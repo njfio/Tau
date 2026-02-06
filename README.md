@@ -204,5 +204,7 @@ cargo run -p pi-coding-agent -- \
   --max-file-read-bytes 500000 \
   --max-tool-output-bytes 8000 \
   --bash-timeout-ms 60000 \
-  --max-command-length 2048
+  --max-command-length 2048 \
+  --bash-profile strict \
+  --allow-command python,cargo-nextest*
 ```

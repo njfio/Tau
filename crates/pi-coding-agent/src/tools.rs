@@ -16,6 +16,24 @@ const SAFE_BASH_ENV_VARS: &[&str] = &[
     "TZ",
 ];
 
+const BALANCED_COMMAND_ALLOWLIST: &[&str] = &[
+    "awk", "cargo", "cat", "cp", "cut", "du", "echo", "env", "fd", "find", "git", "grep", "head",
+    "ls", "mkdir", "mv", "printf", "pwd", "rg", "rm", "rustc", "rustup", "sed", "sleep", "sort",
+    "stat", "tail", "touch", "tr", "uniq", "wc",
+];
+
+const STRICT_COMMAND_ALLOWLIST: &[&str] = &[
+    "awk", "cat", "cut", "du", "echo", "env", "fd", "find", "grep", "head", "ls", "printf", "pwd",
+    "rg", "sed", "sort", "stat", "tail", "tr", "uniq", "wc",
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BashCommandProfile {
+    Permissive,
+    Balanced,
+    Strict,
+}
+
 #[derive(Debug, Clone)]
 pub struct ToolPolicy {
     pub allowed_roots: Vec<PathBuf>,
@@ -24,7 +42,8 @@ pub struct ToolPolicy {
     pub bash_timeout_ms: u64,
     pub max_command_length: usize,
     pub allow_command_newlines: bool,
-    pub denied_command_patterns: Vec<&'static str>,
+    pub bash_profile: BashCommandProfile,
+    pub allowed_commands: Vec<String>,
 }
 
 impl ToolPolicy {
@@ -36,16 +55,27 @@ impl ToolPolicy {
             bash_timeout_ms: 120_000,
             max_command_length: 4_096,
             allow_command_newlines: false,
-            denied_command_patterns: vec![
-                "rm -rf /",
-                "rm -rf ~",
-                ":(){:|:&};:",
-                "shutdown",
-                "reboot",
-                "mkfs",
-                "dd if=/dev/zero",
-            ],
+            bash_profile: BashCommandProfile::Balanced,
+            allowed_commands: BALANCED_COMMAND_ALLOWLIST
+                .iter()
+                .map(|command| (*command).to_string())
+                .collect(),
         }
+    }
+
+    pub fn set_bash_profile(&mut self, profile: BashCommandProfile) {
+        self.bash_profile = profile;
+        self.allowed_commands = match profile {
+            BashCommandProfile::Permissive => Vec::new(),
+            BashCommandProfile::Balanced => BALANCED_COMMAND_ALLOWLIST
+                .iter()
+                .map(|command| (*command).to_string())
+                .collect(),
+            BashCommandProfile::Strict => STRICT_COMMAND_ALLOWLIST
+                .iter()
+                .map(|command| (*command).to_string())
+                .collect(),
+        };
     }
 }
 
@@ -360,16 +390,24 @@ impl AgentTool for BashTool {
             }));
         }
 
-        if let Some(pattern) = self
-            .policy
-            .denied_command_patterns
-            .iter()
-            .find(|pattern| command.contains(**pattern))
-        {
-            return ToolExecutionResult::error(json!({
-                "command": command,
-                "error": format!("command contains denied pattern '{pattern}'"),
-            }));
+        if !self.policy.allowed_commands.is_empty() {
+            let Some(executable) = leading_executable(&command) else {
+                return ToolExecutionResult::error(json!({
+                    "command": command,
+                    "error": "unable to parse command executable",
+                }));
+            };
+            if !is_command_allowed(&executable, &self.policy.allowed_commands) {
+                return ToolExecutionResult::error(json!({
+                    "command": command,
+                    "error": format!(
+                        "command '{}' is not allowed by '{}' bash profile",
+                        executable,
+                        bash_profile_name(self.policy.bash_profile),
+                    ),
+                    "allowed_commands": self.policy.allowed_commands,
+                }));
+            }
         }
 
         let cwd = match arguments.get("cwd").and_then(Value::as_str) {
@@ -532,6 +570,57 @@ fn required_string(arguments: &Value, key: &str) -> Result<String, String> {
         .ok_or_else(|| format!("missing required string argument '{key}'"))
 }
 
+fn leading_executable(command: &str) -> Option<String> {
+    let tokens = shell_words::split(command).ok()?;
+    for token in tokens {
+        if is_shell_assignment(&token) {
+            continue;
+        }
+
+        return Some(
+            Path::new(&token)
+                .file_name()
+                .map(|file_name| file_name.to_string_lossy().to_string())
+                .unwrap_or(token),
+        );
+    }
+    None
+}
+
+fn is_shell_assignment(token: &str) -> bool {
+    let Some((name, _value)) = token.split_once('=') else {
+        return false;
+    };
+
+    let mut chars = name.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    if !(first == '_' || first.is_ascii_alphabetic()) {
+        return false;
+    }
+
+    chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
+}
+
+fn is_command_allowed(executable: &str, allowlist: &[String]) -> bool {
+    allowlist.iter().any(|entry| {
+        if let Some(prefix) = entry.strip_suffix('*') {
+            executable.starts_with(prefix)
+        } else {
+            executable == entry
+        }
+    })
+}
+
+fn bash_profile_name(profile: BashCommandProfile) -> &'static str {
+    match profile {
+        BashCommandProfile::Permissive => "permissive",
+        BashCommandProfile::Balanced => "balanced",
+        BashCommandProfile::Strict => "strict",
+    }
+}
+
 fn truncate_bytes(value: &str, limit: usize) -> String {
     if value.len() <= limit {
         return value.to_string();
@@ -577,7 +666,8 @@ mod tests {
     use tempfile::tempdir;
 
     use super::{
-        canonicalize_best_effort, redact_secrets, truncate_bytes, AgentTool, BashTool, EditTool,
+        bash_profile_name, canonicalize_best_effort, is_command_allowed, leading_executable,
+        redact_secrets, truncate_bytes, AgentTool, BashCommandProfile, BashTool, EditTool,
         ToolExecutionResult, ToolPolicy, WriteTool,
     };
 
@@ -713,6 +803,24 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn regression_bash_tool_blocks_command_not_in_allowlist() {
+        let temp = tempdir().expect("tempdir");
+        let tool = BashTool::new(test_policy(temp.path()));
+        let result = tool
+            .execute(serde_json::json!({
+                "command": "python --version",
+                "cwd": temp.path().display().to_string(),
+            }))
+            .await;
+
+        assert!(result.is_error);
+        assert!(result
+            .content
+            .to_string()
+            .contains("is not allowed by 'balanced' bash profile"));
+    }
+
+    #[tokio::test]
     async fn regression_bash_tool_rejects_commands_longer_than_policy_limit() {
         let temp = tempdir().expect("tempdir");
         let mut policy = ToolPolicy::new(vec![temp.path().to_path_buf()]);
@@ -808,5 +916,35 @@ mod tests {
         let target = temp.path().join("a/b/c.txt");
         let canonical = canonicalize_best_effort(&target).expect("canonicalization should work");
         assert!(canonical.ends_with("a/b/c.txt"));
+    }
+
+    #[test]
+    fn unit_leading_executable_parses_assignments_and_paths() {
+        assert_eq!(
+            leading_executable("FOO=1 /usr/bin/git status"),
+            Some("git".to_string())
+        );
+        assert_eq!(
+            leading_executable("BAR=baz cargo test"),
+            Some("cargo".to_string())
+        );
+    }
+
+    #[test]
+    fn functional_command_allowlist_supports_prefix_patterns() {
+        let allowlist = vec!["git".to_string(), "cargo-*".to_string()];
+        assert!(is_command_allowed("git", &allowlist));
+        assert!(is_command_allowed("cargo-nextest", &allowlist));
+        assert!(!is_command_allowed("python", &allowlist));
+    }
+
+    #[test]
+    fn regression_bash_profile_name_is_stable() {
+        assert_eq!(
+            bash_profile_name(BashCommandProfile::Permissive),
+            "permissive"
+        );
+        assert_eq!(bash_profile_name(BashCommandProfile::Balanced), "balanced");
+        assert_eq!(bash_profile_name(BashCommandProfile::Strict), "strict");
     }
 }

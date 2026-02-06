@@ -5,7 +5,7 @@ mod tools;
 use std::{future::Future, io::Write, path::PathBuf, sync::Arc, time::Duration};
 
 use anyhow::{anyhow, bail, Context, Result};
-use clap::{ArgAction, Parser};
+use clap::{ArgAction, Parser, ValueEnum};
 use pi_agent_core::{Agent, AgentConfig, AgentEvent};
 use pi_ai::{
     AnthropicClient, AnthropicConfig, GoogleClient, GoogleConfig, LlmClient, Message, MessageRole,
@@ -22,7 +22,24 @@ use crate::skills::{
     load_catalog, resolve_registry_skill_sources, resolve_remote_skill_sources,
     resolve_selected_skills, TrustedKey,
 };
-use crate::tools::ToolPolicy;
+use crate::tools::{BashCommandProfile, ToolPolicy};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum CliBashProfile {
+    Permissive,
+    Balanced,
+    Strict,
+}
+
+impl From<CliBashProfile> for BashCommandProfile {
+    fn from(value: CliBashProfile) -> Self {
+        match value {
+            CliBashProfile::Permissive => BashCommandProfile::Permissive,
+            CliBashProfile::Balanced => BashCommandProfile::Balanced,
+            CliBashProfile::Strict => BashCommandProfile::Strict,
+        }
+    }
+}
 
 #[derive(Debug, Parser)]
 #[command(
@@ -291,6 +308,23 @@ struct Cli {
         help = "Allow newline characters in bash commands"
     )]
     allow_command_newlines: bool,
+
+    #[arg(
+        long,
+        env = "PI_BASH_PROFILE",
+        value_enum,
+        default_value = "balanced",
+        help = "Command execution profile for bash tool: permissive, balanced, or strict"
+    )]
+    bash_profile: CliBashProfile,
+
+    #[arg(
+        long = "allow-command",
+        env = "PI_ALLOW_COMMAND",
+        value_delimiter = ',',
+        help = "Additional command executables/prefixes to allow (supports trailing '*' wildcards)"
+    )]
+    allow_command: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -984,6 +1018,22 @@ fn build_tool_policy(cli: &Cli) -> Result<ToolPolicy> {
     policy.max_file_read_bytes = cli.max_file_read_bytes.max(1_024);
     policy.max_command_length = cli.max_command_length.max(8);
     policy.allow_command_newlines = cli.allow_command_newlines;
+    policy.set_bash_profile(cli.bash_profile.into());
+    if !cli.allow_command.is_empty() {
+        for command in &cli.allow_command {
+            let command = command.trim();
+            if command.is_empty() {
+                continue;
+            }
+            if !policy
+                .allowed_commands
+                .iter()
+                .any(|existing| existing == command)
+            {
+                policy.allowed_commands.push(command.to_string());
+            }
+        }
+    }
     Ok(policy)
 }
 
@@ -1020,11 +1070,12 @@ mod tests {
 
     use super::{
         build_tool_policy, handle_command, parse_trusted_root_spec, resolve_skill_trust_roots,
-        run_prompt_with_cancellation, stream_text_chunks, Cli, CommandAction, PromptRunStatus,
-        RenderOptions, SessionRuntime,
+        run_prompt_with_cancellation, stream_text_chunks, Cli, CliBashProfile, CommandAction,
+        PromptRunStatus, RenderOptions, SessionRuntime,
     };
     use crate::resolve_api_key;
     use crate::session::SessionStore;
+    use crate::tools::BashCommandProfile;
 
     struct NoopClient;
 
@@ -1123,6 +1174,8 @@ mod tests {
             max_file_read_bytes: 2048,
             max_command_length: 4096,
             allow_command_newlines: true,
+            bash_profile: CliBashProfile::Balanced,
+            allow_command: vec![],
         }
     }
 
@@ -1535,5 +1588,28 @@ mod tests {
         assert_eq!(policy.max_file_read_bytes, 2048);
         assert_eq!(policy.max_command_length, 4096);
         assert!(policy.allow_command_newlines);
+    }
+
+    #[test]
+    fn functional_build_tool_policy_applies_strict_profile_and_custom_allowlist() {
+        let mut cli = test_cli();
+        cli.bash_profile = CliBashProfile::Strict;
+        cli.allow_command = vec!["python".to_string(), "cargo-nextest*".to_string()];
+
+        let policy = build_tool_policy(&cli).expect("policy should build");
+        assert_eq!(policy.bash_profile, BashCommandProfile::Strict);
+        assert!(policy.allowed_commands.contains(&"python".to_string()));
+        assert!(policy
+            .allowed_commands
+            .contains(&"cargo-nextest*".to_string()));
+        assert!(!policy.allowed_commands.contains(&"rm".to_string()));
+    }
+
+    #[test]
+    fn regression_build_tool_policy_permissive_profile_disables_allowlist() {
+        let mut cli = test_cli();
+        cli.bash_profile = CliBashProfile::Permissive;
+        let policy = build_tool_policy(&cli).expect("policy should build");
+        assert!(policy.allowed_commands.is_empty());
     }
 }
