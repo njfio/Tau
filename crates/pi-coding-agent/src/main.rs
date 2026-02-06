@@ -303,6 +303,22 @@ struct Cli {
     branch_from: Option<u64>,
 
     #[arg(
+        long,
+        env = "PI_SESSION_LOCK_WAIT_MS",
+        default_value_t = 5_000,
+        help = "Maximum time to wait for acquiring the session lock in milliseconds"
+    )]
+    session_lock_wait_ms: u64,
+
+    #[arg(
+        long,
+        env = "PI_SESSION_LOCK_STALE_MS",
+        default_value_t = 30_000,
+        help = "Lock-file age threshold in milliseconds before stale session locks are reclaimed (0 disables reclaim)"
+    )]
+    session_lock_stale_ms: u64,
+
+    #[arg(
         long = "allow-path",
         env = "PI_ALLOW_PATH",
         value_delimiter = ',',
@@ -740,6 +756,7 @@ fn is_expired_unix(expires_unix: Option<u64>, now_unix: u64) -> bool {
 
 fn initialize_session(agent: &mut Agent, cli: &Cli, system_prompt: &str) -> Result<SessionRuntime> {
     let mut store = SessionStore::load(&cli.session)?;
+    store.set_lock_policy(cli.session_lock_wait_ms.max(1), cli.session_lock_stale_ms);
 
     let mut active_head = store.ensure_initialized(system_prompt)?;
     if let Some(branch_id) = cli.branch_from {
@@ -1294,7 +1311,7 @@ mod tests {
         future::{pending, ready},
         path::PathBuf,
         sync::Arc,
-        time::Duration,
+        time::{Duration, Instant},
     };
 
     use async_trait::async_trait;
@@ -1307,7 +1324,7 @@ mod tests {
     use tokio::time::sleep;
 
     use super::{
-        apply_trust_root_mutations, build_tool_policy, handle_command,
+        apply_trust_root_mutations, build_tool_policy, handle_command, initialize_session,
         parse_sandbox_command_tokens, parse_trust_rotation_spec, parse_trusted_root_spec,
         resolve_skill_trust_roots, run_prompt_with_cancellation, stream_text_chunks, Cli,
         CliBashProfile, CliOsSandboxMode, CommandAction, PromptRunStatus, RenderOptions,
@@ -1411,6 +1428,8 @@ mod tests {
             session: PathBuf::from(".pi/sessions/default.jsonl"),
             no_session: false,
             branch_from: None,
+            session_lock_wait_ms: 5_000,
+            session_lock_stale_ms: 30_000,
             allow_path: vec![],
             bash_timeout_ms: 500,
             max_tool_output_bytes: 1024,
@@ -1955,6 +1974,48 @@ mod tests {
         assert_eq!(runtime.store.branch_tips().len(), 1);
         assert_eq!(runtime.store.branch_tips()[0].id, head);
         assert_eq!(agent.messages().len(), 3);
+    }
+
+    #[test]
+    fn integration_initialize_session_applies_lock_timeout_policy() {
+        let temp = tempdir().expect("tempdir");
+        let session_path = temp.path().join("locked-session.jsonl");
+        let lock_path = session_path.with_extension("lock");
+        std::fs::write(&lock_path, "locked").expect("write lock");
+
+        let mut cli = test_cli();
+        cli.session = session_path;
+        cli.session_lock_wait_ms = 120;
+        cli.session_lock_stale_ms = 0;
+        let mut agent = Agent::new(Arc::new(NoopClient), AgentConfig::default());
+        let start = Instant::now();
+
+        let error = initialize_session(&mut agent, &cli, "sys")
+            .expect_err("initialization should fail when lock persists");
+        assert!(error.to_string().contains("timed out acquiring lock"));
+        assert!(start.elapsed() < Duration::from_secs(2));
+
+        std::fs::remove_file(lock_path).expect("cleanup lock");
+    }
+
+    #[test]
+    fn functional_initialize_session_reclaims_stale_lock_when_enabled() {
+        let temp = tempdir().expect("tempdir");
+        let session_path = temp.path().join("stale-lock-session.jsonl");
+        let lock_path = session_path.with_extension("lock");
+        std::fs::write(&lock_path, "stale").expect("write lock");
+        std::thread::sleep(Duration::from_millis(30));
+
+        let mut cli = test_cli();
+        cli.session = session_path;
+        cli.session_lock_wait_ms = 1_000;
+        cli.session_lock_stale_ms = 10;
+        let mut agent = Agent::new(Arc::new(NoopClient), AgentConfig::default());
+
+        let runtime = initialize_session(&mut agent, &cli, "sys")
+            .expect("initialization should reclaim stale lock");
+        assert_eq!(runtime.store.entries().len(), 1);
+        assert!(!lock_path.exists());
     }
 
     #[test]
