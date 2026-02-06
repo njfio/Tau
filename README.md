@@ -24,15 +24,13 @@ Implemented now:
 - Theme loading and ANSI styling primitives in `pi-tui`
 - Overlay composition primitives in `pi-tui`
 - Editor buffer primitives in `pi-tui` (cursor + insert/delete/navigation)
+- Editor viewport rendering in `pi-tui` (line numbers + cursor marker)
+- Image rendering primitives in `pi-tui` (grayscale-to-ASCII)
 - Skill loading from markdown packages via `--skills-dir` and `--skill`
 - Remote skill fetch/install with optional checksum verification
 - Registry-based skill installation (`--skill-registry-url`, `--install-skill-from-registry`)
 - Signed registry skill installation with trust roots (`--skill-trust-root`, `--require-signed-skills`)
 - Unit tests for serialization, tool loop, renderer diffing, and tool behaviors
-
-Not implemented yet:
-
-- Full TUI parity with overlays/images/editor
 
 ## Build & Test
 

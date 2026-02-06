@@ -317,6 +317,166 @@ impl Component for Text {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LumaImage {
+    width: usize,
+    height: usize,
+    pixels: Vec<u8>,
+}
+
+impl LumaImage {
+    pub fn from_luma(width: usize, height: usize, pixels: Vec<u8>) -> Result<Self, ImageError> {
+        if width == 0 || height == 0 {
+            return Err(ImageError::EmptyDimensions);
+        }
+
+        let expected = width
+            .checked_mul(height)
+            .ok_or(ImageError::DimensionsTooLarge)?;
+        if pixels.len() != expected {
+            return Err(ImageError::InvalidPixelCount {
+                expected,
+                actual: pixels.len(),
+            });
+        }
+
+        Ok(Self {
+            width,
+            height,
+            pixels,
+        })
+    }
+
+    pub fn width(&self) -> usize {
+        self.width
+    }
+
+    pub fn height(&self) -> usize {
+        self.height
+    }
+
+    pub fn render_fit(&self, max_width: usize) -> Vec<String> {
+        if max_width == 0 {
+            return vec![String::new()];
+        }
+
+        let target_width = self.width.min(max_width).max(1);
+        let target_height = ((self.height * target_width) / self.width).max(1);
+        let mut lines = Vec::with_capacity(target_height);
+        for target_y in 0..target_height {
+            let src_y = target_y * self.height / target_height;
+            let mut line = String::with_capacity(target_width);
+            for target_x in 0..target_width {
+                let src_x = target_x * self.width / target_width;
+                let value = self.pixels[src_y * self.width + src_x];
+                line.push(luma_to_ascii(value));
+            }
+            lines.push(line);
+        }
+        lines
+    }
+}
+
+impl Component for LumaImage {
+    fn render(&self, width: usize) -> Vec<String> {
+        self.render_fit(width)
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum ImageError {
+    #[error("image dimensions must be greater than zero")]
+    EmptyDimensions,
+    #[error("image dimensions overflowed while computing pixel count")]
+    DimensionsTooLarge,
+    #[error("invalid pixel count: expected {expected}, got {actual}")]
+    InvalidPixelCount { expected: usize, actual: usize },
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct EditorView<'a> {
+    buffer: &'a EditorBuffer,
+    viewport_top: usize,
+    viewport_height: usize,
+    show_line_numbers: bool,
+    show_cursor: bool,
+}
+
+impl<'a> EditorView<'a> {
+    pub fn new(buffer: &'a EditorBuffer) -> Self {
+        Self {
+            buffer,
+            viewport_top: 0,
+            viewport_height: buffer.lines().len().max(1),
+            show_line_numbers: true,
+            show_cursor: true,
+        }
+    }
+
+    pub fn with_viewport(mut self, top: usize, height: usize) -> Self {
+        self.viewport_top = top;
+        self.viewport_height = height.max(1);
+        self
+    }
+
+    pub fn with_line_numbers(mut self, enabled: bool) -> Self {
+        self.show_line_numbers = enabled;
+        self
+    }
+
+    pub fn with_cursor(mut self, enabled: bool) -> Self {
+        self.show_cursor = enabled;
+        self
+    }
+}
+
+impl Component for EditorView<'_> {
+    fn render(&self, width: usize) -> Vec<String> {
+        if width == 0 {
+            return vec![String::new()];
+        }
+
+        let lines = self.buffer.lines();
+        if lines.is_empty() {
+            return vec![String::new()];
+        }
+
+        let total_line_digits = lines.len().to_string().len();
+        let number_prefix_width = if self.show_line_numbers {
+            total_line_digits + 2
+        } else {
+            0
+        };
+        let text_width = width.saturating_sub(number_prefix_width).max(1);
+        let cursor = self.buffer.cursor();
+
+        let mut rendered = Vec::new();
+        let end = (self.viewport_top + self.viewport_height).min(lines.len());
+        for (line_index, line) in lines.iter().enumerate().take(end).skip(self.viewport_top) {
+            let mut text = line.clone();
+            if self.show_cursor && cursor.line == line_index {
+                text = insert_marker_at_char(&text, cursor.column, '|');
+            }
+
+            text = truncate_to_char_width(&text, text_width);
+            if self.show_line_numbers {
+                let prefix = format!("{:>width$} ", line_index + 1, width = total_line_digits);
+                let mut line = prefix;
+                line.push(' ');
+                line.push_str(&text);
+                rendered.push(truncate_to_char_width(&line, width));
+            } else {
+                rendered.push(text);
+            }
+        }
+
+        if rendered.is_empty() {
+            rendered.push(String::new());
+        }
+        rendered
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RenderOp {
     Update { line: usize, content: String },
     ClearFrom { line: usize },
@@ -449,6 +609,38 @@ pub fn apply_overlay(base: &[String], overlay: &[String], top: usize, left: usiz
     output
 }
 
+fn luma_to_ascii(value: u8) -> char {
+    const SCALE: &[u8] = b" .:-=+*#%@";
+    let index = (usize::from(value) * (SCALE.len() - 1)) / 255;
+    SCALE[index] as char
+}
+
+fn truncate_to_char_width(text: &str, width: usize) -> String {
+    if width == 0 {
+        return String::new();
+    }
+    text.chars().take(width).collect()
+}
+
+fn insert_marker_at_char(text: &str, column: usize, marker: char) -> String {
+    let mut output = String::new();
+    let mut inserted = false;
+    for (index, ch) in text.chars().enumerate() {
+        if index == column {
+            output.push(marker);
+            inserted = true;
+        }
+        output.push(ch);
+    }
+    if !inserted {
+        while output.chars().count() < column {
+            output.push(' ');
+        }
+        output.push(marker);
+    }
+    output
+}
+
 fn char_to_byte_index(line: &str, char_index: usize) -> usize {
     if char_index == 0 {
         return 0;
@@ -492,8 +684,8 @@ mod tests {
     use tempfile::tempdir;
 
     use super::{
-        apply_overlay, wrap_text, Cursor, DiffRenderer, EditorBuffer, RenderOp, Text, Theme,
-        ThemeError, ThemeRole,
+        apply_overlay, wrap_text, Cursor, DiffRenderer, EditorBuffer, EditorView, ImageError,
+        LumaImage, RenderOp, Text, Theme, ThemeError, ThemeRole,
     };
     use crate::Component;
 
@@ -513,6 +705,25 @@ mod tests {
     fn text_component_renders_with_wrap() {
         let component = Text::new("hello world");
         assert_eq!(component.render(5), vec!["hello", "world"]);
+    }
+
+    #[test]
+    fn unit_luma_image_rejects_invalid_pixel_count() {
+        let error = LumaImage::from_luma(2, 2, vec![0, 1, 2]).expect_err("invalid size");
+        assert!(matches!(error, ImageError::InvalidPixelCount { .. }));
+    }
+
+    #[test]
+    fn functional_luma_image_renders_gradient_to_ascii() {
+        let image =
+            LumaImage::from_luma(4, 1, vec![0, 64, 192, 255]).expect("image should construct");
+        assert_eq!(image.render(8), vec![" :*@".to_string()]);
+    }
+
+    #[test]
+    fn regression_luma_image_render_handles_zero_width() {
+        let image = LumaImage::from_luma(1, 1, vec![128]).expect("image");
+        assert_eq!(image.render(0), vec![String::new()]);
     }
 
     #[test]
@@ -685,6 +896,27 @@ mod tests {
     }
 
     #[test]
+    fn unit_editor_view_renders_line_numbers_and_cursor() {
+        let mut editor = EditorBuffer::from_text("alpha\nbeta");
+        editor.move_right();
+        editor.move_right();
+        let view = EditorView::new(&editor).with_viewport(0, 2);
+
+        assert_eq!(view.render(20), vec!["1  al|pha", "2  beta"]);
+    }
+
+    #[test]
+    fn functional_editor_view_hides_line_numbers_when_disabled() {
+        let editor = EditorBuffer::from_text("a\nb\nc");
+        let view = EditorView::new(&editor)
+            .with_viewport(1, 2)
+            .with_line_numbers(false)
+            .with_cursor(false);
+
+        assert_eq!(view.render(20), vec!["b", "c"]);
+    }
+
+    #[test]
     fn regression_editor_delete_backward_merges_lines_without_panic() {
         let mut editor = EditorBuffer::from_text("ab\ncd");
         editor.move_down();
@@ -710,6 +942,38 @@ mod tests {
                 line: 1,
                 content: "!b".to_string(),
             }]
+        );
+    }
+
+    #[test]
+    fn integration_editor_view_overlay_and_diff_renderer_updates_cursor_line_only() {
+        let mut renderer = DiffRenderer::new();
+        let mut editor = EditorBuffer::from_text("hello\nworld");
+        let base = vec!["status: ok".to_string()];
+
+        let first_view = EditorView::new(&editor).with_viewport(0, 2).render(20);
+        let first_frame = apply_overlay(&base, &first_view, 1, 0);
+        let initial = renderer.diff(first_frame);
+        assert_eq!(initial.len(), 3);
+
+        editor.move_down();
+        editor.move_right();
+        let second_view = EditorView::new(&editor).with_viewport(0, 2).render(20);
+        let second_frame = apply_overlay(&base, &second_view, 1, 0);
+        let delta = renderer.diff(second_frame);
+
+        assert_eq!(
+            delta,
+            vec![
+                RenderOp::Update {
+                    line: 1,
+                    content: "1  hello".to_string(),
+                },
+                RenderOp::Update {
+                    line: 2,
+                    content: "2  w|orld".to_string(),
+                },
+            ]
         );
     }
 }
