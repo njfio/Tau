@@ -10,17 +10,13 @@ on:
 permissions:
   contents: read
 
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
-  lint-and-test:
-    name: Lint/Test (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os:
-          - ubuntu-latest
-          - macos-latest
-          - windows-latest
+  lint:
+    name: Lint (fmt + clippy)
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -39,5 +35,256 @@ jobs:
       - name: Lint
         run: cargo clippy --workspace --all-targets -- -D warnings
 
-      - name: Test
-        run: cargo test --workspace
+  test-agent-core:
+    name: Test pi-agent-core
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run unit/integration tests
+        run: cargo test -p pi-agent-core --lib
+
+  test-pi-ai-unit:
+    name: Test pi-ai (unit)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run unit tests
+        run: cargo test -p pi-ai --lib
+
+  test-pi-ai-integration:
+    name: Test pi-ai (provider integration)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run provider integration tests
+        run: cargo test -p pi-ai --test provider_http_integration
+
+  test-coding-agent-unit:
+    name: Test pi-coding-agent (unit/functional/regression)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run crate tests
+        run: cargo test -p pi-coding-agent --bin pi-coding-agent
+
+  test-coding-agent-integration:
+    name: Test pi-coding-agent (CLI integration)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run CLI integration suite
+        run: cargo test -p pi-coding-agent --test cli_integration
+
+  test-pi-tui:
+    name: Test pi-tui
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run tests
+        run: cargo test -p pi-tui --lib
+
+  cross-platform-smoke:
+    name: Cross-platform compile smoke (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - macos-latest
+          - windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build test binaries
+        run: cargo test --workspace --no-run
+
+  coverage:
+    name: Coverage (llvm-cov)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    outputs:
+      line_coverage: ${{ steps.coverage.outputs.line_coverage }}
+    needs:
+      - lint
+      - test-agent-core
+      - test-pi-ai-unit
+      - test-pi-ai-integration
+      - test-coding-agent-unit
+      - test-coding-agent-integration
+      - test-pi-tui
+    env:
+      COVERAGE_MIN: "35.0"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+
+      - name: Generate coverage report
+        id: coverage
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p coverage
+          cargo llvm-cov --workspace --all-features --summary-only --lcov --output-path coverage/lcov.info | tee coverage/summary.txt
+
+          coverage_pct=$(awk '/^TOTAL/{gsub(/%/,"",$NF); print $NF}' coverage/summary.txt)
+          if [[ -z "${coverage_pct}" ]]; then
+            echo "::error::failed to parse TOTAL coverage percentage"
+            exit 1
+          fi
+
+          echo "line_coverage=${coverage_pct}" >> "$GITHUB_OUTPUT"
+          awk -v coverage="${coverage_pct}" -v minimum="${COVERAGE_MIN}" 'BEGIN { if (coverage + 0 < minimum + 0) exit 1 }'
+
+      - name: Coverage summary
+        run: |
+          echo "### Coverage" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Line coverage: ${{ steps.coverage.outputs.line_coverage }}%" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Minimum threshold: ${COVERAGE_MIN}%" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload coverage artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: |
+            coverage/lcov.info
+            coverage/summary.txt
+
+  report:
+    name: CI Summary
+    runs-on: ubuntu-latest
+    if: always()
+    needs:
+      - lint
+      - test-agent-core
+      - test-pi-ai-unit
+      - test-pi-ai-integration
+      - test-coding-agent-unit
+      - test-coding-agent-integration
+      - test-pi-tui
+      - cross-platform-smoke
+      - coverage
+    env:
+      LINT_RESULT: ${{ needs.lint.result }}
+      AGENT_CORE_RESULT: ${{ needs.test-agent-core.result }}
+      PI_AI_UNIT_RESULT: ${{ needs.test-pi-ai-unit.result }}
+      PI_AI_INTEGRATION_RESULT: ${{ needs.test-pi-ai-integration.result }}
+      CODING_AGENT_UNIT_RESULT: ${{ needs.test-coding-agent-unit.result }}
+      CODING_AGENT_INTEGRATION_RESULT: ${{ needs.test-coding-agent-integration.result }}
+      PI_TUI_RESULT: ${{ needs.test-pi-tui.result }}
+      CROSS_PLATFORM_RESULT: ${{ needs.cross-platform-smoke.result }}
+      COVERAGE_RESULT: ${{ needs.coverage.result }}
+      COVERAGE_PCT: ${{ needs.coverage.outputs.line_coverage }}
+    steps:
+      - name: Publish summary and annotate failures
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          {
+            echo "### CI Suite Summary"
+            echo ""
+            echo "| Suite | Result |"
+            echo "| --- | --- |"
+            echo "| Lint | ${LINT_RESULT} |"
+            echo "| pi-agent-core tests | ${AGENT_CORE_RESULT} |"
+            echo "| pi-ai unit tests | ${PI_AI_UNIT_RESULT} |"
+            echo "| pi-ai integration tests | ${PI_AI_INTEGRATION_RESULT} |"
+            echo "| pi-coding-agent unit/functional/regression | ${CODING_AGENT_UNIT_RESULT} |"
+            echo "| pi-coding-agent integration | ${CODING_AGENT_INTEGRATION_RESULT} |"
+            echo "| pi-tui tests | ${PI_TUI_RESULT} |"
+            echo "| Cross-platform smoke | ${CROSS_PLATFORM_RESULT} |"
+            echo "| Coverage | ${COVERAGE_RESULT} |"
+            if [[ "${COVERAGE_RESULT}" == "success" ]]; then
+              echo ""
+              echo "Coverage: ${COVERAGE_PCT}%"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          failed=0
+          for suite in \
+            "Lint:${LINT_RESULT}" \
+            "pi-agent-core tests:${AGENT_CORE_RESULT}" \
+            "pi-ai unit tests:${PI_AI_UNIT_RESULT}" \
+            "pi-ai integration tests:${PI_AI_INTEGRATION_RESULT}" \
+            "pi-coding-agent unit/functional/regression:${CODING_AGENT_UNIT_RESULT}" \
+            "pi-coding-agent integration:${CODING_AGENT_INTEGRATION_RESULT}" \
+            "pi-tui tests:${PI_TUI_RESULT}" \
+            "Cross-platform smoke:${CROSS_PLATFORM_RESULT}" \
+            "Coverage:${COVERAGE_RESULT}"; do
+            name="${suite%%:*}"
+            result="${suite##*:}"
+            if [[ "${result}" != "success" && "${result}" != "skipped" ]]; then
+              echo "::error title=CI suite failed::${name} returned ${result}"
+              failed=1
+            fi
+          done
+
+          if [[ "${failed}" -ne 0 ]]; then
+            exit 1
+          fi
