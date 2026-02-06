@@ -144,6 +144,19 @@ cargo run -p pi-coding-agent -- --prompt "Hello" --request-timeout-ms 60000
 cargo run -p pi-coding-agent -- --prompt "Hello" --turn-timeout-ms 20000
 ```
 
+Control provider retry resilience behavior:
+
+```bash
+# Retry retryable provider errors up to 4 times
+cargo run -p pi-coding-agent -- --prompt "Hello" --provider-max-retries 4
+
+# Enforce a 1500ms cumulative backoff budget for retries (0 disables)
+cargo run -p pi-coding-agent -- --prompt "Hello" --provider-retry-budget-ms 1500
+
+# Disable jitter to use deterministic exponential backoff
+cargo run -p pi-coding-agent -- --prompt "Hello" --provider-retry-jitter false
+```
+
 Load reusable skills into the system prompt:
 
 ```bash

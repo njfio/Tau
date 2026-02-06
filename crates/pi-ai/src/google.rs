@@ -5,7 +5,8 @@ use tokio::time::sleep;
 
 use crate::{
     retry::{
-        is_retryable_http_error, new_request_id, next_backoff_ms, should_retry_status, MAX_RETRIES,
+        is_retryable_http_error, new_request_id, next_backoff_ms_with_jitter,
+        retry_budget_allows_delay, should_retry_status,
     },
     ChatRequest, ChatResponse, ChatUsage, ContentBlock, LlmClient, Message, MessageRole, PiAiError,
     ToolDefinition,
@@ -16,6 +17,9 @@ pub struct GoogleConfig {
     pub api_base: String,
     pub api_key: String,
     pub request_timeout_ms: u64,
+    pub max_retries: usize,
+    pub retry_budget_ms: u64,
+    pub retry_jitter: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -54,8 +58,10 @@ impl LlmClient for GoogleClient {
     async fn complete(&self, request: ChatRequest) -> Result<ChatResponse, PiAiError> {
         let body = build_generate_content_body(&request);
         let url = self.generate_content_url(&request.model);
+        let started = std::time::Instant::now();
+        let max_retries = self.config.max_retries;
 
-        for attempt in 0..=MAX_RETRIES {
+        for attempt in 0..=max_retries {
             let request_id = new_request_id();
             let response = self
                 .client
@@ -75,9 +81,18 @@ impl LlmClient for GoogleClient {
                         return parse_generate_content_response(&raw);
                     }
 
-                    if attempt < MAX_RETRIES && should_retry_status(status.as_u16()) {
-                        sleep(std::time::Duration::from_millis(next_backoff_ms(attempt))).await;
-                        continue;
+                    if attempt < max_retries && should_retry_status(status.as_u16()) {
+                        let backoff_ms =
+                            next_backoff_ms_with_jitter(attempt, self.config.retry_jitter);
+                        let elapsed_ms = started.elapsed().as_millis() as u64;
+                        if retry_budget_allows_delay(
+                            elapsed_ms,
+                            backoff_ms,
+                            self.config.retry_budget_ms,
+                        ) {
+                            sleep(std::time::Duration::from_millis(backoff_ms)).await;
+                            continue;
+                        }
                     }
 
                     return Err(PiAiError::HttpStatus {
@@ -86,9 +101,18 @@ impl LlmClient for GoogleClient {
                     });
                 }
                 Err(error) => {
-                    if attempt < MAX_RETRIES && is_retryable_http_error(&error) {
-                        sleep(std::time::Duration::from_millis(next_backoff_ms(attempt))).await;
-                        continue;
+                    if attempt < max_retries && is_retryable_http_error(&error) {
+                        let backoff_ms =
+                            next_backoff_ms_with_jitter(attempt, self.config.retry_jitter);
+                        let elapsed_ms = started.elapsed().as_millis() as u64;
+                        if retry_budget_allows_delay(
+                            elapsed_ms,
+                            backoff_ms,
+                            self.config.retry_budget_ms,
+                        ) {
+                            sleep(std::time::Duration::from_millis(backoff_ms)).await;
+                            continue;
+                        }
                     }
                     return Err(PiAiError::Http(error));
                 }

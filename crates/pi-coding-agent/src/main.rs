@@ -309,6 +309,31 @@ struct Cli {
 
     #[arg(
         long,
+        env = "PI_PROVIDER_MAX_RETRIES",
+        default_value_t = 2,
+        help = "Maximum retry attempts for retryable provider HTTP failures"
+    )]
+    provider_max_retries: usize,
+
+    #[arg(
+        long,
+        env = "PI_PROVIDER_RETRY_BUDGET_MS",
+        default_value_t = 0,
+        help = "Optional cumulative retry backoff budget in milliseconds (0 disables budget)"
+    )]
+    provider_retry_budget_ms: u64,
+
+    #[arg(
+        long,
+        env = "PI_PROVIDER_RETRY_JITTER",
+        default_value_t = true,
+        action = ArgAction::Set,
+        help = "Enable bounded jitter for provider retry backoff delays"
+    )]
+    provider_retry_jitter: bool,
+
+    #[arg(
+        long,
         env = "PI_TURN_TIMEOUT_MS",
         default_value_t = 0,
         help = "Optional per-prompt timeout in milliseconds (0 disables timeout)"
@@ -1926,6 +1951,9 @@ fn build_client(cli: &Cli, provider: Provider) -> Result<Arc<dyn LlmClient>> {
                 api_key,
                 organization: None,
                 request_timeout_ms: cli.request_timeout_ms.max(1),
+                max_retries: cli.provider_max_retries,
+                retry_budget_ms: cli.provider_retry_budget_ms,
+                retry_jitter: cli.provider_retry_jitter,
             })?;
             Ok(Arc::new(client))
         }
@@ -1946,6 +1974,9 @@ fn build_client(cli: &Cli, provider: Provider) -> Result<Arc<dyn LlmClient>> {
                 api_base: cli.anthropic_api_base.clone(),
                 api_key,
                 request_timeout_ms: cli.request_timeout_ms.max(1),
+                max_retries: cli.provider_max_retries,
+                retry_budget_ms: cli.provider_retry_budget_ms,
+                retry_jitter: cli.provider_retry_jitter,
             })?;
             Ok(Arc::new(client))
         }
@@ -1967,6 +1998,9 @@ fn build_client(cli: &Cli, provider: Provider) -> Result<Arc<dyn LlmClient>> {
                 api_base: cli.google_api_base.clone(),
                 api_key,
                 request_timeout_ms: cli.request_timeout_ms.max(1),
+                max_retries: cli.provider_max_retries,
+                retry_budget_ms: cli.provider_retry_budget_ms,
+                retry_jitter: cli.provider_retry_jitter,
             })?;
             Ok(Arc::new(client))
         }
@@ -2110,6 +2144,7 @@ mod tests {
     };
 
     use async_trait::async_trait;
+    use clap::Parser;
     use pi_agent_core::{Agent, AgentConfig, AgentEvent, ToolExecutionResult};
     use pi_ai::{
         ChatRequest, ChatResponse, ChatUsage, ContentBlock, LlmClient, MessageRole, PiAiError,
@@ -2227,6 +2262,9 @@ mod tests {
             require_signed_skills: false,
             max_turns: 8,
             request_timeout_ms: 120_000,
+            provider_max_retries: 2,
+            provider_retry_budget_ms: 0,
+            provider_retry_jitter: true,
             turn_timeout_ms: 0,
             json_events: false,
             stream_output: true,
@@ -2270,6 +2308,38 @@ mod tests {
         ]);
 
         assert_eq!(key, Some("abc".to_string()));
+    }
+
+    #[test]
+    fn unit_cli_provider_retry_flags_accept_explicit_baseline_values() {
+        let cli = Cli::parse_from([
+            "pi-rs",
+            "--provider-max-retries",
+            "2",
+            "--provider-retry-budget-ms",
+            "0",
+            "--provider-retry-jitter",
+            "true",
+        ]);
+        assert_eq!(cli.provider_max_retries, 2);
+        assert_eq!(cli.provider_retry_budget_ms, 0);
+        assert!(cli.provider_retry_jitter);
+    }
+
+    #[test]
+    fn functional_cli_provider_retry_flags_accept_overrides() {
+        let cli = Cli::parse_from([
+            "pi-rs",
+            "--provider-max-retries",
+            "5",
+            "--provider-retry-budget-ms",
+            "1500",
+            "--provider-retry-jitter",
+            "false",
+        ]);
+        assert_eq!(cli.provider_max_retries, 5);
+        assert_eq!(cli.provider_retry_budget_ms, 1500);
+        assert!(!cli.provider_retry_jitter);
     }
 
     #[test]

@@ -44,6 +44,9 @@ async fn openai_client_sends_expected_http_request() {
         api_key: "test-openai-key".to_string(),
         organization: None,
         request_timeout_ms: 5_000,
+        max_retries: 2,
+        retry_budget_ms: 0,
+        retry_jitter: false,
     })
     .expect("openai client should be created");
 
@@ -103,6 +106,9 @@ async fn anthropic_client_sends_expected_http_request() {
         api_base: format!("{}/v1", server.base_url()),
         api_key: "test-anthropic-key".to_string(),
         request_timeout_ms: 5_000,
+        max_retries: 2,
+        retry_budget_ms: 0,
+        retry_jitter: false,
     })
     .expect("anthropic client should be created");
 
@@ -168,6 +174,9 @@ async fn google_client_sends_expected_http_request() {
         api_base: server.base_url(),
         api_key: "test-google-key".to_string(),
         request_timeout_ms: 5_000,
+        max_retries: 2,
+        retry_budget_ms: 0,
+        retry_jitter: false,
     })
     .expect("google client should be created");
 
@@ -207,6 +216,9 @@ async fn openai_client_surfaces_http_status_error() {
         api_key: "test-openai-key".to_string(),
         organization: None,
         request_timeout_ms: 5_000,
+        max_retries: 2,
+        retry_budget_ms: 0,
+        retry_jitter: false,
     })
     .expect("openai client should be created");
 
@@ -259,6 +271,9 @@ async fn openai_client_retries_on_rate_limit_then_succeeds() {
         api_key: "test-openai-key".to_string(),
         organization: None,
         request_timeout_ms: 5_000,
+        max_retries: 2,
+        retry_budget_ms: 0,
+        retry_jitter: false,
     })
     .expect("openai client should be created");
 
@@ -276,6 +291,62 @@ async fn openai_client_retries_on_rate_limit_then_succeeds() {
     assert_eq!(response.message.text_content(), "ok after retry");
     first.assert_calls(1);
     second.assert_calls(1);
+}
+
+#[tokio::test]
+async fn openai_client_retry_budget_can_block_retries() {
+    let server = MockServer::start();
+    let first = server.mock(|when, then| {
+        when.method(POST)
+            .path("/v1/chat/completions")
+            .header("x-pi-retry-attempt", "0");
+        then.status(429).body("rate limited");
+    });
+    let second = server.mock(|when, then| {
+        when.method(POST)
+            .path("/v1/chat/completions")
+            .header("x-pi-retry-attempt", "1");
+        then.status(200).json_body(json!({
+            "choices": [{
+                "message": {"content": "should not be reached"},
+                "finish_reason": "stop"
+            }],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
+        }));
+    });
+
+    let client = OpenAiClient::new(OpenAiConfig {
+        api_base: format!("{}/v1", server.base_url()),
+        api_key: "test-openai-key".to_string(),
+        organization: None,
+        request_timeout_ms: 5_000,
+        max_retries: 2,
+        retry_budget_ms: 10,
+        retry_jitter: true,
+    })
+    .expect("openai client should be created");
+
+    let error = client
+        .complete(ChatRequest {
+            model: "gpt-4o-mini".to_string(),
+            messages: vec![Message::user("hello")],
+            tools: vec![],
+            max_tokens: None,
+            temperature: None,
+        })
+        .await
+        .expect_err("retry budget should block retry");
+
+    match error {
+        PiAiError::HttpStatus { status, body } => {
+            assert_eq!(status, 429);
+            assert!(body.contains("rate limited"));
+        }
+        other => panic!("expected PiAiError::HttpStatus, got {other:?}"),
+    }
+
+    first.assert_calls(1);
+    second.assert_calls(0);
 }
 
 #[tokio::test]
@@ -299,6 +370,9 @@ async fn regression_openai_client_returns_timeout_error_when_server_is_slow() {
         api_key: "test-openai-key".to_string(),
         organization: None,
         request_timeout_ms: 40,
+        max_retries: 2,
+        retry_budget_ms: 0,
+        retry_jitter: false,
     })
     .expect("openai client should be created");
 
