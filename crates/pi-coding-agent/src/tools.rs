@@ -35,6 +35,14 @@ pub enum BashCommandProfile {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToolPolicyPreset {
+    Permissive,
+    Balanced,
+    Strict,
+    Hardened,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OsSandboxMode {
     Off,
     Auto,
@@ -51,6 +59,7 @@ struct BashSandboxSpec {
 #[derive(Debug, Clone)]
 pub struct ToolPolicy {
     pub allowed_roots: Vec<PathBuf>,
+    pub policy_preset: ToolPolicyPreset,
     pub max_file_read_bytes: usize,
     pub max_file_write_bytes: usize,
     pub max_command_output_bytes: usize,
@@ -62,12 +71,14 @@ pub struct ToolPolicy {
     pub os_sandbox_mode: OsSandboxMode,
     pub os_sandbox_command: Vec<String>,
     pub enforce_regular_files: bool,
+    pub bash_dry_run: bool,
 }
 
 impl ToolPolicy {
     pub fn new(allowed_roots: Vec<PathBuf>) -> Self {
-        Self {
+        let mut policy = Self {
             allowed_roots,
+            policy_preset: ToolPolicyPreset::Balanced,
             max_file_read_bytes: 1_000_000,
             max_file_write_bytes: 1_000_000,
             max_command_output_bytes: 16_000,
@@ -82,7 +93,10 @@ impl ToolPolicy {
             os_sandbox_mode: OsSandboxMode::Off,
             os_sandbox_command: Vec::new(),
             enforce_regular_files: true,
-        }
+            bash_dry_run: false,
+        };
+        policy.apply_preset(ToolPolicyPreset::Balanced);
+        policy
     }
 
     pub fn set_bash_profile(&mut self, profile: BashCommandProfile) {
@@ -98,6 +112,69 @@ impl ToolPolicy {
                 .map(|command| (*command).to_string())
                 .collect(),
         };
+    }
+
+    pub fn apply_preset(&mut self, preset: ToolPolicyPreset) {
+        self.policy_preset = preset;
+        match preset {
+            ToolPolicyPreset::Permissive => {
+                self.max_file_read_bytes = 2_000_000;
+                self.max_file_write_bytes = 2_000_000;
+                self.max_command_output_bytes = 32_000;
+                self.bash_timeout_ms = 180_000;
+                self.max_command_length = 8_192;
+                self.allow_command_newlines = true;
+                self.set_bash_profile(BashCommandProfile::Permissive);
+                self.os_sandbox_mode = OsSandboxMode::Off;
+                self.os_sandbox_command.clear();
+                self.enforce_regular_files = false;
+            }
+            ToolPolicyPreset::Balanced => {
+                self.max_file_read_bytes = 1_000_000;
+                self.max_file_write_bytes = 1_000_000;
+                self.max_command_output_bytes = 16_000;
+                self.bash_timeout_ms = 120_000;
+                self.max_command_length = 4_096;
+                self.allow_command_newlines = false;
+                self.set_bash_profile(BashCommandProfile::Balanced);
+                self.os_sandbox_mode = OsSandboxMode::Off;
+                self.os_sandbox_command.clear();
+                self.enforce_regular_files = true;
+            }
+            ToolPolicyPreset::Strict => {
+                self.max_file_read_bytes = 750_000;
+                self.max_file_write_bytes = 750_000;
+                self.max_command_output_bytes = 8_000;
+                self.bash_timeout_ms = 90_000;
+                self.max_command_length = 2_048;
+                self.allow_command_newlines = false;
+                self.set_bash_profile(BashCommandProfile::Strict);
+                self.os_sandbox_mode = OsSandboxMode::Auto;
+                self.os_sandbox_command.clear();
+                self.enforce_regular_files = true;
+            }
+            ToolPolicyPreset::Hardened => {
+                self.max_file_read_bytes = 500_000;
+                self.max_file_write_bytes = 500_000;
+                self.max_command_output_bytes = 4_000;
+                self.bash_timeout_ms = 60_000;
+                self.max_command_length = 1_024;
+                self.allow_command_newlines = false;
+                self.set_bash_profile(BashCommandProfile::Strict);
+                self.os_sandbox_mode = OsSandboxMode::Force;
+                self.os_sandbox_command.clear();
+                self.enforce_regular_files = true;
+            }
+        }
+    }
+}
+
+pub fn tool_policy_preset_name(preset: ToolPolicyPreset) -> &'static str {
+    match preset {
+        ToolPolicyPreset::Permissive => "permissive",
+        ToolPolicyPreset::Balanced => "balanced",
+        ToolPolicyPreset::Strict => "strict",
+        ToolPolicyPreset::Hardened => "hardened",
     }
 }
 
@@ -443,6 +520,7 @@ impl AgentTool for BashTool {
         if command_length > self.policy.max_command_length {
             return ToolExecutionResult::error(json!({
                 "command": command,
+                "policy_rule": "max_command_length",
                 "error": format!(
                     "command is too long ({} chars), limit is {} chars",
                     command_length,
@@ -455,6 +533,7 @@ impl AgentTool for BashTool {
         {
             return ToolExecutionResult::error(json!({
                 "command": command,
+                "policy_rule": "allow_command_newlines",
                 "error": "multiline commands are disabled by policy",
             }));
         }
@@ -463,12 +542,14 @@ impl AgentTool for BashTool {
             let Some(executable) = leading_executable(&command) else {
                 return ToolExecutionResult::error(json!({
                     "command": command,
+                    "policy_rule": "allowed_commands",
                     "error": "unable to parse command executable",
                 }));
             };
             if !is_command_allowed(&executable, &self.policy.allowed_commands) {
                 return ToolExecutionResult::error(json!({
                     "command": command,
+                    "policy_rule": "allowed_commands",
                     "error": format!(
                         "command '{}' is not allowed by '{}' bash profile",
                         executable,
@@ -495,6 +576,7 @@ impl AgentTool for BashTool {
                 Err(error) => {
                     return ToolExecutionResult::error(json!({
                         "cwd": cwd,
+                        "policy_rule": "allowed_roots",
                         "error": error,
                     }))
                 }
@@ -513,10 +595,27 @@ impl AgentTool for BashTool {
                 return ToolExecutionResult::error(json!({
                     "command": command,
                     "cwd": cwd.as_ref().map(|value| value.display().to_string()),
+                    "policy_rule": "os_sandbox_mode",
                     "error": error,
                 }))
             }
         };
+
+        if self.policy.bash_dry_run {
+            return ToolExecutionResult::ok(json!({
+                "command": command,
+                "cwd": cwd.map(|value| value.display().to_string()),
+                "sandboxed": sandbox_spec.sandboxed,
+                "sandbox_mode": os_sandbox_mode_name(self.policy.os_sandbox_mode),
+                "dry_run": true,
+                "would_execute": true,
+                "status": null,
+                "success": true,
+                "stdout": "",
+                "stderr": "",
+            }));
+        }
+
         let mut command_builder = Command::new(&sandbox_spec.program);
         command_builder.args(&sandbox_spec.args);
         command_builder.kill_on_drop(true);
@@ -563,6 +662,7 @@ impl AgentTool for BashTool {
             "cwd": cwd.map(|value| value.display().to_string()),
             "sandboxed": sandbox_spec.sandboxed,
             "sandbox_mode": os_sandbox_mode_name(self.policy.os_sandbox_mode),
+            "dry_run": false,
             "status": output.status.code(),
             "success": output.status.success(),
             "stdout": truncate_bytes(&stdout, self.policy.max_command_output_bytes),
@@ -981,7 +1081,8 @@ mod tests {
         bash_profile_name, build_spec_from_command_template, canonicalize_best_effort,
         command_available, is_command_allowed, leading_executable, os_sandbox_mode_name,
         redact_secrets, resolve_sandbox_spec, truncate_bytes, AgentTool, BashCommandProfile,
-        BashTool, EditTool, OsSandboxMode, ToolExecutionResult, ToolPolicy, WriteTool,
+        BashTool, EditTool, OsSandboxMode, ToolExecutionResult, ToolPolicy, ToolPolicyPreset,
+        WriteTool,
     };
 
     fn test_policy(path: &Path) -> Arc<ToolPolicy> {
@@ -991,6 +1092,20 @@ mod tests {
     #[cfg(unix)]
     use std::os::unix::fs::symlink as symlink_file;
     use std::path::Path;
+
+    #[test]
+    fn unit_tool_policy_hardened_preset_applies_expected_configuration() {
+        let temp = tempdir().expect("tempdir");
+        let mut policy = ToolPolicy::new(vec![temp.path().to_path_buf()]);
+        policy.apply_preset(ToolPolicyPreset::Hardened);
+
+        assert_eq!(policy.policy_preset, ToolPolicyPreset::Hardened);
+        assert_eq!(policy.bash_profile, BashCommandProfile::Strict);
+        assert_eq!(policy.max_command_length, 1_024);
+        assert_eq!(policy.max_command_output_bytes, 4_000);
+        assert_eq!(policy.os_sandbox_mode, OsSandboxMode::Force);
+        assert!(policy.enforce_regular_files);
+    }
 
     #[tokio::test]
     async fn edit_tool_replaces_single_match() {
@@ -1297,6 +1412,46 @@ mod tests {
             .content
             .to_string()
             .contains("is not allowed by 'balanced' bash profile"));
+        assert_eq!(
+            result
+                .content
+                .get("policy_rule")
+                .and_then(serde_json::Value::as_str),
+            Some("allowed_commands")
+        );
+    }
+
+    #[tokio::test]
+    async fn integration_bash_tool_dry_run_validates_without_execution() {
+        let temp = tempdir().expect("tempdir");
+        let marker = temp.path().join("marker.txt");
+        let mut policy = ToolPolicy::new(vec![temp.path().to_path_buf()]);
+        policy.bash_dry_run = true;
+        let tool = BashTool::new(Arc::new(policy));
+
+        let result = tool
+            .execute(serde_json::json!({
+                "command": format!("printf 'x' > {}", marker.display()),
+                "cwd": temp.path().display().to_string(),
+            }))
+            .await;
+
+        assert!(!result.is_error);
+        assert_eq!(
+            result
+                .content
+                .get("dry_run")
+                .and_then(serde_json::Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            result
+                .content
+                .get("would_execute")
+                .and_then(serde_json::Value::as_bool),
+            Some(true)
+        );
+        assert!(!marker.exists());
     }
 
     #[tokio::test]

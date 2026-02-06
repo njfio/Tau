@@ -29,7 +29,9 @@ use crate::skills::{
     load_catalog, resolve_registry_skill_sources, resolve_remote_skill_sources,
     resolve_selected_skills, TrustedKey,
 };
-use crate::tools::{BashCommandProfile, OsSandboxMode, ToolPolicy};
+use crate::tools::{
+    tool_policy_preset_name, BashCommandProfile, OsSandboxMode, ToolPolicy, ToolPolicyPreset,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum CliBashProfile {
@@ -76,6 +78,25 @@ impl From<CliSessionImportMode> for SessionImportMode {
         match value {
             CliSessionImportMode::Merge => SessionImportMode::Merge,
             CliSessionImportMode::Replace => SessionImportMode::Replace,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum CliToolPolicyPreset {
+    Permissive,
+    Balanced,
+    Strict,
+    Hardened,
+}
+
+impl From<CliToolPolicyPreset> for ToolPolicyPreset {
+    fn from(value: CliToolPolicyPreset) -> Self {
+        match value {
+            CliToolPolicyPreset::Permissive => ToolPolicyPreset::Permissive,
+            CliToolPolicyPreset::Balanced => ToolPolicyPreset::Balanced,
+            CliToolPolicyPreset::Strict => ToolPolicyPreset::Strict,
+            CliToolPolicyPreset::Hardened => ToolPolicyPreset::Hardened,
         }
     }
 }
@@ -436,6 +457,23 @@ struct Cli {
         help = "Command execution profile for bash tool: permissive, balanced, or strict"
     )]
     bash_profile: CliBashProfile,
+
+    #[arg(
+        long,
+        env = "PI_TOOL_POLICY_PRESET",
+        value_enum,
+        default_value = "balanced",
+        help = "Tool policy preset: permissive, balanced, strict, or hardened"
+    )]
+    tool_policy_preset: CliToolPolicyPreset,
+
+    #[arg(
+        long,
+        env = "PI_BASH_DRY_RUN",
+        default_value_t = false,
+        help = "Validate bash commands against policy without executing them"
+    )]
+    bash_dry_run: bool,
 
     #[arg(
         long = "allow-command",
@@ -1934,22 +1972,49 @@ fn resolve_api_key(candidates: Vec<Option<String>>) -> Option<String> {
         .find(|value| !value.trim().is_empty())
 }
 
+const TOOL_POLICY_SCHEMA_VERSION: u32 = 2;
+
 fn build_tool_policy(cli: &Cli) -> Result<ToolPolicy> {
     let cwd = std::env::current_dir().context("failed to resolve current directory")?;
     let mut roots = vec![cwd];
     roots.extend(cli.allow_path.clone());
 
     let mut policy = ToolPolicy::new(roots);
-    policy.bash_timeout_ms = cli.bash_timeout_ms.max(1);
-    policy.max_command_output_bytes = cli.max_tool_output_bytes.max(128);
-    policy.max_file_read_bytes = cli.max_file_read_bytes.max(1_024);
-    policy.max_file_write_bytes = cli.max_file_write_bytes.max(1_024);
-    policy.max_command_length = cli.max_command_length.max(8);
-    policy.allow_command_newlines = cli.allow_command_newlines;
-    policy.set_bash_profile(cli.bash_profile.into());
-    policy.os_sandbox_mode = cli.os_sandbox_mode.into();
-    policy.os_sandbox_command = parse_sandbox_command_tokens(&cli.os_sandbox_command)?;
-    policy.enforce_regular_files = cli.enforce_regular_files;
+    policy.apply_preset(cli.tool_policy_preset.into());
+
+    if cli.bash_timeout_ms != 120_000 {
+        policy.bash_timeout_ms = cli.bash_timeout_ms.max(1);
+    }
+    if cli.max_tool_output_bytes != 16_000 {
+        policy.max_command_output_bytes = cli.max_tool_output_bytes.max(128);
+    }
+    if cli.max_file_read_bytes != 1_000_000 {
+        policy.max_file_read_bytes = cli.max_file_read_bytes.max(1_024);
+    }
+    if cli.max_file_write_bytes != 1_000_000 {
+        policy.max_file_write_bytes = cli.max_file_write_bytes.max(1_024);
+    }
+    if cli.max_command_length != 4_096 {
+        policy.max_command_length = cli.max_command_length.max(8);
+    }
+    if cli.allow_command_newlines {
+        policy.allow_command_newlines = true;
+    }
+    if cli.bash_profile != CliBashProfile::Balanced {
+        policy.set_bash_profile(cli.bash_profile.into());
+    }
+    if cli.os_sandbox_mode != CliOsSandboxMode::Off {
+        policy.os_sandbox_mode = cli.os_sandbox_mode.into();
+    }
+    if !cli.os_sandbox_command.is_empty() {
+        policy.os_sandbox_command = parse_sandbox_command_tokens(&cli.os_sandbox_command)?;
+    }
+    if !cli.enforce_regular_files {
+        policy.enforce_regular_files = false;
+    }
+    if cli.bash_dry_run {
+        policy.bash_dry_run = true;
+    }
     if !cli.allow_command.is_empty() {
         for command in &cli.allow_command {
             let command = command.trim();
@@ -1988,6 +2053,8 @@ fn parse_sandbox_command_tokens(raw_tokens: &[String]) -> Result<Vec<String>> {
 
 fn tool_policy_to_json(policy: &ToolPolicy) -> serde_json::Value {
     serde_json::json!({
+        "schema_version": TOOL_POLICY_SCHEMA_VERSION,
+        "preset": tool_policy_preset_name(policy.policy_preset),
         "allowed_roots": policy
             .allowed_roots
             .iter()
@@ -2004,6 +2071,7 @@ fn tool_policy_to_json(policy: &ToolPolicy) -> serde_json::Value {
         "os_sandbox_mode": format!("{:?}", policy.os_sandbox_mode).to_lowercase(),
         "os_sandbox_command": policy.os_sandbox_command.clone(),
         "enforce_regular_files": policy.enforce_regular_files,
+        "bash_dry_run": policy.bash_dry_run,
     })
 }
 
@@ -2046,12 +2114,12 @@ mod tests {
         resolve_skill_trust_roots, resolve_system_prompt, run_prompt_with_cancellation,
         stream_text_chunks, tool_audit_event_json, tool_policy_to_json, unknown_command_message,
         validate_session_file, Cli, CliBashProfile, CliOsSandboxMode, CliSessionImportMode,
-        CommandAction, PromptRunStatus, RenderOptions, SessionRuntime, ToolAuditLogger,
-        TrustedRootRecord,
+        CliToolPolicyPreset, CommandAction, PromptRunStatus, RenderOptions, SessionRuntime,
+        ToolAuditLogger, TrustedRootRecord,
     };
     use crate::resolve_api_key;
     use crate::session::{SessionImportMode, SessionStore};
-    use crate::tools::{BashCommandProfile, OsSandboxMode};
+    use crate::tools::{BashCommandProfile, OsSandboxMode, ToolPolicyPreset};
 
     struct NoopClient;
 
@@ -2168,6 +2236,8 @@ mod tests {
             max_command_length: 4096,
             allow_command_newlines: true,
             bash_profile: CliBashProfile::Balanced,
+            tool_policy_preset: CliToolPolicyPreset::Balanced,
+            bash_dry_run: false,
             allow_command: vec![],
             print_tool_policy: false,
             tool_audit_log: None,
@@ -3317,6 +3387,8 @@ mod tests {
         assert_eq!(policy.os_sandbox_mode, OsSandboxMode::Off);
         assert!(policy.os_sandbox_command.is_empty());
         assert!(policy.enforce_regular_files);
+        assert_eq!(policy.policy_preset, ToolPolicyPreset::Balanced);
+        assert!(!policy.bash_dry_run);
     }
 
     #[test]
@@ -3328,10 +3400,55 @@ mod tests {
 
         let policy = build_tool_policy(&cli).expect("policy should build");
         let payload = tool_policy_to_json(&policy);
+        assert_eq!(payload["schema_version"], 2);
+        assert_eq!(payload["preset"], "balanced");
         assert_eq!(payload["bash_profile"], "strict");
         assert_eq!(payload["os_sandbox_mode"], "auto");
         assert_eq!(payload["max_file_write_bytes"], 4096);
         assert_eq!(payload["enforce_regular_files"], true);
+        assert_eq!(payload["bash_dry_run"], false);
+    }
+
+    #[test]
+    fn functional_build_tool_policy_hardened_preset_applies_hardened_defaults() {
+        let mut cli = test_cli();
+        cli.bash_timeout_ms = 120_000;
+        cli.max_tool_output_bytes = 16_000;
+        cli.max_file_read_bytes = 1_000_000;
+        cli.max_file_write_bytes = 1_000_000;
+        cli.max_command_length = 4_096;
+        cli.allow_command_newlines = false;
+        cli.bash_profile = CliBashProfile::Balanced;
+        cli.os_sandbox_mode = CliOsSandboxMode::Off;
+        cli.enforce_regular_files = true;
+        cli.tool_policy_preset = CliToolPolicyPreset::Hardened;
+
+        let policy = build_tool_policy(&cli).expect("policy should build");
+        assert_eq!(policy.policy_preset, ToolPolicyPreset::Hardened);
+        assert_eq!(policy.bash_profile, BashCommandProfile::Strict);
+        assert_eq!(policy.max_command_length, 1_024);
+        assert_eq!(policy.max_command_output_bytes, 4_000);
+        assert_eq!(policy.os_sandbox_mode, OsSandboxMode::Force);
+    }
+
+    #[test]
+    fn regression_build_tool_policy_explicit_profile_overrides_preset_profile() {
+        let mut cli = test_cli();
+        cli.bash_timeout_ms = 120_000;
+        cli.max_tool_output_bytes = 16_000;
+        cli.max_file_read_bytes = 1_000_000;
+        cli.max_file_write_bytes = 1_000_000;
+        cli.max_command_length = 4_096;
+        cli.allow_command_newlines = false;
+        cli.os_sandbox_mode = CliOsSandboxMode::Off;
+        cli.enforce_regular_files = true;
+        cli.tool_policy_preset = CliToolPolicyPreset::Hardened;
+        cli.bash_profile = CliBashProfile::Permissive;
+
+        let policy = build_tool_policy(&cli).expect("policy should build");
+        assert_eq!(policy.policy_preset, ToolPolicyPreset::Hardened);
+        assert_eq!(policy.bash_profile, BashCommandProfile::Permissive);
+        assert!(policy.allowed_commands.is_empty());
     }
 
     #[test]
