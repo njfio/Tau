@@ -17,8 +17,9 @@ use tracing_subscriber::EnvFilter;
 
 use crate::session::SessionStore;
 use crate::skills::{
-    augment_system_prompt, install_remote_skills, install_skills, load_catalog,
-    resolve_remote_skill_sources, resolve_selected_skills,
+    augment_system_prompt, fetch_registry_manifest, install_remote_skills, install_skills,
+    load_catalog, resolve_registry_skill_sources, resolve_remote_skill_sources,
+    resolve_selected_skills,
 };
 use crate::tools::ToolPolicy;
 
@@ -140,6 +141,28 @@ struct Cli {
         help = "Optional sha256 value(s) matching --install-skill-url entries"
     )]
     install_skill_sha256: Vec<String>,
+
+    #[arg(
+        long = "skill-registry-url",
+        env = "PI_SKILL_REGISTRY_URL",
+        help = "Remote registry manifest URL for skills"
+    )]
+    skill_registry_url: Option<String>,
+
+    #[arg(
+        long = "skill-registry-sha256",
+        env = "PI_SKILL_REGISTRY_SHA256",
+        help = "Optional sha256 checksum for the registry manifest"
+    )]
+    skill_registry_sha256: Option<String>,
+
+    #[arg(
+        long = "install-skill-from-registry",
+        env = "PI_INSTALL_SKILL_FROM_REGISTRY",
+        value_delimiter = ',',
+        help = "Skill name(s) to install from the remote registry"
+    )]
+    install_skill_from_registry: Vec<String>,
 
     #[arg(long, env = "PI_MAX_TURNS", default_value_t = 8)]
     max_turns: usize,
@@ -290,6 +313,19 @@ async fn main() -> Result<()> {
         let report = install_remote_skills(&remote_skill_sources, &cli.skills_dir).await?;
         println!(
             "remote skills install: installed={} updated={} skipped={}",
+            report.installed, report.updated, report.skipped
+        );
+    }
+    if !cli.install_skill_from_registry.is_empty() {
+        let registry_url = cli.skill_registry_url.as_deref().ok_or_else(|| {
+            anyhow!("--skill-registry-url is required when using --install-skill-from-registry")
+        })?;
+        let manifest =
+            fetch_registry_manifest(registry_url, cli.skill_registry_sha256.as_deref()).await?;
+        let sources = resolve_registry_skill_sources(&manifest, &cli.install_skill_from_registry)?;
+        let report = install_remote_skills(&sources, &cli.skills_dir).await?;
+        println!(
+            "registry skills install: installed={} updated={} skipped={}",
             report.installed, report.updated, report.skipped
         );
     }
@@ -1217,6 +1253,9 @@ mod tests {
             install_skill: vec![],
             install_skill_url: vec![],
             install_skill_sha256: vec![],
+            skill_registry_url: None,
+            skill_registry_sha256: None,
+            install_skill_from_registry: vec![],
             max_turns: 8,
             json_events: false,
             stream_output: true,

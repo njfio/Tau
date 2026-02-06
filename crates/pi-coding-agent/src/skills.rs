@@ -5,6 +5,7 @@ use std::{
 
 use anyhow::{bail, Context, Result};
 use reqwest::Url;
+use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -25,6 +26,19 @@ pub struct SkillInstallReport {
 pub struct RemoteSkillSource {
     pub url: String,
     pub sha256: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct RegistrySkillEntry {
+    pub name: String,
+    pub url: String,
+    pub sha256: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct SkillRegistryManifest {
+    pub version: u32,
+    pub skills: Vec<RegistrySkillEntry>,
 }
 
 pub fn load_catalog(dir: &Path) -> Result<Vec<Skill>> {
@@ -180,6 +194,75 @@ pub async fn install_remote_skills(
     Ok(report)
 }
 
+pub async fn fetch_registry_manifest(
+    registry_url: &str,
+    expected_sha256: Option<&str>,
+) -> Result<SkillRegistryManifest> {
+    let url = Url::parse(registry_url)
+        .with_context(|| format!("invalid registry URL '{}'", registry_url))?;
+    if !matches!(url.scheme(), "http" | "https") {
+        bail!("unsupported registry URL scheme '{}'", url.scheme());
+    }
+
+    let response = reqwest::Client::new()
+        .get(url)
+        .send()
+        .await
+        .with_context(|| format!("failed to fetch registry '{}'", registry_url))?;
+    if !response.status().is_success() {
+        bail!(
+            "failed to fetch registry '{}' with status {}",
+            registry_url,
+            response.status()
+        );
+    }
+
+    let bytes = response
+        .bytes()
+        .await
+        .with_context(|| format!("failed to read registry response '{}'", registry_url))?;
+
+    if let Some(expected_sha256) = expected_sha256 {
+        let actual_sha256 = sha256_hex(&bytes);
+        let expected_sha256 = normalize_sha256(expected_sha256);
+        if actual_sha256 != expected_sha256 {
+            bail!(
+                "registry sha256 mismatch for '{}': expected {}, got {}",
+                registry_url,
+                expected_sha256,
+                actual_sha256
+            );
+        }
+    }
+
+    let manifest = serde_json::from_slice::<SkillRegistryManifest>(&bytes)
+        .with_context(|| format!("failed to parse registry '{}'", registry_url))?;
+    if manifest.version == 0 {
+        bail!("registry '{}' has invalid version 0", registry_url);
+    }
+    Ok(manifest)
+}
+
+pub fn resolve_registry_skill_sources(
+    manifest: &SkillRegistryManifest,
+    selected_names: &[String],
+) -> Result<Vec<RemoteSkillSource>> {
+    let mut resolved = Vec::new();
+    for name in selected_names {
+        let entry = manifest
+            .skills
+            .iter()
+            .find(|entry| entry.name == *name)
+            .ok_or_else(|| anyhow::anyhow!("registry does not contain skill '{}'", name))?;
+        resolved.push(RemoteSkillSource {
+            url: entry.url.clone(),
+            sha256: entry.sha256.clone(),
+        });
+    }
+
+    Ok(resolved)
+}
+
 pub fn resolve_selected_skills(catalog: &[Skill], selected: &[String]) -> Result<Vec<Skill>> {
     let mut resolved = Vec::new();
     for name in selected {
@@ -270,9 +353,10 @@ mod tests {
     use tempfile::tempdir;
 
     use super::{
-        augment_system_prompt, install_remote_skills, install_skills, load_catalog,
-        resolve_remote_skill_sources, resolve_selected_skills, RemoteSkillSource, Skill,
-        SkillInstallReport,
+        augment_system_prompt, fetch_registry_manifest, install_remote_skills, install_skills,
+        load_catalog, resolve_registry_skill_sources, resolve_remote_skill_sources,
+        resolve_selected_skills, RemoteSkillSource, Skill, SkillInstallReport,
+        SkillRegistryManifest,
     };
 
     #[test]
@@ -519,5 +603,106 @@ mod tests {
             "v2"
         );
         remote.assert_hits(1);
+    }
+
+    #[tokio::test]
+    async fn functional_fetch_registry_manifest_with_checksum_verification() {
+        let server = MockServer::start();
+        let body = serde_json::json!({
+            "version": 1,
+            "skills": [
+                {"name":"review","url":"https://example.com/review.md","sha256":"abc"}
+            ]
+        })
+        .to_string();
+        let checksum = format!("{:x}", Sha256::digest(body.as_bytes()));
+
+        let registry = server.mock(|when, then| {
+            when.method(GET).path("/registry.json");
+            then.status(200).body(body);
+        });
+
+        let manifest = fetch_registry_manifest(
+            &format!("{}/registry.json", server.base_url()),
+            Some(&checksum),
+        )
+        .await
+        .expect("fetch should succeed");
+        assert_eq!(manifest.version, 1);
+        assert_eq!(manifest.skills.len(), 1);
+        registry.assert_hits(1);
+    }
+
+    #[test]
+    fn regression_resolve_registry_skill_sources_errors_for_missing_name() {
+        let manifest = SkillRegistryManifest {
+            version: 1,
+            skills: vec![super::RegistrySkillEntry {
+                name: "known".to_string(),
+                url: "https://example.com/known.md".to_string(),
+                sha256: None,
+            }],
+        };
+
+        let error = resolve_registry_skill_sources(&manifest, &["missing".to_string()])
+            .expect_err("unknown name should fail");
+        assert!(error
+            .to_string()
+            .contains("registry does not contain skill"));
+    }
+
+    #[tokio::test]
+    async fn integration_registry_manifest_to_remote_install_roundtrip() {
+        let server = MockServer::start();
+        let skill_body = "from registry";
+        let skill_sha = format!("{:x}", Sha256::digest(skill_body.as_bytes()));
+        let registry_body = serde_json::json!({
+            "version": 1,
+            "skills": [
+                {
+                    "name":"registry-skill",
+                    "url": format!("{}/skill.md", server.base_url()),
+                    "sha256": skill_sha
+                }
+            ]
+        })
+        .to_string();
+
+        let registry = server.mock(|when, then| {
+            when.method(GET).path("/registry.json");
+            then.status(200).body(registry_body);
+        });
+        let skill = server.mock(|when, then| {
+            when.method(GET).path("/skill.md");
+            then.status(200).body(skill_body);
+        });
+
+        let manifest =
+            fetch_registry_manifest(&format!("{}/registry.json", server.base_url()), None)
+                .await
+                .expect("manifest fetch");
+        let sources = resolve_registry_skill_sources(&manifest, &["registry-skill".to_string()])
+            .expect("resolve");
+
+        let temp = tempdir().expect("tempdir");
+        let destination = temp.path().join("skills");
+        let report = install_remote_skills(&sources, &destination)
+            .await
+            .expect("install");
+
+        assert_eq!(
+            report,
+            SkillInstallReport {
+                installed: 1,
+                updated: 0,
+                skipped: 0
+            }
+        );
+        assert_eq!(
+            std::fs::read_to_string(destination.join("skill.md")).expect("read skill"),
+            skill_body
+        );
+        registry.assert_hits(1);
+        skill.assert_hits(1);
     }
 }
