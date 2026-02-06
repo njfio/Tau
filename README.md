@@ -235,6 +235,15 @@ cargo run -p pi-coding-agent -- --model openai/gpt-4o-mini
 /session-compact
 ```
 
+Tune session lock behavior for shared/concurrent workflows:
+
+```bash
+cargo run -p pi-coding-agent -- \
+  --model openai/gpt-4o-mini \
+  --session-lock-wait-ms 15000 \
+  --session-lock-stale-ms 60000
+```
+
 Tool policy controls:
 
 ```bash
@@ -242,9 +251,14 @@ cargo run -p pi-coding-agent -- \
   --model openai/gpt-4o-mini \
   --allow-path /Users/me/project \
   --max-file-read-bytes 500000 \
+  --max-file-write-bytes 500000 \
   --max-tool-output-bytes 8000 \
   --bash-timeout-ms 60000 \
   --max-command-length 2048 \
   --bash-profile strict \
-  --allow-command python,cargo-nextest*
+  --allow-command python,cargo-nextest* \
+  --print-tool-policy \
+  --os-sandbox-mode auto \
+  --os-sandbox-command bwrap,--die-with-parent,--new-session,--unshare-all,--proc,/proc,--dev,/dev,--tmpfs,/tmp,--bind,{cwd},{cwd},--chdir,{cwd},{shell},-lc,{command} \
+  --enforce-regular-files true
 ```

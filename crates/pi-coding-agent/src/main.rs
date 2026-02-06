@@ -22,7 +22,7 @@ use crate::skills::{
     load_catalog, resolve_registry_skill_sources, resolve_remote_skill_sources,
     resolve_selected_skills, TrustedKey,
 };
-use crate::tools::{BashCommandProfile, ToolPolicy};
+use crate::tools::{BashCommandProfile, OsSandboxMode, ToolPolicy};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum CliBashProfile {
@@ -37,6 +37,23 @@ impl From<CliBashProfile> for BashCommandProfile {
             CliBashProfile::Permissive => BashCommandProfile::Permissive,
             CliBashProfile::Balanced => BashCommandProfile::Balanced,
             CliBashProfile::Strict => BashCommandProfile::Strict,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum CliOsSandboxMode {
+    Off,
+    Auto,
+    Force,
+}
+
+impl From<CliOsSandboxMode> for OsSandboxMode {
+    fn from(value: CliOsSandboxMode) -> Self {
+        match value {
+            CliOsSandboxMode::Off => OsSandboxMode::Off,
+            CliOsSandboxMode::Auto => OsSandboxMode::Auto,
+            CliOsSandboxMode::Force => OsSandboxMode::Force,
         }
     }
 }
@@ -286,6 +303,22 @@ struct Cli {
     branch_from: Option<u64>,
 
     #[arg(
+        long,
+        env = "PI_SESSION_LOCK_WAIT_MS",
+        default_value_t = 5_000,
+        help = "Maximum time to wait for acquiring the session lock in milliseconds"
+    )]
+    session_lock_wait_ms: u64,
+
+    #[arg(
+        long,
+        env = "PI_SESSION_LOCK_STALE_MS",
+        default_value_t = 30_000,
+        help = "Lock-file age threshold in milliseconds before stale session locks are reclaimed (0 disables reclaim)"
+    )]
+    session_lock_stale_ms: u64,
+
+    #[arg(
         long = "allow-path",
         env = "PI_ALLOW_PATH",
         value_delimiter = ',',
@@ -319,6 +352,14 @@ struct Cli {
 
     #[arg(
         long,
+        env = "PI_MAX_FILE_WRITE_BYTES",
+        default_value_t = 1_000_000,
+        help = "Maximum file size written by write/edit tools"
+    )]
+    max_file_write_bytes: usize,
+
+    #[arg(
+        long,
         env = "PI_MAX_COMMAND_LENGTH",
         default_value_t = 4_096,
         help = "Maximum command length accepted by the bash tool"
@@ -349,6 +390,40 @@ struct Cli {
         help = "Additional command executables/prefixes to allow (supports trailing '*' wildcards)"
     )]
     allow_command: Vec<String>,
+
+    #[arg(
+        long,
+        env = "PI_PRINT_TOOL_POLICY",
+        default_value_t = false,
+        help = "Print effective tool policy JSON before executing prompts"
+    )]
+    print_tool_policy: bool,
+
+    #[arg(
+        long,
+        env = "PI_OS_SANDBOX_MODE",
+        value_enum,
+        default_value = "off",
+        help = "OS sandbox mode for bash tool: off, auto, or force"
+    )]
+    os_sandbox_mode: CliOsSandboxMode,
+
+    #[arg(
+        long = "os-sandbox-command",
+        env = "PI_OS_SANDBOX_COMMAND",
+        value_delimiter = ',',
+        help = "Optional sandbox launcher command template tokens. Supports placeholders: {shell}, {command}, {cwd}"
+    )]
+    os_sandbox_command: Vec<String>,
+
+    #[arg(
+        long,
+        env = "PI_ENFORCE_REGULAR_FILES",
+        default_value_t = true,
+        action = ArgAction::Set,
+        help = "Require read/edit targets and existing write targets to be regular files (reject symlink targets)"
+    )]
+    enforce_regular_files: bool,
 }
 
 #[derive(Debug)]
@@ -451,6 +526,9 @@ async fn main() -> Result<()> {
     );
 
     let tool_policy = build_tool_policy(&cli)?;
+    if cli.print_tool_policy {
+        println!("{}", tool_policy_to_json(&tool_policy));
+    }
     tools::register_builtin_tools(&mut agent, tool_policy);
     let render_options = RenderOptions::from_cli(&cli);
 
@@ -689,6 +767,7 @@ fn is_expired_unix(expires_unix: Option<u64>, now_unix: u64) -> bool {
 
 fn initialize_session(agent: &mut Agent, cli: &Cli, system_prompt: &str) -> Result<SessionRuntime> {
     let mut store = SessionStore::load(&cli.session)?;
+    store.set_lock_policy(cli.session_lock_wait_ms.max(1), cli.session_lock_stale_ms);
 
     let mut active_head = store.ensure_initialized(system_prompt)?;
     if let Some(branch_id) = cli.branch_from {
@@ -1181,9 +1260,13 @@ fn build_tool_policy(cli: &Cli) -> Result<ToolPolicy> {
     policy.bash_timeout_ms = cli.bash_timeout_ms.max(1);
     policy.max_command_output_bytes = cli.max_tool_output_bytes.max(128);
     policy.max_file_read_bytes = cli.max_file_read_bytes.max(1_024);
+    policy.max_file_write_bytes = cli.max_file_write_bytes.max(1_024);
     policy.max_command_length = cli.max_command_length.max(8);
     policy.allow_command_newlines = cli.allow_command_newlines;
     policy.set_bash_profile(cli.bash_profile.into());
+    policy.os_sandbox_mode = cli.os_sandbox_mode.into();
+    policy.os_sandbox_command = parse_sandbox_command_tokens(&cli.os_sandbox_command)?;
+    policy.enforce_regular_files = cli.enforce_regular_files;
     if !cli.allow_command.is_empty() {
         for command in &cli.allow_command {
             let command = command.trim();
@@ -1200,6 +1283,45 @@ fn build_tool_policy(cli: &Cli) -> Result<ToolPolicy> {
         }
     }
     Ok(policy)
+}
+
+fn parse_sandbox_command_tokens(raw_tokens: &[String]) -> Result<Vec<String>> {
+    let mut parsed = Vec::new();
+    for raw in raw_tokens {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let tokens = shell_words::split(trimmed).map_err(|error| {
+            anyhow!("invalid --os-sandbox-command token '{}': {error}", trimmed)
+        })?;
+        if tokens.is_empty() {
+            continue;
+        }
+        parsed.extend(tokens);
+    }
+    Ok(parsed)
+}
+
+fn tool_policy_to_json(policy: &ToolPolicy) -> serde_json::Value {
+    serde_json::json!({
+        "allowed_roots": policy
+            .allowed_roots
+            .iter()
+            .map(|path| path.display().to_string())
+            .collect::<Vec<_>>(),
+        "max_file_read_bytes": policy.max_file_read_bytes,
+        "max_file_write_bytes": policy.max_file_write_bytes,
+        "max_command_output_bytes": policy.max_command_output_bytes,
+        "bash_timeout_ms": policy.bash_timeout_ms,
+        "max_command_length": policy.max_command_length,
+        "allow_command_newlines": policy.allow_command_newlines,
+        "bash_profile": format!("{:?}", policy.bash_profile).to_lowercase(),
+        "allowed_commands": policy.allowed_commands.clone(),
+        "os_sandbox_mode": format!("{:?}", policy.os_sandbox_mode).to_lowercase(),
+        "os_sandbox_command": policy.os_sandbox_command.clone(),
+        "enforce_regular_files": policy.enforce_regular_files,
+    })
 }
 
 fn init_tracing() {
@@ -1221,7 +1343,7 @@ mod tests {
         future::{pending, ready},
         path::PathBuf,
         sync::Arc,
-        time::Duration,
+        time::{Duration, Instant},
     };
 
     use async_trait::async_trait;
@@ -1234,14 +1356,15 @@ mod tests {
     use tokio::time::sleep;
 
     use super::{
-        apply_trust_root_mutations, build_tool_policy, handle_command, parse_trust_rotation_spec,
-        parse_trusted_root_spec, resolve_skill_trust_roots, run_prompt_with_cancellation,
-        stream_text_chunks, Cli, CliBashProfile, CommandAction, PromptRunStatus, RenderOptions,
-        SessionRuntime, TrustedRootRecord,
+        apply_trust_root_mutations, build_tool_policy, handle_command, initialize_session,
+        parse_sandbox_command_tokens, parse_trust_rotation_spec, parse_trusted_root_spec,
+        resolve_skill_trust_roots, run_prompt_with_cancellation, stream_text_chunks,
+        tool_policy_to_json, Cli, CliBashProfile, CliOsSandboxMode, CommandAction, PromptRunStatus,
+        RenderOptions, SessionRuntime, TrustedRootRecord,
     };
     use crate::resolve_api_key;
     use crate::session::SessionStore;
-    use crate::tools::BashCommandProfile;
+    use crate::tools::{BashCommandProfile, OsSandboxMode};
 
     struct NoopClient;
 
@@ -1337,14 +1460,21 @@ mod tests {
             session: PathBuf::from(".pi/sessions/default.jsonl"),
             no_session: false,
             branch_from: None,
+            session_lock_wait_ms: 5_000,
+            session_lock_stale_ms: 30_000,
             allow_path: vec![],
             bash_timeout_ms: 500,
             max_tool_output_bytes: 1024,
             max_file_read_bytes: 2048,
+            max_file_write_bytes: 2048,
             max_command_length: 4096,
             allow_command_newlines: true,
             bash_profile: CliBashProfile::Balanced,
             allow_command: vec![],
+            print_tool_policy: false,
+            os_sandbox_mode: CliOsSandboxMode::Off,
+            os_sandbox_command: vec![],
+            enforce_regular_files: true,
         }
     }
 
@@ -1685,6 +1815,52 @@ mod tests {
         assert!(tool_message.text_content().contains("command is too long"));
     }
 
+    #[tokio::test]
+    async fn integration_agent_write_policy_blocks_oversized_content() {
+        let temp = tempdir().expect("tempdir");
+        let target = temp.path().join("target.txt");
+        let responses = VecDeque::from(vec![
+            ChatResponse {
+                message: pi_ai::Message::assistant_blocks(vec![ContentBlock::ToolCall {
+                    id: "call-1".to_string(),
+                    name: "write".to_string(),
+                    arguments: serde_json::json!({
+                        "path": target,
+                        "content": "hello",
+                    }),
+                }]),
+                finish_reason: Some("tool_calls".to_string()),
+                usage: ChatUsage::default(),
+            },
+            ChatResponse {
+                message: pi_ai::Message::assistant_text("done"),
+                finish_reason: Some("stop".to_string()),
+                usage: ChatUsage::default(),
+            },
+        ]);
+
+        let client = Arc::new(QueueClient {
+            responses: AsyncMutex::new(responses),
+        });
+        let mut agent = Agent::new(client, AgentConfig::default());
+
+        let mut policy = crate::tools::ToolPolicy::new(vec![temp.path().to_path_buf()]);
+        policy.max_file_write_bytes = 4;
+        crate::tools::register_builtin_tools(&mut agent, policy);
+
+        let new_messages = agent
+            .prompt("write file")
+            .await
+            .expect("prompt should succeed");
+        let tool_message = new_messages
+            .iter()
+            .find(|message| message.role == MessageRole::Tool)
+            .expect("tool result should be present");
+
+        assert!(tool_message.is_error);
+        assert!(tool_message.text_content().contains("content is too large"));
+    }
+
     #[test]
     fn branch_and_resume_commands_reload_agent_messages() {
         let temp = tempdir().expect("tempdir");
@@ -1834,6 +2010,82 @@ mod tests {
     }
 
     #[test]
+    fn integration_initialize_session_applies_lock_timeout_policy() {
+        let temp = tempdir().expect("tempdir");
+        let session_path = temp.path().join("locked-session.jsonl");
+        let lock_path = session_path.with_extension("lock");
+        std::fs::write(&lock_path, "locked").expect("write lock");
+
+        let mut cli = test_cli();
+        cli.session = session_path;
+        cli.session_lock_wait_ms = 120;
+        cli.session_lock_stale_ms = 0;
+        let mut agent = Agent::new(Arc::new(NoopClient), AgentConfig::default());
+        let start = Instant::now();
+
+        let error = initialize_session(&mut agent, &cli, "sys")
+            .expect_err("initialization should fail when lock persists");
+        assert!(error.to_string().contains("timed out acquiring lock"));
+        assert!(start.elapsed() < Duration::from_secs(2));
+
+        std::fs::remove_file(lock_path).expect("cleanup lock");
+    }
+
+    #[test]
+    fn functional_initialize_session_reclaims_stale_lock_when_enabled() {
+        let temp = tempdir().expect("tempdir");
+        let session_path = temp.path().join("stale-lock-session.jsonl");
+        let lock_path = session_path.with_extension("lock");
+        std::fs::write(&lock_path, "stale").expect("write lock");
+        std::thread::sleep(Duration::from_millis(30));
+
+        let mut cli = test_cli();
+        cli.session = session_path;
+        cli.session_lock_wait_ms = 1_000;
+        cli.session_lock_stale_ms = 10;
+        let mut agent = Agent::new(Arc::new(NoopClient), AgentConfig::default());
+
+        let runtime = initialize_session(&mut agent, &cli, "sys")
+            .expect("initialization should reclaim stale lock");
+        assert_eq!(runtime.store.entries().len(), 1);
+        assert!(!lock_path.exists());
+    }
+
+    #[test]
+    fn unit_parse_sandbox_command_tokens_supports_shell_words_and_placeholders() {
+        let tokens = parse_sandbox_command_tokens(&[
+            "bwrap".to_string(),
+            "--bind".to_string(),
+            "\"{cwd}\"".to_string(),
+            "{cwd}".to_string(),
+            "{shell}".to_string(),
+            "{command}".to_string(),
+        ])
+        .expect("parse should succeed");
+
+        assert_eq!(
+            tokens,
+            vec![
+                "bwrap".to_string(),
+                "--bind".to_string(),
+                "{cwd}".to_string(),
+                "{cwd}".to_string(),
+                "{shell}".to_string(),
+                "{command}".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn regression_parse_sandbox_command_tokens_rejects_invalid_quotes() {
+        let error = parse_sandbox_command_tokens(&["\"unterminated".to_string()])
+            .expect_err("parse should fail");
+        assert!(error
+            .to_string()
+            .contains("invalid --os-sandbox-command token"));
+    }
+
+    #[test]
     fn build_tool_policy_includes_cwd_and_custom_root() {
         let mut cli = test_cli();
         cli.allow_path = vec![PathBuf::from("/tmp")];
@@ -1843,8 +2095,27 @@ mod tests {
         assert_eq!(policy.bash_timeout_ms, 500);
         assert_eq!(policy.max_command_output_bytes, 1024);
         assert_eq!(policy.max_file_read_bytes, 2048);
+        assert_eq!(policy.max_file_write_bytes, 2048);
         assert_eq!(policy.max_command_length, 4096);
         assert!(policy.allow_command_newlines);
+        assert_eq!(policy.os_sandbox_mode, OsSandboxMode::Off);
+        assert!(policy.os_sandbox_command.is_empty());
+        assert!(policy.enforce_regular_files);
+    }
+
+    #[test]
+    fn unit_tool_policy_to_json_includes_key_limits_and_modes() {
+        let mut cli = test_cli();
+        cli.bash_profile = CliBashProfile::Strict;
+        cli.os_sandbox_mode = CliOsSandboxMode::Auto;
+        cli.max_file_write_bytes = 4096;
+
+        let policy = build_tool_policy(&cli).expect("policy should build");
+        let payload = tool_policy_to_json(&policy);
+        assert_eq!(payload["bash_profile"], "strict");
+        assert_eq!(payload["os_sandbox_mode"], "auto");
+        assert_eq!(payload["max_file_write_bytes"], 4096);
+        assert_eq!(payload["enforce_regular_files"], true);
     }
 
     #[test]
@@ -1868,5 +2139,31 @@ mod tests {
         cli.bash_profile = CliBashProfile::Permissive;
         let policy = build_tool_policy(&cli).expect("policy should build");
         assert!(policy.allowed_commands.is_empty());
+    }
+
+    #[test]
+    fn functional_build_tool_policy_applies_sandbox_and_regular_file_settings() {
+        let mut cli = test_cli();
+        cli.os_sandbox_mode = CliOsSandboxMode::Auto;
+        cli.os_sandbox_command = vec![
+            "sandbox-run".to_string(),
+            "--cwd".to_string(),
+            "{cwd}".to_string(),
+        ];
+        cli.max_file_write_bytes = 4096;
+        cli.enforce_regular_files = false;
+
+        let policy = build_tool_policy(&cli).expect("policy should build");
+        assert_eq!(policy.os_sandbox_mode, OsSandboxMode::Auto);
+        assert_eq!(
+            policy.os_sandbox_command,
+            vec![
+                "sandbox-run".to_string(),
+                "--cwd".to_string(),
+                "{cwd}".to_string()
+            ]
+        );
+        assert_eq!(policy.max_file_write_bytes, 4096);
+        assert!(!policy.enforce_regular_files);
     }
 }

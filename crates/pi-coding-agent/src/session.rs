@@ -12,7 +12,8 @@ use pi_ai::Message;
 use serde::{Deserialize, Serialize};
 
 const SESSION_SCHEMA_VERSION: u32 = 1;
-const LOCK_WAIT_MS: u64 = 5_000;
+const DEFAULT_LOCK_WAIT_MS: u64 = 5_000;
+const DEFAULT_LOCK_STALE_MS: u64 = 30_000;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionEntry {
@@ -52,6 +53,8 @@ pub struct SessionStore {
     path: PathBuf,
     entries: Vec<SessionEntry>,
     next_id: u64,
+    lock_wait_ms: u64,
+    lock_stale_ms: u64,
 }
 
 impl SessionStore {
@@ -64,6 +67,8 @@ impl SessionStore {
             path,
             entries,
             next_id,
+            lock_wait_ms: DEFAULT_LOCK_WAIT_MS,
+            lock_stale_ms: DEFAULT_LOCK_STALE_MS,
         })
     }
 
@@ -81,6 +86,11 @@ impl SessionStore {
 
     pub fn contains(&self, id: u64) -> bool {
         self.entries.iter().any(|entry| entry.id == id)
+    }
+
+    pub fn set_lock_policy(&mut self, lock_wait_ms: u64, lock_stale_ms: u64) {
+        self.lock_wait_ms = lock_wait_ms.max(1);
+        self.lock_stale_ms = lock_stale_ms;
     }
 
     pub fn ensure_initialized(&mut self, system_prompt: &str) -> Result<Option<u64>> {
@@ -106,7 +116,11 @@ impl SessionStore {
         }
 
         let lock_path = self.lock_path();
-        let _lock = acquire_lock(&lock_path, Duration::from_millis(LOCK_WAIT_MS))?;
+        let _lock = acquire_lock(
+            &lock_path,
+            Duration::from_millis(self.lock_wait_ms),
+            Duration::from_millis(self.lock_stale_ms),
+        )?;
 
         let mut entries = read_session_entries(&self.path)?;
         let mut next_id = entries.iter().map(|entry| entry.id).max().unwrap_or(0) + 1;
@@ -196,7 +210,11 @@ impl SessionStore {
 
     pub fn repair(&mut self) -> Result<RepairReport> {
         let lock_path = self.lock_path();
-        let _lock = acquire_lock(&lock_path, Duration::from_millis(LOCK_WAIT_MS))?;
+        let _lock = acquire_lock(
+            &lock_path,
+            Duration::from_millis(self.lock_wait_ms),
+            Duration::from_millis(self.lock_stale_ms),
+        )?;
 
         let mut entries = read_session_entries(&self.path)?;
         entries.sort_by_key(|entry| entry.id);
@@ -268,7 +286,11 @@ impl SessionStore {
 
     pub fn compact_to_lineage(&mut self, preferred_head_id: Option<u64>) -> Result<CompactReport> {
         let lock_path = self.lock_path();
-        let _lock = acquire_lock(&lock_path, Duration::from_millis(LOCK_WAIT_MS))?;
+        let _lock = acquire_lock(
+            &lock_path,
+            Duration::from_millis(self.lock_wait_ms),
+            Duration::from_millis(self.lock_stale_ms),
+        )?;
 
         let entries = read_session_entries(&self.path)?;
         if entries.is_empty() {
@@ -490,7 +512,7 @@ impl Drop for LockGuard {
     }
 }
 
-fn acquire_lock(path: &Path, timeout: Duration) -> Result<LockGuard> {
+fn acquire_lock(path: &Path, timeout: Duration, stale_after: Duration) -> Result<LockGuard> {
     let start = SystemTime::now();
 
     loop {
@@ -503,6 +525,9 @@ fn acquire_lock(path: &Path, timeout: Duration) -> Result<LockGuard> {
                 });
             }
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                if stale_after > Duration::ZERO && reclaim_stale_lock(path, stale_after) {
+                    continue;
+                }
                 let elapsed = SystemTime::now().duration_since(start).unwrap_or_default();
                 if elapsed >= timeout {
                     bail!("timed out acquiring lock {}", path.display());
@@ -519,9 +544,29 @@ fn acquire_lock(path: &Path, timeout: Duration) -> Result<LockGuard> {
     }
 }
 
+fn reclaim_stale_lock(path: &Path, stale_after: Duration) -> bool {
+    let metadata = match fs::metadata(path) {
+        Ok(metadata) => metadata,
+        Err(_) => return false,
+    };
+    let modified = match metadata.modified() {
+        Ok(modified) => modified,
+        Err(_) => return false,
+    };
+    let age = match SystemTime::now().duration_since(modified) {
+        Ok(age) => age,
+        Err(_) => Duration::ZERO,
+    };
+    if age < stale_after {
+        return false;
+    }
+
+    fs::remove_file(path).is_ok()
+}
+
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashSet, fs, path::PathBuf, sync::Arc, thread};
+    use std::{collections::HashSet, fs, path::PathBuf, sync::Arc, thread, time::Duration};
 
     use tempfile::tempdir;
 
@@ -881,16 +926,29 @@ mod tests {
             let path = path.clone();
             handles.push(thread::spawn(move || {
                 for append_index in 0..appends_per_worker {
-                    let mut store = SessionStore::load(&path).expect("load worker");
-                    let head = store.head_id();
-                    store
-                        .append_messages(
+                    let mut retries = 0usize;
+                    loop {
+                        let mut store = SessionStore::load(&path).expect("load worker");
+                        let head = store.head_id();
+                        match store.append_messages(
                             head,
                             &[pi_ai::Message::user(format!(
                                 "worker-{worker_index}-append-{append_index}"
                             ))],
-                        )
-                        .expect("append worker");
+                        ) {
+                            Ok(_) => break,
+                            Err(error)
+                                if error.to_string().contains("timed out acquiring lock") =>
+                            {
+                                retries += 1;
+                                if retries >= 8 {
+                                    panic!("append worker retries exhausted: {error}");
+                                }
+                                thread::sleep(Duration::from_millis(30));
+                            }
+                            Err(error) => panic!("append worker: {error}"),
+                        }
+                    }
                 }
             }));
         }
@@ -1162,11 +1220,30 @@ mod tests {
         fs::write(&lock_path, "stale").expect("write lock");
 
         let mut store = SessionStore::load(&path).expect("load");
+        store.set_lock_policy(150, 0);
         let error = store
             .append_messages(None, &[pi_ai::Message::system("sys")])
             .expect_err("append should time out when lock persists");
         assert!(error.to_string().contains("timed out acquiring lock"));
 
         fs::remove_file(&lock_path).expect("cleanup lock");
+    }
+
+    #[test]
+    fn functional_stale_lock_file_is_reclaimed_after_threshold() {
+        let temp = tempdir().expect("tempdir");
+        let path = temp.path().join("stale-reclaim.jsonl");
+        let lock_path = path.with_extension("lock");
+        fs::write(&lock_path, "stale").expect("write lock");
+        thread::sleep(Duration::from_millis(30));
+
+        let mut store = SessionStore::load(&path).expect("load");
+        store.set_lock_policy(1_000, 10);
+        let head = store
+            .append_messages(None, &[pi_ai::Message::system("sys")])
+            .expect("append should reclaim stale lock");
+
+        assert_eq!(head, Some(1));
+        assert!(!lock_path.exists());
     }
 }

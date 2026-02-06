@@ -317,6 +317,85 @@ fn bash_profile_flags_are_accepted_in_prompt_mode() {
 }
 
 #[test]
+fn session_lock_flags_are_accepted_in_prompt_mode() {
+    let server = MockServer::start();
+    let openai = server.mock(|when, then| {
+        when.method(POST)
+            .path("/v1/chat/completions")
+            .header("authorization", "Bearer test-openai-key");
+        then.status(200).json_body(json!({
+            "choices": [{
+                "message": {"content": "lock flags ok"},
+                "finish_reason": "stop"
+            }],
+            "usage": {"prompt_tokens": 4, "completion_tokens": 2, "total_tokens": 6}
+        }));
+    });
+
+    let mut cmd = binary_command();
+    cmd.args([
+        "--model",
+        "openai/gpt-4o-mini",
+        "--api-base",
+        &format!("{}/v1", server.base_url()),
+        "--openai-api-key",
+        "test-openai-key",
+        "--prompt",
+        "hello",
+        "--session-lock-wait-ms",
+        "250",
+        "--session-lock-stale-ms",
+        "0",
+        "--no-session",
+    ]);
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("lock flags ok"));
+
+    openai.assert_hits(1);
+}
+
+#[test]
+fn print_tool_policy_flag_outputs_effective_policy_json() {
+    let server = MockServer::start();
+    let openai = server.mock(|when, then| {
+        when.method(POST)
+            .path("/v1/chat/completions")
+            .header("authorization", "Bearer test-openai-key");
+        then.status(200).json_body(json!({
+            "choices": [{
+                "message": {"content": "policy output ok"},
+                "finish_reason": "stop"
+            }],
+            "usage": {"prompt_tokens": 4, "completion_tokens": 2, "total_tokens": 6}
+        }));
+    });
+
+    let mut cmd = binary_command();
+    cmd.args([
+        "--model",
+        "openai/gpt-4o-mini",
+        "--api-base",
+        &format!("{}/v1", server.base_url()),
+        "--openai-api-key",
+        "test-openai-key",
+        "--prompt",
+        "hello",
+        "--print-tool-policy",
+        "--no-session",
+    ]);
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("\"max_file_write_bytes\""))
+        .stdout(predicate::str::contains("\"os_sandbox_mode\""))
+        .stdout(predicate::str::contains("policy output ok"));
+
+    openai.assert_hits(1);
+}
+
+#[test]
 fn turn_timeout_flag_times_out_prompt_and_keeps_process_healthy() {
     let server = MockServer::start();
     let _openai = server.mock(|when, then| {
