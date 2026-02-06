@@ -32,6 +32,7 @@ const SKILLS_LOCK_FILE_NAME: &str = "skills.lock.json";
 pub struct RemoteSkillSource {
     pub url: String,
     pub sha256: Option<String>,
+    pub signing_key_id: Option<String>,
     pub signature: Option<String>,
     pub signer_public_key: Option<String>,
 }
@@ -46,16 +47,20 @@ pub enum SkillLockSource {
     Remote {
         url: String,
         expected_sha256: Option<String>,
+        signing_key_id: Option<String>,
         signature: Option<String>,
         signer_public_key: Option<String>,
+        signature_sha256: Option<String>,
     },
     Registry {
         registry_url: String,
         name: String,
         url: String,
         expected_sha256: Option<String>,
+        signing_key_id: Option<String>,
         signature: Option<String>,
         signer_public_key: Option<String>,
+        signature_sha256: Option<String>,
     },
 }
 
@@ -86,11 +91,15 @@ pub struct SkillsSyncReport {
     pub missing: Vec<String>,
     pub extra: Vec<String>,
     pub changed: Vec<String>,
+    pub metadata_mismatch: Vec<String>,
 }
 
 impl SkillsSyncReport {
     pub fn in_sync(&self) -> bool {
-        self.missing.is_empty() && self.extra.is_empty() && self.changed.is_empty()
+        self.missing.is_empty()
+            && self.extra.is_empty()
+            && self.changed.is_empty()
+            && self.metadata_mismatch.is_empty()
     }
 }
 
@@ -200,6 +209,7 @@ pub fn resolve_remote_skill_sources(
             .map(|url| RemoteSkillSource {
                 url: url.clone(),
                 sha256: None,
+                signing_key_id: None,
                 signature: None,
                 signer_public_key: None,
             })
@@ -220,6 +230,7 @@ pub fn resolve_remote_skill_sources(
         .map(|(url, sha256)| RemoteSkillSource {
             url: url.clone(),
             sha256: Some(sha256.clone()),
+            signing_key_id: None,
             signature: None,
             signer_public_key: None,
         })
@@ -334,8 +345,10 @@ pub fn build_remote_skill_lock_hints(sources: &[RemoteSkillSource]) -> Result<Ve
             source: SkillLockSource::Remote {
                 url: source.url.clone(),
                 expected_sha256: source.sha256.clone(),
+                signing_key_id: source.signing_key_id.clone(),
                 signature: source.signature.clone(),
                 signer_public_key: source.signer_public_key.clone(),
+                signature_sha256: source.signature.as_deref().map(signature_digest_sha256_hex),
             },
         });
     }
@@ -364,8 +377,10 @@ pub fn build_registry_skill_lock_hints(
                 name: name.clone(),
                 url: source.url.clone(),
                 expected_sha256: source.sha256.clone(),
+                signing_key_id: source.signing_key_id.clone(),
                 signature: source.signature.clone(),
                 signer_public_key: source.signer_public_key.clone(),
+                signature_sha256: source.signature.as_deref().map(signature_digest_sha256_hex),
             },
         });
     }
@@ -477,6 +492,13 @@ pub fn sync_skills_with_lockfile(skills_dir: &Path, lock_path: &Path) -> Result<
         actual_entries: actual.len(),
         ..SkillsSyncReport::default()
     };
+    for entry in &lockfile.entries {
+        if let Some(reason) = lock_entry_metadata_mismatch(entry) {
+            report
+                .metadata_mismatch
+                .push(format!("{}: {}", entry.file, reason));
+        }
+    }
 
     for (file, expected_sha) in &expected {
         match actual.get(file) {
@@ -494,6 +516,7 @@ pub fn sync_skills_with_lockfile(skills_dir: &Path, lock_path: &Path) -> Result<
     report.missing.sort();
     report.extra.sort();
     report.changed.sort();
+    report.metadata_mismatch.sort();
 
     Ok(report)
 }
@@ -625,6 +648,7 @@ pub fn resolve_registry_skill_sources(
         resolved.push(RemoteSkillSource {
             url: entry.url.clone(),
             sha256: entry.sha256.clone(),
+            signing_key_id: entry.signing_key.clone(),
             signature,
             signer_public_key,
         });
@@ -705,6 +729,55 @@ fn validate_skills_lockfile(lockfile: &SkillsLockfile, path: &Path) -> Result<()
     }
 
     Ok(())
+}
+
+fn lock_entry_metadata_mismatch(entry: &SkillLockEntry) -> Option<String> {
+    match &entry.source {
+        SkillLockSource::Remote {
+            expected_sha256,
+            signature,
+            signature_sha256,
+            ..
+        }
+        | SkillLockSource::Registry {
+            expected_sha256,
+            signature,
+            signature_sha256,
+            ..
+        } => {
+            if let Some(expected_sha256) = expected_sha256 {
+                let normalized_expected = normalize_sha256(expected_sha256);
+                if normalized_expected != entry.sha256 {
+                    return Some(format!(
+                        "expected_sha256 {} does not match lockfile sha256 {}",
+                        normalized_expected, entry.sha256
+                    ));
+                }
+            }
+
+            match (signature.as_deref(), signature_sha256.as_deref()) {
+                (Some(signature), Some(signature_sha256)) => {
+                    let expected_digest = normalize_sha256(signature_sha256);
+                    let actual_digest = signature_digest_sha256_hex(signature);
+                    if expected_digest != actual_digest {
+                        return Some(format!(
+                            "signature_sha256 {} does not match computed digest {}",
+                            expected_digest, actual_digest
+                        ));
+                    }
+                }
+                (Some(_), None) => {
+                    return Some("signature_sha256 missing for signed source".to_string())
+                }
+                (None, Some(_)) => {
+                    return Some("signature_sha256 is present without signature".to_string())
+                }
+                (None, None) => {}
+            }
+        }
+        SkillLockSource::Unknown | SkillLockSource::Local { .. } => {}
+    }
+    None
 }
 
 fn build_trusted_key_map(
@@ -889,6 +962,10 @@ fn remote_skill_file_name(url: &Url, index: usize) -> String {
 
 fn sha256_hex(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
+}
+
+fn signature_digest_sha256_hex(signature: &str) -> String {
+    sha256_hex(signature.trim().as_bytes())
 }
 
 fn normalize_sha256(value: &str) -> String {
@@ -1078,6 +1155,7 @@ mod tests {
         let remote_sources = vec![RemoteSkillSource {
             url: "https://example.com/skills/review".to_string(),
             sha256: Some("abc".to_string()),
+            signing_key_id: Some("publisher".to_string()),
             signature: Some("sig".to_string()),
             signer_public_key: Some("key".to_string()),
         }];
@@ -1088,13 +1166,20 @@ mod tests {
             SkillLockSource::Remote {
                 url,
                 expected_sha256,
+                signing_key_id,
                 signature,
                 signer_public_key,
+                signature_sha256,
             } => {
                 assert_eq!(url, "https://example.com/skills/review");
                 assert_eq!(expected_sha256.as_deref(), Some("abc"));
+                assert_eq!(signing_key_id.as_deref(), Some("publisher"));
                 assert_eq!(signature.as_deref(), Some("sig"));
                 assert_eq!(signer_public_key.as_deref(), Some("key"));
+                assert_eq!(
+                    signature_sha256.as_deref(),
+                    Some("a543997d84f12798350c09bdef2cdb171bf41ed3e4a5f808af2feb0c56263009")
+                );
             }
             other => panic!("expected remote source, got {other:?}"),
         }
@@ -1111,11 +1196,18 @@ mod tests {
                 registry_url,
                 name,
                 url,
+                signing_key_id,
+                signature_sha256,
                 ..
             } => {
                 assert_eq!(registry_url, "https://registry.example.com/manifest.json");
                 assert_eq!(name, "review");
                 assert_eq!(url, "https://example.com/skills/review");
+                assert_eq!(signing_key_id.as_deref(), Some("publisher"));
+                assert_eq!(
+                    signature_sha256.as_deref(),
+                    Some("a543997d84f12798350c09bdef2cdb171bf41ed3e4a5f808af2feb0c56263009")
+                );
             }
             other => panic!("expected registry source, got {other:?}"),
         }
@@ -1134,6 +1226,7 @@ mod tests {
             build_remote_skill_lock_hints(&[RemoteSkillSource {
                 url: "https://example.com/skills/remote.md".to_string(),
                 sha256: Some("deadbeef".to_string()),
+                signing_key_id: None,
                 signature: None,
                 signer_public_key: None,
             }])
@@ -1163,6 +1256,7 @@ mod tests {
         let sources = vec![RemoteSkillSource {
             url: format!("{}/skills/lock.md", server.base_url()),
             sha256: Some(checksum),
+            signing_key_id: None,
             signature: None,
             signer_public_key: None,
         }];
@@ -1203,6 +1297,52 @@ mod tests {
         assert_eq!(report.changed, vec!["a.md".to_string()]);
         assert_eq!(report.missing, vec!["b.md".to_string()]);
         assert_eq!(report.extra, vec!["c.md".to_string()]);
+        assert!(report.metadata_mismatch.is_empty());
+    }
+
+    #[test]
+    fn regression_sync_skills_with_lockfile_reports_signature_metadata_mismatch() {
+        let temp = tempdir().expect("tempdir");
+        let skills_dir = temp.path().join("skills");
+        std::fs::create_dir_all(&skills_dir).expect("mkdir");
+        std::fs::write(skills_dir.join("focus.md"), "secure body").expect("write skill");
+
+        let actual_sha = format!("{:x}", Sha256::digest("secure body".as_bytes()));
+        let lock_path = default_skills_lock_path(&skills_dir);
+        std::fs::write(
+            &lock_path,
+            serde_json::json!({
+                "schema_version": 1,
+                "entries": [{
+                    "name": "focus",
+                    "file": "focus.md",
+                    "sha256": actual_sha.clone(),
+                    "source": {
+                        "kind": "remote",
+                        "url": "https://example.com/skills/focus.md",
+                        "expected_sha256": actual_sha,
+                        "signing_key_id": "publisher",
+                        "signature": "sig",
+                        "signer_public_key": "key",
+                        "signature_sha256": "deadbeef"
+                    }
+                }]
+            })
+            .to_string(),
+        )
+        .expect("write lock");
+
+        let report = sync_skills_with_lockfile(&skills_dir, &lock_path).expect("sync");
+        assert!(!report.in_sync());
+        assert!(report.changed.is_empty());
+        assert!(report.missing.is_empty());
+        assert!(report.extra.is_empty());
+        assert_eq!(report.metadata_mismatch.len(), 1);
+        assert!(
+            report.metadata_mismatch[0].contains("signature_sha256"),
+            "unexpected metadata mismatch payload: {}",
+            report.metadata_mismatch[0]
+        );
     }
 
     #[test]
@@ -1252,6 +1392,7 @@ mod tests {
             &[RemoteSkillSource {
                 url: format!("{}/skills/review.md", server.base_url()),
                 sha256: Some(checksum),
+                signing_key_id: None,
                 signature: None,
                 signer_public_key: None,
             }],
@@ -1289,6 +1430,7 @@ mod tests {
             &[RemoteSkillSource {
                 url: format!("{}/skills/check.md", server.base_url()),
                 sha256: Some("deadbeef".to_string()),
+                signing_key_id: None,
                 signature: None,
                 signer_public_key: None,
             }],
@@ -1318,6 +1460,7 @@ mod tests {
             &[RemoteSkillSource {
                 url: format!("{}/skills/sync", server.base_url()),
                 sha256: None,
+                signing_key_id: None,
                 signature: None,
                 signer_public_key: None,
             }],
@@ -1468,6 +1611,7 @@ mod tests {
             &[RemoteSkillSource {
                 url: format!("{}/skills/signed.md", server.base_url()),
                 sha256: None,
+                signing_key_id: None,
                 signature: Some(signature),
                 signer_public_key: Some(public_key),
             }],
@@ -1543,6 +1687,7 @@ mod tests {
             true,
         )
         .expect("resolve signed sources");
+        assert_eq!(sources[0].signing_key_id.as_deref(), Some("publisher"));
 
         let temp = tempdir().expect("tempdir");
         let destination = temp.path().join("skills");
@@ -1562,6 +1707,34 @@ mod tests {
             std::fs::read_to_string(destination.join("secure.md")).expect("read skill"),
             skill_body
         );
+        let lock_hints = build_registry_skill_lock_hints(
+            &format!("{}/registry.json", server.base_url()),
+            &["secure-skill".to_string()],
+            &sources,
+        )
+        .expect("build lock hints");
+        let lock_path = default_skills_lock_path(&destination);
+        let lock =
+            write_skills_lockfile(&destination, &lock_path, &lock_hints).expect("write lock");
+        assert_eq!(lock.entries.len(), 1);
+        let expected_signature_sha =
+            format!("{:x}", Sha256::digest(skill_signature.trim().as_bytes()));
+        match &lock.entries[0].source {
+            SkillLockSource::Registry {
+                signing_key_id,
+                signature_sha256,
+                ..
+            } => {
+                assert_eq!(signing_key_id.as_deref(), Some("publisher"));
+                assert_eq!(
+                    signature_sha256.as_deref(),
+                    Some(expected_signature_sha.as_str())
+                );
+            }
+            other => panic!("expected registry lock source, got {other:?}"),
+        }
+        let sync = sync_skills_with_lockfile(&destination, &lock_path).expect("sync");
+        assert!(sync.in_sync());
         registry.assert_calls(1);
         skill.assert_calls(1);
     }

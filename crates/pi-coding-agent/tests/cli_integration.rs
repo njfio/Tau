@@ -1669,6 +1669,7 @@ fn install_signed_skill_from_registry_with_trust_root_works_end_to_end() {
     let skill_body = "Signed registry skill";
     let skill_sha = format!("{:x}", Sha256::digest(skill_body.as_bytes()));
     let skill_signature = BASE64.encode(publisher.sign(skill_body.as_bytes()).to_bytes());
+    let expected_signature_sha = format!("{:x}", Sha256::digest(skill_signature.trim().as_bytes()));
     let registry_body = json!({
         "version": 1,
         "keys": [{
@@ -1744,6 +1745,7 @@ fn install_signed_skill_from_registry_with_trust_root_works_end_to_end() {
         "--require-signed-skills",
         "--install-skill-from-registry",
         "reg-secure",
+        "--skills-lock-write",
         "--skill",
         "reg-secure",
         "--no-session",
@@ -1754,8 +1756,18 @@ fn install_signed_skill_from_registry_with_trust_root_works_end_to_end() {
         .stdout(predicate::str::contains(
             "registry skills install: installed=1",
         ))
+        .stdout(predicate::str::contains("skills lock write: path="))
         .stdout(predicate::str::contains("ok signed registry"));
     assert!(skills_dir.join("reg-secure.md").exists());
+    let lock_path = skills_dir.join("skills.lock.json");
+    let raw = fs::read_to_string(lock_path).expect("read lockfile");
+    let lock: serde_json::Value = serde_json::from_str(&raw).expect("parse lockfile");
+    assert_eq!(lock["entries"][0]["source"]["kind"], "registry");
+    assert_eq!(lock["entries"][0]["source"]["signing_key_id"], "publisher");
+    assert_eq!(
+        lock["entries"][0]["source"]["signature_sha256"],
+        expected_signature_sha
+    );
     registry.assert_calls(1);
     remote.assert_calls(1);
     openai.assert_calls(1);
