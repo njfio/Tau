@@ -1,0 +1,83 @@
+name: Nightly Quality
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  stress-and-property:
+    name: Nightly stress/property suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run property and stress tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ci-artifacts
+          cargo test -p pi-coding-agent property_ -- --nocapture | tee ci-artifacts/property-tests.log
+          cargo test -p pi-coding-agent stress_parallel_appends_high_volume_remain_consistent -- --nocapture | tee ci-artifacts/stress-tests.log
+
+      - name: Upload nightly quality logs
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-quality-logs
+          path: |
+            ci-artifacts/property-tests.log
+            ci-artifacts/stress-tests.log
+
+  benchmark-pi-tui:
+    name: Nightly benchmark capture (pi-tui)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run pi-tui benchmarks
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ci-artifacts
+          cargo bench -p pi-tui --bench render_bench -- --noplot | tee ci-artifacts/pi-tui-bench.log
+          cat > ci-artifacts/benchmark-metadata.json <<JSON
+          {
+            "workflow": "nightly-quality",
+            "suite": "pi-tui/render_bench",
+            "sha": "${GITHUB_SHA}",
+            "run_id": "${GITHUB_RUN_ID}",
+            "run_number": "${GITHUB_RUN_NUMBER}"
+          }
+          JSON
+
+      - name: Upload benchmark artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-pi-tui-benchmarks
+          if-no-files-found: warn
+          path: |
+            ci-artifacts/pi-tui-bench.log
+            ci-artifacts/benchmark-metadata.json
+            target/criterion
