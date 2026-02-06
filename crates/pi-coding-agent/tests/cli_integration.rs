@@ -758,9 +758,53 @@ fn print_tool_policy_flag_outputs_effective_policy_json() {
 
     cmd.assert()
         .success()
+        .stdout(predicate::str::contains("\"schema_version\""))
+        .stdout(predicate::str::contains("\"preset\""))
         .stdout(predicate::str::contains("\"max_file_write_bytes\""))
         .stdout(predicate::str::contains("\"os_sandbox_mode\""))
         .stdout(predicate::str::contains("policy output ok"));
+
+    openai.assert_calls(1);
+}
+
+#[test]
+fn tool_policy_preset_and_bash_dry_run_flags_are_accepted_in_prompt_mode() {
+    let server = MockServer::start();
+    let openai = server.mock(|when, then| {
+        when.method(POST)
+            .path("/v1/chat/completions")
+            .header("authorization", "Bearer test-openai-key");
+        then.status(200).json_body(json!({
+            "choices": [{
+                "message": {"content": "preset dry-run ok"},
+                "finish_reason": "stop"
+            }],
+            "usage": {"prompt_tokens": 4, "completion_tokens": 2, "total_tokens": 6}
+        }));
+    });
+
+    let mut cmd = binary_command();
+    cmd.args([
+        "--model",
+        "openai/gpt-4o-mini",
+        "--api-base",
+        &format!("{}/v1", server.base_url()),
+        "--openai-api-key",
+        "test-openai-key",
+        "--prompt",
+        "hello",
+        "--tool-policy-preset",
+        "hardened",
+        "--bash-dry-run",
+        "--print-tool-policy",
+        "--no-session",
+    ]);
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("\"preset\":\"hardened\""))
+        .stdout(predicate::str::contains("\"bash_dry_run\":true"))
+        .stdout(predicate::str::contains("preset dry-run ok"));
 
     openai.assert_calls(1);
 }

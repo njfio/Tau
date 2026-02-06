@@ -294,6 +294,7 @@ Tool policy controls:
 ```bash
 cargo run -p pi-coding-agent -- \
   --model openai/gpt-4o-mini \
+  --tool-policy-preset hardened \
   --allow-path /Users/me/project \
   --max-file-read-bytes 500000 \
   --max-file-write-bytes 500000 \
@@ -301,6 +302,7 @@ cargo run -p pi-coding-agent -- \
   --bash-timeout-ms 60000 \
   --max-command-length 2048 \
   --bash-profile strict \
+  --bash-dry-run false \
   --allow-command python,cargo-nextest* \
   --print-tool-policy \
   --os-sandbox-mode auto \
