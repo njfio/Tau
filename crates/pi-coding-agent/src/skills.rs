@@ -46,6 +46,9 @@ pub struct RegistrySkillEntry {
     pub sha256: Option<String>,
     pub signing_key: Option<String>,
     pub signature: Option<String>,
+    #[serde(default)]
+    pub revoked: bool,
+    pub expires_unix: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -54,6 +57,9 @@ pub struct RegistryKeyEntry {
     pub public_key: String,
     pub signed_by: Option<String>,
     pub signature: Option<String>,
+    #[serde(default)]
+    pub revoked: bool,
+    pub expires_unix: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -288,6 +294,7 @@ pub fn resolve_registry_skill_sources(
     trust_roots: &[TrustedKey],
     require_signed: bool,
 ) -> Result<Vec<RemoteSkillSource>> {
+    let now_unix = current_unix_timestamp();
     let trusted_keys = build_trusted_key_map(manifest, trust_roots)?;
     let mut resolved = Vec::new();
     for name in selected_names {
@@ -296,6 +303,13 @@ pub fn resolve_registry_skill_sources(
             .iter()
             .find(|entry| entry.name == *name)
             .ok_or_else(|| anyhow!("registry does not contain skill '{}'", name))?;
+
+        if entry.revoked {
+            bail!("registry skill '{}' is revoked", name);
+        }
+        if is_expired(entry.expires_unix, now_unix) {
+            bail!("registry skill '{}' is expired", name);
+        }
 
         let has_signature = entry.signature.is_some() || entry.signing_key.is_some();
         if require_signed && !has_signature {
@@ -315,11 +329,34 @@ pub fn resolve_registry_skill_sources(
         let (signature, signer_public_key) =
             if let (Some(signature), Some(signing_key)) = (&entry.signature, &entry.signing_key) {
                 let signer_public_key = trusted_keys.get(signing_key).ok_or_else(|| {
-                    anyhow!(
-                        "registry skill '{}' uses untrusted signing key '{}'",
-                        name,
-                        signing_key
-                    )
+                    let maybe_signing_key = manifest.keys.iter().find(|key| key.id == *signing_key);
+                    if let Some(signing_key_entry) = maybe_signing_key {
+                        if signing_key_entry.revoked {
+                            anyhow!(
+                                "registry skill '{}' uses revoked signing key '{}'",
+                                name,
+                                signing_key
+                            )
+                        } else if is_expired(signing_key_entry.expires_unix, now_unix) {
+                            anyhow!(
+                                "registry skill '{}' uses expired signing key '{}'",
+                                name,
+                                signing_key
+                            )
+                        } else {
+                            anyhow!(
+                                "registry skill '{}' uses untrusted signing key '{}'",
+                                name,
+                                signing_key
+                            )
+                        }
+                    } else {
+                        anyhow!(
+                            "registry skill '{}' uses untrusted signing key '{}'",
+                            name,
+                            signing_key
+                        )
+                    }
                 })?;
                 (Some(signature.clone()), Some(signer_public_key.clone()))
             } else {
@@ -371,6 +408,7 @@ fn build_trusted_key_map(
     manifest: &SkillRegistryManifest,
     trust_roots: &[TrustedKey],
 ) -> Result<HashMap<String, String>> {
+    let now_unix = current_unix_timestamp();
     let mut trusted = HashMap::new();
     for root in trust_roots {
         let root_public_key = root.public_key.trim().to_string();
@@ -406,6 +444,12 @@ fn build_trusted_key_map(
 
     for root in trust_roots {
         if let Some(manifest_root) = manifest_keys.get(&root.id) {
+            if manifest_root.revoked {
+                bail!("trusted root '{}' is revoked in registry manifest", root.id);
+            }
+            if is_expired(manifest_root.expires_unix, now_unix) {
+                bail!("trusted root '{}' is expired in registry manifest", root.id);
+            }
             if manifest_root.public_key.trim() != root.public_key.trim() {
                 bail!(
                     "trusted root '{}' does not match registry key material",
@@ -419,6 +463,9 @@ fn build_trusted_key_map(
         let mut progressed = false;
         for key in &manifest.keys {
             if trusted.contains_key(&key.id) {
+                continue;
+            }
+            if key.revoked || is_expired(key.expires_unix, now_unix) {
                 continue;
             }
 
@@ -481,6 +528,17 @@ fn decode_base64_fixed<const N: usize>(label: &str, value: &str) -> Result<[u8; 
 
 fn key_certificate_payload(key: &RegistryKeyEntry) -> String {
     format!("pi-skill-key-v1:{}:{}", key.id, key.public_key.trim())
+}
+
+fn current_unix_timestamp() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
+fn is_expired(expires_unix: Option<u64>, now_unix: u64) -> bool {
+    matches!(expires_unix, Some(expires_unix) if expires_unix <= now_unix)
 }
 
 fn upsert_skill_file(
@@ -842,6 +900,8 @@ mod tests {
                 sha256: None,
                 signing_key: None,
                 signature: None,
+                revoked: false,
+                expires_unix: None,
             }],
         };
 
@@ -1038,6 +1098,8 @@ mod tests {
                 sha256: None,
                 signing_key: Some("publisher".to_string()),
                 signature: Some(BASE64.encode(publisher.sign(b"payload").to_bytes())),
+                revoked: false,
+                expires_unix: None,
             }],
         };
 
@@ -1057,6 +1119,8 @@ mod tests {
                 sha256: None,
                 signing_key: None,
                 signature: None,
+                revoked: false,
+                expires_unix: None,
             }],
         };
 
@@ -1080,6 +1144,8 @@ mod tests {
                 public_key: publisher_public_key,
                 signed_by: Some("root".to_string()),
                 signature: Some(invalid_certificate),
+                revoked: false,
+                expires_unix: None,
             }],
             skills: vec![super::RegistrySkillEntry {
                 name: "secure".to_string(),
@@ -1087,6 +1153,8 @@ mod tests {
                 sha256: None,
                 signing_key: Some("publisher".to_string()),
                 signature: Some(BASE64.encode(publisher.sign(b"payload").to_bytes())),
+                revoked: false,
+                expires_unix: None,
             }],
         };
 
@@ -1101,5 +1169,93 @@ mod tests {
         )
         .expect_err("invalid certificate should fail");
         assert!(error.to_string().contains("failed to verify registry key"));
+    }
+
+    #[test]
+    fn regression_resolve_registry_skill_sources_rejects_revoked_skill() {
+        let manifest = SkillRegistryManifest {
+            version: 1,
+            keys: vec![],
+            skills: vec![super::RegistrySkillEntry {
+                name: "revoked".to_string(),
+                url: "https://example.com/revoked.md".to_string(),
+                sha256: None,
+                signing_key: None,
+                signature: None,
+                revoked: true,
+                expires_unix: None,
+            }],
+        };
+
+        let error = resolve_registry_skill_sources(&manifest, &["revoked".to_string()], &[], false)
+            .expect_err("revoked skill should fail");
+        assert!(error.to_string().contains("is revoked"));
+    }
+
+    #[test]
+    fn regression_resolve_registry_skill_sources_rejects_expired_skill() {
+        let now = super::current_unix_timestamp();
+        let manifest = SkillRegistryManifest {
+            version: 1,
+            keys: vec![],
+            skills: vec![super::RegistrySkillEntry {
+                name: "expired".to_string(),
+                url: "https://example.com/expired.md".to_string(),
+                sha256: None,
+                signing_key: None,
+                signature: None,
+                revoked: false,
+                expires_unix: Some(now.saturating_sub(1)),
+            }],
+        };
+
+        let error = resolve_registry_skill_sources(&manifest, &["expired".to_string()], &[], false)
+            .expect_err("expired skill should fail");
+        assert!(error.to_string().contains("is expired"));
+    }
+
+    #[test]
+    fn regression_resolve_registry_skill_sources_rejects_revoked_signing_key() {
+        let root = SigningKey::from_bytes(&[41u8; 32]);
+        let root_public_key = BASE64.encode(root.verifying_key().to_bytes());
+        let publisher = SigningKey::from_bytes(&[42u8; 32]);
+        let publisher_public_key = BASE64.encode(publisher.verifying_key().to_bytes());
+        let cert = BASE64.encode(
+            root.sign(format!("pi-skill-key-v1:publisher:{publisher_public_key}").as_bytes())
+                .to_bytes(),
+        );
+
+        let manifest = SkillRegistryManifest {
+            version: 1,
+            keys: vec![RegistryKeyEntry {
+                id: "publisher".to_string(),
+                public_key: publisher_public_key,
+                signed_by: Some("root".to_string()),
+                signature: Some(cert),
+                revoked: true,
+                expires_unix: None,
+            }],
+            skills: vec![super::RegistrySkillEntry {
+                name: "secure".to_string(),
+                url: "https://example.com/secure.md".to_string(),
+                sha256: None,
+                signing_key: Some("publisher".to_string()),
+                signature: Some(BASE64.encode(publisher.sign(b"payload").to_bytes())),
+                revoked: false,
+                expires_unix: None,
+            }],
+        };
+
+        let error = resolve_registry_skill_sources(
+            &manifest,
+            &["secure".to_string()],
+            &[TrustedKey {
+                id: "root".to_string(),
+                public_key: root_public_key,
+            }],
+            true,
+        )
+        .expect_err("revoked signing key should fail");
+        assert!(error.to_string().contains("revoked signing key"));
     }
 }

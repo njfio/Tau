@@ -11,7 +11,7 @@ use pi_ai::{
     AnthropicClient, AnthropicConfig, GoogleClient, GoogleConfig, LlmClient, Message, MessageRole,
     ModelRef, OpenAiClient, OpenAiConfig, Provider,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::EnvFilter;
@@ -196,6 +196,30 @@ struct Cli {
         help = "JSON file containing trusted root keys for skill signature verification"
     )]
     skill_trust_root_file: Option<PathBuf>,
+
+    #[arg(
+        long = "skill-trust-add",
+        env = "PI_SKILL_TRUST_ADD",
+        value_delimiter = ',',
+        help = "Add or update trusted key(s) in --skill-trust-root-file (key_id=base64_public_key)"
+    )]
+    skill_trust_add: Vec<String>,
+
+    #[arg(
+        long = "skill-trust-revoke",
+        env = "PI_SKILL_TRUST_REVOKE",
+        value_delimiter = ',',
+        help = "Revoke trusted key id(s) in --skill-trust-root-file"
+    )]
+    skill_trust_revoke: Vec<String>,
+
+    #[arg(
+        long = "skill-trust-rotate",
+        env = "PI_SKILL_TRUST_ROTATE",
+        value_delimiter = ',',
+        help = "Rotate trusted key(s) in --skill-trust-root-file using old_id:new_id=base64_public_key"
+    )]
+    skill_trust_rotate: Vec<String>,
 
     #[arg(
         long = "require-signed-skills",
@@ -458,13 +482,17 @@ async fn main() -> Result<()> {
     run_interactive(agent, session_runtime, cli.turn_timeout_ms, render_options).await
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct TrustedRootRecord {
     id: String,
     public_key: String,
+    #[serde(default)]
+    revoked: bool,
+    expires_unix: Option<u64>,
+    rotated_from: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(untagged)]
 enum TrustedRootFileFormat {
     List(Vec<TrustedRootRecord>),
@@ -472,35 +500,47 @@ enum TrustedRootFileFormat {
     Keys { keys: Vec<TrustedRootRecord> },
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct TrustMutationReport {
+    added: usize,
+    updated: usize,
+    revoked: usize,
+    rotated: usize,
+}
+
 fn resolve_skill_trust_roots(cli: &Cli) -> Result<Vec<TrustedKey>> {
+    let has_store_mutation = !cli.skill_trust_add.is_empty()
+        || !cli.skill_trust_revoke.is_empty()
+        || !cli.skill_trust_rotate.is_empty();
+    if has_store_mutation && cli.skill_trust_root_file.is_none() {
+        bail!("--skill-trust-root-file is required when using trust lifecycle flags");
+    }
+
     let mut roots = Vec::new();
     for raw in &cli.skill_trust_root {
         roots.push(parse_trusted_root_spec(raw)?);
     }
 
     if let Some(path) = &cli.skill_trust_root_file {
-        let raw = std::fs::read_to_string(path)
-            .with_context(|| format!("failed to read {}", path.display()))?;
-        let parsed = serde_json::from_str::<TrustedRootFileFormat>(&raw)
-            .with_context(|| format!("failed to parse trusted root file {}", path.display()))?;
-        match parsed {
-            TrustedRootFileFormat::List(items) => {
-                for item in items {
-                    roots.push(TrustedKey {
-                        id: item.id,
-                        public_key: item.public_key,
-                    });
-                }
+        let mut records = load_trust_root_records(path)?;
+        if has_store_mutation {
+            let report = apply_trust_root_mutations(&mut records, cli)?;
+            save_trust_root_records(path, &records)?;
+            println!(
+                "skill trust store update: added={} updated={} revoked={} rotated={}",
+                report.added, report.updated, report.revoked, report.rotated
+            );
+        }
+
+        let now_unix = current_unix_timestamp();
+        for item in records {
+            if item.revoked || is_expired_unix(item.expires_unix, now_unix) {
+                continue;
             }
-            TrustedRootFileFormat::Wrapped { roots: items }
-            | TrustedRootFileFormat::Keys { keys: items } => {
-                for item in items {
-                    roots.push(TrustedKey {
-                        id: item.id,
-                        public_key: item.public_key,
-                    });
-                }
-            }
+            roots.push(TrustedKey {
+                id: item.id,
+                public_key: item.public_key,
+            });
         }
     }
 
@@ -520,6 +560,131 @@ fn parse_trusted_root_spec(raw: &str) -> Result<TrustedKey> {
         id: id.to_string(),
         public_key: public_key.to_string(),
     })
+}
+
+fn parse_trust_rotation_spec(raw: &str) -> Result<(String, TrustedKey)> {
+    let (old_id, new_spec) = raw.split_once(':').ok_or_else(|| {
+        anyhow!("invalid --skill-trust-rotate '{raw}', expected old_id:new_id=base64_key")
+    })?;
+    let old_id = old_id.trim();
+    if old_id.is_empty() {
+        bail!("invalid --skill-trust-rotate '{raw}', expected old_id:new_id=base64_key");
+    }
+    let new_key = parse_trusted_root_spec(new_spec)?;
+    Ok((old_id.to_string(), new_key))
+}
+
+fn load_trust_root_records(path: &PathBuf) -> Result<Vec<TrustedRootRecord>> {
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let raw = std::fs::read_to_string(path)
+        .with_context(|| format!("failed to read {}", path.display()))?;
+    let parsed = serde_json::from_str::<TrustedRootFileFormat>(&raw)
+        .with_context(|| format!("failed to parse trusted root file {}", path.display()))?;
+
+    let records = match parsed {
+        TrustedRootFileFormat::List(items) => items,
+        TrustedRootFileFormat::Wrapped { roots } => roots,
+        TrustedRootFileFormat::Keys { keys } => keys,
+    };
+
+    Ok(records)
+}
+
+fn save_trust_root_records(path: &PathBuf, records: &[TrustedRootRecord]) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("failed to create {}", parent.display()))?;
+        }
+    }
+    let payload = serde_json::to_string_pretty(&TrustedRootFileFormat::Wrapped {
+        roots: records.to_vec(),
+    })
+    .context("failed to serialize trusted root records")?;
+    std::fs::write(path, payload).with_context(|| format!("failed to write {}", path.display()))?;
+    Ok(())
+}
+
+fn apply_trust_root_mutations(
+    records: &mut Vec<TrustedRootRecord>,
+    cli: &Cli,
+) -> Result<TrustMutationReport> {
+    let mut report = TrustMutationReport::default();
+
+    for spec in &cli.skill_trust_add {
+        let key = parse_trusted_root_spec(spec)?;
+        if let Some(existing) = records.iter_mut().find(|record| record.id == key.id) {
+            existing.public_key = key.public_key;
+            existing.revoked = false;
+            existing.rotated_from = None;
+            report.updated += 1;
+        } else {
+            records.push(TrustedRootRecord {
+                id: key.id,
+                public_key: key.public_key,
+                revoked: false,
+                expires_unix: None,
+                rotated_from: None,
+            });
+            report.added += 1;
+        }
+    }
+
+    for id in &cli.skill_trust_revoke {
+        let id = id.trim();
+        if id.is_empty() {
+            continue;
+        }
+        let record = records
+            .iter_mut()
+            .find(|record| record.id == id)
+            .ok_or_else(|| anyhow!("cannot revoke unknown trust key id '{}'", id))?;
+        if !record.revoked {
+            record.revoked = true;
+            report.revoked += 1;
+        }
+    }
+
+    for spec in &cli.skill_trust_rotate {
+        let (old_id, new_key) = parse_trust_rotation_spec(spec)?;
+        let old = records
+            .iter_mut()
+            .find(|record| record.id == old_id)
+            .ok_or_else(|| anyhow!("cannot rotate unknown trust key id '{}'", old_id))?;
+        old.revoked = true;
+
+        if let Some(existing_new) = records.iter_mut().find(|record| record.id == new_key.id) {
+            existing_new.public_key = new_key.public_key;
+            existing_new.revoked = false;
+            existing_new.rotated_from = Some(old_id.clone());
+            report.updated += 1;
+        } else {
+            records.push(TrustedRootRecord {
+                id: new_key.id,
+                public_key: new_key.public_key,
+                revoked: false,
+                expires_unix: None,
+                rotated_from: Some(old_id.clone()),
+            });
+            report.added += 1;
+        }
+        report.rotated += 1;
+    }
+
+    Ok(report)
+}
+
+fn current_unix_timestamp() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
+fn is_expired_unix(expires_unix: Option<u64>, now_unix: u64) -> bool {
+    matches!(expires_unix, Some(value) if value <= now_unix)
 }
 
 fn initialize_session(agent: &mut Agent, cli: &Cli, system_prompt: &str) -> Result<SessionRuntime> {
@@ -1069,9 +1234,10 @@ mod tests {
     use tokio::time::sleep;
 
     use super::{
-        build_tool_policy, handle_command, parse_trusted_root_spec, resolve_skill_trust_roots,
-        run_prompt_with_cancellation, stream_text_chunks, Cli, CliBashProfile, CommandAction,
-        PromptRunStatus, RenderOptions, SessionRuntime,
+        apply_trust_root_mutations, build_tool_policy, handle_command, parse_trust_rotation_spec,
+        parse_trusted_root_spec, resolve_skill_trust_roots, run_prompt_with_cancellation,
+        stream_text_chunks, Cli, CliBashProfile, CommandAction, PromptRunStatus, RenderOptions,
+        SessionRuntime, TrustedRootRecord,
     };
     use crate::resolve_api_key;
     use crate::session::SessionStore;
@@ -1157,6 +1323,9 @@ mod tests {
             install_skill_from_registry: vec![],
             skill_trust_root: vec![],
             skill_trust_root_file: None,
+            skill_trust_add: vec![],
+            skill_trust_revoke: vec![],
+            skill_trust_rotate: vec![],
             require_signed_skills: false,
             max_turns: 8,
             request_timeout_ms: 120_000,
@@ -1217,6 +1386,60 @@ mod tests {
     }
 
     #[test]
+    fn unit_parse_trust_rotation_spec_accepts_old_and_new_key() {
+        let (old_id, new_key) =
+            parse_trust_rotation_spec("old:new=YQ==").expect("rotation spec parse");
+        assert_eq!(old_id, "old");
+        assert_eq!(new_key.id, "new");
+        assert_eq!(new_key.public_key, "YQ==");
+    }
+
+    #[test]
+    fn regression_parse_trust_rotation_spec_rejects_invalid_shapes() {
+        let error = parse_trust_rotation_spec("invalid-shape").expect_err("should fail");
+        assert!(error
+            .to_string()
+            .contains("expected old_id:new_id=base64_key"));
+    }
+
+    #[test]
+    fn functional_apply_trust_root_mutations_add_revoke_and_rotate() {
+        let mut records = vec![TrustedRootRecord {
+            id: "old".to_string(),
+            public_key: "YQ==".to_string(),
+            revoked: false,
+            expires_unix: None,
+            rotated_from: None,
+        }];
+        let mut cli = test_cli();
+        cli.skill_trust_add = vec!["extra=Yg==".to_string()];
+        cli.skill_trust_revoke = vec!["extra".to_string()];
+        cli.skill_trust_rotate = vec!["old:new=Yw==".to_string()];
+
+        let report = apply_trust_root_mutations(&mut records, &cli).expect("mutate");
+        assert_eq!(report.added, 2);
+        assert_eq!(report.updated, 0);
+        assert_eq!(report.revoked, 1);
+        assert_eq!(report.rotated, 1);
+
+        let old = records
+            .iter()
+            .find(|record| record.id == "old")
+            .expect("old");
+        let new = records
+            .iter()
+            .find(|record| record.id == "new")
+            .expect("new");
+        let extra = records
+            .iter()
+            .find(|record| record.id == "extra")
+            .expect("extra");
+        assert!(old.revoked);
+        assert_eq!(new.rotated_from.as_deref(), Some("old"));
+        assert!(extra.revoked);
+    }
+
+    #[test]
     fn functional_resolve_skill_trust_roots_loads_inline_and_file_entries() {
         let temp = tempdir().expect("tempdir");
         let roots_file = temp.path().join("roots.json");
@@ -1234,6 +1457,40 @@ mod tests {
         assert_eq!(roots.len(), 2);
         assert_eq!(roots[0].id, "inline-root");
         assert_eq!(roots[1].id, "file-root");
+    }
+
+    #[test]
+    fn integration_resolve_skill_trust_roots_applies_mutations_and_persists_file() {
+        let temp = tempdir().expect("tempdir");
+        let roots_file = temp.path().join("roots.json");
+        std::fs::write(
+            &roots_file,
+            r#"{"roots":[{"id":"old","public_key":"YQ=="}]}"#,
+        )
+        .expect("write roots");
+
+        let mut cli = test_cli();
+        cli.skill_trust_root_file = Some(roots_file.clone());
+        cli.skill_trust_rotate = vec!["old:new=Yg==".to_string()];
+
+        let roots = resolve_skill_trust_roots(&cli).expect("resolve roots");
+        assert_eq!(roots.len(), 1);
+        assert_eq!(roots[0].id, "new");
+
+        let raw = std::fs::read_to_string(&roots_file).expect("read persisted");
+        assert!(raw.contains("\"id\": \"old\""));
+        assert!(raw.contains("\"revoked\": true"));
+        assert!(raw.contains("\"id\": \"new\""));
+    }
+
+    #[test]
+    fn regression_resolve_skill_trust_roots_requires_file_for_mutations() {
+        let mut cli = test_cli();
+        cli.skill_trust_add = vec!["root=YQ==".to_string()];
+        let error = resolve_skill_trust_roots(&cli).expect_err("should fail");
+        assert!(error
+            .to_string()
+            .contains("--skill-trust-root-file is required"));
     }
 
     #[test]

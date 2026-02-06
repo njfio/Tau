@@ -166,6 +166,33 @@ cargo run -p pi-coding-agent -- \
   --skill review
 ```
 
+Manage trust lifecycle in a trust-root file:
+
+```bash
+# Add/update a trust root key
+cargo run -p pi-coding-agent -- \
+  --prompt "noop" \
+  --skill-trust-root-file .pi/skills/trust-roots.json \
+  --skill-trust-add root=Gf7...
+
+# Rotate a key (revokes old id and adds new id/key)
+cargo run -p pi-coding-agent -- \
+  --prompt "noop" \
+  --skill-trust-root-file .pi/skills/trust-roots.json \
+  --skill-trust-rotate root:root-v2=AbC...
+
+# Revoke a key id
+cargo run -p pi-coding-agent -- \
+  --prompt "noop" \
+  --skill-trust-root-file .pi/skills/trust-roots.json \
+  --skill-trust-revoke root
+```
+
+Registry manifests can optionally mark keys/skills as revoked or expired with:
+
+- `revoked: true`
+- `expires_unix: <unix_timestamp_seconds>`
+
 Use a custom base URL (OpenAI-compatible):
 
 ```bash
