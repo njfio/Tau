@@ -752,10 +752,10 @@ const COMMAND_SPECS: &[CommandSpec] = &[
     },
     CommandSpec {
         name: "/doctor",
-        usage: "/doctor",
+        usage: "/doctor [--json]",
         description: "Run deterministic runtime diagnostics",
         details:
-            "Checks provider key presence plus session/skills/lock/trust-root path readability.",
+            "Checks provider key presence plus session/skills/lock/trust-root path readability. Add --json for machine-readable output.",
         example: "/doctor",
     },
     CommandSpec {
@@ -2407,13 +2407,16 @@ fn handle_command_with_session_import_mode(
     }
 
     if command_name == "/doctor" {
-        if !command_args.is_empty() {
-            println!("usage: /doctor");
-            return Ok(CommandAction::Continue);
-        }
+        let format = match parse_doctor_command_args(command_args) {
+            Ok(format) => format,
+            Err(_) => {
+                println!("usage: /doctor [--json]");
+                return Ok(CommandAction::Continue);
+            }
+        };
         println!(
             "{}",
-            execute_doctor_command(&skills_command_config.doctor_config)
+            execute_doctor_command(&skills_command_config.doctor_config, format)
         );
         return Ok(CommandAction::Continue);
     }
@@ -3270,6 +3273,26 @@ struct DoctorCheckResult {
     action: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DoctorCommandOutputFormat {
+    Text,
+    Json,
+}
+
+fn parse_doctor_command_args(command_args: &str) -> Result<DoctorCommandOutputFormat> {
+    let tokens = command_args
+        .split_whitespace()
+        .filter(|token| !token.is_empty())
+        .collect::<Vec<_>>();
+    if tokens.is_empty() {
+        return Ok(DoctorCommandOutputFormat::Text);
+    }
+    if tokens.len() == 1 && tokens[0] == "--json" {
+        return Ok(DoctorCommandOutputFormat::Json);
+    }
+    bail!("usage: /doctor [--json]");
+}
+
 fn run_doctor_checks(config: &DoctorCommandConfig) -> Vec<DoctorCheckResult> {
     let mut checks = Vec::new();
     checks.push(DoctorCheckResult {
@@ -3495,8 +3518,52 @@ fn render_doctor_report(checks: &[DoctorCheckResult]) -> String {
     lines.join("\n")
 }
 
-fn execute_doctor_command(config: &DoctorCommandConfig) -> String {
-    render_doctor_report(&run_doctor_checks(config))
+fn render_doctor_report_json(checks: &[DoctorCheckResult]) -> String {
+    let pass = checks
+        .iter()
+        .filter(|item| item.status == DoctorStatus::Pass)
+        .count();
+    let warn = checks
+        .iter()
+        .filter(|item| item.status == DoctorStatus::Warn)
+        .count();
+    let fail = checks
+        .iter()
+        .filter(|item| item.status == DoctorStatus::Fail)
+        .count();
+
+    serde_json::json!({
+        "summary": {
+            "checks": checks.len(),
+            "pass": pass,
+            "warn": warn,
+            "fail": fail,
+        },
+        "checks": checks
+            .iter()
+            .map(|check| {
+                serde_json::json!({
+                    "key": check.key,
+                    "status": check.status.as_str(),
+                    "code": check.code,
+                    "path": check.path,
+                    "action": check.action,
+                })
+            })
+            .collect::<Vec<_>>()
+    })
+    .to_string()
+}
+
+fn execute_doctor_command(
+    config: &DoctorCommandConfig,
+    format: DoctorCommandOutputFormat,
+) -> String {
+    let checks = run_doctor_checks(config);
+    match format {
+        DoctorCommandOutputFormat::Text => render_doctor_report(&checks),
+        DoctorCommandOutputFormat::Json => render_doctor_report_json(&checks),
+    }
 }
 
 const MACRO_SCHEMA_VERSION: u32 = 1;
@@ -6164,12 +6231,13 @@ mod tests {
         format_remap_ids, handle_command, handle_command_with_session_import_mode,
         initialize_session, is_retryable_provider_error, load_branch_aliases, load_macro_file,
         load_profile_store, parse_branch_alias_command, parse_command, parse_command_file,
-        parse_macro_command, parse_profile_command, parse_sandbox_command_tokens,
-        parse_session_search_args, parse_skills_lock_diff_args, parse_skills_prune_args,
-        parse_skills_search_args, parse_skills_trust_list_args, parse_trust_rotation_spec,
-        parse_trusted_root_spec, percentile_duration_ms, render_audit_summary, render_command_help,
-        render_doctor_report, render_help_overview, render_macro_list, render_macro_show,
-        render_profile_diffs, render_profile_list, render_profile_show, render_session_graph_dot,
+        parse_doctor_command_args, parse_macro_command, parse_profile_command,
+        parse_sandbox_command_tokens, parse_session_search_args, parse_skills_lock_diff_args,
+        parse_skills_prune_args, parse_skills_search_args, parse_skills_trust_list_args,
+        parse_trust_rotation_spec, parse_trusted_root_spec, percentile_duration_ms,
+        render_audit_summary, render_command_help, render_doctor_report, render_doctor_report_json,
+        render_help_overview, render_macro_list, render_macro_show, render_profile_diffs,
+        render_profile_list, render_profile_show, render_session_graph_dot,
         render_session_graph_mermaid, render_session_stats, render_skills_list,
         render_skills_lock_diff_drift, render_skills_lock_diff_in_sync,
         render_skills_lock_write_success, render_skills_search, render_skills_show,
@@ -6184,9 +6252,9 @@ mod tests {
         validate_skills_prune_file_name, BranchAliasCommand, BranchAliasFile, Cli, CliBashProfile,
         CliCommandFileErrorMode, CliOsSandboxMode, CliSessionImportMode, CliToolPolicyPreset,
         ClientRoute, CommandAction, CommandExecutionContext, CommandFileEntry, CommandFileReport,
-        DoctorCheckResult, DoctorCommandConfig, DoctorProviderKeyStatus, DoctorStatus,
-        FallbackRoutingClient, MacroCommand, MacroFile, ProfileCommand, ProfileDefaults,
-        ProfileStoreFile, PromptRunStatus, PromptTelemetryLogger, RenderOptions,
+        DoctorCheckResult, DoctorCommandConfig, DoctorCommandOutputFormat, DoctorProviderKeyStatus,
+        DoctorStatus, FallbackRoutingClient, MacroCommand, MacroFile, ProfileCommand,
+        ProfileDefaults, ProfileStoreFile, PromptRunStatus, PromptTelemetryLogger, RenderOptions,
         SessionGraphFormat, SessionRuntime, SessionStats, SkillsPruneMode, SkillsSyncCommandConfig,
         ToolAuditLogger, TrustedRootRecord, BRANCH_ALIAS_SCHEMA_VERSION, BRANCH_ALIAS_USAGE,
         MACRO_SCHEMA_VERSION, MACRO_USAGE, PROFILE_SCHEMA_VERSION, PROFILE_USAGE,
@@ -7101,7 +7169,52 @@ mod tests {
     }
 
     #[test]
-    fn functional_execute_doctor_command_reports_deterministic_check_order() {
+    fn unit_parse_doctor_command_args_supports_default_and_json_modes() {
+        assert_eq!(
+            parse_doctor_command_args("").expect("parse empty"),
+            DoctorCommandOutputFormat::Text
+        );
+        assert_eq!(
+            parse_doctor_command_args("--json").expect("parse json"),
+            DoctorCommandOutputFormat::Json
+        );
+
+        let error =
+            parse_doctor_command_args("--json --extra").expect_err("extra args should fail");
+        assert!(error.to_string().contains("usage: /doctor [--json]"));
+    }
+
+    #[test]
+    fn unit_render_doctor_report_json_contains_summary_and_rows() {
+        let report = render_doctor_report_json(&[
+            DoctorCheckResult {
+                key: "model".to_string(),
+                status: DoctorStatus::Pass,
+                code: "openai/gpt-4o-mini".to_string(),
+                path: None,
+                action: None,
+            },
+            DoctorCheckResult {
+                key: "provider_key.openai".to_string(),
+                status: DoctorStatus::Fail,
+                code: "missing".to_string(),
+                path: None,
+                action: Some("set OPENAI_API_KEY".to_string()),
+            },
+        ]);
+        let value = serde_json::from_str::<serde_json::Value>(&report).expect("parse json");
+        assert_eq!(value["summary"]["checks"], 2);
+        assert_eq!(value["summary"]["pass"], 1);
+        assert_eq!(value["summary"]["warn"], 0);
+        assert_eq!(value["summary"]["fail"], 1);
+        assert_eq!(value["checks"][0]["key"], "model");
+        assert_eq!(value["checks"][0]["status"], "pass");
+        assert_eq!(value["checks"][1]["key"], "provider_key.openai");
+        assert_eq!(value["checks"][1]["status"], "fail");
+    }
+
+    #[test]
+    fn functional_execute_doctor_command_supports_text_and_json_modes() {
         let temp = tempdir().expect("tempdir");
         let session_path = temp.path().join("session.jsonl");
         let skills_dir = temp.path().join("skills");
@@ -7133,7 +7246,7 @@ mod tests {
             trust_root_path: Some(trust_root_path),
         };
 
-        let report = execute_doctor_command(&config);
+        let report = execute_doctor_command(&config, DoctorCommandOutputFormat::Text);
         assert!(report.contains("doctor summary: checks=7 pass=6 warn=0 fail=1"));
 
         let keys = report
@@ -7161,6 +7274,16 @@ mod tests {
                 "trust_root".to_string(),
             ]
         );
+
+        let json_report = execute_doctor_command(&config, DoctorCommandOutputFormat::Json);
+        let value =
+            serde_json::from_str::<serde_json::Value>(&json_report).expect("parse json report");
+        assert_eq!(value["summary"]["checks"], 7);
+        assert_eq!(value["summary"]["pass"], 6);
+        assert_eq!(value["summary"]["warn"], 0);
+        assert_eq!(value["summary"]["fail"], 1);
+        assert_eq!(value["checks"][0]["key"], "model");
+        assert_eq!(value["checks"][1]["key"], "provider_key.anthropic");
     }
 
     #[test]
@@ -8510,7 +8633,7 @@ mod tests {
     fn functional_render_command_help_supports_doctor_topic_without_slash() {
         let help = render_command_help("doctor").expect("render help");
         assert!(help.contains("command: /doctor"));
-        assert!(help.contains("usage: /doctor"));
+        assert!(help.contains("usage: /doctor [--json]"));
         assert!(help.contains("example: /doctor"));
     }
 
