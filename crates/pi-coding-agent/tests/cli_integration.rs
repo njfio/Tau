@@ -277,6 +277,44 @@ fn stream_output_flags_are_accepted_in_prompt_mode() {
 }
 
 #[test]
+fn turn_timeout_flag_times_out_prompt_and_keeps_process_healthy() {
+    let server = MockServer::start();
+    let _openai = server.mock(|when, then| {
+        when.method(POST)
+            .path("/v1/chat/completions")
+            .header("authorization", "Bearer test-openai-key");
+        then.status(200)
+            .delay(std::time::Duration::from_millis(150))
+            .json_body(json!({
+                "choices": [{
+                    "message": {"content": "slow response"},
+                    "finish_reason": "stop"
+                }],
+                "usage": {"prompt_tokens": 4, "completion_tokens": 2, "total_tokens": 6}
+            }));
+    });
+
+    let mut cmd = binary_command();
+    cmd.args([
+        "--model",
+        "openai/gpt-4o-mini",
+        "--api-base",
+        &format!("{}/v1", server.base_url()),
+        "--openai-api-key",
+        "test-openai-key",
+        "--prompt",
+        "hello",
+        "--turn-timeout-ms",
+        "20",
+        "--no-session",
+    ]);
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("request timed out"));
+}
+
+#[test]
 fn selected_skill_is_included_in_system_prompt() {
     let server = MockServer::start();
     let openai = server.mock(|when, then| {

@@ -101,6 +101,16 @@ cargo run -p pi-coding-agent -- --prompt "Hello" --stream-output false
 cargo run -p pi-coding-agent -- --prompt "Hello" --stream-delay-ms 20
 ```
 
+Control provider and turn timeouts:
+
+```bash
+# Request timeout for provider HTTP calls
+cargo run -p pi-coding-agent -- --prompt "Hello" --request-timeout-ms 60000
+
+# Abort a single prompt turn if it exceeds 20 seconds (0 disables)
+cargo run -p pi-coding-agent -- --prompt "Hello" --turn-timeout-ms 20000
+```
+
 Load reusable skills into the system prompt:
 
 ```bash

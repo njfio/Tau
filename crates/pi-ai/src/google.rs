@@ -15,6 +15,7 @@ use crate::{
 pub struct GoogleConfig {
     pub api_base: String,
     pub api_key: String,
+    pub request_timeout_ms: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -29,10 +30,13 @@ impl GoogleClient {
             return Err(PiAiError::MissingApiKey);
         }
 
-        Ok(Self {
-            client: reqwest::Client::new(),
-            config,
-        })
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_millis(
+                config.request_timeout_ms.max(1),
+            ))
+            .build()?;
+
+        Ok(Self { client, config })
     }
 
     fn generate_content_url(&self, model: &str) -> String {

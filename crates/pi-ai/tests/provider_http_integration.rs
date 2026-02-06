@@ -4,6 +4,7 @@ use pi_ai::{
     OpenAiClient, OpenAiConfig, PiAiError, ToolDefinition,
 };
 use serde_json::json;
+use std::time::Duration;
 
 #[tokio::test]
 async fn openai_client_sends_expected_http_request() {
@@ -42,6 +43,7 @@ async fn openai_client_sends_expected_http_request() {
         api_base: format!("{}/v1", server.base_url()),
         api_key: "test-openai-key".to_string(),
         organization: None,
+        request_timeout_ms: 5_000,
     })
     .expect("openai client should be created");
 
@@ -100,6 +102,7 @@ async fn anthropic_client_sends_expected_http_request() {
     let client = AnthropicClient::new(AnthropicConfig {
         api_base: format!("{}/v1", server.base_url()),
         api_key: "test-anthropic-key".to_string(),
+        request_timeout_ms: 5_000,
     })
     .expect("anthropic client should be created");
 
@@ -164,6 +167,7 @@ async fn google_client_sends_expected_http_request() {
     let client = GoogleClient::new(GoogleConfig {
         api_base: server.base_url(),
         api_key: "test-google-key".to_string(),
+        request_timeout_ms: 5_000,
     })
     .expect("google client should be created");
 
@@ -202,6 +206,7 @@ async fn openai_client_surfaces_http_status_error() {
         api_base: format!("{}/v1", server.base_url()),
         api_key: "test-openai-key".to_string(),
         organization: None,
+        request_timeout_ms: 5_000,
     })
     .expect("openai client should be created");
 
@@ -253,6 +258,7 @@ async fn openai_client_retries_on_rate_limit_then_succeeds() {
         api_base: format!("{}/v1", server.base_url()),
         api_key: "test-openai-key".to_string(),
         organization: None,
+        request_timeout_ms: 5_000,
     })
     .expect("openai client should be created");
 
@@ -270,4 +276,45 @@ async fn openai_client_retries_on_rate_limit_then_succeeds() {
     assert_eq!(response.message.text_content(), "ok after retry");
     first.assert_hits(1);
     second.assert_hits(1);
+}
+
+#[tokio::test]
+async fn regression_openai_client_returns_timeout_error_when_server_is_slow() {
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(POST).path("/v1/chat/completions");
+        then.status(200)
+            .delay(Duration::from_millis(120))
+            .json_body(json!({
+                "choices": [{
+                    "message": {"content": "late"},
+                    "finish_reason": "stop"
+                }],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
+            }));
+    });
+
+    let client = OpenAiClient::new(OpenAiConfig {
+        api_base: format!("{}/v1", server.base_url()),
+        api_key: "test-openai-key".to_string(),
+        organization: None,
+        request_timeout_ms: 40,
+    })
+    .expect("openai client should be created");
+
+    let error = client
+        .complete(ChatRequest {
+            model: "gpt-4o-mini".to_string(),
+            messages: vec![Message::user("hello")],
+            tools: vec![],
+            max_tokens: None,
+            temperature: None,
+        })
+        .await
+        .expect_err("request should timeout");
+
+    match error {
+        PiAiError::Http(inner) => assert!(inner.is_timeout()),
+        other => panic!("expected timeout HTTP error, got {other:?}"),
+    }
 }

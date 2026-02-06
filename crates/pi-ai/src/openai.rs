@@ -17,6 +17,7 @@ pub struct OpenAiConfig {
     pub api_base: String,
     pub api_key: String,
     pub organization: Option<String>,
+    pub request_timeout_ms: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -52,6 +53,9 @@ impl OpenAiClient {
 
         let client = reqwest::Client::builder()
             .default_headers(headers)
+            .timeout(std::time::Duration::from_millis(
+                config.request_timeout_ms.max(1),
+            ))
             .build()?;
 
         Ok(Self { client, config })

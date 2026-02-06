@@ -191,6 +191,22 @@ struct Cli {
     #[arg(long, env = "PI_MAX_TURNS", default_value_t = 8)]
     max_turns: usize,
 
+    #[arg(
+        long,
+        env = "PI_REQUEST_TIMEOUT_MS",
+        default_value_t = 120_000,
+        help = "HTTP request timeout for provider API calls in milliseconds"
+    )]
+    request_timeout_ms: u64,
+
+    #[arg(
+        long,
+        env = "PI_TURN_TIMEOUT_MS",
+        default_value_t = 0,
+        help = "Optional per-prompt timeout in milliseconds (0 disables timeout)"
+    )]
+    turn_timeout_ms: u64,
+
     #[arg(long, help = "Print agent lifecycle events as JSON")]
     json_events: bool,
 
@@ -293,6 +309,7 @@ enum CommandAction {
 enum PromptRunStatus {
     Completed,
     Cancelled,
+    TimedOut,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -393,11 +410,18 @@ async fn main() -> Result<()> {
     }
 
     if let Some(prompt) = cli.prompt {
-        run_prompt(&mut agent, &mut session_runtime, &prompt, render_options).await?;
+        run_prompt(
+            &mut agent,
+            &mut session_runtime,
+            &prompt,
+            cli.turn_timeout_ms,
+            render_options,
+        )
+        .await?;
         return Ok(());
     }
 
-    run_interactive(agent, session_runtime, render_options).await
+    run_interactive(agent, session_runtime, cli.turn_timeout_ms, render_options).await
 }
 
 #[derive(Debug, Deserialize)]
@@ -491,18 +515,22 @@ async fn run_prompt(
     agent: &mut Agent,
     session_runtime: &mut Option<SessionRuntime>,
     prompt: &str,
+    turn_timeout_ms: u64,
     render_options: RenderOptions,
 ) -> Result<()> {
     let status = run_prompt_with_cancellation(
         agent,
         session_runtime,
         prompt,
+        turn_timeout_ms,
         tokio::signal::ctrl_c(),
         render_options,
     )
     .await?;
     if status == PromptRunStatus::Cancelled {
         println!("\nrequest cancelled\n");
+    } else if status == PromptRunStatus::TimedOut {
+        println!("\nrequest timed out\n");
     }
     Ok(())
 }
@@ -510,6 +538,7 @@ async fn run_prompt(
 async fn run_interactive(
     mut agent: Agent,
     mut session_runtime: Option<SessionRuntime>,
+    turn_timeout_ms: u64,
     render_options: RenderOptions,
 ) -> Result<()> {
     let stdin = BufReader::new(tokio::io::stdin());
@@ -541,12 +570,15 @@ async fn run_interactive(
             &mut agent,
             &mut session_runtime,
             trimmed,
+            turn_timeout_ms,
             tokio::signal::ctrl_c(),
             render_options,
         )
         .await?;
         if status == PromptRunStatus::Cancelled {
             println!("\nrequest cancelled\n");
+        } else if status == PromptRunStatus::TimedOut {
+            println!("\nrequest timed out\n");
         }
     }
 
@@ -557,6 +589,7 @@ async fn run_prompt_with_cancellation<F>(
     agent: &mut Agent,
     session_runtime: &mut Option<SessionRuntime>,
     prompt: &str,
+    turn_timeout_ms: u64,
     cancellation_signal: F,
     render_options: RenderOptions,
 ) -> Result<PromptRunStatus>
@@ -566,14 +599,37 @@ where
     let checkpoint = agent.messages().to_vec();
     tokio::pin!(cancellation_signal);
 
-    let prompt_result = tokio::select! {
-        result = agent.prompt(prompt) => Some(result),
-        _ = &mut cancellation_signal => None,
+    enum PromptOutcome<T> {
+        Result(T),
+        Cancelled,
+        TimedOut,
+    }
+
+    let prompt_result = if turn_timeout_ms == 0 {
+        tokio::select! {
+            result = agent.prompt(prompt) => PromptOutcome::Result(result),
+            _ = &mut cancellation_signal => PromptOutcome::Cancelled,
+        }
+    } else {
+        let timeout = tokio::time::sleep(Duration::from_millis(turn_timeout_ms));
+        tokio::pin!(timeout);
+        tokio::select! {
+            result = agent.prompt(prompt) => PromptOutcome::Result(result),
+            _ = &mut cancellation_signal => PromptOutcome::Cancelled,
+            _ = &mut timeout => PromptOutcome::TimedOut,
+        }
     };
 
-    let Some(prompt_result) = prompt_result else {
-        agent.replace_messages(checkpoint);
-        return Ok(PromptRunStatus::Cancelled);
+    let prompt_result = match prompt_result {
+        PromptOutcome::Result(result) => result,
+        PromptOutcome::Cancelled => {
+            agent.replace_messages(checkpoint);
+            return Ok(PromptRunStatus::Cancelled);
+        }
+        PromptOutcome::TimedOut => {
+            agent.replace_messages(checkpoint);
+            return Ok(PromptRunStatus::TimedOut);
+        }
     };
 
     let new_messages = prompt_result?;
@@ -862,6 +918,7 @@ fn build_client(cli: &Cli, provider: Provider) -> Result<Arc<dyn LlmClient>> {
                 api_base: cli.api_base.clone(),
                 api_key,
                 organization: None,
+                request_timeout_ms: cli.request_timeout_ms.max(1),
             })?;
             Ok(Arc::new(client))
         }
@@ -881,6 +938,7 @@ fn build_client(cli: &Cli, provider: Provider) -> Result<Arc<dyn LlmClient>> {
             let client = AnthropicClient::new(AnthropicConfig {
                 api_base: cli.anthropic_api_base.clone(),
                 api_key,
+                request_timeout_ms: cli.request_timeout_ms.max(1),
             })?;
             Ok(Arc::new(client))
         }
@@ -901,6 +959,7 @@ fn build_client(cli: &Cli, provider: Provider) -> Result<Arc<dyn LlmClient>> {
             let client = GoogleClient::new(GoogleConfig {
                 api_base: cli.google_api_base.clone(),
                 api_key,
+                request_timeout_ms: cli.request_timeout_ms.max(1),
             })?;
             Ok(Arc::new(client))
         }
@@ -1049,6 +1108,8 @@ mod tests {
             skill_trust_root_file: None,
             require_signed_skills: false,
             max_turns: 8,
+            request_timeout_ms: 120_000,
+            turn_timeout_ms: 0,
             json_events: false,
             stream_output: true,
             stream_delay_ms: 0,
@@ -1143,6 +1204,7 @@ mod tests {
             &mut agent,
             &mut runtime,
             "hello",
+            0,
             pending::<()>(),
             test_render_options(),
         )
@@ -1165,6 +1227,7 @@ mod tests {
             &mut agent,
             &mut runtime,
             "cancel me",
+            0,
             ready(()),
             test_render_options(),
         )
@@ -1174,6 +1237,31 @@ mod tests {
         assert_eq!(status, PromptRunStatus::Cancelled);
         assert_eq!(agent.messages().len(), initial_messages.len());
         assert_eq!(agent.messages()[0].role, initial_messages[0].role);
+        assert_eq!(
+            agent.messages()[0].text_content(),
+            initial_messages[0].text_content()
+        );
+    }
+
+    #[tokio::test]
+    async fn functional_run_prompt_with_timeout_restores_agent_state() {
+        let mut agent = Agent::new(Arc::new(SlowClient), AgentConfig::default());
+        let initial_messages = agent.messages().to_vec();
+        let mut runtime = None;
+
+        let status = run_prompt_with_cancellation(
+            &mut agent,
+            &mut runtime,
+            "timeout me",
+            20,
+            pending::<()>(),
+            test_render_options(),
+        )
+        .await
+        .expect("timeout branch should succeed");
+
+        assert_eq!(status, PromptRunStatus::TimedOut);
+        assert_eq!(agent.messages().len(), initial_messages.len());
         assert_eq!(
             agent.messages()[0].text_content(),
             initial_messages[0].text_content()
@@ -1197,6 +1285,7 @@ mod tests {
             &mut agent,
             &mut runtime,
             "cancel me",
+            0,
             ready(()),
             test_render_options(),
         )
@@ -1204,6 +1293,37 @@ mod tests {
         .expect("cancelled prompt should succeed");
 
         assert_eq!(status, PromptRunStatus::Cancelled);
+        assert_eq!(runtime.as_ref().expect("runtime").store.entries().len(), 1);
+
+        let reloaded = SessionStore::load(&path).expect("reload");
+        assert_eq!(reloaded.entries().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn integration_regression_timeout_does_not_persist_partial_session_entries() {
+        let temp = tempdir().expect("tempdir");
+        let path = temp.path().join("timeout-session.jsonl");
+
+        let mut store = SessionStore::load(&path).expect("load");
+        let active_head = store
+            .ensure_initialized("You are a helpful coding assistant.")
+            .expect("initialize session");
+
+        let mut runtime = Some(SessionRuntime { store, active_head });
+        let mut agent = Agent::new(Arc::new(SlowClient), AgentConfig::default());
+
+        let status = run_prompt_with_cancellation(
+            &mut agent,
+            &mut runtime,
+            "timeout me",
+            20,
+            pending::<()>(),
+            test_render_options(),
+        )
+        .await
+        .expect("timed-out prompt should succeed");
+
+        assert_eq!(status, PromptRunStatus::TimedOut);
         assert_eq!(runtime.as_ref().expect("runtime").store.entries().len(), 1);
 
         let reloaded = SessionStore::load(&path).expect("reload");
