@@ -3,7 +3,8 @@ use std::{collections::HashMap, sync::Arc};
 use async_trait::async_trait;
 use jsonschema::validator_for;
 use pi_ai::{
-    ChatRequest, LlmClient, Message, PiAiError, StreamDeltaHandler, ToolCall, ToolDefinition,
+    ChatRequest, ChatUsage, LlmClient, Message, PiAiError, StreamDeltaHandler, ToolCall,
+    ToolDefinition,
 };
 use serde_json::{json, Value};
 use thiserror::Error;
@@ -76,6 +77,9 @@ pub enum AgentEvent {
     TurnEnd {
         turn: usize,
         tool_results: usize,
+        request_duration_ms: u64,
+        usage: ChatUsage,
+        finish_reason: Option<String>,
     },
     MessageAdded {
         message: Message,
@@ -226,10 +230,14 @@ impl Agent {
                 temperature: self.config.temperature,
             };
 
+            let request_started = std::time::Instant::now();
             let response = self
                 .client
                 .complete_with_stream(request, on_delta.clone())
                 .await?;
+            let request_duration_ms = request_started.elapsed().as_millis() as u64;
+            let finish_reason = response.finish_reason.clone();
+            let usage = response.usage.clone();
             let assistant = response.message;
             self.messages.push(assistant.clone());
             self.emit(AgentEvent::MessageAdded {
@@ -241,6 +249,9 @@ impl Agent {
                 self.emit(AgentEvent::TurnEnd {
                     turn,
                     tool_results: 0,
+                    request_duration_ms,
+                    usage,
+                    finish_reason,
                 });
                 let new_messages = self.messages[start_index..].to_vec();
                 self.emit(AgentEvent::AgentEnd {
@@ -261,6 +272,9 @@ impl Agent {
                     .rev()
                     .take_while(|message| message.role == pi_ai::MessageRole::Tool)
                     .count(),
+                request_duration_ms,
+                usage,
+                finish_reason,
             });
         }
 
@@ -522,6 +536,59 @@ mod tests {
                 "agent_end",
             ]
         );
+    }
+
+    #[tokio::test]
+    async fn turn_end_events_include_usage_finish_reason_and_request_duration() {
+        let usage = ChatUsage {
+            input_tokens: 3,
+            output_tokens: 2,
+            total_tokens: 5,
+        };
+        let client = Arc::new(MockClient {
+            responses: AsyncMutex::new(VecDeque::from([ChatResponse {
+                message: Message::assistant_text("done"),
+                finish_reason: Some("stop".to_string()),
+                usage: usage.clone(),
+            }])),
+        });
+
+        let mut agent = Agent::new(client, AgentConfig::default());
+        let turn_ends = Arc::new(Mutex::new(Vec::<(
+            usize,
+            usize,
+            u64,
+            ChatUsage,
+            Option<String>,
+        )>::new()));
+        let captured = turn_ends.clone();
+        agent.subscribe(move |event| {
+            if let AgentEvent::TurnEnd {
+                turn,
+                tool_results,
+                request_duration_ms,
+                usage,
+                finish_reason,
+            } = event
+            {
+                captured.lock().expect("turn_end lock").push((
+                    *turn,
+                    *tool_results,
+                    *request_duration_ms,
+                    usage.clone(),
+                    finish_reason.clone(),
+                ));
+            }
+        });
+
+        let _ = agent.prompt("hello").await.expect("prompt should succeed");
+
+        let turn_ends = turn_ends.lock().expect("turn_end lock");
+        assert_eq!(turn_ends.len(), 1);
+        assert_eq!(turn_ends[0].0, 1);
+        assert_eq!(turn_ends[0].1, 0);
+        assert_eq!(turn_ends[0].3, usage);
+        assert_eq!(turn_ends[0].4.as_deref(), Some("stop"));
     }
 
     #[tokio::test]

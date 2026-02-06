@@ -1091,6 +1091,134 @@ fn tool_audit_log_flag_creates_audit_log_file() {
 }
 
 #[test]
+fn telemetry_log_flag_creates_prompt_telemetry_record() {
+    let server = MockServer::start();
+    let openai = server.mock(|when, then| {
+        when.method(POST)
+            .path("/v1/chat/completions")
+            .header("authorization", "Bearer test-openai-key");
+        then.status(200).json_body(json!({
+            "choices": [{
+                "message": {"content": "telemetry log ok"},
+                "finish_reason": "stop"
+            }],
+            "usage": {"prompt_tokens": 4, "completion_tokens": 2, "total_tokens": 6}
+        }));
+    });
+
+    let temp = tempdir().expect("tempdir");
+    let telemetry_path = temp.path().join("prompt-telemetry.jsonl");
+    let mut cmd = binary_command();
+    cmd.args([
+        "--model",
+        "openai/gpt-4o-mini",
+        "--api-base",
+        &format!("{}/v1", server.base_url()),
+        "--openai-api-key",
+        "test-openai-key",
+        "--prompt",
+        "hello",
+        "--telemetry-log",
+        telemetry_path.to_str().expect("utf8 path"),
+        "--no-session",
+    ]);
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("telemetry log ok"));
+
+    assert!(telemetry_path.exists());
+    let raw = fs::read_to_string(&telemetry_path).expect("read telemetry log");
+    let lines = raw.lines().collect::<Vec<_>>();
+    assert_eq!(lines.len(), 1);
+    let record: serde_json::Value = serde_json::from_str(lines[0]).expect("parse telemetry record");
+    assert_eq!(record["record_type"], "prompt_telemetry_v1");
+    assert_eq!(record["provider"], "openai");
+    assert_eq!(record["model"], "gpt-4o-mini");
+    assert_eq!(record["status"], "completed");
+    assert_eq!(record["success"], true);
+    assert_eq!(record["token_usage"]["total_tokens"], 6);
+    assert_eq!(record["redaction_policy"]["prompt_content"], "omitted");
+    openai.assert_calls(1);
+}
+
+#[test]
+fn interactive_audit_summary_command_reports_aggregates() {
+    let temp = tempdir().expect("tempdir");
+    let audit_path = temp.path().join("audit.jsonl");
+    let rows = [
+        json!({
+            "event": "tool_execution_end",
+            "tool_name": "bash",
+            "duration_ms": 25,
+            "is_error": false
+        }),
+        json!({
+            "record_type": "prompt_telemetry_v1",
+            "provider": "openai",
+            "status": "completed",
+            "success": true,
+            "duration_ms": 90,
+            "token_usage": {
+                "input_tokens": 3,
+                "output_tokens": 1,
+                "total_tokens": 4
+            }
+        }),
+    ]
+    .iter()
+    .map(serde_json::Value::to_string)
+    .collect::<Vec<_>>()
+    .join("\n");
+    fs::write(&audit_path, format!("{rows}\n")).expect("write audit file");
+
+    let mut cmd = binary_command();
+    cmd.args([
+        "--model",
+        "openai/gpt-4o-mini",
+        "--openai-api-key",
+        "test-openai-key",
+        "--no-session",
+    ])
+    .write_stdin(format!(
+        "/audit-summary {}\n/quit\n",
+        audit_path.to_str().expect("utf8 path")
+    ));
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("audit summary: path="))
+        .stdout(predicate::str::contains("tool_breakdown:"))
+        .stdout(predicate::str::contains("provider_breakdown:"))
+        .stdout(predicate::str::contains("bash count=1"))
+        .stdout(predicate::str::contains("openai count=1"));
+}
+
+#[test]
+fn regression_audit_summary_command_handles_missing_file_without_exiting() {
+    let temp = tempdir().expect("tempdir");
+    let missing_path = temp.path().join("missing.jsonl");
+
+    let mut cmd = binary_command();
+    cmd.args([
+        "--model",
+        "openai/gpt-4o-mini",
+        "--openai-api-key",
+        "test-openai-key",
+        "--no-session",
+    ])
+    .write_stdin(format!(
+        "/audit-summary {}\n/quit\n",
+        missing_path.to_str().expect("utf8 path")
+    ));
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("audit summary error:"))
+        .stdout(predicate::str::contains("failed to open audit file"));
+}
+
+#[test]
 fn turn_timeout_flag_times_out_prompt_and_keeps_process_healthy() {
     let server = MockServer::start();
     let _openai = server.mock(|when, then| {

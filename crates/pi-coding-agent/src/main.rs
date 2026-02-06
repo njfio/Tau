@@ -3,10 +3,10 @@ mod skills;
 mod tools;
 
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     future::Future,
     io::{Read, Write},
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex,
@@ -24,6 +24,7 @@ use pi_ai::{
     StreamDeltaHandler,
 };
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::EnvFilter;
@@ -546,6 +547,13 @@ struct Cli {
 
     #[arg(
         long,
+        env = "PI_TELEMETRY_LOG",
+        help = "Optional JSONL file path for prompt-level telemetry summaries"
+    )]
+    telemetry_log: Option<PathBuf>,
+
+    #[arg(
+        long,
         env = "PI_OS_SANDBOX_MODE",
         value_enum,
         default_value = "off",
@@ -636,6 +644,14 @@ const COMMAND_SPECS: &[CommandSpec] = &[
         example: "/policy",
     },
     CommandSpec {
+        name: "/audit-summary",
+        usage: "/audit-summary <path>",
+        description: "Summarize tool and telemetry JSONL audit records",
+        details:
+            "Aggregates tool/provider counts, error rates, and p50/p95 durations from audit log files.",
+        example: "/audit-summary .pi/audit/tool-events.jsonl",
+    },
+    CommandSpec {
         name: "/branches",
         usage: "/branches",
         description: "List branch tips in the current session graph",
@@ -685,6 +701,7 @@ const COMMAND_NAMES: &[&str] = &[
     "/session-export",
     "/session-import",
     "/policy",
+    "/audit-summary",
     "/branches",
     "/branch",
     "/resume",
@@ -770,6 +787,386 @@ impl ToolAuditLogger {
             .with_context(|| format!("failed to flush tool audit log {}", self.path.display()))?;
         Ok(())
     }
+}
+
+#[derive(Debug, Default)]
+struct PromptTelemetryState {
+    next_prompt_id: u64,
+    active: Option<PromptTelemetryRunState>,
+}
+
+#[derive(Debug)]
+struct PromptTelemetryRunState {
+    prompt_id: u64,
+    started_unix_ms: u64,
+    started: Instant,
+    turn_count: u64,
+    request_duration_ms_total: u64,
+    input_tokens: u64,
+    output_tokens: u64,
+    total_tokens: u64,
+    tool_calls: u64,
+    tool_errors: u64,
+    finish_reason: Option<String>,
+}
+
+#[derive(Clone)]
+struct PromptTelemetryLogger {
+    path: PathBuf,
+    provider: String,
+    model: String,
+    file: Arc<Mutex<std::fs::File>>,
+    state: Arc<Mutex<PromptTelemetryState>>,
+}
+
+impl PromptTelemetryLogger {
+    fn open(path: PathBuf, provider: &str, model: &str) -> Result<Self> {
+        if let Some(parent) = path.parent() {
+            if !parent.as_os_str().is_empty() {
+                std::fs::create_dir_all(parent).with_context(|| {
+                    format!(
+                        "failed to create telemetry log directory {}",
+                        parent.display()
+                    )
+                })?;
+            }
+        }
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+            .with_context(|| format!("failed to open telemetry log {}", path.display()))?;
+        Ok(Self {
+            path,
+            provider: provider.to_string(),
+            model: model.to_string(),
+            file: Arc::new(Mutex::new(file)),
+            state: Arc::new(Mutex::new(PromptTelemetryState::default())),
+        })
+    }
+
+    fn build_record(
+        &self,
+        active: PromptTelemetryRunState,
+        status: &'static str,
+        success: bool,
+    ) -> Value {
+        serde_json::json!({
+            "record_type": "prompt_telemetry_v1",
+            "schema_version": 1,
+            "timestamp_unix_ms": current_unix_timestamp_ms(),
+            "prompt_id": active.prompt_id,
+            "provider": self.provider,
+            "model": self.model,
+            "status": status,
+            "success": success,
+            "started_unix_ms": active.started_unix_ms,
+            "duration_ms": active.started.elapsed().as_millis() as u64,
+            "turn_count": active.turn_count,
+            "request_duration_ms_total": active.request_duration_ms_total,
+            "finish_reason": active.finish_reason,
+            "token_usage": {
+                "input_tokens": active.input_tokens,
+                "output_tokens": active.output_tokens,
+                "total_tokens": active.total_tokens,
+            },
+            "tool_calls": active.tool_calls,
+            "tool_errors": active.tool_errors,
+            "redaction_policy": {
+                "prompt_content": "omitted",
+                "tool_arguments": "omitted",
+                "tool_results": "bytes_only",
+            }
+        })
+    }
+
+    fn log_event(&self, event: &AgentEvent) -> Result<()> {
+        let mut records = Vec::new();
+        {
+            let mut state = self
+                .state
+                .lock()
+                .map_err(|_| anyhow!("telemetry state lock is poisoned"))?;
+            match event {
+                AgentEvent::AgentStart => {
+                    if let Some(active) = state.active.take() {
+                        records.push(self.build_record(active, "interrupted", false));
+                    }
+                    state.next_prompt_id = state.next_prompt_id.saturating_add(1);
+                    let prompt_id = state.next_prompt_id;
+                    state.active = Some(PromptTelemetryRunState {
+                        prompt_id,
+                        started_unix_ms: current_unix_timestamp_ms(),
+                        started: Instant::now(),
+                        turn_count: 0,
+                        request_duration_ms_total: 0,
+                        input_tokens: 0,
+                        output_tokens: 0,
+                        total_tokens: 0,
+                        tool_calls: 0,
+                        tool_errors: 0,
+                        finish_reason: None,
+                    });
+                }
+                AgentEvent::TurnEnd {
+                    request_duration_ms,
+                    usage,
+                    finish_reason,
+                    ..
+                } => {
+                    if let Some(active) = state.active.as_mut() {
+                        active.turn_count = active.turn_count.saturating_add(1);
+                        active.request_duration_ms_total = active
+                            .request_duration_ms_total
+                            .saturating_add(*request_duration_ms);
+                        active.input_tokens =
+                            active.input_tokens.saturating_add(usage.input_tokens);
+                        active.output_tokens =
+                            active.output_tokens.saturating_add(usage.output_tokens);
+                        active.total_tokens =
+                            active.total_tokens.saturating_add(usage.total_tokens);
+                        active.finish_reason = finish_reason.clone();
+                    }
+                }
+                AgentEvent::ToolExecutionEnd { result, .. } => {
+                    if let Some(active) = state.active.as_mut() {
+                        active.tool_calls = active.tool_calls.saturating_add(1);
+                        if result.is_error {
+                            active.tool_errors = active.tool_errors.saturating_add(1);
+                        }
+                    }
+                }
+                AgentEvent::AgentEnd { .. } => {
+                    if let Some(active) = state.active.take() {
+                        let success = active.tool_errors == 0;
+                        let status = if success {
+                            "completed"
+                        } else {
+                            "completed_with_tool_errors"
+                        };
+                        records.push(self.build_record(active, status, success));
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        if records.is_empty() {
+            return Ok(());
+        }
+        let mut file = self
+            .file
+            .lock()
+            .map_err(|_| anyhow!("telemetry file lock is poisoned"))?;
+        for record in records {
+            let line =
+                serde_json::to_string(&record).context("failed to encode telemetry event")?;
+            writeln!(file, "{line}").with_context(|| {
+                format!("failed to write telemetry log {}", self.path.display())
+            })?;
+        }
+        file.flush()
+            .with_context(|| format!("failed to flush telemetry log {}", self.path.display()))?;
+        Ok(())
+    }
+}
+
+#[derive(Debug, Default)]
+struct ToolAuditAggregate {
+    count: u64,
+    error_count: u64,
+    durations_ms: Vec<u64>,
+}
+
+#[derive(Debug, Default)]
+struct ProviderAuditAggregate {
+    count: u64,
+    error_count: u64,
+    durations_ms: Vec<u64>,
+    input_tokens: u64,
+    output_tokens: u64,
+    total_tokens: u64,
+}
+
+#[derive(Debug, Default)]
+struct AuditSummary {
+    record_count: u64,
+    tool_event_count: u64,
+    prompt_record_count: u64,
+    tools: BTreeMap<String, ToolAuditAggregate>,
+    providers: BTreeMap<String, ProviderAuditAggregate>,
+}
+
+fn summarize_audit_file(path: &Path) -> Result<AuditSummary> {
+    let file = std::fs::File::open(path)
+        .with_context(|| format!("failed to open audit file {}", path.display()))?;
+    let reader = std::io::BufReader::new(file);
+
+    let mut summary = AuditSummary::default();
+    for (line_no, raw_line) in std::io::BufRead::lines(reader).enumerate() {
+        let line = raw_line.with_context(|| {
+            format!(
+                "failed to read line {} from {}",
+                line_no + 1,
+                path.display()
+            )
+        })?;
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        summary.record_count = summary.record_count.saturating_add(1);
+        let value: Value = serde_json::from_str(trimmed).with_context(|| {
+            format!(
+                "failed to parse JSON at line {} in {}",
+                line_no + 1,
+                path.display()
+            )
+        })?;
+
+        if value.get("event").and_then(Value::as_str) == Some("tool_execution_end") {
+            summary.tool_event_count = summary.tool_event_count.saturating_add(1);
+            let tool_name = value
+                .get("tool_name")
+                .and_then(Value::as_str)
+                .unwrap_or("unknown_tool")
+                .to_string();
+            let duration_ms = value.get("duration_ms").and_then(Value::as_u64);
+            let is_error = value
+                .get("is_error")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            let aggregate = summary.tools.entry(tool_name).or_default();
+            aggregate.count = aggregate.count.saturating_add(1);
+            if is_error {
+                aggregate.error_count = aggregate.error_count.saturating_add(1);
+            }
+            if let Some(duration_ms) = duration_ms {
+                aggregate.durations_ms.push(duration_ms);
+            }
+            continue;
+        }
+
+        if value.get("record_type").and_then(Value::as_str) == Some("prompt_telemetry_v1") {
+            summary.prompt_record_count = summary.prompt_record_count.saturating_add(1);
+            let provider = value
+                .get("provider")
+                .and_then(Value::as_str)
+                .unwrap_or("unknown_provider")
+                .to_string();
+            let duration_ms = value
+                .get("duration_ms")
+                .and_then(Value::as_u64)
+                .unwrap_or(0);
+            let status = value.get("status").and_then(Value::as_str);
+            let success = value
+                .get("success")
+                .and_then(Value::as_bool)
+                .unwrap_or_else(|| status == Some("completed"));
+
+            let usage = value
+                .get("token_usage")
+                .and_then(Value::as_object)
+                .cloned()
+                .unwrap_or_default();
+            let input_tokens = usage
+                .get("input_tokens")
+                .and_then(Value::as_u64)
+                .unwrap_or(0);
+            let output_tokens = usage
+                .get("output_tokens")
+                .and_then(Value::as_u64)
+                .unwrap_or(0);
+            let total_tokens = usage
+                .get("total_tokens")
+                .and_then(Value::as_u64)
+                .unwrap_or(0);
+
+            let aggregate = summary.providers.entry(provider).or_default();
+            aggregate.count = aggregate.count.saturating_add(1);
+            if !success {
+                aggregate.error_count = aggregate.error_count.saturating_add(1);
+            }
+            if duration_ms > 0 {
+                aggregate.durations_ms.push(duration_ms);
+            }
+            aggregate.input_tokens = aggregate.input_tokens.saturating_add(input_tokens);
+            aggregate.output_tokens = aggregate.output_tokens.saturating_add(output_tokens);
+            aggregate.total_tokens = aggregate.total_tokens.saturating_add(total_tokens);
+        }
+    }
+
+    Ok(summary)
+}
+
+fn percentile_duration_ms(values: &[u64], percentile_numerator: u64) -> u64 {
+    if values.is_empty() {
+        return 0;
+    }
+    let mut sorted = values.to_vec();
+    sorted.sort_unstable();
+    let len = sorted.len() as u64;
+    let rank = len.saturating_mul(percentile_numerator).saturating_add(99) / 100;
+    let index = rank.saturating_sub(1).min(len.saturating_sub(1)) as usize;
+    sorted[index]
+}
+
+fn render_audit_summary(path: &Path, summary: &AuditSummary) -> String {
+    let mut lines = vec![format!(
+        "audit summary: path={} records={} tool_events={} prompt_records={}",
+        path.display(),
+        summary.record_count,
+        summary.tool_event_count,
+        summary.prompt_record_count
+    )];
+
+    lines.push("tool_breakdown:".to_string());
+    if summary.tools.is_empty() {
+        lines.push("  none".to_string());
+    } else {
+        for (tool_name, aggregate) in &summary.tools {
+            let error_rate = if aggregate.count == 0 {
+                0.0
+            } else {
+                (aggregate.error_count as f64 / aggregate.count as f64) * 100.0
+            };
+            lines.push(format!(
+                "  {} count={} error_rate={:.2}% p50_ms={} p95_ms={}",
+                tool_name,
+                aggregate.count,
+                error_rate,
+                percentile_duration_ms(&aggregate.durations_ms, 50),
+                percentile_duration_ms(&aggregate.durations_ms, 95),
+            ));
+        }
+    }
+
+    lines.push("provider_breakdown:".to_string());
+    if summary.providers.is_empty() {
+        lines.push("  none".to_string());
+    } else {
+        for (provider, aggregate) in &summary.providers {
+            let error_rate = if aggregate.count == 0 {
+                0.0
+            } else {
+                (aggregate.error_count as f64 / aggregate.count as f64) * 100.0
+            };
+            lines.push(format!(
+                "  {} count={} error_rate={:.2}% p50_ms={} p95_ms={} input_tokens={} output_tokens={} total_tokens={}",
+                provider,
+                aggregate.count,
+                error_rate,
+                percentile_duration_ms(&aggregate.durations_ms, 50),
+                percentile_duration_ms(&aggregate.durations_ms, 95),
+                aggregate.input_tokens,
+                aggregate.output_tokens,
+                aggregate.total_tokens,
+            ));
+        }
+    }
+
+    lines.join("\n")
 }
 
 fn current_unix_timestamp_ms() -> u64 {
@@ -904,6 +1301,15 @@ async fn main() -> Result<()> {
         agent.subscribe(move |event| {
             if let Err(error) = logger.log_event(event) {
                 eprintln!("tool audit logger error: {error}");
+            }
+        });
+    }
+    if let Some(path) = cli.telemetry_log.clone() {
+        let logger =
+            PromptTelemetryLogger::open(path, model_ref.provider.as_str(), &model_ref.model)?;
+        agent.subscribe(move |event| {
+            if let Err(error) = logger.log_event(event) {
+                eprintln!("telemetry logger error: {error}");
             }
         });
     }
@@ -1547,6 +1953,19 @@ fn handle_command_with_session_import_mode(
         return Ok(CommandAction::Continue);
     }
 
+    if command_name == "/audit-summary" {
+        if command_args.is_empty() {
+            println!("usage: /audit-summary <path>");
+            return Ok(CommandAction::Continue);
+        }
+        let path = PathBuf::from(command_args);
+        match summarize_audit_file(&path) {
+            Ok(summary) => println!("{}", render_audit_summary(&path, &summary)),
+            Err(error) => println!("audit summary error: {error}"),
+        }
+        return Ok(CommandAction::Continue);
+    }
+
     if command_name == "/resume" {
         if !command_args.is_empty() {
             println!("usage: /resume");
@@ -1943,9 +2362,20 @@ fn event_to_json(event: &AgentEvent) -> serde_json::Value {
             serde_json::json!({ "type": "agent_end", "new_messages": new_messages })
         }
         AgentEvent::TurnStart { turn } => serde_json::json!({ "type": "turn_start", "turn": turn }),
-        AgentEvent::TurnEnd { turn, tool_results } => {
-            serde_json::json!({ "type": "turn_end", "turn": turn, "tool_results": tool_results })
-        }
+        AgentEvent::TurnEnd {
+            turn,
+            tool_results,
+            request_duration_ms,
+            usage,
+            finish_reason,
+        } => serde_json::json!({
+            "type": "turn_end",
+            "turn": turn,
+            "tool_results": tool_results,
+            "request_duration_ms": request_duration_ms,
+            "usage": usage,
+            "finish_reason": finish_reason,
+        }),
         AgentEvent::MessageAdded { message } => serde_json::json!({
             "type": "message_added",
             "role": format!("{:?}", message.role).to_lowercase(),
@@ -2410,12 +2840,13 @@ mod tests {
         format_remap_ids, handle_command, handle_command_with_session_import_mode,
         initialize_session, is_retryable_provider_error, parse_command,
         parse_sandbox_command_tokens, parse_trust_rotation_spec, parse_trusted_root_spec,
-        render_command_help, render_help_overview, resolve_fallback_models, resolve_prompt_input,
-        resolve_skill_trust_roots, resolve_system_prompt, run_prompt_with_cancellation,
-        stream_text_chunks, tool_audit_event_json, tool_policy_to_json, unknown_command_message,
+        percentile_duration_ms, render_audit_summary, render_command_help, render_help_overview,
+        resolve_fallback_models, resolve_prompt_input, resolve_skill_trust_roots,
+        resolve_system_prompt, run_prompt_with_cancellation, stream_text_chunks,
+        summarize_audit_file, tool_audit_event_json, tool_policy_to_json, unknown_command_message,
         validate_session_file, Cli, CliBashProfile, CliOsSandboxMode, CliSessionImportMode,
         CliToolPolicyPreset, ClientRoute, CommandAction, FallbackRoutingClient, PromptRunStatus,
-        RenderOptions, SessionRuntime, ToolAuditLogger, TrustedRootRecord,
+        PromptTelemetryLogger, RenderOptions, SessionRuntime, ToolAuditLogger, TrustedRootRecord,
     };
     use crate::resolve_api_key;
     use crate::session::{SessionImportMode, SessionStore};
@@ -2572,6 +3003,7 @@ mod tests {
             allow_command: vec![],
             print_tool_policy: false,
             tool_audit_log: None,
+            telemetry_log: None,
             os_sandbox_mode: CliOsSandboxMode::Off,
             os_sandbox_command: vec![],
             enforce_regular_files: true,
@@ -2849,6 +3281,7 @@ mod tests {
         assert!(help.contains("/session"));
         assert!(help.contains("/session-export <path>"));
         assert!(help.contains("/session-import <path>"));
+        assert!(help.contains("/audit-summary <path>"));
         assert!(help.contains("/branch <id>"));
         assert!(help.contains("/quit"));
     }
@@ -2893,6 +3326,22 @@ mod tests {
 
         let action = handle_command("/help branch", &mut agent, &mut runtime, &tool_policy_json)
             .expect("help should succeed");
+        assert_eq!(action, CommandAction::Continue);
+    }
+
+    #[test]
+    fn functional_audit_summary_command_without_path_returns_continue_action() {
+        let mut agent = Agent::new(Arc::new(NoopClient), AgentConfig::default());
+        let mut runtime = None;
+        let tool_policy_json = test_tool_policy_json();
+
+        let action = handle_command(
+            "/audit-summary",
+            &mut agent,
+            &mut runtime,
+            &tool_policy_json,
+        )
+        .expect("audit summary usage should not fail");
         assert_eq!(action, CommandAction::Continue);
     }
 
@@ -3166,6 +3615,203 @@ mod tests {
         assert_eq!(first["event"], "tool_execution_start");
         assert_eq!(second["event"], "tool_execution_end");
         assert_eq!(second["is_error"], false);
+    }
+
+    #[test]
+    fn unit_percentile_duration_ms_handles_empty_and_unsorted_values() {
+        assert_eq!(percentile_duration_ms(&[], 50), 0);
+        assert_eq!(percentile_duration_ms(&[9], 95), 9);
+        assert_eq!(percentile_duration_ms(&[50, 10, 20, 40, 30], 50), 30);
+        assert_eq!(percentile_duration_ms(&[50, 10, 20, 40, 30], 95), 50);
+    }
+
+    #[test]
+    fn functional_summarize_audit_file_aggregates_tool_and_provider_metrics() {
+        let temp = tempdir().expect("tempdir");
+        let log_path = temp.path().join("audit.jsonl");
+        let rows = [
+            serde_json::json!({
+                "event": "tool_execution_end",
+                "tool_name": "bash",
+                "duration_ms": 12,
+                "is_error": false
+            }),
+            serde_json::json!({
+                "event": "tool_execution_end",
+                "tool_name": "bash",
+                "duration_ms": 32,
+                "is_error": true
+            }),
+            serde_json::json!({
+                "record_type": "prompt_telemetry_v1",
+                "provider": "openai",
+                "status": "completed",
+                "success": true,
+                "duration_ms": 100,
+                "token_usage": {
+                    "input_tokens": 4,
+                    "output_tokens": 2,
+                    "total_tokens": 6
+                }
+            }),
+            serde_json::json!({
+                "record_type": "prompt_telemetry_v1",
+                "provider": "openai",
+                "status": "interrupted",
+                "success": false,
+                "duration_ms": 180,
+                "token_usage": {
+                    "input_tokens": 1,
+                    "output_tokens": 1,
+                    "total_tokens": 2
+                }
+            }),
+        ]
+        .iter()
+        .map(serde_json::Value::to_string)
+        .collect::<Vec<_>>()
+        .join("\n");
+        std::fs::write(&log_path, format!("{rows}\n")).expect("write audit log");
+
+        let summary = summarize_audit_file(&log_path).expect("summary");
+        assert_eq!(summary.record_count, 4);
+        assert_eq!(summary.tool_event_count, 2);
+        assert_eq!(summary.prompt_record_count, 2);
+
+        let tool = summary.tools.get("bash").expect("tool aggregate");
+        assert_eq!(tool.count, 2);
+        assert_eq!(tool.error_count, 1);
+        assert_eq!(percentile_duration_ms(&tool.durations_ms, 50), 12);
+        assert_eq!(percentile_duration_ms(&tool.durations_ms, 95), 32);
+
+        let provider = summary.providers.get("openai").expect("provider aggregate");
+        assert_eq!(provider.count, 2);
+        assert_eq!(provider.error_count, 1);
+        assert_eq!(provider.input_tokens, 5);
+        assert_eq!(provider.output_tokens, 3);
+        assert_eq!(provider.total_tokens, 8);
+    }
+
+    #[test]
+    fn functional_render_audit_summary_includes_expected_sections() {
+        let temp = tempdir().expect("tempdir");
+        let path = temp.path().join("audit.jsonl");
+        std::fs::write(&path, "").expect("write empty log");
+        let summary = summarize_audit_file(path.as_path()).expect("empty summary should parse");
+        let output = render_audit_summary(&path, &summary);
+        assert!(output.contains("audit summary:"));
+        assert!(output.contains("tool_breakdown:"));
+        assert!(output.contains("provider_breakdown:"));
+    }
+
+    #[test]
+    fn integration_prompt_telemetry_logger_persists_completed_record() {
+        let temp = tempdir().expect("tempdir");
+        let log_path = temp.path().join("prompt-telemetry.jsonl");
+        let logger = PromptTelemetryLogger::open(log_path.clone(), "openai", "gpt-4o-mini")
+            .expect("logger open");
+
+        logger
+            .log_event(&AgentEvent::AgentStart)
+            .expect("agent start");
+        logger
+            .log_event(&AgentEvent::TurnEnd {
+                turn: 1,
+                tool_results: 0,
+                request_duration_ms: 44,
+                usage: ChatUsage {
+                    input_tokens: 4,
+                    output_tokens: 2,
+                    total_tokens: 6,
+                },
+                finish_reason: Some("stop".to_string()),
+            })
+            .expect("turn end");
+        logger
+            .log_event(&AgentEvent::AgentEnd { new_messages: 2 })
+            .expect("agent end");
+
+        let raw = std::fs::read_to_string(log_path).expect("read telemetry log");
+        let lines = raw.lines().collect::<Vec<_>>();
+        assert_eq!(lines.len(), 1);
+        let record: serde_json::Value = serde_json::from_str(lines[0]).expect("parse record");
+        assert_eq!(record["record_type"], "prompt_telemetry_v1");
+        assert_eq!(record["provider"], "openai");
+        assert_eq!(record["model"], "gpt-4o-mini");
+        assert_eq!(record["status"], "completed");
+        assert_eq!(record["success"], true);
+        assert_eq!(record["finish_reason"], "stop");
+        assert_eq!(record["token_usage"]["total_tokens"], 6);
+        assert_eq!(record["redaction_policy"]["prompt_content"], "omitted");
+    }
+
+    #[test]
+    fn regression_prompt_telemetry_logger_marks_interrupted_runs() {
+        let temp = tempdir().expect("tempdir");
+        let log_path = temp.path().join("prompt-telemetry.jsonl");
+        let logger = PromptTelemetryLogger::open(log_path.clone(), "openai", "gpt-4o-mini")
+            .expect("logger open");
+
+        logger
+            .log_event(&AgentEvent::AgentStart)
+            .expect("first start");
+        logger
+            .log_event(&AgentEvent::TurnEnd {
+                turn: 1,
+                tool_results: 0,
+                request_duration_ms: 11,
+                usage: ChatUsage {
+                    input_tokens: 1,
+                    output_tokens: 1,
+                    total_tokens: 2,
+                },
+                finish_reason: Some("length".to_string()),
+            })
+            .expect("first turn");
+        logger
+            .log_event(&AgentEvent::AgentStart)
+            .expect("second start");
+        logger
+            .log_event(&AgentEvent::AgentEnd { new_messages: 1 })
+            .expect("finalize second run");
+
+        let raw = std::fs::read_to_string(log_path).expect("read telemetry log");
+        let lines = raw.lines().collect::<Vec<_>>();
+        assert_eq!(lines.len(), 2);
+
+        let first: serde_json::Value = serde_json::from_str(lines[0]).expect("first record");
+        let second: serde_json::Value = serde_json::from_str(lines[1]).expect("second record");
+        assert_eq!(first["status"], "interrupted");
+        assert_eq!(first["success"], false);
+        assert_eq!(second["status"], "completed");
+        assert_eq!(second["success"], true);
+    }
+
+    #[test]
+    fn regression_summarize_audit_file_remains_compatible_with_tool_audit_logs() {
+        let temp = tempdir().expect("tempdir");
+        let log_path = temp.path().join("tool-audit.jsonl");
+        let logger = ToolAuditLogger::open(log_path.clone()).expect("logger should open");
+        logger
+            .log_event(&AgentEvent::ToolExecutionStart {
+                tool_call_id: "call-1".to_string(),
+                tool_name: "read".to_string(),
+                arguments: serde_json::json!({ "path": "README.md" }),
+            })
+            .expect("start");
+        logger
+            .log_event(&AgentEvent::ToolExecutionEnd {
+                tool_call_id: "call-1".to_string(),
+                tool_name: "read".to_string(),
+                result: ToolExecutionResult::ok(serde_json::json!({ "ok": true })),
+            })
+            .expect("end");
+
+        let summary = summarize_audit_file(&log_path).expect("summarize");
+        assert_eq!(summary.record_count, 2);
+        assert_eq!(summary.tool_event_count, 1);
+        assert_eq!(summary.prompt_record_count, 0);
+        assert!(summary.providers.is_empty());
     }
 
     #[tokio::test]
