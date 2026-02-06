@@ -1,0 +1,42 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build release binary
+        run: cargo build --release -p pi-coding-agent
+
+      - name: Package artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp target/release/pi-coding-agent dist/pi-coding-agent-linux-amd64
+          tar -czf dist/pi-coding-agent-linux-amd64.tar.gz -C dist pi-coding-agent-linux-amd64
+          sha256sum dist/pi-coding-agent-linux-amd64.tar.gz > dist/pi-coding-agent-linux-amd64.tar.gz.sha256
+
+      - name: Publish release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/pi-coding-agent-linux-amd64.tar.gz
+            dist/pi-coding-agent-linux-amd64.tar.gz.sha256

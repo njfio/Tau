@@ -40,6 +40,16 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
+## CI/CD
+
+This repository includes GitHub Actions workflows for:
+
+- CI (`.github/workflows/ci.yml`): format, clippy, and workspace tests on Linux/macOS/Windows
+- Security (`.github/workflows/security.yml`): `cargo audit` and `cargo deny`
+- Releases (`.github/workflows/release.yml`): build and publish `pi-coding-agent` assets on `v*` tags
+
+Dependency update automation is configured in `.github/dependabot.yml`.
+
 ## Usage
 
 Set an API key for your provider:
