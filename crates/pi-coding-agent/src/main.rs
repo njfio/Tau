@@ -321,6 +321,14 @@ struct Cli {
     #[arg(long, help = "Disable session persistence")]
     no_session: bool,
 
+    #[arg(
+        long,
+        env = "PI_SESSION_VALIDATE",
+        default_value_t = false,
+        help = "Validate session graph integrity and exit"
+    )]
+    session_validate: bool,
+
     #[arg(long, help = "Start from a specific session entry id")]
     branch_from: Option<u64>,
 
@@ -498,6 +506,13 @@ const COMMAND_SPECS: &[CommandSpec] = &[
         example: "/session",
     },
     CommandSpec {
+        name: "/session-export",
+        usage: "/session-export <path>",
+        description: "Export active lineage snapshot to a JSONL file",
+        details: "Writes only the active lineage entries, including schema metadata.",
+        example: "/session-export /tmp/session-snapshot.jsonl",
+    },
+    CommandSpec {
         name: "/policy",
         usage: "/policy",
         description: "Print the effective tool policy JSON",
@@ -551,6 +566,7 @@ const COMMAND_SPECS: &[CommandSpec] = &[
 const COMMAND_NAMES: &[&str] = &[
     "/help",
     "/session",
+    "/session-export",
     "/policy",
     "/branches",
     "/branch",
@@ -693,6 +709,11 @@ fn tool_audit_event_json(
 async fn main() -> Result<()> {
     init_tracing();
     let cli = Cli::parse();
+
+    if cli.session_validate {
+        validate_session_file(&cli)?;
+        return Ok(());
+    }
 
     if cli.no_session && cli.branch_from.is_some() {
         bail!("--branch-from cannot be used together with --no-session");
@@ -1061,6 +1082,34 @@ fn is_expired_unix(expires_unix: Option<u64>, now_unix: u64) -> bool {
     matches!(expires_unix, Some(value) if value <= now_unix)
 }
 
+fn validate_session_file(cli: &Cli) -> Result<()> {
+    if cli.no_session {
+        bail!("--session-validate cannot be used together with --no-session");
+    }
+
+    let store = SessionStore::load(&cli.session)?;
+    let report = store.validation_report();
+    println!(
+        "session validation: path={} entries={} duplicates={} invalid_parent={} cycles={}",
+        cli.session.display(),
+        report.entries,
+        report.duplicates,
+        report.invalid_parent,
+        report.cycles
+    );
+    if report.is_valid() {
+        println!("session validation passed");
+        Ok(())
+    } else {
+        bail!(
+            "session validation failed: duplicates={} invalid_parent={} cycles={}",
+            report.duplicates,
+            report.invalid_parent,
+            report.cycles
+        );
+    }
+}
+
 fn initialize_session(agent: &mut Agent, cli: &Cli, system_prompt: &str) -> Result<SessionRuntime> {
     let mut store = SessionStore::load(&cli.session)?;
     store.set_lock_policy(cli.session_lock_wait_ms.max(1), cli.session_lock_stale_ms);
@@ -1264,6 +1313,32 @@ fn handle_command(
             }
             None => println!("session: disabled"),
         }
+        return Ok(CommandAction::Continue);
+    }
+
+    if command_name == "/session-export" {
+        let Some(runtime) = session_runtime.as_ref() else {
+            println!("session is disabled");
+            return Ok(CommandAction::Continue);
+        };
+        if command_args.is_empty() {
+            println!("usage: /session-export <path>");
+            return Ok(CommandAction::Continue);
+        }
+
+        let destination = PathBuf::from(command_args);
+        let exported = runtime
+            .store
+            .export_lineage(runtime.active_head, &destination)?;
+        println!(
+            "session export complete: path={} entries={} head={}",
+            destination.display(),
+            exported,
+            runtime
+                .active_head
+                .map(|id| id.to_string())
+                .unwrap_or_else(|| "none".to_string())
+        );
         return Ok(CommandAction::Continue);
     }
 
@@ -1846,8 +1921,8 @@ mod tests {
         parse_trusted_root_spec, render_command_help, render_help_overview, resolve_prompt_input,
         resolve_skill_trust_roots, resolve_system_prompt, run_prompt_with_cancellation,
         stream_text_chunks, tool_audit_event_json, tool_policy_to_json, unknown_command_message,
-        Cli, CliBashProfile, CliOsSandboxMode, CommandAction, PromptRunStatus, RenderOptions,
-        SessionRuntime, ToolAuditLogger, TrustedRootRecord,
+        validate_session_file, Cli, CliBashProfile, CliOsSandboxMode, CommandAction,
+        PromptRunStatus, RenderOptions, SessionRuntime, ToolAuditLogger, TrustedRootRecord,
     };
     use crate::resolve_api_key;
     use crate::session::SessionStore;
@@ -1955,6 +2030,7 @@ mod tests {
             prompt_file: None,
             session: PathBuf::from(".pi/sessions/default.jsonl"),
             no_session: false,
+            session_validate: false,
             branch_from: None,
             session_lock_wait_ms: 5_000,
             session_lock_stale_ms: 30_000,
@@ -2033,6 +2109,7 @@ mod tests {
         let help = render_help_overview();
         assert!(help.contains("/help [command]"));
         assert!(help.contains("/session"));
+        assert!(help.contains("/session-export <path>"));
         assert!(help.contains("/branch <id>"));
         assert!(help.contains("/quit"));
     }
@@ -2653,6 +2730,106 @@ mod tests {
         let action = handle_command("/policy", &mut agent, &mut runtime, &tool_policy_json)
             .expect("policy should succeed");
         assert_eq!(action, CommandAction::Continue);
+    }
+
+    #[test]
+    fn functional_session_export_command_writes_active_lineage_snapshot() {
+        let temp = tempdir().expect("tempdir");
+        let session_path = temp.path().join("session.jsonl");
+        let export_path = temp.path().join("snapshot.jsonl");
+
+        let mut store = SessionStore::load(&session_path).expect("load");
+        let head = store
+            .append_messages(None, &[pi_ai::Message::system("sys")])
+            .expect("append");
+        let head = store
+            .append_messages(
+                head,
+                &[
+                    pi_ai::Message::user("q1"),
+                    pi_ai::Message::assistant_text("a1"),
+                ],
+            )
+            .expect("append")
+            .expect("head");
+
+        let mut agent = Agent::new(Arc::new(NoopClient), AgentConfig::default());
+        let mut runtime = Some(SessionRuntime {
+            store,
+            active_head: Some(head),
+        });
+        let tool_policy_json = test_tool_policy_json();
+
+        let action = handle_command(
+            &format!("/session-export {}", export_path.display()),
+            &mut agent,
+            &mut runtime,
+            &tool_policy_json,
+        )
+        .expect("session export should succeed");
+        assert_eq!(action, CommandAction::Continue);
+
+        let exported = SessionStore::load(&export_path).expect("load exported");
+        assert_eq!(exported.entries().len(), 3);
+        assert_eq!(exported.entries()[0].message.text_content(), "sys");
+        assert_eq!(exported.entries()[1].message.text_content(), "q1");
+        assert_eq!(exported.entries()[2].message.text_content(), "a1");
+    }
+
+    #[test]
+    fn functional_validate_session_file_succeeds_for_valid_session() {
+        let temp = tempdir().expect("tempdir");
+        let session_path = temp.path().join("session.jsonl");
+
+        let mut store = SessionStore::load(&session_path).expect("load");
+        let head = store
+            .append_messages(None, &[pi_ai::Message::system("sys")])
+            .expect("append");
+        store
+            .append_messages(head, &[pi_ai::Message::user("hello")])
+            .expect("append");
+
+        let mut cli = test_cli();
+        cli.session = session_path;
+        cli.session_validate = true;
+
+        validate_session_file(&cli).expect("session validation should pass");
+    }
+
+    #[test]
+    fn regression_validate_session_file_fails_for_invalid_session_graph() {
+        let temp = tempdir().expect("tempdir");
+        let session_path = temp.path().join("session.jsonl");
+
+        let raw = [
+            serde_json::json!({"record_type":"meta","schema_version":1}).to_string(),
+            serde_json::json!({"record_type":"entry","id":1,"parent_id":2,"message":pi_ai::Message::system("sys")}).to_string(),
+            serde_json::json!({"record_type":"entry","id":2,"parent_id":1,"message":pi_ai::Message::user("cycle")}).to_string(),
+        ]
+        .join("\n");
+        std::fs::write(&session_path, format!("{raw}\n")).expect("write invalid session");
+
+        let mut cli = test_cli();
+        cli.session = session_path;
+        cli.session_validate = true;
+
+        let error =
+            validate_session_file(&cli).expect_err("session validation should fail for cycle");
+        assert!(error.to_string().contains("session validation failed"));
+        assert!(error.to_string().contains("cycles=2"));
+    }
+
+    #[test]
+    fn regression_validate_session_file_rejects_no_session_flag() {
+        let mut cli = test_cli();
+        cli.no_session = true;
+        cli.session_validate = true;
+
+        let error = validate_session_file(&cli)
+            .expect_err("validation with no-session flag should fail fast");
+        assert!(error
+            .to_string()
+            .contains("--session-validate cannot be used together with --no-session"));
     }
 
     #[test]
