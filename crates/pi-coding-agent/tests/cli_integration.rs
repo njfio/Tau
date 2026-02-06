@@ -5,6 +5,7 @@ use httpmock::prelude::*;
 use predicates::prelude::*;
 use serde::Deserialize;
 use serde_json::json;
+use sha2::{Digest, Sha256};
 use tempfile::tempdir;
 
 #[derive(Debug, Deserialize)]
@@ -384,5 +385,75 @@ fn install_skill_flag_installs_skill_before_prompt() {
         .stdout(predicate::str::contains("skills install: installed=1"))
         .stdout(predicate::str::contains("ok install"));
     assert!(skills_dir.join("installable.md").exists());
+    openai.assert_hits(1);
+}
+
+#[test]
+fn install_skill_url_with_sha256_verification_works_end_to_end() {
+    let server = MockServer::start();
+    let remote_body = "Remote checksum skill";
+    let checksum = format!("{:x}", Sha256::digest(remote_body.as_bytes()));
+
+    let remote = server.mock(|when, then| {
+        when.method(GET).path("/skills/remote.md");
+        then.status(200).body(remote_body);
+    });
+
+    let openai = server.mock(|when, then| {
+        when.method(POST)
+            .path("/v1/chat/completions")
+            .header("authorization", "Bearer test-openai-key")
+            .json_body_partial(
+                json!({
+                    "messages": [{
+                        "role": "system",
+                        "content": "base\n\n# Skill: remote\nRemote checksum skill"
+                    }]
+                })
+                .to_string(),
+            );
+        then.status(200).json_body(json!({
+            "choices": [{
+                "message": {"content": "ok remote"},
+                "finish_reason": "stop"
+            }],
+            "usage": {"prompt_tokens": 7, "completion_tokens": 1, "total_tokens": 8}
+        }));
+    });
+
+    let temp = tempdir().expect("tempdir");
+    let skills_dir = temp.path().join("skills");
+
+    let mut cmd = binary_command();
+    cmd.args([
+        "--model",
+        "openai/gpt-4o-mini",
+        "--api-base",
+        &format!("{}/v1", server.base_url()),
+        "--openai-api-key",
+        "test-openai-key",
+        "--prompt",
+        "hello",
+        "--system-prompt",
+        "base",
+        "--skills-dir",
+        skills_dir.to_str().expect("utf8 path"),
+        "--install-skill-url",
+        &format!("{}/skills/remote.md", server.base_url()),
+        "--install-skill-sha256",
+        &checksum,
+        "--skill",
+        "remote",
+        "--no-session",
+    ]);
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "remote skills install: installed=1",
+        ))
+        .stdout(predicate::str::contains("ok remote"));
+    assert!(skills_dir.join("remote.md").exists());
+    remote.assert_hits(1);
     openai.assert_hits(1);
 }

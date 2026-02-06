@@ -16,7 +16,10 @@ use tracing::level_filters::LevelFilter;
 use tracing_subscriber::EnvFilter;
 
 use crate::session::SessionStore;
-use crate::skills::{augment_system_prompt, install_skills, load_catalog, resolve_selected_skills};
+use crate::skills::{
+    augment_system_prompt, install_remote_skills, install_skills, load_catalog,
+    resolve_remote_skill_sources, resolve_selected_skills,
+};
 use crate::tools::ToolPolicy;
 
 #[derive(Debug, Parser)]
@@ -121,6 +124,22 @@ struct Cli {
         help = "Skill markdown file(s) to install into --skills-dir before startup"
     )]
     install_skill: Vec<PathBuf>,
+
+    #[arg(
+        long = "install-skill-url",
+        env = "PI_INSTALL_SKILL_URL",
+        value_delimiter = ',',
+        help = "Skill URL(s) to install into --skills-dir before startup"
+    )]
+    install_skill_url: Vec<String>,
+
+    #[arg(
+        long = "install-skill-sha256",
+        env = "PI_INSTALL_SKILL_SHA256",
+        value_delimiter = ',',
+        help = "Optional sha256 value(s) matching --install-skill-url entries"
+    )]
+    install_skill_sha256: Vec<String>,
 
     #[arg(long, env = "PI_MAX_TURNS", default_value_t = 8)]
     max_turns: usize,
@@ -262,6 +281,15 @@ async fn main() -> Result<()> {
         let report = install_skills(&cli.install_skill, &cli.skills_dir)?;
         println!(
             "skills install: installed={} updated={} skipped={}",
+            report.installed, report.updated, report.skipped
+        );
+    }
+    let remote_skill_sources =
+        resolve_remote_skill_sources(&cli.install_skill_url, &cli.install_skill_sha256)?;
+    if !remote_skill_sources.is_empty() {
+        let report = install_remote_skills(&remote_skill_sources, &cli.skills_dir).await?;
+        println!(
+            "remote skills install: installed={} updated={} skipped={}",
             report.installed, report.updated, report.skipped
         );
     }
@@ -1187,6 +1215,8 @@ mod tests {
             skills_dir: PathBuf::from(".pi/skills"),
             skills: vec![],
             install_skill: vec![],
+            install_skill_url: vec![],
+            install_skill_sha256: vec![],
             max_turns: 8,
             json_events: false,
             stream_output: true,

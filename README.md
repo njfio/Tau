@@ -24,11 +24,12 @@ Implemented now:
 - Theme loading and ANSI styling primitives in `pi-tui`
 - Overlay composition primitives in `pi-tui`
 - Skill loading from markdown packages via `--skills-dir` and `--skill`
+- Remote skill fetch/install with optional checksum verification
 - Unit tests for serialization, tool loop, renderer diffing, and tool behaviors
 
 Not implemented yet:
 
-- Remote/distributed extensions lifecycle (registry/fetch/signing)
+- Distributed extension registry/signing workflow
 - Full TUI parity with overlays/images/editor
 
 ## Build & Test
@@ -106,6 +107,17 @@ cargo run -p pi-coding-agent -- \
   --prompt "Audit this module" \
   --skills-dir .pi/skills \
   --install-skill /tmp/review.md \
+  --skill review
+```
+
+Install a remote skill with checksum verification:
+
+```bash
+cargo run -p pi-coding-agent -- \
+  --prompt "Audit this module" \
+  --skills-dir .pi/skills \
+  --install-skill-url https://example.com/skills/review.md \
+  --install-skill-sha256 2f7d0... \
   --skill review
 ```
 
