@@ -539,7 +539,7 @@ fn integration_interactive_doctor_command_reports_runtime_diagnostics() {
         "--skill-trust-root-file",
         trust_root_path.to_str().expect("utf8 path"),
     ])
-    .write_stdin("/doctor\n/quit\n");
+    .write_stdin("/doctor\n/doctor --json\n/quit\n");
 
     cmd.assert()
         .success()
@@ -557,7 +557,10 @@ fn integration_interactive_doctor_command_reports_runtime_diagnostics() {
         ))
         .stdout(predicate::str::contains(
             "doctor check: key=trust_root status=pass code=readable",
-        ));
+        ))
+        .stdout(predicate::str::contains("\"summary\""))
+        .stdout(predicate::str::contains("\"checks\""))
+        .stdout(predicate::str::contains("\"provider_key.openai\""));
 }
 
 #[test]
@@ -570,11 +573,11 @@ fn regression_interactive_doctor_command_with_args_prints_usage_and_continues() 
         "test-openai-key",
         "--no-session",
     ])
-    .write_stdin("/doctor extra\n/help doctor\n/quit\n");
+    .write_stdin("/doctor --bad\n/help doctor\n/quit\n");
 
     cmd.assert()
         .success()
-        .stdout(predicate::str::contains("usage: /doctor"))
+        .stdout(predicate::str::contains("usage: /doctor [--json]"))
         .stdout(predicate::str::contains("command: /doctor"))
         .stdout(predicate::str::contains("example: /doctor"));
 }
