@@ -1344,12 +1344,18 @@ async fn main() -> Result<()> {
             } else {
                 report.changed.join(",")
             };
+            let metadata = if report.metadata_mismatch.is_empty() {
+                "none".to_string()
+            } else {
+                report.metadata_mismatch.join(";")
+            };
             bail!(
-                "skills sync drift detected: path={} missing={} extra={} changed={}",
+                "skills sync drift detected: path={} missing={} extra={} changed={} metadata={}",
                 skills_lock_path.display(),
                 missing,
                 extra,
-                changed
+                changed,
+                metadata
             );
         }
     }
