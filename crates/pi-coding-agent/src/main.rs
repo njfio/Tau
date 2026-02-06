@@ -393,6 +393,14 @@ struct Cli {
 
     #[arg(
         long,
+        env = "PI_PRINT_TOOL_POLICY",
+        default_value_t = false,
+        help = "Print effective tool policy JSON before executing prompts"
+    )]
+    print_tool_policy: bool,
+
+    #[arg(
+        long,
         env = "PI_OS_SANDBOX_MODE",
         value_enum,
         default_value = "off",
@@ -518,6 +526,9 @@ async fn main() -> Result<()> {
     );
 
     let tool_policy = build_tool_policy(&cli)?;
+    if cli.print_tool_policy {
+        println!("{}", tool_policy_to_json(&tool_policy));
+    }
     tools::register_builtin_tools(&mut agent, tool_policy);
     let render_options = RenderOptions::from_cli(&cli);
 
@@ -1292,6 +1303,27 @@ fn parse_sandbox_command_tokens(raw_tokens: &[String]) -> Result<Vec<String>> {
     Ok(parsed)
 }
 
+fn tool_policy_to_json(policy: &ToolPolicy) -> serde_json::Value {
+    serde_json::json!({
+        "allowed_roots": policy
+            .allowed_roots
+            .iter()
+            .map(|path| path.display().to_string())
+            .collect::<Vec<_>>(),
+        "max_file_read_bytes": policy.max_file_read_bytes,
+        "max_file_write_bytes": policy.max_file_write_bytes,
+        "max_command_output_bytes": policy.max_command_output_bytes,
+        "bash_timeout_ms": policy.bash_timeout_ms,
+        "max_command_length": policy.max_command_length,
+        "allow_command_newlines": policy.allow_command_newlines,
+        "bash_profile": format!("{:?}", policy.bash_profile).to_lowercase(),
+        "allowed_commands": policy.allowed_commands.clone(),
+        "os_sandbox_mode": format!("{:?}", policy.os_sandbox_mode).to_lowercase(),
+        "os_sandbox_command": policy.os_sandbox_command.clone(),
+        "enforce_regular_files": policy.enforce_regular_files,
+    })
+}
+
 fn init_tracing() {
     let env_filter = EnvFilter::builder()
         .with_default_directive(LevelFilter::WARN.into())
@@ -1326,9 +1358,9 @@ mod tests {
     use super::{
         apply_trust_root_mutations, build_tool_policy, handle_command, initialize_session,
         parse_sandbox_command_tokens, parse_trust_rotation_spec, parse_trusted_root_spec,
-        resolve_skill_trust_roots, run_prompt_with_cancellation, stream_text_chunks, Cli,
-        CliBashProfile, CliOsSandboxMode, CommandAction, PromptRunStatus, RenderOptions,
-        SessionRuntime, TrustedRootRecord,
+        resolve_skill_trust_roots, run_prompt_with_cancellation, stream_text_chunks,
+        tool_policy_to_json, Cli, CliBashProfile, CliOsSandboxMode, CommandAction, PromptRunStatus,
+        RenderOptions, SessionRuntime, TrustedRootRecord,
     };
     use crate::resolve_api_key;
     use crate::session::SessionStore;
@@ -1439,6 +1471,7 @@ mod tests {
             allow_command_newlines: true,
             bash_profile: CliBashProfile::Balanced,
             allow_command: vec![],
+            print_tool_policy: false,
             os_sandbox_mode: CliOsSandboxMode::Off,
             os_sandbox_command: vec![],
             enforce_regular_files: true,
@@ -2068,6 +2101,21 @@ mod tests {
         assert_eq!(policy.os_sandbox_mode, OsSandboxMode::Off);
         assert!(policy.os_sandbox_command.is_empty());
         assert!(policy.enforce_regular_files);
+    }
+
+    #[test]
+    fn unit_tool_policy_to_json_includes_key_limits_and_modes() {
+        let mut cli = test_cli();
+        cli.bash_profile = CliBashProfile::Strict;
+        cli.os_sandbox_mode = CliOsSandboxMode::Auto;
+        cli.max_file_write_bytes = 4096;
+
+        let policy = build_tool_policy(&cli).expect("policy should build");
+        let payload = tool_policy_to_json(&policy);
+        assert_eq!(payload["bash_profile"], "strict");
+        assert_eq!(payload["os_sandbox_mode"], "auto");
+        assert_eq!(payload["max_file_write_bytes"], 4096);
+        assert_eq!(payload["enforce_regular_files"], true);
     }
 
     #[test]
