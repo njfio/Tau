@@ -305,6 +305,9 @@ cargo run -p pi-coding-agent -- --model openai/gpt-4o-mini
 # Import a snapshot into the current session (mode defaults to merge)
 /session-import /tmp/session-snapshot.jsonl
 
+# Show a specific installed skill by name
+/skills-show checklist
+
 # List currently installed skills
 /skills-list
 

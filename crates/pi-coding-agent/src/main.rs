@@ -683,6 +683,13 @@ const COMMAND_SPECS: &[CommandSpec] = &[
         example: "/audit-summary .pi/audit/tool-events.jsonl",
     },
     CommandSpec {
+        name: "/skills-show",
+        usage: "/skills-show <name>",
+        description: "Display installed skill content and metadata",
+        details: "Read-only command for inspecting a single skill by name.",
+        example: "/skills-show checklist",
+    },
+    CommandSpec {
         name: "/skills-list",
         usage: "/skills-list",
         description: "List installed skills in the active skills directory",
@@ -756,6 +763,7 @@ const COMMAND_NAMES: &[&str] = &[
     "/session-import",
     "/policy",
     "/audit-summary",
+    "/skills-show",
     "/skills-list",
     "/skills-lock-write",
     "/skills-sync",
@@ -2069,6 +2077,15 @@ fn handle_command_with_session_import_mode(
         return Ok(CommandAction::Continue);
     }
 
+    if command_name == "/skills-show" {
+        if command_args.is_empty() {
+            println!("usage: /skills-show <name>");
+            return Ok(CommandAction::Continue);
+        }
+        println!("{}", execute_skills_show_command(skills_dir, command_args));
+        return Ok(CommandAction::Continue);
+    }
+
     if command_name == "/skills-list" {
         if !command_args.is_empty() {
             println!("usage: /skills-list");
@@ -2255,6 +2272,41 @@ fn session_import_mode_label(mode: SessionImportMode) -> &'static str {
     match mode {
         SessionImportMode::Merge => "merge",
         SessionImportMode::Replace => "replace",
+    }
+}
+
+fn render_skills_show(skills_dir: &Path, skill: &skills::Skill) -> String {
+    let file = skill
+        .path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("unknown");
+    format!(
+        "skills show: path={} name={} file={} content_bytes={}\n---\n{}",
+        skills_dir.display(),
+        skill.name,
+        file,
+        skill.content.len(),
+        skill.content
+    )
+}
+
+fn execute_skills_show_command(skills_dir: &Path, skill_name: &str) -> String {
+    match load_catalog(skills_dir) {
+        Ok(catalog) => match catalog.into_iter().find(|skill| skill.name == skill_name) {
+            Some(skill) => render_skills_show(skills_dir, &skill),
+            None => format!(
+                "skills show error: path={} name={} error=unknown skill '{}'",
+                skills_dir.display(),
+                skill_name,
+                skill_name
+            ),
+        },
+        Err(error) => format!(
+            "skills show error: path={} name={} error={error}",
+            skills_dir.display(),
+            skill_name
+        ),
     }
 }
 
@@ -3086,18 +3138,19 @@ mod tests {
     use super::{
         apply_trust_root_mutations, build_tool_policy, default_skills_lock_path,
         ensure_non_empty_text, execute_skills_list_command, execute_skills_lock_write_command,
-        execute_skills_sync_command, format_id_list, format_remap_ids, handle_command,
-        handle_command_with_session_import_mode, initialize_session, is_retryable_provider_error,
-        parse_command, parse_sandbox_command_tokens, parse_trust_rotation_spec,
-        parse_trusted_root_spec, percentile_duration_ms, render_audit_summary, render_command_help,
-        render_help_overview, render_skills_list, render_skills_lock_write_success,
-        render_skills_sync_drift_details, resolve_fallback_models, resolve_prompt_input,
-        resolve_skill_trust_roots, resolve_skills_lock_path, resolve_system_prompt,
-        run_prompt_with_cancellation, stream_text_chunks, summarize_audit_file,
-        tool_audit_event_json, tool_policy_to_json, unknown_command_message, validate_session_file,
-        Cli, CliBashProfile, CliOsSandboxMode, CliSessionImportMode, CliToolPolicyPreset,
-        ClientRoute, CommandAction, FallbackRoutingClient, PromptRunStatus, PromptTelemetryLogger,
-        RenderOptions, SessionRuntime, ToolAuditLogger, TrustedRootRecord,
+        execute_skills_show_command, execute_skills_sync_command, format_id_list, format_remap_ids,
+        handle_command, handle_command_with_session_import_mode, initialize_session,
+        is_retryable_provider_error, parse_command, parse_sandbox_command_tokens,
+        parse_trust_rotation_spec, parse_trusted_root_spec, percentile_duration_ms,
+        render_audit_summary, render_command_help, render_help_overview, render_skills_list,
+        render_skills_lock_write_success, render_skills_show, render_skills_sync_drift_details,
+        resolve_fallback_models, resolve_prompt_input, resolve_skill_trust_roots,
+        resolve_skills_lock_path, resolve_system_prompt, run_prompt_with_cancellation,
+        stream_text_chunks, summarize_audit_file, tool_audit_event_json, tool_policy_to_json,
+        unknown_command_message, validate_session_file, Cli, CliBashProfile, CliOsSandboxMode,
+        CliSessionImportMode, CliToolPolicyPreset, ClientRoute, CommandAction,
+        FallbackRoutingClient, PromptRunStatus, PromptTelemetryLogger, RenderOptions,
+        SessionRuntime, ToolAuditLogger, TrustedRootRecord,
     };
     use crate::resolve_api_key;
     use crate::session::{SessionImportMode, SessionStore};
@@ -3561,6 +3614,7 @@ mod tests {
         assert!(help.contains("/session-export <path>"));
         assert!(help.contains("/session-import <path>"));
         assert!(help.contains("/audit-summary <path>"));
+        assert!(help.contains("/skills-show <name>"));
         assert!(help.contains("/skills-list"));
         assert!(help.contains("/skills-lock-write [lockfile_path]"));
         assert!(help.contains("/skills-sync [lockfile_path]"));
@@ -3595,6 +3649,13 @@ mod tests {
         let help = render_command_help("skills-list").expect("render help");
         assert!(help.contains("command: /skills-list"));
         assert!(help.contains("usage: /skills-list"));
+    }
+
+    #[test]
+    fn functional_render_command_help_supports_skills_show_topic_without_slash() {
+        let help = render_command_help("skills-show").expect("render help");
+        assert!(help.contains("command: /skills-show"));
+        assert!(help.contains("usage: /skills-show <name>"));
     }
 
     #[test]
@@ -3664,6 +3725,21 @@ mod tests {
     }
 
     #[test]
+    fn unit_render_skills_show_includes_metadata_and_content() {
+        let skill = crate::skills::Skill {
+            name: "checklist".to_string(),
+            content: "line one\nline two".to_string(),
+            path: PathBuf::from("checklist.md"),
+        };
+        let rendered = render_skills_show(Path::new(".pi/skills"), &skill);
+        assert!(rendered.contains("skills show: path=.pi/skills"));
+        assert!(rendered.contains("name=checklist"));
+        assert!(rendered.contains("file=checklist.md"));
+        assert!(rendered.contains("content_bytes=17"));
+        assert!(rendered.contains("---\nline one\nline two"));
+    }
+
+    #[test]
     fn functional_execute_skills_list_command_reports_sorted_inventory() {
         let temp = tempdir().expect("tempdir");
         let skills_dir = temp.path().join("skills");
@@ -3690,6 +3766,32 @@ mod tests {
         let output = execute_skills_list_command(&not_a_dir);
         assert!(output.contains("skills list error: path="));
         assert!(output.contains("is not a directory"));
+    }
+
+    #[test]
+    fn functional_execute_skills_show_command_displays_selected_skill() {
+        let temp = tempdir().expect("tempdir");
+        let skills_dir = temp.path().join("skills");
+        std::fs::create_dir_all(&skills_dir).expect("mkdir");
+        std::fs::write(skills_dir.join("checklist.md"), "Always run tests").expect("write skill");
+
+        let output = execute_skills_show_command(&skills_dir, "checklist");
+        assert!(output.contains("skills show: path="));
+        assert!(output.contains("name=checklist"));
+        assert!(output.contains("file=checklist.md"));
+        assert!(output.contains("Always run tests"));
+    }
+
+    #[test]
+    fn regression_execute_skills_show_command_reports_unknown_skill_without_panicking() {
+        let temp = tempdir().expect("tempdir");
+        let skills_dir = temp.path().join("skills");
+        std::fs::create_dir_all(&skills_dir).expect("mkdir");
+        std::fs::write(skills_dir.join("known.md"), "Known").expect("write skill");
+
+        let output = execute_skills_show_command(&skills_dir, "missing");
+        assert!(output.contains("skills show error: path="));
+        assert!(output.contains("error=unknown skill 'missing'"));
     }
 
     #[test]
@@ -3948,6 +4050,52 @@ mod tests {
             &lock_path,
         )
         .expect("skills list command should continue");
+        assert_eq!(action, CommandAction::Continue);
+
+        let runtime = runtime.expect("runtime");
+        assert_eq!(runtime.active_head, Some(head));
+        assert_eq!(runtime.store.entries().len(), 2);
+        assert_eq!(agent.messages().len(), lineage.len());
+    }
+
+    #[test]
+    fn integration_skills_show_command_preserves_session_runtime_on_unknown_skill() {
+        let temp = tempdir().expect("tempdir");
+        let skills_dir = temp.path().join("skills");
+        std::fs::create_dir_all(&skills_dir).expect("mkdir");
+        std::fs::write(skills_dir.join("alpha.md"), "alpha body").expect("write alpha");
+        let lock_path = default_skills_lock_path(&skills_dir);
+
+        let mut store = SessionStore::load(temp.path().join("session.jsonl")).expect("load");
+        let root = store
+            .append_messages(None, &[pi_ai::Message::system("sys")])
+            .expect("append root")
+            .expect("root id");
+        let head = store
+            .append_messages(Some(root), &[pi_ai::Message::user("hello")])
+            .expect("append user")
+            .expect("head id");
+
+        let mut agent = Agent::new(Arc::new(NoopClient), AgentConfig::default());
+        let lineage = store.lineage_messages(Some(head)).expect("lineage");
+        agent.replace_messages(lineage.clone());
+
+        let mut runtime = Some(SessionRuntime {
+            store,
+            active_head: Some(head),
+        });
+        let tool_policy_json = test_tool_policy_json();
+
+        let action = handle_command_with_session_import_mode(
+            "/skills-show missing",
+            &mut agent,
+            &mut runtime,
+            &tool_policy_json,
+            SessionImportMode::Merge,
+            &skills_dir,
+            &lock_path,
+        )
+        .expect("skills show command should continue");
         assert_eq!(action, CommandAction::Continue);
 
         let runtime = runtime.expect("runtime");

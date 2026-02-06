@@ -1552,6 +1552,59 @@ fn regression_interactive_skills_list_command_with_args_prints_usage_and_continu
 }
 
 #[test]
+fn interactive_skills_show_command_displays_skill_metadata_and_content() {
+    let temp = tempdir().expect("tempdir");
+    let skills_dir = temp.path().join("skills");
+    fs::create_dir_all(&skills_dir).expect("mkdir");
+    fs::write(skills_dir.join("checklist.md"), "Always run tests").expect("write skill");
+
+    let mut cmd = binary_command();
+    cmd.args([
+        "--model",
+        "openai/gpt-4o-mini",
+        "--openai-api-key",
+        "test-openai-key",
+        "--skills-dir",
+        skills_dir.to_str().expect("utf8 path"),
+        "--no-session",
+    ])
+    .write_stdin("/skills-show checklist\n/quit\n");
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("skills show: path="))
+        .stdout(predicate::str::contains("name=checklist"))
+        .stdout(predicate::str::contains("file=checklist.md"))
+        .stdout(predicate::str::contains("Always run tests"));
+}
+
+#[test]
+fn regression_interactive_skills_show_command_reports_unknown_skill_and_continues() {
+    let temp = tempdir().expect("tempdir");
+    let skills_dir = temp.path().join("skills");
+    fs::create_dir_all(&skills_dir).expect("mkdir");
+    fs::write(skills_dir.join("known.md"), "known body").expect("write skill");
+
+    let mut cmd = binary_command();
+    cmd.args([
+        "--model",
+        "openai/gpt-4o-mini",
+        "--openai-api-key",
+        "test-openai-key",
+        "--skills-dir",
+        skills_dir.to_str().expect("utf8 path"),
+        "--no-session",
+    ])
+    .write_stdin("/skills-show missing\n/help skills-show\n/quit\n");
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("skills show error: path="))
+        .stdout(predicate::str::contains("unknown skill 'missing'"))
+        .stdout(predicate::str::contains("usage: /skills-show <name>"));
+}
+
+#[test]
 fn interactive_skills_lock_write_command_writes_default_lockfile() {
     let temp = tempdir().expect("tempdir");
     let skills_dir = temp.path().join("skills");
