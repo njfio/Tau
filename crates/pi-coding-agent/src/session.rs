@@ -48,6 +48,20 @@ pub struct CompactReport {
     pub head_id: Option<u64>,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SessionValidationReport {
+    pub entries: usize,
+    pub duplicates: usize,
+    pub invalid_parent: usize,
+    pub cycles: usize,
+}
+
+impl SessionValidationReport {
+    pub fn is_valid(&self) -> bool {
+        self.duplicates == 0 && self.invalid_parent == 0 && self.cycles == 0
+    }
+}
+
 #[derive(Debug)]
 pub struct SessionStore {
     path: PathBuf,
@@ -150,11 +164,19 @@ impl SessionStore {
     }
 
     pub fn lineage_messages(&self, head_id: Option<u64>) -> Result<Vec<Message>> {
+        Ok(self
+            .lineage_entries(head_id)?
+            .into_iter()
+            .map(|entry| entry.message)
+            .collect())
+    }
+
+    pub fn lineage_entries(&self, head_id: Option<u64>) -> Result<Vec<SessionEntry>> {
         let Some(mut current_id) = head_id else {
             return Ok(Vec::new());
         };
 
-        let mut ids = Vec::new();
+        let mut lineage = Vec::new();
         let mut visited = HashSet::new();
 
         loop {
@@ -168,27 +190,63 @@ impl SessionStore {
                 .find(|entry| entry.id == current_id)
                 .ok_or_else(|| anyhow!("unknown session id {current_id}"))?;
 
-            ids.push(entry.id);
+            lineage.push(entry.clone());
             match entry.parent_id {
                 Some(parent) => current_id = parent,
                 None => break,
             }
         }
+        lineage.reverse();
+        Ok(lineage)
+    }
 
-        ids.reverse();
+    pub fn export_lineage(
+        &self,
+        head_id: Option<u64>,
+        destination: impl AsRef<Path>,
+    ) -> Result<usize> {
+        let lineage = self.lineage_entries(head_id)?;
+        write_session_entries_atomic(destination.as_ref(), &lineage)?;
+        Ok(lineage.len())
+    }
 
-        let messages = ids
-            .into_iter()
-            .map(|id| {
-                self.entries
-                    .iter()
-                    .find(|entry| entry.id == id)
-                    .map(|entry| entry.message.clone())
-                    .ok_or_else(|| anyhow!("missing message for id {id}"))
-            })
-            .collect::<Result<Vec<_>>>()?;
+    pub fn validation_report(&self) -> SessionValidationReport {
+        let mut report = SessionValidationReport {
+            entries: self.entries.len(),
+            ..SessionValidationReport::default()
+        };
 
-        Ok(messages)
+        let mut seen = HashSet::new();
+        for entry in &self.entries {
+            if !seen.insert(entry.id) {
+                report.duplicates += 1;
+            }
+        }
+
+        let id_to_entry = self
+            .entries
+            .iter()
+            .cloned()
+            .map(|entry| (entry.id, entry))
+            .collect::<HashMap<_, _>>();
+
+        for entry in &self.entries {
+            if let Some(parent_id) = entry.parent_id {
+                if !id_to_entry.contains_key(&parent_id) {
+                    report.invalid_parent += 1;
+                }
+            }
+        }
+
+        let mut cycle_ids = HashSet::new();
+        for entry in &self.entries {
+            if has_cycle(entry.id, &id_to_entry) {
+                cycle_ids.insert(entry.id);
+            }
+        }
+        report.cycles = cycle_ids.len();
+
+        report
     }
 
     pub fn branch_tips(&self) -> Vec<&SessionEntry> {
@@ -570,7 +628,7 @@ mod tests {
 
     use tempfile::tempdir;
 
-    use super::{CompactReport, RepairReport, SessionEntry, SessionStore};
+    use super::{CompactReport, RepairReport, SessionEntry, SessionStore, SessionValidationReport};
 
     #[test]
     fn appends_and_restores_lineage() {
@@ -638,6 +696,101 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(texts, vec!["sys", "q1", "a1", "q2b", "a2b"]);
         assert_eq!(store.branch_tips().len(), 2);
+    }
+
+    #[test]
+    fn functional_export_lineage_writes_schema_valid_snapshot() {
+        let temp = tempdir().expect("tempdir");
+        let path = temp.path().join("session.jsonl");
+        let export = temp.path().join("export.jsonl");
+
+        let mut store = SessionStore::load(&path).expect("load");
+        let head = store
+            .append_messages(None, &[pi_ai::Message::system("sys")])
+            .expect("append");
+        let head = store
+            .append_messages(
+                head,
+                &[
+                    pi_ai::Message::user("q1"),
+                    pi_ai::Message::assistant_text("a1"),
+                ],
+            )
+            .expect("append");
+
+        let exported = store
+            .export_lineage(head, &export)
+            .expect("lineage export should succeed");
+        assert_eq!(exported, 3);
+
+        let snapshot = SessionStore::load(&export).expect("load export");
+        assert_eq!(snapshot.entries().len(), 3);
+        assert_eq!(snapshot.entries()[0].message.text_content(), "sys");
+        assert_eq!(snapshot.entries()[1].message.text_content(), "q1");
+        assert_eq!(snapshot.entries()[2].message.text_content(), "a1");
+    }
+
+    #[test]
+    fn unit_validation_report_detects_duplicates_invalid_parents_and_cycles() {
+        let temp = tempdir().expect("tempdir");
+        let path = temp.path().join("validate-invalid.jsonl");
+
+        let raw = [
+            serde_json::json!({"record_type":"meta","schema_version":1}).to_string(),
+            serde_json::json!({"record_type":"entry","id":1,"parent_id":null,"message":pi_ai::Message::system("root")}).to_string(),
+            serde_json::json!({"record_type":"entry","id":2,"parent_id":99,"message":pi_ai::Message::user("dangling")}).to_string(),
+            serde_json::json!({"record_type":"entry","id":3,"parent_id":4,"message":pi_ai::Message::user("cycle-a")}).to_string(),
+            serde_json::json!({"record_type":"entry","id":4,"parent_id":3,"message":pi_ai::Message::user("cycle-b")}).to_string(),
+            serde_json::json!({"record_type":"entry","id":6,"parent_id":1,"message":pi_ai::Message::user("duplicate-a")}).to_string(),
+            serde_json::json!({"record_type":"entry","id":6,"parent_id":1,"message":pi_ai::Message::user("duplicate-b")}).to_string(),
+        ]
+        .join("\n");
+        fs::write(&path, format!("{raw}\n")).expect("write invalid session");
+
+        let store = SessionStore::load(&path).expect("load");
+        let report = store.validation_report();
+        assert_eq!(
+            report,
+            SessionValidationReport {
+                entries: 6,
+                duplicates: 1,
+                invalid_parent: 1,
+                cycles: 2,
+            }
+        );
+        assert!(!report.is_valid());
+    }
+
+    #[test]
+    fn regression_validation_report_for_valid_session_is_clean() {
+        let temp = tempdir().expect("tempdir");
+        let path = temp.path().join("validate-valid.jsonl");
+
+        let mut store = SessionStore::load(&path).expect("load");
+        let head = store
+            .append_messages(None, &[pi_ai::Message::system("sys")])
+            .expect("append");
+        store
+            .append_messages(
+                head,
+                &[
+                    pi_ai::Message::user("q1"),
+                    pi_ai::Message::assistant_text("a1"),
+                ],
+            )
+            .expect("append");
+
+        let report = store.validation_report();
+        assert_eq!(
+            report,
+            SessionValidationReport {
+                entries: 3,
+                duplicates: 0,
+                invalid_parent: 0,
+                cycles: 0,
+            }
+        );
+        assert!(report.is_valid());
     }
 
     #[test]

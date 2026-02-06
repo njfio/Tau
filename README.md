@@ -257,6 +257,9 @@ cargo run -p pi-coding-agent -- --model openai/gpt-4o-mini
 
 # Compact to the active lineage and prune inactive branches
 /session-compact
+
+# Export the active lineage snapshot to a new JSONL file
+/session-export /tmp/session-snapshot.jsonl
 ```
 
 Tune session lock behavior for shared/concurrent workflows:
@@ -266,6 +269,14 @@ cargo run -p pi-coding-agent -- \
   --model openai/gpt-4o-mini \
   --session-lock-wait-ms 15000 \
   --session-lock-stale-ms 60000
+```
+
+Validate a session graph and exit:
+
+```bash
+cargo run -p pi-coding-agent -- \
+  --session .pi/sessions/default.jsonl \
+  --session-validate
 ```
 
 Tool policy controls:

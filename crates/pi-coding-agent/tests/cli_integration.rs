@@ -90,6 +90,96 @@ fn no_session_and_branch_from_combination_fails_fast() {
 }
 
 #[test]
+fn session_validate_flag_succeeds_for_valid_session_file() {
+    let temp = tempdir().expect("tempdir");
+    let session = temp.path().join("session.jsonl");
+    let raw = [
+        json!({"record_type":"meta","schema_version":1}).to_string(),
+        json!({
+            "record_type":"entry",
+            "id":1,
+            "parent_id":null,
+            "message":{
+                "role":"system",
+                "content":[{"type":"text","text":"sys"}],
+                "is_error":false
+            }
+        })
+        .to_string(),
+        json!({
+            "record_type":"entry",
+            "id":2,
+            "parent_id":1,
+            "message":{
+                "role":"user",
+                "content":[{"type":"text","text":"hello"}],
+                "is_error":false
+            }
+        })
+        .to_string(),
+    ]
+    .join("\n");
+    fs::write(&session, format!("{raw}\n")).expect("write valid session");
+
+    let mut cmd = binary_command();
+    cmd.args([
+        "--session",
+        session.to_str().expect("utf8 path"),
+        "--session-validate",
+    ]);
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("session validation passed"))
+        .stdout(predicate::str::contains("entries=2"));
+}
+
+#[test]
+fn regression_session_validate_flag_fails_for_invalid_session_file() {
+    let temp = tempdir().expect("tempdir");
+    let session = temp.path().join("session.jsonl");
+    let raw = [
+        json!({"record_type":"meta","schema_version":1}).to_string(),
+        json!({
+            "record_type":"entry",
+            "id":1,
+            "parent_id":2,
+            "message":{
+                "role":"system",
+                "content":[{"type":"text","text":"sys"}],
+                "is_error":false
+            }
+        })
+        .to_string(),
+        json!({
+            "record_type":"entry",
+            "id":2,
+            "parent_id":1,
+            "message":{
+                "role":"user",
+                "content":[{"type":"text","text":"cycle"}],
+                "is_error":false
+            }
+        })
+        .to_string(),
+    ]
+    .join("\n");
+    fs::write(&session, format!("{raw}\n")).expect("write invalid session");
+
+    let mut cmd = binary_command();
+    cmd.args([
+        "--session",
+        session.to_str().expect("utf8 path"),
+        "--session-validate",
+    ]);
+
+    cmd.assert()
+        .failure()
+        .stderr(predicate::str::contains("session validation failed"))
+        .stderr(predicate::str::contains("cycles=2"));
+}
+
+#[test]
 fn interactive_help_and_unknown_command_suggestions_work() {
     let mut cmd = binary_command();
     cmd.args([
