@@ -336,6 +336,14 @@ struct Cli {
 
     #[arg(
         long,
+        env = "PI_MAX_FILE_WRITE_BYTES",
+        default_value_t = 1_000_000,
+        help = "Maximum file size written by write/edit tools"
+    )]
+    max_file_write_bytes: usize,
+
+    #[arg(
+        long,
         env = "PI_MAX_COMMAND_LENGTH",
         default_value_t = 4_096,
         help = "Maximum command length accepted by the bash tool"
@@ -1224,6 +1232,7 @@ fn build_tool_policy(cli: &Cli) -> Result<ToolPolicy> {
     policy.bash_timeout_ms = cli.bash_timeout_ms.max(1);
     policy.max_command_output_bytes = cli.max_tool_output_bytes.max(128);
     policy.max_file_read_bytes = cli.max_file_read_bytes.max(1_024);
+    policy.max_file_write_bytes = cli.max_file_write_bytes.max(1_024);
     policy.max_command_length = cli.max_command_length.max(8);
     policy.allow_command_newlines = cli.allow_command_newlines;
     policy.set_bash_profile(cli.bash_profile.into());
@@ -1406,6 +1415,7 @@ mod tests {
             bash_timeout_ms: 500,
             max_tool_output_bytes: 1024,
             max_file_read_bytes: 2048,
+            max_file_write_bytes: 2048,
             max_command_length: 4096,
             allow_command_newlines: true,
             bash_profile: CliBashProfile::Balanced,
@@ -1753,6 +1763,52 @@ mod tests {
         assert!(tool_message.text_content().contains("command is too long"));
     }
 
+    #[tokio::test]
+    async fn integration_agent_write_policy_blocks_oversized_content() {
+        let temp = tempdir().expect("tempdir");
+        let target = temp.path().join("target.txt");
+        let responses = VecDeque::from(vec![
+            ChatResponse {
+                message: pi_ai::Message::assistant_blocks(vec![ContentBlock::ToolCall {
+                    id: "call-1".to_string(),
+                    name: "write".to_string(),
+                    arguments: serde_json::json!({
+                        "path": target,
+                        "content": "hello",
+                    }),
+                }]),
+                finish_reason: Some("tool_calls".to_string()),
+                usage: ChatUsage::default(),
+            },
+            ChatResponse {
+                message: pi_ai::Message::assistant_text("done"),
+                finish_reason: Some("stop".to_string()),
+                usage: ChatUsage::default(),
+            },
+        ]);
+
+        let client = Arc::new(QueueClient {
+            responses: AsyncMutex::new(responses),
+        });
+        let mut agent = Agent::new(client, AgentConfig::default());
+
+        let mut policy = crate::tools::ToolPolicy::new(vec![temp.path().to_path_buf()]);
+        policy.max_file_write_bytes = 4;
+        crate::tools::register_builtin_tools(&mut agent, policy);
+
+        let new_messages = agent
+            .prompt("write file")
+            .await
+            .expect("prompt should succeed");
+        let tool_message = new_messages
+            .iter()
+            .find(|message| message.role == MessageRole::Tool)
+            .expect("tool result should be present");
+
+        assert!(tool_message.is_error);
+        assert!(tool_message.text_content().contains("content is too large"));
+    }
+
     #[test]
     fn branch_and_resume_commands_reload_agent_messages() {
         let temp = tempdir().expect("tempdir");
@@ -1945,6 +2001,7 @@ mod tests {
         assert_eq!(policy.bash_timeout_ms, 500);
         assert_eq!(policy.max_command_output_bytes, 1024);
         assert_eq!(policy.max_file_read_bytes, 2048);
+        assert_eq!(policy.max_file_write_bytes, 2048);
         assert_eq!(policy.max_command_length, 4096);
         assert!(policy.allow_command_newlines);
         assert_eq!(policy.os_sandbox_mode, OsSandboxMode::Off);
@@ -1984,6 +2041,7 @@ mod tests {
             "--cwd".to_string(),
             "{cwd}".to_string(),
         ];
+        cli.max_file_write_bytes = 4096;
         cli.enforce_regular_files = false;
 
         let policy = build_tool_policy(&cli).expect("policy should build");
@@ -1996,6 +2054,7 @@ mod tests {
                 "{cwd}".to_string()
             ]
         );
+        assert_eq!(policy.max_file_write_bytes, 4096);
         assert!(!policy.enforce_regular_files);
     }
 }

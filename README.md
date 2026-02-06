@@ -242,6 +242,7 @@ cargo run -p pi-coding-agent -- \
   --model openai/gpt-4o-mini \
   --allow-path /Users/me/project \
   --max-file-read-bytes 500000 \
+  --max-file-write-bytes 500000 \
   --max-tool-output-bytes 8000 \
   --bash-timeout-ms 60000 \
   --max-command-length 2048 \

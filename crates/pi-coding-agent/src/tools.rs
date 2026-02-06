@@ -52,6 +52,7 @@ struct BashSandboxSpec {
 pub struct ToolPolicy {
     pub allowed_roots: Vec<PathBuf>,
     pub max_file_read_bytes: usize,
+    pub max_file_write_bytes: usize,
     pub max_command_output_bytes: usize,
     pub bash_timeout_ms: u64,
     pub max_command_length: usize,
@@ -68,6 +69,7 @@ impl ToolPolicy {
         Self {
             allowed_roots,
             max_file_read_bytes: 1_000_000,
+            max_file_write_bytes: 1_000_000,
             max_command_output_bytes: 16_000,
             bash_timeout_ms: 120_000,
             max_command_length: 4_096,
@@ -228,6 +230,17 @@ impl AgentTool for WriteTool {
             Ok(content) => content,
             Err(error) => return ToolExecutionResult::error(json!({ "error": error })),
         };
+        let content_size = content.len();
+        if content_size > self.policy.max_file_write_bytes {
+            return ToolExecutionResult::error(json!({
+                "path": path,
+                "error": format!(
+                    "content is too large ({} bytes), limit is {} bytes",
+                    content_size,
+                    self.policy.max_file_write_bytes
+                ),
+            }));
+        }
 
         let resolved = match resolve_and_validate_path(&path, &self.policy, PathMode::Write) {
             Ok(path) => path,
@@ -366,6 +379,16 @@ impl AgentTool for EditTool {
         } else {
             source.replacen(&find, &replace, 1)
         };
+        if updated.len() > self.policy.max_file_write_bytes {
+            return ToolExecutionResult::error(json!({
+                "path": resolved.display().to_string(),
+                "error": format!(
+                    "edited content is too large ({} bytes), limit is {} bytes",
+                    updated.len(),
+                    self.policy.max_file_write_bytes
+                ),
+            }));
+        }
 
         if let Err(error) = tokio::fs::write(&resolved, updated.as_bytes()).await {
             return ToolExecutionResult::error(json!({
@@ -457,8 +480,18 @@ impl AgentTool for BashTool {
         }
 
         let cwd = match arguments.get("cwd").and_then(Value::as_str) {
-            Some(cwd) => match resolve_and_validate_path(cwd, &self.policy, PathMode::Read) {
-                Ok(path) => Some(path),
+            Some(cwd) => match resolve_and_validate_path(cwd, &self.policy, PathMode::Directory) {
+                Ok(path) => {
+                    if let Err(error) =
+                        validate_directory_target(&path, self.policy.enforce_regular_files)
+                    {
+                        return ToolExecutionResult::error(json!({
+                            "cwd": path.display().to_string(),
+                            "error": error,
+                        }));
+                    }
+                    Some(path)
+                }
                 Err(error) => {
                     return ToolExecutionResult::error(json!({
                         "cwd": cwd,
@@ -543,6 +576,7 @@ enum PathMode {
     Read,
     Write,
     Edit,
+    Directory,
 }
 
 fn resolve_and_validate_path(
@@ -572,7 +606,7 @@ fn resolve_and_validate_path(
         ));
     }
 
-    if matches!(mode, PathMode::Read | PathMode::Edit) && !absolute.exists() {
+    if matches!(mode, PathMode::Read | PathMode::Edit | PathMode::Directory) && !absolute.exists() {
         return Err(format!("path '{}' does not exist", absolute.display()));
     }
 
@@ -611,6 +645,28 @@ fn validate_file_target(
     if matches!(mode, PathMode::Write) && path.exists() && !symlink_meta.file_type().is_file() {
         return Err(format!(
             "path '{}' must be a regular file when overwriting existing content",
+            path.display()
+        ));
+    }
+
+    Ok(())
+}
+
+fn validate_directory_target(path: &Path, enforce_regular_files: bool) -> Result<(), String> {
+    let symlink_meta = std::fs::symlink_metadata(path)
+        .map_err(|error| format!("failed to inspect path '{}': {error}", path.display()))?;
+    if enforce_regular_files && symlink_meta.file_type().is_symlink() {
+        return Err(format!(
+            "path '{}' is a symbolic link, which is denied by policy",
+            path.display()
+        ));
+    }
+
+    let metadata = std::fs::metadata(path)
+        .map_err(|error| format!("failed to inspect path '{}': {error}", path.display()))?;
+    if !metadata.is_dir() {
+        return Err(format!(
+            "path '{}' must be a directory for this operation",
             path.display()
         ));
     }
@@ -982,6 +1038,30 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn regression_edit_tool_rejects_result_larger_than_write_limit() {
+        let temp = tempdir().expect("tempdir");
+        let file = temp.path().join("test.txt");
+        tokio::fs::write(&file, "a").await.expect("write file");
+
+        let mut policy = ToolPolicy::new(vec![temp.path().to_path_buf()]);
+        policy.max_file_write_bytes = 3;
+        let tool = EditTool::new(Arc::new(policy));
+        let result = tool
+            .execute(serde_json::json!({
+                "path": file,
+                "find": "a",
+                "replace": "longer",
+            }))
+            .await;
+
+        assert!(result.is_error);
+        assert!(result
+            .content
+            .to_string()
+            .contains("edited content is too large"));
+    }
+
+    #[tokio::test]
     async fn write_tool_creates_parent_directory() {
         let temp = tempdir().expect("tempdir");
         let file = temp.path().join("nested/output.txt");
@@ -999,6 +1079,28 @@ mod tests {
             .await
             .expect("read file");
         assert_eq!(content, "hello");
+    }
+
+    #[tokio::test]
+    async fn functional_write_tool_enforces_max_file_write_bytes() {
+        let temp = tempdir().expect("tempdir");
+        let file = temp.path().join("too-large.txt");
+        let mut policy = ToolPolicy::new(vec![temp.path().to_path_buf()]);
+        policy.max_file_write_bytes = 4;
+        let tool = WriteTool::new(Arc::new(policy));
+
+        let result = tool
+            .execute(serde_json::json!({
+                "path": file,
+                "content": "hello"
+            }))
+            .await;
+
+        assert!(result.is_error);
+        assert!(result
+            .content
+            .to_string()
+            .contains("content is too large (5 bytes), limit is 4 bytes"));
     }
 
     #[cfg(unix)]
@@ -1059,6 +1161,84 @@ mod tests {
                 .get("sandboxed")
                 .and_then(serde_json::Value::as_bool),
             Some(false)
+        );
+    }
+
+    #[tokio::test]
+    async fn regression_bash_tool_rejects_non_directory_cwd() {
+        let temp = tempdir().expect("tempdir");
+        let file = temp.path().join("not-a-dir.txt");
+        tokio::fs::write(&file, "x").await.expect("write file");
+
+        let tool = BashTool::new(test_policy(temp.path()));
+        let result = tool
+            .execute(serde_json::json!({
+                "command": "printf 'ok'",
+                "cwd": file,
+            }))
+            .await;
+
+        assert!(result.is_error);
+        assert!(result
+            .content
+            .to_string()
+            .contains("must be a directory for this operation"));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn regression_bash_tool_rejects_symlink_cwd_when_enforced() {
+        let temp = tempdir().expect("tempdir");
+        let real_dir = temp.path().join("real");
+        tokio::fs::create_dir_all(&real_dir)
+            .await
+            .expect("create real dir");
+        let link_dir = temp.path().join("link");
+        symlink_file(&real_dir, &link_dir).expect("create symlink");
+
+        let tool = BashTool::new(test_policy(temp.path()));
+        let result = tool
+            .execute(serde_json::json!({
+                "command": "pwd",
+                "cwd": link_dir,
+            }))
+            .await;
+
+        assert!(result.is_error);
+        assert!(result
+            .content
+            .to_string()
+            .contains("symbolic link, which is denied by policy"));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn integration_bash_tool_allows_symlink_cwd_when_enforcement_disabled() {
+        let temp = tempdir().expect("tempdir");
+        let real_dir = temp.path().join("real");
+        tokio::fs::create_dir_all(&real_dir)
+            .await
+            .expect("create real dir");
+        let link_dir = temp.path().join("link");
+        symlink_file(&real_dir, &link_dir).expect("create symlink");
+
+        let mut policy = ToolPolicy::new(vec![temp.path().to_path_buf()]);
+        policy.enforce_regular_files = false;
+        let tool = BashTool::new(Arc::new(policy));
+        let result = tool
+            .execute(serde_json::json!({
+                "command": "pwd",
+                "cwd": link_dir,
+            }))
+            .await;
+
+        assert!(!result.is_error);
+        assert_eq!(
+            result
+                .content
+                .get("success")
+                .and_then(serde_json::Value::as_bool),
+            Some(true)
         );
     }
 
