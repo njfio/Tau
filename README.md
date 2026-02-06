@@ -30,6 +30,7 @@ Implemented now:
 - Remote skill fetch/install with optional checksum verification
 - Registry-based skill installation (`--skill-registry-url`, `--install-skill-from-registry`)
 - Signed registry skill installation with trust roots (`--skill-trust-root`, `--require-signed-skills`)
+- Skills lockfile write/sync workflow (`--skills-lock-write`, `--skills-sync`)
 - Unit tests for serialization, tool loop, renderer diffing, and tool behaviors
 
 ## Build & Test
@@ -217,6 +218,26 @@ cargo run -p pi-coding-agent -- \
   --skill-trust-root root=Gf7... \
   --require-signed-skills \
   --skill review
+```
+
+Write a deterministic skills lockfile after installs:
+
+```bash
+cargo run -p pi-coding-agent -- \
+  --prompt "Audit this module" \
+  --skills-dir .pi/skills \
+  --install-skill /tmp/review.md \
+  --skills-lock-write \
+  --skill review
+```
+
+Verify installed skills match the lockfile (fails on drift):
+
+```bash
+cargo run -p pi-coding-agent -- \
+  --skills-dir .pi/skills \
+  --skills-sync \
+  --no-session
 ```
 
 Manage trust lifecycle in a trust-root file:

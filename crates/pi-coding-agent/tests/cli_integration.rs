@@ -1371,6 +1371,134 @@ fn install_skill_flag_installs_skill_before_prompt() {
 }
 
 #[test]
+fn skills_lock_write_flag_generates_lockfile_for_local_install() {
+    let server = MockServer::start();
+    let openai = server.mock(|when, then| {
+        when.method(POST)
+            .path("/v1/chat/completions")
+            .header("authorization", "Bearer test-openai-key");
+        then.status(200).json_body(json!({
+            "choices": [{
+                "message": {"content": "ok lock"},
+                "finish_reason": "stop"
+            }],
+            "usage": {"prompt_tokens": 4, "completion_tokens": 1, "total_tokens": 5}
+        }));
+    });
+
+    let temp = tempdir().expect("tempdir");
+    let skills_dir = temp.path().join("skills");
+    let source_skill = temp.path().join("installable.md");
+    fs::write(&source_skill, "Installed skill body").expect("write source skill");
+
+    let mut cmd = binary_command();
+    cmd.args([
+        "--model",
+        "openai/gpt-4o-mini",
+        "--api-base",
+        &format!("{}/v1", server.base_url()),
+        "--openai-api-key",
+        "test-openai-key",
+        "--prompt",
+        "hello",
+        "--skills-dir",
+        skills_dir.to_str().expect("utf8 path"),
+        "--install-skill",
+        source_skill.to_str().expect("utf8 path"),
+        "--skills-lock-write",
+        "--no-session",
+    ]);
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("skills lock write: path="))
+        .stdout(predicate::str::contains("ok lock"));
+
+    let lock_path = skills_dir.join("skills.lock.json");
+    assert!(lock_path.exists());
+    let raw = fs::read_to_string(&lock_path).expect("read lockfile");
+    let lock: serde_json::Value = serde_json::from_str(&raw).expect("parse lockfile");
+    assert_eq!(lock["schema_version"], 1);
+    assert_eq!(lock["entries"][0]["file"], "installable.md");
+    assert_eq!(lock["entries"][0]["source"]["kind"], "local");
+    openai.assert_calls(1);
+}
+
+#[test]
+fn skills_sync_flag_succeeds_for_matching_lockfile() {
+    let temp = tempdir().expect("tempdir");
+    let skills_dir = temp.path().join("skills");
+    fs::create_dir_all(&skills_dir).expect("mkdir");
+    fs::write(skills_dir.join("focus.md"), "deterministic body").expect("write skill");
+    let sha = format!("{:x}", Sha256::digest("deterministic body".as_bytes()));
+    let lockfile = json!({
+        "schema_version": 1,
+        "entries": [{
+            "name": "focus",
+            "file": "focus.md",
+            "sha256": sha,
+            "source": {
+                "kind": "unknown"
+            }
+        }]
+    });
+    fs::write(skills_dir.join("skills.lock.json"), format!("{lockfile}\n")).expect("write lock");
+
+    let mut cmd = binary_command();
+    cmd.args([
+        "--model",
+        "openai/gpt-4o-mini",
+        "--openai-api-key",
+        "test-openai-key",
+        "--skills-dir",
+        skills_dir.to_str().expect("utf8 path"),
+        "--skills-sync",
+        "--no-session",
+    ])
+    .write_stdin("/quit\n");
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("skills sync: in-sync"));
+}
+
+#[test]
+fn regression_skills_sync_flag_fails_on_drift() {
+    let temp = tempdir().expect("tempdir");
+    let skills_dir = temp.path().join("skills");
+    fs::create_dir_all(&skills_dir).expect("mkdir");
+    fs::write(skills_dir.join("focus.md"), "actual body").expect("write skill");
+    let lockfile = json!({
+        "schema_version": 1,
+        "entries": [{
+            "name": "focus",
+            "file": "focus.md",
+            "sha256": "deadbeef",
+            "source": {
+                "kind": "unknown"
+            }
+        }]
+    });
+    fs::write(skills_dir.join("skills.lock.json"), format!("{lockfile}\n")).expect("write lock");
+
+    let mut cmd = binary_command();
+    cmd.args([
+        "--model",
+        "openai/gpt-4o-mini",
+        "--openai-api-key",
+        "test-openai-key",
+        "--skills-dir",
+        skills_dir.to_str().expect("utf8 path"),
+        "--skills-sync",
+        "--no-session",
+    ]);
+
+    cmd.assert()
+        .failure()
+        .stderr(predicate::str::contains("skills sync drift detected"));
+}
+
+#[test]
 fn install_skill_url_with_sha256_verification_works_end_to_end() {
     let server = MockServer::start();
     let remote_body = "Remote checksum skill";

@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fs,
     path::{Path, PathBuf},
 };
@@ -8,7 +8,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use ed25519_dalek::{Signature, VerifyingKey};
 use reqwest::Url;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -25,12 +25,73 @@ pub struct SkillInstallReport {
     pub skipped: usize,
 }
 
+const SKILLS_LOCK_SCHEMA_VERSION: u32 = 1;
+const SKILLS_LOCK_FILE_NAME: &str = "skills.lock.json";
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RemoteSkillSource {
     pub url: String,
     pub sha256: Option<String>,
     pub signature: Option<String>,
     pub signer_public_key: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SkillLockSource {
+    Unknown,
+    Local {
+        path: String,
+    },
+    Remote {
+        url: String,
+        expected_sha256: Option<String>,
+        signature: Option<String>,
+        signer_public_key: Option<String>,
+    },
+    Registry {
+        registry_url: String,
+        name: String,
+        url: String,
+        expected_sha256: Option<String>,
+        signature: Option<String>,
+        signer_public_key: Option<String>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SkillLockEntry {
+    pub name: String,
+    pub file: String,
+    pub sha256: String,
+    pub source: SkillLockSource,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SkillsLockfile {
+    pub schema_version: u32,
+    pub entries: Vec<SkillLockEntry>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SkillLockHint {
+    pub file: String,
+    pub source: SkillLockSource,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SkillsSyncReport {
+    pub expected_entries: usize,
+    pub actual_entries: usize,
+    pub missing: Vec<String>,
+    pub extra: Vec<String>,
+    pub changed: Vec<String>,
+}
+
+impl SkillsSyncReport {
+    pub fn in_sync(&self) -> bool {
+        self.missing.is_empty() && self.extra.is_empty() && self.changed.is_empty()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -239,6 +300,204 @@ pub async fn install_remote_skills(
     Ok(report)
 }
 
+pub fn default_skills_lock_path(skills_dir: &Path) -> PathBuf {
+    skills_dir.join(SKILLS_LOCK_FILE_NAME)
+}
+
+pub fn build_local_skill_lock_hints(sources: &[PathBuf]) -> Result<Vec<SkillLockHint>> {
+    let mut hints = Vec::new();
+    for source in sources {
+        if source.extension().and_then(|ext| ext.to_str()) != Some("md") {
+            bail!("skill source '{}' must be a .md file", source.display());
+        }
+        let file = source
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or_else(|| anyhow!("invalid skill source '{}'", source.display()))?
+            .to_string();
+        hints.push(SkillLockHint {
+            file,
+            source: SkillLockSource::Local {
+                path: source.display().to_string(),
+            },
+        });
+    }
+    Ok(hints)
+}
+
+pub fn build_remote_skill_lock_hints(sources: &[RemoteSkillSource]) -> Result<Vec<SkillLockHint>> {
+    let mut hints = Vec::new();
+    for (index, source) in sources.iter().enumerate() {
+        let file = remote_skill_file_name_for_source(&source.url, index)?;
+        hints.push(SkillLockHint {
+            file,
+            source: SkillLockSource::Remote {
+                url: source.url.clone(),
+                expected_sha256: source.sha256.clone(),
+                signature: source.signature.clone(),
+                signer_public_key: source.signer_public_key.clone(),
+            },
+        });
+    }
+    Ok(hints)
+}
+
+pub fn build_registry_skill_lock_hints(
+    registry_url: &str,
+    names: &[String],
+    sources: &[RemoteSkillSource],
+) -> Result<Vec<SkillLockHint>> {
+    if names.len() != sources.len() {
+        bail!(
+            "registry lock hint metadata mismatch: names={}, sources={}",
+            names.len(),
+            sources.len()
+        );
+    }
+    let mut hints = Vec::new();
+    for (index, (name, source)) in names.iter().zip(sources.iter()).enumerate() {
+        let file = remote_skill_file_name_for_source(&source.url, index)?;
+        hints.push(SkillLockHint {
+            file,
+            source: SkillLockSource::Registry {
+                registry_url: registry_url.to_string(),
+                name: name.clone(),
+                url: source.url.clone(),
+                expected_sha256: source.sha256.clone(),
+                signature: source.signature.clone(),
+                signer_public_key: source.signer_public_key.clone(),
+            },
+        });
+    }
+    Ok(hints)
+}
+
+pub fn remote_skill_file_name_for_source(url: &str, index: usize) -> Result<String> {
+    let url = Url::parse(url).with_context(|| format!("invalid skill URL '{}'", url))?;
+    Ok(remote_skill_file_name(&url, index))
+}
+
+pub fn load_skills_lockfile(path: &Path) -> Result<SkillsLockfile> {
+    let raw = fs::read_to_string(path)
+        .with_context(|| format!("failed to read skills lockfile {}", path.display()))?;
+    let lockfile: SkillsLockfile = serde_json::from_str(&raw)
+        .with_context(|| format!("failed to parse skills lockfile {}", path.display()))?;
+    validate_skills_lockfile(&lockfile, path)?;
+    Ok(lockfile)
+}
+
+pub fn write_skills_lockfile(
+    skills_dir: &Path,
+    lock_path: &Path,
+    hints: &[SkillLockHint],
+) -> Result<SkillsLockfile> {
+    if !skills_dir.exists() {
+        fs::create_dir_all(skills_dir)
+            .with_context(|| format!("failed to create {}", skills_dir.display()))?;
+    }
+
+    let mut hint_by_file = HashMap::new();
+    for hint in hints {
+        hint_by_file.insert(hint.file.clone(), hint.source.clone());
+    }
+
+    let mut existing_source_by_file = HashMap::new();
+    if lock_path.exists() {
+        let existing = load_skills_lockfile(lock_path)?;
+        for entry in existing.entries {
+            existing_source_by_file.insert(entry.file, entry.source);
+        }
+    }
+
+    let catalog = load_catalog(skills_dir)?;
+    let mut entries = Vec::new();
+    for skill in catalog {
+        let file = skill
+            .path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or_else(|| anyhow!("invalid installed skill path '{}'", skill.path.display()))?
+            .to_string();
+        let source = hint_by_file
+            .get(&file)
+            .cloned()
+            .or_else(|| existing_source_by_file.get(&file).cloned())
+            .unwrap_or(SkillLockSource::Unknown);
+        entries.push(SkillLockEntry {
+            name: skill.name,
+            file,
+            sha256: sha256_hex(skill.content.as_bytes()),
+            source,
+        });
+    }
+    entries.sort_by(|left, right| left.file.cmp(&right.file));
+
+    let lockfile = SkillsLockfile {
+        schema_version: SKILLS_LOCK_SCHEMA_VERSION,
+        entries,
+    };
+    validate_skills_lockfile(&lockfile, lock_path)?;
+
+    if let Some(parent) = lock_path.parent() {
+        if !parent.as_os_str().is_empty() {
+            fs::create_dir_all(parent).with_context(|| {
+                format!("failed to create lockfile directory {}", parent.display())
+            })?;
+        }
+    }
+    let mut encoded = serde_json::to_vec_pretty(&lockfile).context("failed to encode lockfile")?;
+    encoded.push(b'\n');
+    fs::write(lock_path, encoded)
+        .with_context(|| format!("failed to write skills lockfile {}", lock_path.display()))?;
+
+    Ok(lockfile)
+}
+
+pub fn sync_skills_with_lockfile(skills_dir: &Path, lock_path: &Path) -> Result<SkillsSyncReport> {
+    let lockfile = load_skills_lockfile(lock_path)?;
+
+    let mut expected = HashMap::new();
+    for entry in &lockfile.entries {
+        expected.insert(entry.file.clone(), entry.sha256.clone());
+    }
+
+    let mut actual = HashMap::new();
+    for skill in load_catalog(skills_dir)? {
+        let file = skill
+            .path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or_else(|| anyhow!("invalid installed skill path '{}'", skill.path.display()))?
+            .to_string();
+        actual.insert(file, sha256_hex(skill.content.as_bytes()));
+    }
+
+    let mut report = SkillsSyncReport {
+        expected_entries: expected.len(),
+        actual_entries: actual.len(),
+        ..SkillsSyncReport::default()
+    };
+
+    for (file, expected_sha) in &expected {
+        match actual.get(file) {
+            None => report.missing.push(file.clone()),
+            Some(actual_sha) if actual_sha != expected_sha => report.changed.push(file.clone()),
+            Some(_) => {}
+        }
+    }
+    for file in actual.keys() {
+        if !expected.contains_key(file) {
+            report.extra.push(file.clone());
+        }
+    }
+
+    report.missing.sort();
+    report.extra.sort();
+    report.changed.sort();
+
+    Ok(report)
+}
+
 pub async fn fetch_registry_manifest(
     registry_url: &str,
     expected_sha256: Option<&str>,
@@ -402,6 +661,50 @@ pub fn augment_system_prompt(base: &str, skills: &[Skill]) -> String {
     }
 
     prompt
+}
+
+fn validate_skills_lockfile(lockfile: &SkillsLockfile, path: &Path) -> Result<()> {
+    if lockfile.schema_version != SKILLS_LOCK_SCHEMA_VERSION {
+        bail!(
+            "unsupported skills lockfile schema_version {} in {} (expected {})",
+            lockfile.schema_version,
+            path.display(),
+            SKILLS_LOCK_SCHEMA_VERSION
+        );
+    }
+
+    let mut seen_files = HashSet::new();
+    for entry in &lockfile.entries {
+        if entry.file.trim().is_empty() {
+            bail!(
+                "skills lockfile {} contains an entry with empty file name",
+                path.display()
+            );
+        }
+        if !entry.file.ends_with(".md") {
+            bail!(
+                "skills lockfile {} contains non-markdown entry '{}'",
+                path.display(),
+                entry.file
+            );
+        }
+        if !seen_files.insert(entry.file.clone()) {
+            bail!(
+                "skills lockfile {} contains duplicate entry '{}'",
+                path.display(),
+                entry.file
+            );
+        }
+        if entry.sha256.trim().is_empty() {
+            bail!(
+                "skills lockfile {} contains empty sha256 for '{}'",
+                path.display(),
+                entry.file
+            );
+        }
+    }
+
+    Ok(())
 }
 
 fn build_trusted_key_map(
@@ -603,10 +906,13 @@ mod tests {
     use tempfile::tempdir;
 
     use super::{
-        augment_system_prompt, fetch_registry_manifest, install_remote_skills, install_skills,
-        load_catalog, resolve_registry_skill_sources, resolve_remote_skill_sources,
-        resolve_selected_skills, RegistryKeyEntry, RemoteSkillSource, Skill, SkillInstallReport,
-        SkillRegistryManifest, TrustedKey,
+        augment_system_prompt, build_local_skill_lock_hints, build_registry_skill_lock_hints,
+        build_remote_skill_lock_hints, default_skills_lock_path, fetch_registry_manifest,
+        install_remote_skills, install_skills, load_catalog, load_skills_lockfile,
+        remote_skill_file_name_for_source, resolve_registry_skill_sources,
+        resolve_remote_skill_sources, resolve_selected_skills, sync_skills_with_lockfile,
+        write_skills_lockfile, RegistryKeyEntry, RemoteSkillSource, Skill, SkillInstallReport,
+        SkillLockSource, SkillRegistryManifest, TrustedKey,
     };
 
     #[test]
@@ -743,6 +1049,180 @@ mod tests {
             std::fs::read_to_string(install_dir.join("evolve.md")).expect("read installed"),
             "v2"
         );
+    }
+
+    #[test]
+    fn unit_default_skills_lock_path_appends_lockfile_name() {
+        let root = PathBuf::from("skills");
+        let lock_path = default_skills_lock_path(&root);
+        assert_eq!(lock_path, PathBuf::from("skills").join("skills.lock.json"));
+    }
+
+    #[test]
+    fn functional_build_skill_lock_hints_capture_source_metadata() {
+        assert_eq!(
+            remote_skill_file_name_for_source("https://example.com/skills/path", 0)
+                .expect("file name"),
+            "path.md"
+        );
+
+        let local_hints =
+            build_local_skill_lock_hints(&[PathBuf::from("/tmp/local-skill.md")]).expect("local");
+        assert_eq!(local_hints.len(), 1);
+        assert_eq!(local_hints[0].file, "local-skill.md");
+        match &local_hints[0].source {
+            SkillLockSource::Local { path } => assert!(path.ends_with("local-skill.md")),
+            other => panic!("expected local source, got {other:?}"),
+        }
+
+        let remote_sources = vec![RemoteSkillSource {
+            url: "https://example.com/skills/review".to_string(),
+            sha256: Some("abc".to_string()),
+            signature: Some("sig".to_string()),
+            signer_public_key: Some("key".to_string()),
+        }];
+        let remote_hints = build_remote_skill_lock_hints(&remote_sources).expect("remote");
+        assert_eq!(remote_hints.len(), 1);
+        assert_eq!(remote_hints[0].file, "review.md");
+        match &remote_hints[0].source {
+            SkillLockSource::Remote {
+                url,
+                expected_sha256,
+                signature,
+                signer_public_key,
+            } => {
+                assert_eq!(url, "https://example.com/skills/review");
+                assert_eq!(expected_sha256.as_deref(), Some("abc"));
+                assert_eq!(signature.as_deref(), Some("sig"));
+                assert_eq!(signer_public_key.as_deref(), Some("key"));
+            }
+            other => panic!("expected remote source, got {other:?}"),
+        }
+
+        let registry_hints = build_registry_skill_lock_hints(
+            "https://registry.example.com/manifest.json",
+            &["review".to_string()],
+            &remote_sources,
+        )
+        .expect("registry");
+        assert_eq!(registry_hints.len(), 1);
+        match &registry_hints[0].source {
+            SkillLockSource::Registry {
+                registry_url,
+                name,
+                url,
+                ..
+            } => {
+                assert_eq!(registry_url, "https://registry.example.com/manifest.json");
+                assert_eq!(name, "review");
+                assert_eq!(url, "https://example.com/skills/review");
+            }
+            other => panic!("expected registry source, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn functional_write_and_load_skills_lockfile_roundtrip() {
+        let temp = tempdir().expect("tempdir");
+        let skills_dir = temp.path().join("skills");
+        std::fs::create_dir_all(&skills_dir).expect("mkdir");
+        std::fs::write(skills_dir.join("local.md"), "local body").expect("write local");
+        std::fs::write(skills_dir.join("remote.md"), "remote body").expect("write remote");
+
+        let mut hints = build_local_skill_lock_hints(&[PathBuf::from("local.md")]).expect("local");
+        hints.extend(
+            build_remote_skill_lock_hints(&[RemoteSkillSource {
+                url: "https://example.com/skills/remote.md".to_string(),
+                sha256: Some("deadbeef".to_string()),
+                signature: None,
+                signer_public_key: None,
+            }])
+            .expect("remote"),
+        );
+        let lock_path = default_skills_lock_path(&skills_dir);
+        let written = write_skills_lockfile(&skills_dir, &lock_path, &hints).expect("write lock");
+        assert_eq!(written.schema_version, 1);
+        assert_eq!(written.entries.len(), 2);
+
+        let loaded = load_skills_lockfile(&lock_path).expect("load lock");
+        assert_eq!(loaded, written);
+    }
+
+    #[tokio::test]
+    async fn integration_remote_install_lockfile_write_and_sync_succeeds() {
+        let server = MockServer::start();
+        let body = "remote lock skill";
+        let checksum = format!("{:x}", Sha256::digest(body.as_bytes()));
+        let remote = server.mock(|when, then| {
+            when.method(GET).path("/skills/lock.md");
+            then.status(200).body(body);
+        });
+
+        let temp = tempdir().expect("tempdir");
+        let skills_dir = temp.path().join("skills");
+        let sources = vec![RemoteSkillSource {
+            url: format!("{}/skills/lock.md", server.base_url()),
+            sha256: Some(checksum),
+            signature: None,
+            signer_public_key: None,
+        }];
+        let report = install_remote_skills(&sources, &skills_dir)
+            .await
+            .expect("install remote");
+        assert_eq!(report.installed, 1);
+
+        let hints = build_remote_skill_lock_hints(&sources).expect("hints");
+        let lock_path = default_skills_lock_path(&skills_dir);
+        let lockfile = write_skills_lockfile(&skills_dir, &lock_path, &hints).expect("write lock");
+        assert_eq!(lockfile.entries.len(), 1);
+        assert_eq!(lockfile.entries[0].file, "lock.md");
+
+        let sync = sync_skills_with_lockfile(&skills_dir, &lock_path).expect("sync");
+        assert!(sync.in_sync());
+        remote.assert_calls(1);
+    }
+
+    #[test]
+    fn regression_sync_skills_with_lockfile_reports_missing_extra_and_changed_files() {
+        let temp = tempdir().expect("tempdir");
+        let skills_dir = temp.path().join("skills");
+        std::fs::create_dir_all(&skills_dir).expect("mkdir");
+        std::fs::write(skills_dir.join("a.md"), "one").expect("write a");
+        std::fs::write(skills_dir.join("b.md"), "two").expect("write b");
+
+        let lock_path = default_skills_lock_path(&skills_dir);
+        let lock = write_skills_lockfile(&skills_dir, &lock_path, &[]).expect("write lock");
+        assert_eq!(lock.entries.len(), 2);
+
+        std::fs::write(skills_dir.join("a.md"), "one changed").expect("update a");
+        std::fs::remove_file(skills_dir.join("b.md")).expect("remove b");
+        std::fs::write(skills_dir.join("c.md"), "three").expect("write c");
+
+        let report = sync_skills_with_lockfile(&skills_dir, &lock_path).expect("sync");
+        assert!(!report.in_sync());
+        assert_eq!(report.changed, vec!["a.md".to_string()]);
+        assert_eq!(report.missing, vec!["b.md".to_string()]);
+        assert_eq!(report.extra, vec!["c.md".to_string()]);
+    }
+
+    #[test]
+    fn regression_load_skills_lockfile_rejects_unsupported_schema_version() {
+        let temp = tempdir().expect("tempdir");
+        let lock_path = temp.path().join("skills.lock.json");
+        std::fs::write(
+            &lock_path,
+            serde_json::json!({
+                "schema_version": 99,
+                "entries": []
+            })
+            .to_string(),
+        )
+        .expect("write lock");
+
+        let error = load_skills_lockfile(&lock_path).expect_err("unsupported schema should fail");
+        assert!(error
+            .to_string()
+            .contains("unsupported skills lockfile schema_version"));
     }
 
     #[test]
