@@ -31,9 +31,11 @@ use tracing_subscriber::EnvFilter;
 
 use crate::session::{SessionImportMode, SessionStore};
 use crate::skills::{
-    augment_system_prompt, fetch_registry_manifest, install_remote_skills, install_skills,
-    load_catalog, resolve_registry_skill_sources, resolve_remote_skill_sources,
-    resolve_selected_skills, TrustedKey,
+    augment_system_prompt, build_local_skill_lock_hints, build_registry_skill_lock_hints,
+    build_remote_skill_lock_hints, default_skills_lock_path, fetch_registry_manifest,
+    install_remote_skills, install_skills, load_catalog, resolve_registry_skill_sources,
+    resolve_remote_skill_sources, resolve_selected_skills, sync_skills_with_lockfile,
+    write_skills_lockfile, TrustedKey,
 };
 use crate::tools::{
     tool_policy_preset_name, BashCommandProfile, OsSandboxMode, ToolPolicy, ToolPolicyPreset,
@@ -309,6 +311,29 @@ struct Cli {
         help = "Require selected registry skills to provide signature metadata and validate against trusted roots"
     )]
     require_signed_skills: bool,
+
+    #[arg(
+        long = "skills-lock-file",
+        env = "PI_SKILLS_LOCK_FILE",
+        help = "Path to skills lockfile (defaults to <skills-dir>/skills.lock.json)"
+    )]
+    skills_lock_file: Option<PathBuf>,
+
+    #[arg(
+        long = "skills-lock-write",
+        env = "PI_SKILLS_LOCK_WRITE",
+        default_value_t = false,
+        help = "Write/update skills lockfile from the current installed skills"
+    )]
+    skills_lock_write: bool,
+
+    #[arg(
+        long = "skills-sync",
+        env = "PI_SKILLS_SYNC",
+        default_value_t = false,
+        help = "Verify installed skills match the lockfile and fail on drift"
+    )]
+    skills_sync: bool,
 
     #[arg(long, env = "PI_MAX_TURNS", default_value_t = 8)]
     max_turns: usize,
@@ -1238,8 +1263,10 @@ async fn main() -> Result<()> {
     let fallback_model_refs = resolve_fallback_models(&cli, &model_ref)?;
 
     let client = build_client_with_fallbacks(&cli, &model_ref, &fallback_model_refs)?;
+    let mut skill_lock_hints = Vec::new();
     if !cli.install_skill.is_empty() {
         let report = install_skills(&cli.install_skill, &cli.skills_dir)?;
+        skill_lock_hints.extend(build_local_skill_lock_hints(&cli.install_skill)?);
         println!(
             "skills install: installed={} updated={} skipped={}",
             report.installed, report.updated, report.skipped
@@ -1249,6 +1276,7 @@ async fn main() -> Result<()> {
         resolve_remote_skill_sources(&cli.install_skill_url, &cli.install_skill_sha256)?;
     if !remote_skill_sources.is_empty() {
         let report = install_remote_skills(&remote_skill_sources, &cli.skills_dir).await?;
+        skill_lock_hints.extend(build_remote_skill_lock_hints(&remote_skill_sources)?);
         println!(
             "remote skills install: installed={} updated={} skipped={}",
             report.installed, report.updated, report.skipped
@@ -1268,10 +1296,62 @@ async fn main() -> Result<()> {
             cli.require_signed_skills,
         )?;
         let report = install_remote_skills(&sources, &cli.skills_dir).await?;
+        skill_lock_hints.extend(build_registry_skill_lock_hints(
+            registry_url,
+            &cli.install_skill_from_registry,
+            &sources,
+        )?);
         println!(
             "registry skills install: installed={} updated={} skipped={}",
             report.installed, report.updated, report.skipped
         );
+    }
+    let skills_lock_path = cli
+        .skills_lock_file
+        .clone()
+        .unwrap_or_else(|| default_skills_lock_path(&cli.skills_dir));
+    if cli.skills_lock_write {
+        let lockfile =
+            write_skills_lockfile(&cli.skills_dir, &skills_lock_path, &skill_lock_hints)?;
+        println!(
+            "skills lock write: path={} entries={}",
+            skills_lock_path.display(),
+            lockfile.entries.len()
+        );
+    }
+    if cli.skills_sync {
+        let report = sync_skills_with_lockfile(&cli.skills_dir, &skills_lock_path)?;
+        if report.in_sync() {
+            println!(
+                "skills sync: in-sync path={} expected_entries={} actual_entries={}",
+                skills_lock_path.display(),
+                report.expected_entries,
+                report.actual_entries
+            );
+        } else {
+            let missing = if report.missing.is_empty() {
+                "none".to_string()
+            } else {
+                report.missing.join(",")
+            };
+            let extra = if report.extra.is_empty() {
+                "none".to_string()
+            } else {
+                report.extra.join(",")
+            };
+            let changed = if report.changed.is_empty() {
+                "none".to_string()
+            } else {
+                report.changed.join(",")
+            };
+            bail!(
+                "skills sync drift detected: path={} missing={} extra={} changed={}",
+                skills_lock_path.display(),
+                missing,
+                extra,
+                changed
+            );
+        }
     }
     let base_system_prompt = resolve_system_prompt(&cli)?;
     let catalog = load_catalog(&cli.skills_dir)
@@ -2971,6 +3051,9 @@ mod tests {
             skill_trust_revoke: vec![],
             skill_trust_rotate: vec![],
             require_signed_skills: false,
+            skills_lock_file: None,
+            skills_lock_write: false,
+            skills_sync: false,
             max_turns: 8,
             request_timeout_ms: 120_000,
             provider_max_retries: 2,
@@ -3052,6 +3135,31 @@ mod tests {
         assert_eq!(cli.provider_max_retries, 5);
         assert_eq!(cli.provider_retry_budget_ms, 1500);
         assert!(!cli.provider_retry_jitter);
+    }
+
+    #[test]
+    fn unit_cli_skills_lock_flags_default_to_disabled() {
+        let cli = Cli::parse_from(["pi-rs"]);
+        assert!(!cli.skills_lock_write);
+        assert!(!cli.skills_sync);
+        assert!(cli.skills_lock_file.is_none());
+    }
+
+    #[test]
+    fn functional_cli_skills_lock_flags_accept_explicit_values() {
+        let cli = Cli::parse_from([
+            "pi-rs",
+            "--skills-lock-write",
+            "--skills-sync",
+            "--skills-lock-file",
+            "custom/skills.lock.json",
+        ]);
+        assert!(cli.skills_lock_write);
+        assert!(cli.skills_sync);
+        assert_eq!(
+            cli.skills_lock_file,
+            Some(PathBuf::from("custom/skills.lock.json"))
+        );
     }
 
     #[test]
