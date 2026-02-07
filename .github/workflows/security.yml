@@ -1,22 +1,28 @@
 name: Security
 
 on:
-  pull_request:
   push:
     branches:
       - master
       - main
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
   schedule:
     - cron: "0 7 * * 1"
   workflow_dispatch:
+
+concurrency:
+  group: security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
   security-events: write
 
 jobs:
-  cargo-audit:
-    name: cargo-audit
+  security-checks:
+    name: cargo-audit + cargo-deny
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -35,19 +41,6 @@ jobs:
 
       - name: Run cargo-audit
         run: cargo audit
-
-  cargo-deny:
-    name: cargo-deny
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Cargo
-        uses: Swatinem/rust-cache@v2
 
       - name: Install cargo-deny
         uses: taiki-e/install-action@v2
