@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "name": "slack_socket_transient_and_duplicate",
+  "transport": "slack_socket",
+  "description": "Replay fixture covering transient failure probe and duplicate message event delivery.",
+  "events": [
+    {
+      "sequence": 10,
+      "event_key": "slack-ev-1",
+      "channel": "C1",
+      "kind": "app_mention",
+      "payload": {
+        "text": "<@UBOT> status",
+        "event_id": "Ev1"
+      }
+    },
+    {
+      "sequence": 20,
+      "event_key": "slack-ev-2",
+      "channel": "D1",
+      "kind": "message",
+      "payload": {
+        "text": "help",
+        "event_id": "Ev2"
+      },
+      "faults": [
+        "transient_failure"
+      ]
+    },
+    {
+      "sequence": 30,
+      "event_key": "slack-ev-3",
+      "channel": "C1",
+      "kind": "app_mention",
+      "payload": {
+        "text": "<@UBOT> run",
+        "event_id": "Ev3"
+      },
+      "faults": [
+        "duplicate"
+      ]
+    }
+  ]
+}
