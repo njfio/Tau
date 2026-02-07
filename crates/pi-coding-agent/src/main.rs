@@ -19,6 +19,7 @@ mod provider_fallback;
 mod runtime_cli_validation;
 mod runtime_loop;
 mod runtime_output;
+mod runtime_types;
 mod session;
 mod session_commands;
 mod session_graph_commands;
@@ -150,6 +151,11 @@ pub(crate) use crate::runtime_loop::{
 pub(crate) use crate::runtime_output::stream_text_chunks;
 pub(crate) use crate::runtime_output::{
     event_to_json, persist_messages, print_assistant_messages, summarize_message,
+};
+pub(crate) use crate::runtime_types::{
+    AuthCommandConfig, CommandExecutionContext, DoctorCommandConfig, DoctorProviderKeyStatus,
+    ProfileAuthDefaults, ProfileDefaults, ProfilePolicyDefaults, ProfileSessionDefaults,
+    RenderOptions, SessionRuntime, SkillsSyncCommandConfig,
 };
 use crate::session::{SessionImportMode, SessionStore};
 #[cfg(test)]
@@ -1231,131 +1237,6 @@ struct Cli {
         help = "Require read/edit targets and existing write targets to be regular files (reject symlink targets)"
     )]
     enforce_regular_files: bool,
-}
-
-#[derive(Debug)]
-struct SessionRuntime {
-    store: SessionStore,
-    active_head: Option<u64>,
-}
-
-#[derive(Debug, Clone)]
-struct SkillsSyncCommandConfig {
-    skills_dir: PathBuf,
-    default_lock_path: PathBuf,
-    default_trust_root_path: Option<PathBuf>,
-    doctor_config: DoctorCommandConfig,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct DoctorProviderKeyStatus {
-    provider_kind: Provider,
-    provider: String,
-    key_env_var: String,
-    present: bool,
-    auth_mode: ProviderAuthMethod,
-    mode_supported: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct DoctorCommandConfig {
-    model: String,
-    provider_keys: Vec<DoctorProviderKeyStatus>,
-    session_enabled: bool,
-    session_path: PathBuf,
-    skills_dir: PathBuf,
-    skills_lock_path: PathBuf,
-    trust_root_path: Option<PathBuf>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-struct ProfileSessionDefaults {
-    enabled: bool,
-    path: Option<String>,
-    import_mode: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-struct ProfilePolicyDefaults {
-    tool_policy_preset: String,
-    bash_profile: String,
-    bash_dry_run: bool,
-    os_sandbox_mode: String,
-    enforce_regular_files: bool,
-    bash_timeout_ms: u64,
-    max_command_length: usize,
-    max_tool_output_bytes: usize,
-    max_file_read_bytes: usize,
-    max_file_write_bytes: usize,
-    allow_command_newlines: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-struct ProfileAuthDefaults {
-    #[serde(default = "default_provider_auth_method")]
-    openai: ProviderAuthMethod,
-    #[serde(default = "default_provider_auth_method")]
-    anthropic: ProviderAuthMethod,
-    #[serde(default = "default_provider_auth_method")]
-    google: ProviderAuthMethod,
-}
-
-impl Default for ProfileAuthDefaults {
-    fn default() -> Self {
-        Self {
-            openai: default_provider_auth_method(),
-            anthropic: default_provider_auth_method(),
-            google: default_provider_auth_method(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-struct ProfileDefaults {
-    model: String,
-    fallback_models: Vec<String>,
-    session: ProfileSessionDefaults,
-    policy: ProfilePolicyDefaults,
-    #[serde(default)]
-    auth: ProfileAuthDefaults,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct RenderOptions {
-    stream_output: bool,
-    stream_delay_ms: u64,
-}
-
-impl RenderOptions {
-    fn from_cli(cli: &Cli) -> Self {
-        Self {
-            stream_output: cli.stream_output,
-            stream_delay_ms: cli.stream_delay_ms,
-        }
-    }
-}
-
-#[derive(Clone, Copy)]
-struct CommandExecutionContext<'a> {
-    tool_policy_json: &'a serde_json::Value,
-    session_import_mode: SessionImportMode,
-    profile_defaults: &'a ProfileDefaults,
-    skills_command_config: &'a SkillsSyncCommandConfig,
-    auth_command_config: &'a AuthCommandConfig,
-}
-
-#[derive(Debug, Clone)]
-struct AuthCommandConfig {
-    credential_store: PathBuf,
-    credential_store_key: Option<String>,
-    credential_store_encryption: CredentialStoreEncryptionMode,
-    api_key: Option<String>,
-    openai_api_key: Option<String>,
-    anthropic_api_key: Option<String>,
-    google_api_key: Option<String>,
-    openai_auth_mode: ProviderAuthMethod,
-    anthropic_auth_mode: ProviderAuthMethod,
-    google_auth_mode: ProviderAuthMethod,
 }
 
 #[tokio::main]
