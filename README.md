@@ -107,6 +107,15 @@ Run interactive mode:
 cargo run -p pi-coding-agent -- --model openai/gpt-4o-mini
 ```
 
+Run interactive mode with plan-first orchestration on each user turn:
+
+```bash
+cargo run -p pi-coding-agent -- \
+  --model openai/gpt-4o-mini \
+  --orchestrator-mode plan-first \
+  --orchestrator-max-plan-steps 8
+```
+
 Use Anthropic:
 
 ```bash
