@@ -5,6 +5,8 @@ mod session;
 mod skills;
 mod slack;
 mod tools;
+#[cfg(test)]
+mod transport_conformance;
 
 use std::{
     collections::{BTreeMap, HashMap, HashSet},

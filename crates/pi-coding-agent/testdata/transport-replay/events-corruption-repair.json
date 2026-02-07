@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "name": "event_scheduler_corruption_repair",
+  "transport": "event_scheduler",
+  "description": "Replay fixture covering transient scheduler failure and store repair markers.",
+  "events": [
+    {
+      "sequence": 10,
+      "event_key": "event-1",
+      "channel": "github/owner/repo#101",
+      "kind": "immediate",
+      "payload": {
+        "prompt": "Run nightly audit"
+      },
+      "faults": [
+        "transient_failure"
+      ]
+    },
+    {
+      "sequence": 20,
+      "event_key": "event-2",
+      "channel": "slack/C1",
+      "kind": "periodic",
+      "payload": {
+        "cron": "0 * * * *",
+        "timezone": "UTC"
+      },
+      "faults": [
+        "store_corruption"
+      ]
+    },
+    {
+      "sequence": 30,
+      "event_key": "event-3",
+      "channel": "github/owner/repo#101",
+      "kind": "at",
+      "payload": {
+        "at_unix_ms": 1760000000000
+      }
+    }
+  ]
+}

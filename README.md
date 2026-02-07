@@ -61,6 +61,7 @@ cargo bench -p pi-tui
 This repository includes GitHub Actions workflows for:
 
 - CI (`.github/workflows/ci.yml`): Linux quality gate (fmt + clippy + workspace tests) on PR/push, cross-platform compile smoke on push/manual, optional manual coverage run
+  - Includes transport replay conformance gate (`transport_conformance_*`) for GitHub/Slack/scheduler fixtures when transport files change
 - Security (`.github/workflows/security.yml`): consolidated `cargo audit` + `cargo deny` on default-branch pushes, weekly schedule, and manual runs
 - Releases (`.github/workflows/release.yml`): build and publish `pi-coding-agent` assets on `v*` tags
 
