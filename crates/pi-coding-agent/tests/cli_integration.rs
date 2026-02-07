@@ -501,6 +501,163 @@ fn regression_interactive_session_stats_command_with_args_prints_usage_and_conti
 }
 
 #[test]
+fn integration_interactive_session_diff_command_reports_shared_and_divergent_lineage() {
+    let temp = tempdir().expect("tempdir");
+    let session = temp.path().join("session-diff.jsonl");
+    let raw = [
+        json!({"record_type":"meta","schema_version":1}).to_string(),
+        json!({
+            "record_type":"entry",
+            "id":1,
+            "parent_id":null,
+            "message":{
+                "role":"system",
+                "content":[{"type":"text","text":"root"}],
+                "is_error":false
+            }
+        })
+        .to_string(),
+        json!({
+            "record_type":"entry",
+            "id":2,
+            "parent_id":1,
+            "message":{
+                "role":"user",
+                "content":[{"type":"text","text":"main"}],
+                "is_error":false
+            }
+        })
+        .to_string(),
+        json!({
+            "record_type":"entry",
+            "id":3,
+            "parent_id":1,
+            "message":{
+                "role":"user",
+                "content":[{"type":"text","text":"branch"}],
+                "is_error":false
+            }
+        })
+        .to_string(),
+    ]
+    .join("\n");
+    fs::write(&session, format!("{raw}\n")).expect("write session");
+
+    let mut cmd = binary_command();
+    cmd.args([
+        "--model",
+        "openai/gpt-4o-mini",
+        "--openai-api-key",
+        "test-openai-key",
+        "--session",
+        session.to_str().expect("utf8 path"),
+    ])
+    .write_stdin("/branch 2\n/session-diff\n/session-diff 2 3\n/quit\n");
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("switched to branch id 2"))
+        .stdout(predicate::str::contains(
+            "session diff: source=default left=2 right=3",
+        ))
+        .stdout(predicate::str::contains(
+            "summary: shared_depth=1 left_depth=2 right_depth=2 left_only=1 right_only=1",
+        ))
+        .stdout(predicate::str::contains(
+            "shared: id=1 parent=none role=system preview=root",
+        ))
+        .stdout(predicate::str::contains(
+            "left-only: id=2 parent=1 role=user preview=main",
+        ))
+        .stdout(predicate::str::contains(
+            "right-only: id=3 parent=1 role=user preview=branch",
+        ))
+        .stdout(predicate::str::contains(
+            "session diff: source=explicit left=2 right=3",
+        ));
+}
+
+#[test]
+fn regression_interactive_session_diff_command_with_args_prints_usage_and_continues() {
+    let temp = tempdir().expect("tempdir");
+    let session = temp.path().join("session-diff-usage.jsonl");
+    let raw = [
+        json!({"record_type":"meta","schema_version":1}).to_string(),
+        json!({
+            "record_type":"entry",
+            "id":1,
+            "parent_id":null,
+            "message":{
+                "role":"system",
+                "content":[{"type":"text","text":"root"}],
+                "is_error":false
+            }
+        })
+        .to_string(),
+    ]
+    .join("\n");
+    fs::write(&session, format!("{raw}\n")).expect("write session");
+
+    let mut cmd = binary_command();
+    cmd.args([
+        "--model",
+        "openai/gpt-4o-mini",
+        "--openai-api-key",
+        "test-openai-key",
+        "--session",
+        session.to_str().expect("utf8 path"),
+    ])
+    .write_stdin("/session-diff 1\n/help session-diff\n/quit\n");
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "usage: /session-diff [<left-id> <right-id>]",
+        ))
+        .stdout(predicate::str::contains("command: /session-diff"))
+        .stdout(predicate::str::contains(
+            "usage: /session-diff [<left-id> <right-id>]",
+        ));
+}
+
+#[test]
+fn regression_interactive_session_diff_command_unknown_ids_are_reported() {
+    let temp = tempdir().expect("tempdir");
+    let session = temp.path().join("session-diff-unknown.jsonl");
+    let raw = [
+        json!({"record_type":"meta","schema_version":1}).to_string(),
+        json!({
+            "record_type":"entry",
+            "id":1,
+            "parent_id":null,
+            "message":{
+                "role":"system",
+                "content":[{"type":"text","text":"root"}],
+                "is_error":false
+            }
+        })
+        .to_string(),
+    ]
+    .join("\n");
+    fs::write(&session, format!("{raw}\n")).expect("write session");
+
+    let mut cmd = binary_command();
+    cmd.args([
+        "--model",
+        "openai/gpt-4o-mini",
+        "--openai-api-key",
+        "test-openai-key",
+        "--session",
+        session.to_str().expect("utf8 path"),
+    ])
+    .write_stdin("/session-diff 999 1\n/quit\n");
+
+    cmd.assert().success().stdout(predicate::str::contains(
+        "session diff error: unknown left session id 999",
+    ));
+}
+
+#[test]
 fn integration_interactive_doctor_command_reports_runtime_diagnostics() {
     let temp = tempdir().expect("tempdir");
     let session = temp.path().join("doctor-session.jsonl");

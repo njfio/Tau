@@ -751,6 +751,14 @@ const COMMAND_SPECS: &[CommandSpec] = &[
         example: "/session-stats",
     },
     CommandSpec {
+        name: "/session-diff",
+        usage: "/session-diff [<left-id> <right-id>]",
+        description: "Compare two session lineage heads",
+        details:
+            "Defaults to active vs latest head when ids are omitted. Includes shared and divergent lineage rows with deterministic previews.",
+        example: "/session-diff 12 24",
+    },
+    CommandSpec {
         name: "/doctor",
         usage: "/doctor [--json]",
         description: "Run deterministic runtime diagnostics",
@@ -929,6 +937,7 @@ const COMMAND_NAMES: &[&str] = &[
     "/session",
     "/session-search",
     "/session-stats",
+    "/session-diff",
     "/doctor",
     "/session-graph-export",
     "/session-export",
@@ -2409,6 +2418,23 @@ fn handle_command_with_session_import_mode(
         return Ok(CommandAction::Continue);
     }
 
+    if command_name == "/session-diff" {
+        let Some(runtime) = session_runtime.as_ref() else {
+            println!("session is disabled");
+            return Ok(CommandAction::Continue);
+        };
+        let heads = match parse_session_diff_args(command_args) {
+            Ok(heads) => heads,
+            Err(_) => {
+                println!("usage: /session-diff [<left-id> <right-id>]");
+                return Ok(CommandAction::Continue);
+            }
+        };
+
+        println!("{}", execute_session_diff_command(runtime, heads));
+        return Ok(CommandAction::Continue);
+    }
+
     if command_name == "/doctor" {
         let format = match parse_doctor_command_args(command_args) {
             Ok(format) => format,
@@ -2939,6 +2965,203 @@ fn execute_session_search_command(runtime: &SessionRuntime, command_args: &str) 
         total_matches,
         SESSION_SEARCH_MAX_RESULTS,
     )
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SessionDiffEntry {
+    id: u64,
+    parent_id: Option<u64>,
+    role: String,
+    preview: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SessionDiffReport {
+    source: &'static str,
+    left_id: u64,
+    right_id: u64,
+    shared_depth: usize,
+    left_depth: usize,
+    right_depth: usize,
+    shared_entries: Vec<SessionDiffEntry>,
+    left_only_entries: Vec<SessionDiffEntry>,
+    right_only_entries: Vec<SessionDiffEntry>,
+}
+
+fn parse_session_diff_args(command_args: &str) -> Result<Option<(u64, u64)>> {
+    let tokens = command_args
+        .split_whitespace()
+        .filter(|token| !token.is_empty())
+        .collect::<Vec<_>>();
+    if tokens.is_empty() {
+        return Ok(None);
+    }
+    if tokens.len() != 2 {
+        bail!("usage: /session-diff [<left-id> <right-id>]");
+    }
+    let left = tokens[0].parse::<u64>().with_context(|| {
+        format!(
+            "invalid left session id '{}'; expected an integer",
+            tokens[0]
+        )
+    })?;
+    let right = tokens[1].parse::<u64>().with_context(|| {
+        format!(
+            "invalid right session id '{}'; expected an integer",
+            tokens[1]
+        )
+    })?;
+    Ok(Some((left, right)))
+}
+
+fn session_diff_entry(entry: &crate::session::SessionEntry) -> SessionDiffEntry {
+    SessionDiffEntry {
+        id: entry.id,
+        parent_id: entry.parent_id,
+        role: session_message_role(&entry.message),
+        preview: session_message_preview(&entry.message),
+    }
+}
+
+fn shared_lineage_prefix_depth(
+    left: &[crate::session::SessionEntry],
+    right: &[crate::session::SessionEntry],
+) -> usize {
+    let mut depth = 0usize;
+    for (left_entry, right_entry) in left.iter().zip(right.iter()) {
+        if left_entry.id != right_entry.id {
+            break;
+        }
+        depth += 1;
+    }
+    depth
+}
+
+fn resolve_session_diff_heads(
+    runtime: &SessionRuntime,
+    heads: Option<(u64, u64)>,
+) -> Result<(u64, u64, &'static str)> {
+    match heads {
+        Some((left_id, right_id)) => {
+            if !runtime.store.contains(left_id) {
+                bail!("unknown left session id {left_id}");
+            }
+            if !runtime.store.contains(right_id) {
+                bail!("unknown right session id {right_id}");
+            }
+            Ok((left_id, right_id, "explicit"))
+        }
+        None => {
+            let left_id = runtime
+                .active_head
+                .ok_or_else(|| anyhow!("active head is not set"))?;
+            if !runtime.store.contains(left_id) {
+                bail!("active head {} does not exist in session", left_id);
+            }
+            let right_id = runtime
+                .store
+                .head_id()
+                .ok_or_else(|| anyhow!("latest head is not set"))?;
+            Ok((left_id, right_id, "default"))
+        }
+    }
+}
+
+fn compute_session_diff(
+    runtime: &SessionRuntime,
+    heads: Option<(u64, u64)>,
+) -> Result<SessionDiffReport> {
+    let (left_id, right_id, source) = resolve_session_diff_heads(runtime, heads)?;
+    let left_lineage = runtime.store.lineage_entries(Some(left_id))?;
+    let right_lineage = runtime.store.lineage_entries(Some(right_id))?;
+    let shared_depth = shared_lineage_prefix_depth(&left_lineage, &right_lineage);
+
+    Ok(SessionDiffReport {
+        source,
+        left_id,
+        right_id,
+        shared_depth,
+        left_depth: left_lineage.len(),
+        right_depth: right_lineage.len(),
+        shared_entries: left_lineage
+            .iter()
+            .take(shared_depth)
+            .map(session_diff_entry)
+            .collect(),
+        left_only_entries: left_lineage
+            .iter()
+            .skip(shared_depth)
+            .map(session_diff_entry)
+            .collect(),
+        right_only_entries: right_lineage
+            .iter()
+            .skip(shared_depth)
+            .map(session_diff_entry)
+            .collect(),
+    })
+}
+
+fn render_session_diff_entry(prefix: &str, entry: &SessionDiffEntry) -> String {
+    format!(
+        "{prefix}: id={} parent={} role={} preview={}",
+        entry.id,
+        entry
+            .parent_id
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "none".to_string()),
+        entry.role,
+        entry.preview
+    )
+}
+
+fn render_session_diff(report: &SessionDiffReport) -> String {
+    let mut lines = vec![
+        format!(
+            "session diff: source={} left={} right={}",
+            report.source, report.left_id, report.right_id
+        ),
+        format!(
+            "summary: shared_depth={} left_depth={} right_depth={} left_only={} right_only={}",
+            report.shared_depth,
+            report.left_depth,
+            report.right_depth,
+            report.left_only_entries.len(),
+            report.right_only_entries.len()
+        ),
+    ];
+
+    if report.shared_entries.is_empty() {
+        lines.push("shared: none".to_string());
+    } else {
+        for entry in &report.shared_entries {
+            lines.push(render_session_diff_entry("shared", entry));
+        }
+    }
+
+    if report.left_only_entries.is_empty() {
+        lines.push("left-only: none".to_string());
+    } else {
+        for entry in &report.left_only_entries {
+            lines.push(render_session_diff_entry("left-only", entry));
+        }
+    }
+
+    if report.right_only_entries.is_empty() {
+        lines.push("right-only: none".to_string());
+    } else {
+        for entry in &report.right_only_entries {
+            lines.push(render_session_diff_entry("right-only", entry));
+        }
+    }
+
+    lines.join("\n")
+}
+
+fn execute_session_diff_command(runtime: &SessionRuntime, heads: Option<(u64, u64)>) -> String {
+    match compute_session_diff(runtime, heads) {
+        Ok(report) => render_session_diff(&report),
+        Err(error) => format!("session diff error: {error}"),
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -6274,8 +6497,9 @@ mod tests {
         default_profile_store_path, default_skills_lock_path, derive_skills_prune_candidates,
         ensure_non_empty_text, escape_graph_label, execute_branch_alias_command,
         execute_command_file, execute_doctor_command, execute_macro_command,
-        execute_profile_command, execute_session_graph_export_command,
-        execute_session_search_command, execute_session_stats_command, execute_skills_list_command,
+        execute_profile_command, execute_session_diff_command,
+        execute_session_graph_export_command, execute_session_search_command,
+        execute_session_stats_command, execute_skills_list_command,
         execute_skills_lock_diff_command, execute_skills_lock_write_command,
         execute_skills_prune_command, execute_skills_search_command, execute_skills_show_command,
         execute_skills_sync_command, execute_skills_trust_list_command, format_id_list,
@@ -6283,33 +6507,35 @@ mod tests {
         initialize_session, is_retryable_provider_error, load_branch_aliases, load_macro_file,
         load_profile_store, parse_branch_alias_command, parse_command, parse_command_file,
         parse_doctor_command_args, parse_macro_command, parse_profile_command,
-        parse_sandbox_command_tokens, parse_session_search_args, parse_session_stats_args,
-        parse_skills_lock_diff_args, parse_skills_prune_args, parse_skills_search_args,
-        parse_skills_trust_list_args, parse_trust_rotation_spec, parse_trusted_root_spec,
-        percentile_duration_ms, render_audit_summary, render_command_help, render_doctor_report,
-        render_doctor_report_json, render_help_overview, render_macro_list, render_macro_show,
-        render_profile_diffs, render_profile_list, render_profile_show, render_session_graph_dot,
-        render_session_graph_mermaid, render_session_stats, render_session_stats_json,
-        render_skills_list, render_skills_lock_diff_drift, render_skills_lock_diff_in_sync,
+        parse_sandbox_command_tokens, parse_session_diff_args, parse_session_search_args,
+        parse_session_stats_args, parse_skills_lock_diff_args, parse_skills_prune_args,
+        parse_skills_search_args, parse_skills_trust_list_args, parse_trust_rotation_spec,
+        parse_trusted_root_spec, percentile_duration_ms, render_audit_summary, render_command_help,
+        render_doctor_report, render_doctor_report_json, render_help_overview, render_macro_list,
+        render_macro_show, render_profile_diffs, render_profile_list, render_profile_show,
+        render_session_diff, render_session_graph_dot, render_session_graph_mermaid,
+        render_session_stats, render_session_stats_json, render_skills_list,
+        render_skills_lock_diff_drift, render_skills_lock_diff_in_sync,
         render_skills_lock_write_success, render_skills_search, render_skills_show,
         render_skills_sync_drift_details, render_skills_trust_list, resolve_fallback_models,
         resolve_prompt_input, resolve_prunable_skill_file_name, resolve_session_graph_format,
         resolve_skill_trust_roots, resolve_skills_lock_path, resolve_system_prompt,
         run_doctor_checks, run_prompt_with_cancellation, save_branch_aliases, save_macro_file,
-        save_profile_store, search_session_entries, session_message_preview, stream_text_chunks,
-        summarize_audit_file, tool_audit_event_json, tool_policy_to_json, trust_record_status,
-        unknown_command_message, validate_branch_alias_name, validate_macro_command_entry,
-        validate_macro_name, validate_profile_name, validate_session_file,
-        validate_skills_prune_file_name, BranchAliasCommand, BranchAliasFile, Cli, CliBashProfile,
-        CliCommandFileErrorMode, CliOsSandboxMode, CliSessionImportMode, CliToolPolicyPreset,
-        ClientRoute, CommandAction, CommandExecutionContext, CommandFileEntry, CommandFileReport,
-        DoctorCheckResult, DoctorCommandConfig, DoctorCommandOutputFormat, DoctorProviderKeyStatus,
-        DoctorStatus, FallbackRoutingClient, MacroCommand, MacroFile, ProfileCommand,
-        ProfileDefaults, ProfileStoreFile, PromptRunStatus, PromptTelemetryLogger, RenderOptions,
-        SessionGraphFormat, SessionRuntime, SessionStats, SessionStatsOutputFormat,
-        SkillsPruneMode, SkillsSyncCommandConfig, ToolAuditLogger, TrustedRootRecord,
-        BRANCH_ALIAS_SCHEMA_VERSION, BRANCH_ALIAS_USAGE, MACRO_SCHEMA_VERSION, MACRO_USAGE,
-        PROFILE_SCHEMA_VERSION, PROFILE_USAGE, SESSION_SEARCH_MAX_RESULTS,
+        save_profile_store, search_session_entries, session_message_preview,
+        shared_lineage_prefix_depth, stream_text_chunks, summarize_audit_file,
+        tool_audit_event_json, tool_policy_to_json, trust_record_status, unknown_command_message,
+        validate_branch_alias_name, validate_macro_command_entry, validate_macro_name,
+        validate_profile_name, validate_session_file, validate_skills_prune_file_name,
+        BranchAliasCommand, BranchAliasFile, Cli, CliBashProfile, CliCommandFileErrorMode,
+        CliOsSandboxMode, CliSessionImportMode, CliToolPolicyPreset, ClientRoute, CommandAction,
+        CommandExecutionContext, CommandFileEntry, CommandFileReport, DoctorCheckResult,
+        DoctorCommandConfig, DoctorCommandOutputFormat, DoctorProviderKeyStatus, DoctorStatus,
+        FallbackRoutingClient, MacroCommand, MacroFile, ProfileCommand, ProfileDefaults,
+        ProfileStoreFile, PromptRunStatus, PromptTelemetryLogger, RenderOptions, SessionDiffEntry,
+        SessionDiffReport, SessionGraphFormat, SessionRuntime, SessionStats,
+        SessionStatsOutputFormat, SkillsPruneMode, SkillsSyncCommandConfig, ToolAuditLogger,
+        TrustedRootRecord, BRANCH_ALIAS_SCHEMA_VERSION, BRANCH_ALIAS_USAGE, MACRO_SCHEMA_VERSION,
+        MACRO_USAGE, PROFILE_SCHEMA_VERSION, PROFILE_USAGE, SESSION_SEARCH_MAX_RESULTS,
         SESSION_SEARCH_PREVIEW_CHARS, SKILLS_PRUNE_USAGE, SKILLS_TRUST_LIST_USAGE,
     };
     use crate::resolve_api_key;
@@ -6948,6 +7174,220 @@ mod tests {
         let main_index = output.find("result: id=2").expect("main result");
         let branch_index = output.find("result: id=3").expect("branch result");
         assert!(main_index < branch_index);
+    }
+
+    #[test]
+    fn unit_parse_session_diff_args_supports_default_and_explicit_heads() {
+        assert_eq!(parse_session_diff_args("").expect("default heads"), None);
+        assert_eq!(
+            parse_session_diff_args(" 12  24 ").expect("explicit heads"),
+            Some((12, 24))
+        );
+    }
+
+    #[test]
+    fn regression_parse_session_diff_args_rejects_invalid_shapes() {
+        let usage = parse_session_diff_args("12").expect_err("single head should fail");
+        assert!(usage
+            .to_string()
+            .contains("usage: /session-diff [<left-id> <right-id>]"));
+
+        let left_error = parse_session_diff_args("left 2").expect_err("invalid left head");
+        assert!(left_error
+            .to_string()
+            .contains("invalid left session id 'left'"));
+    }
+
+    #[test]
+    fn unit_shared_lineage_prefix_depth_returns_common_ancestor_depth() {
+        let left = vec![
+            crate::session::SessionEntry {
+                id: 1,
+                parent_id: None,
+                message: Message::system("root"),
+            },
+            crate::session::SessionEntry {
+                id: 2,
+                parent_id: Some(1),
+                message: Message::user("shared"),
+            },
+            crate::session::SessionEntry {
+                id: 4,
+                parent_id: Some(2),
+                message: Message::assistant_text("left"),
+            },
+        ];
+        let right = vec![
+            crate::session::SessionEntry {
+                id: 1,
+                parent_id: None,
+                message: Message::system("root"),
+            },
+            crate::session::SessionEntry {
+                id: 2,
+                parent_id: Some(1),
+                message: Message::user("shared"),
+            },
+            crate::session::SessionEntry {
+                id: 5,
+                parent_id: Some(2),
+                message: Message::assistant_text("right"),
+            },
+        ];
+
+        assert_eq!(shared_lineage_prefix_depth(&left, &right), 2);
+    }
+
+    #[test]
+    fn functional_render_session_diff_includes_summary_and_lineage_rows() {
+        let report = SessionDiffReport {
+            source: "explicit",
+            left_id: 4,
+            right_id: 5,
+            shared_depth: 2,
+            left_depth: 3,
+            right_depth: 3,
+            shared_entries: vec![SessionDiffEntry {
+                id: 1,
+                parent_id: None,
+                role: "system".to_string(),
+                preview: "root".to_string(),
+            }],
+            left_only_entries: vec![SessionDiffEntry {
+                id: 4,
+                parent_id: Some(2),
+                role: "assistant".to_string(),
+                preview: "left path".to_string(),
+            }],
+            right_only_entries: vec![SessionDiffEntry {
+                id: 5,
+                parent_id: Some(2),
+                role: "assistant".to_string(),
+                preview: "right path".to_string(),
+            }],
+        };
+
+        let output = render_session_diff(&report);
+        assert!(output.contains("session diff: source=explicit left=4 right=5"));
+        assert!(output.contains(
+            "summary: shared_depth=2 left_depth=3 right_depth=3 left_only=1 right_only=1"
+        ));
+        assert!(output.contains("shared: id=1 parent=none role=system preview=root"));
+        assert!(output.contains("left-only: id=4 parent=2 role=assistant preview=left path"));
+        assert!(output.contains("right-only: id=5 parent=2 role=assistant preview=right path"));
+    }
+
+    #[test]
+    fn integration_execute_session_diff_command_defaults_to_active_and_latest_heads() {
+        let temp = tempdir().expect("tempdir");
+        let mut store = SessionStore::load(temp.path().join("session.jsonl")).expect("load");
+        let root = store
+            .append_messages(None, &[Message::system("sys")])
+            .expect("append root")
+            .expect("root id");
+        let main_head = store
+            .append_messages(Some(root), &[Message::user("main user")])
+            .expect("append main")
+            .expect("main head");
+        let latest_head = store
+            .append_messages(Some(root), &[Message::user("branch user")])
+            .expect("append branch")
+            .expect("branch head");
+        let runtime = SessionRuntime {
+            store,
+            active_head: Some(main_head),
+        };
+
+        let output = execute_session_diff_command(&runtime, None);
+        assert!(output.contains(&format!(
+            "session diff: source=default left={} right={}",
+            main_head, latest_head
+        )));
+        assert!(output.contains(
+            "summary: shared_depth=1 left_depth=2 right_depth=2 left_only=1 right_only=1"
+        ));
+        assert!(output.contains("shared: id=1 parent=none role=system preview=sys"));
+        assert!(output.contains("left-only: id=2 parent=1 role=user preview=main user"));
+        assert!(output.contains("right-only: id=3 parent=1 role=user preview=branch user"));
+    }
+
+    #[test]
+    fn integration_execute_session_diff_command_supports_explicit_identical_heads() {
+        let temp = tempdir().expect("tempdir");
+        let mut store = SessionStore::load(temp.path().join("session.jsonl")).expect("load");
+        let root = store
+            .append_messages(None, &[Message::system("sys")])
+            .expect("append root")
+            .expect("root id");
+        let head = store
+            .append_messages(Some(root), &[Message::user("user")])
+            .expect("append user")
+            .expect("head id");
+        let runtime = SessionRuntime {
+            store,
+            active_head: Some(head),
+        };
+
+        let output = execute_session_diff_command(&runtime, Some((head, head)));
+        assert!(output.contains("summary: shared_depth=2 left_depth=2 right_depth=2"));
+        assert!(output.contains("left-only: none"));
+        assert!(output.contains("right-only: none"));
+    }
+
+    #[test]
+    fn regression_execute_session_diff_command_reports_unknown_ids() {
+        let temp = tempdir().expect("tempdir");
+        let mut store = SessionStore::load(temp.path().join("session.jsonl")).expect("load");
+        let root = store
+            .append_messages(None, &[Message::system("sys")])
+            .expect("append")
+            .expect("root");
+        let runtime = SessionRuntime {
+            store,
+            active_head: Some(root),
+        };
+
+        let output = execute_session_diff_command(&runtime, Some((999, root)));
+        assert!(output.contains("session diff error: unknown left session id 999"));
+    }
+
+    #[test]
+    fn regression_execute_session_diff_command_reports_empty_session_default_heads() {
+        let temp = tempdir().expect("tempdir");
+        let store = SessionStore::load(temp.path().join("session.jsonl")).expect("load");
+        let runtime = SessionRuntime {
+            store,
+            active_head: None,
+        };
+
+        let output = execute_session_diff_command(&runtime, None);
+        assert!(output.contains("session diff error: active head is not set"));
+    }
+
+    #[test]
+    fn regression_execute_session_diff_command_reports_malformed_graph() {
+        let temp = tempdir().expect("tempdir");
+        let session_path = temp.path().join("malformed-session.jsonl");
+        let raw = [
+            serde_json::json!({"record_type":"meta","schema_version":1}).to_string(),
+            serde_json::json!({
+                "record_type":"entry",
+                "id":1,
+                "parent_id":2,
+                "message": Message::system("orphan")
+            })
+            .to_string(),
+        ]
+        .join("\n");
+        std::fs::write(&session_path, format!("{raw}\n")).expect("write session");
+        let store = SessionStore::load(&session_path).expect("load session");
+        let runtime = SessionRuntime {
+            store,
+            active_head: Some(1),
+        };
+
+        let output = execute_session_diff_command(&runtime, None);
+        assert!(output.contains("session diff error: unknown session id 2"));
     }
 
     #[test]
@@ -8683,6 +9123,7 @@ mod tests {
         assert!(help.contains("/session"));
         assert!(help.contains("/session-search <query>"));
         assert!(help.contains("/session-stats"));
+        assert!(help.contains("/session-diff [<left-id> <right-id>]"));
         assert!(help.contains("/doctor"));
         assert!(help.contains("/session-graph-export <path>"));
         assert!(help.contains("/session-export <path>"));
@@ -8747,6 +9188,13 @@ mod tests {
         let help = render_command_help("session-stats").expect("render help");
         assert!(help.contains("command: /session-stats"));
         assert!(help.contains("usage: /session-stats [--json]"));
+    }
+
+    #[test]
+    fn functional_render_command_help_supports_session_diff_topic_without_slash() {
+        let help = render_command_help("session-diff").expect("render help");
+        assert!(help.contains("command: /session-diff"));
+        assert!(help.contains("usage: /session-diff [<left-id> <right-id>]"));
     }
 
     #[test]

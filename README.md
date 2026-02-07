@@ -300,6 +300,8 @@ cargo run -p pi-coding-agent -- --model openai/gpt-4o-mini
 /session-search retry budget
 /session-stats
 /session-stats --json
+/session-diff
+/session-diff 12 24
 /doctor
 /doctor --json
 /session-graph-export /tmp/session-graph.mmd
