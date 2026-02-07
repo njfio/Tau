@@ -116,6 +116,8 @@ pub(crate) async fn run_local_runtime(config: LocalRuntimeConfig<'_>) -> Result<
     let interactive_config = InteractiveRuntimeConfig {
         turn_timeout_ms: cli.turn_timeout_ms,
         render_options,
+        orchestrator_mode: cli.orchestrator_mode,
+        orchestrator_max_plan_steps: cli.orchestrator_max_plan_steps,
         command_context,
     };
     if let Some(command_file_path) = cli.command_file.as_deref() {

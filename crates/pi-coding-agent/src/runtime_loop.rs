@@ -15,8 +15,8 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 
 use crate::{
     ensure_non_empty_text, handle_command_with_session_import_mode, persist_messages,
-    print_assistant_messages, Cli, CommandAction, CommandExecutionContext, RenderOptions,
-    SessionRuntime,
+    print_assistant_messages, run_plan_first_prompt, Cli, CliOrchestratorMode, CommandAction,
+    CommandExecutionContext, RenderOptions, SessionRuntime,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -30,6 +30,8 @@ pub(crate) enum PromptRunStatus {
 pub(crate) struct InteractiveRuntimeConfig<'a> {
     pub(crate) turn_timeout_ms: u64,
     pub(crate) render_options: RenderOptions,
+    pub(crate) orchestrator_mode: CliOrchestratorMode,
+    pub(crate) orchestrator_max_plan_steps: usize,
     pub(crate) command_context: CommandExecutionContext<'a>,
 }
 
@@ -94,16 +96,28 @@ pub(crate) async fn run_interactive(
             continue;
         }
 
-        let status = run_prompt_with_cancellation(
-            &mut agent,
-            &mut session_runtime,
-            trimmed,
-            config.turn_timeout_ms,
-            tokio::signal::ctrl_c(),
-            config.render_options,
-        )
-        .await?;
-        report_prompt_status(status);
+        if config.orchestrator_mode == CliOrchestratorMode::PlanFirst {
+            run_plan_first_prompt(
+                &mut agent,
+                &mut session_runtime,
+                trimmed,
+                config.turn_timeout_ms,
+                config.render_options,
+                config.orchestrator_max_plan_steps,
+            )
+            .await?;
+        } else {
+            let status = run_prompt_with_cancellation(
+                &mut agent,
+                &mut session_runtime,
+                trimmed,
+                config.turn_timeout_ms,
+                tokio::signal::ctrl_c(),
+                config.render_options,
+            )
+            .await?;
+            report_prompt_status(status);
+        }
     }
 
     Ok(())
