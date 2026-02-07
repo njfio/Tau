@@ -1,5 +1,6 @@
 mod atomic_io;
 mod auth_commands;
+mod auth_types;
 mod bootstrap_helpers;
 mod channel_store;
 mod channel_store_admin;
@@ -59,6 +60,7 @@ pub(crate) use crate::atomic_io::write_text_atomic;
 pub(crate) use crate::auth_commands::execute_auth_command;
 #[cfg(test)]
 pub(crate) use crate::auth_commands::{parse_auth_command, AuthCommand};
+pub(crate) use crate::auth_types::{CredentialStoreEncryptionMode, ProviderAuthMethod};
 pub(crate) use crate::bootstrap_helpers::{command_file_error_mode_label, init_tracing};
 use crate::channel_store::ChannelStore;
 pub(crate) use crate::channel_store_admin::execute_channel_store_admin_command;
@@ -229,33 +231,6 @@ pub(crate) use crate::trust_roots::{
 };
 use github_issues::{run_github_issues_bridge, GithubIssuesBridgeRuntimeConfig};
 use slack::{run_slack_bridge, SlackBridgeRuntimeConfig};
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-enum CredentialStoreEncryptionMode {
-    None,
-    Keyed,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-enum ProviderAuthMethod {
-    ApiKey,
-    OauthToken,
-    Adc,
-    SessionToken,
-}
-
-impl ProviderAuthMethod {
-    fn as_str(self) -> &'static str {
-        match self {
-            ProviderAuthMethod::ApiKey => "api_key",
-            ProviderAuthMethod::OauthToken => "oauth_token",
-            ProviderAuthMethod::Adc => "adc",
-            ProviderAuthMethod::SessionToken => "session_token",
-        }
-    }
-}
 
 #[derive(Debug, Parser)]
 #[command(
