@@ -15,6 +15,7 @@ mod slack;
 mod tools;
 #[cfg(test)]
 mod transport_conformance;
+mod trust_roots;
 
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
@@ -127,15 +128,6 @@ use crate::skills::{
     resolve_remote_skill_sources, resolve_selected_skills, sync_skills_with_lockfile,
     write_skills_lockfile, SkillsDownloadOptions, TrustedKey,
 };
-pub(crate) use crate::skills_commands::{
-    apply_trust_root_mutations, execute_skills_list_command, execute_skills_lock_diff_command,
-    execute_skills_lock_write_command, execute_skills_prune_command, execute_skills_search_command,
-    execute_skills_show_command, execute_skills_sync_command, execute_skills_trust_add_command,
-    execute_skills_trust_list_command, execute_skills_trust_revoke_command,
-    execute_skills_trust_rotate_command, execute_skills_verify_command, load_trust_root_records,
-    parse_trust_rotation_spec, render_skills_lock_write_success, render_skills_sync_drift_details,
-    render_skills_sync_in_sync, save_trust_root_records,
-};
 #[cfg(test)]
 pub(crate) use crate::skills_commands::{
     derive_skills_prune_candidates, parse_skills_lock_diff_args, parse_skills_prune_args,
@@ -148,8 +140,20 @@ pub(crate) use crate::skills_commands::{
     SkillsVerifySummary, SkillsVerifyTrustSummary, SKILLS_PRUNE_USAGE, SKILLS_TRUST_ADD_USAGE,
     SKILLS_TRUST_LIST_USAGE, SKILLS_VERIFY_USAGE,
 };
+pub(crate) use crate::skills_commands::{
+    execute_skills_list_command, execute_skills_lock_diff_command,
+    execute_skills_lock_write_command, execute_skills_prune_command, execute_skills_search_command,
+    execute_skills_show_command, execute_skills_sync_command, execute_skills_trust_add_command,
+    execute_skills_trust_list_command, execute_skills_trust_revoke_command,
+    execute_skills_trust_rotate_command, execute_skills_verify_command,
+    render_skills_lock_write_success, render_skills_sync_drift_details, render_skills_sync_in_sync,
+};
 use crate::tools::{
     tool_policy_preset_name, BashCommandProfile, OsSandboxMode, ToolPolicy, ToolPolicyPreset,
+};
+pub(crate) use crate::trust_roots::{
+    apply_trust_root_mutation_specs, apply_trust_root_mutations, load_trust_root_records,
+    parse_trust_rotation_spec, parse_trusted_root_spec, save_trust_root_records, TrustedRootRecord,
 };
 use github_issues::{run_github_issues_bridge, GithubIssuesBridgeRuntimeConfig};
 use slack::{run_slack_bridge, SlackBridgeRuntimeConfig};
@@ -2389,32 +2393,6 @@ fn ensure_non_empty_text(text: String, source: String) -> Result<String> {
     Ok(text)
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct TrustedRootRecord {
-    id: String,
-    public_key: String,
-    #[serde(default)]
-    revoked: bool,
-    expires_unix: Option<u64>,
-    rotated_from: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(untagged)]
-enum TrustedRootFileFormat {
-    List(Vec<TrustedRootRecord>),
-    Wrapped { roots: Vec<TrustedRootRecord> },
-    Keys { keys: Vec<TrustedRootRecord> },
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub(crate) struct TrustMutationReport {
-    added: usize,
-    updated: usize,
-    revoked: usize,
-    rotated: usize,
-}
-
 fn resolve_skill_trust_roots(cli: &Cli) -> Result<Vec<TrustedKey>> {
     let has_store_mutation = !cli.skill_trust_add.is_empty()
         || !cli.skill_trust_revoke.is_empty()
@@ -2452,92 +2430,6 @@ fn resolve_skill_trust_roots(cli: &Cli) -> Result<Vec<TrustedKey>> {
     }
 
     Ok(roots)
-}
-
-fn parse_trusted_root_spec(raw: &str) -> Result<TrustedKey> {
-    let (id, public_key) = raw
-        .split_once('=')
-        .ok_or_else(|| anyhow!("invalid --skill-trust-root '{raw}', expected key_id=base64_key"))?;
-    let id = id.trim();
-    let public_key = public_key.trim();
-    if id.is_empty() || public_key.is_empty() {
-        bail!("invalid --skill-trust-root '{raw}', expected key_id=base64_key");
-    }
-    Ok(TrustedKey {
-        id: id.to_string(),
-        public_key: public_key.to_string(),
-    })
-}
-
-fn apply_trust_root_mutation_specs(
-    records: &mut Vec<TrustedRootRecord>,
-    add_specs: &[String],
-    revoke_ids: &[String],
-    rotate_specs: &[String],
-) -> Result<TrustMutationReport> {
-    let mut report = TrustMutationReport::default();
-
-    for spec in add_specs {
-        let key = parse_trusted_root_spec(spec)?;
-        if let Some(existing) = records.iter_mut().find(|record| record.id == key.id) {
-            existing.public_key = key.public_key;
-            existing.revoked = false;
-            existing.rotated_from = None;
-            report.updated += 1;
-        } else {
-            records.push(TrustedRootRecord {
-                id: key.id,
-                public_key: key.public_key,
-                revoked: false,
-                expires_unix: None,
-                rotated_from: None,
-            });
-            report.added += 1;
-        }
-    }
-
-    for id in revoke_ids {
-        let id = id.trim();
-        if id.is_empty() {
-            continue;
-        }
-        let record = records
-            .iter_mut()
-            .find(|record| record.id == id)
-            .ok_or_else(|| anyhow!("cannot revoke unknown trust key id '{}'", id))?;
-        if !record.revoked {
-            record.revoked = true;
-            report.revoked += 1;
-        }
-    }
-
-    for spec in rotate_specs {
-        let (old_id, new_key) = parse_trust_rotation_spec(spec)?;
-        let old = records
-            .iter_mut()
-            .find(|record| record.id == old_id)
-            .ok_or_else(|| anyhow!("cannot rotate unknown trust key id '{}'", old_id))?;
-        old.revoked = true;
-
-        if let Some(existing_new) = records.iter_mut().find(|record| record.id == new_key.id) {
-            existing_new.public_key = new_key.public_key;
-            existing_new.revoked = false;
-            existing_new.rotated_from = Some(old_id.clone());
-            report.updated += 1;
-        } else {
-            records.push(TrustedRootRecord {
-                id: new_key.id,
-                public_key: new_key.public_key,
-                revoked: false,
-                expires_unix: None,
-                rotated_from: Some(old_id.clone()),
-            });
-            report.added += 1;
-        }
-        report.rotated += 1;
-    }
-
-    Ok(report)
 }
 
 fn current_unix_timestamp() -> u64 {
