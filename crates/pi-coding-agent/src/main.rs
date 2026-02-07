@@ -3,6 +3,7 @@ mod auth_commands;
 mod bootstrap_helpers;
 mod channel_store;
 mod channel_store_admin;
+mod cli_types;
 mod commands;
 mod credentials;
 mod diagnostics_commands;
@@ -44,7 +45,7 @@ use std::{
 
 use anyhow::{anyhow, bail, Context, Result};
 use async_trait::async_trait;
-use clap::{ArgAction, Parser, ValueEnum};
+use clap::{ArgAction, Parser};
 use pi_agent_core::{Agent, AgentConfig, AgentEvent};
 use pi_ai::{
     AnthropicClient, AnthropicConfig, ChatRequest, ChatResponse, GoogleClient, GoogleConfig,
@@ -61,6 +62,10 @@ pub(crate) use crate::auth_commands::{parse_auth_command, AuthCommand};
 pub(crate) use crate::bootstrap_helpers::{command_file_error_mode_label, init_tracing};
 use crate::channel_store::ChannelStore;
 pub(crate) use crate::channel_store_admin::execute_channel_store_admin_command;
+pub(crate) use crate::cli_types::{
+    CliBashProfile, CliCommandFileErrorMode, CliCredentialStoreEncryptionMode, CliOsSandboxMode,
+    CliProviderAuthMode, CliSessionImportMode, CliToolPolicyPreset, CliWebhookSignatureAlgorithm,
+};
 #[cfg(test)]
 pub(crate) use crate::commands::handle_command;
 pub(crate) use crate::commands::{
@@ -97,7 +102,7 @@ pub(crate) use crate::diagnostics_commands::{
 };
 use crate::events::{
     ingest_webhook_immediate_event, run_event_scheduler, EventSchedulerConfig,
-    EventWebhookIngestConfig, WebhookSignatureAlgorithm,
+    EventWebhookIngestConfig,
 };
 pub(crate) use crate::macro_profile_commands::{
     default_macro_config_path, default_profile_store_path, execute_macro_command,
@@ -217,119 +222,13 @@ pub(crate) use crate::time_utils::{
 #[cfg(test)]
 pub(crate) use crate::tool_policy_config::parse_sandbox_command_tokens;
 pub(crate) use crate::tool_policy_config::{build_tool_policy, tool_policy_to_json};
-use crate::tools::{
-    tool_policy_preset_name, BashCommandProfile, OsSandboxMode, ToolPolicy, ToolPolicyPreset,
-};
+use crate::tools::{tool_policy_preset_name, ToolPolicy};
 pub(crate) use crate::trust_roots::{
     apply_trust_root_mutation_specs, apply_trust_root_mutations, load_trust_root_records,
     parse_trust_rotation_spec, parse_trusted_root_spec, save_trust_root_records, TrustedRootRecord,
 };
 use github_issues::{run_github_issues_bridge, GithubIssuesBridgeRuntimeConfig};
 use slack::{run_slack_bridge, SlackBridgeRuntimeConfig};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
-enum CliBashProfile {
-    Permissive,
-    Balanced,
-    Strict,
-}
-
-impl From<CliBashProfile> for BashCommandProfile {
-    fn from(value: CliBashProfile) -> Self {
-        match value {
-            CliBashProfile::Permissive => BashCommandProfile::Permissive,
-            CliBashProfile::Balanced => BashCommandProfile::Balanced,
-            CliBashProfile::Strict => BashCommandProfile::Strict,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
-enum CliOsSandboxMode {
-    Off,
-    Auto,
-    Force,
-}
-
-impl From<CliOsSandboxMode> for OsSandboxMode {
-    fn from(value: CliOsSandboxMode) -> Self {
-        match value {
-            CliOsSandboxMode::Off => OsSandboxMode::Off,
-            CliOsSandboxMode::Auto => OsSandboxMode::Auto,
-            CliOsSandboxMode::Force => OsSandboxMode::Force,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
-enum CliSessionImportMode {
-    Merge,
-    Replace,
-}
-
-impl From<CliSessionImportMode> for SessionImportMode {
-    fn from(value: CliSessionImportMode) -> Self {
-        match value {
-            CliSessionImportMode::Merge => SessionImportMode::Merge,
-            CliSessionImportMode::Replace => SessionImportMode::Replace,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
-enum CliCommandFileErrorMode {
-    FailFast,
-    ContinueOnError,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
-enum CliWebhookSignatureAlgorithm {
-    GithubSha256,
-    SlackV0,
-}
-
-impl From<CliWebhookSignatureAlgorithm> for WebhookSignatureAlgorithm {
-    fn from(value: CliWebhookSignatureAlgorithm) -> Self {
-        match value {
-            CliWebhookSignatureAlgorithm::GithubSha256 => WebhookSignatureAlgorithm::GithubSha256,
-            CliWebhookSignatureAlgorithm::SlackV0 => WebhookSignatureAlgorithm::SlackV0,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
-enum CliToolPolicyPreset {
-    Permissive,
-    Balanced,
-    Strict,
-    Hardened,
-}
-
-impl From<CliToolPolicyPreset> for ToolPolicyPreset {
-    fn from(value: CliToolPolicyPreset) -> Self {
-        match value {
-            CliToolPolicyPreset::Permissive => ToolPolicyPreset::Permissive,
-            CliToolPolicyPreset::Balanced => ToolPolicyPreset::Balanced,
-            CliToolPolicyPreset::Strict => ToolPolicyPreset::Strict,
-            CliToolPolicyPreset::Hardened => ToolPolicyPreset::Hardened,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
-enum CliProviderAuthMode {
-    ApiKey,
-    OauthToken,
-    Adc,
-    SessionToken,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
-enum CliCredentialStoreEncryptionMode {
-    Auto,
-    None,
-    Keyed,
-}
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -354,17 +253,6 @@ impl ProviderAuthMethod {
             ProviderAuthMethod::OauthToken => "oauth_token",
             ProviderAuthMethod::Adc => "adc",
             ProviderAuthMethod::SessionToken => "session_token",
-        }
-    }
-}
-
-impl From<CliProviderAuthMode> for ProviderAuthMethod {
-    fn from(value: CliProviderAuthMode) -> Self {
-        match value {
-            CliProviderAuthMode::ApiKey => ProviderAuthMethod::ApiKey,
-            CliProviderAuthMode::OauthToken => ProviderAuthMethod::OauthToken,
-            CliProviderAuthMode::Adc => ProviderAuthMethod::Adc,
-            CliProviderAuthMode::SessionToken => ProviderAuthMethod::SessionToken,
         }
     }
 }
