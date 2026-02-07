@@ -2,10 +2,27 @@ name: CI
 
 on:
   pull_request:
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
   push:
     branches:
       - master
       - main
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+  workflow_dispatch:
+    inputs:
+      run_coverage:
+        description: "Run llvm-cov coverage job"
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -14,8 +31,8 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  lint:
-    name: Lint (fmt + clippy)
+  quality-linux:
+    name: Quality (fmt + clippy + tests)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -35,104 +52,12 @@ jobs:
       - name: Lint
         run: cargo clippy --workspace --all-targets -- -D warnings
 
-  test-agent-core:
-    name: Test pi-agent-core
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Cargo
-        uses: Swatinem/rust-cache@v2
-
-      - name: Run unit/integration tests
-        run: cargo test -p pi-agent-core --lib
-
-  test-pi-ai-unit:
-    name: Test pi-ai (unit)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Cargo
-        uses: Swatinem/rust-cache@v2
-
-      - name: Run unit tests
-        run: cargo test -p pi-ai --lib
-
-  test-pi-ai-integration:
-    name: Test pi-ai (provider integration)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Cargo
-        uses: Swatinem/rust-cache@v2
-
-      - name: Run provider integration tests
-        run: cargo test -p pi-ai --test provider_http_integration
-
-  test-coding-agent-unit:
-    name: Test pi-coding-agent (unit/functional/regression)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Cargo
-        uses: Swatinem/rust-cache@v2
-
-      - name: Run crate tests
-        run: cargo test -p pi-coding-agent --bin pi-coding-agent
-
-  test-coding-agent-integration:
-    name: Test pi-coding-agent (CLI integration)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Cargo
-        uses: Swatinem/rust-cache@v2
-
-      - name: Run CLI integration suite
-        run: cargo test -p pi-coding-agent --test cli_integration
-
-  test-pi-tui:
-    name: Test pi-tui
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Cargo
-        uses: Swatinem/rust-cache@v2
-
-      - name: Run tests
-        run: cargo test -p pi-tui --lib
+      - name: Run workspace tests
+        run: cargo test --workspace
 
   cross-platform-smoke:
     name: Cross-platform compile smoke (${{ matrix.os }})
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -156,17 +81,10 @@ jobs:
   coverage:
     name: Coverage (llvm-cov)
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'workflow_dispatch' && inputs.run_coverage
     outputs:
       line_coverage: ${{ steps.coverage.outputs.line_coverage }}
-    needs:
-      - lint
-      - test-agent-core
-      - test-pi-ai-unit
-      - test-pi-ai-integration
-      - test-coding-agent-unit
-      - test-coding-agent-integration
-      - test-pi-tui
+    needs: [quality-linux]
     env:
       COVERAGE_MIN: "35.0"
     steps:
@@ -220,23 +138,11 @@ jobs:
     runs-on: ubuntu-latest
     if: always()
     needs:
-      - lint
-      - test-agent-core
-      - test-pi-ai-unit
-      - test-pi-ai-integration
-      - test-coding-agent-unit
-      - test-coding-agent-integration
-      - test-pi-tui
+      - quality-linux
       - cross-platform-smoke
       - coverage
     env:
-      LINT_RESULT: ${{ needs.lint.result }}
-      AGENT_CORE_RESULT: ${{ needs.test-agent-core.result }}
-      PI_AI_UNIT_RESULT: ${{ needs.test-pi-ai-unit.result }}
-      PI_AI_INTEGRATION_RESULT: ${{ needs.test-pi-ai-integration.result }}
-      CODING_AGENT_UNIT_RESULT: ${{ needs.test-coding-agent-unit.result }}
-      CODING_AGENT_INTEGRATION_RESULT: ${{ needs.test-coding-agent-integration.result }}
-      PI_TUI_RESULT: ${{ needs.test-pi-tui.result }}
+      QUALITY_RESULT: ${{ needs.quality-linux.result }}
       CROSS_PLATFORM_RESULT: ${{ needs.cross-platform-smoke.result }}
       COVERAGE_RESULT: ${{ needs.coverage.result }}
       COVERAGE_PCT: ${{ needs.coverage.outputs.line_coverage }}
@@ -251,13 +157,7 @@ jobs:
             echo ""
             echo "| Suite | Result |"
             echo "| --- | --- |"
-            echo "| Lint | ${LINT_RESULT} |"
-            echo "| pi-agent-core tests | ${AGENT_CORE_RESULT} |"
-            echo "| pi-ai unit tests | ${PI_AI_UNIT_RESULT} |"
-            echo "| pi-ai integration tests | ${PI_AI_INTEGRATION_RESULT} |"
-            echo "| pi-coding-agent unit/functional/regression | ${CODING_AGENT_UNIT_RESULT} |"
-            echo "| pi-coding-agent integration | ${CODING_AGENT_INTEGRATION_RESULT} |"
-            echo "| pi-tui tests | ${PI_TUI_RESULT} |"
+            echo "| Linux quality (fmt + clippy + workspace tests) | ${QUALITY_RESULT} |"
             echo "| Cross-platform smoke | ${CROSS_PLATFORM_RESULT} |"
             echo "| Coverage | ${COVERAGE_RESULT} |"
             if [[ "${COVERAGE_RESULT}" == "success" ]]; then
@@ -268,13 +168,7 @@ jobs:
 
           failed=0
           for suite in \
-            "Lint:${LINT_RESULT}" \
-            "pi-agent-core tests:${AGENT_CORE_RESULT}" \
-            "pi-ai unit tests:${PI_AI_UNIT_RESULT}" \
-            "pi-ai integration tests:${PI_AI_INTEGRATION_RESULT}" \
-            "pi-coding-agent unit/functional/regression:${CODING_AGENT_UNIT_RESULT}" \
-            "pi-coding-agent integration:${CODING_AGENT_INTEGRATION_RESULT}" \
-            "pi-tui tests:${PI_TUI_RESULT}" \
+            "Linux quality:${QUALITY_RESULT}" \
             "Cross-platform smoke:${CROSS_PLATFORM_RESULT}" \
             "Coverage:${COVERAGE_RESULT}"; do
             name="${suite%%:*}"

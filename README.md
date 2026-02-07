@@ -60,8 +60,8 @@ cargo bench -p pi-tui
 
 This repository includes GitHub Actions workflows for:
 
-- CI (`.github/workflows/ci.yml`): format, clippy, and workspace tests on Linux/macOS/Windows
-- Security (`.github/workflows/security.yml`): `cargo audit` and `cargo deny`
+- CI (`.github/workflows/ci.yml`): Linux quality gate (fmt + clippy + workspace tests) on PR/push, cross-platform compile smoke on push/manual, optional manual coverage run
+- Security (`.github/workflows/security.yml`): consolidated `cargo audit` + `cargo deny` on default-branch pushes, weekly schedule, and manual runs
 - Releases (`.github/workflows/release.yml`): build and publish `pi-coding-agent` assets on `v*` tags
 
 Dependency update automation is configured in `.github/dependabot.yml`.
