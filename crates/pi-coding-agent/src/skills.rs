@@ -1094,12 +1094,8 @@ fn write_cached_payload(path: &Path, bytes: &[u8]) -> Result<()> {
 fn remote_skill_file_name(url: &Url, index: usize) -> String {
     let base_name = url
         .path_segments()
-        .and_then(|segments| {
-            segments
-                .filter(|segment| !segment.is_empty())
-                .next_back()
-                .map(|segment| segment.to_string())
-        })
+        .and_then(|mut segments| segments.rfind(|segment| !segment.is_empty()))
+        .map(std::string::ToString::to_string)
         .unwrap_or_else(|| format!("remote-skill-{}", index + 1));
 
     if base_name.ends_with(".md") {
