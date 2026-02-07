@@ -90,6 +90,24 @@ fn no_session_and_branch_from_combination_fails_fast() {
 }
 
 #[test]
+fn regression_github_issues_bridge_requires_token() {
+    let mut cmd = binary_command();
+    cmd.args([
+        "--model",
+        "openai/gpt-4o-mini",
+        "--openai-api-key",
+        "test-openai-key",
+        "--github-issues-bridge",
+        "--github-repo",
+        "owner/repo",
+    ]);
+
+    cmd.assert().failure().stderr(predicate::str::contains(
+        "--github-token (or GITHUB_TOKEN) is required",
+    ));
+}
+
+#[test]
 fn session_validate_flag_succeeds_for_valid_session_file() {
     let temp = tempdir().expect("tempdir");
     let session = temp.path().join("session.jsonl");

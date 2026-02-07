@@ -1,3 +1,4 @@
+mod github_issues;
 mod session;
 mod skills;
 mod tools;
@@ -43,6 +44,7 @@ use crate::skills::{
 use crate::tools::{
     tool_policy_preset_name, BashCommandProfile, OsSandboxMode, ToolPolicy, ToolPolicyPreset,
 };
+use github_issues::{run_github_issues_bridge, GithubIssuesBridgeRuntimeConfig};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum CliBashProfile {
@@ -564,6 +566,113 @@ struct Cli {
         help = "Behavior when command-file execution hits malformed or failing commands"
     )]
     command_file_error_mode: CliCommandFileErrorMode,
+
+    #[arg(
+        long = "github-issues-bridge",
+        env = "PI_GITHUB_ISSUES_BRIDGE",
+        default_value_t = false,
+        help = "Run as a GitHub Issues conversational transport loop instead of interactive prompt mode"
+    )]
+    github_issues_bridge: bool,
+
+    #[arg(
+        long = "github-repo",
+        env = "PI_GITHUB_REPO",
+        requires = "github_issues_bridge",
+        help = "GitHub repository in owner/repo format used by --github-issues-bridge"
+    )]
+    github_repo: Option<String>,
+
+    #[arg(
+        long = "github-token",
+        env = "GITHUB_TOKEN",
+        hide_env_values = true,
+        requires = "github_issues_bridge",
+        help = "GitHub token used for API access in --github-issues-bridge mode"
+    )]
+    github_token: Option<String>,
+
+    #[arg(
+        long = "github-bot-login",
+        env = "PI_GITHUB_BOT_LOGIN",
+        requires = "github_issues_bridge",
+        help = "Optional bot login used to ignore self-comments and identify already-replied events"
+    )]
+    github_bot_login: Option<String>,
+
+    #[arg(
+        long = "github-api-base",
+        env = "PI_GITHUB_API_BASE",
+        default_value = "https://api.github.com",
+        requires = "github_issues_bridge",
+        help = "GitHub API base URL"
+    )]
+    github_api_base: String,
+
+    #[arg(
+        long = "github-state-dir",
+        env = "PI_GITHUB_STATE_DIR",
+        default_value = ".pi/github-issues",
+        requires = "github_issues_bridge",
+        help = "Directory for github bridge state/session/event logs"
+    )]
+    github_state_dir: PathBuf,
+
+    #[arg(
+        long = "github-poll-interval-seconds",
+        env = "PI_GITHUB_POLL_INTERVAL_SECONDS",
+        default_value_t = 30,
+        requires = "github_issues_bridge",
+        help = "Polling interval in seconds for github bridge mode"
+    )]
+    github_poll_interval_seconds: u64,
+
+    #[arg(
+        long = "github-include-issue-body",
+        env = "PI_GITHUB_INCLUDE_ISSUE_BODY",
+        default_value_t = false,
+        action = ArgAction::Set,
+        requires = "github_issues_bridge",
+        help = "Treat the issue description itself as an initial conversation event"
+    )]
+    github_include_issue_body: bool,
+
+    #[arg(
+        long = "github-include-edited-comments",
+        env = "PI_GITHUB_INCLUDE_EDITED_COMMENTS",
+        default_value_t = true,
+        action = ArgAction::Set,
+        requires = "github_issues_bridge",
+        help = "Process edited issue comments as new events (deduped by comment id + updated timestamp)"
+    )]
+    github_include_edited_comments: bool,
+
+    #[arg(
+        long = "github-processed-event-cap",
+        env = "PI_GITHUB_PROCESSED_EVENT_CAP",
+        default_value_t = 10_000,
+        requires = "github_issues_bridge",
+        help = "Maximum processed-event keys to retain for duplicate delivery protection"
+    )]
+    github_processed_event_cap: usize,
+
+    #[arg(
+        long = "github-retry-max-attempts",
+        env = "PI_GITHUB_RETRY_MAX_ATTEMPTS",
+        default_value_t = 4,
+        requires = "github_issues_bridge",
+        help = "Maximum attempts for retryable github api failures (429/5xx/transport)"
+    )]
+    github_retry_max_attempts: usize,
+
+    #[arg(
+        long = "github-retry-base-delay-ms",
+        env = "PI_GITHUB_RETRY_BASE_DELAY_MS",
+        default_value_t = 500,
+        requires = "github_issues_bridge",
+        help = "Base backoff delay in milliseconds for github api retries"
+    )]
+    github_retry_base_delay_ms: u64,
 
     #[arg(
         long,
@@ -1834,8 +1943,50 @@ async fn main() -> Result<()> {
     let selected_skills = resolve_selected_skills(&catalog, &cli.skills)?;
     let system_prompt = augment_system_prompt(&base_system_prompt, &selected_skills);
 
+    let tool_policy = build_tool_policy(&cli)?;
+    let tool_policy_json = tool_policy_to_json(&tool_policy);
+    if cli.print_tool_policy {
+        println!("{tool_policy_json}");
+    }
+    let render_options = RenderOptions::from_cli(&cli);
+    validate_github_issues_bridge_cli(&cli)?;
+    if cli.github_issues_bridge {
+        let repo_slug = cli.github_repo.clone().ok_or_else(|| {
+            anyhow!("--github-repo is required when --github-issues-bridge is set")
+        })?;
+        let token = cli.github_token.clone().ok_or_else(|| {
+            anyhow!(
+                "--github-token (or GITHUB_TOKEN) is required when --github-issues-bridge is set"
+            )
+        })?;
+        return run_github_issues_bridge(GithubIssuesBridgeRuntimeConfig {
+            client: client.clone(),
+            model: model_ref.model.clone(),
+            system_prompt: system_prompt.clone(),
+            max_turns: cli.max_turns,
+            tool_policy: tool_policy.clone(),
+            turn_timeout_ms: cli.turn_timeout_ms,
+            request_timeout_ms: cli.request_timeout_ms,
+            render_options,
+            session_lock_wait_ms: cli.session_lock_wait_ms,
+            session_lock_stale_ms: cli.session_lock_stale_ms,
+            state_dir: cli.github_state_dir.clone(),
+            repo_slug,
+            api_base: cli.github_api_base.clone(),
+            token,
+            bot_login: cli.github_bot_login.clone(),
+            poll_interval: Duration::from_secs(cli.github_poll_interval_seconds.max(1)),
+            include_issue_body: cli.github_include_issue_body,
+            include_edited_comments: cli.github_include_edited_comments,
+            processed_event_cap: cli.github_processed_event_cap.max(1),
+            retry_max_attempts: cli.github_retry_max_attempts.max(1),
+            retry_base_delay_ms: cli.github_retry_base_delay_ms.max(1),
+        })
+        .await;
+    }
+
     let mut agent = Agent::new(
-        client,
+        client.clone(),
         AgentConfig {
             model: model_ref.model.clone(),
             system_prompt: system_prompt.clone(),
@@ -1844,12 +1995,6 @@ async fn main() -> Result<()> {
             max_tokens: None,
         },
     );
-
-    let tool_policy = build_tool_policy(&cli)?;
-    let tool_policy_json = tool_policy_to_json(&tool_policy);
-    if cli.print_tool_policy {
-        println!("{tool_policy_json}");
-    }
     tools::register_builtin_tools(&mut agent, tool_policy);
     if let Some(path) = cli.tool_audit_log.clone() {
         let logger = ToolAuditLogger::open(path)?;
@@ -1868,8 +2013,6 @@ async fn main() -> Result<()> {
             }
         });
     }
-    let render_options = RenderOptions::from_cli(&cli);
-
     let mut session_runtime = if cli.no_session {
         None
     } else {
@@ -1960,6 +2103,52 @@ fn resolve_prompt_input(cli: &Cli) -> Result<Option<String>> {
         prompt,
         format!("prompt file {}", path.display()),
     )?))
+}
+
+fn validate_github_issues_bridge_cli(cli: &Cli) -> Result<()> {
+    if !cli.github_issues_bridge {
+        return Ok(());
+    }
+
+    if cli.prompt.is_some() || cli.prompt_file.is_some() || cli.command_file.is_some() {
+        bail!(
+            "--github-issues-bridge cannot be combined with --prompt, --prompt-file, or --command-file"
+        );
+    }
+    if cli.no_session {
+        bail!("--github-issues-bridge cannot be used together with --no-session");
+    }
+    if cli.github_poll_interval_seconds == 0 {
+        bail!("--github-poll-interval-seconds must be greater than 0");
+    }
+    if cli.github_processed_event_cap == 0 {
+        bail!("--github-processed-event-cap must be greater than 0");
+    }
+    if cli.github_retry_max_attempts == 0 {
+        bail!("--github-retry-max-attempts must be greater than 0");
+    }
+    if cli.github_retry_base_delay_ms == 0 {
+        bail!("--github-retry-base-delay-ms must be greater than 0");
+    }
+    if cli
+        .github_repo
+        .as_deref()
+        .map(str::trim)
+        .unwrap_or_default()
+        .is_empty()
+    {
+        bail!("--github-repo is required when --github-issues-bridge is set");
+    }
+    if cli
+        .github_token
+        .as_deref()
+        .map(str::trim)
+        .unwrap_or_default()
+        .is_empty()
+    {
+        bail!("--github-token (or GITHUB_TOKEN) is required when --github-issues-bridge is set");
+    }
+    Ok(())
 }
 
 fn resolve_system_prompt(cli: &Cli) -> Result<String> {
@@ -9575,11 +9764,12 @@ mod tests {
         search_session_entries, session_bookmark_path_for_session, session_message_preview,
         shared_lineage_prefix_depth, stream_text_chunks, summarize_audit_file,
         tool_audit_event_json, tool_policy_to_json, trust_record_status, unknown_command_message,
-        validate_branch_alias_name, validate_macro_command_entry, validate_macro_name,
-        validate_profile_name, validate_session_file, validate_skills_prune_file_name, AuthCommand,
-        AuthCommandConfig, BranchAliasCommand, BranchAliasFile, Cli, CliBashProfile,
-        CliCommandFileErrorMode, CliCredentialStoreEncryptionMode, CliOsSandboxMode,
-        CliProviderAuthMode, CliSessionImportMode, CliToolPolicyPreset, ClientRoute, CommandAction,
+        validate_branch_alias_name, validate_github_issues_bridge_cli,
+        validate_macro_command_entry, validate_macro_name, validate_profile_name,
+        validate_session_file, validate_skills_prune_file_name, AuthCommand, AuthCommandConfig,
+        BranchAliasCommand, BranchAliasFile, Cli, CliBashProfile, CliCommandFileErrorMode,
+        CliCredentialStoreEncryptionMode, CliOsSandboxMode, CliProviderAuthMode,
+        CliSessionImportMode, CliToolPolicyPreset, ClientRoute, CommandAction,
         CommandExecutionContext, CommandFileEntry, CommandFileReport, CredentialStoreData,
         CredentialStoreEncryptionMode, DoctorCheckResult, DoctorCommandConfig,
         DoctorCommandOutputFormat, DoctorProviderKeyStatus, DoctorStatus, FallbackRoutingClient,
@@ -9742,6 +9932,18 @@ mod tests {
             prompt_file: None,
             command_file: None,
             command_file_error_mode: CliCommandFileErrorMode::FailFast,
+            github_issues_bridge: false,
+            github_repo: None,
+            github_token: None,
+            github_bot_login: None,
+            github_api_base: "https://api.github.com".to_string(),
+            github_state_dir: PathBuf::from(".pi/github-issues"),
+            github_poll_interval_seconds: 30,
+            github_include_issue_body: false,
+            github_include_edited_comments: true,
+            github_processed_event_cap: 10_000,
+            github_retry_max_attempts: 4,
+            github_retry_base_delay_ms: 500,
             session: PathBuf::from(".pi/sessions/default.jsonl"),
             no_session: false,
             session_validate: false,
@@ -15293,6 +15495,43 @@ mod tests {
         assert!(error
             .to_string()
             .contains(&format!("prompt file {} is empty", prompt_path.display())));
+    }
+
+    #[test]
+    fn unit_validate_github_issues_bridge_cli_accepts_minimum_configuration() {
+        let mut cli = test_cli();
+        cli.github_issues_bridge = true;
+        cli.github_repo = Some("owner/repo".to_string());
+        cli.github_token = Some("token".to_string());
+
+        validate_github_issues_bridge_cli(&cli).expect("bridge config should validate");
+    }
+
+    #[test]
+    fn functional_validate_github_issues_bridge_cli_rejects_prompt_conflicts() {
+        let mut cli = test_cli();
+        cli.github_issues_bridge = true;
+        cli.github_repo = Some("owner/repo".to_string());
+        cli.github_token = Some("token".to_string());
+        cli.prompt = Some("conflict".to_string());
+
+        let error = validate_github_issues_bridge_cli(&cli).expect_err("prompt conflict");
+        assert!(error
+            .to_string()
+            .contains("--github-issues-bridge cannot be combined"));
+    }
+
+    #[test]
+    fn regression_validate_github_issues_bridge_cli_requires_credentials() {
+        let mut cli = test_cli();
+        cli.github_issues_bridge = true;
+        cli.github_repo = Some("owner/repo".to_string());
+        cli.github_token = None;
+
+        let error = validate_github_issues_bridge_cli(&cli).expect_err("missing token");
+        assert!(error
+            .to_string()
+            .contains("--github-token (or GITHUB_TOKEN) is required"));
     }
 
     #[test]
