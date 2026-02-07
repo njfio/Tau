@@ -129,6 +129,27 @@ cargo run -p pi-coding-agent -- --no-session \
   --command-file-error-mode continue-on-error
 ```
 
+Run as a GitHub Issues conversational transport ("living issue chat stream"):
+
+```bash
+export GITHUB_TOKEN=...your-token...
+
+cargo run -p pi-coding-agent -- \
+  --model openai/gpt-4o-mini \
+  --github-issues-bridge \
+  --github-repo owner/repo \
+  --github-bot-login your-bot-login \
+  --github-state-dir .pi/github-issues \
+  --github-poll-interval-seconds 30
+```
+
+In bridge mode:
+
+- each issue maps to a deterministic session file under `.pi/github-issues/.../sessions/`
+- inbound/outbound event payloads are persisted as JSONL logs for replay/debugging
+- duplicate deliveries are deduplicated using persisted event keys and response footers
+- bot replies include run/model/token metadata in the issue comment footer
+
 Load the base system prompt from a file:
 
 ```bash
