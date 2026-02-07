@@ -42,11 +42,12 @@ use crate::channel_store::ChannelStore;
 pub(crate) use crate::commands::handle_command;
 pub(crate) use crate::commands::{
     canonical_command_name, execute_command_file, handle_command_with_session_import_mode,
-    parse_command, CommandAction, COMMAND_NAMES, COMMAND_SPECS,
+    parse_command, CommandAction, COMMAND_NAMES,
 };
 #[cfg(test)]
 pub(crate) use crate::commands::{
-    parse_command_file, CommandFileEntry, CommandFileReport,
+    parse_command_file, render_command_help, render_help_overview, unknown_command_message,
+    CommandFileEntry, CommandFileReport,
 };
 #[cfg(test)]
 pub(crate) use crate::credentials::{
@@ -7756,122 +7757,6 @@ fn format_remap_ids(remapped: &[(u64, u64)]) -> String {
         .map(|(from, to)| format!("{from}->{to}"))
         .collect::<Vec<_>>()
         .join(",")
-}
-
-fn normalize_help_topic(topic: &str) -> String {
-    let trimmed = topic.trim();
-    if trimmed.is_empty() {
-        return String::new();
-    }
-    if trimmed.starts_with('/') {
-        trimmed.to_string()
-    } else {
-        format!("/{trimmed}")
-    }
-}
-
-fn render_help_overview() -> String {
-    let mut lines = vec!["commands:".to_string()];
-    for spec in COMMAND_SPECS {
-        lines.push(format!("  {:<22} {}", spec.usage, spec.description));
-    }
-    lines.push("tip: run /help <command> for details".to_string());
-    lines.join("\n")
-}
-
-fn render_command_help(topic: &str) -> Option<String> {
-    let normalized = normalize_help_topic(topic);
-    let command_name = canonical_command_name(&normalized);
-    let spec = COMMAND_SPECS
-        .iter()
-        .find(|entry| entry.name == command_name)?;
-    Some(format!(
-        "command: {}\nusage: {}\n{}\n{}\nexample: {}",
-        spec.name, spec.usage, spec.description, spec.details, spec.example
-    ))
-}
-
-fn unknown_help_topic_message(topic: &str) -> String {
-    match suggest_command(topic) {
-        Some(suggestion) => format!(
-            "unknown help topic: {topic}\ndid you mean {suggestion}?\nrun /help for command list"
-        ),
-        None => format!("unknown help topic: {topic}\nrun /help for command list"),
-    }
-}
-
-fn unknown_command_message(command: &str) -> String {
-    match suggest_command(command) {
-        Some(suggestion) => {
-            format!("unknown command: {command}\ndid you mean {suggestion}?\nrun /help for command list")
-        }
-        None => format!("unknown command: {command}\nrun /help for command list"),
-    }
-}
-
-fn suggest_command(command: &str) -> Option<&'static str> {
-    let command = canonical_command_name(command);
-    if command.is_empty() {
-        return None;
-    }
-
-    if let Some(prefix_match) = COMMAND_NAMES
-        .iter()
-        .find(|candidate| candidate.starts_with(command))
-    {
-        return Some(prefix_match);
-    }
-
-    let mut best: Option<(&str, usize)> = None;
-    for candidate in COMMAND_NAMES {
-        let distance = levenshtein_distance(command, candidate);
-        match best {
-            Some((_, best_distance)) if distance >= best_distance => {}
-            _ => best = Some((candidate, distance)),
-        }
-    }
-
-    let (candidate, distance) = best?;
-    let threshold = match command.len() {
-        0..=4 => 1,
-        5..=8 => 2,
-        _ => 3,
-    };
-    if distance <= threshold {
-        Some(candidate)
-    } else {
-        None
-    }
-}
-
-fn levenshtein_distance(a: &str, b: &str) -> usize {
-    if a == b {
-        return 0;
-    }
-    if a.is_empty() {
-        return b.chars().count();
-    }
-    if b.is_empty() {
-        return a.chars().count();
-    }
-
-    let b_chars = b.chars().collect::<Vec<_>>();
-    let mut previous = (0..=b_chars.len()).collect::<Vec<_>>();
-    let mut current = vec![0; b_chars.len() + 1];
-
-    for (i, left) in a.chars().enumerate() {
-        current[0] = i + 1;
-        for (j, right) in b_chars.iter().enumerate() {
-            let substitution_cost = if left == *right { 0 } else { 1 };
-            let deletion = previous[j + 1] + 1;
-            let insertion = current[j] + 1;
-            let substitution = previous[j] + substitution_cost;
-            current[j + 1] = deletion.min(insertion).min(substitution);
-        }
-        previous.clone_from_slice(&current);
-    }
-
-    previous[b_chars.len()]
 }
 
 fn reload_agent_from_active_head(agent: &mut Agent, runtime: &SessionRuntime) -> Result<()> {
