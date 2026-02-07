@@ -7786,10 +7786,7 @@ fn resolve_store_backed_provider_credential(
         match refresh_provider_access_token(provider, &refresh_token, now_unix) {
             Ok(refreshed) => {
                 entry.access_token = Some(refreshed.access_token.clone());
-                entry.refresh_token = refreshed
-                    .refresh_token
-                    .clone()
-                    .or(Some(refresh_token));
+                entry.refresh_token = refreshed.refresh_token.clone().or(Some(refresh_token));
                 entry.expires_unix = refreshed.expires_unix;
                 entry.revoked = false;
                 store_dirty = true;
@@ -8478,13 +8475,13 @@ mod tests {
         apply_trust_root_mutations, branch_alias_path_for_session, build_doctor_command_config,
         build_profile_defaults, build_provider_client, build_tool_policy,
         command_file_error_mode_label, compute_session_entry_depths, compute_session_stats,
-        decrypt_credential_store_secret, default_macro_config_path, default_profile_store_path,
-        default_skills_lock_path, derive_skills_prune_candidates, encrypt_credential_store_secret,
-        ensure_non_empty_text, escape_graph_label, execute_branch_alias_command,
-        execute_command_file, execute_doctor_command, execute_macro_command,
-        execute_profile_command, execute_session_bookmark_command, execute_session_diff_command,
-        execute_session_graph_export_command, execute_session_search_command,
-        execute_session_stats_command, execute_skills_list_command,
+        current_unix_timestamp, decrypt_credential_store_secret, default_macro_config_path,
+        default_profile_store_path, default_skills_lock_path, derive_skills_prune_candidates,
+        encrypt_credential_store_secret, ensure_non_empty_text, escape_graph_label,
+        execute_branch_alias_command, execute_command_file, execute_doctor_command,
+        execute_macro_command, execute_profile_command, execute_session_bookmark_command,
+        execute_session_diff_command, execute_session_graph_export_command,
+        execute_session_search_command, execute_session_stats_command, execute_skills_list_command,
         execute_skills_lock_diff_command, execute_skills_lock_write_command,
         execute_skills_prune_command, execute_skills_search_command, execute_skills_show_command,
         execute_skills_sync_command, execute_skills_trust_add_command,
@@ -8500,8 +8497,7 @@ mod tests {
         parse_skills_prune_args, parse_skills_search_args, parse_skills_trust_list_args,
         parse_skills_trust_mutation_args, parse_skills_verify_args, parse_trust_rotation_spec,
         parse_trusted_root_spec, percentile_duration_ms, provider_auth_capability,
-        current_unix_timestamp, refresh_provider_access_token, render_audit_summary,
-        render_command_help,
+        refresh_provider_access_token, render_audit_summary, render_command_help,
         render_doctor_report, render_doctor_report_json, render_help_overview, render_macro_list,
         render_macro_show, render_profile_diffs, render_profile_list, render_profile_show,
         render_session_diff, render_session_graph_dot, render_session_graph_mermaid,
@@ -8723,7 +8719,9 @@ mod tests {
             encryption,
             providers: BTreeMap::new(),
         };
-        store.providers.insert(provider.as_str().to_string(), record);
+        store
+            .providers
+            .insert(provider.as_str().to_string(), record);
         save_credential_store(path, &store, key).expect("save credential store");
     }
 
