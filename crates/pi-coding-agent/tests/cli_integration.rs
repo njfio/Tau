@@ -705,7 +705,10 @@ fn integration_interactive_doctor_command_reports_runtime_diagnostics() {
     cmd.assert()
         .success()
         .stdout(predicate::str::contains(
-            "doctor summary: checks=6 pass=6 warn=0 fail=0",
+            "doctor summary: checks=7 pass=7 warn=0 fail=0",
+        ))
+        .stdout(predicate::str::contains(
+            "doctor check: key=provider_auth_mode.openai status=pass code=api_key",
         ))
         .stdout(predicate::str::contains(
             "doctor check: key=provider_key.openai status=pass code=present",
@@ -721,6 +724,7 @@ fn integration_interactive_doctor_command_reports_runtime_diagnostics() {
         ))
         .stdout(predicate::str::contains("\"summary\""))
         .stdout(predicate::str::contains("\"checks\""))
+        .stdout(predicate::str::contains("\"provider_auth_mode.openai\""))
         .stdout(predicate::str::contains("\"provider_key.openai\""));
 }
 

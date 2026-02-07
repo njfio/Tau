@@ -123,6 +123,45 @@ impl From<CliToolPolicyPreset> for ToolPolicyPreset {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum CliProviderAuthMode {
+    ApiKey,
+    OauthToken,
+    Adc,
+    SessionToken,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+enum ProviderAuthMethod {
+    ApiKey,
+    OauthToken,
+    Adc,
+    SessionToken,
+}
+
+impl ProviderAuthMethod {
+    fn as_str(self) -> &'static str {
+        match self {
+            ProviderAuthMethod::ApiKey => "api_key",
+            ProviderAuthMethod::OauthToken => "oauth_token",
+            ProviderAuthMethod::Adc => "adc",
+            ProviderAuthMethod::SessionToken => "session_token",
+        }
+    }
+}
+
+impl From<CliProviderAuthMode> for ProviderAuthMethod {
+    fn from(value: CliProviderAuthMode) -> Self {
+        match value {
+            CliProviderAuthMode::ApiKey => ProviderAuthMethod::ApiKey,
+            CliProviderAuthMode::OauthToken => ProviderAuthMethod::OauthToken,
+            CliProviderAuthMode::Adc => ProviderAuthMethod::Adc,
+            CliProviderAuthMode::SessionToken => ProviderAuthMethod::SessionToken,
+        }
+    }
+}
+
 #[derive(Debug, Parser)]
 #[command(
     name = "pi-rs",
@@ -201,6 +240,33 @@ struct Cli {
         help = "API key for Google Gemini"
     )]
     google_api_key: Option<String>,
+
+    #[arg(
+        long = "openai-auth-mode",
+        env = "PI_OPENAI_AUTH_MODE",
+        value_enum,
+        default_value_t = CliProviderAuthMode::ApiKey,
+        help = "Authentication mode preference for OpenAI provider"
+    )]
+    openai_auth_mode: CliProviderAuthMode,
+
+    #[arg(
+        long = "anthropic-auth-mode",
+        env = "PI_ANTHROPIC_AUTH_MODE",
+        value_enum,
+        default_value_t = CliProviderAuthMode::ApiKey,
+        help = "Authentication mode preference for Anthropic provider"
+    )]
+    anthropic_auth_mode: CliProviderAuthMode,
+
+    #[arg(
+        long = "google-auth-mode",
+        env = "PI_GOOGLE_AUTH_MODE",
+        value_enum,
+        default_value_t = CliProviderAuthMode::ApiKey,
+        help = "Authentication mode preference for Google provider"
+    )]
+    google_auth_mode: CliProviderAuthMode,
 
     #[arg(
         long,
@@ -668,9 +734,12 @@ struct SkillsSyncCommandConfig {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct DoctorProviderKeyStatus {
+    provider_kind: Provider,
     provider: String,
     key_env_var: String,
     present: bool,
+    auth_mode: ProviderAuthMethod,
+    mode_supported: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -707,11 +776,37 @@ struct ProfilePolicyDefaults {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+struct ProfileAuthDefaults {
+    #[serde(default = "default_provider_auth_method")]
+    openai: ProviderAuthMethod,
+    #[serde(default = "default_provider_auth_method")]
+    anthropic: ProviderAuthMethod,
+    #[serde(default = "default_provider_auth_method")]
+    google: ProviderAuthMethod,
+}
+
+impl Default for ProfileAuthDefaults {
+    fn default() -> Self {
+        Self {
+            openai: default_provider_auth_method(),
+            anthropic: default_provider_auth_method(),
+            google: default_provider_auth_method(),
+        }
+    }
+}
+
+fn default_provider_auth_method() -> ProviderAuthMethod {
+    ProviderAuthMethod::ApiKey
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 struct ProfileDefaults {
     model: String,
     fallback_models: Vec<String>,
     session: ProfileSessionDefaults,
     policy: ProfilePolicyDefaults,
+    #[serde(default)]
+    auth: ProfileAuthDefaults,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2380,9 +2475,12 @@ fn handle_command(
         doctor_config: DoctorCommandConfig {
             model: "openai/gpt-4o-mini".to_string(),
             provider_keys: vec![DoctorProviderKeyStatus {
+                provider_kind: Provider::OpenAi,
                 provider: "openai".to_string(),
                 key_env_var: "OPENAI_API_KEY".to_string(),
                 present: true,
+                auth_mode: ProviderAuthMethod::ApiKey,
+                mode_supported: true,
             }],
             session_enabled: true,
             session_path: PathBuf::from(".pi/sessions/default.jsonl"),
@@ -2412,6 +2510,7 @@ fn handle_command(
             max_file_write_bytes: 2048,
             allow_command_newlines: true,
         },
+        auth: ProfileAuthDefaults::default(),
     };
     handle_command_with_session_import_mode(
         command,
@@ -3724,25 +3823,49 @@ fn run_doctor_checks(config: &DoctorCommandConfig) -> Vec<DoctorCheckResult> {
     });
 
     for provider_check in &config.provider_keys {
-        let status = if provider_check.present {
+        let mode_status = if provider_check.mode_supported {
             DoctorStatus::Pass
         } else {
             DoctorStatus::Fail
         };
         checks.push(DoctorCheckResult {
-            key: format!("provider_key.{}", provider_check.provider),
-            status,
-            code: if provider_check.present {
-                "present".to_string()
-            } else {
-                "missing".to_string()
-            },
+            key: format!("provider_auth_mode.{}", provider_check.provider),
+            status: mode_status,
+            code: provider_check.auth_mode.as_str().to_string(),
             path: None,
-            action: if provider_check.present {
+            action: if provider_check.mode_supported {
                 None
             } else {
-                Some(format!("set {}", provider_check.key_env_var))
+                Some(format!(
+                    "set {} api-key",
+                    provider_auth_mode_flag(provider_check.provider_kind)
+                ))
             },
+        });
+
+        let (status, code, action) = if provider_check.auth_mode == ProviderAuthMethod::ApiKey {
+            if provider_check.present {
+                (DoctorStatus::Pass, "present".to_string(), None)
+            } else {
+                (
+                    DoctorStatus::Fail,
+                    "missing".to_string(),
+                    Some(format!("set {}", provider_check.key_env_var)),
+                )
+            }
+        } else {
+            (
+                DoctorStatus::Warn,
+                "not_required_for_mode".to_string(),
+                None,
+            )
+        };
+        checks.push(DoctorCheckResult {
+            key: format!("provider_key.{}", provider_check.provider),
+            status,
+            code,
+            path: None,
+            action,
         });
     }
 
@@ -4639,6 +4762,27 @@ fn render_profile_diffs(current: &ProfileDefaults, loaded: &ProfileDefaults) -> 
             current.policy.allow_command_newlines, loaded.policy.allow_command_newlines
         ));
     }
+    if current.auth.openai != loaded.auth.openai {
+        diffs.push(format!(
+            "diff: field=auth.openai current={} loaded={}",
+            current.auth.openai.as_str(),
+            loaded.auth.openai.as_str()
+        ));
+    }
+    if current.auth.anthropic != loaded.auth.anthropic {
+        diffs.push(format!(
+            "diff: field=auth.anthropic current={} loaded={}",
+            current.auth.anthropic.as_str(),
+            loaded.auth.anthropic.as_str()
+        ));
+    }
+    if current.auth.google != loaded.auth.google {
+        diffs.push(format!(
+            "diff: field=auth.google current={} loaded={}",
+            current.auth.google.as_str(),
+            loaded.auth.google.as_str()
+        ));
+    }
 
     diffs
 }
@@ -4733,6 +4877,18 @@ fn render_profile_show(profile_path: &Path, name: &str, profile: &ProfileDefault
     lines.push(format!(
         "value: policy.allow_command_newlines={}",
         profile.policy.allow_command_newlines
+    ));
+    lines.push(format!(
+        "value: auth.openai={}",
+        profile.auth.openai.as_str()
+    ));
+    lines.push(format!(
+        "value: auth.anthropic={}",
+        profile.auth.anthropic.as_str()
+    ));
+    lines.push(format!(
+        "value: auth.google={}",
+        profile.auth.google.as_str()
     ));
     lines.join("\n")
 }
@@ -7163,6 +7319,222 @@ fn fallback_error_metadata(error: &PiAiError) -> (&'static str, Option<u16>) {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ProviderAuthCapability {
+    method: ProviderAuthMethod,
+    supported: bool,
+    reason: &'static str,
+}
+
+const OPENAI_AUTH_CAPABILITIES: &[ProviderAuthCapability] = &[
+    ProviderAuthCapability {
+        method: ProviderAuthMethod::ApiKey,
+        supported: true,
+        reason: "supported",
+    },
+    ProviderAuthCapability {
+        method: ProviderAuthMethod::OauthToken,
+        supported: false,
+        reason: "not_implemented",
+    },
+    ProviderAuthCapability {
+        method: ProviderAuthMethod::Adc,
+        supported: false,
+        reason: "not_implemented",
+    },
+    ProviderAuthCapability {
+        method: ProviderAuthMethod::SessionToken,
+        supported: false,
+        reason: "unsupported",
+    },
+];
+
+const ANTHROPIC_AUTH_CAPABILITIES: &[ProviderAuthCapability] = &[
+    ProviderAuthCapability {
+        method: ProviderAuthMethod::ApiKey,
+        supported: true,
+        reason: "supported",
+    },
+    ProviderAuthCapability {
+        method: ProviderAuthMethod::OauthToken,
+        supported: false,
+        reason: "not_implemented",
+    },
+    ProviderAuthCapability {
+        method: ProviderAuthMethod::Adc,
+        supported: false,
+        reason: "not_implemented",
+    },
+    ProviderAuthCapability {
+        method: ProviderAuthMethod::SessionToken,
+        supported: false,
+        reason: "unsupported",
+    },
+];
+
+const GOOGLE_AUTH_CAPABILITIES: &[ProviderAuthCapability] = &[
+    ProviderAuthCapability {
+        method: ProviderAuthMethod::ApiKey,
+        supported: true,
+        reason: "supported",
+    },
+    ProviderAuthCapability {
+        method: ProviderAuthMethod::OauthToken,
+        supported: false,
+        reason: "not_implemented",
+    },
+    ProviderAuthCapability {
+        method: ProviderAuthMethod::Adc,
+        supported: false,
+        reason: "not_implemented",
+    },
+    ProviderAuthCapability {
+        method: ProviderAuthMethod::SessionToken,
+        supported: false,
+        reason: "unsupported",
+    },
+];
+
+fn provider_auth_capabilities(provider: Provider) -> &'static [ProviderAuthCapability] {
+    match provider {
+        Provider::OpenAi => OPENAI_AUTH_CAPABILITIES,
+        Provider::Anthropic => ANTHROPIC_AUTH_CAPABILITIES,
+        Provider::Google => GOOGLE_AUTH_CAPABILITIES,
+    }
+}
+
+fn provider_auth_capability(
+    provider: Provider,
+    method: ProviderAuthMethod,
+) -> ProviderAuthCapability {
+    provider_auth_capabilities(provider)
+        .iter()
+        .find(|capability| capability.method == method)
+        .copied()
+        .unwrap_or(ProviderAuthCapability {
+            method,
+            supported: false,
+            reason: "unknown",
+        })
+}
+
+fn configured_provider_auth_method(cli: &Cli, provider: Provider) -> ProviderAuthMethod {
+    match provider {
+        Provider::OpenAi => cli.openai_auth_mode.into(),
+        Provider::Anthropic => cli.anthropic_auth_mode.into(),
+        Provider::Google => cli.google_auth_mode.into(),
+    }
+}
+
+fn provider_auth_mode_flag(provider: Provider) -> &'static str {
+    match provider {
+        Provider::OpenAi => "--openai-auth-mode",
+        Provider::Anthropic => "--anthropic-auth-mode",
+        Provider::Google => "--google-auth-mode",
+    }
+}
+
+fn missing_provider_api_key_message(provider: Provider) -> &'static str {
+    match provider {
+        Provider::OpenAi => {
+            "missing OpenAI API key. Set OPENAI_API_KEY, PI_API_KEY, --openai-api-key, or --api-key"
+        }
+        Provider::Anthropic => {
+            "missing Anthropic API key. Set ANTHROPIC_API_KEY, PI_API_KEY, --anthropic-api-key, or --api-key"
+        }
+        Provider::Google => {
+            "missing Google API key. Set GEMINI_API_KEY, GOOGLE_API_KEY, PI_API_KEY, --google-api-key, or --api-key"
+        }
+    }
+}
+
+fn provider_api_key_candidates(
+    cli: &Cli,
+    provider: Provider,
+) -> Vec<(&'static str, Option<String>)> {
+    match provider {
+        Provider::OpenAi => vec![
+            ("--openai-api-key", cli.openai_api_key.clone()),
+            ("--api-key", cli.api_key.clone()),
+            ("OPENAI_API_KEY", std::env::var("OPENAI_API_KEY").ok()),
+            ("PI_API_KEY", std::env::var("PI_API_KEY").ok()),
+        ],
+        Provider::Anthropic => vec![
+            ("--anthropic-api-key", cli.anthropic_api_key.clone()),
+            ("--api-key", cli.api_key.clone()),
+            ("ANTHROPIC_API_KEY", std::env::var("ANTHROPIC_API_KEY").ok()),
+            ("PI_API_KEY", std::env::var("PI_API_KEY").ok()),
+        ],
+        Provider::Google => vec![
+            ("--google-api-key", cli.google_api_key.clone()),
+            ("--api-key", cli.api_key.clone()),
+            ("GEMINI_API_KEY", std::env::var("GEMINI_API_KEY").ok()),
+            ("GOOGLE_API_KEY", std::env::var("GOOGLE_API_KEY").ok()),
+            ("PI_API_KEY", std::env::var("PI_API_KEY").ok()),
+        ],
+    }
+}
+
+fn resolve_non_empty_secret_with_source(
+    candidates: Vec<(&'static str, Option<String>)>,
+) -> Option<(String, String)> {
+    candidates.into_iter().find_map(|(source, value)| {
+        let value = value?;
+        if value.trim().is_empty() {
+            return None;
+        }
+        Some((value, source.to_string()))
+    })
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ResolvedProviderCredential {
+    method: ProviderAuthMethod,
+    secret: Option<String>,
+    source: Option<String>,
+}
+
+trait ProviderCredentialResolver {
+    fn resolve(
+        &self,
+        provider: Provider,
+        method: ProviderAuthMethod,
+    ) -> Result<ResolvedProviderCredential>;
+}
+
+struct CliProviderCredentialResolver<'a> {
+    cli: &'a Cli,
+}
+
+impl ProviderCredentialResolver for CliProviderCredentialResolver<'_> {
+    fn resolve(
+        &self,
+        provider: Provider,
+        method: ProviderAuthMethod,
+    ) -> Result<ResolvedProviderCredential> {
+        match method {
+            ProviderAuthMethod::ApiKey => {
+                let (secret, source) = resolve_non_empty_secret_with_source(
+                    provider_api_key_candidates(self.cli, provider),
+                )
+                .ok_or_else(|| anyhow!(missing_provider_api_key_message(provider)))?;
+                Ok(ResolvedProviderCredential {
+                    method,
+                    secret: Some(secret),
+                    source: Some(source),
+                })
+            }
+            ProviderAuthMethod::OauthToken
+            | ProviderAuthMethod::Adc
+            | ProviderAuthMethod::SessionToken => Ok(ResolvedProviderCredential {
+                method,
+                secret: None,
+                source: None,
+            }),
+        }
+    }
+}
+
 fn resolve_fallback_models(cli: &Cli, primary: &ModelRef) -> Result<Vec<ModelRef>> {
     let mut resolved = Vec::new();
     for raw in &cli.fallback_model {
@@ -7236,17 +7608,29 @@ fn build_client_with_fallbacks(
 }
 
 fn build_provider_client(cli: &Cli, provider: Provider) -> Result<Arc<dyn LlmClient>> {
+    let auth_mode = configured_provider_auth_method(cli, provider);
+    let capability = provider_auth_capability(provider, auth_mode);
+    if !capability.supported {
+        bail!(
+            "unsupported auth mode '{}' for provider '{}': {} (set {} api-key)",
+            auth_mode.as_str(),
+            provider.as_str(),
+            capability.reason,
+            provider_auth_mode_flag(provider),
+        );
+    }
+
+    let resolver = CliProviderCredentialResolver { cli };
+    let resolved = resolver.resolve(provider, auth_mode)?;
+    let auth_source = resolved.source.as_deref().unwrap_or("none");
+
     match provider {
         Provider::OpenAi => {
-            let api_key = resolve_api_key(vec![
-                cli.openai_api_key.clone(),
-                cli.api_key.clone(),
-                std::env::var("OPENAI_API_KEY").ok(),
-                std::env::var("PI_API_KEY").ok(),
-            ])
-            .ok_or_else(|| {
+            let api_key = resolved.secret.ok_or_else(|| {
                 anyhow!(
-                    "missing OpenAI API key. Set OPENAI_API_KEY, PI_API_KEY, --openai-api-key, or --api-key"
+                    "resolved auth mode '{}' for '{}' did not provide a credential",
+                    resolved.method.as_str(),
+                    provider.as_str()
                 )
             })?;
 
@@ -7259,18 +7643,20 @@ fn build_provider_client(cli: &Cli, provider: Provider) -> Result<Arc<dyn LlmCli
                 retry_budget_ms: cli.provider_retry_budget_ms,
                 retry_jitter: cli.provider_retry_jitter,
             })?;
+            tracing::debug!(
+                provider = provider.as_str(),
+                auth_mode = resolved.method.as_str(),
+                auth_source = auth_source,
+                "provider auth resolved"
+            );
             Ok(Arc::new(client))
         }
         Provider::Anthropic => {
-            let api_key = resolve_api_key(vec![
-                cli.anthropic_api_key.clone(),
-                cli.api_key.clone(),
-                std::env::var("ANTHROPIC_API_KEY").ok(),
-                std::env::var("PI_API_KEY").ok(),
-            ])
-            .ok_or_else(|| {
+            let api_key = resolved.secret.ok_or_else(|| {
                 anyhow!(
-                    "missing Anthropic API key. Set ANTHROPIC_API_KEY, PI_API_KEY, --anthropic-api-key, or --api-key"
+                    "resolved auth mode '{}' for '{}' did not provide a credential",
+                    resolved.method.as_str(),
+                    provider.as_str()
                 )
             })?;
 
@@ -7282,19 +7668,20 @@ fn build_provider_client(cli: &Cli, provider: Provider) -> Result<Arc<dyn LlmCli
                 retry_budget_ms: cli.provider_retry_budget_ms,
                 retry_jitter: cli.provider_retry_jitter,
             })?;
+            tracing::debug!(
+                provider = provider.as_str(),
+                auth_mode = resolved.method.as_str(),
+                auth_source = auth_source,
+                "provider auth resolved"
+            );
             Ok(Arc::new(client))
         }
         Provider::Google => {
-            let api_key = resolve_api_key(vec![
-                cli.google_api_key.clone(),
-                cli.api_key.clone(),
-                std::env::var("GEMINI_API_KEY").ok(),
-                std::env::var("GOOGLE_API_KEY").ok(),
-                std::env::var("PI_API_KEY").ok(),
-            ])
-            .ok_or_else(|| {
+            let api_key = resolved.secret.ok_or_else(|| {
                 anyhow!(
-                    "missing Google API key. Set GEMINI_API_KEY, GOOGLE_API_KEY, PI_API_KEY, --google-api-key, or --api-key"
+                    "resolved auth mode '{}' for '{}' did not provide a credential",
+                    resolved.method.as_str(),
+                    provider.as_str()
                 )
             })?;
 
@@ -7306,6 +7693,12 @@ fn build_provider_client(cli: &Cli, provider: Provider) -> Result<Arc<dyn LlmCli
                 retry_budget_ms: cli.provider_retry_budget_ms,
                 retry_jitter: cli.provider_retry_jitter,
             })?;
+            tracing::debug!(
+                provider = provider.as_str(),
+                auth_mode = resolved.method.as_str(),
+                auth_source = auth_source,
+                "provider auth resolved"
+            );
             Ok(Arc::new(client))
         }
     }
@@ -7451,6 +7844,11 @@ fn build_profile_defaults(cli: &Cli) -> ProfileDefaults {
             max_file_write_bytes: cli.max_file_write_bytes,
             allow_command_newlines: cli.allow_command_newlines,
         },
+        auth: ProfileAuthDefaults {
+            openai: cli.openai_auth_mode.into(),
+            anthropic: cli.anthropic_auth_mode.into(),
+            google: cli.google_auth_mode.into(),
+        },
     }
 }
 
@@ -7492,10 +7890,17 @@ fn build_doctor_command_config(
     providers.sort_by_key(|provider| provider.as_str().to_string());
     let provider_keys = providers
         .into_iter()
-        .map(|provider| DoctorProviderKeyStatus {
-            provider: provider.as_str().to_string(),
-            key_env_var: provider_key_env_var(provider).to_string(),
-            present: provider_key_present(cli, provider),
+        .map(|provider| {
+            let auth_mode = configured_provider_auth_method(cli, provider);
+            let capability = provider_auth_capability(provider, auth_mode);
+            DoctorProviderKeyStatus {
+                provider_kind: provider,
+                provider: provider.as_str().to_string(),
+                key_env_var: provider_key_env_var(provider).to_string(),
+                present: provider_key_present(cli, provider),
+                auth_mode,
+                mode_supported: capability.supported,
+            }
         })
         .collect::<Vec<_>>();
 
@@ -7550,14 +7955,14 @@ mod tests {
 
     use super::{
         apply_trust_root_mutations, branch_alias_path_for_session, build_doctor_command_config,
-        build_profile_defaults, build_tool_policy, command_file_error_mode_label,
-        compute_session_entry_depths, compute_session_stats, default_macro_config_path,
-        default_profile_store_path, default_skills_lock_path, derive_skills_prune_candidates,
-        ensure_non_empty_text, escape_graph_label, execute_branch_alias_command,
-        execute_command_file, execute_doctor_command, execute_macro_command,
-        execute_profile_command, execute_session_bookmark_command, execute_session_diff_command,
-        execute_session_graph_export_command, execute_session_search_command,
-        execute_session_stats_command, execute_skills_list_command,
+        build_profile_defaults, build_provider_client, build_tool_policy,
+        command_file_error_mode_label, compute_session_entry_depths, compute_session_stats,
+        default_macro_config_path, default_profile_store_path, default_skills_lock_path,
+        derive_skills_prune_candidates, ensure_non_empty_text, escape_graph_label,
+        execute_branch_alias_command, execute_command_file, execute_doctor_command,
+        execute_macro_command, execute_profile_command, execute_session_bookmark_command,
+        execute_session_diff_command, execute_session_graph_export_command,
+        execute_session_search_command, execute_session_stats_command, execute_skills_list_command,
         execute_skills_lock_diff_command, execute_skills_lock_write_command,
         execute_skills_prune_command, execute_skills_search_command, execute_skills_show_command,
         execute_skills_sync_command, execute_skills_trust_add_command,
@@ -7572,36 +7977,38 @@ mod tests {
         parse_session_stats_args, parse_skills_lock_diff_args, parse_skills_prune_args,
         parse_skills_search_args, parse_skills_trust_list_args, parse_skills_trust_mutation_args,
         parse_skills_verify_args, parse_trust_rotation_spec, parse_trusted_root_spec,
-        percentile_duration_ms, render_audit_summary, render_command_help, render_doctor_report,
-        render_doctor_report_json, render_help_overview, render_macro_list, render_macro_show,
-        render_profile_diffs, render_profile_list, render_profile_show, render_session_diff,
-        render_session_graph_dot, render_session_graph_mermaid, render_session_stats,
-        render_session_stats_json, render_skills_list, render_skills_lock_diff_drift,
-        render_skills_lock_diff_in_sync, render_skills_lock_write_success, render_skills_search,
-        render_skills_show, render_skills_sync_drift_details, render_skills_trust_list,
-        render_skills_verify_report, resolve_fallback_models, resolve_prompt_input,
-        resolve_prunable_skill_file_name, resolve_session_graph_format, resolve_skill_trust_roots,
-        resolve_skills_lock_path, resolve_system_prompt, run_doctor_checks,
-        run_prompt_with_cancellation, save_branch_aliases, save_macro_file, save_profile_store,
-        save_session_bookmarks, search_session_entries, session_bookmark_path_for_session,
-        session_message_preview, shared_lineage_prefix_depth, stream_text_chunks,
-        summarize_audit_file, tool_audit_event_json, tool_policy_to_json, trust_record_status,
-        unknown_command_message, validate_branch_alias_name, validate_macro_command_entry,
-        validate_macro_name, validate_profile_name, validate_session_file,
-        validate_skills_prune_file_name, BranchAliasCommand, BranchAliasFile, Cli, CliBashProfile,
-        CliCommandFileErrorMode, CliOsSandboxMode, CliSessionImportMode, CliToolPolicyPreset,
+        percentile_duration_ms, provider_auth_capability, render_audit_summary,
+        render_command_help, render_doctor_report, render_doctor_report_json, render_help_overview,
+        render_macro_list, render_macro_show, render_profile_diffs, render_profile_list,
+        render_profile_show, render_session_diff, render_session_graph_dot,
+        render_session_graph_mermaid, render_session_stats, render_session_stats_json,
+        render_skills_list, render_skills_lock_diff_drift, render_skills_lock_diff_in_sync,
+        render_skills_lock_write_success, render_skills_search, render_skills_show,
+        render_skills_sync_drift_details, render_skills_trust_list, render_skills_verify_report,
+        resolve_fallback_models, resolve_prompt_input, resolve_prunable_skill_file_name,
+        resolve_session_graph_format, resolve_skill_trust_roots, resolve_skills_lock_path,
+        resolve_system_prompt, run_doctor_checks, run_prompt_with_cancellation,
+        save_branch_aliases, save_macro_file, save_profile_store, save_session_bookmarks,
+        search_session_entries, session_bookmark_path_for_session, session_message_preview,
+        shared_lineage_prefix_depth, stream_text_chunks, summarize_audit_file,
+        tool_audit_event_json, tool_policy_to_json, trust_record_status, unknown_command_message,
+        validate_branch_alias_name, validate_macro_command_entry, validate_macro_name,
+        validate_profile_name, validate_session_file, validate_skills_prune_file_name,
+        BranchAliasCommand, BranchAliasFile, Cli, CliBashProfile, CliCommandFileErrorMode,
+        CliOsSandboxMode, CliProviderAuthMode, CliSessionImportMode, CliToolPolicyPreset,
         ClientRoute, CommandAction, CommandExecutionContext, CommandFileEntry, CommandFileReport,
         DoctorCheckResult, DoctorCommandConfig, DoctorCommandOutputFormat, DoctorProviderKeyStatus,
         DoctorStatus, FallbackRoutingClient, MacroCommand, MacroFile, ProfileCommand,
-        ProfileDefaults, ProfileStoreFile, PromptRunStatus, PromptTelemetryLogger, RenderOptions,
-        SessionBookmarkCommand, SessionBookmarkFile, SessionDiffEntry, SessionDiffReport,
-        SessionGraphFormat, SessionRuntime, SessionStats, SessionStatsOutputFormat,
-        SkillsPruneMode, SkillsSyncCommandConfig, SkillsVerifyEntry, SkillsVerifyReport,
-        SkillsVerifyStatus, SkillsVerifySummary, SkillsVerifyTrustSummary, ToolAuditLogger,
-        TrustedRootRecord, BRANCH_ALIAS_SCHEMA_VERSION, BRANCH_ALIAS_USAGE, MACRO_SCHEMA_VERSION,
-        MACRO_USAGE, PROFILE_SCHEMA_VERSION, PROFILE_USAGE, SESSION_BOOKMARK_SCHEMA_VERSION,
-        SESSION_BOOKMARK_USAGE, SESSION_SEARCH_MAX_RESULTS, SESSION_SEARCH_PREVIEW_CHARS,
-        SKILLS_PRUNE_USAGE, SKILLS_TRUST_ADD_USAGE, SKILLS_TRUST_LIST_USAGE, SKILLS_VERIFY_USAGE,
+        ProfileDefaults, ProfileStoreFile, PromptRunStatus, PromptTelemetryLogger,
+        ProviderAuthMethod, RenderOptions, SessionBookmarkCommand, SessionBookmarkFile,
+        SessionDiffEntry, SessionDiffReport, SessionGraphFormat, SessionRuntime, SessionStats,
+        SessionStatsOutputFormat, SkillsPruneMode, SkillsSyncCommandConfig, SkillsVerifyEntry,
+        SkillsVerifyReport, SkillsVerifyStatus, SkillsVerifySummary, SkillsVerifyTrustSummary,
+        ToolAuditLogger, TrustedRootRecord, BRANCH_ALIAS_SCHEMA_VERSION, BRANCH_ALIAS_USAGE,
+        MACRO_SCHEMA_VERSION, MACRO_USAGE, PROFILE_SCHEMA_VERSION, PROFILE_USAGE,
+        SESSION_BOOKMARK_SCHEMA_VERSION, SESSION_BOOKMARK_USAGE, SESSION_SEARCH_MAX_RESULTS,
+        SESSION_SEARCH_PREVIEW_CHARS, SKILLS_PRUNE_USAGE, SKILLS_TRUST_ADD_USAGE,
+        SKILLS_TRUST_LIST_USAGE, SKILLS_VERIFY_USAGE,
     };
     use crate::resolve_api_key;
     use crate::session::{SessionImportMode, SessionStore};
@@ -7710,6 +8117,9 @@ mod tests {
             openai_api_key: None,
             anthropic_api_key: None,
             google_api_key: None,
+            openai_auth_mode: CliProviderAuthMode::ApiKey,
+            anthropic_auth_mode: CliProviderAuthMode::ApiKey,
+            google_auth_mode: CliProviderAuthMode::ApiKey,
             system_prompt: "sys".to_string(),
             system_prompt_file: None,
             skills_dir: PathBuf::from(".pi/skills"),
@@ -7784,9 +8194,12 @@ mod tests {
             doctor_config: DoctorCommandConfig {
                 model: "openai/gpt-4o-mini".to_string(),
                 provider_keys: vec![DoctorProviderKeyStatus {
+                    provider_kind: Provider::OpenAi,
                     provider: "openai".to_string(),
                     key_env_var: "OPENAI_API_KEY".to_string(),
                     present: true,
+                    auth_mode: ProviderAuthMethod::ApiKey,
+                    mode_supported: true,
                 }],
                 session_enabled: true,
                 session_path: PathBuf::from(".pi/sessions/default.jsonl"),
@@ -7856,6 +8269,30 @@ mod tests {
         assert_eq!(cli.provider_max_retries, 5);
         assert_eq!(cli.provider_retry_budget_ms, 1500);
         assert!(!cli.provider_retry_jitter);
+    }
+
+    #[test]
+    fn unit_cli_provider_auth_mode_flags_default_to_api_key() {
+        let cli = Cli::parse_from(["pi-rs"]);
+        assert_eq!(cli.openai_auth_mode, CliProviderAuthMode::ApiKey);
+        assert_eq!(cli.anthropic_auth_mode, CliProviderAuthMode::ApiKey);
+        assert_eq!(cli.google_auth_mode, CliProviderAuthMode::ApiKey);
+    }
+
+    #[test]
+    fn functional_cli_provider_auth_mode_flags_accept_overrides() {
+        let cli = Cli::parse_from([
+            "pi-rs",
+            "--openai-auth-mode",
+            "oauth-token",
+            "--anthropic-auth-mode",
+            "session-token",
+            "--google-auth-mode",
+            "adc",
+        ]);
+        assert_eq!(cli.openai_auth_mode, CliProviderAuthMode::OauthToken);
+        assert_eq!(cli.anthropic_auth_mode, CliProviderAuthMode::SessionToken);
+        assert_eq!(cli.google_auth_mode, CliProviderAuthMode::Adc);
     }
 
     #[test]
@@ -8114,6 +8551,41 @@ mod tests {
     fn resolve_api_key_returns_none_when_all_candidates_are_empty() {
         let key = resolve_api_key(vec![None, Some("".to_string())]);
         assert!(key.is_none());
+    }
+
+    #[test]
+    fn unit_provider_auth_capability_reports_api_key_support() {
+        let openai = provider_auth_capability(Provider::OpenAi, ProviderAuthMethod::ApiKey);
+        assert!(openai.supported);
+        assert_eq!(openai.reason, "supported");
+
+        let google = provider_auth_capability(Provider::Google, ProviderAuthMethod::OauthToken);
+        assert!(!google.supported);
+        assert_eq!(google.reason, "not_implemented");
+    }
+
+    #[test]
+    fn regression_build_provider_client_rejects_unsupported_auth_mode() {
+        let mut cli = test_cli();
+        cli.openai_auth_mode = CliProviderAuthMode::OauthToken;
+
+        match build_provider_client(&cli, Provider::OpenAi) {
+            Ok(_) => panic!("unsupported auth mode should fail"),
+            Err(error) => {
+                assert!(error.to_string().contains("unsupported auth mode"));
+                assert!(error.to_string().contains("--openai-auth-mode api-key"));
+            }
+        }
+    }
+
+    #[test]
+    fn integration_build_provider_client_preserves_api_key_mode_behavior() {
+        let mut cli = test_cli();
+        cli.openai_api_key = Some("test-openai-key".to_string());
+
+        let client = build_provider_client(&cli, Provider::OpenAi).expect("build client");
+        let ptr = Arc::as_ptr(&client);
+        assert!(!ptr.is_null());
     }
 
     #[test]
@@ -8764,6 +9236,8 @@ mod tests {
                     item.provider.clone(),
                     item.key_env_var.clone(),
                     item.present,
+                    item.auth_mode.as_str().to_string(),
+                    item.mode_supported,
                 )
             })
             .collect::<Vec<_>>();
@@ -8773,10 +9247,24 @@ mod tests {
                 (
                     "anthropic".to_string(),
                     "ANTHROPIC_API_KEY".to_string(),
+                    true,
+                    "api_key".to_string(),
                     true
                 ),
-                ("google".to_string(), "GEMINI_API_KEY".to_string(), false),
-                ("openai".to_string(), "OPENAI_API_KEY".to_string(), true),
+                (
+                    "google".to_string(),
+                    "GEMINI_API_KEY".to_string(),
+                    false,
+                    "api_key".to_string(),
+                    true
+                ),
+                (
+                    "openai".to_string(),
+                    "OPENAI_API_KEY".to_string(),
+                    true,
+                    "api_key".to_string(),
+                    true
+                ),
             ]
         );
     }
@@ -8878,14 +9366,20 @@ mod tests {
             model: "openai/gpt-4o-mini".to_string(),
             provider_keys: vec![
                 DoctorProviderKeyStatus {
+                    provider_kind: Provider::Anthropic,
                     provider: "anthropic".to_string(),
                     key_env_var: "ANTHROPIC_API_KEY".to_string(),
                     present: false,
+                    auth_mode: ProviderAuthMethod::ApiKey,
+                    mode_supported: true,
                 },
                 DoctorProviderKeyStatus {
+                    provider_kind: Provider::OpenAi,
                     provider: "openai".to_string(),
                     key_env_var: "OPENAI_API_KEY".to_string(),
                     present: true,
+                    auth_mode: ProviderAuthMethod::ApiKey,
+                    mode_supported: true,
                 },
             ],
             session_enabled: true,
@@ -8896,7 +9390,7 @@ mod tests {
         };
 
         let report = execute_doctor_command(&config, DoctorCommandOutputFormat::Text);
-        assert!(report.contains("doctor summary: checks=7 pass=6 warn=0 fail=1"));
+        assert!(report.contains("doctor summary: checks=9 pass=8 warn=0 fail=1"));
 
         let keys = report
             .lines()
@@ -8915,7 +9409,9 @@ mod tests {
             keys,
             vec![
                 "model".to_string(),
+                "provider_auth_mode.anthropic".to_string(),
                 "provider_key.anthropic".to_string(),
+                "provider_auth_mode.openai".to_string(),
                 "provider_key.openai".to_string(),
                 "session_path".to_string(),
                 "skills_dir".to_string(),
@@ -8927,12 +9423,12 @@ mod tests {
         let json_report = execute_doctor_command(&config, DoctorCommandOutputFormat::Json);
         let value =
             serde_json::from_str::<serde_json::Value>(&json_report).expect("parse json report");
-        assert_eq!(value["summary"]["checks"], 7);
-        assert_eq!(value["summary"]["pass"], 6);
+        assert_eq!(value["summary"]["checks"], 9);
+        assert_eq!(value["summary"]["pass"], 8);
         assert_eq!(value["summary"]["warn"], 0);
         assert_eq!(value["summary"]["fail"], 1);
         assert_eq!(value["checks"][0]["key"], "model");
-        assert_eq!(value["checks"][1]["key"], "provider_key.anthropic");
+        assert_eq!(value["checks"][1]["key"], "provider_auth_mode.anthropic");
     }
 
     #[test]
@@ -8941,9 +9437,12 @@ mod tests {
         let config = DoctorCommandConfig {
             model: "openai/gpt-4o-mini".to_string(),
             provider_keys: vec![DoctorProviderKeyStatus {
+                provider_kind: Provider::OpenAi,
                 provider: "openai".to_string(),
                 key_env_var: "OPENAI_API_KEY".to_string(),
                 present: false,
+                auth_mode: ProviderAuthMethod::ApiKey,
+                mode_supported: true,
             }],
             session_enabled: true,
             session_path: temp.path().join("missing-parent").join("session.jsonl"),
@@ -8961,6 +9460,12 @@ mod tests {
         assert_eq!(
             by_key.get("model").map(|item| item.status),
             Some(DoctorStatus::Pass)
+        );
+        assert_eq!(
+            by_key
+                .get("provider_auth_mode.openai")
+                .map(|item| (item.status, item.code.clone())),
+            Some((DoctorStatus::Pass, "api_key".to_string()))
         );
         assert_eq!(
             by_key
@@ -9062,9 +9567,12 @@ mod tests {
         let config = DoctorCommandConfig {
             model: "openai/gpt-4o-mini".to_string(),
             provider_keys: vec![DoctorProviderKeyStatus {
+                provider_kind: Provider::OpenAi,
                 provider: "openai".to_string(),
                 key_env_var: "OPENAI_API_KEY".to_string(),
                 present: true,
+                auth_mode: ProviderAuthMethod::ApiKey,
+                mode_supported: true,
             }],
             session_enabled: true,
             session_path,
@@ -9078,6 +9586,13 @@ mod tests {
             .into_iter()
             .map(|check| (check.key.clone(), check))
             .collect::<HashMap<_, _>>();
+
+        assert_eq!(
+            by_key
+                .get("provider_auth_mode.openai")
+                .map(|item| (item.status, item.code.clone())),
+            Some((DoctorStatus::Pass, "api_key".to_string()))
+        );
 
         assert_eq!(
             by_key
@@ -9745,6 +10260,56 @@ mod tests {
     }
 
     #[test]
+    fn regression_load_profile_store_backfills_auth_defaults_for_legacy_profiles() {
+        let temp = tempdir().expect("tempdir");
+        let profile_path = temp.path().join(".pi").join("profiles.json");
+        std::fs::create_dir_all(
+            profile_path
+                .parent()
+                .expect("profile path should have parent"),
+        )
+        .expect("mkdir profile dir");
+        std::fs::write(
+            &profile_path,
+            serde_json::json!({
+                "schema_version": PROFILE_SCHEMA_VERSION,
+                "profiles": {
+                    "legacy": {
+                        "model": "openai/gpt-4o-mini",
+                        "fallback_models": [],
+                        "session": {
+                            "enabled": true,
+                            "path": ".pi/sessions/default.jsonl",
+                            "import_mode": "merge"
+                        },
+                        "policy": {
+                            "tool_policy_preset": "balanced",
+                            "bash_profile": "balanced",
+                            "bash_dry_run": false,
+                            "os_sandbox_mode": "off",
+                            "enforce_regular_files": true,
+                            "bash_timeout_ms": 500,
+                            "max_command_length": 4096,
+                            "max_tool_output_bytes": 1024,
+                            "max_file_read_bytes": 2048,
+                            "max_file_write_bytes": 2048,
+                            "allow_command_newlines": true
+                        }
+                    }
+                }
+            })
+            .to_string(),
+        )
+        .expect("write legacy profile store");
+
+        let loaded = load_profile_store(&profile_path).expect("load legacy profiles");
+        let legacy = loaded.get("legacy").expect("legacy profile");
+        assert_eq!(legacy.auth.openai, ProviderAuthMethod::ApiKey);
+        assert_eq!(legacy.auth.anthropic, ProviderAuthMethod::ApiKey);
+        assert_eq!(legacy.auth.google, ProviderAuthMethod::ApiKey);
+    }
+
+    #[test]
     fn functional_render_profile_diffs_reports_changed_fields() {
         let current = test_profile_defaults();
         let mut loaded = current.clone();
@@ -9762,6 +10327,22 @@ mod tests {
         assert!(diffs
             .iter()
             .any(|line| line.contains("field=policy.max_command_length current=4096 loaded=2048")));
+    }
+
+    #[test]
+    fn functional_render_profile_diffs_reports_changed_auth_modes() {
+        let current = test_profile_defaults();
+        let mut loaded = current.clone();
+        loaded.auth.openai = ProviderAuthMethod::OauthToken;
+        loaded.auth.google = ProviderAuthMethod::Adc;
+
+        let diffs = render_profile_diffs(&current, &loaded);
+        assert!(diffs
+            .iter()
+            .any(|line| line.contains("field=auth.openai current=api_key loaded=oauth_token")));
+        assert!(diffs
+            .iter()
+            .any(|line| line.contains("field=auth.google current=api_key loaded=adc")));
     }
 
     #[test]
@@ -9788,6 +10369,7 @@ mod tests {
         assert!(show_output.contains("value: fallback_models=none"));
         assert!(show_output.contains("value: session.path=.pi/sessions/default.jsonl"));
         assert!(show_output.contains("value: policy.max_command_length=4096"));
+        assert!(show_output.contains("value: auth.openai=api_key"));
     }
 
     #[test]
