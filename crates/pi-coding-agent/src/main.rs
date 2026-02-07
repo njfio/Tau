@@ -741,6 +741,14 @@ struct Cli {
     event_webhook_secret: Option<String>,
 
     #[arg(
+        long = "event-webhook-secret-id",
+        env = "PI_EVENT_WEBHOOK_SECRET_ID",
+        requires = "event_webhook_ingest_file",
+        help = "Credential-store integration id used to resolve webhook signing secret"
+    )]
+    event_webhook_secret_id: Option<String>,
+
+    #[arg(
         long = "event-webhook-signature-algorithm",
         env = "PI_EVENT_WEBHOOK_SIGNATURE_ALGORITHM",
         value_enum,
@@ -782,6 +790,14 @@ struct Cli {
         help = "GitHub token used for API access in --github-issues-bridge mode"
     )]
     github_token: Option<String>,
+
+    #[arg(
+        long = "github-token-id",
+        env = "PI_GITHUB_TOKEN_ID",
+        requires = "github_issues_bridge",
+        help = "Credential-store integration id used to resolve GitHub bridge token"
+    )]
+    github_token_id: Option<String>,
 
     #[arg(
         long = "github-bot-login",
@@ -883,6 +899,14 @@ struct Cli {
     slack_app_token: Option<String>,
 
     #[arg(
+        long = "slack-app-token-id",
+        env = "PI_SLACK_APP_TOKEN_ID",
+        requires = "slack_bridge",
+        help = "Credential-store integration id used to resolve Slack app token"
+    )]
+    slack_app_token_id: Option<String>,
+
+    #[arg(
         long = "slack-bot-token",
         env = "PI_SLACK_BOT_TOKEN",
         hide_env_values = true,
@@ -890,6 +914,14 @@ struct Cli {
         help = "Slack bot token for Web API (xoxb-...)"
     )]
     slack_bot_token: Option<String>,
+
+    #[arg(
+        long = "slack-bot-token-id",
+        env = "PI_SLACK_BOT_TOKEN_ID",
+        requires = "slack_bridge",
+        help = "Credential-store integration id used to resolve Slack bot token"
+    )]
+    slack_bot_token_id: Option<String>,
 
     #[arg(
         long = "slack-bot-user-id",
@@ -1488,6 +1520,14 @@ const COMMAND_SPECS: &[CommandSpec] = &[
         example: "/auth status openai --json",
     },
     CommandSpec {
+        name: "/integration-auth",
+        usage: "/integration-auth <set|status|rotate|revoke> ...",
+        description: "Manage credential-store secrets for integrations (GitHub, Slack, webhooks)",
+        details:
+            "Supports set/status/rotate/revoke flows for integration secret ids with optional --json output.",
+        example: "/integration-auth status github-token --json",
+    },
+    CommandSpec {
         name: "/profile",
         usage: "/profile <save|load|list|show|delete> ...",
         description: "Manage model, policy, and session default profiles",
@@ -1575,6 +1615,7 @@ const COMMAND_NAMES: &[&str] = &[
     "/branches",
     "/macro",
     "/auth",
+    "/integration-auth",
     "/profile",
     "/branch-alias",
     "/session-bookmark",
@@ -2162,6 +2203,12 @@ async fn main() -> Result<()> {
             .event_webhook_channel
             .clone()
             .ok_or_else(|| anyhow!("--event-webhook-channel is required"))?;
+        let event_webhook_secret = resolve_secret_from_cli_or_store_id(
+            &cli,
+            cli.event_webhook_secret.as_deref(),
+            cli.event_webhook_secret_id.as_deref(),
+            "--event-webhook-secret-id",
+        )?;
         ingest_webhook_immediate_event(&EventWebhookIngestConfig {
             events_dir: cli.events_dir.clone(),
             state_path: cli.events_state_path.clone(),
@@ -2172,7 +2219,7 @@ async fn main() -> Result<()> {
             debounce_window_seconds: cli.event_webhook_debounce_window_seconds,
             signature: cli.event_webhook_signature.clone(),
             timestamp: cli.event_webhook_timestamp.clone(),
-            secret: cli.event_webhook_secret.clone(),
+            secret: event_webhook_secret,
             signature_algorithm: cli.event_webhook_signature_algorithm.map(Into::into),
             signature_max_skew_seconds: cli.event_webhook_signature_max_skew_seconds,
         })?;
@@ -2293,9 +2340,15 @@ async fn main() -> Result<()> {
         let repo_slug = cli.github_repo.clone().ok_or_else(|| {
             anyhow!("--github-repo is required when --github-issues-bridge is set")
         })?;
-        let token = cli.github_token.clone().ok_or_else(|| {
+        let token = resolve_secret_from_cli_or_store_id(
+            &cli,
+            cli.github_token.as_deref(),
+            cli.github_token_id.as_deref(),
+            "--github-token-id",
+        )?
+        .ok_or_else(|| {
             anyhow!(
-                "--github-token (or GITHUB_TOKEN) is required when --github-issues-bridge is set"
+                "--github-token (or --github-token-id) is required when --github-issues-bridge is set"
             )
         })?;
         return run_github_issues_bridge(GithubIssuesBridgeRuntimeConfig {
@@ -2324,15 +2377,23 @@ async fn main() -> Result<()> {
         .await;
     }
     if cli.slack_bridge {
-        let app_token = cli.slack_app_token.clone().ok_or_else(|| {
-            anyhow!(
-                "--slack-app-token (or PI_SLACK_APP_TOKEN) is required when --slack-bridge is set"
-            )
+        let app_token = resolve_secret_from_cli_or_store_id(
+            &cli,
+            cli.slack_app_token.as_deref(),
+            cli.slack_app_token_id.as_deref(),
+            "--slack-app-token-id",
+        )?
+        .ok_or_else(|| {
+            anyhow!("--slack-app-token (or --slack-app-token-id) is required when --slack-bridge is set")
         })?;
-        let bot_token = cli.slack_bot_token.clone().ok_or_else(|| {
-            anyhow!(
-                "--slack-bot-token (or PI_SLACK_BOT_TOKEN) is required when --slack-bridge is set"
-            )
+        let bot_token = resolve_secret_from_cli_or_store_id(
+            &cli,
+            cli.slack_bot_token.as_deref(),
+            cli.slack_bot_token_id.as_deref(),
+            "--slack-bot-token-id",
+        )?
+        .ok_or_else(|| {
+            anyhow!("--slack-bot-token (or --slack-bot-token-id) is required when --slack-bridge is set")
         })?;
         return run_slack_bridge(SlackBridgeRuntimeConfig {
             client: client.clone(),
@@ -2501,6 +2562,73 @@ fn resolve_prompt_input(cli: &Cli) -> Result<Option<String>> {
     )?))
 }
 
+fn resolve_non_empty_cli_value(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+fn resolve_secret_from_cli_or_store_id(
+    cli: &Cli,
+    direct_secret: Option<&str>,
+    secret_id: Option<&str>,
+    secret_id_flag: &str,
+) -> Result<Option<String>> {
+    if let Some(secret) = resolve_non_empty_cli_value(direct_secret) {
+        return Ok(Some(secret));
+    }
+    let Some(raw_secret_id) = secret_id else {
+        return Ok(None);
+    };
+    let normalized_secret_id = normalize_integration_credential_id(raw_secret_id)?;
+    let store = load_credential_store(
+        &cli.credential_store,
+        resolve_credential_store_encryption_mode(cli),
+        cli.credential_store_key.as_deref(),
+    )
+    .with_context(|| {
+        format!(
+            "failed to resolve {} from credential store {}",
+            secret_id_flag,
+            cli.credential_store.display()
+        )
+    })?;
+    let entry = store
+        .integrations
+        .get(&normalized_secret_id)
+        .ok_or_else(|| {
+            anyhow!(
+                "integration credential id '{}' from {} was not found in credential store {}",
+                normalized_secret_id,
+                secret_id_flag,
+                cli.credential_store.display()
+            )
+        })?;
+    if entry.revoked {
+        bail!(
+            "integration credential id '{}' from {} is revoked in credential store {}",
+            normalized_secret_id,
+            secret_id_flag,
+            cli.credential_store.display()
+        );
+    }
+    let secret = entry
+        .secret
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            anyhow!(
+                "integration credential id '{}' from {} has no secret value in credential store {}",
+                normalized_secret_id,
+                secret_id_flag,
+                cli.credential_store.display()
+            )
+        })?;
+    Ok(Some(secret.to_string()))
+}
+
 fn validate_github_issues_bridge_cli(cli: &Cli) -> Result<()> {
     if !cli.github_issues_bridge {
         return Ok(());
@@ -2535,14 +2663,12 @@ fn validate_github_issues_bridge_cli(cli: &Cli) -> Result<()> {
     {
         bail!("--github-repo is required when --github-issues-bridge is set");
     }
-    if cli
-        .github_token
-        .as_deref()
-        .map(str::trim)
-        .unwrap_or_default()
-        .is_empty()
-    {
-        bail!("--github-token (or GITHUB_TOKEN) is required when --github-issues-bridge is set");
+    let has_github_token = resolve_non_empty_cli_value(cli.github_token.as_deref()).is_some();
+    let has_github_token_id = resolve_non_empty_cli_value(cli.github_token_id.as_deref()).is_some();
+    if !has_github_token && !has_github_token_id {
+        bail!(
+            "--github-token (or --github-token-id) is required when --github-issues-bridge is set"
+        );
     }
     Ok(())
 }
@@ -2561,23 +2687,17 @@ fn validate_slack_bridge_cli(cli: &Cli) -> Result<()> {
     if cli.github_issues_bridge {
         bail!("--slack-bridge cannot be combined with --github-issues-bridge");
     }
-    if cli
-        .slack_app_token
-        .as_deref()
-        .map(str::trim)
-        .unwrap_or_default()
-        .is_empty()
-    {
-        bail!("--slack-app-token (or PI_SLACK_APP_TOKEN) is required when --slack-bridge is set");
+    let has_slack_app_token = resolve_non_empty_cli_value(cli.slack_app_token.as_deref()).is_some();
+    let has_slack_app_token_id =
+        resolve_non_empty_cli_value(cli.slack_app_token_id.as_deref()).is_some();
+    if !has_slack_app_token && !has_slack_app_token_id {
+        bail!("--slack-app-token (or --slack-app-token-id) is required when --slack-bridge is set");
     }
-    if cli
-        .slack_bot_token
-        .as_deref()
-        .map(str::trim)
-        .unwrap_or_default()
-        .is_empty()
-    {
-        bail!("--slack-bot-token (or PI_SLACK_BOT_TOKEN) is required when --slack-bridge is set");
+    let has_slack_bot_token = resolve_non_empty_cli_value(cli.slack_bot_token.as_deref()).is_some();
+    let has_slack_bot_token_id =
+        resolve_non_empty_cli_value(cli.slack_bot_token_id.as_deref()).is_some();
+    if !has_slack_bot_token && !has_slack_bot_token_id {
+        bail!("--slack-bot-token (or --slack-bot-token-id) is required when --slack-bridge is set");
     }
     if cli.slack_thread_detail_threshold_chars == 0 {
         bail!("--slack-thread-detail-threshold-chars must be greater than 0");
@@ -2644,6 +2764,7 @@ fn validate_event_webhook_ingest_cli(cli: &Cli) -> Result<()> {
     let signing_configured = cli.event_webhook_signature.is_some()
         || cli.event_webhook_timestamp.is_some()
         || cli.event_webhook_secret.is_some()
+        || cli.event_webhook_secret_id.is_some()
         || cli.event_webhook_signature_algorithm.is_some();
     if signing_configured {
         if cli
@@ -2657,14 +2778,12 @@ fn validate_event_webhook_ingest_cli(cli: &Cli) -> Result<()> {
                 "--event-webhook-signature is required when webhook signature verification is configured"
             );
         }
-        if cli
-            .event_webhook_secret
-            .as_deref()
-            .map(str::trim)
-            .unwrap_or_default()
-            .is_empty()
-        {
-            bail!("--event-webhook-secret is required when webhook signature verification is configured");
+        let has_webhook_secret =
+            resolve_non_empty_cli_value(cli.event_webhook_secret.as_deref()).is_some();
+        let has_webhook_secret_id =
+            resolve_non_empty_cli_value(cli.event_webhook_secret_id.as_deref()).is_some();
+        if !has_webhook_secret && !has_webhook_secret_id {
+            bail!("--event-webhook-secret (or --event-webhook-secret-id) is required when webhook signature verification is configured");
         }
         match cli.event_webhook_signature_algorithm {
             Some(CliWebhookSignatureAlgorithm::GithubSha256) => {}
@@ -3830,6 +3949,14 @@ fn handle_command_with_session_import_mode(
         println!(
             "{}",
             execute_auth_command(auth_command_config, command_args)
+        );
+        return Ok(CommandAction::Continue);
+    }
+
+    if command_name == "/integration-auth" {
+        println!(
+            "{}",
+            execute_integration_auth_command(auth_command_config, command_args)
         );
         return Ok(CommandAction::Continue);
     }
@@ -5964,6 +6091,559 @@ fn execute_auth_command(config: &AuthCommandConfig, command_args: &str) -> Strin
             provider,
             json_output,
         } => execute_auth_logout_command(config, provider, json_output),
+    }
+}
+
+const INTEGRATION_AUTH_USAGE: &str = "usage: /integration-auth <set|status|rotate|revoke> ...";
+const INTEGRATION_AUTH_SET_USAGE: &str =
+    "usage: /integration-auth set <integration-id> <secret> [--json]";
+const INTEGRATION_AUTH_STATUS_USAGE: &str =
+    "usage: /integration-auth status [integration-id] [--json]";
+const INTEGRATION_AUTH_ROTATE_USAGE: &str =
+    "usage: /integration-auth rotate <integration-id> <secret> [--json]";
+const INTEGRATION_AUTH_REVOKE_USAGE: &str =
+    "usage: /integration-auth revoke <integration-id> [--json]";
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum IntegrationAuthCommand {
+    Set {
+        integration_id: String,
+        secret: String,
+        json_output: bool,
+    },
+    Status {
+        integration_id: Option<String>,
+        json_output: bool,
+    },
+    Rotate {
+        integration_id: String,
+        secret: String,
+        json_output: bool,
+    },
+    Revoke {
+        integration_id: String,
+        json_output: bool,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+struct IntegrationAuthStatusRow {
+    integration_id: String,
+    available: bool,
+    state: String,
+    source: String,
+    reason: String,
+    updated_unix: Option<u64>,
+    revoked: bool,
+}
+
+fn normalize_integration_credential_id(raw: &str) -> Result<String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        bail!("integration credential id must not be empty");
+    }
+
+    let mut normalized = String::with_capacity(trimmed.len());
+    for ch in trimmed.chars() {
+        if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.') {
+            normalized.push(ch.to_ascii_lowercase());
+            continue;
+        }
+        bail!(
+            "integration credential id '{}' contains unsupported character '{}'; use only [a-z0-9._-]",
+            trimmed,
+            ch
+        );
+    }
+    Ok(normalized)
+}
+
+fn parse_integration_auth_command(command_args: &str) -> Result<IntegrationAuthCommand> {
+    let tokens = command_args
+        .split_whitespace()
+        .filter(|token| !token.is_empty())
+        .collect::<Vec<_>>();
+    if tokens.is_empty() {
+        bail!("{INTEGRATION_AUTH_USAGE}");
+    }
+
+    match tokens[0] {
+        "set" => {
+            if tokens.len() < 3 {
+                bail!("{INTEGRATION_AUTH_SET_USAGE}");
+            }
+            let integration_id = normalize_integration_credential_id(tokens[1])?;
+            let mut secret: Option<String> = None;
+            let mut json_output = false;
+            for token in tokens.into_iter().skip(2) {
+                if token == "--json" {
+                    json_output = true;
+                    continue;
+                }
+                if secret.is_some() {
+                    bail!(
+                        "unexpected argument '{}'; {INTEGRATION_AUTH_SET_USAGE}",
+                        token
+                    );
+                }
+                secret = Some(token.to_string());
+            }
+            let Some(secret) = secret else {
+                bail!("{INTEGRATION_AUTH_SET_USAGE}");
+            };
+            Ok(IntegrationAuthCommand::Set {
+                integration_id,
+                secret,
+                json_output,
+            })
+        }
+        "status" => {
+            let mut integration_id: Option<String> = None;
+            let mut json_output = false;
+            for token in tokens.into_iter().skip(1) {
+                if token == "--json" {
+                    json_output = true;
+                    continue;
+                }
+                if integration_id.is_some() {
+                    bail!(
+                        "unexpected argument '{}'; {INTEGRATION_AUTH_STATUS_USAGE}",
+                        token
+                    );
+                }
+                integration_id = Some(normalize_integration_credential_id(token)?);
+            }
+            Ok(IntegrationAuthCommand::Status {
+                integration_id,
+                json_output,
+            })
+        }
+        "rotate" => {
+            if tokens.len() < 3 {
+                bail!("{INTEGRATION_AUTH_ROTATE_USAGE}");
+            }
+            let integration_id = normalize_integration_credential_id(tokens[1])?;
+            let mut secret: Option<String> = None;
+            let mut json_output = false;
+            for token in tokens.into_iter().skip(2) {
+                if token == "--json" {
+                    json_output = true;
+                    continue;
+                }
+                if secret.is_some() {
+                    bail!(
+                        "unexpected argument '{}'; {INTEGRATION_AUTH_ROTATE_USAGE}",
+                        token
+                    );
+                }
+                secret = Some(token.to_string());
+            }
+            let Some(secret) = secret else {
+                bail!("{INTEGRATION_AUTH_ROTATE_USAGE}");
+            };
+            Ok(IntegrationAuthCommand::Rotate {
+                integration_id,
+                secret,
+                json_output,
+            })
+        }
+        "revoke" => {
+            if tokens.len() < 2 {
+                bail!("{INTEGRATION_AUTH_REVOKE_USAGE}");
+            }
+            let integration_id = normalize_integration_credential_id(tokens[1])?;
+            let mut json_output = false;
+            for token in tokens.into_iter().skip(2) {
+                if token == "--json" {
+                    json_output = true;
+                } else {
+                    bail!(
+                        "unexpected argument '{}'; {INTEGRATION_AUTH_REVOKE_USAGE}",
+                        token
+                    );
+                }
+            }
+            Ok(IntegrationAuthCommand::Revoke {
+                integration_id,
+                json_output,
+            })
+        }
+        other => bail!("unknown subcommand '{}'; {INTEGRATION_AUTH_USAGE}", other),
+    }
+}
+
+fn integration_auth_error(command: &str, integration_id: &str, error: anyhow::Error) -> String {
+    format!("integration auth {command} error: integration_id={integration_id} error={error}")
+}
+
+fn execute_integration_auth_set_or_rotate_command(
+    config: &AuthCommandConfig,
+    integration_id: String,
+    secret: String,
+    json_output: bool,
+    rotate: bool,
+) -> String {
+    let secret = secret.trim();
+    if secret.is_empty() {
+        if json_output {
+            return serde_json::json!({
+                "command": if rotate {
+                    "integration_auth.rotate"
+                } else {
+                    "integration_auth.set"
+                },
+                "integration_id": integration_id,
+                "status": "error",
+                "reason": "integration secret must not be empty",
+            })
+            .to_string();
+        }
+        return format!(
+            "integration auth {} error: integration_id={} error=integration secret must not be empty",
+            if rotate { "rotate" } else { "set" },
+            integration_id,
+        );
+    }
+
+    let mut store = match load_credential_store(
+        &config.credential_store,
+        config.credential_store_encryption,
+        config.credential_store_key.as_deref(),
+    ) {
+        Ok(store) => store,
+        Err(error) => {
+            if json_output {
+                return serde_json::json!({
+                    "command": if rotate {
+                        "integration_auth.rotate"
+                    } else {
+                        "integration_auth.set"
+                    },
+                    "integration_id": integration_id,
+                    "status": "error",
+                    "reason": error.to_string(),
+                })
+                .to_string();
+            }
+            return integration_auth_error(
+                if rotate { "rotate" } else { "set" },
+                &integration_id,
+                error,
+            );
+        }
+    };
+
+    let existed = store.integrations.contains_key(&integration_id);
+    let updated_unix = Some(current_unix_timestamp());
+    store.integrations.insert(
+        integration_id.clone(),
+        IntegrationCredentialStoreRecord {
+            secret: Some(secret.to_string()),
+            revoked: false,
+            updated_unix,
+        },
+    );
+    if let Err(error) = save_credential_store(
+        &config.credential_store,
+        &store,
+        config.credential_store_key.as_deref(),
+    ) {
+        if json_output {
+            return serde_json::json!({
+                "command": if rotate {
+                    "integration_auth.rotate"
+                } else {
+                    "integration_auth.set"
+                },
+                "integration_id": integration_id,
+                "status": "error",
+                "reason": error.to_string(),
+            })
+            .to_string();
+        }
+        return integration_auth_error(
+            if rotate { "rotate" } else { "set" },
+            &integration_id,
+            error,
+        );
+    }
+
+    let status = if rotate {
+        if existed {
+            "rotated"
+        } else {
+            "created"
+        }
+    } else {
+        "saved"
+    };
+    if json_output {
+        return serde_json::json!({
+            "command": if rotate {
+                "integration_auth.rotate"
+            } else {
+                "integration_auth.set"
+            },
+            "integration_id": integration_id,
+            "status": status,
+            "credential_store": config.credential_store.display().to_string(),
+            "updated_unix": updated_unix,
+        })
+        .to_string();
+    }
+
+    format!(
+        "integration auth {}: integration_id={} status={} credential_store={} updated_unix={}",
+        if rotate { "rotate" } else { "set" },
+        integration_id,
+        status,
+        config.credential_store.display(),
+        updated_unix
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "none".to_string())
+    )
+}
+
+fn integration_status_row_for_entry(
+    integration_id: &str,
+    entry: Option<&IntegrationCredentialStoreRecord>,
+) -> IntegrationAuthStatusRow {
+    let Some(entry) = entry else {
+        return IntegrationAuthStatusRow {
+            integration_id: integration_id.to_string(),
+            available: false,
+            state: "missing_credential".to_string(),
+            source: "credential_store".to_string(),
+            reason: "credential store entry is missing".to_string(),
+            updated_unix: None,
+            revoked: false,
+        };
+    };
+
+    if entry.revoked {
+        return IntegrationAuthStatusRow {
+            integration_id: integration_id.to_string(),
+            available: false,
+            state: "revoked".to_string(),
+            source: "credential_store".to_string(),
+            reason: "credential has been revoked".to_string(),
+            updated_unix: entry.updated_unix,
+            revoked: true,
+        };
+    }
+
+    if entry
+        .secret
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .is_none()
+    {
+        return IntegrationAuthStatusRow {
+            integration_id: integration_id.to_string(),
+            available: false,
+            state: "missing_secret".to_string(),
+            source: "credential_store".to_string(),
+            reason: "credential store entry has no secret".to_string(),
+            updated_unix: entry.updated_unix,
+            revoked: false,
+        };
+    }
+
+    IntegrationAuthStatusRow {
+        integration_id: integration_id.to_string(),
+        available: true,
+        state: "ready".to_string(),
+        source: "credential_store".to_string(),
+        reason: "credential available".to_string(),
+        updated_unix: entry.updated_unix,
+        revoked: false,
+    }
+}
+
+fn execute_integration_auth_status_command(
+    config: &AuthCommandConfig,
+    integration_id: Option<String>,
+    json_output: bool,
+) -> String {
+    let store = match load_credential_store(
+        &config.credential_store,
+        config.credential_store_encryption,
+        config.credential_store_key.as_deref(),
+    ) {
+        Ok(store) => store,
+        Err(error) => {
+            if json_output {
+                return serde_json::json!({
+                    "command": "integration_auth.status",
+                    "status": "error",
+                    "reason": error.to_string(),
+                })
+                .to_string();
+            }
+            return format!("integration auth status error: {error}");
+        }
+    };
+
+    let rows = match integration_id {
+        Some(integration_id) => {
+            vec![integration_status_row_for_entry(
+                &integration_id,
+                store.integrations.get(&integration_id),
+            )]
+        }
+        None => store
+            .integrations
+            .iter()
+            .map(|(integration_id, entry)| {
+                integration_status_row_for_entry(integration_id, Some(entry))
+            })
+            .collect::<Vec<_>>(),
+    };
+    let available = rows.iter().filter(|row| row.available).count();
+    let unavailable = rows.len().saturating_sub(available);
+
+    if json_output {
+        return serde_json::json!({
+            "command": "integration_auth.status",
+            "integrations": rows.len(),
+            "available": available,
+            "unavailable": unavailable,
+            "entries": rows,
+        })
+        .to_string();
+    }
+
+    let mut lines = vec![format!(
+        "integration auth status: integrations={} available={} unavailable={}",
+        rows.len(),
+        available,
+        unavailable
+    )];
+    for row in rows {
+        lines.push(format!(
+            "integration credential: id={} available={} state={} source={} reason={} updated_unix={} revoked={}",
+            row.integration_id,
+            row.available,
+            row.state,
+            row.source,
+            row.reason,
+            row.updated_unix
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "none".to_string()),
+            row.revoked
+        ));
+    }
+    lines.join("\n")
+}
+
+fn execute_integration_auth_revoke_command(
+    config: &AuthCommandConfig,
+    integration_id: String,
+    json_output: bool,
+) -> String {
+    let mut store = match load_credential_store(
+        &config.credential_store,
+        config.credential_store_encryption,
+        config.credential_store_key.as_deref(),
+    ) {
+        Ok(store) => store,
+        Err(error) => {
+            if json_output {
+                return serde_json::json!({
+                    "command": "integration_auth.revoke",
+                    "integration_id": integration_id,
+                    "status": "error",
+                    "reason": error.to_string(),
+                })
+                .to_string();
+            }
+            return integration_auth_error("revoke", &integration_id, error);
+        }
+    };
+
+    let status = if let Some(entry) = store.integrations.get_mut(&integration_id) {
+        entry.secret = None;
+        entry.revoked = true;
+        entry.updated_unix = Some(current_unix_timestamp());
+        "revoked"
+    } else {
+        "not_found"
+    };
+    if status == "revoked" {
+        if let Err(error) = save_credential_store(
+            &config.credential_store,
+            &store,
+            config.credential_store_key.as_deref(),
+        ) {
+            if json_output {
+                return serde_json::json!({
+                    "command": "integration_auth.revoke",
+                    "integration_id": integration_id,
+                    "status": "error",
+                    "reason": error.to_string(),
+                })
+                .to_string();
+            }
+            return integration_auth_error("revoke", &integration_id, error);
+        }
+    }
+
+    if json_output {
+        return serde_json::json!({
+            "command": "integration_auth.revoke",
+            "integration_id": integration_id,
+            "status": status,
+            "credential_store": config.credential_store.display().to_string(),
+        })
+        .to_string();
+    }
+
+    format!(
+        "integration auth revoke: integration_id={} status={} credential_store={}",
+        integration_id,
+        status,
+        config.credential_store.display()
+    )
+}
+
+fn execute_integration_auth_command(config: &AuthCommandConfig, command_args: &str) -> String {
+    let command = match parse_integration_auth_command(command_args) {
+        Ok(command) => command,
+        Err(error) => return format!("integration auth error: {error}"),
+    };
+
+    match command {
+        IntegrationAuthCommand::Set {
+            integration_id,
+            secret,
+            json_output,
+        } => execute_integration_auth_set_or_rotate_command(
+            config,
+            integration_id,
+            secret,
+            json_output,
+            false,
+        ),
+        IntegrationAuthCommand::Status {
+            integration_id,
+            json_output,
+        } => execute_integration_auth_status_command(config, integration_id, json_output),
+        IntegrationAuthCommand::Rotate {
+            integration_id,
+            secret,
+            json_output,
+        } => execute_integration_auth_set_or_rotate_command(
+            config,
+            integration_id,
+            secret,
+            json_output,
+            true,
+        ),
+        IntegrationAuthCommand::Revoke {
+            integration_id,
+            json_output,
+        } => execute_integration_auth_revoke_command(config, integration_id, json_output),
     }
 }
 
@@ -9188,6 +9868,8 @@ struct CredentialStoreFile {
     schema_version: u32,
     encryption: CredentialStoreEncryptionMode,
     providers: BTreeMap<String, StoredProviderCredential>,
+    #[serde(default)]
+    integrations: BTreeMap<String, StoredIntegrationCredential>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -9197,6 +9879,13 @@ struct StoredProviderCredential {
     refresh_token: Option<String>,
     expires_unix: Option<u64>,
     revoked: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+struct StoredIntegrationCredential {
+    secret: Option<String>,
+    revoked: bool,
+    updated_unix: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -9209,9 +9898,17 @@ struct ProviderCredentialStoreRecord {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+struct IntegrationCredentialStoreRecord {
+    secret: Option<String>,
+    revoked: bool,
+    updated_unix: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct CredentialStoreData {
     encryption: CredentialStoreEncryptionMode,
     providers: BTreeMap<String, ProviderCredentialStoreRecord>,
+    integrations: BTreeMap<String, IntegrationCredentialStoreRecord>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -9405,6 +10102,7 @@ fn load_credential_store(
         return Ok(CredentialStoreData {
             encryption: default_mode,
             providers: BTreeMap::new(),
+            integrations: BTreeMap::new(),
         });
     }
 
@@ -9457,9 +10155,33 @@ fn load_credential_store(
         );
     }
 
+    let mut integrations = BTreeMap::new();
+    for (integration_id, record) in parsed.integrations {
+        let secret = record
+            .secret
+            .map(|value| {
+                decrypt_credential_store_secret(&value, parsed.encryption, key).with_context(|| {
+                    format!(
+                        "integration credential store entry '{}' secret is invalid or corrupted",
+                        integration_id
+                    )
+                })
+            })
+            .transpose()?;
+        integrations.insert(
+            integration_id,
+            IntegrationCredentialStoreRecord {
+                secret,
+                revoked: record.revoked,
+                updated_unix: record.updated_unix,
+            },
+        );
+    }
+
     Ok(CredentialStoreData {
         encryption: parsed.encryption,
         providers,
+        integrations,
     })
 }
 
@@ -9506,10 +10228,35 @@ fn save_credential_store(
         );
     }
 
+    let mut integrations = BTreeMap::new();
+    for (integration_id, record) in &store.integrations {
+        let secret = record
+            .secret
+            .as_deref()
+            .map(|value| {
+                encrypt_credential_store_secret(value, store.encryption, key).with_context(|| {
+                    format!(
+                        "failed to encode integration credential store entry '{}' secret",
+                        integration_id
+                    )
+                })
+            })
+            .transpose()?;
+        integrations.insert(
+            integration_id.clone(),
+            StoredIntegrationCredential {
+                secret,
+                revoked: record.revoked,
+                updated_unix: record.updated_unix,
+            },
+        );
+    }
+
     let payload = CredentialStoreFile {
         schema_version: CREDENTIAL_STORE_SCHEMA_VERSION,
         encryption: store.encryption,
         providers,
+        integrations,
     };
     let mut encoded =
         serde_json::to_string_pretty(&payload).context("failed to encode credential store")?;
@@ -10325,9 +11072,10 @@ mod tests {
         derive_skills_prune_candidates, encrypt_credential_store_secret, ensure_non_empty_text,
         escape_graph_label, execute_auth_command, execute_branch_alias_command,
         execute_channel_store_admin_command, execute_command_file, execute_doctor_command,
-        execute_macro_command, execute_profile_command, execute_session_bookmark_command,
-        execute_session_diff_command, execute_session_graph_export_command,
-        execute_session_search_command, execute_session_stats_command, execute_skills_list_command,
+        execute_integration_auth_command, execute_macro_command, execute_profile_command,
+        execute_session_bookmark_command, execute_session_diff_command,
+        execute_session_graph_export_command, execute_session_search_command,
+        execute_session_stats_command, execute_skills_list_command,
         execute_skills_lock_diff_command, execute_skills_lock_write_command,
         execute_skills_prune_command, execute_skills_search_command, execute_skills_show_command,
         execute_skills_sync_command, execute_skills_trust_add_command,
@@ -10337,29 +11085,30 @@ mod tests {
         initialize_session, is_retryable_provider_error, load_branch_aliases,
         load_credential_store, load_macro_file, load_profile_store, load_session_bookmarks,
         load_trust_root_records, parse_auth_command, parse_branch_alias_command, parse_command,
-        parse_command_file, parse_doctor_command_args, parse_macro_command, parse_profile_command,
-        parse_sandbox_command_tokens, parse_session_bookmark_command, parse_session_diff_args,
-        parse_session_search_args, parse_session_stats_args, parse_skills_lock_diff_args,
-        parse_skills_prune_args, parse_skills_search_args, parse_skills_trust_list_args,
-        parse_skills_trust_mutation_args, parse_skills_verify_args, parse_trust_rotation_spec,
-        parse_trusted_root_spec, percentile_duration_ms, provider_auth_capability,
-        refresh_provider_access_token, render_audit_summary, render_command_help,
-        render_doctor_report, render_doctor_report_json, render_help_overview, render_macro_list,
-        render_macro_show, render_profile_diffs, render_profile_list, render_profile_show,
-        render_session_diff, render_session_graph_dot, render_session_graph_mermaid,
-        render_session_stats, render_session_stats_json, render_skills_list,
-        render_skills_lock_diff_drift, render_skills_lock_diff_in_sync,
+        parse_command_file, parse_doctor_command_args, parse_integration_auth_command,
+        parse_macro_command, parse_profile_command, parse_sandbox_command_tokens,
+        parse_session_bookmark_command, parse_session_diff_args, parse_session_search_args,
+        parse_session_stats_args, parse_skills_lock_diff_args, parse_skills_prune_args,
+        parse_skills_search_args, parse_skills_trust_list_args, parse_skills_trust_mutation_args,
+        parse_skills_verify_args, parse_trust_rotation_spec, parse_trusted_root_spec,
+        percentile_duration_ms, provider_auth_capability, refresh_provider_access_token,
+        render_audit_summary, render_command_help, render_doctor_report, render_doctor_report_json,
+        render_help_overview, render_macro_list, render_macro_show, render_profile_diffs,
+        render_profile_list, render_profile_show, render_session_diff, render_session_graph_dot,
+        render_session_graph_mermaid, render_session_stats, render_session_stats_json,
+        render_skills_list, render_skills_lock_diff_drift, render_skills_lock_diff_in_sync,
         render_skills_lock_write_success, render_skills_search, render_skills_show,
         render_skills_sync_drift_details, render_skills_trust_list, render_skills_verify_report,
         resolve_credential_store_encryption_mode, resolve_fallback_models, resolve_prompt_input,
-        resolve_prunable_skill_file_name, resolve_session_graph_format, resolve_skill_trust_roots,
-        resolve_skills_lock_path, resolve_store_backed_provider_credential, resolve_system_prompt,
-        run_doctor_checks, run_prompt_with_cancellation, save_branch_aliases,
-        save_credential_store, save_macro_file, save_profile_store, save_session_bookmarks,
-        search_session_entries, session_bookmark_path_for_session, session_message_preview,
-        shared_lineage_prefix_depth, stream_text_chunks, summarize_audit_file,
-        tool_audit_event_json, tool_policy_to_json, trust_record_status, unknown_command_message,
-        validate_branch_alias_name, validate_event_webhook_ingest_cli, validate_events_runner_cli,
+        resolve_prunable_skill_file_name, resolve_secret_from_cli_or_store_id,
+        resolve_session_graph_format, resolve_skill_trust_roots, resolve_skills_lock_path,
+        resolve_store_backed_provider_credential, resolve_system_prompt, run_doctor_checks,
+        run_prompt_with_cancellation, save_branch_aliases, save_credential_store, save_macro_file,
+        save_profile_store, save_session_bookmarks, search_session_entries,
+        session_bookmark_path_for_session, session_message_preview, shared_lineage_prefix_depth,
+        stream_text_chunks, summarize_audit_file, tool_audit_event_json, tool_policy_to_json,
+        trust_record_status, unknown_command_message, validate_branch_alias_name,
+        validate_event_webhook_ingest_cli, validate_events_runner_cli,
         validate_github_issues_bridge_cli, validate_macro_command_entry, validate_macro_name,
         validate_profile_name, validate_session_file, validate_skills_prune_file_name,
         validate_slack_bridge_cli, AuthCommand, AuthCommandConfig, BranchAliasCommand,
@@ -10369,17 +11118,17 @@ mod tests {
         CommandAction, CommandExecutionContext, CommandFileEntry, CommandFileReport,
         CredentialStoreData, CredentialStoreEncryptionMode, DoctorCheckResult, DoctorCommandConfig,
         DoctorCommandOutputFormat, DoctorProviderKeyStatus, DoctorStatus, FallbackRoutingClient,
-        MacroCommand, MacroFile, ProfileCommand, ProfileDefaults, ProfileStoreFile,
-        PromptRunStatus, PromptTelemetryLogger, ProviderAuthMethod, ProviderCredentialStoreRecord,
-        RenderOptions, SessionBookmarkCommand, SessionBookmarkFile, SessionDiffEntry,
-        SessionDiffReport, SessionGraphFormat, SessionRuntime, SessionSearchArgs, SessionStats,
-        SessionStatsOutputFormat, SkillsPruneMode, SkillsSyncCommandConfig, SkillsVerifyEntry,
-        SkillsVerifyReport, SkillsVerifyStatus, SkillsVerifySummary, SkillsVerifyTrustSummary,
-        ToolAuditLogger, TrustedRootRecord, BRANCH_ALIAS_SCHEMA_VERSION, BRANCH_ALIAS_USAGE,
-        MACRO_SCHEMA_VERSION, MACRO_USAGE, PROFILE_SCHEMA_VERSION, PROFILE_USAGE,
-        SESSION_BOOKMARK_SCHEMA_VERSION, SESSION_BOOKMARK_USAGE, SESSION_SEARCH_DEFAULT_RESULTS,
-        SESSION_SEARCH_PREVIEW_CHARS, SKILLS_PRUNE_USAGE, SKILLS_TRUST_ADD_USAGE,
-        SKILLS_TRUST_LIST_USAGE, SKILLS_VERIFY_USAGE,
+        IntegrationAuthCommand, IntegrationCredentialStoreRecord, MacroCommand, MacroFile,
+        ProfileCommand, ProfileDefaults, ProfileStoreFile, PromptRunStatus, PromptTelemetryLogger,
+        ProviderAuthMethod, ProviderCredentialStoreRecord, RenderOptions, SessionBookmarkCommand,
+        SessionBookmarkFile, SessionDiffEntry, SessionDiffReport, SessionGraphFormat,
+        SessionRuntime, SessionSearchArgs, SessionStats, SessionStatsOutputFormat, SkillsPruneMode,
+        SkillsSyncCommandConfig, SkillsVerifyEntry, SkillsVerifyReport, SkillsVerifyStatus,
+        SkillsVerifySummary, SkillsVerifyTrustSummary, ToolAuditLogger, TrustedRootRecord,
+        BRANCH_ALIAS_SCHEMA_VERSION, BRANCH_ALIAS_USAGE, MACRO_SCHEMA_VERSION, MACRO_USAGE,
+        PROFILE_SCHEMA_VERSION, PROFILE_USAGE, SESSION_BOOKMARK_SCHEMA_VERSION,
+        SESSION_BOOKMARK_USAGE, SESSION_SEARCH_DEFAULT_RESULTS, SESSION_SEARCH_PREVIEW_CHARS,
+        SKILLS_PRUNE_USAGE, SKILLS_TRUST_ADD_USAGE, SKILLS_TRUST_LIST_USAGE, SKILLS_VERIFY_USAGE,
     };
     use crate::resolve_api_key;
     use crate::session::{SessionImportMode, SessionStore};
@@ -10545,11 +11294,13 @@ mod tests {
             event_webhook_signature: None,
             event_webhook_timestamp: None,
             event_webhook_secret: None,
+            event_webhook_secret_id: None,
             event_webhook_signature_algorithm: None,
             event_webhook_signature_max_skew_seconds: 300,
             github_issues_bridge: false,
             github_repo: None,
             github_token: None,
+            github_token_id: None,
             github_bot_login: None,
             github_api_base: "https://api.github.com".to_string(),
             github_state_dir: PathBuf::from(".pi/github-issues"),
@@ -10561,7 +11312,9 @@ mod tests {
             github_retry_base_delay_ms: 500,
             slack_bridge: false,
             slack_app_token: None,
+            slack_app_token_id: None,
             slack_bot_token: None,
+            slack_bot_token_id: None,
             slack_bot_user_id: None,
             slack_api_base: "https://slack.com/api".to_string(),
             slack_state_dir: PathBuf::from(".pi/slack"),
@@ -10610,10 +11363,29 @@ mod tests {
         let mut store = CredentialStoreData {
             encryption,
             providers: BTreeMap::new(),
+            integrations: BTreeMap::new(),
         };
         store
             .providers
             .insert(provider.as_str().to_string(), record);
+        save_credential_store(path, &store, key).expect("save credential store");
+    }
+
+    fn write_test_integration_credential(
+        path: &Path,
+        encryption: CredentialStoreEncryptionMode,
+        key: Option<&str>,
+        integration_id: &str,
+        record: IntegrationCredentialStoreRecord,
+    ) {
+        let mut store = CredentialStoreData {
+            encryption,
+            providers: BTreeMap::new(),
+            integrations: BTreeMap::new(),
+        };
+        store
+            .integrations
+            .insert(integration_id.to_string(), record);
         save_credential_store(path, &store, key).expect("save credential store");
     }
 
@@ -10793,6 +11565,41 @@ mod tests {
     }
 
     #[test]
+    fn unit_cli_integration_secret_id_flags_default_to_none() {
+        let cli = Cli::parse_from(["pi-rs"]);
+        assert!(cli.event_webhook_secret_id.is_none());
+        assert!(cli.github_token_id.is_none());
+        assert!(cli.slack_app_token_id.is_none());
+        assert!(cli.slack_bot_token_id.is_none());
+    }
+
+    #[test]
+    fn functional_cli_integration_secret_id_flags_accept_explicit_values() {
+        let cli = Cli::parse_from([
+            "pi-rs",
+            "--event-webhook-ingest-file",
+            "payload.json",
+            "--github-issues-bridge",
+            "--slack-bridge",
+            "--event-webhook-secret-id",
+            "event-webhook-secret",
+            "--github-token-id",
+            "github-token",
+            "--slack-app-token-id",
+            "slack-app-token",
+            "--slack-bot-token-id",
+            "slack-bot-token",
+        ]);
+        assert_eq!(
+            cli.event_webhook_secret_id.as_deref(),
+            Some("event-webhook-secret")
+        );
+        assert_eq!(cli.github_token_id.as_deref(), Some("github-token"));
+        assert_eq!(cli.slack_app_token_id.as_deref(), Some("slack-app-token"));
+        assert_eq!(cli.slack_bot_token_id.as_deref(), Some("slack-bot-token"));
+    }
+
+    #[test]
     fn unit_parse_auth_command_supports_login_status_logout_and_json() {
         let login =
             parse_auth_command("login openai --mode oauth-token --json").expect("parse auth login");
@@ -10841,6 +11648,67 @@ mod tests {
 
         let unknown_subcommand = parse_auth_command("noop").expect_err("subcommand fail");
         assert!(unknown_subcommand.to_string().contains("usage: /auth"));
+    }
+
+    #[test]
+    fn unit_parse_integration_auth_command_supports_set_status_rotate_revoke_and_json() {
+        let set = parse_integration_auth_command("set github-token ghp_token --json")
+            .expect("parse integration set");
+        assert_eq!(
+            set,
+            IntegrationAuthCommand::Set {
+                integration_id: "github-token".to_string(),
+                secret: "ghp_token".to_string(),
+                json_output: true,
+            }
+        );
+
+        let status = parse_integration_auth_command("status slack-app-token --json")
+            .expect("parse integration status");
+        assert_eq!(
+            status,
+            IntegrationAuthCommand::Status {
+                integration_id: Some("slack-app-token".to_string()),
+                json_output: true,
+            }
+        );
+
+        let rotate = parse_integration_auth_command("rotate slack-bot-token next_secret")
+            .expect("parse integration rotate");
+        assert_eq!(
+            rotate,
+            IntegrationAuthCommand::Rotate {
+                integration_id: "slack-bot-token".to_string(),
+                secret: "next_secret".to_string(),
+                json_output: false,
+            }
+        );
+
+        let revoke = parse_integration_auth_command("revoke event-webhook-secret")
+            .expect("parse integration revoke");
+        assert_eq!(
+            revoke,
+            IntegrationAuthCommand::Revoke {
+                integration_id: "event-webhook-secret".to_string(),
+                json_output: false,
+            }
+        );
+    }
+
+    #[test]
+    fn regression_parse_integration_auth_command_rejects_usage_and_invalid_ids() {
+        let error = parse_integration_auth_command("set github-token").expect_err("missing secret");
+        assert!(error
+            .to_string()
+            .contains("usage: /integration-auth set <integration-id> <secret> [--json]"));
+
+        let error = parse_integration_auth_command("status bad$id").expect_err("invalid id");
+        assert!(error.to_string().contains("contains unsupported character"));
+
+        let error = parse_integration_auth_command("unknown").expect_err("unknown subcommand");
+        assert!(error
+            .to_string()
+            .contains("usage: /integration-auth <set|status|rotate|revoke> ..."));
     }
 
     #[test]
@@ -11294,6 +12162,65 @@ mod tests {
     }
 
     #[test]
+    fn functional_execute_integration_auth_command_set_status_rotate_revoke_lifecycle() {
+        let temp = tempdir().expect("tempdir");
+        let mut config = test_auth_command_config();
+        config.credential_store = temp.path().join("integration-credentials.json");
+        config.credential_store_encryption = CredentialStoreEncryptionMode::None;
+
+        let set_output =
+            execute_integration_auth_command(&config, "set github-token ghp_secret --json");
+        let set_json: serde_json::Value = serde_json::from_str(&set_output).expect("parse set");
+        assert_eq!(set_json["command"], "integration_auth.set");
+        assert_eq!(set_json["integration_id"], "github-token");
+        assert_eq!(set_json["status"], "saved");
+        assert!(!set_output.contains("ghp_secret"));
+
+        let status_output = execute_integration_auth_command(&config, "status github-token --json");
+        let status_json: serde_json::Value =
+            serde_json::from_str(&status_output).expect("parse status");
+        assert_eq!(status_json["available"], 1);
+        assert_eq!(status_json["entries"][0]["integration_id"], "github-token");
+        assert_eq!(status_json["entries"][0]["state"], "ready");
+        assert_eq!(status_json["entries"][0]["revoked"], false);
+        assert!(!status_output.contains("ghp_secret"));
+
+        let rotate_output =
+            execute_integration_auth_command(&config, "rotate github-token ghp_rotated --json");
+        let rotate_json: serde_json::Value =
+            serde_json::from_str(&rotate_output).expect("parse rotate");
+        assert_eq!(rotate_json["command"], "integration_auth.rotate");
+        assert_eq!(rotate_json["status"], "rotated");
+        assert!(!rotate_output.contains("ghp_rotated"));
+
+        let revoke_output = execute_integration_auth_command(&config, "revoke github-token --json");
+        let revoke_json: serde_json::Value =
+            serde_json::from_str(&revoke_output).expect("parse revoke");
+        assert_eq!(revoke_json["command"], "integration_auth.revoke");
+        assert_eq!(revoke_json["status"], "revoked");
+
+        let post_revoke_status =
+            execute_integration_auth_command(&config, "status github-token --json");
+        let post_revoke_json: serde_json::Value =
+            serde_json::from_str(&post_revoke_status).expect("parse status");
+        assert_eq!(post_revoke_json["entries"][0]["state"], "revoked");
+        assert_eq!(post_revoke_json["entries"][0]["available"], false);
+
+        let store = load_credential_store(
+            &config.credential_store,
+            CredentialStoreEncryptionMode::None,
+            None,
+        )
+        .expect("load credential store");
+        let entry = store
+            .integrations
+            .get("github-token")
+            .expect("github integration entry");
+        assert!(entry.secret.is_none());
+        assert!(entry.revoked);
+    }
+
+    #[test]
     fn regression_execute_auth_command_login_rejects_unsupported_provider_mode() {
         let config = test_auth_command_config();
         let output = execute_auth_command(&config, "login google --mode oauth-token --json");
@@ -11670,6 +12597,72 @@ mod tests {
         assert_eq!(entry.refresh_token.as_deref(), Some("openai-refresh"));
         assert_eq!(entry.expires_unix, Some(12345));
         assert!(!entry.revoked);
+    }
+
+    #[test]
+    fn integration_credential_store_roundtrip_preserves_integration_records() {
+        let temp = tempdir().expect("tempdir");
+        let store_path = temp.path().join("integration-credentials.json");
+        write_test_integration_credential(
+            &store_path,
+            CredentialStoreEncryptionMode::Keyed,
+            Some("credential-key"),
+            "github-token",
+            IntegrationCredentialStoreRecord {
+                secret: Some("ghp_top_secret".to_string()),
+                revoked: false,
+                updated_unix: Some(98765),
+            },
+        );
+
+        let loaded = load_credential_store(
+            &store_path,
+            CredentialStoreEncryptionMode::None,
+            Some("credential-key"),
+        )
+        .expect("load credential store");
+        let entry = loaded
+            .integrations
+            .get("github-token")
+            .expect("integration entry");
+        assert_eq!(entry.secret.as_deref(), Some("ghp_top_secret"));
+        assert!(!entry.revoked);
+        assert_eq!(entry.updated_unix, Some(98765));
+    }
+
+    #[test]
+    fn regression_load_credential_store_allows_legacy_provider_only_payload() {
+        let temp = tempdir().expect("tempdir");
+        let store_path = temp.path().join("legacy-credentials.json");
+        std::fs::write(
+            &store_path,
+            r#"{
+  "schema_version": 1,
+  "encryption": "none",
+  "providers": {
+    "openai": {
+      "auth_method": "oauth_token",
+      "access_token": "legacy-access",
+      "refresh_token": "legacy-refresh",
+      "expires_unix": 42,
+      "revoked": false
+    }
+  }
+}
+"#,
+        )
+        .expect("write legacy credential store");
+
+        let loaded = load_credential_store(&store_path, CredentialStoreEncryptionMode::None, None)
+            .expect("load legacy credential store");
+        assert!(loaded.integrations.is_empty());
+        assert_eq!(
+            loaded
+                .providers
+                .get("openai")
+                .and_then(|entry| entry.access_token.as_deref()),
+            Some("legacy-access")
+        );
     }
 
     #[test]
@@ -14355,6 +15348,8 @@ mod tests {
         assert!(help.contains("/skills-lock-write [lockfile_path]"));
         assert!(help.contains("/skills-sync [lockfile_path]"));
         assert!(help.contains("/macro <save|run|list|show|delete> ..."));
+        assert!(help.contains("/auth <login|status|logout> ..."));
+        assert!(help.contains("/integration-auth <set|status|rotate|revoke> ..."));
         assert!(help.contains("/profile <save|load|list|show|delete> ..."));
         assert!(help.contains("/branch <id>"));
         assert!(help.contains("/branch-alias <set|list|use> ..."));
@@ -14392,6 +15387,14 @@ mod tests {
         assert!(help.contains("command: /macro"));
         assert!(help.contains("usage: /macro <save|run|list|show|delete> ..."));
         assert!(help.contains("example: /macro save quick-check /tmp/quick-check.commands"));
+    }
+
+    #[test]
+    fn functional_render_command_help_supports_integration_auth_topic_without_slash() {
+        let help = render_command_help("integration-auth").expect("render help");
+        assert!(help.contains("command: /integration-auth"));
+        assert!(help.contains("usage: /integration-auth <set|status|rotate|revoke> ..."));
+        assert!(help.contains("example: /integration-auth status github-token --json"));
     }
 
     #[test]
@@ -16126,11 +17129,92 @@ mod tests {
     }
 
     #[test]
+    fn functional_resolve_secret_from_cli_or_store_id_reads_integration_secret() {
+        let temp = tempdir().expect("tempdir");
+        let store_path = temp.path().join("credentials.json");
+        write_test_integration_credential(
+            &store_path,
+            CredentialStoreEncryptionMode::None,
+            None,
+            "github-token",
+            IntegrationCredentialStoreRecord {
+                secret: Some("ghp_store_secret".to_string()),
+                revoked: false,
+                updated_unix: Some(current_unix_timestamp()),
+            },
+        );
+
+        let mut cli = test_cli();
+        cli.credential_store = store_path;
+        let resolved = resolve_secret_from_cli_or_store_id(
+            &cli,
+            None,
+            Some("github-token"),
+            "--github-token-id",
+        )
+        .expect("resolve secret")
+        .expect("secret should be present");
+        assert_eq!(resolved, "ghp_store_secret");
+    }
+
+    #[test]
+    fn regression_resolve_secret_from_cli_or_store_id_rejects_revoked_secret() {
+        let temp = tempdir().expect("tempdir");
+        let store_path = temp.path().join("credentials.json");
+        write_test_integration_credential(
+            &store_path,
+            CredentialStoreEncryptionMode::None,
+            None,
+            "slack-app-token",
+            IntegrationCredentialStoreRecord {
+                secret: Some("xapp_secret".to_string()),
+                revoked: true,
+                updated_unix: Some(current_unix_timestamp()),
+            },
+        );
+
+        let mut cli = test_cli();
+        cli.credential_store = store_path;
+        let error = resolve_secret_from_cli_or_store_id(
+            &cli,
+            None,
+            Some("slack-app-token"),
+            "--slack-app-token-id",
+        )
+        .expect_err("revoked secret should fail");
+        assert!(error.to_string().contains("is revoked"));
+    }
+
+    #[test]
+    fn unit_resolve_secret_from_cli_or_store_id_prefers_direct_secret() {
+        let cli = test_cli();
+        let resolved = resolve_secret_from_cli_or_store_id(
+            &cli,
+            Some("direct-token"),
+            Some("missing-id"),
+            "--github-token-id",
+        )
+        .expect("resolve direct secret")
+        .expect("secret");
+        assert_eq!(resolved, "direct-token");
+    }
+
+    #[test]
     fn unit_validate_github_issues_bridge_cli_accepts_minimum_configuration() {
         let mut cli = test_cli();
         cli.github_issues_bridge = true;
         cli.github_repo = Some("owner/repo".to_string());
         cli.github_token = Some("token".to_string());
+
+        validate_github_issues_bridge_cli(&cli).expect("bridge config should validate");
+    }
+
+    #[test]
+    fn unit_validate_github_issues_bridge_cli_accepts_token_id_configuration() {
+        let mut cli = test_cli();
+        cli.github_issues_bridge = true;
+        cli.github_repo = Some("owner/repo".to_string());
+        cli.github_token_id = Some("github-token".to_string());
 
         validate_github_issues_bridge_cli(&cli).expect("bridge config should validate");
     }
@@ -16155,11 +17239,12 @@ mod tests {
         cli.github_issues_bridge = true;
         cli.github_repo = Some("owner/repo".to_string());
         cli.github_token = None;
+        cli.github_token_id = None;
 
         let error = validate_github_issues_bridge_cli(&cli).expect_err("missing token");
         assert!(error
             .to_string()
-            .contains("--github-token (or GITHUB_TOKEN) is required"));
+            .contains("--github-token (or --github-token-id) is required"));
     }
 
     #[test]
@@ -16168,6 +17253,16 @@ mod tests {
         cli.slack_bridge = true;
         cli.slack_app_token = Some("xapp-test".to_string());
         cli.slack_bot_token = Some("xoxb-test".to_string());
+
+        validate_slack_bridge_cli(&cli).expect("slack bridge config should validate");
+    }
+
+    #[test]
+    fn unit_validate_slack_bridge_cli_accepts_token_id_configuration() {
+        let mut cli = test_cli();
+        cli.slack_bridge = true;
+        cli.slack_app_token_id = Some("slack-app-token".to_string());
+        cli.slack_bot_token_id = Some("slack-bot-token".to_string());
 
         validate_slack_bridge_cli(&cli).expect("slack bridge config should validate");
     }
@@ -16192,11 +17287,13 @@ mod tests {
         cli.slack_bridge = true;
         cli.slack_app_token = Some("xapp-test".to_string());
         cli.slack_bot_token = None;
+        cli.slack_app_token_id = None;
+        cli.slack_bot_token_id = None;
 
         let error = validate_slack_bridge_cli(&cli).expect_err("missing slack bot token");
         assert!(error
             .to_string()
-            .contains("--slack-bot-token (or PI_SLACK_BOT_TOKEN) is required"));
+            .contains("--slack-bot-token (or --slack-bot-token-id) is required"));
     }
 
     #[test]
@@ -16241,6 +17338,18 @@ mod tests {
         assert!(error
             .to_string()
             .contains("--event-webhook-signature-algorithm is required"));
+    }
+
+    #[test]
+    fn functional_validate_event_webhook_ingest_cli_accepts_secret_id_configuration() {
+        let mut cli = test_cli();
+        cli.event_webhook_ingest_file = Some(PathBuf::from("payload.json"));
+        cli.event_webhook_channel = Some("slack/C123".to_string());
+        cli.event_webhook_signature = Some("sha256=abcd".to_string());
+        cli.event_webhook_secret_id = Some("event-webhook-secret".to_string());
+        cli.event_webhook_signature_algorithm = Some(CliWebhookSignatureAlgorithm::GithubSha256);
+
+        validate_event_webhook_ingest_cli(&cli).expect("webhook config should validate");
     }
 
     #[test]

@@ -103,7 +103,7 @@ fn regression_github_issues_bridge_requires_token() {
     ]);
 
     cmd.assert().failure().stderr(predicate::str::contains(
-        "--github-token (or GITHUB_TOKEN) is required",
+        "--github-token (or --github-token-id) is required",
     ));
 }
 
