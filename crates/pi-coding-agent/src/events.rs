@@ -10,9 +10,11 @@ use anyhow::{anyhow, bail, Context, Result};
 use chrono::TimeZone;
 use chrono_tz::Tz;
 use cron::Schedule;
+use hmac::{Hmac, Mac};
 use pi_agent_core::{Agent, AgentConfig, AgentEvent};
 use pi_ai::{LlmClient, Message, MessageRole};
 use serde::{Deserialize, Serialize};
+use sha2::Sha256;
 
 use crate::{
     channel_store::{ChannelLogEntry, ChannelStore},
@@ -51,6 +53,17 @@ pub(crate) struct EventWebhookIngestConfig {
     pub prompt_prefix: String,
     pub debounce_key: Option<String>,
     pub debounce_window_seconds: u64,
+    pub signature: Option<String>,
+    pub timestamp: Option<String>,
+    pub secret: Option<String>,
+    pub signature_algorithm: Option<WebhookSignatureAlgorithm>,
+    pub signature_max_skew_seconds: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum WebhookSignatureAlgorithm {
+    GithubSha256,
+    SlackV0,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -90,6 +103,8 @@ struct EventRunnerState {
     periodic_last_run_unix_ms: HashMap<String, u64>,
     #[serde(default)]
     debounce_last_seen_unix_ms: HashMap<String, u64>,
+    #[serde(default)]
+    signature_replay_last_seen_unix_ms: HashMap<String, u64>,
 }
 
 impl Default for EventRunnerState {
@@ -98,6 +113,7 @@ impl Default for EventRunnerState {
             schema_version: EVENT_RUNNER_STATE_SCHEMA_VERSION,
             periodic_last_run_unix_ms: HashMap::new(),
             debounce_last_seen_unix_ms: HashMap::new(),
+            signature_replay_last_seen_unix_ms: HashMap::new(),
         }
     }
 }
@@ -127,9 +143,36 @@ pub(crate) async fn run_event_scheduler(config: EventSchedulerConfig) -> Result<
 pub(crate) fn ingest_webhook_immediate_event(config: &EventWebhookIngestConfig) -> Result<()> {
     std::fs::create_dir_all(&config.events_dir)
         .with_context(|| format!("failed to create {}", config.events_dir.display()))?;
-    let mut state = load_runner_state(&config.state_path)?;
 
     let now_unix_ms = current_unix_timestamp_ms();
+    let payload_raw = std::fs::read_to_string(&config.payload_file)
+        .with_context(|| format!("failed to read {}", config.payload_file.display()))?;
+    let payload = payload_raw.trim();
+    if payload.is_empty() {
+        bail!(
+            "webhook payload file is empty: {}",
+            config.payload_file.display()
+        );
+    }
+
+    let mut state = load_runner_state(&config.state_path)?;
+    if let Some(replay_key) = verify_webhook_signature(
+        &payload_raw,
+        config.signature.as_deref(),
+        config.timestamp.as_deref(),
+        config.secret.as_deref(),
+        config.signature_algorithm,
+        now_unix_ms,
+        config.signature_max_skew_seconds,
+    )? {
+        enforce_signature_replay_guard(
+            &mut state,
+            &replay_key,
+            now_unix_ms,
+            config.signature_max_skew_seconds,
+        )?;
+    }
+
     if let Some(key) = config.debounce_key.as_deref() {
         let debounce_window_ms = config.debounce_window_seconds.saturating_mul(1000);
         if let Some(last_seen) = state.debounce_last_seen_unix_ms.get(key) {
@@ -144,16 +187,6 @@ pub(crate) fn ingest_webhook_immediate_event(config: &EventWebhookIngestConfig) 
         state
             .debounce_last_seen_unix_ms
             .insert(key.to_string(), now_unix_ms);
-    }
-
-    let payload = std::fs::read_to_string(&config.payload_file)
-        .with_context(|| format!("failed to read {}", config.payload_file.display()))?;
-    let payload = payload.trim();
-    if payload.is_empty() {
-        bail!(
-            "webhook payload file is empty: {}",
-            config.payload_file.display()
-        );
     }
 
     let event_id = format!("webhook-{}-{}", now_unix_ms, short_hash(payload.as_bytes()));
@@ -181,6 +214,163 @@ pub(crate) fn ingest_webhook_immediate_event(config: &EventWebhookIngestConfig) 
         event_id,
         event_path.display()
     );
+    Ok(())
+}
+
+fn verify_webhook_signature(
+    payload_raw: &str,
+    signature: Option<&str>,
+    timestamp: Option<&str>,
+    secret: Option<&str>,
+    algorithm: Option<WebhookSignatureAlgorithm>,
+    now_unix_ms: u64,
+    max_skew_seconds: u64,
+) -> Result<Option<String>> {
+    let has_signature_inputs =
+        signature.is_some() || timestamp.is_some() || secret.is_some() || algorithm.is_some();
+    if !has_signature_inputs {
+        return Ok(None);
+    }
+
+    let signature = signature
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            anyhow!("--event-webhook-signature is required when webhook signing is configured")
+        })?;
+    let secret = secret
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            anyhow!("--event-webhook-secret is required when webhook signing is configured")
+        })?;
+    let algorithm = algorithm.ok_or_else(|| {
+        anyhow!(
+            "--event-webhook-signature-algorithm is required when webhook signing is configured"
+        )
+    })?;
+
+    let replay_key = match algorithm {
+        WebhookSignatureAlgorithm::GithubSha256 => {
+            verify_github_sha256_signature(payload_raw.as_bytes(), signature, secret)?;
+            if let Some(value) = timestamp {
+                validate_timestamp_skew(value, now_unix_ms, max_skew_seconds)?;
+            }
+            format!(
+                "github_sha256:{}:{}",
+                timestamp.unwrap_or_default(),
+                signature
+            )
+        }
+        WebhookSignatureAlgorithm::SlackV0 => {
+            let timestamp = timestamp
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| {
+                    anyhow!("--event-webhook-timestamp is required for slack-v0 signatures")
+                })?;
+            verify_slack_v0_signature(payload_raw, signature, timestamp, secret)?;
+            validate_timestamp_skew(timestamp, now_unix_ms, max_skew_seconds)?;
+            format!("slack_v0:{timestamp}:{signature}")
+        }
+    };
+
+    Ok(Some(replay_key.to_ascii_lowercase()))
+}
+
+fn verify_github_sha256_signature(payload: &[u8], signature: &str, secret: &str) -> Result<()> {
+    let Some(digest_hex) = signature.strip_prefix("sha256=") else {
+        bail!("github webhook signature must use sha256=<hex> format");
+    };
+    let signature_bytes = decode_hex(digest_hex)?;
+    let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes())
+        .context("failed to initialize webhook HMAC verifier")?;
+    mac.update(payload);
+    mac.verify_slice(&signature_bytes)
+        .map_err(|_| anyhow!("webhook signature verification failed"))
+}
+
+fn verify_slack_v0_signature(
+    payload: &str,
+    signature: &str,
+    timestamp: &str,
+    secret: &str,
+) -> Result<()> {
+    let Some(digest_hex) = signature.strip_prefix("v0=") else {
+        bail!("slack webhook signature must use v0=<hex> format");
+    };
+    let signature_bytes = decode_hex(digest_hex)?;
+    let signed_payload = format!("v0:{timestamp}:{payload}");
+    let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes())
+        .context("failed to initialize webhook HMAC verifier")?;
+    mac.update(signed_payload.as_bytes());
+    mac.verify_slice(&signature_bytes)
+        .map_err(|_| anyhow!("webhook signature verification failed"))
+}
+
+fn decode_hex(value: &str) -> Result<Vec<u8>> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        bail!("signature digest cannot be empty");
+    }
+    if !trimmed.len().is_multiple_of(2) {
+        bail!("signature digest must have an even number of hex characters");
+    }
+
+    let mut bytes = Vec::with_capacity(trimmed.len() / 2);
+    let raw = trimmed.as_bytes();
+    let mut index = 0usize;
+    while index < raw.len() {
+        let hex = std::str::from_utf8(&raw[index..index + 2]).context("invalid utf-8 in digest")?;
+        let byte = u8::from_str_radix(hex, 16)
+            .with_context(|| format!("invalid hex byte '{}' in signature digest", hex))?;
+        bytes.push(byte);
+        index = index.saturating_add(2);
+    }
+    Ok(bytes)
+}
+
+fn validate_timestamp_skew(timestamp: &str, now_unix_ms: u64, max_skew_seconds: u64) -> Result<()> {
+    if max_skew_seconds == 0 {
+        return Ok(());
+    }
+    let timestamp_seconds = timestamp
+        .trim()
+        .parse::<u64>()
+        .with_context(|| format!("invalid webhook timestamp '{}'", timestamp))?;
+    let now_seconds = now_unix_ms / 1_000;
+    let skew = now_seconds.abs_diff(timestamp_seconds);
+    if skew > max_skew_seconds {
+        bail!(
+            "webhook timestamp skew {}s exceeds max {}s",
+            skew,
+            max_skew_seconds
+        );
+    }
+    Ok(())
+}
+
+fn enforce_signature_replay_guard(
+    state: &mut EventRunnerState,
+    replay_key: &str,
+    now_unix_ms: u64,
+    max_skew_seconds: u64,
+) -> Result<()> {
+    let window_ms = max_skew_seconds.max(1).saturating_mul(1_000);
+    let retain_window_ms = window_ms.saturating_mul(3);
+    state
+        .signature_replay_last_seen_unix_ms
+        .retain(|_key, seen| now_unix_ms.saturating_sub(*seen) <= retain_window_ms);
+
+    if let Some(last_seen) = state.signature_replay_last_seen_unix_ms.get(replay_key) {
+        if now_unix_ms.saturating_sub(*last_seen) <= window_ms {
+            bail!("webhook signature replay detected for key '{}'", replay_key);
+        }
+    }
+
+    state
+        .signature_replay_last_seen_unix_ms
+        .insert(replay_key.to_string(), now_unix_ms);
     Ok(())
 }
 
@@ -616,13 +806,16 @@ mod tests {
     use std::{path::Path, sync::Arc, time::Duration};
 
     use async_trait::async_trait;
+    use hmac::{Hmac, Mac};
     use pi_ai::{ChatRequest, ChatResponse, ChatUsage, LlmClient, Message, PiAiError};
+    use sha2::Sha256;
     use tempfile::tempdir;
 
     use super::{
         due_decision, ingest_webhook_immediate_event, load_event_records,
         next_periodic_due_unix_ms, DueDecision, EventDefinition, EventRunnerState, EventSchedule,
         EventSchedulerConfig, EventSchedulerRuntime, EventWebhookIngestConfig,
+        WebhookSignatureAlgorithm,
     };
     use crate::{tools::ToolPolicy, RenderOptions};
 
@@ -670,6 +863,33 @@ mod tests {
         let mut payload = serde_json::to_string_pretty(event).expect("serialize event");
         payload.push('\n');
         std::fs::write(path, payload).expect("write event file");
+    }
+
+    fn github_signature(secret: &str, payload: &str) -> String {
+        let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes()).expect("mac");
+        mac.update(payload.as_bytes());
+        let digest = mac.finalize().into_bytes();
+        format!(
+            "sha256={}",
+            digest
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>()
+        )
+    }
+
+    fn slack_v0_signature(secret: &str, timestamp: &str, payload: &str) -> String {
+        let signed = format!("v0:{timestamp}:{payload}");
+        let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes()).expect("mac");
+        mac.update(signed.as_bytes());
+        let digest = mac.finalize().into_bytes();
+        format!(
+            "v0={}",
+            digest
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>()
+        )
     }
 
     #[test]
@@ -847,6 +1067,11 @@ mod tests {
             prompt_prefix: "Handle incoming webhook".to_string(),
             debounce_key: Some("hook-A".to_string()),
             debounce_window_seconds: 60,
+            signature: None,
+            timestamp: None,
+            secret: None,
+            signature_algorithm: None,
+            signature_max_skew_seconds: 300,
         };
 
         ingest_webhook_immediate_event(&config).expect("first ingest");
@@ -860,5 +1085,137 @@ mod tests {
 
         assert_eq!(first_count, second_count);
         assert!(state_path.exists());
+    }
+
+    #[test]
+    fn unit_webhook_signature_github_sha256_and_slack_v0_are_verified() {
+        let payload = "{\"signal\":\"ok\"}";
+        let github_secret = "github-secret";
+        let github_sig = github_signature(github_secret, payload);
+        let github_result = super::verify_webhook_signature(
+            payload,
+            Some(&github_sig),
+            None,
+            Some(github_secret),
+            Some(WebhookSignatureAlgorithm::GithubSha256),
+            1_700_000_000_000,
+            300,
+        )
+        .expect("github signature");
+        assert!(github_result.is_some());
+
+        let slack_secret = "slack-secret";
+        let slack_ts = "1700000000";
+        let slack_sig = slack_v0_signature(slack_secret, slack_ts, payload);
+        let slack_result = super::verify_webhook_signature(
+            payload,
+            Some(&slack_sig),
+            Some(slack_ts),
+            Some(slack_secret),
+            Some(WebhookSignatureAlgorithm::SlackV0),
+            1_700_000_050_000,
+            600,
+        )
+        .expect("slack signature");
+        assert!(slack_result.is_some());
+    }
+
+    #[test]
+    fn functional_webhook_ingest_accepts_valid_signed_payload() {
+        let temp = tempdir().expect("tempdir");
+        let events_dir = temp.path().join("events");
+        let state_path = temp.path().join("state.json");
+        std::fs::create_dir_all(&events_dir).expect("create events dir");
+        let payload_path = temp.path().join("payload.json");
+        let payload = "{\"event\":\"deploy\"}";
+        std::fs::write(&payload_path, payload).expect("write payload");
+
+        let secret = "github-secret";
+        let signature = github_signature(secret, payload);
+        let config = EventWebhookIngestConfig {
+            events_dir: events_dir.clone(),
+            state_path: state_path.clone(),
+            channel_ref: "github/owner/repo#10".to_string(),
+            payload_file: payload_path,
+            prompt_prefix: "Handle incoming webhook".to_string(),
+            debounce_key: None,
+            debounce_window_seconds: 60,
+            signature: Some(signature),
+            timestamp: None,
+            secret: Some(secret.to_string()),
+            signature_algorithm: Some(WebhookSignatureAlgorithm::GithubSha256),
+            signature_max_skew_seconds: 300,
+        };
+
+        ingest_webhook_immediate_event(&config).expect("signed ingest");
+        let count = std::fs::read_dir(&events_dir)
+            .expect("read events dir")
+            .count();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn integration_webhook_ingest_rejects_replay_signature_within_window() {
+        let temp = tempdir().expect("tempdir");
+        let events_dir = temp.path().join("events");
+        let state_path = temp.path().join("state.json");
+        std::fs::create_dir_all(&events_dir).expect("create events dir");
+        let payload_path = temp.path().join("payload.json");
+        let payload = "{\"event\":\"sync\"}";
+        std::fs::write(&payload_path, payload).expect("write payload");
+
+        let secret = "slack-secret";
+        let timestamp = format!("{}", super::current_unix_timestamp_ms() / 1_000);
+        let signature = slack_v0_signature(secret, &timestamp, payload);
+        let config = EventWebhookIngestConfig {
+            events_dir: events_dir.clone(),
+            state_path: state_path.clone(),
+            channel_ref: "slack/C123".to_string(),
+            payload_file: payload_path,
+            prompt_prefix: "Handle incoming webhook".to_string(),
+            debounce_key: None,
+            debounce_window_seconds: 60,
+            signature: Some(signature),
+            timestamp: Some(timestamp),
+            secret: Some(secret.to_string()),
+            signature_algorithm: Some(WebhookSignatureAlgorithm::SlackV0),
+            signature_max_skew_seconds: 300,
+        };
+
+        ingest_webhook_immediate_event(&config).expect("first ingest");
+        let error = ingest_webhook_immediate_event(&config).expect_err("replay should fail");
+        assert!(error.to_string().contains("replay"));
+    }
+
+    #[test]
+    fn regression_webhook_ingest_invalid_signature_is_rejected_without_event_write() {
+        let temp = tempdir().expect("tempdir");
+        let events_dir = temp.path().join("events");
+        let state_path = temp.path().join("state.json");
+        std::fs::create_dir_all(&events_dir).expect("create events dir");
+        let payload_path = temp.path().join("payload.json");
+        std::fs::write(&payload_path, "{\"signal\":\"bad\"}").expect("write payload");
+
+        let config = EventWebhookIngestConfig {
+            events_dir: events_dir.clone(),
+            state_path,
+            channel_ref: "slack/C123".to_string(),
+            payload_file: payload_path,
+            prompt_prefix: "Handle incoming webhook".to_string(),
+            debounce_key: None,
+            debounce_window_seconds: 60,
+            signature: Some("sha256=deadbeef".to_string()),
+            timestamp: None,
+            secret: Some("secret".to_string()),
+            signature_algorithm: Some(WebhookSignatureAlgorithm::GithubSha256),
+            signature_max_skew_seconds: 300,
+        };
+
+        let error = ingest_webhook_immediate_event(&config).expect_err("signature should fail");
+        assert!(error.to_string().contains("verification failed"));
+        let count = std::fs::read_dir(&events_dir)
+            .expect("read events dir")
+            .count();
+        assert_eq!(count, 0);
     }
 }

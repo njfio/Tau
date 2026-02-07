@@ -40,7 +40,7 @@ use tracing_subscriber::EnvFilter;
 use crate::channel_store::ChannelStore;
 use crate::events::{
     ingest_webhook_immediate_event, run_event_scheduler, EventSchedulerConfig,
-    EventWebhookIngestConfig,
+    EventWebhookIngestConfig, WebhookSignatureAlgorithm,
 };
 use crate::session::{SessionImportMode, SessionStore};
 use crate::skills::{
@@ -116,6 +116,21 @@ fn command_file_error_mode_label(mode: CliCommandFileErrorMode) -> &'static str 
     match mode {
         CliCommandFileErrorMode::FailFast => "fail-fast",
         CliCommandFileErrorMode::ContinueOnError => "continue-on-error",
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum CliWebhookSignatureAlgorithm {
+    GithubSha256,
+    SlackV0,
+}
+
+impl From<CliWebhookSignatureAlgorithm> for WebhookSignatureAlgorithm {
+    fn from(value: CliWebhookSignatureAlgorithm) -> Self {
+        match value {
+            CliWebhookSignatureAlgorithm::GithubSha256 => WebhookSignatureAlgorithm::GithubSha256,
+            CliWebhookSignatureAlgorithm::SlackV0 => WebhookSignatureAlgorithm::SlackV0,
+        }
     }
 }
 
@@ -698,6 +713,50 @@ struct Cli {
         help = "Debounce window in seconds for repeated webhook ingestions with same key"
     )]
     event_webhook_debounce_window_seconds: u64,
+
+    #[arg(
+        long = "event-webhook-signature",
+        env = "PI_EVENT_WEBHOOK_SIGNATURE",
+        requires = "event_webhook_ingest_file",
+        hide_env_values = true,
+        help = "Raw webhook signature header value (for signed ingest verification)"
+    )]
+    event_webhook_signature: Option<String>,
+
+    #[arg(
+        long = "event-webhook-timestamp",
+        env = "PI_EVENT_WEBHOOK_TIMESTAMP",
+        requires = "event_webhook_ingest_file",
+        help = "Webhook timestamp header value used by signature algorithms that require timestamp checks"
+    )]
+    event_webhook_timestamp: Option<String>,
+
+    #[arg(
+        long = "event-webhook-secret",
+        env = "PI_EVENT_WEBHOOK_SECRET",
+        requires = "event_webhook_ingest_file",
+        hide_env_values = true,
+        help = "Shared secret used to verify signed webhook payloads"
+    )]
+    event_webhook_secret: Option<String>,
+
+    #[arg(
+        long = "event-webhook-signature-algorithm",
+        env = "PI_EVENT_WEBHOOK_SIGNATURE_ALGORITHM",
+        value_enum,
+        requires = "event_webhook_ingest_file",
+        help = "Webhook signature algorithm (github-sha256, slack-v0)"
+    )]
+    event_webhook_signature_algorithm: Option<CliWebhookSignatureAlgorithm>,
+
+    #[arg(
+        long = "event-webhook-signature-max-skew-seconds",
+        env = "PI_EVENT_WEBHOOK_SIGNATURE_MAX_SKEW_SECONDS",
+        default_value_t = 300,
+        requires = "event_webhook_ingest_file",
+        help = "Maximum allowed webhook timestamp skew in seconds (0 disables skew checks)"
+    )]
+    event_webhook_signature_max_skew_seconds: u64,
 
     #[arg(
         long = "github-issues-bridge",
@@ -2111,6 +2170,11 @@ async fn main() -> Result<()> {
             prompt_prefix: cli.event_webhook_prompt_prefix.clone(),
             debounce_key: cli.event_webhook_debounce_key.clone(),
             debounce_window_seconds: cli.event_webhook_debounce_window_seconds,
+            signature: cli.event_webhook_signature.clone(),
+            timestamp: cli.event_webhook_timestamp.clone(),
+            secret: cli.event_webhook_secret.clone(),
+            signature_algorithm: cli.event_webhook_signature_algorithm.map(Into::into),
+            signature_max_skew_seconds: cli.event_webhook_signature_max_skew_seconds,
         })?;
         return Ok(());
     }
@@ -2575,6 +2639,54 @@ fn validate_event_webhook_ingest_cli(cli: &Cli) -> Result<()> {
     }
     if cli.event_webhook_debounce_window_seconds == 0 {
         bail!("--event-webhook-debounce-window-seconds must be greater than 0");
+    }
+
+    let signing_configured = cli.event_webhook_signature.is_some()
+        || cli.event_webhook_timestamp.is_some()
+        || cli.event_webhook_secret.is_some()
+        || cli.event_webhook_signature_algorithm.is_some();
+    if signing_configured {
+        if cli
+            .event_webhook_signature
+            .as_deref()
+            .map(str::trim)
+            .unwrap_or_default()
+            .is_empty()
+        {
+            bail!(
+                "--event-webhook-signature is required when webhook signature verification is configured"
+            );
+        }
+        if cli
+            .event_webhook_secret
+            .as_deref()
+            .map(str::trim)
+            .unwrap_or_default()
+            .is_empty()
+        {
+            bail!("--event-webhook-secret is required when webhook signature verification is configured");
+        }
+        match cli.event_webhook_signature_algorithm {
+            Some(CliWebhookSignatureAlgorithm::GithubSha256) => {}
+            Some(CliWebhookSignatureAlgorithm::SlackV0) => {
+                if cli
+                    .event_webhook_timestamp
+                    .as_deref()
+                    .map(str::trim)
+                    .unwrap_or_default()
+                    .is_empty()
+                {
+                    bail!(
+                        "--event-webhook-timestamp is required when --event-webhook-signature-algorithm=slack-v0"
+                    );
+                }
+            }
+            None => {
+                bail!(
+                    "--event-webhook-signature-algorithm is required when webhook signature verification is configured"
+                );
+            }
+        }
     }
     Ok(())
 }
@@ -10253,9 +10365,9 @@ mod tests {
         validate_slack_bridge_cli, AuthCommand, AuthCommandConfig, BranchAliasCommand,
         BranchAliasFile, Cli, CliBashProfile, CliCommandFileErrorMode,
         CliCredentialStoreEncryptionMode, CliOsSandboxMode, CliProviderAuthMode,
-        CliSessionImportMode, CliToolPolicyPreset, ClientRoute, CommandAction,
-        CommandExecutionContext, CommandFileEntry, CommandFileReport, CredentialStoreData,
-        CredentialStoreEncryptionMode, DoctorCheckResult, DoctorCommandConfig,
+        CliSessionImportMode, CliToolPolicyPreset, CliWebhookSignatureAlgorithm, ClientRoute,
+        CommandAction, CommandExecutionContext, CommandFileEntry, CommandFileReport,
+        CredentialStoreData, CredentialStoreEncryptionMode, DoctorCheckResult, DoctorCommandConfig,
         DoctorCommandOutputFormat, DoctorProviderKeyStatus, DoctorStatus, FallbackRoutingClient,
         MacroCommand, MacroFile, ProfileCommand, ProfileDefaults, ProfileStoreFile,
         PromptRunStatus, PromptTelemetryLogger, ProviderAuthMethod, ProviderCredentialStoreRecord,
@@ -10430,6 +10542,11 @@ mod tests {
             event_webhook_prompt_prefix: "Handle webhook-triggered event.".to_string(),
             event_webhook_debounce_key: None,
             event_webhook_debounce_window_seconds: 60,
+            event_webhook_signature: None,
+            event_webhook_timestamp: None,
+            event_webhook_secret: None,
+            event_webhook_signature_algorithm: None,
+            event_webhook_signature_max_skew_seconds: 300,
             github_issues_bridge: false,
             github_repo: None,
             github_token: None,
@@ -16109,6 +16226,50 @@ mod tests {
         assert!(error
             .to_string()
             .contains("--event-webhook-channel is required"));
+    }
+
+    #[test]
+    fn functional_validate_event_webhook_ingest_cli_requires_signing_arguments_together() {
+        let mut cli = test_cli();
+        cli.event_webhook_ingest_file = Some(PathBuf::from("payload.json"));
+        cli.event_webhook_channel = Some("slack/C123".to_string());
+        cli.event_webhook_signature = Some("sha256=abcd".to_string());
+        cli.event_webhook_secret = Some("secret".to_string());
+
+        let error =
+            validate_event_webhook_ingest_cli(&cli).expect_err("algorithm should be required");
+        assert!(error
+            .to_string()
+            .contains("--event-webhook-signature-algorithm is required"));
+    }
+
+    #[test]
+    fn regression_validate_event_webhook_ingest_cli_requires_timestamp_for_slack_v0() {
+        let mut cli = test_cli();
+        cli.event_webhook_ingest_file = Some(PathBuf::from("payload.json"));
+        cli.event_webhook_channel = Some("slack/C123".to_string());
+        cli.event_webhook_signature = Some("v0=abcd".to_string());
+        cli.event_webhook_secret = Some("secret".to_string());
+        cli.event_webhook_signature_algorithm = Some(CliWebhookSignatureAlgorithm::SlackV0);
+        cli.event_webhook_timestamp = None;
+
+        let error =
+            validate_event_webhook_ingest_cli(&cli).expect_err("timestamp should be required");
+        assert!(error
+            .to_string()
+            .contains("--event-webhook-timestamp is required"));
+    }
+
+    #[test]
+    fn unit_validate_event_webhook_ingest_cli_accepts_signed_github_configuration() {
+        let mut cli = test_cli();
+        cli.event_webhook_ingest_file = Some(PathBuf::from("payload.json"));
+        cli.event_webhook_channel = Some("github/owner/repo#1".to_string());
+        cli.event_webhook_signature = Some("sha256=abcd".to_string());
+        cli.event_webhook_secret = Some("secret".to_string());
+        cli.event_webhook_signature_algorithm = Some(CliWebhookSignatureAlgorithm::GithubSha256);
+
+        validate_event_webhook_ingest_cli(&cli).expect("signed github webhook config should pass");
     }
 
     #[test]

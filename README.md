@@ -213,6 +213,20 @@ cargo run -p pi-coding-agent -- \
   --event-webhook-debounce-window-seconds 60
 ```
 
+Queue a signed webhook payload with verification and replay protection:
+
+```bash
+cargo run -p pi-coding-agent -- \
+  --events-dir .pi/events \
+  --events-state-path .pi/events/state.json \
+  --event-webhook-ingest-file /tmp/webhook.json \
+  --event-webhook-channel github/owner/repo#42 \
+  --event-webhook-signature "$X_HUB_SIGNATURE_256" \
+  --event-webhook-secret "$WEBHOOK_SECRET" \
+  --event-webhook-signature-algorithm github-sha256 \
+  --event-webhook-signature-max-skew-seconds 300
+```
+
 Load the base system prompt from a file:
 
 ```bash
