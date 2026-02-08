@@ -3000,6 +3000,66 @@ fn regression_package_list_flag_reports_invalid_manifest_entries() {
 }
 
 #[test]
+fn package_remove_flag_removes_installed_bundle_and_exits() {
+    let temp = tempdir().expect("tempdir");
+    let package_root = temp.path().join("bundle");
+    fs::create_dir_all(package_root.join("templates")).expect("create templates dir");
+    fs::write(package_root.join("templates/review.txt"), "template body")
+        .expect("write template source");
+    let manifest_path = package_root.join("package.json");
+    fs::write(
+        &manifest_path,
+        r#"{
+  "schema_version": 1,
+  "name": "starter-bundle",
+  "version": "1.0.0",
+  "templates": [{"id":"review","path":"templates/review.txt"}]
+}"#,
+    )
+    .expect("write manifest");
+    let install_root = temp.path().join("installed");
+
+    let mut install_cmd = binary_command();
+    install_cmd.args([
+        "--package-install",
+        manifest_path.to_str().expect("utf8 path"),
+        "--package-install-root",
+        install_root.to_str().expect("utf8 path"),
+    ]);
+    install_cmd.assert().success();
+
+    let mut remove_cmd = binary_command();
+    remove_cmd.args([
+        "--package-remove",
+        "starter-bundle@1.0.0",
+        "--package-remove-root",
+        install_root.to_str().expect("utf8 path"),
+    ]);
+    remove_cmd
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("package remove:"))
+        .stdout(predicate::str::contains("status=removed"));
+    assert!(!install_root.join("starter-bundle/1.0.0").exists());
+}
+
+#[test]
+fn regression_package_remove_flag_rejects_invalid_coordinate() {
+    let temp = tempdir().expect("tempdir");
+    let mut cmd = binary_command();
+    cmd.args([
+        "--package-remove",
+        "starter-bundle",
+        "--package-remove-root",
+        temp.path().to_str().expect("utf8 path"),
+    ]);
+
+    cmd.assert()
+        .failure()
+        .stderr(predicate::str::contains("must follow <name>@<version>"));
+}
+
+#[test]
 fn rpc_capabilities_flag_outputs_versioned_json_and_exits() {
     let mut cmd = binary_command();
     cmd.arg("--rpc-capabilities");

@@ -59,6 +59,30 @@ pub(crate) struct PackageListReport {
     pub invalid_entries: Vec<PackageListInvalidEntry>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PackageRemoveReport {
+    pub remove_root: PathBuf,
+    pub package_dir: PathBuf,
+    pub name: String,
+    pub version: String,
+    pub status: PackageRemoveStatus,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PackageRemoveStatus {
+    Removed,
+    NotFound,
+}
+
+impl PackageRemoveStatus {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Removed => "removed",
+            Self::NotFound => "not_found",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum FileUpsertOutcome {
     Installed,
@@ -140,6 +164,15 @@ pub(crate) fn execute_package_list_command(cli: &Cli) -> Result<()> {
     }
     let report = list_installed_packages(&cli.package_list_root)?;
     println!("{}", render_package_list_report(&report));
+    Ok(())
+}
+
+pub(crate) fn execute_package_remove_command(cli: &Cli) -> Result<()> {
+    let Some(coordinate) = cli.package_remove.as_deref() else {
+        return Ok(());
+    };
+    let report = remove_installed_package(coordinate, &cli.package_remove_root)?;
+    println!("{}", render_package_remove_report(&report));
     Ok(())
 }
 
@@ -494,6 +527,99 @@ fn render_package_list_report(report: &PackageListReport) -> String {
     lines.join("\n")
 }
 
+fn remove_installed_package(coordinate: &str, remove_root: &Path) -> Result<PackageRemoveReport> {
+    let (name, version) = parse_package_coordinate(coordinate)?;
+    let package_dir = remove_root.join(name.as_str()).join(version.as_str());
+    if !package_dir.exists() {
+        return Ok(PackageRemoveReport {
+            remove_root: remove_root.to_path_buf(),
+            package_dir,
+            name,
+            version,
+            status: PackageRemoveStatus::NotFound,
+        });
+    }
+    if !package_dir.is_dir() {
+        bail!(
+            "installed package path '{}' is not a directory",
+            package_dir.display()
+        );
+    }
+
+    std::fs::remove_dir_all(&package_dir).with_context(|| {
+        format!(
+            "failed to remove installed package {}",
+            package_dir.display()
+        )
+    })?;
+    let package_name_dir = remove_root.join(name.as_str());
+    if package_name_dir.is_dir() {
+        let mut entries = std::fs::read_dir(&package_name_dir)
+            .with_context(|| format!("failed to read {}", package_name_dir.display()))?;
+        if entries.next().is_none() {
+            std::fs::remove_dir(&package_name_dir).with_context(|| {
+                format!(
+                    "failed to remove empty package directory {}",
+                    package_name_dir.display()
+                )
+            })?;
+        }
+    }
+
+    Ok(PackageRemoveReport {
+        remove_root: remove_root.to_path_buf(),
+        package_dir,
+        name,
+        version,
+        status: PackageRemoveStatus::Removed,
+    })
+}
+
+fn parse_package_coordinate(raw: &str) -> Result<(String, String)> {
+    let trimmed = raw.trim();
+    let mut parts = trimmed.split('@');
+    let Some(name_raw) = parts.next() else {
+        bail!("package coordinate must follow <name>@<version>");
+    };
+    let Some(version_raw) = parts.next() else {
+        bail!("package coordinate must follow <name>@<version>");
+    };
+    if parts.next().is_some() {
+        bail!("package coordinate must follow <name>@<version>");
+    }
+
+    let name = name_raw.trim();
+    if name.is_empty() {
+        bail!("package coordinate name must be non-empty");
+    }
+    if name.contains('/') || name.contains('\\') || name.contains("..") {
+        bail!(
+            "package coordinate name '{}' must not contain path separators or parent traversals",
+            name
+        );
+    }
+
+    let version = version_raw.trim();
+    if !is_semver_like(version) {
+        bail!(
+            "package coordinate version '{}' must follow x.y.z numeric semver form",
+            version
+        );
+    }
+    Ok((name.to_string(), version.to_string()))
+}
+
+fn render_package_remove_report(report: &PackageRemoveReport) -> String {
+    format!(
+        "package remove: root={} name={} version={} path={} status={}",
+        report.remove_root.display(),
+        report.name,
+        report.version,
+        report.package_dir.display(),
+        report.status.as_str()
+    )
+}
+
 fn render_package_manifest_report(
     summary: &PackageManifestSummary,
     manifest: &PackageManifest,
@@ -599,8 +725,9 @@ mod tests {
 
     use super::{
         install_package_manifest, list_installed_packages, load_and_validate_manifest,
-        render_package_install_report, render_package_list_report, render_package_manifest_report,
-        validate_package_manifest, FileUpsertOutcome, PackageListReport,
+        parse_package_coordinate, remove_installed_package, render_package_install_report,
+        render_package_list_report, render_package_manifest_report, render_package_remove_report,
+        validate_package_manifest, FileUpsertOutcome, PackageListReport, PackageRemoveStatus,
     };
 
     #[cfg(unix)]
@@ -1015,5 +1142,82 @@ mod tests {
         assert!(rendered.contains("invalid=1"));
         assert!(rendered.contains("package: name=starter version=1.0.0"));
         assert!(rendered.contains("package invalid: path=/tmp/packages/broken/9.9.9"));
+    }
+
+    #[test]
+    fn functional_remove_installed_package_deletes_bundle_and_empty_parent() {
+        let temp = tempdir().expect("tempdir");
+        let source_root = temp.path().join("source");
+        std::fs::create_dir_all(source_root.join("templates")).expect("create templates dir");
+        std::fs::write(source_root.join("templates/review.txt"), "template")
+            .expect("write template source");
+        let manifest_path = source_root.join("package.json");
+        std::fs::write(
+            &manifest_path,
+            r#"{
+  "schema_version": 1,
+  "name": "starter",
+  "version": "1.0.0",
+  "templates": [{"id":"review","path":"templates/review.txt"}]
+}"#,
+        )
+        .expect("write manifest");
+
+        let install_root = temp.path().join("installed");
+        install_package_manifest(&manifest_path, &install_root).expect("install package");
+        let report = remove_installed_package("starter@1.0.0", &install_root)
+            .expect("remove installed package");
+        assert_eq!(report.status, PackageRemoveStatus::Removed);
+        assert!(!install_root.join("starter/1.0.0").exists());
+        assert!(!install_root.join("starter").exists());
+    }
+
+    #[test]
+    fn functional_remove_installed_package_not_found_returns_not_found_status() {
+        let temp = tempdir().expect("tempdir");
+        let install_root = temp.path().join("installed");
+        let report =
+            remove_installed_package("starter@1.0.0", &install_root).expect("remove package");
+        assert_eq!(report.status, PackageRemoveStatus::NotFound);
+        assert_eq!(report.name, "starter");
+        assert_eq!(report.version, "1.0.0");
+    }
+
+    #[test]
+    fn regression_parse_package_coordinate_rejects_invalid_and_unsafe_inputs() {
+        let format_error = parse_package_coordinate("starter").expect_err("format should fail");
+        assert!(format_error
+            .to_string()
+            .contains("must follow <name>@<version>"));
+
+        let version_error = parse_package_coordinate("starter@1.0").expect_err("version invalid");
+        assert!(version_error.to_string().contains("must follow x.y.z"));
+
+        let traversal_error =
+            parse_package_coordinate("../evil@1.0.0").expect_err("unsafe name should fail");
+        assert!(traversal_error
+            .to_string()
+            .contains("must not contain path separators"));
+    }
+
+    #[test]
+    fn unit_parse_and_render_package_remove_report_are_deterministic() {
+        let (name, version) =
+            parse_package_coordinate("starter@2.3.4").expect("coordinate should parse");
+        assert_eq!(name, "starter");
+        assert_eq!(version, "2.3.4");
+
+        let report = super::PackageRemoveReport {
+            remove_root: Path::new("/tmp/packages").to_path_buf(),
+            package_dir: Path::new("/tmp/packages/starter/2.3.4").to_path_buf(),
+            name,
+            version,
+            status: PackageRemoveStatus::Removed,
+        };
+        let rendered = render_package_remove_report(&report);
+        assert!(rendered.contains("package remove:"));
+        assert!(rendered.contains("name=starter"));
+        assert!(rendered.contains("version=2.3.4"));
+        assert!(rendered.contains("status=removed"));
     }
 }

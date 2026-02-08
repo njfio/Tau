@@ -28,8 +28,8 @@ use super::{
     execute_auth_command, execute_branch_alias_command, execute_channel_store_admin_command,
     execute_command_file, execute_doctor_command, execute_integration_auth_command,
     execute_macro_command, execute_package_install_command, execute_package_list_command,
-    execute_package_show_command, execute_package_validate_command, execute_profile_command,
-    execute_rpc_capabilities_command, execute_rpc_dispatch_frame_command,
+    execute_package_remove_command, execute_package_show_command, execute_package_validate_command,
+    execute_profile_command, execute_rpc_capabilities_command, execute_rpc_dispatch_frame_command,
     execute_rpc_dispatch_ndjson_command, execute_rpc_validate_frame_command,
     execute_session_bookmark_command, execute_session_diff_command,
     execute_session_graph_export_command, execute_session_search_command,
@@ -254,6 +254,8 @@ fn test_cli() -> Cli {
         package_install_root: PathBuf::from(".pi/packages"),
         package_list: false,
         package_list_root: PathBuf::from(".pi/packages"),
+        package_remove: None,
+        package_remove_root: PathBuf::from(".pi/packages"),
         rpc_capabilities: false,
         rpc_validate_frame_file: None,
         rpc_dispatch_frame_file: None,
@@ -6862,6 +6864,48 @@ fn regression_execute_package_list_command_rejects_non_directory_root() {
     cli.package_list_root = root_file;
     let error = execute_package_list_command(&cli).expect_err("non-directory root should fail");
     assert!(error.to_string().contains("is not a directory"));
+}
+
+#[test]
+fn functional_execute_package_remove_command_removes_installed_package() {
+    let temp = tempdir().expect("tempdir");
+    let package_root = temp.path().join("bundle");
+    std::fs::create_dir_all(package_root.join("templates")).expect("create templates dir");
+    std::fs::write(package_root.join("templates/review.txt"), "template")
+        .expect("write template source");
+    let manifest_path = package_root.join("package.json");
+    std::fs::write(
+        &manifest_path,
+        r#"{
+  "schema_version": 1,
+  "name": "starter-bundle",
+  "version": "1.0.0",
+  "templates": [{"id":"review","path":"templates/review.txt"}]
+}"#,
+    )
+    .expect("write manifest");
+
+    let install_root = temp.path().join("installed");
+    let mut install_cli = test_cli();
+    install_cli.package_install = Some(manifest_path);
+    install_cli.package_install_root = install_root.clone();
+    execute_package_install_command(&install_cli).expect("package install should succeed");
+
+    let mut remove_cli = test_cli();
+    remove_cli.package_remove = Some("starter-bundle@1.0.0".to_string());
+    remove_cli.package_remove_root = install_root.clone();
+    execute_package_remove_command(&remove_cli).expect("package remove should succeed");
+    assert!(!install_root.join("starter-bundle/1.0.0").exists());
+}
+
+#[test]
+fn regression_execute_package_remove_command_rejects_invalid_coordinate() {
+    let mut cli = test_cli();
+    cli.package_remove = Some("starter-bundle".to_string());
+    cli.package_remove_root = PathBuf::from(".pi/packages");
+    let error =
+        execute_package_remove_command(&cli).expect_err("invalid coordinate format should fail");
+    assert!(error.to_string().contains("must follow <name>@<version>"));
 }
 
 #[test]
