@@ -363,7 +363,9 @@ fn dispatch_rpc_frame_for_serve(
                     run_id
                 );
             }
-            Ok(vec![dispatch_rpc_frame(frame)?])
+            let mut responses = vec![dispatch_rpc_frame(frame)?];
+            responses.push(build_run_cancel_stream_frame(&frame.request_id, &run_id));
+            Ok(responses)
         }
         RpcFrameKind::RunComplete => {
             let run_id =
@@ -730,6 +732,21 @@ fn build_run_complete_stream_frame(request_id: &str, run_id: &str) -> RpcRespons
             "event": "run.completed",
             "terminal": true,
             "terminal_state": "completed",
+            "mode": RPC_STUB_MODE,
+            "sequence": 2,
+        }),
+    )
+}
+
+fn build_run_cancel_stream_frame(request_id: &str, run_id: &str) -> RpcResponseFrame {
+    build_response_frame(
+        request_id,
+        RPC_RUN_STREAM_TOOL_EVENTS_KIND,
+        json!({
+            "run_id": run_id,
+            "event": "run.cancelled",
+            "terminal": true,
+            "terminal_state": "cancelled",
             "mode": RPC_STUB_MODE,
             "sequence": 2,
         }),
@@ -1617,7 +1634,7 @@ not-json
             .lines()
             .map(|line| serde_json::from_str::<serde_json::Value>(line).expect("json frame"))
             .collect::<Vec<_>>();
-        assert_eq!(rows.len(), 7);
+        assert_eq!(rows.len(), 8);
         assert_eq!(rows[0]["request_id"], "req-cap");
         assert_eq!(rows[0]["kind"], "capabilities.response");
         assert_eq!(rows[1]["request_id"], "req-start");
@@ -1641,10 +1658,15 @@ not-json
         assert_eq!(rows[5]["kind"], "run.cancelled");
         assert_eq!(rows[5]["payload"]["terminal"], true);
         assert_eq!(rows[5]["payload"]["terminal_state"], "cancelled");
-        assert_eq!(rows[6]["request_id"], "req-status-inactive");
-        assert_eq!(rows[6]["kind"], "run.status");
-        assert_eq!(rows[6]["payload"]["active"], false);
-        assert_eq!(rows[6]["payload"]["known"], false);
+        assert_eq!(rows[6]["request_id"], "req-cancel");
+        assert_eq!(rows[6]["kind"], "run.stream.tool_events");
+        assert_eq!(rows[6]["payload"]["event"], "run.cancelled");
+        assert_eq!(rows[6]["payload"]["terminal"], true);
+        assert_eq!(rows[6]["payload"]["terminal_state"], "cancelled");
+        assert_eq!(rows[7]["request_id"], "req-status-inactive");
+        assert_eq!(rows[7]["kind"], "run.status");
+        assert_eq!(rows[7]["payload"]["active"], false);
+        assert_eq!(rows[7]["payload"]["known"], false);
     }
 
     #[test]
@@ -1798,7 +1820,7 @@ not-json
             .lines()
             .map(|line| serde_json::from_str::<serde_json::Value>(line).expect("json frame"))
             .collect::<Vec<_>>();
-        assert_eq!(rows.len(), 5);
+        assert_eq!(rows.len(), 6);
         assert_eq!(rows[0]["request_id"], "req-ok");
         assert_eq!(rows[0]["kind"], "run.accepted");
         assert_eq!(rows[0]["payload"]["run_id"], "run-req-ok");
@@ -1810,6 +1832,9 @@ not-json
         assert_eq!(rows[3]["payload"]["code"], "invalid_json");
         assert_eq!(rows[4]["request_id"], "req-ok-2");
         assert_eq!(rows[4]["kind"], "run.cancelled");
+        assert_eq!(rows[5]["request_id"], "req-ok-2");
+        assert_eq!(rows[5]["kind"], "run.stream.tool_events");
+        assert_eq!(rows[5]["payload"]["event"], "run.cancelled");
     }
 
     #[test]
@@ -1986,11 +2011,14 @@ not-json
 
     #[test]
     fn functional_rpc_schema_compat_serve_fixture_replays_supported_versions() {
-        let fixture = load_rpc_schema_compat_fixture("serve-mixed-supported.json");
-        let (processed_lines, error_count, responses) = replay_rpc_schema_compat_fixture(&fixture);
-        assert_eq!(processed_lines, fixture.expected_processed_lines);
-        assert_eq!(error_count, fixture.expected_error_count);
-        assert_eq!(responses, fixture.expected_responses);
+        for name in ["serve-mixed-supported.json", "serve-cancel-supported.json"] {
+            let fixture = load_rpc_schema_compat_fixture(name);
+            let (processed_lines, error_count, responses) =
+                replay_rpc_schema_compat_fixture(&fixture);
+            assert_eq!(processed_lines, fixture.expected_processed_lines);
+            assert_eq!(error_count, fixture.expected_error_count);
+            assert_eq!(responses, fixture.expected_responses);
+        }
     }
 
     #[test]
@@ -1999,6 +2027,7 @@ not-json
             "dispatch-mixed-supported.json",
             "dispatch-unsupported-continues.json",
             "serve-mixed-supported.json",
+            "serve-cancel-supported.json",
             "serve-unsupported-continues.json",
         ] {
             let fixture = load_rpc_schema_compat_fixture(name);

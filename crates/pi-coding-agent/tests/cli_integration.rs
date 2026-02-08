@@ -5420,6 +5420,7 @@ fn rpc_serve_ndjson_flag_streams_ordered_response_lines() {
         .stdout(predicate::str::contains("\"active\":true"))
         .stdout(predicate::str::contains("\"request_id\":\"req-cancel\""))
         .stdout(predicate::str::contains("\"kind\":\"run.cancelled\""))
+        .stdout(predicate::str::contains("\"event\":\"run.cancelled\""))
         .stdout(predicate::str::contains("\"terminal_state\":\"cancelled\""))
         .stdout(predicate::str::contains(
             "\"request_id\":\"req-status-inactive\"",
@@ -5494,20 +5495,21 @@ fn rpc_serve_ndjson_flag_supports_run_timeout_lifecycle() {
 
 #[test]
 fn integration_rpc_serve_ndjson_replays_schema_compat_fixture() {
-    let fixture = load_rpc_schema_compat_fixture("serve-mixed-supported.json");
-    assert_eq!(fixture.name, "serve-mixed-supported");
-    assert_eq!(fixture.mode, RpcSchemaCompatMode::ServeNdjson);
-    assert_eq!(fixture.expected_processed_lines, fixture.input_lines.len());
-    assert_eq!(fixture.expected_error_count, 0);
+    for fixture_name in ["serve-mixed-supported.json", "serve-cancel-supported.json"] {
+        let fixture = load_rpc_schema_compat_fixture(fixture_name);
+        assert_eq!(fixture.mode, RpcSchemaCompatMode::ServeNdjson);
+        assert_eq!(fixture.expected_processed_lines, fixture.input_lines.len());
+        assert_eq!(fixture.expected_error_count, 0);
 
-    let mut cmd = binary_command();
-    cmd.arg("--rpc-serve-ndjson")
-        .write_stdin(fixture.input_lines.join("\n"));
+        let mut cmd = binary_command();
+        cmd.arg("--rpc-serve-ndjson")
+            .write_stdin(fixture.input_lines.join("\n"));
 
-    let assert = cmd.assert().success();
-    let stdout = String::from_utf8(assert.get_output().stdout.clone()).expect("stdout utf8");
-    let responses = parse_ndjson_values(&stdout);
-    assert_eq!(responses, fixture.expected_responses);
+        let assert = cmd.assert().success();
+        let stdout = String::from_utf8(assert.get_output().stdout.clone()).expect("stdout utf8");
+        let responses = parse_ndjson_values(&stdout);
+        assert_eq!(responses, fixture.expected_responses);
+    }
 }
 
 #[test]

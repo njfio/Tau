@@ -5,6 +5,7 @@ This fixture corpus locks deterministic RPC behavior across request schema versi
 - `dispatch-mixed-supported.json`: supported schema versions (`0`, `1`) in preflight dispatch mode.
 - `dispatch-unsupported-continues.json`: unsupported schema regression while continuing to later valid frames.
 - `serve-mixed-supported.json`: supported schema versions (`0`, `1`) in stateful serve mode.
+- `serve-cancel-supported.json`: serve-mode cancel lifecycle with deterministic terminal stream event.
 - `serve-unsupported-continues.json`: unsupported schema regression while serve mode continues processing.
 
 Each fixture file includes input lines, expected processing/error counts, and expected response envelopes.
