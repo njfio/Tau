@@ -1,9 +1,9 @@
 [workspace]
 members = [
-  "crates/pi-ai",
-  "crates/pi-agent-core",
-  "crates/pi-tui",
-  "crates/pi-coding-agent",
+  "crates/tau-ai",
+  "crates/tau-agent-core",
+  "crates/tau-tui",
+  "crates/tau-coding-agent",
 ]
 resolver = "2"
 

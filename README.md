@@ -1,31 +1,31 @@
-# rust-pi
+# rust-tau
 
-Pure Rust implementation of core `pi-mono` concepts.
+Pure Rust implementation of core `upstream mono` concepts.
 
-This workspace mirrors the high-level package boundaries from `badlogic/pi-mono` and provides a functional baseline:
+This workspace mirrors the high-level package boundaries from `badlogic/tau-mono` and provides a functional baseline:
 
-- `crates/pi-ai`: provider-agnostic message and tool model + OpenAI/Anthropic/Google adapters
-- `crates/pi-agent-core`: event-driven agent loop with tool execution
-- `crates/pi-tui`: minimal differential terminal rendering primitives
-- `crates/pi-coding-agent`: CLI harness with built-in `read`, `write`, `edit`, and `bash` tools
+- `crates/tau-ai`: provider-agnostic message and tool model + OpenAI/Anthropic/Google adapters
+- `crates/tau-agent-core`: event-driven agent loop with tool execution
+- `crates/tau-tui`: minimal differential terminal rendering primitives
+- `crates/tau-coding-agent`: CLI harness with built-in `read`, `write`, `edit`, and `bash` tools
 
 ## Current Scope
 
 Implemented now:
 
 - Rust-first core architecture (no Node/TypeScript runtime)
-- Tool-call loop (`assistant -> tool -> assistant`) in `pi-agent-core`
+- Tool-call loop (`assistant -> tool -> assistant`) in `tau-agent-core`
 - Multi-provider model routing: `openai/*`, `anthropic/*`, `google/*`
 - Interactive CLI and one-shot prompt mode
 - Token-by-token CLI output rendering controls
 - Persistent JSONL sessions with branch/resume support
 - Session repair, export/import, and lineage compaction commands
 - Built-in filesystem and shell tools
-- Theme loading and ANSI styling primitives in `pi-tui`
-- Overlay composition primitives in `pi-tui`
-- Editor buffer primitives in `pi-tui` (cursor + insert/delete/navigation)
-- Editor viewport rendering in `pi-tui` (line numbers + cursor marker)
-- Image rendering primitives in `pi-tui` (grayscale-to-ASCII)
+- Theme loading and ANSI styling primitives in `tau-tui`
+- Overlay composition primitives in `tau-tui`
+- Editor buffer primitives in `tau-tui` (cursor + insert/delete/navigation)
+- Editor viewport rendering in `tau-tui` (line numbers + cursor marker)
+- Image rendering primitives in `tau-tui` (grayscale-to-ASCII)
 - Skill loading from markdown packages via `--skills-dir` and `--skill`
 - Remote skill fetch/install with optional checksum verification
 - Registry-based skill installation (`--skill-registry-url`, `--install-skill-from-registry`)
@@ -37,7 +37,7 @@ Implemented now:
 
 ## Contributor Map
 
-- `pi-coding-agent` architecture and module guide: `docs/pi-coding-agent/code-map.md`
+- `tau-coding-agent` architecture and module guide: `docs/tau-coding-agent/code-map.md`
 
 ## Build & Test
 
@@ -51,13 +51,13 @@ Robustness and performance suites:
 
 ```bash
 # Property and regression-heavy suite
-cargo test -p pi-coding-agent
+cargo test -p tau-coding-agent
 
 # Stress-oriented session test
-cargo test -p pi-coding-agent stress_parallel_appends_high_volume_remain_consistent
+cargo test -p tau-coding-agent stress_parallel_appends_high_volume_remain_consistent
 
 # Benchmarks
-cargo bench -p pi-tui
+cargo bench -p tau-tui
 ```
 
 ## CI/CD
@@ -67,7 +67,7 @@ This repository includes GitHub Actions workflows for:
 - CI (`.github/workflows/ci.yml`): Linux quality gate (fmt + clippy + workspace tests) on PR/push, cross-platform compile smoke on push/manual, optional manual coverage run
   - Includes transport replay conformance gate (`transport_conformance_*`) for GitHub/Slack/scheduler fixtures when transport files change
 - Security (`.github/workflows/security.yml`): consolidated `cargo audit` + `cargo deny` on default-branch pushes, weekly schedule, and manual runs
-- Releases (`.github/workflows/release.yml`): build and publish `pi-coding-agent` assets on `v*` tags
+- Releases (`.github/workflows/release.yml`): build and publish `tau-coding-agent` assets on `v*` tags
 
 Dependency update automation is configured in `.github/dependabot.yml`.
 
@@ -104,13 +104,13 @@ export GEMINI_API_KEY=...your-key...
 Run interactive mode:
 
 ```bash
-cargo run -p pi-coding-agent -- --model openai/gpt-4o-mini
+cargo run -p tau-coding-agent -- --model openai/gpt-4o-mini
 ```
 
 Run interactive mode with plan-first orchestration on each user turn:
 
 ```bash
-cargo run -p pi-coding-agent -- \
+cargo run -p tau-coding-agent -- \
   --model openai/gpt-4o-mini \
   --orchestrator-mode plan-first \
   --orchestrator-delegate-steps \
@@ -126,19 +126,19 @@ Plan-first mode emits deterministic orchestration traces for `planner`, `executo
 Use Anthropic:
 
 ```bash
-cargo run -p pi-coding-agent -- --model anthropic/claude-sonnet-4-20250514
+cargo run -p tau-coding-agent -- --model anthropic/claude-sonnet-4-20250514
 ```
 
 Use Google Gemini:
 
 ```bash
-cargo run -p pi-coding-agent -- --model google/gemini-2.5-pro
+cargo run -p tau-coding-agent -- --model google/gemini-2.5-pro
 ```
 
 Use OpenRouter via OpenAI-compatible endpoint:
 
 ```bash
-cargo run -p pi-coding-agent -- \
+cargo run -p tau-coding-agent -- \
   --model openrouter/openai/gpt-4o-mini \
   --api-base https://openrouter.ai/api/v1
 ```
@@ -146,7 +146,7 @@ cargo run -p pi-coding-agent -- \
 Use Groq via OpenAI-compatible endpoint:
 
 ```bash
-cargo run -p pi-coding-agent -- \
+cargo run -p tau-coding-agent -- \
   --model groq/llama-3.3-70b \
   --api-base https://api.groq.com/openai/v1
 ```
@@ -154,7 +154,7 @@ cargo run -p pi-coding-agent -- \
 Use xAI via OpenAI-compatible endpoint:
 
 ```bash
-cargo run -p pi-coding-agent -- \
+cargo run -p tau-coding-agent -- \
   --model xai/grok-4 \
   --api-base https://api.x.ai/v1
 ```
@@ -162,7 +162,7 @@ cargo run -p pi-coding-agent -- \
 Use Mistral via OpenAI-compatible endpoint:
 
 ```bash
-cargo run -p pi-coding-agent -- \
+cargo run -p tau-coding-agent -- \
   --model mistral/mistral-large-latest \
   --api-base https://api.mistral.ai/v1
 ```
@@ -170,7 +170,7 @@ cargo run -p pi-coding-agent -- \
 Use Azure OpenAI deployment endpoint:
 
 ```bash
-cargo run -p pi-coding-agent -- \
+cargo run -p tau-coding-agent -- \
   --model azure/gpt-4o-mini \
   --api-base https://YOUR-RESOURCE.openai.azure.com/openai/deployments/YOUR-DEPLOYMENT \
   --azure-openai-api-version 2024-10-21
@@ -179,10 +179,10 @@ cargo run -p pi-coding-agent -- \
 Refresh model catalog metadata from a remote JSON URL (cached locally):
 
 ```bash
-cargo run -p pi-coding-agent -- \
+cargo run -p tau-coding-agent -- \
   --model openai/gpt-4o-mini \
   --model-catalog-url https://example.com/models.json \
-  --model-catalog-cache .pi/models/catalog.json
+  --model-catalog-cache .tau/models/catalog.json
 ```
 
 Inspect model capabilities in interactive mode:
@@ -195,13 +195,13 @@ Inspect model capabilities in interactive mode:
 Run one prompt:
 
 ```bash
-cargo run -p pi-coding-agent -- --prompt "Summarize src/lib.rs"
+cargo run -p tau-coding-agent -- --prompt "Summarize src/lib.rs"
 ```
 
 Run one prompt with plan-first orchestration:
 
 ```bash
-cargo run -p pi-coding-agent -- \
+cargo run -p tau-coding-agent -- \
   --prompt "Summarize src/lib.rs" \
   --orchestrator-mode plan-first \
   --orchestrator-delegate-steps \
@@ -215,14 +215,14 @@ cargo run -p pi-coding-agent -- \
 Run one prompt from a file:
 
 ```bash
-cargo run -p pi-coding-agent -- --prompt-file .pi/prompts/review.txt
+cargo run -p tau-coding-agent -- --prompt-file .tau/prompts/review.txt
 ```
 
 Run one prompt from a template file with variables:
 
 ```bash
-cargo run -p pi-coding-agent -- \
-  --prompt-template-file .pi/prompts/review.template.txt \
+cargo run -p tau-coding-agent -- \
+  --prompt-template-file .tau/prompts/review.template.txt \
   --prompt-template-var module=src/main.rs \
   --prompt-template-var focus=\"error handling\"
 ```
@@ -230,18 +230,18 @@ cargo run -p pi-coding-agent -- \
 Pipe a one-shot prompt from stdin:
 
 ```bash
-printf "Summarize src/main.rs" | cargo run -p pi-coding-agent -- --prompt-file -
+printf "Summarize src/main.rs" | cargo run -p tau-coding-agent -- --prompt-file -
 ```
 
 Execute a slash-command script and exit:
 
 ```bash
 # Fail-fast on first malformed/failing line (default)
-cargo run -p pi-coding-agent -- --no-session --command-file .pi/commands/checks.commands
+cargo run -p tau-coding-agent -- --no-session --command-file .tau/commands/checks.commands
 
 # Continue past malformed/failing lines and report a final summary
-cargo run -p pi-coding-agent -- --no-session \
-  --command-file .pi/commands/checks.commands \
+cargo run -p tau-coding-agent -- --no-session \
+  --command-file .tau/commands/checks.commands \
   --command-file-error-mode continue-on-error
 ```
 
@@ -250,38 +250,38 @@ Run as a GitHub Issues conversational transport ("living issue chat stream"):
 ```bash
 export GITHUB_TOKEN=...your-token...
 
-cargo run -p pi-coding-agent -- \
+cargo run -p tau-coding-agent -- \
   --model openai/gpt-4o-mini \
   --github-issues-bridge \
   --github-repo owner/repo \
   --github-bot-login your-bot-login \
-  --github-state-dir .pi/github-issues \
+  --github-state-dir .tau/github-issues \
   --github-poll-interval-seconds 30 \
   --github-artifact-retention-days 30
 ```
 
 In bridge mode:
 
-- each issue maps to a deterministic session file under `.pi/github-issues/.../sessions/`
+- each issue maps to a deterministic session file under `.tau/github-issues/.../sessions/`
 - inbound/outbound event payloads are persisted as JSONL logs for replay/debugging
 - duplicate deliveries are deduplicated using persisted event keys and response footers
 - bot replies include run/model/token metadata in the issue comment footer
 - each completed run emits a markdown artifact plus metadata index entry under `channel-store/.../artifacts/`
 - set `--github-artifact-retention-days 0` to disable artifact expiration
-- `/pi help` prints the supported GitHub issue commands
-- `/pi chat start` initializes an issue chat session; `/pi chat resume` acknowledges an existing session; `/pi chat reset` clears the stored session for the issue; `/pi chat export` writes a JSONL session export artifact; `/pi chat status` reports the current session metadata; `/pi chat show [limit]` posts recent message previews; `/pi chat search <query>` searches the session
-- `/pi artifacts` posts the current issue artifact inventory; `/pi artifacts run <run_id>` filters inventory for one run; `/pi artifacts show <artifact_id>` shows one artifact record; `/pi artifacts purge` removes expired entries and reports lifecycle counts
+- `/tau help` prints the supported GitHub issue commands
+- `/tau chat start` initializes an issue chat session; `/tau chat resume` acknowledges an existing session; `/tau chat reset` clears the stored session for the issue; `/tau chat export` writes a JSONL session export artifact; `/tau chat status` reports the current session metadata; `/tau chat show [limit]` posts recent message previews; `/tau chat search <query>` searches the session
+- `/tau artifacts` posts the current issue artifact inventory; `/tau artifacts run <run_id>` filters inventory for one run; `/tau artifacts show <artifact_id>` shows one artifact record; `/tau artifacts purge` removes expired entries and reports lifecycle counts
 
 Run as a Slack Socket Mode conversational transport:
 
 ```bash
-export PI_SLACK_APP_TOKEN=...xapp-token...
-export PI_SLACK_BOT_TOKEN=...xoxb-token...
+export TAU_SLACK_APP_TOKEN=...xapp-token...
+export TAU_SLACK_BOT_TOKEN=...xoxb-token...
 
-cargo run -p pi-coding-agent -- \
+cargo run -p tau-coding-agent -- \
   --model openai/gpt-4o-mini \
   --slack-bridge \
-  --slack-state-dir .pi/slack \
+  --slack-state-dir .tau/slack \
   --slack-artifact-retention-days 30 \
   --slack-thread-detail-output true \
   --slack-thread-detail-threshold-chars 1500
@@ -290,11 +290,11 @@ cargo run -p pi-coding-agent -- \
 In Slack bridge mode:
 
 - `app_mention` and DM (`message.im`) events are normalized into per-channel runs
-- each channel maps to a deterministic session file under `.pi/slack/channels/.../session.jsonl`
+- each channel maps to a deterministic session file under `.tau/slack/channels/.../session.jsonl`
 - inbound/outbound event payloads are persisted as JSONL logs for replay/debugging
 - duplicate deliveries are deduplicated via persisted event keys
 - stale events are skipped based on `--slack-max-event-age-seconds`
-- `/pi help`, `/pi status`, `/pi stop`, and `/pi artifacts` are handled as Slack control commands (no run started)
+- `/tau help`, `/tau status`, `/tau stop`, and `/tau artifacts` are handled as Slack control commands (no run started)
 - attached files are downloaded into channel-local attachment folders and surfaced in prompt context
 - each completed run emits a markdown artifact + metadata under `channel-store/channels/slack/<channel>/artifacts/`
 - set `--slack-artifact-retention-days 0` to disable artifact expiration
@@ -303,13 +303,13 @@ Inspect or repair ChannelStore state for a specific channel:
 
 ```bash
 # Inspect one channel
-cargo run -p pi-coding-agent -- \
-  --channel-store-root .pi/channel-store \
+cargo run -p tau-coding-agent -- \
+  --channel-store-root .tau/channel-store \
   --channel-store-inspect github/issue-9
 
 # Repair malformed log/context JSONL lines for one channel
-cargo run -p pi-coding-agent -- \
-  --channel-store-root .pi/channel-store \
+cargo run -p tau-coding-agent -- \
+  --channel-store-root .tau/channel-store \
   --channel-store-repair slack/C123
 ```
 
@@ -318,43 +318,43 @@ Inspect now reports artifact health counters (records, invalid index lines, acti
 Validate an extension manifest JSON and exit:
 
 ```bash
-cargo run -p pi-coding-agent -- \
-  --extension-validate .pi/extensions/issue-assistant/extension.json
+cargo run -p tau-coding-agent -- \
+  --extension-validate .tau/extensions/issue-assistant/extension.json
 ```
 
 Inspect extension manifest metadata and declared inventory:
 
 ```bash
-cargo run -p pi-coding-agent -- \
-  --extension-show .pi/extensions/issue-assistant/extension.json
+cargo run -p tau-coding-agent -- \
+  --extension-show .tau/extensions/issue-assistant/extension.json
 ```
 
 List discovered extension manifests from an extension root (including invalid entries):
 
 ```bash
-cargo run -p pi-coding-agent -- \
+cargo run -p tau-coding-agent -- \
   --extension-list \
-  --extension-list-root .pi/extensions
+  --extension-list-root .tau/extensions
 ```
 
 Execute one declared process-runtime extension hook with a JSON payload:
 
 ```bash
-cargo run -p pi-coding-agent -- \
-  --extension-exec-manifest .pi/extensions/issue-assistant/extension.json \
+cargo run -p tau-coding-agent -- \
+  --extension-exec-manifest .tau/extensions/issue-assistant/extension.json \
   --extension-exec-hook run-start \
-  --extension-exec-payload-file .pi/extensions/issue-assistant/payload.json
+  --extension-exec-payload-file .tau/extensions/issue-assistant/payload.json
 ```
 
 Enable runtime lifecycle hook dispatch (`run-start`, `run-end`, `pre-tool-call`, `post-tool-call`) for prompt turns:
 
 ```bash
-cargo run -p pi-coding-agent -- \
+cargo run -p tau-coding-agent -- \
   --model openai/gpt-4o-mini \
   --openai-api-key "$OPENAI_API_KEY" \
   --prompt "Summarize open issues" \
   --extension-runtime-hooks \
-  --extension-runtime-root .pi/extensions
+  --extension-runtime-root .tau/extensions
 ```
 
 For `message-transform` hooks, extension responses can return a replacement prompt via `{"prompt":"..."}`.
@@ -402,23 +402,23 @@ Runtime slash-command response contract:
 Validate a reusable package manifest JSON and exit:
 
 ```bash
-cargo run -p pi-coding-agent -- \
-  --package-validate .pi/packages/starter/package.json
+cargo run -p tau-coding-agent -- \
+  --package-validate .tau/packages/starter/package.json
 ```
 
 Inspect package manifest metadata and component inventory:
 
 ```bash
-cargo run -p pi-coding-agent -- \
-  --package-show .pi/packages/starter/package.json
+cargo run -p tau-coding-agent -- \
+  --package-show .tau/packages/starter/package.json
 ```
 
 Install a local package manifest bundle into a versioned package root:
 
 ```bash
-cargo run -p pi-coding-agent -- \
+cargo run -p tau-coding-agent -- \
   --package-install ./examples/starter/package.json \
-  --package-install-root .pi/packages
+  --package-install-root .tau/packages
 ```
 
 Package components can also source content from remote HTTP(S) URLs with optional checksum pinning:
@@ -442,9 +442,9 @@ Package components can also source content from remote HTTP(S) URLs with optiona
 Require package signatures during install (trusted keys come from skill trust roots):
 
 ```bash
-cargo run -p pi-coding-agent -- \
+cargo run -p tau-coding-agent -- \
   --package-install ./examples/starter/package.json \
-  --package-install-root .pi/packages \
+  --package-install-root .tau/packages \
   --require-signed-packages \
   --skill-trust-root publisher=BASE64_PUBLIC_KEY
 ```
@@ -452,36 +452,36 @@ cargo run -p pi-coding-agent -- \
 Update an already installed package bundle from a manifest (fails if target version is not installed):
 
 ```bash
-cargo run -p pi-coding-agent -- \
+cargo run -p tau-coding-agent -- \
   --package-update ./examples/starter/package.json \
-  --package-update-root .pi/packages
+  --package-update-root .tau/packages
 ```
 
 Audit installed package bundles for deterministic component path conflicts:
 
 ```bash
-cargo run -p pi-coding-agent -- \
+cargo run -p tau-coding-agent -- \
   --package-conflicts \
-  --package-conflicts-root .pi/packages
+  --package-conflicts-root .tau/packages
 ```
 
 Materialize installed package components into an activation destination with explicit conflict policy:
 
 ```bash
-cargo run -p pi-coding-agent -- \
+cargo run -p tau-coding-agent -- \
   --package-activate \
-  --package-activate-root .pi/packages \
-  --package-activate-destination .pi/packages-active \
+  --package-activate-root .tau/packages \
+  --package-activate-destination .tau/packages-active \
   --package-activate-conflict-policy keep-first
 ```
 
 Activate installed package components during normal startup (without exiting), then run with activated package skills:
 
 ```bash
-cargo run -p pi-coding-agent -- \
+cargo run -p tau-coding-agent -- \
   --package-activate-on-startup \
-  --package-activate-root .pi/packages \
-  --package-activate-destination .pi/packages-active \
+  --package-activate-root .tau/packages \
+  --package-activate-destination .tau/packages-active \
   --package-activate-conflict-policy keep-first \
   --skill checks
 ```
@@ -489,64 +489,64 @@ cargo run -p pi-coding-agent -- \
 List installed package bundles from a package root:
 
 ```bash
-cargo run -p pi-coding-agent -- \
+cargo run -p tau-coding-agent -- \
   --package-list \
-  --package-list-root .pi/packages
+  --package-list-root .tau/packages
 ```
 
 Remove one installed package bundle from a package root:
 
 ```bash
-cargo run -p pi-coding-agent -- \
+cargo run -p tau-coding-agent -- \
   --package-remove starter-bundle@1.0.0 \
-  --package-remove-root .pi/packages
+  --package-remove-root .tau/packages
 ```
 
 Rollback one package to a target installed version (removes sibling versions):
 
 ```bash
-cargo run -p pi-coding-agent -- \
+cargo run -p tau-coding-agent -- \
   --package-rollback starter-bundle@1.0.0 \
-  --package-rollback-root .pi/packages
+  --package-rollback-root .tau/packages
 ```
 
 Print versioned RPC protocol capabilities JSON and exit:
 
 ```bash
-cargo run -p pi-coding-agent -- \
+cargo run -p tau-coding-agent -- \
   --rpc-capabilities
 ```
 
 Validate one RPC frame JSON request/command shape and exit:
 
 ```bash
-cargo run -p pi-coding-agent -- \
+cargo run -p tau-coding-agent -- \
   --rpc-validate-frame-file /tmp/rpc-frame.json
 ```
 
 Dispatch one RPC request frame JSON into a response frame JSON and exit:
 
 ```bash
-cargo run -p pi-coding-agent -- \
+cargo run -p tau-coding-agent -- \
   --rpc-dispatch-frame-file /tmp/rpc-frame.json
 ```
 
 RPC request frame schema versions `0` and `1` are accepted; response frames are emitted with schema version `1`. `capabilities.request` accepts optional `request_schema_version` for explicit negotiation, and `capabilities.response` includes `response_schema_version`, `supported_request_schema_versions`, `negotiated_request_schema_version`, `contracts.run_status` metadata (terminal flag contract + serve closed-status retention capacity + declared `status_values`/`terminal_states`), `contracts.errors.codes` taxonomy metadata (machine-readable RPC error contract list), `contracts.protocol` kind inventories (`request_kinds`, `response_kinds`, `stream_event_kinds`), and `contracts.lifecycle` transition contracts (`non_terminal_transitions` for run.start/run.status response + stream metadata, plus `terminal_transitions` request->response->terminal-state mappings with terminal assistant stream final-marker guarantee).
-Schema compatibility fixture replay coverage for dispatch/serve mode lives under `crates/pi-coding-agent/testdata/rpc-schema-compat/`.
+Schema compatibility fixture replay coverage for dispatch/serve mode lives under `crates/tau-coding-agent/testdata/rpc-schema-compat/`.
 
 For invalid request frames, dispatch still prints a structured JSON error envelope (`kind: "error"` with `payload.code` and `payload.message`) and exits non-zero.
 
 Dispatch newline-delimited RPC request frames (NDJSON) and emit one response JSON line per input frame:
 
 ```bash
-cargo run -p pi-coding-agent -- \
+cargo run -p tau-coding-agent -- \
   --rpc-dispatch-ndjson-file /tmp/rpc-frames.ndjson
 ```
 
 Run long-lived RPC NDJSON server mode over stdin/stdout:
 
 ```bash
-cat /tmp/rpc-frames.ndjson | cargo run -p pi-coding-agent -- --rpc-serve-ndjson
+cat /tmp/rpc-frames.ndjson | cargo run -p tau-coding-agent -- --rpc-serve-ndjson
 ```
 
 In `--rpc-serve-ndjson` mode, run lifecycle is stateful: `run.start` returns a `run_id` and emits deterministic `run.stream.tool_events` plus `run.stream.assistant_text` frames, `run.status` reports active/inactive state for that `run_id`, `run.complete` closes active runs with `run.completed`, `run.fail` closes active runs with `run.failed`, `run.timeout` closes active runs with `run.timed_out`, and `run.cancel` closes active runs with `run.cancelled` plus terminal `run.stream.tool_events` and terminal `run.stream.assistant_text` frames (unknown `run_id` still returns a structured `error` envelope).
@@ -556,11 +556,11 @@ In serve mode, `run.status` also retains closed-run terminal outcomes for known 
 Run the autonomous events scheduler (immediate, one-shot, periodic):
 
 ```bash
-cargo run -p pi-coding-agent -- \
+cargo run -p tau-coding-agent -- \
   --model openai/gpt-4o-mini \
   --events-runner \
-  --events-dir .pi/events \
-  --events-state-path .pi/events/state.json \
+  --events-dir .tau/events \
+  --events-state-path .tau/events/state.json \
   --events-poll-interval-ms 1000 \
   --events-queue-limit 64
 ```
@@ -568,9 +568,9 @@ cargo run -p pi-coding-agent -- \
 Queue a webhook-triggered immediate event from a payload file (debounced):
 
 ```bash
-cargo run -p pi-coding-agent -- \
-  --events-dir .pi/events \
-  --events-state-path .pi/events/state.json \
+cargo run -p tau-coding-agent -- \
+  --events-dir .tau/events \
+  --events-state-path .tau/events/state.json \
   --event-webhook-ingest-file /tmp/webhook.json \
   --event-webhook-channel slack/C123 \
   --event-webhook-prompt-prefix "Handle incoming deployment signal." \
@@ -581,9 +581,9 @@ cargo run -p pi-coding-agent -- \
 Queue a signed webhook payload with verification and replay protection:
 
 ```bash
-cargo run -p pi-coding-agent -- \
-  --events-dir .pi/events \
-  --events-state-path .pi/events/state.json \
+cargo run -p tau-coding-agent -- \
+  --events-dir .tau/events \
+  --events-state-path .tau/events/state.json \
   --event-webhook-ingest-file /tmp/webhook.json \
   --event-webhook-channel github/owner/repo#42 \
   --event-webhook-signature "$X_HUB_SIGNATURE_256" \
@@ -595,8 +595,8 @@ cargo run -p pi-coding-agent -- \
 Load the base system prompt from a file:
 
 ```bash
-cargo run -p pi-coding-agent -- \
-  --system-prompt-file .pi/prompts/system.txt \
+cargo run -p tau-coding-agent -- \
+  --system-prompt-file .tau/prompts/system.txt \
   --prompt "Review src/main.rs"
 ```
 
@@ -606,10 +606,10 @@ Control output streaming behavior:
 
 ```bash
 # Disable token-by-token rendering
-cargo run -p pi-coding-agent -- --prompt "Hello" --stream-output false
+cargo run -p tau-coding-agent -- --prompt "Hello" --stream-output false
 
 # Add artificial delay between streamed chunks
-cargo run -p pi-coding-agent -- --prompt "Hello" --stream-delay-ms 20
+cargo run -p tau-coding-agent -- --prompt "Hello" --stream-delay-ms 20
 ```
 
 When using OpenAI-compatible, Anthropic, or Google models with `--stream-output true`, the client uses provider-side incremental streaming when available.
@@ -618,26 +618,26 @@ Control provider and turn timeouts:
 
 ```bash
 # Request timeout for provider HTTP calls
-cargo run -p pi-coding-agent -- --prompt "Hello" --request-timeout-ms 60000
+cargo run -p tau-coding-agent -- --prompt "Hello" --request-timeout-ms 60000
 
 # Abort a single prompt turn if it exceeds 20 seconds (0 disables)
-cargo run -p pi-coding-agent -- --prompt "Hello" --turn-timeout-ms 20000
+cargo run -p tau-coding-agent -- --prompt "Hello" --turn-timeout-ms 20000
 ```
 
 Control provider retry resilience behavior:
 
 ```bash
 # Retry retryable provider errors up to 4 times
-cargo run -p pi-coding-agent -- --prompt "Hello" --provider-max-retries 4
+cargo run -p tau-coding-agent -- --prompt "Hello" --provider-max-retries 4
 
 # Enforce a 1500ms cumulative backoff budget for retries (0 disables)
-cargo run -p pi-coding-agent -- --prompt "Hello" --provider-retry-budget-ms 1500
+cargo run -p tau-coding-agent -- --prompt "Hello" --provider-retry-budget-ms 1500
 
 # Disable jitter to use deterministic exponential backoff
-cargo run -p pi-coding-agent -- --prompt "Hello" --provider-retry-jitter false
+cargo run -p tau-coding-agent -- --prompt "Hello" --provider-retry-jitter false
 
 # Configure fallback models (attempted in order on retriable provider failures)
-cargo run -p pi-coding-agent -- --prompt "Hello" \
+cargo run -p tau-coding-agent -- --prompt "Hello" \
   --model openai/gpt-4o-mini \
   --fallback-model openai/gpt-4o,anthropic/claude-sonnet-4-20250514
 ```
@@ -645,18 +645,18 @@ cargo run -p pi-coding-agent -- --prompt "Hello" \
 Load reusable skills into the system prompt:
 
 ```bash
-cargo run -p pi-coding-agent -- \
+cargo run -p tau-coding-agent -- \
   --prompt "Review src/lib.rs" \
-  --skills-dir .pi/skills \
+  --skills-dir .tau/skills \
   --skill checklist,security
 ```
 
 Install skills into the local package directory before running:
 
 ```bash
-cargo run -p pi-coding-agent -- \
+cargo run -p tau-coding-agent -- \
   --prompt "Audit this module" \
-  --skills-dir .pi/skills \
+  --skills-dir .tau/skills \
   --install-skill /tmp/review.md \
   --skill review
 ```
@@ -664,9 +664,9 @@ cargo run -p pi-coding-agent -- \
 Install a remote skill with checksum verification:
 
 ```bash
-cargo run -p pi-coding-agent -- \
+cargo run -p tau-coding-agent -- \
   --prompt "Audit this module" \
-  --skills-dir .pi/skills \
+  --skills-dir .tau/skills \
   --install-skill-url https://example.com/skills/review.md \
   --install-skill-sha256 2f7d0... \
   --skill review
@@ -676,19 +676,19 @@ Warm the remote skill cache, then replay installs offline:
 
 ```bash
 # Online warm-cache run
-cargo run -p pi-coding-agent -- \
+cargo run -p tau-coding-agent -- \
   --prompt "Audit this module" \
-  --skills-dir .pi/skills \
-  --skills-cache-dir .pi/skills-cache \
+  --skills-dir .tau/skills \
+  --skills-cache-dir .tau/skills-cache \
   --install-skill-url https://example.com/skills/review.md \
   --install-skill-sha256 2f7d0... \
   --skill review
 
 # Offline replay run (no remote fetches; requires cache hit)
-cargo run -p pi-coding-agent -- \
+cargo run -p tau-coding-agent -- \
   --prompt "Audit this module" \
-  --skills-dir .pi/skills \
-  --skills-cache-dir .pi/skills-cache \
+  --skills-dir .tau/skills \
+  --skills-cache-dir .tau/skills-cache \
   --skills-offline \
   --install-skill-url https://example.com/skills/review.md \
   --install-skill-sha256 2f7d0... \
@@ -698,9 +698,9 @@ cargo run -p pi-coding-agent -- \
 Install skills from a remote registry manifest:
 
 ```bash
-cargo run -p pi-coding-agent -- \
+cargo run -p tau-coding-agent -- \
   --prompt "Audit this module" \
-  --skills-dir .pi/skills \
+  --skills-dir .tau/skills \
   --skill-registry-url https://example.com/registry.json \
   --skill-registry-sha256 3ac10... \
   --install-skill-from-registry review \
@@ -710,10 +710,10 @@ cargo run -p pi-coding-agent -- \
 Replay registry installs offline from cache:
 
 ```bash
-cargo run -p pi-coding-agent -- \
+cargo run -p tau-coding-agent -- \
   --prompt "Audit this module" \
-  --skills-dir .pi/skills \
-  --skills-cache-dir .pi/skills-cache \
+  --skills-dir .tau/skills \
+  --skills-cache-dir .tau/skills-cache \
   --skills-offline \
   --skill-registry-url https://example.com/registry.json \
   --skill-registry-sha256 3ac10... \
@@ -724,9 +724,9 @@ cargo run -p pi-coding-agent -- \
 Enforce signed registry skills with trusted root keys:
 
 ```bash
-cargo run -p pi-coding-agent -- \
+cargo run -p tau-coding-agent -- \
   --prompt "Audit this module" \
-  --skills-dir .pi/skills \
+  --skills-dir .tau/skills \
   --skill-registry-url https://example.com/registry.json \
   --install-skill-from-registry review \
   --skill-trust-root root=Gf7... \
@@ -737,9 +737,9 @@ cargo run -p pi-coding-agent -- \
 Write a deterministic skills lockfile after installs:
 
 ```bash
-cargo run -p pi-coding-agent -- \
+cargo run -p tau-coding-agent -- \
   --prompt "Audit this module" \
-  --skills-dir .pi/skills \
+  --skills-dir .tau/skills \
   --install-skill /tmp/review.md \
   --skills-lock-write \
   --skill review
@@ -748,8 +748,8 @@ cargo run -p pi-coding-agent -- \
 Verify installed skills match the lockfile (fails on drift):
 
 ```bash
-cargo run -p pi-coding-agent -- \
-  --skills-dir .pi/skills \
+cargo run -p tau-coding-agent -- \
+  --skills-dir .tau/skills \
   --skills-sync \
   --no-session
 ```
@@ -758,21 +758,21 @@ Manage trust lifecycle in a trust-root file:
 
 ```bash
 # Add/update a trust root key
-cargo run -p pi-coding-agent -- \
+cargo run -p tau-coding-agent -- \
   --prompt "noop" \
-  --skill-trust-root-file .pi/skills/trust-roots.json \
+  --skill-trust-root-file .tau/skills/trust-roots.json \
   --skill-trust-add root=Gf7...
 
 # Rotate a key (revokes old id and adds new id/key)
-cargo run -p pi-coding-agent -- \
+cargo run -p tau-coding-agent -- \
   --prompt "noop" \
-  --skill-trust-root-file .pi/skills/trust-roots.json \
+  --skill-trust-root-file .tau/skills/trust-roots.json \
   --skill-trust-rotate root:root-v2=AbC...
 
 # Revoke a key id
-cargo run -p pi-coding-agent -- \
+cargo run -p tau-coding-agent -- \
   --prompt "noop" \
-  --skill-trust-root-file .pi/skills/trust-roots.json \
+  --skill-trust-root-file .tau/skills/trust-roots.json \
   --skill-trust-revoke root
 ```
 
@@ -784,14 +784,14 @@ Registry manifests can optionally mark keys/skills as revoked or expired with:
 Use a custom base URL (OpenAI-compatible):
 
 ```bash
-cargo run -p pi-coding-agent -- --api-base http://localhost:11434/v1 --model openai/qwen2.5-coder
+cargo run -p tau-coding-agent -- --api-base http://localhost:11434/v1 --model openai/qwen2.5-coder
 ```
 
 Session branching and resume:
 
 ```bash
-# Persist to the default session file (.pi/sessions/default.jsonl)
-cargo run -p pi-coding-agent -- --model openai/gpt-4o-mini
+# Persist to the default session file (.tau/sessions/default.jsonl)
+cargo run -p tau-coding-agent -- --model openai/gpt-4o-mini
 
 # Show interactive command help
 /help
@@ -809,7 +809,7 @@ cargo run -p pi-coding-agent -- --model openai/gpt-4o-mini
 /session-graph-export /tmp/session-graph.mmd
 /branches
 
-# Save/list/run repeatable command macros (project-local .pi/macros.json)
+# Save/list/run repeatable command macros (project-local .tau/macros.json)
 /macro save quick-check /tmp/quick-check.commands
 /macro list
 /macro show quick-check
@@ -817,7 +817,7 @@ cargo run -p pi-coding-agent -- --model openai/gpt-4o-mini
 /macro run quick-check
 /macro delete quick-check
 
-# Save/load runtime defaults profiles (project-local .pi/profiles.json)
+# Save/load runtime defaults profiles (project-local .tau/profiles.json)
 /profile save baseline
 /profile list
 /profile show baseline
@@ -898,13 +898,13 @@ cargo run -p pi-coding-agent -- --model openai/gpt-4o-mini
 Tune session lock behavior for shared/concurrent workflows:
 
 ```bash
-cargo run -p pi-coding-agent -- \
+cargo run -p tau-coding-agent -- \
   --model openai/gpt-4o-mini \
   --session-lock-wait-ms 15000 \
   --session-lock-stale-ms 60000
 
 # Optional: use replace mode for /session-import
-cargo run -p pi-coding-agent -- \
+cargo run -p tau-coding-agent -- \
   --model openai/gpt-4o-mini \
   --session-import-mode replace
 ```
@@ -912,15 +912,15 @@ cargo run -p pi-coding-agent -- \
 Validate a session graph and exit:
 
 ```bash
-cargo run -p pi-coding-agent -- \
-  --session .pi/sessions/default.jsonl \
+cargo run -p tau-coding-agent -- \
+  --session .tau/sessions/default.jsonl \
   --session-validate
 ```
 
 Tool policy controls:
 
 ```bash
-cargo run -p pi-coding-agent -- \
+cargo run -p tau-coding-agent -- \
   --model openai/gpt-4o-mini \
   --tool-policy-preset hardened \
   --allow-path /Users/me/project \
@@ -942,8 +942,8 @@ cargo run -p pi-coding-agent -- \
 Emit structured tool audit events to JSONL:
 
 ```bash
-cargo run -p pi-coding-agent -- \
+cargo run -p tau-coding-agent -- \
   --model openai/gpt-4o-mini \
   --prompt "Inspect repo status" \
-  --tool-audit-log .pi/audit/tools.jsonl
+  --tool-audit-log .tau/audit/tools.jsonl
 ```
