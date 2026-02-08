@@ -36,6 +36,29 @@ pub(crate) struct PackageInstallReport {
     pub total_components: usize,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PackageListEntry {
+    pub manifest_path: PathBuf,
+    pub package_dir: PathBuf,
+    pub name: String,
+    pub version: String,
+    pub total_components: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PackageListInvalidEntry {
+    pub package_dir: PathBuf,
+    pub manifest_path: PathBuf,
+    pub error: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PackageListReport {
+    pub list_root: PathBuf,
+    pub packages: Vec<PackageListEntry>,
+    pub invalid_entries: Vec<PackageListInvalidEntry>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum FileUpsertOutcome {
     Installed,
@@ -108,6 +131,15 @@ pub(crate) fn execute_package_install_command(cli: &Cli) -> Result<()> {
     };
     let report = install_package_manifest(path, &cli.package_install_root)?;
     println!("{}", render_package_install_report(&report));
+    Ok(())
+}
+
+pub(crate) fn execute_package_list_command(cli: &Cli) -> Result<()> {
+    if !cli.package_list {
+        return Ok(());
+    }
+    let report = list_installed_packages(&cli.package_list_root)?;
+    println!("{}", render_package_list_report(&report));
     Ok(())
 }
 
@@ -351,6 +383,117 @@ fn upsert_file_from_source(source: &Path, destination: &Path) -> Result<FileUpse
     }
 }
 
+fn list_installed_packages(list_root: &Path) -> Result<PackageListReport> {
+    let mut report = PackageListReport {
+        list_root: list_root.to_path_buf(),
+        packages: Vec::new(),
+        invalid_entries: Vec::new(),
+    };
+    if !list_root.exists() {
+        return Ok(report);
+    }
+    if !list_root.is_dir() {
+        bail!(
+            "package list root '{}' is not a directory",
+            list_root.display()
+        );
+    }
+
+    let package_name_dirs = read_sorted_directory_paths(list_root)?;
+    for package_name_dir in package_name_dirs {
+        if !package_name_dir.is_dir() {
+            continue;
+        }
+        let version_dirs = read_sorted_directory_paths(&package_name_dir)?;
+        for package_dir in version_dirs {
+            if !package_dir.is_dir() {
+                continue;
+            }
+            let manifest_path = package_dir.join("package.json");
+            if !manifest_path.is_file() {
+                report.invalid_entries.push(PackageListInvalidEntry {
+                    package_dir: package_dir.clone(),
+                    manifest_path: manifest_path.clone(),
+                    error: "missing package manifest file".to_string(),
+                });
+                continue;
+            }
+
+            match validate_package_manifest(&manifest_path) {
+                Ok(summary) => report.packages.push(PackageListEntry {
+                    manifest_path,
+                    package_dir: package_dir.clone(),
+                    name: summary.name,
+                    version: summary.version,
+                    total_components: summary.total_components,
+                }),
+                Err(error) => report.invalid_entries.push(PackageListInvalidEntry {
+                    package_dir: package_dir.clone(),
+                    manifest_path,
+                    error: error.to_string(),
+                }),
+            }
+        }
+    }
+
+    report.packages.sort_by(|left, right| {
+        left.name
+            .cmp(&right.name)
+            .then_with(|| left.version.cmp(&right.version))
+            .then_with(|| left.package_dir.cmp(&right.package_dir))
+    });
+    report.invalid_entries.sort_by(|left, right| {
+        left.package_dir
+            .cmp(&right.package_dir)
+            .then_with(|| left.manifest_path.cmp(&right.manifest_path))
+    });
+    Ok(report)
+}
+
+fn read_sorted_directory_paths(path: &Path) -> Result<Vec<PathBuf>> {
+    let mut entries = Vec::new();
+    for entry in
+        std::fs::read_dir(path).with_context(|| format!("failed to read {}", path.display()))?
+    {
+        let entry = entry.with_context(|| format!("failed to read entry in {}", path.display()))?;
+        entries.push(entry.path());
+    }
+    entries.sort();
+    Ok(entries)
+}
+
+fn render_package_list_report(report: &PackageListReport) -> String {
+    let mut lines = vec![format!(
+        "package list: root={} packages={} invalid={}",
+        report.list_root.display(),
+        report.packages.len(),
+        report.invalid_entries.len()
+    )];
+    if report.packages.is_empty() {
+        lines.push("packages: none".to_string());
+    } else {
+        for package in &report.packages {
+            lines.push(format!(
+                "package: name={} version={} path={} total_components={}",
+                package.name,
+                package.version,
+                package.package_dir.display(),
+                package.total_components
+            ));
+        }
+    }
+
+    for invalid in &report.invalid_entries {
+        lines.push(format!(
+            "package invalid: path={} manifest={} error={}",
+            invalid.package_dir.display(),
+            invalid.manifest_path.display(),
+            invalid.error
+        ));
+    }
+    lines.join("\n")
+}
+
 fn render_package_manifest_report(
     summary: &PackageManifestSummary,
     manifest: &PackageManifest,
@@ -455,8 +598,9 @@ mod tests {
     use tempfile::tempdir;
 
     use super::{
-        install_package_manifest, load_and_validate_manifest, render_package_install_report,
-        render_package_manifest_report, validate_package_manifest, FileUpsertOutcome,
+        install_package_manifest, list_installed_packages, load_and_validate_manifest,
+        render_package_install_report, render_package_list_report, render_package_manifest_report,
+        validate_package_manifest, FileUpsertOutcome, PackageListReport,
     };
 
     #[cfg(unix)]
@@ -756,5 +900,120 @@ mod tests {
         assert!(rendered.contains("updated=2"));
         assert!(rendered.contains("skipped=3"));
         assert!(rendered.contains("total_components=6"));
+    }
+
+    #[test]
+    fn functional_list_installed_packages_reports_sorted_inventory() {
+        let temp = tempdir().expect("tempdir");
+        let install_root = temp.path().join("installed");
+        let build_and_install = |name: &str, version: &str, body: &str| {
+            let source_root = temp.path().join(format!("source-{name}-{version}"));
+            std::fs::create_dir_all(source_root.join("templates")).expect("create templates dir");
+            std::fs::write(source_root.join("templates/review.txt"), body)
+                .expect("write template source");
+            let manifest_path = source_root.join("package.json");
+            std::fs::write(
+                &manifest_path,
+                format!(
+                    r#"{{
+  "schema_version": 1,
+  "name": "{name}",
+  "version": "{version}",
+  "templates": [{{"id":"review","path":"templates/review.txt"}}]
+}}"#
+                ),
+            )
+            .expect("write manifest");
+            install_package_manifest(&manifest_path, &install_root).expect("install package");
+        };
+
+        build_and_install("zeta", "2.0.0", "zeta template");
+        build_and_install("alpha", "1.0.0", "alpha template");
+
+        let report = list_installed_packages(&install_root).expect("list installed packages");
+        assert_eq!(report.packages.len(), 2);
+        assert_eq!(report.invalid_entries.len(), 0);
+        assert_eq!(report.packages[0].name, "alpha");
+        assert_eq!(report.packages[0].version, "1.0.0");
+        assert_eq!(report.packages[1].name, "zeta");
+        assert_eq!(report.packages[1].version, "2.0.0");
+    }
+
+    #[test]
+    fn regression_list_installed_packages_records_invalid_manifest() {
+        let temp = tempdir().expect("tempdir");
+        let install_root = temp.path().join("installed");
+
+        let source_root = temp.path().join("valid-source");
+        std::fs::create_dir_all(source_root.join("templates")).expect("create templates dir");
+        std::fs::write(source_root.join("templates/review.txt"), "valid template")
+            .expect("write template source");
+        let valid_manifest = source_root.join("package.json");
+        std::fs::write(
+            &valid_manifest,
+            r#"{
+  "schema_version": 1,
+  "name": "valid",
+  "version": "1.0.0",
+  "templates": [{"id":"review","path":"templates/review.txt"}]
+}"#,
+        )
+        .expect("write valid manifest");
+        install_package_manifest(&valid_manifest, &install_root).expect("install valid package");
+
+        let invalid_dir = install_root.join("broken/9.9.9");
+        std::fs::create_dir_all(&invalid_dir).expect("create invalid dir");
+        std::fs::write(
+            invalid_dir.join("package.json"),
+            r#"{
+  "schema_version": 99,
+  "name": "broken",
+  "version": "9.9.9",
+  "templates": [{"id":"review","path":"templates/review.txt"}]
+}"#,
+        )
+        .expect("write invalid manifest");
+
+        let report = list_installed_packages(&install_root).expect("list installed packages");
+        assert_eq!(report.packages.len(), 1);
+        assert_eq!(report.invalid_entries.len(), 1);
+        assert_eq!(report.packages[0].name, "valid");
+        assert!(report.invalid_entries[0]
+            .error
+            .contains("unsupported package manifest schema"));
+    }
+
+    #[test]
+    fn regression_list_installed_packages_missing_root_returns_empty_inventory() {
+        let temp = tempdir().expect("tempdir");
+        let report =
+            list_installed_packages(&temp.path().join("missing-root")).expect("list succeeds");
+        assert_eq!(report.packages.len(), 0);
+        assert_eq!(report.invalid_entries.len(), 0);
+    }
+
+    #[test]
+    fn unit_render_package_list_report_includes_inventory_and_invalid_sections() {
+        let report = PackageListReport {
+            list_root: Path::new("/tmp/packages").to_path_buf(),
+            packages: vec![super::PackageListEntry {
+                manifest_path: Path::new("/tmp/packages/starter/1.0.0/package.json").to_path_buf(),
+                package_dir: Path::new("/tmp/packages/starter/1.0.0").to_path_buf(),
+                name: "starter".to_string(),
+                version: "1.0.0".to_string(),
+                total_components: 2,
+            }],
+            invalid_entries: vec![super::PackageListInvalidEntry {
+                package_dir: Path::new("/tmp/packages/broken/9.9.9").to_path_buf(),
+                manifest_path: Path::new("/tmp/packages/broken/9.9.9/package.json").to_path_buf(),
+                error: "unsupported package manifest schema".to_string(),
+            }],
+        };
+        let rendered = render_package_list_report(&report);
+        assert!(rendered.contains("package list:"));
+        assert!(rendered.contains("packages=1"));
+        assert!(rendered.contains("invalid=1"));
+        assert!(rendered.contains("package: name=starter version=1.0.0"));
+        assert!(rendered.contains("package invalid: path=/tmp/packages/broken/9.9.9"));
     }
 }

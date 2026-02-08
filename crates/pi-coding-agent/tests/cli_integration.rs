@@ -2921,6 +2921,85 @@ fn regression_package_install_flag_rejects_missing_component_source() {
 }
 
 #[test]
+fn package_list_flag_reports_installed_packages_and_exits() {
+    let temp = tempdir().expect("tempdir");
+    let package_root = temp.path().join("bundle");
+    fs::create_dir_all(package_root.join("templates")).expect("create templates dir");
+    fs::write(package_root.join("templates/review.txt"), "template body")
+        .expect("write template source");
+
+    let manifest_path = package_root.join("package.json");
+    fs::write(
+        &manifest_path,
+        r#"{
+  "schema_version": 1,
+  "name": "starter-bundle",
+  "version": "1.0.0",
+  "templates": [{"id":"review","path":"templates/review.txt"}]
+}"#,
+    )
+    .expect("write manifest");
+    let install_root = temp.path().join("installed");
+
+    let mut install_cmd = binary_command();
+    install_cmd.args([
+        "--package-install",
+        manifest_path.to_str().expect("utf8 path"),
+        "--package-install-root",
+        install_root.to_str().expect("utf8 path"),
+    ]);
+    install_cmd.assert().success();
+
+    let mut list_cmd = binary_command();
+    list_cmd.args([
+        "--package-list",
+        "--package-list-root",
+        install_root.to_str().expect("utf8 path"),
+    ]);
+    list_cmd
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("package list:"))
+        .stdout(predicate::str::contains("packages=1"))
+        .stdout(predicate::str::contains("invalid=0"))
+        .stdout(predicate::str::contains(
+            "package: name=starter-bundle version=1.0.0",
+        ));
+}
+
+#[test]
+fn regression_package_list_flag_reports_invalid_manifest_entries() {
+    let temp = tempdir().expect("tempdir");
+    let list_root = temp.path().join("installed");
+    let invalid_dir = list_root.join("broken/9.9.9");
+    fs::create_dir_all(&invalid_dir).expect("create invalid dir");
+    fs::write(
+        invalid_dir.join("package.json"),
+        r#"{
+  "schema_version": 99,
+  "name": "broken",
+  "version": "9.9.9",
+  "templates": [{"id":"review","path":"templates/review.txt"}]
+}"#,
+    )
+    .expect("write invalid manifest");
+
+    let mut cmd = binary_command();
+    cmd.args([
+        "--package-list",
+        "--package-list-root",
+        list_root.to_str().expect("utf8 path"),
+    ]);
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("package list:"))
+        .stdout(predicate::str::contains("packages=0"))
+        .stdout(predicate::str::contains("invalid=1"))
+        .stdout(predicate::str::contains("package invalid:"));
+}
+
+#[test]
 fn rpc_capabilities_flag_outputs_versioned_json_and_exits() {
     let mut cmd = binary_command();
     cmd.arg("--rpc-capabilities");
