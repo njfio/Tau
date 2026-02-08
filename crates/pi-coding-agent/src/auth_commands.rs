@@ -1013,6 +1013,7 @@ pub(crate) fn execute_auth_status_command(
         })
         .collect::<Vec<_>>();
     let total_rows = rows.len();
+    let state_counts_total = auth_state_counts(&rows);
     rows = match availability {
         AuthMatrixAvailabilityFilter::All => rows,
         AuthMatrixAvailabilityFilter::Available => {
@@ -1043,6 +1044,7 @@ pub(crate) fn execute_auth_status_command(
             "rows": rows.len(),
             "available": available,
             "unavailable": unavailable,
+            "state_counts_total": state_counts_total,
             "state_counts": state_counts,
             "entries": rows,
         })
@@ -1050,7 +1052,7 @@ pub(crate) fn execute_auth_status_command(
     }
 
     let mut lines = vec![format!(
-        "auth status: providers={} rows={} available={} unavailable={} availability_filter={} state_filter={} rows_total={} state_counts={}",
+        "auth status: providers={} rows={} available={} unavailable={} availability_filter={} state_filter={} rows_total={} state_counts={} state_counts_total={}",
         selected_providers.len(),
         rows.len(),
         available,
@@ -1058,7 +1060,8 @@ pub(crate) fn execute_auth_status_command(
         availability.as_str(),
         state_filter.as_deref().unwrap_or("all"),
         total_rows,
-        format_auth_state_counts(&state_counts)
+        format_auth_state_counts(&state_counts),
+        format_auth_state_counts(&state_counts_total)
     )];
     for row in rows {
         lines.push(format!(
@@ -1139,6 +1142,7 @@ pub(crate) fn execute_auth_matrix_command(
     }
 
     let total_rows = rows.len();
+    let state_counts_total = auth_state_counts(&rows);
     rows = match mode_support {
         AuthMatrixModeSupportFilter::All => rows,
         AuthMatrixModeSupportFilter::Supported => {
@@ -1184,6 +1188,7 @@ pub(crate) fn execute_auth_matrix_command(
             "mode_unsupported": mode_unsupported,
             "available": available,
             "unavailable": unavailable,
+            "state_counts_total": state_counts_total,
             "state_counts": state_counts,
             "entries": rows,
         })
@@ -1191,7 +1196,7 @@ pub(crate) fn execute_auth_matrix_command(
     }
 
     let mut lines = vec![format!(
-        "auth matrix: providers={} modes={} rows={} mode_supported={} mode_unsupported={} available={} unavailable={} mode_support_filter={} availability_filter={} state_filter={} rows_total={} state_counts={}",
+        "auth matrix: providers={} modes={} rows={} mode_supported={} mode_unsupported={} available={} unavailable={} mode_support_filter={} availability_filter={} state_filter={} rows_total={} state_counts={} state_counts_total={}",
         selected_providers.len(),
         selected_modes.len(),
         rows.len(),
@@ -1203,7 +1208,8 @@ pub(crate) fn execute_auth_matrix_command(
         availability.as_str(),
         state_filter.as_deref().unwrap_or("all"),
         total_rows,
-        format_auth_state_counts(&state_counts)
+        format_auth_state_counts(&state_counts),
+        format_auth_state_counts(&state_counts_total)
     )];
     for row in rows {
         lines.push(format!(
