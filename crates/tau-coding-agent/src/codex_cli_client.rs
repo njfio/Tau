@@ -50,6 +50,34 @@ impl CodexCliClient {
     }
 }
 
+async fn spawn_with_text_file_busy_retry(
+    command: &mut Command,
+    executable: &str,
+) -> Result<tokio::process::Child, TauAiError> {
+    const MAX_TEXT_FILE_BUSY_RETRIES: u32 = 5;
+    const TEXT_FILE_BUSY_ERRNO: i32 = 26;
+    for attempt in 0..=MAX_TEXT_FILE_BUSY_RETRIES {
+        match command.spawn() {
+            Ok(child) => return Ok(child),
+            Err(error) => {
+                if error.raw_os_error() == Some(TEXT_FILE_BUSY_ERRNO)
+                    && attempt < MAX_TEXT_FILE_BUSY_RETRIES
+                {
+                    tokio::time::sleep(Duration::from_millis(25)).await;
+                    continue;
+                }
+                return Err(TauAiError::InvalidResponse(format!(
+                    "failed to spawn codex cli '{executable}': {error}"
+                )));
+            }
+        }
+    }
+
+    Err(TauAiError::InvalidResponse(format!(
+        "failed to spawn codex cli '{executable}': unknown error"
+    )))
+}
+
 #[async_trait]
 impl LlmClient for CodexCliClient {
     async fn complete(&self, request: ChatRequest) -> Result<ChatResponse, TauAiError> {
@@ -68,12 +96,8 @@ impl LlmClient for CodexCliClient {
         command.stderr(Stdio::piped());
 
         let prompt = render_codex_exec_prompt(&request);
-        let mut child = command.spawn().map_err(|error| {
-            TauAiError::InvalidResponse(format!(
-                "failed to spawn codex cli '{}': {error}",
-                self.config.executable
-            ))
-        })?;
+        let mut child =
+            spawn_with_text_file_busy_retry(&mut command, &self.config.executable).await?;
 
         if let Some(mut stdin) = child.stdin.take() {
             stdin.write_all(prompt.as_bytes()).await.map_err(|error| {
