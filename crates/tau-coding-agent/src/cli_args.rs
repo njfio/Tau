@@ -195,6 +195,42 @@ pub(crate) struct Cli {
     pub(crate) anthropic_auth_mode: CliProviderAuthMode,
 
     #[arg(
+        long = "anthropic-claude-backend",
+        env = "TAU_ANTHROPIC_CLAUDE_BACKEND",
+        default_value_t = true,
+        action = ArgAction::Set,
+        num_args = 0..=1,
+        require_equals = true,
+        default_missing_value = "true",
+        help = "Enable Claude Code CLI backend for Anthropic oauth/session auth modes"
+    )]
+    pub(crate) anthropic_claude_backend: bool,
+
+    #[arg(
+        long = "anthropic-claude-cli",
+        env = "TAU_ANTHROPIC_CLAUDE_CLI",
+        default_value = "claude",
+        help = "Claude Code CLI executable path used by Anthropic oauth/session backend"
+    )]
+    pub(crate) anthropic_claude_cli: String,
+
+    #[arg(
+        long = "anthropic-claude-args",
+        env = "TAU_ANTHROPIC_CLAUDE_ARGS",
+        value_delimiter = ',',
+        help = "Additional argument(s) forwarded to claude for Anthropic oauth/session backend"
+    )]
+    pub(crate) anthropic_claude_args: Vec<String>,
+
+    #[arg(
+        long = "anthropic-claude-timeout-ms",
+        env = "TAU_ANTHROPIC_CLAUDE_TIMEOUT_MS",
+        default_value_t = 120_000,
+        help = "Timeout in milliseconds for each Claude Code CLI request"
+    )]
+    pub(crate) anthropic_claude_timeout_ms: u64,
+
+    #[arg(
         long = "google-auth-mode",
         env = "TAU_GOOGLE_AUTH_MODE",
         value_enum,

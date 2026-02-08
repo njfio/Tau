@@ -38,8 +38,8 @@ const ANTHROPIC_AUTH_CAPABILITIES: &[ProviderAuthCapability] = &[
     },
     ProviderAuthCapability {
         method: ProviderAuthMethod::OauthToken,
-        supported: false,
-        reason: "not_implemented",
+        supported: true,
+        reason: "supported",
     },
     ProviderAuthCapability {
         method: ProviderAuthMethod::Adc,
@@ -48,8 +48,8 @@ const ANTHROPIC_AUTH_CAPABILITIES: &[ProviderAuthCapability] = &[
     },
     ProviderAuthCapability {
         method: ProviderAuthMethod::SessionToken,
-        supported: false,
-        reason: "unsupported",
+        supported: true,
+        reason: "supported",
     },
 ];
 
