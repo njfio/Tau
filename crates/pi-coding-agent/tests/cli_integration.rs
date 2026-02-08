@@ -2889,6 +2889,58 @@ fn package_install_flag_installs_bundle_files_and_exits() {
 }
 
 #[test]
+fn package_install_flag_accepts_valid_signed_manifest_when_required() {
+    let temp = tempdir().expect("tempdir");
+    let package_root = temp.path().join("bundle");
+    fs::create_dir_all(package_root.join("templates")).expect("create templates dir");
+    fs::write(package_root.join("templates/review.txt"), "template body")
+        .expect("write template source");
+
+    let manifest_path = package_root.join("package.json");
+    fs::write(
+        &manifest_path,
+        r#"{
+  "schema_version": 1,
+  "name": "starter-bundle",
+  "version": "1.0.0",
+  "signing_key": "publisher",
+  "signature_file": "package.sig",
+  "templates": [{"id":"review","path":"templates/review.txt"}]
+}"#,
+    )
+    .expect("write manifest");
+
+    let signing_key = SigningKey::from_bytes(&[7_u8; 32]);
+    let signature = signing_key.sign(&fs::read(&manifest_path).expect("read manifest bytes"));
+    fs::write(
+        package_root.join("package.sig"),
+        BASE64.encode(signature.to_bytes()),
+    )
+    .expect("write signature");
+    let trust_root = format!(
+        "publisher={}",
+        BASE64.encode(signing_key.verifying_key().as_bytes())
+    );
+
+    let install_root = temp.path().join("installed");
+    let mut cmd = binary_command();
+    cmd.args([
+        "--package-install",
+        manifest_path.to_str().expect("utf8 path"),
+        "--package-install-root",
+        install_root.to_str().expect("utf8 path"),
+        "--require-signed-packages",
+        "--skill-trust-root",
+        trust_root.as_str(),
+    ]);
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("package install:"))
+        .stdout(predicate::str::contains("name=starter-bundle"));
+}
+
+#[test]
 fn regression_package_install_flag_rejects_missing_component_source() {
     let temp = tempdir().expect("tempdir");
     let package_root = temp.path().join("bundle");
@@ -2918,6 +2970,40 @@ fn regression_package_install_flag_rejects_missing_component_source() {
     cmd.assert()
         .failure()
         .stderr(predicate::str::contains("does not exist"));
+}
+
+#[test]
+fn regression_package_install_flag_rejects_unsigned_when_signatures_required() {
+    let temp = tempdir().expect("tempdir");
+    let package_root = temp.path().join("bundle");
+    fs::create_dir_all(package_root.join("templates")).expect("create templates dir");
+    fs::write(package_root.join("templates/review.txt"), "template body")
+        .expect("write template source");
+    let manifest_path = package_root.join("package.json");
+    fs::write(
+        &manifest_path,
+        r#"{
+  "schema_version": 1,
+  "name": "starter-bundle",
+  "version": "1.0.0",
+  "templates": [{"id":"review","path":"templates/review.txt"}]
+}"#,
+    )
+    .expect("write manifest");
+    let install_root = temp.path().join("installed");
+
+    let mut cmd = binary_command();
+    cmd.args([
+        "--package-install",
+        manifest_path.to_str().expect("utf8 path"),
+        "--package-install-root",
+        install_root.to_str().expect("utf8 path"),
+        "--require-signed-packages",
+    ]);
+
+    cmd.assert().failure().stderr(predicate::str::contains(
+        "must include signing_key and signature_file",
+    ));
 }
 
 #[test]

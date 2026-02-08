@@ -322,6 +322,14 @@ pub(crate) struct Cli {
     pub(crate) require_signed_skills: bool,
 
     #[arg(
+        long = "require-signed-packages",
+        env = "PI_REQUIRE_SIGNED_PACKAGES",
+        default_value_t = false,
+        help = "Require package manifests to provide signing metadata and validate against trusted roots"
+    )]
+    pub(crate) require_signed_packages: bool,
+
+    #[arg(
         long = "skills-lock-file",
         env = "PI_SKILLS_LOCK_FILE",
         help = "Path to skills lockfile (defaults to <skills-dir>/skills.lock.json)"

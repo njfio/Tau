@@ -226,6 +226,7 @@ fn test_cli() -> Cli {
         skill_trust_revoke: vec![],
         skill_trust_rotate: vec![],
         require_signed_skills: false,
+        require_signed_packages: false,
         skills_lock_file: None,
         skills_lock_write: false,
         skills_sync: false,
@@ -6823,6 +6824,36 @@ fn regression_execute_package_install_command_rejects_missing_component_source()
     cli.package_install_root = temp.path().join("installed");
     let error = execute_package_install_command(&cli).expect_err("missing source should fail");
     assert!(error.to_string().contains("does not exist"));
+}
+
+#[test]
+fn regression_execute_package_install_command_rejects_unsigned_when_required() {
+    let temp = tempdir().expect("tempdir");
+    let package_root = temp.path().join("bundle");
+    std::fs::create_dir_all(package_root.join("templates")).expect("create templates dir");
+    std::fs::write(package_root.join("templates/review.txt"), "template")
+        .expect("write template source");
+    let manifest_path = package_root.join("package.json");
+    std::fs::write(
+        &manifest_path,
+        r#"{
+  "schema_version": 1,
+  "name": "starter-bundle",
+  "version": "1.0.0",
+  "templates": [{"id":"review","path":"templates/review.txt"}]
+}"#,
+    )
+    .expect("write manifest");
+
+    let mut cli = test_cli();
+    cli.package_install = Some(manifest_path);
+    cli.package_install_root = temp.path().join("installed");
+    cli.require_signed_packages = true;
+    let error =
+        execute_package_install_command(&cli).expect_err("unsigned package should fail policy");
+    assert!(error
+        .to_string()
+        .contains("must include signing_key and signature_file"));
 }
 
 #[test]
