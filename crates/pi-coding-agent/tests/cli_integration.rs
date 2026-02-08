@@ -1,4 +1,7 @@
-use std::fs;
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use assert_cmd::Command;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
@@ -6,7 +9,7 @@ use ed25519_dalek::{Signer, SigningKey};
 use httpmock::prelude::*;
 use predicates::prelude::*;
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use tempfile::tempdir;
 
@@ -33,6 +36,24 @@ enum SessionRecord {
         parent_id: Option<u64>,
         message: SessionMessage,
     },
+}
+
+#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+enum RpcSchemaCompatMode {
+    DispatchNdjson,
+    ServeNdjson,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct RpcSchemaCompatFixture {
+    schema_version: u32,
+    name: String,
+    mode: RpcSchemaCompatMode,
+    input_lines: Vec<String>,
+    expected_processed_lines: usize,
+    expected_error_count: usize,
+    expected_responses: Vec<Value>,
 }
 
 fn parse_session_entries(path: &std::path::Path) -> Vec<SessionEntry> {
@@ -70,6 +91,35 @@ fn write_model_catalog(path: &std::path::Path, entries: serde_json::Value) {
         "entries": entries,
     });
     fs::write(path, format!("{payload}\n")).expect("write model catalog");
+}
+
+fn rpc_schema_compat_fixture_path(name: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("testdata")
+        .join("rpc-schema-compat")
+        .join(name)
+}
+
+fn load_rpc_schema_compat_fixture(name: &str) -> RpcSchemaCompatFixture {
+    let path = rpc_schema_compat_fixture_path(name);
+    let raw = fs::read_to_string(&path)
+        .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
+    let fixture = serde_json::from_str::<RpcSchemaCompatFixture>(&raw)
+        .unwrap_or_else(|error| panic!("failed to parse {}: {error}", path.display()));
+    assert_eq!(
+        fixture.schema_version,
+        1,
+        "unsupported fixture schema_version in {}",
+        path.display()
+    );
+    fixture
+}
+
+fn parse_ndjson_values(raw: &str) -> Vec<Value> {
+    raw.lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| serde_json::from_str::<Value>(line).expect("line should parse as JSON"))
+        .collect::<Vec<_>>()
 }
 
 #[test]
@@ -5246,6 +5296,56 @@ fn rpc_dispatch_ndjson_file_flag_outputs_ordered_response_lines() {
 }
 
 #[test]
+fn integration_rpc_dispatch_ndjson_file_replays_schema_compat_fixture() {
+    let fixture = load_rpc_schema_compat_fixture("dispatch-mixed-supported.json");
+    assert_eq!(fixture.name, "dispatch-mixed-supported");
+    assert_eq!(fixture.mode, RpcSchemaCompatMode::DispatchNdjson);
+    assert_eq!(fixture.expected_processed_lines, fixture.input_lines.len());
+    assert_eq!(fixture.expected_error_count, 0);
+
+    let temp = tempdir().expect("tempdir");
+    let frame_path = temp.path().join("schema-compat-dispatch.ndjson");
+    fs::write(&frame_path, fixture.input_lines.join("\n")).expect("write fixture input");
+
+    let mut cmd = binary_command();
+    cmd.args([
+        "--rpc-dispatch-ndjson-file",
+        frame_path.to_str().expect("utf8 path"),
+    ]);
+
+    let assert = cmd.assert().success();
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).expect("stdout utf8");
+    let responses = parse_ndjson_values(&stdout);
+    assert_eq!(responses, fixture.expected_responses);
+}
+
+#[test]
+fn regression_rpc_dispatch_ndjson_file_schema_fixture_keeps_processing_after_unsupported_schema() {
+    let fixture = load_rpc_schema_compat_fixture("dispatch-unsupported-continues.json");
+    assert_eq!(fixture.name, "dispatch-unsupported-continues");
+    assert_eq!(fixture.mode, RpcSchemaCompatMode::DispatchNdjson);
+    assert_eq!(fixture.expected_processed_lines, fixture.input_lines.len());
+    assert_eq!(fixture.expected_error_count, 1);
+
+    let temp = tempdir().expect("tempdir");
+    let frame_path = temp.path().join("schema-compat-dispatch-regression.ndjson");
+    fs::write(&frame_path, fixture.input_lines.join("\n")).expect("write fixture input");
+
+    let mut cmd = binary_command();
+    cmd.args([
+        "--rpc-dispatch-ndjson-file",
+        frame_path.to_str().expect("utf8 path"),
+    ]);
+
+    let assert = cmd.assert().failure().stderr(predicate::str::contains(
+        "rpc ndjson dispatch completed with 1 error frame(s)",
+    ));
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).expect("stdout utf8");
+    let responses = parse_ndjson_values(&stdout);
+    assert_eq!(responses, fixture.expected_responses);
+}
+
+#[test]
 fn regression_rpc_dispatch_ndjson_file_continues_after_error_and_exits_failure() {
     let temp = tempdir().expect("tempdir");
     let frame_path = temp.path().join("frames.ndjson");
@@ -5373,6 +5473,44 @@ fn rpc_serve_ndjson_flag_supports_run_timeout_lifecycle() {
         .stdout(predicate::str::contains("\"reason\":\"deadline exceeded\""))
         .stdout(predicate::str::contains("\"request_id\":\"req-status\""))
         .stdout(predicate::str::contains("\"active\":false"));
+}
+
+#[test]
+fn integration_rpc_serve_ndjson_replays_schema_compat_fixture() {
+    let fixture = load_rpc_schema_compat_fixture("serve-mixed-supported.json");
+    assert_eq!(fixture.name, "serve-mixed-supported");
+    assert_eq!(fixture.mode, RpcSchemaCompatMode::ServeNdjson);
+    assert_eq!(fixture.expected_processed_lines, fixture.input_lines.len());
+    assert_eq!(fixture.expected_error_count, 0);
+
+    let mut cmd = binary_command();
+    cmd.arg("--rpc-serve-ndjson")
+        .write_stdin(fixture.input_lines.join("\n"));
+
+    let assert = cmd.assert().success();
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).expect("stdout utf8");
+    let responses = parse_ndjson_values(&stdout);
+    assert_eq!(responses, fixture.expected_responses);
+}
+
+#[test]
+fn regression_rpc_serve_ndjson_schema_fixture_keeps_processing_after_unsupported_schema() {
+    let fixture = load_rpc_schema_compat_fixture("serve-unsupported-continues.json");
+    assert_eq!(fixture.name, "serve-unsupported-continues");
+    assert_eq!(fixture.mode, RpcSchemaCompatMode::ServeNdjson);
+    assert_eq!(fixture.expected_processed_lines, fixture.input_lines.len());
+    assert_eq!(fixture.expected_error_count, 1);
+
+    let mut cmd = binary_command();
+    cmd.arg("--rpc-serve-ndjson")
+        .write_stdin(fixture.input_lines.join("\n"));
+
+    let assert = cmd.assert().failure().stderr(predicate::str::contains(
+        "rpc ndjson serve completed with 1 error frame(s)",
+    ));
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).expect("stdout utf8");
+    let responses = parse_ndjson_values(&stdout);
+    assert_eq!(responses, fixture.expected_responses);
 }
 
 #[test]
