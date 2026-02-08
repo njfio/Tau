@@ -552,6 +552,8 @@ pub(crate) fn handle_command(
         openai_auth_mode: ProviderAuthMethod::ApiKey,
         anthropic_auth_mode: ProviderAuthMethod::ApiKey,
         google_auth_mode: ProviderAuthMethod::ApiKey,
+        anthropic_claude_backend: true,
+        anthropic_claude_cli: "claude".to_string(),
         google_gemini_backend: true,
         google_gemini_cli: "gemini".to_string(),
     };

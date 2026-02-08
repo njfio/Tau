@@ -17,6 +17,7 @@ Implemented now:
 - Tool-call loop (`assistant -> tool -> assistant`) in `tau-agent-core`
 - Multi-provider model routing: `openai/*`, `anthropic/*`, `google/*`
 - OpenAI oauth/session fallback to Codex CLI backend when provider credential-store entry is missing
+- Anthropic oauth/session routing to Claude Code CLI backend (subscription/account login workflows)
 - Google oauth/adc routing to Gemini CLI backend (subscription login and Vertex/ADC workflows)
 - Interactive CLI and one-shot prompt mode
 - Token-by-token CLI output rendering controls
@@ -117,6 +118,32 @@ cargo run -p tau-coding-agent -- \
 ```
 
 `tau-coding-agent` prefers provider credential-store oauth/session entries when present; if the OpenAI entry is missing and Codex backend is enabled, it falls back to `codex exec` for local subscription-backed runs.
+
+Use Anthropic with Claude Code subscription login (without setting `ANTHROPIC_API_KEY`):
+
+```bash
+claude
+# complete account login flow in the CLI
+
+cargo run -p tau-coding-agent -- \
+  --model anthropic/claude-sonnet-4-20250514 \
+  --anthropic-auth-mode oauth-token \
+  --anthropic-claude-backend=true \
+  --anthropic-claude-cli claude \
+  --anthropic-claude-timeout-ms 120000
+```
+
+Use Anthropic session-mode backend routing (same Claude Code login backend):
+
+```bash
+cargo run -p tau-coding-agent -- \
+  --model anthropic/claude-sonnet-4-20250514 \
+  --anthropic-auth-mode session-token \
+  --anthropic-claude-backend=true \
+  --anthropic-claude-cli claude
+```
+
+`/auth status anthropic` and `/doctor` reflect Anthropic oauth/session backend readiness (`--anthropic-claude-backend`, executable availability) separately from API-key mode.
 
 Use Google Gemini with subscription login (without setting `GEMINI_API_KEY`):
 

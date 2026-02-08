@@ -4,6 +4,7 @@ mod auth_types;
 mod bootstrap_helpers;
 mod channel_store;
 mod channel_store_admin;
+mod claude_cli_client;
 mod cli_args;
 mod cli_executable;
 mod cli_types;

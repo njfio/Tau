@@ -249,6 +249,66 @@ fn google_gemini_backend_snapshot(
     }
 }
 
+fn anthropic_claude_backend_snapshot(
+    config: &AuthCommandConfig,
+    mode: ProviderAuthMethod,
+) -> ProviderAuthSnapshot {
+    if !config.anthropic_claude_backend {
+        return ProviderAuthSnapshot {
+            provider: Provider::Anthropic,
+            method: mode,
+            mode_supported: true,
+            available: false,
+            state: "backend_disabled".to_string(),
+            source: "none".to_string(),
+            reason: "anthropic claude backend is disabled".to_string(),
+            expires_unix: None,
+            revoked: false,
+            refreshable: false,
+            secret: None,
+        };
+    }
+
+    if !is_executable_available(&config.anthropic_claude_cli) {
+        return ProviderAuthSnapshot {
+            provider: Provider::Anthropic,
+            method: mode,
+            mode_supported: true,
+            available: false,
+            state: "backend_unavailable".to_string(),
+            source: "claude_cli".to_string(),
+            reason: format!(
+                "claude cli executable '{}' is not available",
+                config.anthropic_claude_cli
+            ),
+            expires_unix: None,
+            revoked: false,
+            refreshable: false,
+            secret: None,
+        };
+    }
+
+    let reason = if mode == ProviderAuthMethod::SessionToken {
+        "anthropic_session_backend_available"
+    } else {
+        "anthropic_oauth_backend_available"
+    };
+
+    ProviderAuthSnapshot {
+        provider: Provider::Anthropic,
+        method: mode,
+        mode_supported: true,
+        available: true,
+        state: "ready".to_string(),
+        source: "claude_cli".to_string(),
+        reason: reason.to_string(),
+        expires_unix: None,
+        revoked: false,
+        refreshable: false,
+        secret: None,
+    }
+}
+
 pub(crate) fn provider_auth_snapshot_for_status(
     config: &AuthCommandConfig,
     provider: Provider,
@@ -280,6 +340,15 @@ pub(crate) fn provider_auth_snapshot_for_status(
         )
     {
         return google_gemini_backend_snapshot(config, mode);
+    }
+
+    if provider == Provider::Anthropic
+        && matches!(
+            mode,
+            ProviderAuthMethod::OauthToken | ProviderAuthMethod::SessionToken
+        )
+    {
+        return anthropic_claude_backend_snapshot(config, mode);
     }
 
     if mode == ProviderAuthMethod::ApiKey {

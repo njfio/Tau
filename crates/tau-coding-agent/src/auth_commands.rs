@@ -744,6 +744,15 @@ pub(crate) fn execute_auth_login_command(
         return execute_google_login_backend_ready(config, mode, json_output);
     }
 
+    if provider == Provider::Anthropic
+        && matches!(
+            mode,
+            ProviderAuthMethod::OauthToken | ProviderAuthMethod::SessionToken
+        )
+    {
+        return execute_anthropic_login_backend_ready(config, mode, json_output);
+    }
+
     match mode {
         ProviderAuthMethod::ApiKey => {
             match resolve_non_empty_secret_with_source(
@@ -1029,6 +1038,76 @@ fn execute_google_login_backend_ready(
         Provider::Google.as_str(),
         mode.as_str(),
         config.google_gemini_cli,
+        action
+    )
+}
+
+fn execute_anthropic_login_backend_ready(
+    config: &AuthCommandConfig,
+    mode: ProviderAuthMethod,
+    json_output: bool,
+) -> String {
+    if !config.anthropic_claude_backend {
+        let reason =
+            "anthropic claude backend is disabled; set --anthropic-claude-backend=true".to_string();
+        if json_output {
+            return serde_json::json!({
+                "command": "auth.login",
+                "provider": Provider::Anthropic.as_str(),
+                "mode": mode.as_str(),
+                "status": "error",
+                "reason": reason,
+            })
+            .to_string();
+        }
+        return format!(
+            "auth login error: provider={} mode={} error={reason}",
+            Provider::Anthropic.as_str(),
+            mode.as_str()
+        );
+    }
+
+    if !is_executable_available(&config.anthropic_claude_cli) {
+        let reason = format!(
+            "claude cli executable '{}' is not available",
+            config.anthropic_claude_cli
+        );
+        if json_output {
+            return serde_json::json!({
+                "command": "auth.login",
+                "provider": Provider::Anthropic.as_str(),
+                "mode": mode.as_str(),
+                "status": "error",
+                "reason": reason,
+            })
+            .to_string();
+        }
+        return format!(
+            "auth login error: provider={} mode={} error={reason}",
+            Provider::Anthropic.as_str(),
+            mode.as_str()
+        );
+    }
+
+    let action = "run claude and complete the account login flow";
+    if json_output {
+        return serde_json::json!({
+            "command": "auth.login",
+            "provider": Provider::Anthropic.as_str(),
+            "mode": mode.as_str(),
+            "status": "ready",
+            "source": "claude_cli",
+            "backend_cli": config.anthropic_claude_cli,
+            "persisted": false,
+            "action": action,
+        })
+        .to_string();
+    }
+    format!(
+        "auth login: provider={} mode={} status=ready source=claude_cli backend_cli={} persisted=false action={}",
+        Provider::Anthropic.as_str(),
+        mode.as_str(),
+        config.anthropic_claude_cli,
         action
     )
 }

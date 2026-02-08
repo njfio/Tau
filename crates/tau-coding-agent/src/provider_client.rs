@@ -1,4 +1,5 @@
 use super::*;
+use crate::claude_cli_client::{ClaudeCliClient, ClaudeCliConfig};
 use crate::codex_cli_client::{CodexCliClient, CodexCliConfig};
 use crate::gemini_cli_client::{GeminiCliClient, GeminiCliConfig};
 use crate::provider_credentials::ProviderAuthCredential;
@@ -60,6 +61,32 @@ fn build_openai_codex_client(cli: &Cli) -> Result<Arc<dyn LlmClient>> {
         provider = Provider::OpenAi.as_str(),
         auth_mode = "codex_backend",
         auth_source = "codex_cli",
+        "provider auth resolved"
+    );
+    Ok(Arc::new(client))
+}
+
+fn anthropic_claude_backend_enabled(cli: &Cli, auth_mode: ProviderAuthMethod) -> bool {
+    cli.anthropic_claude_backend
+        && matches!(
+            auth_mode,
+            ProviderAuthMethod::OauthToken | ProviderAuthMethod::SessionToken
+        )
+}
+
+fn build_anthropic_claude_client(
+    cli: &Cli,
+    auth_mode: ProviderAuthMethod,
+) -> Result<Arc<dyn LlmClient>> {
+    let client = ClaudeCliClient::new(ClaudeCliConfig {
+        executable: cli.anthropic_claude_cli.clone(),
+        extra_args: cli.anthropic_claude_args.clone(),
+        timeout_ms: cli.anthropic_claude_timeout_ms.max(1),
+    })?;
+    tracing::debug!(
+        provider = Provider::Anthropic.as_str(),
+        auth_mode = auth_mode.as_str(),
+        auth_source = "claude_cli",
         "provider auth resolved"
     );
     Ok(Arc::new(client))
@@ -155,6 +182,19 @@ pub(crate) fn build_provider_client(cli: &Cli, provider: Provider) -> Result<Arc
             build_openai_codex_client(cli)
         }
         Provider::Anthropic => {
+            if matches!(
+                auth_mode,
+                ProviderAuthMethod::OauthToken | ProviderAuthMethod::SessionToken
+            ) {
+                if !anthropic_claude_backend_enabled(cli, auth_mode) {
+                    bail!(
+                        "anthropic auth mode '{}' requires Claude Code backend (enable --anthropic-claude-backend=true or set --anthropic-auth-mode api-key)",
+                        auth_mode.as_str()
+                    );
+                }
+                return build_anthropic_claude_client(cli, auth_mode);
+            }
+
             let resolver = CliProviderCredentialResolver { cli };
             let resolved = resolver.resolve(provider, auth_mode)?;
             let api_key = resolved_secret_for_provider(&resolved, provider)?;

@@ -303,7 +303,19 @@ pub(crate) fn build_doctor_command_config(
             let auth_mode = configured_provider_auth_method(cli, provider);
             let capability = provider_auth_capability(provider, auth_mode);
             let (login_backend_enabled, login_backend_executable, login_backend_available) =
-                if provider == Provider::Google
+                if provider == Provider::Anthropic
+                    && matches!(
+                        auth_mode,
+                        ProviderAuthMethod::OauthToken | ProviderAuthMethod::SessionToken
+                    )
+                {
+                    (
+                        cli.anthropic_claude_backend,
+                        Some(cli.anthropic_claude_cli.clone()),
+                        cli.anthropic_claude_backend
+                            && is_executable_available(&cli.anthropic_claude_cli),
+                    )
+                } else if provider == Provider::Google
                     && matches!(
                         auth_mode,
                         ProviderAuthMethod::OauthToken | ProviderAuthMethod::Adc
@@ -403,17 +415,36 @@ pub(crate) fn run_doctor_checks(config: &DoctorCommandConfig) -> Vec<DoctorCheck
             action,
         });
 
-        if provider_check.provider_kind == Provider::Google
+        if (provider_check.provider_kind == Provider::Anthropic
             && matches!(
                 provider_check.auth_mode,
-                ProviderAuthMethod::OauthToken | ProviderAuthMethod::Adc
-            )
+                ProviderAuthMethod::OauthToken | ProviderAuthMethod::SessionToken
+            ))
+            || (provider_check.provider_kind == Provider::Google
+                && matches!(
+                    provider_check.auth_mode,
+                    ProviderAuthMethod::OauthToken | ProviderAuthMethod::Adc
+                ))
         {
+            let (backend_flag, executable_flag, default_executable) =
+                if provider_check.provider_kind == Provider::Anthropic {
+                    (
+                        "--anthropic-claude-backend=true",
+                        "--anthropic-claude-cli",
+                        "claude",
+                    )
+                } else {
+                    (
+                        "--google-gemini-backend=true",
+                        "--google-gemini-cli",
+                        "gemini",
+                    )
+                };
             let (status, code, action) = if !provider_check.login_backend_enabled {
                 (
                     DoctorStatus::Fail,
                     "backend_disabled".to_string(),
-                    Some("set --google-gemini-backend=true".to_string()),
+                    Some(format!("set {backend_flag}")),
                 )
             } else if provider_check.login_backend_available {
                 (DoctorStatus::Pass, "ready".to_string(), None)
@@ -421,13 +452,13 @@ pub(crate) fn run_doctor_checks(config: &DoctorCommandConfig) -> Vec<DoctorCheck
                 let executable = provider_check
                     .login_backend_executable
                     .as_deref()
-                    .unwrap_or("gemini");
+                    .unwrap_or(default_executable);
                 (
                     DoctorStatus::Fail,
                     "missing_executable".to_string(),
                     Some(format!(
-                        "install '{}' or set --google-gemini-cli to an available executable",
-                        executable
+                        "install '{}' or set {} to an available executable",
+                        executable, executable_flag
                     )),
                 )
             };
