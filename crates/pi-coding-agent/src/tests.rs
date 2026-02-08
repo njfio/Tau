@@ -4714,6 +4714,7 @@ fn regression_execute_auth_command_login_rejects_unsupported_provider_mode() {
         .as_str()
         .unwrap_or_default()
         .contains("not supported"));
+    assert_eq!(payload["supported_modes"], serde_json::json!(["api_key"]));
 }
 
 #[test]
