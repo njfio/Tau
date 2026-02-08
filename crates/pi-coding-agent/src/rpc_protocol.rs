@@ -804,16 +804,134 @@ fn best_effort_request_id_from_raw(raw: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    use std::{
+        io::Cursor,
+        path::{Path, PathBuf},
+    };
+
+    use anyhow::{bail, Context, Result};
+    use serde::Deserialize;
+    use serde_json::Value;
     use tempfile::tempdir;
 
     use super::{
         classify_rpc_error_message, dispatch_rpc_frame, dispatch_rpc_frame_file,
         dispatch_rpc_ndjson_input, dispatch_rpc_raw_with_error_envelope, parse_rpc_frame,
-        serve_rpc_ndjson_reader, validate_rpc_frame_file, RpcFrameKind,
+        serve_rpc_ndjson_reader, validate_rpc_frame_file, RpcFrameKind, RpcResponseFrame,
         RPC_ERROR_CODE_INVALID_JSON, RPC_ERROR_CODE_INVALID_PAYLOAD,
         RPC_ERROR_CODE_INVALID_REQUEST_ID, RPC_ERROR_CODE_UNSUPPORTED_KIND,
         RPC_ERROR_CODE_UNSUPPORTED_SCHEMA,
     };
+
+    const RPC_SCHEMA_COMPAT_FIXTURE_SCHEMA_VERSION: u32 = 1;
+
+    #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+    #[serde(rename_all = "snake_case")]
+    enum RpcSchemaCompatMode {
+        DispatchNdjson,
+        ServeNdjson,
+    }
+
+    #[derive(Debug, Clone, Deserialize, PartialEq)]
+    struct RpcSchemaCompatFixture {
+        schema_version: u32,
+        name: String,
+        mode: RpcSchemaCompatMode,
+        input_lines: Vec<String>,
+        expected_processed_lines: usize,
+        expected_error_count: usize,
+        expected_responses: Vec<Value>,
+    }
+
+    fn rpc_schema_compat_fixture_path(name: &str) -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("testdata")
+            .join("rpc-schema-compat")
+            .join(name)
+    }
+
+    fn parse_rpc_schema_compat_fixture(raw: &str) -> Result<RpcSchemaCompatFixture> {
+        let fixture = serde_json::from_str::<RpcSchemaCompatFixture>(raw)
+            .context("failed to parse rpc schema compatibility fixture")?;
+        validate_rpc_schema_compat_fixture(&fixture)?;
+        Ok(fixture)
+    }
+
+    fn load_rpc_schema_compat_fixture(name: &str) -> RpcSchemaCompatFixture {
+        let path = rpc_schema_compat_fixture_path(name);
+        let raw = std::fs::read_to_string(&path)
+            .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
+        parse_rpc_schema_compat_fixture(&raw)
+            .unwrap_or_else(|error| panic!("invalid fixture {}: {error}", path.display()))
+    }
+
+    fn validate_rpc_schema_compat_fixture(fixture: &RpcSchemaCompatFixture) -> Result<()> {
+        if fixture.schema_version != RPC_SCHEMA_COMPAT_FIXTURE_SCHEMA_VERSION {
+            bail!(
+                "unsupported rpc schema compatibility fixture schema_version {} (expected {})",
+                fixture.schema_version,
+                RPC_SCHEMA_COMPAT_FIXTURE_SCHEMA_VERSION
+            );
+        }
+        if fixture.name.trim().is_empty() {
+            bail!("rpc schema compatibility fixture name cannot be empty");
+        }
+        if fixture.input_lines.is_empty() {
+            bail!(
+                "rpc schema compatibility fixture '{}' must include at least one input line",
+                fixture.name
+            );
+        }
+        if fixture.expected_responses.is_empty() {
+            bail!(
+                "rpc schema compatibility fixture '{}' must include at least one expected response",
+                fixture.name
+            );
+        }
+        Ok(())
+    }
+
+    fn replay_rpc_schema_compat_fixture(
+        fixture: &RpcSchemaCompatFixture,
+    ) -> (usize, usize, Vec<Value>) {
+        let input = fixture.input_lines.join("\n");
+        match fixture.mode {
+            RpcSchemaCompatMode::DispatchNdjson => {
+                let report = dispatch_rpc_ndjson_input(&input);
+                (
+                    report.processed_lines,
+                    report.error_count,
+                    report
+                        .responses
+                        .into_iter()
+                        .map(normalize_rpc_response_frame)
+                        .collect::<Vec<_>>(),
+                )
+            }
+            RpcSchemaCompatMode::ServeNdjson => {
+                let mut output = Vec::new();
+                let report = serve_rpc_ndjson_reader(Cursor::new(input), &mut output)
+                    .expect("serve fixture replay should succeed");
+                let raw = String::from_utf8(output).expect("fixture output should be utf8");
+                (
+                    report.processed_lines,
+                    report.error_count,
+                    parse_rpc_ndjson_lines(&raw),
+                )
+            }
+        }
+    }
+
+    fn normalize_rpc_response_frame(frame: RpcResponseFrame) -> Value {
+        serde_json::to_value(frame).expect("rpc response frame should serialize")
+    }
+
+    fn parse_rpc_ndjson_lines(raw: &str) -> Vec<Value> {
+        raw.lines()
+            .filter(|line| !line.trim().is_empty())
+            .map(|line| serde_json::from_str::<Value>(line).expect("line should parse as json"))
+            .collect::<Vec<_>>()
+    }
 
     #[test]
     fn unit_parse_rpc_frame_accepts_supported_kind_and_payload_object() {
@@ -1757,5 +1875,89 @@ not-json
         assert_eq!(rows[3]["request_id"], "req-start-2");
         assert_eq!(rows[3]["kind"], "error");
         assert_eq!(rows[3]["payload"]["code"], "invalid_payload");
+    }
+
+    #[test]
+    fn unit_parse_rpc_schema_compat_fixture_rejects_unsupported_fixture_schema() {
+        let raw = r#"{
+  "schema_version": 99,
+  "name": "invalid",
+  "mode": "dispatch_ndjson",
+  "input_lines": ["{\"schema_version\":1,\"request_id\":\"req\",\"kind\":\"capabilities.request\",\"payload\":{}}"],
+  "expected_processed_lines": 1,
+  "expected_error_count": 0,
+  "expected_responses": [{"schema_version":1,"request_id":"req","kind":"capabilities.response","payload":{"capabilities":[]}}]
+}"#;
+
+        let error = parse_rpc_schema_compat_fixture(raw).expect_err("schema should fail");
+        assert!(error
+            .to_string()
+            .contains("unsupported rpc schema compatibility fixture schema_version"));
+    }
+
+    #[test]
+    fn functional_rpc_schema_compat_dispatch_fixture_replays_supported_versions() {
+        let fixture = load_rpc_schema_compat_fixture("dispatch-mixed-supported.json");
+        let (processed_lines, error_count, responses) = replay_rpc_schema_compat_fixture(&fixture);
+        assert_eq!(processed_lines, fixture.expected_processed_lines);
+        assert_eq!(error_count, fixture.expected_error_count);
+        assert_eq!(responses, fixture.expected_responses);
+    }
+
+    #[test]
+    fn functional_rpc_schema_compat_serve_fixture_replays_supported_versions() {
+        let fixture = load_rpc_schema_compat_fixture("serve-mixed-supported.json");
+        let (processed_lines, error_count, responses) = replay_rpc_schema_compat_fixture(&fixture);
+        assert_eq!(processed_lines, fixture.expected_processed_lines);
+        assert_eq!(error_count, fixture.expected_error_count);
+        assert_eq!(responses, fixture.expected_responses);
+    }
+
+    #[test]
+    fn integration_rpc_schema_compat_fixture_replay_is_deterministic_across_modes() {
+        for name in [
+            "dispatch-mixed-supported.json",
+            "dispatch-unsupported-continues.json",
+            "serve-mixed-supported.json",
+            "serve-unsupported-continues.json",
+        ] {
+            let fixture = load_rpc_schema_compat_fixture(name);
+            let first = replay_rpc_schema_compat_fixture(&fixture);
+            let second = replay_rpc_schema_compat_fixture(&fixture);
+            assert_eq!(first, second);
+            assert_eq!(first.0, fixture.expected_processed_lines);
+            assert_eq!(first.1, fixture.expected_error_count);
+            assert_eq!(first.2, fixture.expected_responses);
+        }
+    }
+
+    #[test]
+    fn regression_rpc_schema_compat_dispatch_fixture_preserves_unsupported_schema_error_contract() {
+        let fixture = load_rpc_schema_compat_fixture("dispatch-unsupported-continues.json");
+        let (processed_lines, error_count, responses) = replay_rpc_schema_compat_fixture(&fixture);
+        assert_eq!(processed_lines, 2);
+        assert_eq!(error_count, 1);
+        assert_eq!(responses, fixture.expected_responses);
+        assert_eq!(responses[0]["kind"], "error");
+        assert_eq!(
+            responses[0]["payload"]["code"],
+            RPC_ERROR_CODE_UNSUPPORTED_SCHEMA
+        );
+        assert_eq!(responses[1]["kind"], "run.accepted");
+    }
+
+    #[test]
+    fn regression_rpc_schema_compat_serve_fixture_preserves_unsupported_schema_error_contract() {
+        let fixture = load_rpc_schema_compat_fixture("serve-unsupported-continues.json");
+        let (processed_lines, error_count, responses) = replay_rpc_schema_compat_fixture(&fixture);
+        assert_eq!(processed_lines, 2);
+        assert_eq!(error_count, 1);
+        assert_eq!(responses, fixture.expected_responses);
+        assert_eq!(responses[0]["kind"], "error");
+        assert_eq!(
+            responses[0]["payload"]["code"],
+            RPC_ERROR_CODE_UNSUPPORTED_SCHEMA
+        );
+        assert_eq!(responses[1]["kind"], "run.accepted");
     }
 }
