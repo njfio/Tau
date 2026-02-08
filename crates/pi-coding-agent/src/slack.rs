@@ -592,6 +592,8 @@ enum SlackCommand {
     Help,
     Status,
     Stop,
+    Artifacts { purge: bool, run_id: Option<String> },
+    ArtifactShow { artifact_id: String },
     Invalid { message: String },
 }
 
@@ -994,6 +996,29 @@ impl SlackBridgeRuntime {
                     )
                 }
             }
+            SlackCommand::Artifacts { purge, run_id } => {
+                if purge {
+                    (
+                        self.render_channel_artifact_purge(&event.channel_id)?,
+                        "artifacts-purge",
+                        "reported",
+                        None,
+                    )
+                } else {
+                    (
+                        self.render_channel_artifacts(&event.channel_id, run_id.as_deref())?,
+                        "artifacts",
+                        "reported",
+                        run_id.as_ref().map(|value| json!({"run_id": value})),
+                    )
+                }
+            }
+            SlackCommand::ArtifactShow { artifact_id } => (
+                self.render_channel_artifact_show(&event.channel_id, &artifact_id)?,
+                "artifacts-show",
+                "reported",
+                Some(json!({"artifact_id": artifact_id})),
+            ),
             SlackCommand::Invalid { message } => (message, "invalid", "usage_reported", None),
         };
 
@@ -1063,6 +1088,148 @@ impl SlackBridgeRuntime {
         }
 
         lines.join("\n")
+    }
+
+    fn render_channel_artifacts(
+        &self,
+        channel_id: &str,
+        run_id_filter: Option<&str>,
+    ) -> Result<String> {
+        let store = ChannelStore::open(&self.state_dir.join("channel-store"), "slack", channel_id)?;
+        let loaded = store.load_artifact_records_tolerant()?;
+        let mut active = store.list_active_artifacts(current_unix_timestamp_ms())?;
+        if let Some(run_id_filter) = run_id_filter {
+            active.retain(|artifact| artifact.run_id == run_id_filter);
+        }
+        active.sort_by(|left, right| {
+            right
+                .created_unix_ms
+                .cmp(&left.created_unix_ms)
+                .then_with(|| left.id.cmp(&right.id))
+        });
+
+        let mut lines = vec![if let Some(run_id_filter) = run_id_filter {
+            format!(
+                "rsBot artifacts for channel {} run_id `{}`: active={}",
+                channel_id,
+                run_id_filter,
+                active.len()
+            )
+        } else {
+            format!(
+                "rsBot artifacts for channel {}: active={}",
+                channel_id,
+                active.len()
+            )
+        }];
+        if active.is_empty() {
+            if let Some(run_id_filter) = run_id_filter {
+                lines.push(format!("none for run_id `{}`", run_id_filter));
+            } else {
+                lines.push("none".to_string());
+            }
+        } else {
+            let max_rows = 10_usize;
+            for artifact in active.iter().take(max_rows) {
+                lines.push(format!(
+                    "- id `{}` type `{}` bytes `{}` visibility `{}` created_unix_ms `{}` expires_unix_ms `{}` checksum `{}` path `{}`",
+                    artifact.id,
+                    artifact.artifact_type,
+                    artifact.bytes,
+                    artifact.visibility,
+                    artifact.created_unix_ms,
+                    artifact
+                        .expires_unix_ms
+                        .map(|value| value.to_string())
+                        .unwrap_or_else(|| "none".to_string()),
+                    artifact.checksum_sha256,
+                    artifact.relative_path,
+                ));
+            }
+            if active.len() > max_rows {
+                lines.push(format!(
+                    "... {} additional artifacts omitted",
+                    active.len() - max_rows
+                ));
+            }
+        }
+        if loaded.invalid_lines > 0 {
+            lines.push(format!(
+                "index_invalid_lines: {} (ignored)",
+                loaded.invalid_lines
+            ));
+        }
+        Ok(lines.join("\n"))
+    }
+
+    fn render_channel_artifact_purge(&self, channel_id: &str) -> Result<String> {
+        let now_unix_ms = current_unix_timestamp_ms();
+        let store = ChannelStore::open(&self.state_dir.join("channel-store"), "slack", channel_id)?;
+        let purge = store.purge_expired_artifacts(now_unix_ms)?;
+        let active = store.list_active_artifacts(now_unix_ms)?;
+        Ok(format!(
+            "rsBot artifact purge for channel {}: expired_removed={} invalid_removed={} active_remaining={}",
+            channel_id,
+            purge.expired_removed,
+            purge.invalid_removed,
+            active.len()
+        ))
+    }
+
+    fn render_channel_artifact_show(&self, channel_id: &str, artifact_id: &str) -> Result<String> {
+        let store = ChannelStore::open(&self.state_dir.join("channel-store"), "slack", channel_id)?;
+        let loaded = store.load_artifact_records_tolerant()?;
+        let now_unix_ms = current_unix_timestamp_ms();
+        let artifact = loaded
+            .records
+            .iter()
+            .find(|record| record.id == artifact_id);
+        let mut lines = Vec::new();
+        match artifact {
+            Some(record) => {
+                let expired = record
+                    .expires_unix_ms
+                    .map(|expires_unix_ms| expires_unix_ms <= now_unix_ms)
+                    .unwrap_or(false);
+                lines.push(format!(
+                    "rsBot artifact for channel {} id `{}`: state={}",
+                    channel_id,
+                    artifact_id,
+                    if expired { "expired" } else { "active" }
+                ));
+                lines.push(format!("run_id: {}", record.run_id));
+                lines.push(format!("artifact_type: {}", record.artifact_type));
+                lines.push(format!("visibility: {}", record.visibility));
+                lines.push(format!("bytes: {}", record.bytes));
+                lines.push(format!("created_unix_ms: {}", record.created_unix_ms));
+                lines.push(format!(
+                    "expires_unix_ms: {}",
+                    record
+                        .expires_unix_ms
+                        .map(|value| value.to_string())
+                        .unwrap_or_else(|| "none".to_string())
+                ));
+                lines.push(format!("checksum: {}", record.checksum_sha256));
+                lines.push(format!("path: {}", record.relative_path));
+                if expired {
+                    lines.push(
+                        "artifact is expired and may be removed by `/pi artifacts purge`."
+                            .to_string(),
+                    );
+                }
+            }
+            None => lines.push(format!(
+                "rsBot artifact for channel {} id `{}`: not found",
+                channel_id, artifact_id
+            )),
+        }
+        if loaded.invalid_lines > 0 {
+            lines.push(format!(
+                "index_invalid_lines: {} (ignored)",
+                loaded.invalid_lines
+            ));
+        }
+        Ok(lines.join("\n"))
     }
 
     async fn drain_finished_runs(&mut self, report: &mut PollCycleReport) -> Result<()> {
@@ -1615,6 +1782,7 @@ fn slack_command_usage() -> String {
         "- `/pi help`",
         "- `/pi status`",
         "- `/pi stop`",
+        "- `/pi artifacts [purge|run <run_id>|show <artifact_id>]`",
     ]
     .join("\n")
 }
@@ -1662,6 +1830,38 @@ fn parse_slack_command(event: &SlackBridgeEvent, bot_user_id: &str) -> Option<Sl
             } else {
                 SlackCommand::Invalid {
                     message: "Usage: /pi stop".to_string(),
+                }
+            }
+        }
+        "artifacts" => {
+            if remainder.is_empty() {
+                SlackCommand::Artifacts {
+                    purge: false,
+                    run_id: None,
+                }
+            } else if remainder == "purge" {
+                SlackCommand::Artifacts {
+                    purge: true,
+                    run_id: None,
+                }
+            } else {
+                let mut artifact_args = remainder.split_whitespace();
+                match (
+                    artifact_args.next(),
+                    artifact_args.next(),
+                    artifact_args.next(),
+                ) {
+                    (Some("run"), Some(run_id), None) => SlackCommand::Artifacts {
+                        purge: false,
+                        run_id: Some(run_id.to_string()),
+                    },
+                    (Some("show"), Some(artifact_id), None) => SlackCommand::ArtifactShow {
+                        artifact_id: artifact_id.to_string(),
+                    },
+                    _ => SlackCommand::Invalid {
+                        message: "Usage: /pi artifacts [purge|run <run_id>|show <artifact_id>]"
+                            .to_string(),
+                    },
                 }
             }
         }
@@ -2219,6 +2419,43 @@ mod tests {
         assert_eq!(parse_slack_command(&dm, "UBOT"), Some(SlackCommand::Status));
         let dm = test_event_with_text(SlackBridgeEventKind::DirectMessage, "/pi stop");
         assert_eq!(parse_slack_command(&dm, "UBOT"), Some(SlackCommand::Stop));
+        let dm = test_event_with_text(SlackBridgeEventKind::DirectMessage, "/pi artifacts");
+        assert_eq!(
+            parse_slack_command(&dm, "UBOT"),
+            Some(SlackCommand::Artifacts {
+                purge: false,
+                run_id: None
+            })
+        );
+        let dm = test_event_with_text(SlackBridgeEventKind::DirectMessage, "/pi artifacts purge");
+        assert_eq!(
+            parse_slack_command(&dm, "UBOT"),
+            Some(SlackCommand::Artifacts {
+                purge: true,
+                run_id: None
+            })
+        );
+        let dm = test_event_with_text(
+            SlackBridgeEventKind::DirectMessage,
+            "/pi artifacts run run-9",
+        );
+        assert_eq!(
+            parse_slack_command(&dm, "UBOT"),
+            Some(SlackCommand::Artifacts {
+                purge: false,
+                run_id: Some("run-9".to_string())
+            })
+        );
+        let dm = test_event_with_text(
+            SlackBridgeEventKind::DirectMessage,
+            "/pi artifacts show artifact-9",
+        );
+        assert_eq!(
+            parse_slack_command(&dm, "UBOT"),
+            Some(SlackCommand::ArtifactShow {
+                artifact_id: "artifact-9".to_string()
+            })
+        );
         let dm = test_event_with_text(SlackBridgeEventKind::DirectMessage, "hello");
         assert_eq!(parse_slack_command(&dm, "UBOT"), None);
     }
@@ -2231,6 +2468,26 @@ mod tests {
             Some(SlackCommand::Invalid { .. })
         ));
         let dm = test_event_with_text(SlackBridgeEventKind::DirectMessage, "/pi help extra");
+        assert!(matches!(
+            parse_slack_command(&dm, "UBOT"),
+            Some(SlackCommand::Invalid { .. })
+        ));
+        let dm = test_event_with_text(SlackBridgeEventKind::DirectMessage, "/pi artifacts extra");
+        assert!(matches!(
+            parse_slack_command(&dm, "UBOT"),
+            Some(SlackCommand::Invalid { .. })
+        ));
+        let dm = test_event_with_text(SlackBridgeEventKind::DirectMessage, "/pi artifacts run");
+        assert!(matches!(
+            parse_slack_command(&dm, "UBOT"),
+            Some(SlackCommand::Invalid { .. })
+        ));
+        let dm = test_event_with_text(SlackBridgeEventKind::DirectMessage, "/pi artifacts run a b");
+        assert!(matches!(
+            parse_slack_command(&dm, "UBOT"),
+            Some(SlackCommand::Invalid { .. })
+        ));
+        let dm = test_event_with_text(SlackBridgeEventKind::DirectMessage, "/pi artifacts show");
         assert!(matches!(
             parse_slack_command(&dm, "UBOT"),
             Some(SlackCommand::Invalid { .. })
@@ -2612,6 +2869,85 @@ mod tests {
         help_post.assert_calls(1);
         status_post.assert_calls(1);
         stop_post.assert_calls(1);
+        assert_eq!(report.queued_events, 0);
+    }
+
+    #[tokio::test]
+    async fn integration_bridge_artifacts_commands_post_reports() {
+        let server = MockServer::start();
+        let list_post = server.mock(|when, then| {
+            when.method(POST)
+                .path("/chat.postMessage")
+                .body_includes("\"channel\":\"C1\"")
+                .body_includes("rsBot artifacts for channel C1: active=1");
+            then.status(200)
+                .json_body(json!({"ok": true, "channel": "C1", "ts": "5.0"}));
+        });
+        let show_post = server.mock(|when, then| {
+            when.method(POST)
+                .path("/chat.postMessage")
+                .body_includes("\"channel\":\"C1\"")
+                .body_includes("rsBot artifact for channel C1 id");
+            then.status(200)
+                .json_body(json!({"ok": true, "channel": "C1", "ts": "5.1"}));
+        });
+
+        let temp = tempdir().expect("tempdir");
+        let store =
+            ChannelStore::open(&temp.path().join("channel-store"), "slack", "C1").expect("store");
+        let artifact = store
+            .write_text_artifact("run-1", "slack-reply", "private", Some(30), "md", "hi")
+            .expect("artifact");
+
+        let config = test_config(&server.base_url(), temp.path());
+        let mut runtime = SlackBridgeRuntime::new(config).await.expect("runtime");
+
+        let now_seconds = current_unix_timestamp_ms() / 1000;
+        let list = SlackSocketEnvelope {
+            envelope_id: "env-artifacts".to_string(),
+            envelope_type: "events_api".to_string(),
+            payload: json!({
+                "type": "event_callback",
+                "event_id": "EvArtifacts",
+                "event_time": now_seconds,
+                "event": {
+                    "type": "app_mention",
+                    "user": "U1",
+                    "channel": "C1",
+                    "text": "<@UBOT> /pi artifacts",
+                    "ts": "13.1"
+                }
+            }),
+        };
+        let show = SlackSocketEnvelope {
+            envelope_id: "env-artifact-show".to_string(),
+            envelope_type: "events_api".to_string(),
+            payload: json!({
+                "type": "event_callback",
+                "event_id": "EvArtifactShow",
+                "event_time": now_seconds,
+                "event": {
+                    "type": "app_mention",
+                    "user": "U1",
+                    "channel": "C1",
+                    "text": format!("<@UBOT> /pi artifacts show {}", artifact.id),
+                    "ts": "13.2"
+                }
+            }),
+        };
+
+        let mut report = PollCycleReport::default();
+        runtime
+            .handle_envelope(list, &mut report)
+            .await
+            .expect("list");
+        runtime
+            .handle_envelope(show, &mut report)
+            .await
+            .expect("show");
+
+        list_post.assert_calls(1);
+        show_post.assert_calls(1);
         assert_eq!(report.queued_events, 0);
     }
 
