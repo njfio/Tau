@@ -76,6 +76,7 @@ pub(crate) struct ExtensionRuntimeHookDispatchSummary {
     pub skipped_invalid: usize,
     pub skipped_unsupported_runtime: usize,
     pub skipped_undeclared_hook: usize,
+    pub skipped_permission_denied: usize,
     pub executed_ids: Vec<String>,
     pub diagnostics: Vec<String>,
 }
@@ -90,6 +91,7 @@ pub(crate) struct ExtensionMessageTransformResult {
     pub skipped_invalid: usize,
     pub skipped_unsupported_runtime: usize,
     pub skipped_undeclared_hook: usize,
+    pub skipped_permission_denied: usize,
     pub applied_ids: Vec<String>,
     pub diagnostics: Vec<String>,
 }
@@ -222,12 +224,12 @@ impl ExtensionPermission {
 
 fn required_permission_for_hook(hook: &ExtensionHook) -> Option<ExtensionPermission> {
     match hook {
-        ExtensionHook::PolicyOverride => Some(ExtensionPermission::RunCommands),
         ExtensionHook::RunStart
         | ExtensionHook::RunEnd
         | ExtensionHook::PreToolCall
         | ExtensionHook::PostToolCall
-        | ExtensionHook::MessageTransform => None,
+        | ExtensionHook::MessageTransform
+        | ExtensionHook::PolicyOverride => Some(ExtensionPermission::RunCommands),
     }
 }
 
@@ -488,6 +490,7 @@ pub(crate) fn dispatch_extension_runtime_hook(
         skipped_invalid: 0,
         skipped_unsupported_runtime: 0,
         skipped_undeclared_hook: 0,
+        skipped_permission_denied: 0,
         executed_ids: Vec::new(),
         diagnostics: Vec::new(),
     };
@@ -529,6 +532,23 @@ pub(crate) fn dispatch_extension_runtime_hook(
         if !loaded_manifest.manifest.hooks.contains(&hook) {
             summary.skipped_undeclared_hook += 1;
             continue;
+        }
+        if let Some(required_permission) = required_permission_for_hook(&hook) {
+            if !loaded_manifest
+                .manifest
+                .permissions
+                .contains(&required_permission)
+            {
+                summary.skipped_permission_denied += 1;
+                summary.diagnostics.push(format!(
+                    "extension runtime: hook={} id={} manifest={} denied: missing required permission={}",
+                    hook.as_str(),
+                    loaded_manifest.summary.id,
+                    loaded_manifest.summary.manifest_path.display(),
+                    required_permission.as_str()
+                ));
+                continue;
+            }
         }
 
         summary.eligible += 1;
@@ -573,6 +593,7 @@ pub(crate) fn apply_extension_message_transforms(
         skipped_invalid: 0,
         skipped_unsupported_runtime: 0,
         skipped_undeclared_hook: 0,
+        skipped_permission_denied: 0,
         applied_ids: Vec::new(),
         diagnostics: Vec::new(),
     };
@@ -599,6 +620,23 @@ pub(crate) fn apply_extension_message_transforms(
         if !loaded_manifest.manifest.hooks.contains(&hook) {
             result.skipped_undeclared_hook += 1;
             continue;
+        }
+        if let Some(required_permission) = required_permission_for_hook(&hook) {
+            if !loaded_manifest
+                .manifest
+                .permissions
+                .contains(&required_permission)
+            {
+                result.skipped_permission_denied += 1;
+                result.diagnostics.push(format!(
+                    "extension runtime: hook={} id={} manifest={} denied: missing required permission={}",
+                    hook.as_str(),
+                    loaded_manifest.summary.id,
+                    loaded_manifest.summary.manifest_path.display(),
+                    required_permission.as_str()
+                ));
+                continue;
+            }
         }
 
         result.executed += 1;
@@ -908,6 +946,16 @@ fn execute_extension_process_hook_with_loaded(
             summary.id,
             hook.as_str()
         );
+    }
+    if let Some(required_permission) = required_permission_for_hook(hook) {
+        if !manifest.permissions.contains(&required_permission) {
+            bail!(
+                "extension manifest '{}' hook '{}' requires permission '{}'",
+                summary.id,
+                hook.as_str(),
+                required_permission.as_str()
+            );
+        }
     }
     let payload_object = payload
         .as_object()
@@ -1354,6 +1402,7 @@ mod tests {
   "runtime": "process",
   "entrypoint": "hook.sh",
   "hooks": ["run-start"],
+  "permissions": ["run-commands"],
   "timeout_ms": 5000
 }"#,
         )
@@ -1388,6 +1437,7 @@ mod tests {
   "runtime": "process",
   "entrypoint": "hook.sh",
   "hooks": ["run-end"],
+  "permissions": ["run-commands"],
   "timeout_ms": 5000
 }"#,
         )
@@ -1416,6 +1466,7 @@ mod tests {
   "runtime": "process",
   "entrypoint": "slow.sh",
   "hooks": ["run-start"],
+  "permissions": ["run-commands"],
   "timeout_ms": 20
 }"#,
         )
@@ -1448,6 +1499,7 @@ mod tests {
   "runtime": "process",
   "entrypoint": "bad-output.sh",
   "hooks": ["run-start"],
+  "permissions": ["run-commands"],
   "timeout_ms": 5000
 }"#,
         )
@@ -1493,6 +1545,7 @@ mod tests {
   "runtime": "process",
   "entrypoint": "hook.sh",
   "hooks": ["run-start"],
+  "permissions": ["run-commands"],
   "timeout_ms": 5000
 }"#,
         )
@@ -1506,6 +1559,7 @@ mod tests {
   "runtime": "process",
   "entrypoint": "hook.sh",
   "hooks": ["run-start"],
+  "permissions": ["run-commands"],
   "timeout_ms": 5000
 }"#,
         )
@@ -1547,6 +1601,7 @@ mod tests {
   "runtime": "process",
   "entrypoint": "hook.sh",
   "hooks": ["run-start", "run-end"],
+  "permissions": ["run-commands"],
   "timeout_ms": 5000
 }"#,
         )
@@ -1592,6 +1647,7 @@ mod tests {
   "runtime": "process",
   "entrypoint": "hook.sh",
   "hooks": ["run-start"],
+  "permissions": ["run-commands"],
   "timeout_ms": 5000
 }"#,
         )
@@ -1605,6 +1661,7 @@ mod tests {
   "runtime": "process",
   "entrypoint": "slow.sh",
   "hooks": ["run-start"],
+  "permissions": ["run-commands"],
   "timeout_ms": 20
 }"#,
         )
@@ -1645,7 +1702,8 @@ mod tests {
   "version": "1.0.0",
   "runtime": "process",
   "entrypoint": "hook.sh",
-  "hooks": ["run-start"]
+  "hooks": ["run-start"],
+  "permissions": ["run-commands"]
 }"#,
         )
         .expect("write valid manifest");
@@ -1668,6 +1726,44 @@ mod tests {
             .diagnostics
             .iter()
             .any(|line| line.contains("skipped invalid manifest")));
+    }
+
+    #[test]
+    fn functional_dispatch_extension_runtime_hook_skips_missing_permission() {
+        let temp = tempdir().expect("tempdir");
+        let root = temp.path().join("extensions");
+        let extension_dir = root.join("missing-permission");
+        fs::create_dir_all(&extension_dir).expect("create extension dir");
+
+        let script_path = extension_dir.join("hook.sh");
+        fs::write(
+            &script_path,
+            "#!/bin/sh\nread -r _input\nprintf '{\"ok\":true}'\n",
+        )
+        .expect("write script");
+        make_executable(&script_path);
+
+        fs::write(
+            extension_dir.join("extension.json"),
+            r#"{
+  "schema_version": 1,
+  "id": "missing-permission",
+  "version": "1.0.0",
+  "runtime": "process",
+  "entrypoint": "hook.sh",
+  "hooks": ["run-start"],
+  "timeout_ms": 5000
+}"#,
+        )
+        .expect("write manifest");
+
+        let report = dispatch_extension_runtime_hook(&root, "run-start", &serde_json::json!({}));
+        assert_eq!(report.executed, 0);
+        assert_eq!(report.skipped_permission_denied, 1);
+        assert!(report
+            .diagnostics
+            .iter()
+            .any(|line| line.contains("missing required permission=run-commands")));
     }
 
     #[test]
@@ -1708,6 +1804,7 @@ mod tests {
   "runtime": "process",
   "entrypoint": "transform.sh",
   "hooks": ["message-transform"],
+  "permissions": ["run-commands"],
   "timeout_ms": 5000
 }"#,
         )
@@ -1753,6 +1850,7 @@ mod tests {
   "runtime": "process",
   "entrypoint": "transform.sh",
   "hooks": ["message-transform"],
+  "permissions": ["run-commands"],
   "timeout_ms": 5000
 }"#,
         )
@@ -1766,6 +1864,7 @@ mod tests {
   "runtime": "process",
   "entrypoint": "transform.sh",
   "hooks": ["message-transform"],
+  "permissions": ["run-commands"],
   "timeout_ms": 5000
 }"#,
         )
@@ -1807,6 +1906,7 @@ mod tests {
   "runtime": "process",
   "entrypoint": "transform.sh",
   "hooks": ["message-transform"],
+  "permissions": ["run-commands"],
   "timeout_ms": 5000
 }"#,
         )
@@ -1823,6 +1923,46 @@ mod tests {
     }
 
     #[test]
+    fn regression_apply_extension_message_transforms_skips_missing_permission() {
+        let temp = tempdir().expect("tempdir");
+        let root = temp.path().join("extensions");
+        let extension_dir = root.join("missing-permission");
+        fs::create_dir_all(&extension_dir).expect("create extension dir");
+
+        let script_path = extension_dir.join("transform.sh");
+        fs::write(
+            &script_path,
+            "#!/bin/sh\nread -r _input\nprintf '{\"prompt\":\"rewritten\"}'\n",
+        )
+        .expect("write script");
+        make_executable(&script_path);
+
+        fs::write(
+            extension_dir.join("extension.json"),
+            r#"{
+  "schema_version": 1,
+  "id": "missing-permission",
+  "version": "0.1.0",
+  "runtime": "process",
+  "entrypoint": "transform.sh",
+  "hooks": ["message-transform"],
+  "timeout_ms": 5000
+}"#,
+        )
+        .expect("write manifest");
+
+        let result = apply_extension_message_transforms(&root, "original prompt");
+        assert_eq!(result.prompt, "original prompt");
+        assert_eq!(result.executed, 0);
+        assert_eq!(result.applied, 0);
+        assert_eq!(result.skipped_permission_denied, 1);
+        assert!(result
+            .diagnostics
+            .iter()
+            .any(|line| line.contains("missing required permission=run-commands")));
+    }
+
+    #[test]
     fn unit_parse_policy_override_response_accepts_allow_decision() {
         let response =
             parse_policy_override_response(r#"{"decision":"allow"}"#).expect("response parses");
@@ -1836,7 +1976,10 @@ mod tests {
             required_permission_for_hook(&ExtensionHook::PolicyOverride),
             Some(ExtensionPermission::RunCommands)
         );
-        assert_eq!(required_permission_for_hook(&ExtensionHook::RunStart), None);
+        assert_eq!(
+            required_permission_for_hook(&ExtensionHook::RunStart),
+            Some(ExtensionPermission::RunCommands)
+        );
     }
 
     #[test]

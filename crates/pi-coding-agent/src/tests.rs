@@ -7051,6 +7051,7 @@ fn functional_execute_extension_exec_command_runs_process_hook() {
   "runtime": "process",
   "entrypoint": "bin/hook.sh",
   "hooks": ["run-start"],
+  "permissions": ["run-commands"],
   "timeout_ms": 5000
 }"#,
     )
@@ -7087,6 +7088,7 @@ fn regression_execute_extension_exec_command_rejects_undeclared_hook() {
   "runtime": "process",
   "entrypoint": "bin/hook.sh",
   "hooks": ["run-end"],
+  "permissions": ["run-commands"],
   "timeout_ms": 5000
 }"#,
     )
@@ -7124,6 +7126,7 @@ fn regression_execute_extension_exec_command_enforces_timeout() {
   "runtime": "process",
   "entrypoint": "bin/slow.sh",
   "hooks": ["run-start"],
+  "permissions": ["run-commands"],
   "timeout_ms": 20
 }"#,
     )
@@ -7161,6 +7164,7 @@ fn regression_execute_extension_exec_command_rejects_invalid_json_response() {
   "runtime": "process",
   "entrypoint": "bin/bad.sh",
   "hooks": ["run-start"],
+  "permissions": ["run-commands"],
   "timeout_ms": 5000
 }"#,
     )
@@ -8523,6 +8527,7 @@ async fn integration_tool_hook_subscriber_dispatches_pre_and_post_tool_call_hook
   "runtime": "process",
   "entrypoint": "hook.sh",
   "hooks": ["pre-tool-call", "post-tool-call"],
+  "permissions": ["run-commands"],
   "timeout_ms": 5000
 }"#,
     )
@@ -8613,6 +8618,7 @@ async fn regression_tool_hook_subscriber_timeout_does_not_fail_prompt() {
   "runtime": "process",
   "entrypoint": "hook.sh",
   "hooks": ["pre-tool-call", "post-tool-call"],
+  "permissions": ["run-commands"],
   "timeout_ms": 20
 }"#,
     )
