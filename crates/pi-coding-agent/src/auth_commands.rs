@@ -3,10 +3,10 @@ use super::*;
 pub(crate) const AUTH_USAGE: &str = "usage: /auth <login|status|logout|matrix> ...";
 pub(crate) const AUTH_LOGIN_USAGE: &str = "usage: /auth login <provider> [--mode <mode>] [--json]";
 pub(crate) const AUTH_STATUS_USAGE: &str =
-    "usage: /auth status [provider] [--mode <mode>] [--mode-support <all|supported|unsupported>] [--availability <all|available|unavailable>] [--state <state>] [--source-kind <all|flag|env|credential-store|none>] [--json]";
+    "usage: /auth status [provider] [--mode <mode>] [--mode-support <all|supported|unsupported>] [--availability <all|available|unavailable>] [--state <state>] [--source-kind <all|flag|env|credential-store|none>] [--revoked <all|revoked|not-revoked>] [--json]";
 pub(crate) const AUTH_LOGOUT_USAGE: &str = "usage: /auth logout <provider> [--json]";
 pub(crate) const AUTH_MATRIX_USAGE: &str =
-    "usage: /auth matrix [provider] [--mode <mode>] [--mode-support <all|supported|unsupported>] [--availability <all|available|unavailable>] [--state <state>] [--source-kind <all|flag|env|credential-store|none>] [--json]";
+    "usage: /auth matrix [provider] [--mode <mode>] [--mode-support <all|supported|unsupported>] [--availability <all|available|unavailable>] [--state <state>] [--source-kind <all|flag|env|credential-store|none>] [--revoked <all|revoked|not-revoked>] [--json]";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum AuthMatrixAvailabilityFilter {
@@ -63,6 +63,23 @@ impl AuthSourceKindFilter {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AuthRevokedFilter {
+    All,
+    Revoked,
+    NotRevoked,
+}
+
+impl AuthRevokedFilter {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::All => "all",
+            Self::Revoked => "revoked",
+            Self::NotRevoked => "not_revoked",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum AuthCommand {
     Login {
@@ -77,6 +94,7 @@ pub(crate) enum AuthCommand {
         availability: AuthMatrixAvailabilityFilter,
         state: Option<String>,
         source_kind: AuthSourceKindFilter,
+        revoked: AuthRevokedFilter,
         json_output: bool,
     },
     Logout {
@@ -90,6 +108,7 @@ pub(crate) enum AuthCommand {
         availability: AuthMatrixAvailabilityFilter,
         state: Option<String>,
         source_kind: AuthSourceKindFilter,
+        revoked: AuthRevokedFilter,
         json_output: bool,
     },
 }
@@ -101,6 +120,7 @@ pub(crate) struct AuthQueryFilters {
     pub(crate) availability: AuthMatrixAvailabilityFilter,
     pub(crate) state: Option<String>,
     pub(crate) source_kind: AuthSourceKindFilter,
+    pub(crate) revoked: AuthRevokedFilter,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -207,6 +227,8 @@ pub(crate) fn parse_auth_command(command_args: &str) -> Result<AuthCommand> {
             let mut state: Option<String> = None;
             let mut source_kind = AuthSourceKindFilter::All;
             let mut source_kind_explicit = false;
+            let mut revoked = AuthRevokedFilter::All;
+            let mut revoked_explicit = false;
             let mut json_output = false;
             let mut index = 1usize;
             while index < tokens.len() {
@@ -268,6 +290,17 @@ pub(crate) fn parse_auth_command(command_args: &str) -> Result<AuthCommand> {
                         source_kind_explicit = true;
                         index += 2;
                     }
+                    "--revoked" => {
+                        if revoked_explicit {
+                            bail!("duplicate --revoked flag; {AUTH_STATUS_USAGE}");
+                        }
+                        let Some(raw_revoked) = tokens.get(index + 1) else {
+                            bail!("missing revoked filter after --revoked; {AUTH_STATUS_USAGE}");
+                        };
+                        revoked = parse_auth_revoked_filter(raw_revoked)?;
+                        revoked_explicit = true;
+                        index += 2;
+                    }
                     token if token.starts_with("--") => {
                         bail!("unexpected argument '{}'; {AUTH_STATUS_USAGE}", token);
                     }
@@ -287,6 +320,7 @@ pub(crate) fn parse_auth_command(command_args: &str) -> Result<AuthCommand> {
                 availability,
                 state,
                 source_kind,
+                revoked,
                 json_output,
             })
         }
@@ -318,6 +352,8 @@ pub(crate) fn parse_auth_command(command_args: &str) -> Result<AuthCommand> {
             let mut state: Option<String> = None;
             let mut source_kind = AuthSourceKindFilter::All;
             let mut source_kind_explicit = false;
+            let mut revoked = AuthRevokedFilter::All;
+            let mut revoked_explicit = false;
             let mut json_output = false;
             let mut index = 1usize;
             while index < tokens.len() {
@@ -379,6 +415,17 @@ pub(crate) fn parse_auth_command(command_args: &str) -> Result<AuthCommand> {
                         source_kind_explicit = true;
                         index += 2;
                     }
+                    "--revoked" => {
+                        if revoked_explicit {
+                            bail!("duplicate --revoked flag; {AUTH_MATRIX_USAGE}");
+                        }
+                        let Some(raw_revoked) = tokens.get(index + 1) else {
+                            bail!("missing revoked filter after --revoked; {AUTH_MATRIX_USAGE}");
+                        };
+                        revoked = parse_auth_revoked_filter(raw_revoked)?;
+                        revoked_explicit = true;
+                        index += 2;
+                    }
                     token if token.starts_with("--") => {
                         bail!("unexpected argument '{}'; {AUTH_MATRIX_USAGE}", token);
                     }
@@ -398,6 +445,7 @@ pub(crate) fn parse_auth_command(command_args: &str) -> Result<AuthCommand> {
                 availability,
                 state,
                 source_kind,
+                revoked,
                 json_output,
             })
         }
@@ -450,6 +498,18 @@ pub(crate) fn parse_auth_source_kind_filter(token: &str) -> Result<AuthSourceKin
         "none" => Ok(AuthSourceKindFilter::None),
         other => bail!(
             "unknown source-kind filter '{}'; supported values: all, flag, env, credential-store, none",
+            other
+        ),
+    }
+}
+
+pub(crate) fn parse_auth_revoked_filter(token: &str) -> Result<AuthRevokedFilter> {
+    match token.trim().to_ascii_lowercase().as_str() {
+        "all" => Ok(AuthRevokedFilter::All),
+        "revoked" => Ok(AuthRevokedFilter::Revoked),
+        "not-revoked" | "not_revoked" => Ok(AuthRevokedFilter::NotRevoked),
+        other => bail!(
+            "unknown revoked filter '{}'; supported values: all, revoked, not-revoked",
             other
         ),
     }
@@ -1127,6 +1187,7 @@ pub(crate) fn execute_auth_status_command(
         availability,
         state,
         source_kind,
+        revoked,
     } = filters;
     let provider_filter = provider.map(|value| value.as_str()).unwrap_or("all");
     let selected_providers = if let Some(provider) = provider {
@@ -1197,6 +1258,11 @@ pub(crate) fn execute_auth_status_command(
         rows.retain(|row| row.state == state_filter);
     }
     rows.retain(|row| auth_source_kind_matches_filter(&row.source, source_kind));
+    rows = match revoked {
+        AuthRevokedFilter::All => rows,
+        AuthRevokedFilter::Revoked => rows.into_iter().filter(|row| row.revoked).collect(),
+        AuthRevokedFilter::NotRevoked => rows.into_iter().filter(|row| !row.revoked).collect(),
+    };
 
     let available = rows.iter().filter(|row| row.available).count();
     let unavailable = rows.len().saturating_sub(available);
@@ -1214,6 +1280,7 @@ pub(crate) fn execute_auth_status_command(
             "availability_filter": availability.as_str(),
             "state_filter": state_filter.as_deref().unwrap_or("all"),
             "source_kind_filter": source_kind.as_str(),
+            "revoked_filter": revoked.as_str(),
             "providers": selected_providers.len(),
             "rows_total": total_rows,
             "rows": rows.len(),
@@ -1233,7 +1300,7 @@ pub(crate) fn execute_auth_status_command(
     }
 
     let mut lines = vec![format!(
-        "auth status: providers={} rows={} mode_supported={} mode_unsupported={} available={} unavailable={} provider_filter={} mode_filter={} mode_support_filter={} availability_filter={} state_filter={} source_kind_filter={} rows_total={} mode_supported_total={} mode_unsupported_total={} state_counts={} state_counts_total={} source_kind_counts={} source_kind_counts_total={}",
+        "auth status: providers={} rows={} mode_supported={} mode_unsupported={} available={} unavailable={} provider_filter={} mode_filter={} mode_support_filter={} availability_filter={} state_filter={} source_kind_filter={} revoked_filter={} rows_total={} mode_supported_total={} mode_unsupported_total={} state_counts={} state_counts_total={} source_kind_counts={} source_kind_counts_total={}",
         selected_providers.len(),
         rows.len(),
         mode_supported,
@@ -1246,6 +1313,7 @@ pub(crate) fn execute_auth_status_command(
         availability.as_str(),
         state_filter.as_deref().unwrap_or("all"),
         source_kind.as_str(),
+        revoked.as_str(),
         total_rows,
         mode_supported_total,
         mode_unsupported_total,
@@ -1299,6 +1367,7 @@ pub(crate) fn execute_auth_matrix_command(
         availability,
         state,
         source_kind,
+        revoked,
     } = filters;
     let provider_filter = provider.map(|value| value.as_str()).unwrap_or("all");
     let mode_filter = mode.map(|value| value.as_str()).unwrap_or("all");
@@ -1368,6 +1437,11 @@ pub(crate) fn execute_auth_matrix_command(
         rows.retain(|row| row.state == state_filter);
     }
     rows.retain(|row| auth_source_kind_matches_filter(&row.source, source_kind));
+    rows = match revoked {
+        AuthRevokedFilter::All => rows,
+        AuthRevokedFilter::Revoked => rows.into_iter().filter(|row| row.revoked).collect(),
+        AuthRevokedFilter::NotRevoked => rows.into_iter().filter(|row| !row.revoked).collect(),
+    };
 
     let available = rows.iter().filter(|row| row.available).count();
     let unavailable = rows.len().saturating_sub(available);
@@ -1385,6 +1459,7 @@ pub(crate) fn execute_auth_matrix_command(
             "availability_filter": availability.as_str(),
             "state_filter": state_filter.as_deref().unwrap_or("all"),
             "source_kind_filter": source_kind.as_str(),
+            "revoked_filter": revoked.as_str(),
             "providers": selected_providers.len(),
             "modes": selected_modes.len(),
             "rows_total": total_rows,
@@ -1405,7 +1480,7 @@ pub(crate) fn execute_auth_matrix_command(
     }
 
     let mut lines = vec![format!(
-        "auth matrix: providers={} modes={} rows={} mode_supported={} mode_unsupported={} available={} unavailable={} provider_filter={} mode_filter={} mode_support_filter={} availability_filter={} state_filter={} source_kind_filter={} rows_total={} mode_supported_total={} mode_unsupported_total={} state_counts={} state_counts_total={} source_kind_counts={} source_kind_counts_total={}",
+        "auth matrix: providers={} modes={} rows={} mode_supported={} mode_unsupported={} available={} unavailable={} provider_filter={} mode_filter={} mode_support_filter={} availability_filter={} state_filter={} source_kind_filter={} revoked_filter={} rows_total={} mode_supported_total={} mode_unsupported_total={} state_counts={} state_counts_total={} source_kind_counts={} source_kind_counts_total={}",
         selected_providers.len(),
         selected_modes.len(),
         rows.len(),
@@ -1419,6 +1494,7 @@ pub(crate) fn execute_auth_matrix_command(
         availability.as_str(),
         state_filter.as_deref().unwrap_or("all"),
         source_kind.as_str(),
+        revoked.as_str(),
         total_rows,
         mode_supported_total,
         mode_unsupported_total,
@@ -1543,6 +1619,7 @@ pub(crate) fn execute_auth_command(config: &AuthCommandConfig, command_args: &st
             availability,
             state,
             source_kind,
+            revoked,
             json_output,
         } => execute_auth_status_command(
             config,
@@ -1553,6 +1630,7 @@ pub(crate) fn execute_auth_command(config: &AuthCommandConfig, command_args: &st
                 availability,
                 state,
                 source_kind,
+                revoked,
             },
             json_output,
         ),
@@ -1567,6 +1645,7 @@ pub(crate) fn execute_auth_command(config: &AuthCommandConfig, command_args: &st
             availability,
             state,
             source_kind,
+            revoked,
             json_output,
         } => execute_auth_matrix_command(
             config,
@@ -1577,6 +1656,7 @@ pub(crate) fn execute_auth_command(config: &AuthCommandConfig, command_args: &st
                 availability,
                 state,
                 source_kind,
+                revoked,
             },
             json_output,
         ),
