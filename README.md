@@ -362,6 +362,16 @@ cargo run -p pi-coding-agent -- \
   --package-conflicts-root .pi/packages
 ```
 
+Materialize installed package components into an activation destination with explicit conflict policy:
+
+```bash
+cargo run -p pi-coding-agent -- \
+  --package-activate \
+  --package-activate-root .pi/packages \
+  --package-activate-destination .pi/packages-active \
+  --package-activate-conflict-policy keep-first
+```
+
 List installed package bundles from a package root:
 
 ```bash

@@ -518,6 +518,7 @@ pub(crate) struct Cli {
         conflicts_with = "package_remove",
         conflicts_with = "package_rollback",
         conflicts_with = "package_conflicts",
+        conflicts_with = "package_activate",
         value_name = "path",
         help = "Validate a package manifest JSON file and exit"
     )]
@@ -533,6 +534,7 @@ pub(crate) struct Cli {
         conflicts_with = "package_remove",
         conflicts_with = "package_rollback",
         conflicts_with = "package_conflicts",
+        conflicts_with = "package_activate",
         value_name = "path",
         help = "Print package manifest metadata and component inventory"
     )]
@@ -548,6 +550,7 @@ pub(crate) struct Cli {
         conflicts_with = "package_remove",
         conflicts_with = "package_rollback",
         conflicts_with = "package_conflicts",
+        conflicts_with = "package_activate",
         value_name = "path",
         help = "Install a local package manifest bundle and exit"
     )]
@@ -573,6 +576,7 @@ pub(crate) struct Cli {
         conflicts_with = "package_remove",
         conflicts_with = "package_rollback",
         conflicts_with = "package_conflicts",
+        conflicts_with = "package_activate",
         value_name = "path",
         help = "Update an already installed package bundle from a manifest and exit"
     )]
@@ -595,6 +599,7 @@ pub(crate) struct Cli {
         conflicts_with = "package_remove",
         conflicts_with = "package_rollback",
         conflicts_with = "package_conflicts",
+        conflicts_with = "package_activate",
         default_value_t = false,
         help = "List installed package bundles from a package root and exit"
     )]
@@ -620,6 +625,7 @@ pub(crate) struct Cli {
         conflicts_with = "package_list",
         conflicts_with = "package_rollback",
         conflicts_with = "package_conflicts",
+        conflicts_with = "package_activate",
         value_name = "name@version",
         help = "Remove one installed package bundle by coordinate and exit"
     )]
@@ -645,6 +651,7 @@ pub(crate) struct Cli {
         conflicts_with = "package_list",
         conflicts_with = "package_remove",
         conflicts_with = "package_conflicts",
+        conflicts_with = "package_activate",
         value_name = "name@version",
         help = "Rollback one package to a target installed version and remove sibling versions"
     )]
@@ -670,6 +677,7 @@ pub(crate) struct Cli {
         conflicts_with = "package_list",
         conflicts_with = "package_remove",
         conflicts_with = "package_rollback",
+        conflicts_with = "package_activate",
         default_value_t = false,
         help = "Audit installed package component path conflicts and exit"
     )]
@@ -684,6 +692,52 @@ pub(crate) struct Cli {
         help = "Source root containing installed package bundles for conflict audit"
     )]
     pub(crate) package_conflicts_root: PathBuf,
+
+    #[arg(
+        long = "package-activate",
+        env = "PI_PACKAGE_ACTIVATE",
+        conflicts_with = "package_validate",
+        conflicts_with = "package_show",
+        conflicts_with = "package_install",
+        conflicts_with = "package_update",
+        conflicts_with = "package_list",
+        conflicts_with = "package_remove",
+        conflicts_with = "package_rollback",
+        conflicts_with = "package_conflicts",
+        default_value_t = false,
+        help = "Materialize installed package components into an activation destination and exit"
+    )]
+    pub(crate) package_activate: bool,
+
+    #[arg(
+        long = "package-activate-root",
+        env = "PI_PACKAGE_ACTIVATE_ROOT",
+        default_value = ".pi/packages",
+        requires = "package_activate",
+        value_name = "path",
+        help = "Source root containing installed package bundles for activation"
+    )]
+    pub(crate) package_activate_root: PathBuf,
+
+    #[arg(
+        long = "package-activate-destination",
+        env = "PI_PACKAGE_ACTIVATE_DESTINATION",
+        default_value = ".pi/packages-active",
+        requires = "package_activate",
+        value_name = "path",
+        help = "Destination root where resolved package components are materialized"
+    )]
+    pub(crate) package_activate_destination: PathBuf,
+
+    #[arg(
+        long = "package-activate-conflict-policy",
+        env = "PI_PACKAGE_ACTIVATE_CONFLICT_POLICY",
+        default_value = "error",
+        requires = "package_activate",
+        value_name = "error|keep-first|keep-last",
+        help = "Conflict strategy when multiple packages contain the same kind/path component"
+    )]
+    pub(crate) package_activate_conflict_policy: String,
 
     #[arg(
         long = "rpc-capabilities",

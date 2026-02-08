@@ -79,6 +79,45 @@ pub(crate) struct PackageConflictReport {
     pub conflicts: Vec<PackageConflictEntry>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PackageActivationConflictPolicy {
+    Error,
+    KeepFirst,
+    KeepLast,
+}
+
+impl PackageActivationConflictPolicy {
+    fn parse(raw: &str) -> Result<Self> {
+        match raw.trim() {
+            "error" => Ok(Self::Error),
+            "keep-first" => Ok(Self::KeepFirst),
+            "keep-last" => Ok(Self::KeepLast),
+            other => bail!(
+                "unsupported package activation conflict policy '{}': expected one of error, keep-first, keep-last",
+                other
+            ),
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Error => "error",
+            Self::KeepFirst => "keep-first",
+            Self::KeepLast => "keep-last",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PackageActivationReport {
+    pub activation_root: PathBuf,
+    pub destination_root: PathBuf,
+    pub policy: PackageActivationConflictPolicy,
+    pub packages: usize,
+    pub activated_components: usize,
+    pub conflicts_detected: usize,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct PackageRemoveReport {
     pub remove_root: PathBuf,
@@ -173,6 +212,14 @@ struct PackageComponent {
     sha256: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PackageActivationSelection {
+    kind: String,
+    path: String,
+    owner: String,
+    source: PathBuf,
+}
+
 pub(crate) fn execute_package_validate_command(cli: &Cli) -> Result<()> {
     let Some(path) = cli.package_validate.as_ref() else {
         return Ok(());
@@ -264,6 +311,21 @@ pub(crate) fn execute_package_conflicts_command(cli: &Cli) -> Result<()> {
     }
     let report = scan_installed_package_conflicts(&cli.package_conflicts_root)?;
     println!("{}", render_package_conflict_report(&report));
+    Ok(())
+}
+
+pub(crate) fn execute_package_activate_command(cli: &Cli) -> Result<()> {
+    if !cli.package_activate {
+        return Ok(());
+    }
+    let policy =
+        PackageActivationConflictPolicy::parse(cli.package_activate_conflict_policy.as_str())?;
+    let report = activate_installed_packages(
+        &cli.package_activate_root,
+        &cli.package_activate_destination,
+        policy,
+    )?;
+    println!("{}", render_package_activation_report(&report));
     Ok(())
 }
 
@@ -983,6 +1045,103 @@ fn scan_installed_package_conflicts(conflict_root: &Path) -> Result<PackageConfl
     Ok(report)
 }
 
+fn activate_installed_packages(
+    activation_root: &Path,
+    destination_root: &Path,
+    policy: PackageActivationConflictPolicy,
+) -> Result<PackageActivationReport> {
+    let list_report = list_installed_packages(activation_root)?;
+    if !list_report.invalid_entries.is_empty() {
+        bail!(
+            "package activation aborted: {} invalid installed package entries found under {}",
+            list_report.invalid_entries.len(),
+            activation_root.display()
+        );
+    }
+
+    let package_count = list_report.packages.len();
+    let mut selected: std::collections::BTreeMap<(String, String), PackageActivationSelection> =
+        std::collections::BTreeMap::new();
+    let mut conflicts_detected = 0_usize;
+
+    for package in list_report.packages {
+        let owner = format!("{}@{}", package.name, package.version);
+        let (manifest, _) = load_and_validate_manifest(&package.manifest_path)?;
+        collect_activation_components(
+            "templates",
+            &manifest.templates,
+            &package.package_dir,
+            &owner,
+            policy,
+            &mut selected,
+            &mut conflicts_detected,
+        )?;
+        collect_activation_components(
+            "skills",
+            &manifest.skills,
+            &package.package_dir,
+            &owner,
+            policy,
+            &mut selected,
+            &mut conflicts_detected,
+        )?;
+        collect_activation_components(
+            "extensions",
+            &manifest.extensions,
+            &package.package_dir,
+            &owner,
+            policy,
+            &mut selected,
+            &mut conflicts_detected,
+        )?;
+        collect_activation_components(
+            "themes",
+            &manifest.themes,
+            &package.package_dir,
+            &owner,
+            policy,
+            &mut selected,
+            &mut conflicts_detected,
+        )?;
+    }
+
+    if destination_root.exists() {
+        if !destination_root.is_dir() {
+            bail!(
+                "package activation destination '{}' is not a directory",
+                destination_root.display()
+            );
+        }
+        std::fs::remove_dir_all(destination_root).with_context(|| {
+            format!(
+                "failed to clear package activation destination {}",
+                destination_root.display()
+            )
+        })?;
+    }
+    std::fs::create_dir_all(destination_root).with_context(|| {
+        format!(
+            "failed to create package activation destination {}",
+            destination_root.display()
+        )
+    })?;
+
+    for selection in selected.values() {
+        let destination =
+            resolve_activation_destination_path(destination_root, &selection.kind, &selection.path);
+        upsert_file_from_source(&selection.source, &destination)?;
+    }
+
+    Ok(PackageActivationReport {
+        activation_root: activation_root.to_path_buf(),
+        destination_root: destination_root.to_path_buf(),
+        policy,
+        packages: package_count,
+        activated_components: selected.len(),
+        conflicts_detected,
+    })
+}
+
 fn append_component_conflicts(
     kind: &str,
     components: &[PackageComponent],
@@ -1004,6 +1163,88 @@ fn append_component_conflicts(
             owners.insert(key, owner.to_string());
         }
     }
+}
+
+fn collect_activation_components(
+    kind: &str,
+    components: &[PackageComponent],
+    package_dir: &Path,
+    owner: &str,
+    policy: PackageActivationConflictPolicy,
+    selected: &mut std::collections::BTreeMap<(String, String), PackageActivationSelection>,
+    conflicts_detected: &mut usize,
+) -> Result<()> {
+    for component in components {
+        let path = component.path.trim().to_string();
+        let source = package_dir.join(path.as_str());
+        let metadata = std::fs::metadata(&source).with_context(|| {
+            format!(
+                "activated package component source is missing for {} '{}': {}",
+                kind,
+                owner,
+                source.display()
+            )
+        })?;
+        if !metadata.is_file() {
+            bail!(
+                "activated package component source for {} '{}' must be a file: {}",
+                kind,
+                owner,
+                source.display()
+            );
+        }
+
+        let key = (kind.to_string(), path.clone());
+        if let Some(existing) = selected.get(&key) {
+            *conflicts_detected = conflicts_detected.saturating_add(1);
+            match policy {
+                PackageActivationConflictPolicy::Error => bail!(
+                    "package activation conflict for {} path '{}': {} vs {}",
+                    kind,
+                    path,
+                    existing.owner,
+                    owner
+                ),
+                PackageActivationConflictPolicy::KeepFirst => {}
+                PackageActivationConflictPolicy::KeepLast => {
+                    selected.insert(
+                        key,
+                        PackageActivationSelection {
+                            kind: kind.to_string(),
+                            path,
+                            owner: owner.to_string(),
+                            source,
+                        },
+                    );
+                }
+            }
+            continue;
+        }
+        selected.insert(
+            key,
+            PackageActivationSelection {
+                kind: kind.to_string(),
+                path,
+                owner: owner.to_string(),
+                source,
+            },
+        );
+    }
+    Ok(())
+}
+
+fn resolve_activation_destination_path(
+    destination_root: &Path,
+    kind: &str,
+    raw_path: &str,
+) -> PathBuf {
+    let path = Path::new(raw_path);
+    let relative = path
+        .strip_prefix(kind)
+        .ok()
+        .filter(|value| !value.as_os_str().is_empty())
+        .unwrap_or(path);
+    destination_root.join(kind).join(relative)
 }
 
 fn read_sorted_directory_paths(path: &Path) -> Result<Vec<PathBuf>> {
@@ -1077,6 +1318,18 @@ fn render_package_conflict_report(report: &PackageConflictReport) -> String {
         ));
     }
     lines.join("\n")
+}
+
+fn render_package_activation_report(report: &PackageActivationReport) -> String {
+    format!(
+        "package activate: root={} destination={} policy={} packages={} activated_components={} conflicts_detected={}",
+        report.activation_root.display(),
+        report.destination_root.display(),
+        report.policy.as_str(),
+        report.packages,
+        report.activated_components,
+        report.conflicts_detected
+    )
 }
 
 fn remove_installed_package(coordinate: &str, remove_root: &Path) -> Result<PackageRemoveReport> {
@@ -1372,14 +1625,16 @@ mod tests {
     use crate::TrustedKey;
 
     use super::{
-        install_package_manifest, install_package_manifest_with_policy, list_installed_packages,
-        load_and_validate_manifest, parse_package_coordinate, remove_installed_package,
+        activate_installed_packages, install_package_manifest,
+        install_package_manifest_with_policy, list_installed_packages, load_and_validate_manifest,
+        parse_package_coordinate, remove_installed_package, render_package_activation_report,
         render_package_conflict_report, render_package_install_report, render_package_list_report,
         render_package_manifest_report, render_package_remove_report,
         render_package_rollback_report, render_package_update_report, rollback_installed_package,
         scan_installed_package_conflicts, update_package_manifest_with_policy,
-        validate_package_manifest, FileUpsertOutcome, PackageConflictEntry, PackageConflictReport,
-        PackageListReport, PackageRemoveStatus, PackageRollbackStatus,
+        validate_package_manifest, FileUpsertOutcome, PackageActivationConflictPolicy,
+        PackageActivationReport, PackageConflictEntry, PackageConflictReport, PackageListReport,
+        PackageRemoveStatus, PackageRollbackStatus,
     };
 
     #[cfg(unix)]
@@ -2422,6 +2677,231 @@ mod tests {
         assert_eq!(report.packages, 1);
         assert_eq!(report.invalid_entries.len(), 1);
         assert_eq!(report.conflicts.len(), 0);
+    }
+
+    #[test]
+    fn unit_package_activation_conflict_policy_parses_supported_values() {
+        assert_eq!(
+            PackageActivationConflictPolicy::parse("error").expect("parse error"),
+            PackageActivationConflictPolicy::Error
+        );
+        assert_eq!(
+            PackageActivationConflictPolicy::parse("keep-first").expect("parse keep-first"),
+            PackageActivationConflictPolicy::KeepFirst
+        );
+        assert_eq!(
+            PackageActivationConflictPolicy::parse("keep-last").expect("parse keep-last"),
+            PackageActivationConflictPolicy::KeepLast
+        );
+
+        let error = PackageActivationConflictPolicy::parse("unknown")
+            .expect_err("unsupported policy should fail");
+        assert!(error
+            .to_string()
+            .contains("unsupported package activation conflict policy"));
+    }
+
+    #[test]
+    fn unit_render_package_activation_report_includes_summary_fields() {
+        let report = PackageActivationReport {
+            activation_root: Path::new("/tmp/packages").to_path_buf(),
+            destination_root: Path::new("/tmp/packages-active").to_path_buf(),
+            policy: PackageActivationConflictPolicy::KeepFirst,
+            packages: 3,
+            activated_components: 12,
+            conflicts_detected: 4,
+        };
+        let rendered = render_package_activation_report(&report);
+        assert!(rendered.contains("package activate:"));
+        assert!(rendered.contains("policy=keep-first"));
+        assert!(rendered.contains("packages=3"));
+        assert!(rendered.contains("activated_components=12"));
+        assert!(rendered.contains("conflicts_detected=4"));
+    }
+
+    #[test]
+    fn functional_activate_installed_packages_keep_first_materializes_resolved_outputs() {
+        let temp = tempdir().expect("tempdir");
+        let install_root = temp.path().join("installed");
+        let install_package = |name: &str, template: &str, skill: &str| {
+            let source_root = temp.path().join(format!("source-{name}"));
+            std::fs::create_dir_all(source_root.join("templates")).expect("create templates dir");
+            std::fs::create_dir_all(source_root.join("skills/checks")).expect("create skills dir");
+            std::fs::write(source_root.join("templates/review.txt"), template)
+                .expect("write template source");
+            std::fs::write(source_root.join("skills/checks/SKILL.md"), skill)
+                .expect("write skill source");
+            let manifest_path = source_root.join("package.json");
+            std::fs::write(
+                &manifest_path,
+                format!(
+                    r#"{{
+  "schema_version": 1,
+  "name": "{name}",
+  "version": "1.0.0",
+  "templates": [{{"id":"review","path":"templates/review.txt"}}],
+  "skills": [{{"id":"checks","path":"skills/checks/SKILL.md"}}]
+}}"#
+                ),
+            )
+            .expect("write manifest");
+            install_package_manifest(&manifest_path, &install_root).expect("install package");
+        };
+
+        install_package("alpha", "alpha template", "# alpha");
+        install_package("zeta", "zeta template", "# zeta");
+
+        let destination_root = temp.path().join("activated");
+        let report = activate_installed_packages(
+            &install_root,
+            &destination_root,
+            PackageActivationConflictPolicy::KeepFirst,
+        )
+        .expect("activate packages");
+        assert_eq!(report.packages, 2);
+        assert_eq!(report.activated_components, 2);
+        assert_eq!(report.conflicts_detected, 2);
+        assert_eq!(
+            std::fs::read_to_string(destination_root.join("templates/review.txt"))
+                .expect("read activated template"),
+            "alpha template"
+        );
+        assert_eq!(
+            std::fs::read_to_string(destination_root.join("skills/checks/SKILL.md"))
+                .expect("read activated skill"),
+            "# alpha"
+        );
+    }
+
+    #[test]
+    fn functional_activate_installed_packages_keep_last_overwrites_previous_owner() {
+        let temp = tempdir().expect("tempdir");
+        let install_root = temp.path().join("installed");
+        let install_package = |name: &str, template: &str| {
+            let source_root = temp.path().join(format!("source-{name}"));
+            std::fs::create_dir_all(source_root.join("templates")).expect("create templates dir");
+            std::fs::write(source_root.join("templates/review.txt"), template)
+                .expect("write template source");
+            let manifest_path = source_root.join("package.json");
+            std::fs::write(
+                &manifest_path,
+                format!(
+                    r#"{{
+  "schema_version": 1,
+  "name": "{name}",
+  "version": "1.0.0",
+  "templates": [{{"id":"review","path":"templates/review.txt"}}]
+}}"#
+                ),
+            )
+            .expect("write manifest");
+            install_package_manifest(&manifest_path, &install_root).expect("install package");
+        };
+
+        install_package("alpha", "alpha template");
+        install_package("zeta", "zeta template");
+
+        let destination_root = temp.path().join("activated");
+        let report = activate_installed_packages(
+            &install_root,
+            &destination_root,
+            PackageActivationConflictPolicy::KeepLast,
+        )
+        .expect("activate packages");
+        assert_eq!(report.packages, 2);
+        assert_eq!(report.activated_components, 1);
+        assert_eq!(report.conflicts_detected, 1);
+        assert_eq!(
+            std::fs::read_to_string(destination_root.join("templates/review.txt"))
+                .expect("read activated template"),
+            "zeta template"
+        );
+    }
+
+    #[test]
+    fn regression_activate_installed_packages_error_policy_rejects_conflicts() {
+        let temp = tempdir().expect("tempdir");
+        let install_root = temp.path().join("installed");
+        let install_package = |name: &str| {
+            let source_root = temp.path().join(format!("source-{name}"));
+            std::fs::create_dir_all(source_root.join("templates")).expect("create templates dir");
+            std::fs::write(
+                source_root.join("templates/review.txt"),
+                format!("{name} template"),
+            )
+            .expect("write template source");
+            let manifest_path = source_root.join("package.json");
+            std::fs::write(
+                &manifest_path,
+                format!(
+                    r#"{{
+  "schema_version": 1,
+  "name": "{name}",
+  "version": "1.0.0",
+  "templates": [{{"id":"review","path":"templates/review.txt"}}]
+}}"#
+                ),
+            )
+            .expect("write manifest");
+            install_package_manifest(&manifest_path, &install_root).expect("install package");
+        };
+
+        install_package("alpha");
+        install_package("zeta");
+
+        let error = activate_installed_packages(
+            &install_root,
+            &temp.path().join("activated"),
+            PackageActivationConflictPolicy::Error,
+        )
+        .expect_err("error policy should fail on conflicts");
+        assert!(error.to_string().contains("package activation conflict"));
+    }
+
+    #[test]
+    fn regression_activate_installed_packages_rejects_invalid_manifest_entries() {
+        let temp = tempdir().expect("tempdir");
+        let install_root = temp.path().join("installed");
+
+        let source_root = temp.path().join("valid-source");
+        std::fs::create_dir_all(source_root.join("templates")).expect("create templates dir");
+        std::fs::write(source_root.join("templates/review.txt"), "valid")
+            .expect("write template source");
+        let valid_manifest = source_root.join("package.json");
+        std::fs::write(
+            &valid_manifest,
+            r#"{
+  "schema_version": 1,
+  "name": "valid",
+  "version": "1.0.0",
+  "templates": [{"id":"review","path":"templates/review.txt"}]
+}"#,
+        )
+        .expect("write manifest");
+        install_package_manifest(&valid_manifest, &install_root).expect("install package");
+
+        let invalid_dir = install_root.join("broken/1.0.0");
+        std::fs::create_dir_all(&invalid_dir).expect("create invalid dir");
+        std::fs::write(
+            invalid_dir.join("package.json"),
+            r#"{
+  "schema_version": 99,
+  "name": "broken",
+  "version": "1.0.0",
+  "templates": [{"id":"review","path":"templates/review.txt"}]
+}"#,
+        )
+        .expect("write invalid manifest");
+
+        let error = activate_installed_packages(
+            &install_root,
+            &temp.path().join("activated"),
+            PackageActivationConflictPolicy::KeepFirst,
+        )
+        .expect_err("invalid installed entry should fail activation");
+        assert!(error
+            .to_string()
+            .contains("invalid installed package entries"));
     }
 
     #[test]
