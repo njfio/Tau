@@ -28,10 +28,10 @@ use super::{
     encrypt_credential_store_secret, ensure_non_empty_text, escape_graph_label,
     execute_auth_command, execute_branch_alias_command, execute_channel_store_admin_command,
     execute_command_file, execute_doctor_command, execute_integration_auth_command,
-    execute_macro_command, execute_package_install_command, execute_package_list_command,
-    execute_package_remove_command, execute_package_rollback_command, execute_package_show_command,
-    execute_package_update_command, execute_package_validate_command, execute_profile_command,
-    execute_rpc_capabilities_command, execute_rpc_dispatch_frame_command,
+    execute_macro_command, execute_package_conflicts_command, execute_package_install_command,
+    execute_package_list_command, execute_package_remove_command, execute_package_rollback_command,
+    execute_package_show_command, execute_package_update_command, execute_package_validate_command,
+    execute_profile_command, execute_rpc_capabilities_command, execute_rpc_dispatch_frame_command,
     execute_rpc_dispatch_ndjson_command, execute_rpc_validate_frame_command,
     execute_session_bookmark_command, execute_session_diff_command,
     execute_session_graph_export_command, execute_session_search_command,
@@ -263,6 +263,8 @@ fn test_cli() -> Cli {
         package_remove_root: PathBuf::from(".pi/packages"),
         package_rollback: None,
         package_rollback_root: PathBuf::from(".pi/packages"),
+        package_conflicts: false,
+        package_conflicts_root: PathBuf::from(".pi/packages"),
         rpc_capabilities: false,
         rpc_validate_frame_file: None,
         rpc_dispatch_frame_file: None,
@@ -7155,6 +7157,57 @@ fn regression_execute_package_rollback_command_rejects_invalid_coordinate() {
     assert!(error
         .to_string()
         .contains("must not contain path separators"));
+}
+
+#[test]
+fn functional_execute_package_conflicts_command_reports_detected_collisions() {
+    let temp = tempdir().expect("tempdir");
+    let install_root = temp.path().join("installed");
+    let install_package = |name: &str, body: &str| {
+        let source_root = temp.path().join(format!("bundle-{name}"));
+        std::fs::create_dir_all(source_root.join("templates")).expect("create templates dir");
+        std::fs::write(source_root.join("templates/review.txt"), body)
+            .expect("write template source");
+        let manifest_path = source_root.join("package.json");
+        std::fs::write(
+            &manifest_path,
+            format!(
+                r#"{{
+  "schema_version": 1,
+  "name": "{name}",
+  "version": "1.0.0",
+  "templates": [{{"id":"review","path":"templates/review.txt"}}]
+}}"#
+            ),
+        )
+        .expect("write manifest");
+        let mut install_cli = test_cli();
+        install_cli.package_install = Some(manifest_path);
+        install_cli.package_install_root = install_root.clone();
+        execute_package_install_command(&install_cli).expect("package install should succeed");
+    };
+
+    install_package("alpha", "alpha body");
+    install_package("zeta", "zeta body");
+
+    let mut cli = test_cli();
+    cli.package_conflicts = true;
+    cli.package_conflicts_root = install_root;
+    execute_package_conflicts_command(&cli).expect("package conflicts should succeed");
+}
+
+#[test]
+fn regression_execute_package_conflicts_command_rejects_non_directory_root() {
+    let temp = tempdir().expect("tempdir");
+    let root_file = temp.path().join("not-a-directory.txt");
+    std::fs::write(&root_file, "file root").expect("write root file");
+
+    let mut cli = test_cli();
+    cli.package_conflicts = true;
+    cli.package_conflicts_root = root_file;
+    let error =
+        execute_package_conflicts_command(&cli).expect_err("non-directory root should fail");
+    assert!(error.to_string().contains("is not a directory"));
 }
 
 #[test]

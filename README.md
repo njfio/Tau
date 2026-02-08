@@ -354,6 +354,14 @@ cargo run -p pi-coding-agent -- \
   --package-update-root .pi/packages
 ```
 
+Audit installed package bundles for deterministic component path conflicts:
+
+```bash
+cargo run -p pi-coding-agent -- \
+  --package-conflicts \
+  --package-conflicts-root .pi/packages
+```
+
 List installed package bundles from a package root:
 
 ```bash

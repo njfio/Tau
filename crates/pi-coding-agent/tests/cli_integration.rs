@@ -3329,6 +3329,122 @@ fn regression_package_update_flag_rejects_missing_target() {
 }
 
 #[test]
+fn package_conflicts_flag_reports_conflicts_and_invalid_entries() {
+    let temp = tempdir().expect("tempdir");
+    let install_root = temp.path().join("installed");
+
+    let install_package = |name: &str, body: &str| {
+        let source_root = temp.path().join(format!("bundle-{name}"));
+        fs::create_dir_all(source_root.join("templates")).expect("create templates dir");
+        fs::write(source_root.join("templates/review.txt"), body).expect("write template source");
+        let manifest_path = source_root.join("package.json");
+        fs::write(
+            &manifest_path,
+            format!(
+                r#"{{
+  "schema_version": 1,
+  "name": "{name}",
+  "version": "1.0.0",
+  "templates": [{{"id":"review","path":"templates/review.txt"}}]
+}}"#
+            ),
+        )
+        .expect("write manifest");
+        let mut install_cmd = binary_command();
+        install_cmd.args([
+            "--package-install",
+            manifest_path.to_str().expect("utf8 path"),
+            "--package-install-root",
+            install_root.to_str().expect("utf8 path"),
+        ]);
+        install_cmd.assert().success();
+    };
+    install_package("alpha", "alpha body");
+    install_package("zeta", "zeta body");
+
+    let invalid_dir = install_root.join("broken/9.9.9");
+    fs::create_dir_all(&invalid_dir).expect("create invalid dir");
+    fs::write(
+        invalid_dir.join("package.json"),
+        r#"{
+  "schema_version": 99,
+  "name": "broken",
+  "version": "9.9.9",
+  "templates": [{"id":"review","path":"templates/review.txt"}]
+}"#,
+    )
+    .expect("write invalid manifest");
+
+    let mut cmd = binary_command();
+    cmd.args([
+        "--package-conflicts",
+        "--package-conflicts-root",
+        install_root.to_str().expect("utf8 path"),
+    ]);
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("package conflicts:"))
+        .stdout(predicate::str::contains("conflicts=1"))
+        .stdout(predicate::str::contains("invalid=1"))
+        .stdout(predicate::str::contains("conflict: kind=templates"))
+        .stdout(predicate::str::contains("package invalid:"));
+}
+
+#[test]
+fn regression_package_conflicts_flag_reports_none_when_no_conflicts_exist() {
+    let temp = tempdir().expect("tempdir");
+    let install_root = temp.path().join("installed");
+
+    let install_package = |name: &str, path: &str| {
+        let source_root = temp.path().join(format!("bundle-{name}"));
+        let component_dir = source_root.join(
+            std::path::Path::new(path)
+                .parent()
+                .expect("component parent"),
+        );
+        fs::create_dir_all(&component_dir).expect("create component dir");
+        fs::write(source_root.join(path), format!("{name} body")).expect("write template source");
+        let manifest_path = source_root.join("package.json");
+        fs::write(
+            &manifest_path,
+            format!(
+                r#"{{
+  "schema_version": 1,
+  "name": "{name}",
+  "version": "1.0.0",
+  "templates": [{{"id":"review","path":"{path}"}}]
+}}"#
+            ),
+        )
+        .expect("write manifest");
+        let mut install_cmd = binary_command();
+        install_cmd.args([
+            "--package-install",
+            manifest_path.to_str().expect("utf8 path"),
+            "--package-install-root",
+            install_root.to_str().expect("utf8 path"),
+        ]);
+        install_cmd.assert().success();
+    };
+    install_package("alpha", "templates/review-a.txt");
+    install_package("zeta", "templates/review-z.txt");
+
+    let mut cmd = binary_command();
+    cmd.args([
+        "--package-conflicts",
+        "--package-conflicts-root",
+        install_root.to_str().expect("utf8 path"),
+    ]);
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("package conflicts:"))
+        .stdout(predicate::str::contains("conflicts=0"))
+        .stdout(predicate::str::contains("conflicts: none"));
+}
+
+#[test]
 fn package_list_flag_reports_installed_packages_and_exits() {
     let temp = tempdir().expect("tempdir");
     let package_root = temp.path().join("bundle");
