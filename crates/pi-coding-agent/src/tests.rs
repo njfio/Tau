@@ -28,16 +28,17 @@ use super::{
     encrypt_credential_store_secret, ensure_non_empty_text, escape_graph_label,
     execute_auth_command, execute_branch_alias_command, execute_channel_store_admin_command,
     execute_command_file, execute_doctor_command, execute_integration_auth_command,
-    execute_macro_command, execute_package_conflicts_command, execute_package_install_command,
-    execute_package_list_command, execute_package_remove_command, execute_package_rollback_command,
-    execute_package_show_command, execute_package_update_command, execute_package_validate_command,
-    execute_profile_command, execute_rpc_capabilities_command, execute_rpc_dispatch_frame_command,
-    execute_rpc_dispatch_ndjson_command, execute_rpc_validate_frame_command,
-    execute_session_bookmark_command, execute_session_diff_command,
-    execute_session_graph_export_command, execute_session_search_command,
-    execute_session_stats_command, execute_skills_list_command, execute_skills_lock_diff_command,
-    execute_skills_lock_write_command, execute_skills_prune_command, execute_skills_search_command,
-    execute_skills_show_command, execute_skills_sync_command, execute_skills_trust_add_command,
+    execute_macro_command, execute_package_activate_command, execute_package_conflicts_command,
+    execute_package_install_command, execute_package_list_command, execute_package_remove_command,
+    execute_package_rollback_command, execute_package_show_command, execute_package_update_command,
+    execute_package_validate_command, execute_profile_command, execute_rpc_capabilities_command,
+    execute_rpc_dispatch_frame_command, execute_rpc_dispatch_ndjson_command,
+    execute_rpc_validate_frame_command, execute_session_bookmark_command,
+    execute_session_diff_command, execute_session_graph_export_command,
+    execute_session_search_command, execute_session_stats_command, execute_skills_list_command,
+    execute_skills_lock_diff_command, execute_skills_lock_write_command,
+    execute_skills_prune_command, execute_skills_search_command, execute_skills_show_command,
+    execute_skills_sync_command, execute_skills_trust_add_command,
     execute_skills_trust_list_command, execute_skills_trust_revoke_command,
     execute_skills_trust_rotate_command, execute_skills_verify_command, format_id_list,
     format_remap_ids, handle_command, handle_command_with_session_import_mode, initialize_session,
@@ -265,6 +266,10 @@ fn test_cli() -> Cli {
         package_rollback_root: PathBuf::from(".pi/packages"),
         package_conflicts: false,
         package_conflicts_root: PathBuf::from(".pi/packages"),
+        package_activate: false,
+        package_activate_root: PathBuf::from(".pi/packages"),
+        package_activate_destination: PathBuf::from(".pi/packages-active"),
+        package_activate_conflict_policy: "error".to_string(),
         rpc_capabilities: false,
         rpc_validate_frame_file: None,
         rpc_dispatch_frame_file: None,
@@ -7208,6 +7213,65 @@ fn regression_execute_package_conflicts_command_rejects_non_directory_root() {
     let error =
         execute_package_conflicts_command(&cli).expect_err("non-directory root should fail");
     assert!(error.to_string().contains("is not a directory"));
+}
+
+#[test]
+fn functional_execute_package_activate_command_materializes_components() {
+    let temp = tempdir().expect("tempdir");
+    let install_root = temp.path().join("installed");
+    let source_root = temp.path().join("bundle");
+    std::fs::create_dir_all(source_root.join("templates")).expect("create templates dir");
+    std::fs::create_dir_all(source_root.join("skills/checks")).expect("create skills dir");
+    std::fs::write(source_root.join("templates/review.txt"), "template body")
+        .expect("write template source");
+    std::fs::write(source_root.join("skills/checks/SKILL.md"), "# checks")
+        .expect("write skill source");
+    let manifest_path = source_root.join("package.json");
+    std::fs::write(
+        &manifest_path,
+        r#"{
+  "schema_version": 1,
+  "name": "starter-bundle",
+  "version": "1.0.0",
+  "templates": [{"id":"review","path":"templates/review.txt"}],
+  "skills": [{"id":"checks","path":"skills/checks/SKILL.md"}]
+}"#,
+    )
+    .expect("write manifest");
+
+    let mut install_cli = test_cli();
+    install_cli.package_install = Some(manifest_path);
+    install_cli.package_install_root = install_root.clone();
+    execute_package_install_command(&install_cli).expect("package install should succeed");
+
+    let destination_root = temp.path().join("activated");
+    let mut cli = test_cli();
+    cli.package_activate = true;
+    cli.package_activate_root = install_root;
+    cli.package_activate_destination = destination_root.clone();
+    execute_package_activate_command(&cli).expect("package activate should succeed");
+    assert_eq!(
+        std::fs::read_to_string(destination_root.join("templates/review.txt"))
+            .expect("read activated template"),
+        "template body"
+    );
+    assert_eq!(
+        std::fs::read_to_string(destination_root.join("skills/checks/SKILL.md"))
+            .expect("read activated skill"),
+        "# checks"
+    );
+}
+
+#[test]
+fn regression_execute_package_activate_command_rejects_unsupported_conflict_policy() {
+    let mut cli = test_cli();
+    cli.package_activate = true;
+    cli.package_activate_conflict_policy = "unsupported".to_string();
+    let error = execute_package_activate_command(&cli)
+        .expect_err("unsupported conflict policy should fail");
+    assert!(error
+        .to_string()
+        .contains("unsupported package activation conflict policy"));
 }
 
 #[test]

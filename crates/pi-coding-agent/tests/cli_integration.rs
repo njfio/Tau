@@ -3445,6 +3445,230 @@ fn regression_package_conflicts_flag_reports_none_when_no_conflicts_exist() {
 }
 
 #[test]
+fn package_activate_flag_materializes_components_and_exits() {
+    let temp = tempdir().expect("tempdir");
+    let install_root = temp.path().join("installed");
+    let destination_root = temp.path().join("activated");
+    let source_root = temp.path().join("bundle");
+    fs::create_dir_all(source_root.join("templates")).expect("create templates dir");
+    fs::create_dir_all(source_root.join("skills/checks")).expect("create skills dir");
+    fs::write(source_root.join("templates/review.txt"), "template body")
+        .expect("write template source");
+    fs::write(source_root.join("skills/checks/SKILL.md"), "# checks").expect("write skill source");
+    let manifest_path = source_root.join("package.json");
+    fs::write(
+        &manifest_path,
+        r#"{
+  "schema_version": 1,
+  "name": "starter-bundle",
+  "version": "1.0.0",
+  "templates": [{"id":"review","path":"templates/review.txt"}],
+  "skills": [{"id":"checks","path":"skills/checks/SKILL.md"}]
+}"#,
+    )
+    .expect("write manifest");
+
+    let mut install_cmd = binary_command();
+    install_cmd.args([
+        "--package-install",
+        manifest_path.to_str().expect("utf8 path"),
+        "--package-install-root",
+        install_root.to_str().expect("utf8 path"),
+    ]);
+    install_cmd.assert().success();
+
+    let mut activate_cmd = binary_command();
+    activate_cmd.args([
+        "--package-activate",
+        "--package-activate-root",
+        install_root.to_str().expect("utf8 path"),
+        "--package-activate-destination",
+        destination_root.to_str().expect("utf8 path"),
+    ]);
+
+    activate_cmd
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("package activate:"))
+        .stdout(predicate::str::contains("policy=error"))
+        .stdout(predicate::str::contains("activated_components=2"));
+    assert_eq!(
+        fs::read_to_string(destination_root.join("templates/review.txt"))
+            .expect("read activated template"),
+        "template body"
+    );
+    assert_eq!(
+        fs::read_to_string(destination_root.join("skills/checks/SKILL.md"))
+            .expect("read activated skill"),
+        "# checks"
+    );
+}
+
+#[test]
+fn package_activate_flag_keep_last_policy_resolves_conflicts() {
+    let temp = tempdir().expect("tempdir");
+    let install_root = temp.path().join("installed");
+    let destination_root = temp.path().join("activated");
+    let install_package = |name: &str, body: &str| {
+        let source_root = temp.path().join(format!("bundle-{name}"));
+        fs::create_dir_all(source_root.join("templates")).expect("create templates dir");
+        fs::write(source_root.join("templates/review.txt"), body).expect("write template source");
+        let manifest_path = source_root.join("package.json");
+        fs::write(
+            &manifest_path,
+            format!(
+                r#"{{
+  "schema_version": 1,
+  "name": "{name}",
+  "version": "1.0.0",
+  "templates": [{{"id":"review","path":"templates/review.txt"}}]
+}}"#
+            ),
+        )
+        .expect("write manifest");
+        let mut install_cmd = binary_command();
+        install_cmd.args([
+            "--package-install",
+            manifest_path.to_str().expect("utf8 path"),
+            "--package-install-root",
+            install_root.to_str().expect("utf8 path"),
+        ]);
+        install_cmd.assert().success();
+    };
+    install_package("alpha", "alpha body");
+    install_package("zeta", "zeta body");
+
+    let mut activate_cmd = binary_command();
+    activate_cmd.args([
+        "--package-activate",
+        "--package-activate-root",
+        install_root.to_str().expect("utf8 path"),
+        "--package-activate-destination",
+        destination_root.to_str().expect("utf8 path"),
+        "--package-activate-conflict-policy",
+        "keep-last",
+    ]);
+
+    activate_cmd
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("package activate:"))
+        .stdout(predicate::str::contains("policy=keep-last"))
+        .stdout(predicate::str::contains("conflicts_detected=1"));
+    assert_eq!(
+        fs::read_to_string(destination_root.join("templates/review.txt"))
+            .expect("read activated template"),
+        "zeta body"
+    );
+}
+
+#[test]
+fn regression_package_activate_flag_error_policy_rejects_conflicts() {
+    let temp = tempdir().expect("tempdir");
+    let install_root = temp.path().join("installed");
+    let install_package = |name: &str| {
+        let source_root = temp.path().join(format!("bundle-{name}"));
+        fs::create_dir_all(source_root.join("templates")).expect("create templates dir");
+        fs::write(
+            source_root.join("templates/review.txt"),
+            format!("{name} body"),
+        )
+        .expect("write template source");
+        let manifest_path = source_root.join("package.json");
+        fs::write(
+            &manifest_path,
+            format!(
+                r#"{{
+  "schema_version": 1,
+  "name": "{name}",
+  "version": "1.0.0",
+  "templates": [{{"id":"review","path":"templates/review.txt"}}]
+}}"#
+            ),
+        )
+        .expect("write manifest");
+        let mut install_cmd = binary_command();
+        install_cmd.args([
+            "--package-install",
+            manifest_path.to_str().expect("utf8 path"),
+            "--package-install-root",
+            install_root.to_str().expect("utf8 path"),
+        ]);
+        install_cmd.assert().success();
+    };
+    install_package("alpha");
+    install_package("zeta");
+
+    let mut cmd = binary_command();
+    cmd.args([
+        "--package-activate",
+        "--package-activate-root",
+        install_root.to_str().expect("utf8 path"),
+        "--package-activate-destination",
+        temp.path().join("activated").to_str().expect("utf8 path"),
+    ]);
+
+    cmd.assert()
+        .failure()
+        .stderr(predicate::str::contains("package activation conflict"));
+}
+
+#[test]
+fn regression_package_activate_flag_rejects_invalid_installed_manifest_entries() {
+    let temp = tempdir().expect("tempdir");
+    let install_root = temp.path().join("installed");
+    let source_root = temp.path().join("bundle");
+    fs::create_dir_all(source_root.join("templates")).expect("create templates dir");
+    fs::write(source_root.join("templates/review.txt"), "valid body").expect("write template");
+    let manifest_path = source_root.join("package.json");
+    fs::write(
+        &manifest_path,
+        r#"{
+  "schema_version": 1,
+  "name": "valid-bundle",
+  "version": "1.0.0",
+  "templates": [{"id":"review","path":"templates/review.txt"}]
+}"#,
+    )
+    .expect("write manifest");
+
+    let mut install_cmd = binary_command();
+    install_cmd.args([
+        "--package-install",
+        manifest_path.to_str().expect("utf8 path"),
+        "--package-install-root",
+        install_root.to_str().expect("utf8 path"),
+    ]);
+    install_cmd.assert().success();
+
+    let invalid_dir = install_root.join("broken/9.9.9");
+    fs::create_dir_all(&invalid_dir).expect("create invalid dir");
+    fs::write(
+        invalid_dir.join("package.json"),
+        r#"{
+  "schema_version": 99,
+  "name": "broken",
+  "version": "9.9.9",
+  "templates": [{"id":"review","path":"templates/review.txt"}]
+}"#,
+    )
+    .expect("write invalid manifest");
+
+    let mut cmd = binary_command();
+    cmd.args([
+        "--package-activate",
+        "--package-activate-root",
+        install_root.to_str().expect("utf8 path"),
+        "--package-activate-destination",
+        temp.path().join("activated").to_str().expect("utf8 path"),
+    ]);
+
+    cmd.assert().failure().stderr(predicate::str::contains(
+        "invalid installed package entries",
+    ));
+}
+
+#[test]
 fn package_list_flag_reports_installed_packages_and_exits() {
     let temp = tempdir().expect("tempdir");
     let package_root = temp.path().join("bundle");
