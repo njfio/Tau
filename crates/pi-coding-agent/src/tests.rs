@@ -27,14 +27,15 @@ use super::{
     encrypt_credential_store_secret, ensure_non_empty_text, escape_graph_label,
     execute_auth_command, execute_branch_alias_command, execute_channel_store_admin_command,
     execute_command_file, execute_doctor_command, execute_integration_auth_command,
-    execute_macro_command, execute_package_show_command, execute_package_validate_command,
-    execute_profile_command, execute_rpc_capabilities_command, execute_rpc_dispatch_frame_command,
-    execute_rpc_dispatch_ndjson_command, execute_rpc_validate_frame_command,
-    execute_session_bookmark_command, execute_session_diff_command,
-    execute_session_graph_export_command, execute_session_search_command,
-    execute_session_stats_command, execute_skills_list_command, execute_skills_lock_diff_command,
-    execute_skills_lock_write_command, execute_skills_prune_command, execute_skills_search_command,
-    execute_skills_show_command, execute_skills_sync_command, execute_skills_trust_add_command,
+    execute_macro_command, execute_package_install_command, execute_package_show_command,
+    execute_package_validate_command, execute_profile_command, execute_rpc_capabilities_command,
+    execute_rpc_dispatch_frame_command, execute_rpc_dispatch_ndjson_command,
+    execute_rpc_validate_frame_command, execute_session_bookmark_command,
+    execute_session_diff_command, execute_session_graph_export_command,
+    execute_session_search_command, execute_session_stats_command, execute_skills_list_command,
+    execute_skills_lock_diff_command, execute_skills_lock_write_command,
+    execute_skills_prune_command, execute_skills_search_command, execute_skills_show_command,
+    execute_skills_sync_command, execute_skills_trust_add_command,
     execute_skills_trust_list_command, execute_skills_trust_revoke_command,
     execute_skills_trust_rotate_command, execute_skills_verify_command, format_id_list,
     format_remap_ids, handle_command, handle_command_with_session_import_mode, initialize_session,
@@ -249,6 +250,8 @@ fn test_cli() -> Cli {
         channel_store_repair: None,
         package_validate: None,
         package_show: None,
+        package_install: None,
+        package_install_root: PathBuf::from(".pi/packages"),
         rpc_capabilities: false,
         rpc_validate_frame_file: None,
         rpc_dispatch_frame_file: None,
@@ -6757,6 +6760,62 @@ fn regression_execute_package_show_command_rejects_invalid_manifest() {
     cli.package_show = Some(manifest_path);
     let error = execute_package_show_command(&cli).expect_err("invalid version should fail");
     assert!(error.to_string().contains("must follow x.y.z"));
+}
+
+#[test]
+fn functional_execute_package_install_command_succeeds_for_valid_manifest() {
+    let temp = tempdir().expect("tempdir");
+    let package_root = temp.path().join("bundle");
+    std::fs::create_dir_all(package_root.join("templates")).expect("create templates dir");
+    std::fs::write(package_root.join("templates/review.txt"), "template")
+        .expect("write template source");
+
+    let manifest_path = package_root.join("package.json");
+    std::fs::write(
+        &manifest_path,
+        r#"{
+  "schema_version": 1,
+  "name": "starter-bundle",
+  "version": "1.0.0",
+  "templates": [{"id":"review","path":"templates/review.txt"}]
+}"#,
+    )
+    .expect("write manifest");
+
+    let install_root = temp.path().join("installed");
+    let mut cli = test_cli();
+    cli.package_install = Some(manifest_path);
+    cli.package_install_root = install_root.clone();
+
+    execute_package_install_command(&cli).expect("package install should succeed");
+    assert!(install_root
+        .join("starter-bundle/1.0.0/templates/review.txt")
+        .exists());
+}
+
+#[test]
+fn regression_execute_package_install_command_rejects_missing_component_source() {
+    let temp = tempdir().expect("tempdir");
+    let package_root = temp.path().join("bundle");
+    std::fs::create_dir_all(package_root.join("templates")).expect("create templates dir");
+
+    let manifest_path = package_root.join("package.json");
+    std::fs::write(
+        &manifest_path,
+        r#"{
+  "schema_version": 1,
+  "name": "starter-bundle",
+  "version": "1.0.0",
+  "templates": [{"id":"review","path":"templates/missing.txt"}]
+}"#,
+    )
+    .expect("write manifest");
+
+    let mut cli = test_cli();
+    cli.package_install = Some(manifest_path);
+    cli.package_install_root = temp.path().join("installed");
+    let error = execute_package_install_command(&cli).expect_err("missing source should fail");
+    assert!(error.to_string().contains("does not exist"));
 }
 
 #[test]
