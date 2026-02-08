@@ -87,11 +87,13 @@
       "request_id": "req-status-inactive",
       "kind": "run.status",
       "payload": {
-        "status": "inactive",
+        "status": "cancelled",
         "mode": "preflight",
         "run_id": "run-req-start",
         "active": false,
-        "known": false
+        "known": true,
+        "terminal": true,
+        "terminal_state": "cancelled"
       }
     }
   ]

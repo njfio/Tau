@@ -5425,7 +5425,10 @@ fn rpc_serve_ndjson_flag_streams_ordered_response_lines() {
         .stdout(predicate::str::contains(
             "\"request_id\":\"req-status-inactive\"",
         ))
-        .stdout(predicate::str::contains("\"active\":false"));
+        .stdout(predicate::str::contains("\"active\":false"))
+        .stdout(predicate::str::contains("\"known\":true"))
+        .stdout(predicate::str::contains("\"status\":\"cancelled\""))
+        .stdout(predicate::str::contains("\"terminal_state\":\"cancelled\""));
 }
 
 #[test]
@@ -5446,7 +5449,10 @@ fn rpc_serve_ndjson_flag_supports_run_complete_lifecycle() {
         .stdout(predicate::str::contains("\"event\":\"run.completed\""))
         .stdout(predicate::str::contains("\"terminal_state\":\"completed\""))
         .stdout(predicate::str::contains("\"request_id\":\"req-status\""))
-        .stdout(predicate::str::contains("\"active\":false"));
+        .stdout(predicate::str::contains("\"active\":false"))
+        .stdout(predicate::str::contains("\"known\":true"))
+        .stdout(predicate::str::contains("\"status\":\"completed\""))
+        .stdout(predicate::str::contains("\"terminal_state\":\"completed\""));
 }
 
 #[test]
@@ -5468,7 +5474,11 @@ fn rpc_serve_ndjson_flag_supports_run_fail_lifecycle() {
         .stdout(predicate::str::contains("\"terminal_state\":\"failed\""))
         .stdout(predicate::str::contains("\"reason\":\"provider timeout\""))
         .stdout(predicate::str::contains("\"request_id\":\"req-status\""))
-        .stdout(predicate::str::contains("\"active\":false"));
+        .stdout(predicate::str::contains("\"active\":false"))
+        .stdout(predicate::str::contains("\"known\":true"))
+        .stdout(predicate::str::contains("\"status\":\"failed\""))
+        .stdout(predicate::str::contains("\"terminal_state\":\"failed\""))
+        .stdout(predicate::str::contains("\"reason\":\"provider timeout\""));
 }
 
 #[test]
@@ -5490,7 +5500,11 @@ fn rpc_serve_ndjson_flag_supports_run_timeout_lifecycle() {
         .stdout(predicate::str::contains("\"terminal_state\":\"timed_out\""))
         .stdout(predicate::str::contains("\"reason\":\"deadline exceeded\""))
         .stdout(predicate::str::contains("\"request_id\":\"req-status\""))
-        .stdout(predicate::str::contains("\"active\":false"));
+        .stdout(predicate::str::contains("\"active\":false"))
+        .stdout(predicate::str::contains("\"known\":true"))
+        .stdout(predicate::str::contains("\"status\":\"timed_out\""))
+        .stdout(predicate::str::contains("\"terminal_state\":\"timed_out\""))
+        .stdout(predicate::str::contains("\"reason\":\"deadline exceeded\""));
 }
 
 #[test]

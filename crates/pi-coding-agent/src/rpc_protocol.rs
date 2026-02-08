@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     io::{BufRead, BufReader, Write},
     path::Path,
     str::FromStr,
@@ -102,6 +102,43 @@ pub(crate) struct RpcNdjsonServeReport {
 #[derive(Debug, Default)]
 struct RpcServeSessionState {
     active_run_ids: BTreeSet<String>,
+    closed_run_states: BTreeMap<String, RpcTerminalRunState>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RpcTerminalRunState {
+    terminal_state: &'static str,
+    reason: Option<String>,
+}
+
+impl RpcTerminalRunState {
+    fn cancelled() -> Self {
+        Self {
+            terminal_state: "cancelled",
+            reason: None,
+        }
+    }
+
+    fn completed() -> Self {
+        Self {
+            terminal_state: "completed",
+            reason: None,
+        }
+    }
+
+    fn failed(reason: &str) -> Self {
+        Self {
+            terminal_state: "failed",
+            reason: Some(reason.to_string()),
+        }
+    }
+
+    fn timed_out(reason: &str) -> Self {
+        Self {
+            terminal_state: "timed_out",
+            reason: Some(reason.to_string()),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -339,6 +376,7 @@ fn dispatch_rpc_frame_for_serve(
                     run_id
                 );
             }
+            state.closed_run_states.remove(&run_id);
             let prompt_chars = response
                 .payload
                 .get("prompt_chars")
@@ -363,6 +401,9 @@ fn dispatch_rpc_frame_for_serve(
                     run_id
                 );
             }
+            state
+                .closed_run_states
+                .insert(run_id.clone(), RpcTerminalRunState::cancelled());
             let mut responses = vec![dispatch_rpc_frame(frame)?];
             responses.push(build_run_cancel_stream_frame(&frame.request_id, &run_id));
             Ok(responses)
@@ -376,6 +417,9 @@ fn dispatch_rpc_frame_for_serve(
                     run_id
                 );
             }
+            state
+                .closed_run_states
+                .insert(run_id.clone(), RpcTerminalRunState::completed());
             let mut responses = vec![dispatch_rpc_frame(frame)?];
             responses.push(build_run_complete_stream_frame(&frame.request_id, &run_id));
             Ok(responses)
@@ -390,6 +434,9 @@ fn dispatch_rpc_frame_for_serve(
                 );
             }
             let reason = resolve_run_fail_reason(&frame.payload)?;
+            state
+                .closed_run_states
+                .insert(run_id.clone(), RpcTerminalRunState::failed(&reason));
             let mut responses = vec![dispatch_rpc_frame(frame)?];
             responses.push(build_run_failed_stream_frame(
                 &frame.request_id,
@@ -408,6 +455,9 @@ fn dispatch_rpc_frame_for_serve(
                 );
             }
             let reason = resolve_run_timeout_reason(&frame.payload)?;
+            state
+                .closed_run_states
+                .insert(run_id.clone(), RpcTerminalRunState::timed_out(&reason));
             let mut responses = vec![dispatch_rpc_frame(frame)?];
             responses.push(build_run_timeout_stream_frame(
                 &frame.request_id,
@@ -419,16 +469,48 @@ fn dispatch_rpc_frame_for_serve(
         RpcFrameKind::RunStatus => {
             let run_id =
                 require_non_empty_payload_string(&frame.payload, "run_id", frame.kind.as_str())?;
-            let active = state.active_run_ids.contains(&run_id);
+            if state.active_run_ids.contains(&run_id) {
+                return Ok(vec![build_response_frame(
+                    &frame.request_id,
+                    "run.status",
+                    json!({
+                        "status": "active",
+                        "mode": RPC_STUB_MODE,
+                        "run_id": run_id,
+                        "active": true,
+                        "known": true,
+                    }),
+                )]);
+            }
+
+            if let Some(closed) = state.closed_run_states.get(&run_id) {
+                let mut payload = serde_json::Map::new();
+                payload.insert("status".to_string(), json!(closed.terminal_state));
+                payload.insert("mode".to_string(), json!(RPC_STUB_MODE));
+                payload.insert("run_id".to_string(), json!(run_id));
+                payload.insert("active".to_string(), json!(false));
+                payload.insert("known".to_string(), json!(true));
+                payload.insert("terminal".to_string(), json!(true));
+                payload.insert("terminal_state".to_string(), json!(closed.terminal_state));
+                if let Some(reason) = &closed.reason {
+                    payload.insert("reason".to_string(), json!(reason));
+                }
+                return Ok(vec![build_response_frame(
+                    &frame.request_id,
+                    "run.status",
+                    Value::Object(payload),
+                )]);
+            }
+
             Ok(vec![build_response_frame(
                 &frame.request_id,
                 "run.status",
                 json!({
-                    "status": if active { "active" } else { "inactive" },
+                    "status": "inactive",
                     "mode": RPC_STUB_MODE,
                     "run_id": run_id,
-                    "active": active,
-                    "known": active,
+                    "active": false,
+                    "known": false,
                 }),
             )])
         }
@@ -1666,7 +1748,10 @@ not-json
         assert_eq!(rows[7]["request_id"], "req-status-inactive");
         assert_eq!(rows[7]["kind"], "run.status");
         assert_eq!(rows[7]["payload"]["active"], false);
-        assert_eq!(rows[7]["payload"]["known"], false);
+        assert_eq!(rows[7]["payload"]["known"], true);
+        assert_eq!(rows[7]["payload"]["status"], "cancelled");
+        assert_eq!(rows[7]["payload"]["terminal"], true);
+        assert_eq!(rows[7]["payload"]["terminal_state"], "cancelled");
     }
 
     #[test]
@@ -1710,6 +1795,10 @@ not-json
         assert_eq!(rows[6]["request_id"], "req-status-inactive");
         assert_eq!(rows[6]["kind"], "run.status");
         assert_eq!(rows[6]["payload"]["active"], false);
+        assert_eq!(rows[6]["payload"]["known"], true);
+        assert_eq!(rows[6]["payload"]["status"], "completed");
+        assert_eq!(rows[6]["payload"]["terminal"], true);
+        assert_eq!(rows[6]["payload"]["terminal_state"], "completed");
     }
 
     #[test]
@@ -1755,6 +1844,11 @@ not-json
         assert_eq!(rows[6]["request_id"], "req-status-inactive");
         assert_eq!(rows[6]["kind"], "run.status");
         assert_eq!(rows[6]["payload"]["active"], false);
+        assert_eq!(rows[6]["payload"]["known"], true);
+        assert_eq!(rows[6]["payload"]["status"], "failed");
+        assert_eq!(rows[6]["payload"]["terminal"], true);
+        assert_eq!(rows[6]["payload"]["terminal_state"], "failed");
+        assert_eq!(rows[6]["payload"]["reason"], "provider timeout");
     }
 
     #[test]
@@ -1800,6 +1894,56 @@ not-json
         assert_eq!(rows[6]["request_id"], "req-status-inactive");
         assert_eq!(rows[6]["kind"], "run.status");
         assert_eq!(rows[6]["payload"]["active"], false);
+        assert_eq!(rows[6]["payload"]["known"], true);
+        assert_eq!(rows[6]["payload"]["status"], "timed_out");
+        assert_eq!(rows[6]["payload"]["terminal"], true);
+        assert_eq!(rows[6]["payload"]["terminal_state"], "timed_out");
+        assert_eq!(rows[6]["payload"]["reason"], "client timeout");
+    }
+
+    #[test]
+    fn functional_serve_rpc_ndjson_reader_reuses_run_id_and_clears_closed_status_history() {
+        let input = r#"
+{"schema_version":1,"request_id":"req-start-1","kind":"run.start","payload":{"prompt":"hello","run_id":"run-fixed"}}
+{"schema_version":1,"request_id":"req-complete","kind":"run.complete","payload":{"run_id":"run-fixed"}}
+{"schema_version":1,"request_id":"req-status-closed","kind":"run.status","payload":{"run_id":"run-fixed"}}
+{"schema_version":1,"request_id":"req-start-2","kind":"run.start","payload":{"prompt":"hello again","run_id":"run-fixed"}}
+{"schema_version":1,"request_id":"req-status-active","kind":"run.status","payload":{"run_id":"run-fixed"}}
+"#;
+        let mut output = Vec::new();
+        let report = serve_rpc_ndjson_reader(std::io::Cursor::new(input), &mut output)
+            .expect("serve should succeed");
+        assert_eq!(report.processed_lines, 5);
+        assert_eq!(report.error_count, 0);
+
+        let lines = String::from_utf8(output).expect("utf8 output");
+        let rows = lines
+            .lines()
+            .map(|line| serde_json::from_str::<serde_json::Value>(line).expect("json frame"))
+            .collect::<Vec<_>>();
+        assert_eq!(rows.len(), 10);
+        assert_eq!(rows[0]["request_id"], "req-start-1");
+        assert_eq!(rows[0]["kind"], "run.accepted");
+        assert_eq!(rows[0]["payload"]["run_id"], "run-fixed");
+        assert_eq!(rows[3]["request_id"], "req-complete");
+        assert_eq!(rows[3]["kind"], "run.completed");
+        assert_eq!(rows[4]["request_id"], "req-complete");
+        assert_eq!(rows[4]["kind"], "run.stream.tool_events");
+        assert_eq!(rows[5]["request_id"], "req-status-closed");
+        assert_eq!(rows[5]["kind"], "run.status");
+        assert_eq!(rows[5]["payload"]["active"], false);
+        assert_eq!(rows[5]["payload"]["known"], true);
+        assert_eq!(rows[5]["payload"]["status"], "completed");
+        assert_eq!(rows[6]["request_id"], "req-start-2");
+        assert_eq!(rows[6]["kind"], "run.accepted");
+        assert_eq!(rows[6]["payload"]["run_id"], "run-fixed");
+        assert_eq!(rows[9]["request_id"], "req-status-active");
+        assert_eq!(rows[9]["kind"], "run.status");
+        assert_eq!(rows[9]["payload"]["active"], true);
+        assert_eq!(rows[9]["payload"]["known"], true);
+        assert_eq!(rows[9]["payload"]["status"], "active");
+        assert_eq!(rows[9]["payload"].get("terminal_state"), None);
+        assert_eq!(rows[9]["payload"].get("terminal"), None);
     }
 
     #[test]
