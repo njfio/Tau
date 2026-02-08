@@ -1,4 +1,5 @@
 use super::*;
+use crate::provider_auth::provider_supported_auth_modes;
 
 pub(crate) const AUTH_USAGE: &str = "usage: /auth <login|status|logout|matrix> ...";
 pub(crate) const AUTH_LOGIN_USAGE: &str = "usage: /auth login <provider> [--mode <mode>] [--json]";
@@ -666,11 +667,18 @@ pub(crate) fn execute_auth_login_command(
         .unwrap_or_else(|| configured_provider_auth_method_from_config(config, provider));
     let capability = provider_auth_capability(provider, mode);
     if !capability.supported {
+        let supported_modes = provider_supported_auth_modes(provider);
+        let supported_mode_list = supported_modes
+            .iter()
+            .map(|method| method.as_str())
+            .collect::<Vec<_>>()
+            .join(",");
         let reason = format!(
-            "auth mode '{}' is not supported for provider '{}': {}",
+            "auth mode '{}' is not supported for provider '{}': {} (supported_modes={})",
             mode.as_str(),
             provider.as_str(),
-            capability.reason
+            capability.reason,
+            supported_mode_list
         );
         if json_output {
             return serde_json::json!({
@@ -679,6 +687,10 @@ pub(crate) fn execute_auth_login_command(
                 "mode": mode.as_str(),
                 "status": "error",
                 "reason": reason,
+                "supported_modes": supported_modes
+                    .iter()
+                    .map(|method| method.as_str())
+                    .collect::<Vec<_>>(),
             })
             .to_string();
         }

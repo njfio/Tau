@@ -99,6 +99,14 @@ pub(crate) fn provider_auth_capability(
         })
 }
 
+pub(crate) fn provider_supported_auth_modes(provider: Provider) -> Vec<ProviderAuthMethod> {
+    provider_auth_capabilities(provider)
+        .iter()
+        .filter(|capability| capability.supported)
+        .map(|capability| capability.method)
+        .collect()
+}
+
 pub(crate) fn configured_provider_auth_method(cli: &Cli, provider: Provider) -> ProviderAuthMethod {
     match provider {
         Provider::OpenAi => cli.openai_auth_mode.into(),
