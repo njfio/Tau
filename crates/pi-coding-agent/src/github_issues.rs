@@ -16,8 +16,8 @@ use tokio::sync::watch;
 
 use crate::channel_store::{ChannelArtifactRecord, ChannelLogEntry, ChannelStore};
 use crate::{
-    current_unix_timestamp_ms, run_prompt_with_cancellation, write_text_atomic, PromptRunStatus,
-    RenderOptions, SessionRuntime,
+    current_unix_timestamp_ms, run_prompt_with_cancellation, session_message_preview,
+    session_message_role, write_text_atomic, PromptRunStatus, RenderOptions, SessionRuntime,
 };
 use crate::{session::SessionStore, tools::ToolPolicy};
 
@@ -25,6 +25,8 @@ const GITHUB_STATE_SCHEMA_VERSION: u32 = 1;
 const GITHUB_COMMENT_MAX_CHARS: usize = 65_000;
 const EVENT_KEY_MARKER_PREFIX: &str = "<!-- rsbot-event-key:";
 const EVENT_KEY_MARKER_SUFFIX: &str = " -->";
+const CHAT_SHOW_DEFAULT_LIMIT: usize = 10;
+const CHAT_SHOW_MAX_LIMIT: usize = 50;
 
 #[derive(Clone)]
 pub(crate) struct GithubIssuesBridgeRuntimeConfig {
@@ -621,6 +623,7 @@ enum PiIssueCommand {
     ChatReset,
     ChatExport,
     ChatStatus,
+    ChatShow { limit: usize },
     Artifacts { purge: bool, run_id: Option<String> },
     ArtifactShow { artifact_id: String },
     Summarize { focus: Option<String> },
@@ -1567,6 +1570,73 @@ impl GithubIssuesBridgeRuntime {
                     }
                 }))?;
             }
+            PiIssueCommand::ChatShow { limit } => {
+                let session_path =
+                    session_path_for_issue(&self.repository_state_dir, event.issue_number);
+                let store = SessionStore::load(&session_path)?;
+                let head_id = store.head_id();
+                let lineage = store.lineage_entries(head_id)?;
+                let session_state = self.state_store.issue_session(event.issue_number);
+                let has_session = session_state.is_some();
+                let head_display = head_id
+                    .map(|value| value.to_string())
+                    .unwrap_or_else(|| "none".to_string());
+                let message = if lineage.is_empty() && !has_session {
+                    format!(
+                        "No chat session found for issue #{}.\n\nentries=0 head=none",
+                        event.issue_number
+                    )
+                } else {
+                    let total = lineage.len();
+                    let capped_limit = limit.min(CHAT_SHOW_MAX_LIMIT).max(1);
+                    let show_count = total.min(capped_limit);
+                    let start_index = total.saturating_sub(show_count);
+                    let mut lines = vec![format!(
+                        "Chat session show for issue #{}.",
+                        event.issue_number
+                    )];
+                    lines.push(format!(
+                        "entries={} head={} showing_last={}",
+                        total, head_display, show_count
+                    ));
+                    if show_count == 0 {
+                        lines.push("no messages".to_string());
+                    } else {
+                        for entry in lineage.iter().skip(start_index) {
+                            let role = session_message_role(&entry.message);
+                            let preview = session_message_preview(&entry.message);
+                            lines.push(format!(
+                                "- id={} role={} preview={}",
+                                entry.id, role, preview
+                            ));
+                        }
+                        lines.push(format!(
+                            "Note: previews truncated to {} chars.",
+                            crate::session_commands::SESSION_SEARCH_PREVIEW_CHARS
+                        ));
+                    }
+                    lines.join("\n")
+                };
+                let posted = self
+                    .github_client
+                    .create_issue_comment(event.issue_number, &message)
+                    .await?;
+                self.outbound_log.append(&json!({
+                    "timestamp_unix_ms": current_unix_timestamp_ms(),
+                    "repo": self.repo.as_slug(),
+                    "event_key": event.key,
+                    "issue_number": event.issue_number,
+                    "command": "chat-show",
+                    "status": "reported",
+                    "posted_comment_id": posted.id,
+                    "posted_comment_url": posted.html_url,
+                    "session": {
+                        "entries": lineage.len(),
+                        "head_id": head_id,
+                        "show_limit": limit,
+                    }
+                }))?;
+            }
             PiIssueCommand::Invalid { message } => {
                 let posted = self
                     .github_client
@@ -2361,17 +2431,30 @@ fn parse_pi_issue_command(body: &str) -> Option<PiIssueCommand> {
         }
         "chat" => {
             let mut chat_parts = remainder.split_whitespace();
-            match (chat_parts.next(), chat_parts.next()) {
-                (Some("start"), None) => PiIssueCommand::ChatStart,
-                (Some("resume"), None) => PiIssueCommand::ChatResume,
-                (Some("reset"), None) => PiIssueCommand::ChatReset,
-                (Some("export"), None) => PiIssueCommand::ChatExport,
-                (Some("status"), None) => PiIssueCommand::ChatStatus,
-                (None, _) => PiIssueCommand::Invalid {
-                    message: "Usage: /pi chat <start|resume|reset|export|status>".to_string(),
+            match (chat_parts.next(), chat_parts.next(), chat_parts.next()) {
+                (Some("start"), None, None) => PiIssueCommand::ChatStart,
+                (Some("resume"), None, None) => PiIssueCommand::ChatResume,
+                (Some("reset"), None, None) => PiIssueCommand::ChatReset,
+                (Some("export"), None, None) => PiIssueCommand::ChatExport,
+                (Some("status"), None, None) => PiIssueCommand::ChatStatus,
+                (Some("show"), None, None) => PiIssueCommand::ChatShow {
+                    limit: CHAT_SHOW_DEFAULT_LIMIT,
+                },
+                (Some("show"), Some(raw), None) => match raw.parse::<usize>() {
+                    Ok(limit) if limit > 0 => PiIssueCommand::ChatShow {
+                        limit: limit.min(CHAT_SHOW_MAX_LIMIT),
+                    },
+                    _ => PiIssueCommand::Invalid {
+                        message: "Usage: /pi chat show [limit]".to_string(),
+                    },
+                },
+                (None, _, _) => PiIssueCommand::Invalid {
+                    message: "Usage: /pi chat <start|resume|reset|export|status|show [limit]>"
+                        .to_string(),
                 },
                 _ => PiIssueCommand::Invalid {
-                    message: "Usage: /pi chat <start|resume|reset|export|status>".to_string(),
+                    message: "Usage: /pi chat <start|resume|reset|export|status|show [limit]>"
+                        .to_string(),
                 },
             }
         }
@@ -2426,7 +2509,7 @@ fn pi_command_usage() -> String {
         "- `/pi status`",
         "- `/pi compact`",
         "- `/pi help`",
-        "- `/pi chat <start|resume|reset|export|status>`",
+        "- `/pi chat <start|resume|reset|export|status|show [limit]>`",
         "- `/pi artifacts [purge|run <run_id>|show <artifact_id>]`",
         "- `/pi summarize [focus]`",
     ]
@@ -2688,7 +2771,8 @@ mod tests {
         session_path_for_issue, EventAction, GithubApiClient, GithubBridgeEvent,
         GithubBridgeEventKind, GithubIssue, GithubIssueComment, GithubIssuesBridgeRuntime,
         GithubIssuesBridgeRuntimeConfig, GithubIssuesBridgeStateStore, GithubUser, PiIssueCommand,
-        PromptRunReport, PromptUsageSummary, RepoRef, SessionStore, EVENT_KEY_MARKER_PREFIX,
+        PromptRunReport, PromptUsageSummary, RepoRef, SessionStore, CHAT_SHOW_DEFAULT_LIMIT,
+        EVENT_KEY_MARKER_PREFIX,
     };
     use crate::{
         channel_store::{ChannelArtifactRecord, ChannelStore},
@@ -3187,6 +3271,16 @@ mod tests {
             Some(PiIssueCommand::ChatStatus)
         );
         assert_eq!(
+            parse_pi_issue_command("/pi chat show"),
+            Some(PiIssueCommand::ChatShow {
+                limit: CHAT_SHOW_DEFAULT_LIMIT
+            })
+        );
+        assert_eq!(
+            parse_pi_issue_command("/pi chat show 25"),
+            Some(PiIssueCommand::ChatShow { limit: 25 })
+        );
+        assert_eq!(
             parse_pi_issue_command("/pi artifacts"),
             Some(PiIssueCommand::Artifacts {
                 purge: false,
@@ -3242,6 +3336,10 @@ mod tests {
         let parsed = parse_pi_issue_command("/pi chat export now").expect("command parse");
         assert!(matches!(parsed, PiIssueCommand::Invalid { .. }));
         let parsed = parse_pi_issue_command("/pi chat status now").expect("command parse");
+        assert!(matches!(parsed, PiIssueCommand::Invalid { .. }));
+        let parsed = parse_pi_issue_command("/pi chat show foo").expect("command parse");
+        assert!(matches!(parsed, PiIssueCommand::Invalid { .. }));
+        let parsed = parse_pi_issue_command("/pi chat show 99 100").expect("command parse");
         assert!(matches!(parsed, PiIssueCommand::Invalid { .. }));
         let parsed = parse_pi_issue_command("/pi chat unknown").expect("command parse");
         assert!(matches!(parsed, PiIssueCommand::Invalid { .. }));
@@ -3797,6 +3895,120 @@ mod tests {
         assert_eq!(report.processed_events, 1);
         assert_eq!(report.failed_events, 0);
         status_post.assert_calls(1);
+    }
+
+    #[tokio::test]
+    async fn integration_bridge_chat_show_reports_recent_messages() {
+        let server = MockServer::start();
+        let _issues = server.mock(|when, then| {
+            when.method(GET).path("/repos/owner/repo/issues");
+            then.status(200).json_body(json!([{
+                "id": 22,
+                "number": 14,
+                "title": "Chat Show",
+                "body": "",
+                "created_at": "2026-01-01T00:00:00Z",
+                "updated_at": "2026-01-01T00:00:05Z",
+                "user": {"login":"alice"}
+            }]));
+        });
+        let _comments = server.mock(|when, then| {
+            when.method(GET)
+                .path("/repos/owner/repo/issues/14/comments");
+            then.status(200).json_body(json!([{
+                "id": 711,
+                "body": "/pi chat show 2",
+                "created_at": "2026-01-01T00:00:01Z",
+                "updated_at": "2026-01-01T00:00:01Z",
+                "user": {"login":"alice"}
+            }]));
+        });
+        let show_post = server.mock(|when, then| {
+            when.method(POST)
+                .path("/repos/owner/repo/issues/14/comments")
+                .body_includes("Chat session show for issue #14.")
+                .body_includes("showing_last=2")
+                .body_includes("role=assistant")
+                .body_includes("role=user");
+            then.status(201).json_body(json!({
+                "id": 972,
+                "html_url": "https://example.test/comment/972"
+            }));
+        });
+
+        let temp = tempdir().expect("tempdir");
+        let config = test_bridge_config(&server.base_url(), temp.path());
+        let mut runtime = GithubIssuesBridgeRuntime::new(config)
+            .await
+            .expect("runtime");
+        let session_path = session_path_for_issue(&runtime.repository_state_dir, 14);
+        if let Some(parent) = session_path.parent() {
+            std::fs::create_dir_all(parent).expect("create session dir");
+        }
+        let mut store = SessionStore::load(&session_path).expect("store");
+        store
+            .append_messages(
+                None,
+                &[
+                    Message::user("First message"),
+                    Message::assistant_text("Second message"),
+                    Message::user("Third message"),
+                ],
+            )
+            .expect("append messages");
+
+        let report = runtime.poll_once().await.expect("poll");
+        assert_eq!(report.processed_events, 1);
+        assert_eq!(report.failed_events, 0);
+        show_post.assert_calls(1);
+    }
+
+    #[tokio::test]
+    async fn integration_bridge_chat_show_reports_missing_session() {
+        let server = MockServer::start();
+        let _issues = server.mock(|when, then| {
+            when.method(GET).path("/repos/owner/repo/issues");
+            then.status(200).json_body(json!([{
+                "id": 23,
+                "number": 15,
+                "title": "Chat Show None",
+                "body": "",
+                "created_at": "2026-01-01T00:00:00Z",
+                "updated_at": "2026-01-01T00:00:05Z",
+                "user": {"login":"alice"}
+            }]));
+        });
+        let _comments = server.mock(|when, then| {
+            when.method(GET)
+                .path("/repos/owner/repo/issues/15/comments");
+            then.status(200).json_body(json!([{
+                "id": 811,
+                "body": "/pi chat show",
+                "created_at": "2026-01-01T00:00:01Z",
+                "updated_at": "2026-01-01T00:00:01Z",
+                "user": {"login":"alice"}
+            }]));
+        });
+        let show_post = server.mock(|when, then| {
+            when.method(POST)
+                .path("/repos/owner/repo/issues/15/comments")
+                .body_includes("No chat session found for issue #15.")
+                .body_includes("entries=0");
+            then.status(201).json_body(json!({
+                "id": 973,
+                "html_url": "https://example.test/comment/973"
+            }));
+        });
+
+        let temp = tempdir().expect("tempdir");
+        let config = test_bridge_config(&server.base_url(), temp.path());
+        let mut runtime = GithubIssuesBridgeRuntime::new(config)
+            .await
+            .expect("runtime");
+        let report = runtime.poll_once().await.expect("poll");
+        assert_eq!(report.processed_events, 1);
+        assert_eq!(report.failed_events, 0);
+        show_post.assert_calls(1);
     }
 
     #[tokio::test]
