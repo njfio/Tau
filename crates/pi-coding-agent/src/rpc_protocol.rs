@@ -8,6 +8,7 @@ use crate::rpc_capabilities::{rpc_capabilities_payload, RPC_PROTOCOL_VERSION};
 use crate::Cli;
 
 pub(crate) const RPC_FRAME_SCHEMA_VERSION: u32 = 1;
+const RPC_COMPATIBLE_REQUEST_SCHEMA_VERSIONS: [u32; 2] = [0, RPC_FRAME_SCHEMA_VERSION];
 const RPC_STUB_MODE: &str = "preflight";
 const RPC_ERROR_KIND: &str = "error";
 const RPC_ERROR_CODE_INVALID_JSON: &str = "invalid_json";
@@ -84,10 +85,15 @@ struct RawRpcFrame {
 pub(crate) fn parse_rpc_frame(raw: &str) -> Result<RpcFrame> {
     let frame =
         serde_json::from_str::<RawRpcFrame>(raw).context("failed to parse rpc frame JSON")?;
-    if frame.schema_version != RPC_FRAME_SCHEMA_VERSION {
+    if !RPC_COMPATIBLE_REQUEST_SCHEMA_VERSIONS.contains(&frame.schema_version) {
+        let supported_versions = RPC_COMPATIBLE_REQUEST_SCHEMA_VERSIONS
+            .iter()
+            .map(|version| version.to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
         bail!(
-            "unsupported rpc frame schema: expected {}, found {}",
-            RPC_FRAME_SCHEMA_VERSION,
+            "unsupported rpc frame schema: supported request schema versions are [{}], found {}",
+            supported_versions,
             frame.schema_version
         );
     }
@@ -127,6 +133,8 @@ pub(crate) fn dispatch_rpc_frame(frame: &RpcFrame) -> Result<RpcResponseFrame> {
                 "capabilities.response",
                 json!({
                     "protocol_version": RPC_PROTOCOL_VERSION,
+                    "response_schema_version": RPC_FRAME_SCHEMA_VERSION,
+                    "supported_request_schema_versions": RPC_COMPATIBLE_REQUEST_SCHEMA_VERSIONS,
                     "capabilities": capability_list,
                 }),
             ))
@@ -387,6 +395,18 @@ mod tests {
         assert_eq!(frame.request_id, "req-1");
         assert_eq!(frame.kind, RpcFrameKind::RunStart);
         assert_eq!(frame.payload.len(), 1);
+
+        let legacy_frame = parse_rpc_frame(
+            r#"{
+  "schema_version": 0,
+  "request_id": "req-legacy",
+  "kind": "run.cancel",
+  "payload": {"run_id":"run-1"}
+}"#,
+        )
+        .expect("parse legacy frame");
+        assert_eq!(legacy_frame.request_id, "req-legacy");
+        assert_eq!(legacy_frame.kind, RpcFrameKind::RunCancel);
     }
 
     #[test]
@@ -406,6 +426,16 @@ mod tests {
             capabilities_response.payload["protocol_version"].as_str(),
             Some("0.1.0")
         );
+        assert_eq!(
+            capabilities_response.payload["response_schema_version"].as_u64(),
+            Some(1)
+        );
+        let schema_versions = capabilities_response.payload["supported_request_schema_versions"]
+            .as_array()
+            .expect("supported schemas array");
+        assert_eq!(schema_versions.len(), 2);
+        assert_eq!(schema_versions[0].as_u64(), Some(0));
+        assert_eq!(schema_versions[1].as_u64(), Some(1));
 
         let start = parse_rpc_frame(
             r#"{
@@ -432,6 +462,22 @@ mod tests {
         let cancel_response = dispatch_rpc_frame(&cancel).expect("dispatch cancel");
         assert_eq!(cancel_response.kind, "run.cancelled");
         assert_eq!(cancel_response.payload["run_id"].as_str(), Some("run-1"));
+    }
+
+    #[test]
+    fn functional_dispatch_rpc_frame_accepts_legacy_schema_zero() {
+        let frame = parse_rpc_frame(
+            r#"{
+  "schema_version": 0,
+  "request_id": "req-legacy-start",
+  "kind": "run.start",
+  "payload": {"prompt":"legacy hello"}
+}"#,
+        )
+        .expect("parse frame");
+        let response = dispatch_rpc_frame(&frame).expect("dispatch frame");
+        assert_eq!(response.kind, "run.accepted");
+        assert_eq!(response.request_id, "req-legacy-start");
     }
 
     #[test]
@@ -554,7 +600,9 @@ mod tests {
             RPC_ERROR_CODE_INVALID_JSON
         );
         assert_eq!(
-            classify_rpc_error_message("unsupported rpc frame schema: expected 1, found 2"),
+            classify_rpc_error_message(
+                "unsupported rpc frame schema: supported request schema versions are [0, 1], found 2"
+            ),
             RPC_ERROR_CODE_UNSUPPORTED_SCHEMA
         );
         assert_eq!(
@@ -619,6 +667,21 @@ mod tests {
         assert_eq!(report.responses[0].request_id, "req-cap");
         assert_eq!(report.responses[0].kind, "capabilities.response");
         assert_eq!(report.responses[1].request_id, "req-start");
+        assert_eq!(report.responses[1].kind, "run.accepted");
+    }
+
+    #[test]
+    fn integration_dispatch_rpc_ndjson_input_supports_mixed_schema_versions() {
+        let report = dispatch_rpc_ndjson_input(
+            r#"
+{"schema_version":0,"request_id":"req-legacy","kind":"run.cancel","payload":{"run_id":"run-1"}}
+{"schema_version":1,"request_id":"req-current","kind":"run.start","payload":{"prompt":"hello"}}
+"#,
+        );
+        assert_eq!(report.processed_lines, 2);
+        assert_eq!(report.error_count, 0);
+        assert_eq!(report.responses.len(), 2);
+        assert_eq!(report.responses[0].kind, "run.cancelled");
         assert_eq!(report.responses[1].kind, "run.accepted");
     }
 
