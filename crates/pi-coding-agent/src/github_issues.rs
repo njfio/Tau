@@ -22,6 +22,7 @@ use crate::{
 use crate::{session::SessionStore, tools::ToolPolicy};
 
 const GITHUB_STATE_SCHEMA_VERSION: u32 = 1;
+const GITHUB_COMMENT_MAX_CHARS: usize = 65_000;
 const EVENT_KEY_MARKER_PREFIX: &str = "<!-- rsbot-event-key:";
 const EVENT_KEY_MARKER_SUFFIX: &str = " -->";
 
@@ -600,6 +601,14 @@ struct PromptRunReport {
     artifact: ChannelArtifactRecord,
 }
 
+#[derive(Debug, Clone)]
+struct CommentUpdateOutcome {
+    posted_comment_id: Option<u64>,
+    edit_attempted: bool,
+    edit_success: bool,
+    append_count: usize,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum PiIssueCommand {
     Run { prompt: String },
@@ -648,6 +657,9 @@ struct RunTaskResult {
     duration_ms: u64,
     status: String,
     posted_comment_id: Option<u64>,
+    comment_edit_attempted: bool,
+    comment_edit_success: bool,
+    comment_append_count: usize,
     model: String,
     usage: PromptUsageSummary,
     error: Option<String>,
@@ -902,6 +914,11 @@ impl GithubIssuesBridgeRuntime {
                         "run_id": result.run_id,
                         "status": result.status,
                         "posted_comment_id": result.posted_comment_id,
+                        "comment_update": {
+                            "edit_attempted": result.comment_edit_attempted,
+                            "edit_success": result.comment_edit_success,
+                            "append_count": result.comment_append_count,
+                        },
                         "model": result.model,
                         "usage": {
                             "input_tokens": result.usage.input_tokens,
@@ -1524,43 +1541,31 @@ async fn execute_issue_run_task(params: IssueRunTaskParams) -> RunTaskResult {
     let completed_unix_ms = current_unix_timestamp_ms();
     let duration_ms = started.elapsed().as_millis() as u64;
 
-    let (status, usage, body, error) = match run_result {
+    let (status, usage, chunks, error) = match run_result {
         Ok(run) => {
             let status = prompt_status_label(run.status).to_string();
             (
                 status,
                 run.usage.clone(),
-                render_issue_comment_response(&event, &run),
+                render_issue_comment_chunks(&event, &run),
                 None,
             )
         }
         Err(error) => (
             "failed".to_string(),
             PromptUsageSummary::default(),
-            render_issue_run_error_comment(&event, &run_id, &error),
+            vec![render_issue_run_error_comment(&event, &run_id, &error)],
             Some(error.to_string()),
         ),
     };
 
-    let posted_comment_id = match github_client
-        .update_issue_comment(working_comment_id, &body)
-        .await
-    {
-        Ok(comment) => Some(comment.id),
-        Err(update_error) => {
-            let fallback_body = format!(
-                "{body}\n\n_(warning: failed to update placeholder comment: {})_",
-                truncate_for_error(&update_error.to_string(), 200)
-            );
-            match github_client
-                .create_issue_comment(event.issue_number, &fallback_body)
-                .await
-            {
-                Ok(comment) => Some(comment.id),
-                Err(_) => None,
-            }
-        }
-    };
+    let comment_outcome = post_issue_comment_chunks(
+        &github_client,
+        event.issue_number,
+        working_comment_id,
+        &chunks,
+    )
+    .await;
 
     RunTaskResult {
         issue_number: event.issue_number,
@@ -1570,11 +1575,74 @@ async fn execute_issue_run_task(params: IssueRunTaskParams) -> RunTaskResult {
         completed_unix_ms,
         duration_ms,
         status,
-        posted_comment_id,
+        posted_comment_id: comment_outcome.posted_comment_id,
+        comment_edit_attempted: comment_outcome.edit_attempted,
+        comment_edit_success: comment_outcome.edit_success,
+        comment_append_count: comment_outcome.append_count,
         model: config.model,
         usage,
         error,
     }
+}
+
+async fn post_issue_comment_chunks(
+    github_client: &GithubApiClient,
+    issue_number: u64,
+    working_comment_id: u64,
+    chunks: &[String],
+) -> CommentUpdateOutcome {
+    let mut outcome = CommentUpdateOutcome {
+        posted_comment_id: None,
+        edit_attempted: false,
+        edit_success: false,
+        append_count: 0,
+    };
+    let Some((first, rest)) = chunks.split_first() else {
+        return outcome;
+    };
+
+    outcome.edit_attempted = true;
+    match github_client
+        .update_issue_comment(working_comment_id, first)
+        .await
+    {
+        Ok(comment) => {
+            outcome.edit_success = true;
+            outcome.posted_comment_id = Some(comment.id);
+        }
+        Err(update_error) => {
+            let fallback_body = format!(
+                "{first}\n\n_(warning: failed to update placeholder comment: {})_",
+                truncate_for_error(&update_error.to_string(), 200)
+            );
+            match github_client
+                .create_issue_comment(issue_number, &fallback_body)
+                .await
+            {
+                Ok(comment) => {
+                    outcome.append_count = outcome.append_count.saturating_add(1);
+                    outcome.posted_comment_id = Some(comment.id);
+                }
+                Err(_) => {
+                    return outcome;
+                }
+            }
+        }
+    };
+
+    for chunk in rest {
+        match github_client
+            .create_issue_comment(issue_number, chunk)
+            .await
+        {
+            Ok(comment) => {
+                outcome.append_count = outcome.append_count.saturating_add(1);
+                outcome.posted_comment_id = Some(comment.id);
+            }
+            Err(_) => break,
+        }
+    }
+    outcome
 }
 
 async fn run_prompt_for_event(
@@ -1761,29 +1829,98 @@ fn render_event_prompt(repo: &RepoRef, event: &GithubBridgeEvent, prompt: &str) 
     )
 }
 
-fn render_issue_comment_response(event: &GithubBridgeEvent, run: &PromptRunReport) -> String {
-    let mut body = run.assistant_reply.trim().to_string();
-    if body.is_empty() {
-        body = "I couldn't generate a textual response for this event.".to_string();
+fn render_issue_comment_response_parts(
+    event: &GithubBridgeEvent,
+    run: &PromptRunReport,
+) -> (String, String) {
+    let mut content = run.assistant_reply.trim().to_string();
+    if content.is_empty() {
+        content = "I couldn't generate a textual response for this event.".to_string();
     }
     let usage = &run.usage;
     let status = format!("{:?}", run.status).to_lowercase();
-    body.push_str("\n\n---\n");
-    body.push_str(&format!(
-        "{EVENT_KEY_MARKER_PREFIX}{}{EVENT_KEY_MARKER_SUFFIX}\n_rsBot run `{}` | status `{}` | model `{}` | tokens in/out/total `{}/{}/{}` | cost `unavailable`_",
+    let footer = format!(
+        "{EVENT_KEY_MARKER_PREFIX}{}{EVENT_KEY_MARKER_SUFFIX}\n_rsBot run `{}` | status `{}` | model `{}` | tokens in/out/total `{}/{}/{}` | cost `unavailable`_\n_artifact `{}` | sha256 `{}` | bytes `{}`_",
         event.key,
         run.run_id,
         status,
         run.model,
         usage.input_tokens,
         usage.output_tokens,
-        usage.total_tokens
-    ));
-    body.push_str(&format!(
-        "\n_artifact `{}` | sha256 `{}` | bytes `{}`_",
-        run.artifact.relative_path, run.artifact.checksum_sha256, run.artifact.bytes
-    ));
-    body
+        usage.total_tokens,
+        run.artifact.relative_path,
+        run.artifact.checksum_sha256,
+        run.artifact.bytes
+    );
+    (content, footer)
+}
+
+fn render_issue_comment_chunks(event: &GithubBridgeEvent, run: &PromptRunReport) -> Vec<String> {
+    render_issue_comment_chunks_with_limit(event, run, GITHUB_COMMENT_MAX_CHARS)
+}
+
+fn render_issue_comment_chunks_with_limit(
+    event: &GithubBridgeEvent,
+    run: &PromptRunReport,
+    max_chars: usize,
+) -> Vec<String> {
+    let (content, footer) = render_issue_comment_response_parts(event, run);
+    let footer_block = format!("\n\n---\n{footer}");
+    let footer_len = footer_block.chars().count();
+    if max_chars == 0 {
+        return Vec::new();
+    }
+    if footer_len >= max_chars {
+        return vec![footer_block];
+    }
+    let content_len = content.chars().count();
+    if content_len + footer_len <= max_chars {
+        return vec![format!("{content}{footer_block}")];
+    }
+
+    let max_first_len = max_chars.saturating_sub(footer_len);
+    let (first_content, remainder) = split_at_char_index(&content, max_first_len);
+    let mut chunks = Vec::new();
+    chunks.push(format!("{first_content}{footer_block}"));
+    let mut trailing = chunk_text_by_chars(&remainder, max_chars);
+    chunks.append(&mut trailing);
+    chunks
+}
+
+fn split_at_char_index(text: &str, index: usize) -> (String, String) {
+    let mut iter = text.chars();
+    let mut left = String::new();
+    for _ in 0..index {
+        if let Some(ch) = iter.next() {
+            left.push(ch);
+        } else {
+            break;
+        }
+    }
+    let right: String = iter.collect();
+    (left, right)
+}
+
+fn chunk_text_by_chars(text: &str, max_chars: usize) -> Vec<String> {
+    if max_chars == 0 {
+        return Vec::new();
+    }
+    let mut chunks = Vec::new();
+    let mut current = String::new();
+    let mut count = 0usize;
+    for ch in text.chars() {
+        if count >= max_chars {
+            chunks.push(current);
+            current = String::new();
+            count = 0;
+        }
+        current.push(ch);
+        count = count.saturating_add(1);
+    }
+    if !current.is_empty() {
+        chunks.push(current);
+    }
+    chunks
 }
 
 fn render_issue_artifact_markdown(
@@ -2165,12 +2302,19 @@ mod tests {
     use super::{
         collect_issue_events, event_action_from_body, extract_footer_event_keys,
         is_retryable_github_status, normalize_artifact_retention_days, parse_pi_issue_command,
-        retry_delay, run_prompt_for_event, sanitize_for_path, session_path_for_issue, EventAction,
+        post_issue_comment_chunks, render_issue_comment_chunks_with_limit,
+        render_issue_comment_response_parts, retry_delay,
+        run_prompt_for_event, sanitize_for_path, session_path_for_issue, EventAction,
         GithubApiClient, GithubBridgeEvent, GithubBridgeEventKind, GithubIssue, GithubIssueComment,
         GithubIssuesBridgeRuntime, GithubIssuesBridgeRuntimeConfig, GithubIssuesBridgeStateStore,
-        GithubUser, PiIssueCommand, RepoRef,
+        GithubUser, PiIssueCommand, PromptRunReport, PromptUsageSummary, RepoRef,
+        EVENT_KEY_MARKER_PREFIX,
     };
-    use crate::{channel_store::ChannelStore, tools::ToolPolicy, RenderOptions};
+    use crate::{
+        channel_store::{ChannelArtifactRecord, ChannelStore},
+        tools::ToolPolicy,
+        PromptRunStatus, RenderOptions,
+    };
 
     struct StaticReplyClient;
 
@@ -2255,6 +2399,33 @@ mod tests {
             occurred_at: "2026-01-01T00:00:01Z".to_string(),
             body: "hello from issue stream".to_string(),
             raw_payload: json!({"id": 200}),
+        }
+    }
+
+    fn test_prompt_run_report(reply: &str) -> PromptRunReport {
+        PromptRunReport {
+            run_id: "run-1".to_string(),
+            model: "openai/gpt-4o-mini".to_string(),
+            status: PromptRunStatus::Completed,
+            assistant_reply: reply.to_string(),
+            usage: PromptUsageSummary {
+                input_tokens: 2,
+                output_tokens: 3,
+                total_tokens: 5,
+                request_duration_ms: 0,
+                finish_reason: None,
+            },
+            artifact: ChannelArtifactRecord {
+                id: "artifact-1".to_string(),
+                run_id: "run-1".to_string(),
+                artifact_type: "github-issue-reply".to_string(),
+                visibility: "private".to_string(),
+                relative_path: "artifacts/run-1.md".to_string(),
+                bytes: 123,
+                checksum_sha256: "checksum".to_string(),
+                created_unix_ms: 0,
+                expires_unix_ms: None,
+            },
         }
     }
 
@@ -2465,6 +2636,128 @@ mod tests {
         let session = session_path_for_issue(root, 9);
         assert!(session.ends_with("sessions/issue-9.jsonl"));
         assert_eq!(sanitize_for_path("owner/repo"), "owner_repo");
+    }
+
+    #[test]
+    fn unit_render_issue_comment_chunks_split_and_keep_marker_in_first_chunk() {
+        let event = test_issue_event();
+        let report = test_prompt_run_report(&"a".repeat(240));
+        let (content, footer) = render_issue_comment_response_parts(&event, &report);
+        let footer_block = format!("\n\n---\n{footer}");
+        let max_chars = footer_block.chars().count() + 10;
+        assert!(content.chars().count() > 10);
+        let chunks = render_issue_comment_chunks_with_limit(&event, &report, max_chars);
+        assert!(chunks.len() > 1);
+        assert!(chunks[0].contains(EVENT_KEY_MARKER_PREFIX));
+        assert!(chunks
+            .iter()
+            .skip(1)
+            .all(|chunk| !chunk.contains(EVENT_KEY_MARKER_PREFIX)));
+        assert!(chunks
+            .iter()
+            .all(|chunk| chunk.chars().count() <= max_chars));
+    }
+
+    #[tokio::test]
+    async fn functional_post_issue_comment_chunks_updates_and_appends() {
+        let server = MockServer::start();
+        let update = server.mock(|when, then| {
+            when.method(PATCH)
+                .path("/repos/owner/repo/issues/comments/901")
+                .body_includes("chunk-1");
+            then.status(200).json_body(json!({
+                "id": 901,
+                "html_url": "https://example.test/comment/901"
+            }));
+        });
+        let append_one = server.mock(|when, then| {
+            when.method(POST)
+                .path("/repos/owner/repo/issues/7/comments")
+                .body_includes("chunk-2");
+            then.status(201).json_body(json!({
+                "id": 902,
+                "html_url": "https://example.test/comment/902"
+            }));
+        });
+        let append_two = server.mock(|when, then| {
+            when.method(POST)
+                .path("/repos/owner/repo/issues/7/comments")
+                .body_includes("chunk-3");
+            then.status(201).json_body(json!({
+                "id": 903,
+                "html_url": "https://example.test/comment/903"
+            }));
+        });
+
+        let client = GithubApiClient::new(
+            server.base_url(),
+            "token".to_string(),
+            RepoRef::parse("owner/repo").expect("repo"),
+            2_000,
+            1,
+            1,
+        )
+        .expect("client");
+        let chunks = vec![
+            "chunk-1".to_string(),
+            "chunk-2".to_string(),
+            "chunk-3".to_string(),
+        ];
+        let outcome = post_issue_comment_chunks(&client, 7, 901, &chunks).await;
+        assert!(outcome.edit_attempted);
+        assert!(outcome.edit_success);
+        assert_eq!(outcome.append_count, 2);
+        assert_eq!(outcome.posted_comment_id, Some(903));
+        update.assert_calls(1);
+        append_one.assert_calls(1);
+        append_two.assert_calls(1);
+    }
+
+    #[tokio::test]
+    async fn regression_post_issue_comment_chunks_falls_back_on_edit_failure() {
+        let server = MockServer::start();
+        let update = server.mock(|when, then| {
+            when.method(PATCH)
+                .path("/repos/owner/repo/issues/comments/901");
+            then.status(500);
+        });
+        let fallback = server.mock(|when, then| {
+            when.method(POST)
+                .path("/repos/owner/repo/issues/7/comments")
+                .body_includes("warning: failed to update placeholder comment");
+            then.status(201).json_body(json!({
+                "id": 910,
+                "html_url": "https://example.test/comment/910"
+            }));
+        });
+        let append = server.mock(|when, then| {
+            when.method(POST)
+                .path("/repos/owner/repo/issues/7/comments")
+                .body_includes("chunk-2");
+            then.status(201).json_body(json!({
+                "id": 911,
+                "html_url": "https://example.test/comment/911"
+            }));
+        });
+
+        let client = GithubApiClient::new(
+            server.base_url(),
+            "token".to_string(),
+            RepoRef::parse("owner/repo").expect("repo"),
+            2_000,
+            1,
+            1,
+        )
+        .expect("client");
+        let chunks = vec!["chunk-1".to_string(), "chunk-2".to_string()];
+        let outcome = post_issue_comment_chunks(&client, 7, 901, &chunks).await;
+        assert!(outcome.edit_attempted);
+        assert!(!outcome.edit_success);
+        assert_eq!(outcome.append_count, 2);
+        assert_eq!(outcome.posted_comment_id, Some(911));
+        update.assert_calls(1);
+        fallback.assert_calls(1);
+        append.assert_calls(1);
     }
 
     #[test]
