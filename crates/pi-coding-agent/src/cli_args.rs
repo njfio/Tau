@@ -447,6 +447,15 @@ pub(crate) struct Cli {
     pub(crate) orchestrator_max_plan_steps: usize,
 
     #[arg(
+        long = "orchestrator-max-delegated-steps",
+        env = "PI_ORCHESTRATOR_MAX_DELEGATED_STEPS",
+        default_value_t = 8,
+        value_parser = parse_positive_usize,
+        help = "Maximum delegated step count allowed when --orchestrator-delegate-steps is enabled"
+    )]
+    pub(crate) orchestrator_max_delegated_steps: usize,
+
+    #[arg(
         long = "orchestrator-max-executor-response-chars",
         env = "PI_ORCHESTRATOR_MAX_EXECUTOR_RESPONSE_CHARS",
         default_value_t = 20000,

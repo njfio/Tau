@@ -111,6 +111,7 @@ pub(crate) async fn run_local_runtime(config: LocalRuntimeConfig<'_>) -> Result<
                 cli.turn_timeout_ms,
                 render_options,
                 cli.orchestrator_max_plan_steps,
+                cli.orchestrator_max_delegated_steps,
                 cli.orchestrator_max_executor_response_chars,
                 cli.orchestrator_max_delegated_step_response_chars,
                 cli.orchestrator_max_delegated_total_response_chars,
@@ -161,6 +162,7 @@ pub(crate) async fn run_local_runtime(config: LocalRuntimeConfig<'_>) -> Result<
         extension_runtime_hooks: &extension_runtime_hooks,
         orchestrator_mode: cli.orchestrator_mode,
         orchestrator_max_plan_steps: cli.orchestrator_max_plan_steps,
+        orchestrator_max_delegated_steps: cli.orchestrator_max_delegated_steps,
         orchestrator_max_executor_response_chars: cli.orchestrator_max_executor_response_chars,
         orchestrator_max_delegated_step_response_chars: cli
             .orchestrator_max_delegated_step_response_chars,
