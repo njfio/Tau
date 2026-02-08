@@ -318,6 +318,16 @@ cargo run -p pi-coding-agent -- \
   --package-install-root .pi/packages
 ```
 
+Require package signatures during install (trusted keys come from skill trust roots):
+
+```bash
+cargo run -p pi-coding-agent -- \
+  --package-install ./examples/starter/package.json \
+  --package-install-root .pi/packages \
+  --require-signed-packages \
+  --skill-trust-root publisher=BASE64_PUBLIC_KEY
+```
+
 List installed package bundles from a package root:
 
 ```bash

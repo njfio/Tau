@@ -4,9 +4,11 @@ use std::{
 };
 
 use anyhow::{anyhow, bail, Context, Result};
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+use ed25519_dalek::{Signature, VerifyingKey};
 use serde::{Deserialize, Serialize};
 
-use crate::Cli;
+use crate::{Cli, TrustedKey};
 
 const PACKAGE_MANIFEST_SCHEMA_VERSION: u32 = 1;
 
@@ -130,6 +132,10 @@ struct PackageManifest {
     name: String,
     version: String,
     #[serde(default)]
+    signing_key: Option<String>,
+    #[serde(default)]
+    signature_file: Option<String>,
+    #[serde(default)]
     templates: Vec<PackageComponent>,
     #[serde(default)]
     skills: Vec<PackageComponent>,
@@ -177,7 +183,13 @@ pub(crate) fn execute_package_install_command(cli: &Cli) -> Result<()> {
     let Some(path) = cli.package_install.as_ref() else {
         return Ok(());
     };
-    let report = install_package_manifest(path, &cli.package_install_root)?;
+    let trusted_roots = crate::resolve_skill_trust_roots(cli)?;
+    let report = install_package_manifest_with_policy(
+        path,
+        &cli.package_install_root,
+        cli.require_signed_packages,
+        &trusted_roots,
+    )?;
     println!("{}", render_package_install_report(&report));
     Ok(())
 }
@@ -236,6 +248,22 @@ fn load_and_validate_manifest(path: &Path) -> Result<(PackageManifest, PackageMa
             manifest.version
         );
     }
+    match (
+        manifest.signing_key.as_deref(),
+        manifest.signature_file.as_deref(),
+    ) {
+        (Some(signing_key), Some(signature_file)) => {
+            let signing_key = signing_key.trim();
+            if signing_key.is_empty() {
+                bail!("package manifest signing_key must be non-empty when signature_file is set");
+            }
+            validate_relative_component_path("signature", signing_key, signature_file.trim())?;
+        }
+        (None, None) => {}
+        _ => bail!(
+            "package manifest signing metadata is incomplete: signing_key and signature_file are required together"
+        ),
+    }
 
     let mut total_components = 0_usize;
     validate_component_set("templates", &manifest.templates)?;
@@ -263,11 +291,27 @@ fn load_and_validate_manifest(path: &Path) -> Result<(PackageManifest, PackageMa
     Ok((manifest, summary))
 }
 
+#[cfg(test)]
 fn install_package_manifest(
     manifest_path: &Path,
     install_root: &Path,
 ) -> Result<PackageInstallReport> {
+    install_package_manifest_with_policy(manifest_path, install_root, false, &[])
+}
+
+fn install_package_manifest_with_policy(
+    manifest_path: &Path,
+    install_root: &Path,
+    require_signed_packages: bool,
+    trusted_roots: &[TrustedKey],
+) -> Result<PackageInstallReport> {
     let (manifest, summary) = load_and_validate_manifest(manifest_path)?;
+    verify_package_signature_policy(
+        manifest_path,
+        &manifest,
+        require_signed_packages,
+        trusted_roots,
+    )?;
     let manifest_dir = manifest_path
         .parent()
         .filter(|dir| !dir.as_os_str().is_empty())
@@ -332,6 +376,115 @@ fn install_package_manifest(
     )?;
 
     Ok(report)
+}
+
+fn verify_package_signature_policy(
+    manifest_path: &Path,
+    manifest: &PackageManifest,
+    require_signed_packages: bool,
+    trusted_roots: &[TrustedKey],
+) -> Result<()> {
+    match (
+        manifest.signing_key.as_deref(),
+        manifest.signature_file.as_deref(),
+    ) {
+        (Some(signing_key), Some(signature_file)) => {
+            let signing_key = signing_key.trim();
+            let trusted_key = trusted_roots
+                .iter()
+                .find(|key| key.id == signing_key)
+                .ok_or_else(|| {
+                    anyhow!(
+                        "package manifest signing key '{}' is not trusted; configure --skill-trust-root or --skill-trust-root-file",
+                        signing_key
+                    )
+                })?;
+            let manifest_dir = manifest_path
+                .parent()
+                .filter(|dir| !dir.as_os_str().is_empty())
+                .unwrap_or_else(|| Path::new("."));
+            let canonical_manifest_dir =
+                std::fs::canonicalize(manifest_dir).with_context(|| {
+                    format!(
+                        "failed to canonicalize package manifest directory {}",
+                        manifest_dir.display()
+                    )
+                })?;
+            let signature_path = resolve_component_source_path(
+                "signature",
+                signing_key,
+                Path::new(signature_file.trim()),
+                &canonical_manifest_dir,
+            )?;
+            let signature_base64 = std::fs::read_to_string(&signature_path).with_context(|| {
+                format!(
+                    "failed to read package signature file {}",
+                    signature_path.display()
+                )
+            })?;
+            let signature_base64 = signature_base64.trim();
+            if signature_base64.is_empty() {
+                bail!(
+                    "package manifest signature file '{}' is empty",
+                    signature_path.display()
+                );
+            }
+            let manifest_bytes = std::fs::read(manifest_path).with_context(|| {
+                format!("failed to read package manifest {}", manifest_path.display())
+            })?;
+            verify_ed25519_signature(
+                &manifest_bytes,
+                signature_base64,
+                trusted_key.public_key.trim(),
+            )
+            .with_context(|| {
+                format!(
+                    "package manifest signature verification failed for key '{}'",
+                    signing_key
+                )
+            })?;
+            Ok(())
+        }
+        (None, None) => {
+            if require_signed_packages {
+                bail!(
+                    "package manifest must include signing_key and signature_file when --require-signed-packages is enabled"
+                );
+            }
+            Ok(())
+        }
+        _ => bail!(
+            "package manifest signing metadata is incomplete: signing_key and signature_file are required together"
+        ),
+    }
+}
+
+fn verify_ed25519_signature(
+    message: &[u8],
+    signature_base64: &str,
+    public_key_base64: &str,
+) -> Result<()> {
+    let signature_bytes = decode_base64_fixed::<64>("signature", signature_base64)?;
+    let public_key_bytes = decode_base64_fixed::<32>("public key", public_key_base64)?;
+    let public_key = VerifyingKey::from_bytes(&public_key_bytes)
+        .context("failed to decode ed25519 public key bytes")?;
+    let signature = Signature::from_bytes(&signature_bytes);
+    public_key
+        .verify_strict(message, &signature)
+        .map_err(|error| anyhow!("invalid ed25519 signature: {error}"))?;
+    Ok(())
+}
+
+fn decode_base64_fixed<const N: usize>(label: &str, raw: &str) -> Result<[u8; N]> {
+    let decoded = BASE64
+        .decode(raw.trim())
+        .with_context(|| format!("failed to decode {label} from base64"))?;
+    decoded.as_slice().try_into().map_err(|_| {
+        anyhow!(
+            "decoded {label} has invalid length: expected {N} bytes, found {}",
+            decoded.len()
+        )
+    })
 }
 
 fn render_package_install_report(report: &PackageInstallReport) -> String {
@@ -831,14 +984,19 @@ fn is_semver_like(raw: &str) -> bool {
 mod tests {
     use std::path::Path;
 
+    use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+    use ed25519_dalek::{Signer, SigningKey};
     use tempfile::tempdir;
 
+    use crate::TrustedKey;
+
     use super::{
-        install_package_manifest, list_installed_packages, load_and_validate_manifest,
-        parse_package_coordinate, remove_installed_package, render_package_install_report,
-        render_package_list_report, render_package_manifest_report, render_package_remove_report,
-        render_package_rollback_report, rollback_installed_package, validate_package_manifest,
-        FileUpsertOutcome, PackageListReport, PackageRemoveStatus, PackageRollbackStatus,
+        install_package_manifest, install_package_manifest_with_policy, list_installed_packages,
+        load_and_validate_manifest, parse_package_coordinate, remove_installed_package,
+        render_package_install_report, render_package_list_report, render_package_manifest_report,
+        render_package_remove_report, render_package_rollback_report, rollback_installed_package,
+        validate_package_manifest, FileUpsertOutcome, PackageListReport, PackageRemoveStatus,
+        PackageRollbackStatus,
     };
 
     #[cfg(unix)]
@@ -979,6 +1137,24 @@ mod tests {
         let version_error =
             validate_package_manifest(&version_path).expect_err("invalid version should fail");
         assert!(version_error.to_string().contains("must follow x.y.z"));
+
+        let signature_path = temp.path().join("signature.json");
+        std::fs::write(
+            &signature_path,
+            r#"{
+  "schema_version": 1,
+  "name": "bundle",
+  "version": "1.0.0",
+  "signing_key": "publisher",
+  "templates": [{"id":"review","path":"templates/review.txt"}]
+}"#,
+        )
+        .expect("write signature manifest");
+        let signature_error = validate_package_manifest(&signature_path)
+            .expect_err("incomplete signing metadata should fail");
+        assert!(signature_error
+            .to_string()
+            .contains("signing metadata is incomplete"));
     }
 
     #[test]
@@ -1059,6 +1235,160 @@ mod tests {
         assert_eq!(second.updated, 0);
         assert_eq!(second.skipped, 2);
         assert_eq!(second.manifest_status, FileUpsertOutcome::Skipped);
+    }
+
+    #[test]
+    fn functional_install_package_manifest_with_policy_verifies_signature() {
+        let temp = tempdir().expect("tempdir");
+        let package_root = temp.path().join("bundle");
+        std::fs::create_dir_all(package_root.join("templates")).expect("create templates dir");
+        std::fs::write(package_root.join("templates/review.txt"), "template body")
+            .expect("write template source");
+        let manifest_path = package_root.join("package.json");
+        std::fs::write(
+            &manifest_path,
+            r#"{
+  "schema_version": 1,
+  "name": "starter",
+  "version": "1.0.0",
+  "signing_key": "publisher",
+  "signature_file": "package.sig",
+  "templates": [{"id":"review","path":"templates/review.txt"}]
+}"#,
+        )
+        .expect("write manifest");
+
+        let signing_key = SigningKey::from_bytes(&[7_u8; 32]);
+        let signature = signing_key.sign(&std::fs::read(&manifest_path).expect("read manifest"));
+        std::fs::write(
+            package_root.join("package.sig"),
+            BASE64.encode(signature.to_bytes()),
+        )
+        .expect("write signature");
+        let trusted_roots = vec![TrustedKey {
+            id: "publisher".to_string(),
+            public_key: BASE64.encode(signing_key.verifying_key().as_bytes()),
+        }];
+
+        let install_root = temp.path().join("installed");
+        let report = install_package_manifest_with_policy(
+            &manifest_path,
+            &install_root,
+            true,
+            &trusted_roots,
+        )
+        .expect("signed install should succeed");
+        assert_eq!(report.installed, 1);
+        assert_eq!(report.total_components, 1);
+    }
+
+    #[test]
+    fn regression_install_package_manifest_with_policy_rejects_unsigned_when_required() {
+        let temp = tempdir().expect("tempdir");
+        let package_root = temp.path().join("bundle");
+        std::fs::create_dir_all(package_root.join("templates")).expect("create templates dir");
+        std::fs::write(package_root.join("templates/review.txt"), "template body")
+            .expect("write template source");
+        let manifest_path = package_root.join("package.json");
+        std::fs::write(
+            &manifest_path,
+            r#"{
+  "schema_version": 1,
+  "name": "starter",
+  "version": "1.0.0",
+  "templates": [{"id":"review","path":"templates/review.txt"}]
+}"#,
+        )
+        .expect("write manifest");
+
+        let install_root = temp.path().join("installed");
+        let error = install_package_manifest_with_policy(&manifest_path, &install_root, true, &[])
+            .expect_err("unsigned package should fail when signatures are required");
+        assert!(error
+            .to_string()
+            .contains("must include signing_key and signature_file"));
+    }
+
+    #[test]
+    fn regression_install_package_manifest_with_policy_rejects_invalid_signature() {
+        let temp = tempdir().expect("tempdir");
+        let package_root = temp.path().join("bundle");
+        std::fs::create_dir_all(package_root.join("templates")).expect("create templates dir");
+        std::fs::write(package_root.join("templates/review.txt"), "template body")
+            .expect("write template source");
+        let manifest_path = package_root.join("package.json");
+        std::fs::write(
+            &manifest_path,
+            r#"{
+  "schema_version": 1,
+  "name": "starter",
+  "version": "1.0.0",
+  "signing_key": "publisher",
+  "signature_file": "package.sig",
+  "templates": [{"id":"review","path":"templates/review.txt"}]
+}"#,
+        )
+        .expect("write manifest");
+        std::fs::write(package_root.join("package.sig"), "invalid-signature")
+            .expect("write signature");
+
+        let signing_key = SigningKey::from_bytes(&[7_u8; 32]);
+        let trusted_roots = vec![TrustedKey {
+            id: "publisher".to_string(),
+            public_key: BASE64.encode(signing_key.verifying_key().as_bytes()),
+        }];
+        let install_root = temp.path().join("installed");
+        let error = install_package_manifest_with_policy(
+            &manifest_path,
+            &install_root,
+            true,
+            &trusted_roots,
+        )
+        .expect_err("invalid signature should fail");
+        assert!(error.to_string().contains("signature verification failed"));
+    }
+
+    #[test]
+    fn regression_install_package_manifest_with_policy_rejects_untrusted_signing_key() {
+        let temp = tempdir().expect("tempdir");
+        let package_root = temp.path().join("bundle");
+        std::fs::create_dir_all(package_root.join("templates")).expect("create templates dir");
+        std::fs::write(package_root.join("templates/review.txt"), "template body")
+            .expect("write template source");
+        let manifest_path = package_root.join("package.json");
+        std::fs::write(
+            &manifest_path,
+            r#"{
+  "schema_version": 1,
+  "name": "starter",
+  "version": "1.0.0",
+  "signing_key": "publisher",
+  "signature_file": "package.sig",
+  "templates": [{"id":"review","path":"templates/review.txt"}]
+}"#,
+        )
+        .expect("write manifest");
+
+        let signing_key = SigningKey::from_bytes(&[7_u8; 32]);
+        let signature = signing_key.sign(&std::fs::read(&manifest_path).expect("read manifest"));
+        std::fs::write(
+            package_root.join("package.sig"),
+            BASE64.encode(signature.to_bytes()),
+        )
+        .expect("write signature");
+        let trusted_roots = vec![TrustedKey {
+            id: "different-key".to_string(),
+            public_key: BASE64.encode(signing_key.verifying_key().as_bytes()),
+        }];
+        let install_root = temp.path().join("installed");
+        let error = install_package_manifest_with_policy(
+            &manifest_path,
+            &install_root,
+            true,
+            &trusted_roots,
+        )
+        .expect_err("untrusted signing key should fail");
+        assert!(error.to_string().contains("is not trusted"));
     }
 
     #[test]
