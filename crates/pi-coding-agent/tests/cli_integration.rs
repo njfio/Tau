@@ -5020,7 +5020,68 @@ fn rpc_dispatch_frame_file_flag_outputs_capabilities_response() {
         .stdout(predicate::str::contains(
             "\"kind\": \"capabilities.response\"",
         ))
-        .stdout(predicate::str::contains("\"protocol_version\": \"0.1.0\""));
+        .stdout(predicate::str::contains("\"protocol_version\": \"0.1.0\""))
+        .stdout(predicate::str::contains(
+            "\"negotiated_request_schema_version\": 1",
+        ));
+}
+
+#[test]
+fn rpc_dispatch_frame_file_flag_negotiates_requested_capabilities_schema_version() {
+    let temp = tempdir().expect("tempdir");
+    let frame_path = temp.path().join("frame.json");
+    fs::write(
+        &frame_path,
+        r#"{
+  "schema_version": 1,
+  "request_id": "req-cap-negotiated",
+  "kind": "capabilities.request",
+  "payload": {"request_schema_version":0}
+}"#,
+    )
+    .expect("write frame");
+
+    let mut cmd = binary_command();
+    cmd.args([
+        "--rpc-dispatch-frame-file",
+        frame_path.to_str().expect("utf8 path"),
+    ]);
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "\"request_id\": \"req-cap-negotiated\"",
+        ))
+        .stdout(predicate::str::contains(
+            "\"negotiated_request_schema_version\": 0",
+        ));
+}
+
+#[test]
+fn regression_rpc_dispatch_frame_file_rejects_unsupported_capabilities_schema_request() {
+    let temp = tempdir().expect("tempdir");
+    let frame_path = temp.path().join("frame.json");
+    fs::write(
+        &frame_path,
+        r#"{
+  "schema_version": 1,
+  "request_id": "req-cap-invalid",
+  "kind": "capabilities.request",
+  "payload": {"request_schema_version":99}
+}"#,
+    )
+    .expect("write frame");
+
+    let mut cmd = binary_command();
+    cmd.args([
+        "--rpc-dispatch-frame-file",
+        frame_path.to_str().expect("utf8 path"),
+    ]);
+
+    cmd.assert()
+        .failure()
+        .stdout(predicate::str::contains("\"code\": \"invalid_payload\""))
+        .stderr(predicate::str::contains("request_schema_version"));
 }
 
 #[test]

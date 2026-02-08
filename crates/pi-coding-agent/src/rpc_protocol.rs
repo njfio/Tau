@@ -222,6 +222,8 @@ pub(crate) fn validate_rpc_frame_file(path: &Path) -> Result<RpcFrame> {
 pub(crate) fn dispatch_rpc_frame(frame: &RpcFrame) -> Result<RpcResponseFrame> {
     match frame.kind {
         RpcFrameKind::CapabilitiesRequest => {
+            let negotiated_request_schema_version =
+                resolve_capabilities_requested_schema_version(&frame.payload)?;
             let capabilities = rpc_capabilities_payload();
             let capability_list = capabilities["capabilities"]
                 .as_array()
@@ -238,6 +240,7 @@ pub(crate) fn dispatch_rpc_frame(frame: &RpcFrame) -> Result<RpcResponseFrame> {
                     "protocol_version": RPC_PROTOCOL_VERSION,
                     "response_schema_version": RPC_FRAME_SCHEMA_VERSION,
                     "supported_request_schema_versions": RPC_COMPATIBLE_REQUEST_SCHEMA_VERSIONS,
+                    "negotiated_request_schema_version": negotiated_request_schema_version,
                     "capabilities": capability_list,
                     "contracts": contracts,
                 }),
@@ -789,6 +792,52 @@ fn resolve_run_start_run_id(
     }
 }
 
+fn resolve_capabilities_requested_schema_version(
+    payload: &serde_json::Map<String, Value>,
+) -> Result<u32> {
+    let Some(raw_value) = payload.get("request_schema_version") else {
+        return Ok(*RPC_COMPATIBLE_REQUEST_SCHEMA_VERSIONS
+            .last()
+            .unwrap_or(&RPC_FRAME_SCHEMA_VERSION));
+    };
+
+    let requested = match raw_value {
+        Value::Number(number) => number.as_u64().ok_or_else(|| {
+            anyhow!(
+                "rpc frame kind 'capabilities.request' optional payload field 'request_schema_version' must be one of supported request schema versions [{}] when provided",
+                supported_request_schema_versions_label()
+            )
+        })?,
+        _ => {
+            bail!(
+                "rpc frame kind 'capabilities.request' optional payload field 'request_schema_version' must be one of supported request schema versions [{}] when provided",
+                supported_request_schema_versions_label()
+            )
+        }
+    };
+    let requested_u32 = u32::try_from(requested).map_err(|_| {
+        anyhow!(
+            "rpc frame kind 'capabilities.request' optional payload field 'request_schema_version' must be one of supported request schema versions [{}] when provided",
+            supported_request_schema_versions_label()
+        )
+    })?;
+    if !RPC_COMPATIBLE_REQUEST_SCHEMA_VERSIONS.contains(&requested_u32) {
+        bail!(
+            "rpc frame kind 'capabilities.request' optional payload field 'request_schema_version' must be one of supported request schema versions [{}] when provided",
+            supported_request_schema_versions_label()
+        );
+    }
+    Ok(requested_u32)
+}
+
+fn supported_request_schema_versions_label() -> String {
+    RPC_COMPATIBLE_REQUEST_SCHEMA_VERSIONS
+        .iter()
+        .map(u32::to_string)
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 fn resolve_run_fail_reason(payload: &serde_json::Map<String, Value>) -> Result<String> {
     match payload.get("reason") {
         Some(Value::String(reason)) => {
@@ -1017,6 +1066,7 @@ fn classify_rpc_error_message(message: &str) -> &'static str {
     } else if message.contains("rpc frame payload must be a JSON object")
         || message.contains("requires non-empty payload field")
         || message.contains("optional payload field 'run_id'")
+        || message.contains("optional payload field 'request_schema_version'")
         || message.contains("optional payload field 'reason'")
         || message.contains("duplicate active run_id")
         || message.contains("references unknown run_id")
@@ -1263,6 +1313,10 @@ mod tests {
             capabilities_response.payload["response_schema_version"].as_u64(),
             Some(1)
         );
+        assert_eq!(
+            capabilities_response.payload["negotiated_request_schema_version"].as_u64(),
+            Some(1)
+        );
         let schema_versions = capabilities_response.payload["supported_request_schema_versions"]
             .as_array()
             .expect("supported schemas array");
@@ -1430,6 +1484,25 @@ mod tests {
         let response = dispatch_rpc_frame(&frame).expect("dispatch frame");
         assert_eq!(response.kind, "run.accepted");
         assert_eq!(response.payload["run_id"].as_str(), Some("my-run"));
+    }
+
+    #[test]
+    fn unit_dispatch_rpc_frame_capabilities_request_accepts_supported_requested_schema_version() {
+        let frame = parse_rpc_frame(
+            r#"{
+  "schema_version": 1,
+  "request_id": "req-cap-legacy",
+  "kind": "capabilities.request",
+  "payload": {"request_schema_version":0}
+}"#,
+        )
+        .expect("parse frame");
+        let response = dispatch_rpc_frame(&frame).expect("dispatch frame");
+        assert_eq!(response.kind, "capabilities.response");
+        assert_eq!(
+            response.payload["negotiated_request_schema_version"].as_u64(),
+            Some(0)
+        );
     }
 
     #[test]
@@ -1681,6 +1754,36 @@ mod tests {
         assert!(start_invalid_run_id_error
             .to_string()
             .contains("optional payload field 'run_id'"));
+
+        let capabilities_invalid_schema = parse_rpc_frame(
+            r#"{
+  "schema_version": 1,
+  "request_id": "req-cap-invalid-schema",
+  "kind": "capabilities.request",
+  "payload": {"request_schema_version":99}
+}"#,
+        )
+        .expect("parse invalid requested schema");
+        let capabilities_invalid_schema_error = dispatch_rpc_frame(&capabilities_invalid_schema)
+            .expect_err("unsupported requested schema should fail");
+        assert!(capabilities_invalid_schema_error
+            .to_string()
+            .contains("optional payload field 'request_schema_version'"));
+
+        let capabilities_invalid_type = parse_rpc_frame(
+            r#"{
+  "schema_version": 1,
+  "request_id": "req-cap-invalid-type",
+  "kind": "capabilities.request",
+  "payload": {"request_schema_version":"1"}
+}"#,
+        )
+        .expect("parse invalid requested schema type");
+        let capabilities_invalid_type_error = dispatch_rpc_frame(&capabilities_invalid_type)
+            .expect_err("non-numeric requested schema should fail");
+        assert!(capabilities_invalid_type_error
+            .to_string()
+            .contains("optional payload field 'request_schema_version'"));
     }
 
     #[test]
@@ -1708,6 +1811,12 @@ mod tests {
         assert_eq!(
             classify_rpc_error_message(
                 "rpc frame kind 'run.start' requires non-empty payload field 'prompt'"
+            ),
+            RPC_ERROR_CODE_INVALID_PAYLOAD
+        );
+        assert_eq!(
+            classify_rpc_error_message(
+                "rpc frame kind 'capabilities.request' optional payload field 'request_schema_version' must be one of supported request schema versions [0, 1] when provided"
             ),
             RPC_ERROR_CODE_INVALID_PAYLOAD
         );
