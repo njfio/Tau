@@ -528,8 +528,40 @@ pub(crate) struct Cli {
     pub(crate) channel_store_repair: Option<String>,
 
     #[arg(
+        long = "extension-exec-manifest",
+        env = "PI_EXTENSION_EXEC_MANIFEST",
+        conflicts_with = "extension_validate",
+        conflicts_with = "extension_list",
+        conflicts_with = "extension_show",
+        requires = "extension_exec_hook",
+        requires = "extension_exec_payload_file",
+        value_name = "path",
+        help = "Execute one process-runtime extension hook from a manifest and exit"
+    )]
+    pub(crate) extension_exec_manifest: Option<PathBuf>,
+
+    #[arg(
+        long = "extension-exec-hook",
+        env = "PI_EXTENSION_EXEC_HOOK",
+        requires = "extension_exec_manifest",
+        value_name = "hook",
+        help = "Hook name used by --extension-exec-manifest (for example run-start)"
+    )]
+    pub(crate) extension_exec_hook: Option<String>,
+
+    #[arg(
+        long = "extension-exec-payload-file",
+        env = "PI_EXTENSION_EXEC_PAYLOAD_FILE",
+        requires = "extension_exec_manifest",
+        value_name = "path",
+        help = "JSON payload file for --extension-exec-manifest hook invocation"
+    )]
+    pub(crate) extension_exec_payload_file: Option<PathBuf>,
+
+    #[arg(
         long = "extension-validate",
         env = "PI_EXTENSION_VALIDATE",
+        conflicts_with = "extension_exec_manifest",
         conflicts_with = "extension_list",
         conflicts_with = "extension_show",
         value_name = "path",
@@ -540,6 +572,7 @@ pub(crate) struct Cli {
     #[arg(
         long = "extension-list",
         env = "PI_EXTENSION_LIST",
+        conflicts_with = "extension_exec_manifest",
         conflicts_with = "extension_validate",
         conflicts_with = "extension_show",
         help = "List discovered extension manifests from a root path and exit"
@@ -559,6 +592,7 @@ pub(crate) struct Cli {
     #[arg(
         long = "extension-show",
         env = "PI_EXTENSION_SHOW",
+        conflicts_with = "extension_exec_manifest",
         conflicts_with = "extension_list",
         conflicts_with = "extension_validate",
         value_name = "path",

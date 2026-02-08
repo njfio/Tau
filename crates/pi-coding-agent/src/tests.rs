@@ -97,7 +97,7 @@ use crate::session::{SessionImportMode, SessionStore};
 use crate::tools::{BashCommandProfile, OsSandboxMode, ToolPolicyPreset};
 use crate::{default_model_catalog_cache_path, ModelCatalog, MODELS_LIST_USAGE, MODEL_SHOW_USAGE};
 use crate::{
-    execute_extension_list_command, execute_extension_show_command,
+    execute_extension_exec_command, execute_extension_list_command, execute_extension_show_command,
     execute_extension_validate_command,
 };
 
@@ -258,6 +258,9 @@ fn test_cli() -> Cli {
         channel_store_root: PathBuf::from(".pi/channel-store"),
         channel_store_inspect: None,
         channel_store_repair: None,
+        extension_exec_manifest: None,
+        extension_exec_hook: None,
+        extension_exec_payload_file: None,
         extension_validate: None,
         extension_list: false,
         extension_list_root: PathBuf::from(".pi/extensions"),
@@ -549,10 +552,35 @@ fn functional_cli_model_catalog_flags_accept_overrides() {
 #[test]
 fn unit_cli_extension_validate_flag_defaults_to_none() {
     let cli = Cli::parse_from(["pi-rs"]);
+    assert!(cli.extension_exec_manifest.is_none());
+    assert!(cli.extension_exec_hook.is_none());
+    assert!(cli.extension_exec_payload_file.is_none());
     assert!(cli.extension_validate.is_none());
     assert!(!cli.extension_list);
     assert_eq!(cli.extension_list_root, PathBuf::from(".pi/extensions"));
     assert!(cli.extension_show.is_none());
+}
+
+#[test]
+fn functional_cli_extension_exec_flags_accept_valid_combo() {
+    let cli = Cli::parse_from([
+        "pi-rs",
+        "--extension-exec-manifest",
+        "extensions/issue.json",
+        "--extension-exec-hook",
+        "run-start",
+        "--extension-exec-payload-file",
+        "extensions/payload.json",
+    ]);
+    assert_eq!(
+        cli.extension_exec_manifest,
+        Some(PathBuf::from("extensions/issue.json"))
+    );
+    assert_eq!(cli.extension_exec_hook.as_deref(), Some("run-start"));
+    assert_eq!(
+        cli.extension_exec_payload_file,
+        Some(PathBuf::from("extensions/payload.json"))
+    );
 }
 
 #[test]
@@ -608,6 +636,19 @@ fn regression_cli_extension_list_and_show_conflict() {
     ]);
     let error = parse.expect_err("list and show should conflict");
     assert!(error.to_string().contains("cannot be used with"));
+}
+
+#[test]
+fn regression_cli_extension_exec_requires_hook_and_payload() {
+    let parse = Cli::try_parse_from([
+        "pi-rs",
+        "--extension-exec-manifest",
+        "extensions/issue.json",
+    ]);
+    let error = parse.expect_err("exec manifest should require hook and payload");
+    assert!(error
+        .to_string()
+        .contains("required arguments were not provided"));
 }
 
 #[test]
@@ -6805,6 +6846,16 @@ fn regression_execute_channel_store_admin_repair_removes_invalid_lines() {
     assert!(!store.channel_dir().join(expired.relative_path).exists());
 }
 
+fn make_script_executable(path: &Path) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut permissions = std::fs::metadata(path).expect("metadata").permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(path, permissions).expect("set executable permissions");
+    }
+}
+
 #[test]
 fn functional_execute_extension_validate_command_succeeds_for_valid_manifest() {
     let temp = tempdir().expect("tempdir");
@@ -6950,6 +7001,154 @@ fn regression_execute_extension_list_command_rejects_non_directory_root() {
     let error =
         execute_extension_list_command(&cli).expect_err("non-directory extension root should fail");
     assert!(error.to_string().contains("is not a directory"));
+}
+
+#[test]
+fn functional_execute_extension_exec_command_runs_process_hook() {
+    let temp = tempdir().expect("tempdir");
+    let bin_dir = temp.path().join("bin");
+    std::fs::create_dir_all(&bin_dir).expect("create bin directory");
+    let script_path = bin_dir.join("hook.sh");
+    std::fs::write(
+        &script_path,
+        "#!/usr/bin/env bash\nread -r _input\nprintf '{\"ok\":true,\"result\":\"hook-processed\"}'\n",
+    )
+    .expect("write hook script");
+    make_script_executable(&script_path);
+    let manifest_path = temp.path().join("extension.json");
+    std::fs::write(
+        &manifest_path,
+        r#"{
+  "schema_version": 1,
+  "id": "issue-assistant",
+  "version": "0.1.0",
+  "runtime": "process",
+  "entrypoint": "bin/hook.sh",
+  "hooks": ["run-start"],
+  "timeout_ms": 5000
+}"#,
+    )
+    .expect("write manifest");
+    let payload_path = temp.path().join("payload.json");
+    std::fs::write(&payload_path, r#"{"event":"created"}"#).expect("write payload");
+
+    let mut cli = test_cli();
+    cli.extension_exec_manifest = Some(manifest_path);
+    cli.extension_exec_hook = Some("run-start".to_string());
+    cli.extension_exec_payload_file = Some(payload_path);
+    execute_extension_exec_command(&cli).expect("extension exec should succeed");
+}
+
+#[test]
+fn regression_execute_extension_exec_command_rejects_undeclared_hook() {
+    let temp = tempdir().expect("tempdir");
+    let bin_dir = temp.path().join("bin");
+    std::fs::create_dir_all(&bin_dir).expect("create bin directory");
+    let script_path = bin_dir.join("hook.sh");
+    std::fs::write(
+        &script_path,
+        "#!/usr/bin/env bash\nread -r _input\nprintf '{\"ok\":true}'\n",
+    )
+    .expect("write hook script");
+    make_script_executable(&script_path);
+    let manifest_path = temp.path().join("extension.json");
+    std::fs::write(
+        &manifest_path,
+        r#"{
+  "schema_version": 1,
+  "id": "issue-assistant",
+  "version": "0.1.0",
+  "runtime": "process",
+  "entrypoint": "bin/hook.sh",
+  "hooks": ["run-end"],
+  "timeout_ms": 5000
+}"#,
+    )
+    .expect("write manifest");
+    let payload_path = temp.path().join("payload.json");
+    std::fs::write(&payload_path, r#"{"event":"created"}"#).expect("write payload");
+
+    let mut cli = test_cli();
+    cli.extension_exec_manifest = Some(manifest_path);
+    cli.extension_exec_hook = Some("run-start".to_string());
+    cli.extension_exec_payload_file = Some(payload_path);
+    let error = execute_extension_exec_command(&cli).expect_err("undeclared hook should fail");
+    assert!(error.to_string().contains("does not declare hook"));
+}
+
+#[test]
+fn regression_execute_extension_exec_command_enforces_timeout() {
+    let temp = tempdir().expect("tempdir");
+    let bin_dir = temp.path().join("bin");
+    std::fs::create_dir_all(&bin_dir).expect("create bin directory");
+    let script_path = bin_dir.join("slow.sh");
+    std::fs::write(
+        &script_path,
+        "#!/usr/bin/env bash\nsleep 1\nprintf '{\"ok\":true}'\n",
+    )
+    .expect("write hook script");
+    make_script_executable(&script_path);
+    let manifest_path = temp.path().join("extension.json");
+    std::fs::write(
+        &manifest_path,
+        r#"{
+  "schema_version": 1,
+  "id": "issue-assistant",
+  "version": "0.1.0",
+  "runtime": "process",
+  "entrypoint": "bin/slow.sh",
+  "hooks": ["run-start"],
+  "timeout_ms": 20
+}"#,
+    )
+    .expect("write manifest");
+    let payload_path = temp.path().join("payload.json");
+    std::fs::write(&payload_path, r#"{"event":"created"}"#).expect("write payload");
+
+    let mut cli = test_cli();
+    cli.extension_exec_manifest = Some(manifest_path);
+    cli.extension_exec_hook = Some("run-start".to_string());
+    cli.extension_exec_payload_file = Some(payload_path);
+    let error = execute_extension_exec_command(&cli).expect_err("timeout should fail");
+    assert!(error.to_string().contains("timed out"));
+}
+
+#[test]
+fn regression_execute_extension_exec_command_rejects_invalid_json_response() {
+    let temp = tempdir().expect("tempdir");
+    let bin_dir = temp.path().join("bin");
+    std::fs::create_dir_all(&bin_dir).expect("create bin directory");
+    let script_path = bin_dir.join("bad.sh");
+    std::fs::write(
+        &script_path,
+        "#!/usr/bin/env bash\nread -r _input\nprintf 'not-json'\n",
+    )
+    .expect("write hook script");
+    make_script_executable(&script_path);
+    let manifest_path = temp.path().join("extension.json");
+    std::fs::write(
+        &manifest_path,
+        r#"{
+  "schema_version": 1,
+  "id": "issue-assistant",
+  "version": "0.1.0",
+  "runtime": "process",
+  "entrypoint": "bin/bad.sh",
+  "hooks": ["run-start"],
+  "timeout_ms": 5000
+}"#,
+    )
+    .expect("write manifest");
+    let payload_path = temp.path().join("payload.json");
+    std::fs::write(&payload_path, r#"{"event":"created"}"#).expect("write payload");
+
+    let mut cli = test_cli();
+    cli.extension_exec_manifest = Some(manifest_path);
+    cli.extension_exec_hook = Some("run-start".to_string());
+    cli.extension_exec_payload_file = Some(payload_path);
+    let error =
+        execute_extension_exec_command(&cli).expect_err("invalid output should be rejected");
+    assert!(error.to_string().contains("response must be valid JSON"));
 }
 
 #[test]
