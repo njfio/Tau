@@ -5023,7 +5023,10 @@ fn rpc_dispatch_frame_file_flag_outputs_capabilities_response() {
         .stdout(predicate::str::contains("\"protocol_version\": \"0.1.0\""))
         .stdout(predicate::str::contains(
             "\"negotiated_request_schema_version\": 1",
-        ));
+        ))
+        .stdout(predicate::str::contains("\"contracts\": {"))
+        .stdout(predicate::str::contains("\"code\": \"invalid_payload\""))
+        .stdout(predicate::str::contains("\"code\": \"unsupported_schema\""));
 }
 
 #[test]

@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use serde_json::{json, Value};
 
-use crate::rpc_protocol::RPC_SERVE_CLOSED_RUN_STATUS_CAPACITY;
+use crate::rpc_protocol::{rpc_error_contracts, RPC_SERVE_CLOSED_RUN_STATUS_CAPACITY};
 use crate::Cli;
 
 pub(crate) const RPC_CAPABILITIES_SCHEMA_VERSION: u32 = 1;
@@ -20,6 +20,17 @@ const RPC_CAPABILITIES: &[&str] = &[
 ];
 
 pub(crate) fn rpc_capabilities_payload() -> Value {
+    let error_codes = rpc_error_contracts()
+        .iter()
+        .map(|contract| {
+            json!({
+                "code": contract.code,
+                "category": contract.category,
+                "description": contract.description,
+            })
+        })
+        .collect::<Vec<_>>();
+
     json!({
         "schema_version": RPC_CAPABILITIES_SCHEMA_VERSION,
         "protocol_version": RPC_PROTOCOL_VERSION,
@@ -28,7 +39,10 @@ pub(crate) fn rpc_capabilities_payload() -> Value {
             "run_status": {
                 "terminal_flag_always_present": true,
                 "serve_closed_status_retention_capacity": RPC_SERVE_CLOSED_RUN_STATUS_CAPACITY,
-            }
+            },
+            "errors": {
+                "codes": error_codes,
+            },
         }
     })
 }
@@ -70,6 +84,12 @@ mod tests {
         assert_eq!(
             payload["contracts"]["run_status"]["serve_closed_status_retention_capacity"].as_u64(),
             Some(RPC_SERVE_CLOSED_RUN_STATUS_CAPACITY as u64)
+        );
+        assert_eq!(
+            payload["contracts"]["errors"]["codes"]
+                .as_array()
+                .map(|codes| codes.len()),
+            Some(7)
         );
     }
 
@@ -114,5 +134,57 @@ mod tests {
             .collect::<Vec<_>>();
         let unique = capabilities.iter().cloned().collect::<BTreeSet<_>>();
         assert_eq!(unique.len(), capabilities.len());
+    }
+
+    #[test]
+    fn functional_rpc_capabilities_payload_error_taxonomy_is_deterministic() {
+        let payload = rpc_capabilities_payload();
+        let codes = payload["contracts"]["errors"]["codes"]
+            .as_array()
+            .expect("error codes should be an array");
+        let ordered_codes = codes
+            .iter()
+            .map(|entry| entry["code"].as_str().expect("code should be string"))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            ordered_codes,
+            vec![
+                "invalid_json",
+                "unsupported_schema",
+                "unsupported_kind",
+                "invalid_request_id",
+                "invalid_payload",
+                "io_error",
+                "internal_error",
+            ]
+        );
+        assert_eq!(
+            codes[0]["category"].as_str(),
+            Some("validation"),
+            "first code category should remain stable"
+        );
+        assert_eq!(
+            codes[1]["category"].as_str(),
+            Some("compatibility"),
+            "unsupported schema should remain compatibility category"
+        );
+    }
+
+    #[test]
+    fn regression_rpc_capabilities_payload_error_taxonomy_has_unique_codes() {
+        let payload = rpc_capabilities_payload();
+        let codes = payload["contracts"]["errors"]["codes"]
+            .as_array()
+            .expect("error codes should be an array")
+            .iter()
+            .map(|entry| {
+                entry["code"]
+                    .as_str()
+                    .expect("code should be string")
+                    .to_string()
+            })
+            .collect::<Vec<_>>();
+        let unique = codes.iter().cloned().collect::<BTreeSet<_>>();
+        assert_eq!(unique.len(), codes.len());
     }
 }

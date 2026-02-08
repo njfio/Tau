@@ -27,6 +27,54 @@ const RPC_RUN_STREAM_ASSISTANT_TEXT_KIND: &str = "run.stream.assistant_text";
 const RPC_RUN_STREAM_TOOL_EVENTS_KIND: &str = "run.stream.tool_events";
 pub(crate) const RPC_SERVE_CLOSED_RUN_STATUS_CAPACITY: usize = 1024;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct RpcErrorContract {
+    pub code: &'static str,
+    pub category: &'static str,
+    pub description: &'static str,
+}
+
+pub(crate) fn rpc_error_contracts() -> &'static [RpcErrorContract] {
+    const CONTRACTS: &[RpcErrorContract] = &[
+        RpcErrorContract {
+            code: RPC_ERROR_CODE_INVALID_JSON,
+            category: "validation",
+            description: "Incoming rpc frame JSON is malformed.",
+        },
+        RpcErrorContract {
+            code: RPC_ERROR_CODE_UNSUPPORTED_SCHEMA,
+            category: "compatibility",
+            description: "Requested rpc frame schema version is unsupported.",
+        },
+        RpcErrorContract {
+            code: RPC_ERROR_CODE_UNSUPPORTED_KIND,
+            category: "compatibility",
+            description: "Rpc frame kind is unsupported by this runtime.",
+        },
+        RpcErrorContract {
+            code: RPC_ERROR_CODE_INVALID_REQUEST_ID,
+            category: "validation",
+            description: "Rpc frame request_id is missing or invalid.",
+        },
+        RpcErrorContract {
+            code: RPC_ERROR_CODE_INVALID_PAYLOAD,
+            category: "validation",
+            description: "Rpc frame payload is missing required fields or shape.",
+        },
+        RpcErrorContract {
+            code: RPC_ERROR_CODE_IO_ERROR,
+            category: "transport",
+            description: "I/O failure occurred while reading or writing rpc frames.",
+        },
+        RpcErrorContract {
+            code: RPC_ERROR_CODE_INTERNAL_ERROR,
+            category: "internal",
+            description: "Unexpected runtime failure while handling rpc frame.",
+        },
+    ];
+    CONTRACTS
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum RpcFrameKind {
     CapabilitiesRequest,
@@ -1335,6 +1383,13 @@ mod tests {
                 .as_u64(),
             Some(RPC_SERVE_CLOSED_RUN_STATUS_CAPACITY as u64)
         );
+        let error_codes = capabilities_response.payload["contracts"]["errors"]["codes"]
+            .as_array()
+            .expect("error code contracts array");
+        assert_eq!(error_codes.len(), 7);
+        assert_eq!(error_codes[0]["code"].as_str(), Some("invalid_json"));
+        assert_eq!(error_codes[0]["category"].as_str(), Some("validation"));
+        assert_eq!(error_codes[6]["code"].as_str(), Some("internal_error"));
 
         let start = parse_rpc_frame(
             r#"{
