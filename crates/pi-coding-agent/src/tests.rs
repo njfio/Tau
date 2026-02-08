@@ -1593,6 +1593,9 @@ fn functional_execute_auth_command_matrix_reports_provider_mode_inventory() {
     assert_eq!(payload["mode_unsupported"], 7);
     assert_eq!(payload["available"], 4);
     assert_eq!(payload["unavailable"], 8);
+    assert_eq!(payload["state_counts_total"]["ready"], 4);
+    assert_eq!(payload["state_counts_total"]["mode_mismatch"], 1);
+    assert_eq!(payload["state_counts_total"]["unsupported_mode"], 7);
     assert_eq!(payload["state_counts"]["ready"], 4);
     assert_eq!(payload["state_counts"]["mode_mismatch"], 1);
     assert_eq!(payload["state_counts"]["unsupported_mode"], 7);
@@ -1625,6 +1628,7 @@ fn functional_execute_auth_command_matrix_reports_provider_mode_inventory() {
     let text_output = execute_auth_command(&config, "matrix");
     assert!(text_output.contains("auth matrix: providers=3 modes=4 rows=12"));
     assert!(text_output.contains("state_counts=mode_mismatch:1,ready:4,unsupported_mode:7"));
+    assert!(text_output.contains("state_counts_total=mode_mismatch:1,ready:4,unsupported_mode:7"));
     assert!(text_output.contains("auth matrix row: provider=openai mode=oauth_token"));
     assert!(!text_output.contains("oauth-access-secret"));
 }
@@ -1704,6 +1708,12 @@ fn functional_execute_auth_command_matrix_supports_availability_filter() {
     assert_eq!(available_payload["rows"], 4);
     assert_eq!(available_payload["available"], 4);
     assert_eq!(available_payload["unavailable"], 0);
+    assert_eq!(available_payload["state_counts_total"]["ready"], 4);
+    assert_eq!(available_payload["state_counts_total"]["mode_mismatch"], 1);
+    assert_eq!(
+        available_payload["state_counts_total"]["unsupported_mode"],
+        7
+    );
     assert_eq!(available_payload["state_counts"]["ready"], 4);
     let available_entries = available_payload["entries"]
         .as_array()
@@ -1722,6 +1732,15 @@ fn functional_execute_auth_command_matrix_supports_availability_filter() {
     assert_eq!(unavailable_payload["rows"], 8);
     assert_eq!(unavailable_payload["available"], 0);
     assert_eq!(unavailable_payload["unavailable"], 8);
+    assert_eq!(unavailable_payload["state_counts_total"]["ready"], 4);
+    assert_eq!(
+        unavailable_payload["state_counts_total"]["mode_mismatch"],
+        1
+    );
+    assert_eq!(
+        unavailable_payload["state_counts_total"]["unsupported_mode"],
+        7
+    );
     assert_eq!(unavailable_payload["state_counts"]["mode_mismatch"], 1);
     assert_eq!(unavailable_payload["state_counts"]["unsupported_mode"], 7);
     let unavailable_entries = unavailable_payload["entries"]
@@ -1762,6 +1781,9 @@ fn functional_execute_auth_command_matrix_supports_state_filter() {
     assert_eq!(ready_payload["state_filter"], "ready");
     assert_eq!(ready_payload["rows_total"], 12);
     assert_eq!(ready_payload["rows"], 4);
+    assert_eq!(ready_payload["state_counts_total"]["ready"], 4);
+    assert_eq!(ready_payload["state_counts_total"]["mode_mismatch"], 1);
+    assert_eq!(ready_payload["state_counts_total"]["unsupported_mode"], 7);
     assert_eq!(ready_payload["state_counts"]["ready"], 4);
     let ready_entries = ready_payload["entries"].as_array().expect("ready entries");
     assert_eq!(ready_entries.len(), 4);
@@ -1770,6 +1792,7 @@ fn functional_execute_auth_command_matrix_supports_state_filter() {
     let text_output = execute_auth_command(&config, "matrix --state ready");
     assert!(text_output.contains("state_filter=ready"));
     assert!(text_output.contains("state_counts=ready:4"));
+    assert!(text_output.contains("state_counts_total=mode_mismatch:1,ready:4,unsupported_mode:7"));
     assert!(!text_output.contains("state=unsupported_mode"));
 }
 
@@ -1803,6 +1826,12 @@ fn functional_execute_auth_command_matrix_supports_mode_support_filter() {
     assert_eq!(supported_payload["rows"], 5);
     assert_eq!(supported_payload["mode_supported"], 5);
     assert_eq!(supported_payload["mode_unsupported"], 0);
+    assert_eq!(supported_payload["state_counts_total"]["ready"], 4);
+    assert_eq!(supported_payload["state_counts_total"]["mode_mismatch"], 1);
+    assert_eq!(
+        supported_payload["state_counts_total"]["unsupported_mode"],
+        7
+    );
     assert_eq!(supported_payload["state_counts"]["ready"], 4);
     assert_eq!(supported_payload["state_counts"]["mode_mismatch"], 1);
     let supported_entries = supported_payload["entries"]
@@ -1822,6 +1851,15 @@ fn functional_execute_auth_command_matrix_supports_mode_support_filter() {
     assert_eq!(unsupported_payload["rows"], 7);
     assert_eq!(unsupported_payload["mode_supported"], 0);
     assert_eq!(unsupported_payload["mode_unsupported"], 7);
+    assert_eq!(unsupported_payload["state_counts_total"]["ready"], 4);
+    assert_eq!(
+        unsupported_payload["state_counts_total"]["mode_mismatch"],
+        1
+    );
+    assert_eq!(
+        unsupported_payload["state_counts_total"]["unsupported_mode"],
+        7
+    );
     assert_eq!(unsupported_payload["state_counts"]["unsupported_mode"], 7);
     let unsupported_entries = unsupported_payload["entries"]
         .as_array()
@@ -1834,6 +1872,7 @@ fn functional_execute_auth_command_matrix_supports_mode_support_filter() {
     let text_output = execute_auth_command(&config, "matrix --mode-support supported");
     assert!(text_output.contains("mode_support_filter=supported"));
     assert!(text_output.contains("state_counts=mode_mismatch:1,ready:4"));
+    assert!(text_output.contains("state_counts_total=mode_mismatch:1,ready:4,unsupported_mode:7"));
     assert!(!text_output.contains("mode_supported=false"));
 }
 
@@ -1871,6 +1910,7 @@ fn integration_execute_auth_command_matrix_state_filter_composes_with_other_filt
     assert_eq!(filtered_payload["modes"], 1);
     assert_eq!(filtered_payload["rows_total"], 1);
     assert_eq!(filtered_payload["rows"], 1);
+    assert_eq!(filtered_payload["state_counts_total"]["ready"], 1);
     assert_eq!(filtered_payload["state_counts"]["ready"], 1);
     assert_eq!(filtered_payload["entries"][0]["provider"], "openai");
     assert_eq!(filtered_payload["entries"][0]["mode"], "oauth_token");
@@ -1886,6 +1926,7 @@ fn integration_execute_auth_command_matrix_state_filter_composes_with_other_filt
     assert_eq!(mismatch_payload["state_filter"], "mode_mismatch");
     assert_eq!(mismatch_payload["rows_total"], 1);
     assert_eq!(mismatch_payload["rows"], 1);
+    assert_eq!(mismatch_payload["state_counts_total"]["mode_mismatch"], 1);
     assert_eq!(mismatch_payload["state_counts"]["mode_mismatch"], 1);
     assert_eq!(mismatch_payload["entries"][0]["state"], "mode_mismatch");
 }
@@ -1927,6 +1968,7 @@ fn integration_execute_auth_command_matrix_mode_support_filter_composes_with_oth
     assert_eq!(filtered_payload["modes"], 1);
     assert_eq!(filtered_payload["rows_total"], 1);
     assert_eq!(filtered_payload["rows"], 1);
+    assert_eq!(filtered_payload["state_counts_total"]["ready"], 1);
     assert_eq!(filtered_payload["state_counts"]["ready"], 1);
     assert_eq!(filtered_payload["entries"][0]["provider"], "openai");
     assert_eq!(filtered_payload["entries"][0]["mode"], "oauth_token");
@@ -1944,6 +1986,7 @@ fn integration_execute_auth_command_matrix_mode_support_filter_composes_with_oth
     assert_eq!(zero_row_payload["rows"], 0);
     assert_eq!(zero_row_payload["mode_supported"], 0);
     assert_eq!(zero_row_payload["mode_unsupported"], 0);
+    assert_eq!(zero_row_payload["state_counts_total"]["ready"], 1);
     assert_eq!(
         zero_row_payload["state_counts"]
             .as_object()
@@ -1958,6 +2001,14 @@ fn integration_execute_auth_command_matrix_mode_support_filter_composes_with_oth
             .len(),
         0
     );
+
+    let zero_row_text = execute_auth_command(
+        &config,
+        "matrix openai --mode oauth-token --mode-support unsupported",
+    );
+    assert!(zero_row_text.contains("rows=0"));
+    assert!(zero_row_text.contains("state_counts=none"));
+    assert!(zero_row_text.contains("state_counts_total=ready:1"));
 }
 
 #[test]
@@ -2429,6 +2480,7 @@ fn integration_execute_auth_command_status_reports_store_backed_state() {
     assert_eq!(payload["entries"][0]["state"], "ready");
     assert_eq!(payload["entries"][0]["available"], true);
     assert_eq!(payload["state_counts"]["ready"], 1);
+    assert_eq!(payload["state_counts_total"]["ready"], 1);
 }
 
 #[test]
@@ -2454,6 +2506,11 @@ fn functional_execute_auth_command_status_supports_availability_and_state_filter
     assert_eq!(available_payload["available"], 2);
     assert_eq!(available_payload["unavailable"], 0);
     assert_eq!(available_payload["state_counts"]["ready"], 2);
+    assert_eq!(available_payload["state_counts_total"]["ready"], 2);
+    assert_eq!(
+        available_payload["state_counts_total"]["missing_api_key"],
+        1
+    );
     let available_entries = available_payload["entries"]
         .as_array()
         .expect("available status entries");
@@ -2477,6 +2534,11 @@ fn functional_execute_auth_command_status_supports_availability_and_state_filter
     assert_eq!(unavailable_payload["available"], 0);
     assert_eq!(unavailable_payload["unavailable"], 1);
     assert_eq!(unavailable_payload["state_counts"]["missing_api_key"], 1);
+    assert_eq!(unavailable_payload["state_counts_total"]["ready"], 2);
+    assert_eq!(
+        unavailable_payload["state_counts_total"]["missing_api_key"],
+        1
+    );
     assert_eq!(unavailable_payload["entries"][0]["provider"], "google");
     assert_eq!(
         unavailable_payload["entries"][0]["state"],
@@ -2493,6 +2555,8 @@ fn functional_execute_auth_command_status_supports_availability_and_state_filter
     assert_eq!(state_payload["rows_total"], 3);
     assert_eq!(state_payload["rows"], 1);
     assert_eq!(state_payload["state_counts"]["missing_api_key"], 1);
+    assert_eq!(state_payload["state_counts_total"]["ready"], 2);
+    assert_eq!(state_payload["state_counts_total"]["missing_api_key"], 1);
     assert_eq!(state_payload["entries"][0]["provider"], "google");
     assert_eq!(state_payload["entries"][0]["state"], "missing_api_key");
 
@@ -2504,6 +2568,7 @@ fn functional_execute_auth_command_status_supports_availability_and_state_filter
     assert!(text_output.contains("state_filter=missing_api_key"));
     assert!(text_output.contains("rows_total=3"));
     assert!(text_output.contains("state_counts=missing_api_key:1"));
+    assert!(text_output.contains("state_counts_total=missing_api_key:1,ready:2"));
     assert!(text_output.contains("auth provider: name=google"));
     assert!(!text_output.contains("auth provider: name=openai"));
 }
@@ -2545,6 +2610,7 @@ fn integration_execute_auth_command_status_filters_compose_with_provider_and_zer
     assert_eq!(filtered_payload["available"], 1);
     assert_eq!(filtered_payload["unavailable"], 0);
     assert_eq!(filtered_payload["state_counts"]["ready"], 1);
+    assert_eq!(filtered_payload["state_counts_total"]["ready"], 1);
     assert_eq!(filtered_payload["entries"][0]["provider"], "openai");
     assert_eq!(filtered_payload["entries"][0]["state"], "ready");
     assert_eq!(filtered_payload["entries"][0]["available"], true);
@@ -2569,6 +2635,7 @@ fn integration_execute_auth_command_status_filters_compose_with_provider_and_zer
             .len(),
         0
     );
+    assert_eq!(zero_row_payload["state_counts_total"]["ready"], 1);
     assert_eq!(
         zero_row_payload["entries"]
             .as_array()
@@ -2584,6 +2651,7 @@ fn integration_execute_auth_command_status_filters_compose_with_provider_and_zer
     assert!(zero_row_text.contains("providers=1 rows=0"));
     assert!(zero_row_text.contains("rows_total=1"));
     assert!(zero_row_text.contains("state_counts=none"));
+    assert!(zero_row_text.contains("state_counts_total=ready:1"));
 }
 
 #[test]
