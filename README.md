@@ -326,6 +326,15 @@ cargo run -p pi-coding-agent -- \
   --extension-list-root .pi/extensions
 ```
 
+Execute one declared process-runtime extension hook with a JSON payload:
+
+```bash
+cargo run -p pi-coding-agent -- \
+  --extension-exec-manifest .pi/extensions/issue-assistant/extension.json \
+  --extension-exec-hook run-start \
+  --extension-exec-payload-file .pi/extensions/issue-assistant/payload.json
+```
+
 Validate a reusable package manifest JSON and exit:
 
 ```bash

@@ -3016,6 +3016,111 @@ fn regression_extension_list_flag_rejects_non_directory_root() {
 }
 
 #[test]
+fn extension_exec_flag_runs_process_hook_and_reports_success() {
+    let temp = tempdir().expect("tempdir");
+    let bin_dir = temp.path().join("bin");
+    fs::create_dir_all(&bin_dir).expect("create bin dir");
+    let script_path = bin_dir.join("hook.sh");
+    fs::write(
+        &script_path,
+        "#!/usr/bin/env bash\nread -r _input\nprintf '{\"ok\":true,\"result\":\"hook-processed\"}'\n",
+    )
+    .expect("write script");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut permissions = fs::metadata(&script_path).expect("metadata").permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&script_path, permissions).expect("set executable permissions");
+    }
+
+    let manifest_path = temp.path().join("extension.json");
+    fs::write(
+        &manifest_path,
+        r#"{
+  "schema_version": 1,
+  "id": "issue-assistant",
+  "version": "0.1.0",
+  "runtime": "process",
+  "entrypoint": "bin/hook.sh",
+  "hooks": ["run-start"],
+  "timeout_ms": 5000
+}"#,
+    )
+    .expect("write manifest");
+    let payload_path = temp.path().join("payload.json");
+    fs::write(&payload_path, r#"{"event":"created"}"#).expect("write payload");
+
+    let mut cmd = binary_command();
+    cmd.args([
+        "--extension-exec-manifest",
+        manifest_path.to_str().expect("utf8 path"),
+        "--extension-exec-hook",
+        "run-start",
+        "--extension-exec-payload-file",
+        payload_path.to_str().expect("utf8 path"),
+    ]);
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("extension exec:"))
+        .stdout(predicate::str::contains("hook=run-start"))
+        .stdout(predicate::str::contains("extension exec response:"))
+        .stdout(predicate::str::contains("\"ok\":true"));
+}
+
+#[test]
+fn regression_extension_exec_flag_rejects_invalid_response() {
+    let temp = tempdir().expect("tempdir");
+    let bin_dir = temp.path().join("bin");
+    fs::create_dir_all(&bin_dir).expect("create bin dir");
+    let script_path = bin_dir.join("bad.sh");
+    fs::write(
+        &script_path,
+        "#!/usr/bin/env bash\nread -r _input\nprintf 'not-json'\n",
+    )
+    .expect("write script");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut permissions = fs::metadata(&script_path).expect("metadata").permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&script_path, permissions).expect("set executable permissions");
+    }
+
+    let manifest_path = temp.path().join("extension.json");
+    fs::write(
+        &manifest_path,
+        r#"{
+  "schema_version": 1,
+  "id": "issue-assistant",
+  "version": "0.1.0",
+  "runtime": "process",
+  "entrypoint": "bin/bad.sh",
+  "hooks": ["run-start"],
+  "timeout_ms": 5000
+}"#,
+    )
+    .expect("write manifest");
+    let payload_path = temp.path().join("payload.json");
+    fs::write(&payload_path, r#"{"event":"created"}"#).expect("write payload");
+
+    let mut cmd = binary_command();
+    cmd.args([
+        "--extension-exec-manifest",
+        manifest_path.to_str().expect("utf8 path"),
+        "--extension-exec-hook",
+        "run-start",
+        "--extension-exec-payload-file",
+        payload_path.to_str().expect("utf8 path"),
+    ]);
+
+    cmd.assert()
+        .failure()
+        .stderr(predicate::str::contains("response must be valid JSON"));
+}
+
+#[test]
 fn regression_package_validate_flag_rejects_invalid_manifest() {
     let temp = tempdir().expect("tempdir");
     let manifest_path = temp.path().join("package.json");

@@ -2,11 +2,16 @@ use std::{
     collections::HashSet,
     fs,
     hash::Hash,
+    io::Write,
     path::{Component, Path, PathBuf},
+    process::{Command, Output, Stdio},
+    time::{Duration, Instant},
 };
 
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use wait_timeout::ChildExt;
 
 use crate::Cli;
 
@@ -45,6 +50,19 @@ pub(crate) struct ExtensionListReport {
     pub list_root: PathBuf,
     pub entries: Vec<ExtensionListEntry>,
     pub invalid_entries: Vec<ExtensionListInvalidEntry>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ExtensionExecSummary {
+    pub manifest_path: PathBuf,
+    pub id: String,
+    pub version: String,
+    pub runtime: String,
+    pub hook: String,
+    pub timeout_ms: u64,
+    pub duration_ms: u64,
+    pub response_bytes: usize,
+    pub response: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -104,6 +122,21 @@ impl ExtensionHook {
             Self::PolicyOverride => "policy-override",
         }
     }
+
+    fn parse(raw: &str) -> Result<Self> {
+        match raw.trim() {
+            "run-start" => Ok(Self::RunStart),
+            "run-end" => Ok(Self::RunEnd),
+            "pre-tool-call" => Ok(Self::PreToolCall),
+            "post-tool-call" => Ok(Self::PostToolCall),
+            "message-transform" => Ok(Self::MessageTransform),
+            "policy-override" => Ok(Self::PolicyOverride),
+            other => bail!(
+                "unsupported extension hook '{}': expected one of run-start, run-end, pre-tool-call, post-tool-call, message-transform, policy-override",
+                other
+            ),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -132,6 +165,35 @@ pub(crate) fn execute_extension_list_command(cli: &Cli) -> Result<()> {
     }
     let report = list_extension_manifests(&cli.extension_list_root)?;
     println!("{}", render_extension_list_report(&report));
+    Ok(())
+}
+
+pub(crate) fn execute_extension_exec_command(cli: &Cli) -> Result<()> {
+    let Some(manifest_path) = cli.extension_exec_manifest.as_ref() else {
+        return Ok(());
+    };
+    let hook = cli
+        .extension_exec_hook
+        .as_deref()
+        .ok_or_else(|| anyhow!("--extension-exec-hook is required"))?;
+    let payload_file = cli
+        .extension_exec_payload_file
+        .as_ref()
+        .ok_or_else(|| anyhow!("--extension-exec-payload-file is required"))?;
+    let payload = load_extension_exec_payload(payload_file)?;
+    let summary = execute_extension_process_hook(manifest_path, hook, &payload)?;
+    println!(
+        "extension exec: path={} id={} version={} runtime={} hook={} timeout_ms={} duration_ms={} response_bytes={}",
+        summary.manifest_path.display(),
+        summary.id,
+        summary.version,
+        summary.runtime,
+        summary.hook,
+        summary.timeout_ms,
+        summary.duration_ms,
+        summary.response_bytes
+    );
+    println!("extension exec response: {}", summary.response);
     Ok(())
 }
 
@@ -339,6 +401,169 @@ fn render_extension_list_report(report: &ExtensionListReport) -> String {
     lines.join("\n")
 }
 
+fn load_extension_exec_payload(path: &Path) -> Result<Value> {
+    let raw = fs::read_to_string(path)
+        .with_context(|| format!("failed to read extension payload {}", path.display()))?;
+    let payload = serde_json::from_str::<Value>(&raw)
+        .with_context(|| format!("failed to parse extension payload {}", path.display()))?;
+    if !payload.is_object() {
+        bail!("extension payload must be a JSON object");
+    }
+    Ok(payload)
+}
+
+fn execute_extension_process_hook(
+    manifest_path: &Path,
+    hook_raw: &str,
+    payload: &Value,
+) -> Result<ExtensionExecSummary> {
+    let (manifest, summary) = load_and_validate_extension_manifest(manifest_path)?;
+    if manifest.runtime != ExtensionRuntime::Process {
+        bail!(
+            "extension manifest runtime '{}' is not supported for extension exec",
+            manifest.runtime.as_str()
+        );
+    }
+    let hook = ExtensionHook::parse(hook_raw)?;
+    if !manifest.hooks.contains(&hook) {
+        bail!(
+            "extension manifest '{}' does not declare hook '{}'",
+            summary.id,
+            hook.as_str()
+        );
+    }
+    let payload_object = payload
+        .as_object()
+        .ok_or_else(|| anyhow!("extension payload must be a JSON object"))?;
+    let request = serde_json::json!({
+        "hook": hook.as_str(),
+        "payload": payload_object,
+        "manifest_id": manifest.id,
+        "manifest_version": manifest.version,
+    });
+    let request_json = serde_json::to_string(&request)
+        .context("failed to serialize extension execution request payload")?;
+
+    let entrypoint = resolve_extension_entrypoint(manifest_path, &manifest.entrypoint)?;
+    let started_at = Instant::now();
+    let output =
+        run_extension_process_with_timeout(&entrypoint, &request_json, manifest.timeout_ms)?;
+    let duration_ms = started_at.elapsed().as_millis() as u64;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stderr = stderr.trim();
+        if stderr.is_empty() {
+            bail!(
+                "extension process exited with non-zero status {}",
+                output.status
+            );
+        }
+        bail!(
+            "extension process exited with non-zero status {}: {}",
+            output.status,
+            stderr
+        );
+    }
+    let response_raw =
+        String::from_utf8(output.stdout).context("extension process output is not valid UTF-8")?;
+    if response_raw.trim().is_empty() {
+        bail!("extension process returned empty response");
+    }
+    let response_json = serde_json::from_str::<Value>(&response_raw)
+        .context("extension process response must be valid JSON")?;
+    if !response_json.is_object() {
+        bail!("extension process response must be a JSON object");
+    }
+    let response = serde_json::to_string(&response_json)
+        .context("failed to serialize extension process response JSON")?;
+
+    Ok(ExtensionExecSummary {
+        manifest_path: summary.manifest_path,
+        id: summary.id,
+        version: summary.version,
+        runtime: summary.runtime,
+        hook: hook.as_str().to_string(),
+        timeout_ms: manifest.timeout_ms,
+        duration_ms,
+        response_bytes: response.len(),
+        response,
+    })
+}
+
+fn resolve_extension_entrypoint(manifest_path: &Path, entrypoint: &str) -> Result<PathBuf> {
+    let manifest_dir = manifest_path.parent().ok_or_else(|| {
+        anyhow!(
+            "extension manifest path '{}' has no parent directory",
+            manifest_path.display()
+        )
+    })?;
+    let manifest_dir = manifest_dir.canonicalize().with_context(|| {
+        format!(
+            "failed to resolve manifest directory {}",
+            manifest_dir.display()
+        )
+    })?;
+    let candidate = manifest_dir.join(entrypoint);
+    let resolved = candidate.canonicalize().with_context(|| {
+        format!(
+            "failed to resolve extension entrypoint {}",
+            candidate.display()
+        )
+    })?;
+    if !resolved.starts_with(&manifest_dir) {
+        bail!(
+            "extension entrypoint '{}' resolves outside manifest directory",
+            entrypoint
+        );
+    }
+    if !resolved.is_file() {
+        bail!(
+            "extension entrypoint '{}' is not a regular file",
+            resolved.display()
+        );
+    }
+    Ok(resolved)
+}
+
+fn run_extension_process_with_timeout(
+    entrypoint: &Path,
+    request_json: &str,
+    timeout_ms: u64,
+) -> Result<Output> {
+    let mut child = Command::new(entrypoint)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .with_context(|| format!("failed to spawn extension process {}", entrypoint.display()))?;
+
+    {
+        let stdin = child
+            .stdin
+            .as_mut()
+            .ok_or_else(|| anyhow!("failed to open extension process stdin"))?;
+        stdin
+            .write_all(request_json.as_bytes())
+            .context("failed to write extension payload to process stdin")?;
+    }
+    child.stdin.take();
+
+    let timeout = Duration::from_millis(timeout_ms);
+    if child
+        .wait_timeout(timeout)
+        .context("failed while waiting for extension process")?
+        .is_none()
+    {
+        let _ = child.kill();
+        let _ = child.wait();
+        bail!("extension process timed out after {} ms", timeout_ms);
+    }
+
+    child
+        .wait_with_output()
+        .context("failed to collect extension process output")
+}
+
 fn load_extension_manifest(path: &Path) -> Result<ExtensionManifest> {
     let raw = std::fs::read_to_string(path)
         .with_context(|| format!("failed to read extension manifest {}", path.display()))?;
@@ -434,9 +659,10 @@ fn validate_timeout_ms(timeout_ms: u64) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{
-        list_extension_manifests, render_extension_list_report, render_extension_manifest_report,
-        validate_extension_manifest, ExtensionHook, ExtensionListReport, ExtensionManifest,
-        ExtensionManifestSummary, ExtensionPermission, ExtensionRuntime,
+        execute_extension_process_hook, list_extension_manifests, render_extension_list_report,
+        render_extension_manifest_report, validate_extension_manifest, ExtensionHook,
+        ExtensionListReport, ExtensionManifest, ExtensionManifestSummary, ExtensionPermission,
+        ExtensionRuntime,
     };
     use std::{fs, path::PathBuf};
     use tempfile::tempdir;
@@ -615,5 +841,145 @@ mod tests {
         let error =
             list_extension_manifests(&root_file).expect_err("non-directory root should fail");
         assert!(error.to_string().contains("is not a directory"));
+    }
+
+    fn make_executable(path: &std::path::Path) {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut permissions = fs::metadata(path).expect("metadata").permissions();
+            permissions.set_mode(0o755);
+            fs::set_permissions(path, permissions).expect("set executable permissions");
+        }
+    }
+
+    #[test]
+    fn functional_execute_extension_process_hook_runs_process_runtime() {
+        let temp = tempdir().expect("tempdir");
+        let script_path = temp.path().join("hook.sh");
+        fs::write(
+            &script_path,
+            "#!/usr/bin/env bash\nread -r _input\nprintf '{\"ok\":true,\"result\":\"hook-processed\"}'\n",
+        )
+        .expect("write script");
+        make_executable(&script_path);
+
+        let manifest_path = temp.path().join("extension.json");
+        fs::write(
+            &manifest_path,
+            r#"{
+  "schema_version": 1,
+  "id": "issue-assistant",
+  "version": "0.1.0",
+  "runtime": "process",
+  "entrypoint": "hook.sh",
+  "hooks": ["run-start"],
+  "timeout_ms": 5000
+}"#,
+        )
+        .expect("write manifest");
+
+        let payload = serde_json::json!({"event":"created"});
+        let summary = execute_extension_process_hook(&manifest_path, "run-start", &payload)
+            .expect("extension execution should succeed");
+        assert_eq!(summary.id, "issue-assistant");
+        assert_eq!(summary.hook, "run-start");
+        assert!(summary.response.contains("\"ok\":true"));
+    }
+
+    #[test]
+    fn regression_execute_extension_process_hook_rejects_undeclared_hook() {
+        let temp = tempdir().expect("tempdir");
+        let script_path = temp.path().join("hook.sh");
+        fs::write(
+            &script_path,
+            "#!/usr/bin/env bash\nread -r _input\nprintf '{\"ok\":true}'\n",
+        )
+        .expect("write script");
+        make_executable(&script_path);
+
+        let manifest_path = temp.path().join("extension.json");
+        fs::write(
+            &manifest_path,
+            r#"{
+  "schema_version": 1,
+  "id": "issue-assistant",
+  "version": "0.1.0",
+  "runtime": "process",
+  "entrypoint": "hook.sh",
+  "hooks": ["run-end"],
+  "timeout_ms": 5000
+}"#,
+        )
+        .expect("write manifest");
+
+        let payload = serde_json::json!({"event":"created"});
+        let error = execute_extension_process_hook(&manifest_path, "run-start", &payload)
+            .expect_err("undeclared hook should fail");
+        assert!(error.to_string().contains("does not declare hook"));
+    }
+
+    #[test]
+    fn regression_execute_extension_process_hook_enforces_timeout() {
+        let temp = tempdir().expect("tempdir");
+        let script_path = temp.path().join("slow.sh");
+        fs::write(
+            &script_path,
+            "#!/usr/bin/env bash\nsleep 1\nprintf '{\"ok\":true}'\n",
+        )
+        .expect("write script");
+        make_executable(&script_path);
+
+        let manifest_path = temp.path().join("extension.json");
+        fs::write(
+            &manifest_path,
+            r#"{
+  "schema_version": 1,
+  "id": "issue-assistant",
+  "version": "0.1.0",
+  "runtime": "process",
+  "entrypoint": "slow.sh",
+  "hooks": ["run-start"],
+  "timeout_ms": 20
+}"#,
+        )
+        .expect("write manifest");
+
+        let payload = serde_json::json!({"event":"created"});
+        let error = execute_extension_process_hook(&manifest_path, "run-start", &payload)
+            .expect_err("timeout should fail");
+        assert!(error.to_string().contains("timed out"));
+    }
+
+    #[test]
+    fn regression_execute_extension_process_hook_rejects_invalid_json_output() {
+        let temp = tempdir().expect("tempdir");
+        let script_path = temp.path().join("bad-output.sh");
+        fs::write(
+            &script_path,
+            "#!/usr/bin/env bash\nread -r _input\nprintf 'not-json'\n",
+        )
+        .expect("write script");
+        make_executable(&script_path);
+
+        let manifest_path = temp.path().join("extension.json");
+        fs::write(
+            &manifest_path,
+            r#"{
+  "schema_version": 1,
+  "id": "issue-assistant",
+  "version": "0.1.0",
+  "runtime": "process",
+  "entrypoint": "bad-output.sh",
+  "hooks": ["run-start"],
+  "timeout_ms": 5000
+}"#,
+        )
+        .expect("write manifest");
+
+        let payload = serde_json::json!({"event":"created"});
+        let error = execute_extension_process_hook(&manifest_path, "run-start", &payload)
+            .expect_err("invalid output should fail");
+        assert!(error.to_string().contains("response must be valid JSON"));
     }
 }
