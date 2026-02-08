@@ -992,6 +992,32 @@ pub(crate) fn auth_state_counts(
     counts
 }
 
+pub(crate) fn auth_source_kind(source: &str) -> &'static str {
+    let normalized = source.trim();
+    if normalized == "credential_store" {
+        return "credential_store";
+    }
+    if normalized == "none" {
+        return "none";
+    }
+    if normalized.starts_with("--") {
+        return "flag";
+    }
+    "env"
+}
+
+pub(crate) fn auth_source_kind_counts(
+    rows: &[AuthStatusRow],
+) -> std::collections::BTreeMap<String, usize> {
+    let mut counts = std::collections::BTreeMap::new();
+    for row in rows {
+        *counts
+            .entry(auth_source_kind(&row.source).to_string())
+            .or_insert(0) += 1;
+    }
+    counts
+}
+
 pub(crate) fn format_auth_state_counts(
     state_counts: &std::collections::BTreeMap<String, usize>,
 ) -> String {
@@ -1057,6 +1083,7 @@ pub(crate) fn execute_auth_status_command(
     let mode_supported_total = rows.iter().filter(|row| row.mode_supported).count();
     let mode_unsupported_total = total_rows.saturating_sub(mode_supported_total);
     let state_counts_total = auth_state_counts(&rows);
+    let source_kind_counts_total = auth_source_kind_counts(&rows);
     rows = match mode_support {
         AuthMatrixModeSupportFilter::All => rows,
         AuthMatrixModeSupportFilter::Supported => {
@@ -1087,6 +1114,7 @@ pub(crate) fn execute_auth_status_command(
     let mode_supported = rows.iter().filter(|row| row.mode_supported).count();
     let mode_unsupported = rows.len().saturating_sub(mode_supported);
     let state_counts = auth_state_counts(&rows);
+    let source_kind_counts = auth_source_kind_counts(&rows);
 
     if json_output {
         return serde_json::json!({
@@ -1107,13 +1135,15 @@ pub(crate) fn execute_auth_status_command(
             "unavailable": unavailable,
             "state_counts_total": state_counts_total,
             "state_counts": state_counts,
+            "source_kind_counts_total": source_kind_counts_total,
+            "source_kind_counts": source_kind_counts,
             "entries": rows,
         })
         .to_string();
     }
 
     let mut lines = vec![format!(
-        "auth status: providers={} rows={} mode_supported={} mode_unsupported={} available={} unavailable={} provider_filter={} mode_filter={} mode_support_filter={} availability_filter={} state_filter={} rows_total={} mode_supported_total={} mode_unsupported_total={} state_counts={} state_counts_total={}",
+        "auth status: providers={} rows={} mode_supported={} mode_unsupported={} available={} unavailable={} provider_filter={} mode_filter={} mode_support_filter={} availability_filter={} state_filter={} rows_total={} mode_supported_total={} mode_unsupported_total={} state_counts={} state_counts_total={} source_kind_counts={} source_kind_counts_total={}",
         selected_providers.len(),
         rows.len(),
         mode_supported,
@@ -1129,7 +1159,9 @@ pub(crate) fn execute_auth_status_command(
         mode_supported_total,
         mode_unsupported_total,
         format_auth_state_counts(&state_counts),
-        format_auth_state_counts(&state_counts_total)
+        format_auth_state_counts(&state_counts_total),
+        format_auth_state_counts(&source_kind_counts),
+        format_auth_state_counts(&source_kind_counts_total)
     )];
     for row in rows {
         lines.push(format!(
@@ -1215,6 +1247,7 @@ pub(crate) fn execute_auth_matrix_command(
     let mode_supported_total = rows.iter().filter(|row| row.mode_supported).count();
     let mode_unsupported_total = total_rows.saturating_sub(mode_supported_total);
     let state_counts_total = auth_state_counts(&rows);
+    let source_kind_counts_total = auth_source_kind_counts(&rows);
     rows = match mode_support {
         AuthMatrixModeSupportFilter::All => rows,
         AuthMatrixModeSupportFilter::Supported => {
@@ -1245,6 +1278,7 @@ pub(crate) fn execute_auth_matrix_command(
     let mode_supported = rows.iter().filter(|row| row.mode_supported).count();
     let mode_unsupported = rows.len().saturating_sub(mode_supported);
     let state_counts = auth_state_counts(&rows);
+    let source_kind_counts = auth_source_kind_counts(&rows);
 
     if json_output {
         return serde_json::json!({
@@ -1266,13 +1300,15 @@ pub(crate) fn execute_auth_matrix_command(
             "unavailable": unavailable,
             "state_counts_total": state_counts_total,
             "state_counts": state_counts,
+            "source_kind_counts_total": source_kind_counts_total,
+            "source_kind_counts": source_kind_counts,
             "entries": rows,
         })
         .to_string();
     }
 
     let mut lines = vec![format!(
-        "auth matrix: providers={} modes={} rows={} mode_supported={} mode_unsupported={} available={} unavailable={} provider_filter={} mode_filter={} mode_support_filter={} availability_filter={} state_filter={} rows_total={} mode_supported_total={} mode_unsupported_total={} state_counts={} state_counts_total={}",
+        "auth matrix: providers={} modes={} rows={} mode_supported={} mode_unsupported={} available={} unavailable={} provider_filter={} mode_filter={} mode_support_filter={} availability_filter={} state_filter={} rows_total={} mode_supported_total={} mode_unsupported_total={} state_counts={} state_counts_total={} source_kind_counts={} source_kind_counts_total={}",
         selected_providers.len(),
         selected_modes.len(),
         rows.len(),
@@ -1289,7 +1325,9 @@ pub(crate) fn execute_auth_matrix_command(
         mode_supported_total,
         mode_unsupported_total,
         format_auth_state_counts(&state_counts),
-        format_auth_state_counts(&state_counts_total)
+        format_auth_state_counts(&state_counts_total),
+        format_auth_state_counts(&source_kind_counts),
+        format_auth_state_counts(&source_kind_counts_total)
     )];
     for row in rows {
         lines.push(format!(

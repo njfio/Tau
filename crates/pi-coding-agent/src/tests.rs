@@ -94,8 +94,8 @@ use super::{
     SKILLS_PRUNE_USAGE, SKILLS_TRUST_ADD_USAGE, SKILLS_TRUST_LIST_USAGE, SKILLS_VERIFY_USAGE,
 };
 use crate::auth_commands::{
-    auth_state_counts, auth_status_row_for_provider, format_auth_state_counts,
-    AuthMatrixAvailabilityFilter, AuthMatrixModeSupportFilter,
+    auth_source_kind, auth_source_kind_counts, auth_state_counts, auth_status_row_for_provider,
+    format_auth_state_counts, AuthMatrixAvailabilityFilter, AuthMatrixModeSupportFilter,
 };
 use crate::extension_manifest::discover_extension_runtime_registrations;
 use crate::provider_api_key_candidates_with_inputs;
@@ -1463,6 +1463,17 @@ fn unit_auth_state_count_helpers_are_deterministic() {
     let counts = auth_state_counts(&rows);
     assert_eq!(counts.get("ready"), Some(&1));
     assert_eq!(counts.get("missing_api_key"), Some(&2));
+    let source_kind_counts = auth_source_kind_counts(&rows);
+    assert_eq!(source_kind_counts.get("flag"), Some(&1));
+    assert_eq!(source_kind_counts.get("none"), Some(&2));
+    assert_eq!(
+        format_auth_state_counts(&source_kind_counts),
+        "flag:1,none:2"
+    );
+    assert_eq!(auth_source_kind("--api-key"), "flag");
+    assert_eq!(auth_source_kind("OPENAI_API_KEY"), "env");
+    assert_eq!(auth_source_kind("credential_store"), "credential_store");
+    assert_eq!(auth_source_kind("none"), "none");
 
     assert_eq!(
         format_auth_state_counts(&counts),
@@ -1672,6 +1683,12 @@ fn functional_execute_auth_command_matrix_reports_provider_mode_inventory() {
     assert_eq!(payload["state_counts"]["ready"], 4);
     assert_eq!(payload["state_counts"]["mode_mismatch"], 1);
     assert_eq!(payload["state_counts"]["unsupported_mode"], 7);
+    assert_eq!(payload["source_kind_counts_total"]["flag"], 3);
+    assert_eq!(payload["source_kind_counts_total"]["credential_store"], 2);
+    assert_eq!(payload["source_kind_counts_total"]["none"], 7);
+    assert_eq!(payload["source_kind_counts"]["flag"], 3);
+    assert_eq!(payload["source_kind_counts"]["credential_store"], 2);
+    assert_eq!(payload["source_kind_counts"]["none"], 7);
 
     let entries = payload["entries"].as_array().expect("matrix entries");
     assert_eq!(entries.len(), 12);
@@ -1704,6 +1721,8 @@ fn functional_execute_auth_command_matrix_reports_provider_mode_inventory() {
     assert!(text_output.contains("mode_unsupported_total=7"));
     assert!(text_output.contains("provider_filter=all"));
     assert!(text_output.contains("mode_filter=all"));
+    assert!(text_output.contains("source_kind_counts=credential_store:2,flag:3,none:7"));
+    assert!(text_output.contains("source_kind_counts_total=credential_store:2,flag:3,none:7"));
     assert!(text_output.contains("state_counts=mode_mismatch:1,ready:4,unsupported_mode:7"));
     assert!(text_output.contains("state_counts_total=mode_mismatch:1,ready:4,unsupported_mode:7"));
     assert!(text_output.contains("auth matrix row: provider=openai mode=oauth_token"));
@@ -1747,6 +1766,8 @@ fn functional_execute_auth_command_matrix_supports_provider_and_mode_filters() {
     assert_eq!(payload["mode_supported_total"], 1);
     assert_eq!(payload["mode_unsupported_total"], 0);
     assert_eq!(payload["available"], 1);
+    assert_eq!(payload["source_kind_counts_total"]["credential_store"], 1);
+    assert_eq!(payload["source_kind_counts"]["credential_store"], 1);
     let entries = payload["entries"].as_array().expect("entries");
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0]["provider"], "openai");
@@ -1795,6 +1816,17 @@ fn functional_execute_auth_command_matrix_supports_availability_filter() {
     assert_eq!(available_payload["rows"], 4);
     assert_eq!(available_payload["mode_supported_total"], 5);
     assert_eq!(available_payload["mode_unsupported_total"], 7);
+    assert_eq!(available_payload["source_kind_counts_total"]["flag"], 3);
+    assert_eq!(
+        available_payload["source_kind_counts_total"]["credential_store"],
+        2
+    );
+    assert_eq!(available_payload["source_kind_counts_total"]["none"], 7);
+    assert_eq!(available_payload["source_kind_counts"]["flag"], 3);
+    assert_eq!(
+        available_payload["source_kind_counts"]["credential_store"],
+        1
+    );
     assert_eq!(available_payload["available"], 4);
     assert_eq!(available_payload["unavailable"], 0);
     assert_eq!(available_payload["state_counts_total"]["ready"], 4);
@@ -1823,6 +1855,17 @@ fn functional_execute_auth_command_matrix_supports_availability_filter() {
     assert_eq!(unavailable_payload["rows"], 8);
     assert_eq!(unavailable_payload["mode_supported_total"], 5);
     assert_eq!(unavailable_payload["mode_unsupported_total"], 7);
+    assert_eq!(unavailable_payload["source_kind_counts_total"]["flag"], 3);
+    assert_eq!(
+        unavailable_payload["source_kind_counts_total"]["credential_store"],
+        2
+    );
+    assert_eq!(unavailable_payload["source_kind_counts_total"]["none"], 7);
+    assert_eq!(
+        unavailable_payload["source_kind_counts"]["credential_store"],
+        1
+    );
+    assert_eq!(unavailable_payload["source_kind_counts"]["none"], 7);
     assert_eq!(unavailable_payload["available"], 0);
     assert_eq!(unavailable_payload["unavailable"], 8);
     assert_eq!(unavailable_payload["state_counts_total"]["ready"], 4);
@@ -1878,6 +1921,14 @@ fn functional_execute_auth_command_matrix_supports_state_filter() {
     assert_eq!(ready_payload["rows"], 4);
     assert_eq!(ready_payload["mode_supported_total"], 5);
     assert_eq!(ready_payload["mode_unsupported_total"], 7);
+    assert_eq!(ready_payload["source_kind_counts_total"]["flag"], 3);
+    assert_eq!(
+        ready_payload["source_kind_counts_total"]["credential_store"],
+        2
+    );
+    assert_eq!(ready_payload["source_kind_counts_total"]["none"], 7);
+    assert_eq!(ready_payload["source_kind_counts"]["flag"], 3);
+    assert_eq!(ready_payload["source_kind_counts"]["credential_store"], 1);
     assert_eq!(ready_payload["state_counts_total"]["ready"], 4);
     assert_eq!(ready_payload["state_counts_total"]["mode_mismatch"], 1);
     assert_eq!(ready_payload["state_counts_total"]["unsupported_mode"], 7);
@@ -1890,6 +1941,8 @@ fn functional_execute_auth_command_matrix_supports_state_filter() {
     assert!(text_output.contains("provider_filter=all"));
     assert!(text_output.contains("mode_filter=all"));
     assert!(text_output.contains("state_filter=ready"));
+    assert!(text_output.contains("source_kind_counts=credential_store:1,flag:3"));
+    assert!(text_output.contains("source_kind_counts_total=credential_store:2,flag:3,none:7"));
     assert!(text_output.contains("state_counts=ready:4"));
     assert!(text_output.contains("state_counts_total=mode_mismatch:1,ready:4,unsupported_mode:7"));
     assert!(!text_output.contains("state=unsupported_mode"));
@@ -1929,6 +1982,17 @@ fn functional_execute_auth_command_matrix_supports_mode_support_filter() {
     assert_eq!(supported_payload["mode_unsupported"], 0);
     assert_eq!(supported_payload["mode_supported_total"], 5);
     assert_eq!(supported_payload["mode_unsupported_total"], 7);
+    assert_eq!(supported_payload["source_kind_counts_total"]["flag"], 3);
+    assert_eq!(
+        supported_payload["source_kind_counts_total"]["credential_store"],
+        2
+    );
+    assert_eq!(supported_payload["source_kind_counts_total"]["none"], 7);
+    assert_eq!(supported_payload["source_kind_counts"]["flag"], 3);
+    assert_eq!(
+        supported_payload["source_kind_counts"]["credential_store"],
+        2
+    );
     assert_eq!(supported_payload["state_counts_total"]["ready"], 4);
     assert_eq!(supported_payload["state_counts_total"]["mode_mismatch"], 1);
     assert_eq!(
@@ -1958,6 +2022,13 @@ fn functional_execute_auth_command_matrix_supports_mode_support_filter() {
     assert_eq!(unsupported_payload["mode_unsupported"], 7);
     assert_eq!(unsupported_payload["mode_supported_total"], 5);
     assert_eq!(unsupported_payload["mode_unsupported_total"], 7);
+    assert_eq!(unsupported_payload["source_kind_counts_total"]["flag"], 3);
+    assert_eq!(
+        unsupported_payload["source_kind_counts_total"]["credential_store"],
+        2
+    );
+    assert_eq!(unsupported_payload["source_kind_counts_total"]["none"], 7);
+    assert_eq!(unsupported_payload["source_kind_counts"]["none"], 7);
     assert_eq!(unsupported_payload["state_counts_total"]["ready"], 4);
     assert_eq!(
         unsupported_payload["state_counts_total"]["mode_mismatch"],
@@ -1982,6 +2053,8 @@ fn functional_execute_auth_command_matrix_supports_mode_support_filter() {
     assert!(text_output.contains("mode_support_filter=supported"));
     assert!(text_output.contains("mode_supported_total=5"));
     assert!(text_output.contains("mode_unsupported_total=7"));
+    assert!(text_output.contains("source_kind_counts=credential_store:2,flag:3"));
+    assert!(text_output.contains("source_kind_counts_total=credential_store:2,flag:3,none:7"));
     assert!(text_output.contains("state_counts=mode_mismatch:1,ready:4"));
     assert!(text_output.contains("state_counts_total=mode_mismatch:1,ready:4,unsupported_mode:7"));
     assert!(!text_output.contains("mode_supported=false"));
@@ -2025,6 +2098,14 @@ fn integration_execute_auth_command_matrix_state_filter_composes_with_other_filt
     assert_eq!(filtered_payload["rows"], 1);
     assert_eq!(filtered_payload["mode_supported_total"], 1);
     assert_eq!(filtered_payload["mode_unsupported_total"], 0);
+    assert_eq!(
+        filtered_payload["source_kind_counts_total"]["credential_store"],
+        1
+    );
+    assert_eq!(
+        filtered_payload["source_kind_counts"]["credential_store"],
+        1
+    );
     assert_eq!(filtered_payload["state_counts_total"]["ready"], 1);
     assert_eq!(filtered_payload["state_counts"]["ready"], 1);
     assert_eq!(filtered_payload["entries"][0]["provider"], "openai");
@@ -2045,6 +2126,14 @@ fn integration_execute_auth_command_matrix_state_filter_composes_with_other_filt
     assert_eq!(mismatch_payload["rows"], 1);
     assert_eq!(mismatch_payload["mode_supported_total"], 1);
     assert_eq!(mismatch_payload["mode_unsupported_total"], 0);
+    assert_eq!(
+        mismatch_payload["source_kind_counts_total"]["credential_store"],
+        1
+    );
+    assert_eq!(
+        mismatch_payload["source_kind_counts"]["credential_store"],
+        1
+    );
     assert_eq!(mismatch_payload["state_counts_total"]["mode_mismatch"], 1);
     assert_eq!(mismatch_payload["state_counts"]["mode_mismatch"], 1);
     assert_eq!(mismatch_payload["entries"][0]["state"], "mode_mismatch");
@@ -2091,6 +2180,14 @@ fn integration_execute_auth_command_matrix_mode_support_filter_composes_with_oth
     assert_eq!(filtered_payload["rows"], 1);
     assert_eq!(filtered_payload["mode_supported_total"], 1);
     assert_eq!(filtered_payload["mode_unsupported_total"], 0);
+    assert_eq!(
+        filtered_payload["source_kind_counts_total"]["credential_store"],
+        1
+    );
+    assert_eq!(
+        filtered_payload["source_kind_counts"]["credential_store"],
+        1
+    );
     assert_eq!(filtered_payload["state_counts_total"]["ready"], 1);
     assert_eq!(filtered_payload["state_counts"]["ready"], 1);
     assert_eq!(filtered_payload["entries"][0]["provider"], "openai");
@@ -2113,6 +2210,17 @@ fn integration_execute_auth_command_matrix_mode_support_filter_composes_with_oth
     assert_eq!(zero_row_payload["mode_unsupported"], 0);
     assert_eq!(zero_row_payload["mode_supported_total"], 1);
     assert_eq!(zero_row_payload["mode_unsupported_total"], 0);
+    assert_eq!(
+        zero_row_payload["source_kind_counts_total"]["credential_store"],
+        1
+    );
+    assert_eq!(
+        zero_row_payload["source_kind_counts"]
+            .as_object()
+            .expect("zero-row source-kind counts")
+            .len(),
+        0
+    );
     assert_eq!(zero_row_payload["state_counts_total"]["ready"], 1);
     assert_eq!(
         zero_row_payload["state_counts"]
@@ -2138,6 +2246,8 @@ fn integration_execute_auth_command_matrix_mode_support_filter_composes_with_oth
     assert!(zero_row_text.contains("mode_unsupported_total=0"));
     assert!(zero_row_text.contains("provider_filter=openai"));
     assert!(zero_row_text.contains("mode_filter=oauth_token"));
+    assert!(zero_row_text.contains("source_kind_counts=none"));
+    assert!(zero_row_text.contains("source_kind_counts_total=credential_store:1"));
     assert!(zero_row_text.contains("state_counts=none"));
     assert!(zero_row_text.contains("state_counts_total=ready:1"));
 }
@@ -2478,6 +2588,8 @@ fn functional_execute_auth_command_status_uses_env_access_token_when_store_entry
     assert_eq!(payload["command"], "auth.status");
     assert_eq!(payload["available"], 1);
     assert_eq!(payload["unavailable"], 0);
+    assert_eq!(payload["source_kind_counts_total"]["env"], 1);
+    assert_eq!(payload["source_kind_counts"]["env"], 1);
     assert_eq!(payload["entries"][0]["provider"], "openai");
     assert_eq!(payload["entries"][0]["mode"], "oauth_token");
     assert_eq!(payload["entries"][0]["state"], "ready");
@@ -2491,6 +2603,8 @@ fn functional_execute_auth_command_status_uses_env_access_token_when_store_entry
 
     let text_output = execute_auth_command(&config, "status openai");
     assert!(text_output.contains("source=OPENAI_ACCESS_TOKEN"));
+    assert!(text_output.contains("source_kind_counts=env:1"));
+    assert!(text_output.contains("source_kind_counts_total=env:1"));
     assert!(!text_output.contains("openai-env-fallback-access"));
 
     restore_env_vars(snapshot);
@@ -2618,6 +2732,8 @@ fn integration_execute_auth_command_status_reports_store_backed_state() {
     assert_eq!(payload["mode_unsupported_total"], 0);
     assert_eq!(payload["state_counts"]["ready"], 1);
     assert_eq!(payload["state_counts_total"]["ready"], 1);
+    assert_eq!(payload["source_kind_counts_total"]["credential_store"], 1);
+    assert_eq!(payload["source_kind_counts"]["credential_store"], 1);
 }
 
 #[test]
@@ -2646,6 +2762,9 @@ fn functional_execute_auth_command_status_supports_availability_and_state_filter
     assert_eq!(available_payload["mode_unsupported_total"], 0);
     assert_eq!(available_payload["available"], 2);
     assert_eq!(available_payload["unavailable"], 0);
+    assert_eq!(available_payload["source_kind_counts_total"]["flag"], 2);
+    assert_eq!(available_payload["source_kind_counts_total"]["none"], 1);
+    assert_eq!(available_payload["source_kind_counts"]["flag"], 2);
     assert_eq!(available_payload["state_counts"]["ready"], 2);
     assert_eq!(available_payload["state_counts_total"]["ready"], 2);
     assert_eq!(
@@ -2678,6 +2797,9 @@ fn functional_execute_auth_command_status_supports_availability_and_state_filter
     assert_eq!(unavailable_payload["mode_unsupported_total"], 0);
     assert_eq!(unavailable_payload["available"], 0);
     assert_eq!(unavailable_payload["unavailable"], 1);
+    assert_eq!(unavailable_payload["source_kind_counts_total"]["flag"], 2);
+    assert_eq!(unavailable_payload["source_kind_counts_total"]["none"], 1);
+    assert_eq!(unavailable_payload["source_kind_counts"]["none"], 1);
     assert_eq!(unavailable_payload["state_counts"]["missing_api_key"], 1);
     assert_eq!(unavailable_payload["state_counts_total"]["ready"], 2);
     assert_eq!(
@@ -2704,6 +2826,9 @@ fn functional_execute_auth_command_status_supports_availability_and_state_filter
     assert_eq!(state_payload["mode_supported_total"], 3);
     assert_eq!(state_payload["mode_unsupported_total"], 0);
     assert_eq!(state_payload["state_counts"]["missing_api_key"], 1);
+    assert_eq!(state_payload["source_kind_counts_total"]["flag"], 2);
+    assert_eq!(state_payload["source_kind_counts_total"]["none"], 1);
+    assert_eq!(state_payload["source_kind_counts"]["none"], 1);
     assert_eq!(state_payload["state_counts_total"]["ready"], 2);
     assert_eq!(state_payload["state_counts_total"]["missing_api_key"], 1);
     assert_eq!(state_payload["entries"][0]["provider"], "google");
@@ -2716,6 +2841,8 @@ fn functional_execute_auth_command_status_supports_availability_and_state_filter
     assert!(text_output.contains("provider_filter=all"));
     assert!(text_output.contains("mode_supported_total=3"));
     assert!(text_output.contains("mode_unsupported_total=0"));
+    assert!(text_output.contains("source_kind_counts=none:1"));
+    assert!(text_output.contains("source_kind_counts_total=flag:2,none:1"));
     assert!(text_output.contains("availability_filter=unavailable"));
     assert!(text_output.contains("state_filter=missing_api_key"));
     assert!(text_output.contains("rows_total=3"));
@@ -2755,6 +2882,26 @@ fn functional_execute_auth_command_status_supports_mode_filter() {
                 .unwrap_or(0),
         3
     );
+    assert_eq!(api_key_payload["source_kind_counts_total"]["flag"], 1);
+    assert_eq!(api_key_payload["source_kind_counts"]["flag"], 1);
+    assert_eq!(
+        api_key_payload["source_kind_counts_total"]
+            .as_object()
+            .expect("api-key source-kind counts total")
+            .values()
+            .map(|value| value.as_u64().unwrap_or(0))
+            .sum::<u64>(),
+        3
+    );
+    assert_eq!(
+        api_key_payload["source_kind_counts"]
+            .as_object()
+            .expect("api-key source-kind counts")
+            .values()
+            .map(|value| value.as_u64().unwrap_or(0))
+            .sum::<u64>(),
+        3
+    );
     assert_eq!(
         api_key_payload["available"].as_u64().unwrap_or(0)
             + api_key_payload["unavailable"].as_u64().unwrap_or(0),
@@ -2789,6 +2936,15 @@ fn functional_execute_auth_command_status_supports_mode_filter() {
                 .unwrap_or(0),
         3
     );
+    assert_eq!(
+        oauth_payload["source_kind_counts_total"]
+            .as_object()
+            .expect("oauth source-kind counts total")
+            .values()
+            .map(|value| value.as_u64().unwrap_or(0))
+            .sum::<u64>(),
+        3
+    );
     let oauth_entries = oauth_payload["entries"]
         .as_array()
         .expect("oauth mode-filtered status entries");
@@ -2800,6 +2956,9 @@ fn functional_execute_auth_command_status_supports_mode_filter() {
     let text_output = execute_auth_command(&config, "status --mode api-key");
     assert!(text_output.contains("provider_filter=all"));
     assert!(text_output.contains("mode_filter=api_key"));
+    assert!(text_output.contains("source_kind_counts="));
+    assert!(text_output.contains("source_kind_counts_total="));
+    assert!(text_output.contains("flag:1"));
     assert!(text_output.contains("auth provider: name=openai mode=api_key"));
 }
 
@@ -2827,6 +2986,26 @@ fn functional_execute_auth_command_status_supports_mode_support_filter() {
     assert_eq!(supported_payload["mode_unsupported"], 0);
     assert_eq!(supported_payload["mode_supported_total"], 2);
     assert_eq!(supported_payload["mode_unsupported_total"], 1);
+    assert_eq!(supported_payload["source_kind_counts_total"]["flag"], 1);
+    assert_eq!(supported_payload["source_kind_counts"]["flag"], 1);
+    assert_eq!(
+        supported_payload["source_kind_counts_total"]
+            .as_object()
+            .expect("supported source-kind counts total")
+            .values()
+            .map(|value| value.as_u64().unwrap_or(0))
+            .sum::<u64>(),
+        3
+    );
+    assert_eq!(
+        supported_payload["source_kind_counts"]
+            .as_object()
+            .expect("supported source-kind counts")
+            .values()
+            .map(|value| value.as_u64().unwrap_or(0))
+            .sum::<u64>(),
+        2
+    );
     assert_eq!(supported_payload["state_counts"]["missing_api_key"], 1);
     assert_eq!(supported_payload["state_counts"]["ready"], 1);
     assert_eq!(
@@ -2859,6 +3038,17 @@ fn functional_execute_auth_command_status_supports_mode_support_filter() {
     assert_eq!(unsupported_payload["mode_unsupported"], 1);
     assert_eq!(unsupported_payload["mode_supported_total"], 2);
     assert_eq!(unsupported_payload["mode_unsupported_total"], 1);
+    assert_eq!(unsupported_payload["source_kind_counts_total"]["flag"], 1);
+    assert_eq!(unsupported_payload["source_kind_counts"]["none"], 1);
+    assert_eq!(
+        unsupported_payload["source_kind_counts_total"]
+            .as_object()
+            .expect("unsupported source-kind counts total")
+            .values()
+            .map(|value| value.as_u64().unwrap_or(0))
+            .sum::<u64>(),
+        3
+    );
     assert_eq!(unsupported_payload["state_counts"]["unsupported_mode"], 1);
     assert_eq!(unsupported_payload["entries"][0]["provider"], "anthropic");
     assert_eq!(unsupported_payload["entries"][0]["mode_supported"], false);
@@ -2872,6 +3062,9 @@ fn functional_execute_auth_command_status_supports_mode_support_filter() {
     assert!(text_output.contains("mode_support_filter=unsupported"));
     assert!(text_output.contains("mode_supported_total=2"));
     assert!(text_output.contains("mode_unsupported_total=1"));
+    assert!(text_output.contains("source_kind_counts=none:1"));
+    assert!(text_output.contains("source_kind_counts_total="));
+    assert!(text_output.contains("flag:1"));
     assert!(text_output.contains("state_counts=unsupported_mode:1"));
     assert!(text_output.contains("auth provider: name=anthropic"));
     assert!(!text_output.contains("auth provider: name=openai"));
@@ -2917,6 +3110,14 @@ fn integration_execute_auth_command_status_filters_compose_with_provider_and_zer
     assert_eq!(filtered_payload["mode_unsupported"], 0);
     assert_eq!(filtered_payload["mode_supported_total"], 1);
     assert_eq!(filtered_payload["mode_unsupported_total"], 0);
+    assert_eq!(
+        filtered_payload["source_kind_counts_total"]["credential_store"],
+        1
+    );
+    assert_eq!(
+        filtered_payload["source_kind_counts"]["credential_store"],
+        1
+    );
     assert_eq!(filtered_payload["available"], 1);
     assert_eq!(filtered_payload["unavailable"], 0);
     assert_eq!(filtered_payload["state_counts"]["ready"], 1);
@@ -2942,6 +3143,17 @@ fn integration_execute_auth_command_status_filters_compose_with_provider_and_zer
     assert_eq!(zero_row_payload["mode_unsupported"], 0);
     assert_eq!(zero_row_payload["mode_supported_total"], 1);
     assert_eq!(zero_row_payload["mode_unsupported_total"], 0);
+    assert_eq!(
+        zero_row_payload["source_kind_counts_total"]["credential_store"],
+        1
+    );
+    assert_eq!(
+        zero_row_payload["source_kind_counts"]
+            .as_object()
+            .expect("zero-row source-kind counts")
+            .len(),
+        0
+    );
     assert_eq!(zero_row_payload["available"], 0);
     assert_eq!(zero_row_payload["unavailable"], 0);
     assert_eq!(
@@ -2968,6 +3180,8 @@ fn integration_execute_auth_command_status_filters_compose_with_provider_and_zer
     assert!(zero_row_text.contains("provider_filter=openai"));
     assert!(zero_row_text.contains("mode_supported_total=1"));
     assert!(zero_row_text.contains("mode_unsupported_total=0"));
+    assert!(zero_row_text.contains("source_kind_counts=none"));
+    assert!(zero_row_text.contains("source_kind_counts_total=credential_store:1"));
     assert!(zero_row_text.contains("rows_total=1"));
     assert!(zero_row_text.contains("state_counts=none"));
     assert!(zero_row_text.contains("state_counts_total=ready:1"));
@@ -3016,6 +3230,14 @@ fn integration_execute_auth_command_status_mode_support_filter_composes_with_oth
     assert_eq!(filtered_payload["mode_unsupported"], 0);
     assert_eq!(filtered_payload["mode_supported_total"], 1);
     assert_eq!(filtered_payload["mode_unsupported_total"], 0);
+    assert_eq!(
+        filtered_payload["source_kind_counts_total"]["credential_store"],
+        1
+    );
+    assert_eq!(
+        filtered_payload["source_kind_counts"]["credential_store"],
+        1
+    );
     assert_eq!(filtered_payload["entries"][0]["provider"], "openai");
     assert_eq!(filtered_payload["entries"][0]["mode_supported"], true);
     assert_eq!(filtered_payload["state_counts"]["ready"], 1);
@@ -3037,6 +3259,17 @@ fn integration_execute_auth_command_status_mode_support_filter_composes_with_oth
     assert_eq!(zero_row_payload["mode_supported_total"], 1);
     assert_eq!(zero_row_payload["mode_unsupported_total"], 0);
     assert_eq!(
+        zero_row_payload["source_kind_counts_total"]["credential_store"],
+        1
+    );
+    assert_eq!(
+        zero_row_payload["source_kind_counts"]
+            .as_object()
+            .expect("zero-row source-kind counts")
+            .len(),
+        0
+    );
+    assert_eq!(
         zero_row_payload["state_counts"]
             .as_object()
             .expect("zero-row state counts")
@@ -3054,6 +3287,8 @@ fn integration_execute_auth_command_status_mode_support_filter_composes_with_oth
     assert!(zero_row_text.contains("mode_filter=session_token"));
     assert!(zero_row_text.contains("mode_supported_total=1"));
     assert!(zero_row_text.contains("mode_unsupported_total=0"));
+    assert!(zero_row_text.contains("source_kind_counts=none"));
+    assert!(zero_row_text.contains("source_kind_counts_total=credential_store:1"));
     assert!(zero_row_text.contains("mode_support_filter=unsupported"));
     assert!(zero_row_text.contains("state_counts=none"));
     assert!(zero_row_text.contains("state_counts_total=ready:1"));
