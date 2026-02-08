@@ -318,6 +318,14 @@ cargo run -p pi-coding-agent -- \
   --package-install-root .pi/packages
 ```
 
+List installed package bundles from a package root:
+
+```bash
+cargo run -p pi-coding-agent -- \
+  --package-list \
+  --package-list-root .pi/packages
+```
+
 Print versioned RPC protocol capabilities JSON and exit:
 
 ```bash
