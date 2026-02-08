@@ -432,6 +432,8 @@ cargo run -p pi-coding-agent -- \
   --rpc-dispatch-frame-file /tmp/rpc-frame.json
 ```
 
+RPC request frame schema versions `0` and `1` are accepted; response frames are emitted with schema version `1`. `capabilities.response` includes both `response_schema_version` and `supported_request_schema_versions`.
+
 For invalid request frames, dispatch still prints a structured JSON error envelope (`kind: "error"` with `payload.code` and `payload.message`) and exits non-zero.
 
 Dispatch newline-delimited RPC request frames (NDJSON) and emit one response JSON line per input frame:
