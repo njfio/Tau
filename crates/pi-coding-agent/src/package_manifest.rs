@@ -22,6 +22,37 @@ pub(crate) struct PackageManifestSummary {
     pub total_components: usize,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PackageInstallReport {
+    pub manifest_path: PathBuf,
+    pub install_root: PathBuf,
+    pub package_dir: PathBuf,
+    pub name: String,
+    pub version: String,
+    pub manifest_status: FileUpsertOutcome,
+    pub installed: usize,
+    pub updated: usize,
+    pub skipped: usize,
+    pub total_components: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FileUpsertOutcome {
+    Installed,
+    Updated,
+    Skipped,
+}
+
+impl FileUpsertOutcome {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Installed => "installed",
+            Self::Updated => "updated",
+            Self::Skipped => "skipped",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct PackageManifest {
     schema_version: u32,
@@ -68,6 +99,15 @@ pub(crate) fn execute_package_show_command(cli: &Cli) -> Result<()> {
     };
     let (manifest, summary) = load_and_validate_manifest(path)?;
     println!("{}", render_package_manifest_report(&summary, &manifest));
+    Ok(())
+}
+
+pub(crate) fn execute_package_install_command(cli: &Cli) -> Result<()> {
+    let Some(path) = cli.package_install.as_ref() else {
+        return Ok(());
+    };
+    let report = install_package_manifest(path, &cli.package_install_root)?;
+    println!("{}", render_package_install_report(&report));
     Ok(())
 }
 
@@ -123,6 +163,192 @@ fn load_and_validate_manifest(path: &Path) -> Result<(PackageManifest, PackageMa
         total_components,
     };
     Ok((manifest, summary))
+}
+
+fn install_package_manifest(
+    manifest_path: &Path,
+    install_root: &Path,
+) -> Result<PackageInstallReport> {
+    let (manifest, summary) = load_and_validate_manifest(manifest_path)?;
+    let manifest_dir = manifest_path
+        .parent()
+        .filter(|dir| !dir.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let canonical_manifest_dir = std::fs::canonicalize(manifest_dir).with_context(|| {
+        format!(
+            "failed to canonicalize package manifest directory {}",
+            manifest_dir.display()
+        )
+    })?;
+
+    std::fs::create_dir_all(install_root)
+        .with_context(|| format!("failed to create {}", install_root.display()))?;
+    let package_dir = install_root
+        .join(summary.name.as_str())
+        .join(summary.version.as_str());
+    std::fs::create_dir_all(&package_dir)
+        .with_context(|| format!("failed to create {}", package_dir.display()))?;
+
+    let manifest_status =
+        upsert_file_from_source(manifest_path, &package_dir.join("package.json"))?;
+    let mut report = PackageInstallReport {
+        manifest_path: manifest_path.to_path_buf(),
+        install_root: install_root.to_path_buf(),
+        package_dir: package_dir.clone(),
+        name: summary.name,
+        version: summary.version,
+        manifest_status,
+        installed: 0,
+        updated: 0,
+        skipped: 0,
+        total_components: summary.total_components,
+    };
+
+    install_component_set(
+        "templates",
+        &manifest.templates,
+        &canonical_manifest_dir,
+        &package_dir,
+        &mut report,
+    )?;
+    install_component_set(
+        "skills",
+        &manifest.skills,
+        &canonical_manifest_dir,
+        &package_dir,
+        &mut report,
+    )?;
+    install_component_set(
+        "extensions",
+        &manifest.extensions,
+        &canonical_manifest_dir,
+        &package_dir,
+        &mut report,
+    )?;
+    install_component_set(
+        "themes",
+        &manifest.themes,
+        &canonical_manifest_dir,
+        &package_dir,
+        &mut report,
+    )?;
+
+    Ok(report)
+}
+
+fn render_package_install_report(report: &PackageInstallReport) -> String {
+    format!(
+        "package install: manifest={} root={} package_dir={} name={} version={} manifest_status={} installed={} updated={} skipped={} total_components={}",
+        report.manifest_path.display(),
+        report.install_root.display(),
+        report.package_dir.display(),
+        report.name,
+        report.version,
+        report.manifest_status.as_str(),
+        report.installed,
+        report.updated,
+        report.skipped,
+        report.total_components
+    )
+}
+
+fn install_component_set(
+    kind: &str,
+    components: &[PackageComponent],
+    canonical_manifest_dir: &Path,
+    package_dir: &Path,
+    report: &mut PackageInstallReport,
+) -> Result<()> {
+    for component in components {
+        let id = component.id.trim();
+        let relative_path = PathBuf::from_str(component.path.trim())
+            .map_err(|_| anyhow!("failed to parse {} path '{}'", kind, component.path.trim()))?;
+        let source_path =
+            resolve_component_source_path(kind, id, &relative_path, canonical_manifest_dir)?;
+        let destination = package_dir.join(&relative_path);
+        match upsert_file_from_source(&source_path, &destination)? {
+            FileUpsertOutcome::Installed => report.installed = report.installed.saturating_add(1),
+            FileUpsertOutcome::Updated => report.updated = report.updated.saturating_add(1),
+            FileUpsertOutcome::Skipped => report.skipped = report.skipped.saturating_add(1),
+        }
+    }
+    Ok(())
+}
+
+fn resolve_component_source_path(
+    kind: &str,
+    id: &str,
+    relative_path: &Path,
+    canonical_manifest_dir: &Path,
+) -> Result<PathBuf> {
+    let joined = canonical_manifest_dir.join(relative_path);
+    let canonical_source = std::fs::canonicalize(&joined).with_context(|| {
+        format!(
+            "package manifest {} entry '{}' source '{}' does not exist",
+            kind,
+            id,
+            relative_path.display()
+        )
+    })?;
+    if !canonical_source.starts_with(canonical_manifest_dir) {
+        bail!(
+            "package manifest {} entry '{}' source '{}' resolves outside package manifest directory",
+            kind,
+            id,
+            relative_path.display()
+        );
+    }
+    let metadata = std::fs::metadata(&canonical_source).with_context(|| {
+        format!(
+            "failed to read metadata for package manifest {} entry '{}' source '{}'",
+            kind,
+            id,
+            canonical_source.display()
+        )
+    })?;
+    if !metadata.is_file() {
+        bail!(
+            "package manifest {} entry '{}' source '{}' must be a file",
+            kind,
+            id,
+            relative_path.display()
+        );
+    }
+    Ok(canonical_source)
+}
+
+fn upsert_file_from_source(source: &Path, destination: &Path) -> Result<FileUpsertOutcome> {
+    let source_content = std::fs::read(source)
+        .with_context(|| format!("failed to read source file {}", source.display()))?;
+    let destination_exists = destination.exists();
+    if destination_exists {
+        if destination.is_dir() {
+            bail!("destination '{}' is a directory", destination.display());
+        }
+        let existing_content = std::fs::read(destination).with_context(|| {
+            format!(
+                "failed to read existing destination file {}",
+                destination.display()
+            )
+        })?;
+        if existing_content == source_content {
+            return Ok(FileUpsertOutcome::Skipped);
+        }
+    }
+
+    let parent_dir = destination
+        .parent()
+        .filter(|dir| !dir.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    std::fs::create_dir_all(parent_dir)
+        .with_context(|| format!("failed to create {}", parent_dir.display()))?;
+    std::fs::write(destination, source_content)
+        .with_context(|| format!("failed to write destination file {}", destination.display()))?;
+    if destination_exists {
+        Ok(FileUpsertOutcome::Updated)
+    } else {
+        Ok(FileUpsertOutcome::Installed)
+    }
 }
 
 fn render_package_manifest_report(
@@ -224,11 +450,29 @@ fn is_semver_like(raw: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use tempfile::tempdir;
 
     use super::{
-        load_and_validate_manifest, render_package_manifest_report, validate_package_manifest,
+        install_package_manifest, load_and_validate_manifest, render_package_install_report,
+        render_package_manifest_report, validate_package_manifest, FileUpsertOutcome,
     };
+
+    #[cfg(unix)]
+    fn create_file_symlink(source: &Path, destination: &Path) {
+        std::os::unix::fs::symlink(source, destination).expect("create symlink");
+    }
+
+    #[cfg(windows)]
+    fn create_file_symlink(source: &Path, destination: &Path) {
+        std::os::windows::fs::symlink_file(source, destination).expect("create symlink");
+    }
+
+    #[cfg(not(any(unix, windows)))]
+    fn create_file_symlink(_source: &Path, _destination: &Path) {
+        panic!("symlink test requires unix or windows target");
+    }
 
     #[test]
     fn unit_validate_package_manifest_accepts_minimal_semver_shape() {
@@ -379,5 +623,138 @@ mod tests {
         assert!(report.contains("skills (1):"));
         assert!(report.contains("extensions (0):"));
         assert!(report.contains("themes (0):"));
+    }
+
+    #[test]
+    fn functional_install_package_manifest_copies_components_into_versioned_layout() {
+        let temp = tempdir().expect("tempdir");
+        let package_root = temp.path().join("bundle");
+        let templates_dir = package_root.join("templates");
+        let skills_dir = package_root.join("skills/checks");
+        std::fs::create_dir_all(&templates_dir).expect("create templates dir");
+        std::fs::create_dir_all(&skills_dir).expect("create skills dir");
+        std::fs::write(templates_dir.join("review.txt"), "template body")
+            .expect("write template source");
+        std::fs::write(skills_dir.join("SKILL.md"), "# checks").expect("write skill source");
+
+        let manifest_path = package_root.join("package.json");
+        std::fs::write(
+            &manifest_path,
+            r#"{
+  "schema_version": 1,
+  "name": "starter",
+  "version": "1.0.0",
+  "templates": [{"id":"review","path":"templates/review.txt"}],
+  "skills": [{"id":"checks","path":"skills/checks/SKILL.md"}]
+}"#,
+        )
+        .expect("write manifest");
+
+        let install_root = temp.path().join("installed");
+        let first =
+            install_package_manifest(&manifest_path, &install_root).expect("install package");
+        assert_eq!(first.name, "starter");
+        assert_eq!(first.version, "1.0.0");
+        assert_eq!(first.total_components, 2);
+        assert_eq!(first.installed, 2);
+        assert_eq!(first.updated, 0);
+        assert_eq!(first.skipped, 0);
+        assert_eq!(first.manifest_status, FileUpsertOutcome::Installed);
+        assert_eq!(
+            std::fs::read_to_string(install_root.join("starter/1.0.0/templates/review.txt"))
+                .expect("read installed template"),
+            "template body"
+        );
+        assert_eq!(
+            std::fs::read_to_string(install_root.join("starter/1.0.0/skills/checks/SKILL.md"))
+                .expect("read installed skill"),
+            "# checks"
+        );
+
+        let second =
+            install_package_manifest(&manifest_path, &install_root).expect("reinstall package");
+        assert_eq!(second.installed, 0);
+        assert_eq!(second.updated, 0);
+        assert_eq!(second.skipped, 2);
+        assert_eq!(second.manifest_status, FileUpsertOutcome::Skipped);
+    }
+
+    #[test]
+    fn regression_install_package_manifest_rejects_missing_component_source() {
+        let temp = tempdir().expect("tempdir");
+        let package_root = temp.path().join("bundle");
+        std::fs::create_dir_all(package_root.join("templates")).expect("create templates dir");
+        let manifest_path = package_root.join("package.json");
+        std::fs::write(
+            &manifest_path,
+            r#"{
+  "schema_version": 1,
+  "name": "starter",
+  "version": "1.0.0",
+  "templates": [{"id":"review","path":"templates/missing.txt"}]
+}"#,
+        )
+        .expect("write manifest");
+
+        let install_root = temp.path().join("installed");
+        let error = install_package_manifest(&manifest_path, &install_root)
+            .expect_err("missing source should fail");
+        assert!(error.to_string().contains("does not exist"));
+    }
+
+    #[test]
+    fn regression_install_package_manifest_rejects_symlink_escape() {
+        let temp = tempdir().expect("tempdir");
+        let package_root = temp.path().join("bundle");
+        let templates_dir = package_root.join("templates");
+        std::fs::create_dir_all(&templates_dir).expect("create templates dir");
+
+        let outside_dir = temp.path().join("outside");
+        std::fs::create_dir_all(&outside_dir).expect("create outside dir");
+        let outside_file = outside_dir.join("secret.txt");
+        std::fs::write(&outside_file, "outside").expect("write outside file");
+        create_file_symlink(&outside_file, &templates_dir.join("escape.txt"));
+
+        let manifest_path = package_root.join("package.json");
+        std::fs::write(
+            &manifest_path,
+            r#"{
+  "schema_version": 1,
+  "name": "starter",
+  "version": "1.0.0",
+  "templates": [{"id":"review","path":"templates/escape.txt"}]
+}"#,
+        )
+        .expect("write manifest");
+
+        let install_root = temp.path().join("installed");
+        let error = install_package_manifest(&manifest_path, &install_root)
+            .expect_err("symlink escape should fail");
+        assert!(error
+            .to_string()
+            .contains("resolves outside package manifest directory"));
+    }
+
+    #[test]
+    fn unit_render_package_install_report_includes_status_and_counts() {
+        let report = super::PackageInstallReport {
+            manifest_path: Path::new("/tmp/source/package.json").to_path_buf(),
+            install_root: Path::new("/tmp/install").to_path_buf(),
+            package_dir: Path::new("/tmp/install/starter/1.0.0").to_path_buf(),
+            name: "starter".to_string(),
+            version: "1.0.0".to_string(),
+            manifest_status: FileUpsertOutcome::Updated,
+            installed: 1,
+            updated: 2,
+            skipped: 3,
+            total_components: 6,
+        };
+        let rendered = render_package_install_report(&report);
+        assert!(rendered.contains("package install:"));
+        assert!(rendered.contains("manifest_status=updated"));
+        assert!(rendered.contains("installed=1"));
+        assert!(rendered.contains("updated=2"));
+        assert!(rendered.contains("skipped=3"));
+        assert!(rendered.contains("total_components=6"));
     }
 }

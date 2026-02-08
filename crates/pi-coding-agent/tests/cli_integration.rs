@@ -2850,6 +2850,77 @@ fn regression_package_show_flag_rejects_invalid_manifest() {
 }
 
 #[test]
+fn package_install_flag_installs_bundle_files_and_exits() {
+    let temp = tempdir().expect("tempdir");
+    let package_root = temp.path().join("bundle");
+    fs::create_dir_all(package_root.join("templates")).expect("create templates dir");
+    fs::write(package_root.join("templates/review.txt"), "template body")
+        .expect("write template source");
+
+    let manifest_path = package_root.join("package.json");
+    fs::write(
+        &manifest_path,
+        r#"{
+  "schema_version": 1,
+  "name": "starter-bundle",
+  "version": "1.0.0",
+  "templates": [{"id":"review","path":"templates/review.txt"}]
+}"#,
+    )
+    .expect("write manifest");
+    let install_root = temp.path().join("installed");
+
+    let mut cmd = binary_command();
+    cmd.args([
+        "--package-install",
+        manifest_path.to_str().expect("utf8 path"),
+        "--package-install-root",
+        install_root.to_str().expect("utf8 path"),
+    ]);
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("package install:"))
+        .stdout(predicate::str::contains("name=starter-bundle"))
+        .stdout(predicate::str::contains("total_components=1"));
+    assert!(install_root
+        .join("starter-bundle/1.0.0/templates/review.txt")
+        .exists());
+}
+
+#[test]
+fn regression_package_install_flag_rejects_missing_component_source() {
+    let temp = tempdir().expect("tempdir");
+    let package_root = temp.path().join("bundle");
+    fs::create_dir_all(package_root.join("templates")).expect("create templates dir");
+
+    let manifest_path = package_root.join("package.json");
+    fs::write(
+        &manifest_path,
+        r#"{
+  "schema_version": 1,
+  "name": "starter-bundle",
+  "version": "1.0.0",
+  "templates": [{"id":"review","path":"templates/missing.txt"}]
+}"#,
+    )
+    .expect("write manifest");
+    let install_root = temp.path().join("installed");
+
+    let mut cmd = binary_command();
+    cmd.args([
+        "--package-install",
+        manifest_path.to_str().expect("utf8 path"),
+        "--package-install-root",
+        install_root.to_str().expect("utf8 path"),
+    ]);
+
+    cmd.assert()
+        .failure()
+        .stderr(predicate::str::contains("does not exist"));
+}
+
+#[test]
 fn rpc_capabilities_flag_outputs_versioned_json_and_exits() {
     let mut cmd = binary_command();
     cmd.arg("--rpc-capabilities");

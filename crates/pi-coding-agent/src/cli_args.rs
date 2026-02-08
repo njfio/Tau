@@ -504,6 +504,7 @@ pub(crate) struct Cli {
         long = "package-validate",
         env = "PI_PACKAGE_VALIDATE",
         conflicts_with = "package_show",
+        conflicts_with = "package_install",
         value_name = "path",
         help = "Validate a package manifest JSON file and exit"
     )]
@@ -513,10 +514,31 @@ pub(crate) struct Cli {
         long = "package-show",
         env = "PI_PACKAGE_SHOW",
         conflicts_with = "package_validate",
+        conflicts_with = "package_install",
         value_name = "path",
         help = "Print package manifest metadata and component inventory"
     )]
     pub(crate) package_show: Option<PathBuf>,
+
+    #[arg(
+        long = "package-install",
+        env = "PI_PACKAGE_INSTALL",
+        conflicts_with = "package_validate",
+        conflicts_with = "package_show",
+        value_name = "path",
+        help = "Install a local package manifest bundle and exit"
+    )]
+    pub(crate) package_install: Option<PathBuf>,
+
+    #[arg(
+        long = "package-install-root",
+        env = "PI_PACKAGE_INSTALL_ROOT",
+        default_value = ".pi/packages",
+        requires = "package_install",
+        value_name = "path",
+        help = "Destination root for installed package bundles"
+    )]
+    pub(crate) package_install_root: PathBuf,
 
     #[arg(
         long = "rpc-capabilities",

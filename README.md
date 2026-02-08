@@ -310,6 +310,14 @@ cargo run -p pi-coding-agent -- \
   --package-show .pi/packages/starter/package.json
 ```
 
+Install a local package manifest bundle into a versioned package root:
+
+```bash
+cargo run -p pi-coding-agent -- \
+  --package-install ./examples/starter/package.json \
+  --package-install-root .pi/packages
+```
+
 Print versioned RPC protocol capabilities JSON and exit:
 
 ```bash

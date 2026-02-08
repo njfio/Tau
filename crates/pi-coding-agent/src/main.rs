@@ -150,7 +150,7 @@ pub(crate) use crate::observability_loggers::{PromptTelemetryLogger, ToolAuditLo
 pub(crate) use crate::orchestrator::parse_numbered_plan_steps;
 pub(crate) use crate::orchestrator::run_plan_first_prompt;
 pub(crate) use crate::package_manifest::{
-    execute_package_show_command, execute_package_validate_command,
+    execute_package_install_command, execute_package_show_command, execute_package_validate_command,
 };
 pub(crate) use crate::provider_auth::{
     configured_provider_auth_method, configured_provider_auth_method_from_config,
