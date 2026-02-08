@@ -1,5 +1,6 @@
 use std::{
     collections::HashSet,
+    fs,
     hash::Hash,
     path::{Component, Path, PathBuf},
 };
@@ -23,6 +24,27 @@ pub(crate) struct ExtensionManifestSummary {
     pub hook_count: usize,
     pub permission_count: usize,
     pub timeout_ms: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ExtensionListEntry {
+    pub manifest_path: PathBuf,
+    pub id: String,
+    pub version: String,
+    pub runtime: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ExtensionListInvalidEntry {
+    pub manifest_path: PathBuf,
+    pub error: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ExtensionListReport {
+    pub list_root: PathBuf,
+    pub entries: Vec<ExtensionListEntry>,
+    pub invalid_entries: Vec<ExtensionListInvalidEntry>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -102,6 +124,15 @@ impl ExtensionPermission {
             Self::Network => "network",
         }
     }
+}
+
+pub(crate) fn execute_extension_list_command(cli: &Cli) -> Result<()> {
+    if !cli.extension_list {
+        return Ok(());
+    }
+    let report = list_extension_manifests(&cli.extension_list_root)?;
+    println!("{}", render_extension_list_report(&report));
+    Ok(())
 }
 
 pub(crate) fn execute_extension_show_command(cli: &Cli) -> Result<()> {
@@ -211,6 +242,103 @@ fn render_extension_manifest_report(
     )
 }
 
+fn list_extension_manifests(root: &Path) -> Result<ExtensionListReport> {
+    if !root.exists() {
+        return Ok(ExtensionListReport {
+            list_root: root.to_path_buf(),
+            entries: vec![],
+            invalid_entries: vec![],
+        });
+    }
+    if !root.is_dir() {
+        bail!(
+            "extension list root '{}' is not a directory",
+            root.display()
+        );
+    }
+
+    let mut entries = Vec::new();
+    let mut invalid_entries = Vec::new();
+    for manifest_path in discover_manifest_paths(root)? {
+        match validate_extension_manifest(&manifest_path) {
+            Ok(summary) => entries.push(ExtensionListEntry {
+                manifest_path: summary.manifest_path,
+                id: summary.id,
+                version: summary.version,
+                runtime: summary.runtime,
+            }),
+            Err(error) => invalid_entries.push(ExtensionListInvalidEntry {
+                manifest_path,
+                error: error.to_string(),
+            }),
+        }
+    }
+    entries.sort_by(|left, right| {
+        left.id
+            .cmp(&right.id)
+            .then_with(|| left.version.cmp(&right.version))
+            .then_with(|| left.manifest_path.cmp(&right.manifest_path))
+    });
+    invalid_entries.sort_by(|left, right| left.manifest_path.cmp(&right.manifest_path));
+
+    Ok(ExtensionListReport {
+        list_root: root.to_path_buf(),
+        entries,
+        invalid_entries,
+    })
+}
+
+fn discover_manifest_paths(root: &Path) -> Result<Vec<PathBuf>> {
+    let mut paths = Vec::new();
+    let read_dir = fs::read_dir(root)
+        .with_context(|| format!("failed to read extension root {}", root.display()))?;
+    for entry in read_dir {
+        let entry = entry
+            .with_context(|| format!("failed to inspect extension root {}", root.display()))?;
+        let path = entry.path();
+        if path.is_dir() {
+            let manifest_path = path.join("extension.json");
+            if manifest_path.is_file() {
+                paths.push(manifest_path);
+            }
+            continue;
+        }
+        if path.extension().and_then(|extension| extension.to_str()) == Some("json")
+            && path.is_file()
+        {
+            paths.push(path);
+        }
+    }
+    paths.sort();
+    Ok(paths)
+}
+
+fn render_extension_list_report(report: &ExtensionListReport) -> String {
+    let mut lines = vec![format!(
+        "extension list: root={} count={} invalid={}",
+        report.list_root.display(),
+        report.entries.len(),
+        report.invalid_entries.len()
+    )];
+    for entry in &report.entries {
+        lines.push(format!(
+            "extension: id={} version={} runtime={} manifest={}",
+            entry.id,
+            entry.version,
+            entry.runtime,
+            entry.manifest_path.display()
+        ));
+    }
+    for invalid in &report.invalid_entries {
+        lines.push(format!(
+            "invalid: manifest={} error={}",
+            invalid.manifest_path.display(),
+            invalid.error
+        ));
+    }
+    lines.join("\n")
+}
+
 fn load_extension_manifest(path: &Path) -> Result<ExtensionManifest> {
     let raw = std::fs::read_to_string(path)
         .with_context(|| format!("failed to read extension manifest {}", path.display()))?;
@@ -306,10 +434,11 @@ fn validate_timeout_ms(timeout_ms: u64) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{
-        render_extension_manifest_report, validate_extension_manifest, ExtensionHook,
-        ExtensionManifest, ExtensionManifestSummary, ExtensionPermission, ExtensionRuntime,
+        list_extension_manifests, render_extension_list_report, render_extension_manifest_report,
+        validate_extension_manifest, ExtensionHook, ExtensionListReport, ExtensionManifest,
+        ExtensionManifestSummary, ExtensionPermission, ExtensionRuntime,
     };
-    use std::path::PathBuf;
+    use std::{fs, path::PathBuf};
     use tempfile::tempdir;
 
     #[test]
@@ -411,5 +540,80 @@ mod tests {
         assert!(report.contains("- id: issue-assistant"));
         assert!(report.contains("- hooks (2):\n- run-end\n- run-start"));
         assert!(report.contains("- permissions (2):\n- network\n- read-files"));
+    }
+
+    #[test]
+    fn unit_render_extension_list_report_is_deterministic() {
+        let report = ExtensionListReport {
+            list_root: PathBuf::from("extensions"),
+            entries: vec![super::ExtensionListEntry {
+                manifest_path: PathBuf::from("extensions/issue-assistant/extension.json"),
+                id: "issue-assistant".to_string(),
+                version: "0.1.0".to_string(),
+                runtime: "process".to_string(),
+            }],
+            invalid_entries: vec![super::ExtensionListInvalidEntry {
+                manifest_path: PathBuf::from("extensions/bad/extension.json"),
+                error: "unsupported extension manifest schema".to_string(),
+            }],
+        };
+
+        let rendered = render_extension_list_report(&report);
+        assert!(rendered.contains("extension list: root=extensions count=1 invalid=1"));
+        assert!(rendered.contains(
+            "extension: id=issue-assistant version=0.1.0 runtime=process manifest=extensions/issue-assistant/extension.json"
+        ));
+        assert!(rendered.contains("invalid: manifest=extensions/bad/extension.json error=unsupported extension manifest schema"));
+    }
+
+    #[test]
+    fn regression_list_extension_manifests_reports_invalid_entries_without_failing() {
+        let temp = tempdir().expect("tempdir");
+        let good_dir = temp.path().join("good");
+        fs::create_dir_all(&good_dir).expect("create good dir");
+        fs::write(
+            good_dir.join("extension.json"),
+            r#"{
+  "schema_version": 1,
+  "id": "issue-assistant",
+  "version": "0.1.0",
+  "runtime": "process",
+  "entrypoint": "bin/assistant"
+}"#,
+        )
+        .expect("write valid extension");
+
+        let bad_dir = temp.path().join("bad");
+        fs::create_dir_all(&bad_dir).expect("create bad dir");
+        fs::write(
+            bad_dir.join("extension.json"),
+            r#"{
+  "schema_version": 9,
+  "id": "broken",
+  "version": "0.1.0",
+  "runtime": "process",
+  "entrypoint": "bin/assistant"
+}"#,
+        )
+        .expect("write invalid extension");
+
+        let report = list_extension_manifests(temp.path()).expect("list should succeed");
+        assert_eq!(report.entries.len(), 1);
+        assert_eq!(report.invalid_entries.len(), 1);
+        assert_eq!(report.entries[0].id, "issue-assistant");
+        assert!(report.invalid_entries[0]
+            .error
+            .contains("unsupported extension manifest schema"));
+    }
+
+    #[test]
+    fn regression_list_extension_manifests_rejects_non_directory_root() {
+        let temp = tempdir().expect("tempdir");
+        let root_file = temp.path().join("extensions.json");
+        fs::write(&root_file, "{}").expect("write root file");
+
+        let error =
+            list_extension_manifests(&root_file).expect_err("non-directory root should fail");
+        assert!(error.to_string().contains("is not a directory"));
     }
 }

@@ -96,7 +96,10 @@ use crate::resolve_api_key;
 use crate::session::{SessionImportMode, SessionStore};
 use crate::tools::{BashCommandProfile, OsSandboxMode, ToolPolicyPreset};
 use crate::{default_model_catalog_cache_path, ModelCatalog, MODELS_LIST_USAGE, MODEL_SHOW_USAGE};
-use crate::{execute_extension_show_command, execute_extension_validate_command};
+use crate::{
+    execute_extension_list_command, execute_extension_show_command,
+    execute_extension_validate_command,
+};
 
 struct NoopClient;
 
@@ -256,6 +259,8 @@ fn test_cli() -> Cli {
         channel_store_inspect: None,
         channel_store_repair: None,
         extension_validate: None,
+        extension_list: false,
+        extension_list_root: PathBuf::from(".pi/extensions"),
         extension_show: None,
         package_validate: None,
         package_show: None,
@@ -545,6 +550,8 @@ fn functional_cli_model_catalog_flags_accept_overrides() {
 fn unit_cli_extension_validate_flag_defaults_to_none() {
     let cli = Cli::parse_from(["pi-rs"]);
     assert!(cli.extension_validate.is_none());
+    assert!(!cli.extension_list);
+    assert_eq!(cli.extension_list_root, PathBuf::from(".pi/extensions"));
     assert!(cli.extension_show.is_none());
 }
 
@@ -567,6 +574,18 @@ fn functional_cli_extension_show_flag_accepts_path() {
 }
 
 #[test]
+fn functional_cli_extension_list_flag_accepts_root_override() {
+    let cli = Cli::parse_from([
+        "pi-rs",
+        "--extension-list",
+        "--extension-list-root",
+        "extensions",
+    ]);
+    assert!(cli.extension_list);
+    assert_eq!(cli.extension_list_root, PathBuf::from("extensions"));
+}
+
+#[test]
 fn regression_cli_extension_show_and_validate_conflict() {
     let parse = Cli::try_parse_from([
         "pi-rs",
@@ -576,6 +595,18 @@ fn regression_cli_extension_show_and_validate_conflict() {
         "extensions/issue.json",
     ]);
     let error = parse.expect_err("show and validate should conflict");
+    assert!(error.to_string().contains("cannot be used with"));
+}
+
+#[test]
+fn regression_cli_extension_list_and_show_conflict() {
+    let parse = Cli::try_parse_from([
+        "pi-rs",
+        "--extension-list",
+        "--extension-show",
+        "extensions/issue.json",
+    ]);
+    let error = parse.expect_err("list and show should conflict");
     assert!(error.to_string().contains("cannot be used with"));
 }
 
@@ -6868,6 +6899,57 @@ fn regression_execute_extension_show_command_rejects_invalid_manifest() {
     assert!(error
         .to_string()
         .contains("unsupported extension manifest schema"));
+}
+
+#[test]
+fn functional_execute_extension_list_command_reports_mixed_inventory() {
+    let temp = tempdir().expect("tempdir");
+    let root = temp.path().join("extensions");
+    let valid_dir = root.join("issue-assistant");
+    std::fs::create_dir_all(&valid_dir).expect("create valid extension dir");
+    std::fs::write(
+        valid_dir.join("extension.json"),
+        r#"{
+  "schema_version": 1,
+  "id": "issue-assistant",
+  "version": "0.1.0",
+  "runtime": "process",
+  "entrypoint": "bin/assistant"
+}"#,
+    )
+    .expect("write valid extension manifest");
+    let invalid_dir = root.join("broken");
+    std::fs::create_dir_all(&invalid_dir).expect("create invalid extension dir");
+    std::fs::write(
+        invalid_dir.join("extension.json"),
+        r#"{
+  "schema_version": 9,
+  "id": "broken",
+  "version": "0.1.0",
+  "runtime": "process",
+  "entrypoint": "bin/assistant"
+}"#,
+    )
+    .expect("write invalid extension manifest");
+
+    let mut cli = test_cli();
+    cli.extension_list = true;
+    cli.extension_list_root = root;
+    execute_extension_list_command(&cli).expect("extension list should succeed");
+}
+
+#[test]
+fn regression_execute_extension_list_command_rejects_non_directory_root() {
+    let temp = tempdir().expect("tempdir");
+    let root_file = temp.path().join("extensions.json");
+    std::fs::write(&root_file, "{}").expect("write root file");
+
+    let mut cli = test_cli();
+    cli.extension_list = true;
+    cli.extension_list_root = root_file;
+    let error =
+        execute_extension_list_command(&cli).expect_err("non-directory extension root should fail");
+    assert!(error.to_string().contains("is not a directory"));
 }
 
 #[test]
