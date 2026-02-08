@@ -4872,6 +4872,7 @@ fn rpc_capabilities_flag_outputs_versioned_json_and_exits() {
         .stdout(predicate::str::contains("\"protocol_version\": \"0.1.0\""))
         .stdout(predicate::str::contains("\"run.cancel\""))
         .stdout(predicate::str::contains("\"run.complete\""))
+        .stdout(predicate::str::contains("\"run.fail\""))
         .stdout(predicate::str::contains("\"run.status\""));
 }
 
@@ -5055,6 +5056,34 @@ fn rpc_dispatch_frame_file_flag_outputs_run_completed_response() {
 }
 
 #[test]
+fn rpc_dispatch_frame_file_flag_outputs_run_failed_response() {
+    let temp = tempdir().expect("tempdir");
+    let frame_path = temp.path().join("frame.json");
+    fs::write(
+        &frame_path,
+        r#"{
+  "schema_version": 1,
+  "request_id": "req-fail",
+  "kind": "run.fail",
+  "payload": {"run_id":"run-123","reason":"tool timeout"}
+}"#,
+    )
+    .expect("write frame");
+
+    let mut cmd = binary_command();
+    cmd.args([
+        "--rpc-dispatch-frame-file",
+        frame_path.to_str().expect("utf8 path"),
+    ]);
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("\"kind\": \"run.failed\""))
+        .stdout(predicate::str::contains("\"run_id\": \"run-123\""))
+        .stdout(predicate::str::contains("\"reason\": \"tool timeout\""));
+}
+
+#[test]
 fn regression_rpc_dispatch_frame_file_flag_rejects_missing_prompt() {
     let temp = tempdir().expect("tempdir");
     let frame_path = temp.path().join("frame.json");
@@ -5152,6 +5181,7 @@ fn rpc_dispatch_ndjson_file_flag_outputs_ordered_response_lines() {
         r#"{"schema_version":1,"request_id":"req-cap","kind":"capabilities.request","payload":{}}
 {"schema_version":1,"request_id":"req-cancel","kind":"run.cancel","payload":{"run_id":"run-1"}}
 {"schema_version":1,"request_id":"req-status","kind":"run.status","payload":{"run_id":"run-1"}}
+{"schema_version":1,"request_id":"req-fail","kind":"run.fail","payload":{"run_id":"run-1","reason":"failed in dispatch"}}
 "#,
     )
     .expect("write frames");
@@ -5172,7 +5202,12 @@ fn rpc_dispatch_ndjson_file_flag_outputs_ordered_response_lines() {
         .stdout(predicate::str::contains("\"kind\":\"run.cancelled\""))
         .stdout(predicate::str::contains("\"request_id\":\"req-status\""))
         .stdout(predicate::str::contains("\"kind\":\"run.status\""))
-        .stdout(predicate::str::contains("\"active\":false"));
+        .stdout(predicate::str::contains("\"active\":false"))
+        .stdout(predicate::str::contains("\"request_id\":\"req-fail\""))
+        .stdout(predicate::str::contains("\"kind\":\"run.failed\""))
+        .stdout(predicate::str::contains(
+            "\"reason\":\"failed in dispatch\"",
+        ));
 }
 
 #[test]
@@ -5261,6 +5296,26 @@ fn rpc_serve_ndjson_flag_supports_run_complete_lifecycle() {
         .stdout(predicate::str::contains("\"request_id\":\"req-complete\""))
         .stdout(predicate::str::contains("\"kind\":\"run.completed\""))
         .stdout(predicate::str::contains("\"event\":\"run.completed\""))
+        .stdout(predicate::str::contains("\"request_id\":\"req-status\""))
+        .stdout(predicate::str::contains("\"active\":false"));
+}
+
+#[test]
+fn rpc_serve_ndjson_flag_supports_run_fail_lifecycle() {
+    let mut cmd = binary_command();
+    cmd.arg("--rpc-serve-ndjson").write_stdin(
+        r#"{"schema_version":1,"request_id":"req-start","kind":"run.start","payload":{"prompt":"hello"}}
+{"schema_version":1,"request_id":"req-fail","kind":"run.fail","payload":{"run_id":"run-req-start","reason":"provider timeout"}}
+{"schema_version":1,"request_id":"req-status","kind":"run.status","payload":{"run_id":"run-req-start"}}
+"#,
+    );
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("\"request_id\":\"req-fail\""))
+        .stdout(predicate::str::contains("\"kind\":\"run.failed\""))
+        .stdout(predicate::str::contains("\"event\":\"run.failed\""))
+        .stdout(predicate::str::contains("\"reason\":\"provider timeout\""))
         .stdout(predicate::str::contains("\"request_id\":\"req-status\""))
         .stdout(predicate::str::contains("\"active\":false"));
 }

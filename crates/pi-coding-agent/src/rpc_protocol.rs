@@ -32,6 +32,7 @@ pub(crate) enum RpcFrameKind {
     RunStart,
     RunCancel,
     RunComplete,
+    RunFail,
     RunStatus,
 }
 
@@ -42,6 +43,7 @@ impl RpcFrameKind {
             Self::RunStart => "run.start",
             Self::RunCancel => "run.cancel",
             Self::RunComplete => "run.complete",
+            Self::RunFail => "run.fail",
             Self::RunStatus => "run.status",
         }
     }
@@ -56,9 +58,10 @@ impl FromStr for RpcFrameKind {
             "run.start" => Ok(Self::RunStart),
             "run.cancel" => Ok(Self::RunCancel),
             "run.complete" => Ok(Self::RunComplete),
+            "run.fail" => Ok(Self::RunFail),
             "run.status" => Ok(Self::RunStatus),
             other => bail!(
-                "unsupported rpc frame kind '{}'; supported kinds are capabilities.request, run.start, run.cancel, run.complete, run.status",
+                "unsupported rpc frame kind '{}'; supported kinds are capabilities.request, run.start, run.cancel, run.complete, run.fail, run.status",
                 other
             ),
         }
@@ -204,6 +207,21 @@ pub(crate) fn dispatch_rpc_frame(frame: &RpcFrame) -> Result<RpcResponseFrame> {
                 }),
             ))
         }
+        RpcFrameKind::RunFail => {
+            let run_id =
+                require_non_empty_payload_string(&frame.payload, "run_id", frame.kind.as_str())?;
+            let reason = resolve_run_fail_reason(&frame.payload)?;
+            Ok(build_response_frame(
+                &frame.request_id,
+                "run.failed",
+                json!({
+                    "status": "failed",
+                    "mode": RPC_STUB_MODE,
+                    "run_id": run_id,
+                    "reason": reason,
+                }),
+            ))
+        }
         RpcFrameKind::RunStatus => {
             let run_id =
                 require_non_empty_payload_string(&frame.payload, "run_id", frame.kind.as_str())?;
@@ -332,6 +350,24 @@ fn dispatch_rpc_frame_for_serve(
             }
             let mut responses = vec![dispatch_rpc_frame(frame)?];
             responses.push(build_run_complete_stream_frame(&frame.request_id, &run_id));
+            Ok(responses)
+        }
+        RpcFrameKind::RunFail => {
+            let run_id =
+                require_non_empty_payload_string(&frame.payload, "run_id", frame.kind.as_str())?;
+            if !state.active_run_ids.remove(&run_id) {
+                bail!(
+                    "rpc frame kind 'run.fail' references unknown run_id '{}'",
+                    run_id
+                );
+            }
+            let reason = resolve_run_fail_reason(&frame.payload)?;
+            let mut responses = vec![dispatch_rpc_frame(frame)?];
+            responses.push(build_run_failed_stream_frame(
+                &frame.request_id,
+                &run_id,
+                &reason,
+            ));
             Ok(responses)
         }
         RpcFrameKind::RunStatus => {
@@ -575,6 +611,24 @@ fn resolve_run_start_run_id(
     }
 }
 
+fn resolve_run_fail_reason(payload: &serde_json::Map<String, Value>) -> Result<String> {
+    match payload.get("reason") {
+        Some(Value::String(reason)) => {
+            let trimmed = reason.trim();
+            if trimmed.is_empty() {
+                bail!(
+                    "rpc frame kind 'run.fail' optional payload field 'reason' must be a non-empty string when provided"
+                );
+            }
+            Ok(trimmed.to_string())
+        }
+        Some(_) => bail!(
+            "rpc frame kind 'run.fail' optional payload field 'reason' must be a non-empty string when provided"
+        ),
+        None => Ok("failed".to_string()),
+    }
+}
+
 fn build_run_start_stream_frames(
     request_id: &str,
     run_id: &str,
@@ -618,6 +672,20 @@ fn build_run_complete_stream_frame(request_id: &str, run_id: &str) -> RpcRespons
     )
 }
 
+fn build_run_failed_stream_frame(request_id: &str, run_id: &str, reason: &str) -> RpcResponseFrame {
+    build_response_frame(
+        request_id,
+        RPC_RUN_STREAM_TOOL_EVENTS_KIND,
+        json!({
+            "run_id": run_id,
+            "event": "run.failed",
+            "reason": reason,
+            "mode": RPC_STUB_MODE,
+            "sequence": 2,
+        }),
+    )
+}
+
 fn build_error_response_frame(request_id: &str, code: &str, message: &str) -> RpcResponseFrame {
     build_response_frame(
         request_id,
@@ -641,6 +709,7 @@ fn classify_rpc_error_message(message: &str) -> &'static str {
     } else if message.contains("rpc frame payload must be a JSON object")
         || message.contains("requires non-empty payload field")
         || message.contains("optional payload field 'run_id'")
+        || message.contains("optional payload field 'reason'")
         || message.contains("duplicate active run_id")
         || message.contains("references unknown run_id")
     {
@@ -722,6 +791,17 @@ mod tests {
         )
         .expect("parse complete frame");
         assert_eq!(complete_frame.kind, RpcFrameKind::RunComplete);
+
+        let fail_frame = parse_rpc_frame(
+            r#"{
+  "schema_version": 1,
+  "request_id": "req-fail",
+  "kind": "run.fail",
+  "payload": {"run_id":"run-1"}
+}"#,
+        )
+        .expect("parse fail frame");
+        assert_eq!(fail_frame.kind, RpcFrameKind::RunFail);
     }
 
     #[test]
@@ -794,6 +874,23 @@ mod tests {
         let complete_response = dispatch_rpc_frame(&complete).expect("dispatch complete");
         assert_eq!(complete_response.kind, "run.completed");
         assert_eq!(complete_response.payload["run_id"].as_str(), Some("run-1"));
+
+        let fail = parse_rpc_frame(
+            r#"{
+  "schema_version": 1,
+  "request_id": "req-fail",
+  "kind": "run.fail",
+  "payload": {"run_id":"run-1","reason":"tool failure"}
+}"#,
+        )
+        .expect("parse fail");
+        let fail_response = dispatch_rpc_frame(&fail).expect("dispatch fail");
+        assert_eq!(fail_response.kind, "run.failed");
+        assert_eq!(fail_response.payload["run_id"].as_str(), Some("run-1"));
+        assert_eq!(
+            fail_response.payload["reason"].as_str(),
+            Some("tool failure")
+        );
 
         let status = parse_rpc_frame(
             r#"{
@@ -973,6 +1070,35 @@ mod tests {
             .to_string()
             .contains("requires non-empty payload field 'run_id'"));
 
+        let fail = parse_rpc_frame(
+            r#"{
+  "schema_version": 1,
+  "request_id": "req-fail",
+  "kind": "run.fail",
+  "payload": {}
+}"#,
+        )
+        .expect("parse fail");
+        let fail_error = dispatch_rpc_frame(&fail).expect_err("missing run_id should fail");
+        assert!(fail_error
+            .to_string()
+            .contains("requires non-empty payload field 'run_id'"));
+
+        let fail_invalid_reason = parse_rpc_frame(
+            r#"{
+  "schema_version": 1,
+  "request_id": "req-fail-invalid-reason",
+  "kind": "run.fail",
+  "payload": {"run_id":"run-1","reason":""}
+}"#,
+        )
+        .expect("parse invalid fail reason");
+        let fail_invalid_reason_error =
+            dispatch_rpc_frame(&fail_invalid_reason).expect_err("invalid reason should fail");
+        assert!(fail_invalid_reason_error
+            .to_string()
+            .contains("optional payload field 'reason'"));
+
         let status = parse_rpc_frame(
             r#"{
   "schema_version": 1,
@@ -1017,7 +1143,7 @@ mod tests {
         );
         assert_eq!(
             classify_rpc_error_message(
-                "unsupported rpc frame kind 'x'; supported kinds are capabilities.request, run.start, run.cancel, run.complete, run.status"
+                "unsupported rpc frame kind 'x'; supported kinds are capabilities.request, run.start, run.cancel, run.complete, run.fail, run.status"
             ),
             RPC_ERROR_CODE_UNSUPPORTED_KIND
         );
@@ -1071,11 +1197,12 @@ mod tests {
 {"schema_version":1,"request_id":"req-start","kind":"run.start","payload":{"prompt":"hello"}}
 {"schema_version":1,"request_id":"req-status","kind":"run.status","payload":{"run_id":"run-req-start"}}
 {"schema_version":1,"request_id":"req-complete","kind":"run.complete","payload":{"run_id":"run-req-start"}}
+{"schema_version":1,"request_id":"req-fail","kind":"run.fail","payload":{"run_id":"run-req-start","reason":"failed for testing"}}
 "#,
         );
-        assert_eq!(report.processed_lines, 4);
+        assert_eq!(report.processed_lines, 5);
         assert_eq!(report.error_count, 0);
-        assert_eq!(report.responses.len(), 4);
+        assert_eq!(report.responses.len(), 5);
         assert_eq!(report.responses[0].request_id, "req-cap");
         assert_eq!(report.responses[0].kind, "capabilities.response");
         assert_eq!(report.responses[1].request_id, "req-start");
@@ -1085,6 +1212,12 @@ mod tests {
         assert_eq!(report.responses[2].payload["active"].as_bool(), Some(false));
         assert_eq!(report.responses[3].request_id, "req-complete");
         assert_eq!(report.responses[3].kind, "run.completed");
+        assert_eq!(report.responses[4].request_id, "req-fail");
+        assert_eq!(report.responses[4].kind, "run.failed");
+        assert_eq!(
+            report.responses[4].payload["reason"].as_str(),
+            Some("failed for testing")
+        );
     }
 
     #[test]
@@ -1232,6 +1365,47 @@ not-json
     }
 
     #[test]
+    fn functional_serve_rpc_ndjson_reader_supports_run_fail_lifecycle_transition() {
+        let input = r#"
+{"schema_version":1,"request_id":"req-start","kind":"run.start","payload":{"prompt":"hello"}}
+{"schema_version":1,"request_id":"req-status-active","kind":"run.status","payload":{"run_id":"run-req-start"}}
+{"schema_version":1,"request_id":"req-fail","kind":"run.fail","payload":{"run_id":"run-req-start","reason":"provider timeout"}}
+{"schema_version":1,"request_id":"req-status-inactive","kind":"run.status","payload":{"run_id":"run-req-start"}}
+"#;
+        let mut output = Vec::new();
+        let report = serve_rpc_ndjson_reader(std::io::Cursor::new(input), &mut output)
+            .expect("serve should succeed");
+        assert_eq!(report.processed_lines, 4);
+        assert_eq!(report.error_count, 0);
+
+        let lines = String::from_utf8(output).expect("utf8 output");
+        let rows = lines
+            .lines()
+            .map(|line| serde_json::from_str::<serde_json::Value>(line).expect("json frame"))
+            .collect::<Vec<_>>();
+        assert_eq!(rows.len(), 7);
+        assert_eq!(rows[0]["request_id"], "req-start");
+        assert_eq!(rows[0]["kind"], "run.accepted");
+        assert_eq!(rows[1]["request_id"], "req-start");
+        assert_eq!(rows[1]["kind"], "run.stream.tool_events");
+        assert_eq!(rows[2]["request_id"], "req-start");
+        assert_eq!(rows[2]["kind"], "run.stream.assistant_text");
+        assert_eq!(rows[3]["request_id"], "req-status-active");
+        assert_eq!(rows[3]["kind"], "run.status");
+        assert_eq!(rows[3]["payload"]["active"], true);
+        assert_eq!(rows[4]["request_id"], "req-fail");
+        assert_eq!(rows[4]["kind"], "run.failed");
+        assert_eq!(rows[4]["payload"]["reason"], "provider timeout");
+        assert_eq!(rows[5]["request_id"], "req-fail");
+        assert_eq!(rows[5]["kind"], "run.stream.tool_events");
+        assert_eq!(rows[5]["payload"]["event"], "run.failed");
+        assert_eq!(rows[5]["payload"]["reason"], "provider timeout");
+        assert_eq!(rows[6]["request_id"], "req-status-inactive");
+        assert_eq!(rows[6]["kind"], "run.status");
+        assert_eq!(rows[6]["payload"]["active"], false);
+    }
+
+    #[test]
     fn regression_serve_rpc_ndjson_reader_keeps_processing_after_malformed_json() {
         let input = r#"
 {"schema_version":1,"request_id":"req-ok","kind":"run.start","payload":{"prompt":"x"}}
@@ -1311,6 +1485,35 @@ not-json
             .collect::<Vec<_>>();
         assert_eq!(rows.len(), 4);
         assert_eq!(rows[0]["request_id"], "req-bad-complete");
+        assert_eq!(rows[0]["kind"], "error");
+        assert_eq!(rows[0]["payload"]["code"], "invalid_payload");
+        assert_eq!(rows[1]["request_id"], "req-start");
+        assert_eq!(rows[1]["kind"], "run.accepted");
+        assert_eq!(rows[2]["request_id"], "req-start");
+        assert_eq!(rows[2]["kind"], "run.stream.tool_events");
+        assert_eq!(rows[3]["request_id"], "req-start");
+        assert_eq!(rows[3]["kind"], "run.stream.assistant_text");
+    }
+
+    #[test]
+    fn regression_serve_rpc_ndjson_reader_rejects_unknown_run_fail_and_continues() {
+        let input = r#"
+{"schema_version":1,"request_id":"req-bad-fail","kind":"run.fail","payload":{"run_id":"run-missing","reason":"oops"}}
+{"schema_version":1,"request_id":"req-start","kind":"run.start","payload":{"prompt":"x"}}
+"#;
+        let mut output = Vec::new();
+        let report = serve_rpc_ndjson_reader(std::io::Cursor::new(input), &mut output)
+            .expect("serve should succeed");
+        assert_eq!(report.processed_lines, 2);
+        assert_eq!(report.error_count, 1);
+
+        let lines = String::from_utf8(output).expect("utf8 output");
+        let rows = lines
+            .lines()
+            .map(|line| serde_json::from_str::<serde_json::Value>(line).expect("json frame"))
+            .collect::<Vec<_>>();
+        assert_eq!(rows.len(), 4);
+        assert_eq!(rows[0]["request_id"], "req-bad-fail");
         assert_eq!(rows[0]["kind"], "error");
         assert_eq!(rows[0]["payload"]["code"], "invalid_payload");
         assert_eq!(rows[1]["request_id"], "req-start");
