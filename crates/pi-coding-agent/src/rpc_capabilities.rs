@@ -10,6 +10,7 @@ const RPC_CAPABILITIES: &[&str] = &[
     "errors.structured",
     "run.cancel",
     "run.start",
+    "run.status",
     "run.stream.assistant_text",
     "run.stream.tool_events",
 ];
@@ -67,6 +68,7 @@ mod tests {
                 "errors.structured",
                 "run.cancel",
                 "run.start",
+                "run.status",
                 "run.stream.assistant_text",
                 "run.stream.tool_events",
             ]
