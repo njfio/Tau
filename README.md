@@ -346,6 +346,8 @@ cargo run -p pi-coding-agent -- \
   --extension-runtime-root .pi/extensions
 ```
 
+For `message-transform` hooks, extension responses can return a replacement prompt via `{"prompt":"..."}`.
+
 Validate a reusable package manifest JSON and exit:
 
 ```bash

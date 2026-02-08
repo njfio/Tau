@@ -126,8 +126,8 @@ use crate::events::{
     EventWebhookIngestConfig,
 };
 pub(crate) use crate::extension_manifest::{
-    dispatch_extension_runtime_hook, execute_extension_exec_command,
-    execute_extension_list_command, execute_extension_show_command,
+    apply_extension_message_transforms, dispatch_extension_runtime_hook,
+    execute_extension_exec_command, execute_extension_list_command, execute_extension_show_command,
     execute_extension_validate_command,
 };
 pub(crate) use crate::macro_profile_commands::{

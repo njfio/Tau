@@ -3277,6 +3277,149 @@ fn regression_extension_runtime_hook_timeout_does_not_fail_prompt() {
 }
 
 #[test]
+fn extension_message_transform_hook_rewrites_prompt_before_model_request() {
+    let temp = tempdir().expect("tempdir");
+    let extension_root = temp.path().join("extensions");
+    let extension_dir = extension_root.join("transformer");
+    fs::create_dir_all(&extension_dir).expect("create extension dir");
+
+    let script_path = extension_dir.join("transform.sh");
+    fs::write(
+        &script_path,
+        "#!/usr/bin/env bash\ncat >/dev/null\nprintf '{\"prompt\":\"transformed prompt text\"}'\n",
+    )
+    .expect("write transform script");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut permissions = fs::metadata(&script_path).expect("metadata").permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&script_path, permissions).expect("set executable permissions");
+    }
+    fs::write(
+        extension_dir.join("extension.json"),
+        r#"{
+  "schema_version": 1,
+  "id": "transformer",
+  "version": "0.1.0",
+  "runtime": "process",
+  "entrypoint": "transform.sh",
+  "hooks": ["message-transform"],
+  "timeout_ms": 5000
+}"#,
+    )
+    .expect("write extension manifest");
+
+    let server = MockServer::start();
+    let openai = server.mock(|when, then| {
+        when.method(POST)
+            .path("/v1/chat/completions")
+            .body_includes("transformed prompt text");
+        then.status(200).json_body(json!({
+            "choices": [{
+                "message": {"content": "transform ok"},
+                "finish_reason": "stop"
+            }],
+            "usage": {"prompt_tokens": 12, "completion_tokens": 3, "total_tokens": 15}
+        }));
+    });
+
+    let mut cmd = binary_command();
+    cmd.args([
+        "--model",
+        "openai/gpt-4o-mini",
+        "--openai-api-key",
+        "test-openai-key",
+        "--api-base",
+        &format!("{}/v1", server.base_url()),
+        "--prompt",
+        "original prompt text",
+        "--no-session",
+        "--extension-runtime-hooks",
+        "--extension-runtime-root",
+        extension_root.to_str().expect("utf8 path"),
+    ]);
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("transform ok"));
+
+    openai.assert_calls(1);
+}
+
+#[test]
+fn regression_extension_message_transform_invalid_response_falls_back_to_original_prompt() {
+    let temp = tempdir().expect("tempdir");
+    let extension_root = temp.path().join("extensions");
+    let extension_dir = extension_root.join("broken-transformer");
+    fs::create_dir_all(&extension_dir).expect("create extension dir");
+
+    let script_path = extension_dir.join("transform.sh");
+    fs::write(
+        &script_path,
+        "#!/usr/bin/env bash\ncat >/dev/null\nprintf '{\"prompt\":123}'\n",
+    )
+    .expect("write transform script");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut permissions = fs::metadata(&script_path).expect("metadata").permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&script_path, permissions).expect("set executable permissions");
+    }
+    fs::write(
+        extension_dir.join("extension.json"),
+        r#"{
+  "schema_version": 1,
+  "id": "broken-transformer",
+  "version": "0.1.0",
+  "runtime": "process",
+  "entrypoint": "transform.sh",
+  "hooks": ["message-transform"],
+  "timeout_ms": 5000
+}"#,
+    )
+    .expect("write extension manifest");
+
+    let server = MockServer::start();
+    let openai = server.mock(|when, then| {
+        when.method(POST)
+            .path("/v1/chat/completions")
+            .body_includes("original prompt text");
+        then.status(200).json_body(json!({
+            "choices": [{
+                "message": {"content": "fallback ok"},
+                "finish_reason": "stop"
+            }],
+            "usage": {"prompt_tokens": 12, "completion_tokens": 3, "total_tokens": 15}
+        }));
+    });
+
+    let mut cmd = binary_command();
+    cmd.args([
+        "--model",
+        "openai/gpt-4o-mini",
+        "--openai-api-key",
+        "test-openai-key",
+        "--api-base",
+        &format!("{}/v1", server.base_url()),
+        "--prompt",
+        "original prompt text",
+        "--no-session",
+        "--extension-runtime-hooks",
+        "--extension-runtime-root",
+        extension_root.to_str().expect("utf8 path"),
+    ]);
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("fallback ok"))
+        .stderr(predicate::str::contains("must be a string"));
+
+    openai.assert_calls(1);
+}
+
+#[test]
 fn regression_package_validate_flag_rejects_invalid_manifest() {
     let temp = tempdir().expect("tempdir");
     let manifest_path = temp.path().join("package.json");

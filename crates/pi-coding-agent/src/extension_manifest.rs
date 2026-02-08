@@ -80,6 +80,20 @@ pub(crate) struct ExtensionRuntimeHookDispatchSummary {
     pub diagnostics: Vec<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ExtensionMessageTransformResult {
+    pub root: PathBuf,
+    pub prompt: String,
+    pub executed: usize,
+    pub applied: usize,
+    pub failed: usize,
+    pub skipped_invalid: usize,
+    pub skipped_unsupported_runtime: usize,
+    pub skipped_undeclared_hook: usize,
+    pub applied_ids: Vec<String>,
+    pub diagnostics: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct ExtensionManifest {
     schema_version: u32,
@@ -508,6 +522,94 @@ pub(crate) fn dispatch_extension_runtime_hook(
     summary
 }
 
+pub(crate) fn apply_extension_message_transforms(
+    root: &Path,
+    prompt: &str,
+) -> ExtensionMessageTransformResult {
+    let mut result = ExtensionMessageTransformResult {
+        root: root.to_path_buf(),
+        prompt: prompt.to_string(),
+        executed: 0,
+        applied: 0,
+        failed: 0,
+        skipped_invalid: 0,
+        skipped_unsupported_runtime: 0,
+        skipped_undeclared_hook: 0,
+        applied_ids: Vec::new(),
+        diagnostics: Vec::new(),
+    };
+    let hook = ExtensionHook::MessageTransform;
+
+    let (loaded, invalid_diagnostics) = match discover_loaded_extension_manifests(root) {
+        Ok(loaded) => loaded,
+        Err(error) => {
+            result
+                .diagnostics
+                .push(format!("extension runtime: {error}"));
+            return result;
+        }
+    };
+
+    result.skipped_invalid = invalid_diagnostics.len();
+    result.diagnostics.extend(invalid_diagnostics);
+
+    for loaded_manifest in loaded {
+        if loaded_manifest.manifest.runtime != ExtensionRuntime::Process {
+            result.skipped_unsupported_runtime += 1;
+            continue;
+        }
+        if !loaded_manifest.manifest.hooks.contains(&hook) {
+            result.skipped_undeclared_hook += 1;
+            continue;
+        }
+
+        result.executed += 1;
+        let payload = serde_json::json!({
+            "prompt": result.prompt.clone(),
+        });
+        match execute_extension_process_hook_with_loaded(
+            &loaded_manifest.manifest,
+            &loaded_manifest.summary,
+            &hook,
+            &payload,
+        ) {
+            Ok(exec_summary) => {
+                match parse_message_transform_response_prompt(&exec_summary.response) {
+                    Ok(Some(next_prompt)) => {
+                        result.prompt = next_prompt;
+                        result.applied += 1;
+                        result
+                            .applied_ids
+                            .push(format!("{}@{}", exec_summary.id, exec_summary.version));
+                    }
+                    Ok(None) => {}
+                    Err(error) => {
+                        result.diagnostics.push(format!(
+                            "extension runtime: hook={} id={} manifest={} invalid response: {}",
+                            hook.as_str(),
+                            loaded_manifest.summary.id,
+                            loaded_manifest.summary.manifest_path.display(),
+                            error
+                        ));
+                    }
+                }
+            }
+            Err(error) => {
+                result.failed += 1;
+                result.diagnostics.push(format!(
+                    "extension runtime: hook={} id={} manifest={} failed: {}",
+                    hook.as_str(),
+                    loaded_manifest.summary.id,
+                    loaded_manifest.summary.manifest_path.display(),
+                    error
+                ));
+            }
+        }
+    }
+
+    result
+}
+
 fn discover_loaded_extension_manifests(
     root: &Path,
 ) -> Result<(Vec<LoadedExtensionManifest>, Vec<String>)> {
@@ -542,6 +644,24 @@ fn discover_loaded_extension_manifests(
     });
 
     Ok((loaded, invalid_diagnostics))
+}
+
+fn parse_message_transform_response_prompt(response_json: &str) -> Result<Option<String>> {
+    let value = serde_json::from_str::<Value>(response_json)
+        .context("message-transform response must be valid JSON object")?;
+    let object = value
+        .as_object()
+        .ok_or_else(|| anyhow!("message-transform response must be a JSON object"))?;
+    let Some(prompt_value) = object.get("prompt") else {
+        return Ok(None);
+    };
+    let prompt = prompt_value
+        .as_str()
+        .ok_or_else(|| anyhow!("message-transform response field 'prompt' must be a string"))?;
+    if prompt.trim().is_empty() {
+        bail!("message-transform response field 'prompt' must not be empty");
+    }
+    Ok(Some(prompt.to_string()))
 }
 
 fn load_extension_exec_payload(path: &Path) -> Result<Value> {
@@ -811,10 +931,12 @@ fn validate_timeout_ms(timeout_ms: u64) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{
-        dispatch_extension_runtime_hook, execute_extension_process_hook, list_extension_manifests,
-        render_extension_list_report, render_extension_manifest_report,
-        validate_extension_manifest, ExtensionHook, ExtensionListReport, ExtensionManifest,
-        ExtensionManifestSummary, ExtensionPermission, ExtensionRuntime,
+        apply_extension_message_transforms, dispatch_extension_runtime_hook,
+        execute_extension_process_hook, list_extension_manifests,
+        parse_message_transform_response_prompt, render_extension_list_report,
+        render_extension_manifest_report, validate_extension_manifest, ExtensionHook,
+        ExtensionListReport, ExtensionManifest, ExtensionManifestSummary, ExtensionPermission,
+        ExtensionRuntime,
     };
     use std::{fs, path::PathBuf};
     use tempfile::tempdir;
@@ -1348,5 +1470,157 @@ mod tests {
             .diagnostics
             .iter()
             .any(|line| line.contains("skipped invalid manifest")));
+    }
+
+    #[test]
+    fn unit_parse_message_transform_response_prompt_accepts_valid_prompt() {
+        let prompt =
+            parse_message_transform_response_prompt(r#"{"prompt":"refined prompt"}"#).expect("ok");
+        assert_eq!(prompt.as_deref(), Some("refined prompt"));
+    }
+
+    #[test]
+    fn regression_parse_message_transform_response_prompt_rejects_non_string_prompt() {
+        let error = parse_message_transform_response_prompt(r#"{"prompt":42}"#)
+            .expect_err("non-string prompt should fail");
+        assert!(error.to_string().contains("must be a string"));
+    }
+
+    #[test]
+    fn functional_apply_extension_message_transforms_rewrites_prompt() {
+        let temp = tempdir().expect("tempdir");
+        let root = temp.path().join("extensions");
+        let extension_dir = root.join("transformer");
+        fs::create_dir_all(&extension_dir).expect("create extension dir");
+
+        let script_path = extension_dir.join("transform.sh");
+        fs::write(
+            &script_path,
+            "#!/usr/bin/env bash\ncat >/dev/null\nprintf '{\"prompt\":\"rewritten prompt\"}'\n",
+        )
+        .expect("write script");
+        make_executable(&script_path);
+
+        fs::write(
+            extension_dir.join("extension.json"),
+            r#"{
+  "schema_version": 1,
+  "id": "transformer",
+  "version": "0.1.0",
+  "runtime": "process",
+  "entrypoint": "transform.sh",
+  "hooks": ["message-transform"],
+  "timeout_ms": 5000
+}"#,
+        )
+        .expect("write manifest");
+
+        let result = apply_extension_message_transforms(&root, "original prompt");
+        assert_eq!(result.prompt, "rewritten prompt");
+        assert_eq!(result.executed, 1);
+        assert_eq!(result.applied, 1);
+        assert_eq!(result.applied_ids, vec!["transformer@0.1.0".to_string()]);
+    }
+
+    #[test]
+    fn integration_apply_extension_message_transforms_applies_in_deterministic_order() {
+        let temp = tempdir().expect("tempdir");
+        let root = temp.path().join("extensions");
+        let a_dir = root.join("a");
+        let b_dir = root.join("b");
+        fs::create_dir_all(&a_dir).expect("create a dir");
+        fs::create_dir_all(&b_dir).expect("create b dir");
+
+        let a_script = a_dir.join("transform.sh");
+        fs::write(
+            &a_script,
+            "#!/usr/bin/env bash\ncat >/dev/null\nprintf '{\"prompt\":\"alpha\"}'\n",
+        )
+        .expect("write a script");
+        make_executable(&a_script);
+        let b_script = b_dir.join("transform.sh");
+        fs::write(
+            &b_script,
+            "#!/usr/bin/env bash\ncat >/dev/null\nprintf '{\"prompt\":\"beta\"}'\n",
+        )
+        .expect("write b script");
+        make_executable(&b_script);
+
+        fs::write(
+            a_dir.join("extension.json"),
+            r#"{
+  "schema_version": 1,
+  "id": "a-extension",
+  "version": "1.0.0",
+  "runtime": "process",
+  "entrypoint": "transform.sh",
+  "hooks": ["message-transform"],
+  "timeout_ms": 5000
+}"#,
+        )
+        .expect("write a manifest");
+        fs::write(
+            b_dir.join("extension.json"),
+            r#"{
+  "schema_version": 1,
+  "id": "b-extension",
+  "version": "1.0.0",
+  "runtime": "process",
+  "entrypoint": "transform.sh",
+  "hooks": ["message-transform"],
+  "timeout_ms": 5000
+}"#,
+        )
+        .expect("write b manifest");
+
+        let result = apply_extension_message_transforms(&root, "seed");
+        assert_eq!(result.prompt, "beta");
+        assert_eq!(result.applied, 2);
+        assert_eq!(
+            result.applied_ids,
+            vec![
+                "a-extension@1.0.0".to_string(),
+                "b-extension@1.0.0".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn regression_apply_extension_message_transforms_falls_back_on_invalid_output() {
+        let temp = tempdir().expect("tempdir");
+        let root = temp.path().join("extensions");
+        let extension_dir = root.join("broken-transformer");
+        fs::create_dir_all(&extension_dir).expect("create extension dir");
+
+        let script_path = extension_dir.join("transform.sh");
+        fs::write(
+            &script_path,
+            "#!/usr/bin/env bash\ncat >/dev/null\nprintf '{\"prompt\":123}'\n",
+        )
+        .expect("write script");
+        make_executable(&script_path);
+
+        fs::write(
+            extension_dir.join("extension.json"),
+            r#"{
+  "schema_version": 1,
+  "id": "broken-transformer",
+  "version": "0.1.0",
+  "runtime": "process",
+  "entrypoint": "transform.sh",
+  "hooks": ["message-transform"],
+  "timeout_ms": 5000
+}"#,
+        )
+        .expect("write manifest");
+
+        let result = apply_extension_message_transforms(&root, "original prompt");
+        assert_eq!(result.prompt, "original prompt");
+        assert_eq!(result.executed, 1);
+        assert_eq!(result.applied, 0);
+        assert!(result
+            .diagnostics
+            .iter()
+            .any(|line| line.contains("must be a string")));
     }
 }

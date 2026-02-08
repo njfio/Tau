@@ -16,7 +16,7 @@ use pi_ai::StreamDeltaHandler;
 use tokio::io::{AsyncBufReadExt, BufReader};
 
 use crate::{
-    dispatch_extension_runtime_hook, ensure_non_empty_text,
+    apply_extension_message_transforms, dispatch_extension_runtime_hook, ensure_non_empty_text,
     handle_command_with_session_import_mode, persist_messages, print_assistant_messages,
     run_plan_first_prompt, Cli, CliOrchestratorMode, CommandAction, CommandExecutionContext,
     RenderOptions, SessionRuntime,
@@ -170,16 +170,17 @@ async fn run_prompt_with_runtime_hooks<F>(
 where
     F: Future,
 {
+    let effective_prompt = apply_runtime_message_transform(extension_runtime_hooks, prompt);
     dispatch_runtime_hook(
         extension_runtime_hooks,
         "run-start",
-        build_runtime_hook_payload(prompt, turn_timeout_ms, None, None),
+        build_runtime_hook_payload(&effective_prompt, turn_timeout_ms, None, None),
     );
 
     let result = run_prompt_with_cancellation(
         agent,
         session_runtime,
-        prompt,
+        &effective_prompt,
         turn_timeout_ms,
         cancellation_signal,
         render_options,
@@ -196,7 +197,12 @@ where
             dispatch_runtime_hook(
                 extension_runtime_hooks,
                 "run-end",
-                build_runtime_hook_payload(prompt, turn_timeout_ms, Some(run_status), None),
+                build_runtime_hook_payload(
+                    &effective_prompt,
+                    turn_timeout_ms,
+                    Some(run_status),
+                    None,
+                ),
             );
             Ok(status)
         }
@@ -205,7 +211,7 @@ where
                 extension_runtime_hooks,
                 "run-end",
                 build_runtime_hook_payload(
-                    prompt,
+                    &effective_prompt,
                     turn_timeout_ms,
                     Some(RuntimeHookRunStatus::Failed),
                     Some(error.to_string()),
@@ -227,16 +233,17 @@ pub(crate) async fn run_plan_first_prompt_with_runtime_hooks(
     orchestrator_max_executor_response_chars: usize,
     extension_runtime_hooks: &RuntimeExtensionHooksConfig,
 ) -> Result<()> {
+    let effective_prompt = apply_runtime_message_transform(extension_runtime_hooks, prompt);
     dispatch_runtime_hook(
         extension_runtime_hooks,
         "run-start",
-        build_runtime_hook_payload(prompt, turn_timeout_ms, None, None),
+        build_runtime_hook_payload(&effective_prompt, turn_timeout_ms, None, None),
     );
 
     let result = run_plan_first_prompt(
         agent,
         session_runtime,
-        prompt,
+        &effective_prompt,
         turn_timeout_ms,
         render_options,
         orchestrator_max_plan_steps,
@@ -250,7 +257,7 @@ pub(crate) async fn run_plan_first_prompt_with_runtime_hooks(
                 extension_runtime_hooks,
                 "run-end",
                 build_runtime_hook_payload(
-                    prompt,
+                    &effective_prompt,
                     turn_timeout_ms,
                     Some(RuntimeHookRunStatus::Completed),
                     None,
@@ -263,7 +270,7 @@ pub(crate) async fn run_plan_first_prompt_with_runtime_hooks(
                 extension_runtime_hooks,
                 "run-end",
                 build_runtime_hook_payload(
-                    prompt,
+                    &effective_prompt,
                     turn_timeout_ms,
                     Some(RuntimeHookRunStatus::Failed),
                     Some(error.to_string()),
@@ -272,6 +279,17 @@ pub(crate) async fn run_plan_first_prompt_with_runtime_hooks(
             Err(error)
         }
     }
+}
+
+fn apply_runtime_message_transform(config: &RuntimeExtensionHooksConfig, prompt: &str) -> String {
+    if !config.enabled {
+        return prompt.to_string();
+    }
+    let transform = apply_extension_message_transforms(&config.root, prompt);
+    for diagnostic in transform.diagnostics {
+        eprintln!("{diagnostic}");
+    }
+    transform.prompt
 }
 
 fn dispatch_runtime_hook(
@@ -508,7 +526,11 @@ fn report_prompt_status(status: PromptRunStatus) {
 
 #[cfg(test)]
 mod tests {
-    use super::{build_runtime_hook_payload, RuntimeHookRunStatus};
+    use super::{
+        apply_runtime_message_transform, build_runtime_hook_payload, RuntimeExtensionHooksConfig,
+        RuntimeHookRunStatus,
+    };
+    use tempfile::tempdir;
 
     #[test]
     fn unit_build_runtime_hook_payload_includes_status_and_error() {
@@ -531,5 +553,27 @@ mod tests {
         assert_eq!(payload["turn_timeout_ms"], 0);
         assert!(payload.get("status").is_none());
         assert!(payload.get("error").is_none());
+    }
+
+    #[test]
+    fn unit_apply_runtime_message_transform_disabled_returns_original_prompt() {
+        let config = RuntimeExtensionHooksConfig {
+            enabled: false,
+            root: std::path::PathBuf::from(".pi/extensions"),
+        };
+        let transformed = apply_runtime_message_transform(&config, "hello");
+        assert_eq!(transformed, "hello");
+    }
+
+    #[test]
+    fn regression_apply_runtime_message_transform_missing_root_returns_original_prompt() {
+        let temp = tempdir().expect("tempdir");
+        let missing_root = temp.path().join("missing");
+        let config = RuntimeExtensionHooksConfig {
+            enabled: true,
+            root: missing_root,
+        };
+        let transformed = apply_runtime_message_transform(&config, "hello");
+        assert_eq!(transformed, "hello");
     }
 }
