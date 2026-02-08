@@ -8,6 +8,7 @@ pub(crate) async fn run_plan_first_prompt(
     turn_timeout_ms: u64,
     render_options: RenderOptions,
     max_plan_steps: usize,
+    max_delegated_steps: usize,
     max_executor_response_chars: usize,
     max_delegated_step_response_chars: usize,
     max_delegated_total_response_chars: usize,
@@ -64,6 +65,18 @@ pub(crate) async fn run_plan_first_prompt(
             "orchestrator trace: mode=plan-first phase=executor strategy=delegated-steps total_steps={}",
             plan_steps.len()
         );
+        if plan_steps.len() > max_delegated_steps {
+            println!(
+                "orchestrator trace: mode=plan-first phase=delegated-step decision=reject reason=delegated_step_count_budget_exceeded approved_steps={} max_delegated_steps={}",
+                plan_steps.len(),
+                max_delegated_steps
+            );
+            bail!(
+                "plan-first orchestrator failed: delegated step budget exceeded (steps {} > max {})",
+                plan_steps.len(),
+                max_delegated_steps
+            );
+        }
         let mut delegated_outputs = Vec::new();
         let mut delegated_total_response_chars = 0usize;
         for (index, step) in plan_steps.iter().enumerate() {

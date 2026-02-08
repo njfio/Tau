@@ -251,6 +251,7 @@ fn test_cli() -> Cli {
         prompt: None,
         orchestrator_mode: CliOrchestratorMode::Off,
         orchestrator_max_plan_steps: 8,
+        orchestrator_max_delegated_steps: 8,
         orchestrator_max_executor_response_chars: 20_000,
         orchestrator_max_delegated_step_response_chars: 20_000,
         orchestrator_max_delegated_total_response_chars: 160_000,
@@ -688,6 +689,7 @@ fn unit_cli_orchestrator_flags_default_values_are_stable() {
     let cli = Cli::parse_from(["pi-rs"]);
     assert_eq!(cli.orchestrator_mode, CliOrchestratorMode::Off);
     assert_eq!(cli.orchestrator_max_plan_steps, 8);
+    assert_eq!(cli.orchestrator_max_delegated_steps, 8);
     assert_eq!(cli.orchestrator_max_executor_response_chars, 20_000);
     assert_eq!(cli.orchestrator_max_delegated_step_response_chars, 20_000);
     assert_eq!(cli.orchestrator_max_delegated_total_response_chars, 160_000);
@@ -702,6 +704,8 @@ fn functional_cli_orchestrator_flags_accept_overrides() {
         "plan-first",
         "--orchestrator-max-plan-steps",
         "5",
+        "--orchestrator-max-delegated-steps",
+        "3",
         "--orchestrator-max-executor-response-chars",
         "160",
         "--orchestrator-max-delegated-step-response-chars",
@@ -712,6 +716,7 @@ fn functional_cli_orchestrator_flags_accept_overrides() {
     ]);
     assert_eq!(cli.orchestrator_mode, CliOrchestratorMode::PlanFirst);
     assert_eq!(cli.orchestrator_max_plan_steps, 5);
+    assert_eq!(cli.orchestrator_max_delegated_steps, 3);
     assert_eq!(cli.orchestrator_max_executor_response_chars, 160);
     assert_eq!(cli.orchestrator_max_delegated_step_response_chars, 80);
     assert_eq!(cli.orchestrator_max_delegated_total_response_chars, 240);
@@ -722,6 +727,13 @@ fn functional_cli_orchestrator_flags_accept_overrides() {
 fn regression_cli_orchestrator_executor_response_budget_rejects_zero() {
     let parse = Cli::try_parse_from(["pi-rs", "--orchestrator-max-executor-response-chars", "0"]);
     let error = parse.expect_err("zero executor budget should be rejected");
+    assert!(error.to_string().contains("greater than 0"));
+}
+
+#[test]
+fn regression_cli_orchestrator_delegated_step_count_budget_rejects_zero() {
+    let parse = Cli::try_parse_from(["pi-rs", "--orchestrator-max-delegated-steps", "0"]);
+    let error = parse.expect_err("zero delegated step count budget should be rejected");
     assert!(error.to_string().contains("greater than 0"));
 }
 
@@ -9066,6 +9078,7 @@ async fn functional_run_plan_first_prompt_executes_planner_then_executor() {
         0,
         test_render_options(),
         4,
+        4,
         512,
         512,
         2_048,
@@ -9127,6 +9140,7 @@ async fn functional_run_plan_first_prompt_delegate_steps_executes_and_consolidat
         0,
         test_render_options(),
         4,
+        4,
         512,
         512,
         1_024,
@@ -9184,6 +9198,7 @@ async fn regression_run_plan_first_prompt_delegate_steps_fails_on_empty_step_out
         0,
         test_render_options(),
         4,
+        4,
         512,
         512,
         1_024,
@@ -9194,6 +9209,53 @@ async fn regression_run_plan_first_prompt_delegate_steps_fails_on_empty_step_out
     assert!(error
         .to_string()
         .contains("delegated step 1 produced no text output"));
+    assert!(!agent
+        .messages()
+        .iter()
+        .any(|message| message.text_content() == "should not execute"));
+}
+
+#[tokio::test]
+async fn regression_run_plan_first_prompt_delegate_steps_fails_when_step_count_exceeds_budget() {
+    let planner_response = ChatResponse {
+        message: Message::assistant_text(
+            "1. Inspect constraints\n2. Apply change\n3. Verify output",
+        ),
+        finish_reason: Some("stop".to_string()),
+        usage: ChatUsage::default(),
+    };
+    let delegated_unused_response = ChatResponse {
+        message: Message::assistant_text("should not execute"),
+        finish_reason: Some("stop".to_string()),
+        usage: ChatUsage::default(),
+    };
+    let mut agent = Agent::new(
+        Arc::new(SequenceClient {
+            outcomes: AsyncMutex::new(VecDeque::from([
+                Ok(planner_response),
+                Ok(delegated_unused_response),
+            ])),
+        }),
+        AgentConfig::default(),
+    );
+    let mut runtime = None;
+
+    let error = run_plan_first_prompt(
+        &mut agent,
+        &mut runtime,
+        "ship feature",
+        0,
+        test_render_options(),
+        4,
+        2,
+        512,
+        512,
+        1_024,
+        true,
+    )
+    .await
+    .expect_err("delegated step count above budget should fail");
+    assert!(error.to_string().contains("delegated step budget exceeded"));
     assert!(!agent
         .messages()
         .iter()
@@ -9235,6 +9297,7 @@ async fn regression_run_plan_first_prompt_delegate_steps_fails_when_step_output_
         "ship feature",
         0,
         test_render_options(),
+        4,
         4,
         512,
         8,
@@ -9294,6 +9357,7 @@ async fn regression_run_plan_first_prompt_delegate_steps_fails_when_total_output
         0,
         test_render_options(),
         4,
+        4,
         512,
         64,
         12,
@@ -9340,6 +9404,7 @@ async fn regression_run_plan_first_prompt_rejects_overlong_plans_before_executor
         0,
         test_render_options(),
         2,
+        2,
         512,
         512,
         1_024,
@@ -9384,6 +9449,7 @@ async fn regression_run_plan_first_prompt_fails_when_executor_output_is_empty() 
         0,
         test_render_options(),
         4,
+        4,
         512,
         512,
         1_024,
@@ -9425,6 +9491,7 @@ async fn regression_run_plan_first_prompt_fails_when_executor_output_exceeds_bud
         "ship feature",
         0,
         test_render_options(),
+        4,
         4,
         8,
         512,
