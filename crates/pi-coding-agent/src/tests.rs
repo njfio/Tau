@@ -94,8 +94,8 @@ use super::{
     SKILLS_PRUNE_USAGE, SKILLS_TRUST_ADD_USAGE, SKILLS_TRUST_LIST_USAGE, SKILLS_VERIFY_USAGE,
 };
 use crate::auth_commands::{
-    auth_mode_counts, auth_provider_counts, auth_revoked_counts, auth_source_kind,
-    auth_source_kind_counts, auth_state_counts, auth_status_row_for_provider,
+    auth_availability_counts, auth_mode_counts, auth_provider_counts, auth_revoked_counts,
+    auth_source_kind, auth_source_kind_counts, auth_state_counts, auth_status_row_for_provider,
     format_auth_state_counts, AuthMatrixAvailabilityFilter, AuthMatrixModeSupportFilter,
     AuthRevokedFilter, AuthSourceKindFilter,
 };
@@ -1658,6 +1658,13 @@ fn unit_auth_state_count_helpers_are_deterministic() {
         format_auth_state_counts(&provider_counts),
         "anthropic:1,google:1,openai:1"
     );
+    let availability_counts = auth_availability_counts(&rows);
+    assert_eq!(availability_counts.get("available"), None);
+    assert_eq!(availability_counts.get("unavailable"), Some(&3));
+    assert_eq!(
+        format_auth_state_counts(&availability_counts),
+        "unavailable:3"
+    );
     let counts = auth_state_counts(&rows);
     assert_eq!(counts.get("revoked"), Some(&1));
     assert_eq!(counts.get("missing_api_key"), Some(&2));
@@ -1898,6 +1905,10 @@ fn functional_execute_auth_command_matrix_reports_provider_mode_inventory() {
     assert_eq!(payload["provider_counts"]["google"], 4);
     assert_eq!(payload["available"], 4);
     assert_eq!(payload["unavailable"], 8);
+    assert_eq!(payload["availability_counts_total"]["available"], 4);
+    assert_eq!(payload["availability_counts_total"]["unavailable"], 8);
+    assert_eq!(payload["availability_counts"]["available"], 4);
+    assert_eq!(payload["availability_counts"]["unavailable"], 8);
     assert_eq!(payload["state_counts_total"]["ready"], 4);
     assert_eq!(payload["state_counts_total"]["mode_mismatch"], 1);
     assert_eq!(payload["state_counts_total"]["unsupported_mode"], 7);
@@ -1946,6 +1957,8 @@ fn functional_execute_auth_command_matrix_reports_provider_mode_inventory() {
     assert!(text_output.contains("mode_counts_total=adc:3,api_key:3,oauth_token:3,session_token:3"));
     assert!(text_output.contains("provider_counts=anthropic:4,google:4,openai:4"));
     assert!(text_output.contains("provider_counts_total=anthropic:4,google:4,openai:4"));
+    assert!(text_output.contains("availability_counts=available:4,unavailable:8"));
+    assert!(text_output.contains("availability_counts_total=available:4,unavailable:8"));
     assert!(text_output.contains("provider_filter=all"));
     assert!(text_output.contains("mode_filter=all"));
     assert!(text_output.contains("source_kind_filter=all"));
@@ -2071,6 +2084,15 @@ fn functional_execute_auth_command_matrix_supports_availability_filter() {
     assert_eq!(available_payload["provider_counts"]["openai"], 2);
     assert_eq!(available_payload["provider_counts"]["anthropic"], 1);
     assert_eq!(available_payload["provider_counts"]["google"], 1);
+    assert_eq!(
+        available_payload["availability_counts_total"]["available"],
+        4
+    );
+    assert_eq!(
+        available_payload["availability_counts_total"]["unavailable"],
+        8
+    );
+    assert_eq!(available_payload["availability_counts"]["available"], 4);
     assert_eq!(available_payload["source_kind_counts_total"]["flag"], 3);
     assert_eq!(
         available_payload["source_kind_counts_total"]["credential_store"],
@@ -2127,6 +2149,15 @@ fn functional_execute_auth_command_matrix_supports_availability_filter() {
     assert_eq!(unavailable_payload["provider_counts"]["openai"], 2);
     assert_eq!(unavailable_payload["provider_counts"]["anthropic"], 3);
     assert_eq!(unavailable_payload["provider_counts"]["google"], 3);
+    assert_eq!(
+        unavailable_payload["availability_counts_total"]["available"],
+        4
+    );
+    assert_eq!(
+        unavailable_payload["availability_counts_total"]["unavailable"],
+        8
+    );
+    assert_eq!(unavailable_payload["availability_counts"]["unavailable"], 8);
     assert_eq!(unavailable_payload["source_kind_counts_total"]["flag"], 3);
     assert_eq!(
         unavailable_payload["source_kind_counts_total"]["credential_store"],
@@ -3397,6 +3428,15 @@ fn functional_execute_auth_command_status_supports_availability_and_state_filter
     assert_eq!(available_payload["provider_counts_total"]["google"], 1);
     assert_eq!(available_payload["provider_counts"]["openai"], 1);
     assert_eq!(available_payload["provider_counts"]["anthropic"], 1);
+    assert_eq!(
+        available_payload["availability_counts_total"]["available"],
+        2
+    );
+    assert_eq!(
+        available_payload["availability_counts_total"]["unavailable"],
+        1
+    );
+    assert_eq!(available_payload["availability_counts"]["available"], 2);
     assert_eq!(available_payload["available"], 2);
     assert_eq!(available_payload["unavailable"], 0);
     assert_eq!(available_payload["source_kind_counts_total"]["flag"], 2);
@@ -3442,6 +3482,15 @@ fn functional_execute_auth_command_status_supports_availability_and_state_filter
     assert_eq!(unavailable_payload["provider_counts_total"]["anthropic"], 1);
     assert_eq!(unavailable_payload["provider_counts_total"]["google"], 1);
     assert_eq!(unavailable_payload["provider_counts"]["google"], 1);
+    assert_eq!(
+        unavailable_payload["availability_counts_total"]["available"],
+        2
+    );
+    assert_eq!(
+        unavailable_payload["availability_counts_total"]["unavailable"],
+        1
+    );
+    assert_eq!(unavailable_payload["availability_counts"]["unavailable"], 1);
     assert_eq!(unavailable_payload["available"], 0);
     assert_eq!(unavailable_payload["unavailable"], 1);
     assert_eq!(unavailable_payload["source_kind_counts_total"]["flag"], 2);
@@ -3485,6 +3534,9 @@ fn functional_execute_auth_command_status_supports_availability_and_state_filter
     assert_eq!(state_payload["provider_counts_total"]["anthropic"], 1);
     assert_eq!(state_payload["provider_counts_total"]["google"], 1);
     assert_eq!(state_payload["provider_counts"]["google"], 1);
+    assert_eq!(state_payload["availability_counts_total"]["available"], 2);
+    assert_eq!(state_payload["availability_counts_total"]["unavailable"], 1);
+    assert_eq!(state_payload["availability_counts"]["unavailable"], 1);
     assert_eq!(state_payload["state_counts"]["missing_api_key"], 1);
     assert_eq!(state_payload["source_kind_counts_total"]["flag"], 2);
     assert_eq!(state_payload["source_kind_counts_total"]["none"], 1);
@@ -3507,6 +3559,8 @@ fn functional_execute_auth_command_status_supports_availability_and_state_filter
     assert!(text_output.contains("mode_counts_total=api_key:3"));
     assert!(text_output.contains("provider_counts=google:1"));
     assert!(text_output.contains("provider_counts_total=anthropic:1,google:1,openai:1"));
+    assert!(text_output.contains("availability_counts=unavailable:1"));
+    assert!(text_output.contains("availability_counts_total=available:2,unavailable:1"));
     assert!(text_output.contains("source_kind_counts=none:1"));
     assert!(text_output.contains("source_kind_counts_total=flag:2,none:1"));
     assert!(text_output.contains("revoked_counts=not_revoked:1"));
@@ -3978,6 +4032,11 @@ fn integration_execute_auth_command_status_filters_compose_with_provider_and_zer
     assert_eq!(filtered_payload["provider_counts_total"]["openai"], 1);
     assert_eq!(filtered_payload["provider_counts"]["openai"], 1);
     assert_eq!(
+        filtered_payload["availability_counts_total"]["available"],
+        1
+    );
+    assert_eq!(filtered_payload["availability_counts"]["available"], 1);
+    assert_eq!(
         filtered_payload["source_kind_counts_total"]["credential_store"],
         1
     );
@@ -4027,6 +4086,17 @@ fn integration_execute_auth_command_status_filters_compose_with_provider_and_zer
         zero_row_payload["provider_counts"]
             .as_object()
             .expect("zero-row status provider counts")
+            .len(),
+        0
+    );
+    assert_eq!(
+        zero_row_payload["availability_counts_total"]["available"],
+        1
+    );
+    assert_eq!(
+        zero_row_payload["availability_counts"]
+            .as_object()
+            .expect("zero-row availability counts")
             .len(),
         0
     );
@@ -4081,6 +4151,8 @@ fn integration_execute_auth_command_status_filters_compose_with_provider_and_zer
     assert!(zero_row_text.contains("mode_counts_total=session_token:1"));
     assert!(zero_row_text.contains("provider_counts=none"));
     assert!(zero_row_text.contains("provider_counts_total=openai:1"));
+    assert!(zero_row_text.contains("availability_counts=none"));
+    assert!(zero_row_text.contains("availability_counts_total=available:1"));
     assert!(zero_row_text.contains("source_kind_counts=none"));
     assert!(zero_row_text.contains("source_kind_counts_total=credential_store:1"));
     assert!(zero_row_text.contains("revoked_counts=none"));
@@ -4325,6 +4397,76 @@ fn integration_execute_auth_command_status_revoked_filter_composes_with_other_fi
             .len(),
         0
     );
+}
+
+#[test]
+fn regression_execute_auth_command_availability_counts_zero_row_outputs_remain_explicit() {
+    let temp = tempdir().expect("tempdir");
+    let store_path = temp
+        .path()
+        .join("auth-availability-zero-row-regression.json");
+    write_test_provider_credential(
+        &store_path,
+        CredentialStoreEncryptionMode::None,
+        None,
+        Provider::OpenAi,
+        ProviderCredentialStoreRecord {
+            auth_method: ProviderAuthMethod::SessionToken,
+            access_token: Some("availability-zero-row-access".to_string()),
+            refresh_token: Some("availability-zero-row-refresh".to_string()),
+            expires_unix: Some(current_unix_timestamp().saturating_add(1200)),
+            revoked: false,
+        },
+    );
+
+    let mut config = test_auth_command_config();
+    config.credential_store = store_path;
+    config.credential_store_encryption = CredentialStoreEncryptionMode::None;
+    config.openai_auth_mode = ProviderAuthMethod::SessionToken;
+
+    let status_json = execute_auth_command(
+        &config,
+        "status openai --availability unavailable --state ready --source-kind credential-store --json",
+    );
+    let status_payload: serde_json::Value =
+        serde_json::from_str(&status_json).expect("parse zero-row availability status payload");
+    assert_eq!(status_payload["rows"], 0);
+    assert_eq!(status_payload["availability_counts_total"]["available"], 1);
+    assert_eq!(
+        status_payload["availability_counts"]
+            .as_object()
+            .expect("zero-row status availability counts")
+            .len(),
+        0
+    );
+    let status_text = execute_auth_command(
+        &config,
+        "status openai --availability unavailable --state ready --source-kind credential-store",
+    );
+    assert!(status_text.contains("availability_counts=none"));
+    assert!(status_text.contains("availability_counts_total=available:1"));
+
+    let matrix_json = execute_auth_command(
+        &config,
+        "matrix openai --mode session-token --availability unavailable --state ready --source-kind credential-store --json",
+    );
+    let matrix_payload: serde_json::Value =
+        serde_json::from_str(&matrix_json).expect("parse zero-row availability matrix payload");
+    assert_eq!(matrix_payload["rows"], 0);
+    assert_eq!(matrix_payload["availability_counts_total"]["available"], 1);
+    assert_eq!(
+        matrix_payload["availability_counts"]
+            .as_object()
+            .expect("zero-row matrix availability counts")
+            .len(),
+        0
+    );
+    let matrix_text = execute_auth_command(
+        &config,
+        "matrix openai --mode session-token --availability unavailable --state ready --source-kind credential-store",
+    );
+    assert!(matrix_text.contains("availability_counts=none"));
+    assert!(matrix_text.contains("availability_counts_total=available:1"));
 }
 
 #[test]
