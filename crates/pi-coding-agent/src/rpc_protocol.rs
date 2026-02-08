@@ -1429,6 +1429,29 @@ mod tests {
             stream_event_kinds[0].as_str(),
             Some("run.stream.tool_events")
         );
+        assert_eq!(
+            capabilities_response.payload["contracts"]["lifecycle"]
+                ["terminal_assistant_stream_final_required"]
+                .as_bool(),
+            Some(true)
+        );
+        let lifecycle_transitions = capabilities_response.payload["contracts"]["lifecycle"]
+            ["terminal_transitions"]
+            .as_array()
+            .expect("lifecycle transitions array");
+        assert_eq!(lifecycle_transitions.len(), 4);
+        assert_eq!(
+            lifecycle_transitions[0]["request_kind"].as_str(),
+            Some("run.cancel")
+        );
+        assert_eq!(
+            lifecycle_transitions[0]["response_kind"].as_str(),
+            Some("run.cancelled")
+        );
+        assert_eq!(
+            lifecycle_transitions[0]["terminal_stream_tool_event"].as_str(),
+            Some("run.cancelled")
+        );
 
         let start = parse_rpc_frame(
             r#"{

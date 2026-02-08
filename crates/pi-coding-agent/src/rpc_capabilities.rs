@@ -50,6 +50,17 @@ const RPC_PROTOCOL_RESPONSE_KINDS: &[&str] = &[
 ];
 const RPC_PROTOCOL_STREAM_EVENT_KINDS: &[&str] =
     &["run.stream.tool_events", "run.stream.assistant_text"];
+const RPC_LIFECYCLE_TERMINAL_TRANSITIONS: &[(&str, &str, &str, &str)] = &[
+    ("run.cancel", "run.cancelled", "cancelled", "run.cancelled"),
+    (
+        "run.complete",
+        "run.completed",
+        "completed",
+        "run.completed",
+    ),
+    ("run.fail", "run.failed", "failed", "run.failed"),
+    ("run.timeout", "run.timed_out", "timed_out", "run.timed_out"),
+];
 
 pub(crate) fn rpc_capabilities_payload() -> Value {
     let error_codes = rpc_error_contracts()
@@ -61,6 +72,19 @@ pub(crate) fn rpc_capabilities_payload() -> Value {
                 "description": contract.description,
             })
         })
+        .collect::<Vec<_>>();
+    let lifecycle_transitions = RPC_LIFECYCLE_TERMINAL_TRANSITIONS
+        .iter()
+        .map(
+            |(request_kind, response_kind, terminal_state, terminal_stream_tool_event)| {
+                json!({
+                    "request_kind": request_kind,
+                    "response_kind": response_kind,
+                    "terminal_state": terminal_state,
+                    "terminal_stream_tool_event": terminal_stream_tool_event,
+                })
+            },
+        )
         .collect::<Vec<_>>();
 
     json!({
@@ -83,6 +107,10 @@ pub(crate) fn rpc_capabilities_payload() -> Value {
                 "response_kinds": RPC_PROTOCOL_RESPONSE_KINDS,
                 "stream_event_kinds": RPC_PROTOCOL_STREAM_EVENT_KINDS,
             },
+            "lifecycle": {
+                "terminal_assistant_stream_final_required": true,
+                "terminal_transitions": lifecycle_transitions,
+            },
         }
     })
 }
@@ -101,6 +129,8 @@ pub(crate) fn execute_rpc_capabilities_command(cli: &Cli) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
+
+    use serde_json::json;
 
     use crate::rpc_protocol::RPC_SERVE_CLOSED_RUN_STATUS_CAPACITY;
 
@@ -147,6 +177,12 @@ mod tests {
                 .as_array()
                 .map(|kinds| kinds.len()),
             Some(10)
+        );
+        assert_eq!(
+            payload["contracts"]["lifecycle"]["terminal_transitions"]
+                .as_array()
+                .map(|transitions| transitions.len()),
+            Some(4)
         );
     }
 
@@ -333,6 +369,55 @@ mod tests {
     }
 
     #[test]
+    fn functional_rpc_capabilities_payload_lifecycle_transitions_are_deterministic() {
+        let payload = rpc_capabilities_payload();
+        assert_eq!(
+            payload["contracts"]["lifecycle"]["terminal_assistant_stream_final_required"].as_bool(),
+            Some(true)
+        );
+        let transitions = payload["contracts"]["lifecycle"]["terminal_transitions"]
+            .as_array()
+            .expect("lifecycle transitions should be an array");
+        assert_eq!(transitions.len(), 4);
+        assert_eq!(
+            transitions[0],
+            json!({
+                "request_kind": "run.cancel",
+                "response_kind": "run.cancelled",
+                "terminal_state": "cancelled",
+                "terminal_stream_tool_event": "run.cancelled",
+            })
+        );
+        assert_eq!(
+            transitions[1],
+            json!({
+                "request_kind": "run.complete",
+                "response_kind": "run.completed",
+                "terminal_state": "completed",
+                "terminal_stream_tool_event": "run.completed",
+            })
+        );
+        assert_eq!(
+            transitions[2],
+            json!({
+                "request_kind": "run.fail",
+                "response_kind": "run.failed",
+                "terminal_state": "failed",
+                "terminal_stream_tool_event": "run.failed",
+            })
+        );
+        assert_eq!(
+            transitions[3],
+            json!({
+                "request_kind": "run.timeout",
+                "response_kind": "run.timed_out",
+                "terminal_state": "timed_out",
+                "terminal_stream_tool_event": "run.timed_out",
+            })
+        );
+    }
+
+    #[test]
     fn regression_rpc_capabilities_payload_protocol_kind_lists_have_unique_entries() {
         let payload = rpc_capabilities_payload();
         for field in ["request_kinds", "response_kinds", "stream_event_kinds"] {
@@ -353,5 +438,36 @@ mod tests {
                 "duplicates found in protocol contract field {field}"
             );
         }
+    }
+
+    #[test]
+    fn regression_rpc_capabilities_payload_lifecycle_transition_request_kinds_are_unique() {
+        let payload = rpc_capabilities_payload();
+        let transitions = payload["contracts"]["lifecycle"]["terminal_transitions"]
+            .as_array()
+            .expect("lifecycle transitions should be an array");
+        let request_kinds = transitions
+            .iter()
+            .map(|entry| {
+                entry["request_kind"]
+                    .as_str()
+                    .expect("request kind should be string")
+                    .to_string()
+            })
+            .collect::<Vec<_>>();
+        let unique_request_kinds = request_kinds.iter().cloned().collect::<BTreeSet<_>>();
+        assert_eq!(unique_request_kinds.len(), request_kinds.len());
+
+        let response_kinds = transitions
+            .iter()
+            .map(|entry| {
+                entry["response_kind"]
+                    .as_str()
+                    .expect("response kind should be string")
+                    .to_string()
+            })
+            .collect::<Vec<_>>();
+        let unique_response_kinds = response_kinds.iter().cloned().collect::<BTreeSet<_>>();
+        assert_eq!(unique_response_kinds.len(), response_kinds.len());
     }
 }
