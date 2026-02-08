@@ -29,6 +29,7 @@ pub(crate) enum RpcFrameKind {
     CapabilitiesRequest,
     RunStart,
     RunCancel,
+    RunStatus,
 }
 
 impl RpcFrameKind {
@@ -37,6 +38,7 @@ impl RpcFrameKind {
             Self::CapabilitiesRequest => "capabilities.request",
             Self::RunStart => "run.start",
             Self::RunCancel => "run.cancel",
+            Self::RunStatus => "run.status",
         }
     }
 }
@@ -49,8 +51,9 @@ impl FromStr for RpcFrameKind {
             "capabilities.request" => Ok(Self::CapabilitiesRequest),
             "run.start" => Ok(Self::RunStart),
             "run.cancel" => Ok(Self::RunCancel),
+            "run.status" => Ok(Self::RunStatus),
             other => bail!(
-                "unsupported rpc frame kind '{}'; supported kinds are capabilities.request, run.start, run.cancel",
+                "unsupported rpc frame kind '{}'; supported kinds are capabilities.request, run.start, run.cancel, run.status",
                 other
             ),
         }
@@ -183,6 +186,21 @@ pub(crate) fn dispatch_rpc_frame(frame: &RpcFrame) -> Result<RpcResponseFrame> {
                 }),
             ))
         }
+        RpcFrameKind::RunStatus => {
+            let run_id =
+                require_non_empty_payload_string(&frame.payload, "run_id", frame.kind.as_str())?;
+            Ok(build_response_frame(
+                &frame.request_id,
+                "run.status",
+                json!({
+                    "status": "inactive",
+                    "mode": RPC_STUB_MODE,
+                    "run_id": run_id,
+                    "active": false,
+                    "known": false,
+                }),
+            ))
+        }
     }
 }
 
@@ -270,6 +288,22 @@ fn dispatch_rpc_frame_for_serve(
                 );
             }
             dispatch_rpc_frame(frame)
+        }
+        RpcFrameKind::RunStatus => {
+            let run_id =
+                require_non_empty_payload_string(&frame.payload, "run_id", frame.kind.as_str())?;
+            let active = state.active_run_ids.contains(&run_id);
+            Ok(build_response_frame(
+                &frame.request_id,
+                "run.status",
+                json!({
+                    "status": if active { "active" } else { "inactive" },
+                    "mode": RPC_STUB_MODE,
+                    "run_id": run_id,
+                    "active": active,
+                    "known": active,
+                }),
+            ))
         }
     }
 }
@@ -576,6 +610,17 @@ mod tests {
         .expect("parse legacy frame");
         assert_eq!(legacy_frame.request_id, "req-legacy");
         assert_eq!(legacy_frame.kind, RpcFrameKind::RunCancel);
+
+        let status_frame = parse_rpc_frame(
+            r#"{
+  "schema_version": 1,
+  "request_id": "req-status",
+  "kind": "run.status",
+  "payload": {"run_id":"run-1"}
+}"#,
+        )
+        .expect("parse status frame");
+        assert_eq!(status_frame.kind, RpcFrameKind::RunStatus);
     }
 
     #[test]
@@ -635,6 +680,21 @@ mod tests {
         let cancel_response = dispatch_rpc_frame(&cancel).expect("dispatch cancel");
         assert_eq!(cancel_response.kind, "run.cancelled");
         assert_eq!(cancel_response.payload["run_id"].as_str(), Some("run-1"));
+
+        let status = parse_rpc_frame(
+            r#"{
+  "schema_version": 1,
+  "request_id": "req-status",
+  "kind": "run.status",
+  "payload": {"run_id":"run-1"}
+}"#,
+        )
+        .expect("parse status");
+        let status_response = dispatch_rpc_frame(&status).expect("dispatch status");
+        assert_eq!(status_response.kind, "run.status");
+        assert_eq!(status_response.payload["run_id"].as_str(), Some("run-1"));
+        assert_eq!(status_response.payload["active"].as_bool(), Some(false));
+        assert_eq!(status_response.payload["known"].as_bool(), Some(false));
     }
 
     #[test]
@@ -785,6 +845,20 @@ mod tests {
             .to_string()
             .contains("requires non-empty payload field 'run_id'"));
 
+        let status = parse_rpc_frame(
+            r#"{
+  "schema_version": 1,
+  "request_id": "req-status",
+  "kind": "run.status",
+  "payload": {}
+}"#,
+        )
+        .expect("parse status");
+        let status_error = dispatch_rpc_frame(&status).expect_err("missing run_id should fail");
+        assert!(status_error
+            .to_string()
+            .contains("requires non-empty payload field 'run_id'"));
+
         let start_invalid_run_id = parse_rpc_frame(
             r#"{
   "schema_version": 1,
@@ -815,7 +889,7 @@ mod tests {
         );
         assert_eq!(
             classify_rpc_error_message(
-                "unsupported rpc frame kind 'x'; supported kinds are capabilities.request, run.start, run.cancel"
+                "unsupported rpc frame kind 'x'; supported kinds are capabilities.request, run.start, run.cancel, run.status"
             ),
             RPC_ERROR_CODE_UNSUPPORTED_KIND
         );
@@ -867,15 +941,19 @@ mod tests {
 # comment
 {"schema_version":1,"request_id":"req-cap","kind":"capabilities.request","payload":{}}
 {"schema_version":1,"request_id":"req-start","kind":"run.start","payload":{"prompt":"hello"}}
+{"schema_version":1,"request_id":"req-status","kind":"run.status","payload":{"run_id":"run-req-start"}}
 "#,
         );
-        assert_eq!(report.processed_lines, 2);
+        assert_eq!(report.processed_lines, 3);
         assert_eq!(report.error_count, 0);
-        assert_eq!(report.responses.len(), 2);
+        assert_eq!(report.responses.len(), 3);
         assert_eq!(report.responses[0].request_id, "req-cap");
         assert_eq!(report.responses[0].kind, "capabilities.response");
         assert_eq!(report.responses[1].request_id, "req-start");
         assert_eq!(report.responses[1].kind, "run.accepted");
+        assert_eq!(report.responses[2].request_id, "req-status");
+        assert_eq!(report.responses[2].kind, "run.status");
+        assert_eq!(report.responses[2].payload["active"].as_bool(), Some(false));
     }
 
     #[test]
@@ -940,12 +1018,14 @@ not-json
         let input = r#"
 {"schema_version":1,"request_id":"req-cap","kind":"capabilities.request","payload":{}}
 {"schema_version":1,"request_id":"req-start","kind":"run.start","payload":{"prompt":"hello"}}
+{"schema_version":1,"request_id":"req-status-active","kind":"run.status","payload":{"run_id":"run-req-start"}}
 {"schema_version":1,"request_id":"req-cancel","kind":"run.cancel","payload":{"run_id":"run-req-start"}}
+{"schema_version":1,"request_id":"req-status-inactive","kind":"run.status","payload":{"run_id":"run-req-start"}}
 "#;
         let mut output = Vec::new();
         let report = serve_rpc_ndjson_reader(std::io::Cursor::new(input), &mut output)
             .expect("serve should succeed");
-        assert_eq!(report.processed_lines, 3);
+        assert_eq!(report.processed_lines, 5);
         assert_eq!(report.error_count, 0);
 
         let lines = String::from_utf8(output).expect("utf8 output");
@@ -953,14 +1033,21 @@ not-json
             .lines()
             .map(|line| serde_json::from_str::<serde_json::Value>(line).expect("json frame"))
             .collect::<Vec<_>>();
-        assert_eq!(rows.len(), 3);
+        assert_eq!(rows.len(), 5);
         assert_eq!(rows[0]["request_id"], "req-cap");
         assert_eq!(rows[0]["kind"], "capabilities.response");
         assert_eq!(rows[1]["request_id"], "req-start");
         assert_eq!(rows[1]["kind"], "run.accepted");
         assert_eq!(rows[1]["payload"]["run_id"], "run-req-start");
-        assert_eq!(rows[2]["request_id"], "req-cancel");
-        assert_eq!(rows[2]["kind"], "run.cancelled");
+        assert_eq!(rows[2]["request_id"], "req-status-active");
+        assert_eq!(rows[2]["kind"], "run.status");
+        assert_eq!(rows[2]["payload"]["active"], true);
+        assert_eq!(rows[3]["request_id"], "req-cancel");
+        assert_eq!(rows[3]["kind"], "run.cancelled");
+        assert_eq!(rows[4]["request_id"], "req-status-inactive");
+        assert_eq!(rows[4]["kind"], "run.status");
+        assert_eq!(rows[4]["payload"]["active"], false);
+        assert_eq!(rows[4]["payload"]["known"], false);
     }
 
     #[test]
