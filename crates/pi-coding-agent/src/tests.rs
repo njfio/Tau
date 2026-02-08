@@ -1021,6 +1021,7 @@ fn unit_parse_auth_command_supports_login_status_logout_and_json() {
             provider: None,
             mode: None,
             availability: AuthMatrixAvailabilityFilter::All,
+            state: None,
             json_output: true,
         }
     );
@@ -1033,6 +1034,7 @@ fn unit_parse_auth_command_supports_login_status_logout_and_json() {
             provider: Some(Provider::OpenAi),
             mode: Some(ProviderAuthMethod::OauthToken),
             availability: AuthMatrixAvailabilityFilter::All,
+            state: None,
             json_output: true,
         }
     );
@@ -1045,6 +1047,20 @@ fn unit_parse_auth_command_supports_login_status_logout_and_json() {
             provider: None,
             mode: None,
             availability: AuthMatrixAvailabilityFilter::Available,
+            state: None,
+            json_output: true,
+        }
+    );
+
+    let state_filtered_matrix = parse_auth_command("matrix --state ready --json")
+        .expect("parse state-filtered auth matrix");
+    assert_eq!(
+        state_filtered_matrix,
+        AuthCommand::Matrix {
+            provider: None,
+            mode: None,
+            availability: AuthMatrixAvailabilityFilter::All,
+            state: Some("ready".to_string()),
             json_output: true,
         }
     );
@@ -1086,6 +1102,18 @@ fn regression_parse_auth_command_rejects_unknown_provider_mode_and_usage_errors(
     assert!(unknown_matrix_availability
         .to_string()
         .contains("unknown availability filter"));
+
+    let missing_matrix_state =
+        parse_auth_command("matrix --state").expect_err("missing matrix state filter");
+    assert!(missing_matrix_state
+        .to_string()
+        .contains("usage: /auth matrix"));
+
+    let duplicate_matrix_state = parse_auth_command("matrix --state ready --state revoked")
+        .expect_err("duplicate matrix state filter");
+    assert!(duplicate_matrix_state
+        .to_string()
+        .contains("usage: /auth matrix"));
 
     let unknown_subcommand = parse_auth_command("noop").expect_err("subcommand fail");
     assert!(unknown_subcommand.to_string().contains("usage: /auth"));
@@ -1555,6 +1583,95 @@ fn functional_execute_auth_command_matrix_supports_availability_filter() {
 }
 
 #[test]
+fn functional_execute_auth_command_matrix_supports_state_filter() {
+    let temp = tempdir().expect("tempdir");
+    let mut config = test_auth_command_config();
+    config.credential_store = temp.path().join("auth-matrix-state-filter.json");
+    config.credential_store_encryption = CredentialStoreEncryptionMode::None;
+    config.api_key = Some("shared-api-key".to_string());
+
+    write_test_provider_credential(
+        &config.credential_store,
+        CredentialStoreEncryptionMode::None,
+        None,
+        Provider::OpenAi,
+        ProviderCredentialStoreRecord {
+            auth_method: ProviderAuthMethod::OauthToken,
+            access_token: Some("state-filter-access".to_string()),
+            refresh_token: Some("state-filter-refresh".to_string()),
+            expires_unix: Some(current_unix_timestamp().saturating_add(600)),
+            revoked: false,
+        },
+    );
+
+    let ready_output = execute_auth_command(&config, "matrix --state ready --json");
+    let ready_payload: serde_json::Value =
+        serde_json::from_str(&ready_output).expect("parse state-filtered payload");
+    assert_eq!(ready_payload["command"], "auth.matrix");
+    assert_eq!(ready_payload["state_filter"], "ready");
+    assert_eq!(ready_payload["rows_total"], 12);
+    assert_eq!(ready_payload["rows"], 4);
+    let ready_entries = ready_payload["entries"].as_array().expect("ready entries");
+    assert_eq!(ready_entries.len(), 4);
+    assert!(ready_entries.iter().all(|entry| entry["state"] == "ready"));
+
+    let text_output = execute_auth_command(&config, "matrix --state ready");
+    assert!(text_output.contains("state_filter=ready"));
+    assert!(!text_output.contains("state=unsupported_mode"));
+}
+
+#[test]
+fn integration_execute_auth_command_matrix_state_filter_composes_with_other_filters() {
+    let temp = tempdir().expect("tempdir");
+    let mut config = test_auth_command_config();
+    config.credential_store = temp.path().join("auth-matrix-state-composition.json");
+    config.credential_store_encryption = CredentialStoreEncryptionMode::None;
+    config.api_key = Some("shared-api-key".to_string());
+
+    write_test_provider_credential(
+        &config.credential_store,
+        CredentialStoreEncryptionMode::None,
+        None,
+        Provider::OpenAi,
+        ProviderCredentialStoreRecord {
+            auth_method: ProviderAuthMethod::OauthToken,
+            access_token: Some("state-composition-access".to_string()),
+            refresh_token: Some("state-composition-refresh".to_string()),
+            expires_unix: Some(current_unix_timestamp().saturating_add(600)),
+            revoked: false,
+        },
+    );
+
+    let filtered_output = execute_auth_command(
+        &config,
+        "matrix openai --mode oauth-token --availability available --state ready --json",
+    );
+    let filtered_payload: serde_json::Value =
+        serde_json::from_str(&filtered_output).expect("parse composed filter payload");
+    assert_eq!(filtered_payload["availability_filter"], "available");
+    assert_eq!(filtered_payload["state_filter"], "ready");
+    assert_eq!(filtered_payload["providers"], 1);
+    assert_eq!(filtered_payload["modes"], 1);
+    assert_eq!(filtered_payload["rows_total"], 1);
+    assert_eq!(filtered_payload["rows"], 1);
+    assert_eq!(filtered_payload["entries"][0]["provider"], "openai");
+    assert_eq!(filtered_payload["entries"][0]["mode"], "oauth_token");
+    assert_eq!(filtered_payload["entries"][0]["state"], "ready");
+    assert_eq!(filtered_payload["entries"][0]["available"], true);
+
+    let mismatch_output = execute_auth_command(
+        &config,
+        "matrix openai --mode session-token --state mode_mismatch --json",
+    );
+    let mismatch_payload: serde_json::Value =
+        serde_json::from_str(&mismatch_output).expect("parse mismatch filter payload");
+    assert_eq!(mismatch_payload["state_filter"], "mode_mismatch");
+    assert_eq!(mismatch_payload["rows_total"], 1);
+    assert_eq!(mismatch_payload["rows"], 1);
+    assert_eq!(mismatch_payload["entries"][0]["state"], "mode_mismatch");
+}
+
+#[test]
 fn integration_auth_conformance_store_backed_status_matrix_handles_stale_token_scenarios() {
     #[derive(Debug)]
     struct StaleCase {
@@ -1707,6 +1824,14 @@ fn regression_execute_auth_command_matrix_rejects_invalid_filter_combinations() 
     );
     assert!(duplicate_availability.contains("auth error:"));
     assert!(duplicate_availability.contains("usage: /auth matrix"));
+
+    let missing_state = execute_auth_command(&config, "matrix --state");
+    assert!(missing_state.contains("auth error:"));
+    assert!(missing_state.contains("usage: /auth matrix"));
+
+    let duplicate_state = execute_auth_command(&config, "matrix --state ready --state revoked");
+    assert!(duplicate_state.contains("auth error:"));
+    assert!(duplicate_state.contains("usage: /auth matrix"));
 }
 
 #[test]

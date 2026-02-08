@@ -5,7 +5,7 @@ pub(crate) const AUTH_LOGIN_USAGE: &str = "usage: /auth login <provider> [--mode
 pub(crate) const AUTH_STATUS_USAGE: &str = "usage: /auth status [provider] [--json]";
 pub(crate) const AUTH_LOGOUT_USAGE: &str = "usage: /auth logout <provider> [--json]";
 pub(crate) const AUTH_MATRIX_USAGE: &str =
-    "usage: /auth matrix [provider] [--mode <mode>] [--availability <all|available|unavailable>] [--json]";
+    "usage: /auth matrix [provider] [--mode <mode>] [--availability <all|available|unavailable>] [--state <state>] [--json]";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum AuthMatrixAvailabilityFilter {
@@ -43,6 +43,7 @@ pub(crate) enum AuthCommand {
         provider: Option<Provider>,
         mode: Option<ProviderAuthMethod>,
         availability: AuthMatrixAvailabilityFilter,
+        state: Option<String>,
         json_output: bool,
     },
 }
@@ -182,6 +183,7 @@ pub(crate) fn parse_auth_command(command_args: &str) -> Result<AuthCommand> {
             let mut mode: Option<ProviderAuthMethod> = None;
             let mut availability = AuthMatrixAvailabilityFilter::All;
             let mut availability_explicit = false;
+            let mut state: Option<String> = None;
             let mut json_output = false;
             let mut index = 1usize;
             while index < tokens.len() {
@@ -211,6 +213,16 @@ pub(crate) fn parse_auth_command(command_args: &str) -> Result<AuthCommand> {
                         availability_explicit = true;
                         index += 2;
                     }
+                    "--state" => {
+                        if state.is_some() {
+                            bail!("duplicate --state flag; {AUTH_MATRIX_USAGE}");
+                        }
+                        let Some(raw_state) = tokens.get(index + 1) else {
+                            bail!("missing state filter after --state; {AUTH_MATRIX_USAGE}");
+                        };
+                        state = Some(parse_auth_matrix_state_filter(raw_state)?);
+                        index += 2;
+                    }
                     token if token.starts_with("--") => {
                         bail!("unexpected argument '{}'; {AUTH_MATRIX_USAGE}", token);
                     }
@@ -227,6 +239,7 @@ pub(crate) fn parse_auth_command(command_args: &str) -> Result<AuthCommand> {
                 provider,
                 mode,
                 availability,
+                state,
                 json_output,
             })
         }
@@ -246,6 +259,14 @@ pub(crate) fn parse_auth_matrix_availability_filter(
             other
         ),
     }
+}
+
+pub(crate) fn parse_auth_matrix_state_filter(token: &str) -> Result<String> {
+    let normalized = token.trim().to_ascii_lowercase();
+    if normalized.is_empty() {
+        bail!("state filter must not be empty");
+    }
+    Ok(normalized)
 }
 
 pub(crate) fn provider_api_key_candidates_from_auth_config(
@@ -940,6 +961,7 @@ pub(crate) fn execute_auth_matrix_command(
     provider: Option<Provider>,
     mode: Option<ProviderAuthMethod>,
     availability: AuthMatrixAvailabilityFilter,
+    state: Option<String>,
     json_output: bool,
 ) -> String {
     let selected_providers = provider
@@ -988,6 +1010,12 @@ pub(crate) fn execute_auth_matrix_command(
             rows.into_iter().filter(|row| !row.available).collect()
         }
     };
+    let state_filter = state
+        .map(|value| value.trim().to_ascii_lowercase())
+        .filter(|value| !value.is_empty());
+    if let Some(state_filter) = state_filter.as_deref() {
+        rows.retain(|row| row.state == state_filter);
+    }
 
     let available = rows.iter().filter(|row| row.available).count();
     let unavailable = rows.len().saturating_sub(available);
@@ -998,6 +1026,7 @@ pub(crate) fn execute_auth_matrix_command(
         return serde_json::json!({
             "command": "auth.matrix",
             "availability_filter": availability.as_str(),
+            "state_filter": state_filter.as_deref().unwrap_or("all"),
             "providers": selected_providers.len(),
             "modes": selected_modes.len(),
             "rows_total": total_rows,
@@ -1012,7 +1041,7 @@ pub(crate) fn execute_auth_matrix_command(
     }
 
     let mut lines = vec![format!(
-        "auth matrix: providers={} modes={} rows={} mode_supported={} mode_unsupported={} available={} unavailable={} availability_filter={} rows_total={}",
+        "auth matrix: providers={} modes={} rows={} mode_supported={} mode_unsupported={} available={} unavailable={} availability_filter={} state_filter={} rows_total={}",
         selected_providers.len(),
         selected_modes.len(),
         rows.len(),
@@ -1021,6 +1050,7 @@ pub(crate) fn execute_auth_matrix_command(
         available,
         unavailable,
         availability.as_str(),
+        state_filter.as_deref().unwrap_or("all"),
         total_rows
     )];
     for row in rows {
@@ -1144,7 +1174,8 @@ pub(crate) fn execute_auth_command(config: &AuthCommandConfig, command_args: &st
             provider,
             mode,
             availability,
+            state,
             json_output,
-        } => execute_auth_matrix_command(config, provider, mode, availability, json_output),
+        } => execute_auth_matrix_command(config, provider, mode, availability, state, json_output),
     }
 }
