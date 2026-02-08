@@ -318,6 +318,14 @@ cargo run -p pi-coding-agent -- \
   --extension-show .pi/extensions/issue-assistant/extension.json
 ```
 
+List discovered extension manifests from an extension root (including invalid entries):
+
+```bash
+cargo run -p pi-coding-agent -- \
+  --extension-list \
+  --extension-list-root .pi/extensions
+```
+
 Validate a reusable package manifest JSON and exit:
 
 ```bash

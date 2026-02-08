@@ -530,6 +530,7 @@ pub(crate) struct Cli {
     #[arg(
         long = "extension-validate",
         env = "PI_EXTENSION_VALIDATE",
+        conflicts_with = "extension_list",
         conflicts_with = "extension_show",
         value_name = "path",
         help = "Validate an extension manifest JSON file and exit"
@@ -537,8 +538,28 @@ pub(crate) struct Cli {
     pub(crate) extension_validate: Option<PathBuf>,
 
     #[arg(
+        long = "extension-list",
+        env = "PI_EXTENSION_LIST",
+        conflicts_with = "extension_validate",
+        conflicts_with = "extension_show",
+        help = "List discovered extension manifests from a root path and exit"
+    )]
+    pub(crate) extension_list: bool,
+
+    #[arg(
+        long = "extension-list-root",
+        env = "PI_EXTENSION_LIST_ROOT",
+        default_value = ".pi/extensions",
+        requires = "extension_list",
+        value_name = "path",
+        help = "Root directory scanned by --extension-list"
+    )]
+    pub(crate) extension_list_root: PathBuf,
+
+    #[arg(
         long = "extension-show",
         env = "PI_EXTENSION_SHOW",
+        conflicts_with = "extension_list",
         conflicts_with = "extension_validate",
         value_name = "path",
         help = "Print extension manifest metadata and inventory"

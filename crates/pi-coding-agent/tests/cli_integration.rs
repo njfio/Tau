@@ -2946,6 +2946,76 @@ fn regression_extension_show_flag_rejects_invalid_manifest() {
 }
 
 #[test]
+fn extension_list_flag_reports_valid_and_invalid_entries() {
+    let temp = tempdir().expect("tempdir");
+    let root = temp.path().join("extensions");
+    let valid_dir = root.join("issue-assistant");
+    fs::create_dir_all(&valid_dir).expect("create valid extension dir");
+    fs::write(
+        valid_dir.join("extension.json"),
+        r#"{
+  "schema_version": 1,
+  "id": "issue-assistant",
+  "version": "0.1.0",
+  "runtime": "process",
+  "entrypoint": "bin/assistant"
+}"#,
+    )
+    .expect("write valid extension manifest");
+    let invalid_dir = root.join("broken");
+    fs::create_dir_all(&invalid_dir).expect("create invalid extension dir");
+    fs::write(
+        invalid_dir.join("extension.json"),
+        r#"{
+  "schema_version": 9,
+  "id": "broken",
+  "version": "0.1.0",
+  "runtime": "process",
+  "entrypoint": "bin/assistant"
+}"#,
+    )
+    .expect("write invalid extension manifest");
+
+    let mut cmd = binary_command();
+    cmd.args([
+        "--extension-list",
+        "--extension-list-root",
+        root.to_str().expect("utf8 path"),
+    ]);
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("extension list:"))
+        .stdout(predicate::str::contains("count=1"))
+        .stdout(predicate::str::contains("invalid=1"))
+        .stdout(predicate::str::contains(
+            "extension: id=issue-assistant version=0.1.0 runtime=process",
+        ))
+        .stdout(predicate::str::contains("invalid: manifest="))
+        .stdout(predicate::str::contains(
+            "unsupported extension manifest schema",
+        ));
+}
+
+#[test]
+fn regression_extension_list_flag_rejects_non_directory_root() {
+    let temp = tempdir().expect("tempdir");
+    let root_file = temp.path().join("extensions.json");
+    fs::write(&root_file, "{}").expect("write root file");
+
+    let mut cmd = binary_command();
+    cmd.args([
+        "--extension-list",
+        "--extension-list-root",
+        root_file.to_str().expect("utf8 path"),
+    ]);
+
+    cmd.assert()
+        .failure()
+        .stderr(predicate::str::contains("is not a directory"));
+}
+
+#[test]
 fn regression_package_validate_flag_rejects_invalid_manifest() {
     let temp = tempdir().expect("tempdir");
     let manifest_path = temp.path().join("package.json");
