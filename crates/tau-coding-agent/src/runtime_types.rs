@@ -32,6 +32,9 @@ pub(crate) struct DoctorProviderKeyStatus {
     pub(crate) present: bool,
     pub(crate) auth_mode: ProviderAuthMethod,
     pub(crate) mode_supported: bool,
+    pub(crate) login_backend_enabled: bool,
+    pub(crate) login_backend_executable: Option<String>,
+    pub(crate) login_backend_available: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -135,4 +138,6 @@ pub(crate) struct AuthCommandConfig {
     pub(crate) openai_auth_mode: ProviderAuthMethod,
     pub(crate) anthropic_auth_mode: ProviderAuthMethod,
     pub(crate) google_auth_mode: ProviderAuthMethod,
+    pub(crate) google_gemini_backend: bool,
+    pub(crate) google_gemini_cli: String,
 }

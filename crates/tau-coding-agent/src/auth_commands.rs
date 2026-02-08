@@ -1,4 +1,5 @@
 use super::*;
+use crate::cli_executable::is_executable_available;
 use crate::provider_auth::provider_supported_auth_modes;
 use crate::provider_credentials::{provider_auth_snapshot_for_status, ProviderAuthSnapshot};
 
@@ -734,6 +735,15 @@ pub(crate) fn execute_auth_login_command(
         );
     }
 
+    if provider == Provider::Google
+        && matches!(
+            mode,
+            ProviderAuthMethod::OauthToken | ProviderAuthMethod::Adc
+        )
+    {
+        return execute_google_login_backend_ready(config, mode, json_output);
+    }
+
     match mode {
         ProviderAuthMethod::ApiKey => {
             match resolve_non_empty_secret_with_source(
@@ -947,6 +957,80 @@ pub(crate) fn execute_auth_login_command(
             )
         }
     }
+}
+
+fn execute_google_login_backend_ready(
+    config: &AuthCommandConfig,
+    mode: ProviderAuthMethod,
+    json_output: bool,
+) -> String {
+    if !config.google_gemini_backend {
+        let reason =
+            "google gemini backend is disabled; set --google-gemini-backend=true".to_string();
+        if json_output {
+            return serde_json::json!({
+                "command": "auth.login",
+                "provider": Provider::Google.as_str(),
+                "mode": mode.as_str(),
+                "status": "error",
+                "reason": reason,
+            })
+            .to_string();
+        }
+        return format!(
+            "auth login error: provider={} mode={} error={reason}",
+            Provider::Google.as_str(),
+            mode.as_str()
+        );
+    }
+
+    if !is_executable_available(&config.google_gemini_cli) {
+        let reason = format!(
+            "gemini cli executable '{}' is not available",
+            config.google_gemini_cli
+        );
+        if json_output {
+            return serde_json::json!({
+                "command": "auth.login",
+                "provider": Provider::Google.as_str(),
+                "mode": mode.as_str(),
+                "status": "error",
+                "reason": reason,
+            })
+            .to_string();
+        }
+        return format!(
+            "auth login error: provider={} mode={} error={reason}",
+            Provider::Google.as_str(),
+            mode.as_str()
+        );
+    }
+
+    let action = if mode == ProviderAuthMethod::Adc {
+        "run gcloud auth application-default login and set GOOGLE_CLOUD_PROJECT/GOOGLE_CLOUD_LOCATION"
+    } else {
+        "run gemini and select Login with Google"
+    };
+    if json_output {
+        return serde_json::json!({
+            "command": "auth.login",
+            "provider": Provider::Google.as_str(),
+            "mode": mode.as_str(),
+            "status": "ready",
+            "source": "gemini_cli",
+            "backend_cli": config.google_gemini_cli,
+            "persisted": false,
+            "action": action,
+        })
+        .to_string();
+    }
+    format!(
+        "auth login: provider={} mode={} status=ready source=gemini_cli backend_cli={} persisted=false action={}",
+        Provider::Google.as_str(),
+        mode.as_str(),
+        config.google_gemini_cli,
+        action
+    )
 }
 
 pub(crate) fn auth_status_row_for_provider(

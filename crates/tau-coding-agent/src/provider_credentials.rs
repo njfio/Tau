@@ -3,6 +3,7 @@ use crate::auth_commands::{
     provider_api_key_candidates_from_auth_config, provider_login_access_token_candidates,
     resolve_auth_login_expires_unix,
 };
+use crate::cli_executable::is_executable_available;
 
 pub(crate) fn resolve_store_backed_provider_credential(
     cli: &Cli,
@@ -188,6 +189,66 @@ pub(crate) struct ProviderAuthSnapshot {
     pub(crate) secret: Option<String>,
 }
 
+fn google_gemini_backend_snapshot(
+    config: &AuthCommandConfig,
+    mode: ProviderAuthMethod,
+) -> ProviderAuthSnapshot {
+    if !config.google_gemini_backend {
+        return ProviderAuthSnapshot {
+            provider: Provider::Google,
+            method: mode,
+            mode_supported: true,
+            available: false,
+            state: "backend_disabled".to_string(),
+            source: "none".to_string(),
+            reason: "google gemini backend is disabled".to_string(),
+            expires_unix: None,
+            revoked: false,
+            refreshable: false,
+            secret: None,
+        };
+    }
+
+    if !is_executable_available(&config.google_gemini_cli) {
+        return ProviderAuthSnapshot {
+            provider: Provider::Google,
+            method: mode,
+            mode_supported: true,
+            available: false,
+            state: "backend_unavailable".to_string(),
+            source: "gemini_cli".to_string(),
+            reason: format!(
+                "gemini cli executable '{}' is not available",
+                config.google_gemini_cli
+            ),
+            expires_unix: None,
+            revoked: false,
+            refreshable: false,
+            secret: None,
+        };
+    }
+
+    let reason = if mode == ProviderAuthMethod::Adc {
+        "google_adc_backend_available"
+    } else {
+        "google_oauth_backend_available"
+    };
+
+    ProviderAuthSnapshot {
+        provider: Provider::Google,
+        method: mode,
+        mode_supported: true,
+        available: true,
+        state: "ready".to_string(),
+        source: "gemini_cli".to_string(),
+        reason: reason.to_string(),
+        expires_unix: None,
+        revoked: false,
+        refreshable: false,
+        secret: None,
+    }
+}
+
 pub(crate) fn provider_auth_snapshot_for_status(
     config: &AuthCommandConfig,
     provider: Provider,
@@ -210,6 +271,15 @@ pub(crate) fn provider_auth_snapshot_for_status(
             refreshable: false,
             secret: None,
         };
+    }
+
+    if provider == Provider::Google
+        && matches!(
+            mode,
+            ProviderAuthMethod::OauthToken | ProviderAuthMethod::Adc
+        )
+    {
+        return google_gemini_backend_snapshot(config, mode);
     }
 
     if mode == ProviderAuthMethod::ApiKey {
