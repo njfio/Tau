@@ -64,6 +64,22 @@ pub(crate) struct PackageListReport {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PackageConflictEntry {
+    pub kind: String,
+    pub path: String,
+    pub winner: String,
+    pub contender: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PackageConflictReport {
+    pub conflict_root: PathBuf,
+    pub packages: usize,
+    pub invalid_entries: Vec<PackageListInvalidEntry>,
+    pub conflicts: Vec<PackageConflictEntry>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct PackageRemoveReport {
     pub remove_root: PathBuf,
     pub package_dir: PathBuf,
@@ -239,6 +255,15 @@ pub(crate) fn execute_package_rollback_command(cli: &Cli) -> Result<()> {
     };
     let report = rollback_installed_package(coordinate, &cli.package_rollback_root)?;
     println!("{}", render_package_rollback_report(&report));
+    Ok(())
+}
+
+pub(crate) fn execute_package_conflicts_command(cli: &Cli) -> Result<()> {
+    if !cli.package_conflicts {
+        return Ok(());
+    }
+    let report = scan_installed_package_conflicts(&cli.package_conflicts_root)?;
+    println!("{}", render_package_conflict_report(&report));
     Ok(())
 }
 
@@ -888,6 +913,99 @@ fn list_installed_packages(list_root: &Path) -> Result<PackageListReport> {
     Ok(report)
 }
 
+fn scan_installed_package_conflicts(conflict_root: &Path) -> Result<PackageConflictReport> {
+    let list_report = list_installed_packages(conflict_root)?;
+    let mut report = PackageConflictReport {
+        conflict_root: conflict_root.to_path_buf(),
+        packages: list_report.packages.len(),
+        invalid_entries: list_report.invalid_entries,
+        conflicts: Vec::new(),
+    };
+    let mut owners: std::collections::BTreeMap<(String, String), String> =
+        std::collections::BTreeMap::new();
+
+    for package in list_report.packages {
+        let owner = format!("{}@{}", package.name, package.version);
+        let manifest_path = package.manifest_path.clone();
+        let manifest = match load_and_validate_manifest(&manifest_path) {
+            Ok((manifest, _)) => manifest,
+            Err(error) => {
+                report.invalid_entries.push(PackageListInvalidEntry {
+                    package_dir: package.package_dir.clone(),
+                    manifest_path,
+                    error: error.to_string(),
+                });
+                continue;
+            }
+        };
+        append_component_conflicts(
+            "templates",
+            &manifest.templates,
+            &owner,
+            &mut owners,
+            &mut report.conflicts,
+        );
+        append_component_conflicts(
+            "skills",
+            &manifest.skills,
+            &owner,
+            &mut owners,
+            &mut report.conflicts,
+        );
+        append_component_conflicts(
+            "extensions",
+            &manifest.extensions,
+            &owner,
+            &mut owners,
+            &mut report.conflicts,
+        );
+        append_component_conflicts(
+            "themes",
+            &manifest.themes,
+            &owner,
+            &mut owners,
+            &mut report.conflicts,
+        );
+    }
+
+    report.conflicts.sort_by(|left, right| {
+        left.kind
+            .cmp(&right.kind)
+            .then_with(|| left.path.cmp(&right.path))
+            .then_with(|| left.winner.cmp(&right.winner))
+            .then_with(|| left.contender.cmp(&right.contender))
+    });
+    report.invalid_entries.sort_by(|left, right| {
+        left.package_dir
+            .cmp(&right.package_dir)
+            .then_with(|| left.manifest_path.cmp(&right.manifest_path))
+    });
+    Ok(report)
+}
+
+fn append_component_conflicts(
+    kind: &str,
+    components: &[PackageComponent],
+    owner: &str,
+    owners: &mut std::collections::BTreeMap<(String, String), String>,
+    conflicts: &mut Vec<PackageConflictEntry>,
+) {
+    for component in components {
+        let path = component.path.trim().to_string();
+        let key = (kind.to_string(), path.clone());
+        if let Some(winner) = owners.get(&key) {
+            conflicts.push(PackageConflictEntry {
+                kind: kind.to_string(),
+                path,
+                winner: winner.clone(),
+                contender: owner.to_string(),
+            });
+        } else {
+            owners.insert(key, owner.to_string());
+        }
+    }
+}
+
 fn read_sorted_directory_paths(path: &Path) -> Result<Vec<PathBuf>> {
     let mut entries = Vec::new();
     for entry in
@@ -921,6 +1039,35 @@ fn render_package_list_report(report: &PackageListReport) -> String {
         }
     }
 
+    for invalid in &report.invalid_entries {
+        lines.push(format!(
+            "package invalid: path={} manifest={} error={}",
+            invalid.package_dir.display(),
+            invalid.manifest_path.display(),
+            invalid.error
+        ));
+    }
+    lines.join("\n")
+}
+
+fn render_package_conflict_report(report: &PackageConflictReport) -> String {
+    let mut lines = vec![format!(
+        "package conflicts: root={} packages={} conflicts={} invalid={}",
+        report.conflict_root.display(),
+        report.packages,
+        report.conflicts.len(),
+        report.invalid_entries.len()
+    )];
+    if report.conflicts.is_empty() {
+        lines.push("conflicts: none".to_string());
+    } else {
+        for conflict in &report.conflicts {
+            lines.push(format!(
+                "conflict: kind={} path={} winner={} contender={}",
+                conflict.kind, conflict.path, conflict.winner, conflict.contender
+            ));
+        }
+    }
     for invalid in &report.invalid_entries {
         lines.push(format!(
             "package invalid: path={} manifest={} error={}",
@@ -1227,10 +1374,12 @@ mod tests {
     use super::{
         install_package_manifest, install_package_manifest_with_policy, list_installed_packages,
         load_and_validate_manifest, parse_package_coordinate, remove_installed_package,
-        render_package_install_report, render_package_list_report, render_package_manifest_report,
-        render_package_remove_report, render_package_rollback_report, render_package_update_report,
-        rollback_installed_package, update_package_manifest_with_policy, validate_package_manifest,
-        FileUpsertOutcome, PackageListReport, PackageRemoveStatus, PackageRollbackStatus,
+        render_package_conflict_report, render_package_install_report, render_package_list_report,
+        render_package_manifest_report, render_package_remove_report,
+        render_package_rollback_report, render_package_update_report, rollback_installed_package,
+        scan_installed_package_conflicts, update_package_manifest_with_policy,
+        validate_package_manifest, FileUpsertOutcome, PackageConflictEntry, PackageConflictReport,
+        PackageListReport, PackageRemoveStatus, PackageRollbackStatus,
     };
 
     #[cfg(unix)]
@@ -2131,6 +2280,148 @@ mod tests {
         assert!(rendered.contains("manifest_status=skipped"));
         assert!(rendered.contains("updated=2"));
         assert!(rendered.contains("skipped=4"));
+    }
+
+    #[test]
+    fn unit_render_package_conflict_report_includes_summary_details_and_invalid_entries() {
+        let report = PackageConflictReport {
+            conflict_root: Path::new("/tmp/packages").to_path_buf(),
+            packages: 2,
+            invalid_entries: vec![super::PackageListInvalidEntry {
+                package_dir: Path::new("/tmp/packages/broken/1.0.0").to_path_buf(),
+                manifest_path: Path::new("/tmp/packages/broken/1.0.0/package.json").to_path_buf(),
+                error: "invalid manifest".to_string(),
+            }],
+            conflicts: vec![PackageConflictEntry {
+                kind: "templates".to_string(),
+                path: "templates/review.txt".to_string(),
+                winner: "alpha@1.0.0".to_string(),
+                contender: "zeta@1.0.0".to_string(),
+            }],
+        };
+        let rendered = render_package_conflict_report(&report);
+        assert!(rendered.contains("package conflicts:"));
+        assert!(rendered.contains("packages=2"));
+        assert!(rendered.contains("conflicts=1"));
+        assert!(rendered.contains(
+            "conflict: kind=templates path=templates/review.txt winner=alpha@1.0.0 contender=zeta@1.0.0"
+        ));
+        assert!(rendered.contains("package invalid: path=/tmp/packages/broken/1.0.0"));
+    }
+
+    #[test]
+    fn functional_scan_installed_package_conflicts_detects_component_collisions() {
+        let temp = tempdir().expect("tempdir");
+        let install_root = temp.path().join("installed");
+        let install_package = |name: &str, body: &str| {
+            let source_root = temp.path().join(format!("source-{name}"));
+            std::fs::create_dir_all(source_root.join("templates")).expect("create templates dir");
+            std::fs::write(source_root.join("templates/review.txt"), body)
+                .expect("write template source");
+            let manifest_path = source_root.join("package.json");
+            std::fs::write(
+                &manifest_path,
+                format!(
+                    r#"{{
+  "schema_version": 1,
+  "name": "{name}",
+  "version": "1.0.0",
+  "templates": [{{"id":"review","path":"templates/review.txt"}}]
+}}"#
+                ),
+            )
+            .expect("write manifest");
+            install_package_manifest(&manifest_path, &install_root).expect("install package");
+        };
+
+        install_package("alpha", "alpha body");
+        install_package("zeta", "zeta body");
+
+        let report = scan_installed_package_conflicts(&install_root).expect("scan conflicts");
+        assert_eq!(report.packages, 2);
+        assert_eq!(report.conflicts.len(), 1);
+        assert_eq!(report.conflicts[0].kind, "templates");
+        assert_eq!(report.conflicts[0].path, "templates/review.txt");
+        assert_eq!(report.conflicts[0].winner, "alpha@1.0.0");
+        assert_eq!(report.conflicts[0].contender, "zeta@1.0.0");
+    }
+
+    #[test]
+    fn regression_scan_installed_package_conflicts_reports_none_when_no_collisions_exist() {
+        let temp = tempdir().expect("tempdir");
+        let install_root = temp.path().join("installed");
+        let install_package = |name: &str, path: &str| {
+            let source_root = temp.path().join(format!("source-{name}"));
+            let component_dir =
+                source_root.join(Path::new(path).parent().expect("component parent"));
+            std::fs::create_dir_all(&component_dir).expect("create component dir");
+            std::fs::write(source_root.join(path), format!("{name} body"))
+                .expect("write component source");
+            let manifest_path = source_root.join("package.json");
+            std::fs::write(
+                &manifest_path,
+                format!(
+                    r#"{{
+  "schema_version": 1,
+  "name": "{name}",
+  "version": "1.0.0",
+  "templates": [{{"id":"review","path":"{path}"}}]
+}}"#
+                ),
+            )
+            .expect("write manifest");
+            install_package_manifest(&manifest_path, &install_root).expect("install package");
+        };
+
+        install_package("alpha", "templates/review-a.txt");
+        install_package("zeta", "templates/review-z.txt");
+
+        let report = scan_installed_package_conflicts(&install_root).expect("scan conflicts");
+        assert_eq!(report.conflicts.len(), 0);
+        assert_eq!(report.invalid_entries.len(), 0);
+        let rendered = render_package_conflict_report(&report);
+        assert!(rendered.contains("conflicts: none"));
+    }
+
+    #[test]
+    fn regression_scan_installed_package_conflicts_surfaces_invalid_manifest_entries() {
+        let temp = tempdir().expect("tempdir");
+        let install_root = temp.path().join("installed");
+
+        let source_root = temp.path().join("valid-source");
+        std::fs::create_dir_all(source_root.join("templates")).expect("create templates dir");
+        std::fs::write(source_root.join("templates/review.txt"), "valid")
+            .expect("write template source");
+        let valid_manifest = source_root.join("package.json");
+        std::fs::write(
+            &valid_manifest,
+            r#"{
+  "schema_version": 1,
+  "name": "valid",
+  "version": "1.0.0",
+  "templates": [{"id":"review","path":"templates/review.txt"}]
+}"#,
+        )
+        .expect("write manifest");
+        install_package_manifest(&valid_manifest, &install_root).expect("install package");
+
+        let invalid_dir = install_root.join("broken/1.0.0");
+        std::fs::create_dir_all(&invalid_dir).expect("create invalid dir");
+        std::fs::write(
+            invalid_dir.join("package.json"),
+            r#"{
+  "schema_version": 99,
+  "name": "broken",
+  "version": "1.0.0",
+  "templates": [{"id":"review","path":"templates/review.txt"}]
+}"#,
+        )
+        .expect("write invalid manifest");
+
+        let report = scan_installed_package_conflicts(&install_root).expect("scan conflicts");
+        assert_eq!(report.packages, 1);
+        assert_eq!(report.invalid_entries.len(), 1);
+        assert_eq!(report.conflicts.len(), 0);
     }
 
     #[test]

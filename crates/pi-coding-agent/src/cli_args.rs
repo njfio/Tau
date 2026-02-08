@@ -517,6 +517,7 @@ pub(crate) struct Cli {
         conflicts_with = "package_list",
         conflicts_with = "package_remove",
         conflicts_with = "package_rollback",
+        conflicts_with = "package_conflicts",
         value_name = "path",
         help = "Validate a package manifest JSON file and exit"
     )]
@@ -531,6 +532,7 @@ pub(crate) struct Cli {
         conflicts_with = "package_list",
         conflicts_with = "package_remove",
         conflicts_with = "package_rollback",
+        conflicts_with = "package_conflicts",
         value_name = "path",
         help = "Print package manifest metadata and component inventory"
     )]
@@ -545,6 +547,7 @@ pub(crate) struct Cli {
         conflicts_with = "package_list",
         conflicts_with = "package_remove",
         conflicts_with = "package_rollback",
+        conflicts_with = "package_conflicts",
         value_name = "path",
         help = "Install a local package manifest bundle and exit"
     )]
@@ -569,6 +572,7 @@ pub(crate) struct Cli {
         conflicts_with = "package_list",
         conflicts_with = "package_remove",
         conflicts_with = "package_rollback",
+        conflicts_with = "package_conflicts",
         value_name = "path",
         help = "Update an already installed package bundle from a manifest and exit"
     )]
@@ -590,6 +594,7 @@ pub(crate) struct Cli {
         conflicts_with = "package_update",
         conflicts_with = "package_remove",
         conflicts_with = "package_rollback",
+        conflicts_with = "package_conflicts",
         default_value_t = false,
         help = "List installed package bundles from a package root and exit"
     )]
@@ -614,6 +619,7 @@ pub(crate) struct Cli {
         conflicts_with = "package_update",
         conflicts_with = "package_list",
         conflicts_with = "package_rollback",
+        conflicts_with = "package_conflicts",
         value_name = "name@version",
         help = "Remove one installed package bundle by coordinate and exit"
     )]
@@ -638,6 +644,7 @@ pub(crate) struct Cli {
         conflicts_with = "package_update",
         conflicts_with = "package_list",
         conflicts_with = "package_remove",
+        conflicts_with = "package_conflicts",
         value_name = "name@version",
         help = "Rollback one package to a target installed version and remove sibling versions"
     )]
@@ -652,6 +659,31 @@ pub(crate) struct Cli {
         help = "Source root containing installed package versions for rollback"
     )]
     pub(crate) package_rollback_root: PathBuf,
+
+    #[arg(
+        long = "package-conflicts",
+        env = "PI_PACKAGE_CONFLICTS",
+        conflicts_with = "package_validate",
+        conflicts_with = "package_show",
+        conflicts_with = "package_install",
+        conflicts_with = "package_update",
+        conflicts_with = "package_list",
+        conflicts_with = "package_remove",
+        conflicts_with = "package_rollback",
+        default_value_t = false,
+        help = "Audit installed package component path conflicts and exit"
+    )]
+    pub(crate) package_conflicts: bool,
+
+    #[arg(
+        long = "package-conflicts-root",
+        env = "PI_PACKAGE_CONFLICTS_ROOT",
+        default_value = ".pi/packages",
+        requires = "package_conflicts",
+        value_name = "path",
+        help = "Source root containing installed package bundles for conflict audit"
+    )]
+    pub(crate) package_conflicts_root: PathBuf,
 
     #[arg(
         long = "rpc-capabilities",
