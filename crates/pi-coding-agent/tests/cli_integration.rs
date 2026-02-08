@@ -4871,6 +4871,7 @@ fn rpc_capabilities_flag_outputs_versioned_json_and_exits() {
         .stdout(predicate::str::contains("\"schema_version\": 1"))
         .stdout(predicate::str::contains("\"protocol_version\": \"0.1.0\""))
         .stdout(predicate::str::contains("\"run.cancel\""))
+        .stdout(predicate::str::contains("\"run.complete\""))
         .stdout(predicate::str::contains("\"run.status\""));
 }
 
@@ -5024,6 +5025,33 @@ fn rpc_dispatch_frame_file_flag_outputs_run_status_response() {
         .stdout(predicate::str::contains("\"run_id\": \"run-123\""))
         .stdout(predicate::str::contains("\"active\": false"))
         .stdout(predicate::str::contains("\"known\": false"));
+}
+
+#[test]
+fn rpc_dispatch_frame_file_flag_outputs_run_completed_response() {
+    let temp = tempdir().expect("tempdir");
+    let frame_path = temp.path().join("frame.json");
+    fs::write(
+        &frame_path,
+        r#"{
+  "schema_version": 1,
+  "request_id": "req-complete",
+  "kind": "run.complete",
+  "payload": {"run_id":"run-123"}
+}"#,
+    )
+    .expect("write frame");
+
+    let mut cmd = binary_command();
+    cmd.args([
+        "--rpc-dispatch-frame-file",
+        frame_path.to_str().expect("utf8 path"),
+    ]);
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("\"kind\": \"run.completed\""))
+        .stdout(predicate::str::contains("\"run_id\": \"run-123\""));
 }
 
 #[test]
@@ -5215,6 +5243,25 @@ fn rpc_serve_ndjson_flag_streams_ordered_response_lines() {
         .stdout(predicate::str::contains(
             "\"request_id\":\"req-status-inactive\"",
         ))
+        .stdout(predicate::str::contains("\"active\":false"));
+}
+
+#[test]
+fn rpc_serve_ndjson_flag_supports_run_complete_lifecycle() {
+    let mut cmd = binary_command();
+    cmd.arg("--rpc-serve-ndjson").write_stdin(
+        r#"{"schema_version":1,"request_id":"req-start","kind":"run.start","payload":{"prompt":"hello"}}
+{"schema_version":1,"request_id":"req-complete","kind":"run.complete","payload":{"run_id":"run-req-start"}}
+{"schema_version":1,"request_id":"req-status","kind":"run.status","payload":{"run_id":"run-req-start"}}
+"#,
+    );
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("\"request_id\":\"req-complete\""))
+        .stdout(predicate::str::contains("\"kind\":\"run.completed\""))
+        .stdout(predicate::str::contains("\"event\":\"run.completed\""))
+        .stdout(predicate::str::contains("\"request_id\":\"req-status\""))
         .stdout(predicate::str::contains("\"active\":false"));
 }
 

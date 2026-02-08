@@ -9,6 +9,7 @@ pub(crate) const RPC_PROTOCOL_VERSION: &str = "0.1.0";
 const RPC_CAPABILITIES: &[&str] = &[
     "errors.structured",
     "run.cancel",
+    "run.complete",
     "run.start",
     "run.status",
     "run.stream.assistant_text",
@@ -67,6 +68,7 @@ mod tests {
             vec![
                 "errors.structured",
                 "run.cancel",
+                "run.complete",
                 "run.start",
                 "run.status",
                 "run.stream.assistant_text",
