@@ -3044,6 +3044,7 @@ fn extension_exec_flag_runs_process_hook_and_reports_success() {
   "runtime": "process",
   "entrypoint": "bin/hook.sh",
   "hooks": ["run-start"],
+  "permissions": ["run-commands"],
   "timeout_ms": 5000
 }"#,
     )
@@ -3098,6 +3099,7 @@ fn regression_extension_exec_flag_rejects_invalid_response() {
   "runtime": "process",
   "entrypoint": "bin/bad.sh",
   "hooks": ["run-start"],
+  "permissions": ["run-commands"],
   "timeout_ms": 5000
 }"#,
     )
@@ -3154,6 +3156,7 @@ fn extension_runtime_hooks_wrap_prompt_with_run_start_and_run_end() {
   "runtime": "process",
   "entrypoint": "hook.sh",
   "hooks": ["run-start", "run-end"],
+  "permissions": ["run-commands"],
   "timeout_ms": 5000
 }"#,
     )
@@ -3235,6 +3238,7 @@ fn regression_extension_runtime_hook_timeout_does_not_fail_prompt() {
   "runtime": "process",
   "entrypoint": "hook.sh",
   "hooks": ["run-start", "run-end"],
+  "permissions": ["run-commands"],
   "timeout_ms": 20
 }"#,
     )
@@ -3305,6 +3309,7 @@ fn extension_message_transform_hook_rewrites_prompt_before_model_request() {
   "runtime": "process",
   "entrypoint": "transform.sh",
   "hooks": ["message-transform"],
+  "permissions": ["run-commands"],
   "timeout_ms": 5000
 }"#,
     )
@@ -3376,6 +3381,7 @@ fn regression_extension_message_transform_invalid_response_falls_back_to_origina
   "runtime": "process",
   "entrypoint": "transform.sh",
   "hooks": ["message-transform"],
+  "permissions": ["run-commands"],
   "timeout_ms": 5000
 }"#,
     )
