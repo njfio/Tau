@@ -2303,12 +2303,11 @@ mod tests {
         collect_issue_events, event_action_from_body, extract_footer_event_keys,
         is_retryable_github_status, normalize_artifact_retention_days, parse_pi_issue_command,
         post_issue_comment_chunks, render_issue_comment_chunks_with_limit,
-        render_issue_comment_response_parts, retry_delay,
-        run_prompt_for_event, sanitize_for_path, session_path_for_issue, EventAction,
-        GithubApiClient, GithubBridgeEvent, GithubBridgeEventKind, GithubIssue, GithubIssueComment,
-        GithubIssuesBridgeRuntime, GithubIssuesBridgeRuntimeConfig, GithubIssuesBridgeStateStore,
-        GithubUser, PiIssueCommand, PromptRunReport, PromptUsageSummary, RepoRef,
-        EVENT_KEY_MARKER_PREFIX,
+        render_issue_comment_response_parts, retry_delay, run_prompt_for_event, sanitize_for_path,
+        session_path_for_issue, EventAction, GithubApiClient, GithubBridgeEvent,
+        GithubBridgeEventKind, GithubIssue, GithubIssueComment, GithubIssuesBridgeRuntime,
+        GithubIssuesBridgeRuntimeConfig, GithubIssuesBridgeStateStore, GithubUser, PiIssueCommand,
+        PromptRunReport, PromptUsageSummary, RepoRef, EVENT_KEY_MARKER_PREFIX,
     };
     use crate::{
         channel_store::{ChannelArtifactRecord, ChannelStore},
