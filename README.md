@@ -326,6 +326,14 @@ cargo run -p pi-coding-agent -- \
   --package-list-root .pi/packages
 ```
 
+Remove one installed package bundle from a package root:
+
+```bash
+cargo run -p pi-coding-agent -- \
+  --package-remove starter-bundle@1.0.0 \
+  --package-remove-root .pi/packages
+```
+
 Print versioned RPC protocol capabilities JSON and exit:
 
 ```bash

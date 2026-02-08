@@ -506,6 +506,7 @@ pub(crate) struct Cli {
         conflicts_with = "package_show",
         conflicts_with = "package_install",
         conflicts_with = "package_list",
+        conflicts_with = "package_remove",
         value_name = "path",
         help = "Validate a package manifest JSON file and exit"
     )]
@@ -517,6 +518,7 @@ pub(crate) struct Cli {
         conflicts_with = "package_validate",
         conflicts_with = "package_install",
         conflicts_with = "package_list",
+        conflicts_with = "package_remove",
         value_name = "path",
         help = "Print package manifest metadata and component inventory"
     )]
@@ -528,6 +530,7 @@ pub(crate) struct Cli {
         conflicts_with = "package_validate",
         conflicts_with = "package_show",
         conflicts_with = "package_list",
+        conflicts_with = "package_remove",
         value_name = "path",
         help = "Install a local package manifest bundle and exit"
     )]
@@ -546,6 +549,7 @@ pub(crate) struct Cli {
     #[arg(
         long = "package-list",
         env = "PI_PACKAGE_LIST",
+        conflicts_with = "package_remove",
         default_value_t = false,
         help = "List installed package bundles from a package root and exit"
     )]
@@ -560,6 +564,28 @@ pub(crate) struct Cli {
         help = "Source root to scan for installed package bundles"
     )]
     pub(crate) package_list_root: PathBuf,
+
+    #[arg(
+        long = "package-remove",
+        env = "PI_PACKAGE_REMOVE",
+        conflicts_with = "package_validate",
+        conflicts_with = "package_show",
+        conflicts_with = "package_install",
+        conflicts_with = "package_list",
+        value_name = "name@version",
+        help = "Remove one installed package bundle by coordinate and exit"
+    )]
+    pub(crate) package_remove: Option<String>,
+
+    #[arg(
+        long = "package-remove-root",
+        env = "PI_PACKAGE_REMOVE_ROOT",
+        default_value = ".pi/packages",
+        requires = "package_remove",
+        value_name = "path",
+        help = "Source root containing installed package bundles for removal"
+    )]
+    pub(crate) package_remove_root: PathBuf,
 
     #[arg(
         long = "rpc-capabilities",
