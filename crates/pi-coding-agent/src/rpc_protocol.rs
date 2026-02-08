@@ -9,6 +9,14 @@ use crate::Cli;
 
 pub(crate) const RPC_FRAME_SCHEMA_VERSION: u32 = 1;
 const RPC_STUB_MODE: &str = "preflight";
+const RPC_ERROR_KIND: &str = "error";
+const RPC_ERROR_CODE_INVALID_JSON: &str = "invalid_json";
+const RPC_ERROR_CODE_UNSUPPORTED_SCHEMA: &str = "unsupported_schema";
+const RPC_ERROR_CODE_UNSUPPORTED_KIND: &str = "unsupported_kind";
+const RPC_ERROR_CODE_INVALID_REQUEST_ID: &str = "invalid_request_id";
+const RPC_ERROR_CODE_INVALID_PAYLOAD: &str = "invalid_payload";
+const RPC_ERROR_CODE_IO_ERROR: &str = "io_error";
+const RPC_ERROR_CODE_INTERNAL_ERROR: &str = "internal_error";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum RpcFrameKind {
@@ -145,9 +153,32 @@ pub(crate) fn dispatch_rpc_frame(frame: &RpcFrame) -> Result<RpcResponseFrame> {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn dispatch_rpc_frame_file(path: &Path) -> Result<RpcResponseFrame> {
     let frame = validate_rpc_frame_file(path)?;
     dispatch_rpc_frame(&frame)
+}
+
+pub(crate) fn dispatch_rpc_raw_with_error_envelope(raw: &str) -> RpcResponseFrame {
+    match parse_rpc_frame(raw) {
+        Ok(frame) => match dispatch_rpc_frame(&frame) {
+            Ok(response) => response,
+            Err(error) => build_error_response_frame(
+                &frame.request_id,
+                classify_rpc_error_message(&error.to_string()),
+                &error.to_string(),
+            ),
+        },
+        Err(error) => {
+            let request_id =
+                best_effort_request_id_from_raw(raw).unwrap_or_else(|| "unknown".to_string());
+            build_error_response_frame(
+                &request_id,
+                classify_rpc_error_message(&error.to_string()),
+                &error.to_string(),
+            )
+        }
+    }
 }
 
 pub(crate) fn execute_rpc_validate_frame_command(cli: &Cli) -> Result<()> {
@@ -169,10 +200,41 @@ pub(crate) fn execute_rpc_dispatch_frame_command(cli: &Cli) -> Result<()> {
     let Some(path) = cli.rpc_dispatch_frame_file.as_ref() else {
         return Ok(());
     };
-    let response = dispatch_rpc_frame_file(path)?;
+    let raw = match std::fs::read_to_string(path) {
+        Ok(raw) => raw,
+        Err(error) => {
+            let response = build_error_response_frame(
+                "unknown",
+                RPC_ERROR_CODE_IO_ERROR,
+                &format!(
+                    "failed to read rpc frame file {}: {}",
+                    path.display(),
+                    error
+                ),
+            );
+            let payload = serde_json::to_string_pretty(&response)
+                .context("failed to serialize rpc response frame")?;
+            println!("{payload}");
+            bail!(
+                "{}",
+                response.payload["message"]
+                    .as_str()
+                    .unwrap_or("failed to read rpc frame file")
+            );
+        }
+    };
+    let response = dispatch_rpc_raw_with_error_envelope(&raw);
     let payload = serde_json::to_string_pretty(&response)
         .context("failed to serialize rpc response frame")?;
     println!("{payload}");
+    if response.kind == RPC_ERROR_KIND {
+        bail!(
+            "{}",
+            response.payload["message"]
+                .as_str()
+                .unwrap_or("rpc dispatch failed")
+        );
+    }
     Ok(())
 }
 
@@ -205,13 +267,56 @@ fn require_non_empty_payload_string(
     Ok(value.to_string())
 }
 
+fn build_error_response_frame(request_id: &str, code: &str, message: &str) -> RpcResponseFrame {
+    build_response_frame(
+        request_id,
+        RPC_ERROR_KIND,
+        json!({
+            "code": code,
+            "message": message,
+        }),
+    )
+}
+
+fn classify_rpc_error_message(message: &str) -> &'static str {
+    if message.contains("failed to parse rpc frame JSON") {
+        RPC_ERROR_CODE_INVALID_JSON
+    } else if message.contains("unsupported rpc frame schema") {
+        RPC_ERROR_CODE_UNSUPPORTED_SCHEMA
+    } else if message.contains("unsupported rpc frame kind") {
+        RPC_ERROR_CODE_UNSUPPORTED_KIND
+    } else if message.contains("rpc frame request_id must be non-empty") {
+        RPC_ERROR_CODE_INVALID_REQUEST_ID
+    } else if message.contains("rpc frame payload must be a JSON object")
+        || message.contains("requires non-empty payload field")
+    {
+        RPC_ERROR_CODE_INVALID_PAYLOAD
+    } else {
+        RPC_ERROR_CODE_INTERNAL_ERROR
+    }
+}
+
+fn best_effort_request_id_from_raw(raw: &str) -> Option<String> {
+    let value = serde_json::from_str::<Value>(raw).ok()?;
+    let request_id = value
+        .as_object()
+        .and_then(|object| object.get("request_id"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())?;
+    Some(request_id.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use tempfile::tempdir;
 
     use super::{
-        dispatch_rpc_frame, dispatch_rpc_frame_file, parse_rpc_frame, validate_rpc_frame_file,
-        RpcFrameKind,
+        classify_rpc_error_message, dispatch_rpc_frame, dispatch_rpc_frame_file,
+        dispatch_rpc_raw_with_error_envelope, parse_rpc_frame, validate_rpc_frame_file,
+        RpcFrameKind, RPC_ERROR_CODE_INVALID_JSON, RPC_ERROR_CODE_INVALID_PAYLOAD,
+        RPC_ERROR_CODE_INVALID_REQUEST_ID, RPC_ERROR_CODE_UNSUPPORTED_KIND,
+        RPC_ERROR_CODE_UNSUPPORTED_SCHEMA,
     };
 
     #[test]
@@ -386,5 +491,62 @@ mod tests {
         assert!(cancel_error
             .to_string()
             .contains("requires non-empty payload field 'run_id'"));
+    }
+
+    #[test]
+    fn unit_classify_rpc_error_message_maps_known_validation_classes() {
+        assert_eq!(
+            classify_rpc_error_message("failed to parse rpc frame JSON: expected value"),
+            RPC_ERROR_CODE_INVALID_JSON
+        );
+        assert_eq!(
+            classify_rpc_error_message("unsupported rpc frame schema: expected 1, found 2"),
+            RPC_ERROR_CODE_UNSUPPORTED_SCHEMA
+        );
+        assert_eq!(
+            classify_rpc_error_message(
+                "unsupported rpc frame kind 'x'; supported kinds are capabilities.request, run.start, run.cancel"
+            ),
+            RPC_ERROR_CODE_UNSUPPORTED_KIND
+        );
+        assert_eq!(
+            classify_rpc_error_message("rpc frame request_id must be non-empty"),
+            RPC_ERROR_CODE_INVALID_REQUEST_ID
+        );
+        assert_eq!(
+            classify_rpc_error_message(
+                "rpc frame kind 'run.start' requires non-empty payload field 'prompt'"
+            ),
+            RPC_ERROR_CODE_INVALID_PAYLOAD
+        );
+    }
+
+    #[test]
+    fn functional_dispatch_rpc_raw_with_error_envelope_returns_structured_error() {
+        let response = dispatch_rpc_raw_with_error_envelope(
+            r#"{
+  "schema_version": 1,
+  "request_id": "req-start",
+  "kind": "run.start",
+  "payload": {}
+}"#,
+        );
+        assert_eq!(response.request_id, "req-start");
+        assert_eq!(response.kind, "error");
+        assert_eq!(
+            response.payload["code"].as_str(),
+            Some(RPC_ERROR_CODE_INVALID_PAYLOAD)
+        );
+    }
+
+    #[test]
+    fn regression_dispatch_rpc_raw_with_error_envelope_handles_invalid_json() {
+        let response = dispatch_rpc_raw_with_error_envelope("{");
+        assert_eq!(response.request_id, "unknown");
+        assert_eq!(response.kind, "error");
+        assert_eq!(
+            response.payload["code"].as_str(),
+            Some(RPC_ERROR_CODE_INVALID_JSON)
+        );
     }
 }

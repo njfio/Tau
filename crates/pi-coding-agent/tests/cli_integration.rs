@@ -2955,9 +2955,41 @@ fn regression_rpc_dispatch_frame_file_flag_rejects_missing_prompt() {
         frame_path.to_str().expect("utf8 path"),
     ]);
 
-    cmd.assert().failure().stderr(predicate::str::contains(
-        "requires non-empty payload field 'prompt'",
-    ));
+    cmd.assert()
+        .failure()
+        .stdout(predicate::str::contains("\"kind\": \"error\""))
+        .stdout(predicate::str::contains("\"code\": \"invalid_payload\""))
+        .stderr(predicate::str::contains(
+            "requires non-empty payload field 'prompt'",
+        ));
+}
+
+#[test]
+fn regression_rpc_dispatch_frame_file_maps_unsupported_kind_to_error_code() {
+    let temp = tempdir().expect("tempdir");
+    let frame_path = temp.path().join("frame.json");
+    fs::write(
+        &frame_path,
+        r#"{
+  "schema_version": 1,
+  "request_id": "req-unknown",
+  "kind": "run.unknown",
+  "payload": {}
+}"#,
+    )
+    .expect("write frame");
+
+    let mut cmd = binary_command();
+    cmd.args([
+        "--rpc-dispatch-frame-file",
+        frame_path.to_str().expect("utf8 path"),
+    ]);
+
+    cmd.assert()
+        .failure()
+        .stdout(predicate::str::contains("\"kind\": \"error\""))
+        .stdout(predicate::str::contains("\"code\": \"unsupported_kind\""))
+        .stderr(predicate::str::contains("unsupported rpc frame kind"));
 }
 
 #[test]

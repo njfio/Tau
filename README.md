@@ -324,6 +324,8 @@ cargo run -p pi-coding-agent -- \
   --rpc-dispatch-frame-file /tmp/rpc-frame.json
 ```
 
+For invalid request frames, dispatch still prints a structured JSON error envelope (`kind: "error"` with `payload.code` and `payload.message`) and exits non-zero.
+
 Run the autonomous events scheduler (immediate, one-shot, periodic):
 
 ```bash
