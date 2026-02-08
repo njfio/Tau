@@ -540,7 +540,7 @@ enum PiIssueCommand {
     Stop,
     Status,
     Compact,
-    Artifacts,
+    Artifacts { purge: bool },
     Summarize { focus: Option<String> },
     Invalid { message: String },
 }
@@ -1053,8 +1053,12 @@ impl GithubIssuesBridgeRuntime {
                     "posted_comment_url": posted.html_url,
                 }))?;
             }
-            PiIssueCommand::Artifacts => {
-                let artifact_report = self.render_issue_artifacts(event.issue_number)?;
+            PiIssueCommand::Artifacts { purge } => {
+                let artifact_report = if purge {
+                    self.render_issue_artifact_purge(event.issue_number)?
+                } else {
+                    self.render_issue_artifacts(event.issue_number)?
+                };
                 let posted = self
                     .github_client
                     .create_issue_comment(event.issue_number, &artifact_report)
@@ -1064,7 +1068,7 @@ impl GithubIssuesBridgeRuntime {
                     "repo": self.repo.as_slug(),
                     "event_key": event.key,
                     "issue_number": event.issue_number,
-                    "command": "artifacts",
+                    "command": if purge { "artifacts-purge" } else { "artifacts" },
                     "status": "reported",
                     "posted_comment_id": posted.id,
                     "posted_comment_url": posted.html_url,
@@ -1236,6 +1240,24 @@ impl GithubIssuesBridgeRuntime {
             ));
         }
         Ok(lines.join("\n"))
+    }
+
+    fn render_issue_artifact_purge(&self, issue_number: u64) -> Result<String> {
+        let now_unix_ms = current_unix_timestamp_ms();
+        let store = ChannelStore::open(
+            &self.repository_state_dir.join("channel-store"),
+            "github",
+            &format!("issue-{issue_number}"),
+        )?;
+        let purge = store.purge_expired_artifacts(now_unix_ms)?;
+        let active = store.list_active_artifacts(now_unix_ms)?;
+        Ok(format!(
+            "rsBot artifact purge for issue #{}: expired_removed={} invalid_removed={} active_remaining={}",
+            issue_number,
+            purge.expired_removed,
+            purge.invalid_removed,
+            active.len()
+        ))
     }
 
     fn append_channel_log(
@@ -1653,10 +1675,12 @@ fn parse_pi_issue_command(body: &str) -> Option<PiIssueCommand> {
         }
         "artifacts" => {
             if remainder.is_empty() {
-                PiIssueCommand::Artifacts
+                PiIssueCommand::Artifacts { purge: false }
+            } else if remainder == "purge" {
+                PiIssueCommand::Artifacts { purge: true }
             } else {
                 PiIssueCommand::Invalid {
-                    message: "Usage: /pi artifacts".to_string(),
+                    message: "Usage: /pi artifacts [purge]".to_string(),
                 }
             }
         }
@@ -1678,7 +1702,7 @@ fn pi_command_usage() -> String {
         "- `/pi stop`",
         "- `/pi status`",
         "- `/pi compact`",
-        "- `/pi artifacts`",
+        "- `/pi artifacts [purge]`",
         "- `/pi summarize [focus]`",
     ]
     .join("\n")
@@ -2080,7 +2104,11 @@ mod tests {
         );
         assert_eq!(
             parse_pi_issue_command("/pi artifacts"),
-            Some(PiIssueCommand::Artifacts)
+            Some(PiIssueCommand::Artifacts { purge: false })
+        );
+        assert_eq!(
+            parse_pi_issue_command("/pi artifacts purge"),
+            Some(PiIssueCommand::Artifacts { purge: true })
         );
         assert_eq!(parse_pi_issue_command("plain message"), None);
     }
@@ -2425,6 +2453,139 @@ mod tests {
         assert_eq!(report.processed_events, 1);
         assert_eq!(report.failed_events, 0);
         artifacts_post.assert_calls(1);
+    }
+
+    #[tokio::test]
+    async fn integration_bridge_artifacts_purge_command_removes_expired_entries() {
+        let server = MockServer::start();
+        let _issues = server.mock(|when, then| {
+            when.method(GET).path("/repos/owner/repo/issues");
+            then.status(200).json_body(json!([{
+                "id": 16,
+                "number": 13,
+                "title": "Artifact purge",
+                "body": "",
+                "created_at": "2026-01-01T00:00:00Z",
+                "updated_at": "2026-01-01T00:00:05Z",
+                "user": {"login":"alice"}
+            }]));
+        });
+        let _comments = server.mock(|when, then| {
+            when.method(GET)
+                .path("/repos/owner/repo/issues/13/comments");
+            then.status(200).json_body(json!([
+                {
+                    "id": 701,
+                    "body": "/pi artifacts purge",
+                    "created_at": "2026-01-01T00:00:01Z",
+                    "updated_at": "2026-01-01T00:00:01Z",
+                    "user": {"login":"alice"}
+                }
+            ]));
+        });
+        let purge_post = server.mock(|when, then| {
+            when.method(POST)
+                .path("/repos/owner/repo/issues/13/comments")
+                .body_includes("rsBot artifact purge for issue #13")
+                .body_includes("expired_removed=1")
+                .body_includes("active_remaining=1");
+            then.status(201).json_body(json!({
+                "id": 953,
+                "html_url": "https://example.test/comment/953"
+            }));
+        });
+
+        let temp = tempdir().expect("tempdir");
+        let seeded_store = ChannelStore::open(
+            &temp.path().join("owner__repo").join("channel-store"),
+            "github",
+            "issue-13",
+        )
+        .expect("seeded store");
+        let expired = seeded_store
+            .write_text_artifact(
+                "run-expired",
+                "github-issue-reply",
+                "private",
+                Some(0),
+                "md",
+                "expired artifact",
+            )
+            .expect("write expired artifact");
+        seeded_store
+            .write_text_artifact(
+                "run-active",
+                "github-issue-reply",
+                "private",
+                Some(30),
+                "md",
+                "active artifact",
+            )
+            .expect("write active artifact");
+
+        let config = test_bridge_config(&server.base_url(), temp.path());
+        let mut runtime = GithubIssuesBridgeRuntime::new(config)
+            .await
+            .expect("runtime");
+        let report = runtime.poll_once().await.expect("poll");
+        assert_eq!(report.processed_events, 1);
+        assert_eq!(report.failed_events, 0);
+        purge_post.assert_calls(1);
+        assert!(!seeded_store
+            .channel_dir()
+            .join(expired.relative_path)
+            .exists());
+    }
+
+    #[tokio::test]
+    async fn regression_bridge_artifacts_purge_command_noop_when_nothing_expired() {
+        let server = MockServer::start();
+        let _issues = server.mock(|when, then| {
+            when.method(GET).path("/repos/owner/repo/issues");
+            then.status(200).json_body(json!([{
+                "id": 17,
+                "number": 14,
+                "title": "Artifact purge no-op",
+                "body": "",
+                "created_at": "2026-01-01T00:00:00Z",
+                "updated_at": "2026-01-01T00:00:05Z",
+                "user": {"login":"alice"}
+            }]));
+        });
+        let _comments = server.mock(|when, then| {
+            when.method(GET)
+                .path("/repos/owner/repo/issues/14/comments");
+            then.status(200).json_body(json!([
+                {
+                    "id": 801,
+                    "body": "/pi artifacts purge",
+                    "created_at": "2026-01-01T00:00:01Z",
+                    "updated_at": "2026-01-01T00:00:01Z",
+                    "user": {"login":"alice"}
+                }
+            ]));
+        });
+        let purge_post = server.mock(|when, then| {
+            when.method(POST)
+                .path("/repos/owner/repo/issues/14/comments")
+                .body_includes("rsBot artifact purge for issue #14")
+                .body_includes("expired_removed=0")
+                .body_includes("active_remaining=0");
+            then.status(201).json_body(json!({
+                "id": 954,
+                "html_url": "https://example.test/comment/954"
+            }));
+        });
+
+        let temp = tempdir().expect("tempdir");
+        let config = test_bridge_config(&server.base_url(), temp.path());
+        let mut runtime = GithubIssuesBridgeRuntime::new(config)
+            .await
+            .expect("runtime");
+        let report = runtime.poll_once().await.expect("poll");
+        assert_eq!(report.processed_events, 1);
+        assert_eq!(report.failed_events, 0);
+        purge_post.assert_calls(1);
     }
 
     #[tokio::test]
