@@ -35,8 +35,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p ci-artifacts
-          cargo test -p pi-coding-agent property_ -- --nocapture | tee ci-artifacts/property-tests.log
-          cargo test -p pi-coding-agent stress_parallel_appends_high_volume_remain_consistent -- --nocapture | tee ci-artifacts/stress-tests.log
+          cargo test -p tau-coding-agent property_ -- --nocapture | tee ci-artifacts/property-tests.log
+          cargo test -p tau-coding-agent stress_parallel_appends_high_volume_remain_consistent -- --nocapture | tee ci-artifacts/stress-tests.log
 
       - name: Upload nightly quality logs
         uses: actions/upload-artifact@v4
@@ -46,8 +46,8 @@ jobs:
             ci-artifacts/property-tests.log
             ci-artifacts/stress-tests.log
 
-  benchmark-pi-tui:
-    name: Nightly benchmark capture (pi-tui)
+  benchmark-tau-tui:
+    name: Nightly benchmark capture (tau-tui)
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
@@ -60,16 +60,16 @@ jobs:
       - name: Cache Cargo
         uses: Swatinem/rust-cache@v2
 
-      - name: Run pi-tui benchmarks
+      - name: Run tau-tui benchmarks
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p ci-artifacts
-          cargo bench -p pi-tui --bench render_bench -- --noplot | tee ci-artifacts/pi-tui-bench.log
+          cargo bench -p tau-tui --bench render_bench -- --noplot | tee ci-artifacts/tau-tui-bench.log
           cat > ci-artifacts/benchmark-metadata.json <<JSON
           {
             "workflow": "nightly-quality",
-            "suite": "pi-tui/render_bench",
+            "suite": "tau-tui/render_bench",
             "sha": "${GITHUB_SHA}",
             "run_id": "${GITHUB_RUN_ID}",
             "run_number": "${GITHUB_RUN_NUMBER}"
@@ -79,9 +79,9 @@ jobs:
       - name: Upload benchmark artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: nightly-pi-tui-benchmarks
+          name: nightly-tau-tui-benchmarks
           if-no-files-found: warn
           path: |
-            ci-artifacts/pi-tui-bench.log
+            ci-artifacts/tau-tui-bench.log
             ci-artifacts/benchmark-metadata.json
             target/criterion

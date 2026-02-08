@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "name": "github_issue_comment_duplicate_out_of_order",
+  "transport": "github_issues",
+  "description": "Replay fixture covering duplicate and out-of-order issue comment deliveries.",
+  "events": [
+    {
+      "sequence": 10,
+      "event_key": "gh-event-1",
+      "channel": "owner/repo#101",
+      "kind": "issue_comment",
+      "payload": {
+        "comment_id": "c-1",
+        "body": "@tau status"
+      }
+    },
+    {
+      "sequence": 20,
+      "event_key": "gh-event-2",
+      "channel": "owner/repo#101",
+      "kind": "issue_comment",
+      "payload": {
+        "comment_id": "c-2",
+        "body": "@tau run checks"
+      },
+      "faults": [
+        "duplicate"
+      ]
+    },
+    {
+      "sequence": 30,
+      "event_key": "gh-event-3",
+      "channel": "owner/repo#101",
+      "kind": "issue_comment",
+      "payload": {
+        "comment_id": "c-3",
+        "body": "@tau summarize"
+      },
+      "faults": [
+        "out_of_order"
+      ]
+    }
+  ]
+}

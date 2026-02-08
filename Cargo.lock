@@ -1593,76 +1593,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pi-agent-core"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "jsonschema",
- "pi-ai",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
-]
-
-[[package]]
-name = "pi-ai"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "futures-util",
- "httpmock",
- "reqwest 0.12.28",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
-]
-
-[[package]]
-name = "pi-coding-agent"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "assert_cmd",
- "async-trait",
- "base64",
- "chrono",
- "chrono-tz",
- "clap",
- "cron",
- "ed25519-dalek",
- "futures-util",
- "hmac",
- "httpmock",
- "pi-agent-core",
- "pi-ai",
- "predicates",
- "proptest",
- "reqwest 0.12.28",
- "serde",
- "serde_json",
- "sha2",
- "shell-words",
- "tempfile",
- "tokio",
- "tokio-tungstenite",
- "tracing",
- "tracing-subscriber",
- "wait-timeout",
-]
-
-[[package]]
-name = "pi-tui"
-version = "0.1.0"
-dependencies = [
- "criterion",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.18",
-]
-
-[[package]]
 name = "pin-project-lite"
 version = "0.2.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2531,6 +2461,76 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fce91f2f0ec87dff7e6bcbbeb267439aa1188703003c6055193c821487400432"
 dependencies = [
  "unicode-width",
+]
+
+[[package]]
+name = "tau-agent-core"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "jsonschema",
+ "serde_json",
+ "tau-ai",
+ "thiserror 2.0.18",
+ "tokio",
+]
+
+[[package]]
+name = "tau-ai"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "futures-util",
+ "httpmock",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+]
+
+[[package]]
+name = "tau-coding-agent"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "assert_cmd",
+ "async-trait",
+ "base64",
+ "chrono",
+ "chrono-tz",
+ "clap",
+ "cron",
+ "ed25519-dalek",
+ "futures-util",
+ "hmac",
+ "httpmock",
+ "predicates",
+ "proptest",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "sha2",
+ "shell-words",
+ "tau-agent-core",
+ "tau-ai",
+ "tempfile",
+ "tokio",
+ "tokio-tungstenite",
+ "tracing",
+ "tracing-subscriber",
+ "wait-timeout",
+]
+
+[[package]]
+name = "tau-tui"
+version = "0.1.0"
+dependencies = [
+ "criterion",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
