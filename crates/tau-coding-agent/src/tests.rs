@@ -145,6 +145,19 @@ fn write_mock_codex_script(dir: &Path, body: &str) -> PathBuf {
     script
 }
 
+#[cfg(unix)]
+fn write_mock_gemini_script(dir: &Path, body: &str) -> PathBuf {
+    let script = dir.join("mock-gemini.sh");
+    let content = format!("#!/bin/sh\nset -eu\n{body}\n");
+    std::fs::write(&script, content).expect("write mock gemini script");
+    let mut perms = std::fs::metadata(&script)
+        .expect("mock gemini metadata")
+        .permissions();
+    perms.set_mode(0o755);
+    std::fs::set_permissions(&script, perms).expect("chmod mock gemini script");
+    script
+}
+
 struct NoopClient;
 
 #[async_trait]
@@ -260,6 +273,10 @@ fn test_cli() -> Cli {
         openai_codex_timeout_ms: 120_000,
         anthropic_auth_mode: CliProviderAuthMode::ApiKey,
         google_auth_mode: CliProviderAuthMode::ApiKey,
+        google_gemini_backend: true,
+        google_gemini_cli: "gemini".to_string(),
+        google_gemini_args: vec![],
+        google_gemini_timeout_ms: 120_000,
         credential_store: PathBuf::from(".tau/credentials.json"),
         credential_store_key: None,
         credential_store_encryption: CliCredentialStoreEncryptionMode::Auto,
@@ -472,6 +489,9 @@ fn skills_command_config(
                 present: true,
                 auth_mode: ProviderAuthMethod::ApiKey,
                 mode_supported: true,
+                login_backend_enabled: false,
+                login_backend_executable: None,
+                login_backend_available: false,
             }],
             session_enabled: true,
             session_path: PathBuf::from(".tau/sessions/default.jsonl"),
@@ -487,7 +507,11 @@ fn test_profile_defaults() -> ProfileDefaults {
 }
 
 fn test_auth_command_config() -> AuthCommandConfig {
-    build_auth_command_config(&test_cli())
+    let mut config = build_auth_command_config(&test_cli());
+    if let Ok(current_exe) = std::env::current_exe() {
+        config.google_gemini_cli = current_exe.display().to_string();
+    }
+    config
 }
 
 fn test_command_context<'a>(
@@ -860,6 +884,40 @@ fn functional_cli_openai_codex_backend_flags_accept_overrides() {
         ]
     );
     assert_eq!(cli.openai_codex_timeout_ms, 9000);
+}
+
+#[test]
+fn unit_cli_google_gemini_backend_flags_default_to_enabled() {
+    let cli = Cli::parse_from(["tau-rs"]);
+    assert!(cli.google_gemini_backend);
+    assert_eq!(cli.google_gemini_cli, "gemini");
+    assert!(cli.google_gemini_args.is_empty());
+    assert_eq!(cli.google_gemini_timeout_ms, 120_000);
+}
+
+#[test]
+fn functional_cli_google_gemini_backend_flags_accept_overrides() {
+    let cli = Cli::parse_from([
+        "tau-rs",
+        "--google-gemini-backend=false",
+        "--google-gemini-cli",
+        "/tmp/mock-gemini",
+        "--google-gemini-args=--sandbox,readonly,--profile,test",
+        "--google-gemini-timeout-ms",
+        "7000",
+    ]);
+    assert!(!cli.google_gemini_backend);
+    assert_eq!(cli.google_gemini_cli, "/tmp/mock-gemini");
+    assert_eq!(
+        cli.google_gemini_args,
+        vec![
+            "--sandbox".to_string(),
+            "readonly".to_string(),
+            "--profile".to_string(),
+            "test".to_string()
+        ]
+    );
+    assert_eq!(cli.google_gemini_timeout_ms, 7000);
 }
 
 #[test]
@@ -1607,8 +1665,8 @@ fn unit_auth_conformance_provider_capability_matrix_matches_expected_support() {
         (
             Provider::Google,
             ProviderAuthMethod::OauthToken,
-            false,
-            "not_implemented",
+            true,
+            "supported",
         ),
         (
             Provider::Google,
@@ -1616,12 +1674,7 @@ fn unit_auth_conformance_provider_capability_matrix_matches_expected_support() {
             false,
             "unsupported",
         ),
-        (
-            Provider::Google,
-            ProviderAuthMethod::Adc,
-            false,
-            "not_implemented",
-        ),
+        (Provider::Google, ProviderAuthMethod::Adc, true, "supported"),
     ];
 
     for (provider, mode, expected_supported, expected_reason) in cases {
@@ -2028,10 +2081,10 @@ fn functional_execute_auth_command_matrix_reports_provider_mode_inventory() {
     assert_eq!(payload["modes"], 4);
     assert_eq!(payload["rows_total"], 12);
     assert_eq!(payload["rows"], 12);
-    assert_eq!(payload["mode_supported"], 5);
-    assert_eq!(payload["mode_unsupported"], 7);
-    assert_eq!(payload["mode_supported_total"], 5);
-    assert_eq!(payload["mode_unsupported_total"], 7);
+    assert_eq!(payload["mode_supported"], 7);
+    assert_eq!(payload["mode_unsupported"], 5);
+    assert_eq!(payload["mode_supported_total"], 7);
+    assert_eq!(payload["mode_unsupported_total"], 5);
     assert_eq!(payload["mode_counts_total"]["api_key"], 3);
     assert_eq!(payload["mode_counts_total"]["oauth_token"], 3);
     assert_eq!(payload["mode_counts_total"]["adc"], 3);
@@ -2046,24 +2099,26 @@ fn functional_execute_auth_command_matrix_reports_provider_mode_inventory() {
     assert_eq!(payload["provider_counts"]["openai"], 4);
     assert_eq!(payload["provider_counts"]["anthropic"], 4);
     assert_eq!(payload["provider_counts"]["google"], 4);
-    assert_eq!(payload["available"], 4);
-    assert_eq!(payload["unavailable"], 8);
-    assert_eq!(payload["availability_counts_total"]["available"], 4);
-    assert_eq!(payload["availability_counts_total"]["unavailable"], 8);
-    assert_eq!(payload["availability_counts"]["available"], 4);
-    assert_eq!(payload["availability_counts"]["unavailable"], 8);
-    assert_eq!(payload["state_counts_total"]["ready"], 4);
+    assert_eq!(payload["available"], 6);
+    assert_eq!(payload["unavailable"], 6);
+    assert_eq!(payload["availability_counts_total"]["available"], 6);
+    assert_eq!(payload["availability_counts_total"]["unavailable"], 6);
+    assert_eq!(payload["availability_counts"]["available"], 6);
+    assert_eq!(payload["availability_counts"]["unavailable"], 6);
+    assert_eq!(payload["state_counts_total"]["ready"], 6);
     assert_eq!(payload["state_counts_total"]["mode_mismatch"], 1);
-    assert_eq!(payload["state_counts_total"]["unsupported_mode"], 7);
-    assert_eq!(payload["state_counts"]["ready"], 4);
+    assert_eq!(payload["state_counts_total"]["unsupported_mode"], 5);
+    assert_eq!(payload["state_counts"]["ready"], 6);
     assert_eq!(payload["state_counts"]["mode_mismatch"], 1);
-    assert_eq!(payload["state_counts"]["unsupported_mode"], 7);
+    assert_eq!(payload["state_counts"]["unsupported_mode"], 5);
     assert_eq!(payload["source_kind_counts_total"]["flag"], 3);
     assert_eq!(payload["source_kind_counts_total"]["credential_store"], 2);
-    assert_eq!(payload["source_kind_counts_total"]["none"], 7);
+    assert_eq!(payload["source_kind_counts_total"]["env"], 2);
+    assert_eq!(payload["source_kind_counts_total"]["none"], 5);
     assert_eq!(payload["source_kind_counts"]["flag"], 3);
     assert_eq!(payload["source_kind_counts"]["credential_store"], 2);
-    assert_eq!(payload["source_kind_counts"]["none"], 7);
+    assert_eq!(payload["source_kind_counts"]["env"], 2);
+    assert_eq!(payload["source_kind_counts"]["none"], 5);
     assert_eq!(payload["revoked_counts_total"]["not_revoked"], 12);
     assert_eq!(payload["revoked_counts"]["not_revoked"], 12);
 
@@ -2092,26 +2147,32 @@ fn functional_execute_auth_command_matrix_reports_provider_mode_inventory() {
     assert_eq!(anthropic_oauth["available"], false);
     assert_eq!(anthropic_oauth["state"], "unsupported_mode");
 
+    let google_oauth = row_for("google", "oauth_token");
+    assert_eq!(google_oauth["mode_supported"], true);
+    assert_eq!(google_oauth["available"], true);
+    assert_eq!(google_oauth["state"], "ready");
+    assert_eq!(google_oauth["source"], "gemini_cli");
+
     let text_output = execute_auth_command(&config, "matrix");
     assert!(text_output.contains("auth matrix: providers=3 modes=4 rows=12"));
-    assert!(text_output.contains("mode_supported_total=5"));
-    assert!(text_output.contains("mode_unsupported_total=7"));
+    assert!(text_output.contains("mode_supported_total=7"));
+    assert!(text_output.contains("mode_unsupported_total=5"));
     assert!(text_output.contains("mode_counts=adc:3,api_key:3,oauth_token:3,session_token:3"));
     assert!(text_output.contains("mode_counts_total=adc:3,api_key:3,oauth_token:3,session_token:3"));
     assert!(text_output.contains("provider_counts=anthropic:4,google:4,openai:4"));
     assert!(text_output.contains("provider_counts_total=anthropic:4,google:4,openai:4"));
-    assert!(text_output.contains("availability_counts=available:4,unavailable:8"));
-    assert!(text_output.contains("availability_counts_total=available:4,unavailable:8"));
+    assert!(text_output.contains("availability_counts=available:6,unavailable:6"));
+    assert!(text_output.contains("availability_counts_total=available:6,unavailable:6"));
     assert!(text_output.contains("provider_filter=all"));
     assert!(text_output.contains("mode_filter=all"));
     assert!(text_output.contains("source_kind_filter=all"));
     assert!(text_output.contains("revoked_filter=all"));
-    assert!(text_output.contains("source_kind_counts=credential_store:2,flag:3,none:7"));
-    assert!(text_output.contains("source_kind_counts_total=credential_store:2,flag:3,none:7"));
+    assert!(text_output.contains("source_kind_counts=credential_store:2,env:2,flag:3,none:5"));
+    assert!(text_output.contains("source_kind_counts_total=credential_store:2,env:2,flag:3,none:5"));
     assert!(text_output.contains("revoked_counts=not_revoked:12"));
     assert!(text_output.contains("revoked_counts_total=not_revoked:12"));
-    assert!(text_output.contains("state_counts=mode_mismatch:1,ready:4,unsupported_mode:7"));
-    assert!(text_output.contains("state_counts_total=mode_mismatch:1,ready:4,unsupported_mode:7"));
+    assert!(text_output.contains("state_counts=mode_mismatch:1,ready:6,unsupported_mode:5"));
+    assert!(text_output.contains("state_counts_total=mode_mismatch:1,ready:6,unsupported_mode:5"));
     assert!(text_output.contains("auth matrix row: provider=openai mode=oauth_token"));
     assert!(!text_output.contains("oauth-access-secret"));
 }
@@ -2212,56 +2273,59 @@ fn functional_execute_auth_command_matrix_supports_availability_filter() {
     assert_eq!(available_payload["revoked_filter"], "all");
     assert_eq!(available_payload["availability_filter"], "available");
     assert_eq!(available_payload["rows_total"], 12);
-    assert_eq!(available_payload["rows"], 4);
-    assert_eq!(available_payload["mode_supported_total"], 5);
-    assert_eq!(available_payload["mode_unsupported_total"], 7);
+    assert_eq!(available_payload["rows"], 6);
+    assert_eq!(available_payload["mode_supported_total"], 7);
+    assert_eq!(available_payload["mode_unsupported_total"], 5);
     assert_eq!(available_payload["mode_counts_total"]["api_key"], 3);
     assert_eq!(available_payload["mode_counts_total"]["oauth_token"], 3);
     assert_eq!(available_payload["mode_counts_total"]["adc"], 3);
     assert_eq!(available_payload["mode_counts_total"]["session_token"], 3);
     assert_eq!(available_payload["mode_counts"]["api_key"], 3);
-    assert_eq!(available_payload["mode_counts"]["oauth_token"], 1);
+    assert_eq!(available_payload["mode_counts"]["oauth_token"], 2);
+    assert_eq!(available_payload["mode_counts"]["adc"], 1);
     assert_eq!(available_payload["provider_counts_total"]["openai"], 4);
     assert_eq!(available_payload["provider_counts_total"]["anthropic"], 4);
     assert_eq!(available_payload["provider_counts_total"]["google"], 4);
     assert_eq!(available_payload["provider_counts"]["openai"], 2);
     assert_eq!(available_payload["provider_counts"]["anthropic"], 1);
-    assert_eq!(available_payload["provider_counts"]["google"], 1);
+    assert_eq!(available_payload["provider_counts"]["google"], 3);
     assert_eq!(
         available_payload["availability_counts_total"]["available"],
-        4
+        6
     );
     assert_eq!(
         available_payload["availability_counts_total"]["unavailable"],
-        8
+        6
     );
-    assert_eq!(available_payload["availability_counts"]["available"], 4);
+    assert_eq!(available_payload["availability_counts"]["available"], 6);
     assert_eq!(available_payload["source_kind_counts_total"]["flag"], 3);
     assert_eq!(
         available_payload["source_kind_counts_total"]["credential_store"],
         2
     );
-    assert_eq!(available_payload["source_kind_counts_total"]["none"], 7);
+    assert_eq!(available_payload["source_kind_counts_total"]["env"], 2);
+    assert_eq!(available_payload["source_kind_counts_total"]["none"], 5);
     assert_eq!(available_payload["source_kind_counts"]["flag"], 3);
     assert_eq!(
         available_payload["source_kind_counts"]["credential_store"],
         1
     );
+    assert_eq!(available_payload["source_kind_counts"]["env"], 2);
     assert_eq!(available_payload["revoked_counts_total"]["not_revoked"], 12);
-    assert_eq!(available_payload["revoked_counts"]["not_revoked"], 4);
-    assert_eq!(available_payload["available"], 4);
+    assert_eq!(available_payload["revoked_counts"]["not_revoked"], 6);
+    assert_eq!(available_payload["available"], 6);
     assert_eq!(available_payload["unavailable"], 0);
-    assert_eq!(available_payload["state_counts_total"]["ready"], 4);
+    assert_eq!(available_payload["state_counts_total"]["ready"], 6);
     assert_eq!(available_payload["state_counts_total"]["mode_mismatch"], 1);
     assert_eq!(
         available_payload["state_counts_total"]["unsupported_mode"],
-        7
+        5
     );
-    assert_eq!(available_payload["state_counts"]["ready"], 4);
+    assert_eq!(available_payload["state_counts"]["ready"], 6);
     let available_entries = available_payload["entries"]
         .as_array()
         .expect("available entries");
-    assert_eq!(available_entries.len(), 4);
+    assert_eq!(available_entries.len(), 6);
     assert!(available_entries
         .iter()
         .all(|entry| entry["available"].as_bool() == Some(true)));
@@ -2276,64 +2340,65 @@ fn functional_execute_auth_command_matrix_supports_availability_filter() {
     assert_eq!(unavailable_payload["revoked_filter"], "all");
     assert_eq!(unavailable_payload["availability_filter"], "unavailable");
     assert_eq!(unavailable_payload["rows_total"], 12);
-    assert_eq!(unavailable_payload["rows"], 8);
-    assert_eq!(unavailable_payload["mode_supported_total"], 5);
-    assert_eq!(unavailable_payload["mode_unsupported_total"], 7);
+    assert_eq!(unavailable_payload["rows"], 6);
+    assert_eq!(unavailable_payload["mode_supported_total"], 7);
+    assert_eq!(unavailable_payload["mode_unsupported_total"], 5);
     assert_eq!(unavailable_payload["mode_counts_total"]["api_key"], 3);
     assert_eq!(unavailable_payload["mode_counts_total"]["oauth_token"], 3);
     assert_eq!(unavailable_payload["mode_counts_total"]["adc"], 3);
     assert_eq!(unavailable_payload["mode_counts_total"]["session_token"], 3);
-    assert_eq!(unavailable_payload["mode_counts"]["oauth_token"], 2);
-    assert_eq!(unavailable_payload["mode_counts"]["adc"], 3);
+    assert_eq!(unavailable_payload["mode_counts"]["oauth_token"], 1);
+    assert_eq!(unavailable_payload["mode_counts"]["adc"], 2);
     assert_eq!(unavailable_payload["mode_counts"]["session_token"], 3);
     assert_eq!(unavailable_payload["provider_counts_total"]["openai"], 4);
     assert_eq!(unavailable_payload["provider_counts_total"]["anthropic"], 4);
     assert_eq!(unavailable_payload["provider_counts_total"]["google"], 4);
     assert_eq!(unavailable_payload["provider_counts"]["openai"], 2);
     assert_eq!(unavailable_payload["provider_counts"]["anthropic"], 3);
-    assert_eq!(unavailable_payload["provider_counts"]["google"], 3);
+    assert_eq!(unavailable_payload["provider_counts"]["google"], 1);
     assert_eq!(
         unavailable_payload["availability_counts_total"]["available"],
-        4
+        6
     );
     assert_eq!(
         unavailable_payload["availability_counts_total"]["unavailable"],
-        8
+        6
     );
-    assert_eq!(unavailable_payload["availability_counts"]["unavailable"], 8);
+    assert_eq!(unavailable_payload["availability_counts"]["unavailable"], 6);
     assert_eq!(unavailable_payload["source_kind_counts_total"]["flag"], 3);
     assert_eq!(
         unavailable_payload["source_kind_counts_total"]["credential_store"],
         2
     );
-    assert_eq!(unavailable_payload["source_kind_counts_total"]["none"], 7);
+    assert_eq!(unavailable_payload["source_kind_counts_total"]["env"], 2);
+    assert_eq!(unavailable_payload["source_kind_counts_total"]["none"], 5);
     assert_eq!(
         unavailable_payload["source_kind_counts"]["credential_store"],
         1
     );
-    assert_eq!(unavailable_payload["source_kind_counts"]["none"], 7);
+    assert_eq!(unavailable_payload["source_kind_counts"]["none"], 5);
     assert_eq!(
         unavailable_payload["revoked_counts_total"]["not_revoked"],
         12
     );
-    assert_eq!(unavailable_payload["revoked_counts"]["not_revoked"], 8);
+    assert_eq!(unavailable_payload["revoked_counts"]["not_revoked"], 6);
     assert_eq!(unavailable_payload["available"], 0);
-    assert_eq!(unavailable_payload["unavailable"], 8);
-    assert_eq!(unavailable_payload["state_counts_total"]["ready"], 4);
+    assert_eq!(unavailable_payload["unavailable"], 6);
+    assert_eq!(unavailable_payload["state_counts_total"]["ready"], 6);
     assert_eq!(
         unavailable_payload["state_counts_total"]["mode_mismatch"],
         1
     );
     assert_eq!(
         unavailable_payload["state_counts_total"]["unsupported_mode"],
-        7
+        5
     );
     assert_eq!(unavailable_payload["state_counts"]["mode_mismatch"], 1);
-    assert_eq!(unavailable_payload["state_counts"]["unsupported_mode"], 7);
+    assert_eq!(unavailable_payload["state_counts"]["unsupported_mode"], 5);
     let unavailable_entries = unavailable_payload["entries"]
         .as_array()
         .expect("unavailable entries");
-    assert_eq!(unavailable_entries.len(), 8);
+    assert_eq!(unavailable_entries.len(), 6);
     assert!(unavailable_entries
         .iter()
         .all(|entry| entry["available"].as_bool() == Some(false)));
@@ -2371,29 +2436,31 @@ fn functional_execute_auth_command_matrix_supports_state_filter() {
     assert_eq!(ready_payload["source_kind_filter"], "all");
     assert_eq!(ready_payload["revoked_filter"], "all");
     assert_eq!(ready_payload["rows_total"], 12);
-    assert_eq!(ready_payload["rows"], 4);
-    assert_eq!(ready_payload["mode_supported_total"], 5);
-    assert_eq!(ready_payload["mode_unsupported_total"], 7);
+    assert_eq!(ready_payload["rows"], 6);
+    assert_eq!(ready_payload["mode_supported_total"], 7);
+    assert_eq!(ready_payload["mode_unsupported_total"], 5);
     assert_eq!(ready_payload["provider_counts_total"]["openai"], 4);
     assert_eq!(ready_payload["provider_counts_total"]["anthropic"], 4);
     assert_eq!(ready_payload["provider_counts_total"]["google"], 4);
     assert_eq!(ready_payload["provider_counts"]["openai"], 2);
     assert_eq!(ready_payload["provider_counts"]["anthropic"], 1);
-    assert_eq!(ready_payload["provider_counts"]["google"], 1);
+    assert_eq!(ready_payload["provider_counts"]["google"], 3);
     assert_eq!(ready_payload["source_kind_counts_total"]["flag"], 3);
     assert_eq!(
         ready_payload["source_kind_counts_total"]["credential_store"],
         2
     );
-    assert_eq!(ready_payload["source_kind_counts_total"]["none"], 7);
+    assert_eq!(ready_payload["source_kind_counts_total"]["env"], 2);
+    assert_eq!(ready_payload["source_kind_counts_total"]["none"], 5);
     assert_eq!(ready_payload["source_kind_counts"]["flag"], 3);
     assert_eq!(ready_payload["source_kind_counts"]["credential_store"], 1);
-    assert_eq!(ready_payload["state_counts_total"]["ready"], 4);
+    assert_eq!(ready_payload["source_kind_counts"]["env"], 2);
+    assert_eq!(ready_payload["state_counts_total"]["ready"], 6);
     assert_eq!(ready_payload["state_counts_total"]["mode_mismatch"], 1);
-    assert_eq!(ready_payload["state_counts_total"]["unsupported_mode"], 7);
-    assert_eq!(ready_payload["state_counts"]["ready"], 4);
+    assert_eq!(ready_payload["state_counts_total"]["unsupported_mode"], 5);
+    assert_eq!(ready_payload["state_counts"]["ready"], 6);
     let ready_entries = ready_payload["entries"].as_array().expect("ready entries");
-    assert_eq!(ready_entries.len(), 4);
+    assert_eq!(ready_entries.len(), 6);
     assert!(ready_entries.iter().all(|entry| entry["state"] == "ready"));
 
     let text_output = execute_auth_command(&config, "matrix --state ready");
@@ -2402,12 +2469,12 @@ fn functional_execute_auth_command_matrix_supports_state_filter() {
     assert!(text_output.contains("state_filter=ready"));
     assert!(text_output.contains("source_kind_filter=all"));
     assert!(text_output.contains("revoked_filter=all"));
-    assert!(text_output.contains("provider_counts=anthropic:1,google:1,openai:2"));
+    assert!(text_output.contains("provider_counts=anthropic:1,google:3,openai:2"));
     assert!(text_output.contains("provider_counts_total=anthropic:4,google:4,openai:4"));
-    assert!(text_output.contains("source_kind_counts=credential_store:1,flag:3"));
-    assert!(text_output.contains("source_kind_counts_total=credential_store:2,flag:3,none:7"));
-    assert!(text_output.contains("state_counts=ready:4"));
-    assert!(text_output.contains("state_counts_total=mode_mismatch:1,ready:4,unsupported_mode:7"));
+    assert!(text_output.contains("source_kind_counts=credential_store:1,env:2,flag:3"));
+    assert!(text_output.contains("source_kind_counts_total=credential_store:2,env:2,flag:3,none:5"));
+    assert!(text_output.contains("state_counts=ready:6"));
+    assert!(text_output.contains("state_counts_total=mode_mismatch:1,ready:6,unsupported_mode:5"));
     assert!(!text_output.contains("state=unsupported_mode"));
 }
 
@@ -2442,40 +2509,42 @@ fn functional_execute_auth_command_matrix_supports_mode_support_filter() {
     assert_eq!(supported_payload["source_kind_filter"], "all");
     assert_eq!(supported_payload["revoked_filter"], "all");
     assert_eq!(supported_payload["rows_total"], 12);
-    assert_eq!(supported_payload["rows"], 5);
-    assert_eq!(supported_payload["mode_supported"], 5);
+    assert_eq!(supported_payload["rows"], 7);
+    assert_eq!(supported_payload["mode_supported"], 7);
     assert_eq!(supported_payload["mode_unsupported"], 0);
-    assert_eq!(supported_payload["mode_supported_total"], 5);
-    assert_eq!(supported_payload["mode_unsupported_total"], 7);
+    assert_eq!(supported_payload["mode_supported_total"], 7);
+    assert_eq!(supported_payload["mode_unsupported_total"], 5);
     assert_eq!(supported_payload["provider_counts_total"]["openai"], 4);
     assert_eq!(supported_payload["provider_counts_total"]["anthropic"], 4);
     assert_eq!(supported_payload["provider_counts_total"]["google"], 4);
     assert_eq!(supported_payload["provider_counts"]["openai"], 3);
     assert_eq!(supported_payload["provider_counts"]["anthropic"], 1);
-    assert_eq!(supported_payload["provider_counts"]["google"], 1);
+    assert_eq!(supported_payload["provider_counts"]["google"], 3);
     assert_eq!(supported_payload["source_kind_counts_total"]["flag"], 3);
     assert_eq!(
         supported_payload["source_kind_counts_total"]["credential_store"],
         2
     );
-    assert_eq!(supported_payload["source_kind_counts_total"]["none"], 7);
+    assert_eq!(supported_payload["source_kind_counts_total"]["env"], 2);
+    assert_eq!(supported_payload["source_kind_counts_total"]["none"], 5);
     assert_eq!(supported_payload["source_kind_counts"]["flag"], 3);
     assert_eq!(
         supported_payload["source_kind_counts"]["credential_store"],
         2
     );
-    assert_eq!(supported_payload["state_counts_total"]["ready"], 4);
+    assert_eq!(supported_payload["source_kind_counts"]["env"], 2);
+    assert_eq!(supported_payload["state_counts_total"]["ready"], 6);
     assert_eq!(supported_payload["state_counts_total"]["mode_mismatch"], 1);
     assert_eq!(
         supported_payload["state_counts_total"]["unsupported_mode"],
-        7
+        5
     );
-    assert_eq!(supported_payload["state_counts"]["ready"], 4);
+    assert_eq!(supported_payload["state_counts"]["ready"], 6);
     assert_eq!(supported_payload["state_counts"]["mode_mismatch"], 1);
     let supported_entries = supported_payload["entries"]
         .as_array()
         .expect("supported entries");
-    assert_eq!(supported_entries.len(), 5);
+    assert_eq!(supported_entries.len(), 7);
     assert!(supported_entries
         .iter()
         .all(|entry| entry["mode_supported"].as_bool() == Some(true)));
@@ -2490,38 +2559,39 @@ fn functional_execute_auth_command_matrix_supports_mode_support_filter() {
     assert_eq!(unsupported_payload["source_kind_filter"], "all");
     assert_eq!(unsupported_payload["revoked_filter"], "all");
     assert_eq!(unsupported_payload["rows_total"], 12);
-    assert_eq!(unsupported_payload["rows"], 7);
+    assert_eq!(unsupported_payload["rows"], 5);
     assert_eq!(unsupported_payload["mode_supported"], 0);
-    assert_eq!(unsupported_payload["mode_unsupported"], 7);
-    assert_eq!(unsupported_payload["mode_supported_total"], 5);
-    assert_eq!(unsupported_payload["mode_unsupported_total"], 7);
+    assert_eq!(unsupported_payload["mode_unsupported"], 5);
+    assert_eq!(unsupported_payload["mode_supported_total"], 7);
+    assert_eq!(unsupported_payload["mode_unsupported_total"], 5);
     assert_eq!(unsupported_payload["provider_counts_total"]["openai"], 4);
     assert_eq!(unsupported_payload["provider_counts_total"]["anthropic"], 4);
     assert_eq!(unsupported_payload["provider_counts_total"]["google"], 4);
     assert_eq!(unsupported_payload["provider_counts"]["openai"], 1);
     assert_eq!(unsupported_payload["provider_counts"]["anthropic"], 3);
-    assert_eq!(unsupported_payload["provider_counts"]["google"], 3);
+    assert_eq!(unsupported_payload["provider_counts"]["google"], 1);
     assert_eq!(unsupported_payload["source_kind_counts_total"]["flag"], 3);
     assert_eq!(
         unsupported_payload["source_kind_counts_total"]["credential_store"],
         2
     );
-    assert_eq!(unsupported_payload["source_kind_counts_total"]["none"], 7);
-    assert_eq!(unsupported_payload["source_kind_counts"]["none"], 7);
-    assert_eq!(unsupported_payload["state_counts_total"]["ready"], 4);
+    assert_eq!(unsupported_payload["source_kind_counts_total"]["env"], 2);
+    assert_eq!(unsupported_payload["source_kind_counts_total"]["none"], 5);
+    assert_eq!(unsupported_payload["source_kind_counts"]["none"], 5);
+    assert_eq!(unsupported_payload["state_counts_total"]["ready"], 6);
     assert_eq!(
         unsupported_payload["state_counts_total"]["mode_mismatch"],
         1
     );
     assert_eq!(
         unsupported_payload["state_counts_total"]["unsupported_mode"],
-        7
+        5
     );
-    assert_eq!(unsupported_payload["state_counts"]["unsupported_mode"], 7);
+    assert_eq!(unsupported_payload["state_counts"]["unsupported_mode"], 5);
     let unsupported_entries = unsupported_payload["entries"]
         .as_array()
         .expect("unsupported entries");
-    assert_eq!(unsupported_entries.len(), 7);
+    assert_eq!(unsupported_entries.len(), 5);
     assert!(unsupported_entries
         .iter()
         .all(|entry| entry["mode_supported"].as_bool() == Some(false)));
@@ -2532,12 +2602,12 @@ fn functional_execute_auth_command_matrix_supports_mode_support_filter() {
     assert!(text_output.contains("mode_support_filter=supported"));
     assert!(text_output.contains("source_kind_filter=all"));
     assert!(text_output.contains("revoked_filter=all"));
-    assert!(text_output.contains("mode_supported_total=5"));
-    assert!(text_output.contains("mode_unsupported_total=7"));
-    assert!(text_output.contains("source_kind_counts=credential_store:2,flag:3"));
-    assert!(text_output.contains("source_kind_counts_total=credential_store:2,flag:3,none:7"));
-    assert!(text_output.contains("state_counts=mode_mismatch:1,ready:4"));
-    assert!(text_output.contains("state_counts_total=mode_mismatch:1,ready:4,unsupported_mode:7"));
+    assert!(text_output.contains("mode_supported_total=7"));
+    assert!(text_output.contains("mode_unsupported_total=5"));
+    assert!(text_output.contains("source_kind_counts=credential_store:2,env:2,flag:3"));
+    assert!(text_output.contains("source_kind_counts_total=credential_store:2,env:2,flag:3,none:5"));
+    assert!(text_output.contains("state_counts=mode_mismatch:1,ready:6"));
+    assert!(text_output.contains("state_counts_total=mode_mismatch:1,ready:6,unsupported_mode:5"));
     assert!(!text_output.contains("mode_supported=false"));
 }
 
@@ -2586,7 +2656,8 @@ fn functional_execute_auth_command_matrix_supports_source_kind_filter() {
         2
     );
     assert_eq!(filtered_payload["source_kind_counts_total"]["flag"], 3);
-    assert_eq!(filtered_payload["source_kind_counts_total"]["none"], 7);
+    assert_eq!(filtered_payload["source_kind_counts_total"]["env"], 2);
+    assert_eq!(filtered_payload["source_kind_counts_total"]["none"], 5);
     assert_eq!(
         filtered_payload["source_kind_counts"]["credential_store"],
         2
@@ -3244,9 +3315,7 @@ fn regression_auth_security_matrix_blocks_unsupported_mode_bypass_attempts() {
         (Provider::Anthropic, ProviderAuthMethod::OauthToken),
         (Provider::Anthropic, ProviderAuthMethod::SessionToken),
         (Provider::Anthropic, ProviderAuthMethod::Adc),
-        (Provider::Google, ProviderAuthMethod::OauthToken),
         (Provider::Google, ProviderAuthMethod::SessionToken),
-        (Provider::Google, ProviderAuthMethod::Adc),
     ];
 
     for (provider, mode) in unsupported_cases {
@@ -4908,16 +4977,78 @@ fn regression_execute_integration_auth_command_status_handles_empty_store() {
 }
 
 #[test]
-fn regression_execute_auth_command_login_rejects_unsupported_provider_mode() {
+fn regression_execute_auth_command_login_rejects_unsupported_google_session_mode() {
     let config = test_auth_command_config();
-    let output = execute_auth_command(&config, "login google --mode oauth-token --json");
+    let output = execute_auth_command(&config, "login google --mode session-token --json");
     let payload: serde_json::Value = serde_json::from_str(&output).expect("parse output");
     assert_eq!(payload["status"], "error");
     assert!(payload["reason"]
         .as_str()
         .unwrap_or_default()
         .contains("not supported"));
-    assert_eq!(payload["supported_modes"], serde_json::json!(["api_key"]));
+    assert_eq!(
+        payload["supported_modes"],
+        serde_json::json!(["api_key", "oauth_token", "adc"])
+    );
+}
+
+#[test]
+fn functional_execute_auth_command_login_google_oauth_reports_backend_ready() {
+    let mut config = test_auth_command_config();
+    config.google_gemini_backend = true;
+    config.google_gemini_cli = std::env::current_exe()
+        .expect("current executable path")
+        .display()
+        .to_string();
+
+    let output = execute_auth_command(&config, "login google --mode oauth-token --json");
+    let payload: serde_json::Value = serde_json::from_str(&output).expect("parse output");
+    assert_eq!(payload["status"], "ready");
+    assert_eq!(payload["source"], "gemini_cli");
+    assert_eq!(payload["persisted"], false);
+    assert!(payload["action"]
+        .as_str()
+        .unwrap_or_default()
+        .contains("Login with Google"));
+}
+
+#[test]
+fn regression_execute_auth_command_status_google_oauth_reports_backend_disabled() {
+    let mut config = test_auth_command_config();
+    config.google_auth_mode = ProviderAuthMethod::OauthToken;
+    config.google_gemini_backend = false;
+
+    let output = execute_auth_command(&config, "status google --json");
+    let payload: serde_json::Value = serde_json::from_str(&output).expect("parse status payload");
+    let entry = payload["entries"]
+        .as_array()
+        .and_then(|entries| entries.first())
+        .expect("google status entry");
+    assert_eq!(entry["provider"], "google");
+    assert_eq!(entry["mode"], "oauth_token");
+    assert_eq!(entry["mode_supported"], true);
+    assert_eq!(entry["available"], false);
+    assert_eq!(entry["state"], "backend_disabled");
+}
+
+#[test]
+fn regression_execute_auth_command_status_google_oauth_reports_backend_unavailable() {
+    let mut config = test_auth_command_config();
+    config.google_auth_mode = ProviderAuthMethod::OauthToken;
+    config.google_gemini_backend = true;
+    config.google_gemini_cli = "__missing_gemini_backend_for_test__".to_string();
+
+    let output = execute_auth_command(&config, "status google --json");
+    let payload: serde_json::Value = serde_json::from_str(&output).expect("parse status payload");
+    let entry = payload["entries"]
+        .as_array()
+        .and_then(|entries| entries.first())
+        .expect("google status entry");
+    assert_eq!(entry["provider"], "google");
+    assert_eq!(entry["mode"], "oauth_token");
+    assert_eq!(entry["mode_supported"], true);
+    assert_eq!(entry["available"], false);
+    assert_eq!(entry["state"], "backend_unavailable");
 }
 
 #[test]
@@ -5206,22 +5337,53 @@ fn unit_provider_auth_capability_reports_api_key_support() {
     assert_eq!(openai.reason, "supported");
 
     let google = provider_auth_capability(Provider::Google, ProviderAuthMethod::OauthToken);
-    assert!(!google.supported);
-    assert_eq!(google.reason, "not_implemented");
+    assert!(google.supported);
+    assert_eq!(google.reason, "supported");
 }
 
 #[test]
-fn regression_build_provider_client_rejects_unsupported_auth_mode() {
+fn regression_build_provider_client_google_oauth_mode_requires_backend_when_disabled() {
     let mut cli = test_cli();
     cli.google_auth_mode = CliProviderAuthMode::OauthToken;
+    cli.google_gemini_backend = false;
 
     match build_provider_client(&cli, Provider::Google) {
-        Ok(_) => panic!("unsupported auth mode should fail"),
+        Ok(_) => panic!("oauth mode without backend should fail"),
         Err(error) => {
-            assert!(error.to_string().contains("unsupported auth mode"));
-            assert!(error.to_string().contains("--google-auth-mode api-key"));
+            assert!(error.to_string().contains("requires Gemini CLI backend"));
         }
     }
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn integration_build_provider_client_uses_gemini_backend_for_google_oauth_mode() {
+    let temp = tempdir().expect("tempdir");
+    let script = write_mock_gemini_script(
+        temp.path(),
+        r#"
+if [ "$1" != "-p" ]; then
+  echo "missing -p" >&2
+  exit 8
+fi
+printf '{"response":"gemini backend response"}'
+"#,
+    );
+
+    let mut cli = test_cli();
+    cli.google_auth_mode = CliProviderAuthMode::OauthToken;
+    cli.google_gemini_backend = true;
+    cli.google_gemini_cli = script.display().to_string();
+    cli.google_gemini_timeout_ms = 2_000;
+    cli.google_api_key = None;
+
+    let client =
+        build_provider_client(&cli, Provider::Google).expect("build gemini backend client");
+    let response = client
+        .complete(test_chat_request())
+        .await
+        .expect("gemini backend completion");
+    assert_eq!(response.message.text_content(), "gemini backend response");
 }
 
 #[test]
@@ -6450,6 +6612,9 @@ fn functional_execute_doctor_command_supports_text_and_json_modes() {
                 present: false,
                 auth_mode: ProviderAuthMethod::ApiKey,
                 mode_supported: true,
+                login_backend_enabled: false,
+                login_backend_executable: None,
+                login_backend_available: false,
             },
             DoctorProviderKeyStatus {
                 provider_kind: Provider::OpenAi,
@@ -6458,6 +6623,9 @@ fn functional_execute_doctor_command_supports_text_and_json_modes() {
                 present: true,
                 auth_mode: ProviderAuthMethod::ApiKey,
                 mode_supported: true,
+                login_backend_enabled: false,
+                login_backend_executable: None,
+                login_backend_available: false,
             },
         ],
         session_enabled: true,
@@ -6520,6 +6688,9 @@ fn integration_run_doctor_checks_identifies_missing_runtime_prerequisites() {
             present: false,
             auth_mode: ProviderAuthMethod::ApiKey,
             mode_supported: true,
+            login_backend_enabled: false,
+            login_backend_executable: None,
+            login_backend_available: false,
         }],
         session_enabled: true,
         session_path: temp.path().join("missing-parent").join("session.jsonl"),
@@ -6573,6 +6744,49 @@ fn integration_run_doctor_checks_identifies_missing_runtime_prerequisites() {
             .get("trust_root")
             .map(|item| (item.status, item.code.clone())),
         Some((DoctorStatus::Warn, "missing".to_string()))
+    );
+}
+
+#[test]
+fn integration_run_doctor_checks_reports_google_backend_status_for_oauth_mode() {
+    let temp = tempdir().expect("tempdir");
+    let config = DoctorCommandConfig {
+        model: "google/gemini-2.5-pro".to_string(),
+        provider_keys: vec![DoctorProviderKeyStatus {
+            provider_kind: Provider::Google,
+            provider: "google".to_string(),
+            key_env_var: "GEMINI_API_KEY".to_string(),
+            present: false,
+            auth_mode: ProviderAuthMethod::OauthToken,
+            mode_supported: true,
+            login_backend_enabled: false,
+            login_backend_executable: Some("gemini".to_string()),
+            login_backend_available: false,
+        }],
+        session_enabled: false,
+        session_path: temp.path().join("session.jsonl"),
+        skills_dir: temp.path().join("skills"),
+        skills_lock_path: temp.path().join("skills.lock.json"),
+        trust_root_path: None,
+    };
+
+    let checks = run_doctor_checks(&config);
+    let by_key = checks
+        .into_iter()
+        .map(|check| (check.key.clone(), check))
+        .collect::<HashMap<_, _>>();
+
+    assert_eq!(
+        by_key
+            .get("provider_auth_mode.google")
+            .map(|item| (item.status, item.code.clone())),
+        Some((DoctorStatus::Pass, "oauth_token".to_string()))
+    );
+    assert_eq!(
+        by_key
+            .get("provider_backend.google")
+            .map(|item| (item.status, item.code.clone())),
+        Some((DoctorStatus::Fail, "backend_disabled".to_string()))
     );
 }
 
@@ -6654,6 +6868,9 @@ fn regression_run_doctor_checks_reports_type_and_readability_errors() {
             present: true,
             auth_mode: ProviderAuthMethod::ApiKey,
             mode_supported: true,
+            login_backend_enabled: false,
+            login_backend_executable: None,
+            login_backend_available: false,
         }],
         session_enabled: true,
         session_path,

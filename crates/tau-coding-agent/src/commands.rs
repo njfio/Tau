@@ -507,6 +507,9 @@ pub(crate) fn handle_command(
                 present: true,
                 auth_mode: ProviderAuthMethod::ApiKey,
                 mode_supported: true,
+                login_backend_enabled: false,
+                login_backend_executable: None,
+                login_backend_available: false,
             }],
             session_enabled: true,
             session_path: PathBuf::from(".tau/sessions/default.jsonl"),
@@ -549,6 +552,8 @@ pub(crate) fn handle_command(
         openai_auth_mode: ProviderAuthMethod::ApiKey,
         anthropic_auth_mode: ProviderAuthMethod::ApiKey,
         google_auth_mode: ProviderAuthMethod::ApiKey,
+        google_gemini_backend: true,
+        google_gemini_cli: "gemini".to_string(),
     };
     let model_catalog = ModelCatalog::built_in();
     handle_command_with_session_import_mode(

@@ -1,5 +1,6 @@
 use super::*;
 use crate::codex_cli_client::{CodexCliClient, CodexCliConfig};
+use crate::gemini_cli_client::{GeminiCliClient, GeminiCliConfig};
 use crate::provider_credentials::ProviderAuthCredential;
 
 fn resolved_secret_for_provider(
@@ -59,6 +60,32 @@ fn build_openai_codex_client(cli: &Cli) -> Result<Arc<dyn LlmClient>> {
         provider = Provider::OpenAi.as_str(),
         auth_mode = "codex_backend",
         auth_source = "codex_cli",
+        "provider auth resolved"
+    );
+    Ok(Arc::new(client))
+}
+
+fn google_gemini_backend_enabled(cli: &Cli, auth_mode: ProviderAuthMethod) -> bool {
+    cli.google_gemini_backend
+        && matches!(
+            auth_mode,
+            ProviderAuthMethod::OauthToken | ProviderAuthMethod::Adc
+        )
+}
+
+fn build_google_gemini_client(
+    cli: &Cli,
+    auth_mode: ProviderAuthMethod,
+) -> Result<Arc<dyn LlmClient>> {
+    let client = GeminiCliClient::new(GeminiCliConfig {
+        executable: cli.google_gemini_cli.clone(),
+        extra_args: cli.google_gemini_args.clone(),
+        timeout_ms: cli.google_gemini_timeout_ms.max(1),
+    })?;
+    tracing::debug!(
+        provider = Provider::Google.as_str(),
+        auth_mode = auth_mode.as_str(),
+        auth_source = "gemini_cli",
         "provider auth resolved"
     );
     Ok(Arc::new(client))
@@ -144,6 +171,19 @@ pub(crate) fn build_provider_client(cli: &Cli, provider: Provider) -> Result<Arc
             Ok(Arc::new(client))
         }
         Provider::Google => {
+            if matches!(
+                auth_mode,
+                ProviderAuthMethod::OauthToken | ProviderAuthMethod::Adc
+            ) {
+                if !google_gemini_backend_enabled(cli, auth_mode) {
+                    bail!(
+                        "google auth mode '{}' requires Gemini CLI backend (enable --google-gemini-backend=true or set --google-auth-mode api-key)",
+                        auth_mode.as_str()
+                    );
+                }
+                return build_google_gemini_client(cli, auth_mode);
+            }
+
             let resolver = CliProviderCredentialResolver { cli };
             let resolved = resolver.resolve(provider, auth_mode)?;
             let api_key = resolved_secret_for_provider(&resolved, provider)?;

@@ -1,4 +1,5 @@
 use super::*;
+use crate::cli_executable::is_executable_available;
 
 pub(crate) const DOCTOR_USAGE: &str = "usage: /doctor [--json]";
 pub(crate) const POLICY_USAGE: &str = "usage: /policy";
@@ -301,6 +302,22 @@ pub(crate) fn build_doctor_command_config(
         .map(|provider| {
             let auth_mode = configured_provider_auth_method(cli, provider);
             let capability = provider_auth_capability(provider, auth_mode);
+            let (login_backend_enabled, login_backend_executable, login_backend_available) =
+                if provider == Provider::Google
+                    && matches!(
+                        auth_mode,
+                        ProviderAuthMethod::OauthToken | ProviderAuthMethod::Adc
+                    )
+                {
+                    (
+                        cli.google_gemini_backend,
+                        Some(cli.google_gemini_cli.clone()),
+                        cli.google_gemini_backend
+                            && is_executable_available(&cli.google_gemini_cli),
+                    )
+                } else {
+                    (false, None, false)
+                };
             DoctorProviderKeyStatus {
                 provider_kind: provider,
                 provider: provider.as_str().to_string(),
@@ -308,6 +325,9 @@ pub(crate) fn build_doctor_command_config(
                 present: provider_key_present(cli, provider),
                 auth_mode,
                 mode_supported: capability.supported,
+                login_backend_enabled,
+                login_backend_executable,
+                login_backend_available,
             }
         })
         .collect::<Vec<_>>();
@@ -382,6 +402,43 @@ pub(crate) fn run_doctor_checks(config: &DoctorCommandConfig) -> Vec<DoctorCheck
             path: None,
             action,
         });
+
+        if provider_check.provider_kind == Provider::Google
+            && matches!(
+                provider_check.auth_mode,
+                ProviderAuthMethod::OauthToken | ProviderAuthMethod::Adc
+            )
+        {
+            let (status, code, action) = if !provider_check.login_backend_enabled {
+                (
+                    DoctorStatus::Fail,
+                    "backend_disabled".to_string(),
+                    Some("set --google-gemini-backend=true".to_string()),
+                )
+            } else if provider_check.login_backend_available {
+                (DoctorStatus::Pass, "ready".to_string(), None)
+            } else {
+                let executable = provider_check
+                    .login_backend_executable
+                    .as_deref()
+                    .unwrap_or("gemini");
+                (
+                    DoctorStatus::Fail,
+                    "missing_executable".to_string(),
+                    Some(format!(
+                        "install '{}' or set --google-gemini-cli to an available executable",
+                        executable
+                    )),
+                )
+            };
+            checks.push(DoctorCheckResult {
+                key: format!("provider_backend.{}", provider_check.provider),
+                status,
+                code,
+                path: None,
+                action,
+            });
+        }
     }
 
     if !config.session_enabled {

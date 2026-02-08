@@ -61,13 +61,13 @@ const GOOGLE_AUTH_CAPABILITIES: &[ProviderAuthCapability] = &[
     },
     ProviderAuthCapability {
         method: ProviderAuthMethod::OauthToken,
-        supported: false,
-        reason: "not_implemented",
+        supported: true,
+        reason: "supported",
     },
     ProviderAuthCapability {
         method: ProviderAuthMethod::Adc,
-        supported: false,
-        reason: "not_implemented",
+        supported: true,
+        reason: "supported",
     },
     ProviderAuthCapability {
         method: ProviderAuthMethod::SessionToken,

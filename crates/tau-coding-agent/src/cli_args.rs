@@ -204,6 +204,42 @@ pub(crate) struct Cli {
     pub(crate) google_auth_mode: CliProviderAuthMode,
 
     #[arg(
+        long = "google-gemini-backend",
+        env = "TAU_GOOGLE_GEMINI_BACKEND",
+        default_value_t = true,
+        action = ArgAction::Set,
+        num_args = 0..=1,
+        require_equals = true,
+        default_missing_value = "true",
+        help = "Enable Gemini CLI backend for Google oauth/adc auth modes"
+    )]
+    pub(crate) google_gemini_backend: bool,
+
+    #[arg(
+        long = "google-gemini-cli",
+        env = "TAU_GOOGLE_GEMINI_CLI",
+        default_value = "gemini",
+        help = "Gemini CLI executable path used by Google oauth/adc backend"
+    )]
+    pub(crate) google_gemini_cli: String,
+
+    #[arg(
+        long = "google-gemini-args",
+        env = "TAU_GOOGLE_GEMINI_ARGS",
+        value_delimiter = ',',
+        help = "Additional argument(s) forwarded to gemini for Google oauth/adc backend"
+    )]
+    pub(crate) google_gemini_args: Vec<String>,
+
+    #[arg(
+        long = "google-gemini-timeout-ms",
+        env = "TAU_GOOGLE_GEMINI_TIMEOUT_MS",
+        default_value_t = 120_000,
+        help = "Timeout in milliseconds for each Gemini CLI request"
+    )]
+    pub(crate) google_gemini_timeout_ms: u64,
+
+    #[arg(
         long = "credential-store",
         env = "TAU_CREDENTIAL_STORE",
         default_value = ".tau/credentials.json",

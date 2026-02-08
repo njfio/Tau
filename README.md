@@ -17,6 +17,7 @@ Implemented now:
 - Tool-call loop (`assistant -> tool -> assistant`) in `tau-agent-core`
 - Multi-provider model routing: `openai/*`, `anthropic/*`, `google/*`
 - OpenAI oauth/session fallback to Codex CLI backend when provider credential-store entry is missing
+- Google oauth/adc routing to Gemini CLI backend (subscription login and Vertex/ADC workflows)
 - Interactive CLI and one-shot prompt mode
 - Token-by-token CLI output rendering controls
 - Persistent JSONL sessions with branch/resume support
@@ -116,6 +117,36 @@ cargo run -p tau-coding-agent -- \
 ```
 
 `tau-coding-agent` prefers provider credential-store oauth/session entries when present; if the OpenAI entry is missing and Codex backend is enabled, it falls back to `codex exec` for local subscription-backed runs.
+
+Use Google Gemini with subscription login (without setting `GEMINI_API_KEY`):
+
+```bash
+gemini
+# choose "Login with Google" in the CLI flow
+
+cargo run -p tau-coding-agent -- \
+  --model google/gemini-2.5-pro \
+  --google-auth-mode oauth-token \
+  --google-gemini-backend=true \
+  --google-gemini-cli gemini \
+  --google-gemini-timeout-ms 120000
+```
+
+Use Google Gemini with ADC / Vertex flow:
+
+```bash
+gcloud auth application-default login
+export GOOGLE_CLOUD_PROJECT=...your-project...
+export GOOGLE_CLOUD_LOCATION=...your-location...
+
+cargo run -p tau-coding-agent -- \
+  --model google/gemini-2.5-pro \
+  --google-auth-mode adc \
+  --google-gemini-backend=true \
+  --google-gemini-cli gemini
+```
+
+`/auth status google` and `/doctor` reflect Google oauth/adc backend readiness (`--google-gemini-backend`, executable availability) separately from API-key mode.
 
 Run interactive mode:
 
