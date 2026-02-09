@@ -8,6 +8,7 @@ skip_build="false"
 list_only="false"
 json_output="false"
 has_only_filter="false"
+report_file=""
 
 demo_scripts=(
   "local.sh"
@@ -92,6 +93,15 @@ run_demo_names=()
 run_demo_statuses=()
 run_demo_exit_codes=()
 
+write_report_file() {
+  local payload="$1"
+  local destination="$2"
+  local destination_parent
+  destination_parent="$(dirname "${destination}")"
+  mkdir -p "${destination_parent}"
+  printf '%s\n' "${payload}" > "${destination}"
+}
+
 print_summary_json() {
   local total_count="$1"
   local passed_count="$2"
@@ -122,7 +132,7 @@ print_summary_json() {
 
 print_usage() {
   cat <<EOF
-Usage: all.sh [--repo-root PATH] [--binary PATH] [--skip-build] [--list] [--only DEMOS] [--json] [--help]
+Usage: all.sh [--repo-root PATH] [--binary PATH] [--skip-build] [--list] [--only DEMOS] [--json] [--report-file PATH] [--help]
 
 Run checked-in Tau demo wrappers (local/rpc/events/package) with deterministic summary output.
 
@@ -133,6 +143,7 @@ Options:
   --list            Print selected demos and exit without execution
   --only DEMOS      Comma-separated subset (names: local,rpc,events,package)
   --json            Emit deterministic JSON output for list/summary modes
+  --report-file     Write deterministic JSON report artifact to path
   --help            Show this usage message
 EOF
 }
@@ -190,6 +201,15 @@ while [[ $# -gt 0 ]]; do
       json_output="true"
       shift
       ;;
+    --report-file)
+      if [[ $# -lt 2 || -z "$2" ]]; then
+        log_error "missing value for --report-file"
+        print_usage >&2
+        exit 2
+      fi
+      report_file="$2"
+      shift 2
+      ;;
     --help)
       print_usage
       exit 0
@@ -232,8 +252,12 @@ if [[ "${has_only_filter}" == "true" ]]; then
 fi
 
 if [[ "${list_only}" == "true" ]]; then
+  list_json_payload="$(print_demo_list_json "${selected_demo_scripts[@]}")"
+  if [[ -n "${report_file}" ]]; then
+    write_report_file "${list_json_payload}" "${report_file}"
+  fi
   if [[ "${json_output}" == "true" ]]; then
-    print_demo_list_json "${selected_demo_scripts[@]}"
+    echo "${list_json_payload}"
   else
     print_demo_list_text "${selected_demo_scripts[@]}"
   fi
@@ -286,8 +310,13 @@ for demo_script in "${selected_demo_scripts[@]}"; do
   fi
 done
 
+summary_json_payload="$(print_summary_json "${total}" "${passed}" "${failed}")"
+if [[ -n "${report_file}" ]]; then
+  write_report_file "${summary_json_payload}" "${report_file}"
+fi
+
 if [[ "${json_output}" == "true" ]]; then
-  print_summary_json "${total}" "${passed}" "${failed}"
+  echo "${summary_json_payload}"
 else
   echo "[demo:all] summary: total=${total} passed=${passed} failed=${failed}"
 fi
