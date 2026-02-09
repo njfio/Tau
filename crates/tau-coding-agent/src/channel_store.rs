@@ -92,6 +92,38 @@ pub(crate) struct ChannelArtifactLoadReport {
 pub(crate) struct ChannelArtifactPurgeReport {
     pub expired_removed: usize,
     pub invalid_removed: usize,
+    pub attachment_expired_removed: usize,
+    pub attachment_invalid_removed: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub(crate) struct ChannelAttachmentRecord {
+    pub id: String,
+    pub run_id: String,
+    pub event_key: String,
+    pub actor: String,
+    pub source_url: String,
+    pub original_name: String,
+    pub relative_path: String,
+    pub content_type: Option<String>,
+    pub bytes: u64,
+    pub checksum_sha256: String,
+    pub policy_decision: String,
+    pub policy_reason_code: String,
+    pub created_unix_ms: u64,
+    pub expires_unix_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub(crate) struct ChannelAttachmentLoadReport {
+    pub records: Vec<ChannelAttachmentRecord>,
+    pub invalid_lines: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+struct ChannelAttachmentPurgeReport {
+    expired_removed: usize,
+    invalid_removed: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -160,6 +192,10 @@ impl ChannelStore {
 
     pub(crate) fn attachments_dir(&self) -> PathBuf {
         self.channel_dir().join("attachments")
+    }
+
+    pub(crate) fn attachments_index_path(&self) -> PathBuf {
+        self.attachments_dir().join("index.jsonl")
     }
 
     pub(crate) fn artifacts_dir(&self) -> PathBuf {
@@ -390,6 +426,34 @@ impl ChannelStore {
         Ok(report)
     }
 
+    pub(crate) fn append_attachment_record(&self, record: &ChannelAttachmentRecord) -> Result<()> {
+        append_jsonl_line(&self.attachments_index_path(), record)
+    }
+
+    pub(crate) fn load_attachment_records_tolerant(&self) -> Result<ChannelAttachmentLoadReport> {
+        let path = self.attachments_index_path();
+        if !path.exists() {
+            return Ok(ChannelAttachmentLoadReport::default());
+        }
+        let file = std::fs::File::open(&path)
+            .with_context(|| format!("failed to open {}", path.display()))?;
+        let reader = std::io::BufReader::new(file);
+
+        let mut report = ChannelAttachmentLoadReport::default();
+        for line_result in reader.lines() {
+            let line = line_result.with_context(|| format!("failed reading {}", path.display()))?;
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            match serde_json::from_str::<ChannelAttachmentRecord>(trimmed) {
+                Ok(record) => report.records.push(record),
+                Err(_) => report.invalid_lines = report.invalid_lines.saturating_add(1),
+            }
+        }
+        Ok(report)
+    }
+
     pub(crate) fn list_active_artifacts(
         &self,
         now_unix_ms: u64,
@@ -431,7 +495,42 @@ impl ChannelStore {
         }
 
         write_jsonl_records(&self.artifact_index_path(), &keep)?;
+        let attachment_purge = self.purge_expired_attachments(now_unix_ms)?;
         Ok(ChannelArtifactPurgeReport {
+            expired_removed,
+            invalid_removed: loaded.invalid_lines,
+            attachment_expired_removed: attachment_purge.expired_removed,
+            attachment_invalid_removed: attachment_purge.invalid_removed,
+        })
+    }
+
+    fn purge_expired_attachments(&self, now_unix_ms: u64) -> Result<ChannelAttachmentPurgeReport> {
+        let loaded = self.load_attachment_records_tolerant()?;
+        let mut keep = Vec::new();
+        let mut expired_removed = 0_usize;
+        for record in loaded.records {
+            let expired = record
+                .expires_unix_ms
+                .map(|value| value <= now_unix_ms)
+                .unwrap_or(false);
+            if expired {
+                let attachment_path =
+                    resolve_safe_channel_path(&self.channel_dir(), &record.relative_path)?;
+                if attachment_path.exists() {
+                    std::fs::remove_file(&attachment_path).with_context(|| {
+                        format!(
+                            "failed to remove expired attachment {}",
+                            attachment_path.display()
+                        )
+                    })?;
+                }
+                expired_removed = expired_removed.saturating_add(1);
+            } else {
+                keep.push(record);
+            }
+        }
+        write_jsonl_records(&self.attachments_index_path(), &keep)?;
+        Ok(ChannelAttachmentPurgeReport {
             expired_removed,
             invalid_removed: loaded.invalid_lines,
         })
@@ -450,6 +549,7 @@ impl ChannelStore {
             self.log_path(),
             self.context_path(),
             self.artifact_index_path(),
+            self.attachments_index_path(),
         ] {
             if !path.exists() {
                 std::fs::write(&path, "")
@@ -681,8 +781,8 @@ mod tests {
     use tempfile::tempdir;
 
     use super::{
-        sanitize_for_path, ChannelContextEntry, ChannelLogEntry, ChannelStore, ChannelStoreMeta,
-        CHANNEL_STORE_SCHEMA_VERSION,
+        sanitize_for_path, ChannelAttachmentRecord, ChannelContextEntry, ChannelLogEntry,
+        ChannelStore, ChannelStoreMeta, CHANNEL_STORE_SCHEMA_VERSION,
     };
     use tau_ai::Message;
 
@@ -924,6 +1024,81 @@ mod tests {
             .expect("active records");
         assert_eq!(active.len(), 1);
         assert_eq!(active[0].id, retained.id);
+    }
+
+    #[test]
+    fn integration_purge_expired_artifacts_also_purges_expired_attachment_records() {
+        let temp = tempdir().expect("tempdir");
+        let store = ChannelStore::open(temp.path(), "github", "issue-53").expect("open store");
+        let expired_path = "attachments/issue-comment-created_1/01-expired.log";
+        let active_path = "attachments/issue-comment-created_2/01-active.log";
+        let expired_full_path = store.channel_dir().join(expired_path);
+        let active_full_path = store.channel_dir().join(active_path);
+        std::fs::create_dir_all(
+            expired_full_path
+                .parent()
+                .expect("expired attachment parent exists"),
+        )
+        .expect("create expired parent");
+        std::fs::create_dir_all(
+            active_full_path
+                .parent()
+                .expect("active attachment parent exists"),
+        )
+        .expect("create active parent");
+        std::fs::write(&expired_full_path, "expired attachment").expect("write expired attachment");
+        std::fs::write(&active_full_path, "active attachment").expect("write active attachment");
+
+        store
+            .append_attachment_record(&ChannelAttachmentRecord {
+                id: "attachment-expired".to_string(),
+                run_id: "run-expired".to_string(),
+                event_key: "issue-comment-created:1".to_string(),
+                actor: "alice".to_string(),
+                source_url: "https://example.com/expired.log".to_string(),
+                original_name: "expired.log".to_string(),
+                relative_path: expired_path.to_string(),
+                content_type: Some("text/plain".to_string()),
+                bytes: 17,
+                checksum_sha256: "sha-expired".to_string(),
+                policy_decision: "accepted".to_string(),
+                policy_reason_code: "allow_extension_allowlist".to_string(),
+                created_unix_ms: 10,
+                expires_unix_ms: Some(11),
+            })
+            .expect("append expired attachment record");
+        store
+            .append_attachment_record(&ChannelAttachmentRecord {
+                id: "attachment-active".to_string(),
+                run_id: "run-active".to_string(),
+                event_key: "issue-comment-created:2".to_string(),
+                actor: "bob".to_string(),
+                source_url: "https://example.com/active.log".to_string(),
+                original_name: "active.log".to_string(),
+                relative_path: active_path.to_string(),
+                content_type: Some("text/plain".to_string()),
+                bytes: 16,
+                checksum_sha256: "sha-active".to_string(),
+                policy_decision: "accepted".to_string(),
+                policy_reason_code: "allow_extension_allowlist".to_string(),
+                created_unix_ms: 10,
+                expires_unix_ms: Some(10_000),
+            })
+            .expect("append active attachment record");
+
+        let purge = store.purge_expired_artifacts(12).expect("purge");
+        assert_eq!(purge.expired_removed, 0);
+        assert_eq!(purge.invalid_removed, 0);
+        assert_eq!(purge.attachment_expired_removed, 1);
+        assert_eq!(purge.attachment_invalid_removed, 0);
+        assert!(!expired_full_path.exists());
+        assert!(active_full_path.exists());
+
+        let attachment_report = store
+            .load_attachment_records_tolerant()
+            .expect("load attachment records");
+        assert_eq!(attachment_report.records.len(), 1);
+        assert_eq!(attachment_report.records[0].id, "attachment-active");
     }
 
     #[test]
