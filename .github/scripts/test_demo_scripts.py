@@ -31,6 +31,19 @@ print("mock-ok " + " ".join(sys.argv[1:]))
     path.chmod(0o755)
 
 
+def write_failing_binary(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        """#!/usr/bin/env bash
+set -euo pipefail
+echo "mock-fail $*" >&2
+exit 1
+""",
+        encoding="utf-8",
+    )
+    path.chmod(0o755)
+
+
 def run_demo_script(
     script_name: str,
     binary_path: Path,
@@ -104,6 +117,16 @@ class DemoScriptsTests(unittest.TestCase):
         self.assertIn("unknown demo names in --only", completed.stderr)
         self.assertIn("unknown-demo", completed.stderr)
 
+    def test_unit_all_script_report_file_requires_value(self) -> None:
+        completed = subprocess.run(
+            [str(SCRIPTS_DIR / "all.sh"), "--report-file"],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 2)
+        self.assertIn("missing value for --report-file", completed.stderr)
+
     def test_functional_demo_scripts_run_expected_command_chains(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -174,6 +197,26 @@ class DemoScriptsTests(unittest.TestCase):
             self.assertEqual(payload["demos"], [{"name": "local.sh", "status": "passed", "exit_code": 0}])
             self.assertIn("[demo:all] [1] local.sh", completed.stderr)
 
+    def test_functional_all_script_report_file_writes_summary_payload(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            binary_path = root / "bin" / "tau-coding-agent"
+            trace_path = root / "trace.ndjson"
+            report_path = root / "reports" / "all.json"
+            write_mock_binary(binary_path)
+
+            completed = run_demo_script("all.sh", binary_path, trace_path, extra_args=["--report-file", str(report_path)])
+            self.assertEqual(completed.returncode, 0, msg=completed.stderr)
+            self.assertIn("[demo:all] summary: total=4 passed=4 failed=0", completed.stdout)
+            self.assertTrue(report_path.exists())
+
+            payload = json.loads(report_path.read_text(encoding="utf-8"))
+            self.assertEqual(payload["summary"], {"total": 4, "passed": 4, "failed": 0})
+            self.assertEqual(
+                [entry["name"] for entry in payload["demos"]],
+                ["local.sh", "rpc.sh", "events.sh", "package.sh"],
+            )
+
     def test_integration_demo_scripts_use_checked_in_example_paths(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -215,6 +258,28 @@ class DemoScriptsTests(unittest.TestCase):
         self.assertEqual(completed.returncode, 0)
         payload = json.loads(completed.stdout)
         self.assertEqual(payload["demos"], ["local.sh", "rpc.sh", "events.sh", "package.sh"])
+
+    def test_integration_all_script_report_file_tracks_selected_subset_order(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            binary_path = root / "bin" / "tau-coding-agent"
+            trace_path = root / "trace.ndjson"
+            report_path = root / "report.json"
+            write_mock_binary(binary_path)
+
+            completed = run_demo_script(
+                "all.sh",
+                binary_path,
+                trace_path,
+                extra_args=["--only", "events,rpc", "--report-file", str(report_path)],
+            )
+            self.assertEqual(completed.returncode, 0, msg=completed.stderr)
+            payload = json.loads(report_path.read_text(encoding="utf-8"))
+            self.assertEqual(
+                [entry["name"] for entry in payload["demos"]],
+                ["rpc.sh", "events.sh"],
+            )
+            self.assertEqual(payload["summary"], {"total": 2, "passed": 2, "failed": 0})
 
     def test_regression_scripts_fail_closed_when_binary_missing_in_skip_build_mode(self) -> None:
         completed = subprocess.run(
@@ -261,6 +326,23 @@ class DemoScriptsTests(unittest.TestCase):
             self.assertEqual(completed.returncode, 2)
             self.assertIn("unknown demo names in --only", completed.stderr)
             self.assertFalse(trace_path.exists())
+
+    def test_regression_all_script_failure_still_writes_report_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            binary_path = root / "bin" / "tau-coding-agent"
+            trace_path = root / "trace.ndjson"
+            report_path = root / "failed" / "report.json"
+            write_failing_binary(binary_path)
+
+            completed = run_demo_script("all.sh", binary_path, trace_path, extra_args=["--report-file", str(report_path)])
+            self.assertEqual(completed.returncode, 1)
+            self.assertTrue(report_path.exists())
+
+            payload = json.loads(report_path.read_text(encoding="utf-8"))
+            self.assertEqual(payload["summary"]["total"], 4)
+            self.assertEqual(payload["summary"]["failed"], 4)
+            self.assertEqual(payload["summary"]["passed"], 0)
 
 
 if __name__ == "__main__":

@@ -67,6 +67,7 @@ Run deterministic local demos:
 ./scripts/demo/all.sh
 ./scripts/demo/all.sh --list
 ./scripts/demo/all.sh --only rpc,events --json
+./scripts/demo/all.sh --report-file .tau/reports/demo-summary.json
 ./scripts/demo/local.sh
 ./scripts/demo/rpc.sh
 ./scripts/demo/events.sh
