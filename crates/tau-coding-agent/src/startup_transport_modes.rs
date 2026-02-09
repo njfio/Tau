@@ -45,6 +45,11 @@ pub(crate) async fn run_transport_mode_if_requested(
             bot_login: cli.github_bot_login.clone(),
             poll_interval: Duration::from_secs(cli.github_poll_interval_seconds.max(1)),
             poll_once: cli.github_poll_once,
+            required_labels: cli
+                .github_required_label
+                .iter()
+                .map(|label| label.trim().to_string())
+                .collect(),
             include_issue_body: cli.github_include_issue_body,
             include_edited_comments: cli.github_include_edited_comments,
             processed_event_cap: cli.github_processed_event_cap.max(1),

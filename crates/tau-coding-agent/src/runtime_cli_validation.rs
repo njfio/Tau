@@ -33,6 +33,13 @@ pub(crate) fn validate_github_issues_bridge_cli(cli: &Cli) -> Result<()> {
         bail!("--github-retry-base-delay-ms must be greater than 0");
     }
     if cli
+        .github_required_label
+        .iter()
+        .any(|label| label.trim().is_empty())
+    {
+        bail!("--github-required-label cannot be empty");
+    }
+    if cli
         .github_repo
         .as_deref()
         .map(str::trim)

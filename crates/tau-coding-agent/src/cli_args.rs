@@ -1723,6 +1723,15 @@ pub(crate) struct Cli {
     pub(crate) github_poll_once: bool,
 
     #[arg(
+        long = "github-required-label",
+        env = "TAU_GITHUB_REQUIRED_LABEL",
+        value_delimiter = ',',
+        requires = "github_issues_bridge",
+        help = "Only process issues containing one of these labels (repeatable)"
+    )]
+    pub(crate) github_required_label: Vec<String>,
+
+    #[arg(
         long = "github-artifact-retention-days",
         env = "TAU_GITHUB_ARTIFACT_RETENTION_DAYS",
         default_value_t = 30,
