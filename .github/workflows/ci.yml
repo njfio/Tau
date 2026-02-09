@@ -24,6 +24,7 @@ concurrency:
 
 permissions:
   contents: read
+  pull-requests: read
 
 env:
   CARGO_TERM_COLOR: always
@@ -37,20 +38,39 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Detect change scope
+        id: change_scope
+        if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            heavy:
+              - "crates/tau-coding-agent/**"
+              - "crates/tau-agent-core/**"
+              - "crates/tau-ai/**"
+              - "Cargo.toml"
+              - "Cargo.lock"
+              - ".github/workflows/**"
+              - ".github/scripts/**"
+
+      - name: Validate CI quality mode helper
+        run: python3 -m unittest discover -s .github/scripts -p "test_ci_quality_mode.py"
+
       - name: Determine quality mode
         id: quality_mode
         shell: bash
         run: |
           set -euo pipefail
-          mode="full"
-          if [[ "${{ github.event_name }}" == "pull_request" && "${{ github.head_ref }}" == codex/* ]]; then
-            mode="codex-light"
+          heavy_changed="${{ steps.change_scope.outputs.heavy }}"
+          if [[ -z "${heavy_changed}" ]]; then
+            heavy_changed="false"
           fi
-          echo "mode=${mode}" >> "$GITHUB_OUTPUT"
-          {
-            echo "### Quality Mode"
-            echo "- Mode: ${mode}"
-          } >> "$GITHUB_STEP_SUMMARY"
+          python3 .github/scripts/ci_quality_mode.py \
+            --event-name "${{ github.event_name }}" \
+            --head-ref "${{ github.head_ref }}" \
+            --heavy-changed "${heavy_changed}" \
+            --output "$GITHUB_OUTPUT" \
+            --summary "$GITHUB_STEP_SUMMARY"
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
