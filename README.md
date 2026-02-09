@@ -706,6 +706,17 @@ cargo run -p tau-coding-agent -- \
   --events-template-timezone UTC
 ```
 
+Simulate next-due schedule posture without executing events:
+
+```bash
+cargo run -p tau-coding-agent -- \
+  --events-dir .tau/events \
+  --events-state-path .tau/events/state.json \
+  --events-simulate \
+  --events-simulate-horizon-seconds 3600 \
+  --events-simulate-json
+```
+
 Queue a webhook-triggered immediate event from a payload file (debounced):
 
 ```bash

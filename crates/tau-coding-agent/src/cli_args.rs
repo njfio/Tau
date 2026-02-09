@@ -1229,6 +1229,7 @@ pub(crate) struct Cli {
         env = "TAU_EVENTS_INSPECT",
         default_value_t = false,
         conflicts_with = "events_validate",
+        conflicts_with = "events_simulate",
         conflicts_with = "events_template_write",
         conflicts_with = "events_runner",
         conflicts_with = "event_webhook_ingest_file",
@@ -1254,6 +1255,7 @@ pub(crate) struct Cli {
         env = "TAU_EVENTS_VALIDATE",
         default_value_t = false,
         conflicts_with = "events_inspect",
+        conflicts_with = "events_simulate",
         conflicts_with = "events_template_write",
         conflicts_with = "events_runner",
         conflicts_with = "event_webhook_ingest_file",
@@ -1275,11 +1277,47 @@ pub(crate) struct Cli {
     pub(crate) events_validate_json: bool,
 
     #[arg(
+        long = "events-simulate",
+        env = "TAU_EVENTS_SIMULATE",
+        default_value_t = false,
+        conflicts_with = "events_inspect",
+        conflicts_with = "events_validate",
+        conflicts_with = "events_template_write",
+        conflicts_with = "events_runner",
+        conflicts_with = "event_webhook_ingest_file",
+        help = "Simulate next event due timings and horizon posture, then exit"
+    )]
+    pub(crate) events_simulate: bool,
+
+    #[arg(
+        long = "events-simulate-json",
+        env = "TAU_EVENTS_SIMULATE_JSON",
+        default_value_t = false,
+        action = ArgAction::Set,
+        num_args = 0..=1,
+        require_equals = true,
+        default_missing_value = "true",
+        requires = "events_simulate",
+        help = "Emit --events-simulate output as pretty JSON"
+    )]
+    pub(crate) events_simulate_json: bool,
+
+    #[arg(
+        long = "events-simulate-horizon-seconds",
+        env = "TAU_EVENTS_SIMULATE_HORIZON_SECONDS",
+        default_value_t = 3_600,
+        requires = "events_simulate",
+        help = "Horizon window used to classify event next-due timing"
+    )]
+    pub(crate) events_simulate_horizon_seconds: u64,
+
+    #[arg(
         long = "events-template-write",
         env = "TAU_EVENTS_TEMPLATE_WRITE",
         value_name = "PATH",
         conflicts_with = "events_inspect",
         conflicts_with = "events_validate",
+        conflicts_with = "events_simulate",
         conflicts_with = "events_runner",
         conflicts_with = "event_webhook_ingest_file",
         help = "Write a schedule-specific event template JSON file and exit"

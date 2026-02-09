@@ -194,6 +194,43 @@ pub(crate) struct EventsValidateReport {
     pub diagnostics: Vec<EventsValidateDiagnostic>,
 }
 
+#[derive(Debug, Clone)]
+struct EventsSimulateConfig {
+    events_dir: PathBuf,
+    state_path: PathBuf,
+    horizon_seconds: u64,
+    stale_immediate_max_age_seconds: u64,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub(crate) struct EventsSimulateRow {
+    pub path: String,
+    pub event_id: String,
+    pub channel: String,
+    pub schedule: String,
+    pub enabled: bool,
+    pub next_due_unix_ms: Option<u64>,
+    pub due_now: bool,
+    pub within_horizon: bool,
+    pub last_run_unix_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub(crate) struct EventsSimulateReport {
+    pub events_dir: String,
+    pub state_path: String,
+    pub now_unix_ms: u64,
+    pub horizon_seconds: u64,
+    pub total_files: usize,
+    pub simulated_rows: usize,
+    pub malformed_files: usize,
+    pub invalid_rows: usize,
+    pub due_now_rows: usize,
+    pub within_horizon_rows: usize,
+    pub rows: Vec<EventsSimulateRow>,
+    pub diagnostics: Vec<EventsValidateDiagnostic>,
+}
+
 pub(crate) fn execute_events_inspect_command(cli: &Cli) -> Result<()> {
     let report = inspect_events(
         &EventsInspectConfig {
@@ -335,6 +372,29 @@ pub(crate) fn execute_events_template_write_command(cli: &Cli) -> Result<()> {
         template.channel,
         cli.events_template_overwrite,
     );
+    Ok(())
+}
+
+pub(crate) fn execute_events_simulate_command(cli: &Cli) -> Result<()> {
+    let report = simulate_events(
+        &EventsSimulateConfig {
+            events_dir: cli.events_dir.clone(),
+            state_path: cli.events_state_path.clone(),
+            horizon_seconds: cli.events_simulate_horizon_seconds,
+            stale_immediate_max_age_seconds: cli.events_stale_immediate_max_age_seconds,
+        },
+        current_unix_timestamp_ms(),
+    )?;
+
+    if cli.events_simulate_json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&report)
+                .context("failed to render events simulate json")?
+        );
+    } else {
+        println!("{}", render_events_simulate_report(&report));
+    }
     Ok(())
 }
 
@@ -1074,6 +1134,196 @@ fn schedule_name(schedule: &EventSchedule) -> &'static str {
     }
 }
 
+fn simulate_events(
+    config: &EventsSimulateConfig,
+    now_unix_ms: u64,
+) -> Result<EventsSimulateReport> {
+    let state = load_runner_state(&config.state_path)?;
+    let event_paths = collect_event_definition_paths(&config.events_dir)?;
+    let total_files = event_paths.len();
+    let horizon_unix_ms = now_unix_ms.saturating_add(config.horizon_seconds.saturating_mul(1_000));
+
+    let mut rows = Vec::new();
+    let mut diagnostics = Vec::new();
+    let mut malformed_files = 0usize;
+
+    for path in event_paths {
+        let path_text = path.display().to_string();
+        let raw = match std::fs::read_to_string(&path) {
+            Ok(value) => value,
+            Err(error) => {
+                malformed_files = malformed_files.saturating_add(1);
+                diagnostics.push(EventsValidateDiagnostic {
+                    path: path_text,
+                    event_id: None,
+                    reason_code: "read_error".to_string(),
+                    message: sanitize_error_message(&error.to_string()),
+                });
+                continue;
+            }
+        };
+        let definition = match serde_json::from_str::<EventDefinition>(&raw) {
+            Ok(value) => value,
+            Err(error) => {
+                malformed_files = malformed_files.saturating_add(1);
+                diagnostics.push(EventsValidateDiagnostic {
+                    path: path_text,
+                    event_id: None,
+                    reason_code: "json_parse".to_string(),
+                    message: sanitize_error_message(&error.to_string()),
+                });
+                continue;
+            }
+        };
+
+        if let Err(error) = ChannelStore::parse_channel_ref(&definition.channel) {
+            diagnostics.push(EventsValidateDiagnostic {
+                path: path_text,
+                event_id: Some(definition.id),
+                reason_code: "channel_ref_invalid".to_string(),
+                message: sanitize_error_message(&error.to_string()),
+            });
+            continue;
+        }
+
+        let next_due_unix_ms = match &definition.schedule {
+            EventSchedule::Immediate => {
+                if definition.enabled {
+                    let decision = due_decision(
+                        &definition,
+                        &state,
+                        now_unix_ms,
+                        config.stale_immediate_max_age_seconds,
+                    )?;
+                    match decision {
+                        DueDecision::Run => Some(now_unix_ms),
+                        DueDecision::SkipStaleRemove => None,
+                        DueDecision::NotDue => None,
+                    }
+                } else {
+                    None
+                }
+            }
+            EventSchedule::At { at_unix_ms } => Some(*at_unix_ms),
+            EventSchedule::Periodic { cron, timezone } => {
+                let last_run = state
+                    .periodic_last_run_unix_ms
+                    .get(&definition.id)
+                    .copied()
+                    .unwrap_or_else(|| now_unix_ms.saturating_sub(60_000));
+                match next_periodic_due_unix_ms(cron, timezone, last_run) {
+                    Ok(next_due) => Some(next_due),
+                    Err(error) => {
+                        diagnostics.push(EventsValidateDiagnostic {
+                            path: path_text,
+                            event_id: Some(definition.id),
+                            reason_code: "schedule_invalid".to_string(),
+                            message: sanitize_error_message(&error.to_string()),
+                        });
+                        continue;
+                    }
+                }
+            }
+        };
+
+        let due_now = definition.enabled
+            && next_due_unix_ms
+                .map(|value| value <= now_unix_ms)
+                .unwrap_or(false);
+        let within_horizon = definition.enabled
+            && next_due_unix_ms
+                .map(|value| value <= horizon_unix_ms)
+                .unwrap_or(false);
+        let last_run_unix_ms = state.periodic_last_run_unix_ms.get(&definition.id).copied();
+        rows.push(EventsSimulateRow {
+            path: path.display().to_string(),
+            event_id: definition.id,
+            channel: definition.channel,
+            schedule: schedule_name(&definition.schedule).to_string(),
+            enabled: definition.enabled,
+            next_due_unix_ms,
+            due_now,
+            within_horizon,
+            last_run_unix_ms,
+        });
+    }
+
+    rows.sort_by(|left, right| {
+        left.event_id
+            .cmp(&right.event_id)
+            .then_with(|| left.path.cmp(&right.path))
+    });
+    let due_now_rows = rows.iter().filter(|row| row.due_now).count();
+    let within_horizon_rows = rows.iter().filter(|row| row.within_horizon).count();
+    let invalid_rows = diagnostics.len().saturating_sub(malformed_files);
+
+    Ok(EventsSimulateReport {
+        events_dir: config.events_dir.display().to_string(),
+        state_path: config.state_path.display().to_string(),
+        now_unix_ms,
+        horizon_seconds: config.horizon_seconds,
+        total_files,
+        simulated_rows: rows.len(),
+        malformed_files,
+        invalid_rows,
+        due_now_rows,
+        within_horizon_rows,
+        rows,
+        diagnostics,
+    })
+}
+
+fn render_events_simulate_report(report: &EventsSimulateReport) -> String {
+    let mut lines = vec![format!(
+        "events simulate: events_dir={} state_path={} now_unix_ms={} horizon_seconds={} total_files={} simulated_rows={} malformed_files={} invalid_rows={} due_now_rows={} within_horizon_rows={}",
+        report.events_dir,
+        report.state_path,
+        report.now_unix_ms,
+        report.horizon_seconds,
+        report.total_files,
+        report.simulated_rows,
+        report.malformed_files,
+        report.invalid_rows,
+        report.due_now_rows,
+        report.within_horizon_rows,
+    )];
+
+    for row in &report.rows {
+        lines.push(format!(
+            "events simulate row: path={} event_id={} schedule={} enabled={} next_due_unix_ms={} due_now={} within_horizon={} last_run_unix_ms={} channel={}",
+            row.path,
+            row.event_id,
+            row.schedule,
+            row.enabled,
+            row.next_due_unix_ms
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "none".to_string()),
+            row.due_now,
+            row.within_horizon,
+            row.last_run_unix_ms
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "none".to_string()),
+            row.channel,
+        ));
+    }
+
+    for diagnostic in &report.diagnostics {
+        lines.push(format!(
+            "events simulate error: path={} event_id={} reason_code={} message={}",
+            diagnostic.path,
+            diagnostic
+                .event_id
+                .as_deref()
+                .filter(|value| !value.is_empty())
+                .unwrap_or("none"),
+            diagnostic.reason_code,
+            diagnostic.message
+        ));
+    }
+
+    lines.join("\n")
+}
+
 fn due_decision(
     event: &EventDefinition,
     state: &EventRunnerState,
@@ -1295,9 +1545,10 @@ mod tests {
     use super::{
         due_decision, execute_events_template_write_command, ingest_webhook_immediate_event,
         inspect_events, load_event_records, next_periodic_due_unix_ms,
-        render_events_inspect_report, render_events_validate_report, validate_events_definitions,
-        DueDecision, EventDefinition, EventRunnerState, EventSchedule, EventSchedulerConfig,
-        EventSchedulerRuntime, EventWebhookIngestConfig, EventsInspectConfig, EventsValidateConfig,
+        render_events_inspect_report, render_events_simulate_report, render_events_validate_report,
+        simulate_events, validate_events_definitions, DueDecision, EventDefinition,
+        EventRunnerState, EventSchedule, EventSchedulerConfig, EventSchedulerRuntime,
+        EventWebhookIngestConfig, EventsInspectConfig, EventsSimulateConfig, EventsValidateConfig,
         EventsValidateReport, WebhookSignatureAlgorithm,
     };
     use crate::{tools::ToolPolicy, Cli, CliEventTemplateSchedule, RenderOptions};
@@ -1915,6 +2166,201 @@ mod tests {
             .expect("overwrite should succeed when enabled");
         let raw = std::fs::read_to_string(path).expect("read overwritten");
         assert!(raw.contains("\"id\": \"template-immediate\""));
+    }
+
+    #[test]
+    fn unit_simulate_events_classifies_due_and_horizon_rows() {
+        let temp = tempdir().expect("tempdir");
+        let events_dir = temp.path().join("events");
+        std::fs::create_dir_all(&events_dir).expect("create events dir");
+        let now = 1_700_000_300_000_u64;
+
+        write_event(
+            &events_dir.join("immediate.json"),
+            &EventDefinition {
+                id: "immediate".to_string(),
+                channel: "slack/C1".to_string(),
+                prompt: "run".to_string(),
+                schedule: EventSchedule::Immediate,
+                enabled: true,
+                created_unix_ms: Some(now.saturating_sub(100)),
+            },
+        );
+        write_event(
+            &events_dir.join("at-future.json"),
+            &EventDefinition {
+                id: "at-future".to_string(),
+                channel: "slack/C2".to_string(),
+                prompt: "later".to_string(),
+                schedule: EventSchedule::At {
+                    at_unix_ms: now.saturating_add(20_000),
+                },
+                enabled: true,
+                created_unix_ms: Some(now.saturating_sub(100)),
+            },
+        );
+
+        let report = simulate_events(
+            &EventsSimulateConfig {
+                events_dir,
+                state_path: temp.path().join("state.json"),
+                horizon_seconds: 30,
+                stale_immediate_max_age_seconds: 86_400,
+            },
+            now,
+        )
+        .expect("simulate report");
+        assert_eq!(report.total_files, 2);
+        assert_eq!(report.simulated_rows, 2);
+        assert_eq!(report.due_now_rows, 1);
+        assert_eq!(report.within_horizon_rows, 2);
+        assert_eq!(report.invalid_rows, 0);
+        assert_eq!(report.malformed_files, 0);
+    }
+
+    #[test]
+    fn functional_render_events_simulate_report_contains_summary_and_rows() {
+        let report = super::EventsSimulateReport {
+            events_dir: "/tmp/events".to_string(),
+            state_path: "/tmp/state.json".to_string(),
+            now_unix_ms: 123,
+            horizon_seconds: 60,
+            total_files: 1,
+            simulated_rows: 1,
+            malformed_files: 0,
+            invalid_rows: 0,
+            due_now_rows: 1,
+            within_horizon_rows: 1,
+            rows: vec![super::EventsSimulateRow {
+                path: "/tmp/events/a.json".to_string(),
+                event_id: "evt-1".to_string(),
+                channel: "slack/C1".to_string(),
+                schedule: "immediate".to_string(),
+                enabled: true,
+                next_due_unix_ms: Some(123),
+                due_now: true,
+                within_horizon: true,
+                last_run_unix_ms: None,
+            }],
+            diagnostics: Vec::new(),
+        };
+
+        let rendered = render_events_simulate_report(&report);
+        assert!(rendered.contains("events simulate:"));
+        assert!(rendered.contains("horizon_seconds=60"));
+        assert!(rendered.contains("events simulate row:"));
+        assert!(rendered.contains("event_id=evt-1"));
+    }
+
+    #[test]
+    fn integration_simulate_events_mixed_schedules_with_state_replay() {
+        let temp = tempdir().expect("tempdir");
+        let events_dir = temp.path().join("events");
+        let state_path = temp.path().join("state.json");
+        std::fs::create_dir_all(&events_dir).expect("create events dir");
+        let now = 1_700_000_400_000_u64;
+
+        write_event(
+            &events_dir.join("periodic.json"),
+            &EventDefinition {
+                id: "periodic".to_string(),
+                channel: "github/owner/repo#1".to_string(),
+                prompt: "periodic".to_string(),
+                schedule: EventSchedule::Periodic {
+                    cron: "0/1 * * * * * *".to_string(),
+                    timezone: "UTC".to_string(),
+                },
+                enabled: true,
+                created_unix_ms: Some(now.saturating_sub(100)),
+            },
+        );
+        write_event(
+            &events_dir.join("disabled-at.json"),
+            &EventDefinition {
+                id: "disabled-at".to_string(),
+                channel: "slack/C3".to_string(),
+                prompt: "disabled".to_string(),
+                schedule: EventSchedule::At {
+                    at_unix_ms: now.saturating_add(120_000),
+                },
+                enabled: false,
+                created_unix_ms: Some(now.saturating_sub(100)),
+            },
+        );
+        std::fs::write(
+            &state_path,
+            r#"{
+  "schema_version": 1,
+  "periodic_last_run_unix_ms": {
+    "periodic": 1700000390000
+  },
+  "debounce_last_seen_unix_ms": {},
+  "signature_replay_last_seen_unix_ms": {}
+}
+"#,
+        )
+        .expect("write state");
+
+        let report = simulate_events(
+            &EventsSimulateConfig {
+                events_dir,
+                state_path,
+                horizon_seconds: 300,
+                stale_immediate_max_age_seconds: 86_400,
+            },
+            now,
+        )
+        .expect("simulate report");
+        assert_eq!(report.total_files, 2);
+        assert_eq!(report.simulated_rows, 2);
+        assert_eq!(report.malformed_files, 0);
+        assert_eq!(report.invalid_rows, 0);
+        assert_eq!(report.rows.iter().filter(|row| row.enabled).count(), 1);
+    }
+
+    #[test]
+    fn regression_simulate_events_reports_malformed_and_invalid_entries() {
+        let temp = tempdir().expect("tempdir");
+        let events_dir = temp.path().join("events");
+        std::fs::create_dir_all(&events_dir).expect("create events dir");
+        let now = 1_700_000_500_000_u64;
+
+        write_event(
+            &events_dir.join("invalid-channel.json"),
+            &EventDefinition {
+                id: "invalid-channel".to_string(),
+                channel: "slack".to_string(),
+                prompt: "bad".to_string(),
+                schedule: EventSchedule::Immediate,
+                enabled: true,
+                created_unix_ms: Some(now.saturating_sub(100)),
+            },
+        );
+        std::fs::write(events_dir.join("broken.json"), "{bad-json").expect("write malformed");
+
+        let report = simulate_events(
+            &EventsSimulateConfig {
+                events_dir,
+                state_path: temp.path().join("state.json"),
+                horizon_seconds: 60,
+                stale_immediate_max_age_seconds: 86_400,
+            },
+            now,
+        )
+        .expect("simulate report");
+
+        assert_eq!(report.total_files, 2);
+        assert_eq!(report.simulated_rows, 0);
+        assert_eq!(report.malformed_files, 1);
+        assert_eq!(report.invalid_rows, 1);
+        assert!(report
+            .diagnostics
+            .iter()
+            .any(|item| item.reason_code == "channel_ref_invalid"));
+        assert!(report
+            .diagnostics
+            .iter()
+            .any(|item| item.reason_code == "json_parse"));
     }
 
     #[tokio::test]
