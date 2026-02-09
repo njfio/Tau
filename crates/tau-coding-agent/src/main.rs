@@ -1,3 +1,4 @@
+mod approvals;
 mod atomic_io;
 mod auth_commands;
 mod auth_types;
@@ -82,6 +83,10 @@ use tau_ai::{
     Provider, StreamDeltaHandler, TauAiError,
 };
 
+pub(crate) use crate::approvals::{
+    evaluate_approval_gate, execute_approvals_command, ApprovalAction, ApprovalGateResult,
+    APPROVALS_USAGE,
+};
 pub(crate) use crate::atomic_io::write_text_atomic;
 pub(crate) use crate::auth_commands::execute_auth_command;
 #[cfg(test)]

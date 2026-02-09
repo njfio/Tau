@@ -253,6 +253,14 @@ pub(crate) const COMMAND_SPECS: &[CommandSpec] = &[
         example: "/auth matrix openai --mode oauth-token --json",
     },
     CommandSpec {
+        name: "/approvals",
+        usage: APPROVALS_USAGE,
+        description: "Review and decide queued HITL approval requests",
+        details:
+            "Use list for queue visibility and approve/reject to unblock or deny pending requests.",
+        example: "/approvals list --status pending",
+    },
+    CommandSpec {
         name: "/integration-auth",
         usage: "/integration-auth <set|status|rotate|revoke> ...",
         description: "Manage credential-store secrets for integrations (GitHub, Slack, webhooks)",
@@ -367,6 +375,7 @@ pub(crate) const COMMAND_NAMES: &[&str] = &[
     "/branches",
     "/macro",
     "/auth",
+    "/approvals",
     "/integration-auth",
     "/pair",
     "/unpair",
@@ -642,6 +651,41 @@ pub(crate) fn handle_command_with_session_import_mode(
             }
         }
         return Ok(CommandAction::Continue);
+    }
+
+    if command_name == "/approvals" {
+        println!("{}", execute_approvals_command(command_args));
+        return Ok(CommandAction::Continue);
+    }
+
+    match evaluate_approval_gate(&ApprovalAction::Command {
+        name: command_name.to_string(),
+        args: command_args.to_string(),
+    }) {
+        Ok(ApprovalGateResult::Allowed) => {}
+        Ok(ApprovalGateResult::Denied {
+            request_id,
+            rule_id,
+            reason_code,
+            message,
+        }) => {
+            println!(
+                "approval gate: status=denied command={} request_id={} rule_id={} reason_code={} message={}",
+                command_name, request_id, rule_id, reason_code, message
+            );
+            println!(
+                "approval gate hint: run '/approvals list' then '/approvals approve {}' to continue",
+                request_id
+            );
+            return Ok(CommandAction::Continue);
+        }
+        Err(error) => {
+            println!(
+                "approval gate error: command={} error={error}",
+                command_name
+            );
+            return Ok(CommandAction::Continue);
+        }
     }
 
     if command_name == "/session" {
