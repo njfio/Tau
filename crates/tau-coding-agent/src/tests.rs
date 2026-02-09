@@ -360,6 +360,7 @@ fn test_cli() -> Cli {
         onboard: false,
         onboard_non_interactive: false,
         onboard_profile: "default".to_string(),
+        onboard_release_channel: None,
         channel_store_root: PathBuf::from(".tau/channel-store"),
         channel_store_inspect: None,
         channel_store_repair: None,
@@ -5801,6 +5802,7 @@ fn unit_cli_onboarding_flags_default_to_disabled() {
     assert!(!cli.onboard);
     assert!(!cli.onboard_non_interactive);
     assert_eq!(cli.onboard_profile, "default");
+    assert_eq!(cli.onboard_release_channel, None);
 }
 
 #[test]
@@ -5811,10 +5813,13 @@ fn functional_cli_onboarding_flags_accept_explicit_overrides() {
         "--onboard-non-interactive",
         "--onboard-profile",
         "team_default",
+        "--onboard-release-channel",
+        "beta",
     ]);
     assert!(cli.onboard);
     assert!(cli.onboard_non_interactive);
     assert_eq!(cli.onboard_profile, "team_default");
+    assert_eq!(cli.onboard_release_channel, Some("beta".to_string()));
 }
 
 #[test]
@@ -5828,6 +5833,13 @@ fn regression_cli_onboarding_non_interactive_requires_onboard() {
 fn regression_cli_onboarding_profile_requires_onboard() {
     let parse = Cli::try_parse_from(["tau-rs", "--onboard-profile", "team"]);
     let error = parse.expect_err("onboarding profile should require --onboard");
+    assert!(error.to_string().contains("--onboard"));
+}
+
+#[test]
+fn regression_cli_onboarding_release_channel_requires_onboard() {
+    let parse = Cli::try_parse_from(["tau-rs", "--onboard-release-channel", "beta"]);
+    let error = parse.expect_err("onboarding release channel should require --onboard");
     assert!(error.to_string().contains("--onboard"));
 }
 
@@ -15217,6 +15229,11 @@ fn integration_execute_startup_preflight_runs_onboarding_and_generates_report() 
 
     let profile_store = temp.path().join(".tau/profiles.json");
     assert!(profile_store.exists(), "profile store should be created");
+    let release_channel_store = temp.path().join(".tau/release-channel.json");
+    assert!(
+        release_channel_store.exists(),
+        "release channel store should be created"
+    );
 
     let reports_dir = temp.path().join(".tau/reports");
     let reports = std::fs::read_dir(&reports_dir)
@@ -15234,6 +15251,15 @@ fn integration_execute_startup_preflight_runs_onboarding_and_generates_report() 
         "expected at least one onboarding report in {}",
         reports_dir.display()
     );
+
+    let latest_report = reports.last().expect("latest onboarding report");
+    let report_payload =
+        std::fs::read_to_string(latest_report).expect("read onboarding report payload");
+    let report_json =
+        serde_json::from_str::<serde_json::Value>(&report_payload).expect("parse report payload");
+    assert_eq!(report_json["release_channel"], "stable");
+    assert_eq!(report_json["release_channel_source"], "default");
+    assert_eq!(report_json["release_channel_action"], "created");
 }
 
 #[test]
