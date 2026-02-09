@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "commands": [
+    {
+      "name": "package-validate",
+      "args": [
+        "--package-validate",
+        "./examples/starter/package.json"
+      ]
+    },
+    {
+      "name": "package-show",
+      "args": [
+        "--package-show",
+        "./examples/starter/package.json"
+      ]
+    },
+    {
+      "name": "extension-validate",
+      "args": [
+        "--extension-validate",
+        "./examples/extensions/issue-assistant/extension.json"
+      ]
+    },
+    {
+      "name": "extension-list",
+      "args": [
+        "--extension-list",
+        "--extension-list-root",
+        "./examples/extensions"
+      ]
+    },
+    {
+      "name": "extension-exec",
+      "args": [
+        "--extension-exec-manifest",
+        "./examples/extensions/issue-assistant/extension.json",
+        "--extension-exec-hook",
+        "run-start",
+        "--extension-exec-payload-file",
+        "./examples/extensions/issue-assistant/payload.json"
+      ]
+    },
+    {
+      "name": "events-validate",
+      "args": [
+        "--events-dir",
+        "./examples/events",
+        "--events-state-path",
+        "./examples/events-state.json",
+        "--events-validate"
+      ]
+    },
+    {
+      "name": "rpc-capabilities",
+      "args": [
+        "--rpc-capabilities"
+      ]
+    }
+  ]
+}

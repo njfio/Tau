@@ -59,8 +59,8 @@ jobs:
               - ".github/workflows/**"
               - ".github/scripts/**"
 
-      - name: Validate CI quality mode helper
-        run: python3 -m unittest discover -s .github/scripts -p "test_ci_quality_mode.py"
+      - name: Validate CI helper scripts
+        run: python3 -m unittest discover -s .github/scripts -p "test_*.py"
 
       - name: Determine quality mode
         id: quality_mode
@@ -102,11 +102,26 @@ jobs:
       - name: Lint
         run: cargo clippy --workspace --all-targets -- -D warnings
 
-      - name: Run codex light smoke tests
+      - name: Run codex light demo smoke
         if: steps.quality_mode.outputs.mode == 'codex-light'
         env:
           RUST_MIN_STACK: "8388608"
-        run: cargo test --workspace --lib --bins
+        run: |
+          python3 .github/scripts/demo_smoke_runner.py \
+            --repo-root . \
+            --manifest .github/demo-smoke-manifest.json \
+            --binary target/debug/tau-coding-agent \
+            --log-dir ci-artifacts/demo-smoke \
+            --summary "$GITHUB_STEP_SUMMARY" \
+            --build
+
+      - name: Upload codex light demo smoke logs
+        if: always() && steps.quality_mode.outputs.mode == 'codex-light'
+        uses: actions/upload-artifact@v4
+        with:
+          name: demo-smoke-logs
+          path: ci-artifacts/demo-smoke
+          if-no-files-found: ignore
 
       - name: Run workspace tests
         if: steps.quality_mode.outputs.mode != 'codex-light'

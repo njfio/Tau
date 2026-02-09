@@ -749,6 +749,14 @@ cargo run -p tau-coding-agent -- \
   --events-dry-run-max-error-rows 0
 ```
 
+Run the deterministic local demo smoke suite (same manifest used by codex-light CI lane):
+
+```bash
+./scripts/demo-smoke.sh
+```
+
+Smoke logs are written under `ci-artifacts/demo-smoke/`.
+
 Queue a webhook-triggered immediate event from a payload file (debounced):
 
 ```bash

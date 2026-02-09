@@ -1,0 +1,172 @@
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(SCRIPT_DIR))
+
+import demo_smoke_runner  # noqa: E402
+
+
+def write_file(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+
+
+def write_mock_binary(path: Path) -> None:
+    write_file(
+        path,
+        """#!/usr/bin/env python3
+import sys
+
+if "--fail" in sys.argv:
+    print("forced-failure", file=sys.stderr)
+    raise SystemExit(7)
+
+print("mock-ok " + " ".join(sys.argv[1:]))
+""",
+    )
+    path.chmod(0o755)
+
+
+class DemoSmokeRunnerTests(unittest.TestCase):
+    def test_unit_load_manifest_accepts_valid_schema_and_commands(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            manifest_path = Path(temp_dir) / "manifest.json"
+            write_file(
+                manifest_path,
+                """{
+  "schema_version": 1,
+  "commands": [
+    {"name": "validate", "args": ["--rpc-capabilities"]},
+    {"name": "show", "args": ["--package-show", "./examples/starter/package.json"]}
+  ]
+}
+""",
+            )
+            commands = demo_smoke_runner.load_manifest(manifest_path)
+            self.assertEqual(len(commands), 2)
+            self.assertEqual(commands[0].name, "validate")
+            self.assertEqual(commands[0].args, ["--rpc-capabilities"])
+
+    def test_functional_run_commands_executes_manifest_with_mock_binary(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            manifest_path = root / "manifest.json"
+            binary_path = root / "bin" / "tau-coding-agent"
+            log_dir = root / "logs"
+            write_mock_binary(binary_path)
+            write_file(
+                manifest_path,
+                """{
+  "schema_version": 1,
+  "commands": [
+    {"name": "first", "args": ["--rpc-capabilities"]},
+    {"name": "second", "args": ["--package-validate", "./examples/starter/package.json"]}
+  ]
+}
+""",
+            )
+            commands = demo_smoke_runner.load_manifest(manifest_path)
+            report = demo_smoke_runner.run_commands(
+                commands=commands,
+                binary=binary_path,
+                repo_root=root,
+                log_dir=log_dir,
+                keep_going=False,
+            )
+            self.assertEqual(report.total, 2)
+            self.assertEqual(report.failed, 0)
+            self.assertEqual(report.passed, 2)
+            self.assertTrue((log_dir / "01-first.stdout.log").exists())
+            self.assertTrue((log_dir / "02-second.stdout.log").exists())
+
+    def test_integration_cli_runs_manifest_and_writes_summary(self):
+        script_path = SCRIPT_DIR / "demo_smoke_runner.py"
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            manifest_path = root / "manifest.json"
+            binary_path = root / "bin" / "tau-coding-agent"
+            summary_path = root / "summary.md"
+            log_dir = root / "logs"
+            write_mock_binary(binary_path)
+            write_file(
+                manifest_path,
+                """{
+  "schema_version": 1,
+  "commands": [
+    {"name": "single", "args": ["--rpc-capabilities"]}
+  ]
+}
+""",
+            )
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(script_path),
+                    "--repo-root",
+                    str(root),
+                    "--manifest",
+                    str(manifest_path),
+                    "--binary",
+                    str(binary_path),
+                    "--log-dir",
+                    str(log_dir),
+                    "--summary",
+                    str(summary_path),
+                ],
+                check=True,
+            )
+            summary = summary_path.read_text(encoding="utf-8")
+            self.assertIn("### Demo Smoke", summary)
+            self.assertIn("- Status: pass", summary)
+            self.assertIn("- Failed: 0", summary)
+            self.assertTrue((log_dir / "01-single.stdout.log").exists())
+            self.assertTrue((log_dir / "01-single.stderr.log").exists())
+
+    def test_regression_cli_reports_failing_command_name_and_exit_code(self):
+        script_path = SCRIPT_DIR / "demo_smoke_runner.py"
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            manifest_path = root / "manifest.json"
+            binary_path = root / "bin" / "tau-coding-agent"
+            log_dir = root / "logs"
+            write_mock_binary(binary_path)
+            write_file(
+                manifest_path,
+                """{
+  "schema_version": 1,
+  "commands": [
+    {"name": "pass-command", "args": ["--rpc-capabilities"]},
+    {"name": "failing-command", "args": ["--fail"]}
+  ]
+}
+""",
+            )
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(script_path),
+                    "--repo-root",
+                    str(root),
+                    "--manifest",
+                    str(manifest_path),
+                    "--binary",
+                    str(binary_path),
+                    "--log-dir",
+                    str(log_dir),
+                ],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertIn("[demo-smoke] FAIL failing-command", completed.stdout)
+            self.assertTrue((log_dir / "02-failing-command.stderr.log").exists())
+
+
+if __name__ == "__main__":
+    unittest.main()
