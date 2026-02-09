@@ -757,6 +757,24 @@ Run the deterministic local demo smoke suite (same manifest used by codex-light 
 
 Smoke logs are written under `ci-artifacts/demo-smoke/`.
 
+Run one-command demo wrappers for key flows:
+
+```bash
+# local onboarding + baseline runtime checks
+./scripts/demo/local.sh
+
+# rpc capabilities + fixture-backed dispatch replay
+./scripts/demo/rpc.sh
+
+# scheduled events inspect/validate/dry-run flow
+./scripts/demo/events.sh
+
+# package validate/install/list/activate lifecycle
+./scripts/demo/package.sh
+```
+
+Each wrapper supports `--skip-build` and `--binary <path>` for deterministic runs with a prebuilt binary.
+
 Queue a webhook-triggered immediate event from a payload file (debounced):
 
 ```bash

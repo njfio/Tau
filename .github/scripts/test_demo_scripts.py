@@ -1,0 +1,121 @@
+import json
+import os
+import subprocess
+import tempfile
+import unittest
+from pathlib import Path
+
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+SCRIPTS_DIR = REPO_ROOT / "scripts" / "demo"
+
+
+def write_mock_binary(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        """#!/usr/bin/env python3
+import json
+import os
+import sys
+
+trace_path = os.environ.get("TAU_DEMO_MOCK_TRACE")
+if trace_path:
+    with open(trace_path, "a", encoding="utf-8") as handle:
+        handle.write(json.dumps(sys.argv[1:]))
+        handle.write("\\n")
+
+print("mock-ok " + " ".join(sys.argv[1:]))
+""",
+        encoding="utf-8",
+    )
+    path.chmod(0o755)
+
+
+def run_demo_script(script_name: str, binary_path: Path, trace_path: Path) -> subprocess.CompletedProcess[str]:
+    script_path = SCRIPTS_DIR / script_name
+    env = dict(os.environ)
+    env["TAU_DEMO_MOCK_TRACE"] = str(trace_path)
+    return subprocess.run(
+        [
+            str(script_path),
+            "--skip-build",
+            "--repo-root",
+            str(REPO_ROOT),
+            "--binary",
+            str(binary_path),
+        ],
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+
+class DemoScriptsTests(unittest.TestCase):
+    def test_unit_script_argument_parser_rejects_unknown_argument(self) -> None:
+        completed = subprocess.run(
+            [str(SCRIPTS_DIR / "local.sh"), "--definitely-unknown"],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 2)
+        self.assertIn("unknown argument: --definitely-unknown", completed.stderr)
+
+    def test_functional_demo_scripts_run_expected_command_chains(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            binary_path = root / "bin" / "tau-coding-agent"
+            trace_path = root / "trace.ndjson"
+            write_mock_binary(binary_path)
+
+            for script_name in ("local.sh", "rpc.sh", "events.sh", "package.sh"):
+                completed = run_demo_script(script_name, binary_path, trace_path)
+                self.assertEqual(
+                    completed.returncode,
+                    0,
+                    msg=f"{script_name} failed\nstdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
+                )
+                self.assertIn("summary: total=", completed.stdout)
+                self.assertIn("failed=0", completed.stdout)
+
+            rows = [json.loads(line) for line in trace_path.read_text(encoding="utf-8").splitlines()]
+            self.assertGreaterEqual(len(rows), 12)
+
+    def test_integration_demo_scripts_use_checked_in_example_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            binary_path = root / "bin" / "tau-coding-agent"
+            trace_path = root / "trace.ndjson"
+            write_mock_binary(binary_path)
+
+            events_run = run_demo_script("events.sh", binary_path, trace_path)
+            self.assertEqual(events_run.returncode, 0, msg=events_run.stderr)
+            package_run = run_demo_script("package.sh", binary_path, trace_path)
+            self.assertEqual(package_run.returncode, 0, msg=package_run.stderr)
+
+            recorded = trace_path.read_text(encoding="utf-8")
+            self.assertIn("./examples/events", recorded)
+            self.assertIn("./examples/events-state.json", recorded)
+            self.assertIn("./examples/starter/package.json", recorded)
+
+    def test_regression_scripts_fail_closed_when_binary_missing_in_skip_build_mode(self) -> None:
+        completed = subprocess.run(
+            [
+                str(SCRIPTS_DIR / "rpc.sh"),
+                "--skip-build",
+                "--repo-root",
+                str(REPO_ROOT),
+                "--binary",
+                "/tmp/tau-missing-binary",
+            ],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("missing tau-coding-agent binary", completed.stderr)
+
+
+if __name__ == "__main__":
+    unittest.main()
