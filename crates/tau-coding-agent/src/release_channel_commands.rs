@@ -245,6 +245,13 @@ pub(crate) fn compare_versions(current: &str, latest: &str) -> Option<std::cmp::
     Some(std::cmp::Ordering::Equal)
 }
 
+fn resolve_channel_latest_or_unknown(
+    channel: ReleaseChannel,
+    releases: &[GitHubReleaseRecord],
+) -> String {
+    select_latest_channel_release(channel, releases).unwrap_or_else(|| "unknown".to_string())
+}
+
 fn fetch_release_records(url: &str) -> Result<Vec<GitHubReleaseRecord>> {
     if let Ok(handle) = tokio::runtime::Handle::try_current() {
         tokio::task::block_in_place(|| handle.block_on(fetch_release_records_async(url)))
@@ -611,8 +618,14 @@ fn execute_release_channel_command_with_lookup_options(
                     } else {
                         "stale"
                     };
+                    let stable_latest =
+                        resolve_channel_latest_or_unknown(ReleaseChannel::Stable, &cache.releases);
+                    let beta_latest =
+                        resolve_channel_latest_or_unknown(ReleaseChannel::Beta, &cache.releases);
+                    let dev_latest =
+                        resolve_channel_latest_or_unknown(ReleaseChannel::Dev, &cache.releases);
                     format!(
-                        "release cache: path={} status=present schema_version={} entries={} fetched_at_unix_ms={} age_ms={} ttl_ms={} freshness={} source_url={}",
+                        "release cache: path={} status=present schema_version={} entries={} fetched_at_unix_ms={} age_ms={} ttl_ms={} freshness={} source_url={} stable_latest={} beta_latest={} dev_latest={}",
                         cache_path.display(),
                         cache.schema_version,
                         cache.releases.len(),
@@ -620,7 +633,10 @@ fn execute_release_channel_command_with_lookup_options(
                         age_ms,
                         cache_ttl_ms,
                         freshness,
-                        cache.source_url
+                        cache.source_url,
+                        stable_latest,
+                        beta_latest,
+                        dev_latest
                     )
                 }
                 Ok(None) => format!(
@@ -773,6 +789,38 @@ mod tests {
     }
 
     #[test]
+    fn unit_resolve_channel_latest_or_unknown_returns_expected_values() {
+        let releases = vec![
+            GitHubReleaseRecord {
+                tag_name: "v2.1.0-beta.1".to_string(),
+                prerelease: true,
+                draft: false,
+            },
+            GitHubReleaseRecord {
+                tag_name: "v2.0.5".to_string(),
+                prerelease: false,
+                draft: false,
+            },
+        ];
+        assert_eq!(
+            resolve_channel_latest_or_unknown(ReleaseChannel::Stable, &releases),
+            "v2.0.5"
+        );
+        assert_eq!(
+            resolve_channel_latest_or_unknown(ReleaseChannel::Beta, &releases),
+            "v2.1.0-beta.1"
+        );
+        assert_eq!(
+            resolve_channel_latest_or_unknown(ReleaseChannel::Dev, &releases),
+            "v2.1.0-beta.1"
+        );
+        assert_eq!(
+            resolve_channel_latest_or_unknown(ReleaseChannel::Stable, &[]),
+            "unknown"
+        );
+    }
+
+    #[test]
     fn functional_execute_release_channel_command_show_and_set_round_trip() {
         let temp = tempfile::tempdir().expect("tempdir");
         let path = temp.path().join("release-channel.json");
@@ -819,6 +867,9 @@ mod tests {
         assert!(present.contains("ttl_ms=900000"));
         assert!(present.contains("freshness=fresh"));
         assert!(present.contains("source_url=https://example.invalid/releases"));
+        assert!(present.contains("stable_latest=v9.9.9"));
+        assert!(present.contains("beta_latest=v9.9.9"));
+        assert!(present.contains("dev_latest=v9.9.9"));
 
         let cleared = execute_release_channel_command("cache clear", &path);
         assert!(cleared.contains("status=removed"));
@@ -865,6 +916,9 @@ mod tests {
         assert!(show.contains("entries=2"));
         assert!(show.contains("freshness=fresh"));
         assert!(show.contains(&format!("source_url={url}")));
+        assert!(show.contains("stable_latest=v8.9.4"));
+        assert!(show.contains("beta_latest=v9.0.0-beta.2"));
+        assert!(show.contains("dev_latest=v9.0.0-beta.2"));
         mock.assert_calls(1);
     }
 
@@ -973,6 +1027,16 @@ mod tests {
         assert_eq!(cached.source_url, url);
         assert_eq!(cached.releases.len(), 2);
         assert_eq!(cached.releases[0].tag_name, "v10.1.0");
+
+        let show = execute_release_channel_command_with_lookup_options(
+            "cache show",
+            &path,
+            &url,
+            RELEASE_LOOKUP_CACHE_TTL_MS,
+        );
+        assert!(show.contains("stable_latest=v10.1.0"));
+        assert!(show.contains("beta_latest=v10.2.0-beta.1"));
+        assert!(show.contains("dev_latest=v10.2.0-beta.1"));
     }
 
     #[test]
@@ -1285,6 +1349,33 @@ mod tests {
         assert!(output.contains("status=present"));
         assert!(output.contains("freshness=stale"));
         assert!(output.contains("ttl_ms=900000"));
+        assert!(output.contains("stable_latest=v8.8.8"));
+        assert!(output.contains("beta_latest=v8.8.8"));
+        assert!(output.contains("dev_latest=v8.8.8"));
+    }
+
+    #[test]
+    fn regression_execute_release_channel_command_cache_show_reports_unknown_channel_latest_for_empty_cache(
+    ) {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let path = temp.path().join(".tau/release-channel.json");
+        let cache_path = temp.path().join(".tau/release-lookup-cache.json");
+        let stale_time =
+            current_unix_timestamp_ms().saturating_sub(RELEASE_LOOKUP_CACHE_TTL_MS + 5_000);
+        save_release_lookup_cache(
+            &cache_path,
+            "https://example.invalid/releases",
+            stale_time,
+            &[],
+        )
+        .expect("save empty cache");
+
+        let output = execute_release_channel_command("cache show", &path);
+        assert!(output.contains("status=present"));
+        assert!(output.contains("entries=0"));
+        assert!(output.contains("stable_latest=unknown"));
+        assert!(output.contains("beta_latest=unknown"));
+        assert!(output.contains("dev_latest=unknown"));
     }
 
     #[test]
