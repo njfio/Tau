@@ -461,6 +461,7 @@ fn test_cli() -> Cli {
         github_api_base: "https://api.github.com".to_string(),
         github_state_dir: PathBuf::from(".tau/github-issues"),
         github_poll_interval_seconds: 30,
+        github_poll_once: false,
         github_artifact_retention_days: 30,
         github_include_issue_body: false,
         github_include_edited_comments: true,
@@ -1139,6 +1140,7 @@ fn functional_cli_integration_secret_id_flags_accept_explicit_values() {
 #[test]
 fn unit_cli_artifact_retention_flags_default_to_30_days() {
     let cli = Cli::parse_from(["tau-rs"]);
+    assert!(!cli.github_poll_once);
     assert_eq!(cli.github_artifact_retention_days, 30);
     assert_eq!(cli.slack_artifact_retention_days, 30);
 }
@@ -1149,13 +1151,25 @@ fn functional_cli_artifact_retention_flags_accept_explicit_values() {
         "tau-rs",
         "--github-issues-bridge",
         "--slack-bridge",
+        "--github-poll-once",
         "--github-artifact-retention-days",
         "14",
         "--slack-artifact-retention-days",
         "0",
     ]);
+    assert!(cli.github_poll_once);
     assert_eq!(cli.github_artifact_retention_days, 14);
     assert_eq!(cli.slack_artifact_retention_days, 0);
+}
+
+#[test]
+fn regression_cli_github_poll_once_accepts_explicit_false() {
+    let cli = Cli::parse_from([
+        "tau-rs",
+        "--github-issues-bridge",
+        "--github-poll-once=false",
+    ]);
+    assert!(!cli.github_poll_once);
 }
 
 #[test]

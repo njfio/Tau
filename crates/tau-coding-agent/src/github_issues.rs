@@ -64,6 +64,7 @@ pub(crate) struct GithubIssuesBridgeRuntimeConfig {
     pub token: String,
     pub bot_login: Option<String>,
     pub poll_interval: Duration,
+    pub poll_once: bool,
     pub include_issue_body: bool,
     pub include_edited_comments: bool,
     pub processed_event_cap: usize,
@@ -949,6 +950,21 @@ impl GithubIssuesBridgeRuntime {
                         report.skipped_duplicate_events,
                         report.failed_events
                     );
+                    if self.config.poll_once {
+                        let mut finalize_report = PollCycleReport::default();
+                        let mut state_dirty = false;
+                        self.drain_finished_runs(&mut finalize_report, &mut state_dirty, true)
+                            .await?;
+                        if state_dirty {
+                            self.state_store.save()?;
+                        }
+                        println!(
+                            "github bridge one-shot complete: repo={} failed_runs={}",
+                            self.repo.as_slug(),
+                            finalize_report.failed_events
+                        );
+                        return Ok(());
+                    }
                 }
                 Err(error) => {
                     failure_streak = failure_streak.saturating_add(1);
@@ -962,6 +978,9 @@ impl GithubIssuesBridgeRuntime {
                         self.state_store.save()?;
                     }
                     eprintln!("github bridge poll error: {error}");
+                    if self.config.poll_once {
+                        return Err(error);
+                    }
                 }
             }
 
@@ -980,7 +999,7 @@ impl GithubIssuesBridgeRuntime {
         let mut report = PollCycleReport::default();
         let mut state_dirty = false;
         tokio::task::yield_now().await;
-        self.drain_finished_runs(&mut report, &mut state_dirty)
+        self.drain_finished_runs(&mut report, &mut state_dirty, false)
             .await?;
 
         let issues = self
@@ -1193,7 +1212,7 @@ impl GithubIssuesBridgeRuntime {
             }
         }
 
-        self.drain_finished_runs(&mut report, &mut state_dirty)
+        self.drain_finished_runs(&mut report, &mut state_dirty, false)
             .await?;
 
         if self
@@ -1237,11 +1256,18 @@ impl GithubIssuesBridgeRuntime {
         &mut self,
         report: &mut PollCycleReport,
         state_dirty: &mut bool,
+        include_pending: bool,
     ) -> Result<()> {
         let finished_issues = self
             .active_runs
             .iter()
-            .filter_map(|(issue_number, run)| run.handle.is_finished().then_some(*issue_number))
+            .filter_map(|(issue_number, run)| {
+                if include_pending || run.handle.is_finished() {
+                    Some(*issue_number)
+                } else {
+                    None
+                }
+            })
             .collect::<Vec<_>>();
 
         for issue_number in finished_issues {
@@ -3960,6 +3986,7 @@ mod tests {
             token: "test-token".to_string(),
             bot_login: Some("tau".to_string()),
             poll_interval: Duration::from_millis(1),
+            poll_once: false,
             include_issue_body: false,
             include_edited_comments: true,
             processed_event_cap: 32,
@@ -5041,6 +5068,114 @@ mod tests {
         let artifact_index = std::fs::read_to_string(channel_dir.join("artifacts/index.jsonl"))
             .expect("artifact index exists");
         assert!(artifact_index.contains("\"artifact_type\":\"github-issue-reply\""));
+    }
+
+    #[tokio::test]
+    async fn functional_bridge_run_poll_once_completes_single_cycle_and_exits() {
+        let server = MockServer::start();
+        let issues = server.mock(|when, then| {
+            when.method(GET).path("/repos/owner/repo/issues");
+            then.status(200).json_body(json!([{
+                "id": 10,
+                "number": 7,
+                "title": "Bridge me",
+                "body": "",
+                "created_at": "2026-01-01T00:00:00Z",
+                "updated_at": "2026-01-01T00:00:05Z",
+                "user": {"login":"alice"}
+            }]));
+        });
+        let comments = server.mock(|when, then| {
+            when.method(GET).path("/repos/owner/repo/issues/7/comments");
+            then.status(200).json_body(json!([{
+                "id": 200,
+                "body": "hello from issue stream",
+                "created_at": "2026-01-01T00:00:01Z",
+                "updated_at": "2026-01-01T00:00:01Z",
+                "user": {"login":"alice"}
+            }]));
+        });
+        let working_post = server.mock(|when, then| {
+            when.method(POST)
+                .path("/repos/owner/repo/issues/7/comments")
+                .body_includes("Tau is working on run");
+            then.status(201).json_body(json!({
+                "id": 901,
+                "html_url": "https://example.test/comment/901"
+            }));
+        });
+        let update = server.mock(|when, then| {
+            when.method(PATCH)
+                .path("/repos/owner/repo/issues/comments/901")
+                .body_includes("bridge reply")
+                .body_includes("tau-event-key:issue-comment-created:200");
+            then.status(200).json_body(json!({
+                "id": 901,
+                "html_url": "https://example.test/comment/901"
+            }));
+        });
+
+        let temp = tempdir().expect("tempdir");
+        let mut config = test_bridge_config(&server.base_url(), temp.path());
+        config.poll_once = true;
+        let mut runtime = GithubIssuesBridgeRuntime::new(config)
+            .await
+            .expect("runtime");
+        runtime.run().await.expect("poll-once run");
+
+        issues.assert_calls(1);
+        comments.assert_calls(1);
+        working_post.assert_calls(1);
+        update.assert_calls(1);
+
+        let state_path = temp.path().join("owner__repo").join("state.json");
+        let state_raw = std::fs::read_to_string(&state_path).expect("state file");
+        let state: serde_json::Value = serde_json::from_str(&state_raw).expect("state json");
+        let issue_session = state
+            .get("issue_sessions")
+            .and_then(serde_json::Value::as_object)
+            .and_then(|sessions| sessions.get("7"))
+            .expect("issue session");
+        assert!(issue_session
+            .get("last_run_id")
+            .and_then(serde_json::Value::as_str)
+            .is_some());
+    }
+
+    #[tokio::test]
+    async fn regression_bridge_run_poll_once_propagates_poll_errors() {
+        let server = MockServer::start();
+        let issues = server.mock(|when, then| {
+            when.method(GET).path("/repos/owner/repo/issues");
+            then.status(500).body("boom");
+        });
+
+        let temp = tempdir().expect("tempdir");
+        let mut config = test_bridge_config(&server.base_url(), temp.path());
+        config.poll_once = true;
+        config.retry_max_attempts = 1;
+        let mut runtime = GithubIssuesBridgeRuntime::new(config)
+            .await
+            .expect("runtime");
+        let error = runtime.run().await.expect_err("poll-once should fail");
+        assert!(error
+            .to_string()
+            .contains("github api list issues failed with status 500"));
+        issues.assert_calls(1);
+
+        let state_path = temp.path().join("owner__repo").join("state.json");
+        let state_raw = std::fs::read_to_string(&state_path).expect("state file");
+        let state: serde_json::Value = serde_json::from_str(&state_raw).expect("state json");
+        let health = state
+            .get("health")
+            .and_then(serde_json::Value::as_object)
+            .expect("health object");
+        assert_eq!(
+            health
+                .get("failure_streak")
+                .and_then(serde_json::Value::as_u64),
+            Some(1)
+        );
     }
 
     #[tokio::test]
