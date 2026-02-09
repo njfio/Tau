@@ -3996,11 +3996,25 @@ printf "codex fallback response" > "$out"
         "TAU_AUTH_EXPIRES_UNIX",
         "OPENAI_ACCESS_TOKEN",
         "OPENAI_AUTH_EXPIRES_UNIX",
+        "OPENAI_API_KEY",
+        "OPENROUTER_API_KEY",
+        "GROQ_API_KEY",
+        "XAI_API_KEY",
+        "MISTRAL_API_KEY",
+        "AZURE_OPENAI_API_KEY",
+        "TAU_API_KEY",
     ]);
     std::env::remove_var("TAU_AUTH_ACCESS_TOKEN");
     std::env::remove_var("TAU_AUTH_EXPIRES_UNIX");
     std::env::remove_var("OPENAI_ACCESS_TOKEN");
     std::env::remove_var("OPENAI_AUTH_EXPIRES_UNIX");
+    std::env::remove_var("OPENAI_API_KEY");
+    std::env::remove_var("OPENROUTER_API_KEY");
+    std::env::remove_var("GROQ_API_KEY");
+    std::env::remove_var("XAI_API_KEY");
+    std::env::remove_var("MISTRAL_API_KEY");
+    std::env::remove_var("AZURE_OPENAI_API_KEY");
+    std::env::remove_var("TAU_API_KEY");
 
     let client = build_provider_client(&cli, Provider::OpenAi).expect("build codex backend client");
     let runtime = tokio::runtime::Runtime::new().expect("runtime");
@@ -4043,6 +4057,13 @@ fn regression_build_provider_client_does_not_bypass_revoked_store_with_env_token
         "TAU_AUTH_EXPIRES_UNIX",
         "OPENAI_ACCESS_TOKEN",
         "OPENAI_AUTH_EXPIRES_UNIX",
+        "OPENAI_API_KEY",
+        "OPENROUTER_API_KEY",
+        "GROQ_API_KEY",
+        "XAI_API_KEY",
+        "MISTRAL_API_KEY",
+        "AZURE_OPENAI_API_KEY",
+        "TAU_API_KEY",
     ]);
     std::env::remove_var("TAU_AUTH_ACCESS_TOKEN");
     std::env::remove_var("TAU_AUTH_EXPIRES_UNIX");
@@ -4051,6 +4072,13 @@ fn regression_build_provider_client_does_not_bypass_revoked_store_with_env_token
         "OPENAI_AUTH_EXPIRES_UNIX",
         current_unix_timestamp().saturating_add(300).to_string(),
     );
+    std::env::remove_var("OPENAI_API_KEY");
+    std::env::remove_var("OPENROUTER_API_KEY");
+    std::env::remove_var("GROQ_API_KEY");
+    std::env::remove_var("XAI_API_KEY");
+    std::env::remove_var("MISTRAL_API_KEY");
+    std::env::remove_var("AZURE_OPENAI_API_KEY");
+    std::env::remove_var("TAU_API_KEY");
 
     let error = match build_provider_client(&cli, Provider::OpenAi) {
         Ok(_) => panic!("revoked store should remain fail-closed"),
@@ -6025,9 +6053,18 @@ fn unit_provider_auth_capability_reports_api_key_support() {
 
 #[test]
 fn regression_build_provider_client_anthropic_oauth_mode_requires_backend_when_disabled() {
+    let _env_lock = AUTH_ENV_TEST_LOCK
+        .lock()
+        .expect("acquire auth env test lock");
     let mut cli = test_cli();
     cli.anthropic_auth_mode = CliProviderAuthMode::OauthToken;
     cli.anthropic_claude_backend = false;
+    cli.anthropic_api_key = None;
+    cli.api_key = None;
+
+    let snapshot = snapshot_env_vars(&["ANTHROPIC_API_KEY", "TAU_API_KEY"]);
+    std::env::remove_var("ANTHROPIC_API_KEY");
+    std::env::remove_var("TAU_API_KEY");
 
     match build_provider_client(&cli, Provider::Anthropic) {
         Ok(_) => panic!("oauth mode without backend should fail"),
@@ -6035,13 +6072,25 @@ fn regression_build_provider_client_anthropic_oauth_mode_requires_backend_when_d
             assert!(error.to_string().contains("requires Claude Code backend"));
         }
     }
+
+    restore_env_vars(snapshot);
 }
 
 #[test]
 fn regression_build_provider_client_google_oauth_mode_requires_backend_when_disabled() {
+    let _env_lock = AUTH_ENV_TEST_LOCK
+        .lock()
+        .expect("acquire auth env test lock");
     let mut cli = test_cli();
     cli.google_auth_mode = CliProviderAuthMode::OauthToken;
     cli.google_gemini_backend = false;
+    cli.google_api_key = None;
+    cli.api_key = None;
+
+    let snapshot = snapshot_env_vars(&["GEMINI_API_KEY", "GOOGLE_API_KEY", "TAU_API_KEY"]);
+    std::env::remove_var("GEMINI_API_KEY");
+    std::env::remove_var("GOOGLE_API_KEY");
+    std::env::remove_var("TAU_API_KEY");
 
     match build_provider_client(&cli, Provider::Google) {
         Ok(_) => panic!("oauth mode without backend should fail"),
@@ -6049,6 +6098,116 @@ fn regression_build_provider_client_google_oauth_mode_requires_backend_when_disa
             assert!(error.to_string().contains("requires Gemini CLI backend"));
         }
     }
+
+    restore_env_vars(snapshot);
+}
+
+#[test]
+fn unit_build_provider_client_openai_oauth_mode_falls_back_to_api_key_when_oauth_unavailable() {
+    let _env_lock = AUTH_ENV_TEST_LOCK
+        .lock()
+        .expect("acquire auth env test lock");
+    let temp = tempdir().expect("tempdir");
+
+    let mut cli = test_cli();
+    cli.openai_auth_mode = CliProviderAuthMode::OauthToken;
+    cli.openai_codex_backend = false;
+    cli.openai_api_key = Some("openai-fallback-key".to_string());
+    cli.api_key = None;
+    cli.credential_store = temp.path().join("missing-openai-oauth-store.json");
+    cli.credential_store_encryption = CliCredentialStoreEncryptionMode::None;
+
+    let snapshot = snapshot_env_vars(&[
+        "TAU_AUTH_ACCESS_TOKEN",
+        "TAU_AUTH_EXPIRES_UNIX",
+        "OPENAI_ACCESS_TOKEN",
+        "OPENAI_AUTH_EXPIRES_UNIX",
+    ]);
+    std::env::remove_var("TAU_AUTH_ACCESS_TOKEN");
+    std::env::remove_var("TAU_AUTH_EXPIRES_UNIX");
+    std::env::remove_var("OPENAI_ACCESS_TOKEN");
+    std::env::remove_var("OPENAI_AUTH_EXPIRES_UNIX");
+
+    let client =
+        build_provider_client(&cli, Provider::OpenAi).expect("build openai api-key fallback");
+    let ptr = Arc::as_ptr(&client);
+    assert!(!ptr.is_null());
+
+    restore_env_vars(snapshot);
+}
+
+#[test]
+fn functional_build_provider_client_anthropic_oauth_mode_falls_back_to_api_key_when_backend_unavailable(
+) {
+    let _env_lock = AUTH_ENV_TEST_LOCK
+        .lock()
+        .expect("acquire auth env test lock");
+    let mut cli = test_cli();
+    cli.anthropic_auth_mode = CliProviderAuthMode::OauthToken;
+    cli.anthropic_claude_backend = false;
+    cli.anthropic_api_key = Some("anthropic-fallback-key".to_string());
+    cli.api_key = None;
+
+    let snapshot = snapshot_env_vars(&["ANTHROPIC_API_KEY", "TAU_API_KEY"]);
+    std::env::remove_var("ANTHROPIC_API_KEY");
+    std::env::remove_var("TAU_API_KEY");
+
+    let client =
+        build_provider_client(&cli, Provider::Anthropic).expect("build anthropic api-key fallback");
+    let ptr = Arc::as_ptr(&client);
+    assert!(!ptr.is_null());
+
+    restore_env_vars(snapshot);
+}
+
+#[test]
+fn integration_build_provider_client_google_adc_mode_falls_back_to_api_key_when_backend_unavailable(
+) {
+    let _env_lock = AUTH_ENV_TEST_LOCK
+        .lock()
+        .expect("acquire auth env test lock");
+    let mut cli = test_cli();
+    cli.google_auth_mode = CliProviderAuthMode::Adc;
+    cli.google_gemini_backend = false;
+    cli.google_api_key = Some("google-fallback-key".to_string());
+    cli.api_key = None;
+
+    let snapshot = snapshot_env_vars(&["GEMINI_API_KEY", "GOOGLE_API_KEY", "TAU_API_KEY"]);
+    std::env::remove_var("GEMINI_API_KEY");
+    std::env::remove_var("GOOGLE_API_KEY");
+    std::env::remove_var("TAU_API_KEY");
+
+    let client =
+        build_provider_client(&cli, Provider::Google).expect("build google api-key fallback");
+    let ptr = Arc::as_ptr(&client);
+    assert!(!ptr.is_null());
+
+    restore_env_vars(snapshot);
+}
+
+#[test]
+fn regression_build_provider_client_anthropic_oauth_mode_without_backend_or_api_key_still_errors() {
+    let _env_lock = AUTH_ENV_TEST_LOCK
+        .lock()
+        .expect("acquire auth env test lock");
+    let mut cli = test_cli();
+    cli.anthropic_auth_mode = CliProviderAuthMode::OauthToken;
+    cli.anthropic_claude_backend = false;
+    cli.anthropic_api_key = None;
+    cli.api_key = None;
+
+    let snapshot = snapshot_env_vars(&["ANTHROPIC_API_KEY", "TAU_API_KEY"]);
+    std::env::remove_var("ANTHROPIC_API_KEY");
+    std::env::remove_var("TAU_API_KEY");
+
+    match build_provider_client(&cli, Provider::Anthropic) {
+        Ok(_) => panic!("missing fallback credential should fail"),
+        Err(error) => {
+            assert!(error.to_string().contains("requires Claude Code backend"));
+        }
+    }
+
+    restore_env_vars(snapshot);
 }
 
 #[cfg(unix)]
