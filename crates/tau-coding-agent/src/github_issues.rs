@@ -28,7 +28,8 @@ use crate::{session::SessionStore, tools::ToolPolicy};
 
 const GITHUB_STATE_SCHEMA_VERSION: u32 = 1;
 const GITHUB_COMMENT_MAX_CHARS: usize = 65_000;
-const EVENT_KEY_MARKER_PREFIX: &str = "<!-- rsbot-event-key:";
+const EVENT_KEY_MARKER_PREFIX: &str = "<!-- tau-event-key:";
+const LEGACY_EVENT_KEY_MARKER_PREFIX: &str = "<!-- rsbot-event-key:";
 const EVENT_KEY_MARKER_SUFFIX: &str = " -->";
 const CHAT_SHOW_DEFAULT_LIMIT: usize = 10;
 const CHAT_SHOW_MAX_LIMIT: usize = 50;
@@ -354,7 +355,7 @@ impl GithubApiClient {
         let mut headers = reqwest::header::HeaderMap::new();
         headers.insert(
             reqwest::header::USER_AGENT,
-            reqwest::header::HeaderValue::from_static("rsBot-github-issues-bridge"),
+            reqwest::header::HeaderValue::from_static("Tau-github-issues-bridge"),
         );
         headers.insert(
             reqwest::header::ACCEPT,
@@ -510,10 +511,7 @@ impl GithubApiClient {
         loop {
             attempt = attempt.saturating_add(1);
             let response = request_builder()
-                .header(
-                    "x-rsbot-retry-attempt",
-                    attempt.saturating_sub(1).to_string(),
-                )
+                .header("x-tau-retry-attempt", attempt.saturating_sub(1).to_string())
                 .send()
                 .await;
             match response {
@@ -1199,7 +1197,7 @@ impl GithubIssuesBridgeRuntime {
             .create_issue_comment(
                 event.issue_number,
                 &format!(
-                    "⏳ rsBot is working on run `{}` for event `{}`.",
+                    "⏳ Tau is working on run `{}` for event `{}`.",
                     run_id, event.key
                 ),
             )
@@ -1928,7 +1926,7 @@ impl GithubIssuesBridgeRuntime {
         let active = self.active_runs.get(&issue_number);
         let latest = self.latest_runs.get(&issue_number);
         let state = if active.is_some() { "running" } else { "idle" };
-        let mut lines = vec![format!("rsBot status for issue #{issue_number}: {state}")];
+        let mut lines = vec![format!("Tau status for issue #{issue_number}: {state}")];
         if let Some(active) = active {
             lines.push(format!("active_run_id: {}", active.run_id));
             lines.push(format!("active_event_key: {}", active.event_key));
@@ -2011,14 +2009,14 @@ impl GithubIssuesBridgeRuntime {
 
         let mut lines = vec![if let Some(run_id_filter) = run_id_filter {
             format!(
-                "rsBot artifacts for issue #{} run_id `{}`: active={}",
+                "Tau artifacts for issue #{} run_id `{}`: active={}",
                 issue_number,
                 run_id_filter,
                 active.len()
             )
         } else {
             format!(
-                "rsBot artifacts for issue #{}: active={}",
+                "Tau artifacts for issue #{}: active={}",
                 issue_number,
                 active.len()
             )
@@ -2073,7 +2071,7 @@ impl GithubIssuesBridgeRuntime {
         let purge = store.purge_expired_artifacts(now_unix_ms)?;
         let active = store.list_active_artifacts(now_unix_ms)?;
         Ok(format!(
-            "rsBot artifact purge for issue #{}: expired_removed={} invalid_removed={} active_remaining={}",
+            "Tau artifact purge for issue #{}: expired_removed={} invalid_removed={} active_remaining={}",
             issue_number,
             purge.expired_removed,
             purge.invalid_removed,
@@ -2101,7 +2099,7 @@ impl GithubIssuesBridgeRuntime {
                     .map(|expires_unix_ms| expires_unix_ms <= now_unix_ms)
                     .unwrap_or(false);
                 lines.push(format!(
-                    "rsBot artifact for issue #{} id `{}`: state={}",
+                    "Tau artifact for issue #{} id `{}`: state={}",
                     issue_number,
                     artifact_id,
                     if expired { "expired" } else { "active" }
@@ -2128,7 +2126,7 @@ impl GithubIssuesBridgeRuntime {
                 }
             }
             None => lines.push(format!(
-                "rsBot artifact for issue #{} id `{}`: not found",
+                "Tau artifact for issue #{} id `{}`: not found",
                 issue_number, artifact_id
             )),
         }
@@ -2496,7 +2494,7 @@ fn collect_assistant_reply(messages: &[tau_ai::Message]) -> String {
 
 fn render_event_prompt(repo: &RepoRef, event: &GithubBridgeEvent, prompt: &str) -> String {
     format!(
-        "You are responding as rsBot inside GitHub issues.\nRepository: {}\nIssue: #{} ({})\nAuthor: @{}\nEvent: {}\n\nUser message:\n{}\n\nProvide a direct, actionable response suitable for a GitHub issue comment.",
+        "You are responding as Tau inside GitHub issues.\nRepository: {}\nIssue: #{} ({})\nAuthor: @{}\nEvent: {}\n\nUser message:\n{}\n\nProvide a direct, actionable response suitable for a GitHub issue comment.",
         repo.as_slug(),
         event.issue_number,
         event.issue_title,
@@ -2517,7 +2515,7 @@ fn render_issue_comment_response_parts(
     let usage = &run.usage;
     let status = format!("{:?}", run.status).to_lowercase();
     let footer = format!(
-        "{EVENT_KEY_MARKER_PREFIX}{}{EVENT_KEY_MARKER_SUFFIX}\n_rsBot run `{}` | status `{}` | model `{}` | tokens in/out/total `{}/{}/{}` | cost `unavailable`_\n_artifact `{}` | sha256 `{}` | bytes `{}`_",
+        "{EVENT_KEY_MARKER_PREFIX}{}{EVENT_KEY_MARKER_SUFFIX}\n_Tau run `{}` | status `{}` | model `{}` | tokens in/out/total `{}/{}/{}` | cost `unavailable`_\n_artifact `{}` | sha256 `{}` | bytes `{}`_",
         event.key,
         run.run_id,
         status,
@@ -2609,7 +2607,7 @@ fn render_issue_artifact_markdown(
 ) -> String {
     let status_label = prompt_status_label(status);
     [
-        "# rsBot Artifact".to_string(),
+        "# Tau Artifact".to_string(),
         format!("repository: {}", repo.as_slug()),
         format!("issue_number: {}", event.issue_number),
         format!("event_key: {}", event.key),
@@ -2636,7 +2634,7 @@ fn render_issue_run_error_comment(
     error: &anyhow::Error,
 ) -> String {
     format!(
-        "rsBot run `{}` failed for event `{}`.\n\nError: `{}`\n\n---\n{EVENT_KEY_MARKER_PREFIX}{}{EVENT_KEY_MARKER_SUFFIX}\n_rsBot run `{}` | status `failed` | model `unavailable` | tokens in/out/total `0/0/0` | cost `unavailable`_",
+        "Tau run `{}` failed for event `{}`.\n\nError: `{}`\n\n---\n{EVENT_KEY_MARKER_PREFIX}{}{EVENT_KEY_MARKER_SUFFIX}\n_Tau run `{}` | status `failed` | model `unavailable` | tokens in/out/total `0/0/0` | cost `unavailable`_",
         run_id,
         event.key,
         truncate_for_error(&error.to_string(), 600),
@@ -3040,8 +3038,19 @@ fn sanitize_for_path(raw: &str) -> String {
 fn extract_footer_event_keys(text: &str) -> Vec<String> {
     let mut keys = Vec::new();
     let mut cursor = text;
-    while let Some(start) = cursor.find(EVENT_KEY_MARKER_PREFIX) {
-        let after_start = &cursor[start + EVENT_KEY_MARKER_PREFIX.len()..];
+    loop {
+        let tau = cursor.find(EVENT_KEY_MARKER_PREFIX);
+        let legacy = cursor.find(LEGACY_EVENT_KEY_MARKER_PREFIX);
+        let (start, marker_prefix) = match (tau, legacy) {
+            (Some(tau_start), Some(legacy_start)) if tau_start <= legacy_start => {
+                (tau_start, EVENT_KEY_MARKER_PREFIX)
+            }
+            (Some(_), Some(legacy_start)) => (legacy_start, LEGACY_EVENT_KEY_MARKER_PREFIX),
+            (Some(tau_start), None) => (tau_start, EVENT_KEY_MARKER_PREFIX),
+            (None, Some(legacy_start)) => (legacy_start, LEGACY_EVENT_KEY_MARKER_PREFIX),
+            (None, None) => break,
+        };
+        let after_start = &cursor[start + marker_prefix.len()..];
         let Some(end) = after_start.find(EVENT_KEY_MARKER_SUFFIX) else {
             break;
         };
@@ -3172,7 +3181,7 @@ mod tests {
         GithubIssuesBridgeRuntimeConfig {
             client,
             model: "openai/gpt-4o-mini".to_string(),
-            system_prompt: "You are rsBot.".to_string(),
+            system_prompt: "You are Tau.".to_string(),
             max_turns: 4,
             tool_policy: ToolPolicy::new(vec![state_dir.to_path_buf()]),
             turn_timeout_ms: 0,
@@ -3187,7 +3196,7 @@ mod tests {
             repo_slug: "owner/repo".to_string(),
             api_base: base_url.to_string(),
             token: "test-token".to_string(),
-            bot_login: Some("rsbot".to_string()),
+            bot_login: Some("tau".to_string()),
             poll_interval: Duration::from_millis(1),
             include_issue_body: false,
             include_edited_comments: true,
@@ -3246,9 +3255,9 @@ mod tests {
 
     #[test]
     fn unit_repo_ref_parse_accepts_owner_repo_shape() {
-        let repo = RepoRef::parse("njfio/rsBot").expect("parse repo");
+        let repo = RepoRef::parse("njfio/Tau").expect("parse repo");
         assert_eq!(repo.owner, "njfio");
-        assert_eq!(repo.name, "rsBot");
+        assert_eq!(repo.name, "Tau");
 
         let error = RepoRef::parse("missing").expect_err("invalid repo should fail");
         assert!(error.to_string().contains("expected owner/repo"));
@@ -3288,7 +3297,7 @@ mod tests {
                 },
             },
         ];
-        let events = collect_issue_events(&issue, &comments, "rsbot", true, true);
+        let events = collect_issue_events(&issue, &comments, "tau", true, true);
         assert_eq!(events.len(), 3);
         assert_eq!(events[0].kind, GithubBridgeEventKind::Opened);
         assert_eq!(events[1].kind, GithubBridgeEventKind::CommentCreated);
@@ -3443,7 +3452,7 @@ mod tests {
 
     #[test]
     fn unit_footer_key_extraction_and_path_helpers_are_stable() {
-        let text = "hello\n<!-- rsbot-event-key:abc -->\nworld\n<!-- rsbot-event-key:def -->";
+        let text = "hello\n<!-- tau-event-key:abc -->\nworld\n<!-- rsbot-event-key:def -->";
         let keys = extract_footer_event_keys(text);
         assert_eq!(keys, vec!["abc".to_string(), "def".to_string()]);
 
@@ -3742,7 +3751,7 @@ mod tests {
         let first = server.mock(|when, then| {
             when.method(GET)
                 .path("/repos/owner/repo/issues")
-                .header("x-rsbot-retry-attempt", "0");
+                .header("x-tau-retry-attempt", "0");
             then.status(429)
                 .header("retry-after", "0")
                 .body("rate limit");
@@ -3750,7 +3759,7 @@ mod tests {
         let second = server.mock(|when, then| {
             when.method(GET)
                 .path("/repos/owner/repo/issues")
-                .header("x-rsbot-retry-attempt", "1");
+                .header("x-tau-retry-attempt", "1");
             then.status(200).json_body(json!([]));
         });
 
@@ -3795,7 +3804,7 @@ mod tests {
         let working_post = server.mock(|when, then| {
             when.method(POST)
                 .path("/repos/owner/repo/issues/7/comments")
-                .body_includes("rsBot is working on run");
+                .body_includes("Tau is working on run");
             then.status(201).json_body(json!({
                 "id": 901,
                 "html_url": "https://example.test/comment/901"
@@ -3805,7 +3814,7 @@ mod tests {
             when.method(PATCH)
                 .path("/repos/owner/repo/issues/comments/901")
                 .body_includes("bridge reply")
-                .body_includes("rsbot-event-key:issue-comment-created:200")
+                .body_includes("tau-event-key:issue-comment-created:200")
                 .body_includes("artifact `artifacts/");
             then.status(200).json_body(json!({
                 "id": 901,
@@ -3892,7 +3901,7 @@ mod tests {
         let working_post = server.mock(|when, then| {
             when.method(POST)
                 .path("/repos/owner/repo/issues/77/comments")
-                .body_includes("rsBot is working on run");
+                .body_includes("Tau is working on run");
             then.status(201).json_body(json!({
                 "id": 7777,
                 "html_url": "https://example.test/comment/7777"
@@ -4047,7 +4056,7 @@ mod tests {
         let working_post = server.mock(|when, then| {
             when.method(POST)
                 .path("/repos/owner/repo/issues/8/comments")
-                .body_includes("rsBot is working on run");
+                .body_includes("Tau is working on run");
             then.status(201).json_body(json!({
                 "id": 902,
                 "html_url": "https://example.test/comment/902"
@@ -4056,7 +4065,7 @@ mod tests {
         let update = server.mock(|when, then| {
             when.method(PATCH)
                 .path("/repos/owner/repo/issues/comments/902")
-                .body_includes("rsbot-event-key:issue-comment-created:201");
+                .body_includes("tau-event-key:issue-comment-created:201");
             then.status(200).json_body(json!({
                 "id": 902,
                 "html_url": "https://example.test/comment/902"
@@ -4124,7 +4133,7 @@ mod tests {
         let status_post = server.mock(|when, then| {
             when.method(POST)
                 .path("/repos/owner/repo/issues/9/comments")
-                .body_includes("rsBot status for issue #9: idle");
+                .body_includes("Tau status for issue #9: idle");
             then.status(201).json_body(json!({
                 "id": 930,
                 "html_url": "https://example.test/comment/930"
@@ -4814,7 +4823,7 @@ mod tests {
         let report = runtime
             .render_issue_artifacts(15, Some("run-target"))
             .expect("render artifacts");
-        assert!(report.contains("rsBot artifacts for issue #15 run_id `run-target`: active=1"));
+        assert!(report.contains("Tau artifacts for issue #15 run_id `run-target`: active=1"));
         assert!(report.contains("artifacts/run-target/"));
         assert!(!report.contains("artifacts/run-other/"));
     }
@@ -4859,7 +4868,7 @@ mod tests {
             .render_issue_artifact_show(17, &active.id)
             .expect("render active artifact");
         assert!(active_report.contains(&format!(
-            "rsBot artifact for issue #17 id `{}`: state=active",
+            "Tau artifact for issue #17 id `{}`: state=active",
             active.id
         )));
         assert!(active_report.contains("run_id: run-active"));
@@ -4868,7 +4877,7 @@ mod tests {
             .render_issue_artifact_show(17, &expired.id)
             .expect("render expired artifact");
         assert!(expired_report.contains(&format!(
-            "rsBot artifact for issue #17 id `{}`: state=expired",
+            "Tau artifact for issue #17 id `{}`: state=expired",
             expired.id
         )));
         assert!(expired_report
@@ -4906,7 +4915,7 @@ mod tests {
         let artifacts_post = server.mock(|when, then| {
             when.method(POST)
                 .path("/repos/owner/repo/issues/11/comments")
-                .body_includes("rsBot artifacts for issue #11: active=1")
+                .body_includes("Tau artifacts for issue #11: active=1")
                 .body_includes("github-issue-reply")
                 .body_includes("artifacts/run-seeded/");
             then.status(201).json_body(json!({
@@ -4974,7 +4983,7 @@ mod tests {
         let artifacts_post = server.mock(|when, then| {
             when.method(POST)
                 .path("/repos/owner/repo/issues/15/comments")
-                .body_includes("rsBot artifacts for issue #15 run_id `run-target`: active=1")
+                .body_includes("Tau artifacts for issue #15 run_id `run-target`: active=1")
                 .body_includes("artifacts/run-target/");
             then.status(201).json_body(json!({
                 "id": 955,
@@ -5068,7 +5077,7 @@ mod tests {
             ]));
         });
         let expected_header = format!(
-            "rsBot artifact for issue #18 id `{}`: state=active",
+            "Tau artifact for issue #18 id `{}`: state=active",
             artifact.id
         );
         let expected_path = format!("path: {}", artifact.relative_path);
@@ -5125,7 +5134,7 @@ mod tests {
         let purge_post = server.mock(|when, then| {
             when.method(POST)
                 .path("/repos/owner/repo/issues/13/comments")
-                .body_includes("rsBot artifact purge for issue #13")
+                .body_includes("Tau artifact purge for issue #13")
                 .body_includes("expired_removed=1")
                 .body_includes("active_remaining=1");
             then.status(201).json_body(json!({
@@ -5207,7 +5216,7 @@ mod tests {
         let purge_post = server.mock(|when, then| {
             when.method(POST)
                 .path("/repos/owner/repo/issues/14/comments")
-                .body_includes("rsBot artifact purge for issue #14")
+                .body_includes("Tau artifact purge for issue #14")
                 .body_includes("expired_removed=0")
                 .body_includes("active_remaining=0");
             then.status(201).json_body(json!({
@@ -5258,7 +5267,7 @@ mod tests {
         let artifacts_post = server.mock(|when, then| {
             when.method(POST)
                 .path("/repos/owner/repo/issues/12/comments")
-                .body_includes("rsBot artifacts for issue #12: active=0")
+                .body_includes("Tau artifacts for issue #12: active=0")
                 .body_includes("none")
                 .body_includes("index_invalid_lines: 1 (ignored)");
             then.status(201).json_body(json!({
@@ -5317,7 +5326,7 @@ mod tests {
         let artifacts_post = server.mock(|when, then| {
             when.method(POST)
                 .path("/repos/owner/repo/issues/16/comments")
-                .body_includes("rsBot artifacts for issue #16 run_id `run-missing`: active=0")
+                .body_includes("Tau artifacts for issue #16 run_id `run-missing`: active=0")
                 .body_includes("none for run_id `run-missing`");
             then.status(201).json_body(json!({
                 "id": 956,
@@ -5384,7 +5393,7 @@ mod tests {
         let artifacts_post = server.mock(|when, then| {
             when.method(POST)
                 .path("/repos/owner/repo/issues/19/comments")
-                .body_includes("rsBot artifact for issue #19 id `artifact-missing`: not found");
+                .body_includes("Tau artifact for issue #19 id `artifact-missing`: not found");
             then.status(201).json_body(json!({
                 "id": 958,
                 "html_url": "https://example.test/comment/958"
@@ -5457,7 +5466,7 @@ mod tests {
         let working_post = server.mock(|when, then| {
             when.method(POST)
                 .path("/repos/owner/repo/issues/10/comments")
-                .body_includes("rsBot is working on run");
+                .body_includes("Tau is working on run");
             then.status(201).json_body(json!({
                 "id": 940,
                 "html_url": "https://example.test/comment/940"

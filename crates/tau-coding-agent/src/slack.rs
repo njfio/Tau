@@ -27,7 +27,7 @@ use crate::{
 use crate::{session::SessionStore, tools::ToolPolicy};
 
 const SLACK_STATE_SCHEMA_VERSION: u32 = 1;
-const SLACK_METADATA_MARKER_PREFIX: &str = "<!-- rsbot-slack-event:";
+const SLACK_METADATA_MARKER_PREFIX: &str = "<!-- tau-slack-event:";
 const SLACK_METADATA_MARKER_SUFFIX: &str = " -->";
 
 #[derive(Clone)]
@@ -235,7 +235,7 @@ impl SlackApiClient {
         let mut headers = reqwest::header::HeaderMap::new();
         headers.insert(
             reqwest::header::USER_AGENT,
-            reqwest::header::HeaderValue::from_static("rsBot-slack-bridge"),
+            reqwest::header::HeaderValue::from_static("Tau-slack-bridge"),
         );
         headers.insert(
             reqwest::header::ACCEPT,
@@ -415,10 +415,7 @@ impl SlackApiClient {
         loop {
             attempt = attempt.saturating_add(1);
             let response = builder()
-                .header(
-                    "x-rsbot-retry-attempt",
-                    attempt.saturating_sub(1).to_string(),
-                )
+                .header("x-tau-retry-attempt", attempt.saturating_sub(1).to_string())
                 .send()
                 .await;
             match response {
@@ -482,10 +479,7 @@ impl SlackApiClient {
         loop {
             attempt = attempt.saturating_add(1);
             let response = builder()
-                .header(
-                    "x-rsbot-retry-attempt",
-                    attempt.saturating_sub(1).to_string(),
-                )
+                .header("x-tau-retry-attempt", attempt.saturating_sub(1).to_string())
                 .send()
                 .await;
             match response {
@@ -1018,7 +1012,7 @@ impl SlackBridgeRuntime {
                 .slack_client
                 .post_message(
                     &event.channel_id,
-                    &format!("rsBot is working on run {run_id}..."),
+                    &format!("Tau is working on run {run_id}..."),
                     event.reply_thread_ts(),
                 )
                 .await?;
@@ -1188,7 +1182,7 @@ impl SlackBridgeRuntime {
         let active = self.active_runs.get(channel_id);
         let latest = self.latest_runs.get(channel_id);
         let state = if active.is_some() { "running" } else { "idle" };
-        let mut lines = vec![format!("rsBot status for channel {channel_id}: {state}")];
+        let mut lines = vec![format!("Tau status for channel {channel_id}: {state}")];
         if let Some(active) = active {
             lines.push(format!("active_run_id: {}", active.run_id));
             lines.push(format!("active_event_key: {}", active.event_key));
@@ -1252,14 +1246,14 @@ impl SlackBridgeRuntime {
 
         let mut lines = vec![if let Some(run_id_filter) = run_id_filter {
             format!(
-                "rsBot artifacts for channel {} run_id `{}`: active={}",
+                "Tau artifacts for channel {} run_id `{}`: active={}",
                 channel_id,
                 run_id_filter,
                 active.len()
             )
         } else {
             format!(
-                "rsBot artifacts for channel {}: active={}",
+                "Tau artifacts for channel {}: active={}",
                 channel_id,
                 active.len()
             )
@@ -1310,7 +1304,7 @@ impl SlackBridgeRuntime {
         let purge = store.purge_expired_artifacts(now_unix_ms)?;
         let active = store.list_active_artifacts(now_unix_ms)?;
         Ok(format!(
-            "rsBot artifact purge for channel {}: expired_removed={} invalid_removed={} active_remaining={}",
+            "Tau artifact purge for channel {}: expired_removed={} invalid_removed={} active_remaining={}",
             channel_id,
             purge.expired_removed,
             purge.invalid_removed,
@@ -1334,7 +1328,7 @@ impl SlackBridgeRuntime {
                     .map(|expires_unix_ms| expires_unix_ms <= now_unix_ms)
                     .unwrap_or(false);
                 lines.push(format!(
-                    "rsBot artifact for channel {} id `{}`: state={}",
+                    "Tau artifact for channel {} id `{}`: state={}",
                     channel_id,
                     artifact_id,
                     if expired { "expired" } else { "active" }
@@ -1361,7 +1355,7 @@ impl SlackBridgeRuntime {
                 }
             }
             None => lines.push(format!(
-                "rsBot artifact for channel {} id `{}`: not found",
+                "Tau artifact for channel {} id `{}`: not found",
                 channel_id, artifact_id
             )),
         }
@@ -1889,7 +1883,7 @@ fn render_event_prompt(
     let message_text = normalize_slack_message_text(event, bot_user_id);
 
     let mut prompt = format!(
-        "You are responding as rsBot inside Slack.\nChannel: {}\nUser: <@{}>\nEvent kind: {}\nMessage ts: {}\n\nUser message:\n{}",
+        "You are responding as Tau inside Slack.\nChannel: {}\nUser: <@{}>\nEvent kind: {}\nMessage ts: {}\n\nUser message:\n{}",
         event.channel_id,
         event.user_id,
         event.kind.as_str(),
@@ -2073,7 +2067,7 @@ fn render_slack_response(
 
     summary_body.push_str("\n\n---\n");
     summary_body.push_str(&format!(
-        "{SLACK_METADATA_MARKER_PREFIX}{}{SLACK_METADATA_MARKER_SUFFIX}\nrsBot run {} | status {} | model {} | tokens {}/{}/{}",
+        "{SLACK_METADATA_MARKER_PREFIX}{}{SLACK_METADATA_MARKER_SUFFIX}\nTau run {} | status {} | model {} | tokens {}/{}/{}",
         event.key,
         run.run_id,
         status,
@@ -2108,7 +2102,7 @@ fn render_slack_run_error_message(
 ) -> String {
     truncate_for_slack(
         &format!(
-            "rsBot run {} failed for event {}.\n\nError: {}\n\n---\n{SLACK_METADATA_MARKER_PREFIX}{}{SLACK_METADATA_MARKER_SUFFIX}",
+            "Tau run {} failed for event {}.\n\nError: {}\n\n---\n{SLACK_METADATA_MARKER_PREFIX}{}{SLACK_METADATA_MARKER_SUFFIX}",
             run_id,
             event.key,
             truncate_for_error(&error.to_string(), 600),
@@ -2126,7 +2120,7 @@ fn render_slack_artifact_markdown(
     downloaded_files: &[DownloadedSlackFile],
 ) -> String {
     let mut lines = vec![
-        "# rsBot Slack Artifact".to_string(),
+        "# Tau Slack Artifact".to_string(),
         format!("channel_id: {}", event.channel_id),
         format!("event_key: {}", event.key),
         format!("event_kind: {}", event.kind.as_str()),
@@ -2319,7 +2313,7 @@ mod tests {
         SlackBridgeRuntimeConfig {
             client,
             model: "openai/gpt-4o-mini".to_string(),
-            system_prompt: "You are rsBot.".to_string(),
+            system_prompt: "You are Tau.".to_string(),
             max_turns: 4,
             tool_policy: ToolPolicy::new(vec![state_dir.to_path_buf()]),
             turn_timeout_ms: 0,
@@ -2710,7 +2704,7 @@ mod tests {
             "reply body",
             &[],
         );
-        assert!(markdown.contains("# rsBot Slack Artifact"));
+        assert!(markdown.contains("# Tau Slack Artifact"));
         assert!(markdown.contains("channel_id: D1"));
         assert!(markdown.contains("run_id: run-1"));
         assert!(markdown.contains("status: completed"));
@@ -2804,7 +2798,7 @@ mod tests {
         let first = server.mock(|when, then| {
             when.method(POST)
                 .path("/chat.postMessage")
-                .header("x-rsbot-retry-attempt", "0");
+                .header("x-tau-retry-attempt", "0");
             then.status(429)
                 .header("retry-after", "0")
                 .body("rate limit");
@@ -2812,7 +2806,7 @@ mod tests {
         let second = server.mock(|when, then| {
             when.method(POST)
                 .path("/chat.postMessage")
-                .header("x-rsbot-retry-attempt", "1");
+                .header("x-tau-retry-attempt", "1");
             then.status(200).json_body(json!({
                 "ok": true,
                 "channel": "C1",
@@ -2852,7 +2846,7 @@ mod tests {
             when.method(POST)
                 .path("/chat.postMessage")
                 .body_includes("\"channel\":\"C1\"")
-                .body_includes("rsBot is working on run");
+                .body_includes("Tau is working on run");
             then.status(200)
                 .json_body(json!({"ok": true, "channel": "C1", "ts": "2.0"}));
         });
@@ -2860,7 +2854,7 @@ mod tests {
             when.method(POST)
                 .path("/chat.postMessage")
                 .body_includes("\"channel\":\"D1\"")
-                .body_includes("rsBot is working on run");
+                .body_includes("Tau is working on run");
             then.status(200)
                 .json_body(json!({"ok": true, "channel": "D1", "ts": "3.0"}));
         });
@@ -2974,7 +2968,7 @@ mod tests {
             when.method(POST)
                 .path("/chat.postMessage")
                 .body_includes("\"channel\":\"C1\"")
-                .body_includes("rsBot status for channel C1: idle");
+                .body_includes("Tau status for channel C1: idle");
             then.status(200)
                 .json_body(json!({"ok": true, "channel": "C1", "ts": "4.1"}));
         });
@@ -3117,7 +3111,7 @@ mod tests {
             when.method(POST)
                 .path("/chat.postMessage")
                 .body_includes("\"channel\":\"C1\"")
-                .body_includes("rsBot artifacts for channel C1: active=1");
+                .body_includes("Tau artifacts for channel C1: active=1");
             then.status(200)
                 .json_body(json!({"ok": true, "channel": "C1", "ts": "5.0"}));
         });
@@ -3125,7 +3119,7 @@ mod tests {
             when.method(POST)
                 .path("/chat.postMessage")
                 .body_includes("\"channel\":\"C1\"")
-                .body_includes("rsBot artifact for channel C1 id");
+                .body_includes("Tau artifact for channel C1 id");
             then.status(200)
                 .json_body(json!({"ok": true, "channel": "C1", "ts": "5.1"}));
         });
