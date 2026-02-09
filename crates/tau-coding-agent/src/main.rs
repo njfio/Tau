@@ -33,6 +33,7 @@ mod provider_credentials;
 mod provider_fallback;
 mod qa_loop_commands;
 mod rbac;
+mod release_channel_commands;
 mod rpc_capabilities;
 mod rpc_protocol;
 mod runtime_cli_validation;
@@ -221,6 +222,10 @@ pub(crate) use crate::rbac::{
     authorize_tool_for_principal, authorize_tool_for_principal_with_policy_path,
     execute_rbac_command, github_principal, rbac_policy_path_for_state_dir,
     resolve_local_principal, slack_principal, RbacDecision, RBAC_USAGE,
+};
+pub(crate) use crate::release_channel_commands::{
+    default_release_channel_path, execute_release_channel_command, load_release_channel_store,
+    RELEASE_CHANNEL_USAGE,
 };
 pub(crate) use crate::rpc_capabilities::execute_rpc_capabilities_command;
 #[cfg(test)]

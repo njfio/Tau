@@ -362,6 +362,8 @@ pub(crate) fn build_doctor_command_config(
             primary_model.model
         ),
         provider_keys,
+        release_channel_path: default_release_channel_path()
+            .unwrap_or_else(|_| PathBuf::from(".tau/release-channel.json")),
         session_enabled: !cli.no_session,
         session_path: cli.session.clone(),
         skills_dir: cli.skills_dir.clone(),
@@ -379,6 +381,30 @@ pub(crate) fn run_doctor_checks(config: &DoctorCommandConfig) -> Vec<DoctorCheck
         path: None,
         action: None,
     });
+
+    match load_release_channel_store(&config.release_channel_path) {
+        Ok(Some(channel)) => checks.push(DoctorCheckResult {
+            key: "release_channel".to_string(),
+            status: DoctorStatus::Pass,
+            code: channel.as_str().to_string(),
+            path: Some(config.release_channel_path.display().to_string()),
+            action: None,
+        }),
+        Ok(None) => checks.push(DoctorCheckResult {
+            key: "release_channel".to_string(),
+            status: DoctorStatus::Pass,
+            code: "default_stable".to_string(),
+            path: Some(config.release_channel_path.display().to_string()),
+            action: Some("run /release-channel set stable|beta|dev to persist".to_string()),
+        }),
+        Err(error) => checks.push(DoctorCheckResult {
+            key: "release_channel".to_string(),
+            status: DoctorStatus::Fail,
+            code: format!("invalid_store:{error}"),
+            path: Some(config.release_channel_path.display().to_string()),
+            action: Some("run /release-channel set stable|beta|dev to repair".to_string()),
+        }),
+    }
 
     for provider_check in &config.provider_keys {
         let mode_status = if provider_check.mode_supported {

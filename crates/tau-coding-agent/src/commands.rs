@@ -84,6 +84,14 @@ pub(crate) const COMMAND_SPECS: &[CommandSpec] = &[
         example: "/doctor",
     },
     CommandSpec {
+        name: "/release-channel",
+        usage: RELEASE_CHANNEL_USAGE,
+        description: "Show or persist release track selection",
+        details:
+            "Supports stable/beta/dev release tracks and persists selections in project-local .tau metadata.",
+        example: "/release-channel set beta",
+    },
+    CommandSpec {
         name: "/session-graph-export",
         usage: "/session-graph-export <path>",
         description: "Export session graph as Mermaid or DOT file",
@@ -369,6 +377,7 @@ pub(crate) const COMMAND_NAMES: &[&str] = &[
     "/session-diff",
     "/qa-loop",
     "/doctor",
+    "/release-channel",
     "/session-graph-export",
     "/session-export",
     "/session-import",
@@ -565,6 +574,7 @@ pub(crate) fn handle_command(
                 login_backend_executable: None,
                 login_backend_available: false,
             }],
+            release_channel_path: PathBuf::from(".tau/release-channel.json"),
             session_enabled: true,
             session_path: PathBuf::from(".tau/sessions/default.jsonl"),
             skills_dir: PathBuf::from(".tau/skills"),
@@ -1161,6 +1171,21 @@ pub(crate) fn handle_command_with_session_import_mode(
         println!(
             "{}",
             execute_profile_command(command_args, &profile_path, profile_defaults)
+        );
+        return Ok(CommandAction::Continue);
+    }
+
+    if command_name == "/release-channel" {
+        let release_channel_path = match default_release_channel_path() {
+            Ok(path) => path,
+            Err(error) => {
+                println!("release channel error: path=unknown error={error}");
+                return Ok(CommandAction::Continue);
+            }
+        };
+        println!(
+            "{}",
+            execute_release_channel_command(command_args, &release_channel_path)
         );
         return Ok(CommandAction::Continue);
     }

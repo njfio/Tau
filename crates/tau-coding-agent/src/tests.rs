@@ -586,6 +586,7 @@ fn skills_command_config(
                 login_backend_executable: None,
                 login_backend_available: false,
             }],
+            release_channel_path: PathBuf::from(".tau/release-channel.json"),
             session_enabled: true,
             session_path: PathBuf::from(".tau/sessions/default.jsonl"),
             skills_dir: skills_dir.to_path_buf(),
@@ -7546,6 +7547,9 @@ fn unit_build_doctor_command_config_collects_sorted_unique_provider_states() {
         config.trust_root_path,
         Some(PathBuf::from("/tmp/trust-roots.json"))
     );
+    assert!(config
+        .release_channel_path
+        .ends_with(Path::new(".tau").join("release-channel.json")));
 
     let provider_rows = config
         .provider_keys
@@ -7706,6 +7710,7 @@ fn functional_execute_doctor_command_supports_text_and_json_modes() {
                 login_backend_available: false,
             },
         ],
+        release_channel_path: temp.path().join("release-channel.json"),
         session_enabled: true,
         session_path,
         skills_dir,
@@ -7714,7 +7719,7 @@ fn functional_execute_doctor_command_supports_text_and_json_modes() {
     };
 
     let report = execute_doctor_command(&config, DoctorCommandOutputFormat::Text);
-    assert!(report.contains("doctor summary: checks=9 pass=8 warn=0 fail=1"));
+    assert!(report.contains("doctor summary: checks=10 pass=9 warn=0 fail=1"));
 
     let keys = report
         .lines()
@@ -7733,6 +7738,7 @@ fn functional_execute_doctor_command_supports_text_and_json_modes() {
         keys,
         vec![
             "model".to_string(),
+            "release_channel".to_string(),
             "provider_auth_mode.anthropic".to_string(),
             "provider_key.anthropic".to_string(),
             "provider_auth_mode.openai".to_string(),
@@ -7746,12 +7752,12 @@ fn functional_execute_doctor_command_supports_text_and_json_modes() {
 
     let json_report = execute_doctor_command(&config, DoctorCommandOutputFormat::Json);
     let value = serde_json::from_str::<serde_json::Value>(&json_report).expect("parse json report");
-    assert_eq!(value["summary"]["checks"], 9);
-    assert_eq!(value["summary"]["pass"], 8);
+    assert_eq!(value["summary"]["checks"], 10);
+    assert_eq!(value["summary"]["pass"], 9);
     assert_eq!(value["summary"]["warn"], 0);
     assert_eq!(value["summary"]["fail"], 1);
     assert_eq!(value["checks"][0]["key"], "model");
-    assert_eq!(value["checks"][1]["key"], "provider_auth_mode.anthropic");
+    assert_eq!(value["checks"][1]["key"], "release_channel");
 }
 
 #[test]
@@ -7770,6 +7776,7 @@ fn integration_run_doctor_checks_identifies_missing_runtime_prerequisites() {
             login_backend_executable: None,
             login_backend_available: false,
         }],
+        release_channel_path: temp.path().join("release-channel.json"),
         session_enabled: true,
         session_path: temp.path().join("missing-parent").join("session.jsonl"),
         skills_dir: temp.path().join("missing-skills"),
@@ -7841,6 +7848,7 @@ fn integration_run_doctor_checks_reports_google_backend_status_for_oauth_mode() 
             login_backend_executable: Some("gemini".to_string()),
             login_backend_available: false,
         }],
+        release_channel_path: temp.path().join("release-channel.json"),
         session_enabled: false,
         session_path: temp.path().join("session.jsonl"),
         skills_dir: temp.path().join("skills"),
@@ -7884,6 +7892,7 @@ fn integration_run_doctor_checks_reports_anthropic_backend_status_for_oauth_mode
             login_backend_executable: Some("claude".to_string()),
             login_backend_available: false,
         }],
+        release_channel_path: temp.path().join("release-channel.json"),
         session_enabled: false,
         session_path: temp.path().join("session.jsonl"),
         skills_dir: temp.path().join("skills"),
@@ -7993,6 +8002,7 @@ fn regression_run_doctor_checks_reports_type_and_readability_errors() {
             login_backend_executable: None,
             login_backend_available: false,
         }],
+        release_channel_path: temp.path().join("release-channel.json"),
         session_enabled: true,
         session_path,
         skills_dir,
@@ -8031,6 +8041,45 @@ fn regression_run_doctor_checks_reports_type_and_readability_errors() {
     let trust = by_key.get("trust_root").expect("trust root check");
     assert_eq!(trust.status, DoctorStatus::Fail);
     assert!(trust.code.starts_with("read_error:"));
+}
+
+#[test]
+fn regression_run_doctor_checks_reports_invalid_release_channel_store() {
+    let temp = tempdir().expect("tempdir");
+    let release_channel_path = temp.path().join("release-channel.json");
+    std::fs::write(&release_channel_path, "{invalid-json").expect("write malformed release file");
+
+    let config = DoctorCommandConfig {
+        model: "openai/gpt-4o-mini".to_string(),
+        provider_keys: vec![DoctorProviderKeyStatus {
+            provider_kind: Provider::OpenAi,
+            provider: "openai".to_string(),
+            key_env_var: "OPENAI_API_KEY".to_string(),
+            present: true,
+            auth_mode: ProviderAuthMethod::ApiKey,
+            mode_supported: true,
+            login_backend_enabled: false,
+            login_backend_executable: None,
+            login_backend_available: false,
+        }],
+        release_channel_path,
+        session_enabled: false,
+        session_path: temp.path().join("session.jsonl"),
+        skills_dir: temp.path().join("skills"),
+        skills_lock_path: temp.path().join("skills.lock.json"),
+        trust_root_path: None,
+    };
+
+    let checks = run_doctor_checks(&config);
+    let by_key = checks
+        .into_iter()
+        .map(|check| (check.key.clone(), check))
+        .collect::<HashMap<_, _>>();
+    let release_channel = by_key
+        .get("release_channel")
+        .expect("release channel check should exist");
+    assert_eq!(release_channel.status, DoctorStatus::Fail);
+    assert!(release_channel.code.starts_with("invalid_store:"));
 }
 
 #[test]
@@ -9411,6 +9460,7 @@ fn functional_render_help_overview_lists_known_commands() {
     assert!(help.contains("/session-stats"));
     assert!(help.contains("/session-diff [<left-id> <right-id>]"));
     assert!(help.contains("/doctor"));
+    assert!(help.contains("/release-channel [show|set <stable|beta|dev>]"));
     assert!(help.contains("/session-graph-export <path>"));
     assert!(help.contains("/session-export <path>"));
     assert!(help.contains("/session-import <path>"));
@@ -9541,6 +9591,14 @@ fn functional_render_command_help_supports_doctor_topic_without_slash() {
     assert!(help.contains("command: /doctor"));
     assert!(help.contains("usage: /doctor [--json]"));
     assert!(help.contains("example: /doctor"));
+}
+
+#[test]
+fn functional_render_command_help_supports_release_channel_topic_without_slash() {
+    let help = render_command_help("release-channel").expect("render help");
+    assert!(help.contains("command: /release-channel"));
+    assert!(help.contains("usage: /release-channel [show|set <stable|beta|dev>]"));
+    assert!(help.contains("example: /release-channel set beta"));
 }
 
 #[test]

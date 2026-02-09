@@ -41,6 +41,7 @@ pub(crate) struct DoctorProviderKeyStatus {
 pub(crate) struct DoctorCommandConfig {
     pub(crate) model: String,
     pub(crate) provider_keys: Vec<DoctorProviderKeyStatus>,
+    pub(crate) release_channel_path: PathBuf,
     pub(crate) session_enabled: bool,
     pub(crate) session_path: PathBuf,
     pub(crate) skills_dir: PathBuf,
