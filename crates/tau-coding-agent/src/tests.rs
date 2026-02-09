@@ -391,6 +391,9 @@ fn test_cli() -> Cli {
         package_activate_root: PathBuf::from(".tau/packages"),
         package_activate_destination: PathBuf::from(".tau/packages-active"),
         package_activate_conflict_policy: "error".to_string(),
+        mcp_server: false,
+        mcp_external_server_config: None,
+        mcp_context_provider: vec![],
         rpc_capabilities: false,
         rpc_validate_frame_file: None,
         rpc_dispatch_frame_file: None,
@@ -1119,11 +1122,53 @@ fn functional_cli_artifact_retention_flags_accept_explicit_values() {
 #[test]
 fn unit_cli_rpc_flags_default_to_disabled() {
     let cli = Cli::parse_from(["tau-rs"]);
+    assert!(!cli.mcp_server);
+    assert!(cli.mcp_external_server_config.is_none());
+    assert!(cli.mcp_context_provider.is_empty());
     assert!(!cli.rpc_capabilities);
     assert!(cli.rpc_validate_frame_file.is_none());
     assert!(cli.rpc_dispatch_frame_file.is_none());
     assert!(cli.rpc_dispatch_ndjson_file.is_none());
     assert!(!cli.rpc_serve_ndjson);
+}
+
+#[test]
+fn functional_cli_mcp_server_flags_accept_external_config_and_context_providers() {
+    let cli = Cli::parse_from([
+        "tau-rs",
+        "--mcp-server",
+        "--mcp-external-server-config",
+        ".tau/mcp/servers.json",
+        "--mcp-context-provider",
+        "session",
+        "--mcp-context-provider",
+        "skills",
+    ]);
+    assert!(cli.mcp_server);
+    assert_eq!(
+        cli.mcp_external_server_config.as_deref(),
+        Some(Path::new(".tau/mcp/servers.json"))
+    );
+    assert_eq!(
+        cli.mcp_context_provider,
+        vec!["session".to_string(), "skills".to_string()]
+    );
+}
+
+#[test]
+fn regression_cli_mcp_server_conflicts_with_rpc_serve_ndjson() {
+    let parse = Cli::try_parse_from(["tau-rs", "--mcp-server", "--rpc-serve-ndjson"]);
+    let error = parse.expect_err("mcp server and rpc serve ndjson should conflict");
+    assert!(error.to_string().contains("cannot be used with"));
+}
+
+#[test]
+fn regression_cli_mcp_context_provider_requires_mcp_server_flag() {
+    let parse = Cli::try_parse_from(["tau-rs", "--mcp-context-provider", "session"]);
+    let error = parse.expect_err("mcp context provider should require mcp server mode");
+    assert!(error
+        .to_string()
+        .contains("required arguments were not provided"));
 }
 
 #[test]

@@ -70,6 +70,28 @@ pub(crate) struct ProfilePolicyDefaults {
     pub(crate) allow_command_newlines: bool,
 }
 
+fn default_profile_mcp_context_providers() -> Vec<String> {
+    vec![
+        "session".to_string(),
+        "skills".to_string(),
+        "channel-store".to_string(),
+    ]
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub(crate) struct ProfileMcpDefaults {
+    #[serde(default = "default_profile_mcp_context_providers")]
+    pub(crate) context_providers: Vec<String>,
+}
+
+impl Default for ProfileMcpDefaults {
+    fn default() -> Self {
+        Self {
+            context_providers: default_profile_mcp_context_providers(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub(crate) struct ProfileAuthDefaults {
     #[serde(default = "default_provider_auth_method")]
@@ -96,6 +118,8 @@ pub(crate) struct ProfileDefaults {
     pub(crate) fallback_models: Vec<String>,
     pub(crate) session: ProfileSessionDefaults,
     pub(crate) policy: ProfilePolicyDefaults,
+    #[serde(default)]
+    pub(crate) mcp: ProfileMcpDefaults,
     #[serde(default)]
     pub(crate) auth: ProfileAuthDefaults,
 }
