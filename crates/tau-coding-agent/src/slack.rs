@@ -1232,23 +1232,48 @@ impl SlackBridgeRuntime {
             }
             SlackCommand::Invalid { message } => (message, "invalid", "usage_reported", None),
         };
+        let source_event_key = event.key.clone();
+        let response_marker = slack_metadata_marker(&source_event_key);
+        let response_message = render_slack_command_response(event, command_name, status, &message);
 
         let posted = self
             .slack_client
-            .post_message(&event.channel_id, &message, reply_thread_ts)
+            .post_message(&event.channel_id, &response_message, reply_thread_ts)
             .await?;
         let mut payload = json!({
             "timestamp_unix_ms": now_unix_ms,
-            "event_key": event.key,
+            "event_key": source_event_key,
+            "source_event_key": event.key,
             "channel_id": event.channel_id,
             "command": command_name,
             "status": status,
-            "posted_ts": posted.ts,
+            "posted_ts": posted.ts.clone(),
+            "response_marker": response_marker.clone(),
         });
         if let Some(extra) = extra {
             payload["details"] = extra;
         }
         self.outbound_log.append(&payload)?;
+        ChannelStore::open(
+            &self.state_dir.join("channel-store"),
+            "slack",
+            &event.channel_id,
+        )?
+        .append_log_entry(&ChannelLogEntry {
+            timestamp_unix_ms: now_unix_ms,
+            direction: "outbound".to_string(),
+            event_key: Some(event.key.clone()),
+            source: "slack".to_string(),
+            payload: json!({
+                "kind": "command_response",
+                "command": command_name,
+                "status": status,
+                "posted_ts": posted.ts,
+                "response_marker": response_marker,
+                "source_event_key": event.key,
+                "body": response_message,
+            }),
+        })?;
         report.completed_runs = report.completed_runs.saturating_add(1);
         Ok(())
     }
@@ -2142,8 +2167,8 @@ fn render_slack_response(
 
     summary_body.push_str("\n\n---\n");
     summary_body.push_str(&format!(
-        "{SLACK_METADATA_MARKER_PREFIX}{}{SLACK_METADATA_MARKER_SUFFIX}\nTau run {} | status {} | model {} | tokens {}/{}/{}",
-        event.key,
+        "{}\nTau run {} | status {} | model {} | tokens {}/{}/{}",
+        slack_metadata_marker(&event.key),
         run.run_id,
         status,
         run.model,
@@ -2177,14 +2202,49 @@ fn render_slack_run_error_message(
 ) -> String {
     truncate_for_slack(
         &format!(
-            "Tau run {} failed for event {}.\n\nError: {}\n\n---\n{SLACK_METADATA_MARKER_PREFIX}{}{SLACK_METADATA_MARKER_SUFFIX}",
+            "Tau run {} failed for event {}.\n\nError: {}\n\n---\n{}",
             run_id,
             event.key,
             truncate_for_error(&error.to_string(), 600),
-            event.key,
+            slack_metadata_marker(&event.key),
         ),
         38_000,
     )
+}
+
+fn render_slack_command_response(
+    event: &SlackBridgeEvent,
+    command_name: &str,
+    status: &str,
+    message: &str,
+) -> String {
+    let mut content = if message.trim().is_empty() {
+        "Tau command response.".to_string()
+    } else {
+        message.trim().to_string()
+    };
+    let command = if command_name.trim().is_empty() {
+        "unknown"
+    } else {
+        command_name.trim()
+    };
+    let status_label = if status.trim().is_empty() {
+        "reported"
+    } else {
+        status.trim()
+    };
+    content.push_str("\n\n---\n");
+    content.push_str(&format!(
+        "{}\nTau command `{}` | status `{}`",
+        slack_metadata_marker(&event.key),
+        command,
+        status_label
+    ));
+    truncate_for_slack(&content, 38_000)
+}
+
+fn slack_metadata_marker(event_key: &str) -> String {
+    format!("{SLACK_METADATA_MARKER_PREFIX}{event_key}{SLACK_METADATA_MARKER_SUFFIX}")
 }
 
 fn render_slack_artifact_markdown(
@@ -2329,10 +2389,10 @@ mod tests {
     use super::{
         event_is_stale, normalize_artifact_retention_days, normalize_socket_envelope,
         parse_slack_command, parse_socket_envelope, render_event_prompt,
-        render_slack_artifact_markdown, render_slack_response, run_prompt_for_event,
-        DownloadedSlackFile, PollCycleReport, SlackApiClient, SlackBridgeEvent,
-        SlackBridgeEventKind, SlackBridgeRuntime, SlackBridgeRuntimeConfig, SlackBridgeStateStore,
-        SlackCommand, SlackSocketEnvelope,
+        render_slack_artifact_markdown, render_slack_command_response, render_slack_response,
+        run_prompt_for_event, DownloadedSlackFile, PollCycleReport, SlackApiClient,
+        SlackBridgeEvent, SlackBridgeEventKind, SlackBridgeRuntime, SlackBridgeRuntimeConfig,
+        SlackBridgeStateStore, SlackCommand, SlackSocketEnvelope,
     };
     use crate::{
         channel_store::{ChannelArtifactRecord, ChannelStore},
@@ -2836,6 +2896,28 @@ mod tests {
     }
 
     #[test]
+    fn unit_render_slack_command_response_appends_marker_footer() {
+        let event = SlackBridgeEvent {
+            key: "EvHelp:C1:12.1".to_string(),
+            kind: SlackBridgeEventKind::AppMention,
+            event_id: "EvHelp".to_string(),
+            occurred_unix_ms: 1,
+            channel_id: "C1".to_string(),
+            user_id: "U1".to_string(),
+            text: "<@UBOT> /tau help".to_string(),
+            ts: "12.1".to_string(),
+            thread_ts: None,
+            files: vec![],
+            raw_payload: json!({}),
+        };
+
+        let rendered = render_slack_command_response(&event, "help", "reported", "hello world");
+        assert!(rendered.contains("hello world"));
+        assert!(rendered.contains("tau-slack-event:EvHelp:C1:12.1"));
+        assert!(rendered.contains("Tau command `help` | status `reported`"));
+    }
+
+    #[test]
     fn regression_event_is_stale_respects_threshold() {
         let event = SlackBridgeEvent {
             key: "k1".to_string(),
@@ -3088,7 +3170,8 @@ mod tests {
             when.method(POST)
                 .path("/chat.postMessage")
                 .body_includes("\"channel\":\"C1\"")
-                .body_includes("Supported `/tau` commands:");
+                .body_includes("Supported `/tau` commands:")
+                .body_includes("tau-slack-event:EvHelp:C1:12.1");
             then.status(200)
                 .json_body(json!({"ok": true, "channel": "C1", "ts": "4.0"}));
         });
@@ -3096,7 +3179,8 @@ mod tests {
             when.method(POST)
                 .path("/chat.postMessage")
                 .body_includes("\"channel\":\"C1\"")
-                .body_includes("Tau status for channel C1: idle");
+                .body_includes("Tau status for channel C1: idle")
+                .body_includes("tau-slack-event:EvStatus:C1:12.2");
             then.status(200)
                 .json_body(json!({"ok": true, "channel": "C1", "ts": "4.1"}));
         });
@@ -3104,7 +3188,8 @@ mod tests {
             when.method(POST)
                 .path("/chat.postMessage")
                 .body_includes("\"channel\":\"C1\"")
-                .body_includes("No active run for this channel. Current state is idle.");
+                .body_includes("No active run for this channel. Current state is idle.")
+                .body_includes("tau-slack-event:EvStop:C1:12.3");
             then.status(200)
                 .json_body(json!({"ok": true, "channel": "C1", "ts": "4.2"}));
         });
@@ -3181,6 +3266,31 @@ mod tests {
         status_post.assert_calls(1);
         stop_post.assert_calls(1);
         assert_eq!(report.queued_events, 0);
+
+        let outbound = std::fs::read_to_string(temp.path().join("outbound-events.jsonl"))
+            .expect("read outbound events");
+        assert!(outbound.contains("\"command\":\"help\""));
+        assert!(outbound.contains("\"command\":\"status\""));
+        assert!(outbound.contains("\"command\":\"stop\""));
+        assert!(
+            outbound.contains("\"response_marker\":\"<!-- tau-slack-event:EvHelp:C1:12.1 -->\"")
+        );
+        assert!(
+            outbound.contains("\"response_marker\":\"<!-- tau-slack-event:EvStatus:C1:12.2 -->\"")
+        );
+        assert!(
+            outbound.contains("\"response_marker\":\"<!-- tau-slack-event:EvStop:C1:12.3 -->\"")
+        );
+
+        let channel_log = std::fs::read_to_string(
+            temp.path()
+                .join("channel-store/channels/slack/C1/log.jsonl"),
+        )
+        .expect("read channel log");
+        assert!(channel_log.contains("\"kind\":\"command_response\""));
+        assert!(
+            channel_log.contains("\"response_marker\":\"<!-- tau-slack-event:EvHelp:C1:12.1 -->\"")
+        );
     }
 
     #[tokio::test]
@@ -3518,5 +3628,72 @@ mod tests {
             .await
             .expect("start queued");
         assert_eq!(post.calls(), 1);
+    }
+
+    #[tokio::test]
+    async fn regression_duplicate_command_events_remain_idempotent_with_markers() {
+        let server = MockServer::start();
+        let help_post = server.mock(|when, then| {
+            when.method(POST)
+                .path("/chat.postMessage")
+                .body_includes("\"channel\":\"C1\"")
+                .body_includes("Supported `/tau` commands:")
+                .body_includes("tau-slack-event:EvDup:C1:55.1");
+            then.status(200)
+                .json_body(json!({"ok": true, "channel": "C1", "ts": "8.0"}));
+        });
+
+        let temp = tempdir().expect("tempdir");
+        let config = test_config(&server.base_url(), temp.path());
+        let mut runtime = SlackBridgeRuntime::new(config).await.expect("runtime");
+
+        let now_seconds = current_unix_timestamp_ms() / 1000;
+        let envelope = SlackSocketEnvelope {
+            envelope_id: "env-dup-command".to_string(),
+            envelope_type: "events_api".to_string(),
+            payload: json!({
+                "type": "event_callback",
+                "event_id": "EvDup",
+                "event_time": now_seconds,
+                "event": {
+                    "type": "app_mention",
+                    "user": "U1",
+                    "channel": "C1",
+                    "text": "<@UBOT> /tau help",
+                    "ts": "55.1"
+                }
+            }),
+        };
+
+        let mut report = PollCycleReport::default();
+        runtime
+            .handle_envelope(envelope.clone(), &mut report)
+            .await
+            .expect("first command event");
+        runtime
+            .handle_envelope(envelope, &mut report)
+            .await
+            .expect("duplicate command event");
+
+        help_post.assert_calls(1);
+        assert_eq!(report.skipped_duplicate_events, 1);
+
+        let outbound = std::fs::read_to_string(temp.path().join("outbound-events.jsonl"))
+            .expect("read outbound events");
+        assert_eq!(outbound.matches("\"command\":\"help\"").count(), 1);
+        assert!(outbound.contains("\"response_marker\":\"<!-- tau-slack-event:EvDup:C1:55.1 -->\""));
+
+        let channel_log = std::fs::read_to_string(
+            temp.path()
+                .join("channel-store/channels/slack/C1/log.jsonl"),
+        )
+        .expect("read channel log");
+        assert_eq!(
+            channel_log.matches("\"kind\":\"command_response\"").count(),
+            1
+        );
+        assert!(
+            channel_log.contains("\"response_marker\":\"<!-- tau-slack-event:EvDup:C1:55.1 -->\"")
+        );
     }
 }
