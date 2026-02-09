@@ -1710,6 +1710,19 @@ pub(crate) struct Cli {
     pub(crate) github_poll_interval_seconds: u64,
 
     #[arg(
+        long = "github-poll-once",
+        env = "TAU_GITHUB_POLL_ONCE",
+        default_value_t = false,
+        action = ArgAction::Set,
+        num_args = 0..=1,
+        require_equals = true,
+        default_missing_value = "true",
+        requires = "github_issues_bridge",
+        help = "Run one GitHub bridge poll cycle, drain spawned runs, and exit"
+    )]
+    pub(crate) github_poll_once: bool,
+
+    #[arg(
         long = "github-artifact-retention-days",
         env = "TAU_GITHUB_ARTIFACT_RETENTION_DAYS",
         default_value_t = 30,

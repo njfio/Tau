@@ -17,6 +17,17 @@ cargo run -p tau-coding-agent -- \
   --github-artifact-retention-days 30
 ```
 
+Run exactly one poll cycle (useful for CI smoke jobs and cron workflows):
+
+```bash
+cargo run -p tau-coding-agent -- \
+  --model openai/gpt-4o-mini \
+  --github-issues-bridge \
+  --github-repo owner/repo \
+  --github-poll-once \
+  --github-state-dir .tau/github-issues
+```
+
 Bridge control commands in issue comments:
 
 - `/tau help`
