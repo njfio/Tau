@@ -7,6 +7,7 @@ use crate::cli_executable::is_executable_available;
 use crate::macro_profile_commands::{
     load_profile_store, save_profile_store, validate_profile_name,
 };
+use crate::release_channel_commands::{save_release_channel_store, ReleaseChannel};
 
 const ONBOARDING_REPORT_SCHEMA_VERSION: u32 = 1;
 const ONBOARDING_DEFAULT_PROFILE: &str = "default";
@@ -28,6 +29,10 @@ pub(crate) struct OnboardingReport {
     pub(crate) profile_name: String,
     pub(crate) profile_store_path: String,
     pub(crate) profile_store_action: String,
+    pub(crate) release_channel_path: String,
+    pub(crate) release_channel: String,
+    pub(crate) release_channel_source: String,
+    pub(crate) release_channel_action: String,
     pub(crate) directories_created: Vec<String>,
     pub(crate) directories_existing: Vec<String>,
     pub(crate) files_created: Vec<String>,
@@ -40,6 +45,13 @@ pub(crate) struct OnboardingReport {
 enum OnboardingMode {
     Interactive,
     NonInteractive,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct OnboardingReleaseChannelState {
+    channel: ReleaseChannel,
+    source: &'static str,
+    action: &'static str,
 }
 
 pub(crate) fn execute_onboarding_command(cli: &Cli) -> Result<()> {
@@ -97,12 +109,22 @@ fn build_onboarding_report(
 
     let profile_store_path = tau_root.join("profiles.json");
     let profile_store_action = ensure_profile_store_entry(cli, &profile_store_path, profile_name)?;
+    let release_channel_path = tau_root.join("release-channel.json");
+    let release_channel_state = ensure_onboarding_release_channel(
+        &release_channel_path,
+        cli.onboard_release_channel.as_deref(),
+    )?;
     let mut files_created = Vec::new();
     let mut files_existing = Vec::new();
     if profile_store_action == "created" {
         files_created.push(profile_store_path.display().to_string());
     } else {
         files_existing.push(profile_store_path.display().to_string());
+    }
+    if release_channel_state.action == "created" {
+        files_created.push(release_channel_path.display().to_string());
+    } else {
+        files_existing.push(release_channel_path.display().to_string());
     }
 
     let executable_checks = collect_executable_checks(cli);
@@ -116,6 +138,10 @@ fn build_onboarding_report(
         profile_name: profile_name.to_string(),
         profile_store_path: profile_store_path.display().to_string(),
         profile_store_action: profile_store_action.to_string(),
+        release_channel_path: release_channel_path.display().to_string(),
+        release_channel: release_channel_state.channel.as_str().to_string(),
+        release_channel_source: release_channel_state.source.to_string(),
+        release_channel_action: release_channel_state.action.to_string(),
         directories_created,
         directories_existing,
         files_created,
@@ -236,6 +262,66 @@ fn ensure_profile_store_entry(
     }
 }
 
+fn resolve_onboarding_release_channel_override(
+    raw: Option<&str>,
+) -> Result<Option<ReleaseChannel>> {
+    let Some(raw) = raw else {
+        return Ok(None);
+    };
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(trimmed.parse::<ReleaseChannel>()?))
+}
+
+fn ensure_onboarding_release_channel(
+    release_channel_path: &Path,
+    override_channel_raw: Option<&str>,
+) -> Result<OnboardingReleaseChannelState> {
+    let override_channel = resolve_onboarding_release_channel_override(override_channel_raw)?;
+    let existing = load_release_channel_store(release_channel_path)?;
+
+    match (override_channel, existing) {
+        (Some(channel), Some(existing_channel)) if channel == existing_channel => {
+            Ok(OnboardingReleaseChannelState {
+                channel,
+                source: "override",
+                action: "unchanged",
+            })
+        }
+        (Some(channel), Some(_)) => {
+            save_release_channel_store(release_channel_path, channel)?;
+            Ok(OnboardingReleaseChannelState {
+                channel,
+                source: "override",
+                action: "updated",
+            })
+        }
+        (Some(channel), None) => {
+            save_release_channel_store(release_channel_path, channel)?;
+            Ok(OnboardingReleaseChannelState {
+                channel,
+                source: "override",
+                action: "created",
+            })
+        }
+        (None, Some(channel)) => Ok(OnboardingReleaseChannelState {
+            channel,
+            source: "existing",
+            action: "unchanged",
+        }),
+        (None, None) => {
+            save_release_channel_store(release_channel_path, ReleaseChannel::Stable)?;
+            Ok(OnboardingReleaseChannelState {
+                channel: ReleaseChannel::Stable,
+                source: "default",
+                action: "created",
+            })
+        }
+    }
+}
+
 fn collect_executable_checks(cli: &Cli) -> Vec<OnboardingExecutableCheck> {
     let openai_required = cli.openai_codex_backend
         && matches!(
@@ -338,6 +424,13 @@ fn render_onboarding_summary(report: &OnboardingReport, report_path: &Path) -> S
             report.files_existing.len(),
             report.profile_store_action
         ),
+        format!(
+            "release_channel: value={} source={} action={} path={}",
+            report.release_channel,
+            report.release_channel_source,
+            report.release_channel_action,
+            report.release_channel_path
+        ),
     ];
     for next_step in &report.next_steps {
         lines.push(format!("next: {next_step}"));
@@ -437,9 +530,16 @@ mod tests {
         assert_eq!(report.profile_name, "team-default");
         assert!(!report.directories_created.is_empty());
         assert_eq!(report.profile_store_action, "created");
+        assert_eq!(report.release_channel, "stable");
+        assert_eq!(report.release_channel_source, "default");
+        assert_eq!(report.release_channel_action, "created");
         assert!(
             PathBuf::from(&report.profile_store_path).exists(),
             "profile store should exist after onboarding"
+        );
+        assert!(
+            PathBuf::from(&report.release_channel_path).exists(),
+            "release channel store should exist after onboarding"
         );
     }
 
@@ -457,5 +557,42 @@ mod tests {
         let second = build_onboarding_report(&cli, "default", OnboardingMode::NonInteractive)
             .expect("second report");
         assert_eq!(second.profile_store_action, "unchanged");
+        assert_eq!(second.release_channel, "stable");
+        assert_eq!(second.release_channel_source, "existing");
+        assert_eq!(second.release_channel_action, "unchanged");
+    }
+
+    #[test]
+    fn functional_build_onboarding_report_applies_release_channel_override() {
+        let temp = tempdir().expect("tempdir");
+        let mut cli = test_cli();
+        apply_workspace_paths(&mut cli, temp.path());
+        cli.onboard_profile = "default".to_string();
+        cli.onboard_release_channel = Some("beta".to_string());
+
+        let first = build_onboarding_report(&cli, "default", OnboardingMode::NonInteractive)
+            .expect("first report");
+        assert_eq!(first.release_channel, "beta");
+        assert_eq!(first.release_channel_source, "override");
+        assert_eq!(first.release_channel_action, "created");
+
+        cli.onboard_release_channel = Some("dev".to_string());
+        let second = build_onboarding_report(&cli, "default", OnboardingMode::NonInteractive)
+            .expect("second report");
+        assert_eq!(second.release_channel, "dev");
+        assert_eq!(second.release_channel_source, "override");
+        assert_eq!(second.release_channel_action, "updated");
+    }
+
+    #[test]
+    fn regression_build_onboarding_report_rejects_invalid_release_channel_override() {
+        let temp = tempdir().expect("tempdir");
+        let mut cli = test_cli();
+        apply_workspace_paths(&mut cli, temp.path());
+        cli.onboard_release_channel = Some("nightly".to_string());
+
+        let error = build_onboarding_report(&cli, "default", OnboardingMode::NonInteractive)
+            .expect_err("invalid release channel should fail");
+        assert!(error.to_string().contains("expected stable|beta|dev"));
     }
 }

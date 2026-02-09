@@ -697,6 +697,14 @@ pub(crate) struct Cli {
     pub(crate) onboard_profile: String,
 
     #[arg(
+        long = "onboard-release-channel",
+        env = "TAU_ONBOARD_RELEASE_CHANNEL",
+        requires = "onboard",
+        help = "Optional release channel initialized by onboarding (stable|beta|dev)"
+    )]
+    pub(crate) onboard_release_channel: Option<String>,
+
+    #[arg(
         long = "channel-store-root",
         env = "TAU_CHANNEL_STORE_ROOT",
         default_value = ".tau/channel-store",
