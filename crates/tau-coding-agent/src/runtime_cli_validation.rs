@@ -129,6 +129,45 @@ pub(crate) fn validate_events_runner_cli(cli: &Cli) -> Result<()> {
     Ok(())
 }
 
+pub(crate) fn validate_multi_channel_contract_runner_cli(cli: &Cli) -> Result<()> {
+    if !cli.multi_channel_contract_runner {
+        return Ok(());
+    }
+
+    if has_prompt_or_command_input(cli) {
+        bail!("--multi-channel-contract-runner cannot be combined with --prompt, --prompt-file, --prompt-template-file, or --command-file");
+    }
+    if cli.no_session {
+        bail!("--multi-channel-contract-runner cannot be used together with --no-session");
+    }
+    if cli.github_issues_bridge || cli.slack_bridge || cli.events_runner {
+        bail!("--multi-channel-contract-runner cannot be combined with --github-issues-bridge, --slack-bridge, or --events-runner");
+    }
+    if cli.multi_channel_queue_limit == 0 {
+        bail!("--multi-channel-queue-limit must be greater than 0");
+    }
+    if cli.multi_channel_processed_event_cap == 0 {
+        bail!("--multi-channel-processed-event-cap must be greater than 0");
+    }
+    if cli.multi_channel_retry_max_attempts == 0 {
+        bail!("--multi-channel-retry-max-attempts must be greater than 0");
+    }
+    if !cli.multi_channel_fixture.exists() {
+        bail!(
+            "--multi-channel-fixture '{}' does not exist",
+            cli.multi_channel_fixture.display()
+        );
+    }
+    if !cli.multi_channel_fixture.is_file() {
+        bail!(
+            "--multi-channel-fixture '{}' must point to a file",
+            cli.multi_channel_fixture.display()
+        );
+    }
+
+    Ok(())
+}
+
 pub(crate) fn validate_event_webhook_ingest_cli(cli: &Cli) -> Result<()> {
     if cli.event_webhook_ingest_file.is_none() {
         return Ok(());

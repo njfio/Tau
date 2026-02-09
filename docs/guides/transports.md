@@ -57,6 +57,33 @@ cargo run -p tau-coding-agent -- \
   --slack-thread-detail-threshold-chars 1500
 ```
 
+## Multi-channel contract runner (Telegram, Discord, WhatsApp)
+
+Use this fixture-driven runtime mode to validate channel-store writes, retry behavior, and
+deduplication for supported transports.
+
+```bash
+cargo run -p tau-coding-agent -- \
+  --model openai/gpt-4o-mini \
+  --multi-channel-contract-runner \
+  --multi-channel-fixture crates/tau-coding-agent/testdata/multi-channel-contract/baseline-three-channel.json \
+  --multi-channel-state-dir .tau/multi-channel \
+  --multi-channel-queue-limit 64 \
+  --multi-channel-processed-event-cap 10000 \
+  --multi-channel-retry-max-attempts 4 \
+  --multi-channel-retry-base-delay-ms 0
+```
+
+The runner writes channel-store output under:
+
+- `.tau/multi-channel/channel-store/telegram/...`
+- `.tau/multi-channel/channel-store/discord/...`
+- `.tau/multi-channel/channel-store/whatsapp/...`
+
+Runtime state for duplicate suppression is persisted at:
+
+- `.tau/multi-channel/state.json`
+
 ## ChannelStore inspection and repair
 
 Inspect one channel:

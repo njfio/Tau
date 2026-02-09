@@ -1642,6 +1642,68 @@ pub(crate) struct Cli {
     pub(crate) event_webhook_signature_max_skew_seconds: u64,
 
     #[arg(
+        long = "multi-channel-contract-runner",
+        env = "TAU_MULTI_CHANNEL_CONTRACT_RUNNER",
+        default_value_t = false,
+        help = "Run fixture-driven multi-channel runtime for Telegram/Discord/WhatsApp contracts"
+    )]
+    pub(crate) multi_channel_contract_runner: bool,
+
+    #[arg(
+        long = "multi-channel-fixture",
+        env = "TAU_MULTI_CHANNEL_FIXTURE",
+        default_value = "crates/tau-coding-agent/testdata/multi-channel-contract/baseline-three-channel.json",
+        requires = "multi_channel_contract_runner",
+        help = "Path to multi-channel contract fixture JSON"
+    )]
+    pub(crate) multi_channel_fixture: PathBuf,
+
+    #[arg(
+        long = "multi-channel-state-dir",
+        env = "TAU_MULTI_CHANNEL_STATE_DIR",
+        default_value = ".tau/multi-channel",
+        requires = "multi_channel_contract_runner",
+        help = "Directory for multi-channel runtime state and channel-store outputs"
+    )]
+    pub(crate) multi_channel_state_dir: PathBuf,
+
+    #[arg(
+        long = "multi-channel-queue-limit",
+        env = "TAU_MULTI_CHANNEL_QUEUE_LIMIT",
+        default_value_t = 64,
+        requires = "multi_channel_contract_runner",
+        help = "Maximum fixture events processed per runtime cycle"
+    )]
+    pub(crate) multi_channel_queue_limit: usize,
+
+    #[arg(
+        long = "multi-channel-processed-event-cap",
+        env = "TAU_MULTI_CHANNEL_PROCESSED_EVENT_CAP",
+        default_value_t = 10_000,
+        requires = "multi_channel_contract_runner",
+        help = "Maximum processed-event keys retained for duplicate suppression"
+    )]
+    pub(crate) multi_channel_processed_event_cap: usize,
+
+    #[arg(
+        long = "multi-channel-retry-max-attempts",
+        env = "TAU_MULTI_CHANNEL_RETRY_MAX_ATTEMPTS",
+        default_value_t = 4,
+        requires = "multi_channel_contract_runner",
+        help = "Maximum retry attempts for transient multi-channel runtime failures"
+    )]
+    pub(crate) multi_channel_retry_max_attempts: usize,
+
+    #[arg(
+        long = "multi-channel-retry-base-delay-ms",
+        env = "TAU_MULTI_CHANNEL_RETRY_BASE_DELAY_MS",
+        default_value_t = 0,
+        requires = "multi_channel_contract_runner",
+        help = "Base backoff delay in milliseconds for multi-channel runtime retries (0 disables delay)"
+    )]
+    pub(crate) multi_channel_retry_base_delay_ms: u64,
+
+    #[arg(
         long = "github-issues-bridge",
         env = "TAU_GITHUB_ISSUES_BRIDGE",
         default_value_t = false,
