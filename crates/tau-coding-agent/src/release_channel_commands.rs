@@ -274,6 +274,14 @@ fn compute_release_cache_age_counters(age_ms: u64, ttl_ms: u64) -> ReleaseCacheA
     }
 }
 
+fn compute_release_cache_expires_at_unix_ms(fetched_at_unix_ms: u64, ttl_ms: u64) -> u64 {
+    fetched_at_unix_ms.saturating_add(ttl_ms)
+}
+
+fn is_release_cache_expired(age_ms: u64, ttl_ms: u64) -> bool {
+    age_ms > ttl_ms
+}
+
 fn fetch_release_records(url: &str) -> Result<Vec<GitHubReleaseRecord>> {
     if let Ok(handle) = tokio::runtime::Handle::try_current() {
         tokio::task::block_in_place(|| handle.block_on(fetch_release_records_async(url)))
@@ -636,6 +644,11 @@ fn execute_release_channel_command_with_lookup_options(
                     let age_ms =
                         current_unix_timestamp_ms().saturating_sub(cache.fetched_at_unix_ms);
                     let age_counters = compute_release_cache_age_counters(age_ms, cache_ttl_ms);
+                    let expires_at_unix_ms = compute_release_cache_expires_at_unix_ms(
+                        cache.fetched_at_unix_ms,
+                        cache_ttl_ms,
+                    );
+                    let is_expired = is_release_cache_expired(age_ms, cache_ttl_ms);
                     let stable_latest =
                         resolve_channel_latest_or_unknown(ReleaseChannel::Stable, &cache.releases);
                     let beta_latest =
@@ -643,7 +656,7 @@ fn execute_release_channel_command_with_lookup_options(
                     let dev_latest =
                         resolve_channel_latest_or_unknown(ReleaseChannel::Dev, &cache.releases);
                     format!(
-                        "release cache: path={} status=present schema_version={} entries={} fetched_at_unix_ms={} age_ms={} ttl_ms={} freshness={} next_refresh_in_ms={} stale_by_ms={} source_url={} stable_latest={} beta_latest={} dev_latest={}",
+                        "release cache: path={} status=present schema_version={} entries={} fetched_at_unix_ms={} age_ms={} ttl_ms={} freshness={} next_refresh_in_ms={} stale_by_ms={} expires_at_unix_ms={} is_expired={} source_url={} stable_latest={} beta_latest={} dev_latest={}",
                         cache_path.display(),
                         cache.schema_version,
                         cache.releases.len(),
@@ -653,6 +666,8 @@ fn execute_release_channel_command_with_lookup_options(
                         age_counters.freshness,
                         age_counters.next_refresh_in_ms,
                         age_counters.stale_by_ms,
+                        expires_at_unix_ms,
+                        is_expired,
                         cache.source_url,
                         stable_latest,
                         beta_latest,
@@ -873,6 +888,17 @@ mod tests {
         );
     }
 
+    #[test]
+    fn unit_release_cache_expiration_helpers_handle_boundary_and_saturation() {
+        assert_eq!(compute_release_cache_expires_at_unix_ms(100, 50), 150);
+        assert_eq!(
+            compute_release_cache_expires_at_unix_ms(u64::MAX - 1, 50),
+            u64::MAX
+        );
+        assert!(!is_release_cache_expired(100, 100));
+        assert!(is_release_cache_expired(101, 100));
+    }
+
     fn parse_u64_field(output: &str, key: &str) -> u64 {
         output
             .split_whitespace()
@@ -884,6 +910,19 @@ mod tests {
                 None
             })
             .unwrap_or_else(|| panic!("missing u64 field '{key}' in output: {output}"))
+    }
+
+    fn parse_bool_field(output: &str, key: &str) -> bool {
+        output
+            .split_whitespace()
+            .find_map(|token| {
+                let (field_key, field_value) = token.split_once('=')?;
+                if field_key == key {
+                    return field_value.parse::<bool>().ok();
+                }
+                None
+            })
+            .unwrap_or_else(|| panic!("missing bool field '{key}' in output: {output}"))
     }
 
     #[test]
@@ -934,11 +973,20 @@ mod tests {
         assert!(present.contains("freshness=fresh"));
         assert!(present.contains("next_refresh_in_ms="));
         assert!(present.contains("stale_by_ms=0"));
+        assert!(present.contains("expires_at_unix_ms="));
+        assert!(present.contains("is_expired=false"));
         assert!(present.contains("source_url=https://example.invalid/releases"));
         assert!(present.contains("stable_latest=v9.9.9"));
         assert!(present.contains("beta_latest=v9.9.9"));
         assert!(present.contains("dev_latest=v9.9.9"));
         assert!(parse_u64_field(&present, "next_refresh_in_ms") <= RELEASE_LOOKUP_CACHE_TTL_MS);
+        let fetched_at = parse_u64_field(&present, "fetched_at_unix_ms");
+        let expires_at = parse_u64_field(&present, "expires_at_unix_ms");
+        assert_eq!(
+            expires_at,
+            compute_release_cache_expires_at_unix_ms(fetched_at, RELEASE_LOOKUP_CACHE_TTL_MS)
+        );
+        assert!(!parse_bool_field(&present, "is_expired"));
 
         let cleared = execute_release_channel_command("cache clear", &path);
         assert!(cleared.contains("status=removed"));
@@ -986,11 +1034,20 @@ mod tests {
         assert!(show.contains("freshness=fresh"));
         assert!(show.contains("next_refresh_in_ms="));
         assert!(show.contains("stale_by_ms=0"));
+        assert!(show.contains("expires_at_unix_ms="));
+        assert!(show.contains("is_expired=false"));
         assert!(show.contains(&format!("source_url={url}")));
         assert!(show.contains("stable_latest=v8.9.4"));
         assert!(show.contains("beta_latest=v9.0.0-beta.2"));
         assert!(show.contains("dev_latest=v9.0.0-beta.2"));
         assert!(parse_u64_field(&show, "next_refresh_in_ms") <= RELEASE_LOOKUP_CACHE_TTL_MS);
+        let fetched_at = parse_u64_field(&show, "fetched_at_unix_ms");
+        let expires_at = parse_u64_field(&show, "expires_at_unix_ms");
+        assert_eq!(
+            expires_at,
+            compute_release_cache_expires_at_unix_ms(fetched_at, RELEASE_LOOKUP_CACHE_TTL_MS)
+        );
+        assert!(!parse_bool_field(&show, "is_expired"));
         mock.assert_calls(1);
     }
 
@@ -1108,10 +1165,13 @@ mod tests {
         );
         assert!(show.contains("next_refresh_in_ms="));
         assert!(show.contains("stale_by_ms=0"));
+        assert!(show.contains("expires_at_unix_ms="));
+        assert!(show.contains("is_expired=false"));
         assert!(show.contains("stable_latest=v10.1.0"));
         assert!(show.contains("beta_latest=v10.2.0-beta.1"));
         assert!(show.contains("dev_latest=v10.2.0-beta.1"));
         assert!(parse_u64_field(&show, "next_refresh_in_ms") <= RELEASE_LOOKUP_CACHE_TTL_MS);
+        assert!(!parse_bool_field(&show, "is_expired"));
     }
 
     #[test]
@@ -1426,10 +1486,13 @@ mod tests {
         assert!(output.contains("ttl_ms=900000"));
         assert!(output.contains("next_refresh_in_ms=0"));
         assert!(output.contains("stale_by_ms="));
+        assert!(output.contains("expires_at_unix_ms="));
+        assert!(output.contains("is_expired=true"));
         assert!(output.contains("stable_latest=v8.8.8"));
         assert!(output.contains("beta_latest=v8.8.8"));
         assert!(output.contains("dev_latest=v8.8.8"));
         assert!(parse_u64_field(&output, "stale_by_ms") > 0);
+        assert!(parse_bool_field(&output, "is_expired"));
     }
 
     #[test]
@@ -1456,6 +1519,9 @@ mod tests {
         assert!(output.contains("dev_latest=unknown"));
         assert!(output.contains("next_refresh_in_ms=0"));
         assert!(parse_u64_field(&output, "stale_by_ms") > 0);
+        assert!(output.contains("expires_at_unix_ms="));
+        assert!(output.contains("is_expired=true"));
+        assert!(parse_bool_field(&output, "is_expired"));
     }
 
     #[test]
