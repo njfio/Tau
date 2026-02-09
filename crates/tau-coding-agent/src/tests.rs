@@ -462,6 +462,7 @@ fn test_cli() -> Cli {
         github_state_dir: PathBuf::from(".tau/github-issues"),
         github_poll_interval_seconds: 30,
         github_poll_once: false,
+        github_required_label: vec![],
         github_artifact_retention_days: 30,
         github_include_issue_body: false,
         github_include_edited_comments: true,
@@ -1170,6 +1171,32 @@ fn regression_cli_github_poll_once_accepts_explicit_false() {
         "--github-poll-once=false",
     ]);
     assert!(!cli.github_poll_once);
+}
+
+#[test]
+fn unit_cli_github_required_label_defaults_empty() {
+    let cli = Cli::parse_from(["tau-rs"]);
+    assert!(cli.github_required_label.is_empty());
+}
+
+#[test]
+fn functional_cli_github_required_label_accepts_repeat_and_csv_values() {
+    let cli = Cli::parse_from([
+        "tau-rs",
+        "--github-issues-bridge",
+        "--github-required-label",
+        "tau-ready",
+        "--github-required-label",
+        "ops,triage",
+    ]);
+    assert_eq!(
+        cli.github_required_label,
+        vec![
+            "tau-ready".to_string(),
+            "ops".to_string(),
+            "triage".to_string()
+        ]
+    );
 }
 
 #[test]
@@ -11742,6 +11769,20 @@ fn regression_validate_github_issues_bridge_cli_requires_credentials() {
     assert!(error
         .to_string()
         .contains("--github-token (or --github-token-id) is required"));
+}
+
+#[test]
+fn regression_validate_github_issues_bridge_cli_rejects_empty_required_labels() {
+    let mut cli = test_cli();
+    cli.github_issues_bridge = true;
+    cli.github_repo = Some("owner/repo".to_string());
+    cli.github_token = Some("token".to_string());
+    cli.github_required_label = vec!["  ".to_string()];
+
+    let error = validate_github_issues_bridge_cli(&cli).expect_err("empty label should fail");
+    assert!(error
+        .to_string()
+        .contains("--github-required-label cannot be empty"));
 }
 
 #[test]

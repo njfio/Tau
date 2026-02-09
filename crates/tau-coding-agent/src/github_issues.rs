@@ -65,6 +65,7 @@ pub(crate) struct GithubIssuesBridgeRuntimeConfig {
     pub bot_login: Option<String>,
     pub poll_interval: Duration,
     pub poll_once: bool,
+    pub required_labels: Vec<String>,
     pub include_issue_body: bool,
     pub include_edited_comments: bool,
     pub processed_event_cap: usize,
@@ -334,6 +335,11 @@ struct GithubUser {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+struct GithubIssueLabel {
+    name: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
 struct GithubIssue {
     id: u64,
     number: u64,
@@ -342,6 +348,8 @@ struct GithubIssue {
     created_at: String,
     updated_at: String,
     user: GithubUser,
+    #[serde(default)]
+    labels: Vec<GithubIssueLabel>,
     #[serde(default)]
     pull_request: Option<Value>,
 }
@@ -885,6 +893,7 @@ struct GithubIssuesBridgeRuntime {
     config: GithubIssuesBridgeRuntimeConfig,
     repo: RepoRef,
     github_client: GithubApiClient,
+    required_issue_labels: HashSet<String>,
     state_store: GithubIssuesBridgeStateStore,
     inbound_log: JsonlEventLog,
     outbound_log: JsonlEventLog,
@@ -921,10 +930,17 @@ impl GithubIssuesBridgeRuntime {
         )?;
         let inbound_log = JsonlEventLog::open(repository_state_dir.join("inbound-events.jsonl"))?;
         let outbound_log = JsonlEventLog::open(repository_state_dir.join("outbound-events.jsonl"))?;
+        let required_issue_labels = config
+            .required_labels
+            .iter()
+            .map(|label| normalize_issue_label(label))
+            .filter(|label| !label.is_empty())
+            .collect::<HashSet<_>>();
         Ok(Self {
             config,
             repo,
             github_client,
+            required_issue_labels,
             state_store,
             inbound_log,
             outbound_log,
@@ -1013,6 +1029,9 @@ impl GithubIssuesBridgeRuntime {
                 Some(existing) if existing >= issue.updated_at => Some(existing),
                 _ => Some(issue.updated_at.clone()),
             };
+            if !issue_matches_required_labels(&issue, &self.required_issue_labels) {
+                continue;
+            }
 
             let comments = self.github_client.list_issue_comments(issue.number).await?;
             let known_event_keys = comments
@@ -3413,6 +3432,21 @@ fn normalize_artifact_retention_days(days: u64) -> Option<u64> {
     }
 }
 
+fn normalize_issue_label(raw: &str) -> String {
+    raw.trim().to_ascii_lowercase()
+}
+
+fn issue_matches_required_labels(issue: &GithubIssue, required: &HashSet<String>) -> bool {
+    if required.is_empty() {
+        return true;
+    }
+    issue
+        .labels
+        .iter()
+        .map(|label| normalize_issue_label(&label.name))
+        .any(|label| required.contains(&label))
+}
+
 fn render_issue_run_error_comment(
     event: &GithubBridgeEvent,
     run_id: &str,
@@ -3890,6 +3924,7 @@ fn short_key_hash(key: &str) -> String {
 #[cfg(test)]
 mod tests {
     use std::{
+        collections::HashSet,
         path::{Path, PathBuf},
         sync::Arc,
         time::Duration,
@@ -3905,16 +3940,17 @@ mod tests {
     use super::{
         collect_issue_events, evaluate_attachment_content_type_policy,
         evaluate_attachment_url_policy, event_action_from_body, extract_attachment_urls,
-        extract_footer_event_keys, is_retryable_github_status, issue_session_id,
-        normalize_artifact_retention_days, normalize_relative_channel_path,
+        extract_footer_event_keys, is_retryable_github_status, issue_matches_required_labels,
+        issue_session_id, normalize_artifact_retention_days, normalize_relative_channel_path,
         parse_rfc3339_to_unix_ms, parse_tau_issue_command, post_issue_comment_chunks,
         render_event_prompt, render_issue_command_comment, render_issue_comment_chunks_with_limit,
         render_issue_comment_response_parts, retry_delay, run_prompt_for_event, sanitize_for_path,
         session_path_for_issue, DownloadedGithubAttachment, EventAction, GithubApiClient,
         GithubBridgeEvent, GithubBridgeEventKind, GithubIssue, GithubIssueComment,
-        GithubIssuesBridgeRuntime, GithubIssuesBridgeRuntimeConfig, GithubIssuesBridgeStateStore,
-        GithubUser, PromptRunReport, PromptUsageSummary, RepoRef, RunPromptForEventRequest,
-        SessionStore, TauIssueCommand, CHAT_SHOW_DEFAULT_LIMIT, EVENT_KEY_MARKER_PREFIX,
+        GithubIssueLabel, GithubIssuesBridgeRuntime, GithubIssuesBridgeRuntimeConfig,
+        GithubIssuesBridgeStateStore, GithubUser, PromptRunReport, PromptUsageSummary, RepoRef,
+        RunPromptForEventRequest, SessionStore, TauIssueCommand, CHAT_SHOW_DEFAULT_LIMIT,
+        EVENT_KEY_MARKER_PREFIX,
     };
     use crate::{
         channel_store::{ChannelArtifactRecord, ChannelStore},
@@ -3987,6 +4023,7 @@ mod tests {
             bot_login: Some("tau".to_string()),
             poll_interval: Duration::from_millis(1),
             poll_once: false,
+            required_labels: Vec::new(),
             include_issue_body: false,
             include_edited_comments: true,
             processed_event_cap: 32,
@@ -4054,6 +4091,29 @@ mod tests {
     }
 
     #[test]
+    fn unit_issue_matches_required_labels_filters_case_insensitively() {
+        let issue = GithubIssue {
+            id: 100,
+            number: 42,
+            title: "Issue".to_string(),
+            body: Some("initial issue body".to_string()),
+            created_at: "2026-01-01T00:00:00Z".to_string(),
+            updated_at: "2026-01-01T00:00:10Z".to_string(),
+            user: GithubUser {
+                login: "alice".to_string(),
+            },
+            labels: vec![GithubIssueLabel {
+                name: "Tau-Ready".to_string(),
+            }],
+            pull_request: None,
+        };
+        let required = HashSet::from([String::from("tau-ready")]);
+        assert!(issue_matches_required_labels(&issue, &required));
+        let required = HashSet::from([String::from("other")]);
+        assert!(!issue_matches_required_labels(&issue, &required));
+    }
+
+    #[test]
     fn functional_collect_issue_events_supports_created_and_edited_comments() {
         let issue = GithubIssue {
             id: 100,
@@ -4065,6 +4125,7 @@ mod tests {
             user: GithubUser {
                 login: "alice".to_string(),
             },
+            labels: Vec::new(),
             pull_request: None,
         };
         let comments = vec![
@@ -5068,6 +5129,87 @@ mod tests {
         let artifact_index = std::fs::read_to_string(channel_dir.join("artifacts/index.jsonl"))
             .expect("artifact index exists");
         assert!(artifact_index.contains("\"artifact_type\":\"github-issue-reply\""));
+    }
+
+    #[tokio::test]
+    async fn integration_bridge_poll_filters_issues_by_required_label() {
+        let server = MockServer::start();
+        let issues = server.mock(|when, then| {
+            when.method(GET).path("/repos/owner/repo/issues");
+            then.status(200).json_body(json!([
+                {
+                    "id": 10,
+                    "number": 7,
+                    "title": "Bridge me",
+                    "body": "",
+                    "created_at": "2026-01-01T00:00:00Z",
+                    "updated_at": "2026-01-01T00:00:05Z",
+                    "user": {"login":"alice"},
+                    "labels": [{"name":"tau-ready"}]
+                },
+                {
+                    "id": 11,
+                    "number": 8,
+                    "title": "Skip me",
+                    "body": "",
+                    "created_at": "2026-01-01T00:00:00Z",
+                    "updated_at": "2026-01-01T00:00:06Z",
+                    "user": {"login":"alice"},
+                    "labels": [{"name":"other"}]
+                }
+            ]));
+        });
+        let comments_7 = server.mock(|when, then| {
+            when.method(GET).path("/repos/owner/repo/issues/7/comments");
+            then.status(200).json_body(json!([{
+                "id": 200,
+                "body": "hello from issue stream",
+                "created_at": "2026-01-01T00:00:01Z",
+                "updated_at": "2026-01-01T00:00:01Z",
+                "user": {"login":"alice"}
+            }]));
+        });
+        let comments_8 = server.mock(|when, then| {
+            when.method(GET).path("/repos/owner/repo/issues/8/comments");
+            then.status(200).json_body(json!([]));
+        });
+        let working_post = server.mock(|when, then| {
+            when.method(POST)
+                .path("/repos/owner/repo/issues/7/comments")
+                .body_includes("Tau is working on run");
+            then.status(201).json_body(json!({
+                "id": 901,
+                "html_url": "https://example.test/comment/901"
+            }));
+        });
+        let update = server.mock(|when, then| {
+            when.method(PATCH)
+                .path("/repos/owner/repo/issues/comments/901")
+                .body_includes("bridge reply")
+                .body_includes("tau-event-key:issue-comment-created:200");
+            then.status(200).json_body(json!({
+                "id": 901,
+                "html_url": "https://example.test/comment/901"
+            }));
+        });
+
+        let temp = tempdir().expect("tempdir");
+        let mut config = test_bridge_config(&server.base_url(), temp.path());
+        config.required_labels = vec!["tau-ready".to_string()];
+        let mut runtime = GithubIssuesBridgeRuntime::new(config)
+            .await
+            .expect("runtime");
+        let first = runtime.poll_once().await.expect("first poll");
+        let second = runtime.poll_once().await.expect("second poll");
+
+        assert_eq!(first.discovered_events, 1);
+        assert_eq!(first.processed_events, 1);
+        assert_eq!(second.processed_events, 0);
+        issues.assert_calls(2);
+        comments_7.assert_calls(2);
+        comments_8.assert_calls(0);
+        working_post.assert_calls(1);
+        update.assert_calls(1);
     }
 
     #[tokio::test]
