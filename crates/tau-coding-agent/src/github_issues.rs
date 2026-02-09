@@ -17,6 +17,10 @@ use tokio::sync::watch;
 use crate::channel_store::{
     ChannelArtifactRecord, ChannelAttachmentRecord, ChannelLogEntry, ChannelStore,
 };
+use crate::github_issues_helpers::{
+    attachment_filename_from_url, chunk_text_by_chars, evaluate_attachment_content_type_policy,
+    evaluate_attachment_url_policy, extract_attachment_urls, split_at_char_index,
+};
 use crate::session_commands::{parse_session_search_args, search_session_entries};
 use crate::{
     authorize_action_for_principal_with_policy_path, current_unix_timestamp_ms,
@@ -37,24 +41,6 @@ const CHAT_SHOW_DEFAULT_LIMIT: usize = 10;
 const CHAT_SHOW_MAX_LIMIT: usize = 50;
 const CHAT_SEARCH_MAX_LIMIT: usize = 50;
 const GITHUB_ATTACHMENT_MAX_BYTES: usize = 10 * 1024 * 1024;
-const GITHUB_ATTACHMENT_SUPPORTED_EXTENSIONS: &[&str] = &[
-    "txt", "md", "json", "yaml", "yml", "toml", "log", "csv", "tsv", "rs", "py", "js", "ts", "tsx",
-    "jsx", "go", "java", "c", "cpp", "h", "hpp", "sh", "zsh", "bash", "sql", "xml", "html", "css",
-    "scss", "diff", "patch", "png", "jpg", "jpeg", "gif", "bmp", "webp", "pdf", "zip", "gz", "tar",
-    "tgz",
-];
-const GITHUB_ATTACHMENT_DENIED_EXTENSIONS: &[&str] = &[
-    "exe", "dll", "dylib", "so", "bat", "cmd", "com", "msi", "apk", "ipa", "ps1", "jar", "scr",
-    "vb", "vbs",
-];
-const GITHUB_ATTACHMENT_DENIED_CONTENT_TYPES: &[&str] = &[
-    "application/x-msdownload",
-    "application/x-dosexec",
-    "application/vnd.microsoft.portable-executable",
-    "application/x-executable",
-    "application/x-bat",
-    "application/x-msdos-program",
-];
 
 #[derive(Clone)]
 pub(crate) struct GithubIssuesBridgeRuntimeConfig {
@@ -746,12 +732,6 @@ struct DownloadedGithubAttachment {
     policy_reason_code: String,
     created_unix_ms: u64,
     expires_unix_ms: Option<u64>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct AttachmentPolicyDecision {
-    accepted: bool,
-    reason_code: &'static str,
 }
 
 #[derive(Debug, Clone)]
@@ -3158,141 +3138,6 @@ async fn download_issue_attachments(
     Ok(downloaded)
 }
 
-fn extract_attachment_urls(text: &str) -> Vec<String> {
-    let mut urls = Vec::new();
-    let mut seen = HashSet::new();
-    for token in text.split_whitespace() {
-        if let Some(markdown_url) = extract_markdown_link_url(token) {
-            push_attachment_url(markdown_url, &mut urls, &mut seen);
-        }
-        push_attachment_url(token, &mut urls, &mut seen);
-    }
-    urls
-}
-
-fn extract_markdown_link_url(token: &str) -> Option<&str> {
-    let start = token.find("](")?;
-    let remainder = &token[start + 2..];
-    let end = remainder.find(')')?;
-    Some(&remainder[..end])
-}
-
-fn push_attachment_url(raw: &str, urls: &mut Vec<String>, seen: &mut HashSet<String>) {
-    let candidate = raw.trim_matches(|ch: char| {
-        matches!(
-            ch,
-            '"' | '\'' | '<' | '>' | '(' | ')' | '[' | ']' | '{' | '}' | ',' | ';'
-        )
-    });
-    if !candidate.starts_with("http://") && !candidate.starts_with("https://") {
-        return;
-    }
-    let candidate = candidate.trim_end_matches(['.', ',', ';', ':']);
-    if !is_supported_attachment_url(candidate) {
-        return;
-    }
-    if seen.insert(candidate.to_string()) {
-        urls.push(candidate.to_string());
-    }
-}
-
-fn evaluate_attachment_url_policy(url: &str) -> AttachmentPolicyDecision {
-    let parsed = match reqwest::Url::parse(url) {
-        Ok(parsed) => parsed,
-        Err(_) => {
-            return AttachmentPolicyDecision {
-                accepted: false,
-                reason_code: "deny_invalid_url",
-            };
-        }
-    };
-    if !matches!(parsed.scheme(), "http" | "https") {
-        return AttachmentPolicyDecision {
-            accepted: false,
-            reason_code: "deny_non_http_scheme",
-        };
-    }
-    let extension = attachment_extension_from_parsed_url(&parsed);
-    let Some(extension) = extension else {
-        return AttachmentPolicyDecision {
-            accepted: false,
-            reason_code: "deny_missing_extension",
-        };
-    };
-    if GITHUB_ATTACHMENT_DENIED_EXTENSIONS.contains(&extension.as_str()) {
-        return AttachmentPolicyDecision {
-            accepted: false,
-            reason_code: "deny_extension_denylist",
-        };
-    }
-    if !GITHUB_ATTACHMENT_SUPPORTED_EXTENSIONS.contains(&extension.as_str()) {
-        return AttachmentPolicyDecision {
-            accepted: false,
-            reason_code: "deny_extension_not_allowlisted",
-        };
-    }
-    AttachmentPolicyDecision {
-        accepted: true,
-        reason_code: "allow_extension_allowlist",
-    }
-}
-
-fn evaluate_attachment_content_type_policy(content_type: Option<&str>) -> AttachmentPolicyDecision {
-    let Some(content_type) = content_type
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-    else {
-        return AttachmentPolicyDecision {
-            accepted: true,
-            reason_code: "allow_content_type_default",
-        };
-    };
-    let normalized = content_type.to_ascii_lowercase();
-    let normalized_base = normalized
-        .split(';')
-        .next()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .unwrap_or(normalized.as_str());
-    if GITHUB_ATTACHMENT_DENIED_CONTENT_TYPES.contains(&normalized_base) {
-        return AttachmentPolicyDecision {
-            accepted: false,
-            reason_code: "deny_content_type_dangerous",
-        };
-    }
-    AttachmentPolicyDecision {
-        accepted: true,
-        reason_code: "allow_content_type_default",
-    }
-}
-
-fn is_supported_attachment_url(url: &str) -> bool {
-    evaluate_attachment_url_policy(url).accepted
-}
-
-fn attachment_extension_from_parsed_url(parsed: &reqwest::Url) -> Option<String> {
-    parsed
-        .path_segments()
-        .and_then(|mut segments| segments.next_back())
-        .and_then(|segment| segment.rsplit('.').next())
-        .map(str::trim)
-        .filter(|segment| !segment.is_empty())
-        .map(|extension| extension.to_ascii_lowercase())
-}
-
-fn attachment_filename_from_url(url: &str, index: usize) -> String {
-    if let Ok(parsed) = reqwest::Url::parse(url) {
-        if let Some(name) = parsed
-            .path_segments()
-            .and_then(|mut segments| segments.next_back())
-            .filter(|name| !name.trim().is_empty())
-        {
-            return name.to_string();
-        }
-    }
-    format!("attachment-{}.bin", index)
-}
-
 fn normalize_relative_channel_path(
     path: &Path,
     channel_root: &Path,
@@ -3478,42 +3323,6 @@ fn render_issue_comment_chunks_with_limit(
     chunks.push(format!("{first_content}{footer_block}"));
     let mut trailing = chunk_text_by_chars(&remainder, max_chars);
     chunks.append(&mut trailing);
-    chunks
-}
-
-fn split_at_char_index(text: &str, index: usize) -> (String, String) {
-    let mut iter = text.chars();
-    let mut left = String::new();
-    for _ in 0..index {
-        if let Some(ch) = iter.next() {
-            left.push(ch);
-        } else {
-            break;
-        }
-    }
-    let right: String = iter.collect();
-    (left, right)
-}
-
-fn chunk_text_by_chars(text: &str, max_chars: usize) -> Vec<String> {
-    if max_chars == 0 {
-        return Vec::new();
-    }
-    let mut chunks = Vec::new();
-    let mut current = String::new();
-    let mut count = 0usize;
-    for ch in text.chars() {
-        if count >= max_chars {
-            chunks.push(current);
-            current = String::new();
-            count = 0;
-        }
-        current.push(ch);
-        count = count.saturating_add(1);
-    }
-    if !current.is_empty() {
-        chunks.push(current);
-    }
     chunks
 }
 
@@ -4579,7 +4388,9 @@ mod tests {
         let url = "http://127.0.0.1:1234/assets/trace.log";
         let urls = extract_attachment_urls(url);
         assert_eq!(urls, vec![url.to_string()]);
-        assert!(super::is_supported_attachment_url(url));
+        assert!(crate::github_issues_helpers::is_supported_attachment_url(
+            url
+        ));
     }
 
     #[test]
