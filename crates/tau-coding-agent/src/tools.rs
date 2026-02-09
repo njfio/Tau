@@ -15,6 +15,7 @@ use tokio::{process::Command, time::timeout};
 use crate::extension_manifest::{
     evaluate_extension_policy_override, execute_extension_registered_tool, ExtensionRegisteredTool,
 };
+use crate::{evaluate_approval_gate, ApprovalAction, ApprovalGateResult};
 
 const SAFE_BASH_ENV_VARS: &[&str] = &[
     "PATH", "HOME", "USER", "SHELL", "LANG", "LC_ALL", "LC_CTYPE", "TERM", "TMPDIR", "TMP", "TEMP",
@@ -388,6 +389,13 @@ impl AgentTool for WriteTool {
             }));
         }
 
+        if let Some(approval_result) = evaluate_tool_approval_gate(ApprovalAction::ToolWrite {
+            path: resolved.display().to_string(),
+            content_bytes: content_size,
+        }) {
+            return approval_result;
+        }
+
         if let Some(parent) = resolved.parent() {
             if !parent.as_os_str().is_empty() {
                 if let Err(error) = tokio::fs::create_dir_all(parent).await {
@@ -478,6 +486,14 @@ impl AgentTool for EditTool {
                 "path": resolved.display().to_string(),
                 "error": error,
             }));
+        }
+
+        if let Some(approval_result) = evaluate_tool_approval_gate(ApprovalAction::ToolEdit {
+            path: resolved.display().to_string(),
+            find: find.clone(),
+            replace_bytes: replace.len(),
+        }) {
+            return approval_result;
         }
 
         let replace_all = arguments
@@ -604,6 +620,41 @@ fn bash_policy_error(
     }
     attach_policy_trace(&mut payload, trace_enabled, trace, "deny");
     ToolExecutionResult::error(Value::Object(payload))
+}
+
+fn evaluate_tool_approval_gate(action: ApprovalAction) -> Option<ToolExecutionResult> {
+    let action_kind = match &action {
+        ApprovalAction::ToolBash { .. } => "tool:bash",
+        ApprovalAction::ToolWrite { .. } => "tool:write",
+        ApprovalAction::ToolEdit { .. } => "tool:edit",
+        ApprovalAction::Command { .. } => "command",
+    };
+    let action_payload = serde_json::to_value(&action).unwrap_or(Value::Null);
+    match evaluate_approval_gate(&action) {
+        Ok(ApprovalGateResult::Allowed) => None,
+        Ok(ApprovalGateResult::Denied {
+            request_id,
+            rule_id,
+            reason_code,
+            message,
+        }) => Some(ToolExecutionResult::error(json!({
+            "policy_rule": "approval_gate",
+            "action_kind": action_kind,
+            "action": action_payload,
+            "approval_request_id": request_id,
+            "approval_rule_id": rule_id,
+            "reason_code": reason_code,
+            "error": message,
+            "hint": "run '/approvals list' then '/approvals approve <request_id>'",
+        }))),
+        Err(error) => Some(ToolExecutionResult::error(json!({
+            "policy_rule": "approval_gate",
+            "action_kind": action_kind,
+            "action": action_payload,
+            "reason_code": "approval_gate_error",
+            "error": format!("failed to evaluate approval gate: {error}"),
+        }))),
+    }
 }
 
 #[async_trait]
@@ -826,6 +877,13 @@ impl AgentTool for BashTool {
                 None
             }
         };
+
+        if let Some(approval_result) = evaluate_tool_approval_gate(ApprovalAction::ToolBash {
+            command: command.clone(),
+            cwd: cwd.as_ref().map(|value| value.display().to_string()),
+        }) {
+            return approval_result;
+        }
 
         let override_payload = serde_json::json!({
             "tool": "bash",
@@ -1473,11 +1531,12 @@ mod tests {
 
     use super::{
         bash_profile_name, build_spec_from_command_template, canonicalize_best_effort,
-        command_available, is_command_allowed, leading_executable, os_sandbox_mode_name,
-        redact_secrets, resolve_sandbox_spec, truncate_bytes, AgentTool, BashCommandProfile,
-        BashTool, EditTool, OsSandboxMode, ToolExecutionResult, ToolPolicy, ToolPolicyPreset,
-        WriteTool,
+        command_available, evaluate_tool_approval_gate, is_command_allowed, leading_executable,
+        os_sandbox_mode_name, redact_secrets, resolve_sandbox_spec, truncate_bytes, AgentTool,
+        BashCommandProfile, BashTool, EditTool, OsSandboxMode, ToolExecutionResult, ToolPolicy,
+        ToolPolicyPreset, WriteTool,
     };
+    use crate::ApprovalAction;
 
     fn test_policy(path: &Path) -> Arc<ToolPolicy> {
         Arc::new(ToolPolicy::new(vec![path.to_path_buf()]))
@@ -1509,6 +1568,15 @@ mod tests {
         assert_eq!(policy.max_command_output_bytes, 4_000);
         assert_eq!(policy.os_sandbox_mode, OsSandboxMode::Force);
         assert!(policy.enforce_regular_files);
+    }
+
+    #[test]
+    fn regression_tool_approval_gate_is_noop_when_policy_is_missing() {
+        let result = evaluate_tool_approval_gate(ApprovalAction::ToolWrite {
+            path: "/tmp/example.txt".to_string(),
+            content_bytes: 12,
+        });
+        assert!(result.is_none());
     }
 
     #[tokio::test]
