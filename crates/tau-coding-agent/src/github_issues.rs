@@ -14,7 +14,9 @@ use tau_agent_core::{Agent, AgentConfig, AgentEvent};
 use tau_ai::LlmClient;
 use tokio::sync::watch;
 
-use crate::channel_store::{ChannelArtifactRecord, ChannelLogEntry, ChannelStore};
+use crate::channel_store::{
+    ChannelArtifactRecord, ChannelAttachmentRecord, ChannelLogEntry, ChannelStore,
+};
 use crate::session_commands::{parse_session_search_args, search_session_entries};
 use crate::{
     authorize_action_for_principal_with_policy_path, current_unix_timestamp_ms,
@@ -40,6 +42,18 @@ const GITHUB_ATTACHMENT_SUPPORTED_EXTENSIONS: &[&str] = &[
     "jsx", "go", "java", "c", "cpp", "h", "hpp", "sh", "zsh", "bash", "sql", "xml", "html", "css",
     "scss", "diff", "patch", "png", "jpg", "jpeg", "gif", "bmp", "webp", "pdf", "zip", "gz", "tar",
     "tgz",
+];
+const GITHUB_ATTACHMENT_DENIED_EXTENSIONS: &[&str] = &[
+    "exe", "dll", "dylib", "so", "bat", "cmd", "com", "msi", "apk", "ipa", "ps1", "jar", "scr",
+    "vb", "vbs",
+];
+const GITHUB_ATTACHMENT_DENIED_CONTENT_TYPES: &[&str] = &[
+    "application/x-msdownload",
+    "application/x-dosexec",
+    "application/vnd.microsoft.portable-executable",
+    "application/x-executable",
+    "application/x-bat",
+    "application/x-msdos-program",
 ];
 
 #[derive(Clone)]
@@ -710,9 +724,19 @@ struct DownloadedGithubAttachment {
     source_url: String,
     original_name: String,
     path: PathBuf,
+    relative_path: String,
     content_type: Option<String>,
     bytes: u64,
     checksum_sha256: String,
+    policy_reason_code: String,
+    created_unix_ms: u64,
+    expires_unix_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct AttachmentPolicyDecision {
+    accepted: bool,
+    reason_code: &'static str,
 }
 
 #[derive(Debug, Clone)]
@@ -2464,10 +2488,12 @@ impl GithubIssuesBridgeRuntime {
         let purge = store.purge_expired_artifacts(now_unix_ms)?;
         let active = store.list_active_artifacts(now_unix_ms)?;
         Ok(format!(
-            "Tau artifact purge for issue #{}: expired_removed={} invalid_removed={} active_remaining={}",
+            "Tau artifact purge for issue #{}: expired_removed={} invalid_removed={} attachment_expired_removed={} attachment_invalid_removed={} active_remaining={}",
             issue_number,
             purge.expired_removed,
             purge.invalid_removed,
+            purge.attachment_expired_removed,
+            purge.attachment_invalid_removed,
             active.len()
         ))
     }
@@ -2742,10 +2768,14 @@ async fn run_prompt_for_event(request: RunPromptForEventRequest<'_>) -> Result<P
         "github",
         &format!("issue-{}", event.issue_number),
     )?;
+    let attachment_retention_days =
+        normalize_artifact_retention_days(config.artifact_retention_days);
     let downloaded_attachments = download_issue_attachments(
         github_client,
-        &channel_store.attachments_dir(),
-        &event.key,
+        &channel_store,
+        event,
+        run_id,
+        attachment_retention_days,
         &event.body,
     )
     .await?;
@@ -2834,7 +2864,7 @@ async fn run_prompt_for_event(request: RunPromptForEventRequest<'_>) -> Result<P
         run_id,
         "github-issue-reply",
         "private",
-        normalize_artifact_retention_days(config.artifact_retention_days),
+        attachment_retention_days,
         "md",
         &render_issue_artifact_markdown(
             repo,
@@ -2872,9 +2902,13 @@ async fn run_prompt_for_event(request: RunPromptForEventRequest<'_>) -> Result<P
                     "source_url": attachment.source_url,
                     "original_name": attachment.original_name,
                     "path": attachment.path.display().to_string(),
+                    "relative_path": attachment.relative_path,
                     "content_type": attachment.content_type,
                     "bytes": attachment.bytes,
                     "checksum_sha256": attachment.checksum_sha256,
+                    "policy_reason_code": attachment.policy_reason_code,
+                    "created_unix_ms": attachment.created_unix_ms,
+                    "expires_unix_ms": attachment.expires_unix_ms,
                 })
             }).collect::<Vec<_>>(),
         }),
@@ -2892,8 +2926,10 @@ async fn run_prompt_for_event(request: RunPromptForEventRequest<'_>) -> Result<P
 
 async fn download_issue_attachments(
     github_client: &GithubApiClient,
-    attachments_root: &Path,
-    event_key: &str,
+    channel_store: &ChannelStore,
+    event: &GithubBridgeEvent,
+    run_id: &str,
+    retention_days: Option<u64>,
     text: &str,
 ) -> Result<Vec<DownloadedGithubAttachment>> {
     let urls = extract_attachment_urls(text);
@@ -2901,18 +2937,29 @@ async fn download_issue_attachments(
         return Ok(Vec::new());
     }
 
-    let file_dir = attachments_root.join(sanitize_for_path(event_key));
+    let file_dir = channel_store
+        .attachments_dir()
+        .join(sanitize_for_path(&event.key));
     std::fs::create_dir_all(&file_dir)
         .with_context(|| format!("failed to create {}", file_dir.display()))?;
 
     let mut downloaded = Vec::new();
     for (index, url) in urls.iter().enumerate() {
+        let url_policy = evaluate_attachment_url_policy(url);
+        if !url_policy.accepted {
+            eprintln!(
+                "github attachment blocked by url policy: event={} url={} reason={}",
+                event.key, url, url_policy.reason_code
+            );
+            continue;
+        }
+
         let payload = match github_client.download_url_bytes(url).await {
             Ok(payload) => payload,
             Err(error) => {
                 eprintln!(
                     "github attachment download failed: event={} url={} error={error}",
-                    event_key, url
+                    event.key, url
                 );
                 continue;
             }
@@ -2920,10 +2967,25 @@ async fn download_issue_attachments(
         if payload.bytes.len() > GITHUB_ATTACHMENT_MAX_BYTES {
             eprintln!(
                 "github attachment skipped due size limit: event={} url={} bytes={} limit={}",
-                event_key,
+                event.key,
                 url,
                 payload.bytes.len(),
                 GITHUB_ATTACHMENT_MAX_BYTES
+            );
+            continue;
+        }
+        let content_policy =
+            evaluate_attachment_content_type_policy(payload.content_type.as_deref());
+        if !content_policy.accepted {
+            eprintln!(
+                "github attachment blocked by content policy: event={} url={} content_type={} reason={}",
+                event.key,
+                url,
+                payload
+                    .content_type
+                    .as_deref()
+                    .unwrap_or("unknown"),
+                content_policy.reason_code,
             );
             continue;
         }
@@ -2938,13 +3000,53 @@ async fn download_issue_attachments(
         let path = file_dir.join(format!("{:02}-{}", index + 1, safe_name));
         std::fs::write(&path, &payload.bytes)
             .with_context(|| format!("failed to write {}", path.display()))?;
+        let relative_path = normalize_relative_channel_path(
+            &path,
+            &channel_store.channel_dir(),
+            "attachment file",
+        )?;
+        let created_unix_ms = current_unix_timestamp_ms();
+        let expires_unix_ms = retention_days
+            .map(|days| days.saturating_mul(86_400_000))
+            .map(|ttl| created_unix_ms.saturating_add(ttl));
+        let checksum_sha256 = sha256_hex(&payload.bytes);
+        let policy_reason_code = if content_policy.reason_code == "allow_content_type_default" {
+            url_policy.reason_code
+        } else {
+            content_policy.reason_code
+        };
+        let record = ChannelAttachmentRecord {
+            id: format!(
+                "attachment-{}-{}",
+                created_unix_ms,
+                short_key_hash(&format!("{}:{}:{}:{}", run_id, event.key, index, url))
+            ),
+            run_id: run_id.to_string(),
+            event_key: event.key.clone(),
+            actor: event.author_login.clone(),
+            source_url: url.clone(),
+            original_name: original_name.clone(),
+            relative_path: relative_path.clone(),
+            content_type: payload.content_type.clone(),
+            bytes: payload.bytes.len() as u64,
+            checksum_sha256: checksum_sha256.clone(),
+            policy_decision: "accepted".to_string(),
+            policy_reason_code: policy_reason_code.to_string(),
+            created_unix_ms,
+            expires_unix_ms,
+        };
+        channel_store.append_attachment_record(&record)?;
         downloaded.push(DownloadedGithubAttachment {
             source_url: url.clone(),
             original_name,
             path,
+            relative_path,
             content_type: payload.content_type,
             bytes: payload.bytes.len() as u64,
-            checksum_sha256: sha256_hex(&payload.bytes),
+            checksum_sha256,
+            policy_reason_code: policy_reason_code.to_string(),
+            created_unix_ms,
+            expires_unix_ms,
         });
     }
 
@@ -2989,28 +3091,88 @@ fn push_attachment_url(raw: &str, urls: &mut Vec<String>, seen: &mut HashSet<Str
     }
 }
 
-fn is_supported_attachment_url(url: &str) -> bool {
+fn evaluate_attachment_url_policy(url: &str) -> AttachmentPolicyDecision {
     let parsed = match reqwest::Url::parse(url) {
         Ok(parsed) => parsed,
-        Err(_) => return false,
+        Err(_) => {
+            return AttachmentPolicyDecision {
+                accepted: false,
+                reason_code: "deny_invalid_url",
+            };
+        }
     };
     if !matches!(parsed.scheme(), "http" | "https") {
-        return false;
+        return AttachmentPolicyDecision {
+            accepted: false,
+            reason_code: "deny_non_http_scheme",
+        };
     }
-
-    let host = parsed.host_str().unwrap_or_default().to_ascii_lowercase();
-    if host == "user-attachments.githubusercontent.com" || host.ends_with(".githubusercontent.com")
-    {
-        return true;
+    let extension = attachment_extension_from_parsed_url(&parsed);
+    let Some(extension) = extension else {
+        return AttachmentPolicyDecision {
+            accepted: false,
+            reason_code: "deny_missing_extension",
+        };
+    };
+    if GITHUB_ATTACHMENT_DENIED_EXTENSIONS.contains(&extension.as_str()) {
+        return AttachmentPolicyDecision {
+            accepted: false,
+            reason_code: "deny_extension_denylist",
+        };
     }
+    if !GITHUB_ATTACHMENT_SUPPORTED_EXTENSIONS.contains(&extension.as_str()) {
+        return AttachmentPolicyDecision {
+            accepted: false,
+            reason_code: "deny_extension_not_allowlisted",
+        };
+    }
+    AttachmentPolicyDecision {
+        accepted: true,
+        reason_code: "allow_extension_allowlist",
+    }
+}
 
-    let extension = parsed
+fn evaluate_attachment_content_type_policy(content_type: Option<&str>) -> AttachmentPolicyDecision {
+    let Some(content_type) = content_type
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return AttachmentPolicyDecision {
+            accepted: true,
+            reason_code: "allow_content_type_default",
+        };
+    };
+    let normalized = content_type.to_ascii_lowercase();
+    let normalized_base = normalized
+        .split(';')
+        .next()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(normalized.as_str());
+    if GITHUB_ATTACHMENT_DENIED_CONTENT_TYPES.contains(&normalized_base) {
+        return AttachmentPolicyDecision {
+            accepted: false,
+            reason_code: "deny_content_type_dangerous",
+        };
+    }
+    AttachmentPolicyDecision {
+        accepted: true,
+        reason_code: "allow_content_type_default",
+    }
+}
+
+fn is_supported_attachment_url(url: &str) -> bool {
+    evaluate_attachment_url_policy(url).accepted
+}
+
+fn attachment_extension_from_parsed_url(parsed: &reqwest::Url) -> Option<String> {
+    parsed
         .path_segments()
         .and_then(|mut segments| segments.next_back())
         .and_then(|segment| segment.rsplit('.').next())
-        .map(|ext| ext.to_ascii_lowercase())
-        .unwrap_or_default();
-    GITHUB_ATTACHMENT_SUPPORTED_EXTENSIONS.contains(&extension.as_str())
+        .map(str::trim)
+        .filter(|segment| !segment.is_empty())
+        .map(|extension| extension.to_ascii_lowercase())
 }
 
 fn attachment_filename_from_url(url: &str, index: usize) -> String {
@@ -3024,6 +3186,27 @@ fn attachment_filename_from_url(url: &str, index: usize) -> String {
         }
     }
     format!("attachment-{}.bin", index)
+}
+
+fn normalize_relative_channel_path(
+    path: &Path,
+    channel_root: &Path,
+    label: &str,
+) -> Result<String> {
+    let relative = path.strip_prefix(channel_root).with_context(|| {
+        format!(
+            "failed to derive relative path for {label}: {}",
+            path.display()
+        )
+    })?;
+    let normalized = relative.to_string_lossy().replace('\\', "/");
+    if normalized.trim().is_empty() {
+        bail!(
+            "derived empty relative path for {label}: {}",
+            path.display()
+        );
+    }
+    Ok(normalized)
 }
 
 fn initialize_issue_session_runtime(
@@ -3083,7 +3266,7 @@ fn render_event_prompt(
         rendered.push_str("\n\nDownloaded attachments:\n");
         for attachment in downloaded_attachments {
             rendered.push_str(&format!(
-                "- name={} path={} content_type={} bytes={} source_url={}\n",
+                "- name={} path={} content_type={} bytes={} source_url={} policy_reason={} expires_unix_ms={}\n",
                 attachment.original_name,
                 attachment.path.display(),
                 attachment
@@ -3091,7 +3274,12 @@ fn render_event_prompt(
                     .clone()
                     .unwrap_or_else(|| "unknown".to_string()),
                 attachment.bytes,
-                attachment.source_url
+                attachment.source_url,
+                attachment.policy_reason_code,
+                attachment
+                    .expires_unix_ms
+                    .map(|value| value.to_string())
+                    .unwrap_or_else(|| "none".to_string()),
             ));
         }
     }
@@ -3247,16 +3435,23 @@ fn render_issue_artifact_markdown(
         lines.push(format!("attachments: {}", downloaded_attachments.len()));
         for attachment in downloaded_attachments {
             lines.push(format!(
-                "- name={} path={} content_type={} bytes={} source_url={} checksum_sha256={}",
+                "- name={} path={} relative_path={} content_type={} bytes={} source_url={} checksum_sha256={} policy_reason={} created_unix_ms={} expires_unix_ms={}",
                 attachment.original_name,
                 attachment.path.display(),
+                attachment.relative_path,
                 attachment
                     .content_type
                     .clone()
                     .unwrap_or_else(|| "unknown".to_string()),
                 attachment.bytes,
                 attachment.source_url,
-                attachment.checksum_sha256
+                attachment.checksum_sha256,
+                attachment.policy_reason_code,
+                attachment.created_unix_ms,
+                attachment
+                    .expires_unix_ms
+                    .map(|value| value.to_string())
+                    .unwrap_or_else(|| "none".to_string()),
             ));
         }
     }
@@ -3786,17 +3981,18 @@ mod tests {
     use tokio::time::sleep;
 
     use super::{
-        collect_issue_events, event_action_from_body, extract_attachment_urls,
+        collect_issue_events, evaluate_attachment_content_type_policy,
+        evaluate_attachment_url_policy, event_action_from_body, extract_attachment_urls,
         extract_footer_event_keys, is_retryable_github_status, issue_session_id,
-        normalize_artifact_retention_days, parse_rfc3339_to_unix_ms, parse_tau_issue_command,
-        post_issue_comment_chunks, render_event_prompt, render_issue_command_comment,
-        render_issue_comment_chunks_with_limit, render_issue_comment_response_parts, retry_delay,
-        run_prompt_for_event, sanitize_for_path, session_path_for_issue,
-        DownloadedGithubAttachment, EventAction, GithubApiClient, GithubBridgeEvent,
-        GithubBridgeEventKind, GithubIssue, GithubIssueComment, GithubIssuesBridgeRuntime,
-        GithubIssuesBridgeRuntimeConfig, GithubIssuesBridgeStateStore, GithubUser, PromptRunReport,
-        PromptUsageSummary, RepoRef, RunPromptForEventRequest, SessionStore, TauIssueCommand,
-        CHAT_SHOW_DEFAULT_LIMIT, EVENT_KEY_MARKER_PREFIX,
+        normalize_artifact_retention_days, normalize_relative_channel_path,
+        parse_rfc3339_to_unix_ms, parse_tau_issue_command, post_issue_comment_chunks,
+        render_event_prompt, render_issue_command_comment, render_issue_comment_chunks_with_limit,
+        render_issue_comment_response_parts, retry_delay, run_prompt_for_event, sanitize_for_path,
+        session_path_for_issue, DownloadedGithubAttachment, EventAction, GithubApiClient,
+        GithubBridgeEvent, GithubBridgeEventKind, GithubIssue, GithubIssueComment,
+        GithubIssuesBridgeRuntime, GithubIssuesBridgeRuntimeConfig, GithubIssuesBridgeStateStore,
+        GithubUser, PromptRunReport, PromptUsageSummary, RepoRef, RunPromptForEventRequest,
+        SessionStore, TauIssueCommand, CHAT_SHOW_DEFAULT_LIMIT, EVENT_KEY_MARKER_PREFIX,
     };
     use crate::{
         channel_store::{ChannelArtifactRecord, ChannelStore},
@@ -4047,6 +4243,76 @@ mod tests {
         assert_eq!(active.len(), 1);
     }
 
+    #[tokio::test]
+    async fn regression_zero_retention_keeps_attachment_manifest_entries_non_expiring() {
+        let server = MockServer::start();
+        let attachment_url = format!("{}/assets/trace.log", server.base_url());
+        let attachment_download = server.mock(|when, then| {
+            when.method(GET).path("/assets/trace.log");
+            then.status(200)
+                .header("content-type", "text/plain")
+                .body("trace-line-1\ntrace-line-2\n");
+        });
+        let temp = tempdir().expect("tempdir");
+        let mut config = test_bridge_config(&server.base_url(), temp.path());
+        config.artifact_retention_days = 0;
+        let repo = RepoRef::parse("owner/repo").expect("repo");
+        let github_client = GithubApiClient::new(
+            server.base_url(),
+            "token".to_string(),
+            repo.clone(),
+            2_000,
+            1,
+            1,
+        )
+        .expect("github client");
+        let (_cancel_tx, cancel_rx) = tokio::sync::watch::channel(false);
+        let event = GithubBridgeEvent {
+            key: "issue-comment-created:1202".to_string(),
+            kind: GithubBridgeEventKind::CommentCreated,
+            issue_number: 22,
+            issue_title: "Attachment retention".to_string(),
+            author_login: "alice".to_string(),
+            occurred_at: "2026-01-01T00:00:01Z".to_string(),
+            body: attachment_url.clone(),
+            raw_payload: json!({"id": 1202}),
+        };
+        let report = run_prompt_for_event(RunPromptForEventRequest {
+            config: &config,
+            github_client: &github_client,
+            repo: &repo,
+            repository_state_dir: temp.path(),
+            event: &event,
+            prompt: &event.body,
+            run_id: "run-zero-retention-attachment",
+            cancel_rx,
+        })
+        .await
+        .expect("run prompt");
+        assert_eq!(report.downloaded_attachments.len(), 1);
+        assert_eq!(report.downloaded_attachments[0].expires_unix_ms, None);
+        attachment_download.assert_calls(1);
+
+        let store = ChannelStore::open(&temp.path().join("channel-store"), "github", "issue-22")
+            .expect("channel store");
+        let attachment_manifest = store
+            .load_attachment_records_tolerant()
+            .expect("attachment manifest");
+        assert_eq!(attachment_manifest.records.len(), 1);
+        assert_eq!(attachment_manifest.records[0].expires_unix_ms, None);
+
+        let purge = store
+            .purge_expired_artifacts(
+                crate::current_unix_timestamp_ms().saturating_add(31 * 86_400_000),
+            )
+            .expect("purge");
+        assert_eq!(purge.attachment_expired_removed, 0);
+        assert!(store
+            .channel_dir()
+            .join(&attachment_manifest.records[0].relative_path)
+            .exists());
+    }
+
     #[test]
     fn regression_state_store_caps_processed_event_history() {
         let temp = tempdir().expect("tempdir");
@@ -4154,6 +4420,20 @@ mod tests {
     }
 
     #[test]
+    fn unit_normalize_relative_channel_path_requires_descendant_paths() {
+        let channel_root = Path::new("/tmp/tau-channel");
+        let file_path = channel_root.join("attachments/issue-comment-created_1/01-trace.log");
+        let relative =
+            normalize_relative_channel_path(&file_path, channel_root, "attachment").expect("path");
+        assert_eq!(relative, "attachments/issue-comment-created_1/01-trace.log");
+
+        let outside = Path::new("/tmp/not-channel/trace.log");
+        let error = normalize_relative_channel_path(outside, channel_root, "attachment")
+            .expect_err("outside channel root should fail");
+        assert!(error.to_string().contains("failed to derive relative path"));
+    }
+
+    #[test]
     fn unit_render_issue_command_comment_appends_marker_footer() {
         let rendered = render_issue_command_comment(
             "issue-comment-created:123",
@@ -4184,6 +4464,32 @@ mod tests {
     }
 
     #[test]
+    fn unit_attachment_url_policy_enforces_allowlist_and_denylist() {
+        let denied = evaluate_attachment_url_policy("https://example.com/files/run.exe");
+        assert!(!denied.accepted);
+        assert_eq!(denied.reason_code, "deny_extension_denylist");
+
+        let unknown = evaluate_attachment_url_policy("https://example.com/files/run.unknown");
+        assert!(!unknown.accepted);
+        assert_eq!(unknown.reason_code, "deny_extension_not_allowlisted");
+
+        let allowed = evaluate_attachment_url_policy("https://example.com/files/run.log");
+        assert!(allowed.accepted);
+        assert_eq!(allowed.reason_code, "allow_extension_allowlist");
+    }
+
+    #[test]
+    fn unit_attachment_content_type_policy_blocks_dangerous_values() {
+        let denied = evaluate_attachment_content_type_policy(Some("application/x-msdownload"));
+        assert!(!denied.accepted);
+        assert_eq!(denied.reason_code, "deny_content_type_dangerous");
+
+        let allowed = evaluate_attachment_content_type_policy(Some("text/plain"));
+        assert!(allowed.accepted);
+        assert_eq!(allowed.reason_code, "allow_content_type_default");
+    }
+
+    #[test]
     fn functional_render_event_prompt_includes_downloaded_attachments() {
         let repo = RepoRef::parse("owner/repo").expect("repo");
         let event = test_issue_event();
@@ -4191,14 +4497,19 @@ mod tests {
             source_url: "https://example.com/files/trace.log".to_string(),
             original_name: "trace.log".to_string(),
             path: PathBuf::from("/tmp/attachments/trace.log"),
+            relative_path: "attachments/issue-comment-created_1/01-trace.log".to_string(),
             content_type: Some("text/plain".to_string()),
             bytes: 42,
             checksum_sha256: "abc123".to_string(),
+            policy_reason_code: "allow_extension_allowlist".to_string(),
+            created_unix_ms: 1,
+            expires_unix_ms: Some(1000),
         }];
         let prompt = render_event_prompt(&repo, &event, "inspect this", &attachments);
         assert!(prompt.contains("Downloaded attachments:"));
         assert!(prompt.contains("name=trace.log"));
         assert!(prompt.contains("source_url=https://example.com/files/trace.log"));
+        assert!(prompt.contains("policy_reason=allow_extension_allowlist"));
     }
 
     #[tokio::test]
@@ -4793,6 +5104,21 @@ mod tests {
 
         let channel_log = std::fs::read_to_string(channel_store.log_path()).expect("channel log");
         assert!(channel_log.contains("\"downloaded_attachments\""));
+        assert!(channel_log.contains("\"policy_reason_code\""));
+
+        let attachment_manifest = channel_store
+            .load_attachment_records_tolerant()
+            .expect("attachment manifest");
+        assert_eq!(attachment_manifest.records.len(), 1);
+        assert_eq!(attachment_manifest.records[0].event_key, event.key);
+        assert_eq!(attachment_manifest.records[0].actor, "alice");
+        assert_eq!(attachment_manifest.records[0].source_url, attachment_url);
+        assert_eq!(attachment_manifest.records[0].policy_decision, "accepted");
+        assert_eq!(
+            attachment_manifest.records[0].policy_reason_code,
+            "allow_extension_allowlist"
+        );
+        assert!(attachment_manifest.records[0].expires_unix_ms.is_some());
 
         let artifacts = channel_store
             .load_artifact_records_tolerant()
@@ -4806,6 +5132,74 @@ mod tests {
         .expect("artifact payload");
         assert!(artifact_payload.contains("attachments: 1"));
         assert!(artifact_payload.contains("source_url=http://"));
+    }
+
+    #[tokio::test]
+    async fn functional_run_prompt_for_event_attachment_policy_rejects_denylisted_extensions() {
+        let server = MockServer::start();
+        let accepted_url = format!("{}/assets/trace.log", server.base_url());
+        let denied_url = format!("{}/assets/run.exe", server.base_url());
+        let accepted_download = server.mock(|when, then| {
+            when.method(GET).path("/assets/trace.log");
+            then.status(200)
+                .header("content-type", "text/plain")
+                .body("trace-line-1\ntrace-line-2\n");
+        });
+        let denied_download = server.mock(|when, then| {
+            when.method(GET).path("/assets/run.exe");
+            then.status(200)
+                .header("content-type", "application/octet-stream")
+                .body("binary");
+        });
+
+        let temp = tempdir().expect("tempdir");
+        let config = test_bridge_config(&server.base_url(), temp.path());
+        let repo = RepoRef::parse("owner/repo").expect("repo");
+        let github_client = GithubApiClient::new(
+            server.base_url(),
+            "token".to_string(),
+            repo.clone(),
+            2_000,
+            1,
+            1,
+        )
+        .expect("github client");
+        let (_cancel_tx, cancel_rx) = tokio::sync::watch::channel(false);
+        let event = GithubBridgeEvent {
+            key: "issue-comment-created:1201".to_string(),
+            kind: GithubBridgeEventKind::CommentCreated,
+            issue_number: 21,
+            issue_title: "Attachment policy".to_string(),
+            author_login: "alice".to_string(),
+            occurred_at: "2026-01-01T00:00:01Z".to_string(),
+            body: format!("{accepted_url}\n{denied_url}"),
+            raw_payload: json!({"id": 1201}),
+        };
+        let report = run_prompt_for_event(RunPromptForEventRequest {
+            config: &config,
+            github_client: &github_client,
+            repo: &repo,
+            repository_state_dir: temp.path(),
+            event: &event,
+            prompt: &event.body,
+            run_id: "run-attachment-policy",
+            cancel_rx,
+        })
+        .await
+        .expect("run prompt");
+        assert_eq!(report.downloaded_attachments.len(), 1);
+        assert_eq!(report.downloaded_attachments[0].source_url, accepted_url);
+        accepted_download.assert_calls(1);
+        denied_download.assert_calls(0);
+
+        let channel_store =
+            ChannelStore::open(&temp.path().join("channel-store"), "github", "issue-21")
+                .expect("channel store");
+        let attachment_manifest = channel_store
+            .load_attachment_records_tolerant()
+            .expect("attachment manifest");
+        assert_eq!(attachment_manifest.records.len(), 1);
+        assert_eq!(attachment_manifest.records[0].source_url, accepted_url);
     }
 
     #[tokio::test]
