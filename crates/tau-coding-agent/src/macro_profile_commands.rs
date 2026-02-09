@@ -662,6 +662,13 @@ pub(crate) fn render_profile_diffs(
             current.policy.allow_command_newlines, loaded.policy.allow_command_newlines
         ));
     }
+    if current.mcp.context_providers != loaded.mcp.context_providers {
+        diffs.push(format!(
+            "diff: field=mcp.context_providers current={} loaded={}",
+            to_list(&current.mcp.context_providers),
+            to_list(&loaded.mcp.context_providers)
+        ));
+    }
     if current.auth.openai != loaded.auth.openai {
         diffs.push(format!(
             "diff: field=auth.openai current={} loaded={}",
@@ -781,6 +788,14 @@ pub(crate) fn render_profile_show(
     lines.push(format!(
         "value: policy.allow_command_newlines={}",
         profile.policy.allow_command_newlines
+    ));
+    lines.push(format!(
+        "value: mcp.context_providers={}",
+        if profile.mcp.context_providers.is_empty() {
+            "none".to_string()
+        } else {
+            profile.mcp.context_providers.join(",")
+        }
     ));
     lines.push(format!(
         "value: auth.openai={}",

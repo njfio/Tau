@@ -17,6 +17,7 @@ mod extension_manifest;
 mod gemini_cli_client;
 mod github_issues;
 mod macro_profile_commands;
+mod mcp_server;
 mod model_catalog;
 mod multi_agent_router;
 mod observability_loggers;
@@ -149,6 +150,7 @@ pub(crate) use crate::macro_profile_commands::{
     validate_macro_name, validate_profile_name, MacroCommand, MacroFile, ProfileCommand,
     ProfileStoreFile, MACRO_SCHEMA_VERSION, MACRO_USAGE, PROFILE_SCHEMA_VERSION, PROFILE_USAGE,
 };
+pub(crate) use crate::mcp_server::execute_mcp_server_command;
 #[cfg(test)]
 pub(crate) use crate::model_catalog::default_model_catalog_cache_path;
 pub(crate) use crate::model_catalog::{
@@ -221,8 +223,8 @@ pub(crate) use crate::runtime_output::{
 };
 pub(crate) use crate::runtime_types::{
     AuthCommandConfig, CommandExecutionContext, DoctorCommandConfig, DoctorProviderKeyStatus,
-    ProfileAuthDefaults, ProfileDefaults, ProfilePolicyDefaults, ProfileSessionDefaults,
-    RenderOptions, SessionRuntime, SkillsSyncCommandConfig,
+    ProfileAuthDefaults, ProfileDefaults, ProfileMcpDefaults, ProfilePolicyDefaults,
+    ProfileSessionDefaults, RenderOptions, SessionRuntime, SkillsSyncCommandConfig,
 };
 use crate::session::{SessionImportMode, SessionStore};
 #[cfg(test)]

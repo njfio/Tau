@@ -1050,6 +1050,41 @@ pub(crate) struct Cli {
     pub(crate) package_activate_conflict_policy: String,
 
     #[arg(
+        long = "mcp-server",
+        env = "TAU_MCP_SERVER",
+        default_value_t = false,
+        conflicts_with = "rpc_capabilities",
+        conflicts_with = "rpc_validate_frame_file",
+        conflicts_with = "rpc_dispatch_frame_file",
+        conflicts_with = "rpc_dispatch_ndjson_file",
+        conflicts_with = "rpc_serve_ndjson",
+        conflicts_with = "github_issues_bridge",
+        conflicts_with = "slack_bridge",
+        conflicts_with = "events_runner",
+        help = "Run MCP server mode over stdin/stdout using JSON-RPC framing"
+    )]
+    pub(crate) mcp_server: bool,
+
+    #[arg(
+        long = "mcp-external-server-config",
+        env = "TAU_MCP_EXTERNAL_SERVER_CONFIG",
+        value_name = "path",
+        requires = "mcp_server",
+        help = "Optional external MCP server config JSON used for discovery and tool forwarding"
+    )]
+    pub(crate) mcp_external_server_config: Option<PathBuf>,
+
+    #[arg(
+        long = "mcp-context-provider",
+        env = "TAU_MCP_CONTEXT_PROVIDER",
+        value_name = "name",
+        requires = "mcp_server",
+        action = ArgAction::Append,
+        help = "Enable MCP context providers (repeatable): session, skills, channel-store"
+    )]
+    pub(crate) mcp_context_provider: Vec<String>,
+
+    #[arg(
         long = "rpc-capabilities",
         env = "TAU_RPC_CAPABILITIES",
         default_value_t = false,

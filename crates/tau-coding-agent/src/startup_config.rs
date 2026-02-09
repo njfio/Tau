@@ -52,6 +52,17 @@ pub(crate) fn build_profile_defaults(cli: &Cli) -> ProfileDefaults {
             max_file_write_bytes: cli.max_file_write_bytes,
             allow_command_newlines: cli.allow_command_newlines,
         },
+        mcp: ProfileMcpDefaults {
+            context_providers: if cli.mcp_context_provider.is_empty() {
+                vec![
+                    "session".to_string(),
+                    "skills".to_string(),
+                    "channel-store".to_string(),
+                ]
+            } else {
+                cli.mcp_context_provider.clone()
+            },
+        },
         auth: ProfileAuthDefaults {
             openai: cli.openai_auth_mode.into(),
             anthropic: cli.anthropic_auth_mode.into(),

@@ -557,6 +557,7 @@ pub(crate) fn handle_command(
             max_file_write_bytes: 2048,
             allow_command_newlines: true,
         },
+        mcp: ProfileMcpDefaults::default(),
         auth: ProfileAuthDefaults::default(),
     };
     let auth_command_config = AuthCommandConfig {
