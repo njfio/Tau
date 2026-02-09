@@ -412,6 +412,9 @@ fn test_cli() -> Cli {
         events_inspect_json: false,
         events_validate: false,
         events_validate_json: false,
+        events_simulate: false,
+        events_simulate_json: false,
+        events_simulate_horizon_seconds: 3_600,
         events_template_write: None,
         events_template_schedule: CliEventTemplateSchedule::Immediate,
         events_template_overwrite: false,
@@ -14924,6 +14927,58 @@ fn regression_execute_startup_preflight_events_template_write_requires_overwrite
     cli.events_template_write = Some(target);
     let error = execute_startup_preflight(&cli).expect_err("overwrite should be required");
     assert!(error.to_string().contains("template path already exists"));
+}
+
+#[test]
+fn functional_execute_startup_preflight_runs_events_simulate_mode() {
+    let temp = tempdir().expect("tempdir");
+    let mut cli = test_cli();
+    set_workspace_tau_paths(&mut cli, temp.path());
+    cli.events_simulate = true;
+    cli.events_simulate_json = true;
+    cli.events_simulate_horizon_seconds = 300;
+
+    std::fs::create_dir_all(&cli.events_dir).expect("create events dir");
+    std::fs::write(
+        cli.events_dir.join("simulate.json"),
+        r#"{
+  "id": "simulate-now",
+  "channel": "slack/C123",
+  "prompt": "simulate me",
+  "schedule": {"type":"immediate"},
+  "enabled": true
+}
+"#,
+    )
+    .expect("write simulate event");
+
+    let handled = execute_startup_preflight(&cli).expect("events simulate preflight");
+    assert!(handled);
+}
+
+#[test]
+fn regression_execute_startup_preflight_events_simulate_reports_invalid_entries() {
+    let temp = tempdir().expect("tempdir");
+    let mut cli = test_cli();
+    set_workspace_tau_paths(&mut cli, temp.path());
+    cli.events_simulate = true;
+
+    std::fs::create_dir_all(&cli.events_dir).expect("create events dir");
+    std::fs::write(
+        cli.events_dir.join("simulate-invalid.json"),
+        r#"{
+  "id": "simulate-invalid",
+  "channel": "slack",
+  "prompt": "bad",
+  "schedule": {"type":"immediate"},
+  "enabled": true
+}
+"#,
+    )
+    .expect("write invalid event");
+
+    let handled = execute_startup_preflight(&cli).expect("simulate preflight should still handle");
+    assert!(handled);
 }
 
 #[test]

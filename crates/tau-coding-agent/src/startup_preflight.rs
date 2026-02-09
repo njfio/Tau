@@ -129,6 +129,11 @@ pub(crate) fn execute_startup_preflight(cli: &Cli) -> Result<bool> {
         return Ok(true);
     }
 
+    if cli.events_simulate {
+        execute_events_simulate_command(cli)?;
+        return Ok(true);
+    }
+
     if cli.events_template_write.is_some() {
         execute_events_template_write_command(cli)?;
         return Ok(true);
