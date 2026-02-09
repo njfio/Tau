@@ -1,8 +1,11 @@
 use super::*;
 
 pub(crate) const RELEASE_CHANNEL_USAGE: &str =
-    "usage: /release-channel [show|set <stable|beta|dev>]";
+    "usage: /release-channel [show|set <stable|beta|dev>|check]";
 pub(crate) const RELEASE_CHANNEL_SCHEMA_VERSION: u32 = 1;
+const RELEASE_LOOKUP_URL: &str = "https://api.github.com/repos/njfio/Tau/releases?per_page=30";
+const RELEASE_LOOKUP_USER_AGENT: &str = "tau-coding-agent/release-channel-check";
+const RELEASE_LOOKUP_TIMEOUT_MS: u64 = 8_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -48,12 +51,22 @@ impl std::str::FromStr for ReleaseChannel {
 pub(crate) enum ReleaseChannelCommand {
     Show,
     Set(ReleaseChannel),
+    Check,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub(crate) struct ReleaseChannelStoreFile {
     pub(crate) schema_version: u32,
     pub(crate) release_channel: ReleaseChannel,
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+pub(crate) struct GitHubReleaseRecord {
+    pub(crate) tag_name: String,
+    #[serde(default)]
+    pub(crate) prerelease: bool,
+    #[serde(default)]
+    pub(crate) draft: bool,
 }
 
 pub(crate) fn default_release_channel_path() -> Result<PathBuf> {
@@ -74,6 +87,10 @@ pub(crate) fn parse_release_channel_command(command_args: &str) -> Result<Releas
 
     if tokens.len() == 1 && tokens[0] == "show" {
         return Ok(ReleaseChannelCommand::Show);
+    }
+
+    if tokens.len() == 1 && tokens[0] == "check" {
+        return Ok(ReleaseChannelCommand::Check);
     }
 
     if tokens.len() == 2 && tokens[0] == "set" {
@@ -127,6 +144,156 @@ pub(crate) fn save_release_channel_store(path: &Path, channel: ReleaseChannel) -
     write_text_atomic(path, &encoded)
 }
 
+fn select_latest_channel_release(
+    channel: ReleaseChannel,
+    releases: &[GitHubReleaseRecord],
+) -> Option<String> {
+    let stable = releases
+        .iter()
+        .find(|item| !item.draft && !item.prerelease)
+        .map(|item| item.tag_name.trim().to_string())
+        .filter(|tag| !tag.is_empty());
+    let prerelease = releases
+        .iter()
+        .find(|item| !item.draft && item.prerelease)
+        .map(|item| item.tag_name.trim().to_string())
+        .filter(|tag| !tag.is_empty());
+
+    match channel {
+        ReleaseChannel::Stable => stable,
+        ReleaseChannel::Beta | ReleaseChannel::Dev => prerelease.or(stable),
+    }
+}
+
+fn parse_version_segments(raw: &str) -> Option<Vec<u64>> {
+    let trimmed = raw.trim().trim_start_matches('v').trim_start_matches('V');
+    let core = trimmed
+        .split_once('-')
+        .map(|(left, _)| left)
+        .unwrap_or(trimmed);
+    if core.is_empty() {
+        return None;
+    }
+    let mut segments = Vec::new();
+    for token in core.split('.') {
+        segments.push(token.parse::<u64>().ok()?);
+    }
+    if segments.is_empty() {
+        return None;
+    }
+    Some(segments)
+}
+
+fn compare_versions(current: &str, latest: &str) -> Option<std::cmp::Ordering> {
+    let current_segments = parse_version_segments(current)?;
+    let latest_segments = parse_version_segments(latest)?;
+    let max_len = current_segments.len().max(latest_segments.len());
+    for index in 0..max_len {
+        let current_value = *current_segments.get(index).unwrap_or(&0);
+        let latest_value = *latest_segments.get(index).unwrap_or(&0);
+        match current_value.cmp(&latest_value) {
+            std::cmp::Ordering::Less => return Some(std::cmp::Ordering::Less),
+            std::cmp::Ordering::Greater => return Some(std::cmp::Ordering::Greater),
+            std::cmp::Ordering::Equal => {}
+        }
+    }
+    Some(std::cmp::Ordering::Equal)
+}
+
+fn fetch_release_records(url: &str) -> Result<Vec<GitHubReleaseRecord>> {
+    if let Ok(handle) = tokio::runtime::Handle::try_current() {
+        tokio::task::block_in_place(|| handle.block_on(fetch_release_records_async(url)))
+    } else {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .context("failed to create runtime for release-channel check")?;
+        runtime.block_on(fetch_release_records_async(url))
+    }
+}
+
+async fn fetch_release_records_async(url: &str) -> Result<Vec<GitHubReleaseRecord>> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_millis(RELEASE_LOOKUP_TIMEOUT_MS))
+        .build()
+        .context("failed to construct HTTP client for release-channel check")?;
+    let response = client
+        .get(url)
+        .header(reqwest::header::USER_AGENT, RELEASE_LOOKUP_USER_AGENT)
+        .send()
+        .await
+        .with_context(|| format!("failed to fetch release metadata from '{}'", url))?;
+    if !response.status().is_success() {
+        bail!(
+            "release lookup request to '{}' returned status {}",
+            url,
+            response.status()
+        );
+    }
+    response
+        .json::<Vec<GitHubReleaseRecord>>()
+        .await
+        .with_context(|| format!("failed to parse release lookup response from '{}'", url))
+}
+
+fn resolve_latest_channel_release(channel: ReleaseChannel, url: &str) -> Result<Option<String>> {
+    let releases = fetch_release_records(url)?;
+    Ok(select_latest_channel_release(channel, &releases))
+}
+
+fn render_release_channel_check_with_lookup<F>(
+    path: &Path,
+    current_version: &str,
+    lookup: F,
+) -> String
+where
+    F: Fn(ReleaseChannel) -> Result<Option<String>>,
+{
+    let (channel, channel_source) = match load_release_channel_store(path) {
+        Ok(Some(channel)) => (channel, "store"),
+        Ok(None) => (ReleaseChannel::Stable, "default"),
+        Err(error) => {
+            return format!(
+                "release channel error: path={} error={error}",
+                path.display()
+            );
+        }
+    };
+
+    match lookup(channel) {
+        Ok(Some(latest)) => {
+            let status = match compare_versions(current_version, &latest) {
+                Some(std::cmp::Ordering::Less) => "update_available",
+                Some(std::cmp::Ordering::Equal | std::cmp::Ordering::Greater) => "up_to_date",
+                None => "unknown",
+            };
+            format!(
+                "release channel check: path={} channel={} channel_source={} current={} latest={} status={} source=github",
+                path.display(),
+                channel,
+                channel_source,
+                current_version,
+                latest,
+                status
+            )
+        }
+        Ok(None) => format!(
+            "release channel check: path={} channel={} channel_source={} current={} latest=unknown status=unknown source=github error=no_release_records",
+            path.display(),
+            channel,
+            channel_source,
+            current_version
+        ),
+        Err(error) => format!(
+            "release channel check: path={} channel={} channel_source={} current={} latest=unknown status=unknown source=github error={error}",
+            path.display(),
+            channel,
+            channel_source,
+            current_version
+        ),
+    }
+}
+
 pub(crate) fn execute_release_channel_command(command_args: &str, path: &Path) -> String {
     let command = match parse_release_channel_command(command_args) {
         Ok(command) => command,
@@ -166,15 +333,21 @@ pub(crate) fn execute_release_channel_command(command_args: &str, path: &Path) -
                 path.display()
             ),
         },
+        ReleaseChannelCommand::Check => {
+            render_release_channel_check_with_lookup(path, env!("CARGO_PKG_VERSION"), |channel| {
+                resolve_latest_channel_release(channel, RELEASE_LOOKUP_URL)
+            })
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use httpmock::prelude::*;
 
     #[test]
-    fn unit_parse_release_channel_command_supports_show_and_set() {
+    fn unit_parse_release_channel_command_supports_show_set_and_check() {
         assert_eq!(
             parse_release_channel_command("").expect("default command"),
             ReleaseChannelCommand::Show
@@ -187,9 +360,81 @@ mod tests {
             parse_release_channel_command("set beta").expect("set command"),
             ReleaseChannelCommand::Set(ReleaseChannel::Beta)
         );
+        assert_eq!(
+            parse_release_channel_command("check").expect("check command"),
+            ReleaseChannelCommand::Check
+        );
 
         let invalid = parse_release_channel_command("set nightly").expect_err("invalid channel");
         assert!(invalid.to_string().contains("expected stable|beta|dev"));
+
+        let invalid = parse_release_channel_command("check now").expect_err("invalid extra arg");
+        assert!(invalid.to_string().contains(RELEASE_CHANNEL_USAGE));
+    }
+
+    #[test]
+    fn unit_select_latest_channel_release_prefers_channel_specific_tags() {
+        let releases = vec![
+            GitHubReleaseRecord {
+                tag_name: "v0.3.0-beta.2".to_string(),
+                prerelease: true,
+                draft: false,
+            },
+            GitHubReleaseRecord {
+                tag_name: "v0.2.1".to_string(),
+                prerelease: false,
+                draft: false,
+            },
+            GitHubReleaseRecord {
+                tag_name: "v0.3.0-beta.1".to_string(),
+                prerelease: true,
+                draft: false,
+            },
+            GitHubReleaseRecord {
+                tag_name: "v0.2.0".to_string(),
+                prerelease: false,
+                draft: true,
+            },
+        ];
+        assert_eq!(
+            select_latest_channel_release(ReleaseChannel::Stable, &releases),
+            Some("v0.2.1".to_string())
+        );
+        assert_eq!(
+            select_latest_channel_release(ReleaseChannel::Beta, &releases),
+            Some("v0.3.0-beta.2".to_string())
+        );
+        assert_eq!(
+            select_latest_channel_release(ReleaseChannel::Dev, &releases),
+            Some("v0.3.0-beta.2".to_string())
+        );
+
+        let stable_only = vec![GitHubReleaseRecord {
+            tag_name: "v1.0.0".to_string(),
+            prerelease: false,
+            draft: false,
+        }];
+        assert_eq!(
+            select_latest_channel_release(ReleaseChannel::Beta, &stable_only),
+            Some("v1.0.0".to_string())
+        );
+    }
+
+    #[test]
+    fn unit_compare_versions_handles_prefix_suffix_and_invalid_input() {
+        assert_eq!(
+            compare_versions("0.1.0", "0.1.1"),
+            Some(std::cmp::Ordering::Less)
+        );
+        assert_eq!(
+            compare_versions("v1.2.3-beta.1", "1.2.3"),
+            Some(std::cmp::Ordering::Equal)
+        );
+        assert_eq!(
+            compare_versions("1.2.3", "1.2.2"),
+            Some(std::cmp::Ordering::Greater)
+        );
+        assert_eq!(compare_versions("abc", "1.0.0"), None);
     }
 
     #[test]
@@ -211,12 +456,83 @@ mod tests {
     }
 
     #[test]
+    fn functional_render_release_channel_check_reports_update_available() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let path = temp.path().join("release-channel.json");
+        let output =
+            render_release_channel_check_with_lookup(&path, "0.1.0", |_| Ok(Some("v0.2.0".into())));
+        assert!(output.contains("channel=stable"));
+        assert!(output.contains("channel_source=default"));
+        assert!(output.contains("current=0.1.0"));
+        assert!(output.contains("latest=v0.2.0"));
+        assert!(output.contains("status=update_available"));
+    }
+
+    #[test]
+    fn functional_render_release_channel_check_reports_up_to_date_when_current_is_newer() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let path = temp.path().join(".tau/release-channel.json");
+        save_release_channel_store(&path, ReleaseChannel::Beta).expect("save release channel");
+
+        let output =
+            render_release_channel_check_with_lookup(&path, "0.3.0", |_| Ok(Some("v0.2.5".into())));
+        assert!(output.contains("channel=beta"));
+        assert!(output.contains("channel_source=store"));
+        assert!(output.contains("status=up_to_date"));
+    }
+
+    #[test]
     fn integration_save_and_load_release_channel_store_round_trip() {
         let temp = tempfile::tempdir().expect("tempdir");
         let path = temp.path().join(".tau/release-channel.json");
         save_release_channel_store(&path, ReleaseChannel::Beta).expect("save release channel");
         let loaded = load_release_channel_store(&path).expect("load release channel");
         assert_eq!(loaded, Some(ReleaseChannel::Beta));
+    }
+
+    #[test]
+    fn integration_fetch_release_records_parses_github_style_response() {
+        let server = MockServer::start();
+        let mock = server.mock(|when, then| {
+            when.method(GET)
+                .path("/releases")
+                .header("user-agent", RELEASE_LOOKUP_USER_AGENT);
+            then.status(200)
+                .header("content-type", "application/json")
+                .body(
+                    r#"[{"tag_name":"v1.2.3","prerelease":false,"draft":false},{"tag_name":"v1.3.0-beta.1","prerelease":true,"draft":false}]"#,
+                );
+        });
+
+        let url = format!("{}/releases", server.base_url());
+        let records = fetch_release_records(&url).expect("fetch release records");
+        mock.assert();
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[0].tag_name, "v1.2.3");
+        assert!(!records[0].prerelease);
+    }
+
+    #[test]
+    fn integration_resolve_latest_channel_release_applies_channel_routing() {
+        let server = MockServer::start();
+        let mock = server.mock(|when, then| {
+            when.method(GET).path("/releases");
+            then.status(200)
+                .header("content-type", "application/json")
+                .body(
+                    r#"[{"tag_name":"v2.0.0-beta.1","prerelease":true,"draft":false},{"tag_name":"v1.9.0","prerelease":false,"draft":false}]"#,
+                );
+        });
+        let url = format!("{}/releases", server.base_url());
+
+        let stable = resolve_latest_channel_release(ReleaseChannel::Stable, &url)
+            .expect("stable resolution should succeed");
+        let beta = resolve_latest_channel_release(ReleaseChannel::Beta, &url)
+            .expect("beta resolution should succeed");
+        mock.assert_calls(2);
+
+        assert_eq!(stable.as_deref(), Some("v1.9.0"));
+        assert_eq!(beta.as_deref(), Some("v2.0.0-beta.1"));
     }
 
     #[test]
@@ -235,5 +551,45 @@ mod tests {
         assert!(parse_error
             .to_string()
             .contains("failed to parse release channel file"));
+    }
+
+    #[test]
+    fn regression_fetch_release_records_reports_http_and_payload_failures() {
+        let error_server = MockServer::start();
+        let error_mock = error_server.mock(|when, then| {
+            when.method(GET).path("/releases");
+            then.status(500);
+        });
+        let error_url = format!("{}/releases", error_server.base_url());
+        let http_error = fetch_release_records(&error_url).expect_err("http error should fail");
+        error_mock.assert();
+        assert!(http_error.to_string().contains("returned status 500"));
+
+        let invalid_server = MockServer::start();
+        let invalid_mock = invalid_server.mock(|when, then| {
+            when.method(GET).path("/releases");
+            then.status(200)
+                .header("content-type", "application/json")
+                .body("{\"tag_name\":\"not-an-array\"}");
+        });
+        let invalid_url = format!("{}/releases", invalid_server.base_url());
+        let parse_error =
+            fetch_release_records(&invalid_url).expect_err("invalid payload should fail");
+        invalid_mock.assert();
+        assert!(parse_error
+            .to_string()
+            .contains("failed to parse release lookup response"));
+    }
+
+    #[test]
+    fn regression_render_release_channel_check_reports_lookup_errors_without_panicking() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let path = temp.path().join("release-channel.json");
+        let output = render_release_channel_check_with_lookup(&path, "0.1.0", |_| {
+            Err(anyhow::anyhow!("lookup backend unavailable"))
+        });
+        assert!(output.contains("latest=unknown"));
+        assert!(output.contains("status=unknown"));
+        assert!(output.contains("error=lookup backend unavailable"));
     }
 }
