@@ -252,6 +252,28 @@ fn resolve_channel_latest_or_unknown(
     select_latest_channel_release(channel, releases).unwrap_or_else(|| "unknown".to_string())
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ReleaseCacheAgeCounters {
+    freshness: &'static str,
+    next_refresh_in_ms: u64,
+    stale_by_ms: u64,
+}
+
+fn compute_release_cache_age_counters(age_ms: u64, ttl_ms: u64) -> ReleaseCacheAgeCounters {
+    if age_ms <= ttl_ms {
+        return ReleaseCacheAgeCounters {
+            freshness: "fresh",
+            next_refresh_in_ms: ttl_ms.saturating_sub(age_ms),
+            stale_by_ms: 0,
+        };
+    }
+    ReleaseCacheAgeCounters {
+        freshness: "stale",
+        next_refresh_in_ms: 0,
+        stale_by_ms: age_ms.saturating_sub(ttl_ms),
+    }
+}
+
 fn fetch_release_records(url: &str) -> Result<Vec<GitHubReleaseRecord>> {
     if let Ok(handle) = tokio::runtime::Handle::try_current() {
         tokio::task::block_in_place(|| handle.block_on(fetch_release_records_async(url)))
@@ -613,11 +635,7 @@ fn execute_release_channel_command_with_lookup_options(
                 Ok(Some(cache)) => {
                     let age_ms =
                         current_unix_timestamp_ms().saturating_sub(cache.fetched_at_unix_ms);
-                    let freshness = if age_ms <= cache_ttl_ms {
-                        "fresh"
-                    } else {
-                        "stale"
-                    };
+                    let age_counters = compute_release_cache_age_counters(age_ms, cache_ttl_ms);
                     let stable_latest =
                         resolve_channel_latest_or_unknown(ReleaseChannel::Stable, &cache.releases);
                     let beta_latest =
@@ -625,14 +643,16 @@ fn execute_release_channel_command_with_lookup_options(
                     let dev_latest =
                         resolve_channel_latest_or_unknown(ReleaseChannel::Dev, &cache.releases);
                     format!(
-                        "release cache: path={} status=present schema_version={} entries={} fetched_at_unix_ms={} age_ms={} ttl_ms={} freshness={} source_url={} stable_latest={} beta_latest={} dev_latest={}",
+                        "release cache: path={} status=present schema_version={} entries={} fetched_at_unix_ms={} age_ms={} ttl_ms={} freshness={} next_refresh_in_ms={} stale_by_ms={} source_url={} stable_latest={} beta_latest={} dev_latest={}",
                         cache_path.display(),
                         cache.schema_version,
                         cache.releases.len(),
                         cache.fetched_at_unix_ms,
                         age_ms,
                         cache_ttl_ms,
-                        freshness,
+                        age_counters.freshness,
+                        age_counters.next_refresh_in_ms,
+                        age_counters.stale_by_ms,
                         cache.source_url,
                         stable_latest,
                         beta_latest,
@@ -821,6 +841,52 @@ mod tests {
     }
 
     #[test]
+    fn unit_compute_release_cache_age_counters_handles_fresh_boundary_and_stale() {
+        let fresh = compute_release_cache_age_counters(10, 100);
+        assert_eq!(
+            fresh,
+            ReleaseCacheAgeCounters {
+                freshness: "fresh",
+                next_refresh_in_ms: 90,
+                stale_by_ms: 0
+            }
+        );
+
+        let boundary = compute_release_cache_age_counters(100, 100);
+        assert_eq!(
+            boundary,
+            ReleaseCacheAgeCounters {
+                freshness: "fresh",
+                next_refresh_in_ms: 0,
+                stale_by_ms: 0
+            }
+        );
+
+        let stale = compute_release_cache_age_counters(105, 100);
+        assert_eq!(
+            stale,
+            ReleaseCacheAgeCounters {
+                freshness: "stale",
+                next_refresh_in_ms: 0,
+                stale_by_ms: 5
+            }
+        );
+    }
+
+    fn parse_u64_field(output: &str, key: &str) -> u64 {
+        output
+            .split_whitespace()
+            .find_map(|token| {
+                let (field_key, field_value) = token.split_once('=')?;
+                if field_key == key {
+                    return field_value.parse::<u64>().ok();
+                }
+                None
+            })
+            .unwrap_or_else(|| panic!("missing u64 field '{key}' in output: {output}"))
+    }
+
+    #[test]
     fn functional_execute_release_channel_command_show_and_set_round_trip() {
         let temp = tempfile::tempdir().expect("tempdir");
         let path = temp.path().join("release-channel.json");
@@ -866,10 +932,13 @@ mod tests {
         assert!(present.contains("entries=1"));
         assert!(present.contains("ttl_ms=900000"));
         assert!(present.contains("freshness=fresh"));
+        assert!(present.contains("next_refresh_in_ms="));
+        assert!(present.contains("stale_by_ms=0"));
         assert!(present.contains("source_url=https://example.invalid/releases"));
         assert!(present.contains("stable_latest=v9.9.9"));
         assert!(present.contains("beta_latest=v9.9.9"));
         assert!(present.contains("dev_latest=v9.9.9"));
+        assert!(parse_u64_field(&present, "next_refresh_in_ms") <= RELEASE_LOOKUP_CACHE_TTL_MS);
 
         let cleared = execute_release_channel_command("cache clear", &path);
         assert!(cleared.contains("status=removed"));
@@ -915,10 +984,13 @@ mod tests {
         assert!(show.contains("status=present"));
         assert!(show.contains("entries=2"));
         assert!(show.contains("freshness=fresh"));
+        assert!(show.contains("next_refresh_in_ms="));
+        assert!(show.contains("stale_by_ms=0"));
         assert!(show.contains(&format!("source_url={url}")));
         assert!(show.contains("stable_latest=v8.9.4"));
         assert!(show.contains("beta_latest=v9.0.0-beta.2"));
         assert!(show.contains("dev_latest=v9.0.0-beta.2"));
+        assert!(parse_u64_field(&show, "next_refresh_in_ms") <= RELEASE_LOOKUP_CACHE_TTL_MS);
         mock.assert_calls(1);
     }
 
@@ -1034,9 +1106,12 @@ mod tests {
             &url,
             RELEASE_LOOKUP_CACHE_TTL_MS,
         );
+        assert!(show.contains("next_refresh_in_ms="));
+        assert!(show.contains("stale_by_ms=0"));
         assert!(show.contains("stable_latest=v10.1.0"));
         assert!(show.contains("beta_latest=v10.2.0-beta.1"));
         assert!(show.contains("dev_latest=v10.2.0-beta.1"));
+        assert!(parse_u64_field(&show, "next_refresh_in_ms") <= RELEASE_LOOKUP_CACHE_TTL_MS);
     }
 
     #[test]
@@ -1349,9 +1424,12 @@ mod tests {
         assert!(output.contains("status=present"));
         assert!(output.contains("freshness=stale"));
         assert!(output.contains("ttl_ms=900000"));
+        assert!(output.contains("next_refresh_in_ms=0"));
+        assert!(output.contains("stale_by_ms="));
         assert!(output.contains("stable_latest=v8.8.8"));
         assert!(output.contains("beta_latest=v8.8.8"));
         assert!(output.contains("dev_latest=v8.8.8"));
+        assert!(parse_u64_field(&output, "stale_by_ms") > 0);
     }
 
     #[test]
@@ -1376,6 +1454,8 @@ mod tests {
         assert!(output.contains("stable_latest=unknown"));
         assert!(output.contains("beta_latest=unknown"));
         assert!(output.contains("dev_latest=unknown"));
+        assert!(output.contains("next_refresh_in_ms=0"));
+        assert!(parse_u64_field(&output, "stale_by_ms") > 0);
     }
 
     #[test]
