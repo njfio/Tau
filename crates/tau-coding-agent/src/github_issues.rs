@@ -681,6 +681,27 @@ struct IssueLatestRun {
     duration_ms: u64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct IssueArtifactSummary {
+    total_records: usize,
+    active_records: usize,
+    latest_artifact_id: Option<String>,
+    latest_artifact_run_id: Option<String>,
+    latest_artifact_created_unix_ms: Option<u64>,
+    invalid_index_lines: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct IssueChatContinuitySummary {
+    entries: usize,
+    head_id: Option<u64>,
+    oldest_entry_id: Option<u64>,
+    newest_entry_id: Option<u64>,
+    newest_entry_role: Option<String>,
+    lineage_digest_sha256: String,
+    artifacts: IssueArtifactSummary,
+}
+
 #[derive(Debug)]
 struct RunTaskResult {
     issue_number: u64,
@@ -1714,11 +1735,7 @@ impl GithubIssuesBridgeRuntime {
                 }))?;
             }
             TauIssueCommand::ChatStatus => {
-                let session_path =
-                    session_path_for_issue(&self.repository_state_dir, event.issue_number);
-                let store = SessionStore::load(&session_path)?;
-                let entries = store.entries().len();
-                let head_id = store.head_id();
+                let continuity = self.issue_chat_continuity_summary(event.issue_number)?;
                 let session_state = self.state_store.issue_session(event.issue_number);
                 let (session_id, last_comment_id, last_run_id, has_session) = match session_state {
                     Some(state) => (
@@ -1729,25 +1746,73 @@ impl GithubIssuesBridgeRuntime {
                     ),
                     None => ("none", None, None, false),
                 };
-                let head_display = head_id
+                let head_display = continuity
+                    .head_id
                     .map(|value| value.to_string())
                     .unwrap_or_else(|| "none".to_string());
-                let message = if entries == 0 && !has_session {
+                let message = if continuity.entries == 0 && !has_session {
                     format!(
-                        "No chat session found for issue #{}.\n\nentries=0 head=none session_id=none last_comment_id=none last_run_id=none",
-                        event.issue_number
+                        "No chat session found for issue #{}.\n\nentries=0 head=none session_id=none last_comment_id=none last_run_id=none lineage_digest_sha256={} artifact_active={} artifact_total={} artifact_latest_id={} artifact_latest_run_id={} artifact_latest_created_unix_ms={} artifact_index_invalid_lines={}",
+                        event.issue_number,
+                        continuity.lineage_digest_sha256,
+                        continuity.artifacts.active_records,
+                        continuity.artifacts.total_records,
+                        continuity
+                            .artifacts
+                            .latest_artifact_id
+                            .as_deref()
+                            .unwrap_or("none"),
+                        continuity
+                            .artifacts
+                            .latest_artifact_run_id
+                            .as_deref()
+                            .unwrap_or("none"),
+                        continuity
+                            .artifacts
+                            .latest_artifact_created_unix_ms
+                            .map(|value| value.to_string())
+                            .unwrap_or_else(|| "none".to_string()),
+                        continuity.artifacts.invalid_index_lines
                     )
                 } else {
                     format!(
-                        "Chat session status for issue #{}.\n\nentries={} head={} session_id={} last_comment_id={} last_run_id={}",
+                        "Chat session status for issue #{}.\n\nentries={} head={} oldest_entry_id={} newest_entry_id={} newest_entry_role={} session_id={} last_comment_id={} last_run_id={} lineage_digest_sha256={} artifact_active={} artifact_total={} artifact_latest_id={} artifact_latest_run_id={} artifact_latest_created_unix_ms={} artifact_index_invalid_lines={}",
                         event.issue_number,
-                        entries,
+                        continuity.entries,
                         head_display,
+                        continuity
+                            .oldest_entry_id
+                            .map(|value| value.to_string())
+                            .unwrap_or_else(|| "none".to_string()),
+                        continuity
+                            .newest_entry_id
+                            .map(|value| value.to_string())
+                            .unwrap_or_else(|| "none".to_string()),
+                        continuity.newest_entry_role.as_deref().unwrap_or("none"),
                         session_id,
                         last_comment_id
                             .map(|value| value.to_string())
                             .unwrap_or_else(|| "none".to_string()),
-                        last_run_id.unwrap_or("none")
+                        last_run_id.unwrap_or("none"),
+                        continuity.lineage_digest_sha256,
+                        continuity.artifacts.active_records,
+                        continuity.artifacts.total_records,
+                        continuity
+                            .artifacts
+                            .latest_artifact_id
+                            .as_deref()
+                            .unwrap_or("none"),
+                        continuity
+                            .artifacts
+                            .latest_artifact_run_id
+                            .as_deref()
+                            .unwrap_or("none"),
+                        continuity
+                            .artifacts
+                            .latest_artifact_created_unix_ms
+                            .map(|value| value.to_string())
+                            .unwrap_or_else(|| "none".to_string()),
+                        continuity.artifacts.invalid_index_lines
                     )
                 };
                 let posted = self
@@ -1764,11 +1829,23 @@ impl GithubIssuesBridgeRuntime {
                     "posted_comment_id": posted.id,
                     "posted_comment_url": posted.html_url,
                     "session": {
-                        "entries": entries,
-                        "head_id": head_id,
+                        "entries": continuity.entries,
+                        "head_id": continuity.head_id,
+                        "oldest_entry_id": continuity.oldest_entry_id,
+                        "newest_entry_id": continuity.newest_entry_id,
+                        "newest_entry_role": continuity.newest_entry_role,
+                        "lineage_digest_sha256": continuity.lineage_digest_sha256,
                         "session_id": session_id,
                         "last_comment_id": last_comment_id,
                         "last_run_id": last_run_id,
+                    },
+                    "artifacts": {
+                        "active": continuity.artifacts.active_records,
+                        "total": continuity.artifacts.total_records,
+                        "latest_id": continuity.artifacts.latest_artifact_id,
+                        "latest_run_id": continuity.artifacts.latest_artifact_run_id,
+                        "latest_created_unix_ms": continuity.artifacts.latest_artifact_created_unix_ms,
+                        "index_invalid_lines": continuity.artifacts.invalid_index_lines,
                     }
                 }))?;
             }
@@ -1922,6 +1999,62 @@ impl GithubIssuesBridgeRuntime {
         Ok(())
     }
 
+    fn issue_artifact_summary(&self, issue_number: u64) -> Result<IssueArtifactSummary> {
+        let store = ChannelStore::open(
+            &self.repository_state_dir.join("channel-store"),
+            "github",
+            &format!("issue-{issue_number}"),
+        )?;
+        let loaded = store.load_artifact_records_tolerant()?;
+        let now_unix_ms = current_unix_timestamp_ms();
+        let mut records = loaded.records;
+        let active_records = records
+            .iter()
+            .filter(|record| !is_artifact_record_expired(record, now_unix_ms))
+            .count();
+        records.sort_by(|left, right| {
+            right
+                .created_unix_ms
+                .cmp(&left.created_unix_ms)
+                .then_with(|| left.id.cmp(&right.id))
+        });
+        let latest = records.first();
+        Ok(IssueArtifactSummary {
+            total_records: records.len(),
+            active_records,
+            latest_artifact_id: latest.map(|record| record.id.clone()),
+            latest_artifact_run_id: latest.map(|record| record.run_id.clone()),
+            latest_artifact_created_unix_ms: latest.map(|record| record.created_unix_ms),
+            invalid_index_lines: loaded.invalid_lines,
+        })
+    }
+
+    fn issue_chat_continuity_summary(
+        &self,
+        issue_number: u64,
+    ) -> Result<IssueChatContinuitySummary> {
+        let session_path = session_path_for_issue(&self.repository_state_dir, issue_number);
+        let store = SessionStore::load(&session_path)?;
+        let head_id = store.head_id();
+        let lineage = store.lineage_entries(head_id)?;
+        let lineage_jsonl = store.export_lineage_jsonl(head_id)?;
+        let digest = sha256_hex(lineage_jsonl.as_bytes());
+        let oldest_entry_id = lineage.first().map(|entry| entry.id);
+        let newest_entry_id = lineage.last().map(|entry| entry.id);
+        let newest_entry_role = lineage
+            .last()
+            .map(|entry| session_message_role(&entry.message));
+        Ok(IssueChatContinuitySummary {
+            entries: lineage.len(),
+            head_id,
+            oldest_entry_id,
+            newest_entry_id,
+            newest_entry_role,
+            lineage_digest_sha256: digest,
+            artifacts: self.issue_artifact_summary(issue_number)?,
+        })
+    }
+
     fn render_issue_status(&self, issue_number: u64) -> String {
         let active = self.active_runs.get(&issue_number);
         let latest = self.latest_runs.get(&issue_number);
@@ -1981,6 +2114,80 @@ impl GithubIssuesBridgeRuntime {
             ));
         } else {
             lines.push("chat_session_id: none".to_string());
+        }
+        match self.issue_chat_continuity_summary(issue_number) {
+            Ok(summary) => {
+                lines.push(format!("chat_entries: {}", summary.entries));
+                lines.push(format!(
+                    "chat_head_id: {}",
+                    summary
+                        .head_id
+                        .map(|value| value.to_string())
+                        .unwrap_or_else(|| "none".to_string())
+                ));
+                lines.push(format!(
+                    "chat_oldest_entry_id: {}",
+                    summary
+                        .oldest_entry_id
+                        .map(|value| value.to_string())
+                        .unwrap_or_else(|| "none".to_string())
+                ));
+                lines.push(format!(
+                    "chat_newest_entry_id: {}",
+                    summary
+                        .newest_entry_id
+                        .map(|value| value.to_string())
+                        .unwrap_or_else(|| "none".to_string())
+                ));
+                lines.push(format!(
+                    "chat_newest_entry_role: {}",
+                    summary.newest_entry_role.as_deref().unwrap_or("none")
+                ));
+                lines.push(format!(
+                    "chat_lineage_digest_sha256: {}",
+                    summary.lineage_digest_sha256
+                ));
+                lines.push(format!(
+                    "artifacts_active: {}",
+                    summary.artifacts.active_records
+                ));
+                lines.push(format!(
+                    "artifacts_total: {}",
+                    summary.artifacts.total_records
+                ));
+                lines.push(format!(
+                    "artifacts_latest_id: {}",
+                    summary
+                        .artifacts
+                        .latest_artifact_id
+                        .as_deref()
+                        .unwrap_or("none")
+                ));
+                lines.push(format!(
+                    "artifacts_latest_run_id: {}",
+                    summary
+                        .artifacts
+                        .latest_artifact_run_id
+                        .as_deref()
+                        .unwrap_or("none")
+                ));
+                lines.push(format!(
+                    "artifacts_latest_created_unix_ms: {}",
+                    summary
+                        .artifacts
+                        .latest_artifact_created_unix_ms
+                        .map(|value| value.to_string())
+                        .unwrap_or_else(|| "none".to_string())
+                ));
+                lines.push(format!(
+                    "artifacts_index_invalid_lines: {}",
+                    summary.artifacts.invalid_index_lines
+                ));
+            }
+            Err(error) => lines.push(format!(
+                "chat_summary_error: {}",
+                truncate_for_error(&error.to_string(), 240)
+            )),
         }
         lines.join("\n")
     }
@@ -3095,6 +3302,24 @@ fn truncate_for_error(text: &str, max_chars: usize) -> String {
     truncated
 }
 
+fn is_artifact_record_expired(record: &ChannelArtifactRecord, now_unix_ms: u64) -> bool {
+    record
+        .expires_unix_ms
+        .map(|value| value <= now_unix_ms)
+        .unwrap_or(false)
+}
+
+fn sha256_hex(payload: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(payload);
+    let digest = hasher.finalize();
+    digest
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>()
+}
+
 fn short_key_hash(key: &str) -> String {
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
@@ -3460,6 +3685,120 @@ mod tests {
         let session = session_path_for_issue(root, 9);
         assert!(session.ends_with("sessions/issue-9.jsonl"));
         assert_eq!(sanitize_for_path("owner/repo"), "owner_repo");
+    }
+
+    #[tokio::test]
+    async fn unit_issue_chat_continuity_summary_digest_is_deterministic_and_tracks_changes() {
+        let temp = tempdir().expect("tempdir");
+        let config = test_bridge_config("http://127.0.0.1", temp.path());
+        let runtime = GithubIssuesBridgeRuntime::new(config)
+            .await
+            .expect("runtime");
+        let issue_number = 77_u64;
+        let session_path = session_path_for_issue(&runtime.repository_state_dir, issue_number);
+        if let Some(parent) = session_path.parent() {
+            std::fs::create_dir_all(parent).expect("create session dir");
+        }
+        let mut store = SessionStore::load(&session_path).expect("session store");
+        store
+            .append_messages(
+                None,
+                &[Message::user("alpha"), Message::assistant_text("beta")],
+            )
+            .expect("append entries");
+
+        let first = runtime
+            .issue_chat_continuity_summary(issue_number)
+            .expect("first summary");
+        let second = runtime
+            .issue_chat_continuity_summary(issue_number)
+            .expect("second summary");
+        assert_eq!(first.lineage_digest_sha256, second.lineage_digest_sha256);
+        assert_eq!(first.entries, 2);
+        assert_eq!(first.oldest_entry_id, Some(1));
+        assert_eq!(first.newest_entry_id, Some(2));
+        assert_eq!(first.newest_entry_role.as_deref(), Some("assistant"));
+        assert_eq!(first.artifacts.total_records, 0);
+        assert_eq!(first.artifacts.active_records, 0);
+
+        let channel_store = ChannelStore::open(
+            &runtime.repository_state_dir.join("channel-store"),
+            "github",
+            &format!("issue-{issue_number}"),
+        )
+        .expect("channel store");
+        channel_store
+            .write_text_artifact(
+                "run-77",
+                "github-issue-chat-export",
+                "private",
+                Some(30),
+                "jsonl",
+                "{\"sample\":true}",
+            )
+            .expect("write artifact");
+
+        let mut store = SessionStore::load(&session_path).expect("reload store");
+        let head = store.head_id();
+        store
+            .append_messages(head, &[Message::user("gamma")])
+            .expect("append change");
+
+        let third = runtime
+            .issue_chat_continuity_summary(issue_number)
+            .expect("third summary");
+        assert_ne!(first.lineage_digest_sha256, third.lineage_digest_sha256);
+        assert_eq!(third.entries, 3);
+        assert_eq!(third.newest_entry_id, Some(3));
+        assert_eq!(third.newest_entry_role.as_deref(), Some("user"));
+        assert_eq!(third.artifacts.total_records, 1);
+        assert_eq!(third.artifacts.active_records, 1);
+        assert!(third.artifacts.latest_artifact_id.is_some());
+        assert_eq!(
+            third.artifacts.latest_artifact_run_id.as_deref(),
+            Some("run-77")
+        );
+    }
+
+    #[tokio::test]
+    async fn functional_render_issue_status_includes_chat_digest_and_artifact_fields() {
+        let temp = tempdir().expect("tempdir");
+        let config = test_bridge_config("http://127.0.0.1", temp.path());
+        let runtime = GithubIssuesBridgeRuntime::new(config)
+            .await
+            .expect("runtime");
+        let issue_number = 78_u64;
+        let session_path = session_path_for_issue(&runtime.repository_state_dir, issue_number);
+        if let Some(parent) = session_path.parent() {
+            std::fs::create_dir_all(parent).expect("create session dir");
+        }
+        let mut store = SessionStore::load(&session_path).expect("store");
+        store
+            .append_messages(None, &[Message::user("status check")])
+            .expect("append");
+        let channel_store = ChannelStore::open(
+            &runtime.repository_state_dir.join("channel-store"),
+            "github",
+            &format!("issue-{issue_number}"),
+        )
+        .expect("channel store");
+        channel_store
+            .write_text_artifact(
+                "run-78",
+                "github-issue-reply",
+                "private",
+                Some(30),
+                "md",
+                "status artifact",
+            )
+            .expect("artifact");
+
+        let status = runtime.render_issue_status(issue_number);
+        assert!(status.contains("chat_lineage_digest_sha256: "));
+        assert!(status.contains("chat_entries: 1"));
+        assert!(status.contains("artifacts_total: 1"));
+        assert!(status.contains("artifacts_active: 1"));
+        assert!(status.contains("artifacts_latest_id: artifact-"));
     }
 
     #[test]
@@ -4358,6 +4697,9 @@ mod tests {
                 .path("/repos/owner/repo/issues/12/comments")
                 .body_includes("Chat session status for issue #12.")
                 .body_includes("entries=2")
+                .body_includes("lineage_digest_sha256=")
+                .body_includes("artifact_active=0")
+                .body_includes("artifact_total=0")
                 .body_includes("session_id=issue-12")
                 .body_includes("last_comment_id=900")
                 .body_includes("last_run_id=run-12");
@@ -4430,7 +4772,10 @@ mod tests {
                 .path("/repos/owner/repo/issues/13/comments")
                 .body_includes("No chat session found for issue #13.")
                 .body_includes("entries=0")
-                .body_includes("session_id=none");
+                .body_includes("session_id=none")
+                .body_includes("lineage_digest_sha256=")
+                .body_includes("artifact_active=0")
+                .body_includes("artifact_total=0");
             then.status(201).json_body(json!({
                 "id": 971,
                 "html_url": "https://example.test/comment/971"
