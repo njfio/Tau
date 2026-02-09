@@ -78,24 +78,24 @@ use super::{
     tool_audit_event_json, tool_policy_to_json, trust_record_status, unknown_command_message,
     validate_branch_alias_name, validate_event_webhook_ingest_cli, validate_events_runner_cli,
     validate_github_issues_bridge_cli, validate_macro_command_entry, validate_macro_name,
-    validate_profile_name, validate_rpc_frame_file, validate_session_file,
-    validate_skills_prune_file_name, validate_slack_bridge_cli, AuthCommand, AuthCommandConfig,
-    BranchAliasCommand, BranchAliasFile, Cli, CliBashProfile, CliCommandFileErrorMode,
-    CliCredentialStoreEncryptionMode, CliEventTemplateSchedule, CliOrchestratorMode,
-    CliOsSandboxMode, CliProviderAuthMode, CliSessionImportMode, CliToolPolicyPreset,
-    CliWebhookSignatureAlgorithm, ClientRoute, CommandAction, CommandExecutionContext,
-    CommandFileEntry, CommandFileReport, CredentialStoreData, CredentialStoreEncryptionMode,
-    DoctorCheckOptions, DoctorCheckResult, DoctorCommandArgs, DoctorCommandConfig,
-    DoctorCommandOutputFormat, DoctorProviderKeyStatus, DoctorStatus, FallbackRoutingClient,
-    IntegrationAuthCommand, IntegrationCredentialStoreRecord, MacroCommand, MacroFile,
-    MultiAgentRouteTable, ProfileCommand, ProfileDefaults, ProfileStoreFile, PromptRunStatus,
-    PromptTelemetryLogger, ProviderAuthMethod, ProviderCredentialStoreRecord, RenderOptions,
-    RuntimeExtensionHooksConfig, SessionBookmarkCommand, SessionBookmarkFile, SessionDiffEntry,
-    SessionDiffReport, SessionGraphFormat, SessionRuntime, SessionSearchArgs, SessionStats,
-    SessionStatsOutputFormat, SkillsPruneMode, SkillsSyncCommandConfig, SkillsVerifyEntry,
-    SkillsVerifyReport, SkillsVerifyStatus, SkillsVerifySummary, SkillsVerifyTrustSummary,
-    ToolAuditLogger, TrustedRootRecord, BRANCH_ALIAS_SCHEMA_VERSION, BRANCH_ALIAS_USAGE,
-    MACRO_SCHEMA_VERSION, MACRO_USAGE, PROFILE_SCHEMA_VERSION, PROFILE_USAGE,
+    validate_multi_channel_contract_runner_cli, validate_profile_name, validate_rpc_frame_file,
+    validate_session_file, validate_skills_prune_file_name, validate_slack_bridge_cli, AuthCommand,
+    AuthCommandConfig, BranchAliasCommand, BranchAliasFile, Cli, CliBashProfile,
+    CliCommandFileErrorMode, CliCredentialStoreEncryptionMode, CliEventTemplateSchedule,
+    CliOrchestratorMode, CliOsSandboxMode, CliProviderAuthMode, CliSessionImportMode,
+    CliToolPolicyPreset, CliWebhookSignatureAlgorithm, ClientRoute, CommandAction,
+    CommandExecutionContext, CommandFileEntry, CommandFileReport, CredentialStoreData,
+    CredentialStoreEncryptionMode, DoctorCheckOptions, DoctorCheckResult, DoctorCommandArgs,
+    DoctorCommandConfig, DoctorCommandOutputFormat, DoctorProviderKeyStatus, DoctorStatus,
+    FallbackRoutingClient, IntegrationAuthCommand, IntegrationCredentialStoreRecord, MacroCommand,
+    MacroFile, MultiAgentRouteTable, ProfileCommand, ProfileDefaults, ProfileStoreFile,
+    PromptRunStatus, PromptTelemetryLogger, ProviderAuthMethod, ProviderCredentialStoreRecord,
+    RenderOptions, RuntimeExtensionHooksConfig, SessionBookmarkCommand, SessionBookmarkFile,
+    SessionDiffEntry, SessionDiffReport, SessionGraphFormat, SessionRuntime, SessionSearchArgs,
+    SessionStats, SessionStatsOutputFormat, SkillsPruneMode, SkillsSyncCommandConfig,
+    SkillsVerifyEntry, SkillsVerifyReport, SkillsVerifyStatus, SkillsVerifySummary,
+    SkillsVerifyTrustSummary, ToolAuditLogger, TrustedRootRecord, BRANCH_ALIAS_SCHEMA_VERSION,
+    BRANCH_ALIAS_USAGE, MACRO_SCHEMA_VERSION, MACRO_USAGE, PROFILE_SCHEMA_VERSION, PROFILE_USAGE,
     SESSION_BOOKMARK_SCHEMA_VERSION, SESSION_BOOKMARK_USAGE, SESSION_SEARCH_DEFAULT_RESULTS,
     SESSION_SEARCH_PREVIEW_CHARS, SKILLS_PRUNE_USAGE, SKILLS_TRUST_ADD_USAGE,
     SKILLS_TRUST_LIST_USAGE, SKILLS_VERIFY_USAGE,
@@ -453,6 +453,15 @@ fn test_cli() -> Cli {
         event_webhook_secret_id: None,
         event_webhook_signature_algorithm: None,
         event_webhook_signature_max_skew_seconds: 300,
+        multi_channel_contract_runner: false,
+        multi_channel_fixture: PathBuf::from(
+            "crates/tau-coding-agent/testdata/multi-channel-contract/baseline-three-channel.json",
+        ),
+        multi_channel_state_dir: PathBuf::from(".tau/multi-channel"),
+        multi_channel_queue_limit: 64,
+        multi_channel_processed_event_cap: 10_000,
+        multi_channel_retry_max_attempts: 4,
+        multi_channel_retry_base_delay_ms: 0,
         github_issues_bridge: false,
         github_repo: None,
         github_token: None,
@@ -523,6 +532,7 @@ fn set_workspace_tau_paths(cli: &mut Cli, workspace: &Path) {
     cli.channel_store_root = tau_root.join("channel-store");
     cli.events_dir = tau_root.join("events");
     cli.events_state_path = tau_root.join("events/state.json");
+    cli.multi_channel_state_dir = tau_root.join("multi-channel");
     cli.github_state_dir = tau_root.join("github-issues");
     cli.slack_state_dir = tau_root.join("slack");
     cli.package_install_root = tau_root.join("packages");
@@ -1229,6 +1239,72 @@ fn regression_cli_github_issue_number_rejects_zero() {
     ]);
     let error = parse.expect_err("zero issue number should be rejected");
     assert!(error.to_string().contains("value must be greater than 0"));
+}
+
+#[test]
+fn unit_cli_multi_channel_runner_flags_default_to_disabled() {
+    let cli = Cli::parse_from(["tau-rs"]);
+    assert!(!cli.multi_channel_contract_runner);
+    assert_eq!(
+        cli.multi_channel_fixture,
+        PathBuf::from(
+            "crates/tau-coding-agent/testdata/multi-channel-contract/baseline-three-channel.json"
+        )
+    );
+    assert_eq!(
+        cli.multi_channel_state_dir,
+        PathBuf::from(".tau/multi-channel")
+    );
+    assert_eq!(cli.multi_channel_queue_limit, 64);
+    assert_eq!(cli.multi_channel_processed_event_cap, 10_000);
+    assert_eq!(cli.multi_channel_retry_max_attempts, 4);
+    assert_eq!(cli.multi_channel_retry_base_delay_ms, 0);
+}
+
+#[test]
+fn functional_cli_multi_channel_runner_flags_accept_explicit_overrides() {
+    let cli = Cli::parse_from([
+        "tau-rs",
+        "--multi-channel-contract-runner",
+        "--multi-channel-fixture",
+        "fixtures/multi-channel.json",
+        "--multi-channel-state-dir",
+        ".tau/multi-channel-custom",
+        "--multi-channel-queue-limit",
+        "128",
+        "--multi-channel-processed-event-cap",
+        "25000",
+        "--multi-channel-retry-max-attempts",
+        "7",
+        "--multi-channel-retry-base-delay-ms",
+        "25",
+    ]);
+    assert!(cli.multi_channel_contract_runner);
+    assert_eq!(
+        cli.multi_channel_fixture,
+        PathBuf::from("fixtures/multi-channel.json")
+    );
+    assert_eq!(
+        cli.multi_channel_state_dir,
+        PathBuf::from(".tau/multi-channel-custom")
+    );
+    assert_eq!(cli.multi_channel_queue_limit, 128);
+    assert_eq!(cli.multi_channel_processed_event_cap, 25_000);
+    assert_eq!(cli.multi_channel_retry_max_attempts, 7);
+    assert_eq!(cli.multi_channel_retry_base_delay_ms, 25);
+}
+
+#[test]
+fn regression_cli_multi_channel_fixture_requires_multi_channel_runner_flag() {
+    let parse = Cli::try_parse_from([
+        "tau-rs",
+        "--multi-channel-fixture",
+        "fixtures/multi-channel.json",
+    ]);
+    let error = parse.expect_err("fixture flag should require multi-channel runner mode");
+    assert!(error
+        .to_string()
+        .contains("required arguments were not provided"));
 }
 
 #[test]
@@ -11920,6 +11996,131 @@ fn regression_validate_events_runner_cli_rejects_prompt_template_conflicts() {
 
     let error = validate_events_runner_cli(&cli).expect_err("template conflict");
     assert!(error.to_string().contains("--prompt-template-file"));
+}
+
+#[test]
+fn unit_validate_multi_channel_contract_runner_cli_accepts_minimum_configuration() {
+    let temp = tempdir().expect("tempdir");
+    let fixture_path = temp.path().join("fixture.json");
+    std::fs::write(
+        &fixture_path,
+        r#"{
+  "schema_version": 1,
+  "name": "single-event",
+  "events": [
+    {
+      "schema_version": 1,
+      "transport": "telegram",
+      "event_kind": "message",
+      "event_id": "telegram-1",
+      "conversation_id": "telegram-chat-1",
+      "actor_id": "telegram-user-1",
+      "timestamp_ms": 1760000000000,
+      "text": "hello",
+      "metadata": {}
+    }
+  ]
+}"#,
+    )
+    .expect("write fixture");
+
+    let mut cli = test_cli();
+    cli.multi_channel_contract_runner = true;
+    cli.multi_channel_fixture = fixture_path;
+
+    validate_multi_channel_contract_runner_cli(&cli)
+        .expect("multi-channel runner config should validate");
+}
+
+#[test]
+fn functional_validate_multi_channel_contract_runner_cli_rejects_prompt_conflicts() {
+    let temp = tempdir().expect("tempdir");
+    let fixture_path = temp.path().join("fixture.json");
+    std::fs::write(&fixture_path, "{}").expect("write fixture");
+
+    let mut cli = test_cli();
+    cli.multi_channel_contract_runner = true;
+    cli.multi_channel_fixture = fixture_path;
+    cli.prompt = Some("conflict".to_string());
+
+    let error = validate_multi_channel_contract_runner_cli(&cli).expect_err("prompt conflict");
+    assert!(error
+        .to_string()
+        .contains("--multi-channel-contract-runner cannot be combined"));
+}
+
+#[test]
+fn integration_validate_multi_channel_contract_runner_cli_rejects_transport_conflicts() {
+    let temp = tempdir().expect("tempdir");
+    let fixture_path = temp.path().join("fixture.json");
+    std::fs::write(&fixture_path, "{}").expect("write fixture");
+
+    let mut cli = test_cli();
+    cli.multi_channel_contract_runner = true;
+    cli.multi_channel_fixture = fixture_path;
+    cli.events_runner = true;
+
+    let error = validate_multi_channel_contract_runner_cli(&cli).expect_err("transport conflict");
+    assert!(error
+        .to_string()
+        .contains("--github-issues-bridge, --slack-bridge, or --events-runner"));
+}
+
+#[test]
+fn regression_validate_multi_channel_contract_runner_cli_rejects_zero_limits() {
+    let temp = tempdir().expect("tempdir");
+    let fixture_path = temp.path().join("fixture.json");
+    std::fs::write(&fixture_path, "{}").expect("write fixture");
+
+    let mut cli = test_cli();
+    cli.multi_channel_contract_runner = true;
+    cli.multi_channel_fixture = fixture_path.clone();
+    cli.multi_channel_queue_limit = 0;
+    let queue_error =
+        validate_multi_channel_contract_runner_cli(&cli).expect_err("zero queue limit");
+    assert!(queue_error
+        .to_string()
+        .contains("--multi-channel-queue-limit must be greater than 0"));
+
+    cli.multi_channel_queue_limit = 1;
+    cli.multi_channel_processed_event_cap = 0;
+    let processed_cap_error =
+        validate_multi_channel_contract_runner_cli(&cli).expect_err("zero processed event cap");
+    assert!(processed_cap_error
+        .to_string()
+        .contains("--multi-channel-processed-event-cap must be greater than 0"));
+
+    cli.multi_channel_processed_event_cap = 1;
+    cli.multi_channel_retry_max_attempts = 0;
+    let retry_error =
+        validate_multi_channel_contract_runner_cli(&cli).expect_err("zero retry max attempts");
+    assert!(retry_error
+        .to_string()
+        .contains("--multi-channel-retry-max-attempts must be greater than 0"));
+}
+
+#[test]
+fn regression_validate_multi_channel_contract_runner_cli_requires_existing_fixture() {
+    let temp = tempdir().expect("tempdir");
+    let mut cli = test_cli();
+    cli.multi_channel_contract_runner = true;
+    cli.multi_channel_fixture = temp.path().join("missing.json");
+
+    let error =
+        validate_multi_channel_contract_runner_cli(&cli).expect_err("missing fixture should fail");
+    assert!(error.to_string().contains("does not exist"));
+}
+
+#[test]
+fn regression_validate_multi_channel_contract_runner_cli_requires_fixture_file() {
+    let temp = tempdir().expect("tempdir");
+    let mut cli = test_cli();
+    cli.multi_channel_contract_runner = true;
+    cli.multi_channel_fixture = temp.path().to_path_buf();
+
+    let error = validate_multi_channel_contract_runner_cli(&cli)
+        .expect_err("directory fixture should fail");
+    assert!(error.to_string().contains("must point to a file"));
 }
 
 #[test]

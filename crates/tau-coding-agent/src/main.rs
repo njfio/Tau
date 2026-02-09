@@ -24,8 +24,8 @@ mod macro_profile_commands;
 mod mcp_server;
 mod model_catalog;
 mod multi_agent_router;
-#[cfg(test)]
 mod multi_channel_contract;
+mod multi_channel_runtime;
 mod observability_loggers;
 mod onboarding;
 mod orchestrator;
@@ -246,7 +246,8 @@ pub(crate) use crate::rpc_protocol::{
 };
 pub(crate) use crate::runtime_cli_validation::{
     validate_event_webhook_ingest_cli, validate_events_runner_cli,
-    validate_github_issues_bridge_cli, validate_slack_bridge_cli,
+    validate_github_issues_bridge_cli, validate_multi_channel_contract_runner_cli,
+    validate_slack_bridge_cli,
 };
 pub(crate) use crate::runtime_loop::{
     resolve_prompt_input, run_interactive, run_plan_first_prompt_with_runtime_hooks, run_prompt,
@@ -356,6 +357,7 @@ pub(crate) use crate::trust_roots::{
     parse_trust_rotation_spec, parse_trusted_root_spec, save_trust_root_records, TrustedRootRecord,
 };
 use github_issues::{run_github_issues_bridge, GithubIssuesBridgeRuntimeConfig};
+use multi_channel_runtime::{run_multi_channel_contract_runner, MultiChannelRuntimeConfig};
 use slack::{run_slack_bridge, SlackBridgeRuntimeConfig};
 
 #[tokio::main]

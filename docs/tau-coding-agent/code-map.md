@@ -89,6 +89,8 @@ Use this area for skill packaging, verification, registry support, and lock work
 - `github_issues.rs`: GitHub Issues bridge transport.
 - `slack.rs`: Slack Socket Mode bridge transport.
 - `events.rs`: scheduler runner and webhook immediate-event ingestion.
+- `multi_channel_contract.rs`: multi-channel (Telegram/Discord/WhatsApp) fixture/schema contract.
+- `multi_channel_runtime.rs`: multi-channel runtime loop (queueing, retry, dedupe, channel-store writes).
 - `runtime_cli_validation.rs`: validation for integration runtime flags.
 - `startup_transport_modes.rs`: transport mode dispatch entry.
 
@@ -117,6 +119,7 @@ Use this area for narrow utility behavior reused across startup/runtime modules.
 - `tests.rs`: large integration/regression suite for `tau-coding-agent`.
 - `transport_conformance.rs`: replay conformance fixtures for bridge/scheduler flows.
 - `multi_channel_contract.rs`: multi-channel (Telegram/Discord/WhatsApp) schema and fixture validation contract.
+- `multi_channel_runtime.rs`: fixture-driven runtime tests covering queueing, retries, and replay idempotency.
 - `#[cfg(test)]` exports in `main.rs`: test-only visibility for parser/helpers.
 
 Prefer adding tests next to the module behavior being changed, plus regression coverage in `tests.rs` when behavior spans modules.
