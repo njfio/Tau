@@ -134,6 +134,26 @@ jobs:
               - "Cargo.lock"
               - ".github/workflows/**"
               - ".github/scripts/**"
+            rust:
+              - "**/*.rs"
+              - "**/Cargo.toml"
+              - "Cargo.toml"
+              - "Cargo.lock"
+
+      - name: Determine rust scope
+        id: rust_scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          rust_changed="${{ steps.change_scope.outputs.rust }}"
+          if [[ "${{ github.event_name }}" != "pull_request" ]]; then
+            rust_changed="true"
+          elif [[ -z "${rust_changed}" ]]; then
+            rust_changed="false"
+          fi
+          echo "rust_changed=${rust_changed}" >> "$GITHUB_OUTPUT"
+          echo "### Rust Scope" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Rust/Cargo changed: ${rust_changed}" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Validate CI helper scripts
         run: python3 -m unittest discover -s .github/scripts -p "test_*.py"
@@ -165,36 +185,41 @@ jobs:
             --summary "$GITHUB_STEP_SUMMARY"
 
       - name: Install Rust (full lane)
-        if: steps.quality_mode.outputs.mode != 'codex-light'
+        if: steps.rust_scope.outputs.rust_changed == 'true' && steps.quality_mode.outputs.mode != 'codex-light'
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
 
       - name: Install Rust (codex-light lane)
-        if: steps.quality_mode.outputs.mode == 'codex-light'
+        if: steps.rust_scope.outputs.rust_changed == 'true' && steps.quality_mode.outputs.mode == 'codex-light'
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
 
       - name: Cache Cargo
+        if: steps.rust_scope.outputs.rust_changed == 'true'
         uses: Swatinem/rust-cache@v2
 
       - name: Check formatting
+        if: steps.rust_scope.outputs.rust_changed == 'true'
         run: cargo fmt --all --check
 
       - name: Lint (full lane)
-        if: steps.quality_mode.outputs.mode != 'codex-light'
+        if: steps.rust_scope.outputs.rust_changed == 'true' && steps.quality_mode.outputs.mode != 'codex-light'
         run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: Lint (codex-light lane)
-        if: steps.quality_mode.outputs.mode == 'codex-light'
+        if: steps.rust_scope.outputs.rust_changed == 'true' && steps.quality_mode.outputs.mode == 'codex-light'
         run: cargo check -p tau-coding-agent --all-targets
 
       - name: Report lint strategy
         shell: bash
         run: |
           echo "### Lint Strategy" >> "$GITHUB_STEP_SUMMARY"
-          if [[ "${{ steps.quality_mode.outputs.mode }}" == "codex-light" ]]; then
+          if [[ "${{ steps.rust_scope.outputs.rust_changed }}" != "true" ]]; then
+            echo "- Mode: skipped" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Reason: no Rust/Cargo changes in pull_request scope" >> "$GITHUB_STEP_SUMMARY"
+          elif [[ "${{ steps.quality_mode.outputs.mode }}" == "codex-light" ]]; then
             echo "- Mode: codex-light" >> "$GITHUB_STEP_SUMMARY"
             echo "- Command: cargo check -p tau-coding-agent --all-targets" >> "$GITHUB_STEP_SUMMARY"
           else
@@ -203,7 +228,7 @@ jobs:
           fi
 
       - name: Run codex light demo smoke
-        if: steps.quality_mode.outputs.mode == 'codex-light'
+        if: steps.rust_scope.outputs.rust_changed == 'true' && steps.quality_mode.outputs.mode == 'codex-light'
         env:
           RUST_MIN_STACK: "8388608"
         run: |
@@ -216,7 +241,7 @@ jobs:
             --build
 
       - name: Upload codex light demo smoke logs
-        if: always() && steps.quality_mode.outputs.mode == 'codex-light'
+        if: always() && steps.rust_scope.outputs.rust_changed == 'true' && steps.quality_mode.outputs.mode == 'codex-light'
         uses: actions/upload-artifact@v4
         with:
           name: demo-smoke-logs
@@ -224,7 +249,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: Run workspace tests
-        if: steps.quality_mode.outputs.mode != 'codex-light'
+        if: steps.rust_scope.outputs.rust_changed == 'true' && steps.quality_mode.outputs.mode != 'codex-light'
         env:
           RUST_MIN_STACK: "8388608"
         run: cargo test --workspace
