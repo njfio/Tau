@@ -57,6 +57,24 @@ echo \"mock-slow-ok $*\"
     path.chmod(0o755)
 
 
+def write_mock_cargo(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        """#!/usr/bin/env bash
+set -euo pipefail
+: "${TAU_DEMO_CARGO_TRACE:?}"
+: "${TAU_DEMO_BUILT_BINARY:?}"
+: "${TAU_DEMO_BINARY_TEMPLATE:?}"
+echo "$*" >> "${TAU_DEMO_CARGO_TRACE}"
+mkdir -p "$(dirname "${TAU_DEMO_BUILT_BINARY}")"
+cp "${TAU_DEMO_BINARY_TEMPLATE}" "${TAU_DEMO_BUILT_BINARY}"
+chmod +x "${TAU_DEMO_BUILT_BINARY}"
+""",
+        encoding="utf-8",
+    )
+    path.chmod(0o755)
+
+
 def run_demo_script(
     script_name: str,
     binary_path: Path,
@@ -179,6 +197,47 @@ class DemoScriptsTests(unittest.TestCase):
 
             rows = [json.loads(line) for line in trace_path.read_text(encoding="utf-8").splitlines()]
             self.assertGreaterEqual(len(rows), 12)
+
+    def test_functional_all_script_builds_once_when_skip_build_is_disabled(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            binary_template = root / "template" / "tau-coding-agent"
+            binary_path = root / "built" / "tau-coding-agent"
+            cargo_script = root / "mock-bin" / "cargo"
+            cargo_trace = root / "cargo.trace"
+            demo_trace = root / "demo.trace"
+            write_mock_binary(binary_template)
+            write_mock_cargo(cargo_script)
+
+            env = dict(os.environ)
+            env["PATH"] = f"{cargo_script.parent}:{env.get('PATH', '')}"
+            env["TAU_DEMO_MOCK_TRACE"] = str(demo_trace)
+            env["TAU_DEMO_CARGO_TRACE"] = str(cargo_trace)
+            env["TAU_DEMO_BUILT_BINARY"] = str(binary_path)
+            env["TAU_DEMO_BINARY_TEMPLATE"] = str(binary_template)
+
+            completed = subprocess.run(
+                [
+                    str(SCRIPTS_DIR / "all.sh"),
+                    "--repo-root",
+                    str(REPO_ROOT),
+                    "--binary",
+                    str(binary_path),
+                    "--only",
+                    "local,rpc",
+                ],
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(completed.returncode, 0, msg=completed.stderr)
+            self.assertIn("[demo:all] summary: total=2 passed=2 failed=0", completed.stdout)
+
+            cargo_calls = cargo_trace.read_text(encoding="utf-8").splitlines()
+            self.assertEqual(len(cargo_calls), 1)
+            self.assertIn("build -p tau-coding-agent", cargo_calls[0])
+            self.assertTrue(binary_path.exists())
 
     def test_functional_all_script_runs_all_demo_wrappers(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

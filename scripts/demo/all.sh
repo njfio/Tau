@@ -36,6 +36,14 @@ log_error() {
   echo "${message}" >&2
 }
 
+require_command() {
+  local executable="$1"
+  if ! command -v "${executable}" >/dev/null 2>&1; then
+    log_error "missing required executable: ${executable}"
+    return 1
+  fi
+}
+
 trim_spaces() {
   local value="$1"
   value="${value#"${value%%[![:space:]]*}"}"
@@ -102,6 +110,28 @@ write_report_file() {
   destination_parent="$(dirname "${destination}")"
   mkdir -p "${destination_parent}"
   printf '%s\n' "${payload}" > "${destination}"
+}
+
+prepare_binary_once() {
+  if [[ "${skip_build}" == "true" ]]; then
+    if [[ ! -f "${binary}" ]]; then
+      log_error "missing tau-coding-agent binary (use --binary or remove --skip-build): ${binary}"
+      return 1
+    fi
+    return 0
+  fi
+
+  require_command cargo || return 1
+  log_info "[demo:all] building tau-coding-agent"
+  (
+    cd "${repo_root}"
+    cargo build -p tau-coding-agent >/dev/null
+  ) || return $?
+
+  if [[ ! -f "${binary}" ]]; then
+    log_error "missing tau-coding-agent binary after build: ${binary}"
+    return 1
+  fi
 }
 
 print_summary_json() {
@@ -286,10 +316,7 @@ if [[ "${list_only}" == "true" ]]; then
   exit 0
 fi
 
-if [[ "${skip_build}" == "true" && ! -f "${binary}" ]]; then
-  log_error "missing tau-coding-agent binary (use --binary or remove --skip-build): ${binary}"
-  exit 1
-fi
+prepare_binary_once || exit $?
 
 total=0
 passed=0
@@ -298,10 +325,7 @@ failed=0
 for demo_script in "${selected_demo_scripts[@]}"; do
   total=$((total + 1))
   log_info "[demo:all] [${total}] ${demo_script}"
-  args=("${script_dir}/${demo_script}" "--repo-root" "${repo_root}" "--binary" "${binary}")
-  if [[ "${skip_build}" == "true" ]]; then
-    args+=("--skip-build")
-  fi
+  args=("${script_dir}/${demo_script}" "--repo-root" "${repo_root}" "--binary" "${binary}" "--skip-build")
   if [[ -n "${timeout_seconds}" ]]; then
     args+=("--timeout-seconds" "${timeout_seconds}")
   fi

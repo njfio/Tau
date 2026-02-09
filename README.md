@@ -64,6 +64,7 @@ cargo run -p tau-tui -- --frames 2 --sleep-ms 0 --width 56 --no-color
 Run deterministic local demos:
 
 ```bash
+# all.sh prepares the binary once, then reuses it across selected wrappers.
 ./scripts/demo/all.sh
 ./scripts/demo/all.sh --list
 ./scripts/demo/all.sh --only rpc,events --json
