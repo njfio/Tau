@@ -140,6 +140,94 @@ fn build_google_gemini_client(
     Ok(Arc::new(client))
 }
 
+fn resolve_api_key_fallback_credential(
+    cli: &Cli,
+    provider: Provider,
+    auth_mode: ProviderAuthMethod,
+) -> Option<ProviderAuthCredential> {
+    if auth_mode == ProviderAuthMethod::ApiKey {
+        return None;
+    }
+    let resolver = CliProviderCredentialResolver { cli };
+    let resolved = resolver
+        .resolve(provider, ProviderAuthMethod::ApiKey)
+        .ok()?;
+    tracing::debug!(
+        provider = provider.as_str(),
+        auth_mode = auth_mode.as_str(),
+        fallback_auth_mode = ProviderAuthMethod::ApiKey.as_str(),
+        fallback_auth_source = resolved.source.as_deref().unwrap_or("none"),
+        "primary auth mode unavailable; falling back to api-key auth"
+    );
+    Some(resolved)
+}
+
+fn build_openai_http_client(
+    cli: &Cli,
+    resolved: &ProviderAuthCredential,
+) -> Result<Arc<dyn LlmClient>> {
+    let api_key = resolved_secret_for_provider(resolved, Provider::OpenAi)?;
+    let azure_mode = is_azure_openai_endpoint(&cli.api_base);
+    let client = OpenAiClient::new(OpenAiConfig {
+        api_base: cli.api_base.clone(),
+        api_key,
+        organization: None,
+        request_timeout_ms: cli.request_timeout_ms.max(1),
+        max_retries: cli.provider_max_retries,
+        retry_budget_ms: cli.provider_retry_budget_ms,
+        retry_jitter: cli.provider_retry_jitter,
+        auth_scheme: if azure_mode {
+            OpenAiAuthScheme::ApiKeyHeader
+        } else {
+            OpenAiAuthScheme::Bearer
+        },
+        api_version: if azure_mode {
+            Some(cli.azure_openai_api_version.clone())
+        } else {
+            None
+        },
+    })?;
+    let auth_source = resolved.source.as_deref().unwrap_or("none");
+    log_provider_auth_resolution(Provider::OpenAi, resolved, auth_source);
+    Ok(Arc::new(client))
+}
+
+fn build_anthropic_http_client(
+    cli: &Cli,
+    resolved: &ProviderAuthCredential,
+) -> Result<Arc<dyn LlmClient>> {
+    let api_key = resolved_secret_for_provider(resolved, Provider::Anthropic)?;
+    let client = AnthropicClient::new(AnthropicConfig {
+        api_base: cli.anthropic_api_base.clone(),
+        api_key,
+        request_timeout_ms: cli.request_timeout_ms.max(1),
+        max_retries: cli.provider_max_retries,
+        retry_budget_ms: cli.provider_retry_budget_ms,
+        retry_jitter: cli.provider_retry_jitter,
+    })?;
+    let auth_source = resolved.source.as_deref().unwrap_or("none");
+    log_provider_auth_resolution(Provider::Anthropic, resolved, auth_source);
+    Ok(Arc::new(client))
+}
+
+fn build_google_http_client(
+    cli: &Cli,
+    resolved: &ProviderAuthCredential,
+) -> Result<Arc<dyn LlmClient>> {
+    let api_key = resolved_secret_for_provider(resolved, Provider::Google)?;
+    let client = GoogleClient::new(GoogleConfig {
+        api_base: cli.google_api_base.clone(),
+        api_key,
+        request_timeout_ms: cli.request_timeout_ms.max(1),
+        max_retries: cli.provider_max_retries,
+        retry_budget_ms: cli.provider_retry_budget_ms,
+        retry_jitter: cli.provider_retry_jitter,
+    })?;
+    let auth_source = resolved.source.as_deref().unwrap_or("none");
+    log_provider_auth_resolution(Provider::Google, resolved, auth_source);
+    Ok(Arc::new(client))
+}
+
 pub(crate) fn build_provider_client(cli: &Cli, provider: Provider) -> Result<Arc<dyn LlmClient>> {
     let auth_mode = configured_provider_auth_method(cli, provider);
     let capability = provider_auth_capability(provider, auth_mode);
@@ -159,7 +247,13 @@ pub(crate) fn build_provider_client(cli: &Cli, provider: Provider) -> Result<Arc
             let resolved = match resolver.resolve(provider, auth_mode) {
                 Ok(resolved) => Some(resolved),
                 Err(error) => {
-                    if should_use_subscription_backend_fallback(cli, provider, auth_mode, &error) {
+                    if let Some(fallback) =
+                        resolve_api_key_fallback_credential(cli, provider, auth_mode)
+                    {
+                        Some(fallback)
+                    } else if should_use_subscription_backend_fallback(
+                        cli, provider, auth_mode, &error,
+                    ) {
                         tracing::debug!(
                             provider = provider.as_str(),
                             auth_mode = auth_mode.as_str(),
@@ -183,30 +277,7 @@ pub(crate) fn build_provider_client(cli: &Cli, provider: Provider) -> Result<Arc
             };
 
             if let Some(resolved) = resolved {
-                let api_key = resolved_secret_for_provider(&resolved, provider)?;
-                let azure_mode = is_azure_openai_endpoint(&cli.api_base);
-                let client = OpenAiClient::new(OpenAiConfig {
-                    api_base: cli.api_base.clone(),
-                    api_key,
-                    organization: None,
-                    request_timeout_ms: cli.request_timeout_ms.max(1),
-                    max_retries: cli.provider_max_retries,
-                    retry_budget_ms: cli.provider_retry_budget_ms,
-                    retry_jitter: cli.provider_retry_jitter,
-                    auth_scheme: if azure_mode {
-                        OpenAiAuthScheme::ApiKeyHeader
-                    } else {
-                        OpenAiAuthScheme::Bearer
-                    },
-                    api_version: if azure_mode {
-                        Some(cli.azure_openai_api_version.clone())
-                    } else {
-                        None
-                    },
-                })?;
-                let auth_source = resolved.source.as_deref().unwrap_or("none");
-                log_provider_auth_resolution(provider, &resolved, auth_source);
-                return Ok(Arc::new(client));
+                return build_openai_http_client(cli, &resolved);
             }
 
             build_openai_codex_client(cli)
@@ -216,13 +287,25 @@ pub(crate) fn build_provider_client(cli: &Cli, provider: Provider) -> Result<Arc
                 auth_mode,
                 ProviderAuthMethod::OauthToken | ProviderAuthMethod::SessionToken
             ) {
-                if !anthropic_claude_backend_enabled(cli, auth_mode) {
-                    bail!(
+                let backend_result = if anthropic_claude_backend_enabled(cli, auth_mode) {
+                    build_anthropic_claude_client(cli, auth_mode)
+                } else {
+                    Err(anyhow!(
                         "anthropic auth mode '{}' requires Claude Code backend (enable --anthropic-claude-backend=true or set --anthropic-auth-mode api-key)",
                         auth_mode.as_str()
-                    );
+                    ))
+                };
+                match backend_result {
+                    Ok(client) => return Ok(client),
+                    Err(error) => {
+                        if let Some(fallback) =
+                            resolve_api_key_fallback_credential(cli, provider, auth_mode)
+                        {
+                            return build_anthropic_http_client(cli, &fallback);
+                        }
+                        return Err(error);
+                    }
                 }
-                return build_anthropic_claude_client(cli, auth_mode);
             }
 
             let resolver = CliProviderCredentialResolver { cli };
@@ -245,31 +328,32 @@ pub(crate) fn build_provider_client(cli: &Cli, provider: Provider) -> Result<Arc
             let Some(resolved) = resolved else {
                 return build_anthropic_claude_client(cli, ProviderAuthMethod::OauthToken);
             };
-            let api_key = resolved_secret_for_provider(&resolved, provider)?;
-            let client = AnthropicClient::new(AnthropicConfig {
-                api_base: cli.anthropic_api_base.clone(),
-                api_key,
-                request_timeout_ms: cli.request_timeout_ms.max(1),
-                max_retries: cli.provider_max_retries,
-                retry_budget_ms: cli.provider_retry_budget_ms,
-                retry_jitter: cli.provider_retry_jitter,
-            })?;
-            let auth_source = resolved.source.as_deref().unwrap_or("none");
-            log_provider_auth_resolution(provider, &resolved, auth_source);
-            Ok(Arc::new(client))
+            build_anthropic_http_client(cli, &resolved)
         }
         Provider::Google => {
             if matches!(
                 auth_mode,
                 ProviderAuthMethod::OauthToken | ProviderAuthMethod::Adc
             ) {
-                if !google_gemini_backend_enabled(cli, auth_mode) {
-                    bail!(
+                let backend_result = if google_gemini_backend_enabled(cli, auth_mode) {
+                    build_google_gemini_client(cli, auth_mode)
+                } else {
+                    Err(anyhow!(
                         "google auth mode '{}' requires Gemini CLI backend (enable --google-gemini-backend=true or set --google-auth-mode api-key)",
                         auth_mode.as_str()
-                    );
+                    ))
+                };
+                match backend_result {
+                    Ok(client) => return Ok(client),
+                    Err(error) => {
+                        if let Some(fallback) =
+                            resolve_api_key_fallback_credential(cli, provider, auth_mode)
+                        {
+                            return build_google_http_client(cli, &fallback);
+                        }
+                        return Err(error);
+                    }
                 }
-                return build_google_gemini_client(cli, auth_mode);
             }
 
             let resolver = CliProviderCredentialResolver { cli };
@@ -292,18 +376,7 @@ pub(crate) fn build_provider_client(cli: &Cli, provider: Provider) -> Result<Arc
             let Some(resolved) = resolved else {
                 return build_google_gemini_client(cli, ProviderAuthMethod::OauthToken);
             };
-            let api_key = resolved_secret_for_provider(&resolved, provider)?;
-            let client = GoogleClient::new(GoogleConfig {
-                api_base: cli.google_api_base.clone(),
-                api_key,
-                request_timeout_ms: cli.request_timeout_ms.max(1),
-                max_retries: cli.provider_max_retries,
-                retry_budget_ms: cli.provider_retry_budget_ms,
-                retry_jitter: cli.provider_retry_jitter,
-            })?;
-            let auth_source = resolved.source.as_deref().unwrap_or("none");
-            log_provider_auth_resolution(provider, &resolved, auth_source);
-            Ok(Arc::new(client))
+            build_google_http_client(cli, &resolved)
         }
     }
 }
