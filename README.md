@@ -7,7 +7,7 @@ This workspace mirrors the high-level package boundaries from the upstream mono 
 - `crates/tau-ai`: provider-agnostic message and tool model + OpenAI/Anthropic/Google adapters
 - `crates/tau-agent-core`: event-driven agent loop with tool execution
 - `crates/tau-tui`: minimal differential terminal rendering primitives
-- `crates/tau-coding-agent`: CLI harness with built-in `read`, `write`, `edit`, and `bash` tools
+- `crates/tau-coding-agent`: CLI harness with built-in `read`, `write`, `edit`, `bash`, and session intelligence tools (`sessions_list`, `sessions_history`, `sessions_search`, `sessions_send`)
 
 ## Current Scope
 

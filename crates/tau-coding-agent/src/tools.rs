@@ -20,7 +20,7 @@ use crate::{
     authorize_tool_for_principal, authorize_tool_for_principal_with_policy_path,
     evaluate_approval_gate, resolve_local_principal,
     session::SessionStore,
-    session_commands::{session_message_preview, session_message_role},
+    session_commands::{search_session_entries, session_message_preview, session_message_role},
     ApprovalAction, ApprovalGateResult, RbacDecision,
 };
 
@@ -45,6 +45,9 @@ const SESSION_LIST_MAX_LIMIT: usize = 256;
 const SESSION_HISTORY_DEFAULT_LIMIT: usize = 40;
 const SESSION_HISTORY_MAX_LIMIT: usize = 200;
 const SESSION_SEND_MAX_MESSAGE_CHARS: usize = 8_000;
+const SESSION_SEARCH_TOOL_DEFAULT_LIMIT: usize = 50;
+const SESSION_SEARCH_TOOL_MAX_LIMIT: usize = 200;
+const SESSION_SEARCH_SCAN_DEFAULT_LIMIT: usize = 64;
 const SESSION_SCAN_MAX_DEPTH: usize = 8;
 const SESSION_SCAN_MAX_DIRECTORIES: usize = 2_000;
 
@@ -59,6 +62,15 @@ struct SessionInventoryEntry {
 
 #[derive(Debug, Clone, Serialize)]
 struct SessionHistoryEntry {
+    id: u64,
+    parent_id: Option<u64>,
+    role: String,
+    preview: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct SessionSearchToolMatch {
+    path: String,
     id: u64,
     parent_id: Option<u64>,
     role: String,
@@ -231,6 +243,7 @@ pub fn register_builtin_tools(agent: &mut Agent, policy: ToolPolicy) {
     agent.register_tool(EditTool::new(policy.clone()));
     agent.register_tool(SessionsListTool::new(policy.clone()));
     agent.register_tool(SessionsHistoryTool::new(policy.clone()));
+    agent.register_tool(SessionsSearchTool::new(policy.clone()));
     agent.register_tool(SessionsSendTool::new(policy.clone()));
     agent.register_tool(BashTool::new(policy));
 }
@@ -788,6 +801,193 @@ impl AgentTool for SessionsHistoryTool {
             "lineage_entries": lineage.len(),
             "returned": history_entries.len(),
             "history": history_entries,
+        }))
+    }
+}
+
+pub struct SessionsSearchTool {
+    policy: Arc<ToolPolicy>,
+}
+
+impl SessionsSearchTool {
+    pub fn new(policy: Arc<ToolPolicy>) -> Self {
+        Self { policy }
+    }
+}
+
+#[async_trait]
+impl AgentTool for SessionsSearchTool {
+    fn definition(&self) -> ToolDefinition {
+        ToolDefinition {
+            name: "sessions_search".to_string(),
+            description: "Search message content across session stores under allowed roots"
+                .to_string(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Case-insensitive search query"
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "Optional path to a specific session JSONL file"
+                    },
+                    "role": {
+                        "type": "string",
+                        "description": "Optional role filter",
+                        "enum": ["system", "user", "assistant", "tool"]
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": format!(
+                            "Maximum matches to return (default {}, max {})",
+                            SESSION_SEARCH_TOOL_DEFAULT_LIMIT,
+                            SESSION_SEARCH_TOOL_MAX_LIMIT
+                        )
+                    }
+                },
+                "required": ["query"],
+                "additionalProperties": false
+            }),
+        }
+    }
+
+    async fn execute(&self, arguments: Value) -> ToolExecutionResult {
+        let query = match required_string(&arguments, "query") {
+            Ok(query) => query,
+            Err(error) => return ToolExecutionResult::error(json!({ "error": error })),
+        };
+        if query.trim().is_empty() {
+            return ToolExecutionResult::error(json!({
+                "error": "query must not be empty",
+            }));
+        }
+        let role_filter = match optional_session_search_role(&arguments, "role") {
+            Ok(role_filter) => role_filter,
+            Err(error) => return ToolExecutionResult::error(json!({ "error": error })),
+        };
+        let limit = match optional_usize(
+            &arguments,
+            "limit",
+            SESSION_SEARCH_TOOL_DEFAULT_LIMIT,
+            SESSION_SEARCH_TOOL_MAX_LIMIT,
+        ) {
+            Ok(limit) => limit,
+            Err(error) => return ToolExecutionResult::error(json!({ "error": error })),
+        };
+
+        let requested_path = arguments
+            .get("path")
+            .and_then(Value::as_str)
+            .map(|value| value.to_string());
+
+        if let Some(path) = requested_path {
+            let resolved = match resolve_and_validate_path(&path, &self.policy, PathMode::Read) {
+                Ok(path) => path,
+                Err(error) => {
+                    return ToolExecutionResult::error(json!({
+                        "path": path,
+                        "error": error,
+                    }))
+                }
+            };
+            if let Err(error) =
+                validate_file_target(&resolved, PathMode::Read, self.policy.enforce_regular_files)
+            {
+                return ToolExecutionResult::error(json!({
+                    "path": resolved.display().to_string(),
+                    "error": error,
+                }));
+            }
+
+            let store = match SessionStore::load(&resolved) {
+                Ok(store) => store,
+                Err(error) => {
+                    return ToolExecutionResult::error(json!({
+                        "path": resolved.display().to_string(),
+                        "error": format!("failed to load session: {error}"),
+                    }))
+                }
+            };
+            let entries_scanned = store.entries().len();
+            let (matches, total_matches) =
+                search_session_entries(store.entries(), &query, role_filter.as_deref(), limit);
+            let results = matches
+                .into_iter()
+                .map(|item| SessionSearchToolMatch {
+                    path: resolved.display().to_string(),
+                    id: item.id,
+                    parent_id: item.parent_id,
+                    role: item.role,
+                    preview: item.preview,
+                })
+                .collect::<Vec<_>>();
+
+            return ToolExecutionResult::ok(json!({
+                "query": query,
+                "role": role_filter.clone().unwrap_or_else(|| "any".to_string()),
+                "path": resolved.display().to_string(),
+                "limit": limit,
+                "sessions_scanned": 1,
+                "entries_scanned": entries_scanned,
+                "matches": total_matches,
+                "returned": results.len(),
+                "skipped_invalid": 0,
+                "results": results,
+            }));
+        }
+
+        let session_paths =
+            match discover_session_paths(&self.policy, SESSION_SEARCH_SCAN_DEFAULT_LIMIT) {
+                Ok(session_paths) => session_paths,
+                Err(error) => return ToolExecutionResult::error(json!({ "error": error })),
+            };
+
+        let mut results = Vec::new();
+        let mut sessions_scanned = 0usize;
+        let mut entries_scanned = 0usize;
+        let mut skipped_invalid = 0usize;
+        let mut total_matches = 0usize;
+
+        for path in session_paths {
+            let store = match SessionStore::load(&path) {
+                Ok(store) => store,
+                Err(_) => {
+                    skipped_invalid += 1;
+                    continue;
+                }
+            };
+
+            sessions_scanned += 1;
+            entries_scanned += store.entries().len();
+            let (session_matches, session_total_matches) =
+                search_session_entries(store.entries(), &query, role_filter.as_deref(), limit);
+            total_matches += session_total_matches;
+            for item in session_matches {
+                if results.len() >= limit {
+                    break;
+                }
+                results.push(SessionSearchToolMatch {
+                    path: path.display().to_string(),
+                    id: item.id,
+                    parent_id: item.parent_id,
+                    role: item.role,
+                    preview: item.preview,
+                });
+            }
+        }
+
+        ToolExecutionResult::ok(json!({
+            "query": query,
+            "role": role_filter.unwrap_or_else(|| "any".to_string()),
+            "limit": limit,
+            "sessions_scanned": sessions_scanned,
+            "entries_scanned": entries_scanned,
+            "matches": total_matches,
+            "returned": results.len(),
+            "skipped_invalid": skipped_invalid,
+            "results": results,
         }))
     }
 }
@@ -1886,6 +2086,22 @@ fn optional_u64(arguments: &Value, key: &str) -> Result<Option<u64>, String> {
     Ok(Some(parsed))
 }
 
+fn optional_session_search_role(arguments: &Value, key: &str) -> Result<Option<String>, String> {
+    let Some(value) = arguments.get(key) else {
+        return Ok(None);
+    };
+    let raw = value
+        .as_str()
+        .ok_or_else(|| format!("optional argument '{key}' must be a string"))?;
+    let normalized = raw.trim().to_ascii_lowercase();
+    match normalized.as_str() {
+        "system" | "user" | "assistant" | "tool" => Ok(Some(normalized)),
+        _ => Err(format!(
+            "optional argument '{key}' must be one of: system, user, assistant, tool"
+        )),
+    }
+}
+
 fn resolve_sandbox_spec(
     policy: &ToolPolicy,
     shell: &str,
@@ -2137,8 +2353,9 @@ mod tests {
         command_available, evaluate_tool_approval_gate, evaluate_tool_rbac_gate,
         is_command_allowed, is_session_candidate_path, leading_executable, os_sandbox_mode_name,
         redact_secrets, resolve_sandbox_spec, truncate_bytes, AgentTool, BashCommandProfile,
-        BashTool, EditTool, OsSandboxMode, SessionsHistoryTool, SessionsListTool, SessionsSendTool,
-        ToolExecutionResult, ToolPolicy, ToolPolicyPreset, WriteTool,
+        BashTool, EditTool, OsSandboxMode, SessionsHistoryTool, SessionsListTool,
+        SessionsSearchTool, SessionsSendTool, ToolExecutionResult, ToolPolicy, ToolPolicyPreset,
+        WriteTool,
     };
     use crate::session::SessionStore;
     use crate::ApprovalAction;
@@ -2357,6 +2574,147 @@ mod tests {
             .content
             .to_string()
             .contains("failed to load session"));
+    }
+
+    #[tokio::test]
+    async fn unit_sessions_search_tool_rejects_invalid_role_filter() {
+        let temp = tempdir().expect("tempdir");
+        let tool = SessionsSearchTool::new(test_policy(temp.path()));
+        let result = tool
+            .execute(serde_json::json!({
+                "query": "retry",
+                "role": "owner"
+            }))
+            .await;
+        assert!(result.is_error);
+        assert!(result
+            .content
+            .to_string()
+            .contains("optional argument 'role' must be one of"));
+    }
+
+    #[tokio::test]
+    async fn functional_sessions_search_tool_returns_matches_for_single_path() {
+        let temp = tempdir().expect("tempdir");
+        let session_path = temp.path().join(".tau/sessions/default.jsonl");
+        let mut store = SessionStore::load(&session_path).expect("load session");
+        store
+            .append_messages(
+                None,
+                &[
+                    Message::user("retry budget"),
+                    Message::assistant_text("ack"),
+                ],
+            )
+            .expect("append messages");
+
+        let tool = SessionsSearchTool::new(test_policy(temp.path()));
+        let result = tool
+            .execute(serde_json::json!({
+                "query": "budget",
+                "path": session_path,
+                "limit": 10
+            }))
+            .await;
+        assert!(!result.is_error);
+        assert_eq!(
+            result
+                .content
+                .get("sessions_scanned")
+                .and_then(serde_json::Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            result
+                .content
+                .get("matches")
+                .and_then(serde_json::Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            result
+                .content
+                .get("returned")
+                .and_then(serde_json::Value::as_u64),
+            Some(1)
+        );
+        let rows = result
+            .content
+            .get("results")
+            .and_then(serde_json::Value::as_array)
+            .expect("results array");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(
+            rows[0].get("role").and_then(serde_json::Value::as_str),
+            Some("user")
+        );
+    }
+
+    #[tokio::test]
+    async fn integration_sessions_search_tool_scans_discovered_session_files() {
+        let temp = tempdir().expect("tempdir");
+        let first_session = temp.path().join(".tau/sessions/default.jsonl");
+        let second_session = temp.path().join(".tau/github/repo/sessions/issue-8.jsonl");
+
+        let mut first_store = SessionStore::load(&first_session).expect("load first");
+        first_store
+            .append_messages(None, &[Message::user("delta target one")])
+            .expect("append first");
+
+        let mut second_store = SessionStore::load(&second_session).expect("load second");
+        second_store
+            .append_messages(None, &[Message::assistant_text("delta target two")])
+            .expect("append second");
+
+        let tool = SessionsSearchTool::new(test_policy(temp.path()));
+        let result = tool
+            .execute(serde_json::json!({
+                "query": "delta",
+                "limit": 10
+            }))
+            .await;
+        assert!(!result.is_error);
+        assert_eq!(
+            result
+                .content
+                .get("sessions_scanned")
+                .and_then(serde_json::Value::as_u64),
+            Some(2)
+        );
+        assert_eq!(
+            result
+                .content
+                .get("matches")
+                .and_then(serde_json::Value::as_u64),
+            Some(2)
+        );
+        let rows = result
+            .content
+            .get("results")
+            .and_then(serde_json::Value::as_array)
+            .expect("results array");
+        assert_eq!(rows.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn regression_sessions_search_tool_rejects_paths_outside_allowed_roots() {
+        let root = tempdir().expect("root");
+        let outside = tempdir().expect("outside");
+        let outside_session = outside.path().join(".tau/sessions/default.jsonl");
+        let mut store = SessionStore::load(&outside_session).expect("load outside");
+        store
+            .append_messages(None, &[Message::user("outside message")])
+            .expect("append outside");
+
+        let tool = SessionsSearchTool::new(test_policy(root.path()));
+        let result = tool
+            .execute(serde_json::json!({
+                "query": "outside",
+                "path": outside_session
+            }))
+            .await;
+        assert!(result.is_error);
+        assert!(result.content.to_string().contains("outside allowed roots"));
     }
 
     #[tokio::test]
