@@ -343,6 +343,55 @@ pub(crate) fn validate_gateway_contract_runner_cli(cli: &Cli) -> Result<()> {
     Ok(())
 }
 
+pub(crate) fn validate_deployment_contract_runner_cli(cli: &Cli) -> Result<()> {
+    if !cli.deployment_contract_runner {
+        return Ok(());
+    }
+
+    if has_prompt_or_command_input(cli) {
+        bail!("--deployment-contract-runner cannot be combined with --prompt, --prompt-file, --prompt-template-file, or --command-file");
+    }
+    if cli.no_session {
+        bail!("--deployment-contract-runner cannot be used together with --no-session");
+    }
+    if cli.github_issues_bridge
+        || cli.slack_bridge
+        || cli.events_runner
+        || cli.multi_channel_contract_runner
+        || cli.multi_agent_contract_runner
+        || cli.memory_contract_runner
+        || cli.dashboard_contract_runner
+        || cli.gateway_contract_runner
+        || cli.custom_command_contract_runner
+        || cli.voice_contract_runner
+    {
+        bail!("--deployment-contract-runner cannot be combined with --github-issues-bridge, --slack-bridge, --events-runner, --multi-channel-contract-runner, --multi-agent-contract-runner, --memory-contract-runner, --dashboard-contract-runner, --gateway-contract-runner, --custom-command-contract-runner, or --voice-contract-runner");
+    }
+    if cli.deployment_queue_limit == 0 {
+        bail!("--deployment-queue-limit must be greater than 0");
+    }
+    if cli.deployment_processed_case_cap == 0 {
+        bail!("--deployment-processed-case-cap must be greater than 0");
+    }
+    if cli.deployment_retry_max_attempts == 0 {
+        bail!("--deployment-retry-max-attempts must be greater than 0");
+    }
+    if !cli.deployment_fixture.exists() {
+        bail!(
+            "--deployment-fixture '{}' does not exist",
+            cli.deployment_fixture.display()
+        );
+    }
+    if !cli.deployment_fixture.is_file() {
+        bail!(
+            "--deployment-fixture '{}' must point to a file",
+            cli.deployment_fixture.display()
+        );
+    }
+
+    Ok(())
+}
+
 pub(crate) fn validate_custom_command_contract_runner_cli(cli: &Cli) -> Result<()> {
     if !cli.custom_command_contract_runner {
         return Ok(());
