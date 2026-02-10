@@ -13,7 +13,7 @@ edition = "2021"
 license = "MIT"
 
 [workspace.dependencies]
-axum = { version = "0.8", features = ["json", "http1", "tokio"] }
+axum = { version = "0.8", features = ["json", "http1", "tokio", "ws"] }
 anyhow = "1"
 async-trait = "0.1"
 base64 = "0.22"

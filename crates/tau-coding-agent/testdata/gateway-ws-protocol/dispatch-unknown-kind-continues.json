@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "name": "dispatch-unknown-kind-continues",
+  "mode": "dispatch",
+  "input_frames": [
+    "{\"schema_version\":1,\"request_id\":\"req-bad-kind\",\"kind\":\"session.delete.request\",\"payload\":{}}",
+    "{\"schema_version\":1,\"request_id\":\"req-good\",\"kind\":\"run.lifecycle.status.request\",\"payload\":{}}"
+  ],
+  "expected_processed_frames": 2,
+  "expected_error_count": 1,
+  "expected_responses": [
+    {
+      "schema_version": 1,
+      "request_id": "req-bad-kind",
+      "kind": "error",
+      "payload": {
+        "code": "unsupported_kind",
+        "message": "unsupported gateway websocket frame kind 'session.delete.request'; supported kinds are capabilities.request, gateway.status.request, session.status.request, session.reset.request, run.lifecycle.status.request"
+      }
+    },
+    {
+      "schema_version": 1,
+      "request_id": "req-good",
+      "kind": "run.lifecycle.status.response",
+      "payload": {
+        "active_runs": [],
+        "recent_events": []
+      }
+    }
+  ]
+}

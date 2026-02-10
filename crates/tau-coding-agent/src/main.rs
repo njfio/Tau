@@ -28,6 +28,7 @@ mod extension_manifest;
 mod gateway_contract;
 mod gateway_openresponses;
 mod gateway_runtime;
+mod gateway_ws_protocol;
 mod gemini_cli_client;
 mod github_issues;
 mod github_issues_helpers;
