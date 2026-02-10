@@ -78,24 +78,25 @@ use super::{
     tool_audit_event_json, tool_policy_to_json, trust_record_status, unknown_command_message,
     validate_branch_alias_name, validate_event_webhook_ingest_cli, validate_events_runner_cli,
     validate_github_issues_bridge_cli, validate_macro_command_entry, validate_macro_name,
-    validate_multi_channel_contract_runner_cli, validate_profile_name, validate_rpc_frame_file,
-    validate_session_file, validate_skills_prune_file_name, validate_slack_bridge_cli, AuthCommand,
-    AuthCommandConfig, BranchAliasCommand, BranchAliasFile, Cli, CliBashProfile,
-    CliCommandFileErrorMode, CliCredentialStoreEncryptionMode, CliEventTemplateSchedule,
-    CliOrchestratorMode, CliOsSandboxMode, CliProviderAuthMode, CliSessionImportMode,
-    CliToolPolicyPreset, CliWebhookSignatureAlgorithm, ClientRoute, CommandAction,
-    CommandExecutionContext, CommandFileEntry, CommandFileReport, CredentialStoreData,
-    CredentialStoreEncryptionMode, DoctorCheckOptions, DoctorCheckResult, DoctorCommandArgs,
-    DoctorCommandConfig, DoctorCommandOutputFormat, DoctorProviderKeyStatus, DoctorStatus,
-    FallbackRoutingClient, IntegrationAuthCommand, IntegrationCredentialStoreRecord, MacroCommand,
-    MacroFile, MultiAgentRouteTable, ProfileCommand, ProfileDefaults, ProfileStoreFile,
-    PromptRunStatus, PromptTelemetryLogger, ProviderAuthMethod, ProviderCredentialStoreRecord,
-    RenderOptions, RuntimeExtensionHooksConfig, SessionBookmarkCommand, SessionBookmarkFile,
-    SessionDiffEntry, SessionDiffReport, SessionGraphFormat, SessionRuntime, SessionSearchArgs,
-    SessionStats, SessionStatsOutputFormat, SkillsPruneMode, SkillsSyncCommandConfig,
-    SkillsVerifyEntry, SkillsVerifyReport, SkillsVerifyStatus, SkillsVerifySummary,
-    SkillsVerifyTrustSummary, ToolAuditLogger, TrustedRootRecord, BRANCH_ALIAS_SCHEMA_VERSION,
-    BRANCH_ALIAS_USAGE, MACRO_SCHEMA_VERSION, MACRO_USAGE, PROFILE_SCHEMA_VERSION, PROFILE_USAGE,
+    validate_memory_contract_runner_cli, validate_multi_channel_contract_runner_cli,
+    validate_profile_name, validate_rpc_frame_file, validate_session_file,
+    validate_skills_prune_file_name, validate_slack_bridge_cli, AuthCommand, AuthCommandConfig,
+    BranchAliasCommand, BranchAliasFile, Cli, CliBashProfile, CliCommandFileErrorMode,
+    CliCredentialStoreEncryptionMode, CliEventTemplateSchedule, CliOrchestratorMode,
+    CliOsSandboxMode, CliProviderAuthMode, CliSessionImportMode, CliToolPolicyPreset,
+    CliWebhookSignatureAlgorithm, ClientRoute, CommandAction, CommandExecutionContext,
+    CommandFileEntry, CommandFileReport, CredentialStoreData, CredentialStoreEncryptionMode,
+    DoctorCheckOptions, DoctorCheckResult, DoctorCommandArgs, DoctorCommandConfig,
+    DoctorCommandOutputFormat, DoctorProviderKeyStatus, DoctorStatus, FallbackRoutingClient,
+    IntegrationAuthCommand, IntegrationCredentialStoreRecord, MacroCommand, MacroFile,
+    MultiAgentRouteTable, ProfileCommand, ProfileDefaults, ProfileStoreFile, PromptRunStatus,
+    PromptTelemetryLogger, ProviderAuthMethod, ProviderCredentialStoreRecord, RenderOptions,
+    RuntimeExtensionHooksConfig, SessionBookmarkCommand, SessionBookmarkFile, SessionDiffEntry,
+    SessionDiffReport, SessionGraphFormat, SessionRuntime, SessionSearchArgs, SessionStats,
+    SessionStatsOutputFormat, SkillsPruneMode, SkillsSyncCommandConfig, SkillsVerifyEntry,
+    SkillsVerifyReport, SkillsVerifyStatus, SkillsVerifySummary, SkillsVerifyTrustSummary,
+    ToolAuditLogger, TrustedRootRecord, BRANCH_ALIAS_SCHEMA_VERSION, BRANCH_ALIAS_USAGE,
+    MACRO_SCHEMA_VERSION, MACRO_USAGE, PROFILE_SCHEMA_VERSION, PROFILE_USAGE,
     SESSION_BOOKMARK_SCHEMA_VERSION, SESSION_BOOKMARK_USAGE, SESSION_SEARCH_DEFAULT_RESULTS,
     SESSION_SEARCH_PREVIEW_CHARS, SKILLS_PRUNE_USAGE, SKILLS_TRUST_ADD_USAGE,
     SKILLS_TRUST_LIST_USAGE, SKILLS_VERIFY_USAGE,
@@ -462,6 +463,15 @@ fn test_cli() -> Cli {
         multi_channel_processed_event_cap: 10_000,
         multi_channel_retry_max_attempts: 4,
         multi_channel_retry_base_delay_ms: 0,
+        memory_contract_runner: false,
+        memory_fixture: PathBuf::from(
+            "crates/tau-coding-agent/testdata/memory-contract/mixed-outcomes.json",
+        ),
+        memory_state_dir: PathBuf::from(".tau/memory"),
+        memory_queue_limit: 64,
+        memory_processed_case_cap: 10_000,
+        memory_retry_max_attempts: 4,
+        memory_retry_base_delay_ms: 0,
         github_issues_bridge: false,
         github_repo: None,
         github_token: None,
@@ -1302,6 +1312,57 @@ fn regression_cli_multi_channel_fixture_requires_multi_channel_runner_flag() {
         "fixtures/multi-channel.json",
     ]);
     let error = parse.expect_err("fixture flag should require multi-channel runner mode");
+    assert!(error
+        .to_string()
+        .contains("required arguments were not provided"));
+}
+
+#[test]
+fn unit_cli_memory_runner_flags_default_to_disabled() {
+    let cli = Cli::parse_from(["tau-rs"]);
+    assert!(!cli.memory_contract_runner);
+    assert_eq!(
+        cli.memory_fixture,
+        PathBuf::from("crates/tau-coding-agent/testdata/memory-contract/mixed-outcomes.json")
+    );
+    assert_eq!(cli.memory_state_dir, PathBuf::from(".tau/memory"));
+    assert_eq!(cli.memory_queue_limit, 64);
+    assert_eq!(cli.memory_processed_case_cap, 10_000);
+    assert_eq!(cli.memory_retry_max_attempts, 4);
+    assert_eq!(cli.memory_retry_base_delay_ms, 0);
+}
+
+#[test]
+fn functional_cli_memory_runner_flags_accept_explicit_overrides() {
+    let cli = Cli::parse_from([
+        "tau-rs",
+        "--memory-contract-runner",
+        "--memory-fixture",
+        "fixtures/memory.json",
+        "--memory-state-dir",
+        ".tau/memory-custom",
+        "--memory-queue-limit",
+        "80",
+        "--memory-processed-case-cap",
+        "9000",
+        "--memory-retry-max-attempts",
+        "6",
+        "--memory-retry-base-delay-ms",
+        "15",
+    ]);
+    assert!(cli.memory_contract_runner);
+    assert_eq!(cli.memory_fixture, PathBuf::from("fixtures/memory.json"));
+    assert_eq!(cli.memory_state_dir, PathBuf::from(".tau/memory-custom"));
+    assert_eq!(cli.memory_queue_limit, 80);
+    assert_eq!(cli.memory_processed_case_cap, 9_000);
+    assert_eq!(cli.memory_retry_max_attempts, 6);
+    assert_eq!(cli.memory_retry_base_delay_ms, 15);
+}
+
+#[test]
+fn regression_cli_memory_fixture_requires_memory_runner_flag() {
+    let parse = Cli::try_parse_from(["tau-rs", "--memory-fixture", "fixtures/memory.json"]);
+    let error = parse.expect_err("fixture flag should require memory runner mode");
     assert!(error
         .to_string()
         .contains("required arguments were not provided"));
@@ -12085,9 +12146,9 @@ fn integration_validate_multi_channel_contract_runner_cli_rejects_transport_conf
     cli.events_runner = true;
 
     let error = validate_multi_channel_contract_runner_cli(&cli).expect_err("transport conflict");
-    assert!(error
-        .to_string()
-        .contains("--github-issues-bridge, --slack-bridge, or --events-runner"));
+    assert!(error.to_string().contains(
+        "--github-issues-bridge, --slack-bridge, --events-runner, or --memory-contract-runner"
+    ));
 }
 
 #[test]
@@ -12144,6 +12205,138 @@ fn regression_validate_multi_channel_contract_runner_cli_requires_fixture_file()
 
     let error = validate_multi_channel_contract_runner_cli(&cli)
         .expect_err("directory fixture should fail");
+    assert!(error.to_string().contains("must point to a file"));
+}
+
+#[test]
+fn unit_validate_memory_contract_runner_cli_accepts_minimum_configuration() {
+    let temp = tempdir().expect("tempdir");
+    let fixture_path = temp.path().join("memory-fixture.json");
+    std::fs::write(
+        &fixture_path,
+        r#"{
+  "schema_version": 1,
+  "name": "single-case",
+  "cases": [
+    {
+      "schema_version": 1,
+      "case_id": "extract-basic",
+      "mode": "extract",
+      "scope": { "workspace_id": "tau-core" },
+      "input_text": "Remember release checklist",
+      "expected": {
+        "outcome": "success",
+        "entries": [
+          {
+            "memory_id": "mem-extract-basic",
+            "summary": "Remember release checklist",
+            "tags": [ "remember", "release", "checklist" ],
+            "facts": [ "scope=tau-core" ],
+            "source_event_key": "tau-core:extract:extract-basic",
+            "recency_weight_bps": 9000,
+            "confidence_bps": 8200
+          }
+        ]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write fixture");
+
+    let mut cli = test_cli();
+    cli.memory_contract_runner = true;
+    cli.memory_fixture = fixture_path;
+
+    validate_memory_contract_runner_cli(&cli).expect("memory runner config should validate");
+}
+
+#[test]
+fn functional_validate_memory_contract_runner_cli_rejects_prompt_conflicts() {
+    let temp = tempdir().expect("tempdir");
+    let fixture_path = temp.path().join("fixture.json");
+    std::fs::write(&fixture_path, "{}").expect("write fixture");
+
+    let mut cli = test_cli();
+    cli.memory_contract_runner = true;
+    cli.memory_fixture = fixture_path;
+    cli.prompt = Some("conflict".to_string());
+
+    let error = validate_memory_contract_runner_cli(&cli).expect_err("prompt conflict");
+    assert!(error
+        .to_string()
+        .contains("--memory-contract-runner cannot be combined"));
+}
+
+#[test]
+fn integration_validate_memory_contract_runner_cli_rejects_transport_conflicts() {
+    let temp = tempdir().expect("tempdir");
+    let fixture_path = temp.path().join("fixture.json");
+    std::fs::write(&fixture_path, "{}").expect("write fixture");
+
+    let mut cli = test_cli();
+    cli.memory_contract_runner = true;
+    cli.memory_fixture = fixture_path;
+    cli.multi_channel_contract_runner = true;
+
+    let error = validate_memory_contract_runner_cli(&cli).expect_err("transport conflict");
+    assert!(error.to_string().contains(
+        "--github-issues-bridge, --slack-bridge, --events-runner, or --multi-channel-contract-runner"
+    ));
+}
+
+#[test]
+fn regression_validate_memory_contract_runner_cli_rejects_zero_limits() {
+    let temp = tempdir().expect("tempdir");
+    let fixture_path = temp.path().join("fixture.json");
+    std::fs::write(&fixture_path, "{}").expect("write fixture");
+
+    let mut cli = test_cli();
+    cli.memory_contract_runner = true;
+    cli.memory_fixture = fixture_path.clone();
+    cli.memory_queue_limit = 0;
+    let queue_error = validate_memory_contract_runner_cli(&cli).expect_err("zero queue limit");
+    assert!(queue_error
+        .to_string()
+        .contains("--memory-queue-limit must be greater than 0"));
+
+    cli.memory_queue_limit = 1;
+    cli.memory_processed_case_cap = 0;
+    let processed_case_error =
+        validate_memory_contract_runner_cli(&cli).expect_err("zero processed case cap");
+    assert!(processed_case_error
+        .to_string()
+        .contains("--memory-processed-case-cap must be greater than 0"));
+
+    cli.memory_processed_case_cap = 1;
+    cli.memory_retry_max_attempts = 0;
+    let retry_error =
+        validate_memory_contract_runner_cli(&cli).expect_err("zero retry max attempts");
+    assert!(retry_error
+        .to_string()
+        .contains("--memory-retry-max-attempts must be greater than 0"));
+}
+
+#[test]
+fn regression_validate_memory_contract_runner_cli_requires_existing_fixture() {
+    let temp = tempdir().expect("tempdir");
+    let mut cli = test_cli();
+    cli.memory_contract_runner = true;
+    cli.memory_fixture = temp.path().join("missing.json");
+
+    let error = validate_memory_contract_runner_cli(&cli).expect_err("missing fixture should fail");
+    assert!(error.to_string().contains("does not exist"));
+}
+
+#[test]
+fn regression_validate_memory_contract_runner_cli_requires_fixture_file() {
+    let temp = tempdir().expect("tempdir");
+    let mut cli = test_cli();
+    cli.memory_contract_runner = true;
+    cli.memory_fixture = temp.path().to_path_buf();
+
+    let error =
+        validate_memory_contract_runner_cli(&cli).expect_err("directory fixture should fail");
     assert!(error.to_string().contains("must point to a file"));
 }
 

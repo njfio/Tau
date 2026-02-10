@@ -12,6 +12,7 @@ pub(crate) async fn run_transport_mode_if_requested(
     validate_slack_bridge_cli(cli)?;
     validate_events_runner_cli(cli)?;
     validate_multi_channel_contract_runner_cli(cli)?;
+    validate_memory_contract_runner_cli(cli)?;
 
     if cli.github_issues_bridge {
         let repo_slug = cli.github_repo.clone().ok_or_else(|| {
@@ -145,6 +146,19 @@ pub(crate) async fn run_transport_mode_if_requested(
             processed_event_cap: cli.multi_channel_processed_event_cap.max(1),
             retry_max_attempts: cli.multi_channel_retry_max_attempts.max(1),
             retry_base_delay_ms: cli.multi_channel_retry_base_delay_ms,
+        })
+        .await?;
+        return Ok(true);
+    }
+
+    if cli.memory_contract_runner {
+        run_memory_contract_runner(MemoryRuntimeConfig {
+            fixture_path: cli.memory_fixture.clone(),
+            state_dir: cli.memory_state_dir.clone(),
+            queue_limit: cli.memory_queue_limit.max(1),
+            processed_case_cap: cli.memory_processed_case_cap.max(1),
+            retry_max_attempts: cli.memory_retry_max_attempts.max(1),
+            retry_base_delay_ms: cli.memory_retry_base_delay_ms,
         })
         .await?;
         return Ok(true);

@@ -117,8 +117,10 @@ pub(crate) fn validate_events_runner_cli(cli: &Cli) -> Result<()> {
     if cli.no_session {
         bail!("--events-runner cannot be used together with --no-session");
     }
-    if cli.github_issues_bridge || cli.slack_bridge {
-        bail!("--events-runner cannot be combined with --github-issues-bridge or --slack-bridge");
+    if cli.github_issues_bridge || cli.slack_bridge || cli.memory_contract_runner {
+        bail!(
+            "--events-runner cannot be combined with --github-issues-bridge, --slack-bridge, or --memory-contract-runner"
+        );
     }
     if cli.events_poll_interval_ms == 0 {
         bail!("--events-poll-interval-ms must be greater than 0");
@@ -140,8 +142,12 @@ pub(crate) fn validate_multi_channel_contract_runner_cli(cli: &Cli) -> Result<()
     if cli.no_session {
         bail!("--multi-channel-contract-runner cannot be used together with --no-session");
     }
-    if cli.github_issues_bridge || cli.slack_bridge || cli.events_runner {
-        bail!("--multi-channel-contract-runner cannot be combined with --github-issues-bridge, --slack-bridge, or --events-runner");
+    if cli.github_issues_bridge
+        || cli.slack_bridge
+        || cli.events_runner
+        || cli.memory_contract_runner
+    {
+        bail!("--multi-channel-contract-runner cannot be combined with --github-issues-bridge, --slack-bridge, --events-runner, or --memory-contract-runner");
     }
     if cli.multi_channel_queue_limit == 0 {
         bail!("--multi-channel-queue-limit must be greater than 0");
@@ -162,6 +168,49 @@ pub(crate) fn validate_multi_channel_contract_runner_cli(cli: &Cli) -> Result<()
         bail!(
             "--multi-channel-fixture '{}' must point to a file",
             cli.multi_channel_fixture.display()
+        );
+    }
+
+    Ok(())
+}
+
+pub(crate) fn validate_memory_contract_runner_cli(cli: &Cli) -> Result<()> {
+    if !cli.memory_contract_runner {
+        return Ok(());
+    }
+
+    if has_prompt_or_command_input(cli) {
+        bail!("--memory-contract-runner cannot be combined with --prompt, --prompt-file, --prompt-template-file, or --command-file");
+    }
+    if cli.no_session {
+        bail!("--memory-contract-runner cannot be used together with --no-session");
+    }
+    if cli.github_issues_bridge
+        || cli.slack_bridge
+        || cli.events_runner
+        || cli.multi_channel_contract_runner
+    {
+        bail!("--memory-contract-runner cannot be combined with --github-issues-bridge, --slack-bridge, --events-runner, or --multi-channel-contract-runner");
+    }
+    if cli.memory_queue_limit == 0 {
+        bail!("--memory-queue-limit must be greater than 0");
+    }
+    if cli.memory_processed_case_cap == 0 {
+        bail!("--memory-processed-case-cap must be greater than 0");
+    }
+    if cli.memory_retry_max_attempts == 0 {
+        bail!("--memory-retry-max-attempts must be greater than 0");
+    }
+    if !cli.memory_fixture.exists() {
+        bail!(
+            "--memory-fixture '{}' does not exist",
+            cli.memory_fixture.display()
+        );
+    }
+    if !cli.memory_fixture.is_file() {
+        bail!(
+            "--memory-fixture '{}' must point to a file",
+            cli.memory_fixture.display()
         );
     }
 
