@@ -22,6 +22,8 @@ mod github_issues_helpers;
 mod github_transport_helpers;
 mod macro_profile_commands;
 mod mcp_server;
+#[cfg(test)]
+mod memory_contract;
 mod model_catalog;
 mod multi_agent_router;
 mod multi_channel_contract;

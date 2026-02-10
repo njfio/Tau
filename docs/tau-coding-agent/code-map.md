@@ -117,6 +117,7 @@ Use this area for narrow utility behavior reused across startup/runtime modules.
 ### Test surfaces
 
 - `tests.rs`: large integration/regression suite for `tau-coding-agent`.
+- `memory_contract.rs`: semantic-memory schema/fixture compatibility and replay contract tests.
 - `transport_conformance.rs`: replay conformance fixtures for bridge/scheduler flows.
 - `multi_channel_contract.rs`: multi-channel (Telegram/Discord/WhatsApp) schema and fixture validation contract.
 - `multi_channel_runtime.rs`: fixture-driven runtime tests covering queueing, retries, and replay idempotency.
