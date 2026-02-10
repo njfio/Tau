@@ -199,6 +199,48 @@ cargo run -p tau-coding-agent -- \
 Use the same command for `discord` and `whatsapp` payloads by changing
 `--multi-channel-live-ingest-transport` and `--multi-channel-live-ingest-file`.
 
+## Outbound delivery modes
+
+Multi-channel runtime supports outbound modes:
+
+- `channel-store`: log outbound response only (no provider adapter dispatch)
+- `dry-run`: shape provider requests and emit deterministic delivery receipts without network calls
+- `provider`: dispatch outbound responses through provider HTTP adapters
+
+Recommended deterministic CI mode:
+
+```bash
+cargo run -p tau-coding-agent -- \
+  --multi-channel-contract-runner \
+  --multi-channel-fixture ./crates/tau-coding-agent/testdata/multi-channel-contract/baseline-three-channel.json \
+  --multi-channel-state-dir .tau/multi-channel \
+  --multi-channel-outbound-mode dry-run \
+  --multi-channel-outbound-max-chars 512
+```
+
+Provider mode example:
+
+```bash
+cargo run -p tau-coding-agent -- \
+  --multi-channel-live-runner \
+  --multi-channel-live-ingress-dir .tau/multi-channel/live-ingress \
+  --multi-channel-state-dir .tau/multi-channel \
+  --multi-channel-outbound-mode provider \
+  --multi-channel-outbound-max-chars 1200 \
+  --multi-channel-outbound-http-timeout-ms 5000
+```
+
+Outbound delivery failure reason codes surfaced in channel-store outbound logs:
+
+- `delivery_missing_telegram_bot_token`
+- `delivery_missing_discord_bot_token`
+- `delivery_missing_whatsapp_access_token`
+- `delivery_missing_whatsapp_phone_number_id`
+- `delivery_rate_limited`
+- `delivery_provider_unavailable`
+- `delivery_request_rejected`
+- `delivery_transport_error`
+
 ## Live readiness preflight
 
 Run this gate before enabling `--multi-channel-live-runner`:

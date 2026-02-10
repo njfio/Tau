@@ -2,6 +2,7 @@ use clap::ValueEnum;
 
 use crate::events::WebhookSignatureAlgorithm;
 use crate::multi_channel_contract::MultiChannelTransport;
+use crate::multi_channel_outbound::MultiChannelOutboundMode;
 use crate::session::SessionImportMode;
 use crate::tools::{BashCommandProfile, OsSandboxMode, ToolPolicyPreset};
 use crate::ProviderAuthMethod;
@@ -147,6 +148,23 @@ impl From<CliMultiChannelTransport> for MultiChannelTransport {
             CliMultiChannelTransport::Telegram => MultiChannelTransport::Telegram,
             CliMultiChannelTransport::Discord => MultiChannelTransport::Discord,
             CliMultiChannelTransport::Whatsapp => MultiChannelTransport::Whatsapp,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub(crate) enum CliMultiChannelOutboundMode {
+    ChannelStore,
+    DryRun,
+    Provider,
+}
+
+impl From<CliMultiChannelOutboundMode> for MultiChannelOutboundMode {
+    fn from(value: CliMultiChannelOutboundMode) -> Self {
+        match value {
+            CliMultiChannelOutboundMode::ChannelStore => MultiChannelOutboundMode::ChannelStore,
+            CliMultiChannelOutboundMode::DryRun => MultiChannelOutboundMode::DryRun,
+            CliMultiChannelOutboundMode::Provider => MultiChannelOutboundMode::Provider,
         }
     }
 }

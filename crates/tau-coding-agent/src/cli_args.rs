@@ -4,9 +4,9 @@ use clap::{ArgAction, Parser};
 
 use crate::{
     release_channel_commands::RELEASE_LOOKUP_CACHE_TTL_MS, CliBashProfile, CliCommandFileErrorMode,
-    CliCredentialStoreEncryptionMode, CliEventTemplateSchedule, CliMultiChannelTransport,
-    CliOrchestratorMode, CliOsSandboxMode, CliProviderAuthMode, CliSessionImportMode,
-    CliToolPolicyPreset, CliWebhookSignatureAlgorithm,
+    CliCredentialStoreEncryptionMode, CliEventTemplateSchedule, CliMultiChannelOutboundMode,
+    CliMultiChannelTransport, CliOrchestratorMode, CliOsSandboxMode, CliProviderAuthMode,
+    CliSessionImportMode, CliToolPolicyPreset, CliWebhookSignatureAlgorithm,
 };
 
 fn parse_positive_usize(value: &str) -> Result<usize, String> {
@@ -2106,6 +2106,94 @@ pub(crate) struct Cli {
         help = "Base backoff delay in milliseconds for multi-channel runtime retries (0 disables delay)"
     )]
     pub(crate) multi_channel_retry_base_delay_ms: u64,
+
+    #[arg(
+        long = "multi-channel-retry-jitter-ms",
+        env = "TAU_MULTI_CHANNEL_RETRY_JITTER_MS",
+        default_value_t = 0,
+        help = "Deterministic jitter upper-bound in milliseconds added to multi-channel runtime retry delays (0 disables jitter)"
+    )]
+    pub(crate) multi_channel_retry_jitter_ms: u64,
+
+    #[arg(
+        long = "multi-channel-outbound-mode",
+        env = "TAU_MULTI_CHANNEL_OUTBOUND_MODE",
+        value_enum,
+        default_value_t = CliMultiChannelOutboundMode::ChannelStore,
+        help = "Outbound delivery mode for multi-channel runtime (channel-store, dry-run, provider)"
+    )]
+    pub(crate) multi_channel_outbound_mode: CliMultiChannelOutboundMode,
+
+    #[arg(
+        long = "multi-channel-outbound-max-chars",
+        env = "TAU_MULTI_CHANNEL_OUTBOUND_MAX_CHARS",
+        default_value_t = 1200,
+        help = "Maximum outbound response chunk size in characters before provider-safe chunk splitting"
+    )]
+    pub(crate) multi_channel_outbound_max_chars: usize,
+
+    #[arg(
+        long = "multi-channel-outbound-http-timeout-ms",
+        env = "TAU_MULTI_CHANNEL_OUTBOUND_HTTP_TIMEOUT_MS",
+        default_value_t = 5000,
+        help = "Provider HTTP timeout in milliseconds for multi-channel outbound mode=provider"
+    )]
+    pub(crate) multi_channel_outbound_http_timeout_ms: u64,
+
+    #[arg(
+        long = "multi-channel-telegram-api-base",
+        env = "TAU_MULTI_CHANNEL_TELEGRAM_API_BASE",
+        default_value = "https://api.telegram.org",
+        help = "Telegram provider API base URL for multi-channel outbound mode=provider"
+    )]
+    pub(crate) multi_channel_telegram_api_base: String,
+
+    #[arg(
+        long = "multi-channel-discord-api-base",
+        env = "TAU_MULTI_CHANNEL_DISCORD_API_BASE",
+        default_value = "https://discord.com/api/v10",
+        help = "Discord provider API base URL for multi-channel outbound mode=provider"
+    )]
+    pub(crate) multi_channel_discord_api_base: String,
+
+    #[arg(
+        long = "multi-channel-whatsapp-api-base",
+        env = "TAU_MULTI_CHANNEL_WHATSAPP_API_BASE",
+        default_value = "https://graph.facebook.com/v20.0",
+        help = "WhatsApp provider API base URL for multi-channel outbound mode=provider"
+    )]
+    pub(crate) multi_channel_whatsapp_api_base: String,
+
+    #[arg(
+        long = "multi-channel-telegram-bot-token",
+        env = "TAU_TELEGRAM_BOT_TOKEN",
+        hide_env_values = true,
+        help = "Telegram bot token for multi-channel outbound mode=provider"
+    )]
+    pub(crate) multi_channel_telegram_bot_token: Option<String>,
+
+    #[arg(
+        long = "multi-channel-discord-bot-token",
+        env = "TAU_DISCORD_BOT_TOKEN",
+        hide_env_values = true,
+        help = "Discord bot token for multi-channel outbound mode=provider"
+    )]
+    pub(crate) multi_channel_discord_bot_token: Option<String>,
+
+    #[arg(
+        long = "multi-channel-whatsapp-access-token",
+        env = "TAU_WHATSAPP_ACCESS_TOKEN",
+        hide_env_values = true,
+        help = "WhatsApp access token for multi-channel outbound mode=provider"
+    )]
+    pub(crate) multi_channel_whatsapp_access_token: Option<String>,
+
+    #[arg(
+        long = "multi-channel-whatsapp-phone-number-id",
+        env = "TAU_WHATSAPP_PHONE_NUMBER_ID",
+        help = "WhatsApp phone number id for multi-channel outbound mode=provider"
+    )]
+    pub(crate) multi_channel_whatsapp_phone_number_id: Option<String>,
 
     #[arg(
         long = "multi-agent-contract-runner",
