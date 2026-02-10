@@ -2,6 +2,7 @@ use clap::ValueEnum;
 
 use crate::events::WebhookSignatureAlgorithm;
 use crate::multi_channel_contract::MultiChannelTransport;
+use crate::multi_channel_live_connectors::MultiChannelLiveConnectorMode;
 use crate::multi_channel_outbound::MultiChannelOutboundMode;
 use crate::session::SessionImportMode;
 use crate::tools::{BashCommandProfile, OsSandboxMode, ToolPolicyPreset};
@@ -250,6 +251,16 @@ impl CliMultiChannelLiveConnectorMode {
 
     pub(crate) fn is_webhook(self) -> bool {
         matches!(self, CliMultiChannelLiveConnectorMode::Webhook)
+    }
+}
+
+impl From<CliMultiChannelLiveConnectorMode> for MultiChannelLiveConnectorMode {
+    fn from(value: CliMultiChannelLiveConnectorMode) -> Self {
+        match value {
+            CliMultiChannelLiveConnectorMode::Disabled => MultiChannelLiveConnectorMode::Disabled,
+            CliMultiChannelLiveConnectorMode::Polling => MultiChannelLiveConnectorMode::Polling,
+            CliMultiChannelLiveConnectorMode::Webhook => MultiChannelLiveConnectorMode::Webhook,
+        }
     }
 }
 
