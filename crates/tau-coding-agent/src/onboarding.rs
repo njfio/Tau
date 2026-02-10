@@ -483,6 +483,7 @@ mod tests {
         cli.channel_store_root = tau_root.join("channel-store");
         cli.events_dir = tau_root.join("events");
         cli.events_state_path = tau_root.join("events/state.json");
+        cli.dashboard_state_dir = tau_root.join("dashboard");
         cli.github_state_dir = tau_root.join("github-issues");
         cli.slack_state_dir = tau_root.join("slack");
         cli.package_install_root = tau_root.join("packages");

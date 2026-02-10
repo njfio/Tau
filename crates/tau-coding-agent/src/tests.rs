@@ -76,7 +76,8 @@ use super::{
     save_session_bookmarks, search_session_entries, session_bookmark_path_for_session,
     session_message_preview, shared_lineage_prefix_depth, stream_text_chunks, summarize_audit_file,
     tool_audit_event_json, tool_policy_to_json, trust_record_status, unknown_command_message,
-    validate_branch_alias_name, validate_event_webhook_ingest_cli, validate_events_runner_cli,
+    validate_branch_alias_name, validate_dashboard_contract_runner_cli,
+    validate_event_webhook_ingest_cli, validate_events_runner_cli,
     validate_github_issues_bridge_cli, validate_macro_command_entry, validate_macro_name,
     validate_memory_contract_runner_cli, validate_multi_channel_contract_runner_cli,
     validate_profile_name, validate_rpc_frame_file, validate_session_file,
@@ -472,6 +473,15 @@ fn test_cli() -> Cli {
         memory_processed_case_cap: 10_000,
         memory_retry_max_attempts: 4,
         memory_retry_base_delay_ms: 0,
+        dashboard_contract_runner: false,
+        dashboard_fixture: PathBuf::from(
+            "crates/tau-coding-agent/testdata/dashboard-contract/mixed-outcomes.json",
+        ),
+        dashboard_state_dir: PathBuf::from(".tau/dashboard"),
+        dashboard_queue_limit: 64,
+        dashboard_processed_case_cap: 10_000,
+        dashboard_retry_max_attempts: 4,
+        dashboard_retry_base_delay_ms: 0,
         github_issues_bridge: false,
         github_repo: None,
         github_token: None,
@@ -543,6 +553,7 @@ fn set_workspace_tau_paths(cli: &mut Cli, workspace: &Path) {
     cli.events_dir = tau_root.join("events");
     cli.events_state_path = tau_root.join("events/state.json");
     cli.multi_channel_state_dir = tau_root.join("multi-channel");
+    cli.dashboard_state_dir = tau_root.join("dashboard");
     cli.github_state_dir = tau_root.join("github-issues");
     cli.slack_state_dir = tau_root.join("slack");
     cli.package_install_root = tau_root.join("packages");
@@ -1369,6 +1380,63 @@ fn regression_cli_memory_fixture_requires_memory_runner_flag() {
 }
 
 #[test]
+fn unit_cli_dashboard_runner_flags_default_to_disabled() {
+    let cli = Cli::parse_from(["tau-rs"]);
+    assert!(!cli.dashboard_contract_runner);
+    assert_eq!(
+        cli.dashboard_fixture,
+        PathBuf::from("crates/tau-coding-agent/testdata/dashboard-contract/mixed-outcomes.json")
+    );
+    assert_eq!(cli.dashboard_state_dir, PathBuf::from(".tau/dashboard"));
+    assert_eq!(cli.dashboard_queue_limit, 64);
+    assert_eq!(cli.dashboard_processed_case_cap, 10_000);
+    assert_eq!(cli.dashboard_retry_max_attempts, 4);
+    assert_eq!(cli.dashboard_retry_base_delay_ms, 0);
+}
+
+#[test]
+fn functional_cli_dashboard_runner_flags_accept_explicit_overrides() {
+    let cli = Cli::parse_from([
+        "tau-rs",
+        "--dashboard-contract-runner",
+        "--dashboard-fixture",
+        "fixtures/dashboard.json",
+        "--dashboard-state-dir",
+        ".tau/dashboard-custom",
+        "--dashboard-queue-limit",
+        "120",
+        "--dashboard-processed-case-cap",
+        "12000",
+        "--dashboard-retry-max-attempts",
+        "5",
+        "--dashboard-retry-base-delay-ms",
+        "20",
+    ]);
+    assert!(cli.dashboard_contract_runner);
+    assert_eq!(
+        cli.dashboard_fixture,
+        PathBuf::from("fixtures/dashboard.json")
+    );
+    assert_eq!(
+        cli.dashboard_state_dir,
+        PathBuf::from(".tau/dashboard-custom")
+    );
+    assert_eq!(cli.dashboard_queue_limit, 120);
+    assert_eq!(cli.dashboard_processed_case_cap, 12_000);
+    assert_eq!(cli.dashboard_retry_max_attempts, 5);
+    assert_eq!(cli.dashboard_retry_base_delay_ms, 20);
+}
+
+#[test]
+fn regression_cli_dashboard_fixture_requires_dashboard_runner_flag() {
+    let parse = Cli::try_parse_from(["tau-rs", "--dashboard-fixture", "fixtures/dashboard.json"]);
+    let error = parse.expect_err("fixture flag should require dashboard runner mode");
+    assert!(error
+        .to_string()
+        .contains("required arguments were not provided"));
+}
+
+#[test]
 fn unit_cli_transport_health_inspect_accepts_multi_channel_target() {
     let cli = Cli::parse_from(["tau-rs", "--transport-health-inspect", "multi-channel"]);
     assert_eq!(
@@ -1408,6 +1476,24 @@ fn functional_cli_transport_health_inspect_accepts_memory_state_dir_override() {
         ".tau/memory-alt",
     ]);
     assert_eq!(cli.memory_state_dir, PathBuf::from(".tau/memory-alt"));
+}
+
+#[test]
+fn unit_cli_transport_health_inspect_accepts_dashboard_target() {
+    let cli = Cli::parse_from(["tau-rs", "--transport-health-inspect", "dashboard"]);
+    assert_eq!(cli.transport_health_inspect.as_deref(), Some("dashboard"));
+}
+
+#[test]
+fn functional_cli_transport_health_inspect_accepts_dashboard_state_dir_override() {
+    let cli = Cli::parse_from([
+        "tau-rs",
+        "--transport-health-inspect",
+        "dashboard",
+        "--dashboard-state-dir",
+        ".tau/dashboard-alt",
+    ]);
+    assert_eq!(cli.dashboard_state_dir, PathBuf::from(".tau/dashboard-alt"));
 }
 
 #[test]
@@ -12355,6 +12441,145 @@ fn regression_validate_memory_contract_runner_cli_requires_fixture_file() {
 
     let error =
         validate_memory_contract_runner_cli(&cli).expect_err("directory fixture should fail");
+    assert!(error.to_string().contains("must point to a file"));
+}
+
+#[test]
+fn unit_validate_dashboard_contract_runner_cli_accepts_minimum_configuration() {
+    let temp = tempdir().expect("tempdir");
+    let fixture_path = temp.path().join("dashboard-fixture.json");
+    std::fs::write(
+        &fixture_path,
+        r#"{
+  "schema_version": 1,
+  "name": "single-case",
+  "cases": [
+    {
+      "schema_version": 1,
+      "case_id": "snapshot-basic",
+      "mode": "snapshot",
+      "scope": { "workspace_id": "tau-core", "operator_id": "ops-1" },
+      "requested_widgets": [
+        {
+          "widget_id": "health-summary",
+          "kind": "health_summary",
+          "title": "Health Summary",
+          "query_key": "health.summary",
+          "refresh_interval_ms": 15000
+        }
+      ],
+      "expected": {
+        "outcome": "success",
+        "widgets": [
+          {
+            "widget_id": "health-summary",
+            "kind": "health_summary",
+            "title": "Health Summary",
+            "query_key": "health.summary",
+            "refresh_interval_ms": 15000
+          }
+        ]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect("write fixture");
+
+    let mut cli = test_cli();
+    cli.dashboard_contract_runner = true;
+    cli.dashboard_fixture = fixture_path;
+
+    validate_dashboard_contract_runner_cli(&cli).expect("dashboard runner config should validate");
+}
+
+#[test]
+fn functional_validate_dashboard_contract_runner_cli_rejects_prompt_conflicts() {
+    let temp = tempdir().expect("tempdir");
+    let fixture_path = temp.path().join("fixture.json");
+    std::fs::write(&fixture_path, "{}").expect("write fixture");
+
+    let mut cli = test_cli();
+    cli.dashboard_contract_runner = true;
+    cli.dashboard_fixture = fixture_path;
+    cli.prompt = Some("conflict".to_string());
+
+    let error = validate_dashboard_contract_runner_cli(&cli).expect_err("prompt conflict");
+    assert!(error
+        .to_string()
+        .contains("--dashboard-contract-runner cannot be combined"));
+}
+
+#[test]
+fn integration_validate_dashboard_contract_runner_cli_rejects_transport_conflicts() {
+    let temp = tempdir().expect("tempdir");
+    let fixture_path = temp.path().join("fixture.json");
+    std::fs::write(&fixture_path, "{}").expect("write fixture");
+
+    let mut cli = test_cli();
+    cli.dashboard_contract_runner = true;
+    cli.dashboard_fixture = fixture_path;
+    cli.memory_contract_runner = true;
+
+    let error = validate_dashboard_contract_runner_cli(&cli).expect_err("transport conflict");
+    assert!(error.to_string().contains(
+        "--github-issues-bridge, --slack-bridge, --events-runner, --multi-channel-contract-runner, or --memory-contract-runner"
+    ));
+}
+
+#[test]
+fn regression_validate_dashboard_contract_runner_cli_rejects_zero_limits() {
+    let temp = tempdir().expect("tempdir");
+    let fixture_path = temp.path().join("fixture.json");
+    std::fs::write(&fixture_path, "{}").expect("write fixture");
+
+    let mut cli = test_cli();
+    cli.dashboard_contract_runner = true;
+    cli.dashboard_fixture = fixture_path.clone();
+    cli.dashboard_queue_limit = 0;
+    let queue_error = validate_dashboard_contract_runner_cli(&cli).expect_err("zero queue limit");
+    assert!(queue_error
+        .to_string()
+        .contains("--dashboard-queue-limit must be greater than 0"));
+
+    cli.dashboard_queue_limit = 1;
+    cli.dashboard_processed_case_cap = 0;
+    let processed_case_error =
+        validate_dashboard_contract_runner_cli(&cli).expect_err("zero processed case cap");
+    assert!(processed_case_error
+        .to_string()
+        .contains("--dashboard-processed-case-cap must be greater than 0"));
+
+    cli.dashboard_processed_case_cap = 1;
+    cli.dashboard_retry_max_attempts = 0;
+    let retry_error =
+        validate_dashboard_contract_runner_cli(&cli).expect_err("zero retry max attempts");
+    assert!(retry_error
+        .to_string()
+        .contains("--dashboard-retry-max-attempts must be greater than 0"));
+}
+
+#[test]
+fn regression_validate_dashboard_contract_runner_cli_requires_existing_fixture() {
+    let temp = tempdir().expect("tempdir");
+    let mut cli = test_cli();
+    cli.dashboard_contract_runner = true;
+    cli.dashboard_fixture = temp.path().join("missing.json");
+
+    let error =
+        validate_dashboard_contract_runner_cli(&cli).expect_err("missing fixture should fail");
+    assert!(error.to_string().contains("does not exist"));
+}
+
+#[test]
+fn regression_validate_dashboard_contract_runner_cli_requires_fixture_file() {
+    let temp = tempdir().expect("tempdir");
+    let mut cli = test_cli();
+    cli.dashboard_contract_runner = true;
+    cli.dashboard_fixture = temp.path().to_path_buf();
+
+    let error =
+        validate_dashboard_contract_runner_cli(&cli).expect_err("directory fixture should fail");
     assert!(error.to_string().contains("must point to a file"));
 }
 

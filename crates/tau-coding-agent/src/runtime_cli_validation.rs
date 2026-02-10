@@ -217,6 +217,50 @@ pub(crate) fn validate_memory_contract_runner_cli(cli: &Cli) -> Result<()> {
     Ok(())
 }
 
+pub(crate) fn validate_dashboard_contract_runner_cli(cli: &Cli) -> Result<()> {
+    if !cli.dashboard_contract_runner {
+        return Ok(());
+    }
+
+    if has_prompt_or_command_input(cli) {
+        bail!("--dashboard-contract-runner cannot be combined with --prompt, --prompt-file, --prompt-template-file, or --command-file");
+    }
+    if cli.no_session {
+        bail!("--dashboard-contract-runner cannot be used together with --no-session");
+    }
+    if cli.github_issues_bridge
+        || cli.slack_bridge
+        || cli.events_runner
+        || cli.multi_channel_contract_runner
+        || cli.memory_contract_runner
+    {
+        bail!("--dashboard-contract-runner cannot be combined with --github-issues-bridge, --slack-bridge, --events-runner, --multi-channel-contract-runner, or --memory-contract-runner");
+    }
+    if cli.dashboard_queue_limit == 0 {
+        bail!("--dashboard-queue-limit must be greater than 0");
+    }
+    if cli.dashboard_processed_case_cap == 0 {
+        bail!("--dashboard-processed-case-cap must be greater than 0");
+    }
+    if cli.dashboard_retry_max_attempts == 0 {
+        bail!("--dashboard-retry-max-attempts must be greater than 0");
+    }
+    if !cli.dashboard_fixture.exists() {
+        bail!(
+            "--dashboard-fixture '{}' does not exist",
+            cli.dashboard_fixture.display()
+        );
+    }
+    if !cli.dashboard_fixture.is_file() {
+        bail!(
+            "--dashboard-fixture '{}' must point to a file",
+            cli.dashboard_fixture.display()
+        );
+    }
+
+    Ok(())
+}
+
 pub(crate) fn validate_event_webhook_ingest_cli(cli: &Cli) -> Result<()> {
     if cli.event_webhook_ingest_file.is_none() {
         return Ok(());
