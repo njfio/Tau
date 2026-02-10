@@ -343,6 +343,53 @@ pub(crate) fn validate_gateway_contract_runner_cli(cli: &Cli) -> Result<()> {
     Ok(())
 }
 
+pub(crate) fn validate_custom_command_contract_runner_cli(cli: &Cli) -> Result<()> {
+    if !cli.custom_command_contract_runner {
+        return Ok(());
+    }
+
+    if has_prompt_or_command_input(cli) {
+        bail!("--custom-command-contract-runner cannot be combined with --prompt, --prompt-file, --prompt-template-file, or --command-file");
+    }
+    if cli.no_session {
+        bail!("--custom-command-contract-runner cannot be used together with --no-session");
+    }
+    if cli.github_issues_bridge
+        || cli.slack_bridge
+        || cli.events_runner
+        || cli.multi_channel_contract_runner
+        || cli.multi_agent_contract_runner
+        || cli.memory_contract_runner
+        || cli.dashboard_contract_runner
+        || cli.gateway_contract_runner
+    {
+        bail!("--custom-command-contract-runner cannot be combined with --github-issues-bridge, --slack-bridge, --events-runner, --multi-channel-contract-runner, --multi-agent-contract-runner, --memory-contract-runner, --dashboard-contract-runner, or --gateway-contract-runner");
+    }
+    if cli.custom_command_queue_limit == 0 {
+        bail!("--custom-command-queue-limit must be greater than 0");
+    }
+    if cli.custom_command_processed_case_cap == 0 {
+        bail!("--custom-command-processed-case-cap must be greater than 0");
+    }
+    if cli.custom_command_retry_max_attempts == 0 {
+        bail!("--custom-command-retry-max-attempts must be greater than 0");
+    }
+    if !cli.custom_command_fixture.exists() {
+        bail!(
+            "--custom-command-fixture '{}' does not exist",
+            cli.custom_command_fixture.display()
+        );
+    }
+    if !cli.custom_command_fixture.is_file() {
+        bail!(
+            "--custom-command-fixture '{}' must point to a file",
+            cli.custom_command_fixture.display()
+        );
+    }
+
+    Ok(())
+}
+
 pub(crate) fn validate_event_webhook_ingest_cli(cli: &Cli) -> Result<()> {
     if cli.event_webhook_ingest_file.is_none() {
         return Ok(());
