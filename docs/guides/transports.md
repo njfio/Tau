@@ -39,8 +39,17 @@ Bridge control commands in issue comments:
 - `/tau status`
 - `/tau health`
 - `/tau stop`
-- `/tau chat start|resume|reset|status|show|search|export`
+- `/tau chat start|resume|reset|status|summary|replay|show|search|export`
 - `/tau artifacts|artifacts run <run_id>|artifacts show <artifact_id>|artifacts purge`
+
+Inspect deterministic GitHub bridge state/report output:
+
+```bash
+cargo run -p tau-coding-agent -- \
+  --github-status-inspect owner/repo \
+  --github-state-dir .tau/github-issues \
+  --github-status-json
+```
 
 ## Slack Socket Mode bridge
 

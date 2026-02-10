@@ -384,6 +384,8 @@ fn test_cli() -> Cli {
         channel_store_repair: None,
         transport_health_inspect: None,
         transport_health_json: false,
+        github_status_inspect: None,
+        github_status_json: false,
         dashboard_status_inspect: false,
         dashboard_status_json: false,
         multi_channel_status_inspect: false,
@@ -2609,6 +2611,37 @@ fn functional_cli_transport_health_inspect_accepts_voice_state_dir_override() {
         ".tau/voice-alt",
     ]);
     assert_eq!(cli.voice_state_dir, PathBuf::from(".tau/voice-alt"));
+}
+
+#[test]
+fn unit_cli_github_status_inspect_defaults_to_disabled() {
+    let cli = parse_cli_with_stack(["tau-rs"]);
+    assert!(cli.github_status_inspect.is_none());
+    assert!(!cli.github_status_json);
+}
+
+#[test]
+fn functional_cli_github_status_inspect_accepts_json_and_state_dir_override() {
+    let cli = parse_cli_with_stack([
+        "tau-rs",
+        "--github-status-inspect",
+        "owner/repo",
+        "--github-status-json",
+        "--github-state-dir",
+        ".tau/github-observe",
+    ]);
+    assert_eq!(cli.github_status_inspect.as_deref(), Some("owner/repo"));
+    assert!(cli.github_status_json);
+    assert_eq!(cli.github_state_dir, PathBuf::from(".tau/github-observe"));
+}
+
+#[test]
+fn regression_cli_github_status_json_requires_github_status_inspect() {
+    let parse = try_parse_cli_with_stack(["tau-rs", "--github-status-json"]);
+    let error = parse.expect_err("json output should require inspect flag");
+    assert!(error
+        .to_string()
+        .contains("required arguments were not provided"));
 }
 
 #[test]
@@ -15815,6 +15848,80 @@ fn regression_execute_channel_store_admin_repair_removes_invalid_lines() {
 }
 
 #[test]
+fn functional_execute_channel_store_admin_github_status_inspect_succeeds() {
+    let temp = tempdir().expect("tempdir");
+    let github_state_dir = temp.path().join("github");
+    let repo_state_dir = github_state_dir.join("owner__repo");
+    std::fs::create_dir_all(&repo_state_dir).expect("create github repo dir");
+    std::fs::write(
+        repo_state_dir.join("state.json"),
+        r#"{
+  "schema_version": 1,
+  "last_issue_scan_at": "2026-01-01T00:00:00Z",
+  "processed_event_keys": ["issue-comment-created:1"],
+  "issue_sessions": {
+    "7": {
+      "session_id": "issue-7",
+      "last_run_id": "run-7",
+      "last_event_key": "issue-comment-created:1",
+      "last_event_kind": "issue_comment_created",
+      "last_actor_login": "alice",
+      "last_reason_code": "command_processed",
+      "total_processed_events": 1
+    }
+  },
+  "health": {
+    "updated_unix_ms": 700,
+    "cycle_duration_ms": 25,
+    "queue_depth": 0,
+    "active_runs": 0,
+    "failure_streak": 0,
+    "last_cycle_discovered": 1,
+    "last_cycle_processed": 1,
+    "last_cycle_completed": 1,
+    "last_cycle_failed": 0,
+    "last_cycle_duplicates": 0
+  }
+}
+"#,
+    )
+    .expect("write github state");
+    std::fs::write(
+        repo_state_dir.join("inbound-events.jsonl"),
+        r#"{"kind":"issue_comment_created","event_key":"issue-comment-created:1"}
+"#,
+    )
+    .expect("write inbound");
+    std::fs::write(
+        repo_state_dir.join("outbound-events.jsonl"),
+        r#"{"event_key":"issue-comment-created:1","command":"chat-status","status":"reported","reason_code":"command_processed"}
+"#,
+    )
+    .expect("write outbound");
+
+    let mut cli = test_cli();
+    cli.github_status_inspect = Some("owner/repo".to_string());
+    cli.github_status_json = true;
+    cli.github_state_dir = github_state_dir;
+
+    execute_channel_store_admin_command(&cli).expect("github status inspect should succeed");
+}
+
+#[test]
+fn regression_execute_channel_store_admin_github_status_inspect_requires_state_file() {
+    let temp = tempdir().expect("tempdir");
+    let mut cli = test_cli();
+    cli.github_status_inspect = Some("owner/repo".to_string());
+    cli.github_state_dir = temp.path().join("github");
+    std::fs::create_dir_all(cli.github_state_dir.join("owner__repo")).expect("create repo dir");
+
+    let error = execute_channel_store_admin_command(&cli)
+        .expect_err("github status inspect should fail without state file");
+    assert!(error.to_string().contains("failed to read"));
+    assert!(error.to_string().contains("state.json"));
+}
+
+#[test]
 fn functional_execute_channel_store_admin_dashboard_status_inspect_succeeds() {
     let temp = tempdir().expect("tempdir");
     let dashboard_state_dir = temp.path().join("dashboard");
@@ -20167,6 +20274,43 @@ fn regression_execute_startup_preflight_deployment_wasm_package_fails_closed() {
     let error =
         execute_startup_preflight(&cli).expect_err("invalid wasm package preflight should fail");
     assert!(error.to_string().contains("invalid wasm module"));
+}
+
+#[test]
+fn functional_execute_startup_preflight_runs_github_status_inspect_mode() {
+    let temp = tempdir().expect("tempdir");
+    let mut cli = test_cli();
+    set_workspace_tau_paths(&mut cli, temp.path());
+    cli.github_status_inspect = Some("owner/repo".to_string());
+    cli.github_status_json = true;
+
+    let repo_state_dir = cli.github_state_dir.join("owner__repo");
+    std::fs::create_dir_all(&repo_state_dir).expect("create github repo state dir");
+    std::fs::write(
+        repo_state_dir.join("state.json"),
+        r#"{
+  "schema_version": 1,
+  "processed_event_keys": [],
+  "issue_sessions": {},
+  "health": {
+    "updated_unix_ms": 800,
+    "cycle_duration_ms": 11,
+    "queue_depth": 0,
+    "active_runs": 0,
+    "failure_streak": 0,
+    "last_cycle_discovered": 1,
+    "last_cycle_processed": 1,
+    "last_cycle_completed": 1,
+    "last_cycle_failed": 0,
+    "last_cycle_duplicates": 0
+  }
+}
+"#,
+    )
+    .expect("write github state");
+
+    let handled = execute_startup_preflight(&cli).expect("github status inspect preflight");
+    assert!(handled);
 }
 
 #[test]

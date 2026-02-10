@@ -796,6 +796,41 @@ pub(crate) struct Cli {
     pub(crate) transport_health_json: bool,
 
     #[arg(
+        long = "github-status-inspect",
+        env = "TAU_GITHUB_STATUS_INSPECT",
+        conflicts_with = "channel_store_inspect",
+        conflicts_with = "channel_store_repair",
+        conflicts_with = "transport_health_inspect",
+        conflicts_with = "dashboard_status_inspect",
+        conflicts_with = "multi_channel_status_inspect",
+        conflicts_with = "multi_channel_route_inspect_file",
+        conflicts_with = "multi_agent_status_inspect",
+        conflicts_with = "gateway_status_inspect",
+        conflicts_with = "deployment_status_inspect",
+        conflicts_with = "custom_command_status_inspect",
+        conflicts_with = "voice_status_inspect",
+        conflicts_with = "gateway_service_start",
+        conflicts_with = "gateway_service_stop",
+        conflicts_with = "gateway_service_status",
+        value_name = "owner/repo",
+        help = "Inspect GitHub issues bridge state and event logs for one repository and exit"
+    )]
+    pub(crate) github_status_inspect: Option<String>,
+
+    #[arg(
+        long = "github-status-json",
+        env = "TAU_GITHUB_STATUS_JSON",
+        default_value_t = false,
+        action = ArgAction::Set,
+        num_args = 0..=1,
+        require_equals = true,
+        default_missing_value = "true",
+        requires = "github_status_inspect",
+        help = "Emit --github-status-inspect output as pretty JSON"
+    )]
+    pub(crate) github_status_json: bool,
+
+    #[arg(
         long = "dashboard-status-inspect",
         env = "TAU_DASHBOARD_STATUS_INSPECT",
         conflicts_with = "channel_store_inspect",
@@ -3041,7 +3076,6 @@ pub(crate) struct Cli {
         long = "github-state-dir",
         env = "TAU_GITHUB_STATE_DIR",
         default_value = ".tau/github-issues",
-        requires = "github_issues_bridge",
         help = "Directory for github bridge state/session/event logs"
     )]
     pub(crate) github_state_dir: PathBuf,

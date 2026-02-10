@@ -62,6 +62,54 @@ struct MultiChannelStatusStateFile {
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
+struct GithubStatusStateFile {
+    #[serde(default)]
+    last_issue_scan_at: Option<String>,
+    #[serde(default)]
+    processed_event_keys: Vec<String>,
+    #[serde(default)]
+    issue_sessions: BTreeMap<String, GithubStatusIssueSessionState>,
+    #[serde(default)]
+    health: TransportHealthSnapshot,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+struct GithubStatusIssueSessionState {
+    #[serde(default)]
+    session_id: String,
+    #[serde(default)]
+    last_comment_id: Option<u64>,
+    #[serde(default)]
+    last_run_id: Option<String>,
+    #[serde(default)]
+    active_run_id: Option<String>,
+    #[serde(default)]
+    last_event_key: Option<String>,
+    #[serde(default)]
+    last_event_kind: Option<String>,
+    #[serde(default)]
+    last_actor_login: Option<String>,
+    #[serde(default)]
+    last_reason_code: Option<String>,
+    #[serde(default)]
+    last_processed_unix_ms: Option<u64>,
+    #[serde(default)]
+    total_processed_events: u64,
+    #[serde(default)]
+    total_duplicate_events: u64,
+    #[serde(default)]
+    total_failed_events: u64,
+    #[serde(default)]
+    total_denied_events: u64,
+    #[serde(default)]
+    total_runs_started: u64,
+    #[serde(default)]
+    total_runs_completed: u64,
+    #[serde(default)]
+    total_runs_failed: u64,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
 struct MultiAgentStatusStateFile {
     #[serde(default)]
     processed_case_keys: Vec<String>,
@@ -312,6 +360,26 @@ struct MultiChannelCycleReportSummary {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct GithubInboundLogSummary {
+    log_present: bool,
+    records: usize,
+    invalid_records: usize,
+    kind_counts: BTreeMap<String, usize>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct GithubOutboundLogSummary {
+    log_present: bool,
+    records: usize,
+    invalid_records: usize,
+    command_counts: BTreeMap<String, usize>,
+    status_counts: BTreeMap<String, usize>,
+    reason_code_counts: BTreeMap<String, usize>,
+    last_reason_codes: Vec<String>,
+    last_event_key: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct MultiAgentCycleReportSummary {
     events_log_present: bool,
     cycle_reports: usize,
@@ -396,6 +464,65 @@ struct MultiChannelStatusInspectReport {
     #[serde(skip_serializing_if = "Option::is_none")]
     connectors:
         Option<crate::multi_channel_live_connectors::MultiChannelLiveConnectorsStatusReport>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+struct GithubStatusIssueSessionInspectRow {
+    issue_number: String,
+    session_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    last_comment_id: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    last_run_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    active_run_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    last_event_key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    last_event_kind: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    last_actor_login: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    last_reason_code: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    last_processed_unix_ms: Option<u64>,
+    total_processed_events: u64,
+    total_duplicate_events: u64,
+    total_failed_events: u64,
+    total_denied_events: u64,
+    total_runs_started: u64,
+    total_runs_completed: u64,
+    total_runs_failed: u64,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+struct GithubStatusInspectReport {
+    repo: String,
+    state_path: String,
+    inbound_log_path: String,
+    outbound_log_path: String,
+    inbound_log_present: bool,
+    outbound_log_present: bool,
+    health_state: String,
+    health_reason: String,
+    rollout_gate: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    last_issue_scan_at: Option<String>,
+    processed_event_count: usize,
+    issue_session_count: usize,
+    issue_sessions: Vec<GithubStatusIssueSessionInspectRow>,
+    inbound_records: usize,
+    inbound_invalid_records: usize,
+    inbound_kind_counts: BTreeMap<String, usize>,
+    outbound_records: usize,
+    outbound_invalid_records: usize,
+    outbound_command_counts: BTreeMap<String, usize>,
+    outbound_status_counts: BTreeMap<String, usize>,
+    outbound_reason_code_counts: BTreeMap<String, usize>,
+    outbound_last_reason_codes: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    outbound_last_event_key: Option<String>,
+    health: TransportHealthSnapshot,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -537,6 +664,20 @@ pub(crate) fn execute_channel_store_admin_command(cli: &Cli) -> Result<()> {
             );
         } else {
             println!("{}", render_transport_health_rows(&rows));
+        }
+        return Ok(());
+    }
+
+    if let Some(repo_slug) = cli.github_status_inspect.as_deref() {
+        let report = collect_github_status_report(cli, repo_slug)?;
+        if cli.github_status_json {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&report)
+                    .context("failed to render github status json")?
+            );
+        } else {
+            println!("{}", render_github_status_report(&report));
         }
         return Ok(());
     }
@@ -769,6 +910,25 @@ fn parse_transport_health_inspect_target(raw: &str) -> Result<TransportHealthIns
     })
 }
 
+fn parse_github_repo_slug(raw: &str) -> Result<(String, String)> {
+    let trimmed = raw.trim();
+    let (owner, repo) = trimmed.split_once('/').ok_or_else(|| {
+        anyhow!(
+            "invalid --github-status-inspect target '{}', expected owner/repo",
+            raw
+        )
+    })?;
+    let owner = owner.trim();
+    let repo = repo.trim();
+    if owner.is_empty() || repo.is_empty() || repo.contains('/') {
+        bail!(
+            "invalid --github-status-inspect target '{}', expected owner/repo",
+            raw
+        );
+    }
+    Ok((owner.to_string(), repo.to_string()))
+}
+
 fn collect_transport_health_rows(
     cli: &Cli,
     target: &TransportHealthInspectTarget,
@@ -872,6 +1032,170 @@ fn collect_all_github_transport_health_rows(cli: &Cli) -> Result<Vec<TransportHe
         );
     }
     Ok(rows)
+}
+
+fn collect_github_status_report(cli: &Cli, repo_slug: &str) -> Result<GithubStatusInspectReport> {
+    let (owner, repo) = parse_github_repo_slug(repo_slug)?;
+    let normalized_repo = format!("{owner}/{repo}");
+    let repo_dir = sanitize_for_path(&format!("{owner}__{repo}"));
+    let repo_root = cli.github_state_dir.join(repo_dir);
+    let state_path = repo_root.join("state.json");
+    let inbound_log_path = repo_root.join("inbound-events.jsonl");
+    let outbound_log_path = repo_root.join("outbound-events.jsonl");
+
+    let state = load_github_status_state(&state_path)?;
+    let inbound_summary = load_github_inbound_log_summary(&inbound_log_path)?;
+    let outbound_summary = load_github_outbound_log_summary(&outbound_log_path)?;
+    let classification = state.health.classify();
+    let rollout_gate = if classification.state.as_str() == "healthy" {
+        "pass"
+    } else {
+        "hold"
+    };
+
+    let mut issue_sessions = state
+        .issue_sessions
+        .into_iter()
+        .map(
+            |(issue_number, session)| GithubStatusIssueSessionInspectRow {
+                issue_number,
+                session_id: session.session_id,
+                last_comment_id: session.last_comment_id,
+                last_run_id: session.last_run_id,
+                active_run_id: session.active_run_id,
+                last_event_key: session.last_event_key,
+                last_event_kind: session.last_event_kind,
+                last_actor_login: session.last_actor_login,
+                last_reason_code: session.last_reason_code,
+                last_processed_unix_ms: session.last_processed_unix_ms,
+                total_processed_events: session.total_processed_events,
+                total_duplicate_events: session.total_duplicate_events,
+                total_failed_events: session.total_failed_events,
+                total_denied_events: session.total_denied_events,
+                total_runs_started: session.total_runs_started,
+                total_runs_completed: session.total_runs_completed,
+                total_runs_failed: session.total_runs_failed,
+            },
+        )
+        .collect::<Vec<_>>();
+    issue_sessions.sort_by(|left, right| left.issue_number.cmp(&right.issue_number));
+
+    Ok(GithubStatusInspectReport {
+        repo: normalized_repo,
+        state_path: state_path.display().to_string(),
+        inbound_log_path: inbound_log_path.display().to_string(),
+        outbound_log_path: outbound_log_path.display().to_string(),
+        inbound_log_present: inbound_summary.log_present,
+        outbound_log_present: outbound_summary.log_present,
+        health_state: classification.state.as_str().to_string(),
+        health_reason: classification.reason.to_string(),
+        rollout_gate: rollout_gate.to_string(),
+        last_issue_scan_at: state.last_issue_scan_at,
+        processed_event_count: state.processed_event_keys.len(),
+        issue_session_count: issue_sessions.len(),
+        issue_sessions,
+        inbound_records: inbound_summary.records,
+        inbound_invalid_records: inbound_summary.invalid_records,
+        inbound_kind_counts: inbound_summary.kind_counts,
+        outbound_records: outbound_summary.records,
+        outbound_invalid_records: outbound_summary.invalid_records,
+        outbound_command_counts: outbound_summary.command_counts,
+        outbound_status_counts: outbound_summary.status_counts,
+        outbound_reason_code_counts: outbound_summary.reason_code_counts,
+        outbound_last_reason_codes: outbound_summary.last_reason_codes,
+        outbound_last_event_key: outbound_summary.last_event_key,
+        health: state.health,
+    })
+}
+
+fn load_github_status_state(path: &Path) -> Result<GithubStatusStateFile> {
+    let raw = std::fs::read_to_string(path)
+        .with_context(|| format!("failed to read state file {}", path.display()))?;
+    serde_json::from_str::<GithubStatusStateFile>(&raw)
+        .with_context(|| format!("failed to parse state file {}", path.display()))
+}
+
+fn load_github_inbound_log_summary(path: &Path) -> Result<GithubInboundLogSummary> {
+    if !path.exists() {
+        return Ok(GithubInboundLogSummary {
+            log_present: false,
+            ..GithubInboundLogSummary::default()
+        });
+    }
+    let raw = std::fs::read_to_string(path)
+        .with_context(|| format!("failed to read {}", path.display()))?;
+    let mut summary = GithubInboundLogSummary {
+        log_present: true,
+        ..GithubInboundLogSummary::default()
+    };
+    for line in raw.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        match serde_json::from_str::<serde_json::Value>(trimmed) {
+            Ok(record) => {
+                summary.records = summary.records.saturating_add(1);
+                if let Some(kind) = record.get("kind").and_then(serde_json::Value::as_str) {
+                    increment_count(&mut summary.kind_counts, kind);
+                }
+            }
+            Err(_) => {
+                summary.invalid_records = summary.invalid_records.saturating_add(1);
+            }
+        }
+    }
+    Ok(summary)
+}
+
+fn load_github_outbound_log_summary(path: &Path) -> Result<GithubOutboundLogSummary> {
+    if !path.exists() {
+        return Ok(GithubOutboundLogSummary {
+            log_present: false,
+            ..GithubOutboundLogSummary::default()
+        });
+    }
+    let raw = std::fs::read_to_string(path)
+        .with_context(|| format!("failed to read {}", path.display()))?;
+    let mut summary = GithubOutboundLogSummary {
+        log_present: true,
+        ..GithubOutboundLogSummary::default()
+    };
+    for line in raw.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        match serde_json::from_str::<serde_json::Value>(trimmed) {
+            Ok(record) => {
+                summary.records = summary.records.saturating_add(1);
+                if let Some(command) = record.get("command").and_then(serde_json::Value::as_str) {
+                    increment_count(&mut summary.command_counts, command);
+                }
+                if let Some(status) = record.get("status").and_then(serde_json::Value::as_str) {
+                    increment_count(&mut summary.status_counts, status);
+                }
+                if let Some(reason_code) = record
+                    .get("reason_code")
+                    .and_then(serde_json::Value::as_str)
+                {
+                    increment_count(&mut summary.reason_code_counts, reason_code);
+                    summary.last_reason_codes.push(reason_code.to_string());
+                    if summary.last_reason_codes.len() > 5 {
+                        summary.last_reason_codes.remove(0);
+                    }
+                }
+                summary.last_event_key = record
+                    .get("event_key")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_string);
+            }
+            Err(_) => {
+                summary.invalid_records = summary.invalid_records.saturating_add(1);
+            }
+        }
+    }
+    Ok(summary)
 }
 
 fn collect_multi_channel_transport_health_row(cli: &Cli) -> Result<TransportHealthInspectRow> {
@@ -1761,6 +2085,68 @@ fn render_transport_health_row(row: &TransportHealthInspectRow) -> String {
     )
 }
 
+fn render_github_status_report(report: &GithubStatusInspectReport) -> String {
+    let reason_codes = if report.outbound_last_reason_codes.is_empty() {
+        "none".to_string()
+    } else {
+        report.outbound_last_reason_codes.join(",")
+    };
+    let outbound_reasons = if report.outbound_reason_code_counts.is_empty() {
+        "none".to_string()
+    } else {
+        report
+            .outbound_reason_code_counts
+            .iter()
+            .map(|(reason, count)| format!("{reason}:{count}"))
+            .collect::<Vec<_>>()
+            .join(",")
+    };
+    let outbound_commands = if report.outbound_command_counts.is_empty() {
+        "none".to_string()
+    } else {
+        report
+            .outbound_command_counts
+            .iter()
+            .map(|(command, count)| format!("{command}:{count}"))
+            .collect::<Vec<_>>()
+            .join(",")
+    };
+    let inbound_kinds = if report.inbound_kind_counts.is_empty() {
+        "none".to_string()
+    } else {
+        report
+            .inbound_kind_counts
+            .iter()
+            .map(|(kind, count)| format!("{kind}:{count}"))
+            .collect::<Vec<_>>()
+            .join(",")
+    };
+    format!(
+        "github status inspect: repo={} state_path={} inbound_log_path={} outbound_log_path={} health_state={} health_reason={} rollout_gate={} processed_event_count={} issue_session_count={} inbound_records={} inbound_invalid_records={} inbound_kind_counts={} outbound_records={} outbound_invalid_records={} outbound_command_counts={} outbound_reason_code_counts={} outbound_last_reason_codes={} outbound_last_event_key={}",
+        report.repo,
+        report.state_path,
+        report.inbound_log_path,
+        report.outbound_log_path,
+        report.health_state,
+        report.health_reason,
+        report.rollout_gate,
+        report.processed_event_count,
+        report.issue_session_count,
+        report.inbound_records,
+        report.inbound_invalid_records,
+        inbound_kinds,
+        report.outbound_records,
+        report.outbound_invalid_records,
+        outbound_commands,
+        outbound_reasons,
+        reason_codes,
+        report
+            .outbound_last_event_key
+            .as_deref()
+            .unwrap_or("none"),
+    )
+}
+
 fn render_dashboard_status_report(report: &DashboardStatusInspectReport) -> String {
     let reason_codes = if report.last_reason_codes.is_empty() {
         "none".to_string()
@@ -2073,14 +2459,14 @@ mod tests {
     use super::{
         collect_custom_command_status_report, collect_dashboard_status_report,
         collect_deployment_status_report, collect_gateway_status_report,
-        collect_multi_agent_status_report, collect_multi_channel_status_report,
-        collect_transport_health_rows, collect_voice_status_report,
-        parse_transport_health_inspect_target, render_custom_command_status_report,
-        render_dashboard_status_report, render_deployment_status_report,
-        render_gateway_status_report, render_multi_agent_status_report,
-        render_multi_channel_status_report, render_transport_health_row,
-        render_transport_health_rows, render_voice_status_report, TransportHealthInspectRow,
-        TransportHealthInspectTarget,
+        collect_github_status_report, collect_multi_agent_status_report,
+        collect_multi_channel_status_report, collect_transport_health_rows,
+        collect_voice_status_report, parse_transport_health_inspect_target,
+        render_custom_command_status_report, render_dashboard_status_report,
+        render_deployment_status_report, render_gateway_status_report, render_github_status_report,
+        render_multi_agent_status_report, render_multi_channel_status_report,
+        render_transport_health_row, render_transport_health_rows, render_voice_status_report,
+        TransportHealthInspectRow, TransportHealthInspectTarget,
     };
     use crate::transport_health::TransportHealthState;
     use crate::Cli;
@@ -2755,6 +3141,149 @@ mod tests {
         let rows = collect_transport_health_rows(&cli, &TransportHealthInspectTarget::Voice)
             .expect("collect voice row");
         assert_eq!(rows[0].health, TransportHealthSnapshot::default());
+    }
+
+    #[test]
+    fn functional_collect_github_status_report_reads_state_and_logs() {
+        let temp = tempdir().expect("tempdir");
+        let github_root = temp.path().join("github");
+        let repo_root = github_root.join("owner__repo");
+        std::fs::create_dir_all(&repo_root).expect("create github repo dir");
+
+        std::fs::write(
+            repo_root.join("state.json"),
+            r#"{
+  "schema_version": 1,
+  "last_issue_scan_at": "2026-01-01T00:00:00Z",
+  "processed_event_keys": ["issue-comment-created:100","issue-comment-created:101"],
+  "issue_sessions": {
+    "7": {
+      "session_id": "issue-7",
+      "last_comment_id": 901,
+      "last_run_id": "run-7",
+      "active_run_id": null,
+      "last_event_key": "issue-comment-created:101",
+      "last_event_kind": "issue_comment_created",
+      "last_actor_login": "alice",
+      "last_reason_code": "command_processed",
+      "last_processed_unix_ms": 1704067200000,
+      "total_processed_events": 4,
+      "total_duplicate_events": 1,
+      "total_failed_events": 1,
+      "total_denied_events": 1,
+      "total_runs_started": 3,
+      "total_runs_completed": 3,
+      "total_runs_failed": 1
+    }
+  },
+  "health": {
+    "updated_unix_ms": 200,
+    "cycle_duration_ms": 20,
+    "queue_depth": 0,
+    "active_runs": 0,
+    "failure_streak": 0,
+    "last_cycle_discovered": 3,
+    "last_cycle_processed": 2,
+    "last_cycle_completed": 2,
+    "last_cycle_failed": 0,
+    "last_cycle_duplicates": 1
+  }
+}
+"#,
+        )
+        .expect("write state");
+        std::fs::write(
+            repo_root.join("inbound-events.jsonl"),
+            r#"{"kind":"issue_comment_created","event_key":"issue-comment-created:100"}
+{"kind":"issue_comment_edited","event_key":"issue-comment-edited:101"}
+{"kind":"issue_comment_created"}
+"#,
+        )
+        .expect("write inbound");
+        std::fs::write(
+            repo_root.join("outbound-events.jsonl"),
+            r#"{"event_key":"issue-comment-created:100","command":"chat-status","status":"reported","reason_code":"command_processed"}
+{"event_key":"issue-comment-created:101","command":"chat-replay","status":"reported","reason_code":"command_processed"}
+{"event_key":"issue-comment-created:101","command":"authorization","status":"denied","reason_code":"pairing_denied"}
+"#,
+        )
+        .expect("write outbound");
+
+        let mut cli = parse_cli(&["tau-rs"]);
+        cli.github_state_dir = github_root;
+        let report =
+            collect_github_status_report(&cli, "owner/repo").expect("collect github status report");
+        assert_eq!(report.repo, "owner/repo");
+        assert_eq!(report.health_state, TransportHealthState::Healthy.as_str());
+        assert_eq!(report.rollout_gate, "pass");
+        assert_eq!(report.processed_event_count, 2);
+        assert_eq!(report.issue_session_count, 1);
+        assert_eq!(report.inbound_records, 3);
+        assert_eq!(report.outbound_records, 3);
+        assert_eq!(report.outbound_command_counts.get("chat-status"), Some(&1));
+        assert_eq!(report.outbound_command_counts.get("chat-replay"), Some(&1));
+        assert_eq!(report.outbound_status_counts.get("reported"), Some(&2));
+        assert_eq!(
+            report.outbound_reason_code_counts.get("command_processed"),
+            Some(&2)
+        );
+        assert_eq!(
+            report.outbound_reason_code_counts.get("pairing_denied"),
+            Some(&1)
+        );
+        assert_eq!(
+            report.outbound_last_event_key.as_deref(),
+            Some("issue-comment-created:101")
+        );
+        let rendered = render_github_status_report(&report);
+        assert!(rendered.contains("github status inspect: repo=owner/repo"));
+        assert!(rendered
+            .contains("outbound_command_counts=authorization:1,chat-replay:1,chat-status:1"));
+        assert!(
+            rendered.contains("outbound_reason_code_counts=command_processed:2,pairing_denied:1")
+        );
+    }
+
+    #[test]
+    fn regression_collect_github_status_report_handles_missing_logs() {
+        let temp = tempdir().expect("tempdir");
+        let github_root = temp.path().join("github");
+        let repo_root = github_root.join("owner__repo");
+        std::fs::create_dir_all(&repo_root).expect("create github repo dir");
+        std::fs::write(
+            repo_root.join("state.json"),
+            r#"{
+  "schema_version": 1,
+  "processed_event_keys": [],
+  "issue_sessions": {},
+  "health": {
+    "updated_unix_ms": 0,
+    "cycle_duration_ms": 0,
+    "queue_depth": 0,
+    "active_runs": 0,
+    "failure_streak": 0,
+    "last_cycle_discovered": 0,
+    "last_cycle_processed": 0,
+    "last_cycle_completed": 0,
+    "last_cycle_failed": 0,
+    "last_cycle_duplicates": 0
+  }
+}
+"#,
+        )
+        .expect("write state");
+
+        let mut cli = parse_cli(&["tau-rs"]);
+        cli.github_state_dir = github_root;
+        let report =
+            collect_github_status_report(&cli, "owner/repo").expect("collect github status report");
+        assert!(!report.inbound_log_present);
+        assert!(!report.outbound_log_present);
+        assert_eq!(report.inbound_records, 0);
+        assert_eq!(report.outbound_records, 0);
+        assert!(report.outbound_reason_code_counts.is_empty());
+        assert!(report.outbound_last_reason_codes.is_empty());
+        assert_eq!(report.health_state, TransportHealthState::Healthy.as_str());
     }
 
     #[test]

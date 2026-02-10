@@ -448,6 +448,7 @@ pub(crate) fn validate_multi_channel_channel_lifecycle_cli(cli: &Cli) -> Result<
     if cli.channel_store_inspect.is_some()
         || cli.channel_store_repair.is_some()
         || cli.transport_health_inspect.is_some()
+        || cli.github_status_inspect.is_some()
         || cli.multi_channel_status_inspect
         || cli.multi_channel_route_inspect_file.is_some()
         || cli.dashboard_status_inspect
