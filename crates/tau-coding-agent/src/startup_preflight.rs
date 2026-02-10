@@ -14,6 +14,7 @@ pub(crate) fn execute_startup_preflight(cli: &Cli) -> Result<bool> {
     if cli.channel_store_inspect.is_some()
         || cli.channel_store_repair.is_some()
         || cli.transport_health_inspect.is_some()
+        || cli.multi_channel_status_inspect
         || cli.dashboard_status_inspect
         || cli.multi_agent_status_inspect
         || cli.gateway_status_inspect

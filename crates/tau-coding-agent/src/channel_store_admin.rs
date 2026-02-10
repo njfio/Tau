@@ -43,6 +43,14 @@ struct DashboardStatusStateFile {
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
+struct MultiChannelStatusStateFile {
+    #[serde(default)]
+    processed_event_keys: Vec<String>,
+    #[serde(default)]
+    health: TransportHealthSnapshot,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
 struct MultiAgentStatusStateFile {
     #[serde(default)]
     processed_case_keys: Vec<String>,
@@ -169,6 +177,14 @@ struct DashboardCycleReportLine {
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
+struct MultiChannelCycleReportLine {
+    #[serde(default)]
+    reason_codes: Vec<String>,
+    #[serde(default)]
+    health_reason: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
 struct MultiAgentCycleReportLine {
     #[serde(default)]
     reason_codes: Vec<String>,
@@ -215,6 +231,16 @@ struct DashboardCycleReportSummary {
     invalid_cycle_reports: usize,
     last_reason_codes: Vec<String>,
     last_health_reason: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct MultiChannelCycleReportSummary {
+    events_log_present: bool,
+    cycle_reports: usize,
+    invalid_cycle_reports: usize,
+    last_reason_codes: Vec<String>,
+    last_health_reason: String,
+    reason_code_counts: BTreeMap<String, usize>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -281,6 +307,23 @@ struct DashboardStatusInspectReport {
     cycle_reports: usize,
     invalid_cycle_reports: usize,
     last_reason_codes: Vec<String>,
+    health: TransportHealthSnapshot,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+struct MultiChannelStatusInspectReport {
+    state_path: String,
+    events_log_path: String,
+    events_log_present: bool,
+    health_state: String,
+    health_reason: String,
+    rollout_gate: String,
+    processed_event_count: usize,
+    transport_counts: BTreeMap<String, usize>,
+    cycle_reports: usize,
+    invalid_cycle_reports: usize,
+    last_reason_codes: Vec<String>,
+    reason_code_counts: BTreeMap<String, usize>,
     health: TransportHealthSnapshot,
 }
 
@@ -421,6 +464,20 @@ pub(crate) fn execute_channel_store_admin_command(cli: &Cli) -> Result<()> {
             );
         } else {
             println!("{}", render_dashboard_status_report(&report));
+        }
+        return Ok(());
+    }
+
+    if cli.multi_channel_status_inspect {
+        let report = collect_multi_channel_status_report(cli)?;
+        if cli.multi_channel_status_json {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&report)
+                    .context("failed to render multi-channel status json")?
+            );
+        } else {
+            println!("{}", render_multi_channel_status_report(&report));
         }
         return Ok(());
     }
@@ -891,6 +948,48 @@ fn load_dashboard_cycle_report_summary(path: &Path) -> Result<DashboardCycleRepo
     Ok(summary)
 }
 
+fn collect_multi_channel_status_report(cli: &Cli) -> Result<MultiChannelStatusInspectReport> {
+    let state_path = cli.multi_channel_state_dir.join("state.json");
+    let events_log_path = cli.multi_channel_state_dir.join("runtime-events.jsonl");
+    let state = load_multi_channel_status_state(&state_path)?;
+    let cycle_summary = load_multi_channel_cycle_report_summary(&events_log_path)?;
+    let classification = state.health.classify();
+    let health_reason = if !cycle_summary.last_health_reason.trim().is_empty() {
+        cycle_summary.last_health_reason.clone()
+    } else {
+        classification.reason
+    };
+    let rollout_gate = if classification.state.as_str() == "healthy" {
+        "pass"
+    } else {
+        "hold"
+    };
+
+    let mut transport_counts = BTreeMap::new();
+    for event_key in &state.processed_event_keys {
+        let Some((transport, _)) = event_key.split_once(':') else {
+            continue;
+        };
+        increment_count(&mut transport_counts, &transport.to_ascii_lowercase());
+    }
+
+    Ok(MultiChannelStatusInspectReport {
+        state_path: state_path.display().to_string(),
+        events_log_path: events_log_path.display().to_string(),
+        events_log_present: cycle_summary.events_log_present,
+        health_state: classification.state.as_str().to_string(),
+        health_reason,
+        rollout_gate: rollout_gate.to_string(),
+        processed_event_count: state.processed_event_keys.len(),
+        transport_counts,
+        cycle_reports: cycle_summary.cycle_reports,
+        invalid_cycle_reports: cycle_summary.invalid_cycle_reports,
+        last_reason_codes: cycle_summary.last_reason_codes,
+        reason_code_counts: cycle_summary.reason_code_counts,
+        health: state.health,
+    })
+}
+
 fn collect_multi_agent_status_report(cli: &Cli) -> Result<MultiAgentStatusInspectReport> {
     let state_path = cli.multi_agent_state_dir.join("state.json");
     let events_log_path = cli.multi_agent_state_dir.join("runtime-events.jsonl");
@@ -1254,6 +1353,48 @@ fn load_deployment_status_state(path: &Path) -> Result<DeploymentStatusStateFile
         .with_context(|| format!("failed to parse {}", path.display()))
 }
 
+fn load_multi_channel_status_state(path: &Path) -> Result<MultiChannelStatusStateFile> {
+    let raw = std::fs::read_to_string(path)
+        .with_context(|| format!("failed to read {}", path.display()))?;
+    serde_json::from_str::<MultiChannelStatusStateFile>(&raw)
+        .with_context(|| format!("failed to parse {}", path.display()))
+}
+
+fn load_multi_channel_cycle_report_summary(path: &Path) -> Result<MultiChannelCycleReportSummary> {
+    if !path.exists() {
+        return Ok(MultiChannelCycleReportSummary {
+            events_log_present: false,
+            ..MultiChannelCycleReportSummary::default()
+        });
+    }
+    let raw = std::fs::read_to_string(path)
+        .with_context(|| format!("failed to read {}", path.display()))?;
+    let mut summary = MultiChannelCycleReportSummary {
+        events_log_present: true,
+        ..MultiChannelCycleReportSummary::default()
+    };
+    for line in raw.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        match serde_json::from_str::<MultiChannelCycleReportLine>(trimmed) {
+            Ok(report) => {
+                summary.cycle_reports = summary.cycle_reports.saturating_add(1);
+                summary.last_reason_codes = report.reason_codes.clone();
+                summary.last_health_reason = report.health_reason;
+                for reason_code in report.reason_codes {
+                    increment_count(&mut summary.reason_code_counts, reason_code.trim());
+                }
+            }
+            Err(_) => {
+                summary.invalid_cycle_reports = summary.invalid_cycle_reports.saturating_add(1);
+            }
+        }
+    }
+    Ok(summary)
+}
+
 fn load_multi_agent_cycle_report_summary(path: &Path) -> Result<MultiAgentCycleReportSummary> {
     if !path.exists() {
         return Ok(MultiAgentCycleReportSummary {
@@ -1511,6 +1652,33 @@ fn render_dashboard_status_report(report: &DashboardStatusInspectReport) -> Stri
     )
 }
 
+fn render_multi_channel_status_report(report: &MultiChannelStatusInspectReport) -> String {
+    let reason_codes = if report.last_reason_codes.is_empty() {
+        "none".to_string()
+    } else {
+        report.last_reason_codes.join(",")
+    };
+    format!(
+        "multi-channel status inspect: state_path={} events_log_path={} events_log_present={} health_state={} health_reason={} rollout_gate={} processed_event_count={} transport_counts={} cycle_reports={} invalid_cycle_reports={} last_reason_codes={} reason_code_counts={} queue_depth={} failure_streak={} last_cycle_failed={} last_cycle_completed={}",
+        report.state_path,
+        report.events_log_path,
+        report.events_log_present,
+        report.health_state,
+        report.health_reason,
+        report.rollout_gate,
+        report.processed_event_count,
+        render_counter_map(&report.transport_counts),
+        report.cycle_reports,
+        report.invalid_cycle_reports,
+        reason_codes,
+        render_counter_map(&report.reason_code_counts),
+        report.health.queue_depth,
+        report.health.failure_streak,
+        report.health.last_cycle_failed,
+        report.health.last_cycle_completed,
+    )
+}
+
 fn render_multi_agent_status_report(report: &MultiAgentStatusInspectReport) -> String {
     let reason_codes = if report.last_reason_codes.is_empty() {
         "none".to_string()
@@ -1706,11 +1874,12 @@ mod tests {
     use super::{
         collect_custom_command_status_report, collect_dashboard_status_report,
         collect_deployment_status_report, collect_gateway_status_report,
-        collect_multi_agent_status_report, collect_transport_health_rows,
-        collect_voice_status_report, parse_transport_health_inspect_target,
-        render_custom_command_status_report, render_dashboard_status_report,
-        render_deployment_status_report, render_gateway_status_report,
-        render_multi_agent_status_report, render_transport_health_row,
+        collect_multi_agent_status_report, collect_multi_channel_status_report,
+        collect_transport_health_rows, collect_voice_status_report,
+        parse_transport_health_inspect_target, render_custom_command_status_report,
+        render_dashboard_status_report, render_deployment_status_report,
+        render_gateway_status_report, render_multi_agent_status_report,
+        render_multi_channel_status_report, render_transport_health_row,
         render_transport_health_rows, render_voice_status_report, TransportHealthInspectRow,
         TransportHealthInspectTarget,
     };
@@ -2487,6 +2656,119 @@ invalid-json-line
         assert_eq!(report.cycle_reports, 0);
         assert_eq!(report.invalid_cycle_reports, 0);
         assert!(report.last_reason_codes.is_empty());
+        assert_eq!(report.health_state, TransportHealthState::Degraded.as_str());
+        assert_eq!(report.rollout_gate, "hold");
+    }
+
+    #[test]
+    fn functional_collect_multi_channel_status_report_reads_state_and_cycle_reports() {
+        let temp = tempdir().expect("tempdir");
+        let multi_channel_root = temp.path().join("multi-channel");
+        std::fs::create_dir_all(&multi_channel_root).expect("create multi-channel dir");
+        std::fs::write(
+            multi_channel_root.join("state.json"),
+            r#"{
+  "schema_version": 1,
+  "processed_event_keys": ["telegram:tg-1", "discord:dc-1", "whatsapp:wa-1", "telegram:tg-2"],
+  "health": {
+    "updated_unix_ms": 735,
+    "cycle_duration_ms": 14,
+    "queue_depth": 0,
+    "active_runs": 0,
+    "failure_streak": 0,
+    "last_cycle_discovered": 4,
+    "last_cycle_processed": 4,
+    "last_cycle_completed": 4,
+    "last_cycle_failed": 0,
+    "last_cycle_duplicates": 0
+  }
+}
+"#,
+        )
+        .expect("write multi-channel state");
+        std::fs::write(
+            multi_channel_root.join("runtime-events.jsonl"),
+            r#"{"reason_codes":["healthy_cycle","events_applied"],"health_reason":"no recent transport failures observed"}
+invalid-json-line
+{"reason_codes":["healthy_cycle","duplicate_events_skipped"],"health_reason":"no recent transport failures observed"}
+"#,
+        )
+        .expect("write multi-channel events");
+
+        let mut cli = parse_cli(&["tau-rs"]);
+        cli.multi_channel_state_dir = multi_channel_root;
+
+        let report =
+            collect_multi_channel_status_report(&cli).expect("collect multi-channel status");
+        assert_eq!(report.health_state, TransportHealthState::Healthy.as_str());
+        assert_eq!(report.rollout_gate, "pass");
+        assert_eq!(report.processed_event_count, 4);
+        assert_eq!(report.transport_counts.get("telegram"), Some(&2));
+        assert_eq!(report.transport_counts.get("discord"), Some(&1));
+        assert_eq!(report.transport_counts.get("whatsapp"), Some(&1));
+        assert_eq!(report.cycle_reports, 2);
+        assert_eq!(report.invalid_cycle_reports, 1);
+        assert_eq!(
+            report.last_reason_codes,
+            vec![
+                "healthy_cycle".to_string(),
+                "duplicate_events_skipped".to_string()
+            ]
+        );
+        assert_eq!(report.reason_code_counts.get("healthy_cycle"), Some(&2));
+        assert_eq!(report.reason_code_counts.get("events_applied"), Some(&1));
+        assert_eq!(
+            report.reason_code_counts.get("duplicate_events_skipped"),
+            Some(&1)
+        );
+
+        let rendered = render_multi_channel_status_report(&report);
+        assert!(rendered.contains("multi-channel status inspect:"));
+        assert!(rendered.contains("rollout_gate=pass"));
+        assert!(rendered.contains("processed_event_count=4"));
+        assert!(rendered.contains("transport_counts=discord:1,telegram:2,whatsapp:1"));
+        assert!(rendered.contains(
+            "reason_code_counts=duplicate_events_skipped:1,events_applied:1,healthy_cycle:2"
+        ));
+    }
+
+    #[test]
+    fn regression_collect_multi_channel_status_report_handles_missing_events_log() {
+        let temp = tempdir().expect("tempdir");
+        let multi_channel_root = temp.path().join("multi-channel");
+        std::fs::create_dir_all(&multi_channel_root).expect("create multi-channel dir");
+        std::fs::write(
+            multi_channel_root.join("state.json"),
+            r#"{
+  "schema_version": 1,
+  "processed_event_keys": [],
+  "health": {
+    "updated_unix_ms": 736,
+    "cycle_duration_ms": 19,
+    "queue_depth": 0,
+    "active_runs": 0,
+    "failure_streak": 2,
+    "last_cycle_discovered": 1,
+    "last_cycle_processed": 1,
+    "last_cycle_completed": 0,
+    "last_cycle_failed": 1,
+    "last_cycle_duplicates": 0
+  }
+}
+"#,
+        )
+        .expect("write multi-channel state");
+
+        let mut cli = parse_cli(&["tau-rs"]);
+        cli.multi_channel_state_dir = multi_channel_root;
+
+        let report =
+            collect_multi_channel_status_report(&cli).expect("collect multi-channel status");
+        assert!(!report.events_log_present);
+        assert_eq!(report.cycle_reports, 0);
+        assert_eq!(report.invalid_cycle_reports, 0);
+        assert!(report.last_reason_codes.is_empty());
+        assert!(report.reason_code_counts.is_empty());
         assert_eq!(report.health_state, TransportHealthState::Degraded.as_str());
         assert_eq!(report.rollout_gate, "hold");
     }
