@@ -2647,6 +2647,7 @@ dependencies = [
  "shell-words",
  "tau-agent-core",
  "tau-ai",
+ "tau-core",
  "tempfile",
  "tokio",
  "tokio-stream",
@@ -2656,6 +2657,14 @@ dependencies = [
  "wait-timeout",
  "wasmparser",
  "yrs",
+]
+
+[[package]]
+name = "tau-core"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "tempfile",
 ]
 
 [[package]]
