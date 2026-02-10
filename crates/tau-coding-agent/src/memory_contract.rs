@@ -129,6 +129,7 @@ pub(crate) struct MemoryReplayResult {
     pub(crate) entries: Vec<MemoryEntry>,
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct MemoryReplaySummary {
     pub(crate) discovered_cases: usize,
@@ -137,6 +138,7 @@ pub(crate) struct MemoryReplaySummary {
     pub(crate) retryable_failures: usize,
 }
 
+#[cfg(test)]
 pub(crate) trait MemoryContractDriver {
     fn apply_case(&mut self, case: &MemoryContractCase) -> Result<MemoryReplayResult>;
 }
@@ -252,6 +254,7 @@ pub(crate) fn validate_memory_contract_fixture(fixture: &MemoryContractFixture) 
     Ok(())
 }
 
+#[cfg(test)]
 pub(crate) fn run_memory_contract_replay<D: MemoryContractDriver>(
     fixture: &MemoryContractFixture,
     driver: &mut D,
@@ -515,6 +518,7 @@ fn validate_memory_entry(entry: &MemoryEntry, case_id: &str, location: &str) -> 
     Ok(())
 }
 
+#[cfg(test)]
 fn assert_memory_replay_matches_expectation(
     case: &MemoryContractCase,
     result: &MemoryReplayResult,
@@ -577,6 +581,7 @@ fn supported_error_codes() -> [&'static str; 3] {
     ]
 }
 
+#[cfg(test)]
 fn expected_replay_step(outcome: MemoryOutcomeKind) -> MemoryReplayStep {
     match outcome {
         MemoryOutcomeKind::Success => MemoryReplayStep::Success,

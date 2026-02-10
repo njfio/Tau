@@ -1703,6 +1703,67 @@ pub(crate) struct Cli {
     pub(crate) multi_channel_retry_base_delay_ms: u64,
 
     #[arg(
+        long = "memory-contract-runner",
+        env = "TAU_MEMORY_CONTRACT_RUNNER",
+        default_value_t = false,
+        help = "Run fixture-driven semantic memory runtime contract scenarios"
+    )]
+    pub(crate) memory_contract_runner: bool,
+
+    #[arg(
+        long = "memory-fixture",
+        env = "TAU_MEMORY_FIXTURE",
+        default_value = "crates/tau-coding-agent/testdata/memory-contract/mixed-outcomes.json",
+        requires = "memory_contract_runner",
+        help = "Path to semantic memory contract fixture JSON"
+    )]
+    pub(crate) memory_fixture: PathBuf,
+
+    #[arg(
+        long = "memory-state-dir",
+        env = "TAU_MEMORY_STATE_DIR",
+        default_value = ".tau/memory",
+        help = "Directory for semantic memory runtime state and channel-store outputs"
+    )]
+    pub(crate) memory_state_dir: PathBuf,
+
+    #[arg(
+        long = "memory-queue-limit",
+        env = "TAU_MEMORY_QUEUE_LIMIT",
+        default_value_t = 64,
+        requires = "memory_contract_runner",
+        help = "Maximum memory fixture cases processed per runtime cycle"
+    )]
+    pub(crate) memory_queue_limit: usize,
+
+    #[arg(
+        long = "memory-processed-case-cap",
+        env = "TAU_MEMORY_PROCESSED_CASE_CAP",
+        default_value_t = 10_000,
+        requires = "memory_contract_runner",
+        help = "Maximum processed-case keys retained for duplicate suppression"
+    )]
+    pub(crate) memory_processed_case_cap: usize,
+
+    #[arg(
+        long = "memory-retry-max-attempts",
+        env = "TAU_MEMORY_RETRY_MAX_ATTEMPTS",
+        default_value_t = 4,
+        requires = "memory_contract_runner",
+        help = "Maximum retry attempts for transient semantic memory runtime failures"
+    )]
+    pub(crate) memory_retry_max_attempts: usize,
+
+    #[arg(
+        long = "memory-retry-base-delay-ms",
+        env = "TAU_MEMORY_RETRY_BASE_DELAY_MS",
+        default_value_t = 0,
+        requires = "memory_contract_runner",
+        help = "Base backoff delay in milliseconds for semantic memory runtime retries (0 disables delay)"
+    )]
+    pub(crate) memory_retry_base_delay_ms: u64,
+
+    #[arg(
         long = "github-issues-bridge",
         env = "TAU_GITHUB_ISSUES_BRIDGE",
         default_value_t = false,
