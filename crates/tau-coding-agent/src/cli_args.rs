@@ -2621,6 +2621,19 @@ pub(crate) struct Cli {
     pub(crate) multi_channel_channel_probe_json: bool,
 
     #[arg(
+        long = "multi-channel-channel-probe-online",
+        env = "TAU_MULTI_CHANNEL_CHANNEL_PROBE_ONLINE",
+        default_value_t = false,
+        action = ArgAction::Set,
+        num_args = 0..=1,
+        require_equals = true,
+        default_missing_value = "true",
+        requires = "multi_channel_channel_probe",
+        help = "Enable provider API login validation for --multi-channel-channel-probe using bounded timeout/retry behavior"
+    )]
+    pub(crate) multi_channel_channel_probe_online: bool,
+
+    #[arg(
         long = "multi-channel-fixture",
         env = "TAU_MULTI_CHANNEL_FIXTURE",
         default_value = "crates/tau-coding-agent/testdata/multi-channel-contract/baseline-three-channel.json",

@@ -32,6 +32,7 @@ fn multi_channel_channel_lifecycle_mode_requested(cli: &Cli) -> bool {
         || cli.multi_channel_channel_login.is_some()
         || cli.multi_channel_channel_logout.is_some()
         || cli.multi_channel_channel_probe.is_some()
+        || cli.multi_channel_channel_probe_online
 }
 
 fn project_index_mode_requested(cli: &Cli) -> bool {
@@ -614,6 +615,9 @@ pub(crate) fn validate_multi_channel_channel_lifecycle_cli(cli: &Cli) -> Result<
     }
     if cli.multi_channel_channel_probe_json && cli.multi_channel_channel_probe.is_none() {
         bail!("--multi-channel-channel-probe-json requires --multi-channel-channel-probe");
+    }
+    if cli.multi_channel_channel_probe_online && cli.multi_channel_channel_probe.is_none() {
+        bail!("--multi-channel-channel-probe-online requires --multi-channel-channel-probe");
     }
     if cli.multi_channel_state_dir.exists() && !cli.multi_channel_state_dir.is_dir() {
         bail!(
