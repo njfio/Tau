@@ -3226,6 +3226,25 @@ fn functional_cli_gateway_remote_profile_inspect_accepts_json_and_profile_overri
 }
 
 #[test]
+fn functional_cli_gateway_remote_profile_accepts_tailscale_funnel_profile() {
+    let cli = parse_cli_with_stack([
+        "tau-rs",
+        "--gateway-remote-profile-inspect",
+        "--gateway-openresponses-server",
+        "--gateway-remote-profile",
+        "tailscale-funnel",
+        "--gateway-openresponses-auth-mode",
+        "password-session",
+        "--gateway-openresponses-auth-password",
+        "edge-password",
+    ]);
+    assert_eq!(
+        cli.gateway_remote_profile,
+        CliGatewayRemoteProfile::TailscaleFunnel
+    );
+}
+
+#[test]
 fn regression_cli_gateway_remote_profile_json_requires_inspect() {
     let parse = try_parse_cli_with_stack(["tau-rs", "--gateway-remote-profile-json"]);
     let error = parse.expect_err("json output should require inspect flag");
@@ -15882,6 +15901,35 @@ fn integration_validate_gateway_openresponses_server_cli_rejects_unsafe_local_on
 }
 
 #[test]
+fn integration_validate_gateway_openresponses_server_cli_accepts_tailscale_funnel_profile() {
+    let mut cli = test_cli();
+    cli.gateway_openresponses_server = true;
+    cli.gateway_remote_profile = CliGatewayRemoteProfile::TailscaleFunnel;
+    cli.gateway_openresponses_auth_mode = CliGatewayOpenResponsesAuthMode::PasswordSession;
+    cli.gateway_openresponses_auth_password = Some("edge-password".to_string());
+    cli.gateway_openresponses_bind = "127.0.0.1:8787".to_string();
+
+    validate_gateway_openresponses_server_cli(&cli)
+        .expect("tailscale funnel profile with password-session auth should pass");
+}
+
+#[test]
+fn regression_validate_gateway_openresponses_server_cli_rejects_tailscale_serve_localhost_dev_auth()
+{
+    let mut cli = test_cli();
+    cli.gateway_openresponses_server = true;
+    cli.gateway_remote_profile = CliGatewayRemoteProfile::TailscaleServe;
+    cli.gateway_openresponses_auth_mode = CliGatewayOpenResponsesAuthMode::LocalhostDev;
+    cli.gateway_openresponses_bind = "127.0.0.1:8787".to_string();
+
+    let error = validate_gateway_openresponses_server_cli(&cli)
+        .expect_err("tailscale-serve should reject localhost-dev auth");
+    assert!(error
+        .to_string()
+        .contains("tailscale_serve_localhost_dev_auth_unsupported"));
+}
+
+#[test]
 fn regression_validate_gateway_openresponses_server_cli_rejects_zero_max_input_chars() {
     let mut cli = test_cli();
     cli.gateway_openresponses_server = true;
@@ -21628,6 +21676,23 @@ fn functional_execute_startup_preflight_runs_gateway_remote_profile_inspect_mode
     cli.gateway_remote_profile = CliGatewayRemoteProfile::ProxyRemote;
     cli.gateway_openresponses_auth_mode = CliGatewayOpenResponsesAuthMode::Token;
     cli.gateway_openresponses_auth_token = Some("edge-token".to_string());
+    cli.gateway_openresponses_bind = "127.0.0.1:8787".to_string();
+
+    let handled =
+        execute_startup_preflight(&cli).expect("gateway remote profile inspect preflight");
+    assert!(handled);
+}
+
+#[test]
+fn integration_execute_startup_preflight_runs_gateway_remote_profile_inspect_tailscale_funnel_mode()
+{
+    let mut cli = test_cli();
+    cli.gateway_remote_profile_inspect = true;
+    cli.gateway_remote_profile_json = true;
+    cli.gateway_openresponses_server = true;
+    cli.gateway_remote_profile = CliGatewayRemoteProfile::TailscaleFunnel;
+    cli.gateway_openresponses_auth_mode = CliGatewayOpenResponsesAuthMode::PasswordSession;
+    cli.gateway_openresponses_auth_password = Some("edge-password".to_string());
     cli.gateway_openresponses_bind = "127.0.0.1:8787".to_string();
 
     let handled =
