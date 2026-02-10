@@ -454,10 +454,7 @@ impl ChannelStore {
         Ok(report)
     }
 
-    pub fn list_active_artifacts(
-        &self,
-        now_unix_ms: u64,
-    ) -> Result<Vec<ChannelArtifactRecord>> {
+    pub fn list_active_artifacts(&self, now_unix_ms: u64) -> Result<Vec<ChannelArtifactRecord>> {
         let mut records = self
             .load_artifact_records_tolerant()?
             .records
@@ -473,10 +470,7 @@ impl ChannelStore {
         Ok(records)
     }
 
-    pub fn purge_expired_artifacts(
-        &self,
-        now_unix_ms: u64,
-    ) -> Result<ChannelArtifactPurgeReport> {
+    pub fn purge_expired_artifacts(&self, now_unix_ms: u64) -> Result<ChannelArtifactPurgeReport> {
         let loaded = self.load_artifact_records_tolerant()?;
         let mut keep = Vec::new();
         let mut expired_removed = 0_usize;
