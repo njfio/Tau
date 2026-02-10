@@ -547,6 +547,7 @@ fn test_cli() -> Cli {
         multi_channel_channel_logout_json: false,
         multi_channel_channel_probe: None,
         multi_channel_channel_probe_json: false,
+        multi_channel_channel_probe_online: false,
         multi_channel_fixture: PathBuf::from(
             "crates/tau-coding-agent/testdata/multi-channel-contract/baseline-three-channel.json",
         ),
@@ -1548,6 +1549,7 @@ fn unit_cli_multi_channel_runner_flags_default_to_disabled() {
     assert!(!cli.multi_channel_channel_logout_json);
     assert!(cli.multi_channel_channel_probe.is_none());
     assert!(!cli.multi_channel_channel_probe_json);
+    assert!(!cli.multi_channel_channel_probe_online);
     assert_eq!(
         cli.multi_channel_fixture,
         PathBuf::from(
@@ -1634,18 +1636,29 @@ fn functional_cli_multi_channel_channel_lifecycle_flags_accept_explicit_override
         "--multi-channel-channel-probe",
         "telegram",
         "--multi-channel-channel-probe-json",
+        "--multi-channel-channel-probe-online",
     ]);
     assert_eq!(
         probe_cli.multi_channel_channel_probe,
         Some(CliMultiChannelTransport::Telegram)
     );
     assert!(probe_cli.multi_channel_channel_probe_json);
+    assert!(probe_cli.multi_channel_channel_probe_online);
 }
 
 #[test]
 fn regression_cli_multi_channel_channel_status_json_requires_status_flag() {
     let parse = try_parse_cli_with_stack(["tau-rs", "--multi-channel-channel-status-json"]);
     let error = parse.expect_err("status json should require status action");
+    assert!(error
+        .to_string()
+        .contains("required arguments were not provided"));
+}
+
+#[test]
+fn regression_cli_multi_channel_channel_probe_online_requires_probe_flag() {
+    let parse = try_parse_cli_with_stack(["tau-rs", "--multi-channel-channel-probe-online"]);
+    let error = parse.expect_err("probe online should require probe action");
     assert!(error
         .to_string()
         .contains("required arguments were not provided"));
@@ -14990,6 +15003,18 @@ fn regression_validate_multi_channel_channel_lifecycle_cli_rejects_file_state_di
     let error = validate_multi_channel_channel_lifecycle_cli(&cli)
         .expect_err("state-dir file path should fail");
     assert!(error.to_string().contains("--multi-channel-state-dir"));
+}
+
+#[test]
+fn regression_validate_multi_channel_channel_lifecycle_cli_rejects_probe_online_without_probe() {
+    let mut cli = test_cli();
+    cli.multi_channel_channel_probe_online = true;
+
+    let error = validate_multi_channel_channel_lifecycle_cli(&cli)
+        .expect_err("probe online without probe action should fail");
+    assert!(error
+        .to_string()
+        .contains("--multi-channel-channel-probe-online requires --multi-channel-channel-probe"));
 }
 
 #[test]

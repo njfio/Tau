@@ -333,6 +333,15 @@ cargo run -p tau-coding-agent -- \
   --multi-channel-telegram-bot-token <token> \
   --multi-channel-channel-probe-json
 
+# online probe (provider API login validation)
+cargo run -p tau-coding-agent -- \
+  --multi-channel-state-dir .tau/multi-channel \
+  --multi-channel-live-ingress-dir .tau/multi-channel/live-ingress \
+  --multi-channel-channel-probe telegram \
+  --multi-channel-telegram-bot-token <token> \
+  --multi-channel-channel-probe-online \
+  --multi-channel-channel-probe-json
+
 # logout/reset
 cargo run -p tau-coding-agent -- \
   --multi-channel-state-dir .tau/multi-channel \
@@ -352,6 +361,41 @@ Lifecycle reason codes include:
 - `ingress_not_file`
 - `credential_store_unreadable`
 - `logout_requested`
+
+Online probe diagnostics (`--multi-channel-channel-probe-online`) add:
+
+- `probe_online_ready`
+- `probe_online_missing_prerequisites`
+- `probe_online_telegram_auth_failed`
+- `probe_online_telegram_rate_limited`
+- `probe_online_telegram_provider_unavailable`
+- `probe_online_telegram_timeout`
+- `probe_online_telegram_transport_error`
+- `probe_online_telegram_request_rejected`
+- `probe_online_telegram_invalid_response`
+- `probe_online_discord_auth_failed`
+- `probe_online_discord_rate_limited`
+- `probe_online_discord_provider_unavailable`
+- `probe_online_discord_timeout`
+- `probe_online_discord_transport_error`
+- `probe_online_discord_request_rejected`
+- `probe_online_discord_invalid_response`
+- `probe_online_whatsapp_auth_failed`
+- `probe_online_whatsapp_phone_number_not_found`
+- `probe_online_whatsapp_phone_number_invalid`
+- `probe_online_whatsapp_rate_limited`
+- `probe_online_whatsapp_provider_unavailable`
+- `probe_online_whatsapp_timeout`
+- `probe_online_whatsapp_transport_error`
+- `probe_online_whatsapp_request_rejected`
+- `probe_online_whatsapp_invalid_response`
+
+Lifecycle report output now includes:
+
+- `probe_mode` (`offline` or `online`)
+- `online_probe_status`
+- `online_probe_reason_codes`
+- `remediation_hints`
 
 ## Native `/tau` commands in channel messages
 
