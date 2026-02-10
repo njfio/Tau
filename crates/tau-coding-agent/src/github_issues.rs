@@ -123,6 +123,39 @@ struct GithubIssueChatSessionState {
     last_comment_id: Option<u64>,
     #[serde(default)]
     last_run_id: Option<String>,
+    #[serde(default)]
+    active_run_id: Option<String>,
+    #[serde(default)]
+    last_event_key: Option<String>,
+    #[serde(default)]
+    last_event_kind: Option<String>,
+    #[serde(default)]
+    last_actor_login: Option<String>,
+    #[serde(default)]
+    last_reason_code: Option<String>,
+    #[serde(default)]
+    last_processed_unix_ms: Option<u64>,
+    #[serde(default)]
+    total_processed_events: u64,
+    #[serde(default)]
+    total_duplicate_events: u64,
+    #[serde(default)]
+    total_failed_events: u64,
+    #[serde(default)]
+    total_denied_events: u64,
+    #[serde(default)]
+    total_runs_started: u64,
+    #[serde(default)]
+    total_runs_completed: u64,
+    #[serde(default)]
+    total_runs_failed: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum IssueEventOutcome {
+    Processed,
+    Denied,
+    Failed,
 }
 
 impl Default for GithubIssuesBridgeState {
@@ -208,8 +241,45 @@ impl GithubIssuesBridgeStateStore {
         true
     }
 
+    fn processed_event_tail(&self, limit: usize) -> Vec<String> {
+        if limit == 0 || self.state.processed_event_keys.is_empty() {
+            return Vec::new();
+        }
+        let total = self.state.processed_event_keys.len();
+        let start = total.saturating_sub(limit);
+        self.state.processed_event_keys[start..].to_vec()
+    }
+
+    fn processed_event_cap(&self) -> usize {
+        self.cap
+    }
+
     fn issue_session(&self, issue_number: u64) -> Option<&GithubIssueChatSessionState> {
         self.state.issue_sessions.get(&issue_number.to_string())
+    }
+
+    fn issue_session_mut(&mut self, issue_number: u64) -> &mut GithubIssueChatSessionState {
+        self.state
+            .issue_sessions
+            .entry(issue_number.to_string())
+            .or_insert_with(|| GithubIssueChatSessionState {
+                session_id: issue_session_id(issue_number),
+                last_comment_id: None,
+                last_run_id: None,
+                active_run_id: None,
+                last_event_key: None,
+                last_event_kind: None,
+                last_actor_login: None,
+                last_reason_code: None,
+                last_processed_unix_ms: None,
+                total_processed_events: 0,
+                total_duplicate_events: 0,
+                total_failed_events: 0,
+                total_denied_events: 0,
+                total_runs_started: 0,
+                total_runs_completed: 0,
+                total_runs_failed: 0,
+            })
     }
 
     fn update_issue_session(
@@ -228,6 +298,19 @@ impl GithubIssuesBridgeStateStore {
                     session_id: session_id.clone(),
                     last_comment_id: None,
                     last_run_id: None,
+                    active_run_id: None,
+                    last_event_key: None,
+                    last_event_kind: None,
+                    last_actor_login: None,
+                    last_reason_code: None,
+                    last_processed_unix_ms: None,
+                    total_processed_events: 0,
+                    total_duplicate_events: 0,
+                    total_failed_events: 0,
+                    total_denied_events: 0,
+                    total_runs_started: 0,
+                    total_runs_completed: 0,
+                    total_runs_failed: 0,
                 });
         let mut changed = false;
         if entry.session_id != session_id {
@@ -247,6 +330,102 @@ impl GithubIssuesBridgeStateStore {
             }
         }
         changed
+    }
+
+    fn record_issue_duplicate_event(
+        &mut self,
+        issue_number: u64,
+        event_key: &str,
+        event_kind: &str,
+        actor_login: &str,
+    ) -> bool {
+        let entry = self.issue_session_mut(issue_number);
+        if entry.last_event_key.as_deref() != Some(event_key) {
+            entry.last_event_key = Some(event_key.to_string());
+        }
+        if entry.last_event_kind.as_deref() != Some(event_kind) {
+            entry.last_event_kind = Some(event_kind.to_string());
+        }
+        if entry.last_actor_login.as_deref() != Some(actor_login) {
+            entry.last_actor_login = Some(actor_login.to_string());
+        }
+        if entry.last_reason_code.as_deref() != Some("duplicate_event") {
+            entry.last_reason_code = Some("duplicate_event".to_string());
+        }
+        let processed_unix_ms = current_unix_timestamp_ms();
+        if entry.last_processed_unix_ms != Some(processed_unix_ms) {
+            entry.last_processed_unix_ms = Some(processed_unix_ms);
+        }
+        entry.total_duplicate_events = entry.total_duplicate_events.saturating_add(1);
+        true
+    }
+
+    fn record_issue_event_outcome(
+        &mut self,
+        issue_number: u64,
+        event_key: &str,
+        event_kind: &str,
+        actor_login: &str,
+        outcome: IssueEventOutcome,
+        reason_code: Option<&str>,
+    ) -> bool {
+        let entry = self.issue_session_mut(issue_number);
+        if entry.last_event_key.as_deref() != Some(event_key) {
+            entry.last_event_key = Some(event_key.to_string());
+        }
+        if entry.last_event_kind.as_deref() != Some(event_kind) {
+            entry.last_event_kind = Some(event_kind.to_string());
+        }
+        if entry.last_actor_login.as_deref() != Some(actor_login) {
+            entry.last_actor_login = Some(actor_login.to_string());
+        }
+        if let Some(reason_code) = reason_code {
+            if entry.last_reason_code.as_deref() != Some(reason_code) {
+                entry.last_reason_code = Some(reason_code.to_string());
+            }
+        }
+        let processed_unix_ms = current_unix_timestamp_ms();
+        if entry.last_processed_unix_ms != Some(processed_unix_ms) {
+            entry.last_processed_unix_ms = Some(processed_unix_ms);
+        }
+        entry.total_processed_events = entry.total_processed_events.saturating_add(1);
+        match outcome {
+            IssueEventOutcome::Processed => {}
+            IssueEventOutcome::Denied => {
+                entry.total_denied_events = entry.total_denied_events.saturating_add(1);
+            }
+            IssueEventOutcome::Failed => {
+                entry.total_failed_events = entry.total_failed_events.saturating_add(1);
+            }
+        }
+        true
+    }
+
+    fn record_issue_run_started(&mut self, issue_number: u64, run_id: &str) -> bool {
+        let entry = self.issue_session_mut(issue_number);
+        if entry.active_run_id.as_deref() != Some(run_id) {
+            entry.active_run_id = Some(run_id.to_string());
+        }
+        if entry.last_run_id.as_deref() != Some(run_id) {
+            entry.last_run_id = Some(run_id.to_string());
+        }
+        entry.total_runs_started = entry.total_runs_started.saturating_add(1);
+        true
+    }
+
+    fn record_issue_run_finished(&mut self, issue_number: u64, run_id: &str, failed: bool) -> bool {
+        let entry = self.issue_session_mut(issue_number);
+        if entry.last_run_id.as_deref() != Some(run_id) {
+            entry.last_run_id = Some(run_id.to_string());
+        }
+        if entry.active_run_id.is_some() {
+            entry.active_run_id = None;
+        }
+        entry.total_runs_completed = entry.total_runs_completed.saturating_add(1);
+        if failed {
+            entry.total_runs_failed = entry.total_runs_failed.saturating_add(1);
+        }
+        true
     }
 
     fn clear_issue_session(&mut self, issue_number: u64) -> bool {
@@ -771,6 +950,8 @@ enum TauIssueCommand {
     ChatReset,
     ChatExport,
     ChatStatus,
+    ChatSummary,
+    ChatReplay,
     ChatShow {
         limit: usize,
     },
@@ -1077,6 +1258,14 @@ impl GithubIssuesBridgeRuntime {
                 if self.state_store.contains(&event.key) || known_event_keys.contains(&event.key) {
                     report.skipped_duplicate_events =
                         report.skipped_duplicate_events.saturating_add(1);
+                    if self.state_store.record_issue_duplicate_event(
+                        event.issue_number,
+                        &event.key,
+                        event.kind.as_str(),
+                        &event.author_login,
+                    ) {
+                        state_dirty = true;
+                    }
                     continue;
                 }
 
@@ -1141,6 +1330,16 @@ impl GithubIssuesBridgeRuntime {
                     if self.state_store.mark_processed(&event.key) {
                         state_dirty = true;
                     }
+                    if self.state_store.record_issue_event_outcome(
+                        event.issue_number,
+                        &event.key,
+                        event.kind.as_str(),
+                        &event.author_login,
+                        IssueEventOutcome::Denied,
+                        Some(reason_code.as_str()),
+                    ) {
+                        state_dirty = true;
+                    }
                     report.processed_events = report.processed_events.saturating_add(1);
                     eprintln!(
                         "github bridge event denied: repo={} issue=#{} key={} actor={} channel={} reason_code={}",
@@ -1203,6 +1402,16 @@ impl GithubIssuesBridgeRuntime {
                         if self.state_store.mark_processed(&event.key) {
                             state_dirty = true;
                         }
+                        if self.state_store.record_issue_event_outcome(
+                            event.issue_number,
+                            &event.key,
+                            event.kind.as_str(),
+                            &event.author_login,
+                            IssueEventOutcome::Denied,
+                            Some(reason_code.as_str()),
+                        ) {
+                            state_dirty = true;
+                        }
                         report.processed_events = report.processed_events.saturating_add(1);
                         continue;
                     }
@@ -1223,15 +1432,37 @@ impl GithubIssuesBridgeRuntime {
                         if self.state_store.mark_processed(&event.key) {
                             state_dirty = true;
                         }
+                        if self.state_store.record_issue_event_outcome(
+                            event.issue_number,
+                            &event.key,
+                            event.kind.as_str(),
+                            &event.author_login,
+                            IssueEventOutcome::Failed,
+                            Some("rbac_policy_error"),
+                        ) {
+                            state_dirty = true;
+                        }
                         report.failed_events = report.failed_events.saturating_add(1);
                         continue;
                     }
                 }
 
+                let suppress_processed_outcome =
+                    matches!(&action, EventAction::Command(TauIssueCommand::ChatReset));
                 if let Err(error) = self
                     .handle_event_action(&event, action, &mut report, &mut state_dirty)
                     .await
                 {
+                    if self.state_store.record_issue_event_outcome(
+                        event.issue_number,
+                        &event.key,
+                        event.kind.as_str(),
+                        &event.author_login,
+                        IssueEventOutcome::Failed,
+                        Some("event_action_failed"),
+                    ) {
+                        state_dirty = true;
+                    }
                     report.failed_events = report.failed_events.saturating_add(1);
                     eprintln!(
                         "github bridge event failed: repo={} issue=#{} key={} error={error}",
@@ -1239,6 +1470,17 @@ impl GithubIssuesBridgeRuntime {
                         event.issue_number,
                         event.key
                     );
+                } else if !suppress_processed_outcome
+                    && self.state_store.record_issue_event_outcome(
+                        event.issue_number,
+                        &event.key,
+                        event.kind.as_str(),
+                        &event.author_login,
+                        IssueEventOutcome::Processed,
+                        Some("event_processed"),
+                    )
+                {
+                    state_dirty = true;
                 }
             }
         }
@@ -1326,6 +1568,13 @@ impl GithubIssuesBridgeRuntime {
                     ) {
                         *state_dirty = true;
                     }
+                    if self.state_store.record_issue_run_finished(
+                        result.issue_number,
+                        &result.run_id,
+                        result.error.is_some(),
+                    ) {
+                        *state_dirty = true;
+                    }
                     self.outbound_log.append(&json!({
                         "timestamp_unix_ms": current_unix_timestamp_ms(),
                         "repo": self.repo.as_slug(),
@@ -1354,6 +1603,13 @@ impl GithubIssuesBridgeRuntime {
                     }
                 }
                 Err(error) => {
+                    if self.state_store.record_issue_run_finished(
+                        issue_number,
+                        &active.run_id,
+                        true,
+                    ) {
+                        *state_dirty = true;
+                    }
                     report.failed_events = report.failed_events.saturating_add(1);
                     eprintln!(
                         "github bridge run join failed: repo={} issue=#{} run_id={} key={} error={error}",
@@ -1493,6 +1749,12 @@ impl GithubIssuesBridgeRuntime {
             Some(working_comment_id),
             Some(run_id.clone()),
         ) {
+            *state_dirty = true;
+        }
+        if self
+            .state_store
+            .record_issue_run_started(event.issue_number, &run_id)
+        {
             *state_dirty = true;
         }
         if self.state_store.mark_processed(&event.key) {
@@ -2045,84 +2307,166 @@ impl GithubIssuesBridgeRuntime {
             TauIssueCommand::ChatStatus => {
                 let continuity = self.issue_chat_continuity_summary(event.issue_number)?;
                 let session_state = self.state_store.issue_session(event.issue_number);
-                let (session_id, last_comment_id, last_run_id, has_session) = match session_state {
+                let (
+                    session_id,
+                    last_comment_id,
+                    last_run_id,
+                    active_run_id,
+                    last_event_key,
+                    last_event_kind,
+                    last_actor_login,
+                    last_reason_code,
+                    last_processed_unix_ms,
+                    total_processed_events,
+                    total_duplicate_events,
+                    total_failed_events,
+                    total_denied_events,
+                    total_runs_started,
+                    total_runs_completed,
+                    total_runs_failed,
+                    has_session,
+                ) = match session_state {
                     Some(state) => (
                         state.session_id.as_str(),
                         state.last_comment_id,
                         state.last_run_id.as_deref(),
+                        state.active_run_id.as_deref(),
+                        state.last_event_key.as_deref(),
+                        state.last_event_kind.as_deref(),
+                        state.last_actor_login.as_deref(),
+                        state.last_reason_code.as_deref(),
+                        state.last_processed_unix_ms,
+                        state.total_processed_events,
+                        state.total_duplicate_events,
+                        state.total_failed_events,
+                        state.total_denied_events,
+                        state.total_runs_started,
+                        state.total_runs_completed,
+                        state.total_runs_failed,
                         true,
                     ),
-                    None => ("none", None, None, false),
+                    None => (
+                        "none", None, None, None, None, None, None, None, None, 0, 0, 0, 0, 0, 0,
+                        0, false,
+                    ),
                 };
-                let head_display = continuity
-                    .head_id
-                    .map(|value| value.to_string())
-                    .unwrap_or_else(|| "none".to_string());
-                let message = if continuity.entries == 0 && !has_session {
-                    format!(
-                        "No chat session found for issue #{}.\n\nentries=0 head=none session_id=none last_comment_id=none last_run_id=none lineage_digest_sha256={} artifact_active={} artifact_total={} artifact_latest_id={} artifact_latest_run_id={} artifact_latest_created_unix_ms={} artifact_index_invalid_lines={}",
-                        event.issue_number,
-                        continuity.lineage_digest_sha256,
-                        continuity.artifacts.active_records,
-                        continuity.artifacts.total_records,
-                        continuity
-                            .artifacts
-                            .latest_artifact_id
-                            .as_deref()
-                            .unwrap_or("none"),
-                        continuity
-                            .artifacts
-                            .latest_artifact_run_id
-                            .as_deref()
-                            .unwrap_or("none"),
-                        continuity
-                            .artifacts
-                            .latest_artifact_created_unix_ms
-                            .map(|value| value.to_string())
-                            .unwrap_or_else(|| "none".to_string()),
-                        continuity.artifacts.invalid_index_lines
-                    )
+                let mut lines = Vec::new();
+                if continuity.entries == 0 && !has_session {
+                    lines.push(format!(
+                        "No chat session found for issue #{}.",
+                        event.issue_number
+                    ));
                 } else {
-                    format!(
-                        "Chat session status for issue #{}.\n\nentries={} head={} oldest_entry_id={} newest_entry_id={} newest_entry_role={} session_id={} last_comment_id={} last_run_id={} lineage_digest_sha256={} artifact_active={} artifact_total={} artifact_latest_id={} artifact_latest_run_id={} artifact_latest_created_unix_ms={} artifact_index_invalid_lines={}",
-                        event.issue_number,
-                        continuity.entries,
-                        head_display,
-                        continuity
-                            .oldest_entry_id
-                            .map(|value| value.to_string())
-                            .unwrap_or_else(|| "none".to_string()),
-                        continuity
-                            .newest_entry_id
-                            .map(|value| value.to_string())
-                            .unwrap_or_else(|| "none".to_string()),
-                        continuity.newest_entry_role.as_deref().unwrap_or("none"),
-                        session_id,
-                        last_comment_id
-                            .map(|value| value.to_string())
-                            .unwrap_or_else(|| "none".to_string()),
-                        last_run_id.unwrap_or("none"),
-                        continuity.lineage_digest_sha256,
-                        continuity.artifacts.active_records,
-                        continuity.artifacts.total_records,
-                        continuity
-                            .artifacts
-                            .latest_artifact_id
-                            .as_deref()
-                            .unwrap_or("none"),
-                        continuity
-                            .artifacts
-                            .latest_artifact_run_id
-                            .as_deref()
-                            .unwrap_or("none"),
-                        continuity
-                            .artifacts
-                            .latest_artifact_created_unix_ms
-                            .map(|value| value.to_string())
-                            .unwrap_or_else(|| "none".to_string()),
-                        continuity.artifacts.invalid_index_lines
-                    )
-                };
+                    lines.push(format!(
+                        "Chat session status for issue #{}.",
+                        event.issue_number
+                    ));
+                }
+                lines.push(format!("entries={}", continuity.entries));
+                lines.push(format!(
+                    "head={}",
+                    continuity
+                        .head_id
+                        .map(|value| value.to_string())
+                        .unwrap_or_else(|| "none".to_string())
+                ));
+                lines.push(format!(
+                    "oldest_entry_id={}",
+                    continuity
+                        .oldest_entry_id
+                        .map(|value| value.to_string())
+                        .unwrap_or_else(|| "none".to_string())
+                ));
+                lines.push(format!(
+                    "newest_entry_id={}",
+                    continuity
+                        .newest_entry_id
+                        .map(|value| value.to_string())
+                        .unwrap_or_else(|| "none".to_string())
+                ));
+                lines.push(format!(
+                    "newest_entry_role={}",
+                    continuity.newest_entry_role.as_deref().unwrap_or("none")
+                ));
+                lines.push(format!("session_id={}", session_id));
+                lines.push(format!(
+                    "last_comment_id={}",
+                    last_comment_id
+                        .map(|value| value.to_string())
+                        .unwrap_or_else(|| "none".to_string())
+                ));
+                lines.push(format!("last_run_id={}", last_run_id.unwrap_or("none")));
+                lines.push(format!("active_run_id={}", active_run_id.unwrap_or("none")));
+                lines.push(format!(
+                    "last_event_key={}",
+                    last_event_key.unwrap_or("none")
+                ));
+                lines.push(format!(
+                    "last_event_kind={}",
+                    last_event_kind.unwrap_or("none")
+                ));
+                lines.push(format!(
+                    "last_actor_login={}",
+                    last_actor_login.unwrap_or("none")
+                ));
+                lines.push(format!(
+                    "last_reason_code={}",
+                    last_reason_code.unwrap_or("none")
+                ));
+                lines.push(format!(
+                    "last_processed_unix_ms={}",
+                    last_processed_unix_ms
+                        .map(|value| value.to_string())
+                        .unwrap_or_else(|| "none".to_string())
+                ));
+                lines.push(format!("total_processed_events={}", total_processed_events));
+                lines.push(format!("total_duplicate_events={}", total_duplicate_events));
+                lines.push(format!("total_failed_events={}", total_failed_events));
+                lines.push(format!("total_denied_events={}", total_denied_events));
+                lines.push(format!("total_runs_started={}", total_runs_started));
+                lines.push(format!("total_runs_completed={}", total_runs_completed));
+                lines.push(format!("total_runs_failed={}", total_runs_failed));
+                lines.push(format!(
+                    "lineage_digest_sha256={}",
+                    continuity.lineage_digest_sha256
+                ));
+                lines.push(format!(
+                    "artifact_active={}",
+                    continuity.artifacts.active_records
+                ));
+                lines.push(format!(
+                    "artifact_total={}",
+                    continuity.artifacts.total_records
+                ));
+                lines.push(format!(
+                    "artifact_latest_id={}",
+                    continuity
+                        .artifacts
+                        .latest_artifact_id
+                        .as_deref()
+                        .unwrap_or("none")
+                ));
+                lines.push(format!(
+                    "artifact_latest_run_id={}",
+                    continuity
+                        .artifacts
+                        .latest_artifact_run_id
+                        .as_deref()
+                        .unwrap_or("none")
+                ));
+                lines.push(format!(
+                    "artifact_latest_created_unix_ms={}",
+                    continuity
+                        .artifacts
+                        .latest_artifact_created_unix_ms
+                        .map(|value| value.to_string())
+                        .unwrap_or_else(|| "none".to_string())
+                ));
+                lines.push(format!(
+                    "artifact_index_invalid_lines={}",
+                    continuity.artifacts.invalid_index_lines
+                ));
+                let message = lines.join("\n");
                 let posted = self
                     .post_issue_command_comment(
                         event.issue_number,
@@ -2141,25 +2485,199 @@ impl GithubIssuesBridgeRuntime {
                     "status": "reported",
                     "posted_comment_id": posted.id,
                     "posted_comment_url": posted.html_url,
-                    "session": {
-                        "entries": continuity.entries,
-                        "head_id": continuity.head_id,
-                        "oldest_entry_id": continuity.oldest_entry_id,
-                        "newest_entry_id": continuity.newest_entry_id,
-                        "newest_entry_role": continuity.newest_entry_role,
-                        "lineage_digest_sha256": continuity.lineage_digest_sha256,
-                        "session_id": session_id,
-                        "last_comment_id": last_comment_id,
-                        "last_run_id": last_run_id,
-                    },
-                    "artifacts": {
-                        "active": continuity.artifacts.active_records,
+                        "session": {
+                            "entries": continuity.entries,
+                            "head_id": continuity.head_id,
+                            "oldest_entry_id": continuity.oldest_entry_id,
+                            "newest_entry_id": continuity.newest_entry_id,
+                            "newest_entry_role": continuity.newest_entry_role,
+                            "lineage_digest_sha256": continuity.lineage_digest_sha256,
+                            "session_id": session_id,
+                            "last_comment_id": last_comment_id,
+                            "last_run_id": last_run_id,
+                            "active_run_id": active_run_id,
+                            "last_event_key": last_event_key,
+                            "last_event_kind": last_event_kind,
+                            "last_actor_login": last_actor_login,
+                            "last_reason_code": last_reason_code,
+                            "last_processed_unix_ms": last_processed_unix_ms,
+                            "total_processed_events": total_processed_events,
+                            "total_duplicate_events": total_duplicate_events,
+                            "total_failed_events": total_failed_events,
+                            "total_denied_events": total_denied_events,
+                            "total_runs_started": total_runs_started,
+                            "total_runs_completed": total_runs_completed,
+                            "total_runs_failed": total_runs_failed,
+                        },
+                        "artifacts": {
+                            "active": continuity.artifacts.active_records,
                         "total": continuity.artifacts.total_records,
                         "latest_id": continuity.artifacts.latest_artifact_id,
                         "latest_run_id": continuity.artifacts.latest_artifact_run_id,
                         "latest_created_unix_ms": continuity.artifacts.latest_artifact_created_unix_ms,
                         "index_invalid_lines": continuity.artifacts.invalid_index_lines,
                     }
+                }))?;
+            }
+            TauIssueCommand::ChatSummary => {
+                let continuity = self.issue_chat_continuity_summary(event.issue_number)?;
+                let session_state = self.state_store.issue_session(event.issue_number);
+                let mut lines = vec![format!("Chat summary for issue #{}.", event.issue_number)];
+                lines.push(format!("entries={}", continuity.entries));
+                lines.push(format!(
+                    "head={}",
+                    continuity
+                        .head_id
+                        .map(|value| value.to_string())
+                        .unwrap_or_else(|| "none".to_string())
+                ));
+                lines.push(format!(
+                    "newest_entry_role={}",
+                    continuity.newest_entry_role.as_deref().unwrap_or("none")
+                ));
+                lines.push(format!(
+                    "lineage_digest_sha256={}",
+                    continuity.lineage_digest_sha256
+                ));
+                if let Some(session_state) = session_state {
+                    lines.push(format!(
+                        "last_run_id={}",
+                        session_state.last_run_id.as_deref().unwrap_or("none")
+                    ));
+                    lines.push(format!(
+                        "active_run_id={}",
+                        session_state.active_run_id.as_deref().unwrap_or("none")
+                    ));
+                    lines.push(format!(
+                        "total_processed_events={}",
+                        session_state.total_processed_events
+                    ));
+                    lines.push(format!(
+                        "total_duplicate_events={}",
+                        session_state.total_duplicate_events
+                    ));
+                    lines.push(format!(
+                        "total_failed_events={}",
+                        session_state.total_failed_events
+                    ));
+                    lines.push(format!(
+                        "total_denied_events={}",
+                        session_state.total_denied_events
+                    ));
+                } else {
+                    lines.push("session_id=none".to_string());
+                }
+                lines.push(format!(
+                    "artifacts_active={} artifacts_total={}",
+                    continuity.artifacts.active_records, continuity.artifacts.total_records
+                ));
+                let message = lines.join("\n");
+                let posted = self
+                    .post_issue_command_comment(
+                        event.issue_number,
+                        &event.key,
+                        "chat-summary",
+                        "reported",
+                        &message,
+                    )
+                    .await?;
+                self.outbound_log.append(&json!({
+                    "timestamp_unix_ms": current_unix_timestamp_ms(),
+                    "repo": self.repo.as_slug(),
+                    "event_key": event.key,
+                    "issue_number": event.issue_number,
+                    "command": "chat-summary",
+                    "status": "reported",
+                    "posted_comment_id": posted.id,
+                    "posted_comment_url": posted.html_url,
+                }))?;
+            }
+            TauIssueCommand::ChatReplay => {
+                let session_state = self.state_store.issue_session(event.issue_number);
+                let processed_tail = self.state_store.processed_event_tail(5);
+                let mut lines = vec![format!(
+                    "Chat replay hints for issue #{}.",
+                    event.issue_number
+                )];
+                lines.push(format!(
+                    "include_edited_comments={}",
+                    self.config.include_edited_comments
+                ));
+                lines.push(format!(
+                    "processed_event_window={}/{}",
+                    processed_tail.len(),
+                    self.state_store.processed_event_cap()
+                ));
+                if processed_tail.is_empty() {
+                    lines.push("recent_event_keys=none".to_string());
+                } else {
+                    lines.push(format!("recent_event_keys={}", processed_tail.join(",")));
+                }
+                if let Some(state) = session_state {
+                    lines.push(format!("session_id={}", state.session_id));
+                    lines.push(format!(
+                        "last_event_key={}",
+                        state.last_event_key.as_deref().unwrap_or("none")
+                    ));
+                    lines.push(format!(
+                        "last_event_kind={}",
+                        state.last_event_kind.as_deref().unwrap_or("none")
+                    ));
+                    lines.push(format!(
+                        "last_actor_login={}",
+                        state.last_actor_login.as_deref().unwrap_or("none")
+                    ));
+                    lines.push(format!(
+                        "last_reason_code={}",
+                        state.last_reason_code.as_deref().unwrap_or("none")
+                    ));
+                    lines.push(format!(
+                        "last_processed_unix_ms={}",
+                        state
+                            .last_processed_unix_ms
+                            .map(|value| value.to_string())
+                            .unwrap_or_else(|| "none".to_string())
+                    ));
+                    lines.push(format!(
+                        "active_run_id={}",
+                        state.active_run_id.as_deref().unwrap_or("none")
+                    ));
+                    lines.push(format!(
+                        "last_run_id={}",
+                        state.last_run_id.as_deref().unwrap_or("none")
+                    ));
+                    lines.push(format!(
+                        "total_duplicate_events={}",
+                        state.total_duplicate_events
+                    ));
+                    lines.push(format!("total_failed_events={}", state.total_failed_events));
+                } else {
+                    lines.push("session_id=none".to_string());
+                }
+                lines.push(
+                    "Replay guidance: use `/tau chat status` for full diagnostics, `/tau chat show` for recent transcript, and `/tau chat search <query>` for targeted replay context."
+                        .to_string(),
+                );
+                let message = lines.join("\n");
+                let posted = self
+                    .post_issue_command_comment(
+                        event.issue_number,
+                        &event.key,
+                        "chat-replay",
+                        "reported",
+                        &message,
+                    )
+                    .await?;
+                self.outbound_log.append(&json!({
+                    "timestamp_unix_ms": current_unix_timestamp_ms(),
+                    "repo": self.repo.as_slug(),
+                    "event_key": event.key,
+                    "issue_number": event.issue_number,
+                    "command": "chat-replay",
+                    "status": "reported",
+                    "posted_comment_id": posted.id,
+                    "posted_comment_url": posted.html_url,
+                    "recent_event_keys": processed_tail,
                 }))?;
             }
             TauIssueCommand::ChatShow { limit } => {
@@ -2441,6 +2959,61 @@ impl GithubIssuesBridgeRuntime {
             lines.push(format!(
                 "chat_last_run_id: {}",
                 session.last_run_id.as_deref().unwrap_or("none")
+            ));
+            lines.push(format!(
+                "chat_active_run_id: {}",
+                session.active_run_id.as_deref().unwrap_or("none")
+            ));
+            lines.push(format!(
+                "chat_last_event_key: {}",
+                session.last_event_key.as_deref().unwrap_or("none")
+            ));
+            lines.push(format!(
+                "chat_last_event_kind: {}",
+                session.last_event_kind.as_deref().unwrap_or("none")
+            ));
+            lines.push(format!(
+                "chat_last_actor_login: {}",
+                session.last_actor_login.as_deref().unwrap_or("none")
+            ));
+            lines.push(format!(
+                "chat_last_reason_code: {}",
+                session.last_reason_code.as_deref().unwrap_or("none")
+            ));
+            lines.push(format!(
+                "chat_last_processed_unix_ms: {}",
+                session
+                    .last_processed_unix_ms
+                    .map(|value| value.to_string())
+                    .unwrap_or_else(|| "none".to_string())
+            ));
+            lines.push(format!(
+                "chat_total_processed_events: {}",
+                session.total_processed_events
+            ));
+            lines.push(format!(
+                "chat_total_duplicate_events: {}",
+                session.total_duplicate_events
+            ));
+            lines.push(format!(
+                "chat_total_failed_events: {}",
+                session.total_failed_events
+            ));
+            lines.push(format!(
+                "chat_total_denied_events: {}",
+                session.total_denied_events
+            ));
+            lines.push(format!(
+                "chat_total_runs_started: {}",
+                session.total_runs_started
+            ));
+            lines.push(format!(
+                "chat_total_runs_completed: {}",
+                session.total_runs_completed
+            ));
+            lines.push(format!(
+                "chat_total_runs_failed: {}",
+                session.total_runs_failed
             ));
         } else {
             lines.push("chat_session_id: none".to_string());
@@ -2753,6 +3326,8 @@ fn rbac_action_for_event(action: &EventAction) -> String {
             TauIssueCommand::ChatReset => "command:/tau-chat-reset".to_string(),
             TauIssueCommand::ChatExport => "command:/tau-chat-export".to_string(),
             TauIssueCommand::ChatStatus => "command:/tau-chat-status".to_string(),
+            TauIssueCommand::ChatSummary => "command:/tau-chat-summary".to_string(),
+            TauIssueCommand::ChatReplay => "command:/tau-chat-replay".to_string(),
             TauIssueCommand::ChatShow { .. } => "command:/tau-chat-show".to_string(),
             TauIssueCommand::ChatSearch { .. } => "command:/tau-chat-search".to_string(),
             TauIssueCommand::Artifacts { .. } => "command:/tau-artifacts".to_string(),
@@ -3297,6 +3872,15 @@ fn render_event_prompt(
     rendered
 }
 
+fn increment_count(map: &mut BTreeMap<String, usize>, raw: &str) {
+    let key = raw.trim();
+    if key.is_empty() {
+        return;
+    }
+    let counter = map.entry(key.to_string()).or_insert(0);
+    *counter = counter.saturating_add(1);
+}
+
 fn render_issue_comment_response_parts(
     event: &GithubBridgeEvent,
     run: &PromptRunReport,
@@ -3321,9 +3905,23 @@ fn render_issue_comment_response_parts(
         run.artifact.bytes
     );
     if !run.downloaded_attachments.is_empty() {
+        let mut reason_counts = BTreeMap::new();
+        for attachment in &run.downloaded_attachments {
+            increment_count(&mut reason_counts, attachment.policy_reason_code.as_str());
+        }
+        let reason_summary = if reason_counts.is_empty() {
+            "none".to_string()
+        } else {
+            reason_counts
+                .iter()
+                .map(|(reason, count)| format!("{}:{}", reason, count))
+                .collect::<Vec<_>>()
+                .join(",")
+        };
         footer.push_str(&format!(
-            "\n_attachments downloaded `{}`_",
-            run.downloaded_attachments.len()
+            "\n_attachments downloaded `{}` | policy_reason_counts `{}`_",
+            run.downloaded_attachments.len(),
+            reason_summary
         ));
     }
     (content, footer)
@@ -3571,6 +4169,8 @@ fn parse_tau_issue_command(body: &str) -> Option<TauIssueCommand> {
                 Some("reset") if chat_remainder.is_empty() => TauIssueCommand::ChatReset,
                 Some("export") if chat_remainder.is_empty() => TauIssueCommand::ChatExport,
                 Some("status") if chat_remainder.is_empty() => TauIssueCommand::ChatStatus,
+                Some("summary") if chat_remainder.is_empty() => TauIssueCommand::ChatSummary,
+                Some("replay") if chat_remainder.is_empty() => TauIssueCommand::ChatReplay,
                 Some("show") => {
                     if chat_remainder.is_empty() {
                         TauIssueCommand::ChatShow {
@@ -3618,11 +4218,11 @@ fn parse_tau_issue_command(body: &str) -> Option<TauIssueCommand> {
                     }
                 }
                 None => TauIssueCommand::Invalid {
-                    message: "Usage: /tau chat <start|resume|reset|export|status|show [limit]|search <query>>"
+                    message: "Usage: /tau chat <start|resume|reset|export|status|summary|replay|show [limit]|search <query>>"
                         .to_string(),
                 },
                 _ => TauIssueCommand::Invalid {
-                    message: "Usage: /tau chat <start|resume|reset|export|status|show [limit]|search <query>>"
+                    message: "Usage: /tau chat <start|resume|reset|export|status|summary|replay|show [limit]|search <query>>"
                         .to_string(),
                 },
             }
@@ -3691,7 +4291,7 @@ fn tau_command_usage() -> String {
         "- `/tau health`",
         "- `/tau compact`",
         "- `/tau help`",
-        "- `/tau chat <start|resume|reset|export|status|show [limit]|search <query>>`",
+        "- `/tau chat <start|resume|reset|export|status|summary|replay|show [limit]|search <query>>`",
         "- `/tau artifacts [purge|run <run_id>|show <artifact_id>]`",
         "- `/tau canvas <create|update|show|export|import> ...`",
         "- `/tau summarize [focus]`",
@@ -3965,8 +4565,9 @@ mod tests {
         DownloadedGithubAttachment, EventAction, GithubApiClient, GithubBridgeEvent,
         GithubBridgeEventKind, GithubIssue, GithubIssueComment, GithubIssueLabel,
         GithubIssuesBridgeRuntime, GithubIssuesBridgeRuntimeConfig, GithubIssuesBridgeStateStore,
-        GithubUser, PromptRunReport, PromptUsageSummary, RepoRef, RunPromptForEventRequest,
-        SessionStore, TauIssueCommand, CHAT_SHOW_DEFAULT_LIMIT, EVENT_KEY_MARKER_PREFIX,
+        GithubUser, IssueEventOutcome, PromptRunReport, PromptUsageSummary, RepoRef,
+        RunPromptForEventRequest, SessionStore, TauIssueCommand, CHAT_SHOW_DEFAULT_LIMIT,
+        EVENT_KEY_MARKER_PREFIX,
     };
     use crate::{
         channel_store::{ChannelArtifactRecord, ChannelStore},
@@ -4721,6 +5322,41 @@ mod tests {
             .all(|chunk| chunk.chars().count() <= max_chars));
     }
 
+    #[test]
+    fn unit_render_issue_comment_response_parts_includes_attachment_policy_reason_counts() {
+        let event = test_issue_event();
+        let mut report = test_prompt_run_report("summary");
+        report.downloaded_attachments = vec![
+            DownloadedGithubAttachment {
+                source_url: "https://example.com/a.log".to_string(),
+                original_name: "a.log".to_string(),
+                path: PathBuf::from("/tmp/a.log"),
+                relative_path: "attachments/a.log".to_string(),
+                content_type: Some("text/plain".to_string()),
+                bytes: 1,
+                checksum_sha256: "a".repeat(64),
+                policy_reason_code: "allow_extension_allowlist".to_string(),
+                created_unix_ms: 1,
+                expires_unix_ms: None,
+            },
+            DownloadedGithubAttachment {
+                source_url: "https://example.com/b.txt".to_string(),
+                original_name: "b.txt".to_string(),
+                path: PathBuf::from("/tmp/b.txt"),
+                relative_path: "attachments/b.txt".to_string(),
+                content_type: Some("text/plain".to_string()),
+                bytes: 1,
+                checksum_sha256: "b".repeat(64),
+                policy_reason_code: "allow_extension_allowlist".to_string(),
+                created_unix_ms: 1,
+                expires_unix_ms: None,
+            },
+        ];
+        let (_content, footer) = render_issue_comment_response_parts(&event, &report);
+        assert!(footer.contains("_attachments downloaded `2`"));
+        assert!(footer.contains("policy_reason_counts `allow_extension_allowlist:2`"));
+    }
+
     #[tokio::test]
     async fn functional_post_issue_comment_chunks_updates_and_appends() {
         let server = MockServer::start();
@@ -4874,6 +5510,14 @@ mod tests {
             Some(TauIssueCommand::ChatStatus)
         );
         assert_eq!(
+            parse_tau_issue_command("/tau chat summary"),
+            Some(TauIssueCommand::ChatSummary)
+        );
+        assert_eq!(
+            parse_tau_issue_command("/tau chat replay"),
+            Some(TauIssueCommand::ChatReplay)
+        );
+        assert_eq!(
             parse_tau_issue_command("/tau chat show"),
             Some(TauIssueCommand::ChatShow {
                 limit: CHAT_SHOW_DEFAULT_LIMIT
@@ -4965,6 +5609,10 @@ mod tests {
         let parsed = parse_tau_issue_command("/tau chat export now").expect("command parse");
         assert!(matches!(parsed, TauIssueCommand::Invalid { .. }));
         let parsed = parse_tau_issue_command("/tau chat status now").expect("command parse");
+        assert!(matches!(parsed, TauIssueCommand::Invalid { .. }));
+        let parsed = parse_tau_issue_command("/tau chat summary now").expect("command parse");
+        assert!(matches!(parsed, TauIssueCommand::Invalid { .. }));
+        let parsed = parse_tau_issue_command("/tau chat replay now").expect("command parse");
         assert!(matches!(parsed, TauIssueCommand::Invalid { .. }));
         let parsed = parse_tau_issue_command("/tau chat show foo").expect("command parse");
         assert!(matches!(parsed, TauIssueCommand::Invalid { .. }));
@@ -6248,6 +6896,165 @@ mod tests {
         assert_eq!(report.processed_events, 1);
         assert_eq!(report.failed_events, 0);
         status_post.assert_calls(1);
+    }
+
+    #[tokio::test]
+    async fn integration_bridge_chat_summary_reports_session_digest() {
+        let server = MockServer::start();
+        let _issues = server.mock(|when, then| {
+            when.method(GET).path("/repos/owner/repo/issues");
+            then.status(200).json_body(json!([{
+                "id": 30,
+                "number": 18,
+                "title": "Chat Summary",
+                "body": "",
+                "created_at": "2026-01-01T00:00:00Z",
+                "updated_at": "2026-01-01T00:00:05Z",
+                "user": {"login":"alice"}
+            }]));
+        });
+        let _comments = server.mock(|when, then| {
+            when.method(GET)
+                .path("/repos/owner/repo/issues/18/comments");
+            then.status(200).json_body(json!([{
+                "id": 1211,
+                "body": "/tau chat summary",
+                "created_at": "2026-01-01T00:00:01Z",
+                "updated_at": "2026-01-01T00:00:01Z",
+                "user": {"login":"alice"}
+            }]));
+        });
+        let summary_post = server.mock(|when, then| {
+            when.method(POST)
+                .path("/repos/owner/repo/issues/18/comments")
+                .body_includes("Chat summary for issue #18.")
+                .body_includes("entries=2")
+                .body_includes("lineage_digest_sha256=")
+                .body_includes("total_processed_events=2")
+                .body_includes("total_denied_events=1");
+            then.status(201).json_body(json!({
+                "id": 980,
+                "html_url": "https://example.test/comment/980"
+            }));
+        });
+
+        let temp = tempdir().expect("tempdir");
+        let config = test_bridge_config(&server.base_url(), temp.path());
+        let mut runtime = GithubIssuesBridgeRuntime::new(config)
+            .await
+            .expect("runtime");
+        let session_path = session_path_for_issue(&runtime.repository_state_dir, 18);
+        if let Some(parent) = session_path.parent() {
+            std::fs::create_dir_all(parent).expect("create session dir");
+        }
+        let mut store = SessionStore::load(&session_path).expect("store");
+        store
+            .append_messages(
+                None,
+                &[
+                    Message::user("summary request"),
+                    Message::assistant_text("summary response"),
+                ],
+            )
+            .expect("append messages");
+        runtime.state_store.update_issue_session(
+            18,
+            issue_session_id(18),
+            Some(1500),
+            Some("run-18".to_string()),
+        );
+        runtime.state_store.record_issue_event_outcome(
+            18,
+            "issue-comment-created:seed-1",
+            "issue_comment_created",
+            "alice",
+            IssueEventOutcome::Processed,
+            Some("command_processed"),
+        );
+        runtime.state_store.record_issue_event_outcome(
+            18,
+            "issue-comment-created:seed-2",
+            "issue_comment_created",
+            "alice",
+            IssueEventOutcome::Denied,
+            Some("pairing_denied"),
+        );
+
+        let report = runtime.poll_once().await.expect("poll");
+        assert_eq!(report.processed_events, 1);
+        assert_eq!(report.failed_events, 0);
+        summary_post.assert_calls(1);
+    }
+
+    #[tokio::test]
+    async fn integration_bridge_chat_replay_reports_diagnostics_hints() {
+        let server = MockServer::start();
+        let _issues = server.mock(|when, then| {
+            when.method(GET).path("/repos/owner/repo/issues");
+            then.status(200).json_body(json!([{
+                "id": 31,
+                "number": 19,
+                "title": "Chat Replay",
+                "body": "",
+                "created_at": "2026-01-01T00:00:00Z",
+                "updated_at": "2026-01-01T00:00:05Z",
+                "user": {"login":"alice"}
+            }]));
+        });
+        let _comments = server.mock(|when, then| {
+            when.method(GET)
+                .path("/repos/owner/repo/issues/19/comments");
+            then.status(200).json_body(json!([{
+                "id": 1311,
+                "body": "/tau chat replay",
+                "created_at": "2026-01-01T00:00:01Z",
+                "updated_at": "2026-01-01T00:00:01Z",
+                "user": {"login":"alice"}
+            }]));
+        });
+        let replay_post = server.mock(|when, then| {
+            when.method(POST)
+                .path("/repos/owner/repo/issues/19/comments")
+                .body_includes("Chat replay hints for issue #19.")
+                .body_includes(
+                    "recent_event_keys=issue-comment-created:seed-a,issue-comment-created:seed-b",
+                )
+                .body_includes("last_reason_code=duplicate_event")
+                .body_includes("Replay guidance: use `/tau chat status`");
+            then.status(201).json_body(json!({
+                "id": 981,
+                "html_url": "https://example.test/comment/981"
+            }));
+        });
+
+        let temp = tempdir().expect("tempdir");
+        let config = test_bridge_config(&server.base_url(), temp.path());
+        let mut runtime = GithubIssuesBridgeRuntime::new(config)
+            .await
+            .expect("runtime");
+        runtime
+            .state_store
+            .mark_processed("issue-comment-created:seed-a");
+        runtime
+            .state_store
+            .mark_processed("issue-comment-created:seed-b");
+        runtime.state_store.update_issue_session(
+            19,
+            issue_session_id(19),
+            Some(1600),
+            Some("run-19".to_string()),
+        );
+        runtime.state_store.record_issue_duplicate_event(
+            19,
+            "issue-comment-created:seed-b",
+            "issue_comment_created",
+            "alice",
+        );
+
+        let report = runtime.poll_once().await.expect("poll");
+        assert_eq!(report.processed_events, 1);
+        assert_eq!(report.failed_events, 0);
+        replay_post.assert_calls(1);
     }
 
     #[tokio::test]
