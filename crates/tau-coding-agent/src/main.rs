@@ -18,6 +18,7 @@ mod custom_command_runtime;
 mod dashboard_contract;
 mod dashboard_runtime;
 mod deployment_contract;
+mod deployment_runtime;
 mod diagnostics_commands;
 mod events;
 mod extension_manifest;
@@ -259,11 +260,11 @@ pub(crate) use crate::rpc_protocol::{
 };
 pub(crate) use crate::runtime_cli_validation::{
     validate_custom_command_contract_runner_cli, validate_dashboard_contract_runner_cli,
-    validate_event_webhook_ingest_cli, validate_events_runner_cli,
-    validate_gateway_contract_runner_cli, validate_github_issues_bridge_cli,
-    validate_memory_contract_runner_cli, validate_multi_agent_contract_runner_cli,
-    validate_multi_channel_contract_runner_cli, validate_slack_bridge_cli,
-    validate_voice_contract_runner_cli,
+    validate_deployment_contract_runner_cli, validate_event_webhook_ingest_cli,
+    validate_events_runner_cli, validate_gateway_contract_runner_cli,
+    validate_github_issues_bridge_cli, validate_memory_contract_runner_cli,
+    validate_multi_agent_contract_runner_cli, validate_multi_channel_contract_runner_cli,
+    validate_slack_bridge_cli, validate_voice_contract_runner_cli,
 };
 pub(crate) use crate::runtime_loop::{
     resolve_prompt_input, run_interactive, run_plan_first_prompt_with_runtime_hooks, run_prompt,
@@ -374,6 +375,7 @@ pub(crate) use crate::trust_roots::{
 };
 use custom_command_runtime::{run_custom_command_contract_runner, CustomCommandRuntimeConfig};
 use dashboard_runtime::{run_dashboard_contract_runner, DashboardRuntimeConfig};
+use deployment_runtime::{run_deployment_contract_runner, DeploymentRuntimeConfig};
 use gateway_runtime::{run_gateway_contract_runner, GatewayRuntimeConfig};
 use github_issues::{run_github_issues_bridge, GithubIssuesBridgeRuntimeConfig};
 use memory_runtime::{run_memory_contract_runner, MemoryRuntimeConfig};

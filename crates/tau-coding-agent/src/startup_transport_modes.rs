@@ -16,6 +16,7 @@ pub(crate) async fn run_transport_mode_if_requested(
     validate_memory_contract_runner_cli(cli)?;
     validate_dashboard_contract_runner_cli(cli)?;
     validate_gateway_contract_runner_cli(cli)?;
+    validate_deployment_contract_runner_cli(cli)?;
     validate_custom_command_contract_runner_cli(cli)?;
     validate_voice_contract_runner_cli(cli)?;
 
@@ -203,6 +204,19 @@ pub(crate) async fn run_transport_mode_if_requested(
             processed_case_cap: 10_000,
             retry_max_attempts: 4,
             retry_base_delay_ms: 0,
+        })
+        .await?;
+        return Ok(true);
+    }
+
+    if cli.deployment_contract_runner {
+        run_deployment_contract_runner(DeploymentRuntimeConfig {
+            fixture_path: cli.deployment_fixture.clone(),
+            state_dir: cli.deployment_state_dir.clone(),
+            queue_limit: cli.deployment_queue_limit.max(1),
+            processed_case_cap: cli.deployment_processed_case_cap.max(1),
+            retry_max_attempts: cli.deployment_retry_max_attempts.max(1),
+            retry_base_delay_ms: cli.deployment_retry_base_delay_ms,
         })
         .await?;
         return Ok(true);

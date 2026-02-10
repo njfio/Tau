@@ -2061,6 +2061,67 @@ pub(crate) struct Cli {
     pub(crate) gateway_state_dir: PathBuf,
 
     #[arg(
+        long = "deployment-contract-runner",
+        env = "TAU_DEPLOYMENT_CONTRACT_RUNNER",
+        default_value_t = false,
+        help = "Run fixture-driven cloud deployment and WASM runtime contract scenarios"
+    )]
+    pub(crate) deployment_contract_runner: bool,
+
+    #[arg(
+        long = "deployment-fixture",
+        env = "TAU_DEPLOYMENT_FIXTURE",
+        default_value = "crates/tau-coding-agent/testdata/deployment-contract/mixed-outcomes.json",
+        requires = "deployment_contract_runner",
+        help = "Path to cloud deployment + WASM runtime contract fixture JSON"
+    )]
+    pub(crate) deployment_fixture: PathBuf,
+
+    #[arg(
+        long = "deployment-state-dir",
+        env = "TAU_DEPLOYMENT_STATE_DIR",
+        default_value = ".tau/deployment",
+        help = "Directory for deployment runtime state and channel-store outputs"
+    )]
+    pub(crate) deployment_state_dir: PathBuf,
+
+    #[arg(
+        long = "deployment-queue-limit",
+        env = "TAU_DEPLOYMENT_QUEUE_LIMIT",
+        default_value_t = 64,
+        requires = "deployment_contract_runner",
+        help = "Maximum deployment fixture cases processed per runtime cycle"
+    )]
+    pub(crate) deployment_queue_limit: usize,
+
+    #[arg(
+        long = "deployment-processed-case-cap",
+        env = "TAU_DEPLOYMENT_PROCESSED_CASE_CAP",
+        default_value_t = 10_000,
+        requires = "deployment_contract_runner",
+        help = "Maximum processed-case keys retained for deployment duplicate suppression"
+    )]
+    pub(crate) deployment_processed_case_cap: usize,
+
+    #[arg(
+        long = "deployment-retry-max-attempts",
+        env = "TAU_DEPLOYMENT_RETRY_MAX_ATTEMPTS",
+        default_value_t = 4,
+        requires = "deployment_contract_runner",
+        help = "Maximum retry attempts for transient deployment runtime failures"
+    )]
+    pub(crate) deployment_retry_max_attempts: usize,
+
+    #[arg(
+        long = "deployment-retry-base-delay-ms",
+        env = "TAU_DEPLOYMENT_RETRY_BASE_DELAY_MS",
+        default_value_t = 0,
+        requires = "deployment_contract_runner",
+        help = "Base backoff delay in milliseconds for deployment runtime retries (0 disables delay)"
+    )]
+    pub(crate) deployment_retry_base_delay_ms: u64,
+
+    #[arg(
         long = "custom-command-contract-runner",
         env = "TAU_CUSTOM_COMMAND_CONTRACT_RUNNER",
         default_value_t = false,
