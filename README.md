@@ -17,6 +17,7 @@ Focused guides:
 
 - Quickstart: [`docs/guides/quickstart.md`](docs/guides/quickstart.md)
 - Demo index: [`docs/guides/demo-index.md`](docs/guides/demo-index.md)
+- Gateway auth session smoke: [`docs/guides/gateway-auth-session-smoke.md`](docs/guides/gateway-auth-session-smoke.md)
 - Project index workflow: [`docs/guides/project-index.md`](docs/guides/project-index.md)
 - Transports (GitHub/Slack/RPC): [`docs/guides/transports.md`](docs/guides/transports.md)
 - Operator control summary: [`docs/guides/operator-control-summary.md`](docs/guides/operator-control-summary.md)
@@ -95,6 +96,7 @@ Run deterministic local demos:
 ./scripts/demo/dashboard.sh
 ./scripts/demo/gateway.sh
 ./scripts/demo/gateway-auth.sh
+./scripts/demo/gateway-auth-session.sh
 ./scripts/demo/deployment.sh
 ./scripts/demo/custom-command.sh
 ./scripts/demo/voice.sh
