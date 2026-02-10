@@ -165,6 +165,103 @@ pub(crate) fn evaluate_gateway_remote_profile(cli: &Cli) -> Result<GatewayRemote
                 push_unique(&mut reason_codes, "proxy_remote_non_loopback_bind");
             }
         }
+        CliGatewayRemoteProfile::TailscaleServe => {
+            if loopback_bind {
+                push_unique(&mut reason_codes, "tailscale_serve_loopback_bind");
+            } else {
+                mark_hold(
+                    &mut gate,
+                    &mut reason_codes,
+                    &mut recommendations,
+                    "tailscale_serve_non_loopback_bind",
+                    "set --gateway-openresponses-bind to a loopback address and expose through tailscale serve",
+                );
+            }
+            match cli.gateway_openresponses_auth_mode {
+                CliGatewayOpenResponsesAuthMode::Token => {
+                    push_unique(&mut reason_codes, "tailscale_serve_token_auth");
+                    if auth_token_configured {
+                        push_unique(&mut reason_codes, "tailscale_serve_token_configured");
+                    } else {
+                        mark_hold(
+                            &mut gate,
+                            &mut reason_codes,
+                            &mut recommendations,
+                            "tailscale_serve_missing_token",
+                            "set --gateway-openresponses-auth-token to a non-empty bearer token",
+                        );
+                    }
+                }
+                CliGatewayOpenResponsesAuthMode::PasswordSession => {
+                    push_unique(&mut reason_codes, "tailscale_serve_password_session_auth");
+                    if auth_password_configured {
+                        push_unique(&mut reason_codes, "tailscale_serve_password_configured");
+                    } else {
+                        mark_hold(
+                            &mut gate,
+                            &mut reason_codes,
+                            &mut recommendations,
+                            "tailscale_serve_missing_password",
+                            "set --gateway-openresponses-auth-password to a non-empty value",
+                        );
+                    }
+                }
+                CliGatewayOpenResponsesAuthMode::LocalhostDev => {
+                    mark_hold(
+                        &mut gate,
+                        &mut reason_codes,
+                        &mut recommendations,
+                        "tailscale_serve_localhost_dev_auth_unsupported",
+                        "set --gateway-openresponses-auth-mode token or password-session for tailscale serve",
+                    );
+                }
+            }
+            push_unique(
+                &mut recommendations,
+                "use tailscale serve to publish gateway while keeping loopback bind on host",
+            );
+        }
+        CliGatewayRemoteProfile::TailscaleFunnel => {
+            if loopback_bind {
+                push_unique(&mut reason_codes, "tailscale_funnel_loopback_bind");
+            } else {
+                mark_hold(
+                    &mut gate,
+                    &mut reason_codes,
+                    &mut recommendations,
+                    "tailscale_funnel_non_loopback_bind",
+                    "set --gateway-openresponses-bind to a loopback address and expose through tailscale funnel",
+                );
+            }
+            if cli.gateway_openresponses_auth_mode
+                != CliGatewayOpenResponsesAuthMode::PasswordSession
+            {
+                mark_hold(
+                    &mut gate,
+                    &mut reason_codes,
+                    &mut recommendations,
+                    "tailscale_funnel_auth_mode_mismatch",
+                    "set --gateway-openresponses-auth-mode password-session",
+                );
+            } else {
+                push_unique(&mut reason_codes, "tailscale_funnel_password_session_auth");
+            }
+            if auth_password_configured {
+                push_unique(&mut reason_codes, "tailscale_funnel_password_configured");
+            } else {
+                mark_hold(
+                    &mut gate,
+                    &mut reason_codes,
+                    &mut recommendations,
+                    "tailscale_funnel_missing_password",
+                    "set --gateway-openresponses-auth-password to a non-empty value",
+                );
+            }
+            push_unique(
+                &mut recommendations,
+                "require password-session auth before enabling tailscale funnel exposure",
+            );
+        }
     }
 
     let posture = if remote_enabled {
@@ -332,6 +429,81 @@ mod tests {
         assert!(report
             .reason_codes
             .contains(&"proxy_remote_token_configured".to_string()));
+    }
+
+    #[test]
+    fn unit_evaluate_gateway_remote_profile_tailscale_serve_rejects_localhost_dev_auth_mode() {
+        let cli = parse_cli_with_stack(&[
+            "tau-rs",
+            "--gateway-openresponses-server",
+            "--gateway-remote-profile",
+            "tailscale-serve",
+            "--gateway-openresponses-auth-mode",
+            "localhost-dev",
+        ]);
+        let report = evaluate_gateway_remote_profile(&cli).expect("evaluate");
+        assert_eq!(report.profile, "tailscale-serve");
+        assert_eq!(report.gate, "hold");
+        assert!(report
+            .reason_codes
+            .contains(&"tailscale_serve_localhost_dev_auth_unsupported".to_string()));
+    }
+
+    #[test]
+    fn functional_evaluate_gateway_remote_profile_tailscale_funnel_accepts_password_session_profile(
+    ) {
+        let cli = parse_cli_with_stack(&[
+            "tau-rs",
+            "--gateway-openresponses-server",
+            "--gateway-remote-profile",
+            "tailscale-funnel",
+            "--gateway-openresponses-auth-mode",
+            "password-session",
+            "--gateway-openresponses-auth-password",
+            "edge-password",
+        ]);
+        let report = evaluate_gateway_remote_profile(&cli).expect("evaluate");
+        assert_eq!(report.profile, "tailscale-funnel");
+        assert_eq!(report.posture, "remote-enabled");
+        assert_eq!(report.gate, "pass");
+        assert!(report
+            .reason_codes
+            .contains(&"tailscale_funnel_password_configured".to_string()));
+    }
+
+    #[test]
+    fn integration_validate_gateway_remote_profile_for_openresponses_accepts_tailscale_serve_token_profile(
+    ) {
+        let cli = parse_cli_with_stack(&[
+            "tau-rs",
+            "--gateway-openresponses-server",
+            "--gateway-remote-profile",
+            "tailscale-serve",
+            "--gateway-openresponses-auth-mode",
+            "token",
+            "--gateway-openresponses-auth-token",
+            "edge-token",
+        ]);
+        validate_gateway_remote_profile_for_openresponses(&cli)
+            .expect("valid tailscale-serve profile should pass");
+    }
+
+    #[test]
+    fn regression_validate_gateway_remote_profile_for_openresponses_rejects_tailscale_funnel_missing_password(
+    ) {
+        let cli = parse_cli_with_stack(&[
+            "tau-rs",
+            "--gateway-openresponses-server",
+            "--gateway-remote-profile",
+            "tailscale-funnel",
+            "--gateway-openresponses-auth-mode",
+            "password-session",
+        ]);
+        let error = validate_gateway_remote_profile_for_openresponses(&cli)
+            .expect_err("tailscale-funnel without password should fail");
+        assert!(error
+            .to_string()
+            .contains("tailscale_funnel_missing_password"));
     }
 
     #[test]

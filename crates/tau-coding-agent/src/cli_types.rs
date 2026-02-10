@@ -144,6 +144,8 @@ pub(crate) enum CliGatewayRemoteProfile {
     LocalOnly,
     PasswordRemote,
     ProxyRemote,
+    TailscaleServe,
+    TailscaleFunnel,
 }
 
 impl CliGatewayRemoteProfile {
@@ -152,6 +154,8 @@ impl CliGatewayRemoteProfile {
             CliGatewayRemoteProfile::LocalOnly => "local-only",
             CliGatewayRemoteProfile::PasswordRemote => "password-remote",
             CliGatewayRemoteProfile::ProxyRemote => "proxy-remote",
+            CliGatewayRemoteProfile::TailscaleServe => "tailscale-serve",
+            CliGatewayRemoteProfile::TailscaleFunnel => "tailscale-funnel",
         }
     }
 }

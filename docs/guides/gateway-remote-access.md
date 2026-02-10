@@ -10,6 +10,8 @@ Profiles:
 - `local-only`
 - `password-remote`
 - `proxy-remote`
+- `tailscale-serve`
+- `tailscale-funnel`
 
 ## Inspect posture without starting the gateway
 
@@ -40,6 +42,18 @@ cargo run -p tau-coding-agent -- \
   --gateway-openresponses-bind 127.0.0.1:8787
 ```
 
+Inspect a tailscale-funnel plan before rollout:
+
+```bash
+cargo run -p tau-coding-agent -- \
+  --gateway-remote-profile-inspect \
+  --gateway-openresponses-server \
+  --gateway-remote-profile tailscale-funnel \
+  --gateway-openresponses-auth-mode password-session \
+  --gateway-openresponses-auth-password edge-password \
+  --gateway-openresponses-bind 127.0.0.1:8787
+```
+
 ## Profile guidance
 
 `local-only`:
@@ -55,6 +69,18 @@ cargo run -p tau-coding-agent -- \
 - intended for exposure behind a trusted reverse proxy or tunnel.
 - requires `--gateway-openresponses-auth-mode token`.
 - requires non-empty `--gateway-openresponses-auth-token`.
+
+`tailscale-serve`:
+- intended for tailnet-only exposure while preserving loopback bind on host.
+- requires loopback bind (`127.0.0.1` or `::1`).
+- requires auth mode `token` or `password-session` (localhost-dev is rejected).
+- requires corresponding non-empty auth secret.
+
+`tailscale-funnel`:
+- intended for public exposure through Tailscale Funnel.
+- requires loopback bind (`127.0.0.1` or `::1`).
+- requires `--gateway-openresponses-auth-mode password-session`.
+- requires non-empty `--gateway-openresponses-auth-password`.
 
 ## Security recommendations
 
