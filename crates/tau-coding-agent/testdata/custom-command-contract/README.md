@@ -6,6 +6,7 @@ and lifecycle operations.
 ## Files
 
 - `mixed-outcomes.json`: success + malformed_input + retryable_failure matrix.
+- `rollout-pass.json`: all-success fixture for deterministic demo and rollout checks.
 - `invalid-duplicate-case-id.json`: regression fixture for duplicate `case_id`.
 - `invalid-error-code.json`: regression fixture for unsupported `error_code`.
 

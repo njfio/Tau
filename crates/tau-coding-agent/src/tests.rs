@@ -381,6 +381,8 @@ fn test_cli() -> Cli {
         multi_agent_status_json: false,
         gateway_status_inspect: false,
         gateway_status_json: false,
+        custom_command_status_inspect: false,
+        custom_command_status_json: false,
         extension_exec_manifest: None,
         extension_exec_hook: None,
         extension_exec_payload_file: None,
@@ -614,7 +616,11 @@ fn set_workspace_tau_paths(cli: &mut Cli, workspace: &Path) {
     cli.events_dir = tau_root.join("events");
     cli.events_state_path = tau_root.join("events/state.json");
     cli.multi_channel_state_dir = tau_root.join("multi-channel");
+    cli.multi_agent_state_dir = tau_root.join("multi-agent");
+    cli.memory_state_dir = tau_root.join("memory");
     cli.dashboard_state_dir = tau_root.join("dashboard");
+    cli.gateway_state_dir = tau_root.join("gateway");
+    cli.custom_command_state_dir = tau_root.join("custom-command");
     cli.github_state_dir = tau_root.join("github-issues");
     cli.slack_state_dir = tau_root.join("slack");
     cli.package_install_root = tau_root.join("packages");
@@ -1761,6 +1767,30 @@ fn functional_cli_transport_health_inspect_accepts_gateway_state_dir_override() 
 }
 
 #[test]
+fn unit_cli_transport_health_inspect_accepts_custom_command_target() {
+    let cli = parse_cli_with_stack(["tau-rs", "--transport-health-inspect", "custom-command"]);
+    assert_eq!(
+        cli.transport_health_inspect.as_deref(),
+        Some("custom-command")
+    );
+}
+
+#[test]
+fn functional_cli_transport_health_inspect_accepts_custom_command_state_dir_override() {
+    let cli = parse_cli_with_stack([
+        "tau-rs",
+        "--transport-health-inspect",
+        "custom-command",
+        "--custom-command-state-dir",
+        ".tau/custom-command-alt",
+    ]);
+    assert_eq!(
+        cli.custom_command_state_dir,
+        PathBuf::from(".tau/custom-command-alt")
+    );
+}
+
+#[test]
 fn unit_cli_dashboard_status_inspect_defaults_to_disabled() {
     let cli = parse_cli_with_stack(["tau-rs"]);
     assert!(!cli.dashboard_status_inspect);
@@ -1850,6 +1880,39 @@ fn functional_cli_gateway_status_inspect_accepts_json_and_state_dir_override() {
 #[test]
 fn regression_cli_gateway_status_json_requires_gateway_status_inspect() {
     let parse = try_parse_cli_with_stack(["tau-rs", "--gateway-status-json"]);
+    let error = parse.expect_err("json output should require inspect flag");
+    assert!(error
+        .to_string()
+        .contains("required arguments were not provided"));
+}
+
+#[test]
+fn unit_cli_custom_command_status_inspect_defaults_to_disabled() {
+    let cli = parse_cli_with_stack(["tau-rs"]);
+    assert!(!cli.custom_command_status_inspect);
+    assert!(!cli.custom_command_status_json);
+}
+
+#[test]
+fn functional_cli_custom_command_status_inspect_accepts_json_and_state_dir_override() {
+    let cli = parse_cli_with_stack([
+        "tau-rs",
+        "--custom-command-status-inspect",
+        "--custom-command-status-json",
+        "--custom-command-state-dir",
+        ".tau/custom-command-observe",
+    ]);
+    assert!(cli.custom_command_status_inspect);
+    assert!(cli.custom_command_status_json);
+    assert_eq!(
+        cli.custom_command_state_dir,
+        PathBuf::from(".tau/custom-command-observe")
+    );
+}
+
+#[test]
+fn regression_cli_custom_command_status_json_requires_custom_command_status_inspect() {
+    let parse = try_parse_cli_with_stack(["tau-rs", "--custom-command-status-json"]);
     let error = parse.expect_err("json output should require inspect flag");
     assert!(error
         .to_string()
@@ -13635,6 +13698,74 @@ fn regression_execute_channel_store_admin_gateway_status_inspect_requires_state_
     assert!(error.to_string().contains("state.json"));
 }
 
+#[test]
+fn functional_execute_channel_store_admin_custom_command_status_inspect_succeeds() {
+    let temp = tempdir().expect("tempdir");
+    let custom_command_state_dir = temp.path().join("custom-command");
+    std::fs::create_dir_all(&custom_command_state_dir).expect("create custom-command state dir");
+    std::fs::write(
+        custom_command_state_dir.join("state.json"),
+        r#"{
+  "schema_version": 1,
+  "processed_case_keys": ["CREATE:deploy_release:create-1"],
+  "commands": [
+    {
+      "case_key": "CREATE:deploy_release:create-1",
+      "case_id": "create-1",
+      "command_name": "deploy_release",
+      "template": "deploy {{env}}",
+      "operation": "CREATE",
+      "last_status_code": 201,
+      "last_outcome": "success",
+      "run_count": 1,
+      "updated_unix_ms": 1
+    }
+  ],
+  "health": {
+    "updated_unix_ms": 710,
+    "cycle_duration_ms": 14,
+    "queue_depth": 0,
+    "active_runs": 0,
+    "failure_streak": 0,
+    "last_cycle_discovered": 1,
+    "last_cycle_processed": 1,
+    "last_cycle_completed": 1,
+    "last_cycle_failed": 0,
+    "last_cycle_duplicates": 0
+  }
+}
+"#,
+    )
+    .expect("write custom-command state");
+    std::fs::write(
+        custom_command_state_dir.join("runtime-events.jsonl"),
+        r#"{"reason_codes":["command_registry_mutated"],"health_reason":"no recent transport failures observed"}
+"#,
+    )
+    .expect("write custom-command events");
+
+    let mut cli = test_cli();
+    cli.custom_command_status_inspect = true;
+    cli.custom_command_status_json = true;
+    cli.custom_command_state_dir = custom_command_state_dir;
+    execute_channel_store_admin_command(&cli)
+        .expect("custom-command status inspect should succeed");
+}
+
+#[test]
+fn regression_execute_channel_store_admin_custom_command_status_inspect_requires_state_file() {
+    let temp = tempdir().expect("tempdir");
+    let mut cli = test_cli();
+    cli.custom_command_status_inspect = true;
+    cli.custom_command_state_dir = temp.path().join("custom-command");
+    std::fs::create_dir_all(&cli.custom_command_state_dir).expect("create custom-command dir");
+
+    let error = execute_channel_store_admin_command(&cli)
+        .expect_err("custom-command status inspect should fail without state file");
+    assert!(error.to_string().contains("failed to read"));
+    assert!(error.to_string().contains("state.json"));
+}
+
 fn make_script_executable(path: &Path) {
     #[cfg(unix)]
     {
@@ -17166,6 +17297,43 @@ fn functional_execute_startup_preflight_runs_gateway_status_inspect_mode() {
     .expect("write gateway state");
 
     let handled = execute_startup_preflight(&cli).expect("gateway status inspect preflight");
+    assert!(handled);
+}
+
+#[test]
+fn functional_execute_startup_preflight_runs_custom_command_status_inspect_mode() {
+    let temp = tempdir().expect("tempdir");
+    let mut cli = test_cli();
+    set_workspace_tau_paths(&mut cli, temp.path());
+    cli.custom_command_status_inspect = true;
+    cli.custom_command_status_json = true;
+
+    std::fs::create_dir_all(&cli.custom_command_state_dir)
+        .expect("create custom-command state dir");
+    std::fs::write(
+        cli.custom_command_state_dir.join("state.json"),
+        r#"{
+  "schema_version": 1,
+  "processed_case_keys": [],
+  "commands": [],
+  "health": {
+    "updated_unix_ms": 801,
+    "cycle_duration_ms": 12,
+    "queue_depth": 0,
+    "active_runs": 0,
+    "failure_streak": 0,
+    "last_cycle_discovered": 1,
+    "last_cycle_processed": 1,
+    "last_cycle_completed": 1,
+    "last_cycle_failed": 0,
+    "last_cycle_duplicates": 0
+  }
+}
+"#,
+    )
+    .expect("write custom-command state");
+
+    let handled = execute_startup_preflight(&cli).expect("custom-command status inspect preflight");
     assert!(handled);
 }
 

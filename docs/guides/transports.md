@@ -255,6 +255,49 @@ cargo run -p tau-coding-agent -- \
 
 Operational rollout and rollback guidance: `docs/guides/gateway-ops.md`.
 
+## No-code custom command contract runner
+
+Use this fixture-driven runtime mode to validate no-code command registry lifecycle behavior,
+retry outcomes, state persistence, and channel-store snapshots.
+
+```bash
+cargo run -p tau-coding-agent -- \
+  --model openai/gpt-4o-mini \
+  --custom-command-contract-runner \
+  --custom-command-fixture crates/tau-coding-agent/testdata/custom-command-contract/rollout-pass.json \
+  --custom-command-state-dir .tau/custom-command \
+  --custom-command-queue-limit 64 \
+  --custom-command-processed-case-cap 10000 \
+  --custom-command-retry-max-attempts 4 \
+  --custom-command-retry-base-delay-ms 0
+```
+
+The runner writes state and observability output under:
+
+- `.tau/custom-command/state.json`
+- `.tau/custom-command/runtime-events.jsonl`
+- `.tau/custom-command/channel-store/custom-command/<command_name or registry>/...`
+
+Inspect custom-command transport health snapshot:
+
+```bash
+cargo run -p tau-coding-agent -- \
+  --custom-command-state-dir .tau/custom-command \
+  --transport-health-inspect custom-command \
+  --transport-health-json
+```
+
+Inspect custom-command rollout guardrail/status report:
+
+```bash
+cargo run -p tau-coding-agent -- \
+  --custom-command-state-dir .tau/custom-command \
+  --custom-command-status-inspect \
+  --custom-command-status-json
+```
+
+Operational rollout and rollback guidance: `docs/guides/custom-command-ops.md`.
+
 ## ChannelStore inspection and repair
 
 Inspect one channel:
