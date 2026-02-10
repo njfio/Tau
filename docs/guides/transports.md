@@ -94,6 +94,15 @@ cargo run -p tau-coding-agent -- \
   --transport-health-json
 ```
 
+Inspect multi-channel rollout guardrail/status report:
+
+```bash
+cargo run -p tau-coding-agent -- \
+  --multi-channel-state-dir .tau/multi-channel \
+  --multi-channel-status-inspect \
+  --multi-channel-status-json
+```
+
 Operational rollout and rollback guidance: `docs/guides/multi-channel-ops.md`.
 
 ## Multi-agent contract runner

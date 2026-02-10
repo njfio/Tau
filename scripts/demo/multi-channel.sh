@@ -39,6 +39,12 @@ tau_demo_common_run_step \
   --transport-health-json
 
 tau_demo_common_run_step \
+  "multi-channel-status-inspect" \
+  --multi-channel-state-dir "${demo_state_dir}" \
+  --multi-channel-status-inspect \
+  --multi-channel-status-json
+
+tau_demo_common_run_step \
   "channel-store-inspect-telegram" \
   --channel-store-root "${demo_state_dir}/channel-store" \
   --channel-store-inspect telegram/telegram-chat-42

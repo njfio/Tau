@@ -12,13 +12,22 @@ This runbook covers the fixture-driven Multi-channel runtime for:
 
 ## Health and observability signals
 
-Primary status signal:
+Primary transport-health signal:
 
 ```bash
 cargo run -p tau-coding-agent -- \
   --multi-channel-state-dir .tau/multi-channel \
   --transport-health-inspect multi-channel \
   --transport-health-json
+```
+
+Primary rollout/status signal:
+
+```bash
+cargo run -p tau-coding-agent -- \
+  --multi-channel-state-dir .tau/multi-channel \
+  --multi-channel-status-inspect \
+  --multi-channel-status-json
 ```
 
 Primary state files:
@@ -50,7 +59,9 @@ Primary state files:
    `./scripts/demo/multi-channel.sh`
 3. Confirm health snapshot is `healthy` before promotion:
    `--transport-health-inspect multi-channel --transport-health-json`
-4. Promote by increasing fixture/event complexity incrementally while monitoring:
+4. Confirm status rollout gate is `pass` before promotion:
+   `--multi-channel-status-inspect --multi-channel-status-json`
+5. Promote by increasing fixture/event complexity incrementally while monitoring:
    `failure_streak`, `last_cycle_failed`, `queue_depth`.
 
 ## Rollback plan

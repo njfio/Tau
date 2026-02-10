@@ -378,6 +378,8 @@ fn test_cli() -> Cli {
         transport_health_json: false,
         dashboard_status_inspect: false,
         dashboard_status_json: false,
+        multi_channel_status_inspect: false,
+        multi_channel_status_json: false,
         multi_agent_status_inspect: false,
         multi_agent_status_json: false,
         gateway_status_inspect: false,
@@ -1990,6 +1992,39 @@ fn functional_cli_dashboard_status_inspect_accepts_json_and_state_dir_override()
 #[test]
 fn regression_cli_dashboard_status_json_requires_dashboard_status_inspect() {
     let parse = try_parse_cli_with_stack(["tau-rs", "--dashboard-status-json"]);
+    let error = parse.expect_err("json output should require inspect flag");
+    assert!(error
+        .to_string()
+        .contains("required arguments were not provided"));
+}
+
+#[test]
+fn unit_cli_multi_channel_status_inspect_defaults_to_disabled() {
+    let cli = parse_cli_with_stack(["tau-rs"]);
+    assert!(!cli.multi_channel_status_inspect);
+    assert!(!cli.multi_channel_status_json);
+}
+
+#[test]
+fn functional_cli_multi_channel_status_inspect_accepts_json_and_state_dir_override() {
+    let cli = parse_cli_with_stack([
+        "tau-rs",
+        "--multi-channel-status-inspect",
+        "--multi-channel-status-json",
+        "--multi-channel-state-dir",
+        ".tau/multi-channel-observe",
+    ]);
+    assert!(cli.multi_channel_status_inspect);
+    assert!(cli.multi_channel_status_json);
+    assert_eq!(
+        cli.multi_channel_state_dir,
+        PathBuf::from(".tau/multi-channel-observe")
+    );
+}
+
+#[test]
+fn regression_cli_multi_channel_status_json_requires_multi_channel_status_inspect() {
+    let parse = try_parse_cli_with_stack(["tau-rs", "--multi-channel-status-json"]);
     let error = parse.expect_err("json output should require inspect flag");
     assert!(error
         .to_string()
@@ -14073,6 +14108,60 @@ fn regression_execute_channel_store_admin_dashboard_status_inspect_requires_stat
 }
 
 #[test]
+fn functional_execute_channel_store_admin_multi_channel_status_inspect_succeeds() {
+    let temp = tempdir().expect("tempdir");
+    let multi_channel_state_dir = temp.path().join("multi-channel");
+    std::fs::create_dir_all(&multi_channel_state_dir).expect("create multi-channel state dir");
+    std::fs::write(
+        multi_channel_state_dir.join("state.json"),
+        r#"{
+  "schema_version": 1,
+  "processed_event_keys": ["telegram:tg-1", "discord:dc-1", "whatsapp:wa-1"],
+  "health": {
+    "updated_unix_ms": 701,
+    "cycle_duration_ms": 16,
+    "queue_depth": 0,
+    "active_runs": 0,
+    "failure_streak": 0,
+    "last_cycle_discovered": 3,
+    "last_cycle_processed": 3,
+    "last_cycle_completed": 3,
+    "last_cycle_failed": 0,
+    "last_cycle_duplicates": 0
+  }
+}
+"#,
+    )
+    .expect("write multi-channel state");
+    std::fs::write(
+        multi_channel_state_dir.join("runtime-events.jsonl"),
+        r#"{"reason_codes":["healthy_cycle","events_applied"],"health_reason":"no recent transport failures observed"}
+"#,
+    )
+    .expect("write multi-channel events");
+
+    let mut cli = test_cli();
+    cli.multi_channel_status_inspect = true;
+    cli.multi_channel_status_json = true;
+    cli.multi_channel_state_dir = multi_channel_state_dir;
+    execute_channel_store_admin_command(&cli).expect("multi-channel status inspect should succeed");
+}
+
+#[test]
+fn regression_execute_channel_store_admin_multi_channel_status_inspect_requires_state_file() {
+    let temp = tempdir().expect("tempdir");
+    let mut cli = test_cli();
+    cli.multi_channel_status_inspect = true;
+    cli.multi_channel_state_dir = temp.path().join("multi-channel");
+    std::fs::create_dir_all(&cli.multi_channel_state_dir).expect("create multi-channel dir");
+
+    let error = execute_channel_store_admin_command(&cli)
+        .expect_err("multi-channel status inspect should fail without state file");
+    assert!(error.to_string().contains("failed to read"));
+    assert!(error.to_string().contains("state.json"));
+}
+
+#[test]
 fn functional_execute_channel_store_admin_multi_agent_status_inspect_succeeds() {
     let temp = tempdir().expect("tempdir");
     let multi_agent_state_dir = temp.path().join("multi-agent");
@@ -17873,6 +17962,41 @@ fn functional_execute_startup_preflight_runs_gateway_status_inspect_mode() {
     .expect("write gateway state");
 
     let handled = execute_startup_preflight(&cli).expect("gateway status inspect preflight");
+    assert!(handled);
+}
+
+#[test]
+fn functional_execute_startup_preflight_runs_multi_channel_status_inspect_mode() {
+    let temp = tempdir().expect("tempdir");
+    let mut cli = test_cli();
+    set_workspace_tau_paths(&mut cli, temp.path());
+    cli.multi_channel_status_inspect = true;
+    cli.multi_channel_status_json = true;
+
+    std::fs::create_dir_all(&cli.multi_channel_state_dir).expect("create multi-channel state dir");
+    std::fs::write(
+        cli.multi_channel_state_dir.join("state.json"),
+        r#"{
+  "schema_version": 1,
+  "processed_event_keys": [],
+  "health": {
+    "updated_unix_ms": 804,
+    "cycle_duration_ms": 8,
+    "queue_depth": 0,
+    "active_runs": 0,
+    "failure_streak": 0,
+    "last_cycle_discovered": 1,
+    "last_cycle_processed": 1,
+    "last_cycle_completed": 1,
+    "last_cycle_failed": 0,
+    "last_cycle_duplicates": 0
+  }
+}
+"#,
+    )
+    .expect("write multi-channel state");
+
+    let handled = execute_startup_preflight(&cli).expect("multi-channel status inspect preflight");
     assert!(handled);
 }
 
