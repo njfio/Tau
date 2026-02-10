@@ -51,6 +51,12 @@ Bridge control commands in issue comments:
 - `/tau stop`
 - `/tau chat start|resume|reset|status|summary|replay|show|search|export`
 - `/tau artifacts|artifacts run <run_id>|artifacts show <artifact_id>|artifacts purge`
+- `/tau demo-index list|run [scenario[,scenario...]] [--timeout-seconds <n>]|report`
+
+Demo-index commands for issue-driven demos:
+- `/tau demo-index list`: show allowlisted scenarios and expected markers.
+- `/tau demo-index run onboarding,gateway-auth --timeout-seconds 120`: execute bounded demo scenarios from the issue thread and persist report/log artifacts.
+- `/tau demo-index report`: show latest demo-index report artifact pointers for the issue channel.
 
 Inspect deterministic GitHub bridge state/report output:
 
