@@ -8,12 +8,14 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 use axum::body::Bytes;
+use axum::extract::ws::{Message as WsMessage, WebSocket, WebSocketUpgrade};
 use axum::extract::State;
 use axum::http::{header::AUTHORIZATION, HeaderMap, StatusCode};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tau_agent_core::{Agent, AgentConfig, AgentEvent};
@@ -21,7 +23,6 @@ use tau_ai::{LlmClient, Message, MessageRole, StreamDeltaHandler};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tokio_stream::StreamExt;
 
 use crate::{
     current_unix_timestamp, current_unix_timestamp_ms, persist_messages, SessionRuntime,
@@ -31,9 +32,11 @@ use crate::{
 const OPENRESPONSES_ENDPOINT: &str = "/v1/responses";
 const WEBCHAT_ENDPOINT: &str = "/webchat";
 const GATEWAY_STATUS_ENDPOINT: &str = "/gateway/status";
+const GATEWAY_WS_ENDPOINT: &str = "/gateway/ws";
 const GATEWAY_AUTH_SESSION_ENDPOINT: &str = "/gateway/auth/session";
 const DEFAULT_SESSION_KEY: &str = "default";
 const INPUT_BODY_SIZE_MULTIPLIER: usize = 8;
+const GATEWAY_WS_HEARTBEAT_REQUEST_ID: &str = "gateway-heartbeat";
 
 #[derive(Clone)]
 pub(crate) struct GatewayOpenResponsesServerConfig {
@@ -354,6 +357,7 @@ fn build_gateway_openresponses_router(state: Arc<GatewayOpenResponsesServerState
         )
         .route(WEBCHAT_ENDPOINT, get(handle_webchat_page))
         .route(GATEWAY_STATUS_ENDPOINT, get(handle_gateway_status))
+        .route(GATEWAY_WS_ENDPOINT, get(handle_gateway_ws_upgrade))
         .with_state(state)
 }
 
@@ -394,6 +398,7 @@ async fn handle_gateway_status(
                 "webchat_endpoint": WEBCHAT_ENDPOINT,
                 "auth_session_endpoint": GATEWAY_AUTH_SESSION_ENDPOINT,
                 "status_endpoint": GATEWAY_STATUS_ENDPOINT,
+                "ws_endpoint": GATEWAY_WS_ENDPOINT,
                 "state_dir": state.config.state_dir.display().to_string(),
                 "model": state.config.model,
             }
@@ -477,6 +482,373 @@ async fn handle_gateway_auth_session(
     match issue_gateway_session_token(&state, request.password.as_str()) {
         Ok(response) => (StatusCode::OK, Json(response)).into_response(),
         Err(error) => error.into_response(),
+    }
+}
+
+async fn handle_gateway_ws_upgrade(
+    State(state): State<Arc<GatewayOpenResponsesServerState>>,
+    headers: HeaderMap,
+    websocket: WebSocketUpgrade,
+) -> Response {
+    let principal = match authorize_gateway_request(&state, &headers) {
+        Ok(principal) => principal,
+        Err(error) => return error.into_response(),
+    };
+    if let Err(error) = enforce_gateway_rate_limit(&state, principal.as_str()) {
+        return error.into_response();
+    }
+
+    websocket
+        .on_upgrade(move |socket| run_gateway_ws_connection(state, socket, principal))
+        .into_response()
+}
+
+fn gateway_ws_message_from_frame(
+    frame: &crate::gateway_ws_protocol::GatewayWsResponseFrame,
+) -> WsMessage {
+    match serde_json::to_string(frame) {
+        Ok(raw) => WsMessage::Text(raw.into()),
+        Err(error) => {
+            let fallback = crate::gateway_ws_protocol::build_gateway_ws_error_frame(
+                &frame.request_id,
+                crate::gateway_ws_protocol::GATEWAY_WS_ERROR_CODE_INTERNAL_ERROR,
+                format!("failed to serialize gateway websocket frame: {error}").as_str(),
+            );
+            WsMessage::Text(
+                serde_json::to_string(&fallback)
+                    .unwrap_or_else(|_| {
+                        "{\"schema_version\":1,\"request_id\":\"unknown-request\",\"kind\":\"error\",\"payload\":{\"code\":\"internal_error\",\"message\":\"failed to serialize gateway websocket frame\"}}".to_string()
+                    })
+                    .into(),
+            )
+        }
+    }
+}
+
+fn gateway_ws_error_code_from_api_error(error: &OpenResponsesApiError) -> &'static str {
+    match error.code {
+        "unauthorized" => crate::gateway_ws_protocol::GATEWAY_WS_ERROR_CODE_UNAUTHORIZED,
+        "rate_limited" => crate::gateway_ws_protocol::GATEWAY_WS_ERROR_CODE_RATE_LIMITED,
+        "internal_error" => crate::gateway_ws_protocol::GATEWAY_WS_ERROR_CODE_INTERNAL_ERROR,
+        other => other,
+    }
+}
+
+fn enforce_gateway_ws_principal_active(
+    state: &GatewayOpenResponsesServerState,
+    principal: &str,
+) -> Result<(), OpenResponsesApiError> {
+    let Some(session_token) = principal.strip_prefix("session:") else {
+        return Ok(());
+    };
+
+    let now_unix_ms = current_unix_timestamp_ms();
+    let mut auth_state = state
+        .auth_runtime
+        .lock()
+        .map_err(|_| OpenResponsesApiError::internal("gateway auth state lock poisoned"))?;
+    prune_expired_gateway_sessions(&mut auth_state, now_unix_ms);
+    if let Some(session) = auth_state.sessions.get_mut(session_token) {
+        session.last_seen_unix_ms = now_unix_ms;
+        session.request_count = session.request_count.saturating_add(1);
+        return Ok(());
+    }
+    auth_state.auth_failures = auth_state.auth_failures.saturating_add(1);
+    Err(OpenResponsesApiError::unauthorized())
+}
+
+fn gateway_ws_resolve_session_key(payload: &serde_json::Map<String, Value>) -> Result<String> {
+    let requested = crate::gateway_ws_protocol::parse_optional_session_key(payload)?;
+    Ok(sanitize_session_key(
+        requested.as_deref().unwrap_or(DEFAULT_SESSION_KEY),
+    ))
+}
+
+fn collect_gateway_ws_session_status_payload(
+    state: &GatewayOpenResponsesServerState,
+    payload: &serde_json::Map<String, Value>,
+) -> Result<Value> {
+    let session_key = gateway_ws_resolve_session_key(payload)?;
+    let session_path = gateway_session_path(&state.config.state_dir, &session_key);
+    let exists = session_path.exists();
+    let (message_count, bytes) = if exists {
+        let raw = std::fs::read_to_string(&session_path)
+            .with_context(|| format!("failed to read {}", session_path.display()))?;
+        (
+            raw.lines().filter(|line| !line.trim().is_empty()).count(),
+            raw.len(),
+        )
+    } else {
+        (0, 0)
+    };
+    Ok(json!({
+        "session_key": session_key,
+        "exists": exists,
+        "message_count": message_count,
+        "bytes": bytes,
+    }))
+}
+
+fn collect_gateway_ws_session_reset_payload(
+    state: &GatewayOpenResponsesServerState,
+    payload: &serde_json::Map<String, Value>,
+) -> Result<Value> {
+    let session_key = gateway_ws_resolve_session_key(payload)?;
+    let session_path = gateway_session_path(&state.config.state_dir, &session_key);
+    let lock_path = session_path.with_extension("lock");
+    let mut reset = false;
+
+    if session_path.exists() {
+        std::fs::remove_file(&session_path)
+            .with_context(|| format!("failed to remove {}", session_path.display()))?;
+        reset = true;
+    }
+    if lock_path.exists() {
+        std::fs::remove_file(&lock_path)
+            .with_context(|| format!("failed to remove {}", lock_path.display()))?;
+    }
+
+    Ok(json!({
+        "session_key": session_key,
+        "reset": reset,
+    }))
+}
+
+fn collect_gateway_ws_run_lifecycle_status_payload() -> Value {
+    let capabilities = crate::gateway_ws_protocol::gateway_ws_capabilities_payload();
+    json!({
+        "active_runs": [],
+        "recent_events": [],
+        "event_kinds": capabilities["contracts"]["run_lifecycle"]["event_kinds"].clone(),
+    })
+}
+
+fn dispatch_gateway_ws_control_text_frame(
+    state: &GatewayOpenResponsesServerState,
+    principal: &str,
+    raw: &str,
+) -> (crate::gateway_ws_protocol::GatewayWsResponseFrame, bool) {
+    if let Err(error) = enforce_gateway_ws_principal_active(state, principal) {
+        let request_id = crate::gateway_ws_protocol::best_effort_gateway_ws_request_id(raw)
+            .unwrap_or_else(|| "unknown-request".to_string());
+        let code = gateway_ws_error_code_from_api_error(&error);
+        return (
+            crate::gateway_ws_protocol::build_gateway_ws_error_frame(
+                &request_id,
+                code,
+                error.message.as_str(),
+            ),
+            true,
+        );
+    }
+    if let Err(error) = enforce_gateway_rate_limit(state, principal) {
+        let request_id = crate::gateway_ws_protocol::best_effort_gateway_ws_request_id(raw)
+            .unwrap_or_else(|| "unknown-request".to_string());
+        let code = gateway_ws_error_code_from_api_error(&error);
+        return (
+            crate::gateway_ws_protocol::build_gateway_ws_error_frame(
+                &request_id,
+                code,
+                error.message.as_str(),
+            ),
+            false,
+        );
+    }
+
+    let request_frame = match crate::gateway_ws_protocol::parse_gateway_ws_request_frame(raw) {
+        Ok(frame) => frame,
+        Err(error) => {
+            let request_id = crate::gateway_ws_protocol::best_effort_gateway_ws_request_id(raw)
+                .unwrap_or_else(|| "unknown-request".to_string());
+            let message = error.to_string();
+            let code =
+                crate::gateway_ws_protocol::classify_gateway_ws_parse_error(message.as_str());
+            return (
+                crate::gateway_ws_protocol::build_gateway_ws_error_frame(
+                    &request_id,
+                    code,
+                    message.as_str(),
+                ),
+                false,
+            );
+        }
+    };
+
+    let response = match request_frame.kind {
+        crate::gateway_ws_protocol::GatewayWsRequestKind::Capabilities => {
+            crate::gateway_ws_protocol::build_gateway_ws_response_frame(
+                &request_frame.request_id,
+                "capabilities.response",
+                crate::gateway_ws_protocol::gateway_ws_capabilities_payload(),
+            )
+        }
+        crate::gateway_ws_protocol::GatewayWsRequestKind::GatewayStatus => {
+            match crate::gateway_runtime::inspect_gateway_service_mode(&state.config.state_dir) {
+                Ok(service_report) => crate::gateway_ws_protocol::build_gateway_ws_response_frame(
+                    &request_frame.request_id,
+                    "gateway.status.response",
+                    json!({
+                        "service": service_report,
+                        "auth": collect_gateway_auth_status_report(state),
+                        "gateway": {
+                            "responses_endpoint": OPENRESPONSES_ENDPOINT,
+                            "status_endpoint": GATEWAY_STATUS_ENDPOINT,
+                            "webchat_endpoint": WEBCHAT_ENDPOINT,
+                            "auth_session_endpoint": GATEWAY_AUTH_SESSION_ENDPOINT,
+                            "ws_endpoint": GATEWAY_WS_ENDPOINT,
+                            "model": state.config.model,
+                            "state_dir": state.config.state_dir.display().to_string(),
+                        }
+                    }),
+                ),
+                Err(error) => crate::gateway_ws_protocol::build_gateway_ws_error_frame(
+                    &request_frame.request_id,
+                    crate::gateway_ws_protocol::GATEWAY_WS_ERROR_CODE_INTERNAL_ERROR,
+                    format!("failed to inspect gateway service state: {error}").as_str(),
+                ),
+            }
+        }
+        crate::gateway_ws_protocol::GatewayWsRequestKind::SessionStatus => {
+            match collect_gateway_ws_session_status_payload(state, &request_frame.payload) {
+                Ok(payload) => crate::gateway_ws_protocol::build_gateway_ws_response_frame(
+                    &request_frame.request_id,
+                    "session.status.response",
+                    payload,
+                ),
+                Err(error) => {
+                    let message = error.to_string();
+                    let code = crate::gateway_ws_protocol::classify_gateway_ws_parse_error(
+                        message.as_str(),
+                    );
+                    crate::gateway_ws_protocol::build_gateway_ws_error_frame(
+                        &request_frame.request_id,
+                        code,
+                        message.as_str(),
+                    )
+                }
+            }
+        }
+        crate::gateway_ws_protocol::GatewayWsRequestKind::SessionReset => {
+            match collect_gateway_ws_session_reset_payload(state, &request_frame.payload) {
+                Ok(payload) => crate::gateway_ws_protocol::build_gateway_ws_response_frame(
+                    &request_frame.request_id,
+                    "session.reset.response",
+                    payload,
+                ),
+                Err(error) => {
+                    let message = error.to_string();
+                    let code = crate::gateway_ws_protocol::classify_gateway_ws_parse_error(
+                        message.as_str(),
+                    );
+                    crate::gateway_ws_protocol::build_gateway_ws_error_frame(
+                        &request_frame.request_id,
+                        code,
+                        message.as_str(),
+                    )
+                }
+            }
+        }
+        crate::gateway_ws_protocol::GatewayWsRequestKind::RunLifecycleStatus => {
+            crate::gateway_ws_protocol::build_gateway_ws_response_frame(
+                &request_frame.request_id,
+                "run.lifecycle.status.response",
+                collect_gateway_ws_run_lifecycle_status_payload(),
+            )
+        }
+    };
+
+    (response, false)
+}
+
+async fn run_gateway_ws_connection(
+    state: Arc<GatewayOpenResponsesServerState>,
+    socket: WebSocket,
+    principal: String,
+) {
+    let (mut sender, mut receiver) = socket.split();
+    let mut heartbeat = tokio::time::interval(Duration::from_secs(
+        crate::gateway_ws_protocol::GATEWAY_WS_HEARTBEAT_INTERVAL_SECONDS.max(1),
+    ));
+    heartbeat.tick().await;
+
+    loop {
+        tokio::select! {
+            inbound = receiver.next() => {
+                let Some(inbound) = inbound else {
+                    break;
+                };
+                let message = match inbound {
+                    Ok(message) => message,
+                    Err(_) => break,
+                };
+
+                match message {
+                    WsMessage::Text(text) => {
+                        let (response, should_close) =
+                            dispatch_gateway_ws_control_text_frame(&state, principal.as_str(), text.as_str());
+                        if sender
+                            .send(gateway_ws_message_from_frame(&response))
+                            .await
+                            .is_err()
+                        {
+                            break;
+                        }
+                        if should_close {
+                            break;
+                        }
+                    }
+                    WsMessage::Binary(bytes) => {
+                        let request_id = "unknown-request";
+                        let response = match String::from_utf8(bytes.to_vec()) {
+                            Ok(text) => dispatch_gateway_ws_control_text_frame(
+                                &state,
+                                principal.as_str(),
+                                text.as_str(),
+                            )
+                            .0,
+                            Err(_) => crate::gateway_ws_protocol::build_gateway_ws_error_frame(
+                                request_id,
+                                crate::gateway_ws_protocol::GATEWAY_WS_ERROR_CODE_INVALID_PAYLOAD,
+                                "gateway websocket binary frame must be UTF-8 encoded JSON text",
+                            ),
+                        };
+                        if sender
+                            .send(gateway_ws_message_from_frame(&response))
+                            .await
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
+                    WsMessage::Ping(payload) => {
+                        if sender.send(WsMessage::Pong(payload)).await.is_err() {
+                            break;
+                        }
+                    }
+                    WsMessage::Pong(_) => {}
+                    WsMessage::Close(_) => break,
+                }
+            }
+            _ = heartbeat.tick() => {
+                if sender.send(WsMessage::Ping(Vec::new().into())).await.is_err() {
+                    break;
+                }
+                let heartbeat_frame = crate::gateway_ws_protocol::build_gateway_ws_response_frame(
+                    GATEWAY_WS_HEARTBEAT_REQUEST_ID,
+                    "gateway.heartbeat",
+                    json!({
+                        "ts_unix_ms": current_unix_timestamp_ms(),
+                    }),
+                );
+                if sender
+                    .send(gateway_ws_message_from_frame(&heartbeat_frame))
+                    .await
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        }
     }
 }
 
@@ -1168,6 +1540,7 @@ fn render_gateway_webchat_page() -> String {
   <script>
     const RESPONSES_ENDPOINT = "{responses_endpoint}";
     const STATUS_ENDPOINT = "{status_endpoint}";
+    const WEBSOCKET_ENDPOINT = "{websocket_endpoint}";
     const STORAGE_TOKEN = "tau.gateway.webchat.token";
     const STORAGE_SESSION = "tau.gateway.webchat.session";
     const tokenInput = document.getElementById("authToken");
@@ -1357,6 +1730,7 @@ fn render_gateway_webchat_page() -> String {
 "#,
         responses_endpoint = OPENRESPONSES_ENDPOINT,
         status_endpoint = GATEWAY_STATUS_ENDPOINT,
+        websocket_endpoint = GATEWAY_WS_ENDPOINT,
         default_session_key = DEFAULT_SESSION_KEY,
     )
 }
@@ -1560,10 +1934,17 @@ pub(crate) fn validate_gateway_openresponses_bind(bind: &str) -> Result<SocketAd
 mod tests {
     use super::*;
     use async_trait::async_trait;
+    use futures_util::{SinkExt, StreamExt};
     use reqwest::Client;
     use serde_json::Value;
     use tau_ai::{ChatRequest, ChatResponse, ChatUsage, TauAiError};
     use tempfile::tempdir;
+    use tokio_tungstenite::{
+        connect_async,
+        tungstenite::{
+            self, client::IntoClientRequest, http::HeaderValue, Message as ClientWsMessage,
+        },
+    };
 
     #[derive(Clone, Default)]
     struct MockGatewayLlmClient {
@@ -1665,6 +2046,65 @@ mod tests {
         Ok((addr, handle))
     }
 
+    async fn connect_gateway_ws(
+        addr: SocketAddr,
+        token: Option<&str>,
+    ) -> Result<
+        tokio_tungstenite::WebSocketStream<
+            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+        >,
+    > {
+        let uri = format!("ws://{addr}{GATEWAY_WS_ENDPOINT}");
+        let mut request = uri
+            .into_client_request()
+            .context("failed to construct websocket request")?;
+        if let Some(token) = token {
+            request.headers_mut().insert(
+                AUTHORIZATION,
+                HeaderValue::from_str(format!("Bearer {token}").as_str())
+                    .expect("valid bearer auth header"),
+            );
+        }
+        let (socket, _) = connect_async(request)
+            .await
+            .context("failed to establish websocket connection")?;
+        Ok(socket)
+    }
+
+    async fn recv_gateway_ws_json(
+        socket: &mut tokio_tungstenite::WebSocketStream<
+            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+        >,
+    ) -> Value {
+        let message = tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                let Some(message) = socket.next().await else {
+                    panic!("websocket closed before response frame");
+                };
+                let message = message.expect("read websocket frame");
+                match message {
+                    ClientWsMessage::Text(text) => {
+                        return serde_json::from_str::<Value>(text.as_str())
+                            .expect("websocket text frame should contain json");
+                    }
+                    ClientWsMessage::Ping(payload) => {
+                        socket
+                            .send(ClientWsMessage::Pong(payload))
+                            .await
+                            .expect("send pong");
+                    }
+                    ClientWsMessage::Pong(_) => continue,
+                    ClientWsMessage::Binary(_) => continue,
+                    ClientWsMessage::Close(_) => panic!("websocket closed before json frame"),
+                    ClientWsMessage::Frame(_) => continue,
+                }
+            }
+        })
+        .await
+        .expect("websocket response should arrive before timeout");
+        message
+    }
+
     #[test]
     fn unit_translate_openresponses_request_supports_item_input_and_function_call_output() {
         let request = OpenResponsesRequest {
@@ -1725,6 +2165,7 @@ mod tests {
         assert!(html.contains("Tau Gateway Webchat"));
         assert!(html.contains(OPENRESPONSES_ENDPOINT));
         assert!(html.contains(GATEWAY_STATUS_ENDPOINT));
+        assert!(html.contains(GATEWAY_WS_ENDPOINT));
         assert!(html.contains(DEFAULT_SESSION_KEY));
     }
 
@@ -1753,6 +2194,7 @@ mod tests {
         assert!(body.contains("Tau Gateway Webchat"));
         assert!(body.contains(OPENRESPONSES_ENDPOINT));
         assert!(body.contains(GATEWAY_STATUS_ENDPOINT));
+        assert!(body.contains(GATEWAY_WS_ENDPOINT));
 
         handle.abort();
     }
@@ -1882,6 +2324,171 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn functional_gateway_ws_endpoint_rejects_unauthorized_upgrade() {
+        let temp = tempdir().expect("tempdir");
+        let state = test_state(temp.path(), 10_000, "secret");
+        let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+
+        let error = connect_async(format!("ws://{addr}{GATEWAY_WS_ENDPOINT}"))
+            .await
+            .expect_err("websocket upgrade should reject missing auth");
+        match error {
+            tungstenite::Error::Http(response) => {
+                assert_eq!(
+                    response.status().as_u16(),
+                    StatusCode::UNAUTHORIZED.as_u16()
+                );
+            }
+            other => panic!("expected HTTP upgrade rejection, got {other:?}"),
+        }
+
+        handle.abort();
+    }
+
+    #[tokio::test]
+    async fn functional_gateway_ws_endpoint_supports_capabilities_and_ping_pong() {
+        let temp = tempdir().expect("tempdir");
+        let state = test_state(temp.path(), 10_000, "secret");
+        let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+
+        let mut socket = connect_gateway_ws(addr, Some("secret"))
+            .await
+            .expect("connect websocket");
+        socket
+            .send(ClientWsMessage::Text(
+                r#"{"schema_version":1,"request_id":"req-cap","kind":"capabilities.request","payload":{}}"#
+                    .into(),
+            ))
+            .await
+            .expect("send capabilities frame");
+
+        let response = recv_gateway_ws_json(&mut socket).await;
+        assert_eq!(response["schema_version"], 1);
+        assert_eq!(response["request_id"], "req-cap");
+        assert_eq!(response["kind"], "capabilities.response");
+        assert_eq!(response["payload"]["protocol_version"], "0.1.0");
+
+        socket
+            .send(ClientWsMessage::Ping(vec![7, 3, 1]))
+            .await
+            .expect("send ping");
+        let pong = tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                let Some(message) = socket.next().await else {
+                    panic!("websocket closed before pong");
+                };
+                let message = message.expect("read websocket frame");
+                if let ClientWsMessage::Pong(payload) = message {
+                    return payload;
+                }
+            }
+        })
+        .await
+        .expect("pong should arrive before timeout");
+        assert_eq!(pong.to_vec(), vec![7, 3, 1]);
+
+        socket.close(None).await.expect("close websocket");
+        handle.abort();
+    }
+
+    #[tokio::test]
+    async fn integration_gateway_ws_session_status_and_reset_roundtrip() {
+        let temp = tempdir().expect("tempdir");
+        let state = test_state(temp.path(), 10_000, "secret");
+        let session_path = gateway_session_path(&state.config.state_dir, DEFAULT_SESSION_KEY);
+        if let Some(parent) = session_path.parent() {
+            std::fs::create_dir_all(parent).expect("create session parent");
+        }
+        std::fs::write(
+            &session_path,
+            r#"{"id":"seed-1","role":"system","content":"seed"}"#,
+        )
+        .expect("seed session file");
+
+        let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+        let mut socket = connect_gateway_ws(addr, Some("secret"))
+            .await
+            .expect("connect websocket");
+
+        socket
+            .send(ClientWsMessage::Text(
+                r#"{"schema_version":1,"request_id":"req-status-before","kind":"session.status.request","payload":{}}"#
+                    .into(),
+            ))
+            .await
+            .expect("send status before");
+        let before = recv_gateway_ws_json(&mut socket).await;
+        assert_eq!(before["kind"], "session.status.response");
+        assert_eq!(before["payload"]["session_key"], DEFAULT_SESSION_KEY);
+        assert_eq!(before["payload"]["exists"], true);
+        assert_eq!(before["payload"]["message_count"], 1);
+        assert!(session_path.exists());
+
+        socket
+            .send(ClientWsMessage::Text(
+                r#"{"schema_version":1,"request_id":"req-reset","kind":"session.reset.request","payload":{}}"#
+                    .into(),
+            ))
+            .await
+            .expect("send session reset");
+        let reset = recv_gateway_ws_json(&mut socket).await;
+        assert_eq!(reset["kind"], "session.reset.response");
+        assert_eq!(reset["payload"]["session_key"], DEFAULT_SESSION_KEY);
+        assert_eq!(reset["payload"]["reset"], true);
+        assert!(!session_path.exists());
+
+        socket
+            .send(ClientWsMessage::Text(
+                r#"{"schema_version":1,"request_id":"req-status-after","kind":"session.status.request","payload":{}}"#
+                    .into(),
+            ))
+            .await
+            .expect("send status after");
+        let after = recv_gateway_ws_json(&mut socket).await;
+        assert_eq!(after["kind"], "session.status.response");
+        assert_eq!(after["payload"]["exists"], false);
+        assert_eq!(after["payload"]["message_count"], 0);
+
+        socket.close(None).await.expect("close websocket");
+        handle.abort();
+    }
+
+    #[tokio::test]
+    async fn regression_gateway_ws_malformed_frame_fails_closed_without_crashing_runtime() {
+        let temp = tempdir().expect("tempdir");
+        let state = test_state(temp.path(), 10_000, "secret");
+        let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+
+        let mut socket = connect_gateway_ws(addr, Some("secret"))
+            .await
+            .expect("connect websocket");
+        socket
+            .send(ClientWsMessage::Text("not-json".into()))
+            .await
+            .expect("send malformed frame");
+        let malformed = recv_gateway_ws_json(&mut socket).await;
+        assert_eq!(malformed["kind"], "error");
+        assert_eq!(malformed["payload"]["code"], "invalid_json");
+
+        socket
+            .send(ClientWsMessage::Text(
+                r#"{"schema_version":1,"request_id":"req-status","kind":"gateway.status.request","payload":{}}"#
+                    .into(),
+            ))
+            .await
+            .expect("send valid status frame");
+        let status = recv_gateway_ws_json(&mut socket).await;
+        assert_eq!(status["kind"], "gateway.status.response");
+        assert_eq!(
+            status["payload"]["gateway"]["ws_endpoint"],
+            GATEWAY_WS_ENDPOINT
+        );
+
+        socket.close(None).await.expect("close websocket");
+        handle.abort();
+    }
+
+    #[tokio::test]
     async fn integration_openresponses_http_roundtrip_persists_session_state() {
         let temp = tempdir().expect("tempdir");
         let state = test_state(temp.path(), 10_000, "secret");
@@ -1971,6 +2578,10 @@ mod tests {
         assert_eq!(
             payload["gateway"]["status_endpoint"].as_str(),
             Some(GATEWAY_STATUS_ENDPOINT)
+        );
+        assert_eq!(
+            payload["gateway"]["ws_endpoint"].as_str(),
+            Some(GATEWAY_WS_ENDPOINT)
         );
         assert_eq!(
             payload["service"]["service_status"].as_str(),

@@ -389,6 +389,52 @@ cargo run -p tau-coding-agent -- \
 
 Operational rollout and rollback guidance: `docs/guides/dashboard-ops.md`.
 
+## Gateway OpenResponses + websocket control server
+
+Run the authenticated gateway server for HTTP OpenResponses plus websocket control-plane methods.
+
+```bash
+cargo run -p tau-coding-agent -- \
+  --model openai/gpt-4o-mini \
+  --gateway-openresponses-server \
+  --gateway-openresponses-bind 127.0.0.1:8787 \
+  --gateway-openresponses-auth-mode token \
+  --gateway-openresponses-auth-token dev-secret \
+  --gateway-state-dir .tau/gateway \
+  --gateway-openresponses-rate-limit-window-seconds 60 \
+  --gateway-openresponses-rate-limit-max-requests 120
+```
+
+Server endpoints:
+
+- `POST /v1/responses` (OpenResponses subset)
+- `POST /gateway/auth/session` (only when `--gateway-openresponses-auth-mode=password-session`)
+- `GET /gateway/status`
+- `GET /gateway/ws` (websocket control protocol)
+- `GET /webchat`
+
+Websocket control methods (schema versions `0` and `1` accepted):
+
+- `capabilities.request`
+- `gateway.status.request`
+- `session.status.request`
+- `session.reset.request`
+- `run.lifecycle.status.request`
+
+Example websocket frame:
+
+```json
+{"schema_version":1,"request_id":"req-cap","kind":"capabilities.request","payload":{}}
+```
+
+The server returns deterministic response envelopes and `error` frames for malformed or unsupported input. It also emits heartbeat signals (`ws.ping` plus `gateway.heartbeat`) on a fixed interval.
+
+Compatibility fixtures for protocol replay:
+
+- `crates/tau-coding-agent/testdata/gateway-ws-protocol/dispatch-supported-controls.json`
+- `crates/tau-coding-agent/testdata/gateway-ws-protocol/dispatch-unsupported-schema-continues.json`
+- `crates/tau-coding-agent/testdata/gateway-ws-protocol/dispatch-unknown-kind-continues.json`
+
 ## Gateway contract runner
 
 Use this fixture-driven runtime mode to validate Tau gateway request handling, retry outcomes,

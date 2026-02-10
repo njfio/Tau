@@ -1,0 +1,116 @@
+{
+  "schema_version": 1,
+  "name": "dispatch-supported-controls",
+  "mode": "dispatch",
+  "input_frames": [
+    "{\"schema_version\":1,\"request_id\":\"req-cap\",\"kind\":\"capabilities.request\",\"payload\":{}}",
+    "{\"schema_version\":1,\"request_id\":\"req-status\",\"kind\":\"gateway.status.request\",\"payload\":{}}",
+    "{\"schema_version\":1,\"request_id\":\"req-session-before\",\"kind\":\"session.status.request\",\"payload\":{}}",
+    "{\"schema_version\":1,\"request_id\":\"req-session-reset\",\"kind\":\"session.reset.request\",\"payload\":{}}",
+    "{\"schema_version\":1,\"request_id\":\"req-session-after\",\"kind\":\"session.status.request\",\"payload\":{}}",
+    "{\"schema_version\":1,\"request_id\":\"req-run\",\"kind\":\"run.lifecycle.status.request\",\"payload\":{}}"
+  ],
+  "expected_processed_frames": 6,
+  "expected_error_count": 0,
+  "expected_responses": [
+    {
+      "schema_version": 1,
+      "request_id": "req-cap",
+      "kind": "capabilities.response",
+      "payload": {
+        "schema_version": 1,
+        "protocol_version": "0.1.0",
+        "response_schema_version": 1,
+        "supported_request_schema_versions": [0, 1],
+        "request_kinds": [
+          "capabilities.request",
+          "gateway.status.request",
+          "session.status.request",
+          "session.reset.request",
+          "run.lifecycle.status.request"
+        ],
+        "response_kinds": [
+          "capabilities.response",
+          "gateway.status.response",
+          "session.status.response",
+          "session.reset.response",
+          "run.lifecycle.status.response",
+          "gateway.heartbeat",
+          "error"
+        ],
+        "contracts": {
+          "heartbeat": {
+            "interval_seconds": 15,
+            "transport_events": ["ws.ping", "gateway.heartbeat"]
+          },
+          "session": {
+            "session_key_field": "session_key",
+            "defaults_to": "default",
+            "status_response_kind": "session.status.response",
+            "reset_response_kind": "session.reset.response"
+          },
+          "run_lifecycle": {
+            "event_kinds": [
+              "run.lifecycle.accepted",
+              "run.lifecycle.cancelled",
+              "run.lifecycle.completed",
+              "run.lifecycle.failed",
+              "run.lifecycle.timed_out",
+              "run.lifecycle.status"
+            ],
+            "status_request_kind": "run.lifecycle.status.request",
+            "status_response_kind": "run.lifecycle.status.response"
+          }
+        }
+      }
+    },
+    {
+      "schema_version": 1,
+      "request_id": "req-status",
+      "kind": "gateway.status.response",
+      "payload": {
+        "service_status": "running",
+        "transport": "websocket",
+        "authenticated": true
+      }
+    },
+    {
+      "schema_version": 1,
+      "request_id": "req-session-before",
+      "kind": "session.status.response",
+      "payload": {
+        "session_key": "default",
+        "exists": true,
+        "message_count": 2
+      }
+    },
+    {
+      "schema_version": 1,
+      "request_id": "req-session-reset",
+      "kind": "session.reset.response",
+      "payload": {
+        "session_key": "default",
+        "reset": true
+      }
+    },
+    {
+      "schema_version": 1,
+      "request_id": "req-session-after",
+      "kind": "session.status.response",
+      "payload": {
+        "session_key": "default",
+        "exists": false,
+        "message_count": 0
+      }
+    },
+    {
+      "schema_version": 1,
+      "request_id": "req-run",
+      "kind": "run.lifecycle.status.response",
+      "payload": {
+        "active_runs": [],
+        "recent_events": []
+      }
+    }
+  ]
+}
