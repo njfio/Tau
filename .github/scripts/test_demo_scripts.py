@@ -151,6 +151,7 @@ class DemoScriptsTests(unittest.TestCase):
                 "memory.sh",
                 "dashboard.sh",
                 "gateway.sh",
+                "custom-command.sh",
             ],
         )
 
@@ -212,6 +213,7 @@ class DemoScriptsTests(unittest.TestCase):
                 "memory.sh",
                 "dashboard.sh",
                 "gateway.sh",
+                "custom-command.sh",
             ):
                 completed = run_demo_script(script_name, binary_path, trace_path)
                 self.assertEqual(
@@ -279,10 +281,10 @@ class DemoScriptsTests(unittest.TestCase):
                 0,
                 msg=f"all.sh failed\nstdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
             )
-            self.assertIn("[demo:all] summary: total=9 passed=9 failed=0", completed.stdout)
+            self.assertIn("[demo:all] summary: total=10 passed=10 failed=0", completed.stdout)
 
             rows = [json.loads(line) for line in trace_path.read_text(encoding="utf-8").splitlines()]
-            self.assertGreaterEqual(len(rows), 26)
+            self.assertGreaterEqual(len(rows), 30)
 
     def test_functional_all_script_only_runs_selected_demo_wrappers(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -331,11 +333,11 @@ class DemoScriptsTests(unittest.TestCase):
 
             completed = run_demo_script("all.sh", binary_path, trace_path, extra_args=["--report-file", str(report_path)])
             self.assertEqual(completed.returncode, 0, msg=completed.stderr)
-            self.assertIn("[demo:all] summary: total=9 passed=9 failed=0", completed.stdout)
+            self.assertIn("[demo:all] summary: total=10 passed=10 failed=0", completed.stdout)
             self.assertTrue(report_path.exists())
 
             payload = json.loads(report_path.read_text(encoding="utf-8"))
-            self.assertEqual(payload["summary"], {"total": 9, "passed": 9, "failed": 0})
+            self.assertEqual(payload["summary"], {"total": 10, "passed": 10, "failed": 0})
             self.assertEqual(
                 [entry["name"] for entry in payload["demos"]],
                 [
@@ -348,6 +350,7 @@ class DemoScriptsTests(unittest.TestCase):
                     "memory.sh",
                     "dashboard.sh",
                     "gateway.sh",
+                    "custom-command.sh",
                 ],
             )
             for entry in payload["demos"]:
@@ -424,6 +427,7 @@ class DemoScriptsTests(unittest.TestCase):
             self.assertIn("[demo:all] [7] memory.sh", completed.stdout)
             self.assertIn("[demo:all] [8] dashboard.sh", completed.stdout)
             self.assertIn("[demo:all] [9] gateway.sh", completed.stdout)
+            self.assertIn("[demo:all] [10] custom-command.sh", completed.stdout)
 
     def test_integration_all_script_list_json_reports_canonical_order(self) -> None:
         completed = subprocess.run(
@@ -446,6 +450,7 @@ class DemoScriptsTests(unittest.TestCase):
                 "memory.sh",
                 "dashboard.sh",
                 "gateway.sh",
+                "custom-command.sh",
             ],
         )
 
@@ -592,8 +597,8 @@ class DemoScriptsTests(unittest.TestCase):
             self.assertTrue(report_path.exists())
 
             payload = json.loads(report_path.read_text(encoding="utf-8"))
-            self.assertEqual(payload["summary"]["total"], 9)
-            self.assertEqual(payload["summary"]["failed"], 9)
+            self.assertEqual(payload["summary"]["total"], 10)
+            self.assertEqual(payload["summary"]["failed"], 10)
             self.assertEqual(payload["summary"]["passed"], 0)
             for entry in payload["demos"]:
                 assert_duration_ms_field(self, entry)

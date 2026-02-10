@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "name": "custom-command-rollout-pass",
+  "description": "All-success fixture used for deterministic rollout demos and observability checks.",
+  "cases": [
+    {
+      "schema_version": 1,
+      "case_id": "custom-command-create-pass",
+      "operation": "create",
+      "command_name": "deploy_release",
+      "template": "deploy {{env}}",
+      "arguments": {
+        "env": "staging"
+      },
+      "simulate_retryable_failure": false,
+      "expected": {
+        "outcome": "success",
+        "status_code": 201,
+        "response_body": {
+          "status": "accepted",
+          "operation": "create",
+          "command_name": "deploy_release"
+        }
+      }
+    },
+    {
+      "schema_version": 1,
+      "case_id": "custom-command-update-pass",
+      "operation": "update",
+      "command_name": "deploy_release",
+      "template": "deploy {{env}} --safe",
+      "arguments": {
+        "env": "staging"
+      },
+      "simulate_retryable_failure": false,
+      "expected": {
+        "outcome": "success",
+        "status_code": 200,
+        "response_body": {
+          "status": "accepted",
+          "operation": "update",
+          "command_name": "deploy_release"
+        }
+      }
+    },
+    {
+      "schema_version": 1,
+      "case_id": "custom-command-run-pass",
+      "operation": "run",
+      "command_name": "deploy_release",
+      "template": "",
+      "arguments": {
+        "env": "staging"
+      },
+      "simulate_retryable_failure": false,
+      "expected": {
+        "outcome": "success",
+        "status_code": 200,
+        "response_body": {
+          "status": "accepted",
+          "operation": "run",
+          "command_name": "deploy_release",
+          "arguments": {
+            "env": "staging"
+          }
+        }
+      }
+    },
+    {
+      "schema_version": 1,
+      "case_id": "custom-command-list-pass",
+      "operation": "list",
+      "command_name": "",
+      "template": "",
+      "arguments": {},
+      "simulate_retryable_failure": false,
+      "expected": {
+        "outcome": "success",
+        "status_code": 200,
+        "response_body": {
+          "status": "accepted",
+          "operation": "list",
+          "commands": [
+            "deploy_release",
+            "triage_alerts"
+          ]
+        }
+      }
+    }
+  ]
+}
