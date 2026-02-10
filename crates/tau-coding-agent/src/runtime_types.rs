@@ -38,6 +38,33 @@ pub(crate) struct DoctorProviderKeyStatus {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct DoctorMultiChannelReadinessConfig {
+    pub(crate) ingress_dir: PathBuf,
+    pub(crate) credential_store_path: PathBuf,
+    pub(crate) credential_store_encryption: CredentialStoreEncryptionMode,
+    pub(crate) credential_store_key: Option<String>,
+    pub(crate) telegram_bot_token: Option<String>,
+    pub(crate) discord_bot_token: Option<String>,
+    pub(crate) whatsapp_access_token: Option<String>,
+    pub(crate) whatsapp_phone_number_id: Option<String>,
+}
+
+impl Default for DoctorMultiChannelReadinessConfig {
+    fn default() -> Self {
+        Self {
+            ingress_dir: PathBuf::from(".tau/multi-channel/live-ingress"),
+            credential_store_path: PathBuf::from(".tau/credentials.json"),
+            credential_store_encryption: CredentialStoreEncryptionMode::None,
+            credential_store_key: None,
+            telegram_bot_token: None,
+            discord_bot_token: None,
+            whatsapp_access_token: None,
+            whatsapp_phone_number_id: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DoctorCommandConfig {
     pub(crate) model: String,
     pub(crate) provider_keys: Vec<DoctorProviderKeyStatus>,
@@ -49,6 +76,7 @@ pub(crate) struct DoctorCommandConfig {
     pub(crate) skills_dir: PathBuf,
     pub(crate) skills_lock_path: PathBuf,
     pub(crate) trust_root_path: Option<PathBuf>,
+    pub(crate) multi_channel_live_readiness: DoctorMultiChannelReadinessConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

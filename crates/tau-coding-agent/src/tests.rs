@@ -30,21 +30,21 @@ use super::{
     compute_session_stats, current_unix_timestamp, decrypt_credential_store_secret,
     default_macro_config_path, default_profile_store_path, default_skills_lock_path,
     derive_skills_prune_candidates, encrypt_credential_store_secret, ensure_non_empty_text,
-    escape_graph_label, execute_auth_command, execute_branch_alias_command,
-    execute_channel_store_admin_command, execute_command_file, execute_doctor_cli_command,
-    execute_doctor_command, execute_doctor_command_with_options, execute_integration_auth_command,
-    execute_macro_command, execute_package_activate_command, execute_package_activate_on_startup,
-    execute_package_conflicts_command, execute_package_install_command,
-    execute_package_list_command, execute_package_remove_command, execute_package_rollback_command,
-    execute_package_show_command, execute_package_update_command, execute_package_validate_command,
-    execute_profile_command, execute_rpc_capabilities_command, execute_rpc_dispatch_frame_command,
-    execute_rpc_dispatch_ndjson_command, execute_rpc_serve_ndjson_command,
-    execute_rpc_validate_frame_command, execute_session_bookmark_command,
-    execute_session_diff_command, execute_session_graph_export_command,
-    execute_session_search_command, execute_session_stats_command, execute_skills_list_command,
-    execute_skills_lock_diff_command, execute_skills_lock_write_command,
-    execute_skills_prune_command, execute_skills_search_command, execute_skills_show_command,
-    execute_skills_sync_command, execute_skills_trust_add_command,
+    escape_graph_label, evaluate_multi_channel_live_readiness, execute_auth_command,
+    execute_branch_alias_command, execute_channel_store_admin_command, execute_command_file,
+    execute_doctor_cli_command, execute_doctor_command, execute_doctor_command_with_options,
+    execute_integration_auth_command, execute_macro_command, execute_package_activate_command,
+    execute_package_activate_on_startup, execute_package_conflicts_command,
+    execute_package_install_command, execute_package_list_command, execute_package_remove_command,
+    execute_package_rollback_command, execute_package_show_command, execute_package_update_command,
+    execute_package_validate_command, execute_profile_command, execute_rpc_capabilities_command,
+    execute_rpc_dispatch_frame_command, execute_rpc_dispatch_ndjson_command,
+    execute_rpc_serve_ndjson_command, execute_rpc_validate_frame_command,
+    execute_session_bookmark_command, execute_session_diff_command,
+    execute_session_graph_export_command, execute_session_search_command,
+    execute_session_stats_command, execute_skills_list_command, execute_skills_lock_diff_command,
+    execute_skills_lock_write_command, execute_skills_prune_command, execute_skills_search_command,
+    execute_skills_show_command, execute_skills_sync_command, execute_skills_trust_add_command,
     execute_skills_trust_list_command, execute_skills_trust_revoke_command,
     execute_skills_trust_rotate_command, execute_skills_verify_command, execute_startup_preflight,
     format_id_list, format_remap_ids, handle_command, handle_command_with_session_import_mode,
@@ -92,19 +92,19 @@ use super::{
     CliWebhookSignatureAlgorithm, ClientRoute, CommandAction, CommandExecutionContext,
     CommandFileEntry, CommandFileReport, CredentialStoreData, CredentialStoreEncryptionMode,
     DoctorCheckOptions, DoctorCheckResult, DoctorCommandArgs, DoctorCommandConfig,
-    DoctorCommandOutputFormat, DoctorProviderKeyStatus, DoctorStatus, FallbackRoutingClient,
-    IntegrationAuthCommand, IntegrationCredentialStoreRecord, MacroCommand, MacroFile,
-    MultiAgentRouteTable, ProfileCommand, ProfileDefaults, ProfileStoreFile, PromptRunStatus,
-    PromptTelemetryLogger, ProviderAuthMethod, ProviderCredentialStoreRecord, RenderOptions,
-    RuntimeExtensionHooksConfig, SessionBookmarkCommand, SessionBookmarkFile, SessionDiffEntry,
-    SessionDiffReport, SessionGraphFormat, SessionRuntime, SessionSearchArgs, SessionStats,
-    SessionStatsOutputFormat, SkillsPruneMode, SkillsSyncCommandConfig, SkillsVerifyEntry,
-    SkillsVerifyReport, SkillsVerifyStatus, SkillsVerifySummary, SkillsVerifyTrustSummary,
-    ToolAuditLogger, TrustedRootRecord, BRANCH_ALIAS_SCHEMA_VERSION, BRANCH_ALIAS_USAGE,
-    MACRO_SCHEMA_VERSION, MACRO_USAGE, PROFILE_SCHEMA_VERSION, PROFILE_USAGE,
-    SESSION_BOOKMARK_SCHEMA_VERSION, SESSION_BOOKMARK_USAGE, SESSION_SEARCH_DEFAULT_RESULTS,
-    SESSION_SEARCH_PREVIEW_CHARS, SKILLS_PRUNE_USAGE, SKILLS_TRUST_ADD_USAGE,
-    SKILLS_TRUST_LIST_USAGE, SKILLS_VERIFY_USAGE,
+    DoctorCommandOutputFormat, DoctorMultiChannelReadinessConfig, DoctorProviderKeyStatus,
+    DoctorStatus, FallbackRoutingClient, IntegrationAuthCommand, IntegrationCredentialStoreRecord,
+    MacroCommand, MacroFile, MultiAgentRouteTable, ProfileCommand, ProfileDefaults,
+    ProfileStoreFile, PromptRunStatus, PromptTelemetryLogger, ProviderAuthMethod,
+    ProviderCredentialStoreRecord, RenderOptions, RuntimeExtensionHooksConfig,
+    SessionBookmarkCommand, SessionBookmarkFile, SessionDiffEntry, SessionDiffReport,
+    SessionGraphFormat, SessionRuntime, SessionSearchArgs, SessionStats, SessionStatsOutputFormat,
+    SkillsPruneMode, SkillsSyncCommandConfig, SkillsVerifyEntry, SkillsVerifyReport,
+    SkillsVerifyStatus, SkillsVerifySummary, SkillsVerifyTrustSummary, ToolAuditLogger,
+    TrustedRootRecord, BRANCH_ALIAS_SCHEMA_VERSION, BRANCH_ALIAS_USAGE, MACRO_SCHEMA_VERSION,
+    MACRO_USAGE, PROFILE_SCHEMA_VERSION, PROFILE_USAGE, SESSION_BOOKMARK_SCHEMA_VERSION,
+    SESSION_BOOKMARK_USAGE, SESSION_SEARCH_DEFAULT_RESULTS, SESSION_SEARCH_PREVIEW_CHARS,
+    SKILLS_PRUNE_USAGE, SKILLS_TRUST_ADD_USAGE, SKILLS_TRUST_LIST_USAGE, SKILLS_VERIFY_USAGE,
 };
 use crate::auth_commands::{
     auth_availability_counts, auth_mode_counts, auth_provider_counts, auth_revoked_counts,
@@ -475,6 +475,8 @@ fn test_cli() -> Cli {
         event_webhook_signature_max_skew_seconds: 300,
         multi_channel_contract_runner: false,
         multi_channel_live_runner: false,
+        multi_channel_live_readiness_preflight: false,
+        multi_channel_live_readiness_json: false,
         multi_channel_fixture: PathBuf::from(
             "crates/tau-coding-agent/testdata/multi-channel-contract/baseline-three-channel.json",
         ),
@@ -731,6 +733,7 @@ fn skills_command_config(
             skills_dir: skills_dir.to_path_buf(),
             skills_lock_path: lock_path.to_path_buf(),
             trust_root_path: trust_root_path.map(Path::to_path_buf),
+            multi_channel_live_readiness: DoctorMultiChannelReadinessConfig::default(),
         },
     }
 }
@@ -1365,6 +1368,8 @@ fn unit_cli_multi_channel_runner_flags_default_to_disabled() {
     let cli = parse_cli_with_stack(["tau-rs"]);
     assert!(!cli.multi_channel_contract_runner);
     assert!(!cli.multi_channel_live_runner);
+    assert!(!cli.multi_channel_live_readiness_preflight);
+    assert!(!cli.multi_channel_live_readiness_json);
     assert_eq!(
         cli.multi_channel_fixture,
         PathBuf::from(
@@ -1450,6 +1455,19 @@ fn functional_cli_multi_channel_live_runner_flags_accept_explicit_overrides() {
 }
 
 #[test]
+fn functional_cli_multi_channel_live_readiness_preflight_flags_accept_explicit_overrides() {
+    let cli = parse_cli_with_stack([
+        "tau-rs",
+        "--multi-channel-live-readiness-preflight",
+        "--multi-channel-live-readiness-json",
+    ]);
+    assert!(cli.multi_channel_live_readiness_preflight);
+    assert!(cli.multi_channel_live_readiness_json);
+    assert!(!cli.multi_channel_contract_runner);
+    assert!(!cli.multi_channel_live_runner);
+}
+
+#[test]
 fn regression_cli_multi_channel_fixture_requires_multi_channel_runner_flag() {
     let parse = try_parse_cli_with_stack([
         "tau-rs",
@@ -1473,6 +1491,26 @@ fn regression_cli_multi_channel_live_ingress_dir_requires_live_runner_flag() {
     assert!(error
         .to_string()
         .contains("required arguments were not provided"));
+}
+
+#[test]
+fn regression_cli_multi_channel_live_readiness_json_requires_preflight_flag() {
+    let parse = try_parse_cli_with_stack(["tau-rs", "--multi-channel-live-readiness-json"]);
+    let error = parse.expect_err("readiness json should require readiness preflight mode");
+    assert!(error
+        .to_string()
+        .contains("required arguments were not provided"));
+}
+
+#[test]
+fn regression_cli_multi_channel_live_readiness_preflight_conflicts_with_live_runner() {
+    let parse = try_parse_cli_with_stack([
+        "tau-rs",
+        "--multi-channel-live-readiness-preflight",
+        "--multi-channel-live-runner",
+    ]);
+    let error = parse.expect_err("readiness preflight should conflict with live runner");
+    assert!(error.to_string().contains("cannot be used with"));
 }
 
 #[test]
@@ -8860,7 +8898,13 @@ fn functional_execute_doctor_command_supports_text_and_json_modes() {
     let skills_dir = temp.path().join("skills");
     let lock_path = temp.path().join("skills.lock.json");
     let trust_root_path = temp.path().join("trust-roots.json");
+    let ingress_dir = temp.path().join("multi-channel-live-ingress");
+    let missing_credential_store = temp.path().join("missing-credentials.json");
     std::fs::create_dir_all(&skills_dir).expect("mkdir skills");
+    std::fs::create_dir_all(&ingress_dir).expect("mkdir ingress dir");
+    std::fs::write(ingress_dir.join("telegram.ndjson"), "").expect("write telegram inbox");
+    std::fs::write(ingress_dir.join("discord.ndjson"), "").expect("write discord inbox");
+    std::fs::write(ingress_dir.join("whatsapp.ndjson"), "").expect("write whatsapp inbox");
     std::fs::write(&session_path, "{}\n").expect("write session");
     std::fs::write(&lock_path, "{}\n").expect("write lock");
     std::fs::write(&trust_root_path, "[]\n").expect("write trust");
@@ -8899,10 +8943,20 @@ fn functional_execute_doctor_command_supports_text_and_json_modes() {
         skills_dir,
         skills_lock_path: lock_path,
         trust_root_path: Some(trust_root_path),
+        multi_channel_live_readiness: DoctorMultiChannelReadinessConfig {
+            ingress_dir,
+            credential_store_path: missing_credential_store,
+            credential_store_encryption: CredentialStoreEncryptionMode::None,
+            credential_store_key: None,
+            telegram_bot_token: Some("telegram-token".to_string()),
+            discord_bot_token: Some("discord-token".to_string()),
+            whatsapp_access_token: Some("whatsapp-access-token".to_string()),
+            whatsapp_phone_number_id: Some("15551234567".to_string()),
+        },
     };
 
     let report = execute_doctor_command(&config, DoctorCommandOutputFormat::Text);
-    assert!(report.contains("doctor summary: checks=11 pass=9 warn=1 fail=1"));
+    assert!(report.contains("doctor summary: checks=16 pass=13 warn=2 fail=1"));
 
     let keys = report
         .lines()
@@ -8931,14 +8985,19 @@ fn functional_execute_doctor_command_supports_text_and_json_modes() {
             "skills_dir".to_string(),
             "skills_lock".to_string(),
             "trust_root".to_string(),
+            "multi_channel_live.credential_store".to_string(),
+            "multi_channel_live.ingress_dir".to_string(),
+            "multi_channel_live.channel.telegram".to_string(),
+            "multi_channel_live.channel.discord".to_string(),
+            "multi_channel_live.channel.whatsapp".to_string(),
         ]
     );
 
     let json_report = execute_doctor_command(&config, DoctorCommandOutputFormat::Json);
     let value = serde_json::from_str::<serde_json::Value>(&json_report).expect("parse json report");
-    assert_eq!(value["summary"]["checks"], 11);
-    assert_eq!(value["summary"]["pass"], 9);
-    assert_eq!(value["summary"]["warn"], 1);
+    assert_eq!(value["summary"]["checks"], 16);
+    assert_eq!(value["summary"]["pass"], 13);
+    assert_eq!(value["summary"]["warn"], 2);
     assert_eq!(value["summary"]["fail"], 1);
     assert_eq!(value["checks"][0]["key"], "model");
     assert_eq!(value["checks"][1]["key"], "release_channel");
@@ -8961,6 +9020,7 @@ fn functional_execute_doctor_cli_command_accepts_online_without_network_when_sto
         skills_dir: temp.path().join("skills"),
         skills_lock_path: temp.path().join("skills.lock.json"),
         trust_root_path: None,
+        multi_channel_live_readiness: DoctorMultiChannelReadinessConfig::default(),
     };
 
     let report = execute_doctor_cli_command(&config, "--online");
@@ -8995,6 +9055,7 @@ fn integration_run_doctor_checks_identifies_missing_runtime_prerequisites() {
         skills_dir: temp.path().join("missing-skills"),
         skills_lock_path: temp.path().join("missing-lock.json"),
         trust_root_path: Some(temp.path().join("missing-trust-roots.json")),
+        multi_channel_live_readiness: DoctorMultiChannelReadinessConfig::default(),
     };
 
     let checks = run_doctor_checks(&config);
@@ -9075,6 +9136,7 @@ fn integration_run_doctor_checks_reports_google_backend_status_for_oauth_mode() 
         skills_dir: temp.path().join("skills"),
         skills_lock_path: temp.path().join("skills.lock.json"),
         trust_root_path: None,
+        multi_channel_live_readiness: DoctorMultiChannelReadinessConfig::default(),
     };
 
     let checks = run_doctor_checks(&config);
@@ -9121,6 +9183,7 @@ fn integration_run_doctor_checks_reports_anthropic_backend_status_for_oauth_mode
         skills_dir: temp.path().join("skills"),
         skills_lock_path: temp.path().join("skills.lock.json"),
         trust_root_path: None,
+        multi_channel_live_readiness: DoctorMultiChannelReadinessConfig::default(),
     };
 
     let checks = run_doctor_checks(&config);
@@ -9157,6 +9220,7 @@ fn integration_execute_doctor_command_with_online_lookup_reports_update_availabl
         skills_dir: temp.path().join("skills"),
         skills_lock_path: temp.path().join("skills.lock.json"),
         trust_root_path: None,
+        multi_channel_live_readiness: DoctorMultiChannelReadinessConfig::default(),
     };
     let checks =
         run_doctor_checks_with_lookup(&config, DoctorCheckOptions { online: true }, |_| {
@@ -9273,6 +9337,7 @@ fn regression_run_doctor_checks_reports_type_and_readability_errors() {
         skills_dir,
         skills_lock_path: lock_path,
         trust_root_path: Some(trust_root_path),
+        multi_channel_live_readiness: DoctorMultiChannelReadinessConfig::default(),
     };
 
     let checks = run_doctor_checks(&config);
@@ -9335,6 +9400,7 @@ fn regression_run_doctor_checks_reports_invalid_release_channel_store() {
         skills_dir: temp.path().join("skills"),
         skills_lock_path: temp.path().join("skills.lock.json"),
         trust_root_path: None,
+        multi_channel_live_readiness: DoctorMultiChannelReadinessConfig::default(),
     };
 
     let checks = run_doctor_checks(&config);
@@ -9368,6 +9434,7 @@ fn regression_run_doctor_checks_with_online_lookup_surfaces_lookup_errors() {
         skills_dir: temp.path().join("skills"),
         skills_lock_path: temp.path().join("skills.lock.json"),
         trust_root_path: None,
+        multi_channel_live_readiness: DoctorMultiChannelReadinessConfig::default(),
     };
     let checks =
         run_doctor_checks_with_lookup(&config, DoctorCheckOptions { online: true }, |_| {
@@ -9382,6 +9449,148 @@ fn regression_run_doctor_checks_with_online_lookup_surfaces_lookup_errors() {
         .expect("release update check should exist");
     assert_eq!(release_update.status, DoctorStatus::Warn);
     assert!(release_update.code.starts_with("lookup_error:"));
+}
+
+#[test]
+fn unit_evaluate_multi_channel_live_readiness_reports_missing_prerequisites() {
+    let temp = tempdir().expect("tempdir");
+    let ingress_dir = temp.path().join("missing-ingress");
+    let credential_store_path = temp.path().join("missing-credentials.json");
+    let config = DoctorMultiChannelReadinessConfig {
+        ingress_dir: ingress_dir.clone(),
+        credential_store_path: credential_store_path.clone(),
+        credential_store_encryption: CredentialStoreEncryptionMode::None,
+        credential_store_key: None,
+        telegram_bot_token: None,
+        discord_bot_token: None,
+        whatsapp_access_token: None,
+        whatsapp_phone_number_id: None,
+    };
+
+    let report = evaluate_multi_channel_live_readiness(&config);
+    assert_eq!(report.checks.len(), 5);
+    assert_eq!(report.pass, 0);
+    assert_eq!(report.warn, 1);
+    assert_eq!(report.fail, 4);
+    assert_eq!(report.gate, "fail");
+    assert!(!report.reason_codes.is_empty());
+
+    let by_key = report
+        .checks
+        .iter()
+        .map(|check| (check.key.clone(), check))
+        .collect::<HashMap<_, _>>();
+
+    assert_eq!(
+        by_key
+            .get("multi_channel_live.credential_store")
+            .map(|check| (check.status, check.code.clone(), check.path.clone())),
+        Some((
+            DoctorStatus::Warn,
+            "missing".to_string(),
+            Some(credential_store_path.display().to_string()),
+        ))
+    );
+    assert_eq!(
+        by_key.get("multi_channel_live.ingress_dir").map(|check| (
+            check.status,
+            check.code.clone(),
+            check.path.clone()
+        )),
+        Some((
+            DoctorStatus::Fail,
+            "missing".to_string(),
+            Some(ingress_dir.display().to_string()),
+        ))
+    );
+    assert_eq!(
+        by_key
+            .get("multi_channel_live.channel.telegram")
+            .map(|check| (check.status, check.code.clone())),
+        Some((DoctorStatus::Fail, "missing_prerequisites".to_string()))
+    );
+    assert_eq!(
+        by_key
+            .get("multi_channel_live.channel.discord")
+            .map(|check| (check.status, check.code.clone())),
+        Some((DoctorStatus::Fail, "missing_prerequisites".to_string()))
+    );
+    assert_eq!(
+        by_key
+            .get("multi_channel_live.channel.whatsapp")
+            .map(|check| (check.status, check.code.clone())),
+        Some((DoctorStatus::Fail, "missing_prerequisites".to_string()))
+    );
+}
+
+#[test]
+fn functional_evaluate_multi_channel_live_readiness_uses_store_backed_secrets() {
+    let temp = tempdir().expect("tempdir");
+    let ingress_dir = temp.path().join("live-ingress");
+    let credential_store_path = temp.path().join("credentials.json");
+    std::fs::create_dir_all(&ingress_dir).expect("create ingress dir");
+    std::fs::write(ingress_dir.join("telegram.ndjson"), "").expect("write telegram inbox");
+    std::fs::write(ingress_dir.join("discord.ndjson"), "").expect("write discord inbox");
+    std::fs::write(ingress_dir.join("whatsapp.ndjson"), "").expect("write whatsapp inbox");
+
+    let mut store = CredentialStoreData {
+        encryption: CredentialStoreEncryptionMode::None,
+        providers: BTreeMap::new(),
+        integrations: BTreeMap::new(),
+    };
+    let timestamp = current_unix_timestamp();
+    store.integrations.insert(
+        "telegram-bot-token".to_string(),
+        IntegrationCredentialStoreRecord {
+            secret: Some("telegram-token".to_string()),
+            revoked: false,
+            updated_unix: Some(timestamp),
+        },
+    );
+    store.integrations.insert(
+        "discord-bot-token".to_string(),
+        IntegrationCredentialStoreRecord {
+            secret: Some("discord-token".to_string()),
+            revoked: false,
+            updated_unix: Some(timestamp),
+        },
+    );
+    store.integrations.insert(
+        "whatsapp-access-token".to_string(),
+        IntegrationCredentialStoreRecord {
+            secret: Some("whatsapp-access-token".to_string()),
+            revoked: false,
+            updated_unix: Some(timestamp),
+        },
+    );
+    store.integrations.insert(
+        "whatsapp-phone-number-id".to_string(),
+        IntegrationCredentialStoreRecord {
+            secret: Some("15551234567".to_string()),
+            revoked: false,
+            updated_unix: Some(timestamp),
+        },
+    );
+    save_credential_store(&credential_store_path, &store, None).expect("save credential store");
+
+    let config = DoctorMultiChannelReadinessConfig {
+        ingress_dir,
+        credential_store_path,
+        credential_store_encryption: CredentialStoreEncryptionMode::None,
+        credential_store_key: None,
+        telegram_bot_token: None,
+        discord_bot_token: None,
+        whatsapp_access_token: None,
+        whatsapp_phone_number_id: None,
+    };
+
+    let report = evaluate_multi_channel_live_readiness(&config);
+    assert_eq!(report.checks.len(), 5);
+    assert_eq!(report.pass, 5);
+    assert_eq!(report.warn, 0);
+    assert_eq!(report.fail, 0);
+    assert_eq!(report.gate, "pass");
+    assert!(report.reason_codes.is_empty());
 }
 
 #[test]
@@ -18081,6 +18290,84 @@ fn integration_execute_startup_preflight_runs_onboarding_and_generates_report() 
     assert_eq!(report_json["release_channel"], "stable");
     assert_eq!(report_json["release_channel_source"], "default");
     assert_eq!(report_json["release_channel_action"], "created");
+}
+
+#[test]
+fn integration_execute_startup_preflight_runs_multi_channel_live_readiness_preflight() {
+    let _env_lock = AUTH_ENV_TEST_LOCK
+        .lock()
+        .expect("acquire auth env test lock");
+    let readiness_env_vars = [
+        "TAU_TELEGRAM_BOT_TOKEN",
+        "TAU_DISCORD_BOT_TOKEN",
+        "TAU_WHATSAPP_ACCESS_TOKEN",
+        "TAU_WHATSAPP_PHONE_NUMBER_ID",
+    ];
+    let snapshot = snapshot_env_vars(&readiness_env_vars);
+    for key in readiness_env_vars {
+        std::env::remove_var(key);
+    }
+
+    let temp = tempdir().expect("tempdir");
+    let ingress_dir = temp.path().join("live-ingress");
+    std::fs::create_dir_all(&ingress_dir).expect("create ingress dir");
+    std::fs::write(ingress_dir.join("telegram.ndjson"), "").expect("write telegram inbox");
+    std::fs::write(ingress_dir.join("discord.ndjson"), "").expect("write discord inbox");
+    std::fs::write(ingress_dir.join("whatsapp.ndjson"), "").expect("write whatsapp inbox");
+
+    std::env::set_var("TAU_TELEGRAM_BOT_TOKEN", "telegram-token");
+    std::env::set_var("TAU_DISCORD_BOT_TOKEN", "discord-token");
+    std::env::set_var("TAU_WHATSAPP_ACCESS_TOKEN", "whatsapp-access-token");
+    std::env::set_var("TAU_WHATSAPP_PHONE_NUMBER_ID", "15551234567");
+
+    let mut cli = test_cli();
+    set_workspace_tau_paths(&mut cli, temp.path());
+    cli.multi_channel_live_readiness_preflight = true;
+    cli.multi_channel_live_readiness_json = true;
+    cli.multi_channel_live_ingress_dir = ingress_dir;
+
+    let handled = execute_startup_preflight(&cli).expect("readiness preflight should pass");
+    assert!(handled);
+
+    restore_env_vars(snapshot);
+}
+
+#[test]
+fn regression_execute_startup_preflight_multi_channel_live_readiness_preflight_fails_closed() {
+    let _env_lock = AUTH_ENV_TEST_LOCK
+        .lock()
+        .expect("acquire auth env test lock");
+    let readiness_env_vars = [
+        "TAU_TELEGRAM_BOT_TOKEN",
+        "TAU_DISCORD_BOT_TOKEN",
+        "TAU_WHATSAPP_ACCESS_TOKEN",
+        "TAU_WHATSAPP_PHONE_NUMBER_ID",
+    ];
+    let snapshot = snapshot_env_vars(&readiness_env_vars);
+    for key in readiness_env_vars {
+        std::env::remove_var(key);
+    }
+
+    let temp = tempdir().expect("tempdir");
+    let ingress_dir = temp.path().join("live-ingress");
+    std::fs::create_dir_all(&ingress_dir).expect("create ingress dir");
+    std::fs::write(ingress_dir.join("telegram.ndjson"), "").expect("write telegram inbox");
+    std::fs::write(ingress_dir.join("discord.ndjson"), "").expect("write discord inbox");
+    std::fs::write(ingress_dir.join("whatsapp.ndjson"), "").expect("write whatsapp inbox");
+
+    let mut cli = test_cli();
+    set_workspace_tau_paths(&mut cli, temp.path());
+    cli.multi_channel_live_readiness_preflight = true;
+    cli.multi_channel_live_ingress_dir = ingress_dir;
+
+    let error = execute_startup_preflight(&cli).expect_err("missing secrets should fail closed");
+    let error_text = error.to_string();
+    assert!(error_text.contains("multi-channel live readiness gate: status=fail"));
+    assert!(error_text.contains("multi_channel_live.channel.telegram:missing_prerequisites"));
+    assert!(error_text.contains("multi_channel_live.channel.discord:missing_prerequisites"));
+    assert!(error_text.contains("multi_channel_live.channel.whatsapp:missing_prerequisites"));
+
+    restore_env_vars(snapshot);
 }
 
 #[test]

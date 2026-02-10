@@ -118,6 +118,35 @@ Ingress directory layout:
 
 Each line is one normalized provider envelope JSON object.
 
+Run readiness preflight before enabling live mode (fails closed on required gaps):
+
+```bash
+cargo run -p tau-coding-agent -- \
+  --multi-channel-live-readiness-preflight
+```
+
+JSON output mode:
+
+```bash
+cargo run -p tau-coding-agent -- \
+  --multi-channel-live-readiness-preflight \
+  --multi-channel-live-readiness-json
+```
+
+Readiness checks cover:
+
+- Credential store readability (`--credential-store`)
+- Live ingress directory path + per-channel inbox files
+- Channel prerequisites for Telegram/Discord/WhatsApp via env var or integration secret
+  (`/integration-auth set <integration-id> <secret>`)
+
+Required channel secrets:
+
+- Telegram: `TAU_TELEGRAM_BOT_TOKEN` or integration id `telegram-bot-token`
+- Discord: `TAU_DISCORD_BOT_TOKEN` or integration id `discord-bot-token`
+- WhatsApp access token: `TAU_WHATSAPP_ACCESS_TOKEN` or integration id `whatsapp-access-token`
+- WhatsApp phone number id: `TAU_WHATSAPP_PHONE_NUMBER_ID` or integration id `whatsapp-phone-number-id`
+
 ```bash
 cargo run -p tau-coding-agent -- \
   --model openai/gpt-4o-mini \

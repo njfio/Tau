@@ -1884,6 +1884,29 @@ pub(crate) struct Cli {
     pub(crate) multi_channel_live_runner: bool,
 
     #[arg(
+        long = "multi-channel-live-readiness-preflight",
+        env = "TAU_MULTI_CHANNEL_LIVE_READINESS_PREFLIGHT",
+        default_value_t = false,
+        conflicts_with = "multi_channel_contract_runner",
+        conflicts_with = "multi_channel_live_runner",
+        help = "Run multi-channel live readiness preflight checks for Telegram/Discord/WhatsApp and exit"
+    )]
+    pub(crate) multi_channel_live_readiness_preflight: bool,
+
+    #[arg(
+        long = "multi-channel-live-readiness-json",
+        env = "TAU_MULTI_CHANNEL_LIVE_READINESS_JSON",
+        default_value_t = false,
+        action = ArgAction::Set,
+        num_args = 0..=1,
+        require_equals = true,
+        default_missing_value = "true",
+        requires = "multi_channel_live_readiness_preflight",
+        help = "Emit --multi-channel-live-readiness-preflight output as pretty JSON"
+    )]
+    pub(crate) multi_channel_live_readiness_json: bool,
+
+    #[arg(
         long = "multi-channel-fixture",
         env = "TAU_MULTI_CHANNEL_FIXTURE",
         default_value = "crates/tau-coding-agent/testdata/multi-channel-contract/baseline-three-channel.json",

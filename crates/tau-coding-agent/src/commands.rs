@@ -582,6 +582,7 @@ pub(crate) fn handle_command(
             skills_dir: PathBuf::from(".tau/skills"),
             skills_lock_path: PathBuf::from(".tau/skills/skills.lock.json"),
             trust_root_path: None,
+            multi_channel_live_readiness: DoctorMultiChannelReadinessConfig::default(),
         },
     };
     let profile_defaults = ProfileDefaults {
