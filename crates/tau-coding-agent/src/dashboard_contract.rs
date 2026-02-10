@@ -166,6 +166,7 @@ pub(crate) struct DashboardReplayResult {
     pub(crate) audit_event_key: String,
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct DashboardReplaySummary {
     pub(crate) discovered_cases: usize,
@@ -174,6 +175,7 @@ pub(crate) struct DashboardReplaySummary {
     pub(crate) retryable_failures: usize,
 }
 
+#[cfg(test)]
 pub(crate) trait DashboardContractDriver {
     fn apply_case(&mut self, case: &DashboardContractCase) -> Result<DashboardReplayResult>;
 }
@@ -287,6 +289,7 @@ pub(crate) fn validate_dashboard_contract_fixture(
     Ok(())
 }
 
+#[cfg(test)]
 pub(crate) fn run_dashboard_contract_replay<D: DashboardContractDriver>(
     fixture: &DashboardContractFixture,
     driver: &mut D,
@@ -523,6 +526,7 @@ fn validate_expectation(case: &DashboardContractCase) -> Result<()> {
     Ok(())
 }
 
+#[cfg(test)]
 fn assert_dashboard_replay_matches_expectation(
     case: &DashboardContractCase,
     result: &DashboardReplayResult,

@@ -756,7 +756,7 @@ pub(crate) struct Cli {
         conflicts_with = "channel_store_inspect",
         conflicts_with = "channel_store_repair",
         value_name = "target",
-        help = "Inspect transport health snapshot(s) and exit. Targets: slack, github, github:owner/repo, multi-channel, memory"
+        help = "Inspect transport health snapshot(s) and exit. Targets: slack, github, github:owner/repo, multi-channel, memory, dashboard"
     )]
     pub(crate) transport_health_inspect: Option<String>,
 
@@ -1762,6 +1762,67 @@ pub(crate) struct Cli {
         help = "Base backoff delay in milliseconds for semantic memory runtime retries (0 disables delay)"
     )]
     pub(crate) memory_retry_base_delay_ms: u64,
+
+    #[arg(
+        long = "dashboard-contract-runner",
+        env = "TAU_DASHBOARD_CONTRACT_RUNNER",
+        default_value_t = false,
+        help = "Run fixture-driven dashboard runtime contract scenarios"
+    )]
+    pub(crate) dashboard_contract_runner: bool,
+
+    #[arg(
+        long = "dashboard-fixture",
+        env = "TAU_DASHBOARD_FIXTURE",
+        default_value = "crates/tau-coding-agent/testdata/dashboard-contract/mixed-outcomes.json",
+        requires = "dashboard_contract_runner",
+        help = "Path to dashboard runtime contract fixture JSON"
+    )]
+    pub(crate) dashboard_fixture: PathBuf,
+
+    #[arg(
+        long = "dashboard-state-dir",
+        env = "TAU_DASHBOARD_STATE_DIR",
+        default_value = ".tau/dashboard",
+        help = "Directory for dashboard runtime state and channel-store outputs"
+    )]
+    pub(crate) dashboard_state_dir: PathBuf,
+
+    #[arg(
+        long = "dashboard-queue-limit",
+        env = "TAU_DASHBOARD_QUEUE_LIMIT",
+        default_value_t = 64,
+        requires = "dashboard_contract_runner",
+        help = "Maximum dashboard fixture cases processed per runtime cycle"
+    )]
+    pub(crate) dashboard_queue_limit: usize,
+
+    #[arg(
+        long = "dashboard-processed-case-cap",
+        env = "TAU_DASHBOARD_PROCESSED_CASE_CAP",
+        default_value_t = 10_000,
+        requires = "dashboard_contract_runner",
+        help = "Maximum processed-case keys retained for dashboard duplicate suppression"
+    )]
+    pub(crate) dashboard_processed_case_cap: usize,
+
+    #[arg(
+        long = "dashboard-retry-max-attempts",
+        env = "TAU_DASHBOARD_RETRY_MAX_ATTEMPTS",
+        default_value_t = 4,
+        requires = "dashboard_contract_runner",
+        help = "Maximum retry attempts for transient dashboard runtime failures"
+    )]
+    pub(crate) dashboard_retry_max_attempts: usize,
+
+    #[arg(
+        long = "dashboard-retry-base-delay-ms",
+        env = "TAU_DASHBOARD_RETRY_BASE_DELAY_MS",
+        default_value_t = 0,
+        requires = "dashboard_contract_runner",
+        help = "Base backoff delay in milliseconds for dashboard runtime retries (0 disables delay)"
+    )]
+    pub(crate) dashboard_retry_base_delay_ms: u64,
 
     #[arg(
         long = "github-issues-bridge",
