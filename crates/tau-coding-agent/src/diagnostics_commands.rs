@@ -7,6 +7,17 @@ use crate::release_channel_commands::{
 pub(crate) const DOCTOR_USAGE: &str = "usage: /doctor [--json] [--online]";
 pub(crate) const POLICY_USAGE: &str = "usage: /policy";
 pub(crate) const AUDIT_SUMMARY_USAGE: &str = "usage: /audit-summary <path>";
+pub(crate) const MULTI_CHANNEL_READINESS_TELEGRAM_TOKEN_ENV: &str = "TAU_TELEGRAM_BOT_TOKEN";
+pub(crate) const MULTI_CHANNEL_READINESS_DISCORD_TOKEN_ENV: &str = "TAU_DISCORD_BOT_TOKEN";
+pub(crate) const MULTI_CHANNEL_READINESS_WHATSAPP_ACCESS_TOKEN_ENV: &str =
+    "TAU_WHATSAPP_ACCESS_TOKEN";
+pub(crate) const MULTI_CHANNEL_READINESS_WHATSAPP_PHONE_NUMBER_ID_ENV: &str =
+    "TAU_WHATSAPP_PHONE_NUMBER_ID";
+const MULTI_CHANNEL_READINESS_TELEGRAM_TOKEN_INTEGRATION_ID: &str = "telegram-bot-token";
+const MULTI_CHANNEL_READINESS_DISCORD_TOKEN_INTEGRATION_ID: &str = "discord-bot-token";
+const MULTI_CHANNEL_READINESS_WHATSAPP_ACCESS_TOKEN_INTEGRATION_ID: &str = "whatsapp-access-token";
+const MULTI_CHANNEL_READINESS_WHATSAPP_PHONE_NUMBER_ID_INTEGRATION_ID: &str =
+    "whatsapp-phone-number-id";
 
 #[derive(Debug, Default)]
 pub(crate) struct ToolAuditAggregate {
@@ -270,6 +281,22 @@ pub(crate) struct DoctorCheckOptions {
     pub(crate) online: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum MultiChannelReadinessOutputFormat {
+    Text,
+    Json,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct MultiChannelLiveReadinessReport {
+    pub(crate) checks: Vec<DoctorCheckResult>,
+    pub(crate) pass: usize,
+    pub(crate) warn: usize,
+    pub(crate) fail: usize,
+    pub(crate) gate: String,
+    pub(crate) reason_codes: Vec<String>,
+}
+
 pub(crate) fn parse_doctor_command_args(command_args: &str) -> Result<DoctorCommandArgs> {
     let tokens = command_args
         .split_whitespace()
@@ -315,6 +342,32 @@ pub(crate) fn provider_key_present(cli: &Cli, provider: Provider) -> bool {
         Provider::Google => {
             resolve_api_key(vec![cli.google_api_key.clone(), cli.api_key.clone()]).is_some()
         }
+    }
+}
+
+fn resolve_non_empty_env_var(name: &str) -> Option<String> {
+    std::env::var(name)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+pub(crate) fn build_multi_channel_live_readiness_config(
+    cli: &Cli,
+) -> DoctorMultiChannelReadinessConfig {
+    DoctorMultiChannelReadinessConfig {
+        ingress_dir: cli.multi_channel_live_ingress_dir.clone(),
+        credential_store_path: cli.credential_store.clone(),
+        credential_store_encryption: resolve_credential_store_encryption_mode(cli),
+        credential_store_key: cli.credential_store_key.clone(),
+        telegram_bot_token: resolve_non_empty_env_var(MULTI_CHANNEL_READINESS_TELEGRAM_TOKEN_ENV),
+        discord_bot_token: resolve_non_empty_env_var(MULTI_CHANNEL_READINESS_DISCORD_TOKEN_ENV),
+        whatsapp_access_token: resolve_non_empty_env_var(
+            MULTI_CHANNEL_READINESS_WHATSAPP_ACCESS_TOKEN_ENV,
+        ),
+        whatsapp_phone_number_id: resolve_non_empty_env_var(
+            MULTI_CHANNEL_READINESS_WHATSAPP_PHONE_NUMBER_ID_ENV,
+        ),
     }
 }
 
@@ -406,7 +459,367 @@ pub(crate) fn build_doctor_command_config(
         skills_dir: cli.skills_dir.clone(),
         skills_lock_path: skills_lock_path.to_path_buf(),
         trust_root_path: cli.skill_trust_root_file.clone(),
+        multi_channel_live_readiness: build_multi_channel_live_readiness_config(cli),
     }
+}
+
+fn integration_secret_available(store: Option<&CredentialStoreData>, integration_id: &str) -> bool {
+    store
+        .and_then(|payload| payload.integrations.get(integration_id))
+        .filter(|entry| !entry.revoked)
+        .and_then(|entry| entry.secret.as_ref())
+        .map(|secret| !secret.trim().is_empty())
+        .unwrap_or(false)
+}
+
+fn build_multi_channel_readiness_summary(
+    checks: Vec<DoctorCheckResult>,
+) -> MultiChannelLiveReadinessReport {
+    let pass = checks
+        .iter()
+        .filter(|item| item.status == DoctorStatus::Pass)
+        .count();
+    let warn = checks
+        .iter()
+        .filter(|item| item.status == DoctorStatus::Warn)
+        .count();
+    let fail = checks
+        .iter()
+        .filter(|item| item.status == DoctorStatus::Fail)
+        .count();
+    let reason_codes = checks
+        .iter()
+        .filter(|item| item.status == DoctorStatus::Fail)
+        .map(|item| format!("{}:{}", item.key, item.code))
+        .collect::<Vec<_>>();
+
+    MultiChannelLiveReadinessReport {
+        checks,
+        pass,
+        warn,
+        fail,
+        gate: if fail == 0 {
+            "pass".to_string()
+        } else {
+            "fail".to_string()
+        },
+        reason_codes,
+    }
+}
+
+fn append_multi_channel_channel_readiness_check(
+    checks: &mut Vec<DoctorCheckResult>,
+    channel: &str,
+    ingress_dir: &Path,
+    missing_prerequisites: &[String],
+) {
+    let ingress_file = ingress_dir.join(format!("{channel}.ndjson"));
+    let ingress_exists = ingress_file.exists();
+    let ingress_is_file = ingress_file.is_file();
+
+    let (status, code, action) = if !missing_prerequisites.is_empty() {
+        (
+            DoctorStatus::Fail,
+            "missing_prerequisites".to_string(),
+            Some(missing_prerequisites.join(" ")),
+        )
+    } else if ingress_exists && !ingress_is_file {
+        (
+            DoctorStatus::Fail,
+            "inbox_not_file".to_string(),
+            Some(format!(
+                "replace {} with a writable NDJSON file",
+                ingress_file.display()
+            )),
+        )
+    } else if !ingress_exists {
+        (
+            DoctorStatus::Warn,
+            "inbox_missing".to_string(),
+            Some(format!(
+                "create {} or start the adapter that writes it",
+                ingress_file.display()
+            )),
+        )
+    } else {
+        (DoctorStatus::Pass, "ready".to_string(), None)
+    };
+
+    checks.push(DoctorCheckResult {
+        key: format!("multi_channel_live.channel.{}", channel),
+        status,
+        code,
+        path: Some(ingress_file.display().to_string()),
+        action,
+    });
+}
+
+pub(crate) fn evaluate_multi_channel_live_readiness(
+    config: &DoctorMultiChannelReadinessConfig,
+) -> MultiChannelLiveReadinessReport {
+    let mut checks = Vec::new();
+    let credential_store = match load_credential_store(
+        &config.credential_store_path,
+        config.credential_store_encryption,
+        config.credential_store_key.as_deref(),
+    ) {
+        Ok(store) => {
+            let code = if config.credential_store_path.exists() {
+                "readable".to_string()
+            } else {
+                "missing".to_string()
+            };
+            let status = if config.credential_store_path.exists() {
+                DoctorStatus::Pass
+            } else {
+                DoctorStatus::Warn
+            };
+            checks.push(DoctorCheckResult {
+                key: "multi_channel_live.credential_store".to_string(),
+                status,
+                code,
+                path: Some(config.credential_store_path.display().to_string()),
+                action: if config.credential_store_path.exists() {
+                    None
+                } else {
+                    Some(
+                        "set channel secrets via env vars or /integration-auth set <integration-id> <secret>"
+                            .to_string(),
+                    )
+                },
+            });
+            Some(store)
+        }
+        Err(error) => {
+            checks.push(DoctorCheckResult {
+                key: "multi_channel_live.credential_store".to_string(),
+                status: DoctorStatus::Fail,
+                code: format!("load_error:{error}"),
+                path: Some(config.credential_store_path.display().to_string()),
+                action: Some(
+                    "repair credential store contents or provide channel secrets via env vars"
+                        .to_string(),
+                ),
+            });
+            None
+        }
+    };
+
+    if config.ingress_dir.exists() {
+        checks.push(DoctorCheckResult {
+            key: "multi_channel_live.ingress_dir".to_string(),
+            status: if config.ingress_dir.is_dir() {
+                DoctorStatus::Pass
+            } else {
+                DoctorStatus::Fail
+            },
+            code: if config.ingress_dir.is_dir() {
+                "ready".to_string()
+            } else {
+                "not_dir".to_string()
+            },
+            path: Some(config.ingress_dir.display().to_string()),
+            action: if config.ingress_dir.is_dir() {
+                None
+            } else {
+                Some("set --multi-channel-live-ingress-dir to a directory path".to_string())
+            },
+        });
+    } else {
+        checks.push(DoctorCheckResult {
+            key: "multi_channel_live.ingress_dir".to_string(),
+            status: DoctorStatus::Fail,
+            code: "missing".to_string(),
+            path: Some(config.ingress_dir.display().to_string()),
+            action: Some(
+                "create --multi-channel-live-ingress-dir before starting live runner".to_string(),
+            ),
+        });
+    }
+
+    let telegram_ready = config
+        .telegram_bot_token
+        .as_ref()
+        .map(|token| !token.trim().is_empty())
+        .unwrap_or(false)
+        || integration_secret_available(
+            credential_store.as_ref(),
+            MULTI_CHANNEL_READINESS_TELEGRAM_TOKEN_INTEGRATION_ID,
+        );
+    let telegram_missing = if telegram_ready {
+        Vec::new()
+    } else {
+        vec![format!(
+            "set {} or /integration-auth set {} <secret>",
+            MULTI_CHANNEL_READINESS_TELEGRAM_TOKEN_ENV,
+            MULTI_CHANNEL_READINESS_TELEGRAM_TOKEN_INTEGRATION_ID
+        )]
+    };
+    append_multi_channel_channel_readiness_check(
+        &mut checks,
+        "telegram",
+        &config.ingress_dir,
+        &telegram_missing,
+    );
+
+    let discord_ready = config
+        .discord_bot_token
+        .as_ref()
+        .map(|token| !token.trim().is_empty())
+        .unwrap_or(false)
+        || integration_secret_available(
+            credential_store.as_ref(),
+            MULTI_CHANNEL_READINESS_DISCORD_TOKEN_INTEGRATION_ID,
+        );
+    let discord_missing = if discord_ready {
+        Vec::new()
+    } else {
+        vec![format!(
+            "set {} or /integration-auth set {} <secret>",
+            MULTI_CHANNEL_READINESS_DISCORD_TOKEN_ENV,
+            MULTI_CHANNEL_READINESS_DISCORD_TOKEN_INTEGRATION_ID
+        )]
+    };
+    append_multi_channel_channel_readiness_check(
+        &mut checks,
+        "discord",
+        &config.ingress_dir,
+        &discord_missing,
+    );
+
+    let whatsapp_access_token_ready = config
+        .whatsapp_access_token
+        .as_ref()
+        .map(|token| !token.trim().is_empty())
+        .unwrap_or(false)
+        || integration_secret_available(
+            credential_store.as_ref(),
+            MULTI_CHANNEL_READINESS_WHATSAPP_ACCESS_TOKEN_INTEGRATION_ID,
+        );
+    let whatsapp_phone_number_id_ready = config
+        .whatsapp_phone_number_id
+        .as_ref()
+        .map(|token| !token.trim().is_empty())
+        .unwrap_or(false)
+        || integration_secret_available(
+            credential_store.as_ref(),
+            MULTI_CHANNEL_READINESS_WHATSAPP_PHONE_NUMBER_ID_INTEGRATION_ID,
+        );
+    let mut whatsapp_missing = Vec::new();
+    if !whatsapp_access_token_ready {
+        whatsapp_missing.push(format!(
+            "set {} or /integration-auth set {} <secret>",
+            MULTI_CHANNEL_READINESS_WHATSAPP_ACCESS_TOKEN_ENV,
+            MULTI_CHANNEL_READINESS_WHATSAPP_ACCESS_TOKEN_INTEGRATION_ID
+        ));
+    }
+    if !whatsapp_phone_number_id_ready {
+        whatsapp_missing.push(format!(
+            "set {} or /integration-auth set {} <value>",
+            MULTI_CHANNEL_READINESS_WHATSAPP_PHONE_NUMBER_ID_ENV,
+            MULTI_CHANNEL_READINESS_WHATSAPP_PHONE_NUMBER_ID_INTEGRATION_ID
+        ));
+    }
+    append_multi_channel_channel_readiness_check(
+        &mut checks,
+        "whatsapp",
+        &config.ingress_dir,
+        &whatsapp_missing,
+    );
+
+    build_multi_channel_readiness_summary(checks)
+}
+
+pub(crate) fn render_multi_channel_live_readiness_report(
+    report: &MultiChannelLiveReadinessReport,
+) -> String {
+    let reason_codes = if report.reason_codes.is_empty() {
+        "none".to_string()
+    } else {
+        report.reason_codes.join(",")
+    };
+
+    let mut lines = vec![format!(
+        "multi-channel live readiness summary: checks={} pass={} warn={} fail={} gate={} reason_codes={}",
+        report.checks.len(),
+        report.pass,
+        report.warn,
+        report.fail,
+        report.gate,
+        reason_codes
+    )];
+    for check in &report.checks {
+        lines.push(format!(
+            "multi-channel live readiness check: key={} status={} code={} path={} action={}",
+            check.key,
+            check.status.as_str(),
+            check.code,
+            check.path.as_deref().unwrap_or("none"),
+            check.action.as_deref().unwrap_or("none"),
+        ));
+    }
+    lines.join("\n")
+}
+
+pub(crate) fn render_multi_channel_live_readiness_report_json(
+    report: &MultiChannelLiveReadinessReport,
+) -> String {
+    serde_json::json!({
+        "summary": {
+            "checks": report.checks.len(),
+            "pass": report.pass,
+            "warn": report.warn,
+            "fail": report.fail,
+            "gate": report.gate,
+            "reason_codes": report.reason_codes,
+        },
+        "checks": report
+            .checks
+            .iter()
+            .map(|check| {
+                serde_json::json!({
+                    "key": check.key,
+                    "status": check.status.as_str(),
+                    "code": check.code,
+                    "path": check.path,
+                    "action": check.action,
+                })
+            })
+            .collect::<Vec<_>>(),
+    })
+    .to_string()
+}
+
+pub(crate) fn execute_multi_channel_live_readiness_preflight_command(cli: &Cli) -> Result<()> {
+    let readiness_config = build_multi_channel_live_readiness_config(cli);
+    let report = evaluate_multi_channel_live_readiness(&readiness_config);
+    let output_format = if cli.multi_channel_live_readiness_json {
+        MultiChannelReadinessOutputFormat::Json
+    } else {
+        MultiChannelReadinessOutputFormat::Text
+    };
+    let output = match output_format {
+        MultiChannelReadinessOutputFormat::Text => {
+            render_multi_channel_live_readiness_report(&report)
+        }
+        MultiChannelReadinessOutputFormat::Json => {
+            render_multi_channel_live_readiness_report_json(&report)
+        }
+    };
+    println!("{output}");
+    if report.fail > 0 {
+        let reason_codes = if report.reason_codes.is_empty() {
+            "unknown".to_string()
+        } else {
+            report.reason_codes.join(",")
+        };
+        bail!(
+            "multi-channel live readiness gate: status=fail fail={} reason_codes={}",
+            report.fail,
+            reason_codes
+        );
+    }
+    Ok(())
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -813,6 +1226,9 @@ where
             action: Some("configure --skill-trust-root-file when using signed skills".to_string()),
         }),
     }
+
+    checks
+        .extend(evaluate_multi_channel_live_readiness(&config.multi_channel_live_readiness).checks);
 
     checks
 }

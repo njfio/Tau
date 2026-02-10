@@ -1421,10 +1421,22 @@ fn integration_interactive_doctor_command_reports_runtime_diagnostics() {
     let skills_dir = temp.path().join("skills");
     let lock_path = temp.path().join("skills.lock.json");
     let trust_root_path = temp.path().join("trust-roots.json");
+    let tau_root = temp.path().join(".tau");
+    let ingress_dir = tau_root.join("multi-channel/live-ingress");
+    let credential_store = tau_root.join("credentials.json");
     fs::create_dir_all(&skills_dir).expect("mkdir skills");
+    fs::create_dir_all(&ingress_dir).expect("mkdir ingress");
     fs::write(skills_dir.join("focus.md"), "focus skill").expect("write skill");
     fs::write(&lock_path, "{}\n").expect("write lock");
     fs::write(&trust_root_path, "[]\n").expect("write trust roots");
+    fs::write(ingress_dir.join("telegram.ndjson"), "").expect("write telegram inbox");
+    fs::write(ingress_dir.join("discord.ndjson"), "").expect("write discord inbox");
+    fs::write(ingress_dir.join("whatsapp.ndjson"), "").expect("write whatsapp inbox");
+    fs::write(
+        &credential_store,
+        "{\"schema_version\":1,\"encryption\":\"none\",\"providers\":{},\"integrations\":{}}\n",
+    )
+    .expect("write credential store");
     let raw = [
         json!({"record_type":"meta","schema_version":1}).to_string(),
         json!({
@@ -1443,26 +1455,31 @@ fn integration_interactive_doctor_command_reports_runtime_diagnostics() {
     fs::write(&session, format!("{raw}\n")).expect("write session");
 
     let mut cmd = binary_command();
-    cmd.args([
-        "--model",
-        "openai/gpt-4o-mini",
-        "--openai-api-key",
-        "test-openai-key",
-        "--session",
-        session.to_str().expect("utf8 path"),
-        "--skills-dir",
-        skills_dir.to_str().expect("utf8 path"),
-        "--skills-lock-file",
-        lock_path.to_str().expect("utf8 path"),
-        "--skill-trust-root-file",
-        trust_root_path.to_str().expect("utf8 path"),
-    ])
-    .write_stdin("/doctor\n/doctor --json\n/quit\n");
+    cmd.current_dir(temp.path())
+        .args([
+            "--model",
+            "openai/gpt-4o-mini",
+            "--openai-api-key",
+            "test-openai-key",
+            "--session",
+            session.to_str().expect("utf8 path"),
+            "--skills-dir",
+            skills_dir.to_str().expect("utf8 path"),
+            "--skills-lock-file",
+            lock_path.to_str().expect("utf8 path"),
+            "--skill-trust-root-file",
+            trust_root_path.to_str().expect("utf8 path"),
+        ])
+        .env("TAU_TELEGRAM_BOT_TOKEN", "telegram-token")
+        .env("TAU_DISCORD_BOT_TOKEN", "discord-token")
+        .env("TAU_WHATSAPP_ACCESS_TOKEN", "whatsapp-access-token")
+        .env("TAU_WHATSAPP_PHONE_NUMBER_ID", "15551234567")
+        .write_stdin("/doctor\n/doctor --json\n/quit\n");
 
     cmd.assert()
         .success()
         .stdout(predicate::str::contains(
-            "doctor summary: checks=9 pass=8 warn=1 fail=0",
+            "doctor summary: checks=14 pass=13 warn=1 fail=0",
         ))
         .stdout(predicate::str::contains(
             "doctor check: key=release_channel status=pass code=default_stable",
@@ -1485,10 +1502,25 @@ fn integration_interactive_doctor_command_reports_runtime_diagnostics() {
         .stdout(predicate::str::contains(
             "doctor check: key=trust_root status=pass code=readable",
         ))
+        .stdout(predicate::str::contains(
+            "doctor check: key=multi_channel_live.ingress_dir status=pass code=ready",
+        ))
+        .stdout(predicate::str::contains(
+            "doctor check: key=multi_channel_live.channel.telegram status=pass code=ready",
+        ))
+        .stdout(predicate::str::contains(
+            "doctor check: key=multi_channel_live.channel.discord status=pass code=ready",
+        ))
+        .stdout(predicate::str::contains(
+            "doctor check: key=multi_channel_live.channel.whatsapp status=pass code=ready",
+        ))
         .stdout(predicate::str::contains("\"summary\""))
         .stdout(predicate::str::contains("\"checks\""))
         .stdout(predicate::str::contains("\"provider_auth_mode.openai\""))
-        .stdout(predicate::str::contains("\"provider_key.openai\""));
+        .stdout(predicate::str::contains("\"provider_key.openai\""))
+        .stdout(predicate::str::contains(
+            "\"multi_channel_live.channel.telegram\"",
+        ));
 }
 
 #[test]

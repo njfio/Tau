@@ -62,6 +62,44 @@ Primary state files:
 Each line must be one normalized provider envelope JSON object. Invalid lines are skipped with
 explicit parse diagnostics in stderr; valid lines continue processing.
 
+## Live readiness preflight
+
+Run this gate before enabling `--multi-channel-live-runner`:
+
+```bash
+cargo run -p tau-coding-agent -- \
+  --multi-channel-live-readiness-preflight
+```
+
+Machine-readable output:
+
+```bash
+cargo run -p tau-coding-agent -- \
+  --multi-channel-live-readiness-preflight \
+  --multi-channel-live-readiness-json
+```
+
+Fail-closed behavior:
+
+- Exit code is non-zero when required prerequisites fail
+- Output includes deterministic reason codes (`key:code`) for remediation
+
+Required channel prerequisites:
+
+- Telegram: `TAU_TELEGRAM_BOT_TOKEN` or integration id `telegram-bot-token`
+- Discord: `TAU_DISCORD_BOT_TOKEN` or integration id `discord-bot-token`
+- WhatsApp token: `TAU_WHATSAPP_ACCESS_TOKEN` or integration id `whatsapp-access-token`
+- WhatsApp phone id: `TAU_WHATSAPP_PHONE_NUMBER_ID` or integration id `whatsapp-phone-number-id`
+
+Channel secrets can be seeded via integration store:
+
+```bash
+/integration-auth set telegram-bot-token <secret>
+/integration-auth set discord-bot-token <secret>
+/integration-auth set whatsapp-access-token <secret>
+/integration-auth set whatsapp-phone-number-id <value>
+```
+
 ## Rollout plan with guardrails
 
 1. Validate fixture/live runtime locally:
