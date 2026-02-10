@@ -739,6 +739,7 @@ pub(crate) struct Cli {
         conflicts_with = "multi_agent_status_inspect",
         conflicts_with = "gateway_status_inspect",
         conflicts_with = "custom_command_status_inspect",
+        conflicts_with = "voice_status_inspect",
         value_name = "transport/channel_id",
         help = "Inspect ChannelStore state for one channel and exit"
     )]
@@ -753,6 +754,7 @@ pub(crate) struct Cli {
         conflicts_with = "multi_agent_status_inspect",
         conflicts_with = "gateway_status_inspect",
         conflicts_with = "custom_command_status_inspect",
+        conflicts_with = "voice_status_inspect",
         value_name = "transport/channel_id",
         help = "Repair malformed ChannelStore JSONL files for one channel and exit"
     )]
@@ -767,8 +769,9 @@ pub(crate) struct Cli {
         conflicts_with = "multi_agent_status_inspect",
         conflicts_with = "gateway_status_inspect",
         conflicts_with = "custom_command_status_inspect",
+        conflicts_with = "voice_status_inspect",
         value_name = "target",
-        help = "Inspect transport health snapshot(s) and exit. Targets: slack, github, github:owner/repo, multi-channel, multi-agent, memory, dashboard, gateway, custom-command"
+        help = "Inspect transport health snapshot(s) and exit. Targets: slack, github, github:owner/repo, multi-channel, multi-agent, memory, dashboard, gateway, custom-command, voice"
     )]
     pub(crate) transport_health_inspect: Option<String>,
 
@@ -794,6 +797,7 @@ pub(crate) struct Cli {
         conflicts_with = "multi_agent_status_inspect",
         conflicts_with = "gateway_status_inspect",
         conflicts_with = "custom_command_status_inspect",
+        conflicts_with = "voice_status_inspect",
         help = "Inspect dashboard runtime status/guardrail report and exit"
     )]
     pub(crate) dashboard_status_inspect: bool,
@@ -820,6 +824,7 @@ pub(crate) struct Cli {
         conflicts_with = "dashboard_status_inspect",
         conflicts_with = "gateway_status_inspect",
         conflicts_with = "custom_command_status_inspect",
+        conflicts_with = "voice_status_inspect",
         help = "Inspect multi-agent runtime status/guardrail report and exit"
     )]
     pub(crate) multi_agent_status_inspect: bool,
@@ -846,6 +851,7 @@ pub(crate) struct Cli {
         conflicts_with = "dashboard_status_inspect",
         conflicts_with = "multi_agent_status_inspect",
         conflicts_with = "custom_command_status_inspect",
+        conflicts_with = "voice_status_inspect",
         help = "Inspect gateway runtime status/guardrail report and exit"
     )]
     pub(crate) gateway_status_inspect: bool,
@@ -872,6 +878,7 @@ pub(crate) struct Cli {
         conflicts_with = "dashboard_status_inspect",
         conflicts_with = "multi_agent_status_inspect",
         conflicts_with = "gateway_status_inspect",
+        conflicts_with = "voice_status_inspect",
         help = "Inspect no-code custom command runtime status/guardrail report and exit"
     )]
     pub(crate) custom_command_status_inspect: bool,
@@ -888,6 +895,33 @@ pub(crate) struct Cli {
         help = "Emit --custom-command-status-inspect output as pretty JSON"
     )]
     pub(crate) custom_command_status_json: bool,
+
+    #[arg(
+        long = "voice-status-inspect",
+        env = "TAU_VOICE_STATUS_INSPECT",
+        conflicts_with = "channel_store_inspect",
+        conflicts_with = "channel_store_repair",
+        conflicts_with = "transport_health_inspect",
+        conflicts_with = "dashboard_status_inspect",
+        conflicts_with = "multi_agent_status_inspect",
+        conflicts_with = "gateway_status_inspect",
+        conflicts_with = "custom_command_status_inspect",
+        help = "Inspect voice runtime status/guardrail report and exit"
+    )]
+    pub(crate) voice_status_inspect: bool,
+
+    #[arg(
+        long = "voice-status-json",
+        env = "TAU_VOICE_STATUS_JSON",
+        default_value_t = false,
+        action = ArgAction::Set,
+        num_args = 0..=1,
+        require_equals = true,
+        default_missing_value = "true",
+        requires = "voice_status_inspect",
+        help = "Emit --voice-status-inspect output as pretty JSON"
+    )]
+    pub(crate) voice_status_json: bool,
 
     #[arg(
         long = "extension-exec-manifest",

@@ -73,6 +73,7 @@ Run deterministic local demos:
 ./scripts/demo/all.sh --only multi-agent --fail-fast
 ./scripts/demo/all.sh --only gateway --fail-fast
 ./scripts/demo/all.sh --only custom-command --fail-fast
+./scripts/demo/all.sh --only voice --fail-fast
 ./scripts/demo/all.sh --only local --timeout-seconds 30 --fail-fast
 ./scripts/demo/local.sh
 ./scripts/demo/rpc.sh
@@ -84,6 +85,7 @@ Run deterministic local demos:
 ./scripts/demo/dashboard.sh
 ./scripts/demo/gateway.sh
 ./scripts/demo/custom-command.sh
+./scripts/demo/voice.sh
 ```
 
 `all.sh --json` and `--report-file` entries include `duration_ms` per wrapper.

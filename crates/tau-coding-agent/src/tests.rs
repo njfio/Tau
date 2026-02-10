@@ -384,6 +384,8 @@ fn test_cli() -> Cli {
         gateway_status_json: false,
         custom_command_status_inspect: false,
         custom_command_status_json: false,
+        voice_status_inspect: false,
+        voice_status_json: false,
         extension_exec_manifest: None,
         extension_exec_hook: None,
         extension_exec_payload_file: None,
@@ -1853,6 +1855,24 @@ fn functional_cli_transport_health_inspect_accepts_custom_command_state_dir_over
 }
 
 #[test]
+fn unit_cli_transport_health_inspect_accepts_voice_target() {
+    let cli = parse_cli_with_stack(["tau-rs", "--transport-health-inspect", "voice"]);
+    assert_eq!(cli.transport_health_inspect.as_deref(), Some("voice"));
+}
+
+#[test]
+fn functional_cli_transport_health_inspect_accepts_voice_state_dir_override() {
+    let cli = parse_cli_with_stack([
+        "tau-rs",
+        "--transport-health-inspect",
+        "voice",
+        "--voice-state-dir",
+        ".tau/voice-alt",
+    ]);
+    assert_eq!(cli.voice_state_dir, PathBuf::from(".tau/voice-alt"));
+}
+
+#[test]
 fn unit_cli_dashboard_status_inspect_defaults_to_disabled() {
     let cli = parse_cli_with_stack(["tau-rs"]);
     assert!(!cli.dashboard_status_inspect);
@@ -1975,6 +1995,36 @@ fn functional_cli_custom_command_status_inspect_accepts_json_and_state_dir_overr
 #[test]
 fn regression_cli_custom_command_status_json_requires_custom_command_status_inspect() {
     let parse = try_parse_cli_with_stack(["tau-rs", "--custom-command-status-json"]);
+    let error = parse.expect_err("json output should require inspect flag");
+    assert!(error
+        .to_string()
+        .contains("required arguments were not provided"));
+}
+
+#[test]
+fn unit_cli_voice_status_inspect_defaults_to_disabled() {
+    let cli = parse_cli_with_stack(["tau-rs"]);
+    assert!(!cli.voice_status_inspect);
+    assert!(!cli.voice_status_json);
+}
+
+#[test]
+fn functional_cli_voice_status_inspect_accepts_json_and_state_dir_override() {
+    let cli = parse_cli_with_stack([
+        "tau-rs",
+        "--voice-status-inspect",
+        "--voice-status-json",
+        "--voice-state-dir",
+        ".tau/voice-observe",
+    ]);
+    assert!(cli.voice_status_inspect);
+    assert!(cli.voice_status_json);
+    assert_eq!(cli.voice_state_dir, PathBuf::from(".tau/voice-observe"));
+}
+
+#[test]
+fn regression_cli_voice_status_json_requires_voice_status_inspect() {
+    let parse = try_parse_cli_with_stack(["tau-rs", "--voice-status-json"]);
     let error = parse.expect_err("json output should require inspect flag");
     assert!(error
         .to_string()
@@ -13960,6 +14010,75 @@ fn regression_execute_channel_store_admin_custom_command_status_inspect_requires
     assert!(error.to_string().contains("state.json"));
 }
 
+#[test]
+fn functional_execute_channel_store_admin_voice_status_inspect_succeeds() {
+    let temp = tempdir().expect("tempdir");
+    let voice_state_dir = temp.path().join("voice");
+    std::fs::create_dir_all(&voice_state_dir).expect("create voice state dir");
+    std::fs::write(
+        voice_state_dir.join("state.json"),
+        r#"{
+  "schema_version": 1,
+  "processed_case_keys": ["turn:tau:ops-1:voice-success-turn"],
+  "interactions": [
+    {
+      "case_key": "turn:tau:ops-1:voice-success-turn",
+      "case_id": "voice-success-turn",
+      "mode": "turn",
+      "wake_word": "tau",
+      "locale": "en-US",
+      "speaker_id": "ops-1",
+      "utterance": "open dashboard",
+      "last_status_code": 202,
+      "last_outcome": "success",
+      "run_count": 1,
+      "updated_unix_ms": 1
+    }
+  ],
+  "health": {
+    "updated_unix_ms": 720,
+    "cycle_duration_ms": 12,
+    "queue_depth": 0,
+    "active_runs": 0,
+    "failure_streak": 0,
+    "last_cycle_discovered": 1,
+    "last_cycle_processed": 1,
+    "last_cycle_completed": 1,
+    "last_cycle_failed": 0,
+    "last_cycle_duplicates": 0
+  }
+}
+"#,
+    )
+    .expect("write voice state");
+    std::fs::write(
+        voice_state_dir.join("runtime-events.jsonl"),
+        r#"{"reason_codes":["turns_handled"],"health_reason":"no recent transport failures observed"}
+"#,
+    )
+    .expect("write voice events");
+
+    let mut cli = test_cli();
+    cli.voice_status_inspect = true;
+    cli.voice_status_json = true;
+    cli.voice_state_dir = voice_state_dir;
+    execute_channel_store_admin_command(&cli).expect("voice status inspect should succeed");
+}
+
+#[test]
+fn regression_execute_channel_store_admin_voice_status_inspect_requires_state_file() {
+    let temp = tempdir().expect("tempdir");
+    let mut cli = test_cli();
+    cli.voice_status_inspect = true;
+    cli.voice_state_dir = temp.path().join("voice");
+    std::fs::create_dir_all(&cli.voice_state_dir).expect("create voice dir");
+
+    let error = execute_channel_store_admin_command(&cli)
+        .expect_err("voice status inspect should fail without state file");
+    assert!(error.to_string().contains("failed to read"));
+    assert!(error.to_string().contains("state.json"));
+}
+
 fn make_script_executable(path: &Path) {
     #[cfg(unix)]
     {
@@ -17528,6 +17647,42 @@ fn functional_execute_startup_preflight_runs_custom_command_status_inspect_mode(
     .expect("write custom-command state");
 
     let handled = execute_startup_preflight(&cli).expect("custom-command status inspect preflight");
+    assert!(handled);
+}
+
+#[test]
+fn functional_execute_startup_preflight_runs_voice_status_inspect_mode() {
+    let temp = tempdir().expect("tempdir");
+    let mut cli = test_cli();
+    set_workspace_tau_paths(&mut cli, temp.path());
+    cli.voice_status_inspect = true;
+    cli.voice_status_json = true;
+
+    std::fs::create_dir_all(&cli.voice_state_dir).expect("create voice state dir");
+    std::fs::write(
+        cli.voice_state_dir.join("state.json"),
+        r#"{
+  "schema_version": 1,
+  "processed_case_keys": [],
+  "interactions": [],
+  "health": {
+    "updated_unix_ms": 802,
+    "cycle_duration_ms": 9,
+    "queue_depth": 0,
+    "active_runs": 0,
+    "failure_streak": 0,
+    "last_cycle_discovered": 1,
+    "last_cycle_processed": 1,
+    "last_cycle_completed": 1,
+    "last_cycle_failed": 0,
+    "last_cycle_duplicates": 0
+  }
+}
+"#,
+    )
+    .expect("write voice state");
+
+    let handled = execute_startup_preflight(&cli).expect("voice status inspect preflight");
     assert!(handled);
 }
 
