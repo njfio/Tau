@@ -35,6 +35,7 @@ Primary state files:
 - `.tau/multi-channel/state.json`
 - `.tau/multi-channel/runtime-events.jsonl`
 - `.tau/multi-channel/route-traces.jsonl`
+- `.tau/multi-channel/security/channel-lifecycle.json`
 - `.tau/multi-channel/security/multi-channel-route-bindings.json`
 - `.tau/multi-channel/channel-store/<transport>/<channel>/...`
 
@@ -198,6 +199,62 @@ cargo run -p tau-coding-agent -- \
 
 Use the same command for `discord` and `whatsapp` payloads by changing
 `--multi-channel-live-ingest-transport` and `--multi-channel-live-ingest-file`.
+
+## Channel lifecycle operations
+
+Tau supports deterministic lifecycle operations per transport:
+
+- `status`: read persisted lifecycle state and readiness.
+- `login`: initialize lifecycle state and create the transport ingress file.
+- `logout`: persist logged-out lifecycle state.
+- `probe`: evaluate readiness and persist probe result.
+
+Commands:
+
+```bash
+# login/init
+cargo run -p tau-coding-agent -- \
+  --multi-channel-state-dir .tau/multi-channel \
+  --multi-channel-live-ingress-dir .tau/multi-channel/live-ingress \
+  --multi-channel-channel-login telegram \
+  --multi-channel-telegram-bot-token <token> \
+  --multi-channel-channel-login-json
+
+# status
+cargo run -p tau-coding-agent -- \
+  --multi-channel-state-dir .tau/multi-channel \
+  --multi-channel-live-ingress-dir .tau/multi-channel/live-ingress \
+  --multi-channel-channel-status telegram \
+  --multi-channel-telegram-bot-token <token> \
+  --multi-channel-channel-status-json
+
+# probe
+cargo run -p tau-coding-agent -- \
+  --multi-channel-state-dir .tau/multi-channel \
+  --multi-channel-live-ingress-dir .tau/multi-channel/live-ingress \
+  --multi-channel-channel-probe telegram \
+  --multi-channel-telegram-bot-token <token> \
+  --multi-channel-channel-probe-json
+
+# logout/reset
+cargo run -p tau-coding-agent -- \
+  --multi-channel-state-dir .tau/multi-channel \
+  --multi-channel-live-ingress-dir .tau/multi-channel/live-ingress \
+  --multi-channel-channel-logout telegram \
+  --multi-channel-channel-logout-json
+```
+
+Lifecycle reason codes include:
+
+- `ready`
+- `missing_telegram_bot_token`
+- `missing_discord_bot_token`
+- `missing_whatsapp_access_token`
+- `missing_whatsapp_phone_number_id`
+- `ingress_missing`
+- `ingress_not_file`
+- `credential_store_unreadable`
+- `logout_requested`
 
 ## Outbound delivery modes
 

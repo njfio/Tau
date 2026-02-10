@@ -15,6 +15,13 @@ fn gateway_openresponses_mode_requested(cli: &Cli) -> bool {
     cli.gateway_openresponses_server
 }
 
+fn multi_channel_channel_lifecycle_mode_requested(cli: &Cli) -> bool {
+    cli.multi_channel_channel_status.is_some()
+        || cli.multi_channel_channel_login.is_some()
+        || cli.multi_channel_channel_logout.is_some()
+        || cli.multi_channel_channel_probe.is_some()
+}
+
 pub(crate) fn validate_github_issues_bridge_cli(cli: &Cli) -> Result<()> {
     if !cli.github_issues_bridge {
         return Ok(());
@@ -320,6 +327,89 @@ pub(crate) fn validate_multi_channel_live_ingest_cli(cli: &Cli) -> Result<()> {
         bail!(
             "--multi-channel-live-ingest-dir '{}' must point to a directory when it exists",
             cli.multi_channel_live_ingest_dir.display()
+        );
+    }
+
+    Ok(())
+}
+
+pub(crate) fn validate_multi_channel_channel_lifecycle_cli(cli: &Cli) -> Result<()> {
+    if !multi_channel_channel_lifecycle_mode_requested(cli) {
+        return Ok(());
+    }
+
+    let selected_modes = [
+        cli.multi_channel_channel_status.is_some(),
+        cli.multi_channel_channel_login.is_some(),
+        cli.multi_channel_channel_logout.is_some(),
+        cli.multi_channel_channel_probe.is_some(),
+    ]
+    .into_iter()
+    .filter(|selected| *selected)
+    .count();
+    if selected_modes > 1 {
+        bail!("--multi-channel-channel-status, --multi-channel-channel-login, --multi-channel-channel-logout, and --multi-channel-channel-probe are mutually exclusive");
+    }
+    if has_prompt_or_command_input(cli) {
+        bail!("--multi-channel-channel-* commands cannot be combined with --prompt, --prompt-file, --prompt-template-file, or --command-file");
+    }
+    if cli.channel_store_inspect.is_some()
+        || cli.channel_store_repair.is_some()
+        || cli.transport_health_inspect.is_some()
+        || cli.multi_channel_status_inspect
+        || cli.multi_channel_route_inspect_file.is_some()
+        || cli.dashboard_status_inspect
+        || cli.multi_agent_status_inspect
+        || cli.gateway_status_inspect
+        || cli.deployment_status_inspect
+        || cli.custom_command_status_inspect
+        || cli.voice_status_inspect
+    {
+        bail!("--multi-channel-channel-* commands cannot be combined with status/inspection preflight commands");
+    }
+    if gateway_service_mode_requested(cli)
+        || gateway_openresponses_mode_requested(cli)
+        || cli.github_issues_bridge
+        || cli.slack_bridge
+        || cli.events_runner
+        || cli.multi_channel_contract_runner
+        || cli.multi_channel_live_runner
+        || cli.multi_channel_live_ingest_file.is_some()
+        || cli.multi_channel_live_readiness_preflight
+        || cli.multi_agent_contract_runner
+        || cli.memory_contract_runner
+        || cli.dashboard_contract_runner
+        || cli.gateway_contract_runner
+        || cli.deployment_contract_runner
+        || cli.custom_command_contract_runner
+        || cli.voice_contract_runner
+    {
+        bail!(
+            "--multi-channel-channel-* commands cannot be combined with active transport/runtime commands"
+        );
+    }
+    if cli.multi_channel_channel_status_json && cli.multi_channel_channel_status.is_none() {
+        bail!("--multi-channel-channel-status-json requires --multi-channel-channel-status");
+    }
+    if cli.multi_channel_channel_login_json && cli.multi_channel_channel_login.is_none() {
+        bail!("--multi-channel-channel-login-json requires --multi-channel-channel-login");
+    }
+    if cli.multi_channel_channel_logout_json && cli.multi_channel_channel_logout.is_none() {
+        bail!("--multi-channel-channel-logout-json requires --multi-channel-channel-logout");
+    }
+    if cli.multi_channel_channel_probe_json && cli.multi_channel_channel_probe.is_none() {
+        bail!("--multi-channel-channel-probe-json requires --multi-channel-channel-probe");
+    }
+    if cli.multi_channel_state_dir.exists() && !cli.multi_channel_state_dir.is_dir() {
+        bail!(
+            "--multi-channel-state-dir '{}' must point to a directory when it exists",
+            cli.multi_channel_state_dir.display()
+        );
+    }
+    if cli.multi_channel_live_ingress_dir.exists() && !cli.multi_channel_live_ingress_dir.is_dir() {
+        bail!(
+            "--multi-channel-live-ingress-dir '{}' must point to a directory when it exists",
+            cli.multi_channel_live_ingress_dir.display()
         );
     }
 

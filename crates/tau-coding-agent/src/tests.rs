@@ -85,15 +85,16 @@ use super::{
     validate_gateway_contract_runner_cli, validate_gateway_openresponses_server_cli,
     validate_gateway_service_cli, validate_github_issues_bridge_cli, validate_macro_command_entry,
     validate_macro_name, validate_memory_contract_runner_cli,
-    validate_multi_agent_contract_runner_cli, validate_multi_channel_contract_runner_cli,
-    validate_multi_channel_live_ingest_cli, validate_multi_channel_live_runner_cli,
-    validate_profile_name, validate_rpc_frame_file, validate_session_file,
-    validate_skills_prune_file_name, validate_slack_bridge_cli, validate_voice_contract_runner_cli,
-    AuthCommand, AuthCommandConfig, BranchAliasCommand, BranchAliasFile, Cli, CliBashProfile,
-    CliCommandFileErrorMode, CliCredentialStoreEncryptionMode, CliEventTemplateSchedule,
-    CliMultiChannelOutboundMode, CliMultiChannelTransport, CliOrchestratorMode, CliOsSandboxMode,
-    CliProviderAuthMode, CliSessionImportMode, CliToolPolicyPreset, CliWebhookSignatureAlgorithm,
-    ClientRoute, CommandAction, CommandExecutionContext, CommandFileEntry, CommandFileReport,
+    validate_multi_agent_contract_runner_cli, validate_multi_channel_channel_lifecycle_cli,
+    validate_multi_channel_contract_runner_cli, validate_multi_channel_live_ingest_cli,
+    validate_multi_channel_live_runner_cli, validate_profile_name, validate_rpc_frame_file,
+    validate_session_file, validate_skills_prune_file_name, validate_slack_bridge_cli,
+    validate_voice_contract_runner_cli, AuthCommand, AuthCommandConfig, BranchAliasCommand,
+    BranchAliasFile, Cli, CliBashProfile, CliCommandFileErrorMode,
+    CliCredentialStoreEncryptionMode, CliEventTemplateSchedule, CliMultiChannelOutboundMode,
+    CliMultiChannelTransport, CliOrchestratorMode, CliOsSandboxMode, CliProviderAuthMode,
+    CliSessionImportMode, CliToolPolicyPreset, CliWebhookSignatureAlgorithm, ClientRoute,
+    CommandAction, CommandExecutionContext, CommandFileEntry, CommandFileReport,
     CredentialStoreData, CredentialStoreEncryptionMode, DoctorCheckOptions, DoctorCheckResult,
     DoctorCommandArgs, DoctorCommandConfig, DoctorCommandOutputFormat,
     DoctorMultiChannelReadinessConfig, DoctorProviderKeyStatus, DoctorStatus,
@@ -492,6 +493,14 @@ fn test_cli() -> Cli {
         multi_channel_live_ingest_dir: PathBuf::from(".tau/multi-channel/live-ingress"),
         multi_channel_live_readiness_preflight: false,
         multi_channel_live_readiness_json: false,
+        multi_channel_channel_status: None,
+        multi_channel_channel_status_json: false,
+        multi_channel_channel_login: None,
+        multi_channel_channel_login_json: false,
+        multi_channel_channel_logout: None,
+        multi_channel_channel_logout_json: false,
+        multi_channel_channel_probe: None,
+        multi_channel_channel_probe_json: false,
         multi_channel_fixture: PathBuf::from(
             "crates/tau-coding-agent/testdata/multi-channel-contract/baseline-three-channel.json",
         ),
@@ -1409,6 +1418,14 @@ fn unit_cli_multi_channel_runner_flags_default_to_disabled() {
     );
     assert!(!cli.multi_channel_live_readiness_preflight);
     assert!(!cli.multi_channel_live_readiness_json);
+    assert!(cli.multi_channel_channel_status.is_none());
+    assert!(!cli.multi_channel_channel_status_json);
+    assert!(cli.multi_channel_channel_login.is_none());
+    assert!(!cli.multi_channel_channel_login_json);
+    assert!(cli.multi_channel_channel_logout.is_none());
+    assert!(!cli.multi_channel_channel_logout_json);
+    assert!(cli.multi_channel_channel_probe.is_none());
+    assert!(!cli.multi_channel_channel_probe_json);
     assert_eq!(
         cli.multi_channel_fixture,
         PathBuf::from(
@@ -1446,6 +1463,79 @@ fn unit_cli_multi_channel_runner_flags_default_to_disabled() {
         cli.multi_channel_whatsapp_api_base,
         "https://graph.facebook.com/v20.0".to_string()
     );
+}
+
+#[test]
+fn functional_cli_multi_channel_channel_lifecycle_flags_accept_explicit_overrides() {
+    let status_cli = parse_cli_with_stack([
+        "tau-rs",
+        "--multi-channel-channel-status",
+        "telegram",
+        "--multi-channel-channel-status-json",
+    ]);
+    assert_eq!(
+        status_cli.multi_channel_channel_status,
+        Some(CliMultiChannelTransport::Telegram)
+    );
+    assert!(status_cli.multi_channel_channel_status_json);
+
+    let login_cli = parse_cli_with_stack([
+        "tau-rs",
+        "--multi-channel-channel-login",
+        "discord",
+        "--multi-channel-channel-login-json",
+    ]);
+    assert_eq!(
+        login_cli.multi_channel_channel_login,
+        Some(CliMultiChannelTransport::Discord)
+    );
+    assert!(login_cli.multi_channel_channel_login_json);
+
+    let logout_cli = parse_cli_with_stack([
+        "tau-rs",
+        "--multi-channel-channel-logout",
+        "whatsapp",
+        "--multi-channel-channel-logout-json",
+    ]);
+    assert_eq!(
+        logout_cli.multi_channel_channel_logout,
+        Some(CliMultiChannelTransport::Whatsapp)
+    );
+    assert!(logout_cli.multi_channel_channel_logout_json);
+
+    let probe_cli = parse_cli_with_stack([
+        "tau-rs",
+        "--multi-channel-channel-probe",
+        "telegram",
+        "--multi-channel-channel-probe-json",
+    ]);
+    assert_eq!(
+        probe_cli.multi_channel_channel_probe,
+        Some(CliMultiChannelTransport::Telegram)
+    );
+    assert!(probe_cli.multi_channel_channel_probe_json);
+}
+
+#[test]
+fn regression_cli_multi_channel_channel_status_json_requires_status_flag() {
+    let parse = try_parse_cli_with_stack(["tau-rs", "--multi-channel-channel-status-json"]);
+    let error = parse.expect_err("status json should require status action");
+    assert!(error
+        .to_string()
+        .contains("required arguments were not provided"));
+}
+
+#[test]
+fn regression_cli_multi_channel_channel_login_conflicts_with_probe() {
+    let parse = try_parse_cli_with_stack([
+        "tau-rs",
+        "--multi-channel-channel-login",
+        "discord",
+        "--multi-channel-channel-probe",
+        "discord",
+    ]);
+    let error = parse.expect_err("login and probe should conflict");
+    assert!(error.to_string().contains("cannot be used with"));
 }
 
 #[test]
@@ -14010,6 +14100,62 @@ fn regression_validate_multi_channel_live_ingest_cli_rejects_empty_provider() {
 }
 
 #[test]
+fn unit_validate_multi_channel_channel_lifecycle_cli_accepts_status_mode() {
+    let mut cli = test_cli();
+    cli.multi_channel_channel_status = Some(CliMultiChannelTransport::Telegram);
+    validate_multi_channel_channel_lifecycle_cli(&cli)
+        .expect("multi-channel lifecycle status config should validate");
+}
+
+#[test]
+fn functional_validate_multi_channel_channel_lifecycle_cli_rejects_prompt_conflicts() {
+    let mut cli = test_cli();
+    cli.multi_channel_channel_status = Some(CliMultiChannelTransport::Discord);
+    cli.prompt = Some("conflict".to_string());
+    let error =
+        validate_multi_channel_channel_lifecycle_cli(&cli).expect_err("prompt conflict expected");
+    assert!(error
+        .to_string()
+        .contains("--multi-channel-channel-* commands cannot be combined"));
+}
+
+#[test]
+fn integration_validate_multi_channel_channel_lifecycle_cli_rejects_runtime_conflicts() {
+    let mut cli = test_cli();
+    cli.multi_channel_channel_probe = Some(CliMultiChannelTransport::Whatsapp);
+    cli.events_runner = true;
+    let error = validate_multi_channel_channel_lifecycle_cli(&cli)
+        .expect_err("runtime conflict should fail");
+    assert!(error
+        .to_string()
+        .contains("active transport/runtime commands"));
+}
+
+#[test]
+fn regression_validate_multi_channel_channel_lifecycle_cli_rejects_multiple_actions() {
+    let mut cli = test_cli();
+    cli.multi_channel_channel_login = Some(CliMultiChannelTransport::Telegram);
+    cli.multi_channel_channel_probe = Some(CliMultiChannelTransport::Telegram);
+    let error = validate_multi_channel_channel_lifecycle_cli(&cli)
+        .expect_err("multiple lifecycle actions should fail");
+    assert!(error.to_string().contains("mutually exclusive"));
+}
+
+#[test]
+fn regression_validate_multi_channel_channel_lifecycle_cli_rejects_file_state_dir() {
+    let temp = tempdir().expect("tempdir");
+    let state_file = temp.path().join("multi-channel-state-file");
+    std::fs::write(&state_file, "{}").expect("write state file");
+
+    let mut cli = test_cli();
+    cli.multi_channel_channel_status = Some(CliMultiChannelTransport::Telegram);
+    cli.multi_channel_state_dir = state_file;
+    let error = validate_multi_channel_channel_lifecycle_cli(&cli)
+        .expect_err("state-dir file path should fail");
+    assert!(error.to_string().contains("--multi-channel-state-dir"));
+}
+
+#[test]
 fn unit_validate_multi_agent_contract_runner_cli_accepts_minimum_configuration() {
     let temp = tempdir().expect("tempdir");
     let fixture_path = temp.path().join("multi-agent-fixture.json");
@@ -19367,6 +19513,119 @@ fn regression_execute_startup_preflight_multi_channel_live_ingest_fails_closed()
     let error_text = error.to_string();
     assert!(error_text.contains("multi-channel live ingest"));
     assert!(error_text.contains("reason_code=missing_field"));
+}
+
+#[test]
+fn functional_execute_startup_preflight_runs_multi_channel_channel_login_and_status() {
+    let temp = tempdir().expect("tempdir");
+    let live_ingress_dir = temp.path().join("live-ingress");
+    std::fs::create_dir_all(&live_ingress_dir).expect("create live ingress");
+
+    let mut login_cli = test_cli();
+    set_workspace_tau_paths(&mut login_cli, temp.path());
+    login_cli.multi_channel_live_ingress_dir = live_ingress_dir.clone();
+    login_cli.multi_channel_channel_login = Some(CliMultiChannelTransport::Telegram);
+    login_cli.multi_channel_telegram_bot_token = Some("telegram-secret".to_string());
+
+    let login_handled =
+        execute_startup_preflight(&login_cli).expect("multi-channel channel login preflight");
+    assert!(login_handled);
+
+    let ingress_file = live_ingress_dir.join("telegram.ndjson");
+    assert!(ingress_file.exists(), "login should create ingress file");
+
+    let mut status_cli = test_cli();
+    set_workspace_tau_paths(&mut status_cli, temp.path());
+    status_cli.multi_channel_live_ingress_dir = live_ingress_dir;
+    status_cli.multi_channel_channel_status = Some(CliMultiChannelTransport::Telegram);
+    status_cli.multi_channel_telegram_bot_token = Some("telegram-secret".to_string());
+    status_cli.multi_channel_channel_status_json = true;
+
+    let status_handled =
+        execute_startup_preflight(&status_cli).expect("multi-channel channel status preflight");
+    assert!(status_handled);
+
+    let state_raw = std::fs::read_to_string(
+        status_cli
+            .multi_channel_state_dir
+            .join("security/channel-lifecycle.json"),
+    )
+    .expect("read lifecycle state");
+    let parsed: serde_json::Value = serde_json::from_str(&state_raw).expect("parse lifecycle");
+    assert_eq!(
+        parsed["channels"]["telegram"]["lifecycle_status"].as_str(),
+        Some("initialized")
+    );
+}
+
+#[test]
+fn integration_execute_startup_preflight_runs_multi_channel_channel_logout_and_probe() {
+    let temp = tempdir().expect("tempdir");
+    let live_ingress_dir = temp.path().join("live-ingress");
+    std::fs::create_dir_all(&live_ingress_dir).expect("create live ingress");
+
+    let mut login_cli = test_cli();
+    set_workspace_tau_paths(&mut login_cli, temp.path());
+    login_cli.multi_channel_live_ingress_dir = live_ingress_dir.clone();
+    login_cli.multi_channel_channel_login = Some(CliMultiChannelTransport::Whatsapp);
+    login_cli.multi_channel_whatsapp_access_token = Some("wa-token".to_string());
+    login_cli.multi_channel_whatsapp_phone_number_id = Some("15551230000".to_string());
+    execute_startup_preflight(&login_cli).expect("multi-channel login preflight");
+
+    let mut logout_cli = test_cli();
+    set_workspace_tau_paths(&mut logout_cli, temp.path());
+    logout_cli.multi_channel_live_ingress_dir = live_ingress_dir.clone();
+    logout_cli.multi_channel_channel_logout = Some(CliMultiChannelTransport::Whatsapp);
+    let logout_handled =
+        execute_startup_preflight(&logout_cli).expect("multi-channel logout preflight");
+    assert!(logout_handled);
+
+    let mut probe_cli = test_cli();
+    set_workspace_tau_paths(&mut probe_cli, temp.path());
+    probe_cli.multi_channel_live_ingress_dir = live_ingress_dir;
+    probe_cli.multi_channel_channel_probe = Some(CliMultiChannelTransport::Whatsapp);
+    probe_cli.multi_channel_whatsapp_access_token = Some("wa-token".to_string());
+    probe_cli.multi_channel_whatsapp_phone_number_id = Some("15551230000".to_string());
+    probe_cli.multi_channel_channel_probe_json = true;
+    let probe_handled =
+        execute_startup_preflight(&probe_cli).expect("multi-channel probe preflight");
+    assert!(probe_handled);
+
+    let state_raw = std::fs::read_to_string(
+        probe_cli
+            .multi_channel_state_dir
+            .join("security/channel-lifecycle.json"),
+    )
+    .expect("read lifecycle state");
+    let parsed: serde_json::Value = serde_json::from_str(&state_raw).expect("parse lifecycle");
+    assert_eq!(
+        parsed["channels"]["whatsapp"]["last_action"].as_str(),
+        Some("probe")
+    );
+}
+
+#[test]
+fn regression_execute_startup_preflight_multi_channel_channel_lifecycle_fails_closed() {
+    let temp = tempdir().expect("tempdir");
+    let live_ingress_dir = temp.path().join("live-ingress");
+    std::fs::create_dir_all(&live_ingress_dir).expect("create live ingress");
+
+    let state_path = temp
+        .path()
+        .join(".tau/multi-channel/security/channel-lifecycle.json");
+    std::fs::create_dir_all(state_path.parent().expect("parent")).expect("create parent");
+    std::fs::write(&state_path, "{corrupted").expect("write corrupted state");
+
+    let mut cli = test_cli();
+    set_workspace_tau_paths(&mut cli, temp.path());
+    cli.multi_channel_live_ingress_dir = live_ingress_dir;
+    cli.multi_channel_channel_probe = Some(CliMultiChannelTransport::Telegram);
+    cli.multi_channel_telegram_bot_token = Some("telegram-secret".to_string());
+
+    let error = execute_startup_preflight(&cli).expect_err("corrupted lifecycle should fail");
+    assert!(error
+        .to_string()
+        .contains("failed to parse multi-channel lifecycle state"));
 }
 
 #[test]
