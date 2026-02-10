@@ -2,6 +2,7 @@ use std::{
     collections::{BTreeMap, HashMap, HashSet},
     io::Write,
     path::{Path, PathBuf},
+    process::Stdio,
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
@@ -45,6 +46,14 @@ const CHAT_SHOW_DEFAULT_LIMIT: usize = 10;
 const CHAT_SHOW_MAX_LIMIT: usize = 50;
 const CHAT_SEARCH_MAX_LIMIT: usize = 50;
 const GITHUB_ATTACHMENT_MAX_BYTES: usize = 10 * 1024 * 1024;
+const DEMO_INDEX_DEFAULT_TIMEOUT_SECONDS: u64 = 180;
+const DEMO_INDEX_MAX_TIMEOUT_SECONDS: u64 = 900;
+const DEMO_INDEX_SCENARIOS: [&str; 4] = [
+    "onboarding",
+    "gateway-auth",
+    "multi-channel-live",
+    "deployment-wasm",
+];
 
 #[derive(Clone)]
 pub(crate) struct GithubIssuesBridgeRuntimeConfig {
@@ -73,6 +82,9 @@ pub(crate) struct GithubIssuesBridgeRuntimeConfig {
     pub retry_max_attempts: usize,
     pub retry_base_delay_ms: u64,
     pub artifact_retention_days: u64,
+    pub demo_index_repo_root: Option<PathBuf>,
+    pub demo_index_script_path: Option<PathBuf>,
+    pub demo_index_binary_path: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -936,6 +948,61 @@ struct CommentUpdateOutcome {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+struct DemoIndexRunCommand {
+    scenarios: Vec<String>,
+    timeout_seconds: u64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct DemoIndexScenarioDescriptor {
+    id: String,
+    wrapper: String,
+    command: String,
+    description: String,
+    #[serde(default)]
+    expected_markers: Vec<String>,
+    troubleshooting: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct DemoIndexScenarioInventory {
+    #[serde(default)]
+    scenarios: Vec<DemoIndexScenarioDescriptor>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct DemoIndexScenarioResult {
+    id: String,
+    status: String,
+    exit_code: i32,
+    duration_ms: u64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct DemoIndexRunSummary {
+    total: u64,
+    passed: u64,
+    failed: u64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct DemoIndexRunReport {
+    #[serde(default)]
+    scenarios: Vec<DemoIndexScenarioResult>,
+    summary: DemoIndexRunSummary,
+}
+
+#[derive(Debug, Clone)]
+struct DemoIndexRunExecution {
+    run_id: String,
+    command_line: String,
+    exit_code: i32,
+    summary: Option<DemoIndexRunReport>,
+    report_artifact: ChannelArtifactRecord,
+    log_artifact: ChannelArtifactRecord,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum TauIssueCommand {
     Run {
         prompt: String,
@@ -967,6 +1034,11 @@ enum TauIssueCommand {
     ArtifactShow {
         artifact_id: String,
     },
+    DemoIndexList,
+    DemoIndexRun {
+        command: DemoIndexRunCommand,
+    },
+    DemoIndexReport,
     Canvas {
         args: String,
     },
@@ -1082,6 +1154,9 @@ struct GithubIssuesBridgeRuntime {
     outbound_log: JsonlEventLog,
     bot_login: String,
     repository_state_dir: PathBuf,
+    demo_index_repo_root: PathBuf,
+    demo_index_script_path: PathBuf,
+    demo_index_binary_path: PathBuf,
     active_runs: HashMap<u64, ActiveIssueRun>,
     latest_runs: HashMap<u64, IssueLatestRun>,
 }
@@ -1113,6 +1188,18 @@ impl GithubIssuesBridgeRuntime {
         )?;
         let inbound_log = JsonlEventLog::open(repository_state_dir.join("inbound-events.jsonl"))?;
         let outbound_log = JsonlEventLog::open(repository_state_dir.join("outbound-events.jsonl"))?;
+        let demo_index_repo_root = config
+            .demo_index_repo_root
+            .clone()
+            .unwrap_or_else(default_demo_index_repo_root);
+        let demo_index_script_path = config
+            .demo_index_script_path
+            .clone()
+            .unwrap_or_else(|| demo_index_repo_root.join("scripts/demo/index.sh"));
+        let demo_index_binary_path = config
+            .demo_index_binary_path
+            .clone()
+            .unwrap_or_else(default_demo_index_binary_path);
         let required_issue_labels = config
             .required_labels
             .iter()
@@ -1136,6 +1223,9 @@ impl GithubIssuesBridgeRuntime {
             outbound_log,
             bot_login,
             repository_state_dir,
+            demo_index_repo_root,
+            demo_index_script_path,
+            demo_index_binary_path,
             active_runs: HashMap::new(),
             latest_runs: HashMap::new(),
         })
@@ -1929,6 +2019,214 @@ impl GithubIssuesBridgeRuntime {
                     "artifact_id": artifact_id,
                     "posted_comment_id": posted.id,
                     "posted_comment_url": posted.html_url,
+                }))?;
+            }
+            TauIssueCommand::DemoIndexList => {
+                let (status, message, error_text) =
+                    match self.render_demo_index_inventory(event.issue_number).await {
+                        Ok(message) => ("reported", message, None),
+                        Err(error) => (
+                            "failed",
+                            format!(
+                                "Tau demo-index list failed for issue #{}.\n\nError: {}",
+                                event.issue_number,
+                                truncate_for_error(&error.to_string(), 280)
+                            ),
+                            Some(error.to_string()),
+                        ),
+                    };
+                let posted = self
+                    .post_issue_command_comment(
+                        event.issue_number,
+                        &event.key,
+                        "demo-index-list",
+                        status,
+                        &message,
+                    )
+                    .await?;
+                self.outbound_log.append(&json!({
+                    "timestamp_unix_ms": current_unix_timestamp_ms(),
+                    "repo": self.repo.as_slug(),
+                    "event_key": event.key,
+                    "issue_number": event.issue_number,
+                    "command": "demo-index-list",
+                    "status": status,
+                    "posted_comment_id": posted.id,
+                    "posted_comment_url": posted.html_url,
+                    "error": error_text,
+                }))?;
+            }
+            TauIssueCommand::DemoIndexRun { command } => {
+                match self
+                    .execute_demo_index_run(event.issue_number, &event.key, &command)
+                    .await
+                {
+                    Ok(execution) => {
+                        let run_status = if execution.exit_code == 0
+                            && execution
+                                .summary
+                                .as_ref()
+                                .map(|summary| summary.summary.failed == 0)
+                                .unwrap_or(true)
+                        {
+                            "completed"
+                        } else {
+                            "failed"
+                        };
+                        let mut lines = vec![format!(
+                            "Tau demo-index run for issue #{}: status={} run_id={}",
+                            event.issue_number, run_status, execution.run_id
+                        )];
+                        lines.push(format!("scenarios: {}", command.scenarios.join(",")));
+                        lines.push(format!("timeout_seconds: {}", command.timeout_seconds));
+                        lines.push(format!("exit_code: {}", execution.exit_code));
+                        if let Some(summary) = &execution.summary {
+                            lines.push(format!(
+                                "summary: total={} passed={} failed={}",
+                                summary.summary.total,
+                                summary.summary.passed,
+                                summary.summary.failed
+                            ));
+                            for scenario in &summary.scenarios {
+                                lines.push(format!(
+                                    "- {} status={} exit_code={} duration_ms={}",
+                                    scenario.id,
+                                    scenario.status,
+                                    scenario.exit_code,
+                                    scenario.duration_ms
+                                ));
+                            }
+                        } else {
+                            lines.push(
+                                "summary: unavailable (demo-index JSON payload was malformed)"
+                                    .to_string(),
+                            );
+                        }
+                        lines.push(format!(
+                            "report_artifact: id=`{}` path=`{}`",
+                            execution.report_artifact.id, execution.report_artifact.relative_path
+                        ));
+                        lines.push(format!(
+                            "log_artifact: id=`{}` path=`{}`",
+                            execution.log_artifact.id, execution.log_artifact.relative_path
+                        ));
+                        lines.push(
+                            "Use `/tau demo-index report` to inspect latest report pointers."
+                                .to_string(),
+                        );
+                        let message = lines.join("\n");
+                        let posted = self
+                            .post_issue_command_comment(
+                                event.issue_number,
+                                &event.key,
+                                "demo-index-run",
+                                run_status,
+                                &message,
+                            )
+                            .await?;
+                        self.outbound_log.append(&json!({
+                            "timestamp_unix_ms": current_unix_timestamp_ms(),
+                            "repo": self.repo.as_slug(),
+                            "event_key": event.key,
+                            "issue_number": event.issue_number,
+                            "command": "demo-index-run",
+                            "status": run_status,
+                            "posted_comment_id": posted.id,
+                            "posted_comment_url": posted.html_url,
+                            "run_id": execution.run_id,
+                            "command_line": execution.command_line,
+                            "scenarios": command.scenarios,
+                            "timeout_seconds": command.timeout_seconds,
+                            "exit_code": execution.exit_code,
+                            "summary": execution.summary.as_ref().map(|summary| json!({
+                                "total": summary.summary.total,
+                                "passed": summary.summary.passed,
+                                "failed": summary.summary.failed,
+                                "scenarios": summary.scenarios.iter().map(|scenario| json!({
+                                    "id": scenario.id,
+                                    "status": scenario.status,
+                                    "exit_code": scenario.exit_code,
+                                    "duration_ms": scenario.duration_ms,
+                                })).collect::<Vec<_>>(),
+                            })),
+                            "report_artifact": {
+                                "id": execution.report_artifact.id,
+                                "path": execution.report_artifact.relative_path,
+                                "bytes": execution.report_artifact.bytes,
+                                "checksum_sha256": execution.report_artifact.checksum_sha256,
+                            },
+                            "log_artifact": {
+                                "id": execution.log_artifact.id,
+                                "path": execution.log_artifact.relative_path,
+                                "bytes": execution.log_artifact.bytes,
+                                "checksum_sha256": execution.log_artifact.checksum_sha256,
+                            },
+                        }))?;
+                    }
+                    Err(error) => {
+                        let message = format!(
+                            "Tau demo-index run failed for issue #{}.\n\nError: {}",
+                            event.issue_number,
+                            truncate_for_error(&error.to_string(), 280)
+                        );
+                        let posted = self
+                            .post_issue_command_comment(
+                                event.issue_number,
+                                &event.key,
+                                "demo-index-run",
+                                "failed",
+                                &message,
+                            )
+                            .await?;
+                        self.outbound_log.append(&json!({
+                            "timestamp_unix_ms": current_unix_timestamp_ms(),
+                            "repo": self.repo.as_slug(),
+                            "event_key": event.key,
+                            "issue_number": event.issue_number,
+                            "command": "demo-index-run",
+                            "status": "failed",
+                            "posted_comment_id": posted.id,
+                            "posted_comment_url": posted.html_url,
+                            "scenarios": command.scenarios,
+                            "timeout_seconds": command.timeout_seconds,
+                            "error": error.to_string(),
+                        }))?;
+                    }
+                }
+            }
+            TauIssueCommand::DemoIndexReport => {
+                let (status, message, error_text) =
+                    match self.render_issue_demo_index_reports(event.issue_number) {
+                        Ok(message) => ("reported", message, None),
+                        Err(error) => (
+                            "failed",
+                            format!(
+                                "Tau demo-index report lookup failed for issue #{}.\n\nError: {}",
+                                event.issue_number,
+                                truncate_for_error(&error.to_string(), 280)
+                            ),
+                            Some(error.to_string()),
+                        ),
+                    };
+                let posted = self
+                    .post_issue_command_comment(
+                        event.issue_number,
+                        &event.key,
+                        "demo-index-report",
+                        status,
+                        &message,
+                    )
+                    .await?;
+                self.outbound_log.append(&json!({
+                    "timestamp_unix_ms": current_unix_timestamp_ms(),
+                    "repo": self.repo.as_slug(),
+                    "event_key": event.key,
+                    "issue_number": event.issue_number,
+                    "command": "demo-index-report",
+                    "status": status,
+                    "posted_comment_id": posted.id,
+                    "posted_comment_url": posted.html_url,
+                    "error": error_text,
                 }))?;
             }
             TauIssueCommand::Canvas { args } => {
@@ -3276,6 +3574,241 @@ impl GithubIssuesBridgeRuntime {
         Ok(lines.join("\n"))
     }
 
+    async fn execute_demo_index_script(
+        &self,
+        args: &[String],
+        include_binary: bool,
+    ) -> Result<std::process::Output> {
+        if !self.demo_index_script_path.exists() {
+            bail!(
+                "demo-index script not found at {}",
+                self.demo_index_script_path.display()
+            );
+        }
+        let mut command = tokio::process::Command::new(&self.demo_index_script_path);
+        command.args(args);
+        command.arg("--repo-root").arg(&self.demo_index_repo_root);
+        if include_binary {
+            command.arg("--binary").arg(&self.demo_index_binary_path);
+            command.arg("--skip-build");
+        }
+        command.stdin(Stdio::null());
+        command.stdout(Stdio::piped());
+        command.stderr(Stdio::piped());
+        command.output().await.with_context(|| {
+            format!(
+                "failed to execute demo-index script {}",
+                self.demo_index_script_path.display()
+            )
+        })
+    }
+
+    async fn render_demo_index_inventory(&self, issue_number: u64) -> Result<String> {
+        let args = vec!["--list".to_string(), "--json".to_string()];
+        let output = self.execute_demo_index_script(&args, false).await?;
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        if !output.status.success() {
+            bail!(
+                "demo-index list failed with exit code {}: {}",
+                output.status.code().unwrap_or(1),
+                truncate_for_error(&stderr, 240)
+            );
+        }
+        let inventory: DemoIndexScenarioInventory =
+            serde_json::from_str(&stdout).with_context(|| {
+                format!(
+                    "failed to parse demo-index list json output: {}",
+                    truncate_for_error(&stdout, 240)
+                )
+            })?;
+        let mut lines = vec![format!(
+            "Tau demo-index scenario inventory for issue #{}: {} scenario(s).",
+            issue_number,
+            inventory.scenarios.len()
+        )];
+        for scenario in inventory.scenarios {
+            lines.push(format!("- `{}`: {}", scenario.id, scenario.description));
+            lines.push(format!(
+                "  wrapper: {} | command: {}",
+                scenario.wrapper, scenario.command
+            ));
+            if let Some(marker) = scenario.expected_markers.first() {
+                lines.push(format!("  expected_marker: {}", marker));
+            }
+            lines.push(format!("  troubleshooting: {}", scenario.troubleshooting));
+        }
+        lines.push(String::new());
+        lines.push(self.render_issue_demo_index_reports(issue_number)?);
+        Ok(lines.join("\n"))
+    }
+
+    async fn execute_demo_index_run(
+        &self,
+        issue_number: u64,
+        event_key: &str,
+        command: &DemoIndexRunCommand,
+    ) -> Result<DemoIndexRunExecution> {
+        let run_id = format!(
+            "demo-index-{}-{}-{}",
+            issue_number,
+            current_unix_timestamp_ms(),
+            short_key_hash(event_key)
+        );
+        let report_dir = self.repository_state_dir.join("demo-index-reports");
+        std::fs::create_dir_all(&report_dir)
+            .with_context(|| format!("failed to create {}", report_dir.display()))?;
+        let report_file = report_dir.join(format!("{}.json", run_id));
+        let only = command.scenarios.join(",");
+        let args = vec![
+            "--json".to_string(),
+            "--report-file".to_string(),
+            report_file.display().to_string(),
+            "--only".to_string(),
+            only.clone(),
+            "--timeout-seconds".to_string(),
+            command.timeout_seconds.to_string(),
+            "--fail-fast".to_string(),
+        ];
+        let output = self.execute_demo_index_script(&args, true).await?;
+        let exit_code = output.status.code().unwrap_or(1);
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        let report_payload = if report_file.exists() {
+            std::fs::read_to_string(&report_file)
+                .with_context(|| format!("failed to read {}", report_file.display()))?
+        } else {
+            stdout.clone()
+        };
+        let summary = serde_json::from_str::<DemoIndexRunReport>(&report_payload)
+            .or_else(|_| serde_json::from_str::<DemoIndexRunReport>(&stdout))
+            .ok();
+
+        let command_line = format!(
+            "{} --json --report-file {} --only {} --timeout-seconds {} --fail-fast --repo-root {} --binary {} --skip-build",
+            self.demo_index_script_path.display(),
+            report_file.display(),
+            only,
+            command.timeout_seconds,
+            self.demo_index_repo_root.display(),
+            self.demo_index_binary_path.display()
+        );
+        let channel_store = ChannelStore::open(
+            &self.repository_state_dir.join("channel-store"),
+            "github",
+            &format!("issue-{issue_number}"),
+        )?;
+        let retention_days = normalize_artifact_retention_days(self.config.artifact_retention_days);
+        let report_artifact = channel_store.write_text_artifact(
+            &run_id,
+            "github-issue-demo-index-report",
+            "private",
+            retention_days,
+            "json",
+            &report_payload,
+        )?;
+        let log_payload = format!(
+            "command: {command_line}\nexit_code: {exit_code}\n\nstdout:\n{stdout}\n\nstderr:\n{stderr}"
+        );
+        let log_artifact = channel_store.write_text_artifact(
+            &run_id,
+            "github-issue-demo-index-log",
+            "private",
+            retention_days,
+            "log",
+            &log_payload,
+        )?;
+        channel_store.append_log_entry(&ChannelLogEntry {
+            timestamp_unix_ms: current_unix_timestamp_ms(),
+            direction: "outbound".to_string(),
+            event_key: Some(event_key.to_string()),
+            source: "github".to_string(),
+            payload: json!({
+                "command": "demo-index-run",
+                "run_id": run_id,
+                "scenarios": command.scenarios.clone(),
+                "timeout_seconds": command.timeout_seconds,
+                "exit_code": exit_code,
+                "report_artifact": {
+                    "id": report_artifact.id,
+                    "path": report_artifact.relative_path,
+                    "checksum_sha256": report_artifact.checksum_sha256,
+                    "bytes": report_artifact.bytes,
+                    "expires_unix_ms": report_artifact.expires_unix_ms,
+                },
+                "log_artifact": {
+                    "id": log_artifact.id,
+                    "path": log_artifact.relative_path,
+                    "checksum_sha256": log_artifact.checksum_sha256,
+                    "bytes": log_artifact.bytes,
+                    "expires_unix_ms": log_artifact.expires_unix_ms,
+                },
+            }),
+        })?;
+        Ok(DemoIndexRunExecution {
+            run_id,
+            command_line,
+            exit_code,
+            summary,
+            report_artifact,
+            log_artifact,
+        })
+    }
+
+    fn render_issue_demo_index_reports(&self, issue_number: u64) -> Result<String> {
+        let store = ChannelStore::open(
+            &self.repository_state_dir.join("channel-store"),
+            "github",
+            &format!("issue-{issue_number}"),
+        )?;
+        let loaded = store.load_artifact_records_tolerant()?;
+        let now_unix_ms = current_unix_timestamp_ms();
+        let mut reports = loaded
+            .records
+            .into_iter()
+            .filter(|artifact| artifact.artifact_type == "github-issue-demo-index-report")
+            .filter(|artifact| !is_artifact_record_expired(artifact, now_unix_ms))
+            .collect::<Vec<_>>();
+        reports.sort_by(|left, right| {
+            right
+                .created_unix_ms
+                .cmp(&left.created_unix_ms)
+                .then_with(|| left.id.cmp(&right.id))
+        });
+        let mut lines = vec![format!(
+            "Tau demo-index latest report pointers for issue #{}: {}",
+            issue_number,
+            reports.len()
+        )];
+        if reports.is_empty() {
+            lines.push("none".to_string());
+        } else {
+            for artifact in reports.iter().take(5) {
+                lines.push(format!(
+                    "- id `{}` run_id `{}` created_unix_ms `{}` bytes `{}` path `{}`",
+                    artifact.id,
+                    artifact.run_id,
+                    artifact.created_unix_ms,
+                    artifact.bytes,
+                    artifact.relative_path,
+                ));
+            }
+            if reports.len() > 5 {
+                lines.push(format!(
+                    "... {} additional reports omitted",
+                    reports.len() - 5
+                ));
+            }
+        }
+        if loaded.invalid_lines > 0 {
+            lines.push(format!(
+                "index_invalid_lines: {} (ignored)",
+                loaded.invalid_lines
+            ));
+        }
+        Ok(lines.join("\n"))
+    }
+
     async fn post_issue_command_comment(
         &self,
         issue_number: u64,
@@ -3332,6 +3865,9 @@ fn rbac_action_for_event(action: &EventAction) -> String {
             TauIssueCommand::ChatSearch { .. } => "command:/tau-chat-search".to_string(),
             TauIssueCommand::Artifacts { .. } => "command:/tau-artifacts".to_string(),
             TauIssueCommand::ArtifactShow { .. } => "command:/tau-artifacts-show".to_string(),
+            TauIssueCommand::DemoIndexList => "command:/tau-demo-index".to_string(),
+            TauIssueCommand::DemoIndexRun { .. } => "command:/tau-demo-index".to_string(),
+            TauIssueCommand::DemoIndexReport => "command:/tau-demo-index".to_string(),
             TauIssueCommand::Canvas { .. } => "command:/tau-canvas".to_string(),
             TauIssueCommand::Summarize { .. } => "command:/tau-summarize".to_string(),
             TauIssueCommand::Invalid { .. } => "command:/tau-invalid".to_string(),
@@ -4042,6 +4578,29 @@ fn normalize_artifact_retention_days(days: u64) -> Option<u64> {
     }
 }
 
+fn default_demo_index_repo_root() -> PathBuf {
+    let manifest_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .to_path_buf();
+    if manifest_root.join("scripts/demo/index.sh").exists() {
+        return manifest_root;
+    }
+    if let Ok(current_dir) = std::env::current_dir() {
+        if current_dir.join("scripts/demo/index.sh").exists() {
+            return current_dir;
+        }
+    }
+    manifest_root
+}
+
+fn default_demo_index_binary_path() -> PathBuf {
+    std::env::current_exe().unwrap_or_else(|_| {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target/debug/tau-coding-agent")
+            .to_path_buf()
+    })
+}
+
 fn normalize_issue_label(raw: &str) -> String {
     raw.trim().to_ascii_lowercase()
 }
@@ -4259,6 +4818,7 @@ fn parse_tau_issue_command(body: &str) -> Option<TauIssueCommand> {
                 }
             }
         }
+        "demo-index" => parse_demo_index_command(remainder),
         "canvas" => {
             if remainder.is_empty() {
                 TauIssueCommand::Invalid {
@@ -4282,6 +4842,111 @@ fn parse_tau_issue_command(body: &str) -> Option<TauIssueCommand> {
     Some(parsed)
 }
 
+fn parse_demo_index_command(remainder: &str) -> TauIssueCommand {
+    let mut parts = remainder.splitn(2, char::is_whitespace);
+    let subcommand = parts.next().unwrap_or_default().trim();
+    let sub_remainder = parts.next().unwrap_or_default().trim();
+    match subcommand {
+        "list" if sub_remainder.is_empty() => TauIssueCommand::DemoIndexList,
+        "report" if sub_remainder.is_empty() => TauIssueCommand::DemoIndexReport,
+        "run" => match parse_demo_index_run_command(sub_remainder) {
+            Ok(command) => TauIssueCommand::DemoIndexRun { command },
+            Err(error_message) => TauIssueCommand::Invalid {
+                message: error_message,
+            },
+        },
+        _ => TauIssueCommand::Invalid {
+            message: demo_index_command_usage(),
+        },
+    }
+}
+
+fn parse_demo_index_run_command(raw: &str) -> std::result::Result<DemoIndexRunCommand, String> {
+    let usage = demo_index_command_usage();
+    let mut timeout_seconds = DEMO_INDEX_DEFAULT_TIMEOUT_SECONDS;
+    let mut scenarios = Vec::new();
+
+    let tokens = raw
+        .split_whitespace()
+        .filter(|token| !token.trim().is_empty())
+        .collect::<Vec<_>>();
+    let mut cursor = 0;
+    if let Some(first) = tokens.first() {
+        if !first.starts_with("--") {
+            cursor = 1;
+            let mut seen = HashSet::new();
+            for raw_scenario in first.split(',') {
+                let normalized =
+                    normalize_demo_index_scenario(raw_scenario).ok_or_else(|| usage.clone())?;
+                if seen.insert(normalized) {
+                    scenarios.push(normalized.to_string());
+                }
+            }
+            if scenarios.is_empty() {
+                return Err(usage);
+            }
+        }
+    }
+
+    while cursor < tokens.len() {
+        let token = tokens[cursor];
+        match token {
+            "--timeout-seconds" => {
+                cursor += 1;
+                let Some(raw_timeout) = tokens.get(cursor) else {
+                    return Err(usage);
+                };
+                let parsed = raw_timeout.parse::<u64>().map_err(|_| usage.clone())?;
+                if parsed == 0 || parsed > DEMO_INDEX_MAX_TIMEOUT_SECONDS {
+                    return Err(usage);
+                }
+                timeout_seconds = parsed;
+            }
+            _ => return Err(usage),
+        }
+        cursor += 1;
+    }
+
+    if scenarios.is_empty() {
+        scenarios = DEMO_INDEX_SCENARIOS
+            .iter()
+            .map(|scenario| scenario.to_string())
+            .collect();
+    }
+    Ok(DemoIndexRunCommand {
+        scenarios,
+        timeout_seconds,
+    })
+}
+
+fn normalize_demo_index_scenario(raw: &str) -> Option<&'static str> {
+    let normalized = raw.trim().to_ascii_lowercase();
+    match normalized.as_str() {
+        "onboarding" | "local" | "onboarding.sh" | "local.sh" => Some("onboarding"),
+        "gateway-auth" | "gatewayauth" | "gateway-auth.sh" | "gatewayauth.sh" => {
+            Some("gateway-auth")
+        }
+        "multi-channel-live"
+        | "multichannel-live"
+        | "multi-channel"
+        | "multi-channel-live.sh"
+        | "multi-channel.sh" => Some("multi-channel-live"),
+        "deployment-wasm" | "deploymentwasm" | "deployment" | "deployment.sh" => {
+            Some("deployment-wasm")
+        }
+        _ => None,
+    }
+}
+
+fn demo_index_command_usage() -> String {
+    format!(
+        "Usage: /tau demo-index <list|run [scenario[,scenario...]] [--timeout-seconds <n>]|report>\nAllowed scenarios: {}\nDefault run timeout: {} seconds (max {}).",
+        DEMO_INDEX_SCENARIOS.join(","),
+        DEMO_INDEX_DEFAULT_TIMEOUT_SECONDS,
+        DEMO_INDEX_MAX_TIMEOUT_SECONDS
+    )
+}
+
 fn tau_command_usage() -> String {
     [
         "Supported `/tau` commands:",
@@ -4293,6 +4958,7 @@ fn tau_command_usage() -> String {
         "- `/tau help`",
         "- `/tau chat <start|resume|reset|export|status|summary|replay|show [limit]|search <query>>`",
         "- `/tau artifacts [purge|run <run_id>|show <artifact_id>]`",
+        "- `/tau demo-index <list|run [scenario[,scenario...]] [--timeout-seconds <n>]|report>`",
         "- `/tau canvas <create|update|show|export|import> ...`",
         "- `/tau summarize [focus]`",
     ]
@@ -4561,13 +5227,13 @@ mod tests {
         normalize_relative_channel_path, parse_rfc3339_to_unix_ms, parse_tau_issue_command,
         post_issue_comment_chunks, render_event_prompt, render_issue_command_comment,
         render_issue_comment_chunks_with_limit, render_issue_comment_response_parts, retry_delay,
-        run_prompt_for_event, sanitize_for_path, session_path_for_issue,
+        run_prompt_for_event, sanitize_for_path, session_path_for_issue, DemoIndexRunCommand,
         DownloadedGithubAttachment, EventAction, GithubApiClient, GithubBridgeEvent,
         GithubBridgeEventKind, GithubIssue, GithubIssueComment, GithubIssueLabel,
         GithubIssuesBridgeRuntime, GithubIssuesBridgeRuntimeConfig, GithubIssuesBridgeStateStore,
         GithubUser, IssueEventOutcome, PromptRunReport, PromptUsageSummary, RepoRef,
         RunPromptForEventRequest, SessionStore, TauIssueCommand, CHAT_SHOW_DEFAULT_LIMIT,
-        EVENT_KEY_MARKER_PREFIX,
+        DEMO_INDEX_DEFAULT_TIMEOUT_SECONDS, DEMO_INDEX_SCENARIOS, EVENT_KEY_MARKER_PREFIX,
     };
     use crate::{
         channel_store::{ChannelArtifactRecord, ChannelStore},
@@ -4648,7 +5314,59 @@ mod tests {
             retry_max_attempts: 3,
             retry_base_delay_ms: 5,
             artifact_retention_days: 30,
+            demo_index_repo_root: None,
+            demo_index_script_path: None,
+            demo_index_binary_path: None,
         }
+    }
+
+    fn write_executable_script(path: &Path, body: &str) {
+        std::fs::write(path, body).expect("write script");
+        let status = std::process::Command::new("chmod")
+            .arg("+x")
+            .arg(path)
+            .status()
+            .expect("chmod script");
+        assert!(status.success());
+    }
+
+    fn write_demo_index_list_stub(path: &Path) {
+        write_executable_script(
+            path,
+            r#"#!/usr/bin/env bash
+set -euo pipefail
+cat <<'JSON'
+{"schema_version":1,"scenarios":[{"id":"onboarding","wrapper":"local.sh","command":"./scripts/demo/local.sh","description":"Bootstrap local Tau state.","expected_markers":["[demo:local] PASS onboard-non-interactive"],"troubleshooting":"rerun local.sh"}]}
+JSON
+"#,
+        );
+    }
+
+    fn write_demo_index_run_stub(path: &Path) {
+        write_executable_script(
+            path,
+            r#"#!/usr/bin/env bash
+set -euo pipefail
+report_file=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --report-file)
+      report_file="$2"
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+payload='{"schema_version":1,"scenarios":[{"id":"onboarding","status":"passed","exit_code":0,"duration_ms":9}],"summary":{"total":1,"passed":1,"failed":0}}'
+if [[ -n "${report_file}" ]]; then
+  mkdir -p "$(dirname "${report_file}")"
+  printf '%s\n' "${payload}" > "${report_file}"
+fi
+printf '%s\n' "${payload}"
+"#,
+        );
     }
 
     fn test_issue_event() -> GithubBridgeEvent {
@@ -5571,6 +6289,37 @@ mod tests {
             })
         );
         assert_eq!(
+            parse_tau_issue_command("/tau demo-index list"),
+            Some(TauIssueCommand::DemoIndexList)
+        );
+        assert_eq!(
+            parse_tau_issue_command("/tau demo-index report"),
+            Some(TauIssueCommand::DemoIndexReport)
+        );
+        assert_eq!(
+            parse_tau_issue_command(
+                "/tau demo-index run onboarding,gateway-auth --timeout-seconds 120"
+            ),
+            Some(TauIssueCommand::DemoIndexRun {
+                command: DemoIndexRunCommand {
+                    scenarios: vec!["onboarding".to_string(), "gateway-auth".to_string()],
+                    timeout_seconds: 120,
+                },
+            })
+        );
+        assert_eq!(
+            parse_tau_issue_command("/tau demo-index run"),
+            Some(TauIssueCommand::DemoIndexRun {
+                command: DemoIndexRunCommand {
+                    scenarios: DEMO_INDEX_SCENARIOS
+                        .iter()
+                        .map(|scenario| scenario.to_string())
+                        .collect(),
+                    timeout_seconds: DEMO_INDEX_DEFAULT_TIMEOUT_SECONDS,
+                },
+            })
+        );
+        assert_eq!(
             parse_tau_issue_command("/tau canvas show architecture --json"),
             Some(TauIssueCommand::Canvas {
                 args: "show architecture --json".to_string()
@@ -5595,6 +6344,20 @@ mod tests {
         assert!(matches!(parsed, TauIssueCommand::Invalid { .. }));
         let parsed =
             parse_tau_issue_command("/tau artifacts show artifact-a extra").expect("command parse");
+        assert!(matches!(parsed, TauIssueCommand::Invalid { .. }));
+        let parsed = parse_tau_issue_command("/tau demo-index").expect("command parse");
+        assert!(matches!(parsed, TauIssueCommand::Invalid { .. }));
+        let parsed = parse_tau_issue_command("/tau demo-index list extra").expect("command parse");
+        assert!(matches!(parsed, TauIssueCommand::Invalid { .. }));
+        let parsed =
+            parse_tau_issue_command("/tau demo-index run unknown-scenario").expect("command parse");
+        assert!(matches!(parsed, TauIssueCommand::Invalid { .. }));
+        let parsed = parse_tau_issue_command("/tau demo-index run onboarding --timeout-seconds 0")
+            .expect("command parse");
+        assert!(matches!(parsed, TauIssueCommand::Invalid { .. }));
+        let parsed =
+            parse_tau_issue_command("/tau demo-index run onboarding --timeout-seconds 10000")
+                .expect("command parse");
         assert!(matches!(parsed, TauIssueCommand::Invalid { .. }));
         let parsed = parse_tau_issue_command("/tau canvas").expect("command parse");
         assert!(matches!(parsed, TauIssueCommand::Invalid { .. }));
@@ -5636,6 +6399,198 @@ mod tests {
             action,
             EventAction::Command(TauIssueCommand::Invalid { .. })
         ));
+    }
+
+    #[tokio::test]
+    async fn functional_bridge_demo_index_list_command_reports_inventory() {
+        let server = MockServer::start();
+        let _issues = server.mock(|when, then| {
+            when.method(GET).path("/repos/owner/repo/issues");
+            then.status(200).json_body(json!([{
+                "id": 23,
+                "number": 23,
+                "title": "Demo index list",
+                "body": "",
+                "created_at": "2026-01-01T00:00:00Z",
+                "updated_at": "2026-01-01T00:00:05Z",
+                "user": {"login":"alice"}
+            }]));
+        });
+        let _comments = server.mock(|when, then| {
+            when.method(GET)
+                .path("/repos/owner/repo/issues/23/comments");
+            then.status(200).json_body(json!([
+                {
+                    "id": 2301,
+                    "body": "/tau demo-index list",
+                    "created_at": "2026-01-01T00:00:01Z",
+                    "updated_at": "2026-01-01T00:00:01Z",
+                    "user": {"login":"alice"}
+                }
+            ]));
+        });
+        let list_post = server.mock(|when, then| {
+            when.method(POST)
+                .path("/repos/owner/repo/issues/23/comments")
+                .body_includes("Tau demo-index scenario inventory for issue #23: 1 scenario(s).")
+                .body_includes("`onboarding`")
+                .body_includes("Tau demo-index latest report pointers for issue #23: 0");
+            then.status(201).json_body(json!({
+                "id": 2302,
+                "html_url": "https://example.test/comment/2302"
+            }));
+        });
+
+        let temp = tempdir().expect("tempdir");
+        let script_path = temp.path().join("demo-index-stub.sh");
+        write_demo_index_list_stub(&script_path);
+        let mut config = test_bridge_config(&server.base_url(), temp.path());
+        config.demo_index_repo_root = Some(temp.path().to_path_buf());
+        config.demo_index_script_path = Some(script_path);
+        config.demo_index_binary_path = Some(temp.path().join("tau-coding-agent"));
+        let mut runtime = GithubIssuesBridgeRuntime::new(config)
+            .await
+            .expect("runtime");
+        let report = runtime.poll_once().await.expect("poll");
+        assert_eq!(report.processed_events, 1);
+        assert_eq!(report.failed_events, 0);
+        list_post.assert_calls(1);
+    }
+
+    #[tokio::test]
+    async fn integration_bridge_demo_index_run_command_posts_artifact_pointers() {
+        let server = MockServer::start();
+        let _issues = server.mock(|when, then| {
+            when.method(GET).path("/repos/owner/repo/issues");
+            then.status(200).json_body(json!([{
+                "id": 24,
+                "number": 24,
+                "title": "Demo index run",
+                "body": "",
+                "created_at": "2026-01-01T00:00:00Z",
+                "updated_at": "2026-01-01T00:00:05Z",
+                "user": {"login":"alice"}
+            }]));
+        });
+        let _comments = server.mock(|when, then| {
+            when.method(GET)
+                .path("/repos/owner/repo/issues/24/comments");
+            then.status(200).json_body(json!([
+                {
+                    "id": 2401,
+                    "body": "/tau demo-index run onboarding --timeout-seconds 120",
+                    "created_at": "2026-01-01T00:00:01Z",
+                    "updated_at": "2026-01-01T00:00:01Z",
+                    "user": {"login":"alice"}
+                }
+            ]));
+        });
+        let run_post = server.mock(|when, then| {
+            when.method(POST)
+                .path("/repos/owner/repo/issues/24/comments")
+                .body_includes("Tau demo-index run for issue #24: status=completed")
+                .body_includes("summary: total=1 passed=1 failed=0")
+                .body_includes("report_artifact:")
+                .body_includes("log_artifact:")
+                .body_includes("Use `/tau demo-index report`");
+            then.status(201).json_body(json!({
+                "id": 2402,
+                "html_url": "https://example.test/comment/2402"
+            }));
+        });
+
+        let temp = tempdir().expect("tempdir");
+        let script_path = temp.path().join("demo-index-stub.sh");
+        write_demo_index_run_stub(&script_path);
+        let mut config = test_bridge_config(&server.base_url(), temp.path());
+        config.demo_index_repo_root = Some(temp.path().to_path_buf());
+        config.demo_index_script_path = Some(script_path);
+        config.demo_index_binary_path = Some(temp.path().join("tau-coding-agent"));
+        let mut runtime = GithubIssuesBridgeRuntime::new(config)
+            .await
+            .expect("runtime");
+        let report = runtime.poll_once().await.expect("poll");
+        assert_eq!(report.processed_events, 1);
+        assert_eq!(report.failed_events, 0);
+        run_post.assert_calls(1);
+
+        let store = ChannelStore::open(
+            &temp.path().join("owner__repo").join("channel-store"),
+            "github",
+            "issue-24",
+        )
+        .expect("channel store");
+        let artifacts = store
+            .load_artifact_records_tolerant()
+            .expect("artifact records");
+        let report_count = artifacts
+            .records
+            .iter()
+            .filter(|record| record.artifact_type == "github-issue-demo-index-report")
+            .count();
+        let log_count = artifacts
+            .records
+            .iter()
+            .filter(|record| record.artifact_type == "github-issue-demo-index-log")
+            .count();
+        assert_eq!(report_count, 1);
+        assert_eq!(log_count, 1);
+    }
+
+    #[tokio::test]
+    async fn regression_bridge_demo_index_run_command_replay_guard_prevents_duplicate_execution() {
+        let server = MockServer::start();
+        let _issues = server.mock(|when, then| {
+            when.method(GET).path("/repos/owner/repo/issues");
+            then.status(200).json_body(json!([{
+                "id": 25,
+                "number": 25,
+                "title": "Demo index replay",
+                "body": "",
+                "created_at": "2026-01-01T00:00:00Z",
+                "updated_at": "2026-01-01T00:00:05Z",
+                "user": {"login":"alice"}
+            }]));
+        });
+        let _comments = server.mock(|when, then| {
+            when.method(GET)
+                .path("/repos/owner/repo/issues/25/comments");
+            then.status(200).json_body(json!([
+                {
+                    "id": 2501,
+                    "body": "/tau demo-index run onboarding --timeout-seconds 120",
+                    "created_at": "2026-01-01T00:00:01Z",
+                    "updated_at": "2026-01-01T00:00:01Z",
+                    "user": {"login":"alice"}
+                }
+            ]));
+        });
+        let run_post = server.mock(|when, then| {
+            when.method(POST)
+                .path("/repos/owner/repo/issues/25/comments")
+                .body_includes("Tau demo-index run for issue #25: status=completed");
+            then.status(201).json_body(json!({
+                "id": 2502,
+                "html_url": "https://example.test/comment/2502"
+            }));
+        });
+
+        let temp = tempdir().expect("tempdir");
+        let script_path = temp.path().join("demo-index-stub.sh");
+        write_demo_index_run_stub(&script_path);
+        let mut config = test_bridge_config(&server.base_url(), temp.path());
+        config.demo_index_repo_root = Some(temp.path().to_path_buf());
+        config.demo_index_script_path = Some(script_path);
+        config.demo_index_binary_path = Some(temp.path().join("tau-coding-agent"));
+        let mut runtime = GithubIssuesBridgeRuntime::new(config)
+            .await
+            .expect("runtime");
+        let first = runtime.poll_once().await.expect("first poll");
+        let second = runtime.poll_once().await.expect("second poll");
+        assert_eq!(first.processed_events, 1);
+        assert_eq!(first.failed_events, 0);
+        assert_eq!(second.processed_events, 0);
+        run_post.assert_calls(1);
     }
 
     #[tokio::test]
