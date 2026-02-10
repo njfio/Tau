@@ -29,6 +29,55 @@ rm -rf "${TAU_DEMO_REPO_ROOT}/${demo_state_dir}"
 mkdir -p "${TAU_DEMO_REPO_ROOT}/${live_ingress_dir}"
 
 tau_demo_common_run_step \
+  "multi-channel-channel-login-telegram" \
+  --multi-channel-state-dir "${demo_state_dir}" \
+  --multi-channel-live-ingress-dir "${live_ingress_dir}" \
+  --multi-channel-channel-login telegram \
+  --multi-channel-telegram-bot-token demo-telegram-token \
+  --multi-channel-channel-login-json
+
+tau_demo_common_run_step \
+  "multi-channel-channel-login-discord" \
+  --multi-channel-state-dir "${demo_state_dir}" \
+  --multi-channel-live-ingress-dir "${live_ingress_dir}" \
+  --multi-channel-channel-login discord \
+  --multi-channel-discord-bot-token demo-discord-token \
+  --multi-channel-channel-login-json
+
+tau_demo_common_run_step \
+  "multi-channel-channel-login-whatsapp" \
+  --multi-channel-state-dir "${demo_state_dir}" \
+  --multi-channel-live-ingress-dir "${live_ingress_dir}" \
+  --multi-channel-channel-login whatsapp \
+  --multi-channel-whatsapp-access-token demo-whatsapp-token \
+  --multi-channel-whatsapp-phone-number-id 15551230000 \
+  --multi-channel-channel-login-json
+
+tau_demo_common_run_step \
+  "multi-channel-channel-status-telegram" \
+  --multi-channel-state-dir "${demo_state_dir}" \
+  --multi-channel-live-ingress-dir "${live_ingress_dir}" \
+  --multi-channel-channel-status telegram \
+  --multi-channel-telegram-bot-token demo-telegram-token \
+  --multi-channel-channel-status-json
+
+tau_demo_common_run_step \
+  "multi-channel-channel-probe-whatsapp" \
+  --multi-channel-state-dir "${demo_state_dir}" \
+  --multi-channel-live-ingress-dir "${live_ingress_dir}" \
+  --multi-channel-channel-probe whatsapp \
+  --multi-channel-whatsapp-access-token demo-whatsapp-token \
+  --multi-channel-whatsapp-phone-number-id 15551230000 \
+  --multi-channel-channel-probe-json
+
+tau_demo_common_run_step \
+  "multi-channel-channel-logout-discord" \
+  --multi-channel-state-dir "${demo_state_dir}" \
+  --multi-channel-live-ingress-dir "${live_ingress_dir}" \
+  --multi-channel-channel-logout discord \
+  --multi-channel-channel-logout-json
+
+tau_demo_common_run_step \
   "multi-channel-runner" \
   --multi-channel-contract-runner \
   --multi-channel-fixture ./crates/tau-coding-agent/testdata/multi-channel-contract/baseline-three-channel.json \

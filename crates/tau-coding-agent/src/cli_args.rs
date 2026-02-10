@@ -2050,6 +2050,122 @@ pub(crate) struct Cli {
     pub(crate) multi_channel_live_readiness_json: bool,
 
     #[arg(
+        long = "multi-channel-channel-status",
+        env = "TAU_MULTI_CHANNEL_CHANNEL_STATUS",
+        value_enum,
+        conflicts_with = "multi_channel_route_inspect_file",
+        conflicts_with = "multi_channel_contract_runner",
+        conflicts_with = "multi_channel_live_runner",
+        conflicts_with = "multi_channel_live_ingest_file",
+        conflicts_with = "multi_channel_live_readiness_preflight",
+        conflicts_with = "multi_channel_channel_login",
+        conflicts_with = "multi_channel_channel_logout",
+        conflicts_with = "multi_channel_channel_probe",
+        help = "Inspect channel lifecycle/readiness status for one transport (telegram, discord, whatsapp) and exit"
+    )]
+    pub(crate) multi_channel_channel_status: Option<CliMultiChannelTransport>,
+
+    #[arg(
+        long = "multi-channel-channel-status-json",
+        env = "TAU_MULTI_CHANNEL_CHANNEL_STATUS_JSON",
+        default_value_t = false,
+        action = ArgAction::Set,
+        num_args = 0..=1,
+        require_equals = true,
+        default_missing_value = "true",
+        requires = "multi_channel_channel_status",
+        help = "Emit --multi-channel-channel-status output as pretty JSON"
+    )]
+    pub(crate) multi_channel_channel_status_json: bool,
+
+    #[arg(
+        long = "multi-channel-channel-login",
+        env = "TAU_MULTI_CHANNEL_CHANNEL_LOGIN",
+        value_enum,
+        conflicts_with = "multi_channel_route_inspect_file",
+        conflicts_with = "multi_channel_contract_runner",
+        conflicts_with = "multi_channel_live_runner",
+        conflicts_with = "multi_channel_live_ingest_file",
+        conflicts_with = "multi_channel_live_readiness_preflight",
+        conflicts_with = "multi_channel_channel_status",
+        conflicts_with = "multi_channel_channel_logout",
+        conflicts_with = "multi_channel_channel_probe",
+        help = "Initialize one channel lifecycle entry and ingress path for one transport (telegram, discord, whatsapp)"
+    )]
+    pub(crate) multi_channel_channel_login: Option<CliMultiChannelTransport>,
+
+    #[arg(
+        long = "multi-channel-channel-login-json",
+        env = "TAU_MULTI_CHANNEL_CHANNEL_LOGIN_JSON",
+        default_value_t = false,
+        action = ArgAction::Set,
+        num_args = 0..=1,
+        require_equals = true,
+        default_missing_value = "true",
+        requires = "multi_channel_channel_login",
+        help = "Emit --multi-channel-channel-login output as pretty JSON"
+    )]
+    pub(crate) multi_channel_channel_login_json: bool,
+
+    #[arg(
+        long = "multi-channel-channel-logout",
+        env = "TAU_MULTI_CHANNEL_CHANNEL_LOGOUT",
+        value_enum,
+        conflicts_with = "multi_channel_route_inspect_file",
+        conflicts_with = "multi_channel_contract_runner",
+        conflicts_with = "multi_channel_live_runner",
+        conflicts_with = "multi_channel_live_ingest_file",
+        conflicts_with = "multi_channel_live_readiness_preflight",
+        conflicts_with = "multi_channel_channel_status",
+        conflicts_with = "multi_channel_channel_login",
+        conflicts_with = "multi_channel_channel_probe",
+        help = "Mark one channel lifecycle entry logged_out for one transport (telegram, discord, whatsapp)"
+    )]
+    pub(crate) multi_channel_channel_logout: Option<CliMultiChannelTransport>,
+
+    #[arg(
+        long = "multi-channel-channel-logout-json",
+        env = "TAU_MULTI_CHANNEL_CHANNEL_LOGOUT_JSON",
+        default_value_t = false,
+        action = ArgAction::Set,
+        num_args = 0..=1,
+        require_equals = true,
+        default_missing_value = "true",
+        requires = "multi_channel_channel_logout",
+        help = "Emit --multi-channel-channel-logout output as pretty JSON"
+    )]
+    pub(crate) multi_channel_channel_logout_json: bool,
+
+    #[arg(
+        long = "multi-channel-channel-probe",
+        env = "TAU_MULTI_CHANNEL_CHANNEL_PROBE",
+        value_enum,
+        conflicts_with = "multi_channel_route_inspect_file",
+        conflicts_with = "multi_channel_contract_runner",
+        conflicts_with = "multi_channel_live_runner",
+        conflicts_with = "multi_channel_live_ingest_file",
+        conflicts_with = "multi_channel_live_readiness_preflight",
+        conflicts_with = "multi_channel_channel_status",
+        conflicts_with = "multi_channel_channel_login",
+        conflicts_with = "multi_channel_channel_logout",
+        help = "Run readiness probe for one transport (telegram, discord, whatsapp) and persist lifecycle probe state"
+    )]
+    pub(crate) multi_channel_channel_probe: Option<CliMultiChannelTransport>,
+
+    #[arg(
+        long = "multi-channel-channel-probe-json",
+        env = "TAU_MULTI_CHANNEL_CHANNEL_PROBE_JSON",
+        default_value_t = false,
+        action = ArgAction::Set,
+        num_args = 0..=1,
+        require_equals = true,
+        default_missing_value = "true",
+        requires = "multi_channel_channel_probe",
+        help = "Emit --multi-channel-channel-probe output as pretty JSON"
+    )]
+    pub(crate) multi_channel_channel_probe_json: bool,
+
+    #[arg(
         long = "multi-channel-fixture",
         env = "TAU_MULTI_CHANNEL_FIXTURE",
         default_value = "crates/tau-coding-agent/testdata/multi-channel-contract/baseline-three-channel.json",
