@@ -1,5 +1,4 @@
 mod approvals;
-mod atomic_io;
 mod auth_commands;
 mod auth_types;
 mod bootstrap_helpers;
@@ -92,7 +91,6 @@ mod startup_prompt_composition;
 mod startup_resolution;
 mod startup_skills_bootstrap;
 mod startup_transport_modes;
-mod time_utils;
 mod tool_policy_config;
 mod tools;
 #[cfg(test)]
@@ -126,7 +124,7 @@ pub(crate) use crate::approvals::{
     evaluate_approval_gate, execute_approvals_command, ApprovalAction, ApprovalGateResult,
     APPROVALS_USAGE,
 };
-pub(crate) use crate::atomic_io::write_text_atomic;
+pub(crate) use tau_core::write_text_atomic;
 pub(crate) use crate::auth_commands::execute_auth_command;
 #[cfg(test)]
 pub(crate) use crate::auth_commands::{parse_auth_command, AuthCommand};
@@ -399,9 +397,7 @@ pub(crate) use crate::startup_resolution::{
 };
 pub(crate) use crate::startup_skills_bootstrap::run_startup_skills_bootstrap;
 pub(crate) use crate::startup_transport_modes::run_transport_mode_if_requested;
-pub(crate) use crate::time_utils::{
-    current_unix_timestamp, current_unix_timestamp_ms, is_expired_unix,
-};
+pub(crate) use tau_core::{current_unix_timestamp, current_unix_timestamp_ms, is_expired_unix};
 #[cfg(test)]
 pub(crate) use crate::tool_policy_config::parse_sandbox_command_tokens;
 pub(crate) use crate::tool_policy_config::{build_tool_policy, tool_policy_to_json};

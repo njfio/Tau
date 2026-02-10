@@ -2,9 +2,9 @@ use std::path::Path;
 
 use anyhow::{bail, Context, Result};
 
-use crate::current_unix_timestamp;
+use crate::time_utils::current_unix_timestamp;
 
-pub(crate) fn write_text_atomic(path: &Path, content: &str) -> Result<()> {
+pub fn write_text_atomic(path: &Path, content: &str) -> Result<()> {
     if path.as_os_str().is_empty() {
         bail!("destination path cannot be empty");
     }
