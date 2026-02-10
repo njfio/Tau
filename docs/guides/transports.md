@@ -298,6 +298,49 @@ cargo run -p tau-coding-agent -- \
 
 Operational rollout and rollback guidance: `docs/guides/custom-command-ops.md`.
 
+## Voice interaction and wake-word contract runner
+
+Use this fixture-driven runtime mode to validate voice wake-word detection, turn handling,
+retry outcomes, state persistence, and channel-store snapshots.
+
+```bash
+cargo run -p tau-coding-agent -- \
+  --model openai/gpt-4o-mini \
+  --voice-contract-runner \
+  --voice-fixture crates/tau-coding-agent/testdata/voice-contract/rollout-pass.json \
+  --voice-state-dir .tau/voice \
+  --voice-queue-limit 64 \
+  --voice-processed-case-cap 10000 \
+  --voice-retry-max-attempts 4 \
+  --voice-retry-base-delay-ms 0
+```
+
+The runner writes state and observability output under:
+
+- `.tau/voice/state.json`
+- `.tau/voice/runtime-events.jsonl`
+- `.tau/voice/channel-store/voice/<speaker_id>/...`
+
+Inspect voice transport health snapshot:
+
+```bash
+cargo run -p tau-coding-agent -- \
+  --voice-state-dir .tau/voice \
+  --transport-health-inspect voice \
+  --transport-health-json
+```
+
+Inspect voice rollout guardrail/status report:
+
+```bash
+cargo run -p tau-coding-agent -- \
+  --voice-state-dir .tau/voice \
+  --voice-status-inspect \
+  --voice-status-json
+```
+
+Operational rollout and rollback guidance: `docs/guides/voice-ops.md`.
+
 ## ChannelStore inspection and repair
 
 Inspect one channel:

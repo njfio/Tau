@@ -12,6 +12,7 @@ enum TransportHealthInspectTarget {
     Dashboard,
     Gateway,
     CustomCommand,
+    Voice,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -71,6 +72,16 @@ struct CustomCommandStatusStateFile {
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
+struct VoiceStatusStateFile {
+    #[serde(default)]
+    processed_case_keys: Vec<String>,
+    #[serde(default)]
+    interactions: Vec<VoiceStatusInteractionRecord>,
+    #[serde(default)]
+    health: TransportHealthSnapshot,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
 struct MultiAgentStatusRoutedCase {
     #[serde(default)]
     phase: String,
@@ -105,6 +116,22 @@ struct CustomCommandStatusCommandRecord {
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
+struct VoiceStatusInteractionRecord {
+    #[serde(default)]
+    mode: String,
+    #[serde(default)]
+    speaker_id: String,
+    #[serde(default)]
+    last_status_code: u16,
+    #[serde(default)]
+    last_outcome: String,
+    #[serde(default)]
+    utterance: String,
+    #[serde(default)]
+    run_count: u64,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
 struct DashboardCycleReportLine {
     #[serde(default)]
     reason_codes: Vec<String>,
@@ -130,6 +157,14 @@ struct GatewayCycleReportLine {
 
 #[derive(Debug, Clone, Deserialize, Default)]
 struct CustomCommandCycleReportLine {
+    #[serde(default)]
+    reason_codes: Vec<String>,
+    #[serde(default)]
+    health_reason: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+struct VoiceCycleReportLine {
     #[serde(default)]
     reason_codes: Vec<String>,
     #[serde(default)]
@@ -167,6 +202,16 @@ struct GatewayCycleReportSummary {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct CustomCommandCycleReportSummary {
+    events_log_present: bool,
+    cycle_reports: usize,
+    invalid_cycle_reports: usize,
+    last_reason_codes: Vec<String>,
+    last_health_reason: String,
+    reason_code_counts: BTreeMap<String, usize>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct VoiceCycleReportSummary {
     events_log_present: bool,
     cycle_reports: usize,
     invalid_cycle_reports: usize,
@@ -254,6 +299,29 @@ struct CustomCommandStatusInspectReport {
     health: TransportHealthSnapshot,
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+struct VoiceStatusInspectReport {
+    state_path: String,
+    events_log_path: String,
+    events_log_present: bool,
+    health_state: String,
+    health_reason: String,
+    rollout_gate: String,
+    processed_case_count: usize,
+    interaction_count: usize,
+    mode_counts: BTreeMap<String, usize>,
+    speaker_counts: BTreeMap<String, usize>,
+    outcome_counts: BTreeMap<String, usize>,
+    status_code_counts: BTreeMap<String, usize>,
+    utterance_count: usize,
+    total_run_count: u64,
+    cycle_reports: usize,
+    invalid_cycle_reports: usize,
+    last_reason_codes: Vec<String>,
+    reason_code_counts: BTreeMap<String, usize>,
+    health: TransportHealthSnapshot,
+}
+
 pub(crate) fn execute_channel_store_admin_command(cli: &Cli) -> Result<()> {
     if let Some(raw_target) = cli.transport_health_inspect.as_deref() {
         let target = parse_transport_health_inspect_target(raw_target)?;
@@ -326,6 +394,20 @@ pub(crate) fn execute_channel_store_admin_command(cli: &Cli) -> Result<()> {
         return Ok(());
     }
 
+    if cli.voice_status_inspect {
+        let report = collect_voice_status_report(cli)?;
+        if cli.voice_status_json {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&report)
+                    .context("failed to render voice status json")?
+            );
+        } else {
+            println!("{}", render_voice_status_report(&report));
+        }
+        return Ok(());
+    }
+
     if let Some(raw_ref) = cli.channel_store_inspect.as_deref() {
         let channel_ref = ChannelStore::parse_channel_ref(raw_ref)?;
         let store = ChannelStore::open(
@@ -390,7 +472,7 @@ fn parse_transport_health_inspect_target(raw: &str) -> Result<TransportHealthIns
     let trimmed = raw.trim();
     if trimmed.is_empty() {
         bail!(
-            "invalid --transport-health-inspect '{}', expected slack, github, github:owner/repo, multi-channel, multi-agent, memory, dashboard, gateway, or custom-command",
+            "invalid --transport-health-inspect '{}', expected slack, github, github:owner/repo, multi-channel, multi-agent, memory, dashboard, gateway, custom-command, or voice",
             raw
         );
     }
@@ -421,16 +503,19 @@ fn parse_transport_health_inspect_target(raw: &str) -> Result<TransportHealthIns
     {
         return Ok(TransportHealthInspectTarget::CustomCommand);
     }
+    if trimmed.eq_ignore_ascii_case("voice") {
+        return Ok(TransportHealthInspectTarget::Voice);
+    }
 
     let Some((transport, repo_slug)) = trimmed.split_once(':') else {
         bail!(
-            "invalid --transport-health-inspect '{}', expected slack, github, github:owner/repo, multi-channel, multi-agent, memory, dashboard, gateway, or custom-command",
+            "invalid --transport-health-inspect '{}', expected slack, github, github:owner/repo, multi-channel, multi-agent, memory, dashboard, gateway, custom-command, or voice",
             raw
         );
     };
     if !transport.eq_ignore_ascii_case("github") {
         bail!(
-            "invalid --transport-health-inspect '{}', expected slack, github, github:owner/repo, multi-channel, multi-agent, memory, dashboard, gateway, or custom-command",
+            "invalid --transport-health-inspect '{}', expected slack, github, github:owner/repo, multi-channel, multi-agent, memory, dashboard, gateway, custom-command, or voice",
             raw
         );
     }
@@ -476,6 +561,7 @@ fn collect_transport_health_rows(
         TransportHealthInspectTarget::CustomCommand => {
             Ok(vec![collect_custom_command_transport_health_row(cli)?])
         }
+        TransportHealthInspectTarget::Voice => Ok(vec![collect_voice_transport_health_row(cli)?]),
     }
 }
 
@@ -612,6 +698,17 @@ fn collect_custom_command_transport_health_row(cli: &Cli) -> Result<TransportHea
     Ok(TransportHealthInspectRow {
         transport: "custom-command".to_string(),
         target: "no-code-command-registry".to_string(),
+        state_path: state_path.display().to_string(),
+        health,
+    })
+}
+
+fn collect_voice_transport_health_row(cli: &Cli) -> Result<TransportHealthInspectRow> {
+    let state_path = cli.voice_state_dir.join("state.json");
+    let health = load_transport_health_snapshot(&state_path)?;
+    Ok(TransportHealthInspectRow {
+        transport: "voice".to_string(),
+        target: "wake-word-pipeline".to_string(),
         state_path: state_path.display().to_string(),
         health,
     })
@@ -863,6 +960,75 @@ fn collect_custom_command_status_report(cli: &Cli) -> Result<CustomCommandStatus
     })
 }
 
+fn collect_voice_status_report(cli: &Cli) -> Result<VoiceStatusInspectReport> {
+    let state_path = cli.voice_state_dir.join("state.json");
+    let events_log_path = cli.voice_state_dir.join("runtime-events.jsonl");
+    let state = load_voice_status_state(&state_path)?;
+    let cycle_summary = load_voice_cycle_report_summary(&events_log_path)?;
+    let classification = state.health.classify();
+    let health_reason = if !cycle_summary.last_health_reason.trim().is_empty() {
+        cycle_summary.last_health_reason.clone()
+    } else {
+        classification.reason
+    };
+    let rollout_gate = if classification.state.as_str() == "healthy" {
+        "pass"
+    } else {
+        "hold"
+    };
+
+    let mut mode_counts = BTreeMap::new();
+    let mut speaker_counts = BTreeMap::new();
+    let mut outcome_counts = BTreeMap::new();
+    let mut status_code_counts = BTreeMap::new();
+    let mut utterance_count = 0usize;
+    let mut total_run_count = 0u64;
+
+    for interaction in &state.interactions {
+        if !interaction.mode.trim().is_empty() {
+            increment_count(&mut mode_counts, interaction.mode.trim());
+        }
+        if !interaction.speaker_id.trim().is_empty() {
+            increment_count(&mut speaker_counts, interaction.speaker_id.trim());
+        }
+        if !interaction.last_outcome.trim().is_empty() {
+            increment_count(&mut outcome_counts, interaction.last_outcome.trim());
+        }
+        if interaction.last_status_code > 0 {
+            increment_count(
+                &mut status_code_counts,
+                &interaction.last_status_code.to_string(),
+            );
+        }
+        if !interaction.utterance.trim().is_empty() {
+            utterance_count = utterance_count.saturating_add(1);
+        }
+        total_run_count = total_run_count.saturating_add(interaction.run_count);
+    }
+
+    Ok(VoiceStatusInspectReport {
+        state_path: state_path.display().to_string(),
+        events_log_path: events_log_path.display().to_string(),
+        events_log_present: cycle_summary.events_log_present,
+        health_state: classification.state.as_str().to_string(),
+        health_reason,
+        rollout_gate: rollout_gate.to_string(),
+        processed_case_count: state.processed_case_keys.len(),
+        interaction_count: state.interactions.len(),
+        mode_counts,
+        speaker_counts,
+        outcome_counts,
+        status_code_counts,
+        utterance_count,
+        total_run_count,
+        cycle_reports: cycle_summary.cycle_reports,
+        invalid_cycle_reports: cycle_summary.invalid_cycle_reports,
+        last_reason_codes: cycle_summary.last_reason_codes,
+        reason_code_counts: cycle_summary.reason_code_counts,
+        health: state.health,
+    })
+}
+
 fn load_multi_agent_status_state(path: &Path) -> Result<MultiAgentStatusStateFile> {
     let raw = std::fs::read_to_string(path)
         .with_context(|| format!("failed to read {}", path.display()))?;
@@ -881,6 +1047,13 @@ fn load_custom_command_status_state(path: &Path) -> Result<CustomCommandStatusSt
     let raw = std::fs::read_to_string(path)
         .with_context(|| format!("failed to read {}", path.display()))?;
     serde_json::from_str::<CustomCommandStatusStateFile>(&raw)
+        .with_context(|| format!("failed to parse {}", path.display()))
+}
+
+fn load_voice_status_state(path: &Path) -> Result<VoiceStatusStateFile> {
+    let raw = std::fs::read_to_string(path)
+        .with_context(|| format!("failed to read {}", path.display()))?;
+    serde_json::from_str::<VoiceStatusStateFile>(&raw)
         .with_context(|| format!("failed to parse {}", path.display()))
 }
 
@@ -975,6 +1148,41 @@ fn load_custom_command_cycle_report_summary(
             continue;
         }
         match serde_json::from_str::<CustomCommandCycleReportLine>(trimmed) {
+            Ok(report) => {
+                summary.cycle_reports = summary.cycle_reports.saturating_add(1);
+                summary.last_reason_codes = report.reason_codes.clone();
+                summary.last_health_reason = report.health_reason;
+                for reason_code in report.reason_codes {
+                    increment_count(&mut summary.reason_code_counts, reason_code.trim());
+                }
+            }
+            Err(_) => {
+                summary.invalid_cycle_reports = summary.invalid_cycle_reports.saturating_add(1);
+            }
+        }
+    }
+    Ok(summary)
+}
+
+fn load_voice_cycle_report_summary(path: &Path) -> Result<VoiceCycleReportSummary> {
+    if !path.exists() {
+        return Ok(VoiceCycleReportSummary {
+            events_log_present: false,
+            ..VoiceCycleReportSummary::default()
+        });
+    }
+    let raw = std::fs::read_to_string(path)
+        .with_context(|| format!("failed to read {}", path.display()))?;
+    let mut summary = VoiceCycleReportSummary {
+        events_log_present: true,
+        ..VoiceCycleReportSummary::default()
+    };
+    for line in raw.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        match serde_json::from_str::<VoiceCycleReportLine>(trimmed) {
             Ok(report) => {
                 summary.cycle_reports = summary.cycle_reports.saturating_add(1);
                 summary.last_reason_codes = report.reason_codes.clone();
@@ -1163,6 +1371,39 @@ fn render_custom_command_status_report(report: &CustomCommandStatusInspectReport
     )
 }
 
+fn render_voice_status_report(report: &VoiceStatusInspectReport) -> String {
+    let reason_codes = if report.last_reason_codes.is_empty() {
+        "none".to_string()
+    } else {
+        report.last_reason_codes.join(",")
+    };
+    format!(
+        "voice status inspect: state_path={} events_log_path={} events_log_present={} health_state={} health_reason={} rollout_gate={} processed_case_count={} interaction_count={} mode_counts={} speaker_counts={} outcome_counts={} status_code_counts={} utterance_count={} total_run_count={} cycle_reports={} invalid_cycle_reports={} last_reason_codes={} reason_code_counts={} queue_depth={} failure_streak={} last_cycle_failed={} last_cycle_completed={}",
+        report.state_path,
+        report.events_log_path,
+        report.events_log_present,
+        report.health_state,
+        report.health_reason,
+        report.rollout_gate,
+        report.processed_case_count,
+        report.interaction_count,
+        render_counter_map(&report.mode_counts),
+        render_counter_map(&report.speaker_counts),
+        render_counter_map(&report.outcome_counts),
+        render_counter_map(&report.status_code_counts),
+        report.utterance_count,
+        report.total_run_count,
+        report.cycle_reports,
+        report.invalid_cycle_reports,
+        reason_codes,
+        render_counter_map(&report.reason_code_counts),
+        report.health.queue_depth,
+        report.health.failure_streak,
+        report.health.last_cycle_failed,
+        report.health.last_cycle_completed,
+    )
+}
+
 fn render_counter_map(counts: &BTreeMap<String, usize>) -> String {
     if counts.is_empty() {
         return "none".to_string();
@@ -1197,10 +1438,11 @@ mod tests {
     use super::{
         collect_custom_command_status_report, collect_dashboard_status_report,
         collect_gateway_status_report, collect_multi_agent_status_report,
-        collect_transport_health_rows, parse_transport_health_inspect_target,
-        render_custom_command_status_report, render_dashboard_status_report,
-        render_gateway_status_report, render_multi_agent_status_report,
-        render_transport_health_row, render_transport_health_rows, TransportHealthInspectRow,
+        collect_transport_health_rows, collect_voice_status_report,
+        parse_transport_health_inspect_target, render_custom_command_status_report,
+        render_dashboard_status_report, render_gateway_status_report,
+        render_multi_agent_status_report, render_transport_health_row,
+        render_transport_health_rows, render_voice_status_report, TransportHealthInspectRow,
         TransportHealthInspectTarget,
     };
     use crate::transport_health::TransportHealthState;
@@ -1271,6 +1513,10 @@ mod tests {
             parse_transport_health_inspect_target("customcommand").expect("customcommand"),
             TransportHealthInspectTarget::CustomCommand
         );
+        assert_eq!(
+            parse_transport_health_inspect_target("voice").expect("voice"),
+            TransportHealthInspectTarget::Voice
+        );
     }
 
     #[test]
@@ -1310,6 +1556,7 @@ mod tests {
         let dashboard_root = temp.path().join("dashboard");
         let gateway_root = temp.path().join("gateway");
         let custom_command_root = temp.path().join("custom-command");
+        let voice_root = temp.path().join("voice");
         let github_repo_dir = github_root.join("owner__repo");
         std::fs::create_dir_all(&github_repo_dir).expect("create github repo dir");
         std::fs::create_dir_all(&slack_root).expect("create slack dir");
@@ -1319,6 +1566,7 @@ mod tests {
         std::fs::create_dir_all(&dashboard_root).expect("create dashboard dir");
         std::fs::create_dir_all(&gateway_root).expect("create gateway dir");
         std::fs::create_dir_all(&custom_command_root).expect("create custom-command dir");
+        std::fs::create_dir_all(&voice_root).expect("create voice dir");
 
         std::fs::write(
             github_repo_dir.join("state.json"),
@@ -1504,6 +1752,29 @@ mod tests {
         )
         .expect("write custom-command state");
 
+        std::fs::write(
+            voice_root.join("state.json"),
+            r#"{
+  "schema_version": 1,
+  "processed_case_keys": [],
+  "interactions": [],
+  "health": {
+    "updated_unix_ms": 590,
+    "cycle_duration_ms": 18,
+    "queue_depth": 0,
+    "active_runs": 0,
+    "failure_streak": 0,
+    "last_cycle_discovered": 3,
+    "last_cycle_processed": 3,
+    "last_cycle_completed": 3,
+    "last_cycle_failed": 0,
+    "last_cycle_duplicates": 0
+  }
+}
+"#,
+        )
+        .expect("write voice state");
+
         let mut cli = parse_cli(&["tau-rs"]);
         cli.github_state_dir = github_root;
         cli.slack_state_dir = slack_root;
@@ -1513,6 +1784,7 @@ mod tests {
         cli.dashboard_state_dir = dashboard_root;
         cli.gateway_state_dir = gateway_root;
         cli.custom_command_state_dir = custom_command_root;
+        cli.voice_state_dir = voice_root;
 
         let github_rows =
             collect_transport_health_rows(&cli, &TransportHealthInspectTarget::GithubAll)
@@ -1576,6 +1848,13 @@ mod tests {
         assert_eq!(custom_command_rows[0].target, "no-code-command-registry");
         assert_eq!(custom_command_rows[0].health.last_cycle_discovered, 4);
 
+        let voice_rows = collect_transport_health_rows(&cli, &TransportHealthInspectTarget::Voice)
+            .expect("collect voice rows");
+        assert_eq!(voice_rows.len(), 1);
+        assert_eq!(voice_rows[0].transport, "voice");
+        assert_eq!(voice_rows[0].target, "wake-word-pipeline");
+        assert_eq!(voice_rows[0].health.last_cycle_discovered, 3);
+
         let rendered = render_transport_health_rows(&[
             github_rows[0].clone(),
             slack_rows[0].clone(),
@@ -1585,6 +1864,7 @@ mod tests {
             dashboard_rows[0].clone(),
             gateway_rows[0].clone(),
             custom_command_rows[0].clone(),
+            voice_rows[0].clone(),
         ]);
         assert!(rendered.contains("transport=github"));
         assert!(rendered.contains("transport=slack"));
@@ -1594,6 +1874,7 @@ mod tests {
         assert!(rendered.contains("transport=dashboard"));
         assert!(rendered.contains("transport=gateway"));
         assert!(rendered.contains("transport=custom-command"));
+        assert!(rendered.contains("transport=voice"));
     }
 
     #[test]
@@ -1748,6 +2029,30 @@ mod tests {
         let rows =
             collect_transport_health_rows(&cli, &TransportHealthInspectTarget::CustomCommand)
                 .expect("collect custom-command row");
+        assert_eq!(rows[0].health, TransportHealthSnapshot::default());
+    }
+
+    #[test]
+    fn regression_collect_transport_health_rows_defaults_missing_health_fields_for_voice() {
+        let temp = tempdir().expect("tempdir");
+        let voice_root = temp.path().join("voice");
+        std::fs::create_dir_all(&voice_root).expect("create voice dir");
+        std::fs::write(
+            voice_root.join("state.json"),
+            r#"{
+  "schema_version": 1,
+  "processed_case_keys": [],
+  "interactions": []
+}
+"#,
+        )
+        .expect("write legacy voice state");
+
+        let mut cli = parse_cli(&["tau-rs"]);
+        cli.voice_state_dir = PathBuf::from(&voice_root);
+
+        let rows = collect_transport_health_rows(&cli, &TransportHealthInspectTarget::Voice)
+            .expect("collect voice row");
         assert_eq!(rows[0].health, TransportHealthSnapshot::default());
     }
 
@@ -2270,6 +2575,160 @@ invalid-json-line
 
         let report = collect_custom_command_status_report(&cli)
             .expect("collect custom-command status report");
+        assert!(!report.events_log_present);
+        assert_eq!(report.cycle_reports, 0);
+        assert_eq!(report.invalid_cycle_reports, 0);
+        assert!(report.last_reason_codes.is_empty());
+        assert!(report.reason_code_counts.is_empty());
+        assert_eq!(report.health_state, TransportHealthState::Degraded.as_str());
+        assert_eq!(report.rollout_gate, "hold");
+    }
+
+    #[test]
+    fn functional_collect_voice_status_report_reads_state_and_cycle_reports() {
+        let temp = tempdir().expect("tempdir");
+        let voice_root = temp.path().join("voice");
+        std::fs::create_dir_all(&voice_root).expect("create voice dir");
+        std::fs::write(
+            voice_root.join("state.json"),
+            r#"{
+  "schema_version": 1,
+  "processed_case_keys": ["turn:tau:ops-1:voice-success-turn", "wake_word:tau:ops-2:voice-wake"],
+  "interactions": [
+    {
+      "case_key": "turn:tau:ops-1:voice-success-turn",
+      "case_id": "voice-success-turn",
+      "mode": "turn",
+      "wake_word": "tau",
+      "locale": "en-US",
+      "speaker_id": "ops-1",
+      "utterance": "open dashboard",
+      "last_status_code": 202,
+      "last_outcome": "success",
+      "run_count": 2,
+      "updated_unix_ms": 10
+    },
+    {
+      "case_key": "wake_word:tau:ops-2:voice-wake",
+      "case_id": "voice-wake",
+      "mode": "wake_word",
+      "wake_word": "tau",
+      "locale": "en-US",
+      "speaker_id": "ops-2",
+      "utterance": "",
+      "last_status_code": 202,
+      "last_outcome": "success",
+      "run_count": 1,
+      "updated_unix_ms": 20
+    }
+  ],
+  "health": {
+    "updated_unix_ms": 760,
+    "cycle_duration_ms": 14,
+    "queue_depth": 0,
+    "active_runs": 0,
+    "failure_streak": 0,
+    "last_cycle_discovered": 2,
+    "last_cycle_processed": 2,
+    "last_cycle_completed": 2,
+    "last_cycle_failed": 0,
+    "last_cycle_duplicates": 0
+  }
+}
+"#,
+        )
+        .expect("write voice state");
+        std::fs::write(
+            voice_root.join("runtime-events.jsonl"),
+            r#"{"reason_codes":["turns_handled","wake_word_detected"],"health_reason":"no recent transport failures observed"}
+invalid-json-line
+{"reason_codes":["healthy_cycle","duplicate_cases_skipped"],"health_reason":"no recent transport failures observed"}
+"#,
+        )
+        .expect("write voice events");
+
+        let mut cli = parse_cli(&["tau-rs"]);
+        cli.voice_state_dir = voice_root;
+
+        let report = collect_voice_status_report(&cli).expect("collect voice status report");
+        assert_eq!(report.health_state, TransportHealthState::Healthy.as_str());
+        assert_eq!(report.rollout_gate, "pass");
+        assert_eq!(report.processed_case_count, 2);
+        assert_eq!(report.interaction_count, 2);
+        assert_eq!(report.mode_counts.get("turn"), Some(&1));
+        assert_eq!(report.mode_counts.get("wake_word"), Some(&1));
+        assert_eq!(report.speaker_counts.get("ops-1"), Some(&1));
+        assert_eq!(report.speaker_counts.get("ops-2"), Some(&1));
+        assert_eq!(report.outcome_counts.get("success"), Some(&2));
+        assert_eq!(report.status_code_counts.get("202"), Some(&2));
+        assert_eq!(report.utterance_count, 1);
+        assert_eq!(report.total_run_count, 3);
+        assert_eq!(report.cycle_reports, 2);
+        assert_eq!(report.invalid_cycle_reports, 1);
+        assert_eq!(
+            report.last_reason_codes,
+            vec![
+                "healthy_cycle".to_string(),
+                "duplicate_cases_skipped".to_string()
+            ]
+        );
+        assert_eq!(report.reason_code_counts.get("turns_handled"), Some(&1));
+        assert_eq!(
+            report.reason_code_counts.get("wake_word_detected"),
+            Some(&1)
+        );
+        assert_eq!(report.reason_code_counts.get("healthy_cycle"), Some(&1));
+        assert_eq!(
+            report.reason_code_counts.get("duplicate_cases_skipped"),
+            Some(&1)
+        );
+
+        let rendered = render_voice_status_report(&report);
+        assert!(rendered.contains("voice status inspect:"));
+        assert!(rendered.contains("rollout_gate=pass"));
+        assert!(rendered.contains("mode_counts=turn:1,wake_word:1"));
+        assert!(rendered.contains("speaker_counts=ops-1:1,ops-2:1"));
+        assert!(rendered.contains("outcome_counts=success:2"));
+        assert!(rendered.contains("status_code_counts=202:2"));
+        assert!(rendered.contains("utterance_count=1"));
+        assert!(rendered.contains("total_run_count=3"));
+        assert!(rendered.contains(
+            "reason_code_counts=duplicate_cases_skipped:1,healthy_cycle:1,turns_handled:1,wake_word_detected:1"
+        ));
+    }
+
+    #[test]
+    fn regression_collect_voice_status_report_handles_missing_events_log() {
+        let temp = tempdir().expect("tempdir");
+        let voice_root = temp.path().join("voice");
+        std::fs::create_dir_all(&voice_root).expect("create voice dir");
+        std::fs::write(
+            voice_root.join("state.json"),
+            r#"{
+  "schema_version": 1,
+  "processed_case_keys": [],
+  "interactions": [],
+  "health": {
+    "updated_unix_ms": 761,
+    "cycle_duration_ms": 20,
+    "queue_depth": 0,
+    "active_runs": 0,
+    "failure_streak": 2,
+    "last_cycle_discovered": 1,
+    "last_cycle_processed": 1,
+    "last_cycle_completed": 0,
+    "last_cycle_failed": 1,
+    "last_cycle_duplicates": 0
+  }
+}
+"#,
+        )
+        .expect("write voice state");
+
+        let mut cli = parse_cli(&["tau-rs"]);
+        cli.voice_state_dir = voice_root;
+
+        let report = collect_voice_status_report(&cli).expect("collect voice status report");
         assert!(!report.events_log_present);
         assert_eq!(report.cycle_reports, 0);
         assert_eq!(report.invalid_cycle_reports, 0);
