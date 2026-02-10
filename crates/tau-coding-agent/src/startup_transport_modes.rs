@@ -187,6 +187,8 @@ pub(crate) async fn run_transport_mode_if_requested(
             processed_event_cap: cli.multi_channel_processed_event_cap.max(1),
             retry_max_attempts: cli.multi_channel_retry_max_attempts.max(1),
             retry_base_delay_ms: cli.multi_channel_retry_base_delay_ms,
+            retry_jitter_ms: cli.multi_channel_retry_jitter_ms,
+            outbound: build_multi_channel_outbound_config(cli),
         })
         .await?;
         return Ok(true);
@@ -201,6 +203,8 @@ pub(crate) async fn run_transport_mode_if_requested(
             processed_event_cap: cli.multi_channel_processed_event_cap.max(1),
             retry_max_attempts: cli.multi_channel_retry_max_attempts.max(1),
             retry_base_delay_ms: cli.multi_channel_retry_base_delay_ms,
+            retry_jitter_ms: cli.multi_channel_retry_jitter_ms,
+            outbound: build_multi_channel_outbound_config(cli),
         })
         .await?;
         return Ok(true);
@@ -304,4 +308,63 @@ pub(crate) async fn run_transport_mode_if_requested(
     }
 
     Ok(false)
+}
+
+fn resolve_multi_channel_outbound_secret(
+    cli: &Cli,
+    direct_secret: Option<&str>,
+    integration_id: &str,
+) -> Option<String> {
+    if let Some(secret) = resolve_non_empty_cli_value(direct_secret) {
+        return Some(secret);
+    }
+    let store = load_credential_store(
+        &cli.credential_store,
+        resolve_credential_store_encryption_mode(cli),
+        cli.credential_store_key.as_deref(),
+    )
+    .ok()?;
+    let entry = store.integrations.get(integration_id)?;
+    if entry.revoked {
+        return None;
+    }
+    entry
+        .secret
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+fn build_multi_channel_outbound_config(
+    cli: &Cli,
+) -> crate::multi_channel_outbound::MultiChannelOutboundConfig {
+    crate::multi_channel_outbound::MultiChannelOutboundConfig {
+        mode: cli.multi_channel_outbound_mode.into(),
+        max_chars: cli.multi_channel_outbound_max_chars.max(1),
+        http_timeout_ms: cli.multi_channel_outbound_http_timeout_ms.max(1),
+        telegram_api_base: cli.multi_channel_telegram_api_base.trim().to_string(),
+        discord_api_base: cli.multi_channel_discord_api_base.trim().to_string(),
+        whatsapp_api_base: cli.multi_channel_whatsapp_api_base.trim().to_string(),
+        telegram_bot_token: resolve_multi_channel_outbound_secret(
+            cli,
+            cli.multi_channel_telegram_bot_token.as_deref(),
+            "telegram-bot-token",
+        ),
+        discord_bot_token: resolve_multi_channel_outbound_secret(
+            cli,
+            cli.multi_channel_discord_bot_token.as_deref(),
+            "discord-bot-token",
+        ),
+        whatsapp_access_token: resolve_multi_channel_outbound_secret(
+            cli,
+            cli.multi_channel_whatsapp_access_token.as_deref(),
+            "whatsapp-access-token",
+        ),
+        whatsapp_phone_number_id: resolve_multi_channel_outbound_secret(
+            cli,
+            cli.multi_channel_whatsapp_phone_number_id.as_deref(),
+            "whatsapp-phone-number-id",
+        ),
+    }
 }

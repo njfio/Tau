@@ -171,6 +171,21 @@ pub(crate) fn validate_multi_channel_contract_runner_cli(cli: &Cli) -> Result<()
     if cli.multi_channel_retry_max_attempts == 0 {
         bail!("--multi-channel-retry-max-attempts must be greater than 0");
     }
+    if cli.multi_channel_outbound_max_chars == 0 {
+        bail!("--multi-channel-outbound-max-chars must be greater than 0");
+    }
+    if cli.multi_channel_outbound_http_timeout_ms == 0 {
+        bail!("--multi-channel-outbound-http-timeout-ms must be greater than 0");
+    }
+    if cli.multi_channel_telegram_api_base.trim().is_empty() {
+        bail!("--multi-channel-telegram-api-base cannot be empty");
+    }
+    if cli.multi_channel_discord_api_base.trim().is_empty() {
+        bail!("--multi-channel-discord-api-base cannot be empty");
+    }
+    if cli.multi_channel_whatsapp_api_base.trim().is_empty() {
+        bail!("--multi-channel-whatsapp-api-base cannot be empty");
+    }
     if !cli.multi_channel_fixture.exists() {
         bail!(
             "--multi-channel-fixture '{}' does not exist",
@@ -218,6 +233,21 @@ pub(crate) fn validate_multi_channel_live_runner_cli(cli: &Cli) -> Result<()> {
     }
     if cli.multi_channel_retry_max_attempts == 0 {
         bail!("--multi-channel-retry-max-attempts must be greater than 0");
+    }
+    if cli.multi_channel_outbound_max_chars == 0 {
+        bail!("--multi-channel-outbound-max-chars must be greater than 0");
+    }
+    if cli.multi_channel_outbound_http_timeout_ms == 0 {
+        bail!("--multi-channel-outbound-http-timeout-ms must be greater than 0");
+    }
+    if cli.multi_channel_telegram_api_base.trim().is_empty() {
+        bail!("--multi-channel-telegram-api-base cannot be empty");
+    }
+    if cli.multi_channel_discord_api_base.trim().is_empty() {
+        bail!("--multi-channel-discord-api-base cannot be empty");
+    }
+    if cli.multi_channel_whatsapp_api_base.trim().is_empty() {
+        bail!("--multi-channel-whatsapp-api-base cannot be empty");
     }
     if !cli.multi_channel_live_ingress_dir.exists() {
         bail!(

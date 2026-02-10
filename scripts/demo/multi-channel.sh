@@ -36,7 +36,9 @@ tau_demo_common_run_step \
   --multi-channel-queue-limit 64 \
   --multi-channel-processed-event-cap 10000 \
   --multi-channel-retry-max-attempts 4 \
-  --multi-channel-retry-base-delay-ms 0
+  --multi-channel-retry-base-delay-ms 0 \
+  --multi-channel-outbound-mode dry-run \
+  --multi-channel-outbound-max-chars 512
 
 tau_demo_common_run_step \
   "transport-health-inspect-multi-channel" \
@@ -79,7 +81,9 @@ tau_demo_common_run_step \
   --multi-channel-queue-limit 64 \
   --multi-channel-processed-event-cap 10000 \
   --multi-channel-retry-max-attempts 4 \
-  --multi-channel-retry-base-delay-ms 0
+  --multi-channel-retry-base-delay-ms 0 \
+  --multi-channel-outbound-mode dry-run \
+  --multi-channel-outbound-max-chars 512
 
 tau_demo_common_run_step \
   "multi-channel-route-inspect-telegram" \

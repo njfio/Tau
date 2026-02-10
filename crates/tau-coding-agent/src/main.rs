@@ -39,6 +39,7 @@ mod multi_agent_router;
 mod multi_agent_runtime;
 mod multi_channel_contract;
 mod multi_channel_live_ingress;
+mod multi_channel_outbound;
 mod multi_channel_policy;
 mod multi_channel_routing;
 mod multi_channel_runtime;
@@ -129,8 +130,9 @@ pub(crate) use crate::channel_store_admin::execute_channel_store_admin_command;
 pub(crate) use crate::cli_args::Cli;
 pub(crate) use crate::cli_types::{
     CliBashProfile, CliCommandFileErrorMode, CliCredentialStoreEncryptionMode,
-    CliEventTemplateSchedule, CliMultiChannelTransport, CliOrchestratorMode, CliOsSandboxMode,
-    CliProviderAuthMode, CliSessionImportMode, CliToolPolicyPreset, CliWebhookSignatureAlgorithm,
+    CliEventTemplateSchedule, CliMultiChannelOutboundMode, CliMultiChannelTransport,
+    CliOrchestratorMode, CliOsSandboxMode, CliProviderAuthMode, CliSessionImportMode,
+    CliToolPolicyPreset, CliWebhookSignatureAlgorithm,
 };
 #[cfg(test)]
 pub(crate) use crate::commands::handle_command;

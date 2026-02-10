@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 use anyhow::{anyhow, bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 
 use crate::channel_store::{ChannelContextEntry, ChannelLogEntry, ChannelStore};
 use crate::multi_agent_router::{load_multi_agent_route_table, MultiAgentRouteTable};
@@ -14,6 +15,9 @@ use crate::multi_channel_contract::{
     MultiChannelContractFixture, MultiChannelEventKind, MultiChannelInboundEvent,
 };
 use crate::multi_channel_live_ingress::parse_multi_channel_live_inbound_envelope;
+use crate::multi_channel_outbound::{
+    MultiChannelOutboundConfig, MultiChannelOutboundDeliveryError, MultiChannelOutboundDispatcher,
+};
 use crate::multi_channel_policy::{
     evaluate_multi_channel_channel_policy, load_multi_channel_policy_for_state_dir,
     MultiChannelAllowFrom, MultiChannelPolicyDecision, MultiChannelPolicyEvaluation,
@@ -53,6 +57,8 @@ pub(crate) struct MultiChannelRuntimeConfig {
     pub(crate) processed_event_cap: usize,
     pub(crate) retry_max_attempts: usize,
     pub(crate) retry_base_delay_ms: u64,
+    pub(crate) retry_jitter_ms: u64,
+    pub(crate) outbound: MultiChannelOutboundConfig,
 }
 
 #[derive(Debug, Clone)]
@@ -64,6 +70,8 @@ pub(crate) struct MultiChannelLiveRuntimeConfig {
     pub(crate) processed_event_cap: usize,
     pub(crate) retry_max_attempts: usize,
     pub(crate) retry_base_delay_ms: u64,
+    pub(crate) retry_jitter_ms: u64,
+    pub(crate) outbound: MultiChannelOutboundConfig,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -176,6 +184,8 @@ pub(crate) async fn run_multi_channel_live_runner(
         processed_event_cap: config.processed_event_cap,
         retry_max_attempts: config.retry_max_attempts,
         retry_base_delay_ms: config.retry_base_delay_ms,
+        retry_jitter_ms: config.retry_jitter_ms,
+        outbound: config.outbound.clone(),
     })?;
     let summary = runtime.run_once_events(&live_events).await?;
     let health = runtime.transport_health().clone();
@@ -356,6 +366,7 @@ struct MultiChannelRuntime {
     processed_event_keys: HashSet<String>,
     route_table: MultiAgentRouteTable,
     route_bindings: MultiChannelRouteBindingFile,
+    outbound_dispatcher: MultiChannelOutboundDispatcher,
 }
 
 impl MultiChannelRuntime {
@@ -382,12 +393,15 @@ impl MultiChannelRuntime {
         state.processed_event_keys =
             normalize_processed_keys(&state.processed_event_keys, config.processed_event_cap);
         let processed_event_keys = state.processed_event_keys.iter().cloned().collect();
+        let outbound_dispatcher = MultiChannelOutboundDispatcher::new(config.outbound.clone())
+            .context("failed to initialize multi-channel outbound dispatcher")?;
         Ok(Self {
             config,
             state,
             processed_event_keys,
             route_table,
             route_bindings,
+            outbound_dispatcher,
         })
     }
 
@@ -461,12 +475,21 @@ impl MultiChannelRuntime {
                         break;
                     }
                     summary.retry_attempts = summary.retry_attempts.saturating_add(1);
-                    apply_retry_delay(self.config.retry_base_delay_ms, attempt).await;
+                    apply_retry_delay(
+                        self.config.retry_base_delay_ms,
+                        self.config.retry_jitter_ms,
+                        attempt,
+                        &event_key,
+                    )
+                    .await;
                     attempt = attempt.saturating_add(1);
                     continue;
                 }
 
-                match self.persist_event(&event, &event_key, &access_decision, &route_decision) {
+                match self
+                    .persist_event(&event, &event_key, &access_decision, &route_decision)
+                    .await
+                {
                     Ok(()) => {
                         self.record_processed_event(&event_key);
                         summary.completed_events = summary.completed_events.saturating_add(1);
@@ -494,7 +517,13 @@ impl MultiChannelRuntime {
                         }
                         summary.transient_failures = summary.transient_failures.saturating_add(1);
                         summary.retry_attempts = summary.retry_attempts.saturating_add(1);
-                        apply_retry_delay(self.config.retry_base_delay_ms, attempt).await;
+                        apply_retry_delay(
+                            self.config.retry_base_delay_ms,
+                            self.config.retry_jitter_ms,
+                            attempt,
+                            &event_key,
+                        )
+                        .await;
                         attempt = attempt.saturating_add(1);
                     }
                 }
@@ -653,7 +682,7 @@ impl MultiChannelRuntime {
         }
     }
 
-    fn persist_event(
+    async fn persist_event(
         &self,
         event: &MultiChannelInboundEvent,
         event_key: &str,
@@ -665,6 +694,8 @@ impl MultiChannelRuntime {
             event.transport.as_str(),
             &route_decision.session_key,
         )?;
+        let existing_logs = store.load_log_entries()?;
+        let existing_context = store.load_context_entries()?;
         let timestamp_unix_ms = current_unix_timestamp_ms();
         let pairing_status = pairing_decision_status(&access_decision.pairing_decision);
         let pairing_reason_code = access_decision.pairing_decision.reason_code().to_string();
@@ -700,45 +731,80 @@ impl MultiChannelRuntime {
             );
         }
 
-        store.append_log_entry(&ChannelLogEntry {
-            timestamp_unix_ms,
-            direction: "inbound".to_string(),
-            event_key: Some(event_key.to_string()),
-            source: event.transport.as_str().to_string(),
-            payload: inbound_payload,
-        })?;
-        append_multi_channel_route_trace(
-            &self
-                .config
-                .state_dir
-                .join(MULTI_CHANNEL_ROUTE_TRACES_LOG_FILE),
-            &route_payload,
-        )?;
+        if !log_contains_event_direction(&existing_logs, event_key, "inbound") {
+            store.append_log_entry(&ChannelLogEntry {
+                timestamp_unix_ms,
+                direction: "inbound".to_string(),
+                event_key: Some(event_key.to_string()),
+                source: event.transport.as_str().to_string(),
+                payload: inbound_payload,
+            })?;
+            append_multi_channel_route_trace(
+                &self
+                    .config
+                    .state_dir
+                    .join(MULTI_CHANNEL_ROUTE_TRACES_LOG_FILE),
+                &route_payload,
+            )?;
+        }
 
         if let PairingDecision::Deny { reason_code } = &access_decision.final_decision {
-            store.append_log_entry(&ChannelLogEntry {
-                timestamp_unix_ms: current_unix_timestamp_ms(),
-                direction: "outbound".to_string(),
-                event_key: Some(event_key.to_string()),
-                source: "tau-multi-channel-runner".to_string(),
-                payload: json!({
-                    "status": "denied",
-                    "reason_code": reason_code,
-                    "policy_channel": access_decision.policy_channel,
-                    "actor_id": event.actor_id.trim(),
-                    "event_key": event_key,
-                    "transport": event.transport.as_str(),
-                    "conversation_id": event.conversation_id.trim(),
-                    "route_session_key": route_decision.session_key.as_str(),
-                    "route": route_payload.clone(),
-                    "channel_policy": channel_policy_payload,
-                    "pairing": pairing_payload,
-                }),
-            })?;
+            if !log_contains_outbound_status(&existing_logs, event_key, "denied") {
+                store.append_log_entry(&ChannelLogEntry {
+                    timestamp_unix_ms: current_unix_timestamp_ms(),
+                    direction: "outbound".to_string(),
+                    event_key: Some(event_key.to_string()),
+                    source: "tau-multi-channel-runner".to_string(),
+                    payload: json!({
+                        "status": "denied",
+                        "reason_code": reason_code,
+                        "policy_channel": access_decision.policy_channel,
+                        "actor_id": event.actor_id.trim(),
+                        "event_key": event_key,
+                        "transport": event.transport.as_str(),
+                        "conversation_id": event.conversation_id.trim(),
+                        "route_session_key": route_decision.session_key.as_str(),
+                        "route": route_payload.clone(),
+                        "channel_policy": channel_policy_payload,
+                        "pairing": pairing_payload,
+                    }),
+                })?;
+            }
             return Ok(());
         }
 
-        if !event.text.trim().is_empty() {
+        let response_text = render_response(event);
+        let delivery_result = match self
+            .outbound_dispatcher
+            .deliver(event, &response_text)
+            .await
+        {
+            Ok(result) => result,
+            Err(error) => {
+                let failure_context = DeliveryFailureLogContext {
+                    event,
+                    event_key,
+                    route_decision,
+                    route_payload: &route_payload,
+                    pairing_payload: &pairing_payload,
+                    channel_policy_payload: &channel_policy_payload,
+                    delivery_mode: self.outbound_dispatcher.mode().as_str(),
+                };
+                append_delivery_failure_log(&store, &failure_context, &error)?;
+                return Err(anyhow!(
+                    "multi-channel outbound delivery failed: reason_code={} retryable={} chunk={}/{} detail={}",
+                    error.reason_code,
+                    error.retryable,
+                    error.chunk_index,
+                    error.chunk_count,
+                    error.detail
+                ));
+            }
+        };
+
+        if !event.text.trim().is_empty()
+            && !context_contains_entry(&existing_context, "user", event.text.trim())
+        {
             store.append_context_entry(&ChannelContextEntry {
                 timestamp_unix_ms,
                 role: "user".to_string(),
@@ -746,28 +812,34 @@ impl MultiChannelRuntime {
             })?;
         }
 
-        let response_text = render_response(event);
-        store.append_log_entry(&ChannelLogEntry {
-            timestamp_unix_ms: current_unix_timestamp_ms(),
-            direction: "outbound".to_string(),
-            event_key: Some(event_key.to_string()),
-            source: "tau-multi-channel-runner".to_string(),
-            payload: json!({
-                "response": response_text,
-                "event_key": event_key,
-                "transport": event.transport.as_str(),
-                "conversation_id": event.conversation_id.trim(),
-                "route_session_key": route_decision.session_key.as_str(),
-                "route": route_payload,
-                "pairing": pairing_payload,
-                "channel_policy": channel_policy_payload,
-            }),
-        })?;
-        store.append_context_entry(&ChannelContextEntry {
-            timestamp_unix_ms: current_unix_timestamp_ms(),
-            role: "assistant".to_string(),
-            text: response_text,
-        })?;
+        let delivery_payload =
+            serde_json::to_value(&delivery_result).context("serialize delivery payload")?;
+        if !log_contains_outbound_response(&existing_logs, event_key, &response_text) {
+            store.append_log_entry(&ChannelLogEntry {
+                timestamp_unix_ms: current_unix_timestamp_ms(),
+                direction: "outbound".to_string(),
+                event_key: Some(event_key.to_string()),
+                source: "tau-multi-channel-runner".to_string(),
+                payload: json!({
+                    "response": response_text,
+                    "event_key": event_key,
+                    "transport": event.transport.as_str(),
+                    "conversation_id": event.conversation_id.trim(),
+                    "route_session_key": route_decision.session_key.as_str(),
+                    "route": route_payload,
+                    "pairing": pairing_payload,
+                    "channel_policy": channel_policy_payload,
+                    "delivery": delivery_payload,
+                }),
+            })?;
+        }
+        if !context_contains_entry(&existing_context, "assistant", &response_text) {
+            store.append_context_entry(&ChannelContextEntry {
+                timestamp_unix_ms: current_unix_timestamp_ms(),
+                role: "assistant".to_string(),
+                text: response_text,
+            })?;
+        }
 
         Ok(())
     }
@@ -810,6 +882,83 @@ fn pairing_decision_status(decision: &PairingDecision) -> &'static str {
 
 fn pairing_decision_is_enforced(decision: &PairingDecision) -> bool {
     decision.reason_code() != PAIRING_REASON_ALLOW_PERMISSIVE_MODE
+}
+
+fn log_contains_event_direction(
+    logs: &[ChannelLogEntry],
+    event_key: &str,
+    direction: &str,
+) -> bool {
+    logs.iter()
+        .any(|entry| entry.direction == direction && entry.event_key.as_deref() == Some(event_key))
+}
+
+fn log_contains_outbound_status(logs: &[ChannelLogEntry], event_key: &str, status: &str) -> bool {
+    logs.iter().any(|entry| {
+        entry.direction == "outbound"
+            && entry.event_key.as_deref() == Some(event_key)
+            && entry.payload.get("status").and_then(Value::as_str) == Some(status)
+    })
+}
+
+fn log_contains_outbound_response(
+    logs: &[ChannelLogEntry],
+    event_key: &str,
+    response: &str,
+) -> bool {
+    logs.iter().any(|entry| {
+        entry.direction == "outbound"
+            && entry.event_key.as_deref() == Some(event_key)
+            && entry.payload.get("response").and_then(Value::as_str) == Some(response)
+    })
+}
+
+fn context_contains_entry(entries: &[ChannelContextEntry], role: &str, text: &str) -> bool {
+    entries
+        .iter()
+        .any(|entry| entry.role == role && entry.text == text)
+}
+
+struct DeliveryFailureLogContext<'a> {
+    event: &'a MultiChannelInboundEvent,
+    event_key: &'a str,
+    route_decision: &'a MultiChannelRouteDecision,
+    route_payload: &'a Value,
+    pairing_payload: &'a Value,
+    channel_policy_payload: &'a Value,
+    delivery_mode: &'a str,
+}
+
+fn append_delivery_failure_log(
+    store: &ChannelStore,
+    context: &DeliveryFailureLogContext<'_>,
+    error: &MultiChannelOutboundDeliveryError,
+) -> Result<()> {
+    store.append_log_entry(&ChannelLogEntry {
+        timestamp_unix_ms: current_unix_timestamp_ms(),
+        direction: "outbound".to_string(),
+        event_key: Some(context.event_key.to_string()),
+        source: "tau-multi-channel-runner".to_string(),
+        payload: json!({
+            "status": "delivery_failed",
+            "reason_code": error.reason_code,
+            "detail": error.detail,
+            "retryable": error.retryable,
+            "chunk_index": error.chunk_index,
+            "chunk_count": error.chunk_count,
+            "endpoint": error.endpoint,
+            "http_status": error.http_status,
+            "request_body": error.request_body,
+            "delivery_mode": context.delivery_mode,
+            "event_key": context.event_key,
+            "transport": context.event.transport.as_str(),
+            "conversation_id": context.event.conversation_id.trim(),
+            "route_session_key": context.route_decision.session_key.as_str(),
+            "route": context.route_payload,
+            "pairing": context.pairing_payload,
+            "channel_policy": context.channel_policy_payload,
+        }),
+    })
 }
 
 fn load_multi_channel_live_events(ingress_dir: &Path) -> Result<Vec<MultiChannelInboundEvent>> {
@@ -1041,16 +1190,27 @@ fn simulated_transient_failures(event: &MultiChannelInboundEvent) -> usize {
         .unwrap_or(0)
 }
 
-fn retry_delay_ms(base_delay_ms: u64, attempt: usize) -> u64 {
+fn retry_delay_ms(base_delay_ms: u64, jitter_ms: u64, attempt: usize, jitter_seed: &str) -> u64 {
     if base_delay_ms == 0 {
         return 0;
     }
     let exponent = attempt.saturating_sub(1).min(10) as u32;
-    base_delay_ms.saturating_mul(1_u64 << exponent)
+    let base_delay = base_delay_ms.saturating_mul(1_u64 << exponent);
+    if jitter_ms == 0 {
+        return base_delay;
+    }
+    let mut hasher = Sha256::new();
+    hasher.update(jitter_seed.as_bytes());
+    hasher.update(attempt.to_le_bytes());
+    let digest = hasher.finalize();
+    let mut seed_bytes = [0_u8; 8];
+    seed_bytes.copy_from_slice(&digest[..8]);
+    let deterministic_jitter = u64::from_le_bytes(seed_bytes) % jitter_ms.saturating_add(1);
+    base_delay.saturating_add(deterministic_jitter)
 }
 
-async fn apply_retry_delay(base_delay_ms: u64, attempt: usize) {
-    let delay_ms = retry_delay_ms(base_delay_ms, attempt);
+async fn apply_retry_delay(base_delay_ms: u64, jitter_ms: u64, attempt: usize, jitter_seed: &str) {
+    let delay_ms = retry_delay_ms(base_delay_ms, jitter_ms, attempt, jitter_seed);
     if delay_ms > 0 {
         tokio::time::sleep(Duration::from_millis(delay_ms)).await;
     }
@@ -1093,6 +1253,8 @@ mod tests {
     use std::collections::BTreeMap;
     use std::path::{Path, PathBuf};
 
+    use httpmock::Method::POST;
+    use httpmock::MockServer;
     use serde_json::Value;
     use tempfile::tempdir;
 
@@ -1106,6 +1268,7 @@ mod tests {
         load_multi_channel_contract_fixture, parse_multi_channel_contract_fixture,
         MultiChannelEventKind, MultiChannelInboundEvent, MultiChannelTransport,
     };
+    use crate::multi_channel_outbound::{MultiChannelOutboundConfig, MultiChannelOutboundMode};
     use crate::transport_health::TransportHealthState;
 
     fn fixture_path(name: &str) -> PathBuf {
@@ -1131,6 +1294,8 @@ mod tests {
             processed_event_cap: 10_000,
             retry_max_attempts: 3,
             retry_base_delay_ms: 0,
+            retry_jitter_ms: 0,
+            outbound: MultiChannelOutboundConfig::default(),
         }
     }
 
@@ -1143,6 +1308,8 @@ mod tests {
             processed_event_cap: 10_000,
             retry_max_attempts: 3,
             retry_base_delay_ms: 0,
+            retry_jitter_ms: 0,
+            outbound: MultiChannelOutboundConfig::default(),
         }
     }
 
@@ -1221,10 +1388,19 @@ mod tests {
 
     #[test]
     fn unit_retry_delay_ms_scales_with_attempt_number() {
-        assert_eq!(retry_delay_ms(0, 1), 0);
-        assert_eq!(retry_delay_ms(10, 1), 10);
-        assert_eq!(retry_delay_ms(10, 2), 20);
-        assert_eq!(retry_delay_ms(10, 3), 40);
+        assert_eq!(retry_delay_ms(0, 0, 1, "seed"), 0);
+        assert_eq!(retry_delay_ms(10, 0, 1, "seed"), 10);
+        assert_eq!(retry_delay_ms(10, 0, 2, "seed"), 20);
+        assert_eq!(retry_delay_ms(10, 0, 3, "seed"), 40);
+    }
+
+    #[test]
+    fn unit_retry_delay_ms_jitter_is_deterministic_for_seed() {
+        let first = retry_delay_ms(20, 15, 2, "event-1");
+        let second = retry_delay_ms(20, 15, 2, "event-1");
+        assert_eq!(first, second);
+        assert!(first >= 40);
+        assert!(first <= 55);
     }
 
     #[test]
@@ -1555,6 +1731,214 @@ mod tests {
         assert_eq!(summary.failed_events, 0);
         assert_eq!(summary.policy_checked_events, 1);
         assert_eq!(summary.policy_allowed_events, 1);
+    }
+
+    #[tokio::test]
+    async fn functional_runner_dry_run_outbound_records_delivery_receipts() {
+        let temp = tempdir().expect("tempdir");
+        let mut config = build_config(temp.path());
+        config.outbound.mode = MultiChannelOutboundMode::DryRun;
+        config.outbound.max_chars = 12;
+
+        let mut runtime = MultiChannelRuntime::new(config.clone()).expect("runtime");
+        let event = sample_event(
+            MultiChannelTransport::Telegram,
+            "tg-dry-run-1",
+            "chat-dry-run",
+            "telegram-user-1",
+            "hello with dry run",
+        );
+        let summary = runtime.run_once_events(&[event]).await.expect("run once");
+        assert_eq!(summary.completed_events, 1);
+        assert_eq!(summary.failed_events, 0);
+
+        let store = ChannelStore::open(
+            &config.state_dir.join("channel-store"),
+            "telegram",
+            "chat-dry-run",
+        )
+        .expect("open store");
+        let logs = store.load_log_entries().expect("load logs");
+        assert_eq!(logs.len(), 2);
+        assert_eq!(logs[1].payload["delivery"]["mode"], "dry_run");
+        let receipts = logs[1].payload["delivery"]["receipts"]
+            .as_array()
+            .expect("delivery receipts");
+        assert!(!receipts.is_empty());
+        assert_eq!(receipts[0]["status"], "dry_run");
+    }
+
+    #[tokio::test]
+    async fn integration_runner_provider_outbound_posts_per_transport_adapter() {
+        struct Scenario<'a> {
+            transport: MultiChannelTransport,
+            event_id: &'a str,
+            conversation_id: &'a str,
+            actor_id: &'a str,
+            expected_path: &'a str,
+            response_body: &'a str,
+        }
+
+        let scenarios = vec![
+            Scenario {
+                transport: MultiChannelTransport::Telegram,
+                event_id: "tg-provider-1",
+                conversation_id: "chat-200",
+                actor_id: "telegram-user-1",
+                expected_path: "/bottelegram-token/sendMessage",
+                response_body: r#"{"ok":true,"result":{"message_id":42}}"#,
+            },
+            Scenario {
+                transport: MultiChannelTransport::Discord,
+                event_id: "dc-provider-1",
+                conversation_id: "discord-room-1",
+                actor_id: "discord-user-1",
+                expected_path: "/channels/discord-room-1/messages",
+                response_body: r#"{"id":"msg-22"}"#,
+            },
+            Scenario {
+                transport: MultiChannelTransport::Whatsapp,
+                event_id: "wa-provider-1",
+                conversation_id: "whatsapp-room-1",
+                actor_id: "15550001111",
+                expected_path: "/15551234567/messages",
+                response_body: r#"{"messages":[{"id":"wamid.1"}]}"#,
+            },
+        ];
+
+        for scenario in scenarios {
+            let server = MockServer::start();
+            let sent = server.mock(|when, then| {
+                when.method(POST).path(scenario.expected_path);
+                then.status(200)
+                    .header("content-type", "application/json")
+                    .body(scenario.response_body);
+            });
+
+            let temp = tempdir().expect("tempdir");
+            let mut config = build_config(temp.path());
+            config.outbound.mode = MultiChannelOutboundMode::Provider;
+            config.outbound.http_timeout_ms = 3_000;
+            match scenario.transport {
+                MultiChannelTransport::Telegram => {
+                    config.outbound.telegram_api_base = server.base_url();
+                    config.outbound.telegram_bot_token = Some("telegram-token".to_string());
+                }
+                MultiChannelTransport::Discord => {
+                    config.outbound.discord_api_base = server.base_url();
+                    config.outbound.discord_bot_token = Some("discord-token".to_string());
+                }
+                MultiChannelTransport::Whatsapp => {
+                    config.outbound.whatsapp_api_base = server.base_url();
+                    config.outbound.whatsapp_access_token = Some("whatsapp-token".to_string());
+                    config.outbound.whatsapp_phone_number_id = Some("15551234567".to_string());
+                }
+            }
+            let mut runtime = MultiChannelRuntime::new(config.clone()).expect("runtime");
+            let event = sample_event(
+                scenario.transport,
+                scenario.event_id,
+                scenario.conversation_id,
+                scenario.actor_id,
+                "provider integration event",
+            );
+            let summary = runtime.run_once_events(&[event]).await.expect("run once");
+            assert_eq!(summary.completed_events, 1);
+            assert_eq!(summary.failed_events, 0);
+            sent.assert_calls(1);
+
+            let store = ChannelStore::open(
+                &config.state_dir.join("channel-store"),
+                scenario.transport.as_str(),
+                scenario.conversation_id,
+            )
+            .expect("open store");
+            let logs = store.load_log_entries().expect("load logs");
+            assert_eq!(logs[1].payload["delivery"]["mode"], "provider");
+            assert_eq!(logs[1].payload["delivery"]["receipts"][0]["status"], "sent");
+        }
+    }
+
+    #[tokio::test]
+    async fn regression_runner_provider_outbound_duplicate_event_suppresses_second_send() {
+        let server = MockServer::start();
+        let sent = server.mock(|when, then| {
+            when.method(POST).path("/bottelegram-token/sendMessage");
+            then.status(200)
+                .header("content-type", "application/json")
+                .body(r#"{"ok":true,"result":{"message_id":42}}"#);
+        });
+
+        let temp = tempdir().expect("tempdir");
+        let mut config = build_config(temp.path());
+        config.outbound.mode = MultiChannelOutboundMode::Provider;
+        config.outbound.telegram_api_base = server.base_url();
+        config.outbound.telegram_bot_token = Some("telegram-token".to_string());
+        let event = sample_event(
+            MultiChannelTransport::Telegram,
+            "tg-dup-provider-1",
+            "chat-dup-provider",
+            "telegram-user-1",
+            "duplicate suppression",
+        );
+
+        let mut runtime = MultiChannelRuntime::new(config).expect("runtime");
+        let first = runtime
+            .run_once_events(std::slice::from_ref(&event))
+            .await
+            .expect("first run");
+        let second = runtime
+            .run_once_events(std::slice::from_ref(&event))
+            .await
+            .expect("second run");
+
+        assert_eq!(first.completed_events, 1);
+        assert_eq!(second.duplicate_skips, 1);
+        sent.assert_calls(1);
+    }
+
+    #[tokio::test]
+    async fn regression_runner_provider_outbound_retry_exhaustion_surfaces_reason_code() {
+        let server = MockServer::start();
+        let failed = server.mock(|when, then| {
+            when.method(POST).path("/bottelegram-token/sendMessage");
+            then.status(503)
+                .header("content-type", "application/json")
+                .body(r#"{"error":"unavailable"}"#);
+        });
+
+        let temp = tempdir().expect("tempdir");
+        let mut config = build_config(temp.path());
+        config.retry_max_attempts = 2;
+        config.outbound.mode = MultiChannelOutboundMode::Provider;
+        config.outbound.telegram_api_base = server.base_url();
+        config.outbound.telegram_bot_token = Some("telegram-token".to_string());
+        let event = sample_event(
+            MultiChannelTransport::Telegram,
+            "tg-retry-exhaust-1",
+            "chat-retry-exhaust",
+            "telegram-user-1",
+            "should fail delivery",
+        );
+
+        let mut runtime = MultiChannelRuntime::new(config.clone()).expect("runtime");
+        let summary = runtime.run_once_events(&[event]).await.expect("run once");
+        assert_eq!(summary.failed_events, 1);
+        assert_eq!(summary.retry_attempts, 1);
+        failed.assert_calls(2);
+
+        let store = ChannelStore::open(
+            &config.state_dir.join("channel-store"),
+            "telegram",
+            "chat-retry-exhaust",
+        )
+        .expect("open store");
+        let logs = store.load_log_entries().expect("load logs");
+        assert!(logs.iter().any(|entry| {
+            entry.payload.get("status").and_then(Value::as_str) == Some("delivery_failed")
+                && entry.payload.get("reason_code").and_then(Value::as_str)
+                    == Some("delivery_provider_unavailable")
+        }));
     }
 
     #[tokio::test]

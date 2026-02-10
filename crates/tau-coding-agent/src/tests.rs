@@ -91,9 +91,9 @@ use super::{
     validate_skills_prune_file_name, validate_slack_bridge_cli, validate_voice_contract_runner_cli,
     AuthCommand, AuthCommandConfig, BranchAliasCommand, BranchAliasFile, Cli, CliBashProfile,
     CliCommandFileErrorMode, CliCredentialStoreEncryptionMode, CliEventTemplateSchedule,
-    CliMultiChannelTransport, CliOrchestratorMode, CliOsSandboxMode, CliProviderAuthMode,
-    CliSessionImportMode, CliToolPolicyPreset, CliWebhookSignatureAlgorithm, ClientRoute,
-    CommandAction, CommandExecutionContext, CommandFileEntry, CommandFileReport,
+    CliMultiChannelOutboundMode, CliMultiChannelTransport, CliOrchestratorMode, CliOsSandboxMode,
+    CliProviderAuthMode, CliSessionImportMode, CliToolPolicyPreset, CliWebhookSignatureAlgorithm,
+    ClientRoute, CommandAction, CommandExecutionContext, CommandFileEntry, CommandFileReport,
     CredentialStoreData, CredentialStoreEncryptionMode, DoctorCheckOptions, DoctorCheckResult,
     DoctorCommandArgs, DoctorCommandConfig, DoctorCommandOutputFormat,
     DoctorMultiChannelReadinessConfig, DoctorProviderKeyStatus, DoctorStatus,
@@ -501,6 +501,17 @@ fn test_cli() -> Cli {
         multi_channel_processed_event_cap: 10_000,
         multi_channel_retry_max_attempts: 4,
         multi_channel_retry_base_delay_ms: 0,
+        multi_channel_retry_jitter_ms: 0,
+        multi_channel_outbound_mode: CliMultiChannelOutboundMode::ChannelStore,
+        multi_channel_outbound_max_chars: 1200,
+        multi_channel_outbound_http_timeout_ms: 5000,
+        multi_channel_telegram_api_base: "https://api.telegram.org".to_string(),
+        multi_channel_discord_api_base: "https://discord.com/api/v10".to_string(),
+        multi_channel_whatsapp_api_base: "https://graph.facebook.com/v20.0".to_string(),
+        multi_channel_telegram_bot_token: None,
+        multi_channel_discord_bot_token: None,
+        multi_channel_whatsapp_access_token: None,
+        multi_channel_whatsapp_phone_number_id: None,
         multi_agent_contract_runner: false,
         multi_agent_fixture: PathBuf::from(
             "crates/tau-coding-agent/testdata/multi-agent-contract/mixed-outcomes.json",
@@ -1416,6 +1427,25 @@ fn unit_cli_multi_channel_runner_flags_default_to_disabled() {
     assert_eq!(cli.multi_channel_processed_event_cap, 10_000);
     assert_eq!(cli.multi_channel_retry_max_attempts, 4);
     assert_eq!(cli.multi_channel_retry_base_delay_ms, 0);
+    assert_eq!(cli.multi_channel_retry_jitter_ms, 0);
+    assert_eq!(
+        cli.multi_channel_outbound_mode,
+        CliMultiChannelOutboundMode::ChannelStore
+    );
+    assert_eq!(cli.multi_channel_outbound_max_chars, 1200);
+    assert_eq!(cli.multi_channel_outbound_http_timeout_ms, 5000);
+    assert_eq!(
+        cli.multi_channel_telegram_api_base,
+        "https://api.telegram.org".to_string()
+    );
+    assert_eq!(
+        cli.multi_channel_discord_api_base,
+        "https://discord.com/api/v10".to_string()
+    );
+    assert_eq!(
+        cli.multi_channel_whatsapp_api_base,
+        "https://graph.facebook.com/v20.0".to_string()
+    );
 }
 
 #[test]
@@ -1435,6 +1465,20 @@ fn functional_cli_multi_channel_runner_flags_accept_explicit_overrides() {
         "7",
         "--multi-channel-retry-base-delay-ms",
         "25",
+        "--multi-channel-retry-jitter-ms",
+        "9",
+        "--multi-channel-outbound-mode",
+        "dry-run",
+        "--multi-channel-outbound-max-chars",
+        "333",
+        "--multi-channel-outbound-http-timeout-ms",
+        "8000",
+        "--multi-channel-telegram-api-base",
+        "https://telegram.internal",
+        "--multi-channel-discord-api-base",
+        "https://discord.internal/api",
+        "--multi-channel-whatsapp-api-base",
+        "https://whatsapp.internal",
     ]);
     assert!(cli.multi_channel_contract_runner);
     assert_eq!(
@@ -1449,6 +1493,25 @@ fn functional_cli_multi_channel_runner_flags_accept_explicit_overrides() {
     assert_eq!(cli.multi_channel_processed_event_cap, 25_000);
     assert_eq!(cli.multi_channel_retry_max_attempts, 7);
     assert_eq!(cli.multi_channel_retry_base_delay_ms, 25);
+    assert_eq!(cli.multi_channel_retry_jitter_ms, 9);
+    assert_eq!(
+        cli.multi_channel_outbound_mode,
+        CliMultiChannelOutboundMode::DryRun
+    );
+    assert_eq!(cli.multi_channel_outbound_max_chars, 333);
+    assert_eq!(cli.multi_channel_outbound_http_timeout_ms, 8000);
+    assert_eq!(
+        cli.multi_channel_telegram_api_base,
+        "https://telegram.internal".to_string()
+    );
+    assert_eq!(
+        cli.multi_channel_discord_api_base,
+        "https://discord.internal/api".to_string()
+    );
+    assert_eq!(
+        cli.multi_channel_whatsapp_api_base,
+        "https://whatsapp.internal".to_string()
+    );
 }
 
 #[test]
@@ -1480,6 +1543,46 @@ fn functional_cli_multi_channel_live_runner_flags_accept_explicit_overrides() {
     assert_eq!(cli.multi_channel_queue_limit, 40);
     assert_eq!(cli.multi_channel_processed_event_cap, 512);
     assert_eq!(cli.multi_channel_retry_max_attempts, 5);
+}
+
+#[test]
+fn functional_cli_multi_channel_outbound_provider_secret_flags_accept_overrides() {
+    let cli = parse_cli_with_stack([
+        "tau-rs",
+        "--multi-channel-live-runner",
+        "--multi-channel-live-ingress-dir",
+        ".tau/multi-channel/live-ingress",
+        "--multi-channel-outbound-mode",
+        "provider",
+        "--multi-channel-telegram-bot-token",
+        "telegram-secret",
+        "--multi-channel-discord-bot-token",
+        "discord-secret",
+        "--multi-channel-whatsapp-access-token",
+        "whatsapp-secret",
+        "--multi-channel-whatsapp-phone-number-id",
+        "15551234567",
+    ]);
+    assert_eq!(
+        cli.multi_channel_outbound_mode,
+        CliMultiChannelOutboundMode::Provider
+    );
+    assert_eq!(
+        cli.multi_channel_telegram_bot_token.as_deref(),
+        Some("telegram-secret")
+    );
+    assert_eq!(
+        cli.multi_channel_discord_bot_token.as_deref(),
+        Some("discord-secret")
+    );
+    assert_eq!(
+        cli.multi_channel_whatsapp_access_token.as_deref(),
+        Some("whatsapp-secret")
+    );
+    assert_eq!(
+        cli.multi_channel_whatsapp_phone_number_id.as_deref(),
+        Some("15551234567")
+    );
 }
 
 #[test]
@@ -13680,6 +13783,22 @@ fn regression_validate_multi_channel_contract_runner_cli_rejects_zero_limits() {
     assert!(retry_error
         .to_string()
         .contains("--multi-channel-retry-max-attempts must be greater than 0"));
+
+    cli.multi_channel_retry_max_attempts = 1;
+    cli.multi_channel_outbound_max_chars = 0;
+    let outbound_chunk_error =
+        validate_multi_channel_contract_runner_cli(&cli).expect_err("zero outbound chunk size");
+    assert!(outbound_chunk_error
+        .to_string()
+        .contains("--multi-channel-outbound-max-chars must be greater than 0"));
+
+    cli.multi_channel_outbound_max_chars = 1;
+    cli.multi_channel_outbound_http_timeout_ms = 0;
+    let outbound_timeout_error =
+        validate_multi_channel_contract_runner_cli(&cli).expect_err("zero outbound timeout");
+    assert!(outbound_timeout_error
+        .to_string()
+        .contains("--multi-channel-outbound-http-timeout-ms must be greater than 0"));
 }
 
 #[test]
@@ -13795,6 +13914,22 @@ fn regression_validate_multi_channel_live_runner_cli_rejects_zero_limits() {
     assert!(queue_error
         .to_string()
         .contains("--multi-channel-queue-limit must be greater than 0"));
+
+    cli.multi_channel_queue_limit = 1;
+    cli.multi_channel_outbound_max_chars = 0;
+    let chunk_error =
+        validate_multi_channel_live_runner_cli(&cli).expect_err("zero outbound chunk size");
+    assert!(chunk_error
+        .to_string()
+        .contains("--multi-channel-outbound-max-chars must be greater than 0"));
+
+    cli.multi_channel_outbound_max_chars = 1;
+    cli.multi_channel_outbound_http_timeout_ms = 0;
+    let timeout_error =
+        validate_multi_channel_live_runner_cli(&cli).expect_err("zero outbound timeout");
+    assert!(timeout_error
+        .to_string()
+        .contains("--multi-channel-outbound-http-timeout-ms must be greater than 0"));
 }
 
 #[test]
