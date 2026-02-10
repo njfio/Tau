@@ -1995,6 +1995,67 @@ pub(crate) struct Cli {
     pub(crate) gateway_state_dir: PathBuf,
 
     #[arg(
+        long = "custom-command-contract-runner",
+        env = "TAU_CUSTOM_COMMAND_CONTRACT_RUNNER",
+        default_value_t = false,
+        help = "Run fixture-driven no-code custom command runtime contract scenarios"
+    )]
+    pub(crate) custom_command_contract_runner: bool,
+
+    #[arg(
+        long = "custom-command-fixture",
+        env = "TAU_CUSTOM_COMMAND_FIXTURE",
+        default_value = "crates/tau-coding-agent/testdata/custom-command-contract/mixed-outcomes.json",
+        requires = "custom_command_contract_runner",
+        help = "Path to no-code custom command runtime contract fixture JSON"
+    )]
+    pub(crate) custom_command_fixture: PathBuf,
+
+    #[arg(
+        long = "custom-command-state-dir",
+        env = "TAU_CUSTOM_COMMAND_STATE_DIR",
+        default_value = ".tau/custom-command",
+        help = "Directory for no-code custom command runtime state and channel-store outputs"
+    )]
+    pub(crate) custom_command_state_dir: PathBuf,
+
+    #[arg(
+        long = "custom-command-queue-limit",
+        env = "TAU_CUSTOM_COMMAND_QUEUE_LIMIT",
+        default_value_t = 64,
+        requires = "custom_command_contract_runner",
+        help = "Maximum no-code custom command fixture cases processed per runtime cycle"
+    )]
+    pub(crate) custom_command_queue_limit: usize,
+
+    #[arg(
+        long = "custom-command-processed-case-cap",
+        env = "TAU_CUSTOM_COMMAND_PROCESSED_CASE_CAP",
+        default_value_t = 10_000,
+        requires = "custom_command_contract_runner",
+        help = "Maximum processed-case keys retained for no-code custom command duplicate suppression"
+    )]
+    pub(crate) custom_command_processed_case_cap: usize,
+
+    #[arg(
+        long = "custom-command-retry-max-attempts",
+        env = "TAU_CUSTOM_COMMAND_RETRY_MAX_ATTEMPTS",
+        default_value_t = 4,
+        requires = "custom_command_contract_runner",
+        help = "Maximum retry attempts for transient no-code custom command runtime failures"
+    )]
+    pub(crate) custom_command_retry_max_attempts: usize,
+
+    #[arg(
+        long = "custom-command-retry-base-delay-ms",
+        env = "TAU_CUSTOM_COMMAND_RETRY_BASE_DELAY_MS",
+        default_value_t = 0,
+        requires = "custom_command_contract_runner",
+        help = "Base backoff delay in milliseconds for no-code custom command runtime retries (0 disables delay)"
+    )]
+    pub(crate) custom_command_retry_base_delay_ms: u64,
+
+    #[arg(
         long = "github-issues-bridge",
         env = "TAU_GITHUB_ISSUES_BRIDGE",
         default_value_t = false,

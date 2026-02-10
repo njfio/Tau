@@ -14,6 +14,7 @@ mod codex_cli_client;
 mod commands;
 mod credentials;
 mod custom_command_contract;
+mod custom_command_runtime;
 mod dashboard_contract;
 mod dashboard_runtime;
 mod diagnostics_commands;
@@ -254,11 +255,11 @@ pub(crate) use crate::rpc_protocol::{
     execute_rpc_serve_ndjson_command, execute_rpc_validate_frame_command,
 };
 pub(crate) use crate::runtime_cli_validation::{
-    validate_dashboard_contract_runner_cli, validate_event_webhook_ingest_cli,
-    validate_events_runner_cli, validate_gateway_contract_runner_cli,
-    validate_github_issues_bridge_cli, validate_memory_contract_runner_cli,
-    validate_multi_agent_contract_runner_cli, validate_multi_channel_contract_runner_cli,
-    validate_slack_bridge_cli,
+    validate_custom_command_contract_runner_cli, validate_dashboard_contract_runner_cli,
+    validate_event_webhook_ingest_cli, validate_events_runner_cli,
+    validate_gateway_contract_runner_cli, validate_github_issues_bridge_cli,
+    validate_memory_contract_runner_cli, validate_multi_agent_contract_runner_cli,
+    validate_multi_channel_contract_runner_cli, validate_slack_bridge_cli,
 };
 pub(crate) use crate::runtime_loop::{
     resolve_prompt_input, run_interactive, run_plan_first_prompt_with_runtime_hooks, run_prompt,
@@ -367,6 +368,7 @@ pub(crate) use crate::trust_roots::{
     apply_trust_root_mutation_specs, apply_trust_root_mutations, load_trust_root_records,
     parse_trust_rotation_spec, parse_trusted_root_spec, save_trust_root_records, TrustedRootRecord,
 };
+use custom_command_runtime::{run_custom_command_contract_runner, CustomCommandRuntimeConfig};
 use dashboard_runtime::{run_dashboard_contract_runner, DashboardRuntimeConfig};
 use gateway_runtime::{run_gateway_contract_runner, GatewayRuntimeConfig};
 use github_issues::{run_github_issues_bridge, GithubIssuesBridgeRuntimeConfig};
