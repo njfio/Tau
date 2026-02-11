@@ -216,8 +216,6 @@ pub(crate) use crate::onboarding::execute_onboarding_command;
 pub(crate) use crate::orchestrator_bridge::run_plan_first_prompt;
 pub(crate) use crate::orchestrator_bridge::run_plan_first_prompt_with_policy_context;
 pub(crate) use crate::orchestrator_bridge::run_plan_first_prompt_with_policy_context_and_routing;
-#[cfg(test)]
-pub(crate) use tau_orchestrator::parse_numbered_plan_steps;
 pub(crate) use crate::package_manifest::{
     execute_package_activate_command, execute_package_activate_on_startup,
     execute_package_conflicts_command, execute_package_install_command,
@@ -414,6 +412,8 @@ pub(crate) use tau_access::trust_roots::{
 pub(crate) use tau_core::write_text_atomic;
 pub(crate) use tau_core::{current_unix_timestamp, current_unix_timestamp_ms, is_expired_unix};
 use tau_gateway::{run_gateway_contract_runner, GatewayRuntimeConfig};
+#[cfg(test)]
+pub(crate) use tau_orchestrator::parse_numbered_plan_steps;
 use voice_runtime::{run_voice_contract_runner, VoiceRuntimeConfig};
 
 pub(crate) fn normalize_daemon_subcommand_args(args: Vec<String>) -> Vec<String> {

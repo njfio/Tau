@@ -9,8 +9,7 @@ use tau_orchestrator::{
 };
 
 use crate::{
-    runtime_loop::run_prompt_with_cancellation, MultiAgentRouteTable, RenderOptions,
-    SessionRuntime,
+    runtime_loop::run_prompt_with_cancellation, MultiAgentRouteTable, RenderOptions, SessionRuntime,
 };
 
 struct OrchestratorRuntimeAdapter<'a> {
