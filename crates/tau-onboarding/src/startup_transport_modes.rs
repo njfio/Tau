@@ -157,6 +157,16 @@ pub struct StandardContractRunnerConfig {
     pub retry_base_delay_ms: u64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EventsRunnerCliConfig {
+    pub channel_store_root: PathBuf,
+    pub events_dir: PathBuf,
+    pub state_path: PathBuf,
+    pub poll_interval_ms: u64,
+    pub queue_limit: usize,
+    pub stale_immediate_max_age_seconds: u64,
+}
+
 pub fn build_browser_automation_contract_runner_config(
     cli: &Cli,
 ) -> BrowserAutomationContractRunnerConfig {
@@ -225,6 +235,17 @@ pub fn build_voice_contract_runner_config(cli: &Cli) -> StandardContractRunnerCo
         processed_case_cap: cli.voice_processed_case_cap.max(1),
         retry_max_attempts: cli.voice_retry_max_attempts.max(1),
         retry_base_delay_ms: cli.voice_retry_base_delay_ms,
+    }
+}
+
+pub fn build_events_runner_cli_config(cli: &Cli) -> EventsRunnerCliConfig {
+    EventsRunnerCliConfig {
+        channel_store_root: cli.channel_store_root.clone(),
+        events_dir: cli.events_dir.clone(),
+        state_path: cli.events_state_path.clone(),
+        poll_interval_ms: cli.events_poll_interval_ms.max(1),
+        queue_limit: cli.events_queue_limit.max(1),
+        stale_immediate_max_age_seconds: cli.events_stale_immediate_max_age_seconds,
     }
 }
 
@@ -435,14 +456,14 @@ mod tests {
     use super::{
         build_browser_automation_contract_runner_config,
         build_custom_command_contract_runner_config, build_dashboard_contract_runner_config,
-        build_deployment_contract_runner_config, build_gateway_contract_runner_config,
-        build_gateway_openresponses_server_config, build_memory_contract_runner_config,
-        build_multi_agent_contract_runner_config, build_multi_channel_contract_runner_config,
-        build_multi_channel_live_connectors_config, build_multi_channel_live_runner_config,
-        build_multi_channel_media_config, build_multi_channel_outbound_config,
-        build_multi_channel_telemetry_config, build_voice_contract_runner_config,
-        map_gateway_openresponses_auth_mode, resolve_gateway_openresponses_auth,
-        resolve_multi_channel_outbound_secret,
+        build_deployment_contract_runner_config, build_events_runner_cli_config,
+        build_gateway_contract_runner_config, build_gateway_openresponses_server_config,
+        build_memory_contract_runner_config, build_multi_agent_contract_runner_config,
+        build_multi_channel_contract_runner_config, build_multi_channel_live_connectors_config,
+        build_multi_channel_live_runner_config, build_multi_channel_media_config,
+        build_multi_channel_outbound_config, build_multi_channel_telemetry_config,
+        build_voice_contract_runner_config, map_gateway_openresponses_auth_mode,
+        resolve_gateway_openresponses_auth, resolve_multi_channel_outbound_secret,
     };
     use async_trait::async_trait;
     use clap::Parser;
@@ -674,6 +695,17 @@ mod tests {
         assert_eq!(voice.queue_limit, 1);
         assert_eq!(voice.processed_case_cap, 1);
         assert_eq!(voice.retry_max_attempts, 1);
+    }
+
+    #[test]
+    fn regression_build_events_runner_cli_config_enforces_minimums() {
+        let mut cli = parse_cli_with_stack();
+        cli.events_poll_interval_ms = 0;
+        cli.events_queue_limit = 0;
+
+        let config = build_events_runner_cli_config(&cli);
+        assert_eq!(config.poll_interval_ms, 1);
+        assert_eq!(config.queue_limit, 1);
     }
 
     #[test]
@@ -940,6 +972,26 @@ mod tests {
         assert_eq!(voice.processed_case_cap, 4_444);
         assert_eq!(voice.retry_max_attempts, 9);
         assert_eq!(voice.retry_base_delay_ms, 12);
+    }
+
+    #[test]
+    fn integration_build_events_runner_cli_config_preserves_runtime_fields() {
+        let temp = tempdir().expect("tempdir");
+        let mut cli = parse_cli_with_stack();
+        cli.channel_store_root = temp.path().join("channel-store");
+        cli.events_dir = temp.path().join("events");
+        cli.events_state_path = temp.path().join("events-state.json");
+        cli.events_poll_interval_ms = 2_500;
+        cli.events_queue_limit = 77;
+        cli.events_stale_immediate_max_age_seconds = 9_999;
+
+        let config = build_events_runner_cli_config(&cli);
+        assert_eq!(config.channel_store_root, cli.channel_store_root);
+        assert_eq!(config.events_dir, cli.events_dir);
+        assert_eq!(config.state_path, cli.events_state_path);
+        assert_eq!(config.poll_interval_ms, 2_500);
+        assert_eq!(config.queue_limit, 77);
+        assert_eq!(config.stale_immediate_max_age_seconds, 9_999);
     }
 
     #[test]
