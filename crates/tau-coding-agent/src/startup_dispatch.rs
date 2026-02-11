@@ -1,6 +1,7 @@
 use super::*;
 use tau_onboarding::startup_dispatch::{
-    build_startup_runtime_dispatch_context, StartupRuntimeDispatchContext,
+    build_startup_runtime_dispatch_context, resolve_startup_model_runtime_from_cli,
+    StartupModelRuntimeResolution, StartupRuntimeDispatchContext,
 };
 
 pub(crate) async fn run_cli(cli: Cli) -> Result<()> {
@@ -8,14 +9,29 @@ pub(crate) async fn run_cli(cli: Cli) -> Result<()> {
         return Ok(());
     }
 
-    let StartupModelResolution {
+    let StartupModelRuntimeResolution {
         model_ref,
         fallback_model_refs,
-    } = resolve_startup_models(&cli)?;
-    let model_catalog = resolve_startup_model_catalog(&cli).await?;
-    validate_startup_model_catalog(&model_catalog, &model_ref, &fallback_model_refs)?;
-
-    let client = build_client_with_fallbacks(&cli, &model_ref, &fallback_model_refs)?;
+        model_catalog,
+        client,
+    } = resolve_startup_model_runtime_from_cli(
+        &cli,
+        |cli| -> Result<(ModelRef, Vec<ModelRef>)> {
+            let StartupModelResolution {
+                model_ref,
+                fallback_model_refs,
+            } = resolve_startup_models(cli)?;
+            Ok((model_ref, fallback_model_refs))
+        },
+        |cli| Box::pin(resolve_startup_model_catalog(cli)),
+        |model_catalog, model_ref, fallback_model_refs: &Vec<ModelRef>| {
+            validate_startup_model_catalog(model_catalog, model_ref, fallback_model_refs)
+        },
+        |cli, model_ref, fallback_model_refs: &Vec<ModelRef>| {
+            build_client_with_fallbacks(cli, model_ref, fallback_model_refs)
+        },
+    )
+    .await?;
     let skills_bootstrap = run_startup_skills_bootstrap(&cli).await?;
     let startup_package_activation = execute_package_activate_on_startup(&cli)?;
     let StartupRuntimeDispatchContext {
