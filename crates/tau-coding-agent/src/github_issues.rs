@@ -59,9 +59,11 @@ use tau_github_issues::issue_render::{
     IssueArtifactAttachmentView, IssueEventPromptAttachmentView,
 };
 use tau_github_issues::issue_runtime_helpers::{
+    issue_session_id as issue_shared_session_id,
     normalize_artifact_retention_days as normalize_shared_artifact_retention_days,
     normalize_relative_channel_path as normalize_shared_relative_channel_path,
     render_issue_artifact_pointer_line as render_shared_issue_artifact_pointer_line,
+    session_path_for_issue as shared_session_path_for_issue,
 };
 use tau_session::SessionStore;
 use tau_session::{parse_session_search_args, search_session_entries};
@@ -5763,13 +5765,11 @@ fn collect_issue_events(
 }
 
 fn session_path_for_issue(repo_state_dir: &Path, issue_number: u64) -> PathBuf {
-    repo_state_dir
-        .join("sessions")
-        .join(format!("issue-{}.jsonl", issue_number))
+    shared_session_path_for_issue(repo_state_dir, issue_number)
 }
 
 fn issue_session_id(issue_number: u64) -> String {
-    format!("issue-{}", issue_number)
+    issue_shared_session_id(issue_number)
 }
 
 fn parse_rfc3339_to_unix_ms(raw: &str) -> Option<u64> {

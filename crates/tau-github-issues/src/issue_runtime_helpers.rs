@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 pub fn normalize_relative_channel_path(
     path: &Path,
@@ -38,11 +38,21 @@ pub fn render_issue_artifact_pointer_line(
     format!("{label}: id=`{artifact_id}` path=`{relative_path}` bytes=`{bytes}`")
 }
 
+pub fn session_path_for_issue(repo_state_dir: &Path, issue_number: u64) -> PathBuf {
+    repo_state_dir
+        .join("sessions")
+        .join(format!("issue-{issue_number}.jsonl"))
+}
+
+pub fn issue_session_id(issue_number: u64) -> String {
+    format!("issue-{issue_number}")
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        normalize_artifact_retention_days, normalize_relative_channel_path,
-        render_issue_artifact_pointer_line,
+        issue_session_id, normalize_artifact_retention_days, normalize_relative_channel_path,
+        render_issue_artifact_pointer_line, session_path_for_issue,
     };
     use std::path::Path;
 
@@ -82,5 +92,17 @@ mod tests {
         let root_path_error = normalize_relative_channel_path(root, root, "artifact")
             .expect_err("root path should fail");
         assert!(root_path_error.contains("derived empty relative path"));
+    }
+
+    #[test]
+    fn unit_issue_session_id_formats_issue_identifier() {
+        assert_eq!(issue_session_id(42), "issue-42");
+    }
+
+    #[test]
+    fn integration_session_path_for_issue_builds_expected_repo_relative_path() {
+        let root = Path::new("/tmp/repo");
+        let path = session_path_for_issue(root, 9);
+        assert_eq!(path, Path::new("/tmp/repo/sessions/issue-9.jsonl"));
     }
 }
