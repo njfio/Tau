@@ -26,7 +26,6 @@ mod memory_contract;
 mod model_catalog;
 mod multi_agent_router;
 mod observability_loggers;
-mod onboarding;
 mod orchestrator_bridge;
 mod package_manifest;
 mod project_index;
@@ -41,16 +40,10 @@ mod skills;
 mod skills_commands;
 mod slack;
 mod slack_helpers;
-mod startup_config;
 mod startup_dispatch;
 mod startup_local_runtime;
 mod startup_model_catalog;
-mod startup_model_resolution;
-mod startup_policy;
 mod startup_preflight;
-mod startup_prompt_composition;
-mod startup_resolution;
-mod startup_skills_bootstrap;
 mod startup_transport_modes;
 mod tool_policy_config;
 mod tools;
@@ -150,7 +143,6 @@ pub(crate) use crate::multi_agent_router::{load_multi_agent_route_table, MultiAg
 #[cfg(test)]
 pub(crate) use crate::observability_loggers::tool_audit_event_json;
 pub(crate) use crate::observability_loggers::{PromptTelemetryLogger, ToolAuditLogger};
-pub(crate) use crate::onboarding::execute_onboarding_command;
 pub(crate) use crate::orchestrator_bridge::run_plan_first_prompt;
 pub(crate) use crate::orchestrator_bridge::run_plan_first_prompt_with_policy_context;
 pub(crate) use crate::orchestrator_bridge::run_plan_first_prompt_with_policy_context_and_routing;
@@ -223,9 +215,6 @@ pub(crate) use crate::skills_commands::{
 pub(crate) use crate::skills_commands::{
     render_skills_lock_write_success, render_skills_sync_drift_details,
 };
-pub(crate) use crate::startup_config::build_auth_command_config;
-#[cfg(test)]
-pub(crate) use crate::startup_config::build_profile_defaults;
 use crate::startup_dispatch::run_cli;
 #[cfg(test)]
 pub(crate) use crate::startup_local_runtime::register_runtime_extension_tool_hook_subscriber;
@@ -233,16 +222,7 @@ pub(crate) use crate::startup_local_runtime::{run_local_runtime, LocalRuntimeCon
 pub(crate) use crate::startup_model_catalog::{
     resolve_startup_model_catalog, validate_startup_model_catalog,
 };
-pub(crate) use crate::startup_model_resolution::{resolve_startup_models, StartupModelResolution};
 pub(crate) use crate::startup_preflight::execute_startup_preflight;
-#[cfg(test)]
-pub(crate) use crate::startup_prompt_composition::compose_startup_system_prompt;
-#[cfg(test)]
-pub(crate) use crate::startup_resolution::apply_trust_root_mutations;
-#[cfg(test)]
-pub(crate) use crate::startup_resolution::resolve_system_prompt;
-pub(crate) use crate::startup_resolution::{ensure_non_empty_text, resolve_skill_trust_roots};
-pub(crate) use crate::startup_skills_bootstrap::run_startup_skills_bootstrap;
 pub(crate) use crate::startup_transport_modes::run_transport_mode_if_requested;
 pub(crate) use crate::tool_policy_config::build_tool_policy;
 #[cfg(test)]
@@ -314,6 +294,23 @@ pub(crate) use tau_diagnostics::{execute_doctor_command, execute_doctor_command_
 pub(crate) use tau_multi_channel::build_multi_channel_incident_timeline_report;
 #[cfg(test)]
 pub(crate) use tau_multi_channel::build_multi_channel_route_inspect_report;
+pub(crate) use tau_onboarding::onboarding_command::execute_onboarding_command;
+pub(crate) use tau_onboarding::startup_config::build_auth_command_config;
+#[cfg(test)]
+pub(crate) use tau_onboarding::startup_config::build_profile_defaults;
+pub(crate) use tau_onboarding::startup_model_resolution::{
+    resolve_startup_models, StartupModelResolution,
+};
+#[cfg(test)]
+pub(crate) use tau_onboarding::startup_prompt_composition::compose_startup_system_prompt;
+#[cfg(test)]
+pub(crate) use tau_onboarding::startup_resolution::apply_trust_root_mutations;
+#[cfg(test)]
+pub(crate) use tau_onboarding::startup_resolution::resolve_system_prompt;
+pub(crate) use tau_onboarding::startup_resolution::{
+    ensure_non_empty_text, resolve_skill_trust_roots,
+};
+pub(crate) use tau_onboarding::startup_skills_bootstrap::run_startup_skills_bootstrap;
 #[cfg(test)]
 pub(crate) use tau_orchestrator::parse_numbered_plan_steps;
 #[cfg(test)]
