@@ -79,6 +79,11 @@ use tau_github_issues::issue_runtime_helpers::{
     session_path_for_issue as shared_session_path_for_issue, sha256_hex as shared_sha256_hex,
     short_key_hash as shared_short_key_hash,
 };
+use tau_github_issues::issue_session_helpers::{
+    compact_issue_session as shared_compact_issue_session,
+    ensure_issue_session_initialized as shared_ensure_issue_session_initialized,
+    reset_issue_session_files as shared_reset_issue_session_files,
+};
 use tau_session::SessionStore;
 use tau_session::{parse_session_search_args, search_session_entries};
 
@@ -5455,15 +5460,7 @@ fn compact_issue_session(
     lock_wait_ms: u64,
     lock_stale_ms: u64,
 ) -> Result<tau_session::CompactReport> {
-    if let Some(parent) = session_path.parent() {
-        if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent)
-                .with_context(|| format!("failed to create {}", parent.display()))?;
-        }
-    }
-    let mut store = SessionStore::load(session_path)?;
-    store.set_lock_policy(lock_wait_ms.max(1), lock_stale_ms);
-    store.compact_to_lineage(store.head_id())
+    shared_compact_issue_session(session_path, lock_wait_ms, lock_stale_ms)
 }
 
 fn ensure_issue_session_initialized(
@@ -5472,35 +5469,16 @@ fn ensure_issue_session_initialized(
     lock_wait_ms: u64,
     lock_stale_ms: u64,
 ) -> Result<(usize, usize, Option<u64>)> {
-    if let Some(parent) = session_path.parent() {
-        if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent)
-                .with_context(|| format!("failed to create {}", parent.display()))?;
-        }
-    }
-    let mut store = SessionStore::load(session_path)?;
-    store.set_lock_policy(lock_wait_ms.max(1), lock_stale_ms);
-    let before_entries = store.entries().len();
-    let head = store.ensure_initialized(system_prompt)?;
-    let after_entries = store.entries().len();
-    Ok((before_entries, after_entries, head))
+    shared_ensure_issue_session_initialized(
+        session_path,
+        system_prompt,
+        lock_wait_ms,
+        lock_stale_ms,
+    )
 }
 
 fn reset_issue_session_files(session_path: &Path) -> Result<(bool, bool)> {
-    let mut removed_session = false;
-    if session_path.exists() {
-        std::fs::remove_file(session_path)
-            .with_context(|| format!("failed to remove {}", session_path.display()))?;
-        removed_session = true;
-    }
-    let lock_path = session_path.with_extension("lock");
-    let mut removed_lock = false;
-    if lock_path.exists() {
-        std::fs::remove_file(&lock_path)
-            .with_context(|| format!("failed to remove {}", lock_path.display()))?;
-        removed_lock = true;
-    }
-    Ok((removed_session, removed_lock))
+    shared_reset_issue_session_files(session_path)
 }
 
 fn prompt_status_label(status: PromptRunStatus) -> &'static str {
