@@ -47,6 +47,13 @@ pub enum PromptEntryRuntimeMode {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PromptOrCommandFileEntryOutcome {
+    PromptHandled,
+    CommandFile(PathBuf),
+    None,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SessionBootstrapOutcome<TSession, TMessage> {
     pub runtime: TSession,
     pub lineage: Vec<TMessage>,
@@ -175,6 +182,25 @@ where
     };
     run_command_file(command_file_path)?;
     Ok(true)
+}
+
+pub async fn execute_prompt_or_command_file_entry_mode<FRunPrompt, FutPrompt>(
+    entry_mode: &LocalRuntimeEntryMode,
+    run_prompt_mode: FRunPrompt,
+) -> Result<PromptOrCommandFileEntryOutcome>
+where
+    FRunPrompt: FnOnce(PromptEntryRuntimeMode) -> FutPrompt,
+    FutPrompt: Future<Output = Result<()>>,
+{
+    if execute_prompt_entry_mode(entry_mode, run_prompt_mode).await? {
+        return Ok(PromptOrCommandFileEntryOutcome::PromptHandled);
+    }
+    if let Some(path) = resolve_command_file_entry_path(entry_mode) {
+        return Ok(PromptOrCommandFileEntryOutcome::CommandFile(
+            path.to_path_buf(),
+        ));
+    }
+    Ok(PromptOrCommandFileEntryOutcome::None)
 }
 
 pub fn resolve_session_runtime<TSession, TMessage, FInit, FReplace>(
@@ -406,14 +432,16 @@ mod tests {
     use super::{
         build_local_runtime_doctor_config, build_local_runtime_extension_bootstrap,
         execute_command_file_entry_mode, execute_prompt_entry_mode,
-        extension_tool_hook_diagnostics, extension_tool_hook_dispatch,
-        register_runtime_event_reporter_if_configured, register_runtime_event_reporter_subscriber,
+        execute_prompt_or_command_file_entry_mode, extension_tool_hook_diagnostics,
+        extension_tool_hook_dispatch, register_runtime_event_reporter_if_configured,
+        register_runtime_event_reporter_subscriber,
         register_runtime_extension_tool_hook_subscriber, register_runtime_extension_tools,
         register_runtime_json_event_subscriber, resolve_command_file_entry_path,
         resolve_extension_runtime_registrations, resolve_local_runtime_entry_mode,
         resolve_orchestrator_route_table, resolve_prompt_entry_runtime_mode,
         resolve_prompt_runtime_mode, resolve_session_runtime, LocalRuntimeEntryMode,
-        PromptEntryRuntimeMode, PromptRuntimeMode, SessionBootstrapOutcome,
+        PromptEntryRuntimeMode, PromptOrCommandFileEntryOutcome, PromptRuntimeMode,
+        SessionBootstrapOutcome,
     };
     use async_trait::async_trait;
     use clap::Parser;
@@ -882,6 +910,64 @@ mod tests {
             error
                 .to_string()
                 .contains("forced command-file dispatch failure"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn unit_execute_prompt_or_command_file_entry_mode_returns_none_for_interactive() {
+        let mode = LocalRuntimeEntryMode::Interactive;
+        let outcome = execute_prompt_or_command_file_entry_mode(&mode, |_| async {
+            panic!("interactive mode should not execute prompt callback")
+        })
+        .await
+        .expect("interactive dispatch should succeed");
+
+        assert_eq!(outcome, PromptOrCommandFileEntryOutcome::None);
+    }
+
+    #[tokio::test]
+    async fn functional_execute_prompt_or_command_file_entry_mode_reports_prompt_handled() {
+        let mode = LocalRuntimeEntryMode::Prompt("prompt text".to_string());
+        let outcome = execute_prompt_or_command_file_entry_mode(&mode, |prompt_mode| async move {
+            assert_eq!(
+                prompt_mode,
+                PromptEntryRuntimeMode::Prompt("prompt text".to_string())
+            );
+            Ok(())
+        })
+        .await
+        .expect("prompt dispatch should succeed");
+
+        assert_eq!(outcome, PromptOrCommandFileEntryOutcome::PromptHandled);
+    }
+
+    #[tokio::test]
+    async fn integration_execute_prompt_or_command_file_entry_mode_returns_command_path() {
+        let mode = LocalRuntimeEntryMode::CommandFile(PathBuf::from("commands.txt"));
+        let outcome = execute_prompt_or_command_file_entry_mode(&mode, |_| async {
+            panic!("command-file mode should not execute prompt callback")
+        })
+        .await
+        .expect("command path resolution should succeed");
+
+        assert_eq!(
+            outcome,
+            PromptOrCommandFileEntryOutcome::CommandFile(PathBuf::from("commands.txt"))
+        );
+    }
+
+    #[tokio::test]
+    async fn regression_execute_prompt_or_command_file_entry_mode_propagates_prompt_errors() {
+        let mode = LocalRuntimeEntryMode::Prompt("prompt text".to_string());
+        let error = execute_prompt_or_command_file_entry_mode(&mode, |_prompt_mode| async {
+            Err(anyhow::anyhow!("forced merged dispatch failure"))
+        })
+        .await
+        .expect_err("prompt callback errors should propagate");
+
+        assert!(
+            error.to_string().contains("forced merged dispatch failure"),
             "unexpected error: {error}"
         );
     }

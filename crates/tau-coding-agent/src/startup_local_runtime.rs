@@ -5,14 +5,13 @@ use crate::extension_manifest::{
 use tau_onboarding::startup_local_runtime::{
     build_local_runtime_doctor_config as build_onboarding_local_runtime_doctor_config,
     build_local_runtime_extension_bootstrap as build_onboarding_local_runtime_extension_bootstrap,
-    execute_command_file_entry_mode as execute_onboarding_command_file_entry_mode,
-    execute_prompt_entry_mode as execute_onboarding_prompt_entry_mode,
+    execute_prompt_or_command_file_entry_mode as execute_onboarding_prompt_or_command_file_entry_mode,
     register_runtime_event_reporter_if_configured as register_onboarding_runtime_event_reporter_if_configured,
     register_runtime_extension_tool_hook_subscriber as register_onboarding_runtime_extension_tool_hook_subscriber,
     register_runtime_extension_tools as register_onboarding_runtime_extension_tools,
     register_runtime_json_event_subscriber as register_onboarding_runtime_json_event_subscriber,
     resolve_local_runtime_entry_mode, resolve_session_runtime, LocalRuntimeExtensionBootstrap,
-    PromptEntryRuntimeMode, SessionBootstrapOutcome,
+    PromptEntryRuntimeMode, PromptOrCommandFileEntryOutcome, SessionBootstrapOutcome,
 };
 
 pub(crate) struct LocalRuntimeConfig<'a> {
@@ -134,47 +133,6 @@ pub(crate) async fn run_local_runtime(config: LocalRuntimeConfig<'_>) -> Result<
         cli.orchestrator_mode == CliOrchestratorMode::PlanFirst,
         cli.command_file.as_deref(),
     );
-    if execute_onboarding_prompt_entry_mode(&entry_mode, |prompt_mode| async {
-        match prompt_mode {
-            PromptEntryRuntimeMode::PlanFirstPrompt(prompt) => {
-                run_plan_first_prompt_with_runtime_hooks(
-                    &mut agent,
-                    &mut session_runtime,
-                    &prompt,
-                    cli.turn_timeout_ms,
-                    render_options,
-                    cli.orchestrator_max_plan_steps,
-                    cli.orchestrator_max_delegated_steps,
-                    cli.orchestrator_max_executor_response_chars,
-                    cli.orchestrator_max_delegated_step_response_chars,
-                    cli.orchestrator_max_delegated_total_response_chars,
-                    cli.orchestrator_delegate_steps,
-                    &orchestrator_route_table,
-                    orchestrator_route_trace_log,
-                    tool_policy_json,
-                    &extension_runtime_hooks,
-                )
-                .await?;
-            }
-            PromptEntryRuntimeMode::Prompt(prompt) => {
-                run_prompt(
-                    &mut agent,
-                    &mut session_runtime,
-                    &prompt,
-                    cli.turn_timeout_ms,
-                    render_options,
-                    &extension_runtime_hooks,
-                )
-                .await?;
-            }
-        }
-        Ok(())
-    })
-    .await?
-    {
-        return Ok(());
-    }
-
     let skills_sync_command_config = SkillsSyncCommandConfig {
         skills_dir: skills_dir.to_path_buf(),
         default_lock_path: skills_lock_path.to_path_buf(),
@@ -216,18 +174,57 @@ pub(crate) async fn run_local_runtime(config: LocalRuntimeConfig<'_>) -> Result<
         command_context,
     };
 
-    if execute_onboarding_command_file_entry_mode(&entry_mode, |command_file_path| {
-        execute_command_file(
-            command_file_path,
-            cli.command_file_error_mode,
-            &mut agent,
-            &mut session_runtime,
-            command_context,
-        )?;
+    match execute_onboarding_prompt_or_command_file_entry_mode(&entry_mode, |prompt_mode| async {
+        match prompt_mode {
+            PromptEntryRuntimeMode::PlanFirstPrompt(prompt) => {
+                run_plan_first_prompt_with_runtime_hooks(
+                    &mut agent,
+                    &mut session_runtime,
+                    &prompt,
+                    cli.turn_timeout_ms,
+                    render_options,
+                    cli.orchestrator_max_plan_steps,
+                    cli.orchestrator_max_delegated_steps,
+                    cli.orchestrator_max_executor_response_chars,
+                    cli.orchestrator_max_delegated_step_response_chars,
+                    cli.orchestrator_max_delegated_total_response_chars,
+                    cli.orchestrator_delegate_steps,
+                    &orchestrator_route_table,
+                    orchestrator_route_trace_log,
+                    tool_policy_json,
+                    &extension_runtime_hooks,
+                )
+                .await?;
+            }
+            PromptEntryRuntimeMode::Prompt(prompt) => {
+                run_prompt(
+                    &mut agent,
+                    &mut session_runtime,
+                    &prompt,
+                    cli.turn_timeout_ms,
+                    render_options,
+                    &extension_runtime_hooks,
+                )
+                .await?;
+            }
+        }
         Ok(())
-    })? {
-        return Ok(());
-    }
+    })
+    .await?
+    {
+        PromptOrCommandFileEntryOutcome::PromptHandled => return Ok(()),
+        PromptOrCommandFileEntryOutcome::CommandFile(command_file_path) => {
+            execute_command_file(
+                &command_file_path,
+                cli.command_file_error_mode,
+                &mut agent,
+                &mut session_runtime,
+                command_context,
+            )?;
+            return Ok(());
+        }
+        PromptOrCommandFileEntryOutcome::None => {}
+    };
 
     run_interactive(agent, session_runtime, interactive_config).await
 }
