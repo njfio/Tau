@@ -5,6 +5,7 @@ use crate::channel_adapters::{
 use crate::validate_multi_channel_live_connectors_runner_cli;
 use std::sync::Arc;
 use tau_onboarding::startup_transport_modes::{
+    build_browser_automation_contract_runner_config, build_memory_contract_runner_config,
     run_gateway_contract_runner_if_requested, run_gateway_openresponses_server_if_requested,
     run_multi_agent_contract_runner_if_requested, run_multi_channel_contract_runner_if_requested,
     run_multi_channel_live_connectors_if_requested, run_multi_channel_live_runner_if_requested,
@@ -226,29 +227,31 @@ pub(crate) async fn run_transport_mode_if_requested(
     }
 
     if cli.browser_automation_contract_runner {
+        let config = build_browser_automation_contract_runner_config(cli);
         run_browser_automation_contract_runner(BrowserAutomationRuntimeConfig {
-            fixture_path: cli.browser_automation_fixture.clone(),
-            state_dir: cli.browser_automation_state_dir.clone(),
-            queue_limit: cli.browser_automation_queue_limit.max(1),
-            processed_case_cap: cli.browser_automation_processed_case_cap.max(1),
-            retry_max_attempts: cli.browser_automation_retry_max_attempts.max(1),
-            retry_base_delay_ms: cli.browser_automation_retry_base_delay_ms,
-            action_timeout_ms: cli.browser_automation_action_timeout_ms.max(1),
-            max_actions_per_case: cli.browser_automation_max_actions_per_case.max(1),
-            allow_unsafe_actions: cli.browser_automation_allow_unsafe_actions,
+            fixture_path: config.fixture_path,
+            state_dir: config.state_dir,
+            queue_limit: config.queue_limit,
+            processed_case_cap: config.processed_case_cap,
+            retry_max_attempts: config.retry_max_attempts,
+            retry_base_delay_ms: config.retry_base_delay_ms,
+            action_timeout_ms: config.action_timeout_ms,
+            max_actions_per_case: config.max_actions_per_case,
+            allow_unsafe_actions: config.allow_unsafe_actions,
         })
         .await?;
         return Ok(true);
     }
 
     if cli.memory_contract_runner {
+        let config = build_memory_contract_runner_config(cli);
         run_memory_contract_runner(MemoryRuntimeConfig {
-            fixture_path: cli.memory_fixture.clone(),
-            state_dir: cli.memory_state_dir.clone(),
-            queue_limit: cli.memory_queue_limit.max(1),
-            processed_case_cap: cli.memory_processed_case_cap.max(1),
-            retry_max_attempts: cli.memory_retry_max_attempts.max(1),
-            retry_base_delay_ms: cli.memory_retry_base_delay_ms,
+            fixture_path: config.fixture_path,
+            state_dir: config.state_dir,
+            queue_limit: config.queue_limit,
+            processed_case_cap: config.processed_case_cap,
+            retry_max_attempts: config.retry_max_attempts,
+            retry_base_delay_ms: config.retry_base_delay_ms,
         })
         .await?;
         return Ok(true);

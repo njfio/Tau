@@ -1,4 +1,5 @@
 use anyhow::Result;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use tau_ai::{LlmClient, ModelRef};
@@ -131,6 +132,56 @@ pub async fn run_multi_agent_contract_runner_if_requested(cli: &Cli) -> Result<b
     let config = build_multi_agent_contract_runner_config(cli);
     tau_orchestrator::multi_agent_runtime::run_multi_agent_contract_runner(config).await?;
     Ok(true)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BrowserAutomationContractRunnerConfig {
+    pub fixture_path: PathBuf,
+    pub state_dir: PathBuf,
+    pub queue_limit: usize,
+    pub processed_case_cap: usize,
+    pub retry_max_attempts: usize,
+    pub retry_base_delay_ms: u64,
+    pub action_timeout_ms: u64,
+    pub max_actions_per_case: usize,
+    pub allow_unsafe_actions: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StandardContractRunnerConfig {
+    pub fixture_path: PathBuf,
+    pub state_dir: PathBuf,
+    pub queue_limit: usize,
+    pub processed_case_cap: usize,
+    pub retry_max_attempts: usize,
+    pub retry_base_delay_ms: u64,
+}
+
+pub fn build_browser_automation_contract_runner_config(
+    cli: &Cli,
+) -> BrowserAutomationContractRunnerConfig {
+    BrowserAutomationContractRunnerConfig {
+        fixture_path: cli.browser_automation_fixture.clone(),
+        state_dir: cli.browser_automation_state_dir.clone(),
+        queue_limit: cli.browser_automation_queue_limit.max(1),
+        processed_case_cap: cli.browser_automation_processed_case_cap.max(1),
+        retry_max_attempts: cli.browser_automation_retry_max_attempts.max(1),
+        retry_base_delay_ms: cli.browser_automation_retry_base_delay_ms,
+        action_timeout_ms: cli.browser_automation_action_timeout_ms.max(1),
+        max_actions_per_case: cli.browser_automation_max_actions_per_case.max(1),
+        allow_unsafe_actions: cli.browser_automation_allow_unsafe_actions,
+    }
+}
+
+pub fn build_memory_contract_runner_config(cli: &Cli) -> StandardContractRunnerConfig {
+    StandardContractRunnerConfig {
+        fixture_path: cli.memory_fixture.clone(),
+        state_dir: cli.memory_state_dir.clone(),
+        queue_limit: cli.memory_queue_limit.max(1),
+        processed_case_cap: cli.memory_processed_case_cap.max(1),
+        retry_max_attempts: cli.memory_retry_max_attempts.max(1),
+        retry_base_delay_ms: cli.memory_retry_base_delay_ms,
+    }
 }
 
 pub fn build_multi_channel_contract_runner_config(
@@ -338,7 +389,8 @@ fn resolve_non_empty_cli_value(value: Option<&str>) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_gateway_contract_runner_config, build_gateway_openresponses_server_config,
+        build_browser_automation_contract_runner_config, build_gateway_contract_runner_config,
+        build_gateway_openresponses_server_config, build_memory_contract_runner_config,
         build_multi_agent_contract_runner_config, build_multi_channel_contract_runner_config,
         build_multi_channel_live_connectors_config, build_multi_channel_live_runner_config,
         build_multi_channel_media_config, build_multi_channel_outbound_config,
@@ -513,6 +565,36 @@ mod tests {
     }
 
     #[test]
+    fn regression_build_browser_automation_contract_runner_config_enforces_minimums() {
+        let mut cli = parse_cli_with_stack();
+        cli.browser_automation_queue_limit = 0;
+        cli.browser_automation_processed_case_cap = 0;
+        cli.browser_automation_retry_max_attempts = 0;
+        cli.browser_automation_action_timeout_ms = 0;
+        cli.browser_automation_max_actions_per_case = 0;
+
+        let config = build_browser_automation_contract_runner_config(&cli);
+        assert_eq!(config.queue_limit, 1);
+        assert_eq!(config.processed_case_cap, 1);
+        assert_eq!(config.retry_max_attempts, 1);
+        assert_eq!(config.action_timeout_ms, 1);
+        assert_eq!(config.max_actions_per_case, 1);
+    }
+
+    #[test]
+    fn regression_build_memory_contract_runner_config_enforces_minimums() {
+        let mut cli = parse_cli_with_stack();
+        cli.memory_queue_limit = 0;
+        cli.memory_processed_case_cap = 0;
+        cli.memory_retry_max_attempts = 0;
+
+        let config = build_memory_contract_runner_config(&cli);
+        assert_eq!(config.queue_limit, 1);
+        assert_eq!(config.processed_case_cap, 1);
+        assert_eq!(config.retry_max_attempts, 1);
+    }
+
+    #[test]
     fn integration_build_gateway_openresponses_server_config_preserves_runtime_fields() {
         let mut cli = parse_cli_with_stack();
         cli.gateway_openresponses_auth_mode = CliGatewayOpenResponsesAuthMode::PasswordSession;
@@ -664,6 +746,52 @@ mod tests {
         assert_eq!(config.processed_case_cap, 3_200);
         assert_eq!(config.retry_max_attempts, 8);
         assert_eq!(config.retry_base_delay_ms, 250);
+    }
+
+    #[test]
+    fn integration_build_browser_automation_contract_runner_config_preserves_runtime_fields() {
+        let temp = tempdir().expect("tempdir");
+        let mut cli = parse_cli_with_stack();
+        cli.browser_automation_fixture = temp.path().join("browser-automation-fixture.json");
+        cli.browser_automation_state_dir = temp.path().join("browser-automation-state");
+        cli.browser_automation_queue_limit = 31;
+        cli.browser_automation_processed_case_cap = 5_500;
+        cli.browser_automation_retry_max_attempts = 7;
+        cli.browser_automation_retry_base_delay_ms = 70;
+        cli.browser_automation_action_timeout_ms = 123;
+        cli.browser_automation_max_actions_per_case = 9;
+        cli.browser_automation_allow_unsafe_actions = true;
+
+        let config = build_browser_automation_contract_runner_config(&cli);
+        assert_eq!(config.fixture_path, cli.browser_automation_fixture);
+        assert_eq!(config.state_dir, cli.browser_automation_state_dir);
+        assert_eq!(config.queue_limit, 31);
+        assert_eq!(config.processed_case_cap, 5_500);
+        assert_eq!(config.retry_max_attempts, 7);
+        assert_eq!(config.retry_base_delay_ms, 70);
+        assert_eq!(config.action_timeout_ms, 123);
+        assert_eq!(config.max_actions_per_case, 9);
+        assert!(config.allow_unsafe_actions);
+    }
+
+    #[test]
+    fn integration_build_memory_contract_runner_config_preserves_runtime_fields() {
+        let temp = tempdir().expect("tempdir");
+        let mut cli = parse_cli_with_stack();
+        cli.memory_fixture = temp.path().join("memory-fixture.json");
+        cli.memory_state_dir = temp.path().join("memory-state");
+        cli.memory_queue_limit = 37;
+        cli.memory_processed_case_cap = 9_100;
+        cli.memory_retry_max_attempts = 6;
+        cli.memory_retry_base_delay_ms = 45;
+
+        let config = build_memory_contract_runner_config(&cli);
+        assert_eq!(config.fixture_path, cli.memory_fixture);
+        assert_eq!(config.state_dir, cli.memory_state_dir);
+        assert_eq!(config.queue_limit, 37);
+        assert_eq!(config.processed_case_cap, 9_100);
+        assert_eq!(config.retry_max_attempts, 6);
+        assert_eq!(config.retry_base_delay_ms, 45);
     }
 
     #[test]
