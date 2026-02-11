@@ -2725,6 +2725,7 @@ dependencies = [
  "tau-orchestrator",
  "tau-runtime",
  "tau-session",
+ "tau-skills",
  "tempfile",
  "tokio",
  "tokio-stream",
@@ -2809,6 +2810,22 @@ dependencies = [
  "serde_json",
  "tau-ai",
  "tempfile",
+]
+
+[[package]]
+name = "tau-skills"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64",
+ "ed25519-dalek",
+ "httpmock",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "tokio",
 ]
 
 [[package]]
