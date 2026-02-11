@@ -5,15 +5,14 @@ use crate::channel_adapters::{
 use std::sync::Arc;
 use tau_onboarding::startup_transport_modes::{
     build_events_runner_cli_config, build_github_issues_bridge_cli_config,
-    build_slack_bridge_cli_config, resolve_bridge_transport_mode, resolve_contract_transport_mode,
-    resolve_multi_channel_transport_mode, run_browser_automation_contract_runner_if_requested,
+    build_slack_bridge_cli_config, resolve_transport_runtime_mode,
+    run_browser_automation_contract_runner_if_requested,
     run_custom_command_contract_runner_if_requested, run_dashboard_contract_runner_if_requested,
     run_deployment_contract_runner_if_requested, run_gateway_contract_runner_if_requested,
     run_gateway_openresponses_server_if_requested, run_memory_contract_runner_if_requested,
     run_multi_agent_contract_runner_if_requested, run_multi_channel_contract_runner_if_requested,
     run_multi_channel_live_connectors_if_requested, run_multi_channel_live_runner_if_requested,
-    run_voice_contract_runner_if_requested, validate_transport_mode_cli, BridgeTransportMode,
-    ContractTransportMode, MultiChannelTransportMode,
+    run_voice_contract_runner_if_requested, validate_transport_mode_cli, TransportRuntimeMode,
 };
 
 fn build_multi_channel_runtime_dependencies(
@@ -224,20 +223,19 @@ pub(crate) async fn run_transport_mode_if_requested(
 ) -> Result<bool> {
     validate_transport_mode_cli(cli)?;
 
-    if run_gateway_openresponses_server_if_requested(
-        cli,
-        client.clone(),
-        model_ref,
-        system_prompt,
-        tool_policy,
-    )
-    .await?
-    {
-        return Ok(true);
-    }
-
-    match resolve_bridge_transport_mode(cli) {
-        BridgeTransportMode::GithubIssuesBridge => {
+    match resolve_transport_runtime_mode(cli) {
+        TransportRuntimeMode::GatewayOpenResponsesServer => {
+            run_gateway_openresponses_server_if_requested(
+                cli,
+                client.clone(),
+                model_ref,
+                system_prompt,
+                tool_policy,
+            )
+            .await?;
+            return Ok(true);
+        }
+        TransportRuntimeMode::GithubIssuesBridge => {
             run_github_issues_bridge_if_requested(
                 cli,
                 client,
@@ -249,7 +247,7 @@ pub(crate) async fn run_transport_mode_if_requested(
             .await?;
             return Ok(true);
         }
-        BridgeTransportMode::SlackBridge => {
+        TransportRuntimeMode::SlackBridge => {
             run_slack_bridge_if_requested(
                 cli,
                 client,
@@ -261,7 +259,7 @@ pub(crate) async fn run_transport_mode_if_requested(
             .await?;
             return Ok(true);
         }
-        BridgeTransportMode::EventsRunner => {
+        TransportRuntimeMode::EventsRunner => {
             run_events_runner_if_requested(
                 cli,
                 client,
@@ -273,11 +271,7 @@ pub(crate) async fn run_transport_mode_if_requested(
             .await?;
             return Ok(true);
         }
-        BridgeTransportMode::None => {}
-    }
-
-    match resolve_multi_channel_transport_mode(cli) {
-        MultiChannelTransportMode::ContractRunner => {
+        TransportRuntimeMode::MultiChannelContractRunner => {
             let (command_handlers, pairing_evaluator) =
                 build_multi_channel_runtime_dependencies(cli, model_ref);
             run_multi_channel_contract_runner_if_requested(
@@ -288,54 +282,50 @@ pub(crate) async fn run_transport_mode_if_requested(
             .await?;
             return Ok(true);
         }
-        MultiChannelTransportMode::LiveRunner => {
+        TransportRuntimeMode::MultiChannelLiveRunner => {
             let (command_handlers, pairing_evaluator) =
                 build_multi_channel_runtime_dependencies(cli, model_ref);
             run_multi_channel_live_runner_if_requested(cli, command_handlers, pairing_evaluator)
                 .await?;
             return Ok(true);
         }
-        MultiChannelTransportMode::LiveConnectorsRunner => {
+        TransportRuntimeMode::MultiChannelLiveConnectorsRunner => {
             run_multi_channel_live_connectors_if_requested(cli).await?;
             return Ok(true);
         }
-        MultiChannelTransportMode::None => {}
-    }
-
-    match resolve_contract_transport_mode(cli) {
-        ContractTransportMode::MultiAgent => {
+        TransportRuntimeMode::MultiAgentContractRunner => {
             run_multi_agent_contract_runner_if_requested(cli).await?;
             return Ok(true);
         }
-        ContractTransportMode::BrowserAutomation => {
+        TransportRuntimeMode::BrowserAutomationContractRunner => {
             run_browser_automation_contract_runner_if_requested(cli).await?;
             return Ok(true);
         }
-        ContractTransportMode::Memory => {
+        TransportRuntimeMode::MemoryContractRunner => {
             run_memory_contract_runner_if_requested(cli).await?;
             return Ok(true);
         }
-        ContractTransportMode::Dashboard => {
+        TransportRuntimeMode::DashboardContractRunner => {
             run_dashboard_contract_runner_if_requested(cli).await?;
             return Ok(true);
         }
-        ContractTransportMode::Gateway => {
+        TransportRuntimeMode::GatewayContractRunner => {
             run_gateway_contract_runner_if_requested(cli).await?;
             return Ok(true);
         }
-        ContractTransportMode::Deployment => {
+        TransportRuntimeMode::DeploymentContractRunner => {
             run_deployment_contract_runner_if_requested(cli).await?;
             return Ok(true);
         }
-        ContractTransportMode::CustomCommand => {
+        TransportRuntimeMode::CustomCommandContractRunner => {
             run_custom_command_contract_runner_if_requested(cli).await?;
             return Ok(true);
         }
-        ContractTransportMode::Voice => {
+        TransportRuntimeMode::VoiceContractRunner => {
             run_voice_contract_runner_if_requested(cli).await?;
             return Ok(true);
         }
-        ContractTransportMode::None => {}
+        TransportRuntimeMode::None => {}
     }
 
     Ok(false)
