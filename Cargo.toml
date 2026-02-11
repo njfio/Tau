@@ -8,6 +8,7 @@ members = [
   "crates/tau-multi-channel",
   "crates/tau-session",
   "crates/tau-skills",
+  "crates/tau-extensions",
   "crates/tau-orchestrator",
   "crates/tau-runtime",
   "crates/tau-tui",

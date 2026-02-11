@@ -19476,7 +19476,8 @@ async fn integration_extension_registered_tool_executes_in_prompt_loop() {
     )
     .expect("write extension manifest");
 
-    let registrations = discover_extension_runtime_registrations(&extension_root);
+    let registrations =
+        discover_extension_runtime_registrations(&extension_root, crate::commands::COMMAND_NAMES);
     assert_eq!(registrations.registered_tools.len(), 1);
 
     let responses = VecDeque::from(vec![
@@ -19573,7 +19574,8 @@ fn integration_handle_command_dispatches_extension_registered_command() {
 }"#,
     )
     .expect("write extension manifest");
-    let registrations = discover_extension_runtime_registrations(&extension_root);
+    let registrations =
+        discover_extension_runtime_registrations(&extension_root, crate::commands::COMMAND_NAMES);
     assert_eq!(registrations.registered_commands.len(), 1);
 
     let mut agent = Agent::new(Arc::new(NoopClient), AgentConfig::default());
@@ -19642,7 +19644,8 @@ fn regression_handle_command_extension_failure_is_fail_isolated() {
 }"#,
     )
     .expect("write extension manifest");
-    let registrations = discover_extension_runtime_registrations(&extension_root);
+    let registrations =
+        discover_extension_runtime_registrations(&extension_root, crate::commands::COMMAND_NAMES);
     assert_eq!(registrations.registered_commands.len(), 1);
 
     let mut agent = Agent::new(Arc::new(NoopClient), AgentConfig::default());

@@ -2720,6 +2720,7 @@ dependencies = [
  "tau-ai",
  "tau-cli",
  "tau-core",
+ "tau-extensions",
  "tau-gateway",
  "tau-multi-channel",
  "tau-orchestrator",
@@ -2743,6 +2744,17 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "tempfile",
+]
+
+[[package]]
+name = "tau-extensions"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "wait-timeout",
 ]
 
 [[package]]
