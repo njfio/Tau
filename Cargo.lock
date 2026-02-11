@@ -2738,12 +2738,14 @@ dependencies = [
  "tau-cli",
  "tau-core",
  "tau-deployment",
+ "tau-diagnostics",
  "tau-events",
  "tau-extensions",
  "tau-gateway",
  "tau-multi-channel",
  "tau-orchestrator",
  "tau-provider",
+ "tau-release-channel",
  "tau-runtime",
  "tau-session",
  "tau-skills",
@@ -2781,6 +2783,22 @@ dependencies = [
  "tempfile",
  "tokio",
  "wasmparser",
+]
+
+[[package]]
+name = "tau-diagnostics"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "serde_json",
+ "tau-ai",
+ "tau-cli",
+ "tau-core",
+ "tau-multi-channel",
+ "tau-provider",
+ "tau-release-channel",
+ "tempfile",
 ]
 
 [[package]]
@@ -2888,6 +2906,19 @@ dependencies = [
  "tempfile",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "tau-release-channel"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "tau-core",
+ "tempfile",
+ "tokio",
 ]
 
 [[package]]

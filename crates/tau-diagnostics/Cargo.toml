@@ -1,0 +1,19 @@
+[package]
+name = "tau-diagnostics"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tau-ai = { path = "../tau-ai" }
+tau-cli = { path = "../tau-cli" }
+tau-core = { path = "../tau-core" }
+tau-provider = { path = "../tau-provider" }
+tau-release-channel = { path = "../tau-release-channel" }
+tau-multi-channel = { path = "../tau-multi-channel" }
+
+[dev-dependencies]
+tempfile = "3"

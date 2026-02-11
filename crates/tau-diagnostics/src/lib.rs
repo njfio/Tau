@@ -1,17 +1,28 @@
-use super::*;
-use crate::cli_executable::is_executable_available;
-use crate::release_channel_commands::{
-    compare_versions, release_lookup_url, resolve_latest_channel_release_cached, ReleaseChannel,
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
+
+use anyhow::{bail, Context, Result};
+use serde_json::Value;
+use tau_ai::{ModelRef, Provider};
+use tau_cli::Cli;
+use tau_provider::is_executable_available;
+use tau_provider::{
+    configured_provider_auth_method, load_credential_store, provider_auth_capability,
+    provider_auth_mode_flag, resolve_api_key, resolve_credential_store_encryption_mode,
+    CredentialStoreData, CredentialStoreEncryptionMode, ProviderAuthMethod,
+};
+use tau_release_channel::{
+    compare_versions, default_release_channel_path, load_release_channel_store, release_lookup_url,
+    resolve_latest_channel_release_cached, ReleaseChannel,
 };
 
-pub(crate) const DOCTOR_USAGE: &str = "usage: /doctor [--json] [--online]";
-pub(crate) const POLICY_USAGE: &str = "usage: /policy";
-pub(crate) const AUDIT_SUMMARY_USAGE: &str = "usage: /audit-summary <path>";
-pub(crate) const MULTI_CHANNEL_READINESS_TELEGRAM_TOKEN_ENV: &str = "TAU_TELEGRAM_BOT_TOKEN";
-pub(crate) const MULTI_CHANNEL_READINESS_DISCORD_TOKEN_ENV: &str = "TAU_DISCORD_BOT_TOKEN";
-pub(crate) const MULTI_CHANNEL_READINESS_WHATSAPP_ACCESS_TOKEN_ENV: &str =
-    "TAU_WHATSAPP_ACCESS_TOKEN";
-pub(crate) const MULTI_CHANNEL_READINESS_WHATSAPP_PHONE_NUMBER_ID_ENV: &str =
+pub const DOCTOR_USAGE: &str = "usage: /doctor [--json] [--online]";
+pub const POLICY_USAGE: &str = "usage: /policy";
+pub const AUDIT_SUMMARY_USAGE: &str = "usage: /audit-summary <path>";
+pub const MULTI_CHANNEL_READINESS_TELEGRAM_TOKEN_ENV: &str = "TAU_TELEGRAM_BOT_TOKEN";
+pub const MULTI_CHANNEL_READINESS_DISCORD_TOKEN_ENV: &str = "TAU_DISCORD_BOT_TOKEN";
+pub const MULTI_CHANNEL_READINESS_WHATSAPP_ACCESS_TOKEN_ENV: &str = "TAU_WHATSAPP_ACCESS_TOKEN";
+pub const MULTI_CHANNEL_READINESS_WHATSAPP_PHONE_NUMBER_ID_ENV: &str =
     "TAU_WHATSAPP_PHONE_NUMBER_ID";
 const MULTI_CHANNEL_READINESS_TELEGRAM_TOKEN_INTEGRATION_ID: &str = "telegram-bot-token";
 const MULTI_CHANNEL_READINESS_DISCORD_TOKEN_INTEGRATION_ID: &str = "discord-bot-token";
@@ -20,32 +31,32 @@ const MULTI_CHANNEL_READINESS_WHATSAPP_PHONE_NUMBER_ID_INTEGRATION_ID: &str =
     "whatsapp-phone-number-id";
 
 #[derive(Debug, Default)]
-pub(crate) struct ToolAuditAggregate {
-    pub(crate) count: u64,
-    pub(crate) error_count: u64,
-    pub(crate) durations_ms: Vec<u64>,
+pub struct ToolAuditAggregate {
+    pub count: u64,
+    pub error_count: u64,
+    pub durations_ms: Vec<u64>,
 }
 
 #[derive(Debug, Default)]
-pub(crate) struct ProviderAuditAggregate {
-    pub(crate) count: u64,
-    pub(crate) error_count: u64,
-    pub(crate) durations_ms: Vec<u64>,
-    pub(crate) input_tokens: u64,
-    pub(crate) output_tokens: u64,
-    pub(crate) total_tokens: u64,
+pub struct ProviderAuditAggregate {
+    pub count: u64,
+    pub error_count: u64,
+    pub durations_ms: Vec<u64>,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub total_tokens: u64,
 }
 
 #[derive(Debug, Default)]
-pub(crate) struct AuditSummary {
-    pub(crate) record_count: u64,
-    pub(crate) tool_event_count: u64,
-    pub(crate) prompt_record_count: u64,
-    pub(crate) tools: BTreeMap<String, ToolAuditAggregate>,
-    pub(crate) providers: BTreeMap<String, ProviderAuditAggregate>,
+pub struct AuditSummary {
+    pub record_count: u64,
+    pub tool_event_count: u64,
+    pub prompt_record_count: u64,
+    pub tools: BTreeMap<String, ToolAuditAggregate>,
+    pub providers: BTreeMap<String, ProviderAuditAggregate>,
 }
 
-pub(crate) fn summarize_audit_file(path: &Path) -> Result<AuditSummary> {
+pub fn summarize_audit_file(path: &Path) -> Result<AuditSummary> {
     let file = std::fs::File::open(path)
         .with_context(|| format!("failed to open audit file {}", path.display()))?;
     let reader = std::io::BufReader::new(file);
@@ -148,7 +159,7 @@ pub(crate) fn summarize_audit_file(path: &Path) -> Result<AuditSummary> {
     Ok(summary)
 }
 
-pub(crate) fn percentile_duration_ms(values: &[u64], percentile_numerator: u64) -> u64 {
+pub fn percentile_duration_ms(values: &[u64], percentile_numerator: u64) -> u64 {
     if values.is_empty() {
         return 0;
     }
@@ -160,7 +171,7 @@ pub(crate) fn percentile_duration_ms(values: &[u64], percentile_numerator: u64) 
     sorted[index]
 }
 
-pub(crate) fn render_audit_summary(path: &Path, summary: &AuditSummary) -> String {
+pub fn render_audit_summary(path: &Path, summary: &AuditSummary) -> String {
     let mut lines = vec![format!(
         "audit summary: path={} records={} tool_events={} prompt_records={}",
         path.display(),
@@ -217,7 +228,7 @@ pub(crate) fn render_audit_summary(path: &Path, summary: &AuditSummary) -> Strin
     lines.join("\n")
 }
 
-pub(crate) fn execute_audit_summary_command(command_args: &str) -> String {
+pub fn execute_audit_summary_command(command_args: &str) -> String {
     if command_args.trim().is_empty() {
         return AUDIT_SUMMARY_USAGE.to_string();
     }
@@ -230,7 +241,7 @@ pub(crate) fn execute_audit_summary_command(command_args: &str) -> String {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum DoctorStatus {
+pub enum DoctorStatus {
     Pass,
     Warn,
     Fail,
@@ -247,24 +258,80 @@ impl DoctorStatus {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct DoctorCheckResult {
-    pub(crate) key: String,
-    pub(crate) status: DoctorStatus,
-    pub(crate) code: String,
-    pub(crate) path: Option<String>,
-    pub(crate) action: Option<String>,
+pub struct DoctorCheckResult {
+    pub key: String,
+    pub status: DoctorStatus,
+    pub code: String,
+    pub path: Option<String>,
+    pub action: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DoctorProviderKeyStatus {
+    pub provider_kind: Provider,
+    pub provider: String,
+    pub key_env_var: String,
+    pub present: bool,
+    pub auth_mode: ProviderAuthMethod,
+    pub mode_supported: bool,
+    pub login_backend_enabled: bool,
+    pub login_backend_executable: Option<String>,
+    pub login_backend_available: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DoctorMultiChannelReadinessConfig {
+    pub ingress_dir: PathBuf,
+    pub credential_store_path: PathBuf,
+    pub credential_store_encryption: CredentialStoreEncryptionMode,
+    pub credential_store_key: Option<String>,
+    pub telegram_bot_token: Option<String>,
+    pub discord_bot_token: Option<String>,
+    pub whatsapp_access_token: Option<String>,
+    pub whatsapp_phone_number_id: Option<String>,
+}
+
+impl Default for DoctorMultiChannelReadinessConfig {
+    fn default() -> Self {
+        Self {
+            ingress_dir: PathBuf::from(".tau/multi-channel/live-ingress"),
+            credential_store_path: PathBuf::from(".tau/credentials.json"),
+            credential_store_encryption: CredentialStoreEncryptionMode::None,
+            credential_store_key: None,
+            telegram_bot_token: None,
+            discord_bot_token: None,
+            whatsapp_access_token: None,
+            whatsapp_phone_number_id: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DoctorCommandConfig {
+    pub model: String,
+    pub provider_keys: Vec<DoctorProviderKeyStatus>,
+    pub release_channel_path: PathBuf,
+    pub release_lookup_cache_path: PathBuf,
+    pub release_lookup_cache_ttl_ms: u64,
+    pub browser_automation_playwright_cli: String,
+    pub session_enabled: bool,
+    pub session_path: PathBuf,
+    pub skills_dir: PathBuf,
+    pub skills_lock_path: PathBuf,
+    pub trust_root_path: Option<PathBuf>,
+    pub multi_channel_live_readiness: DoctorMultiChannelReadinessConfig,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum DoctorCommandOutputFormat {
+pub enum DoctorCommandOutputFormat {
     Text,
     Json,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct DoctorCommandArgs {
-    pub(crate) output_format: DoctorCommandOutputFormat,
-    pub(crate) online: bool,
+pub struct DoctorCommandArgs {
+    pub output_format: DoctorCommandOutputFormat,
+    pub online: bool,
 }
 
 impl Default for DoctorCommandArgs {
@@ -277,43 +344,43 @@ impl Default for DoctorCommandArgs {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub(crate) struct DoctorCheckOptions {
-    pub(crate) online: bool,
+pub struct DoctorCheckOptions {
+    pub online: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum MultiChannelReadinessOutputFormat {
+pub enum MultiChannelReadinessOutputFormat {
     Text,
     Json,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct MultiChannelLiveReadinessReport {
-    pub(crate) checks: Vec<DoctorCheckResult>,
-    pub(crate) pass: usize,
-    pub(crate) warn: usize,
-    pub(crate) fail: usize,
-    pub(crate) gate: String,
-    pub(crate) reason_codes: Vec<String>,
+pub struct MultiChannelLiveReadinessReport {
+    pub checks: Vec<DoctorCheckResult>,
+    pub pass: usize,
+    pub warn: usize,
+    pub fail: usize,
+    pub gate: String,
+    pub reason_codes: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum BrowserAutomationReadinessOutputFormat {
+pub enum BrowserAutomationReadinessOutputFormat {
     Text,
     Json,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct BrowserAutomationReadinessReport {
-    pub(crate) checks: Vec<DoctorCheckResult>,
-    pub(crate) pass: usize,
-    pub(crate) warn: usize,
-    pub(crate) fail: usize,
-    pub(crate) gate: String,
-    pub(crate) reason_codes: Vec<String>,
+pub struct BrowserAutomationReadinessReport {
+    pub checks: Vec<DoctorCheckResult>,
+    pub pass: usize,
+    pub warn: usize,
+    pub fail: usize,
+    pub gate: String,
+    pub reason_codes: Vec<String>,
 }
 
-pub(crate) fn parse_doctor_command_args(command_args: &str) -> Result<DoctorCommandArgs> {
+pub fn parse_doctor_command_args(command_args: &str) -> Result<DoctorCommandArgs> {
     let tokens = command_args
         .split_whitespace()
         .filter(|token| !token.is_empty())
@@ -339,7 +406,7 @@ pub(crate) fn parse_doctor_command_args(command_args: &str) -> Result<DoctorComm
     Ok(args)
 }
 
-pub(crate) fn provider_key_env_var(provider: Provider) -> &'static str {
+pub fn provider_key_env_var(provider: Provider) -> &'static str {
     match provider {
         Provider::OpenAi => "OPENAI_API_KEY",
         Provider::Anthropic => "ANTHROPIC_API_KEY",
@@ -347,7 +414,7 @@ pub(crate) fn provider_key_env_var(provider: Provider) -> &'static str {
     }
 }
 
-pub(crate) fn provider_key_present(cli: &Cli, provider: Provider) -> bool {
+pub fn provider_key_present(cli: &Cli, provider: Provider) -> bool {
     match provider {
         Provider::OpenAi => {
             resolve_api_key(vec![cli.openai_api_key.clone(), cli.api_key.clone()]).is_some()
@@ -368,9 +435,7 @@ fn resolve_non_empty_env_var(name: &str) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
-pub(crate) fn build_multi_channel_live_readiness_config(
-    cli: &Cli,
-) -> DoctorMultiChannelReadinessConfig {
+pub fn build_multi_channel_live_readiness_config(cli: &Cli) -> DoctorMultiChannelReadinessConfig {
     DoctorMultiChannelReadinessConfig {
         ingress_dir: cli.multi_channel_live_ingress_dir.clone(),
         credential_store_path: cli.credential_store.clone(),
@@ -387,7 +452,7 @@ pub(crate) fn build_multi_channel_live_readiness_config(
     }
 }
 
-pub(crate) fn build_doctor_command_config(
+pub fn build_doctor_command_config(
     cli: &Cli,
     primary_model: &ModelRef,
     fallback_models: &[ModelRef],
@@ -606,7 +671,7 @@ fn append_multi_channel_channel_readiness_check(
     });
 }
 
-pub(crate) fn evaluate_multi_channel_live_readiness(
+pub fn evaluate_multi_channel_live_readiness(
     config: &DoctorMultiChannelReadinessConfig,
 ) -> MultiChannelLiveReadinessReport {
     let mut checks = Vec::new();
@@ -878,7 +943,7 @@ fn append_multi_channel_policy_readiness_checks(
     });
 }
 
-pub(crate) fn render_multi_channel_live_readiness_report(
+pub fn render_multi_channel_live_readiness_report(
     report: &MultiChannelLiveReadinessReport,
 ) -> String {
     let reason_codes = if report.reason_codes.is_empty() {
@@ -909,7 +974,7 @@ pub(crate) fn render_multi_channel_live_readiness_report(
     lines.join("\n")
 }
 
-pub(crate) fn render_multi_channel_live_readiness_report_json(
+pub fn render_multi_channel_live_readiness_report_json(
     report: &MultiChannelLiveReadinessReport,
 ) -> String {
     serde_json::json!({
@@ -938,7 +1003,7 @@ pub(crate) fn render_multi_channel_live_readiness_report_json(
     .to_string()
 }
 
-pub(crate) fn execute_multi_channel_live_readiness_preflight_command(cli: &Cli) -> Result<()> {
+pub fn execute_multi_channel_live_readiness_preflight_command(cli: &Cli) -> Result<()> {
     let readiness_config = build_multi_channel_live_readiness_config(cli);
     let report = evaluate_multi_channel_live_readiness(&readiness_config);
     let output_format = if cli.multi_channel_live_readiness_json {
@@ -970,7 +1035,7 @@ pub(crate) fn execute_multi_channel_live_readiness_preflight_command(cli: &Cli) 
     Ok(())
 }
 
-pub(crate) fn evaluate_browser_automation_readiness(
+pub fn evaluate_browser_automation_readiness(
     playwright_cli: &str,
 ) -> BrowserAutomationReadinessReport {
     let mut checks = Vec::new();
@@ -1030,7 +1095,7 @@ pub(crate) fn evaluate_browser_automation_readiness(
     build_browser_automation_readiness_summary(checks)
 }
 
-pub(crate) fn render_browser_automation_readiness_report(
+pub fn render_browser_automation_readiness_report(
     report: &BrowserAutomationReadinessReport,
 ) -> String {
     let reason_codes = if report.reason_codes.is_empty() {
@@ -1061,7 +1126,7 @@ pub(crate) fn render_browser_automation_readiness_report(
     lines.join("\n")
 }
 
-pub(crate) fn render_browser_automation_readiness_report_json(
+pub fn render_browser_automation_readiness_report_json(
     report: &BrowserAutomationReadinessReport,
 ) -> String {
     serde_json::json!({
@@ -1090,7 +1155,7 @@ pub(crate) fn render_browser_automation_readiness_report_json(
     .to_string()
 }
 
-pub(crate) fn execute_browser_automation_preflight_command(cli: &Cli) -> Result<()> {
+pub fn execute_browser_automation_preflight_command(cli: &Cli) -> Result<()> {
     let report = evaluate_browser_automation_readiness(&cli.browser_automation_playwright_cli);
     let output_format = if cli.browser_automation_preflight_json {
         BrowserAutomationReadinessOutputFormat::Json
@@ -1122,11 +1187,11 @@ pub(crate) fn execute_browser_automation_preflight_command(cli: &Cli) -> Result<
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
-pub(crate) fn run_doctor_checks(config: &DoctorCommandConfig) -> Vec<DoctorCheckResult> {
+pub fn run_doctor_checks(config: &DoctorCommandConfig) -> Vec<DoctorCheckResult> {
     run_doctor_checks_with_options(config, DoctorCheckOptions::default())
 }
 
-pub(crate) fn run_doctor_checks_with_options(
+pub fn run_doctor_checks_with_options(
     config: &DoctorCommandConfig,
     options: DoctorCheckOptions,
 ) -> Vec<DoctorCheckResult> {
@@ -1535,8 +1600,7 @@ where
     checks
 }
 
-#[cfg(test)]
-pub(crate) fn run_doctor_checks_with_lookup<F>(
+pub fn run_doctor_checks_with_lookup<F>(
     config: &DoctorCommandConfig,
     options: DoctorCheckOptions,
     release_lookup: F,
@@ -1547,7 +1611,7 @@ where
     run_doctor_checks_with_release_lookup(config, options, release_lookup)
 }
 
-pub(crate) fn render_doctor_report(checks: &[DoctorCheckResult]) -> String {
+pub fn render_doctor_report(checks: &[DoctorCheckResult]) -> String {
     let pass = checks
         .iter()
         .filter(|item| item.status == DoctorStatus::Pass)
@@ -1583,7 +1647,7 @@ pub(crate) fn render_doctor_report(checks: &[DoctorCheckResult]) -> String {
     lines.join("\n")
 }
 
-pub(crate) fn render_doctor_report_json(checks: &[DoctorCheckResult]) -> String {
+pub fn render_doctor_report_json(checks: &[DoctorCheckResult]) -> String {
     let pass = checks
         .iter()
         .filter(|item| item.status == DoctorStatus::Pass)
@@ -1620,14 +1684,14 @@ pub(crate) fn render_doctor_report_json(checks: &[DoctorCheckResult]) -> String 
     .to_string()
 }
 
-pub(crate) fn execute_doctor_command(
+pub fn execute_doctor_command(
     config: &DoctorCommandConfig,
     format: DoctorCommandOutputFormat,
 ) -> String {
     execute_doctor_command_with_options(config, format, DoctorCheckOptions::default())
 }
 
-pub(crate) fn execute_doctor_command_with_options(
+pub fn execute_doctor_command_with_options(
     config: &DoctorCommandConfig,
     format: DoctorCommandOutputFormat,
     options: DoctorCheckOptions,
@@ -1639,10 +1703,7 @@ pub(crate) fn execute_doctor_command_with_options(
     }
 }
 
-pub(crate) fn execute_doctor_cli_command(
-    config: &DoctorCommandConfig,
-    command_args: &str,
-) -> String {
+pub fn execute_doctor_cli_command(config: &DoctorCommandConfig, command_args: &str) -> String {
     let args = match parse_doctor_command_args(command_args) {
         Ok(args) => args,
         Err(_) => return DOCTOR_USAGE.to_string(),
@@ -1658,7 +1719,7 @@ pub(crate) fn execute_doctor_cli_command(
     }
 }
 
-pub(crate) fn execute_policy_command(
+pub fn execute_policy_command(
     command_args: &str,
     tool_policy_json: &serde_json::Value,
 ) -> Result<String> {

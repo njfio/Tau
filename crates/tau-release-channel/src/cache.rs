@@ -3,39 +3,39 @@ use std::path::Path;
 use anyhow::{anyhow, bail, Context, Result};
 use serde::{Deserialize, Serialize};
 
-use crate::write_text_atomic;
+use tau_core::write_text_atomic;
 
-use super::{GitHubReleaseRecord, RELEASE_LOOKUP_CACHE_SCHEMA_VERSION};
+use crate::{GitHubReleaseRecord, RELEASE_LOOKUP_CACHE_SCHEMA_VERSION};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub(super) struct ReleaseLookupCacheFile {
-    pub(super) schema_version: u32,
-    pub(super) source_url: String,
-    pub(super) fetched_at_unix_ms: u64,
-    pub(super) releases: Vec<GitHubReleaseRecord>,
+pub struct ReleaseLookupCacheFile {
+    pub schema_version: u32,
+    pub source_url: String,
+    pub fetched_at_unix_ms: u64,
+    pub releases: Vec<GitHubReleaseRecord>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct ReleaseCacheAgeCounters {
-    pub(super) freshness: &'static str,
-    pub(super) next_refresh_in_ms: u64,
-    pub(super) stale_by_ms: u64,
+pub struct ReleaseCacheAgeCounters {
+    pub freshness: &'static str,
+    pub next_refresh_in_ms: u64,
+    pub stale_by_ms: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum ReleaseCachePruneDecision {
+pub enum ReleaseCachePruneDecision {
     KeepFresh,
     RemoveStale,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum ReleaseCachePruneRecoveryReason {
+pub enum ReleaseCachePruneRecoveryReason {
     InvalidPayload,
     UnsupportedSchema,
 }
 
 impl ReleaseCachePruneRecoveryReason {
-    pub(super) fn as_str(self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             ReleaseCachePruneRecoveryReason::InvalidPayload => "invalid_payload",
             ReleaseCachePruneRecoveryReason::UnsupportedSchema => "unsupported_schema",
@@ -43,7 +43,7 @@ impl ReleaseCachePruneRecoveryReason {
     }
 }
 
-pub(super) enum ReleaseCachePruneLoadOutcome {
+pub enum ReleaseCachePruneLoadOutcome {
     Missing,
     Present(ReleaseLookupCacheFile),
     RecoverableError {
@@ -52,10 +52,7 @@ pub(super) enum ReleaseCachePruneLoadOutcome {
     FatalError(anyhow::Error),
 }
 
-pub(super) fn compute_release_cache_age_counters(
-    age_ms: u64,
-    ttl_ms: u64,
-) -> ReleaseCacheAgeCounters {
+pub fn compute_release_cache_age_counters(age_ms: u64, ttl_ms: u64) -> ReleaseCacheAgeCounters {
     if age_ms <= ttl_ms {
         return ReleaseCacheAgeCounters {
             freshness: "fresh",
@@ -70,27 +67,22 @@ pub(super) fn compute_release_cache_age_counters(
     }
 }
 
-pub(super) fn decide_release_cache_prune(age_ms: u64, ttl_ms: u64) -> ReleaseCachePruneDecision {
+pub fn decide_release_cache_prune(age_ms: u64, ttl_ms: u64) -> ReleaseCachePruneDecision {
     if age_ms <= ttl_ms {
         return ReleaseCachePruneDecision::KeepFresh;
     }
     ReleaseCachePruneDecision::RemoveStale
 }
 
-pub(super) fn compute_release_cache_expires_at_unix_ms(
-    fetched_at_unix_ms: u64,
-    ttl_ms: u64,
-) -> u64 {
+pub fn compute_release_cache_expires_at_unix_ms(fetched_at_unix_ms: u64, ttl_ms: u64) -> u64 {
     fetched_at_unix_ms.saturating_add(ttl_ms)
 }
 
-pub(super) fn is_release_cache_expired(age_ms: u64, ttl_ms: u64) -> bool {
+pub fn is_release_cache_expired(age_ms: u64, ttl_ms: u64) -> bool {
     age_ms > ttl_ms
 }
 
-pub(super) fn load_release_lookup_cache_file(
-    path: &Path,
-) -> Result<Option<ReleaseLookupCacheFile>> {
+pub fn load_release_lookup_cache_file(path: &Path) -> Result<Option<ReleaseLookupCacheFile>> {
     if !path.exists() {
         return Ok(None);
     }
@@ -109,7 +101,7 @@ pub(super) fn load_release_lookup_cache_file(
     Ok(Some(parsed))
 }
 
-pub(super) fn load_release_lookup_cache_for_prune(path: &Path) -> ReleaseCachePruneLoadOutcome {
+pub fn load_release_lookup_cache_for_prune(path: &Path) -> ReleaseCachePruneLoadOutcome {
     if !path.exists() {
         return ReleaseCachePruneLoadOutcome::Missing;
     }
@@ -141,10 +133,7 @@ pub(super) fn load_release_lookup_cache_for_prune(path: &Path) -> ReleaseCachePr
     ReleaseCachePruneLoadOutcome::Present(parsed)
 }
 
-pub(super) fn load_release_lookup_cache(
-    path: &Path,
-    url: &str,
-) -> Result<Option<ReleaseLookupCacheFile>> {
+pub fn load_release_lookup_cache(path: &Path, url: &str) -> Result<Option<ReleaseLookupCacheFile>> {
     let Some(parsed) = load_release_lookup_cache_file(path)? else {
         return Ok(None);
     };
@@ -154,7 +143,7 @@ pub(super) fn load_release_lookup_cache(
     Ok(Some(parsed))
 }
 
-pub(super) fn save_release_lookup_cache(
+pub fn save_release_lookup_cache(
     path: &Path,
     url: &str,
     fetched_at_unix_ms: u64,

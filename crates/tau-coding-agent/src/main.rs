@@ -20,7 +20,6 @@ mod dashboard_contract;
 mod dashboard_runtime;
 mod deployment_runtime;
 mod deployment_wasm;
-mod diagnostics_commands;
 mod events;
 mod extension_manifest;
 mod github_issues;
@@ -123,22 +122,6 @@ pub(crate) use crate::credentials::{
 };
 #[cfg(test)]
 pub(crate) use crate::credentials::{parse_integration_auth_command, IntegrationAuthCommand};
-pub(crate) use crate::diagnostics_commands::{
-    build_doctor_command_config, execute_audit_summary_command,
-    execute_browser_automation_preflight_command, execute_doctor_cli_command,
-    execute_multi_channel_live_readiness_preflight_command, execute_policy_command,
-};
-#[cfg(test)]
-pub(crate) use crate::diagnostics_commands::{
-    evaluate_multi_channel_live_readiness, parse_doctor_command_args, percentile_duration_ms,
-    render_audit_summary, render_doctor_report, render_doctor_report_json, run_doctor_checks,
-    run_doctor_checks_with_lookup, summarize_audit_file, DoctorCheckOptions, DoctorCheckResult,
-    DoctorCommandArgs, DoctorCommandOutputFormat, DoctorStatus,
-};
-#[cfg(test)]
-pub(crate) use crate::diagnostics_commands::{
-    execute_doctor_command, execute_doctor_command_with_options,
-};
 use crate::events::{
     execute_events_dry_run_command, execute_events_inspect_command,
     execute_events_simulate_command, execute_events_template_write_command,
@@ -211,10 +194,13 @@ pub(crate) use crate::runtime_output::{
     event_to_json, persist_messages, print_assistant_messages, summarize_message,
 };
 pub(crate) use crate::runtime_types::{
-    AuthCommandConfig, CommandExecutionContext, DoctorCommandConfig,
-    DoctorMultiChannelReadinessConfig, DoctorProviderKeyStatus, ProfileAuthDefaults,
-    ProfileDefaults, ProfileMcpDefaults, ProfilePolicyDefaults, ProfileSessionDefaults,
-    RenderOptions, SkillsSyncCommandConfig,
+    AuthCommandConfig, CommandExecutionContext, ProfileAuthDefaults, ProfileDefaults,
+    ProfileMcpDefaults, ProfilePolicyDefaults, ProfileSessionDefaults, RenderOptions,
+    SkillsSyncCommandConfig,
+};
+#[cfg(test)]
+pub(crate) use crate::runtime_types::{
+    DoctorCommandConfig, DoctorMultiChannelReadinessConfig, DoctorProviderKeyStatus,
 };
 use crate::skills::{
     augment_system_prompt, build_local_skill_lock_hints, build_registry_skill_lock_hints,
@@ -320,6 +306,20 @@ pub(crate) use tau_cli::validation::{
 };
 pub(crate) use tau_core::write_text_atomic;
 pub(crate) use tau_core::{current_unix_timestamp, current_unix_timestamp_ms, is_expired_unix};
+pub(crate) use tau_diagnostics::{
+    build_doctor_command_config, execute_audit_summary_command,
+    execute_browser_automation_preflight_command, execute_doctor_cli_command,
+    execute_multi_channel_live_readiness_preflight_command, execute_policy_command,
+};
+#[cfg(test)]
+pub(crate) use tau_diagnostics::{
+    evaluate_multi_channel_live_readiness, parse_doctor_command_args, percentile_duration_ms,
+    render_audit_summary, render_doctor_report, render_doctor_report_json, run_doctor_checks,
+    run_doctor_checks_with_lookup, summarize_audit_file, DoctorCheckOptions, DoctorCheckResult,
+    DoctorCommandArgs, DoctorCommandOutputFormat, DoctorStatus,
+};
+#[cfg(test)]
+pub(crate) use tau_diagnostics::{execute_doctor_command, execute_doctor_command_with_options};
 use tau_gateway::{run_gateway_contract_runner, GatewayRuntimeConfig};
 #[cfg(test)]
 pub(crate) use tau_multi_channel::build_multi_channel_incident_timeline_report;
@@ -338,10 +338,15 @@ pub(crate) use tau_orchestrator::parse_numbered_plan_steps;
 pub(crate) use tau_provider::provider_auth_snapshot_for_status;
 #[cfg(test)]
 pub(crate) use tau_provider::refresh_provider_access_token;
+#[cfg(test)]
+pub(crate) use tau_provider::resolve_api_key;
+#[cfg(test)]
+pub(crate) use tau_provider::CredentialStoreEncryptionMode;
+pub(crate) use tau_provider::ProviderAuthMethod;
 pub(crate) use tau_provider::{
-    build_client_with_fallbacks, configured_provider_auth_method,
-    configured_provider_auth_method_from_config, missing_provider_api_key_message,
-    provider_auth_capability, provider_auth_mode_flag, resolve_api_key, resolve_fallback_models,
+    build_client_with_fallbacks, configured_provider_auth_method_from_config,
+    missing_provider_api_key_message, provider_auth_capability, provider_auth_mode_flag,
+    resolve_fallback_models,
 };
 #[cfg(test)]
 pub(crate) use tau_provider::{build_provider_client, provider_api_key_candidates_with_inputs};
@@ -360,7 +365,6 @@ pub(crate) use tau_provider::{
     resolve_non_empty_secret_with_source, save_credential_store, CredentialStoreData,
     ProviderCredentialStoreRecord,
 };
-pub(crate) use tau_provider::{CredentialStoreEncryptionMode, ProviderAuthMethod};
 pub(crate) use tau_session::execute_session_graph_export_command;
 #[cfg(test)]
 pub(crate) use tau_session::validate_session_file;
