@@ -1,69 +1,40 @@
 use super::*;
 
-mod cache;
 mod update_state;
 
-use cache::{
+#[cfg(test)]
+use tau_release_channel::cache::load_release_lookup_cache;
+use tau_release_channel::cache::{
     compute_release_cache_age_counters, compute_release_cache_expires_at_unix_ms,
-    decide_release_cache_prune, is_release_cache_expired, load_release_lookup_cache,
-    load_release_lookup_cache_file, load_release_lookup_cache_for_prune, save_release_lookup_cache,
-    ReleaseCachePruneDecision, ReleaseCachePruneLoadOutcome,
+    decide_release_cache_prune, is_release_cache_expired, load_release_lookup_cache_file,
+    load_release_lookup_cache_for_prune, save_release_lookup_cache, ReleaseCachePruneDecision,
+    ReleaseCachePruneLoadOutcome,
 };
 #[cfg(test)]
-use cache::{ReleaseCacheAgeCounters, ReleaseCachePruneRecoveryReason};
+use tau_release_channel::cache::{ReleaseCacheAgeCounters, ReleaseCachePruneRecoveryReason};
+use tau_release_channel::{
+    compare_versions, fetch_release_records, release_lookup_url,
+    resolve_latest_channel_release_cached, select_latest_channel_release, GitHubReleaseRecord,
+    LatestChannelReleaseResolution, ReleaseLookupSource, RELEASE_LOOKUP_CACHE_TTL_MS,
+};
+#[cfg(test)]
+use tau_release_channel::{
+    resolve_latest_channel_release, RELEASE_LOOKUP_CACHE_SCHEMA_VERSION, RELEASE_LOOKUP_USER_AGENT,
+};
 use update_state::{
     load_release_update_state_file, save_release_update_state_file, ReleaseUpdateStateFile,
 };
 
 pub(crate) const RELEASE_CHANNEL_USAGE: &str =
     "usage: /release-channel [show|set <stable|beta|dev>|check|plan [--target <version>] [--dry-run]|apply [--target <version>] [--dry-run]|cache <show|clear|refresh|prune>]";
-pub(crate) const RELEASE_CHANNEL_SCHEMA_VERSION: u32 = 2;
-pub(crate) const RELEASE_LOOKUP_CACHE_SCHEMA_VERSION: u32 = 1;
 pub(crate) const RELEASE_UPDATE_STATE_SCHEMA_VERSION: u32 = 1;
-pub(crate) const RELEASE_LOOKUP_CACHE_TTL_MS: u64 = 15 * 60 * 1_000;
-const RELEASE_LOOKUP_URL: &str = "https://api.github.com/repos/njfio/Tau/releases?per_page=30";
-const RELEASE_LOOKUP_USER_AGENT: &str = "tau-coding-agent/release-channel-check";
-const RELEASE_LOOKUP_TIMEOUT_MS: u64 = 8_000;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub(crate) enum ReleaseChannel {
-    Stable,
-    Beta,
-    Dev,
-}
-
-impl ReleaseChannel {
-    pub(crate) fn as_str(self) -> &'static str {
-        match self {
-            ReleaseChannel::Stable => "stable",
-            ReleaseChannel::Beta => "beta",
-            ReleaseChannel::Dev => "dev",
-        }
-    }
-}
-
-impl std::fmt::Display for ReleaseChannel {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
-impl std::str::FromStr for ReleaseChannel {
-    type Err = anyhow::Error;
-
-    fn from_str(value: &str) -> Result<Self> {
-        match value {
-            "stable" => Ok(Self::Stable),
-            "beta" => Ok(Self::Beta),
-            "dev" => Ok(Self::Dev),
-            _ => bail!(
-                "invalid release channel '{}'; expected stable|beta|dev",
-                value
-            ),
-        }
-    }
-}
+pub(crate) use tau_release_channel::default_release_channel_path;
+pub(crate) use tau_release_channel::ReleaseChannel;
+pub(crate) use tau_release_channel::{
+    load_release_channel_store, load_release_channel_store_file, save_release_channel_store,
+    save_release_channel_store_file, ReleaseChannelRollbackMetadata, ReleaseChannelStoreFile,
+    RELEASE_CHANNEL_SCHEMA_VERSION,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ReleaseChannelCommand {
@@ -146,61 +117,6 @@ impl ReleaseUpdateGuardOutcome {
     fn allowed(&self) -> bool {
         self.code == ReleaseUpdateGuardCode::Ok
     }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
-pub(crate) struct ReleaseChannelRollbackMetadata {
-    #[serde(default)]
-    pub(crate) previous_channel: Option<ReleaseChannel>,
-    #[serde(default)]
-    pub(crate) previous_version: Option<String>,
-    #[serde(default)]
-    pub(crate) reference_unix_ms: Option<u64>,
-    #[serde(default)]
-    pub(crate) reason: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct ReleaseChannelStoreFile {
-    pub(crate) schema_version: u32,
-    pub(crate) release_channel: ReleaseChannel,
-    #[serde(default)]
-    pub(crate) rollback: ReleaseChannelRollbackMetadata,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-struct LegacyReleaseChannelStoreFile {
-    schema_version: u32,
-    release_channel: ReleaseChannel,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct GitHubReleaseRecord {
-    pub(crate) tag_name: String,
-    #[serde(default)]
-    pub(crate) prerelease: bool,
-    #[serde(default)]
-    pub(crate) draft: bool,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ReleaseLookupSource {
-    Live,
-    CacheFresh,
-    CacheStaleFallback,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct LatestChannelReleaseResolution {
-    pub(crate) latest: Option<String>,
-    pub(crate) source: ReleaseLookupSource,
-}
-
-pub(crate) fn default_release_channel_path() -> Result<PathBuf> {
-    Ok(std::env::current_dir()
-        .context("failed to resolve current working directory")?
-        .join(".tau")
-        .join("release-channel.json"))
 }
 
 pub(crate) fn parse_release_channel_command(command_args: &str) -> Result<ReleaseChannelCommand> {
@@ -306,86 +222,6 @@ fn release_update_state_path_for_release_channel_store(path: &Path) -> Result<Pa
     Ok(parent.join("release-update-state.json"))
 }
 
-pub(crate) fn load_release_channel_store(path: &Path) -> Result<Option<ReleaseChannel>> {
-    Ok(load_release_channel_store_file(path)?.map(|store| store.release_channel))
-}
-
-fn load_release_channel_store_file(path: &Path) -> Result<Option<ReleaseChannelStoreFile>> {
-    if !path.exists() {
-        return Ok(None);
-    }
-
-    let raw = std::fs::read_to_string(path)
-        .with_context(|| format!("failed to read release channel file {}", path.display()))?;
-    let value = serde_json::from_str::<serde_json::Value>(&raw)
-        .with_context(|| format!("failed to parse release channel file {}", path.display()))?;
-    let schema_version = value
-        .get("schema_version")
-        .and_then(serde_json::Value::as_u64)
-        .ok_or_else(|| {
-            anyhow!(
-                "release channel file {} is missing schema_version",
-                path.display()
-            )
-        })?;
-
-    match schema_version {
-        1 => {
-            let legacy = serde_json::from_value::<LegacyReleaseChannelStoreFile>(value)
-                .with_context(|| {
-                    format!("failed to parse release channel file {}", path.display())
-                })?;
-            Ok(Some(ReleaseChannelStoreFile {
-                schema_version: RELEASE_CHANNEL_SCHEMA_VERSION,
-                release_channel: legacy.release_channel,
-                rollback: ReleaseChannelRollbackMetadata::default(),
-            }))
-        }
-        version if version == RELEASE_CHANNEL_SCHEMA_VERSION as u64 => {
-            let parsed =
-                serde_json::from_value::<ReleaseChannelStoreFile>(value).with_context(|| {
-                    format!("failed to parse release channel file {}", path.display())
-                })?;
-            Ok(Some(parsed))
-        }
-        other => bail!(
-            "unsupported release channel schema_version {} in {} (expected {} or 1)",
-            other,
-            path.display(),
-            RELEASE_CHANNEL_SCHEMA_VERSION
-        ),
-    }
-}
-
-fn save_release_channel_store_file(path: &Path, payload: &ReleaseChannelStoreFile) -> Result<()> {
-    let mut encoded =
-        serde_json::to_string_pretty(payload).context("failed to encode release channel store")?;
-    encoded.push('\n');
-    let parent = path.parent().ok_or_else(|| {
-        anyhow!(
-            "release channel path {} does not have a parent directory",
-            path.display()
-        )
-    })?;
-    std::fs::create_dir_all(parent).with_context(|| {
-        format!(
-            "failed to create release channel directory {}",
-            parent.display()
-        )
-    })?;
-    write_text_atomic(path, &encoded)
-}
-
-pub(crate) fn save_release_channel_store(path: &Path, channel: ReleaseChannel) -> Result<()> {
-    let existing = load_release_channel_store_file(path)?;
-    let payload = ReleaseChannelStoreFile {
-        schema_version: RELEASE_CHANNEL_SCHEMA_VERSION,
-        release_channel: channel,
-        rollback: existing.map(|store| store.rollback).unwrap_or_default(),
-    };
-    save_release_channel_store_file(path, &payload)
-}
-
 fn resolve_release_channel_and_metadata(
     path: &Path,
 ) -> Result<(ReleaseChannel, &'static str, ReleaseChannelRollbackMetadata)> {
@@ -423,27 +259,6 @@ fn render_rollback_fields(rollback: &ReleaseChannelRollbackMetadata) -> String {
     )
 }
 
-fn select_latest_channel_release(
-    channel: ReleaseChannel,
-    releases: &[GitHubReleaseRecord],
-) -> Option<String> {
-    let stable = releases
-        .iter()
-        .find(|item| !item.draft && !item.prerelease)
-        .map(|item| item.tag_name.trim().to_string())
-        .filter(|tag| !tag.is_empty());
-    let prerelease = releases
-        .iter()
-        .find(|item| !item.draft && item.prerelease)
-        .map(|item| item.tag_name.trim().to_string())
-        .filter(|tag| !tag.is_empty());
-
-    match channel {
-        ReleaseChannel::Stable => stable,
-        ReleaseChannel::Beta | ReleaseChannel::Dev => prerelease.or(stable),
-    }
-}
-
 fn parse_version_segments(raw: &str) -> Option<Vec<u64>> {
     let trimmed = raw.trim().trim_start_matches('v').trim_start_matches('V');
     let core = trimmed
@@ -461,22 +276,6 @@ fn parse_version_segments(raw: &str) -> Option<Vec<u64>> {
         return None;
     }
     Some(segments)
-}
-
-pub(crate) fn compare_versions(current: &str, latest: &str) -> Option<std::cmp::Ordering> {
-    let current_segments = parse_version_segments(current)?;
-    let latest_segments = parse_version_segments(latest)?;
-    let max_len = current_segments.len().max(latest_segments.len());
-    for index in 0..max_len {
-        let current_value = *current_segments.get(index).unwrap_or(&0);
-        let latest_value = *latest_segments.get(index).unwrap_or(&0);
-        match current_value.cmp(&latest_value) {
-            std::cmp::Ordering::Less => return Some(std::cmp::Ordering::Less),
-            std::cmp::Ordering::Greater => return Some(std::cmp::Ordering::Greater),
-            std::cmp::Ordering::Equal => {}
-        }
-    }
-    Some(std::cmp::Ordering::Equal)
 }
 
 fn major_version(raw: &str) -> Option<u64> {
@@ -555,100 +354,11 @@ fn resolve_channel_latest_or_unknown(
     select_latest_channel_release(channel, releases).unwrap_or_else(|| "unknown".to_string())
 }
 
-fn fetch_release_records(url: &str) -> Result<Vec<GitHubReleaseRecord>> {
-    if let Ok(handle) = tokio::runtime::Handle::try_current() {
-        tokio::task::block_in_place(|| handle.block_on(fetch_release_records_async(url)))
-    } else {
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .context("failed to create runtime for release-channel check")?;
-        runtime.block_on(fetch_release_records_async(url))
-    }
-}
-
 fn current_unix_timestamp_ms() -> u64 {
     match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
         Ok(duration) => duration.as_millis().min(u64::MAX as u128) as u64,
         Err(_) => 0,
     }
-}
-
-async fn fetch_release_records_async(url: &str) -> Result<Vec<GitHubReleaseRecord>> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_millis(RELEASE_LOOKUP_TIMEOUT_MS))
-        .build()
-        .context("failed to construct HTTP client for release-channel check")?;
-    let response = client
-        .get(url)
-        .header(reqwest::header::USER_AGENT, RELEASE_LOOKUP_USER_AGENT)
-        .send()
-        .await
-        .with_context(|| format!("failed to fetch release metadata from '{}'", url))?;
-    if !response.status().is_success() {
-        bail!(
-            "release lookup request to '{}' returned status {}",
-            url,
-            response.status()
-        );
-    }
-    response
-        .json::<Vec<GitHubReleaseRecord>>()
-        .await
-        .with_context(|| format!("failed to parse release lookup response from '{}'", url))
-}
-
-#[cfg_attr(not(test), allow(dead_code))]
-pub(crate) fn resolve_latest_channel_release(
-    channel: ReleaseChannel,
-    url: &str,
-) -> Result<Option<String>> {
-    let releases = fetch_release_records(url)?;
-    Ok(select_latest_channel_release(channel, &releases))
-}
-
-pub(crate) fn resolve_latest_channel_release_cached(
-    channel: ReleaseChannel,
-    url: &str,
-    cache_path: &Path,
-    cache_ttl_ms: u64,
-) -> Result<LatestChannelReleaseResolution> {
-    let now_ms = current_unix_timestamp_ms();
-    let mut stale_cache_releases: Option<Vec<GitHubReleaseRecord>> = None;
-
-    if let Ok(Some(cache)) = load_release_lookup_cache(cache_path, url) {
-        let age_ms = now_ms.saturating_sub(cache.fetched_at_unix_ms);
-        if age_ms <= cache_ttl_ms {
-            return Ok(LatestChannelReleaseResolution {
-                latest: select_latest_channel_release(channel, &cache.releases),
-                source: ReleaseLookupSource::CacheFresh,
-            });
-        }
-        stale_cache_releases = Some(cache.releases);
-    }
-
-    match fetch_release_records(url) {
-        Ok(releases) => {
-            let _ = save_release_lookup_cache(cache_path, url, now_ms, &releases);
-            Ok(LatestChannelReleaseResolution {
-                latest: select_latest_channel_release(channel, &releases),
-                source: ReleaseLookupSource::Live,
-            })
-        }
-        Err(error) => {
-            if let Some(releases) = stale_cache_releases {
-                return Ok(LatestChannelReleaseResolution {
-                    latest: select_latest_channel_release(channel, &releases),
-                    source: ReleaseLookupSource::CacheStaleFallback,
-                });
-            }
-            Err(error)
-        }
-    }
-}
-
-pub(crate) fn release_lookup_url() -> &'static str {
-    RELEASE_LOOKUP_URL
 }
 
 fn release_lookup_source_label(source: ReleaseLookupSource) -> &'static str {
@@ -1147,7 +857,7 @@ pub(crate) fn execute_release_channel_command(command_args: &str, path: &Path) -
     execute_release_channel_command_with_lookup_options(
         command_args,
         path,
-        RELEASE_LOOKUP_URL,
+        release_lookup_url(),
         RELEASE_LOOKUP_CACHE_TTL_MS,
     )
 }

@@ -1,13 +1,11 @@
 use std::path::PathBuf;
 
-use serde::{Deserialize, Serialize};
-use tau_ai::Provider;
-
 use crate::extension_manifest::ExtensionRegisteredCommand;
-use crate::{
-    default_provider_auth_method, Cli, CredentialStoreEncryptionMode, ModelCatalog,
-    ProviderAuthMethod,
-};
+use crate::{default_provider_auth_method, Cli, ModelCatalog, ProviderAuthMethod};
+use serde::{Deserialize, Serialize};
+pub(crate) use tau_diagnostics::DoctorCommandConfig;
+#[cfg(test)]
+pub(crate) use tau_diagnostics::{DoctorMultiChannelReadinessConfig, DoctorProviderKeyStatus};
 pub(crate) use tau_provider::AuthCommandConfig;
 use tau_session::SessionImportMode;
 
@@ -17,62 +15,6 @@ pub(crate) struct SkillsSyncCommandConfig {
     pub(crate) default_lock_path: PathBuf,
     pub(crate) default_trust_root_path: Option<PathBuf>,
     pub(crate) doctor_config: DoctorCommandConfig,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct DoctorProviderKeyStatus {
-    pub(crate) provider_kind: Provider,
-    pub(crate) provider: String,
-    pub(crate) key_env_var: String,
-    pub(crate) present: bool,
-    pub(crate) auth_mode: ProviderAuthMethod,
-    pub(crate) mode_supported: bool,
-    pub(crate) login_backend_enabled: bool,
-    pub(crate) login_backend_executable: Option<String>,
-    pub(crate) login_backend_available: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct DoctorMultiChannelReadinessConfig {
-    pub(crate) ingress_dir: PathBuf,
-    pub(crate) credential_store_path: PathBuf,
-    pub(crate) credential_store_encryption: CredentialStoreEncryptionMode,
-    pub(crate) credential_store_key: Option<String>,
-    pub(crate) telegram_bot_token: Option<String>,
-    pub(crate) discord_bot_token: Option<String>,
-    pub(crate) whatsapp_access_token: Option<String>,
-    pub(crate) whatsapp_phone_number_id: Option<String>,
-}
-
-impl Default for DoctorMultiChannelReadinessConfig {
-    fn default() -> Self {
-        Self {
-            ingress_dir: PathBuf::from(".tau/multi-channel/live-ingress"),
-            credential_store_path: PathBuf::from(".tau/credentials.json"),
-            credential_store_encryption: CredentialStoreEncryptionMode::None,
-            credential_store_key: None,
-            telegram_bot_token: None,
-            discord_bot_token: None,
-            whatsapp_access_token: None,
-            whatsapp_phone_number_id: None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct DoctorCommandConfig {
-    pub(crate) model: String,
-    pub(crate) provider_keys: Vec<DoctorProviderKeyStatus>,
-    pub(crate) release_channel_path: PathBuf,
-    pub(crate) release_lookup_cache_path: PathBuf,
-    pub(crate) release_lookup_cache_ttl_ms: u64,
-    pub(crate) browser_automation_playwright_cli: String,
-    pub(crate) session_enabled: bool,
-    pub(crate) session_path: PathBuf,
-    pub(crate) skills_dir: PathBuf,
-    pub(crate) skills_lock_path: PathBuf,
-    pub(crate) trust_root_path: Option<PathBuf>,
-    pub(crate) multi_channel_live_readiness: DoctorMultiChannelReadinessConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

@@ -21,10 +21,6 @@ use crate::auth_commands::{
 use crate::channel_store::{
     ChannelArtifactRecord, ChannelAttachmentRecord, ChannelLogEntry, ChannelStore,
 };
-use crate::diagnostics_commands::{
-    render_doctor_report, render_doctor_report_json, run_doctor_checks_with_options,
-    DoctorCheckOptions, DoctorStatus,
-};
 use crate::github_issues_helpers::{
     attachment_filename_from_url, chunk_text_by_chars, evaluate_attachment_content_type_policy,
     evaluate_attachment_url_policy, extract_attachment_urls, split_at_char_index,
@@ -42,6 +38,10 @@ use crate::{
     session_message_preview, session_message_role, write_text_atomic, CanvasCommandConfig,
     CanvasEventOrigin, CanvasSessionLinkContext, PairingDecision, PromptRunStatus, RbacDecision,
     RenderOptions, SessionRuntime, TransportHealthSnapshot,
+};
+use tau_diagnostics::{
+    render_doctor_report, render_doctor_report_json, run_doctor_checks_with_options,
+    DoctorCheckOptions, DoctorStatus,
 };
 use tau_session::SessionStore;
 use tau_session::{parse_session_search_args, search_session_entries};
