@@ -120,8 +120,8 @@ pub(crate) fn execute_startup_preflight(cli: &Cli) -> Result<bool> {
     }
 
     if cli.gateway_remote_profile_inspect {
-        crate::runtime_cli_validation::validate_gateway_remote_profile_inspect_cli(cli)?;
-        crate::gateway_remote_profile::execute_gateway_remote_profile_inspect_command(cli)?;
+        crate::validate_gateway_remote_profile_inspect_cli(cli)?;
+        tau_cli::gateway_remote_profile::execute_gateway_remote_profile_inspect_command(cli)?;
         return Ok(true);
     }
 
