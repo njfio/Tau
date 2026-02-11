@@ -43,6 +43,10 @@ use tau_github_issues::github_transport_helpers::{
     is_retryable_github_status, is_retryable_transport_error, parse_retry_after, retry_delay,
     truncate_for_error,
 };
+use tau_github_issues::issue_auth_helpers::{
+    build_issue_auth_summary_line as build_shared_issue_auth_summary_line,
+    ensure_auth_json_flag as ensure_shared_auth_json_flag, IssueAuthSummaryKind,
+};
 use tau_github_issues::issue_comment::{
     extract_footer_event_keys, issue_command_reason_code, normalize_issue_command_status,
     render_issue_command_comment, render_issue_comment_chunks_with_footer,
@@ -5529,108 +5533,15 @@ fn doctor_status_label(status: DoctorStatus) -> &'static str {
 }
 
 fn ensure_auth_json_flag(args: &str) -> String {
-    let tokens = args
-        .split_whitespace()
-        .filter(|token| !token.trim().is_empty())
-        .collect::<Vec<_>>();
-    if tokens.contains(&"--json") {
-        args.trim().to_string()
-    } else if args.trim().is_empty() {
-        "--json".to_string()
-    } else {
-        format!("{} --json", args.trim())
-    }
+    ensure_shared_auth_json_flag(args)
 }
 
 fn build_issue_auth_summary_line(kind: TauIssueAuthCommandKind, raw_json: &str) -> String {
-    let Ok(payload) = serde_json::from_str::<Value>(raw_json) else {
-        return "summary: unavailable (auth JSON payload was malformed)".to_string();
+    let summary_kind = match kind {
+        TauIssueAuthCommandKind::Status => IssueAuthSummaryKind::Status,
+        TauIssueAuthCommandKind::Matrix => IssueAuthSummaryKind::Matrix,
     };
-    let providers = payload
-        .get("providers")
-        .and_then(Value::as_u64)
-        .unwrap_or(0);
-    let modes = payload.get("modes").and_then(Value::as_u64).unwrap_or(0);
-    let rows = payload.get("rows").and_then(Value::as_u64).unwrap_or(0);
-    let available = payload
-        .get("available")
-        .and_then(Value::as_u64)
-        .unwrap_or(0);
-    let unavailable = payload
-        .get("unavailable")
-        .and_then(Value::as_u64)
-        .unwrap_or(0);
-    let mode_supported = payload
-        .get("mode_supported")
-        .and_then(Value::as_u64)
-        .unwrap_or(0);
-    let mode_unsupported = payload
-        .get("mode_unsupported")
-        .and_then(Value::as_u64)
-        .unwrap_or(0);
-    let provider_filter = payload
-        .get("provider_filter")
-        .and_then(Value::as_str)
-        .unwrap_or("all");
-    let mode_filter = payload
-        .get("mode_filter")
-        .and_then(Value::as_str)
-        .unwrap_or("all");
-    let mode_support_filter = payload
-        .get("mode_support_filter")
-        .and_then(Value::as_str)
-        .unwrap_or("all");
-    let availability_filter = payload
-        .get("availability_filter")
-        .and_then(Value::as_str)
-        .unwrap_or("all");
-    let state_filter = payload
-        .get("state_filter")
-        .and_then(Value::as_str)
-        .unwrap_or("all");
-    let source_kind_filter = payload
-        .get("source_kind_filter")
-        .and_then(Value::as_str)
-        .unwrap_or("all");
-    let revoked_filter = payload
-        .get("revoked_filter")
-        .and_then(Value::as_str)
-        .unwrap_or("all");
-    match kind {
-        TauIssueAuthCommandKind::Status => format!(
-            "summary: providers={} rows={} available={} unavailable={} mode_supported={} mode_unsupported={} provider_filter={} mode_filter={} mode_support_filter={} availability_filter={} state_filter={} source_kind_filter={} revoked_filter={}",
-            providers,
-            rows,
-            available,
-            unavailable,
-            mode_supported,
-            mode_unsupported,
-            provider_filter,
-            mode_filter,
-            mode_support_filter,
-            availability_filter,
-            state_filter,
-            source_kind_filter,
-            revoked_filter
-        ),
-        TauIssueAuthCommandKind::Matrix => format!(
-            "summary: providers={} modes={} rows={} available={} unavailable={} mode_supported={} mode_unsupported={} provider_filter={} mode_filter={} mode_support_filter={} availability_filter={} state_filter={} source_kind_filter={} revoked_filter={}",
-            providers,
-            modes,
-            rows,
-            available,
-            unavailable,
-            mode_supported,
-            mode_unsupported,
-            provider_filter,
-            mode_filter,
-            mode_support_filter,
-            availability_filter,
-            state_filter,
-            source_kind_filter,
-            revoked_filter
-        ),
-    }
+    build_shared_issue_auth_summary_line(summary_kind, raw_json)
 }
 
 fn collect_issue_events(
