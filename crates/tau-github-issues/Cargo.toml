@@ -1,0 +1,7 @@
+[package]
+name = "tau-github-issues"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+reqwest = { workspace = true }

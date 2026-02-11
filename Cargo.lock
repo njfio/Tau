@@ -2742,6 +2742,7 @@ dependencies = [
  "tau-events",
  "tau-extensions",
  "tau-gateway",
+ "tau-github-issues",
  "tau-memory",
  "tau-multi-channel",
  "tau-ops",
@@ -2856,6 +2857,13 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tokio-tungstenite 0.24.0",
+]
+
+[[package]]
+name = "tau-github-issues"
+version = "0.1.0"
+dependencies = [
+ "reqwest 0.12.28",
 ]
 
 [[package]]
