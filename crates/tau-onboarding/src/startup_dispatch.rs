@@ -1,4 +1,6 @@
+use std::future::Future;
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 
 use anyhow::Result;
 use tau_cli::Cli;
@@ -12,6 +14,49 @@ pub struct StartupRuntimeDispatchContext {
     pub skills_lock_path: PathBuf,
     pub system_prompt: String,
     pub startup_policy: StartupPolicyBundle,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StartupModelRuntimeResolution<TModelRef, TFallbackModelRefs, TModelCatalog, TClient> {
+    pub model_ref: TModelRef,
+    pub fallback_model_refs: TFallbackModelRefs,
+    pub model_catalog: TModelCatalog,
+    pub client: TClient,
+}
+
+pub async fn resolve_startup_model_runtime_from_cli<
+    TModelRef,
+    TFallbackModelRefs,
+    TModelCatalog,
+    TClient,
+    FResolveModels,
+    FResolveModelCatalog,
+    FValidateModelCatalog,
+    FBuildClientWithFallbacks,
+>(
+    cli: &Cli,
+    resolve_models: FResolveModels,
+    resolve_model_catalog: FResolveModelCatalog,
+    validate_model_catalog: FValidateModelCatalog,
+    build_client_with_fallbacks: FBuildClientWithFallbacks,
+) -> Result<StartupModelRuntimeResolution<TModelRef, TFallbackModelRefs, TModelCatalog, TClient>>
+where
+    FResolveModels: FnOnce(&Cli) -> Result<(TModelRef, TFallbackModelRefs)>,
+    FResolveModelCatalog:
+        for<'a> FnOnce(&'a Cli) -> Pin<Box<dyn Future<Output = Result<TModelCatalog>> + 'a>>,
+    FValidateModelCatalog: FnOnce(&TModelCatalog, &TModelRef, &TFallbackModelRefs) -> Result<()>,
+    FBuildClientWithFallbacks: FnOnce(&Cli, &TModelRef, &TFallbackModelRefs) -> Result<TClient>,
+{
+    let (model_ref, fallback_model_refs) = resolve_models(cli)?;
+    let model_catalog = resolve_model_catalog(cli).await?;
+    validate_model_catalog(&model_catalog, &model_ref, &fallback_model_refs)?;
+    let client = build_client_with_fallbacks(cli, &model_ref, &fallback_model_refs)?;
+    Ok(StartupModelRuntimeResolution {
+        model_ref,
+        fallback_model_refs,
+        model_catalog,
+        client,
+    })
 }
 
 pub fn build_startup_runtime_dispatch_context(
@@ -59,9 +104,12 @@ pub fn resolve_runtime_skills_lock_path(
 mod tests {
     use super::{
         build_startup_runtime_dispatch_context, resolve_runtime_skills_dir,
-        resolve_runtime_skills_lock_path,
+        resolve_runtime_skills_lock_path, resolve_startup_model_runtime_from_cli,
+        StartupModelRuntimeResolution,
     };
+    use anyhow::{anyhow, Result};
     use clap::Parser;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use tau_cli::Cli;
     use tau_skills::default_skills_lock_path;
     use tempfile::tempdir;
@@ -186,5 +234,111 @@ mod tests {
         assert_eq!(context.effective_skills_dir, cli.skills_dir);
         assert_eq!(context.skills_lock_path, bootstrap_lock_path);
         assert!(context.system_prompt.contains("Tau system prompt"));
+    }
+
+    #[tokio::test]
+    async fn unit_resolve_startup_model_runtime_from_cli_returns_composed_outputs() {
+        let cli = parse_cli_with_stack();
+        let StartupModelRuntimeResolution {
+            model_ref,
+            fallback_model_refs,
+            model_catalog,
+            client,
+        } = resolve_startup_model_runtime_from_cli(
+            &cli,
+            |_cli| {
+                Ok((
+                    "primary-model".to_string(),
+                    vec!["fallback-a".to_string(), "fallback-b".to_string()],
+                ))
+            },
+            |_cli| Box::pin(async { Ok("catalog-v1".to_string()) }),
+            |catalog, model, fallback| {
+                assert_eq!(catalog, "catalog-v1");
+                assert_eq!(model, "primary-model");
+                assert_eq!(fallback.len(), 2);
+                Ok(())
+            },
+            |_cli, model, _fallback| Ok(format!("client:{model}")),
+        )
+        .await
+        .expect("runtime");
+
+        assert_eq!(model_ref, "primary-model");
+        assert_eq!(
+            fallback_model_refs,
+            vec!["fallback-a".to_string(), "fallback-b".to_string()]
+        );
+        assert_eq!(model_catalog, "catalog-v1");
+        assert_eq!(client, "client:primary-model");
+    }
+
+    #[tokio::test]
+    async fn functional_resolve_startup_model_runtime_from_cli_builds_client_from_resolved_models()
+    {
+        let cli = parse_cli_with_stack();
+        let build_calls = AtomicUsize::new(0);
+        let runtime = resolve_startup_model_runtime_from_cli(
+            &cli,
+            |_cli| {
+                Ok((
+                    "primary".to_string(),
+                    vec!["f1".to_string(), "f2".to_string()],
+                ))
+            },
+            |_cli| Box::pin(async { Ok("catalog".to_string()) }),
+            |_catalog, _model, _fallback| Ok(()),
+            |_cli, model, fallback| {
+                build_calls.fetch_add(1, Ordering::Relaxed);
+                Ok(format!("client:{model}+{}", fallback.len()))
+            },
+        )
+        .await
+        .expect("runtime");
+
+        assert_eq!(build_calls.load(Ordering::Relaxed), 1);
+        assert_eq!(runtime.client, "client:primary+2");
+    }
+
+    #[tokio::test]
+    async fn integration_resolve_startup_model_runtime_from_cli_validates_before_client_build() {
+        let cli = parse_cli_with_stack();
+        let stage = AtomicUsize::new(0);
+        let _runtime = resolve_startup_model_runtime_from_cli(
+            &cli,
+            |_cli| Ok(("primary".to_string(), vec!["fallback".to_string()])),
+            |_cli| Box::pin(async { Ok("catalog".to_string()) }),
+            |_catalog, _model, _fallback| {
+                stage.store(1, Ordering::Relaxed);
+                Ok(())
+            },
+            |_cli, _model, _fallback| {
+                assert_eq!(stage.load(Ordering::Relaxed), 1);
+                stage.store(2, Ordering::Relaxed);
+                Ok("client".to_string())
+            },
+        )
+        .await
+        .expect("runtime");
+
+        assert_eq!(stage.load(Ordering::Relaxed), 2);
+    }
+
+    #[tokio::test]
+    async fn regression_resolve_startup_model_runtime_from_cli_propagates_validation_errors() {
+        let cli = parse_cli_with_stack();
+        let error = resolve_startup_model_runtime_from_cli(
+            &cli,
+            |_cli| Ok(("primary".to_string(), vec!["fallback".to_string()])),
+            |_cli| Box::pin(async { Ok("catalog".to_string()) }),
+            |_catalog, _model, _fallback| Err(anyhow!("catalog validation failed")),
+            |_cli, _model, _fallback| -> Result<String> {
+                panic!("client builder should not run after validation error");
+            },
+        )
+        .await
+        .expect_err("validation errors should propagate");
+
+        assert!(error.to_string().contains("catalog validation failed"));
     }
 }
