@@ -7,7 +7,8 @@ use std::sync::Arc;
 use tau_onboarding::startup_transport_modes::{
     build_multi_channel_media_config, build_multi_channel_outbound_config,
     build_multi_channel_telemetry_config, run_gateway_contract_runner_if_requested,
-    run_gateway_openresponses_server_if_requested, run_multi_channel_live_connectors_if_requested,
+    run_gateway_openresponses_server_if_requested, run_multi_agent_contract_runner_if_requested,
+    run_multi_channel_live_connectors_if_requested,
 };
 
 pub(crate) async fn run_transport_mode_if_requested(
@@ -241,16 +242,7 @@ pub(crate) async fn run_transport_mode_if_requested(
         return Ok(true);
     }
 
-    if cli.multi_agent_contract_runner {
-        run_multi_agent_contract_runner(MultiAgentRuntimeConfig {
-            fixture_path: cli.multi_agent_fixture.clone(),
-            state_dir: cli.multi_agent_state_dir.clone(),
-            queue_limit: cli.multi_agent_queue_limit.max(1),
-            processed_case_cap: cli.multi_agent_processed_case_cap.max(1),
-            retry_max_attempts: cli.multi_agent_retry_max_attempts.max(1),
-            retry_base_delay_ms: cli.multi_agent_retry_base_delay_ms,
-        })
-        .await?;
+    if run_multi_agent_contract_runner_if_requested(cli).await? {
         return Ok(true);
     }
 

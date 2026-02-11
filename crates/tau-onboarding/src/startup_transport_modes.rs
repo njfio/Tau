@@ -12,6 +12,7 @@ use tau_multi_channel::{
     MultiChannelLiveConnectorsConfig, MultiChannelMediaUnderstandingConfig,
     MultiChannelOutboundConfig, MultiChannelTelemetryConfig,
 };
+use tau_orchestrator::multi_agent_runtime::MultiAgentRuntimeConfig;
 use tau_provider::{load_credential_store, resolve_credential_store_encryption_mode};
 use tau_tools::tools::{register_builtin_tools, ToolPolicy};
 
@@ -108,6 +109,26 @@ pub async fn run_gateway_contract_runner_if_requested(cli: &Cli) -> Result<bool>
     }
     let config = build_gateway_contract_runner_config(cli);
     tau_gateway::run_gateway_contract_runner(config).await?;
+    Ok(true)
+}
+
+pub fn build_multi_agent_contract_runner_config(cli: &Cli) -> MultiAgentRuntimeConfig {
+    MultiAgentRuntimeConfig {
+        fixture_path: cli.multi_agent_fixture.clone(),
+        state_dir: cli.multi_agent_state_dir.clone(),
+        queue_limit: cli.multi_agent_queue_limit.max(1),
+        processed_case_cap: cli.multi_agent_processed_case_cap.max(1),
+        retry_max_attempts: cli.multi_agent_retry_max_attempts.max(1),
+        retry_base_delay_ms: cli.multi_agent_retry_base_delay_ms,
+    }
+}
+
+pub async fn run_multi_agent_contract_runner_if_requested(cli: &Cli) -> Result<bool> {
+    if !cli.multi_agent_contract_runner {
+        return Ok(false);
+    }
+    let config = build_multi_agent_contract_runner_config(cli);
+    tau_orchestrator::multi_agent_runtime::run_multi_agent_contract_runner(config).await?;
     Ok(true)
 }
 
@@ -246,10 +267,10 @@ fn resolve_non_empty_cli_value(value: Option<&str>) -> Option<String> {
 mod tests {
     use super::{
         build_gateway_contract_runner_config, build_gateway_openresponses_server_config,
-        build_multi_channel_live_connectors_config, build_multi_channel_media_config,
-        build_multi_channel_outbound_config, build_multi_channel_telemetry_config,
-        map_gateway_openresponses_auth_mode, resolve_gateway_openresponses_auth,
-        resolve_multi_channel_outbound_secret,
+        build_multi_agent_contract_runner_config, build_multi_channel_live_connectors_config,
+        build_multi_channel_media_config, build_multi_channel_outbound_config,
+        build_multi_channel_telemetry_config, map_gateway_openresponses_auth_mode,
+        resolve_gateway_openresponses_auth, resolve_multi_channel_outbound_secret,
     };
     use async_trait::async_trait;
     use clap::Parser;
@@ -371,6 +392,19 @@ mod tests {
     }
 
     #[test]
+    fn regression_build_multi_agent_contract_runner_config_enforces_minimums() {
+        let mut cli = parse_cli_with_stack();
+        cli.multi_agent_queue_limit = 0;
+        cli.multi_agent_processed_case_cap = 0;
+        cli.multi_agent_retry_max_attempts = 0;
+
+        let config = build_multi_agent_contract_runner_config(&cli);
+        assert_eq!(config.queue_limit, 1);
+        assert_eq!(config.processed_case_cap, 1);
+        assert_eq!(config.retry_max_attempts, 1);
+    }
+
+    #[test]
     fn integration_build_gateway_openresponses_server_config_preserves_runtime_fields() {
         let mut cli = parse_cli_with_stack();
         cli.gateway_openresponses_auth_mode = CliGatewayOpenResponsesAuthMode::PasswordSession;
@@ -443,6 +477,17 @@ mod tests {
         assert!(!handled);
     }
 
+    #[tokio::test]
+    async fn unit_run_multi_agent_contract_runner_if_requested_returns_false_when_disabled() {
+        let cli = parse_cli_with_stack();
+
+        let handled = super::run_multi_agent_contract_runner_if_requested(&cli)
+            .await
+            .expect("multi-agent contract helper");
+
+        assert!(!handled);
+    }
+
     #[test]
     fn integration_build_gateway_contract_runner_config_preserves_runtime_fields() {
         let temp = tempdir().expect("tempdir");
@@ -461,6 +506,26 @@ mod tests {
         assert_eq!(config.retry_base_delay_ms, 0);
         assert_eq!(config.guardrail_failure_streak_threshold, 7);
         assert_eq!(config.guardrail_retryable_failures_threshold, 9);
+    }
+
+    #[test]
+    fn integration_build_multi_agent_contract_runner_config_preserves_runtime_fields() {
+        let temp = tempdir().expect("tempdir");
+        let mut cli = parse_cli_with_stack();
+        cli.multi_agent_fixture = temp.path().join("multi-agent-fixture.json");
+        cli.multi_agent_state_dir = temp.path().join("multi-agent-state");
+        cli.multi_agent_queue_limit = 42;
+        cli.multi_agent_processed_case_cap = 3_200;
+        cli.multi_agent_retry_max_attempts = 8;
+        cli.multi_agent_retry_base_delay_ms = 250;
+
+        let config = build_multi_agent_contract_runner_config(&cli);
+        assert_eq!(config.fixture_path, cli.multi_agent_fixture);
+        assert_eq!(config.state_dir, cli.multi_agent_state_dir);
+        assert_eq!(config.queue_limit, 42);
+        assert_eq!(config.processed_case_cap, 3_200);
+        assert_eq!(config.retry_max_attempts, 8);
+        assert_eq!(config.retry_base_delay_ms, 250);
     }
 
     #[tokio::test]
