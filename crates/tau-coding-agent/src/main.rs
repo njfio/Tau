@@ -164,8 +164,6 @@ pub(crate) use crate::project_index::execute_project_index_command;
 pub(crate) use crate::qa_loop_commands::{
     execute_qa_loop_cli_command, execute_qa_loop_preflight_command, QA_LOOP_USAGE,
 };
-#[cfg(test)]
-pub(crate) use crate::release_channel_commands::load_release_channel_store;
 pub(crate) use crate::release_channel_commands::{
     default_release_channel_path, execute_release_channel_command, RELEASE_CHANNEL_USAGE,
 };
@@ -196,13 +194,6 @@ pub(crate) use crate::runtime_types::{
 pub(crate) use crate::runtime_types::{
     DoctorCommandConfig, DoctorMultiChannelReadinessConfig, DoctorProviderKeyStatus,
 };
-#[cfg(test)]
-pub(crate) use crate::skills::{
-    augment_system_prompt, build_local_skill_lock_hints, build_registry_skill_lock_hints,
-    build_remote_skill_lock_hints, default_skills_cache_dir, fetch_registry_manifest_with_cache,
-    install_remote_skills_with_cache, install_skills, resolve_registry_skill_sources,
-    resolve_remote_skill_sources, resolve_selected_skills, SkillsDownloadOptions,
-};
 use crate::skills::{
     default_skills_lock_path, load_catalog, load_skills_lockfile, sync_skills_with_lockfile,
     write_skills_lockfile, TrustedKey,
@@ -228,7 +219,7 @@ pub(crate) use crate::skills_commands::{
 };
 #[cfg(test)]
 pub(crate) use crate::skills_commands::{
-    render_skills_lock_write_success, render_skills_sync_drift_details, render_skills_sync_in_sync,
+    render_skills_lock_write_success, render_skills_sync_drift_details,
 };
 pub(crate) use crate::startup_config::{build_auth_command_config, build_profile_defaults};
 use crate::startup_dispatch::run_cli;
@@ -282,13 +273,13 @@ pub(crate) use tau_cli::validation::validate_gateway_remote_profile_inspect_cli;
 pub(crate) use tau_cli::validation::validate_multi_channel_live_connectors_runner_cli;
 #[cfg(test)]
 pub(crate) use tau_cli::validation::{
-    validate_browser_automation_contract_runner_cli, validate_custom_command_contract_runner_cli,
-    validate_dashboard_contract_runner_cli, validate_deployment_contract_runner_cli,
-    validate_events_runner_cli, validate_gateway_contract_runner_cli,
-    validate_gateway_openresponses_server_cli, validate_github_issues_bridge_cli,
-    validate_memory_contract_runner_cli, validate_multi_agent_contract_runner_cli,
-    validate_multi_channel_contract_runner_cli, validate_multi_channel_live_runner_cli,
-    validate_slack_bridge_cli, validate_voice_contract_runner_cli,
+    validate_custom_command_contract_runner_cli, validate_dashboard_contract_runner_cli,
+    validate_deployment_contract_runner_cli, validate_events_runner_cli,
+    validate_gateway_contract_runner_cli, validate_gateway_openresponses_server_cli,
+    validate_github_issues_bridge_cli, validate_memory_contract_runner_cli,
+    validate_multi_agent_contract_runner_cli, validate_multi_channel_contract_runner_cli,
+    validate_multi_channel_live_runner_cli, validate_slack_bridge_cli,
+    validate_voice_contract_runner_cli,
 };
 #[cfg(test)]
 pub(crate) use tau_cli::validation::{
