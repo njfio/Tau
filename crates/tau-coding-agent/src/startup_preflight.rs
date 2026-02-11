@@ -150,66 +150,7 @@ impl tau_startup::StartupPreflightActions for TauStartupPreflightActions {
     }
 
     fn handle_daemon_commands(&self, cli: &Cli) -> Result<bool> {
-        if crate::daemon_runtime::tau_daemon_mode_requested(cli) {
-            validate_daemon_cli(cli)?;
-            let config = crate::daemon_runtime::TauDaemonConfig {
-                state_dir: cli.daemon_state_dir.clone(),
-                profile: cli.daemon_profile,
-            };
-
-            if cli.daemon_install {
-                let report = crate::daemon_runtime::install_tau_daemon(&config)?;
-                println!(
-                    "{}",
-                    crate::daemon_runtime::render_tau_daemon_status_report(&report)
-                );
-                return Ok(true);
-            }
-            if cli.daemon_uninstall {
-                let report = crate::daemon_runtime::uninstall_tau_daemon(&config)?;
-                println!(
-                    "{}",
-                    crate::daemon_runtime::render_tau_daemon_status_report(&report)
-                );
-                return Ok(true);
-            }
-            if cli.daemon_start {
-                let report = crate::daemon_runtime::start_tau_daemon(&config)?;
-                println!(
-                    "{}",
-                    crate::daemon_runtime::render_tau_daemon_status_report(&report)
-                );
-                return Ok(true);
-            }
-            if cli.daemon_stop {
-                let report = crate::daemon_runtime::stop_tau_daemon(
-                    &config,
-                    cli.daemon_stop_reason.as_deref(),
-                )?;
-                println!(
-                    "{}",
-                    crate::daemon_runtime::render_tau_daemon_status_report(&report)
-                );
-                return Ok(true);
-            }
-            if cli.daemon_status {
-                let report = crate::daemon_runtime::inspect_tau_daemon(&config)?;
-                if cli.daemon_status_json {
-                    println!(
-                        "{}",
-                        serde_json::to_string_pretty(&report)
-                            .context("failed to render daemon status json")?
-                    );
-                } else {
-                    println!(
-                        "{}",
-                        crate::daemon_runtime::render_tau_daemon_status_report(&report)
-                    );
-                }
-                return Ok(true);
-            }
-        }
-        Ok(false)
+        tau_onboarding::startup_daemon_preflight::handle_daemon_commands(cli)
     }
 }
 

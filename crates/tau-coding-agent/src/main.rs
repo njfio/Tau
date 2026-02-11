@@ -15,7 +15,6 @@ mod commands;
 mod credentials;
 mod custom_command_contract;
 mod custom_command_runtime;
-mod daemon_runtime;
 mod dashboard_contract;
 mod dashboard_runtime;
 mod deployment_runtime;
@@ -295,21 +294,20 @@ pub(crate) use tau_cli::validation::validate_gateway_remote_profile_inspect_cli;
 pub(crate) use tau_cli::validation::validate_multi_channel_live_connectors_runner_cli;
 pub(crate) use tau_cli::validation::{
     validate_browser_automation_contract_runner_cli, validate_custom_command_contract_runner_cli,
-    validate_daemon_cli, validate_dashboard_contract_runner_cli,
-    validate_deployment_contract_runner_cli, validate_events_runner_cli,
-    validate_gateway_contract_runner_cli, validate_gateway_openresponses_server_cli,
-    validate_github_issues_bridge_cli, validate_memory_contract_runner_cli,
-    validate_multi_agent_contract_runner_cli, validate_multi_channel_contract_runner_cli,
-    validate_multi_channel_live_runner_cli, validate_slack_bridge_cli,
-    validate_voice_contract_runner_cli,
+    validate_dashboard_contract_runner_cli, validate_deployment_contract_runner_cli,
+    validate_events_runner_cli, validate_gateway_contract_runner_cli,
+    validate_gateway_openresponses_server_cli, validate_github_issues_bridge_cli,
+    validate_memory_contract_runner_cli, validate_multi_agent_contract_runner_cli,
+    validate_multi_channel_contract_runner_cli, validate_multi_channel_live_runner_cli,
+    validate_slack_bridge_cli, validate_voice_contract_runner_cli,
 };
 #[cfg(test)]
 pub(crate) use tau_cli::validation::{
-    validate_deployment_wasm_inspect_cli, validate_deployment_wasm_package_cli,
-    validate_event_webhook_ingest_cli, validate_gateway_service_cli,
-    validate_multi_channel_channel_lifecycle_cli, validate_multi_channel_incident_timeline_cli,
-    validate_multi_channel_live_ingest_cli, validate_multi_channel_send_cli,
-    validate_project_index_cli,
+    validate_daemon_cli, validate_deployment_wasm_inspect_cli,
+    validate_deployment_wasm_package_cli, validate_event_webhook_ingest_cli,
+    validate_gateway_service_cli, validate_multi_channel_channel_lifecycle_cli,
+    validate_multi_channel_incident_timeline_cli, validate_multi_channel_live_ingest_cli,
+    validate_multi_channel_send_cli, validate_project_index_cli,
 };
 pub(crate) use tau_core::write_text_atomic;
 pub(crate) use tau_core::{current_unix_timestamp, current_unix_timestamp_ms, is_expired_unix};

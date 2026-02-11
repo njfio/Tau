@@ -5,6 +5,7 @@ pub mod onboarding_release_channel;
 pub mod onboarding_report;
 pub mod profile_store;
 pub mod startup_config;
+pub mod startup_daemon_preflight;
 pub mod startup_dispatch;
 pub mod startup_model_resolution;
 pub mod startup_policy;
