@@ -62,7 +62,6 @@ mod tests {
         resolve_runtime_skills_lock_path,
     };
     use clap::Parser;
-    use std::path::PathBuf;
     use tau_cli::Cli;
     use tau_skills::default_skills_lock_path;
     use tempfile::tempdir;
@@ -127,7 +126,7 @@ mod tests {
             resolve_runtime_skills_lock_path(&cli, &bootstrap_lock_path, &activated_skills_dir);
 
         assert_eq!(resolved, default_skills_lock_path(&activated_skills_dir));
-        assert_ne!(resolved, PathBuf::from(bootstrap_lock_path));
+        assert_ne!(resolved, bootstrap_lock_path);
     }
 
     #[test]
