@@ -67,6 +67,26 @@ pub enum ContractTransportMode {
     Voice,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TransportRuntimeMode {
+    None,
+    GatewayOpenResponsesServer,
+    GithubIssuesBridge,
+    SlackBridge,
+    EventsRunner,
+    MultiChannelContractRunner,
+    MultiChannelLiveRunner,
+    MultiChannelLiveConnectorsRunner,
+    MultiAgentContractRunner,
+    BrowserAutomationContractRunner,
+    MemoryContractRunner,
+    DashboardContractRunner,
+    GatewayContractRunner,
+    DeploymentContractRunner,
+    CustomCommandContractRunner,
+    VoiceContractRunner,
+}
+
 pub fn validate_transport_mode_cli(cli: &Cli) -> Result<()> {
     validate_github_issues_bridge_cli(cli)?;
     validate_slack_bridge_cli(cli)?;
@@ -130,6 +150,52 @@ pub fn resolve_contract_transport_mode(cli: &Cli) -> ContractTransportMode {
     } else {
         ContractTransportMode::None
     }
+}
+
+pub fn resolve_transport_runtime_mode(cli: &Cli) -> TransportRuntimeMode {
+    if cli.gateway_openresponses_server {
+        return TransportRuntimeMode::GatewayOpenResponsesServer;
+    }
+
+    match resolve_bridge_transport_mode(cli) {
+        BridgeTransportMode::GithubIssuesBridge => {
+            return TransportRuntimeMode::GithubIssuesBridge;
+        }
+        BridgeTransportMode::SlackBridge => return TransportRuntimeMode::SlackBridge,
+        BridgeTransportMode::EventsRunner => return TransportRuntimeMode::EventsRunner,
+        BridgeTransportMode::None => {}
+    }
+
+    match resolve_multi_channel_transport_mode(cli) {
+        MultiChannelTransportMode::ContractRunner => {
+            return TransportRuntimeMode::MultiChannelContractRunner;
+        }
+        MultiChannelTransportMode::LiveRunner => {
+            return TransportRuntimeMode::MultiChannelLiveRunner;
+        }
+        MultiChannelTransportMode::LiveConnectorsRunner => {
+            return TransportRuntimeMode::MultiChannelLiveConnectorsRunner;
+        }
+        MultiChannelTransportMode::None => {}
+    }
+
+    match resolve_contract_transport_mode(cli) {
+        ContractTransportMode::MultiAgent => return TransportRuntimeMode::MultiAgentContractRunner,
+        ContractTransportMode::BrowserAutomation => {
+            return TransportRuntimeMode::BrowserAutomationContractRunner;
+        }
+        ContractTransportMode::Memory => return TransportRuntimeMode::MemoryContractRunner,
+        ContractTransportMode::Dashboard => return TransportRuntimeMode::DashboardContractRunner,
+        ContractTransportMode::Gateway => return TransportRuntimeMode::GatewayContractRunner,
+        ContractTransportMode::Deployment => return TransportRuntimeMode::DeploymentContractRunner,
+        ContractTransportMode::CustomCommand => {
+            return TransportRuntimeMode::CustomCommandContractRunner;
+        }
+        ContractTransportMode::Voice => return TransportRuntimeMode::VoiceContractRunner,
+        ContractTransportMode::None => {}
+    }
+
+    TransportRuntimeMode::None
 }
 
 pub fn map_gateway_openresponses_auth_mode(
@@ -771,8 +837,9 @@ mod tests {
         build_voice_contract_runner_config, map_gateway_openresponses_auth_mode,
         resolve_bridge_transport_mode, resolve_contract_transport_mode,
         resolve_gateway_openresponses_auth, resolve_multi_channel_outbound_secret,
-        resolve_multi_channel_transport_mode, validate_transport_mode_cli, BridgeTransportMode,
-        ContractTransportMode, MultiChannelTransportMode,
+        resolve_multi_channel_transport_mode, resolve_transport_runtime_mode,
+        validate_transport_mode_cli, BridgeTransportMode, ContractTransportMode,
+        MultiChannelTransportMode, TransportRuntimeMode,
     };
     use async_trait::async_trait;
     use clap::Parser;
@@ -974,6 +1041,73 @@ mod tests {
         assert_eq!(
             resolve_bridge_transport_mode(&cli),
             BridgeTransportMode::EventsRunner
+        );
+    }
+
+    #[test]
+    fn unit_resolve_transport_runtime_mode_defaults_to_none() {
+        let cli = parse_cli_with_stack();
+        assert_eq!(
+            resolve_transport_runtime_mode(&cli),
+            TransportRuntimeMode::None
+        );
+    }
+
+    #[test]
+    fn functional_resolve_transport_runtime_mode_prefers_gateway_openresponses_server() {
+        let mut cli = parse_cli_with_stack();
+        cli.gateway_openresponses_server = true;
+        cli.github_issues_bridge = true;
+        cli.slack_bridge = true;
+        cli.events_runner = true;
+        cli.multi_channel_contract_runner = true;
+        cli.multi_channel_live_runner = true;
+        cli.multi_channel_live_connectors_runner = true;
+        cli.multi_agent_contract_runner = true;
+        cli.browser_automation_contract_runner = true;
+        cli.memory_contract_runner = true;
+        cli.dashboard_contract_runner = true;
+        cli.gateway_contract_runner = true;
+        cli.deployment_contract_runner = true;
+        cli.custom_command_contract_runner = true;
+        cli.voice_contract_runner = true;
+        assert_eq!(
+            resolve_transport_runtime_mode(&cli),
+            TransportRuntimeMode::GatewayOpenResponsesServer
+        );
+    }
+
+    #[test]
+    fn integration_resolve_transport_runtime_mode_prefers_bridge_before_multi_channel_and_contract()
+    {
+        let mut cli = parse_cli_with_stack();
+        cli.github_issues_bridge = true;
+        cli.multi_channel_contract_runner = true;
+        cli.multi_agent_contract_runner = true;
+        assert_eq!(
+            resolve_transport_runtime_mode(&cli),
+            TransportRuntimeMode::GithubIssuesBridge
+        );
+    }
+
+    #[test]
+    fn integration_resolve_transport_runtime_mode_prefers_multi_channel_before_contract() {
+        let mut cli = parse_cli_with_stack();
+        cli.multi_channel_live_runner = true;
+        cli.voice_contract_runner = true;
+        assert_eq!(
+            resolve_transport_runtime_mode(&cli),
+            TransportRuntimeMode::MultiChannelLiveRunner
+        );
+    }
+
+    #[test]
+    fn regression_resolve_transport_runtime_mode_selects_voice_contract_runner() {
+        let mut cli = parse_cli_with_stack();
+        cli.voice_contract_runner = true;
+        assert_eq!(
+            resolve_transport_runtime_mode(&cli),
+            TransportRuntimeMode::VoiceContractRunner
         );
     }
 
