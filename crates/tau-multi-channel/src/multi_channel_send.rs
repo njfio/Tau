@@ -447,8 +447,8 @@ fn sanitize_event_component(raw: &str) -> String {
 }
 
 fn is_telegram_chat_id(value: &str) -> bool {
-    if value.starts_with('-') {
-        return value[1..].chars().all(|ch| ch.is_ascii_digit());
+    if let Some(stripped) = value.strip_prefix('-') {
+        return stripped.chars().all(|ch| ch.is_ascii_digit());
     }
     value.chars().all(|ch| ch.is_ascii_digit())
 }
