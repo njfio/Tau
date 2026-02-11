@@ -22,5 +22,6 @@ tau-tools = { path = "../tau-tools" }
 tau-ops = { path = "../tau-ops" }
 
 [dev-dependencies]
+async-trait = { workspace = true }
 clap = { workspace = true }
 tempfile = "3"

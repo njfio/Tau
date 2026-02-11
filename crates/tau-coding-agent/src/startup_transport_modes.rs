@@ -4,23 +4,11 @@ use crate::channel_adapters::{
 };
 use crate::validate_multi_channel_live_connectors_runner_cli;
 use std::sync::Arc;
-use tau_gateway::GatewayToolRegistrar;
 use tau_onboarding::startup_transport_modes::{
-    build_multi_channel_media_config, build_multi_channel_outbound_config,
-    build_multi_channel_telemetry_config, map_gateway_openresponses_auth_mode,
-    resolve_gateway_openresponses_auth, resolve_multi_channel_outbound_secret,
+    build_gateway_openresponses_server_config, build_multi_channel_media_config,
+    build_multi_channel_outbound_config, build_multi_channel_telemetry_config,
+    resolve_multi_channel_outbound_secret,
 };
-
-#[derive(Clone)]
-struct GatewayToolPolicyRegistrar {
-    policy: ToolPolicy,
-}
-
-impl GatewayToolRegistrar for GatewayToolPolicyRegistrar {
-    fn register(&self, agent: &mut tau_agent_core::Agent) {
-        crate::tools::register_builtin_tools(agent, self.policy.clone());
-    }
-}
 
 pub(crate) async fn run_transport_mode_if_requested(
     cli: &Cli,
@@ -47,31 +35,14 @@ pub(crate) async fn run_transport_mode_if_requested(
     validate_voice_contract_runner_cli(cli)?;
 
     if cli.gateway_openresponses_server {
-        let (auth_token, auth_password) = resolve_gateway_openresponses_auth(cli);
-        tau_gateway::run_gateway_openresponses_server(
-            tau_gateway::GatewayOpenResponsesServerConfig {
-                client: client.clone(),
-                model: model_ref.model.clone(),
-                system_prompt: system_prompt.to_string(),
-                max_turns: cli.max_turns,
-                tool_registrar: Arc::new(GatewayToolPolicyRegistrar {
-                    policy: tool_policy.clone(),
-                }),
-                turn_timeout_ms: cli.turn_timeout_ms,
-                session_lock_wait_ms: cli.session_lock_wait_ms,
-                session_lock_stale_ms: cli.session_lock_stale_ms,
-                state_dir: cli.gateway_state_dir.clone(),
-                bind: cli.gateway_openresponses_bind.clone(),
-                auth_mode: map_gateway_openresponses_auth_mode(cli.gateway_openresponses_auth_mode),
-                auth_token,
-                auth_password,
-                session_ttl_seconds: cli.gateway_openresponses_session_ttl_seconds,
-                rate_limit_window_seconds: cli.gateway_openresponses_rate_limit_window_seconds,
-                rate_limit_max_requests: cli.gateway_openresponses_rate_limit_max_requests,
-                max_input_chars: cli.gateway_openresponses_max_input_chars,
-            },
-        )
-        .await?;
+        let config = build_gateway_openresponses_server_config(
+            cli,
+            client.clone(),
+            model_ref,
+            system_prompt,
+            tool_policy,
+        );
+        tau_gateway::run_gateway_openresponses_server(config).await?;
         return Ok(true);
     }
 
