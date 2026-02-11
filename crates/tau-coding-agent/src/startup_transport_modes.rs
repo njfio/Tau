@@ -7,10 +7,11 @@ use std::sync::Arc;
 use tau_onboarding::startup_transport_modes::{
     build_browser_automation_contract_runner_config, build_custom_command_contract_runner_config,
     build_dashboard_contract_runner_config, build_deployment_contract_runner_config,
-    build_memory_contract_runner_config, build_voice_contract_runner_config,
-    run_gateway_contract_runner_if_requested, run_gateway_openresponses_server_if_requested,
-    run_multi_agent_contract_runner_if_requested, run_multi_channel_contract_runner_if_requested,
-    run_multi_channel_live_connectors_if_requested, run_multi_channel_live_runner_if_requested,
+    build_events_runner_cli_config, build_memory_contract_runner_config,
+    build_voice_contract_runner_config, run_gateway_contract_runner_if_requested,
+    run_gateway_openresponses_server_if_requested, run_multi_agent_contract_runner_if_requested,
+    run_multi_channel_contract_runner_if_requested, run_multi_channel_live_connectors_if_requested,
+    run_multi_channel_live_runner_if_requested,
 };
 
 pub(crate) async fn run_transport_mode_if_requested(
@@ -169,6 +170,7 @@ pub(crate) async fn run_transport_mode_if_requested(
     }
 
     if cli.events_runner {
+        let config = build_events_runner_cli_config(cli);
         run_event_scheduler(EventSchedulerConfig {
             client: client.clone(),
             model: model_ref.model.clone(),
@@ -179,12 +181,12 @@ pub(crate) async fn run_transport_mode_if_requested(
             render_options,
             session_lock_wait_ms: cli.session_lock_wait_ms,
             session_lock_stale_ms: cli.session_lock_stale_ms,
-            channel_store_root: cli.channel_store_root.clone(),
-            events_dir: cli.events_dir.clone(),
-            state_path: cli.events_state_path.clone(),
-            poll_interval: Duration::from_millis(cli.events_poll_interval_ms.max(1)),
-            queue_limit: cli.events_queue_limit.max(1),
-            stale_immediate_max_age_seconds: cli.events_stale_immediate_max_age_seconds,
+            channel_store_root: config.channel_store_root,
+            events_dir: config.events_dir,
+            state_path: config.state_path,
+            poll_interval: Duration::from_millis(config.poll_interval_ms),
+            queue_limit: config.queue_limit,
+            stale_immediate_max_age_seconds: config.stale_immediate_max_age_seconds,
         })
         .await?;
         return Ok(true);
