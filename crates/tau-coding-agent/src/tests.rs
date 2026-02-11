@@ -126,7 +126,7 @@ use crate::auth_commands::{
 };
 use crate::extension_manifest::discover_extension_runtime_registrations;
 use crate::provider_api_key_candidates_with_inputs;
-use crate::provider_credentials::provider_auth_snapshot_for_status;
+use crate::provider_auth_snapshot_for_status;
 use crate::resolve_api_key;
 use crate::tools::{register_extension_tools, BashCommandProfile, OsSandboxMode, ToolPolicyPreset};
 use crate::{default_model_catalog_cache_path, ModelCatalog, MODELS_LIST_USAGE, MODEL_SHOW_USAGE};

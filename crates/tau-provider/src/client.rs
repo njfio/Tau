@@ -1,8 +1,24 @@
-use super::*;
+use std::sync::Arc;
+
+use anyhow::{anyhow, bail, Result};
+use tau_ai::{
+    AnthropicClient, AnthropicConfig, GoogleClient, GoogleConfig, LlmClient, OpenAiAuthScheme,
+    OpenAiClient, OpenAiConfig, Provider,
+};
+use tau_cli::Cli;
+
+use crate::auth::{
+    configured_provider_auth_method, missing_provider_api_key_message, provider_auth_capability,
+    provider_auth_mode_flag,
+};
 use crate::claude_cli_client::{ClaudeCliClient, ClaudeCliConfig};
 use crate::codex_cli_client::{CodexCliClient, CodexCliConfig};
+use crate::credential_store::{load_credential_store, resolve_credential_store_encryption_mode};
+use crate::credentials::{
+    CliProviderCredentialResolver, ProviderAuthCredential, ProviderCredentialResolver,
+};
 use crate::gemini_cli_client::{GeminiCliClient, GeminiCliConfig};
-use crate::provider_credentials::ProviderAuthCredential;
+use crate::types::ProviderAuthMethod;
 
 fn resolved_secret_for_provider(
     resolved: &ProviderAuthCredential,
@@ -244,7 +260,7 @@ fn build_google_http_client(
     Ok(Arc::new(client))
 }
 
-pub(crate) fn build_provider_client(cli: &Cli, provider: Provider) -> Result<Arc<dyn LlmClient>> {
+pub fn build_provider_client(cli: &Cli, provider: Provider) -> Result<Arc<dyn LlmClient>> {
     let auth_mode = configured_provider_auth_method(cli, provider);
     let capability = provider_auth_capability(provider, auth_mode);
     if !capability.supported {

@@ -1,5 +1,4 @@
 mod auth_commands;
-mod auth_types;
 mod bootstrap_helpers;
 mod browser_automation_contract;
 mod browser_automation_runtime;
@@ -9,11 +8,9 @@ mod channel_lifecycle;
 mod channel_send;
 mod channel_store;
 mod channel_store_admin;
-mod claude_cli_client;
 mod cli_args;
 mod cli_executable;
 mod cli_types;
-mod codex_cli_client;
 mod commands;
 mod credentials;
 mod custom_command_contract;
@@ -26,7 +23,6 @@ mod deployment_wasm;
 mod diagnostics_commands;
 mod events;
 mod extension_manifest;
-mod gemini_cli_client;
 mod github_issues;
 mod github_issues_helpers;
 mod github_transport_helpers;
@@ -41,10 +37,6 @@ mod onboarding;
 mod orchestrator_bridge;
 mod package_manifest;
 mod project_index;
-mod provider_auth;
-mod provider_client;
-mod provider_credentials;
-mod provider_fallback;
 mod qa_loop_commands;
 mod release_channel_commands;
 mod rpc_capabilities;
@@ -84,21 +76,15 @@ use std::{
 };
 
 use anyhow::{anyhow, bail, Context, Result};
-use async_trait::async_trait;
 use clap::Parser;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tau_agent_core::{Agent, AgentConfig, AgentEvent};
-use tau_ai::{
-    AnthropicClient, AnthropicConfig, ChatRequest, ChatResponse, GoogleClient, GoogleConfig,
-    LlmClient, Message, MessageRole, ModelRef, OpenAiAuthScheme, OpenAiClient, OpenAiConfig,
-    Provider, StreamDeltaHandler, TauAiError,
-};
+use tau_ai::{LlmClient, Message, MessageRole, ModelRef, Provider};
 
 pub(crate) use crate::auth_commands::execute_auth_command;
 #[cfg(test)]
 pub(crate) use crate::auth_commands::{parse_auth_command, AuthCommand};
-pub(crate) use crate::auth_types::{CredentialStoreEncryptionMode, ProviderAuthMethod};
 pub(crate) use crate::bootstrap_helpers::{command_file_error_mode_label, init_tracing};
 pub(crate) use crate::canvas::{
     execute_canvas_command, CanvasCommandConfig, CanvasEventOrigin, CanvasSessionLinkContext,
@@ -108,14 +94,15 @@ use crate::channel_store::ChannelStore;
 pub(crate) use crate::channel_store_admin::execute_channel_store_admin_command;
 pub(crate) use crate::cli_args::Cli;
 pub(crate) use crate::cli_types::{
-    CliBashProfile, CliCommandFileErrorMode, CliCredentialStoreEncryptionMode, CliDaemonProfile,
-    CliEventTemplateSchedule, CliGatewayOpenResponsesAuthMode, CliGatewayRemoteProfile,
-    CliOrchestratorMode, CliOsSandboxMode, CliProviderAuthMode,
+    CliBashProfile, CliCommandFileErrorMode, CliDaemonProfile, CliEventTemplateSchedule,
+    CliGatewayOpenResponsesAuthMode, CliGatewayRemoteProfile, CliOrchestratorMode,
+    CliOsSandboxMode, CliProviderAuthMode,
 };
 #[cfg(test)]
 pub(crate) use crate::cli_types::{
-    CliDeploymentWasmRuntimeProfile, CliMultiChannelLiveConnectorMode, CliMultiChannelTransport,
-    CliSessionImportMode, CliToolPolicyPreset,
+    CliCredentialStoreEncryptionMode, CliDeploymentWasmRuntimeProfile,
+    CliMultiChannelLiveConnectorMode, CliMultiChannelTransport, CliSessionImportMode,
+    CliToolPolicyPreset,
 };
 #[cfg(test)]
 pub(crate) use crate::cli_types::{CliMultiChannelOutboundMode, CliWebhookSignatureAlgorithm};
@@ -130,17 +117,12 @@ pub(crate) use crate::commands::{
     parse_command_file, render_command_help, render_help_overview, unknown_command_message,
     CommandFileEntry, CommandFileReport,
 };
+pub(crate) use crate::credentials::{
+    execute_integration_auth_command, resolve_non_empty_cli_value,
+    resolve_secret_from_cli_or_store_id,
+};
 #[cfg(test)]
-pub(crate) use crate::credentials::{
-    decrypt_credential_store_secret, encrypt_credential_store_secret,
-    parse_integration_auth_command, IntegrationAuthCommand, IntegrationCredentialStoreRecord,
-};
-pub(crate) use crate::credentials::{
-    execute_integration_auth_command, load_credential_store, reauth_required_error,
-    refresh_provider_access_token, resolve_credential_store_encryption_mode,
-    resolve_non_empty_cli_value, resolve_secret_from_cli_or_store_id, save_credential_store,
-    CredentialStoreData, ProviderCredentialStoreRecord,
-};
+pub(crate) use crate::credentials::{parse_integration_auth_command, IntegrationAuthCommand};
 pub(crate) use crate::diagnostics_commands::{
     build_doctor_command_config, execute_audit_summary_command,
     execute_browser_automation_preflight_command, execute_doctor_cli_command,
@@ -202,23 +184,6 @@ pub(crate) use crate::package_manifest::{
     execute_package_show_command, execute_package_update_command, execute_package_validate_command,
 };
 pub(crate) use crate::project_index::execute_project_index_command;
-pub(crate) use crate::provider_auth::{
-    configured_provider_auth_method, configured_provider_auth_method_from_config,
-    missing_provider_api_key_message, provider_api_key_candidates,
-    provider_api_key_candidates_with_inputs, provider_auth_capability, provider_auth_mode_flag,
-    resolve_api_key,
-};
-pub(crate) use crate::provider_client::build_provider_client;
-#[cfg(test)]
-pub(crate) use crate::provider_credentials::resolve_store_backed_provider_credential;
-pub(crate) use crate::provider_credentials::{
-    resolve_non_empty_secret_with_source, CliProviderCredentialResolver, ProviderCredentialResolver,
-};
-pub(crate) use crate::provider_fallback::{build_client_with_fallbacks, resolve_fallback_models};
-#[cfg(test)]
-pub(crate) use crate::provider_fallback::{
-    is_retryable_provider_error, ClientRoute, FallbackRoutingClient,
-};
 pub(crate) use crate::qa_loop_commands::{
     execute_qa_loop_cli_command, execute_qa_loop_preflight_command, QA_LOOP_USAGE,
 };
@@ -369,6 +334,33 @@ use tau_orchestrator::multi_agent_runtime::{
 };
 #[cfg(test)]
 pub(crate) use tau_orchestrator::parse_numbered_plan_steps;
+#[cfg(test)]
+pub(crate) use tau_provider::provider_auth_snapshot_for_status;
+#[cfg(test)]
+pub(crate) use tau_provider::refresh_provider_access_token;
+pub(crate) use tau_provider::{
+    build_client_with_fallbacks, configured_provider_auth_method,
+    configured_provider_auth_method_from_config, missing_provider_api_key_message,
+    provider_auth_capability, provider_auth_mode_flag, resolve_api_key, resolve_fallback_models,
+};
+#[cfg(test)]
+pub(crate) use tau_provider::{build_provider_client, provider_api_key_candidates_with_inputs};
+#[cfg(test)]
+pub(crate) use tau_provider::{
+    decrypt_credential_store_secret, encrypt_credential_store_secret,
+    IntegrationCredentialStoreRecord,
+};
+#[cfg(test)]
+pub(crate) use tau_provider::{
+    is_retryable_provider_error, resolve_store_backed_provider_credential, ClientRoute,
+    FallbackRoutingClient,
+};
+pub(crate) use tau_provider::{
+    load_credential_store, resolve_credential_store_encryption_mode,
+    resolve_non_empty_secret_with_source, save_credential_store, CredentialStoreData,
+    ProviderCredentialStoreRecord,
+};
+pub(crate) use tau_provider::{CredentialStoreEncryptionMode, ProviderAuthMethod};
 pub(crate) use tau_session::execute_session_graph_export_command;
 #[cfg(test)]
 pub(crate) use tau_session::validate_session_file;

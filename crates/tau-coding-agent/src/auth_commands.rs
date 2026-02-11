@@ -1,9 +1,10 @@
 use super::*;
 use crate::cli_executable::is_executable_available;
-use crate::provider_auth::provider_supported_auth_modes;
-use crate::provider_credentials::{provider_auth_snapshot_for_status, ProviderAuthSnapshot};
 use std::process::Command;
 use std::time::Duration;
+use tau_provider::{
+    provider_auth_snapshot_for_status, provider_supported_auth_modes, ProviderAuthSnapshot,
+};
 use wait_timeout::ChildExt;
 
 pub(crate) const AUTH_USAGE: &str = "usage: /auth <login|reauth|status|logout|matrix> ...";
@@ -625,141 +626,23 @@ pub(crate) fn provider_api_key_candidates_from_auth_config(
     config: &AuthCommandConfig,
     provider: Provider,
 ) -> Vec<(&'static str, Option<String>)> {
-    provider_api_key_candidates_with_inputs(
-        provider,
-        config.api_key.clone(),
-        config.openai_api_key.clone(),
-        config.anthropic_api_key.clone(),
-        config.google_api_key.clone(),
-    )
+    tau_provider::provider_api_key_candidates_from_auth_config(config, provider)
 }
 
 pub(crate) fn provider_login_access_token_candidates(
     provider: Provider,
 ) -> Vec<(&'static str, Option<String>)> {
-    match provider {
-        Provider::OpenAi => vec![
-            (
-                "TAU_AUTH_ACCESS_TOKEN",
-                std::env::var("TAU_AUTH_ACCESS_TOKEN").ok(),
-            ),
-            (
-                "OPENAI_ACCESS_TOKEN",
-                std::env::var("OPENAI_ACCESS_TOKEN").ok(),
-            ),
-        ],
-        Provider::Anthropic => vec![
-            (
-                "TAU_AUTH_ACCESS_TOKEN",
-                std::env::var("TAU_AUTH_ACCESS_TOKEN").ok(),
-            ),
-            (
-                "ANTHROPIC_ACCESS_TOKEN",
-                std::env::var("ANTHROPIC_ACCESS_TOKEN").ok(),
-            ),
-        ],
-        Provider::Google => vec![
-            (
-                "TAU_AUTH_ACCESS_TOKEN",
-                std::env::var("TAU_AUTH_ACCESS_TOKEN").ok(),
-            ),
-            (
-                "GOOGLE_ACCESS_TOKEN",
-                std::env::var("GOOGLE_ACCESS_TOKEN").ok(),
-            ),
-        ],
-    }
+    tau_provider::provider_login_access_token_candidates(provider)
 }
 
 pub(crate) fn provider_login_refresh_token_candidates(
     provider: Provider,
 ) -> Vec<(&'static str, Option<String>)> {
-    match provider {
-        Provider::OpenAi => vec![
-            (
-                "TAU_AUTH_REFRESH_TOKEN",
-                std::env::var("TAU_AUTH_REFRESH_TOKEN").ok(),
-            ),
-            (
-                "OPENAI_REFRESH_TOKEN",
-                std::env::var("OPENAI_REFRESH_TOKEN").ok(),
-            ),
-        ],
-        Provider::Anthropic => vec![
-            (
-                "TAU_AUTH_REFRESH_TOKEN",
-                std::env::var("TAU_AUTH_REFRESH_TOKEN").ok(),
-            ),
-            (
-                "ANTHROPIC_REFRESH_TOKEN",
-                std::env::var("ANTHROPIC_REFRESH_TOKEN").ok(),
-            ),
-        ],
-        Provider::Google => vec![
-            (
-                "TAU_AUTH_REFRESH_TOKEN",
-                std::env::var("TAU_AUTH_REFRESH_TOKEN").ok(),
-            ),
-            (
-                "GOOGLE_REFRESH_TOKEN",
-                std::env::var("GOOGLE_REFRESH_TOKEN").ok(),
-            ),
-        ],
-    }
-}
-
-pub(crate) fn provider_login_expires_candidates(
-    provider: Provider,
-) -> Vec<(&'static str, Option<String>)> {
-    match provider {
-        Provider::OpenAi => vec![
-            (
-                "TAU_AUTH_EXPIRES_UNIX",
-                std::env::var("TAU_AUTH_EXPIRES_UNIX").ok(),
-            ),
-            (
-                "OPENAI_AUTH_EXPIRES_UNIX",
-                std::env::var("OPENAI_AUTH_EXPIRES_UNIX").ok(),
-            ),
-        ],
-        Provider::Anthropic => vec![
-            (
-                "TAU_AUTH_EXPIRES_UNIX",
-                std::env::var("TAU_AUTH_EXPIRES_UNIX").ok(),
-            ),
-            (
-                "ANTHROPIC_AUTH_EXPIRES_UNIX",
-                std::env::var("ANTHROPIC_AUTH_EXPIRES_UNIX").ok(),
-            ),
-        ],
-        Provider::Google => vec![
-            (
-                "TAU_AUTH_EXPIRES_UNIX",
-                std::env::var("TAU_AUTH_EXPIRES_UNIX").ok(),
-            ),
-            (
-                "GOOGLE_AUTH_EXPIRES_UNIX",
-                std::env::var("GOOGLE_AUTH_EXPIRES_UNIX").ok(),
-            ),
-        ],
-    }
+    tau_provider::provider_login_refresh_token_candidates(provider)
 }
 
 pub(crate) fn resolve_auth_login_expires_unix(provider: Provider) -> Result<Option<u64>> {
-    for (source, value) in provider_login_expires_candidates(provider) {
-        let Some(value) = value else {
-            continue;
-        };
-        let trimmed = value.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        let parsed = trimmed
-            .parse::<u64>()
-            .with_context(|| format!("invalid unix timestamp in {}", source))?;
-        return Ok(Some(parsed));
-    }
-    Ok(None)
+    tau_provider::resolve_auth_login_expires_unix(provider)
 }
 
 fn collect_non_empty_secrets(candidates: Vec<(&'static str, Option<String>)>) -> Vec<String> {
