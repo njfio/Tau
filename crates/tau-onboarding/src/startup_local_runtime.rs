@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use anyhow::Result;
 use serde_json::Value;
 use tau_agent_core::{Agent, AgentEvent};
 use tau_core::current_unix_timestamp_ms;
@@ -42,6 +43,38 @@ pub fn extension_tool_hook_dispatch(event: &AgentEvent) -> Option<(&'static str,
             ),
         )),
         _ => None,
+    }
+}
+
+pub fn resolve_orchestrator_route_table<T, F>(
+    route_table_path: Option<&Path>,
+    load_route_table: F,
+) -> Result<T>
+where
+    T: Default,
+    F: FnOnce(&Path) -> Result<T>,
+{
+    if let Some(path) = route_table_path {
+        load_route_table(path)
+    } else {
+        Ok(T::default())
+    }
+}
+
+pub fn resolve_extension_runtime_registrations<T, FDiscover, FEmpty>(
+    enabled: bool,
+    root: &Path,
+    discover: FDiscover,
+    empty: FEmpty,
+) -> T
+where
+    FDiscover: FnOnce(&Path) -> T,
+    FEmpty: FnOnce(&Path) -> T,
+{
+    if enabled {
+        discover(root)
+    } else {
+        empty(root)
     }
 }
 
@@ -106,13 +139,18 @@ fn extension_tool_hook_payload(hook: &str, data: Value) -> Value {
 mod tests {
     use super::{
         extension_tool_hook_diagnostics, extension_tool_hook_dispatch,
-        register_runtime_extension_tool_hook_subscriber,
+        register_runtime_extension_tool_hook_subscriber, resolve_extension_runtime_registrations,
+        resolve_orchestrator_route_table,
     };
     use async_trait::async_trait;
     use serde_json::Value;
     use std::collections::VecDeque;
     use std::path::Path;
-    use std::sync::{Arc, Mutex};
+    use std::path::PathBuf;
+    use std::sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    };
     use tau_agent_core::{Agent, AgentConfig, AgentEvent, AgentTool, ToolExecutionResult};
     use tau_ai::{
         ChatRequest, ChatResponse, ChatUsage, ContentBlock, LlmClient, Message, TauAiError,
@@ -224,6 +262,55 @@ mod tests {
     fn regression_extension_tool_hook_dispatch_ignores_non_tool_events() {
         let event = AgentEvent::AgentStart;
         assert!(extension_tool_hook_dispatch(&event).is_none());
+    }
+
+    #[test]
+    fn unit_resolve_orchestrator_route_table_returns_default_when_unset() {
+        let table: Vec<String> =
+            resolve_orchestrator_route_table::<Vec<String>, _>(None, |_path| {
+                panic!("loader should not be called when route table path is unset")
+            })
+            .expect("default table");
+        assert!(table.is_empty());
+    }
+
+    #[test]
+    fn functional_resolve_orchestrator_route_table_uses_loader_when_path_is_set() {
+        let loaded =
+            resolve_orchestrator_route_table(Some(Path::new("/tmp/route-table.json")), |path| {
+                Ok(vec![path.display().to_string()])
+            })
+            .expect("loaded table");
+        assert_eq!(loaded, vec!["/tmp/route-table.json".to_string()]);
+    }
+
+    #[test]
+    fn integration_resolve_extension_runtime_registrations_uses_discover_when_enabled() {
+        let root = PathBuf::from("/tmp/extensions");
+        let result = resolve_extension_runtime_registrations(
+            true,
+            &root,
+            |path| vec![format!("discover:{}", path.display())],
+            |_path| vec!["empty".to_string()],
+        );
+        assert_eq!(result, vec!["discover:/tmp/extensions".to_string()]);
+    }
+
+    #[test]
+    fn regression_resolve_extension_runtime_registrations_uses_empty_when_disabled() {
+        let discover_called = AtomicBool::new(false);
+        let root = PathBuf::from("/tmp/extensions");
+        let result = resolve_extension_runtime_registrations(
+            false,
+            &root,
+            |_path| {
+                discover_called.store(true, Ordering::Relaxed);
+                vec!["discover".to_string()]
+            },
+            |_path| vec!["empty".to_string()],
+        );
+        assert_eq!(result, vec!["empty".to_string()]);
+        assert!(!discover_called.load(Ordering::Relaxed));
     }
 
     #[test]

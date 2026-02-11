@@ -2,7 +2,10 @@ use super::*;
 use crate::extension_manifest::{
     discover_extension_runtime_registrations, ExtensionRuntimeRegistrationSummary,
 };
-use tau_onboarding::startup_local_runtime::register_runtime_extension_tool_hook_subscriber as register_onboarding_runtime_extension_tool_hook_subscriber;
+use tau_onboarding::startup_local_runtime::{
+    register_runtime_extension_tool_hook_subscriber as register_onboarding_runtime_extension_tool_hook_subscriber,
+    resolve_extension_runtime_registrations, resolve_orchestrator_route_table,
+};
 
 pub(crate) struct LocalRuntimeConfig<'a> {
     pub(crate) cli: &'a Cli,
@@ -87,20 +90,17 @@ pub(crate) async fn run_local_runtime(config: LocalRuntimeConfig<'_>) -> Result<
         enabled: cli.extension_runtime_hooks,
         root: cli.extension_runtime_root.clone(),
     };
-    let orchestrator_route_table = if let Some(path) = cli.orchestrator_route_table.as_deref() {
-        load_multi_agent_route_table(path)?
-    } else {
-        MultiAgentRouteTable::default()
-    };
+    let orchestrator_route_table = resolve_orchestrator_route_table(
+        cli.orchestrator_route_table.as_deref(),
+        load_multi_agent_route_table,
+    )?;
     let orchestrator_route_trace_log = cli.telemetry_log.as_deref();
-    let extension_runtime_registrations = if extension_runtime_hooks.enabled {
-        discover_extension_runtime_registrations(
-            &extension_runtime_hooks.root,
-            crate::commands::COMMAND_NAMES,
-        )
-    } else {
-        ExtensionRuntimeRegistrationSummary {
-            root: extension_runtime_hooks.root.clone(),
+    let extension_runtime_registrations = resolve_extension_runtime_registrations(
+        extension_runtime_hooks.enabled,
+        &extension_runtime_hooks.root,
+        |root| discover_extension_runtime_registrations(root, crate::commands::COMMAND_NAMES),
+        |root| ExtensionRuntimeRegistrationSummary {
+            root: root.to_path_buf(),
             discovered: 0,
             registered_tools: Vec::new(),
             registered_commands: Vec::new(),
@@ -109,8 +109,8 @@ pub(crate) async fn run_local_runtime(config: LocalRuntimeConfig<'_>) -> Result<
             skipped_permission_denied: 0,
             skipped_name_conflict: 0,
             diagnostics: Vec::new(),
-        }
-    };
+        },
+    );
     tools::register_extension_tools(
         &mut agent,
         &extension_runtime_registrations.registered_tools,
