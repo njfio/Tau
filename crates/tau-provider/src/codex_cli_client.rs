@@ -23,19 +23,19 @@ const DEFAULT_EXEC_ARGS: &[&str] = &[
 static OUTPUT_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct CodexCliConfig {
-    pub(crate) executable: String,
-    pub(crate) extra_args: Vec<String>,
-    pub(crate) timeout_ms: u64,
+pub struct CodexCliConfig {
+    pub executable: String,
+    pub extra_args: Vec<String>,
+    pub timeout_ms: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct CodexCliClient {
+pub struct CodexCliClient {
     config: CodexCliConfig,
 }
 
 impl CodexCliClient {
-    pub(crate) fn new(config: CodexCliConfig) -> Result<Self, TauAiError> {
+    pub fn new(config: CodexCliConfig) -> Result<Self, TauAiError> {
         if config.executable.trim().is_empty() {
             return Err(TauAiError::InvalidResponse(
                 "codex cli executable is empty".to_string(),

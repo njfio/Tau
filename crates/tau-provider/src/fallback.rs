@@ -1,12 +1,21 @@
-use super::*;
+use std::sync::Arc;
+
+use anyhow::{anyhow, Context, Result};
+use async_trait::async_trait;
+use tau_ai::{
+    ChatRequest, ChatResponse, LlmClient, ModelRef, Provider, StreamDeltaHandler, TauAiError,
+};
+use tau_cli::Cli;
+
+use crate::client::build_provider_client;
 
 type FallbackEventSink = Arc<dyn Fn(serde_json::Value) + Send + Sync>;
 
 #[derive(Clone)]
-pub(crate) struct ClientRoute {
-    pub(crate) provider: Provider,
-    pub(crate) model: String,
-    pub(crate) client: Arc<dyn LlmClient>,
+pub struct ClientRoute {
+    pub provider: Provider,
+    pub model: String,
+    pub client: Arc<dyn LlmClient>,
 }
 
 impl ClientRoute {
@@ -15,13 +24,13 @@ impl ClientRoute {
     }
 }
 
-pub(crate) struct FallbackRoutingClient {
+pub struct FallbackRoutingClient {
     routes: Vec<ClientRoute>,
     event_sink: Option<FallbackEventSink>,
 }
 
 impl FallbackRoutingClient {
-    pub(crate) fn new(routes: Vec<ClientRoute>, event_sink: Option<FallbackEventSink>) -> Self {
+    pub fn new(routes: Vec<ClientRoute>, event_sink: Option<FallbackEventSink>) -> Self {
         Self { routes, event_sink }
     }
 
@@ -110,7 +119,7 @@ fn is_retryable_status(status: u16) -> bool {
     status == 408 || status == 409 || status == 425 || status == 429 || status >= 500
 }
 
-pub(crate) fn is_retryable_provider_error(error: &TauAiError) -> bool {
+pub fn is_retryable_provider_error(error: &TauAiError) -> bool {
     match error {
         TauAiError::HttpStatus { status, .. } => is_retryable_status(*status),
         TauAiError::Http(inner) => {
@@ -134,7 +143,7 @@ fn fallback_error_metadata(error: &TauAiError) -> (&'static str, Option<u16>) {
     }
 }
 
-pub(crate) fn resolve_fallback_models(cli: &Cli, primary: &ModelRef) -> Result<Vec<ModelRef>> {
+pub fn resolve_fallback_models(cli: &Cli, primary: &ModelRef) -> Result<Vec<ModelRef>> {
     let mut resolved = Vec::new();
     for raw in &cli.fallback_model {
         let parsed = ModelRef::parse(raw)
@@ -155,7 +164,7 @@ pub(crate) fn resolve_fallback_models(cli: &Cli, primary: &ModelRef) -> Result<V
     Ok(resolved)
 }
 
-pub(crate) fn build_client_with_fallbacks(
+pub fn build_client_with_fallbacks(
     cli: &Cli,
     primary: &ModelRef,
     fallback_models: &[ModelRef],
@@ -210,7 +219,10 @@ pub(crate) fn build_client_with_fallbacks(
 mod tests {
     use super::*;
     use std::collections::VecDeque;
+    use std::sync::Mutex;
 
+    use serde_json::Value;
+    use tau_ai::Message;
     #[derive(Clone)]
     struct MockLlmClient {
         complete_responses: Arc<Mutex<VecDeque<Result<ChatResponse, TauAiError>>>>,

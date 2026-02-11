@@ -11,27 +11,27 @@ use tau_ai::{
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ClaudeCliConfig {
-    pub(crate) executable: String,
-    pub(crate) extra_args: Vec<String>,
-    pub(crate) timeout_ms: u64,
+pub struct GeminiCliConfig {
+    pub executable: String,
+    pub extra_args: Vec<String>,
+    pub timeout_ms: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ClaudeCliClient {
-    config: ClaudeCliConfig,
+pub struct GeminiCliClient {
+    config: GeminiCliConfig,
 }
 
-impl ClaudeCliClient {
-    pub(crate) fn new(config: ClaudeCliConfig) -> Result<Self, TauAiError> {
+impl GeminiCliClient {
+    pub fn new(config: GeminiCliConfig) -> Result<Self, TauAiError> {
         if config.executable.trim().is_empty() {
             return Err(TauAiError::InvalidResponse(
-                "claude cli executable is empty".to_string(),
+                "gemini cli executable is empty".to_string(),
             ));
         }
         if config.timeout_ms == 0 {
             return Err(TauAiError::InvalidResponse(
-                "claude cli timeout must be greater than 0ms".to_string(),
+                "gemini cli timeout must be greater than 0ms".to_string(),
             ));
         }
         Ok(Self { config })
@@ -55,29 +55,27 @@ async fn spawn_with_text_file_busy_retry(
                     continue;
                 }
                 return Err(TauAiError::InvalidResponse(format!(
-                    "failed to spawn claude cli '{executable}': {error}"
+                    "failed to spawn gemini cli '{executable}': {error}"
                 )));
             }
         }
     }
 
     Err(TauAiError::InvalidResponse(format!(
-        "failed to spawn claude cli '{executable}': unknown error"
+        "failed to spawn gemini cli '{executable}': unknown error"
     )))
 }
 
 #[async_trait]
-impl LlmClient for ClaudeCliClient {
+impl LlmClient for GeminiCliClient {
     async fn complete(&self, request: ChatRequest) -> Result<ChatResponse, TauAiError> {
-        let prompt = render_claude_prompt(&request);
+        let prompt = render_gemini_prompt(&request);
         let mut command = Command::new(&self.config.executable);
         command.kill_on_drop(true);
         command.arg("-p");
         command.arg(prompt);
         command.arg("--output-format");
         command.arg("json");
-        command.arg("--model");
-        command.arg(&request.model);
         command.args(&self.config.extra_args);
         command.stdin(Stdio::null());
         command.stdout(Stdio::piped());
@@ -91,12 +89,12 @@ impl LlmClient for ClaudeCliClient {
         .await
         .map_err(|_| {
             TauAiError::InvalidResponse(format!(
-                "claude cli timed out after {}ms",
+                "gemini cli timed out after {}ms",
                 self.config.timeout_ms
             ))
         })?
         .map_err(|error| {
-            TauAiError::InvalidResponse(format!("claude cli process failed: {error}"))
+            TauAiError::InvalidResponse(format!("gemini cli process failed: {error}"))
         })?;
 
         let stdout = String::from_utf8_lossy(&output.stdout).to_string();
@@ -109,14 +107,14 @@ impl LlmClient for ClaudeCliClient {
                 .unwrap_or_else(|| "signal".to_string());
             let summary = summarize_process_failure(&stderr, &stdout);
             return Err(TauAiError::InvalidResponse(format!(
-                "claude cli failed with status {status}: {summary}"
+                "gemini cli failed with status {status}: {summary}"
             )));
         }
 
         let message_text = extract_assistant_text(&stdout)?;
         if message_text.trim().is_empty() {
             return Err(TauAiError::InvalidResponse(
-                "claude cli returned empty assistant output".to_string(),
+                "gemini cli returned empty assistant output".to_string(),
             ));
         }
 
@@ -148,67 +146,30 @@ fn extract_assistant_text(stdout: &str) -> Result<String, TauAiError> {
     if trimmed.is_empty() {
         return Ok(String::new());
     }
-    if let Ok(value) = serde_json::from_str::<Value>(trimmed) {
-        if let Some(error_message) = extract_error_message(&value) {
+    let parsed = serde_json::from_str::<Value>(trimmed);
+    if let Ok(value) = parsed {
+        if let Some(error_message) = value
+            .get("error")
+            .and_then(Value::as_object)
+            .and_then(|error| error.get("message"))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|message| !message.is_empty())
+        {
             return Err(TauAiError::InvalidResponse(format!(
-                "claude cli returned an error payload: {error_message}"
+                "gemini cli returned an error payload: {error_message}"
             )));
         }
-        if let Some(result) = extract_result_message(&value) {
-            return Ok(result);
+        if let Some(response) = value
+            .get("response")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|response| !response.is_empty())
+        {
+            return Ok(response.to_string());
         }
     }
     Ok(trimmed.to_string())
-}
-
-fn extract_error_message(value: &Value) -> Option<String> {
-    match value {
-        Value::Object(map) => {
-            if map
-                .get("is_error")
-                .and_then(Value::as_bool)
-                .unwrap_or(false)
-            {
-                return map
-                    .get("result")
-                    .and_then(Value::as_str)
-                    .map(str::trim)
-                    .filter(|message| !message.is_empty())
-                    .map(str::to_string)
-                    .or_else(|| {
-                        map.get("error")
-                            .and_then(Value::as_str)
-                            .map(str::trim)
-                            .filter(|message| !message.is_empty())
-                            .map(str::to_string)
-                    })
-                    .or_else(|| {
-                        map.get("message")
-                            .and_then(Value::as_str)
-                            .map(str::trim)
-                            .filter(|message| !message.is_empty())
-                            .map(str::to_string)
-                    })
-                    .or(Some("claude cli reported an error".to_string()));
-            }
-            None
-        }
-        Value::Array(entries) => entries.iter().find_map(extract_error_message),
-        _ => None,
-    }
-}
-
-fn extract_result_message(value: &Value) -> Option<String> {
-    match value {
-        Value::Object(map) => map
-            .get("result")
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|result| !result.is_empty())
-            .map(str::to_string),
-        Value::Array(entries) => entries.iter().rev().find_map(extract_result_message),
-        _ => None,
-    }
 }
 
 fn summarize_process_failure(stderr: &str, stdout: &str) -> String {
@@ -233,9 +194,9 @@ fn truncate_for_log(text: &str) -> String {
     text.chars().take(MAX_CHARS).collect::<String>() + "..."
 }
 
-fn render_claude_prompt(request: &ChatRequest) -> String {
+fn render_gemini_prompt(request: &ChatRequest) -> String {
     let mut lines = vec![
-        "You are the Anthropic Claude Code-compatible Tau backend.".to_string(),
+        "You are the Google Gemini-compatible Tau backend.".to_string(),
         "Respond with the assistant's next message for the conversation below.".to_string(),
         "Return plain assistant text only.".to_string(),
         "Conversation:".to_string(),
@@ -299,7 +260,7 @@ mod tests {
 
     fn test_request() -> ChatRequest {
         ChatRequest {
-            model: "claude-sonnet-4-20250514".to_string(),
+            model: "google/gemini-2.5-pro".to_string(),
             messages: vec![
                 Message::system("system message"),
                 Message::user("hello"),
@@ -323,7 +284,7 @@ mod tests {
 
     #[cfg(unix)]
     fn write_script(dir: &Path, body: &str) -> PathBuf {
-        let script = dir.join("mock-claude.sh");
+        let script = dir.join("mock-gemini.sh");
         let content = format!("#!/bin/sh\nset -eu\n{body}\n");
         std::fs::write(&script, content).expect("write script");
         let mut perms = std::fs::metadata(&script)
@@ -336,7 +297,7 @@ mod tests {
 
     #[cfg(unix)]
     #[tokio::test]
-    async fn integration_claude_cli_client_reads_json_result_field() {
+    async fn integration_gemini_cli_client_reads_json_response_field() {
         let dir = tempdir().expect("tempdir");
         let script = write_script(
             dir.path(),
@@ -347,26 +308,21 @@ if [ "$1" != "-p" ]; then
 fi
 shift 2
 fmt=""
-model=""
 while [ "$#" -gt 0 ]; do
-  case "$1" in
-    --output-format) shift; fmt="$1";;
-    --model) shift; model="$1";;
-  esac
+  if [ "$1" = "--output-format" ]; then
+    shift
+    fmt="$1"
+  fi
   shift
 done
 if [ "$fmt" != "json" ]; then
   echo "expected json output format" >&2
   exit 12
 fi
-if [ "$model" != "claude-sonnet-4-20250514" ]; then
-  echo "expected model argument" >&2
-  exit 13
-fi
-printf '{"type":"result","subtype":"success","is_error":false,"result":"claude mock reply"}'
+printf '{"response":"gemini mock reply"}'
 "#,
         );
-        let client = ClaudeCliClient::new(ClaudeCliConfig {
+        let client = GeminiCliClient::new(GeminiCliConfig {
             executable: script.display().to_string(),
             extra_args: vec![],
             timeout_ms: 6_000,
@@ -374,15 +330,15 @@ printf '{"type":"result","subtype":"success","is_error":false,"result":"claude m
         .expect("build client");
 
         let response = client.complete(test_request()).await.expect("completion");
-        assert_eq!(response.message.text_content(), "claude mock reply");
+        assert_eq!(response.message.text_content(), "gemini mock reply");
     }
 
     #[cfg(unix)]
     #[tokio::test]
-    async fn functional_claude_cli_client_falls_back_to_plain_stdout() {
+    async fn functional_gemini_cli_client_falls_back_to_plain_stdout() {
         let dir = tempdir().expect("tempdir");
-        let script = write_script(dir.path(), r#"printf "plain claude stdout""#);
-        let client = ClaudeCliClient::new(ClaudeCliConfig {
+        let script = write_script(dir.path(), r#"printf "plain gemini stdout""#);
+        let client = GeminiCliClient::new(GeminiCliConfig {
             executable: script.display().to_string(),
             extra_args: vec![],
             timeout_ms: 30_000,
@@ -390,21 +346,21 @@ printf '{"type":"result","subtype":"success","is_error":false,"result":"claude m
         .expect("build client");
 
         let response = client.complete(test_request()).await.expect("completion");
-        assert_eq!(response.message.text_content(), "plain claude stdout");
+        assert_eq!(response.message.text_content(), "plain gemini stdout");
     }
 
     #[cfg(unix)]
     #[tokio::test]
-    async fn regression_claude_cli_client_reports_non_zero_exit() {
+    async fn regression_gemini_cli_client_reports_non_zero_exit() {
         let dir = tempdir().expect("tempdir");
         let script = write_script(
             dir.path(),
             r#"
-echo "claude auth failed" >&2
+echo "fatal auth failure" >&2
 exit 42
 "#,
         );
-        let client = ClaudeCliClient::new(ClaudeCliConfig {
+        let client = GeminiCliClient::new(GeminiCliConfig {
             executable: script.display().to_string(),
             extra_args: vec![],
             timeout_ms: 30_000,
@@ -416,18 +372,15 @@ exit 42
             .await
             .expect_err("expected failure");
         assert!(error.to_string().contains("status 42"));
-        assert!(error.to_string().contains("claude auth failed"));
+        assert!(error.to_string().contains("fatal auth failure"));
     }
 
     #[cfg(unix)]
     #[tokio::test]
-    async fn integration_claude_cli_client_stream_callback_receives_text() {
+    async fn integration_gemini_cli_client_stream_callback_receives_text() {
         let dir = tempdir().expect("tempdir");
-        let script = write_script(
-            dir.path(),
-            r#"printf '{"type":"result","subtype":"success","is_error":false,"result":"stream payload"}'"#,
-        );
-        let client = ClaudeCliClient::new(ClaudeCliConfig {
+        let script = write_script(dir.path(), r#"printf '{"response":"stream payload"}'"#);
+        let client = GeminiCliClient::new(GeminiCliConfig {
             executable: script.display().to_string(),
             extra_args: vec![],
             timeout_ms: 30_000,
@@ -451,16 +404,16 @@ exit 42
 
     #[cfg(unix)]
     #[tokio::test]
-    async fn regression_claude_cli_client_reports_timeout() {
+    async fn regression_gemini_cli_client_reports_timeout() {
         let dir = tempdir().expect("tempdir");
         let script = write_script(
             dir.path(),
             r#"
 sleep 1
-printf '{"type":"result","subtype":"success","is_error":false,"result":"late"}'
+printf '{"response":"late"}'
 "#,
         );
-        let client = ClaudeCliClient::new(ClaudeCliConfig {
+        let client = GeminiCliClient::new(GeminiCliConfig {
             executable: script.display().to_string(),
             extra_args: vec![],
             timeout_ms: 50,
@@ -475,9 +428,9 @@ printf '{"type":"result","subtype":"success","is_error":false,"result":"late"}'
     }
 
     #[test]
-    fn unit_render_claude_prompt_includes_roles_and_tools() {
-        let prompt = render_claude_prompt(&test_request());
-        assert!(prompt.contains("Anthropic Claude Code-compatible Tau backend"));
+    fn unit_render_gemini_prompt_includes_roles_and_tools() {
+        let prompt = render_gemini_prompt(&test_request());
+        assert!(prompt.contains("Google Gemini-compatible Tau backend"));
         assert!(prompt.contains("[system]"));
         assert!(prompt.contains("[user]"));
         assert!(prompt.contains("[assistant]"));
@@ -486,18 +439,15 @@ printf '{"type":"result","subtype":"success","is_error":false,"result":"late"}'
     }
 
     #[test]
-    fn unit_extract_assistant_text_prefers_result_field() {
-        let text =
-            extract_assistant_text("{\"type\":\"result\",\"is_error\":false,\"result\":\"hello\"}")
-                .expect("extract");
+    fn unit_extract_assistant_text_prefers_response_field() {
+        let text = extract_assistant_text("{\"response\":\"hello\"}").expect("extract");
         assert_eq!(text, "hello");
     }
 
     #[test]
     fn regression_extract_assistant_text_reports_error_payload() {
-        let error =
-            extract_assistant_text("{\"type\":\"result\",\"is_error\":true,\"result\":\"denied\"}")
-                .expect_err("error payload should fail");
+        let error = extract_assistant_text("{\"error\":{\"message\":\"denied\"}}")
+            .expect_err("error payload should fail");
         assert!(error.to_string().contains("denied"));
     }
 }

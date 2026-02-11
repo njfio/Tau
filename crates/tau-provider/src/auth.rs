@@ -1,10 +1,14 @@
-use super::*;
+use anyhow::{Context, Result};
+use tau_ai::Provider;
+use tau_cli::Cli;
+
+use crate::types::{AuthCommandConfig, ProviderAuthMethod};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct ProviderAuthCapability {
-    pub(crate) method: ProviderAuthMethod,
-    pub(crate) supported: bool,
-    pub(crate) reason: &'static str,
+pub struct ProviderAuthCapability {
+    pub method: ProviderAuthMethod,
+    pub supported: bool,
+    pub reason: &'static str,
 }
 
 const OPENAI_AUTH_CAPABILITIES: &[ProviderAuthCapability] = &[
@@ -84,7 +88,7 @@ fn provider_auth_capabilities(provider: Provider) -> &'static [ProviderAuthCapab
     }
 }
 
-pub(crate) fn provider_auth_capability(
+pub fn provider_auth_capability(
     provider: Provider,
     method: ProviderAuthMethod,
 ) -> ProviderAuthCapability {
@@ -99,7 +103,7 @@ pub(crate) fn provider_auth_capability(
         })
 }
 
-pub(crate) fn provider_supported_auth_modes(provider: Provider) -> Vec<ProviderAuthMethod> {
+pub fn provider_supported_auth_modes(provider: Provider) -> Vec<ProviderAuthMethod> {
     provider_auth_capabilities(provider)
         .iter()
         .filter(|capability| capability.supported)
@@ -107,7 +111,7 @@ pub(crate) fn provider_supported_auth_modes(provider: Provider) -> Vec<ProviderA
         .collect()
 }
 
-pub(crate) fn configured_provider_auth_method(cli: &Cli, provider: Provider) -> ProviderAuthMethod {
+pub fn configured_provider_auth_method(cli: &Cli, provider: Provider) -> ProviderAuthMethod {
     match provider {
         Provider::OpenAi => cli.openai_auth_mode.into(),
         Provider::Anthropic => cli.anthropic_auth_mode.into(),
@@ -115,7 +119,7 @@ pub(crate) fn configured_provider_auth_method(cli: &Cli, provider: Provider) -> 
     }
 }
 
-pub(crate) fn configured_provider_auth_method_from_config(
+pub fn configured_provider_auth_method_from_config(
     config: &AuthCommandConfig,
     provider: Provider,
 ) -> ProviderAuthMethod {
@@ -126,7 +130,7 @@ pub(crate) fn configured_provider_auth_method_from_config(
     }
 }
 
-pub(crate) fn provider_auth_mode_flag(provider: Provider) -> &'static str {
+pub fn provider_auth_mode_flag(provider: Provider) -> &'static str {
     match provider {
         Provider::OpenAi => "--openai-auth-mode",
         Provider::Anthropic => "--anthropic-auth-mode",
@@ -134,7 +138,7 @@ pub(crate) fn provider_auth_mode_flag(provider: Provider) -> &'static str {
     }
 }
 
-pub(crate) fn missing_provider_api_key_message(provider: Provider) -> &'static str {
+pub fn missing_provider_api_key_message(provider: Provider) -> &'static str {
     match provider {
         Provider::OpenAi => {
             "missing OpenAI-compatible API key. Set OPENAI_API_KEY, OPENROUTER_API_KEY, GROQ_API_KEY, XAI_API_KEY, MISTRAL_API_KEY, AZURE_OPENAI_API_KEY, TAU_API_KEY, --openai-api-key, or --api-key"
@@ -148,7 +152,7 @@ pub(crate) fn missing_provider_api_key_message(provider: Provider) -> &'static s
     }
 }
 
-pub(crate) fn provider_api_key_candidates_with_inputs(
+pub fn provider_api_key_candidates_with_inputs(
     provider: Provider,
     api_key: Option<String>,
     openai_api_key: Option<String>,
@@ -189,7 +193,7 @@ pub(crate) fn provider_api_key_candidates_with_inputs(
     }
 }
 
-pub(crate) fn provider_api_key_candidates(
+pub fn provider_api_key_candidates(
     cli: &Cli,
     provider: Provider,
 ) -> Vec<(&'static str, Option<String>)> {
@@ -202,9 +206,150 @@ pub(crate) fn provider_api_key_candidates(
     )
 }
 
-pub(crate) fn resolve_api_key(candidates: Vec<Option<String>>) -> Option<String> {
+pub fn resolve_api_key(candidates: Vec<Option<String>>) -> Option<String> {
     candidates
         .into_iter()
         .flatten()
         .find(|value| !value.trim().is_empty())
+}
+
+pub fn provider_api_key_candidates_from_auth_config(
+    config: &AuthCommandConfig,
+    provider: Provider,
+) -> Vec<(&'static str, Option<String>)> {
+    provider_api_key_candidates_with_inputs(
+        provider,
+        config.api_key.clone(),
+        config.openai_api_key.clone(),
+        config.anthropic_api_key.clone(),
+        config.google_api_key.clone(),
+    )
+}
+
+pub fn provider_login_access_token_candidates(
+    provider: Provider,
+) -> Vec<(&'static str, Option<String>)> {
+    match provider {
+        Provider::OpenAi => vec![
+            (
+                "TAU_AUTH_ACCESS_TOKEN",
+                std::env::var("TAU_AUTH_ACCESS_TOKEN").ok(),
+            ),
+            (
+                "OPENAI_ACCESS_TOKEN",
+                std::env::var("OPENAI_ACCESS_TOKEN").ok(),
+            ),
+        ],
+        Provider::Anthropic => vec![
+            (
+                "TAU_AUTH_ACCESS_TOKEN",
+                std::env::var("TAU_AUTH_ACCESS_TOKEN").ok(),
+            ),
+            (
+                "ANTHROPIC_ACCESS_TOKEN",
+                std::env::var("ANTHROPIC_ACCESS_TOKEN").ok(),
+            ),
+        ],
+        Provider::Google => vec![
+            (
+                "TAU_AUTH_ACCESS_TOKEN",
+                std::env::var("TAU_AUTH_ACCESS_TOKEN").ok(),
+            ),
+            (
+                "GOOGLE_ACCESS_TOKEN",
+                std::env::var("GOOGLE_ACCESS_TOKEN").ok(),
+            ),
+        ],
+    }
+}
+
+pub fn provider_login_refresh_token_candidates(
+    provider: Provider,
+) -> Vec<(&'static str, Option<String>)> {
+    match provider {
+        Provider::OpenAi => vec![
+            (
+                "TAU_AUTH_REFRESH_TOKEN",
+                std::env::var("TAU_AUTH_REFRESH_TOKEN").ok(),
+            ),
+            (
+                "OPENAI_REFRESH_TOKEN",
+                std::env::var("OPENAI_REFRESH_TOKEN").ok(),
+            ),
+        ],
+        Provider::Anthropic => vec![
+            (
+                "TAU_AUTH_REFRESH_TOKEN",
+                std::env::var("TAU_AUTH_REFRESH_TOKEN").ok(),
+            ),
+            (
+                "ANTHROPIC_REFRESH_TOKEN",
+                std::env::var("ANTHROPIC_REFRESH_TOKEN").ok(),
+            ),
+        ],
+        Provider::Google => vec![
+            (
+                "TAU_AUTH_REFRESH_TOKEN",
+                std::env::var("TAU_AUTH_REFRESH_TOKEN").ok(),
+            ),
+            (
+                "GOOGLE_REFRESH_TOKEN",
+                std::env::var("GOOGLE_REFRESH_TOKEN").ok(),
+            ),
+        ],
+    }
+}
+
+pub fn provider_login_expires_candidates(
+    provider: Provider,
+) -> Vec<(&'static str, Option<String>)> {
+    match provider {
+        Provider::OpenAi => vec![
+            (
+                "TAU_AUTH_EXPIRES_UNIX",
+                std::env::var("TAU_AUTH_EXPIRES_UNIX").ok(),
+            ),
+            (
+                "OPENAI_AUTH_EXPIRES_UNIX",
+                std::env::var("OPENAI_AUTH_EXPIRES_UNIX").ok(),
+            ),
+        ],
+        Provider::Anthropic => vec![
+            (
+                "TAU_AUTH_EXPIRES_UNIX",
+                std::env::var("TAU_AUTH_EXPIRES_UNIX").ok(),
+            ),
+            (
+                "ANTHROPIC_AUTH_EXPIRES_UNIX",
+                std::env::var("ANTHROPIC_AUTH_EXPIRES_UNIX").ok(),
+            ),
+        ],
+        Provider::Google => vec![
+            (
+                "TAU_AUTH_EXPIRES_UNIX",
+                std::env::var("TAU_AUTH_EXPIRES_UNIX").ok(),
+            ),
+            (
+                "GOOGLE_AUTH_EXPIRES_UNIX",
+                std::env::var("GOOGLE_AUTH_EXPIRES_UNIX").ok(),
+            ),
+        ],
+    }
+}
+
+pub fn resolve_auth_login_expires_unix(provider: Provider) -> Result<Option<u64>> {
+    for (source, value) in provider_login_expires_candidates(provider) {
+        let Some(value) = value else {
+            continue;
+        };
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let parsed = trimmed
+            .parse::<u64>()
+            .with_context(|| format!("invalid unix timestamp in {}", source))?;
+        return Ok(Some(parsed));
+    }
+    Ok(None)
 }

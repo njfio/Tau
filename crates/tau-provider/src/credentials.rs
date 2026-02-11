@@ -1,11 +1,23 @@
-use super::*;
-use crate::auth_commands::{
-    provider_api_key_candidates_from_auth_config, provider_login_access_token_candidates,
+use anyhow::{anyhow, Context, Result};
+use tau_ai::Provider;
+use tau_cli::Cli;
+use tau_core::current_unix_timestamp;
+
+use crate::auth::{
+    configured_provider_auth_method_from_config, missing_provider_api_key_message,
+    provider_api_key_candidates, provider_api_key_candidates_from_auth_config,
+    provider_auth_capability, provider_login_access_token_candidates,
     resolve_auth_login_expires_unix,
 };
 use crate::cli_executable::is_executable_available;
+use crate::credential_store::{
+    load_credential_store, reauth_required_error, refresh_provider_access_token,
+    resolve_credential_store_encryption_mode, save_credential_store,
+};
+use crate::types::{AuthCommandConfig, ProviderAuthMethod};
+use crate::CredentialStoreData;
 
-pub(crate) fn resolve_store_backed_provider_credential(
+pub fn resolve_store_backed_provider_credential(
     cli: &Cli,
     provider: Provider,
     method: ProviderAuthMethod,
@@ -121,7 +133,7 @@ pub(crate) fn resolve_store_backed_provider_credential(
     })
 }
 
-pub(crate) fn resolve_non_empty_secret_with_source(
+pub fn resolve_non_empty_secret_with_source(
     candidates: Vec<(&'static str, Option<String>)>,
 ) -> Option<(String, String)> {
     candidates.into_iter().find_map(|(source, value)| {
@@ -165,28 +177,28 @@ fn resolve_env_backed_provider_credential(
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ProviderAuthCredential {
-    pub(crate) method: ProviderAuthMethod,
-    pub(crate) secret: Option<String>,
-    pub(crate) source: Option<String>,
-    pub(crate) expires_unix: Option<u64>,
-    pub(crate) refreshable: bool,
-    pub(crate) revoked: bool,
+pub struct ProviderAuthCredential {
+    pub method: ProviderAuthMethod,
+    pub secret: Option<String>,
+    pub source: Option<String>,
+    pub expires_unix: Option<u64>,
+    pub refreshable: bool,
+    pub revoked: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ProviderAuthSnapshot {
-    pub(crate) provider: Provider,
-    pub(crate) method: ProviderAuthMethod,
-    pub(crate) mode_supported: bool,
-    pub(crate) available: bool,
-    pub(crate) state: String,
-    pub(crate) source: String,
-    pub(crate) reason: String,
-    pub(crate) expires_unix: Option<u64>,
-    pub(crate) revoked: bool,
-    pub(crate) refreshable: bool,
-    pub(crate) secret: Option<String>,
+pub struct ProviderAuthSnapshot {
+    pub provider: Provider,
+    pub method: ProviderAuthMethod,
+    pub mode_supported: bool,
+    pub available: bool,
+    pub state: String,
+    pub source: String,
+    pub reason: String,
+    pub expires_unix: Option<u64>,
+    pub revoked: bool,
+    pub refreshable: bool,
+    pub secret: Option<String>,
 }
 
 fn google_gemini_backend_snapshot(
@@ -369,7 +381,7 @@ fn anthropic_claude_backend_snapshot(
     }
 }
 
-pub(crate) fn provider_auth_snapshot_for_status(
+pub fn provider_auth_snapshot_for_status(
     config: &AuthCommandConfig,
     provider: Provider,
     store: Option<&CredentialStoreData>,
@@ -663,7 +675,7 @@ pub(crate) fn provider_auth_snapshot_for_status(
     }
 }
 
-pub(crate) trait ProviderCredentialResolver {
+pub trait ProviderCredentialResolver {
     fn resolve(
         &self,
         provider: Provider,
@@ -671,8 +683,8 @@ pub(crate) trait ProviderCredentialResolver {
     ) -> Result<ProviderAuthCredential>;
 }
 
-pub(crate) struct CliProviderCredentialResolver<'a> {
-    pub(crate) cli: &'a Cli,
+pub struct CliProviderCredentialResolver<'a> {
+    pub cli: &'a Cli,
 }
 
 impl ProviderCredentialResolver for CliProviderCredentialResolver<'_> {

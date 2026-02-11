@@ -8,6 +8,7 @@ use crate::{
     default_provider_auth_method, Cli, CredentialStoreEncryptionMode, ModelCatalog,
     ProviderAuthMethod,
 };
+pub(crate) use tau_provider::AuthCommandConfig;
 use tau_session::SessionImportMode;
 
 #[derive(Debug, Clone)]
@@ -174,26 +175,4 @@ pub(crate) struct CommandExecutionContext<'a> {
     pub(crate) auth_command_config: &'a AuthCommandConfig,
     pub(crate) model_catalog: &'a ModelCatalog,
     pub(crate) extension_commands: &'a [ExtensionRegisteredCommand],
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct AuthCommandConfig {
-    pub(crate) credential_store: PathBuf,
-    pub(crate) credential_store_key: Option<String>,
-    pub(crate) credential_store_encryption: CredentialStoreEncryptionMode,
-    pub(crate) api_key: Option<String>,
-    pub(crate) openai_api_key: Option<String>,
-    pub(crate) anthropic_api_key: Option<String>,
-    pub(crate) google_api_key: Option<String>,
-    pub(crate) openai_auth_mode: ProviderAuthMethod,
-    pub(crate) anthropic_auth_mode: ProviderAuthMethod,
-    pub(crate) google_auth_mode: ProviderAuthMethod,
-    pub(crate) provider_subscription_strict: bool,
-    pub(crate) openai_codex_backend: bool,
-    pub(crate) openai_codex_cli: String,
-    pub(crate) anthropic_claude_backend: bool,
-    pub(crate) anthropic_claude_cli: String,
-    pub(crate) google_gemini_backend: bool,
-    pub(crate) google_gemini_cli: String,
-    pub(crate) google_gcloud_cli: String,
 }

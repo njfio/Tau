@@ -1,5 +1,4 @@
 use crate::tools::{BashCommandProfile, OsSandboxMode, ToolPolicyPreset};
-use crate::ProviderAuthMethod;
 pub use tau_cli::cli_types::*;
 
 impl From<CliBashProfile> for BashCommandProfile {
@@ -29,17 +28,6 @@ impl From<CliToolPolicyPreset> for ToolPolicyPreset {
             CliToolPolicyPreset::Balanced => ToolPolicyPreset::Balanced,
             CliToolPolicyPreset::Strict => ToolPolicyPreset::Strict,
             CliToolPolicyPreset::Hardened => ToolPolicyPreset::Hardened,
-        }
-    }
-}
-
-impl From<CliProviderAuthMode> for ProviderAuthMethod {
-    fn from(value: CliProviderAuthMode) -> Self {
-        match value {
-            CliProviderAuthMode::ApiKey => ProviderAuthMethod::ApiKey,
-            CliProviderAuthMode::OauthToken => ProviderAuthMethod::OauthToken,
-            CliProviderAuthMode::Adc => ProviderAuthMethod::Adc,
-            CliProviderAuthMode::SessionToken => ProviderAuthMethod::SessionToken,
         }
     }
 }
