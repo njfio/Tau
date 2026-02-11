@@ -19,7 +19,6 @@ mod custom_command_runtime;
 mod daemon_runtime;
 mod dashboard_contract;
 mod dashboard_runtime;
-mod deployment_contract;
 mod deployment_runtime;
 mod deployment_wasm;
 mod diagnostics_commands;
