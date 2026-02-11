@@ -7,11 +7,12 @@ use std::sync::Arc;
 use tau_onboarding::startup_transport_modes::{
     build_browser_automation_contract_runner_config, build_custom_command_contract_runner_config,
     build_dashboard_contract_runner_config, build_deployment_contract_runner_config,
-    build_events_runner_cli_config, build_memory_contract_runner_config,
-    build_slack_bridge_cli_config, build_voice_contract_runner_config,
-    run_gateway_contract_runner_if_requested, run_gateway_openresponses_server_if_requested,
-    run_multi_agent_contract_runner_if_requested, run_multi_channel_contract_runner_if_requested,
-    run_multi_channel_live_connectors_if_requested, run_multi_channel_live_runner_if_requested,
+    build_events_runner_cli_config, build_github_issues_bridge_cli_config,
+    build_memory_contract_runner_config, build_slack_bridge_cli_config,
+    build_voice_contract_runner_config, run_gateway_contract_runner_if_requested,
+    run_gateway_openresponses_server_if_requested, run_multi_agent_contract_runner_if_requested,
+    run_multi_channel_contract_runner_if_requested, run_multi_channel_live_connectors_if_requested,
+    run_multi_channel_live_runner_if_requested,
 };
 
 pub(crate) async fn run_transport_mode_if_requested(
@@ -65,6 +66,7 @@ pub(crate) async fn run_transport_mode_if_requested(
                 "--github-token (or --github-token-id) is required when --github-issues-bridge is set"
             )
         })?;
+        let config = build_github_issues_bridge_cli_config(cli, repo_slug, token);
         run_github_issues_bridge(GithubIssuesBridgeRuntimeConfig {
             client: client.clone(),
             model: model_ref.model.clone(),
@@ -76,25 +78,21 @@ pub(crate) async fn run_transport_mode_if_requested(
             render_options,
             session_lock_wait_ms: cli.session_lock_wait_ms,
             session_lock_stale_ms: cli.session_lock_stale_ms,
-            state_dir: cli.github_state_dir.clone(),
-            repo_slug,
-            api_base: cli.github_api_base.clone(),
-            token,
-            bot_login: cli.github_bot_login.clone(),
-            poll_interval: Duration::from_secs(cli.github_poll_interval_seconds.max(1)),
-            poll_once: cli.github_poll_once,
-            required_labels: cli
-                .github_required_label
-                .iter()
-                .map(|label| label.trim().to_string())
-                .collect(),
-            required_issue_numbers: cli.github_issue_number.clone(),
-            include_issue_body: cli.github_include_issue_body,
-            include_edited_comments: cli.github_include_edited_comments,
-            processed_event_cap: cli.github_processed_event_cap.max(1),
-            retry_max_attempts: cli.github_retry_max_attempts.max(1),
-            retry_base_delay_ms: cli.github_retry_base_delay_ms.max(1),
-            artifact_retention_days: cli.github_artifact_retention_days,
+            state_dir: config.state_dir,
+            repo_slug: config.repo_slug,
+            api_base: config.api_base,
+            token: config.token,
+            bot_login: config.bot_login,
+            poll_interval: Duration::from_secs(config.poll_interval_seconds),
+            poll_once: config.poll_once,
+            required_labels: config.required_labels,
+            required_issue_numbers: config.required_issue_numbers,
+            include_issue_body: config.include_issue_body,
+            include_edited_comments: config.include_edited_comments,
+            processed_event_cap: config.processed_event_cap,
+            retry_max_attempts: config.retry_max_attempts,
+            retry_base_delay_ms: config.retry_base_delay_ms,
+            artifact_retention_days: config.artifact_retention_days,
             auth_command_config: build_auth_command_config(cli),
             demo_index_repo_root: None,
             demo_index_script_path: None,

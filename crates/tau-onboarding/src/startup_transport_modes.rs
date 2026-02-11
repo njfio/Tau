@@ -184,6 +184,25 @@ pub struct SlackBridgeCliConfig {
     pub artifact_retention_days: u64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GithubIssuesBridgeCliConfig {
+    pub state_dir: PathBuf,
+    pub repo_slug: String,
+    pub api_base: String,
+    pub token: String,
+    pub bot_login: Option<String>,
+    pub poll_interval_seconds: u64,
+    pub poll_once: bool,
+    pub required_labels: Vec<String>,
+    pub required_issue_numbers: Vec<u64>,
+    pub include_issue_body: bool,
+    pub include_edited_comments: bool,
+    pub processed_event_cap: usize,
+    pub retry_max_attempts: usize,
+    pub retry_base_delay_ms: u64,
+    pub artifact_retention_days: u64,
+}
+
 pub fn build_browser_automation_contract_runner_config(
     cli: &Cli,
 ) -> BrowserAutomationContractRunnerConfig {
@@ -285,6 +304,34 @@ pub fn build_slack_bridge_cli_config(
         retry_max_attempts: cli.slack_retry_max_attempts.max(1),
         retry_base_delay_ms: cli.slack_retry_base_delay_ms.max(1),
         artifact_retention_days: cli.slack_artifact_retention_days,
+    }
+}
+
+pub fn build_github_issues_bridge_cli_config(
+    cli: &Cli,
+    repo_slug: String,
+    token: String,
+) -> GithubIssuesBridgeCliConfig {
+    GithubIssuesBridgeCliConfig {
+        state_dir: cli.github_state_dir.clone(),
+        repo_slug,
+        api_base: cli.github_api_base.clone(),
+        token,
+        bot_login: cli.github_bot_login.clone(),
+        poll_interval_seconds: cli.github_poll_interval_seconds.max(1),
+        poll_once: cli.github_poll_once,
+        required_labels: cli
+            .github_required_label
+            .iter()
+            .map(|label| label.trim().to_string())
+            .collect(),
+        required_issue_numbers: cli.github_issue_number.clone(),
+        include_issue_body: cli.github_include_issue_body,
+        include_edited_comments: cli.github_include_edited_comments,
+        processed_event_cap: cli.github_processed_event_cap.max(1),
+        retry_max_attempts: cli.github_retry_max_attempts.max(1),
+        retry_base_delay_ms: cli.github_retry_base_delay_ms.max(1),
+        artifact_retention_days: cli.github_artifact_retention_days,
     }
 }
 
@@ -497,13 +544,13 @@ mod tests {
         build_custom_command_contract_runner_config, build_dashboard_contract_runner_config,
         build_deployment_contract_runner_config, build_events_runner_cli_config,
         build_gateway_contract_runner_config, build_gateway_openresponses_server_config,
-        build_memory_contract_runner_config, build_multi_agent_contract_runner_config,
-        build_multi_channel_contract_runner_config, build_multi_channel_live_connectors_config,
-        build_multi_channel_live_runner_config, build_multi_channel_media_config,
-        build_multi_channel_outbound_config, build_multi_channel_telemetry_config,
-        build_slack_bridge_cli_config, build_voice_contract_runner_config,
-        map_gateway_openresponses_auth_mode, resolve_gateway_openresponses_auth,
-        resolve_multi_channel_outbound_secret,
+        build_github_issues_bridge_cli_config, build_memory_contract_runner_config,
+        build_multi_agent_contract_runner_config, build_multi_channel_contract_runner_config,
+        build_multi_channel_live_connectors_config, build_multi_channel_live_runner_config,
+        build_multi_channel_media_config, build_multi_channel_outbound_config,
+        build_multi_channel_telemetry_config, build_slack_bridge_cli_config,
+        build_voice_contract_runner_config, map_gateway_openresponses_auth_mode,
+        resolve_gateway_openresponses_auth, resolve_multi_channel_outbound_secret,
     };
     use async_trait::async_trait;
     use clap::Parser;
@@ -764,6 +811,41 @@ mod tests {
         assert_eq!(config.reconnect_delay_ms, 1);
         assert_eq!(config.retry_max_attempts, 1);
         assert_eq!(config.retry_base_delay_ms, 1);
+    }
+
+    #[test]
+    fn regression_build_github_issues_bridge_cli_config_enforces_minimums() {
+        let mut cli = parse_cli_with_stack();
+        cli.github_poll_interval_seconds = 0;
+        cli.github_processed_event_cap = 0;
+        cli.github_retry_max_attempts = 0;
+        cli.github_retry_base_delay_ms = 0;
+
+        let config = build_github_issues_bridge_cli_config(
+            &cli,
+            "owner/repo".to_string(),
+            "token".to_string(),
+        );
+        assert_eq!(config.poll_interval_seconds, 1);
+        assert_eq!(config.processed_event_cap, 1);
+        assert_eq!(config.retry_max_attempts, 1);
+        assert_eq!(config.retry_base_delay_ms, 1);
+    }
+
+    #[test]
+    fn functional_build_github_issues_bridge_cli_config_trims_required_labels() {
+        let mut cli = parse_cli_with_stack();
+        cli.github_required_label = vec![" bug ".to_string(), "triage".to_string()];
+
+        let config = build_github_issues_bridge_cli_config(
+            &cli,
+            "owner/repo".to_string(),
+            "token".to_string(),
+        );
+        assert_eq!(
+            config.required_labels,
+            vec!["bug".to_string(), "triage".to_string()]
+        );
     }
 
     #[test]
@@ -1083,6 +1165,49 @@ mod tests {
         assert_eq!(config.retry_max_attempts, 8);
         assert_eq!(config.retry_base_delay_ms, 650);
         assert_eq!(config.artifact_retention_days, 14);
+    }
+
+    #[test]
+    fn integration_build_github_issues_bridge_cli_config_preserves_runtime_fields() {
+        let temp = tempdir().expect("tempdir");
+        let mut cli = parse_cli_with_stack();
+        cli.github_state_dir = temp.path().join("github-state");
+        cli.github_api_base = "https://github.example/api/v3".to_string();
+        cli.github_bot_login = Some("tau-bot".to_string());
+        cli.github_poll_interval_seconds = 45;
+        cli.github_poll_once = true;
+        cli.github_required_label = vec!["ops".to_string(), "triage".to_string()];
+        cli.github_issue_number = vec![7, 42];
+        cli.github_include_issue_body = true;
+        cli.github_include_edited_comments = true;
+        cli.github_processed_event_cap = 321;
+        cli.github_retry_max_attempts = 9;
+        cli.github_retry_base_delay_ms = 700;
+        cli.github_artifact_retention_days = 21;
+
+        let config = build_github_issues_bridge_cli_config(
+            &cli,
+            "owner/repo".to_string(),
+            "token-value".to_string(),
+        );
+        assert_eq!(config.state_dir, cli.github_state_dir);
+        assert_eq!(config.repo_slug, "owner/repo");
+        assert_eq!(config.api_base, "https://github.example/api/v3");
+        assert_eq!(config.token, "token-value");
+        assert_eq!(config.bot_login.as_deref(), Some("tau-bot"));
+        assert_eq!(config.poll_interval_seconds, 45);
+        assert!(config.poll_once);
+        assert_eq!(
+            config.required_labels,
+            vec!["ops".to_string(), "triage".to_string()]
+        );
+        assert_eq!(config.required_issue_numbers, vec![7, 42]);
+        assert!(config.include_issue_body);
+        assert!(config.include_edited_comments);
+        assert_eq!(config.processed_event_cap, 321);
+        assert_eq!(config.retry_max_attempts, 9);
+        assert_eq!(config.retry_base_delay_ms, 700);
+        assert_eq!(config.artifact_retention_days, 21);
     }
 
     #[test]
