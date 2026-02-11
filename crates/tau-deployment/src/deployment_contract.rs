@@ -9,12 +9,12 @@ use serde_json::json;
 
 use crate::deployment_wasm::load_deployment_wasm_manifest;
 
-pub(crate) const DEPLOYMENT_CONTRACT_SCHEMA_VERSION: u32 = 1;
+pub const DEPLOYMENT_CONTRACT_SCHEMA_VERSION: u32 = 1;
 
-pub(crate) const DEPLOYMENT_ERROR_INVALID_BLUEPRINT: &str = "deployment_invalid_blueprint";
-pub(crate) const DEPLOYMENT_ERROR_UNSUPPORTED_RUNTIME: &str = "deployment_unsupported_runtime";
-pub(crate) const DEPLOYMENT_ERROR_MISSING_ARTIFACT: &str = "deployment_missing_artifact";
-pub(crate) const DEPLOYMENT_ERROR_BACKEND_UNAVAILABLE: &str = "deployment_backend_unavailable";
+pub const DEPLOYMENT_ERROR_INVALID_BLUEPRINT: &str = "deployment_invalid_blueprint";
+pub const DEPLOYMENT_ERROR_UNSUPPORTED_RUNTIME: &str = "deployment_unsupported_runtime";
+pub const DEPLOYMENT_ERROR_MISSING_ARTIFACT: &str = "deployment_missing_artifact";
+pub const DEPLOYMENT_ERROR_BACKEND_UNAVAILABLE: &str = "deployment_backend_unavailable";
 
 fn deployment_contract_schema_version() -> u32 {
     DEPLOYMENT_CONTRACT_SCHEMA_VERSION
@@ -26,108 +26,108 @@ fn default_replicas() -> u16 {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum DeploymentOutcomeKind {
+pub enum DeploymentOutcomeKind {
     Success,
     MalformedInput,
     RetryableFailure,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct DeploymentCaseExpectation {
-    pub(crate) outcome: DeploymentOutcomeKind,
-    pub(crate) status_code: u16,
+pub struct DeploymentCaseExpectation {
+    pub outcome: DeploymentOutcomeKind,
+    pub status_code: u16,
     #[serde(default)]
-    pub(crate) error_code: String,
+    pub error_code: String,
     #[serde(default)]
-    pub(crate) response_body: serde_json::Value,
+    pub response_body: serde_json::Value,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct DeploymentContractCase {
+pub struct DeploymentContractCase {
     #[serde(default = "deployment_contract_schema_version")]
-    pub(crate) schema_version: u32,
-    pub(crate) case_id: String,
-    pub(crate) deploy_target: String,
-    pub(crate) runtime_profile: String,
-    pub(crate) blueprint_id: String,
-    pub(crate) environment: String,
-    pub(crate) region: String,
+    pub schema_version: u32,
+    pub case_id: String,
+    pub deploy_target: String,
+    pub runtime_profile: String,
+    pub blueprint_id: String,
+    pub environment: String,
+    pub region: String,
     #[serde(default)]
-    pub(crate) container_image: String,
+    pub container_image: String,
     #[serde(default)]
-    pub(crate) wasm_module: String,
+    pub wasm_module: String,
     #[serde(default)]
-    pub(crate) wasm_manifest: String,
+    pub wasm_manifest: String,
     #[serde(default = "default_replicas")]
-    pub(crate) replicas: u16,
+    pub replicas: u16,
     #[serde(default)]
-    pub(crate) simulate_retryable_failure: bool,
-    pub(crate) expected: DeploymentCaseExpectation,
+    pub simulate_retryable_failure: bool,
+    pub expected: DeploymentCaseExpectation,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct DeploymentContractFixture {
-    pub(crate) schema_version: u32,
-    pub(crate) name: String,
+pub struct DeploymentContractFixture {
+    pub schema_version: u32,
+    pub name: String,
     #[serde(default)]
-    pub(crate) description: String,
-    pub(crate) cases: Vec<DeploymentContractCase>,
+    pub description: String,
+    pub cases: Vec<DeploymentContractCase>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct DeploymentContractCapabilities {
-    pub(crate) schema_version: u32,
-    pub(crate) supported_outcomes: BTreeSet<DeploymentOutcomeKind>,
-    pub(crate) supported_error_codes: BTreeSet<String>,
-    pub(crate) supported_targets: BTreeSet<String>,
-    pub(crate) supported_runtimes: BTreeSet<String>,
-    pub(crate) supported_environments: BTreeSet<String>,
+pub struct DeploymentContractCapabilities {
+    pub schema_version: u32,
+    pub supported_outcomes: BTreeSet<DeploymentOutcomeKind>,
+    pub supported_error_codes: BTreeSet<String>,
+    pub supported_targets: BTreeSet<String>,
+    pub supported_runtimes: BTreeSet<String>,
+    pub supported_environments: BTreeSet<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum DeploymentReplayStep {
+pub enum DeploymentReplayStep {
     Success,
     MalformedInput,
     RetryableFailure,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct DeploymentReplayResult {
-    pub(crate) step: DeploymentReplayStep,
-    pub(crate) status_code: u16,
-    pub(crate) error_code: Option<String>,
-    pub(crate) response_body: serde_json::Value,
+pub struct DeploymentReplayResult {
+    pub step: DeploymentReplayStep,
+    pub status_code: u16,
+    pub error_code: Option<String>,
+    pub response_body: serde_json::Value,
 }
 
 #[cfg(test)]
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub(crate) struct DeploymentReplaySummary {
-    pub(crate) discovered_cases: usize,
-    pub(crate) success_cases: usize,
-    pub(crate) malformed_cases: usize,
-    pub(crate) retryable_failures: usize,
+pub struct DeploymentReplaySummary {
+    pub discovered_cases: usize,
+    pub success_cases: usize,
+    pub malformed_cases: usize,
+    pub retryable_failures: usize,
 }
 
 #[cfg(test)]
-pub(crate) trait DeploymentContractDriver {
+pub trait DeploymentContractDriver {
     fn apply_case(&mut self, case: &DeploymentContractCase) -> Result<DeploymentReplayResult>;
 }
 
-pub(crate) fn parse_deployment_contract_fixture(raw: &str) -> Result<DeploymentContractFixture> {
+pub fn parse_deployment_contract_fixture(raw: &str) -> Result<DeploymentContractFixture> {
     let fixture = serde_json::from_str::<DeploymentContractFixture>(raw)
         .context("failed to parse deployment contract fixture")?;
     validate_deployment_contract_fixture(&fixture)?;
     Ok(fixture)
 }
 
-pub(crate) fn load_deployment_contract_fixture(path: &Path) -> Result<DeploymentContractFixture> {
+pub fn load_deployment_contract_fixture(path: &Path) -> Result<DeploymentContractFixture> {
     let raw = std::fs::read_to_string(path)
         .with_context(|| format!("failed to read fixture {}", path.display()))?;
     parse_deployment_contract_fixture(&raw)
         .with_context(|| format!("invalid fixture {}", path.display()))
 }
 
-pub(crate) fn deployment_contract_capabilities() -> DeploymentContractCapabilities {
+pub fn deployment_contract_capabilities() -> DeploymentContractCapabilities {
     DeploymentContractCapabilities {
         schema_version: DEPLOYMENT_CONTRACT_SCHEMA_VERSION,
         supported_outcomes: [
@@ -156,7 +156,7 @@ pub(crate) fn deployment_contract_capabilities() -> DeploymentContractCapabiliti
     }
 }
 
-pub(crate) fn validate_deployment_contract_compatibility(
+pub fn validate_deployment_contract_compatibility(
     fixture: &DeploymentContractFixture,
 ) -> Result<()> {
     let capabilities = deployment_contract_capabilities();
@@ -241,9 +241,7 @@ pub(crate) fn validate_deployment_contract_compatibility(
     Ok(())
 }
 
-pub(crate) fn validate_deployment_contract_fixture(
-    fixture: &DeploymentContractFixture,
-) -> Result<()> {
+pub fn validate_deployment_contract_fixture(fixture: &DeploymentContractFixture) -> Result<()> {
     if fixture.schema_version != DEPLOYMENT_CONTRACT_SCHEMA_VERSION {
         bail!(
             "unsupported deployment contract schema version {} (expected {})",
@@ -270,7 +268,7 @@ pub(crate) fn validate_deployment_contract_fixture(
     Ok(())
 }
 
-pub(crate) fn evaluate_deployment_case(case: &DeploymentContractCase) -> DeploymentReplayResult {
+pub fn evaluate_deployment_case(case: &DeploymentContractCase) -> DeploymentReplayResult {
     if case.simulate_retryable_failure {
         return DeploymentReplayResult {
             step: DeploymentReplayStep::RetryableFailure,
@@ -420,7 +418,7 @@ pub(crate) fn evaluate_deployment_case(case: &DeploymentContractCase) -> Deploym
     }
 }
 
-pub(crate) fn validate_deployment_case_result_against_contract(
+pub fn validate_deployment_case_result_against_contract(
     case: &DeploymentContractCase,
     result: &DeploymentReplayResult,
 ) -> Result<()> {
@@ -483,7 +481,7 @@ pub(crate) fn validate_deployment_case_result_against_contract(
 }
 
 #[cfg(test)]
-pub(crate) fn run_deployment_contract_replay<D: DeploymentContractDriver>(
+pub fn run_deployment_contract_replay<D: DeploymentContractDriver>(
     fixture: &DeploymentContractFixture,
     driver: &mut D,
 ) -> Result<DeploymentReplaySummary> {

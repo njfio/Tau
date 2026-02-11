@@ -2734,6 +2734,7 @@ dependencies = [
  "tau-ai",
  "tau-cli",
  "tau-core",
+ "tau-deployment",
  "tau-events",
  "tau-extensions",
  "tau-gateway",
@@ -2759,6 +2760,22 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "tempfile",
+]
+
+[[package]]
+name = "tau-deployment"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tau-core",
+ "tau-runtime",
+ "tempfile",
+ "tokio",
+ "wasmparser",
 ]
 
 [[package]]
