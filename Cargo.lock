@@ -2761,6 +2761,7 @@ dependencies = [
  "tau-github-issues",
  "tau-memory",
  "tau-multi-channel",
+ "tau-onboarding",
  "tau-ops",
  "tau-orchestrator",
  "tau-provider",
@@ -2942,6 +2943,21 @@ dependencies = [
  "tau-runtime",
  "tempfile",
  "tokio",
+]
+
+[[package]]
+name = "tau-onboarding"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde_json",
+ "tau-access",
+ "tau-ai",
+ "tau-cli",
+ "tau-core",
+ "tau-provider",
+ "tau-skills",
+ "tau-tools",
 ]
 
 [[package]]

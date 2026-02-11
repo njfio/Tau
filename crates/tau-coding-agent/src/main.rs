@@ -202,13 +202,16 @@ pub(crate) use crate::runtime_types::{
 pub(crate) use crate::runtime_types::{
     DoctorCommandConfig, DoctorMultiChannelReadinessConfig, DoctorProviderKeyStatus,
 };
-use crate::skills::{
+#[cfg(test)]
+pub(crate) use crate::skills::{
     augment_system_prompt, build_local_skill_lock_hints, build_registry_skill_lock_hints,
-    build_remote_skill_lock_hints, default_skills_cache_dir, default_skills_lock_path,
-    fetch_registry_manifest_with_cache, install_remote_skills_with_cache, install_skills,
-    load_catalog, load_skills_lockfile, resolve_registry_skill_sources,
-    resolve_remote_skill_sources, resolve_selected_skills, sync_skills_with_lockfile,
-    write_skills_lockfile, SkillsDownloadOptions, TrustedKey,
+    build_remote_skill_lock_hints, default_skills_cache_dir, fetch_registry_manifest_with_cache,
+    install_remote_skills_with_cache, install_skills, resolve_registry_skill_sources,
+    resolve_remote_skill_sources, resolve_selected_skills, SkillsDownloadOptions,
+};
+use crate::skills::{
+    default_skills_lock_path, load_catalog, load_skills_lockfile, sync_skills_with_lockfile,
+    write_skills_lockfile, TrustedKey,
 };
 #[cfg(test)]
 pub(crate) use crate::skills_commands::{
@@ -228,6 +231,9 @@ pub(crate) use crate::skills_commands::{
     execute_skills_show_command, execute_skills_sync_command, execute_skills_trust_add_command,
     execute_skills_trust_list_command, execute_skills_trust_revoke_command,
     execute_skills_trust_rotate_command, execute_skills_verify_command,
+};
+#[cfg(test)]
+pub(crate) use crate::skills_commands::{
     render_skills_lock_write_success, render_skills_sync_drift_details, render_skills_sync_in_sync,
 };
 pub(crate) use crate::startup_config::{
@@ -246,14 +252,16 @@ pub(crate) use crate::startup_preflight::execute_startup_preflight;
 pub(crate) use crate::startup_prompt_composition::compose_startup_system_prompt;
 #[cfg(test)]
 pub(crate) use crate::startup_resolution::apply_trust_root_mutations;
-pub(crate) use crate::startup_resolution::{
-    ensure_non_empty_text, resolve_skill_trust_roots, resolve_system_prompt,
-};
+#[cfg(test)]
+pub(crate) use crate::startup_resolution::resolve_system_prompt;
+pub(crate) use crate::startup_resolution::{ensure_non_empty_text, resolve_skill_trust_roots};
 pub(crate) use crate::startup_skills_bootstrap::run_startup_skills_bootstrap;
 pub(crate) use crate::startup_transport_modes::run_transport_mode_if_requested;
+pub(crate) use crate::tool_policy_config::build_tool_policy;
 #[cfg(test)]
 pub(crate) use crate::tool_policy_config::parse_sandbox_command_tokens;
-pub(crate) use crate::tool_policy_config::{build_tool_policy, tool_policy_to_json};
+#[cfg(test)]
+pub(crate) use crate::tool_policy_config::tool_policy_to_json;
 use crate::tools::ToolPolicy;
 pub(crate) use crate::transport_health::TransportHealthSnapshot;
 use browser_automation_runtime::{
@@ -340,12 +348,13 @@ pub(crate) use tau_provider::refresh_provider_access_token;
 #[cfg(test)]
 pub(crate) use tau_provider::resolve_api_key;
 #[cfg(test)]
+pub(crate) use tau_provider::resolve_fallback_models;
+#[cfg(test)]
 pub(crate) use tau_provider::CredentialStoreEncryptionMode;
 pub(crate) use tau_provider::ProviderAuthMethod;
 pub(crate) use tau_provider::{
     build_client_with_fallbacks, configured_provider_auth_method_from_config,
     missing_provider_api_key_message, provider_auth_capability, provider_auth_mode_flag,
-    resolve_fallback_models,
 };
 #[cfg(test)]
 pub(crate) use tau_provider::{build_provider_client, provider_api_key_candidates_with_inputs};
