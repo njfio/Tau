@@ -1,6 +1,6 @@
 use super::*;
 use tau_onboarding::startup_dispatch::{
-    resolve_runtime_skills_dir, resolve_runtime_skills_lock_path,
+    build_startup_runtime_dispatch_context, StartupRuntimeDispatchContext,
 };
 
 pub(crate) async fn run_cli(cli: Cli) -> Result<()> {
@@ -18,18 +18,20 @@ pub(crate) async fn run_cli(cli: Cli) -> Result<()> {
     let client = build_client_with_fallbacks(&cli, &model_ref, &fallback_model_refs)?;
     let skills_bootstrap = run_startup_skills_bootstrap(&cli).await?;
     let startup_package_activation = execute_package_activate_on_startup(&cli)?;
-    let effective_skills_dir =
-        resolve_runtime_skills_dir(&cli, startup_package_activation.is_some());
-    let skills_lock_path = resolve_runtime_skills_lock_path(
+    let StartupRuntimeDispatchContext {
+        effective_skills_dir,
+        skills_lock_path,
+        system_prompt,
+        startup_policy,
+    } = build_startup_runtime_dispatch_context(
         &cli,
         &skills_bootstrap.skills_lock_path,
-        &effective_skills_dir,
-    );
-    let system_prompt = compose_startup_system_prompt(&cli, &effective_skills_dir)?;
+        startup_package_activation.is_some(),
+    )?;
     let StartupPolicyBundle {
         tool_policy,
         tool_policy_json,
-    } = resolve_startup_policy(&cli)?;
+    } = startup_policy;
     let render_options = RenderOptions::from_cli(&cli);
     if run_transport_mode_if_requested(
         &cli,
