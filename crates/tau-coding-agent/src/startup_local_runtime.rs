@@ -85,7 +85,10 @@ pub(crate) async fn run_local_runtime(config: LocalRuntimeConfig<'_>) -> Result<
     };
     let orchestrator_route_trace_log = cli.telemetry_log.as_deref();
     let extension_runtime_registrations = if extension_runtime_hooks.enabled {
-        discover_extension_runtime_registrations(&extension_runtime_hooks.root)
+        discover_extension_runtime_registrations(
+            &extension_runtime_hooks.root,
+            crate::commands::COMMAND_NAMES,
+        )
     } else {
         ExtensionRuntimeRegistrationSummary {
             root: extension_runtime_hooks.root.clone(),
