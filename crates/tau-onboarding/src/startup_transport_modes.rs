@@ -1,10 +1,16 @@
+use std::sync::Arc;
+
+use tau_ai::{LlmClient, ModelRef};
 use tau_cli::Cli;
 use tau_cli::CliGatewayOpenResponsesAuthMode;
-use tau_gateway::GatewayOpenResponsesAuthMode;
+use tau_gateway::{
+    GatewayOpenResponsesAuthMode, GatewayOpenResponsesServerConfig, GatewayToolRegistrarFn,
+};
 use tau_multi_channel::{
     MultiChannelMediaUnderstandingConfig, MultiChannelOutboundConfig, MultiChannelTelemetryConfig,
 };
 use tau_provider::{load_credential_store, resolve_credential_store_encryption_mode};
+use tau_tools::tools::{register_builtin_tools, ToolPolicy};
 
 pub fn map_gateway_openresponses_auth_mode(
     mode: CliGatewayOpenResponsesAuthMode,
@@ -23,6 +29,38 @@ pub fn resolve_gateway_openresponses_auth(cli: &Cli) -> (Option<String>, Option<
     let auth_password =
         resolve_non_empty_cli_value(cli.gateway_openresponses_auth_password.as_deref());
     (auth_token, auth_password)
+}
+
+pub fn build_gateway_openresponses_server_config(
+    cli: &Cli,
+    client: Arc<dyn LlmClient>,
+    model_ref: &ModelRef,
+    system_prompt: &str,
+    tool_policy: &ToolPolicy,
+) -> GatewayOpenResponsesServerConfig {
+    let (auth_token, auth_password) = resolve_gateway_openresponses_auth(cli);
+    let policy = tool_policy.clone();
+    GatewayOpenResponsesServerConfig {
+        client,
+        model: model_ref.model.clone(),
+        system_prompt: system_prompt.to_string(),
+        max_turns: cli.max_turns,
+        tool_registrar: Arc::new(GatewayToolRegistrarFn::new(move |agent| {
+            register_builtin_tools(agent, policy.clone());
+        })),
+        turn_timeout_ms: cli.turn_timeout_ms,
+        session_lock_wait_ms: cli.session_lock_wait_ms,
+        session_lock_stale_ms: cli.session_lock_stale_ms,
+        state_dir: cli.gateway_state_dir.clone(),
+        bind: cli.gateway_openresponses_bind.clone(),
+        auth_mode: map_gateway_openresponses_auth_mode(cli.gateway_openresponses_auth_mode),
+        auth_token,
+        auth_password,
+        session_ttl_seconds: cli.gateway_openresponses_session_ttl_seconds,
+        rate_limit_window_seconds: cli.gateway_openresponses_rate_limit_window_seconds,
+        rate_limit_max_requests: cli.gateway_openresponses_rate_limit_max_requests,
+        max_input_chars: cli.gateway_openresponses_max_input_chars,
+    }
 }
 
 pub fn resolve_multi_channel_outbound_secret(
@@ -109,19 +147,24 @@ fn resolve_non_empty_cli_value(value: Option<&str>) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_multi_channel_media_config, build_multi_channel_outbound_config,
-        build_multi_channel_telemetry_config, map_gateway_openresponses_auth_mode,
-        resolve_gateway_openresponses_auth, resolve_multi_channel_outbound_secret,
+        build_gateway_openresponses_server_config, build_multi_channel_media_config,
+        build_multi_channel_outbound_config, build_multi_channel_telemetry_config,
+        map_gateway_openresponses_auth_mode, resolve_gateway_openresponses_auth,
+        resolve_multi_channel_outbound_secret,
     };
+    use async_trait::async_trait;
     use clap::Parser;
     use std::collections::BTreeMap;
     use std::path::Path;
+    use std::sync::Arc;
+    use tau_ai::{ChatRequest, ChatResponse, ChatUsage, LlmClient, Message, ModelRef, TauAiError};
     use tau_cli::{Cli, CliGatewayOpenResponsesAuthMode};
     use tau_gateway::GatewayOpenResponsesAuthMode;
     use tau_provider::{
         load_credential_store, save_credential_store, CredentialStoreData,
         CredentialStoreEncryptionMode, IntegrationCredentialStoreRecord,
     };
+    use tau_tools::tools::ToolPolicy;
     use tempfile::tempdir;
 
     fn parse_cli_with_stack() -> Cli {
@@ -132,6 +175,19 @@ mod tests {
             .expect("spawn cli parse thread")
             .join()
             .expect("join cli parse thread")
+    }
+
+    struct NoopClient;
+
+    #[async_trait]
+    impl LlmClient for NoopClient {
+        async fn complete(&self, _request: ChatRequest) -> Result<ChatResponse, TauAiError> {
+            Ok(ChatResponse {
+                message: Message::assistant_text("ok"),
+                finish_reason: Some("stop".to_string()),
+                usage: ChatUsage::default(),
+            })
+        }
     }
 
     fn write_integration_secret(
@@ -201,6 +257,48 @@ mod tests {
         let (token, password) = resolve_gateway_openresponses_auth(&cli);
         assert!(token.is_none());
         assert!(password.is_none());
+    }
+
+    #[test]
+    fn integration_build_gateway_openresponses_server_config_preserves_runtime_fields() {
+        let mut cli = parse_cli_with_stack();
+        cli.gateway_openresponses_auth_mode = CliGatewayOpenResponsesAuthMode::PasswordSession;
+        cli.gateway_openresponses_auth_password = Some("  secret-pass  ".to_string());
+        cli.gateway_openresponses_auth_token = Some("  secret-token  ".to_string());
+        cli.gateway_openresponses_bind = "127.0.0.1:9090".to_string();
+        cli.max_turns = 7;
+        cli.turn_timeout_ms = 20_000;
+        cli.gateway_openresponses_session_ttl_seconds = 1_800;
+        cli.gateway_openresponses_rate_limit_window_seconds = 120;
+        cli.gateway_openresponses_rate_limit_max_requests = 40;
+        cli.gateway_openresponses_max_input_chars = 24_000;
+
+        let model_ref = ModelRef::parse("openai/gpt-4o-mini").expect("model ref");
+        let client: Arc<dyn LlmClient> = Arc::new(NoopClient);
+        let tool_policy = ToolPolicy::new(vec![]);
+        let config = build_gateway_openresponses_server_config(
+            &cli,
+            client.clone(),
+            &model_ref,
+            "system prompt",
+            &tool_policy,
+        );
+
+        assert_eq!(config.model, "gpt-4o-mini");
+        assert_eq!(config.system_prompt, "system prompt");
+        assert_eq!(config.max_turns, 7);
+        assert_eq!(config.turn_timeout_ms, 20_000);
+        assert_eq!(config.bind, "127.0.0.1:9090");
+        assert_eq!(
+            config.auth_mode,
+            GatewayOpenResponsesAuthMode::PasswordSession
+        );
+        assert_eq!(config.auth_token.as_deref(), Some("secret-token"));
+        assert_eq!(config.auth_password.as_deref(), Some("secret-pass"));
+        assert_eq!(config.session_ttl_seconds, 1_800);
+        assert_eq!(config.rate_limit_window_seconds, 120);
+        assert_eq!(config.rate_limit_max_requests, 40);
+        assert_eq!(config.max_input_chars, 24_000);
     }
 
     #[test]
