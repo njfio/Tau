@@ -2,7 +2,7 @@ use super::*;
 use crate::channel_adapters::{
     build_multi_channel_command_handlers, build_multi_channel_pairing_evaluator,
 };
-use crate::runtime_cli_validation::validate_multi_channel_live_connectors_runner_cli;
+use crate::validate_multi_channel_live_connectors_runner_cli;
 use std::sync::Arc;
 use tau_gateway::{GatewayOpenResponsesAuthMode, GatewayToolRegistrar};
 

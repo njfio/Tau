@@ -34,7 +34,7 @@ fn has_non_empty(value: Option<&str>) -> bool {
         .unwrap_or(false)
 }
 
-pub(crate) fn evaluate_gateway_remote_profile(cli: &Cli) -> Result<GatewayRemoteProfileReport> {
+pub fn evaluate_gateway_remote_profile(cli: &Cli) -> Result<GatewayRemoteProfileReport> {
     let config = GatewayRemoteProfileConfig {
         bind: cli.gateway_openresponses_bind.clone(),
         auth_mode: map_auth_mode(cli.gateway_openresponses_auth_mode),
@@ -46,7 +46,7 @@ pub(crate) fn evaluate_gateway_remote_profile(cli: &Cli) -> Result<GatewayRemote
     evaluate_gateway_remote_profile_config(&config)
 }
 
-pub(crate) fn render_gateway_remote_profile_report(report: &GatewayRemoteProfileReport) -> String {
+pub fn render_gateway_remote_profile_report(report: &GatewayRemoteProfileReport) -> String {
     let reason_codes = if report.reason_codes.is_empty() {
         "none".to_string()
     } else {
@@ -76,7 +76,7 @@ pub(crate) fn render_gateway_remote_profile_report(report: &GatewayRemoteProfile
     )
 }
 
-pub(crate) fn execute_gateway_remote_profile_inspect_command(cli: &Cli) -> Result<()> {
+pub fn execute_gateway_remote_profile_inspect_command(cli: &Cli) -> Result<()> {
     let report = evaluate_gateway_remote_profile(cli)?;
     if cli.gateway_remote_profile_json {
         println!(
@@ -90,7 +90,7 @@ pub(crate) fn execute_gateway_remote_profile_inspect_command(cli: &Cli) -> Resul
     Ok(())
 }
 
-pub(crate) fn validate_gateway_remote_profile_for_openresponses(cli: &Cli) -> Result<()> {
+pub fn validate_gateway_remote_profile_for_openresponses(cli: &Cli) -> Result<()> {
     if !cli.gateway_openresponses_server {
         return Ok(());
     }

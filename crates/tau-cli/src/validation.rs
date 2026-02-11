@@ -1,4 +1,15 @@
-use super::*;
+use anyhow::{anyhow, bail, Context, Result};
+
+use crate::{
+    Cli, CliGatewayOpenResponsesAuthMode, CliMultiChannelOutboundMode, CliWebhookSignatureAlgorithm,
+};
+
+fn resolve_non_empty_cli_value(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
 
 fn has_prompt_or_command_input(cli: &Cli) -> bool {
     cli.prompt.is_some()
@@ -47,7 +58,7 @@ fn project_index_mode_requested(cli: &Cli) -> bool {
     cli.project_index_build || cli.project_index_query.is_some() || cli.project_index_inspect
 }
 
-pub(crate) fn validate_project_index_cli(cli: &Cli) -> Result<()> {
+pub fn validate_project_index_cli(cli: &Cli) -> Result<()> {
     let mode_requested = project_index_mode_requested(cli);
     if !mode_requested && !cli.project_index_json {
         return Ok(());
@@ -135,7 +146,7 @@ pub(crate) fn validate_project_index_cli(cli: &Cli) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn validate_github_issues_bridge_cli(cli: &Cli) -> Result<()> {
+pub fn validate_github_issues_bridge_cli(cli: &Cli) -> Result<()> {
     if !cli.github_issues_bridge {
         return Ok(());
     }
@@ -189,7 +200,7 @@ pub(crate) fn validate_github_issues_bridge_cli(cli: &Cli) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn validate_slack_bridge_cli(cli: &Cli) -> Result<()> {
+pub fn validate_slack_bridge_cli(cli: &Cli) -> Result<()> {
     if !cli.slack_bridge {
         return Ok(());
     }
@@ -234,7 +245,7 @@ pub(crate) fn validate_slack_bridge_cli(cli: &Cli) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn validate_events_runner_cli(cli: &Cli) -> Result<()> {
+pub fn validate_events_runner_cli(cli: &Cli) -> Result<()> {
     if !cli.events_runner {
         return Ok(());
     }
@@ -259,7 +270,7 @@ pub(crate) fn validate_events_runner_cli(cli: &Cli) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn validate_multi_channel_contract_runner_cli(cli: &Cli) -> Result<()> {
+pub fn validate_multi_channel_contract_runner_cli(cli: &Cli) -> Result<()> {
     if !cli.multi_channel_contract_runner {
         return Ok(());
     }
@@ -328,7 +339,7 @@ pub(crate) fn validate_multi_channel_contract_runner_cli(cli: &Cli) -> Result<()
     Ok(())
 }
 
-pub(crate) fn validate_multi_channel_live_runner_cli(cli: &Cli) -> Result<()> {
+pub fn validate_multi_channel_live_runner_cli(cli: &Cli) -> Result<()> {
     if !cli.multi_channel_live_runner {
         return Ok(());
     }
@@ -397,7 +408,7 @@ pub(crate) fn validate_multi_channel_live_runner_cli(cli: &Cli) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn validate_multi_channel_live_connectors_runner_cli(cli: &Cli) -> Result<()> {
+pub fn validate_multi_channel_live_connectors_runner_cli(cli: &Cli) -> Result<()> {
     if !cli.multi_channel_live_connectors_runner {
         return Ok(());
     }
@@ -487,7 +498,7 @@ pub(crate) fn validate_multi_channel_live_connectors_runner_cli(cli: &Cli) -> Re
     Ok(())
 }
 
-pub(crate) fn validate_multi_channel_live_ingest_cli(cli: &Cli) -> Result<()> {
+pub fn validate_multi_channel_live_ingest_cli(cli: &Cli) -> Result<()> {
     if cli.multi_channel_live_ingest_file.is_none() {
         return Ok(());
     }
@@ -548,7 +559,7 @@ pub(crate) fn validate_multi_channel_live_ingest_cli(cli: &Cli) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn validate_multi_channel_incident_timeline_cli(cli: &Cli) -> Result<()> {
+pub fn validate_multi_channel_incident_timeline_cli(cli: &Cli) -> Result<()> {
     if !multi_channel_incident_timeline_mode_requested(cli) {
         return Ok(());
     }
@@ -634,7 +645,7 @@ pub(crate) fn validate_multi_channel_incident_timeline_cli(cli: &Cli) -> Result<
     Ok(())
 }
 
-pub(crate) fn validate_multi_channel_channel_lifecycle_cli(cli: &Cli) -> Result<()> {
+pub fn validate_multi_channel_channel_lifecycle_cli(cli: &Cli) -> Result<()> {
     if !multi_channel_channel_lifecycle_mode_requested(cli) {
         return Ok(());
     }
@@ -729,7 +740,7 @@ pub(crate) fn validate_multi_channel_channel_lifecycle_cli(cli: &Cli) -> Result<
     Ok(())
 }
 
-pub(crate) fn validate_multi_channel_send_cli(cli: &Cli) -> Result<()> {
+pub fn validate_multi_channel_send_cli(cli: &Cli) -> Result<()> {
     if !multi_channel_send_mode_requested(cli) {
         if cli.multi_channel_send_json
             || cli.multi_channel_send_target.is_some()
@@ -841,7 +852,7 @@ pub(crate) fn validate_multi_channel_send_cli(cli: &Cli) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn validate_multi_agent_contract_runner_cli(cli: &Cli) -> Result<()> {
+pub fn validate_multi_agent_contract_runner_cli(cli: &Cli) -> Result<()> {
     if !cli.multi_agent_contract_runner {
         return Ok(());
     }
@@ -887,7 +898,7 @@ pub(crate) fn validate_multi_agent_contract_runner_cli(cli: &Cli) -> Result<()> 
     Ok(())
 }
 
-pub(crate) fn validate_browser_automation_contract_runner_cli(cli: &Cli) -> Result<()> {
+pub fn validate_browser_automation_contract_runner_cli(cli: &Cli) -> Result<()> {
     if !cli.browser_automation_contract_runner {
         return Ok(());
     }
@@ -946,7 +957,7 @@ pub(crate) fn validate_browser_automation_contract_runner_cli(cli: &Cli) -> Resu
     Ok(())
 }
 
-pub(crate) fn validate_browser_automation_preflight_cli(cli: &Cli) -> Result<()> {
+pub fn validate_browser_automation_preflight_cli(cli: &Cli) -> Result<()> {
     if !cli.browser_automation_preflight {
         return Ok(());
     }
@@ -979,7 +990,7 @@ pub(crate) fn validate_browser_automation_preflight_cli(cli: &Cli) -> Result<()>
     Ok(())
 }
 
-pub(crate) fn validate_memory_contract_runner_cli(cli: &Cli) -> Result<()> {
+pub fn validate_memory_contract_runner_cli(cli: &Cli) -> Result<()> {
     if !cli.memory_contract_runner {
         return Ok(());
     }
@@ -1023,7 +1034,7 @@ pub(crate) fn validate_memory_contract_runner_cli(cli: &Cli) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn validate_dashboard_contract_runner_cli(cli: &Cli) -> Result<()> {
+pub fn validate_dashboard_contract_runner_cli(cli: &Cli) -> Result<()> {
     if !cli.dashboard_contract_runner {
         return Ok(());
     }
@@ -1068,7 +1079,7 @@ pub(crate) fn validate_dashboard_contract_runner_cli(cli: &Cli) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn validate_daemon_cli(cli: &Cli) -> Result<()> {
+pub fn validate_daemon_cli(cli: &Cli) -> Result<()> {
     if !daemon_mode_requested(cli) {
         return Ok(());
     }
@@ -1149,7 +1160,7 @@ pub(crate) fn validate_daemon_cli(cli: &Cli) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn validate_gateway_service_cli(cli: &Cli) -> Result<()> {
+pub fn validate_gateway_service_cli(cli: &Cli) -> Result<()> {
     if !gateway_service_mode_requested(cli) {
         return Ok(());
     }
@@ -1208,7 +1219,7 @@ pub(crate) fn validate_gateway_service_cli(cli: &Cli) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn validate_gateway_remote_profile_inspect_cli(cli: &Cli) -> Result<()> {
+pub fn validate_gateway_remote_profile_inspect_cli(cli: &Cli) -> Result<()> {
     if !gateway_remote_profile_inspect_mode_requested(cli) {
         if cli.gateway_remote_profile_json {
             bail!("--gateway-remote-profile-json requires --gateway-remote-profile-inspect");
@@ -1274,7 +1285,7 @@ pub(crate) fn validate_gateway_remote_profile_inspect_cli(cli: &Cli) -> Result<(
     Ok(())
 }
 
-pub(crate) fn validate_gateway_openresponses_server_cli(cli: &Cli) -> Result<()> {
+pub fn validate_gateway_openresponses_server_cli(cli: &Cli) -> Result<()> {
     if !gateway_openresponses_mode_requested(cli) {
         return Ok(());
     }
@@ -1359,7 +1370,7 @@ pub(crate) fn validate_gateway_openresponses_server_cli(cli: &Cli) -> Result<()>
     Ok(())
 }
 
-pub(crate) fn validate_gateway_contract_runner_cli(cli: &Cli) -> Result<()> {
+pub fn validate_gateway_contract_runner_cli(cli: &Cli) -> Result<()> {
     if !cli.gateway_contract_runner {
         return Ok(());
     }
@@ -1403,7 +1414,7 @@ pub(crate) fn validate_gateway_contract_runner_cli(cli: &Cli) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn validate_deployment_contract_runner_cli(cli: &Cli) -> Result<()> {
+pub fn validate_deployment_contract_runner_cli(cli: &Cli) -> Result<()> {
     if !cli.deployment_contract_runner {
         return Ok(());
     }
@@ -1453,7 +1464,7 @@ pub(crate) fn validate_deployment_contract_runner_cli(cli: &Cli) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn validate_deployment_wasm_package_cli(cli: &Cli) -> Result<()> {
+pub fn validate_deployment_wasm_package_cli(cli: &Cli) -> Result<()> {
     if cli.deployment_wasm_package_module.is_none() {
         return Ok(());
     }
@@ -1517,7 +1528,7 @@ pub(crate) fn validate_deployment_wasm_package_cli(cli: &Cli) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn validate_deployment_wasm_inspect_cli(cli: &Cli) -> Result<()> {
+pub fn validate_deployment_wasm_inspect_cli(cli: &Cli) -> Result<()> {
     if cli.deployment_wasm_inspect_manifest.is_none() {
         return Ok(());
     }
@@ -1567,7 +1578,7 @@ pub(crate) fn validate_deployment_wasm_inspect_cli(cli: &Cli) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn validate_custom_command_contract_runner_cli(cli: &Cli) -> Result<()> {
+pub fn validate_custom_command_contract_runner_cli(cli: &Cli) -> Result<()> {
     if !cli.custom_command_contract_runner {
         return Ok(());
     }
@@ -1615,7 +1626,7 @@ pub(crate) fn validate_custom_command_contract_runner_cli(cli: &Cli) -> Result<(
     Ok(())
 }
 
-pub(crate) fn validate_voice_contract_runner_cli(cli: &Cli) -> Result<()> {
+pub fn validate_voice_contract_runner_cli(cli: &Cli) -> Result<()> {
     if !cli.voice_contract_runner {
         return Ok(());
     }
@@ -1664,7 +1675,7 @@ pub(crate) fn validate_voice_contract_runner_cli(cli: &Cli) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn validate_event_webhook_ingest_cli(cli: &Cli) -> Result<()> {
+pub fn validate_event_webhook_ingest_cli(cli: &Cli) -> Result<()> {
     if cli.event_webhook_ingest_file.is_none() {
         return Ok(());
     }

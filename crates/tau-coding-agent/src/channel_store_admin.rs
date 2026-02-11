@@ -2660,9 +2660,10 @@ fn collect_operator_policy_posture(cli: &Cli) -> OperatorControlPolicyPosture {
     let pairing_strict_effective =
         pairing_policy.strict_mode || pairing_allowlist_strict || pairing_rules_configured;
 
-    let remote_profile = match crate::gateway_remote_profile::evaluate_gateway_remote_profile(cli) {
+    let remote_profile = match tau_cli::gateway_remote_profile::evaluate_gateway_remote_profile(cli)
+    {
         Ok(report) => report,
-        Err(_) => crate::gateway_remote_profile::GatewayRemoteProfileReport {
+        Err(_) => tau_cli::gateway_remote_profile::GatewayRemoteProfileReport {
             profile: cli.gateway_remote_profile.as_str().to_string(),
             posture: "unknown".to_string(),
             gate: "hold".to_string(),

@@ -26,7 +26,6 @@ mod deployment_wasm;
 mod diagnostics_commands;
 mod events;
 mod extension_manifest;
-mod gateway_remote_profile;
 mod gemini_cli_client;
 mod github_issues;
 mod github_issues_helpers;
@@ -50,7 +49,6 @@ mod qa_loop_commands;
 mod release_channel_commands;
 mod rpc_capabilities;
 mod rpc_protocol;
-mod runtime_cli_validation;
 mod runtime_loop;
 mod runtime_output;
 mod runtime_types;
@@ -112,14 +110,15 @@ pub(crate) use crate::cli_args::Cli;
 pub(crate) use crate::cli_types::{
     CliBashProfile, CliCommandFileErrorMode, CliCredentialStoreEncryptionMode, CliDaemonProfile,
     CliEventTemplateSchedule, CliGatewayOpenResponsesAuthMode, CliGatewayRemoteProfile,
-    CliMultiChannelOutboundMode, CliOrchestratorMode, CliOsSandboxMode, CliProviderAuthMode,
-    CliWebhookSignatureAlgorithm,
+    CliOrchestratorMode, CliOsSandboxMode, CliProviderAuthMode,
 };
 #[cfg(test)]
 pub(crate) use crate::cli_types::{
     CliDeploymentWasmRuntimeProfile, CliMultiChannelLiveConnectorMode, CliMultiChannelTransport,
     CliSessionImportMode, CliToolPolicyPreset,
 };
+#[cfg(test)]
+pub(crate) use crate::cli_types::{CliMultiChannelOutboundMode, CliWebhookSignatureAlgorithm};
 #[cfg(test)]
 pub(crate) use crate::commands::handle_command;
 pub(crate) use crate::commands::{
@@ -237,24 +236,6 @@ pub(crate) use crate::rpc_protocol::{
     execute_rpc_dispatch_frame_command, execute_rpc_dispatch_ndjson_command,
     execute_rpc_serve_ndjson_command, execute_rpc_validate_frame_command,
 };
-#[cfg(test)]
-pub(crate) use crate::runtime_cli_validation::validate_gateway_remote_profile_inspect_cli;
-#[cfg(test)]
-pub(crate) use crate::runtime_cli_validation::validate_multi_channel_live_connectors_runner_cli;
-pub(crate) use crate::runtime_cli_validation::{
-    validate_browser_automation_contract_runner_cli, validate_browser_automation_preflight_cli,
-    validate_custom_command_contract_runner_cli, validate_daemon_cli,
-    validate_dashboard_contract_runner_cli, validate_deployment_contract_runner_cli,
-    validate_deployment_wasm_inspect_cli, validate_deployment_wasm_package_cli,
-    validate_event_webhook_ingest_cli, validate_events_runner_cli,
-    validate_gateway_contract_runner_cli, validate_gateway_openresponses_server_cli,
-    validate_gateway_service_cli, validate_github_issues_bridge_cli,
-    validate_memory_contract_runner_cli, validate_multi_agent_contract_runner_cli,
-    validate_multi_channel_channel_lifecycle_cli, validate_multi_channel_contract_runner_cli,
-    validate_multi_channel_incident_timeline_cli, validate_multi_channel_live_ingest_cli,
-    validate_multi_channel_live_runner_cli, validate_multi_channel_send_cli,
-    validate_project_index_cli, validate_slack_bridge_cli, validate_voice_contract_runner_cli,
-};
 pub(crate) use crate::runtime_loop::{
     resolve_prompt_input, run_interactive, run_plan_first_prompt_with_runtime_hooks, run_prompt,
     run_prompt_with_cancellation, InteractiveRuntimeConfig, PromptRunStatus,
@@ -351,6 +332,22 @@ pub(crate) use tau_access::rbac::{
 pub(crate) use tau_access::trust_roots::{
     apply_trust_root_mutation_specs, load_trust_root_records, parse_trust_rotation_spec,
     parse_trusted_root_spec, save_trust_root_records, TrustedRootRecord,
+};
+pub(crate) use tau_cli::validation::validate_gateway_remote_profile_inspect_cli;
+pub(crate) use tau_cli::validation::validate_multi_channel_live_connectors_runner_cli;
+pub(crate) use tau_cli::validation::{
+    validate_browser_automation_contract_runner_cli, validate_browser_automation_preflight_cli,
+    validate_custom_command_contract_runner_cli, validate_daemon_cli,
+    validate_dashboard_contract_runner_cli, validate_deployment_contract_runner_cli,
+    validate_deployment_wasm_inspect_cli, validate_deployment_wasm_package_cli,
+    validate_event_webhook_ingest_cli, validate_events_runner_cli,
+    validate_gateway_contract_runner_cli, validate_gateway_openresponses_server_cli,
+    validate_gateway_service_cli, validate_github_issues_bridge_cli,
+    validate_memory_contract_runner_cli, validate_multi_agent_contract_runner_cli,
+    validate_multi_channel_channel_lifecycle_cli, validate_multi_channel_contract_runner_cli,
+    validate_multi_channel_incident_timeline_cli, validate_multi_channel_live_ingest_cli,
+    validate_multi_channel_live_runner_cli, validate_multi_channel_send_cli,
+    validate_project_index_cli, validate_slack_bridge_cli, validate_voice_contract_runner_cli,
 };
 pub(crate) use tau_core::write_text_atomic;
 pub(crate) use tau_core::{current_unix_timestamp, current_unix_timestamp_ms, is_expired_unix};
