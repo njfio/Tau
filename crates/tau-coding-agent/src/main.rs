@@ -293,17 +293,19 @@ pub(crate) use tau_cli::validation::{
 };
 pub(crate) use tau_core::write_text_atomic;
 pub(crate) use tau_core::{current_unix_timestamp, current_unix_timestamp_ms, is_expired_unix};
-pub(crate) use tau_diagnostics::{
-    build_doctor_command_config, execute_audit_summary_command,
-    execute_browser_automation_preflight_command, execute_doctor_cli_command,
-    execute_multi_channel_live_readiness_preflight_command, execute_policy_command,
-};
+#[cfg(test)]
+pub(crate) use tau_diagnostics::build_doctor_command_config;
 #[cfg(test)]
 pub(crate) use tau_diagnostics::{
     evaluate_multi_channel_live_readiness, parse_doctor_command_args, percentile_duration_ms,
     render_audit_summary, render_doctor_report, render_doctor_report_json, run_doctor_checks,
     run_doctor_checks_with_lookup, summarize_audit_file, DoctorCheckOptions, DoctorCheckResult,
     DoctorCommandArgs, DoctorCommandOutputFormat, DoctorStatus,
+};
+pub(crate) use tau_diagnostics::{
+    execute_audit_summary_command, execute_browser_automation_preflight_command,
+    execute_doctor_cli_command, execute_multi_channel_live_readiness_preflight_command,
+    execute_policy_command,
 };
 #[cfg(test)]
 pub(crate) use tau_diagnostics::{execute_doctor_command, execute_doctor_command_with_options};

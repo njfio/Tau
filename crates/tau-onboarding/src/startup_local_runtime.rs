@@ -4,9 +4,26 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 use serde_json::Value;
 use tau_agent_core::{Agent, AgentEvent};
+use tau_ai::ModelRef;
+use tau_cli::Cli;
 use tau_core::current_unix_timestamp_ms;
+use tau_diagnostics::{build_doctor_command_config, DoctorCommandConfig};
 
 const EXTENSION_TOOL_HOOK_PAYLOAD_SCHEMA_VERSION: u32 = 1;
+
+pub fn build_local_runtime_doctor_config(
+    cli: &Cli,
+    model_ref: &ModelRef,
+    fallback_model_refs: &[ModelRef],
+    skills_dir: &Path,
+    skills_lock_path: &Path,
+) -> DoctorCommandConfig {
+    let mut doctor_config =
+        build_doctor_command_config(cli, model_ref, fallback_model_refs, skills_lock_path);
+    doctor_config.skills_dir = skills_dir.to_path_buf();
+    doctor_config.skills_lock_path = skills_lock_path.to_path_buf();
+    doctor_config
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PromptRuntimeMode {
@@ -343,8 +360,8 @@ fn extension_tool_hook_payload(hook: &str, data: Value) -> Value {
 #[cfg(test)]
 mod tests {
     use super::{
-        execute_command_file_entry_mode, execute_prompt_entry_mode,
-        extension_tool_hook_diagnostics, extension_tool_hook_dispatch,
+        build_local_runtime_doctor_config, execute_command_file_entry_mode,
+        execute_prompt_entry_mode, extension_tool_hook_diagnostics, extension_tool_hook_dispatch,
         register_runtime_event_reporter_if_configured, register_runtime_event_reporter_subscriber,
         register_runtime_extension_tool_hook_subscriber, register_runtime_extension_tools,
         register_runtime_json_event_subscriber, resolve_command_file_entry_path,
@@ -354,6 +371,7 @@ mod tests {
         PromptEntryRuntimeMode, PromptRuntimeMode, SessionBootstrapOutcome,
     };
     use async_trait::async_trait;
+    use clap::Parser;
     use serde_json::Value;
     use std::collections::VecDeque;
     use std::path::Path;
@@ -364,13 +382,24 @@ mod tests {
     };
     use tau_agent_core::{Agent, AgentConfig, AgentEvent, AgentTool, ToolExecutionResult};
     use tau_ai::{
-        ChatRequest, ChatResponse, ChatUsage, ContentBlock, LlmClient, Message, TauAiError,
-        ToolDefinition,
+        ChatRequest, ChatResponse, ChatUsage, ContentBlock, LlmClient, Message, ModelRef,
+        TauAiError, ToolDefinition,
     };
+    use tau_cli::Cli;
     use tokio::sync::Mutex as AsyncMutex;
 
     struct QueueClient {
         responses: AsyncMutex<VecDeque<ChatResponse>>,
+    }
+
+    fn parse_cli_with_stack() -> Cli {
+        std::thread::Builder::new()
+            .name("tau-cli-parse".to_string())
+            .stack_size(16 * 1024 * 1024)
+            .spawn(|| Cli::parse_from(["tau-rs"]))
+            .expect("spawn cli parse thread")
+            .join()
+            .expect("join cli parse thread")
     }
 
     #[async_trait]
@@ -705,6 +734,81 @@ mod tests {
                 .contains("forced command-file dispatch failure"),
             "unexpected error: {error}"
         );
+    }
+
+    #[test]
+    fn unit_build_local_runtime_doctor_config_uses_runtime_skills_paths() {
+        let cli = parse_cli_with_stack();
+        let model_ref = ModelRef::parse("openai/gpt-4o-mini").expect("model ref");
+        let doctor_config = build_local_runtime_doctor_config(
+            &cli,
+            &model_ref,
+            &[],
+            Path::new("runtime-skills"),
+            Path::new("runtime-skills.lock.json"),
+        );
+
+        assert_eq!(doctor_config.skills_dir, PathBuf::from("runtime-skills"));
+        assert_eq!(
+            doctor_config.skills_lock_path,
+            PathBuf::from("runtime-skills.lock.json")
+        );
+    }
+
+    #[test]
+    fn functional_build_local_runtime_doctor_config_keeps_primary_model_identity() {
+        let cli = parse_cli_with_stack();
+        let model_ref = ModelRef::parse("openai/gpt-4o-mini").expect("model ref");
+        let doctor_config = build_local_runtime_doctor_config(
+            &cli,
+            &model_ref,
+            &[],
+            Path::new("runtime-skills"),
+            Path::new("runtime-skills.lock.json"),
+        );
+
+        assert_eq!(doctor_config.model, "openai/gpt-4o-mini");
+    }
+
+    #[test]
+    fn integration_build_local_runtime_doctor_config_includes_fallback_providers() {
+        let cli = parse_cli_with_stack();
+        let model_ref = ModelRef::parse("openai/gpt-4o-mini").expect("model ref");
+        let fallback_model_refs = vec![
+            ModelRef::parse("anthropic/claude-sonnet-4").expect("fallback model"),
+            ModelRef::parse("openai/gpt-4o-mini").expect("duplicate provider fallback model"),
+        ];
+        let doctor_config = build_local_runtime_doctor_config(
+            &cli,
+            &model_ref,
+            &fallback_model_refs,
+            Path::new("runtime-skills"),
+            Path::new("runtime-skills.lock.json"),
+        );
+
+        let providers = doctor_config
+            .provider_keys
+            .iter()
+            .map(|entry| entry.provider.as_str())
+            .collect::<Vec<_>>();
+        assert!(providers.contains(&"openai"));
+        assert!(providers.contains(&"anthropic"));
+    }
+
+    #[test]
+    fn regression_build_local_runtime_doctor_config_respects_no_session_flag() {
+        let mut cli = parse_cli_with_stack();
+        cli.no_session = true;
+        let model_ref = ModelRef::parse("openai/gpt-4o-mini").expect("model ref");
+        let doctor_config = build_local_runtime_doctor_config(
+            &cli,
+            &model_ref,
+            &[],
+            Path::new("runtime-skills"),
+            Path::new("runtime-skills.lock.json"),
+        );
+
+        assert!(!doctor_config.session_enabled);
     }
 
     #[test]

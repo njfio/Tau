@@ -3,6 +3,7 @@ use crate::extension_manifest::{
     discover_extension_runtime_registrations, ExtensionRuntimeRegistrationSummary,
 };
 use tau_onboarding::startup_local_runtime::{
+    build_local_runtime_doctor_config as build_onboarding_local_runtime_doctor_config,
     execute_command_file_entry_mode as execute_onboarding_command_file_entry_mode,
     execute_prompt_entry_mode as execute_onboarding_prompt_entry_mode,
     register_runtime_event_reporter_if_configured as register_onboarding_runtime_event_reporter_if_configured,
@@ -176,13 +177,13 @@ pub(crate) async fn run_local_runtime(config: LocalRuntimeConfig<'_>) -> Result<
         skills_dir: skills_dir.to_path_buf(),
         default_lock_path: skills_lock_path.to_path_buf(),
         default_trust_root_path: cli.skill_trust_root_file.clone(),
-        doctor_config: {
-            let mut doctor_config =
-                build_doctor_command_config(cli, model_ref, fallback_model_refs, skills_lock_path);
-            doctor_config.skills_dir = skills_dir.to_path_buf();
-            doctor_config.skills_lock_path = skills_lock_path.to_path_buf();
-            doctor_config
-        },
+        doctor_config: build_onboarding_local_runtime_doctor_config(
+            cli,
+            model_ref,
+            fallback_model_refs,
+            skills_dir,
+            skills_lock_path,
+        ),
     };
     let profile_defaults = build_profile_defaults(cli);
     let auth_command_config = build_auth_command_config(cli);
