@@ -332,9 +332,6 @@ use tau_multi_channel::{
     run_multi_channel_contract_runner, run_multi_channel_live_runner,
     MultiChannelLiveRuntimeConfig, MultiChannelRuntimeConfig,
 };
-use tau_orchestrator::multi_agent_runtime::{
-    run_multi_agent_contract_runner, MultiAgentRuntimeConfig,
-};
 #[cfg(test)]
 pub(crate) use tau_orchestrator::parse_numbered_plan_steps;
 #[cfg(test)]

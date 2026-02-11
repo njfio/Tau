@@ -2962,6 +2962,7 @@ dependencies = [
  "tau-gateway",
  "tau-multi-channel",
  "tau-ops",
+ "tau-orchestrator",
  "tau-provider",
  "tau-release-channel",
  "tau-skills",

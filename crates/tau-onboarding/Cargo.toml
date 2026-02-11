@@ -20,6 +20,7 @@ tau-release-channel = { path = "../tau-release-channel" }
 tau-skills = { path = "../tau-skills" }
 tau-tools = { path = "../tau-tools" }
 tau-ops = { path = "../tau-ops" }
+tau-orchestrator = { path = "../tau-orchestrator" }
 
 [dev-dependencies]
 async-trait = { workspace = true }
