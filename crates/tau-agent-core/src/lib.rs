@@ -39,6 +39,8 @@ pub struct AgentConfig {
     pub request_retry_max_backoff_ms: u64,
     pub request_timeout_ms: Option<u64>,
     pub tool_timeout_ms: Option<u64>,
+    pub max_estimated_input_tokens: Option<u32>,
+    pub max_estimated_total_tokens: Option<u32>,
 }
 
 impl Default for AgentConfig {
@@ -56,6 +58,8 @@ impl Default for AgentConfig {
             request_retry_max_backoff_ms: 2_000,
             request_timeout_ms: Some(120_000),
             tool_timeout_ms: Some(120_000),
+            max_estimated_input_tokens: Some(120_000),
+            max_estimated_total_tokens: None,
         }
     }
 }
@@ -189,6 +193,15 @@ pub enum AgentError {
     MaxTurnsExceeded(usize),
     #[error("model request timed out after {timeout_ms}ms on attempt {attempt}")]
     RequestTimeout { timeout_ms: u64, attempt: usize },
+    #[error(
+        "token budget exceeded: estimated_input_tokens={estimated_input_tokens}, max_input_tokens={max_input_tokens}, estimated_total_tokens={estimated_total_tokens}, max_total_tokens={max_total_tokens}"
+    )]
+    TokenBudgetExceeded {
+        estimated_input_tokens: u32,
+        max_input_tokens: u32,
+        estimated_total_tokens: u32,
+        max_total_tokens: u32,
+    },
     #[error("structured output error: {0}")]
     StructuredOutput(String),
 }
@@ -453,6 +466,23 @@ impl Agent {
             .collect()
     }
 
+    fn enforce_token_budget(&self, request: &ChatRequest) -> Result<(), AgentError> {
+        let estimate = estimate_chat_request_tokens(request);
+        let max_input_tokens = self.config.max_estimated_input_tokens.unwrap_or(u32::MAX);
+        let max_total_tokens = self.config.max_estimated_total_tokens.unwrap_or(u32::MAX);
+
+        if estimate.input_tokens > max_input_tokens || estimate.total_tokens > max_total_tokens {
+            return Err(AgentError::TokenBudgetExceeded {
+                estimated_input_tokens: estimate.input_tokens,
+                max_input_tokens,
+                estimated_total_tokens: estimate.total_tokens,
+                max_total_tokens,
+            });
+        }
+
+        Ok(())
+    }
+
     async fn run_loop(
         &mut self,
         start_index: usize,
@@ -470,6 +500,7 @@ impl Agent {
                 max_tokens: self.config.max_tokens,
                 temperature: self.config.temperature,
             };
+            self.enforce_token_budget(&request)?;
 
             let request_started = std::time::Instant::now();
             let response = self.complete_with_retry(request, on_delta.clone()).await?;
@@ -666,6 +697,77 @@ impl Agent {
             message: tool_message,
         });
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ChatRequestTokenEstimate {
+    input_tokens: u32,
+    total_tokens: u32,
+}
+
+fn estimate_chat_request_tokens(request: &ChatRequest) -> ChatRequestTokenEstimate {
+    let message_tokens = request.messages.iter().fold(0u32, |acc, message| {
+        acc.saturating_add(estimate_message_tokens(message))
+    });
+    let tool_tokens = request.tools.iter().fold(0u32, |acc, tool| {
+        acc.saturating_add(estimate_tool_definition_tokens(tool))
+    });
+    let input_tokens = message_tokens.saturating_add(tool_tokens).saturating_add(2);
+    let total_tokens = input_tokens.saturating_add(request.max_tokens.unwrap_or(0));
+
+    ChatRequestTokenEstimate {
+        input_tokens,
+        total_tokens,
+    }
+}
+
+fn estimate_message_tokens(message: &Message) -> u32 {
+    let mut total = 4u32;
+    for block in &message.content {
+        match block {
+            tau_ai::ContentBlock::Text { text } => {
+                total = total.saturating_add(estimate_text_tokens(text));
+            }
+            tau_ai::ContentBlock::ToolCall {
+                id,
+                name,
+                arguments,
+            } => {
+                total = total.saturating_add(estimate_text_tokens(id));
+                total = total.saturating_add(estimate_text_tokens(name));
+                total = total.saturating_add(estimate_json_tokens(arguments));
+                total = total.saturating_add(4);
+            }
+        }
+    }
+    if let Some(tool_call_id) = &message.tool_call_id {
+        total = total.saturating_add(estimate_text_tokens(tool_call_id));
+    }
+    if let Some(tool_name) = &message.tool_name {
+        total = total.saturating_add(estimate_text_tokens(tool_name));
+    }
+    total
+}
+
+fn estimate_tool_definition_tokens(definition: &ToolDefinition) -> u32 {
+    let mut total = 12u32;
+    total = total.saturating_add(estimate_text_tokens(&definition.name));
+    total = total.saturating_add(estimate_text_tokens(&definition.description));
+    total = total.saturating_add(estimate_json_tokens(&definition.parameters));
+    total
+}
+
+fn estimate_json_tokens(value: &Value) -> u32 {
+    let rendered = serde_json::to_string(value).unwrap_or_else(|_| value.to_string());
+    estimate_text_tokens(&rendered)
+}
+
+fn estimate_text_tokens(text: &str) -> u32 {
+    if text.is_empty() {
+        return 0;
+    }
+    let chars = u32::try_from(text.chars().count()).unwrap_or(u32::MAX);
+    chars.saturating_add(3) / 4
 }
 
 fn bounded_messages(messages: &[Message], max_messages: usize) -> Vec<Message> {
@@ -966,13 +1068,15 @@ mod tests {
     };
 
     use async_trait::async_trait;
-    use tau_ai::{ChatRequest, ChatResponse, ChatUsage, ContentBlock, Message, MessageRole};
+    use tau_ai::{
+        ChatRequest, ChatResponse, ChatUsage, ContentBlock, Message, MessageRole, ToolDefinition,
+    };
     use tokio::sync::Mutex as AsyncMutex;
 
     use crate::{
-        bounded_messages, extract_json_payload, truncate_chars, Agent, AgentConfig, AgentError,
-        AgentEvent, AgentTool, ToolExecutionResult, CONTEXT_SUMMARY_MAX_CHARS,
-        CONTEXT_SUMMARY_PREFIX,
+        bounded_messages, estimate_chat_request_tokens, extract_json_payload, truncate_chars,
+        Agent, AgentConfig, AgentError, AgentEvent, AgentTool, ToolExecutionResult,
+        CONTEXT_SUMMARY_MAX_CHARS, CONTEXT_SUMMARY_PREFIX,
     };
 
     struct MockClient {
@@ -1245,6 +1349,43 @@ mod tests {
         let config = AgentConfig::default();
         assert_eq!(config.request_timeout_ms, Some(120_000));
         assert_eq!(config.tool_timeout_ms, Some(120_000));
+        assert_eq!(config.max_estimated_input_tokens, Some(120_000));
+        assert_eq!(config.max_estimated_total_tokens, None);
+    }
+
+    #[test]
+    fn unit_estimate_chat_request_tokens_accounts_for_tools_and_max_tokens() {
+        let request = ChatRequest {
+            model: "openai/gpt-4o-mini".to_string(),
+            messages: vec![
+                Message::system("sys"),
+                Message::user("hello world"),
+                Message::assistant_blocks(vec![ContentBlock::ToolCall {
+                    id: "call-1".to_string(),
+                    name: "read".to_string(),
+                    arguments: serde_json::json!({ "path": "README.md" }),
+                }]),
+            ],
+            tools: vec![ToolDefinition {
+                name: "read".to_string(),
+                description: "Read file contents".to_string(),
+                parameters: serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "path": { "type": "string" }
+                    }
+                }),
+            }],
+            max_tokens: Some(64),
+            temperature: Some(0.0),
+        };
+
+        let estimate = estimate_chat_request_tokens(&request);
+        assert!(estimate.input_tokens > 0);
+        assert_eq!(
+            estimate.total_tokens,
+            estimate.input_tokens.saturating_add(64)
+        );
     }
 
     #[tokio::test]
@@ -1571,6 +1712,74 @@ mod tests {
             } => {}
             other => panic!("expected request timeout on first attempt, got {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn functional_token_budget_exceeded_fails_before_request_dispatch() {
+        let client = Arc::new(CapturingMockClient {
+            responses: AsyncMutex::new(VecDeque::from([ChatResponse {
+                message: Message::assistant_text("should-not-run"),
+                finish_reason: Some("stop".to_string()),
+                usage: ChatUsage::default(),
+            }])),
+            requests: AsyncMutex::new(Vec::new()),
+        });
+
+        let mut agent = Agent::new(
+            client.clone(),
+            AgentConfig {
+                system_prompt: String::new(),
+                max_estimated_input_tokens: Some(1),
+                ..AgentConfig::default()
+            },
+        );
+        let error = agent
+            .prompt("this prompt should exceed budget")
+            .await
+            .expect_err("token budget should fail closed");
+        assert!(matches!(error, AgentError::TokenBudgetExceeded { .. }));
+        assert!(
+            client.requests.lock().await.is_empty(),
+            "request should not be dispatched when budget check fails"
+        );
+    }
+
+    #[tokio::test]
+    async fn integration_total_token_budget_enforces_max_tokens_headroom() {
+        let client = Arc::new(CapturingMockClient {
+            responses: AsyncMutex::new(VecDeque::from([ChatResponse {
+                message: Message::assistant_text("should-not-run"),
+                finish_reason: Some("stop".to_string()),
+                usage: ChatUsage::default(),
+            }])),
+            requests: AsyncMutex::new(Vec::new()),
+        });
+
+        let mut agent = Agent::new(
+            client.clone(),
+            AgentConfig {
+                system_prompt: String::new(),
+                max_tokens: Some(64),
+                max_estimated_input_tokens: Some(10_000),
+                max_estimated_total_tokens: Some(30),
+                ..AgentConfig::default()
+            },
+        );
+        let error = agent
+            .prompt("small prompt")
+            .await
+            .expect_err("max_tokens should count against total budget");
+        match error {
+            AgentError::TokenBudgetExceeded {
+                max_total_tokens: 30,
+                ..
+            } => {}
+            other => panic!("expected total token budget failure, got {other:?}"),
+        }
+        assert!(
+            client.requests.lock().await.is_empty(),
+            "request should not be dispatched when total budget is exceeded"
+        );
     }
 
     #[test]
@@ -1935,6 +2144,35 @@ mod tests {
             "timeout-recovered"
         );
         assert_eq!(*client.attempts.lock().await, 2);
+    }
+
+    #[tokio::test]
+    async fn regression_token_budget_none_disables_estimation_gate() {
+        let client = Arc::new(MockClient {
+            responses: AsyncMutex::new(VecDeque::from([ChatResponse {
+                message: Message::assistant_text("ok"),
+                finish_reason: Some("stop".to_string()),
+                usage: ChatUsage::default(),
+            }])),
+        });
+        let mut agent = Agent::new(
+            client,
+            AgentConfig {
+                system_prompt: String::new(),
+                max_estimated_input_tokens: None,
+                max_estimated_total_tokens: None,
+                ..AgentConfig::default()
+            },
+        );
+        let oversized_prompt = "x".repeat(250_000);
+        let messages = agent
+            .prompt(oversized_prompt)
+            .await
+            .expect("token gate disabled should allow prompt");
+        assert_eq!(
+            messages.last().expect("assistant response").text_content(),
+            "ok"
+        );
     }
 
     #[tokio::test]
