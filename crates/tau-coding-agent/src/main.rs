@@ -306,6 +306,8 @@ pub(crate) use tau_provider::refresh_provider_access_token;
 #[cfg(test)]
 pub(crate) use tau_provider::resolve_api_key;
 #[cfg(test)]
+pub(crate) use tau_provider::resolve_credential_store_encryption_mode;
+#[cfg(test)]
 pub(crate) use tau_provider::resolve_fallback_models;
 #[cfg(test)]
 pub(crate) use tau_provider::CredentialStoreEncryptionMode;
@@ -322,8 +324,7 @@ pub(crate) use tau_provider::{
     IntegrationCredentialStoreRecord,
 };
 pub(crate) use tau_provider::{
-    execute_integration_auth_command, resolve_non_empty_cli_value,
-    resolve_secret_from_cli_or_store_id,
+    execute_integration_auth_command, resolve_secret_from_cli_or_store_id,
 };
 #[cfg(test)]
 pub(crate) use tau_provider::{
@@ -331,9 +332,8 @@ pub(crate) use tau_provider::{
     FallbackRoutingClient,
 };
 pub(crate) use tau_provider::{
-    load_credential_store, resolve_credential_store_encryption_mode,
-    resolve_non_empty_secret_with_source, save_credential_store, CredentialStoreData,
-    ProviderCredentialStoreRecord,
+    load_credential_store, resolve_non_empty_secret_with_source, save_credential_store,
+    CredentialStoreData, ProviderCredentialStoreRecord,
 };
 #[cfg(test)]
 pub(crate) use tau_provider::{parse_integration_auth_command, IntegrationAuthCommand};
