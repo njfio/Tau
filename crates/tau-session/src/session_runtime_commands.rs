@@ -3,7 +3,12 @@ use std::path::PathBuf;
 use anyhow::{anyhow, bail, Result};
 use tau_ai::Message;
 
-use crate::{format_id_list, format_remap_ids, SessionImportMode, SessionRuntime};
+use crate::{
+    execute_session_diff_command, execute_session_graph_export_command,
+    execute_session_search_command, execute_session_stats_command, format_id_list,
+    format_remap_ids, parse_session_diff_args, parse_session_stats_args, SessionImportMode,
+    SessionRuntime,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// Public struct `SessionRuntimeCommandOutcome` used across Tau components.
@@ -253,6 +258,71 @@ pub fn execute_branches_command(
     SessionRuntimeCommandOutcome::new(lines, false)
 }
 
+pub fn execute_session_search_runtime_command(
+    command_args: &str,
+    runtime: &SessionRuntime,
+) -> SessionRuntimeCommandOutcome {
+    if command_args.trim().is_empty() {
+        return SessionRuntimeCommandOutcome::new(
+            "usage: /session-search <query> [--role <role>] [--limit <n>]".to_string(),
+            false,
+        );
+    }
+
+    SessionRuntimeCommandOutcome::new(execute_session_search_command(runtime, command_args), false)
+}
+
+pub fn execute_session_stats_runtime_command(
+    command_args: &str,
+    runtime: &SessionRuntime,
+) -> SessionRuntimeCommandOutcome {
+    let format = match parse_session_stats_args(command_args) {
+        Ok(format) => format,
+        Err(_) => {
+            return SessionRuntimeCommandOutcome::new(
+                "usage: /session-stats [--json]".to_string(),
+                false,
+            );
+        }
+    };
+
+    SessionRuntimeCommandOutcome::new(execute_session_stats_command(runtime, format), false)
+}
+
+pub fn execute_session_diff_runtime_command(
+    command_args: &str,
+    runtime: &SessionRuntime,
+) -> SessionRuntimeCommandOutcome {
+    let heads = match parse_session_diff_args(command_args) {
+        Ok(heads) => heads,
+        Err(_) => {
+            return SessionRuntimeCommandOutcome::new(
+                "usage: /session-diff [<left-id> <right-id>]".to_string(),
+                false,
+            );
+        }
+    };
+
+    SessionRuntimeCommandOutcome::new(execute_session_diff_command(runtime, heads), false)
+}
+
+pub fn execute_session_graph_export_runtime_command(
+    command_args: &str,
+    runtime: &SessionRuntime,
+) -> SessionRuntimeCommandOutcome {
+    if command_args.trim().is_empty() {
+        return SessionRuntimeCommandOutcome::new(
+            "usage: /session-graph-export <path>".to_string(),
+            false,
+        );
+    }
+
+    SessionRuntimeCommandOutcome::new(
+        execute_session_graph_export_command(runtime, command_args),
+        false,
+    )
+}
+
 fn summarize_message(message: &Message) -> String {
     let text = message.text_content().replace('\n', " ");
     if text.trim().is_empty() {
@@ -275,17 +345,22 @@ fn summarize_message(message: &Message) -> String {
 mod tests {
     use super::{
         execute_branch_switch_command, execute_branches_command, execute_resume_command,
-        execute_session_compact_command, execute_session_export_command,
+        execute_session_compact_command, execute_session_diff_runtime_command,
+        execute_session_export_command, execute_session_graph_export_runtime_command,
         execute_session_import_command, execute_session_repair_command,
+        execute_session_search_runtime_command, execute_session_stats_runtime_command,
         execute_session_status_command, session_import_mode_label,
     };
     use crate::{SessionImportMode, SessionRuntime, SessionStore};
     use std::{
         fs,
         path::PathBuf,
+        sync::atomic::{AtomicU64, Ordering},
         time::{SystemTime, UNIX_EPOCH},
     };
     use tau_ai::Message;
+
+    static FIXTURE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
     struct SessionRuntimeFixture {
         runtime: SessionRuntime,
@@ -293,14 +368,19 @@ mod tests {
     }
 
     impl SessionRuntimeFixture {
-        fn empty() -> Self {
+        fn next_root() -> PathBuf {
             let unique = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .expect("system clock should be after unix epoch")
                 .as_nanos();
-            let root = std::env::temp_dir()
+            let counter = FIXTURE_COUNTER.fetch_add(1, Ordering::Relaxed);
+            std::env::temp_dir()
                 .join("tau-session-runtime-commands-tests")
-                .join(format!("case-{unique}"));
+                .join(format!("case-{unique}-{counter}"))
+        }
+
+        fn empty() -> Self {
+            let root = Self::next_root();
             fs::create_dir_all(&root).expect("create fixture root");
             let session_path = root.join("session.jsonl");
             let store = SessionStore::load(&session_path).expect("load session store");
@@ -314,13 +394,7 @@ mod tests {
         }
 
         fn seeded() -> Self {
-            let unique = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("system clock should be after unix epoch")
-                .as_nanos();
-            let root = std::env::temp_dir()
-                .join("tau-session-runtime-commands-tests")
-                .join(format!("case-{unique}"));
+            let root = Self::next_root();
             fs::create_dir_all(&root).expect("create fixture root");
             let session_path = root.join("session.jsonl");
             let mut store = SessionStore::load(&session_path).expect("load session store");
@@ -433,6 +507,26 @@ mod tests {
     }
 
     #[test]
+    fn unit_execute_session_search_runtime_command_usage_for_empty_query() {
+        let fixture = SessionRuntimeFixture::seeded();
+        let outcome = execute_session_search_runtime_command("   ", &fixture.runtime);
+        assert_eq!(
+            outcome.message,
+            "usage: /session-search <query> [--role <role>] [--limit <n>]"
+        );
+        assert!(!outcome.reload_active_head);
+    }
+
+    #[test]
+    fn functional_execute_session_search_runtime_command_returns_matches() {
+        let fixture = SessionRuntimeFixture::seeded();
+        let outcome = execute_session_search_runtime_command("assistant", &fixture.runtime);
+        assert!(!outcome.reload_active_head);
+        assert!(outcome.message.contains("session search:"));
+        assert!(outcome.message.contains("matches="));
+    }
+
+    #[test]
     fn integration_execute_session_compact_command_prunes_diverged_lineage() {
         let mut fixture = SessionRuntimeFixture::with_diverged_branches();
         let branch_tips = fixture.runtime.store.branch_tips();
@@ -521,6 +615,43 @@ mod tests {
     }
 
     #[test]
+    fn integration_execute_session_stats_runtime_command_supports_text_and_json() {
+        let fixture = SessionRuntimeFixture::with_diverged_branches();
+
+        let text_outcome = execute_session_stats_runtime_command("", &fixture.runtime);
+        assert!(!text_outcome.reload_active_head);
+        assert!(text_outcome.message.contains("session stats:"));
+
+        let json_outcome = execute_session_stats_runtime_command("--json", &fixture.runtime);
+        assert!(!json_outcome.reload_active_head);
+        let payload = serde_json::from_str::<serde_json::Value>(&json_outcome.message)
+            .expect("stats json output should parse");
+        assert!(payload["entries"].as_u64().unwrap_or(0) >= 3);
+        assert!(payload["branch_tips"].as_u64().unwrap_or(0) >= 1);
+    }
+
+    #[test]
+    fn integration_execute_session_diff_runtime_command_supports_explicit_heads() {
+        let fixture = SessionRuntimeFixture::with_diverged_branches();
+        let mut heads = fixture
+            .runtime
+            .store
+            .branch_tips()
+            .iter()
+            .map(|entry| entry.id)
+            .collect::<Vec<_>>();
+        assert!(heads.len() >= 2);
+        heads.sort_unstable();
+        let command_args = format!("{} {}", heads[0], heads[1]);
+
+        let outcome = execute_session_diff_runtime_command(&command_args, &fixture.runtime);
+        assert!(!outcome.reload_active_head);
+        assert!(outcome.message.contains("session diff:"));
+        assert!(outcome.message.contains(&heads[0].to_string()));
+        assert!(outcome.message.contains(&heads[1].to_string()));
+    }
+
+    #[test]
     fn regression_execute_session_repair_command_usage_returns_non_reloading_outcome() {
         let mut fixture = SessionRuntimeFixture::seeded();
         let original_head = fixture.runtime.active_head;
@@ -572,6 +703,40 @@ mod tests {
                 .expect("usage should succeed");
         assert_eq!(import_usage.message, "usage: /session-import <path>");
         assert!(!import_usage.reload_active_head);
+    }
+
+    #[test]
+    fn regression_execute_session_stats_and_diff_runtime_commands_invalid_args_use_usage_messages()
+    {
+        let fixture = SessionRuntimeFixture::seeded();
+
+        let stats_usage = execute_session_stats_runtime_command("--unknown", &fixture.runtime);
+        assert_eq!(stats_usage.message, "usage: /session-stats [--json]");
+        assert!(!stats_usage.reload_active_head);
+
+        let diff_usage = execute_session_diff_runtime_command("one two three", &fixture.runtime);
+        assert_eq!(
+            diff_usage.message,
+            "usage: /session-diff [<left-id> <right-id>]"
+        );
+        assert!(!diff_usage.reload_active_head);
+    }
+
+    #[test]
+    fn regression_execute_session_graph_export_runtime_command_usage_and_invalid_destination() {
+        let fixture = SessionRuntimeFixture::seeded();
+
+        let usage = execute_session_graph_export_runtime_command("", &fixture.runtime);
+        assert_eq!(usage.message, "usage: /session-graph-export <path>");
+        assert!(!usage.reload_active_head);
+
+        let invalid_path = fixture.root.to_str().expect("utf8 root path");
+        let error_outcome =
+            execute_session_graph_export_runtime_command(invalid_path, &fixture.runtime);
+        assert!(!error_outcome.reload_active_head);
+        assert!(error_outcome
+            .message
+            .contains("session graph export error:"));
     }
 
     #[test]
