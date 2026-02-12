@@ -43,6 +43,9 @@ use tau_github_issues::github_transport_helpers::{
     is_retryable_github_status, is_retryable_transport_error, parse_retry_after, retry_delay,
     truncate_for_error,
 };
+use tau_github_issues::issue_artifacts_command::{
+    parse_issue_artifacts_command as parse_shared_issue_artifacts_command, ArtifactsIssueCommand,
+};
 use tau_github_issues::issue_auth_command::{
     parse_issue_auth_command as parse_shared_issue_auth_command, TauIssueAuthCommand,
     TauIssueAuthCommandKind,
@@ -5200,38 +5203,7 @@ fn parse_tau_issue_command(body: &str) -> Option<TauIssueCommand> {
                 },
             }
         }
-        "artifacts" => {
-            if remainder.is_empty() {
-                TauIssueCommand::Artifacts {
-                    purge: false,
-                    run_id: None,
-                }
-            } else if remainder == "purge" {
-                TauIssueCommand::Artifacts {
-                    purge: true,
-                    run_id: None,
-                }
-            } else {
-                let mut artifact_args = remainder.split_whitespace();
-                match (
-                    artifact_args.next(),
-                    artifact_args.next(),
-                    artifact_args.next(),
-                ) {
-                    (Some("run"), Some(run_id), None) => TauIssueCommand::Artifacts {
-                        purge: false,
-                        run_id: Some(run_id.to_string()),
-                    },
-                    (Some("show"), Some(artifact_id), None) => TauIssueCommand::ArtifactShow {
-                        artifact_id: artifact_id.to_string(),
-                    },
-                    _ => TauIssueCommand::Invalid {
-                        message: "Usage: /tau artifacts [purge|run <run_id>|show <artifact_id>]"
-                            .to_string(),
-                    },
-                }
-            }
-        }
+        "artifacts" => parse_artifacts_command(remainder),
         "demo-index" => parse_demo_index_command(remainder),
         "canvas" => {
             if remainder.is_empty() {
@@ -5288,6 +5260,27 @@ fn parse_issue_auth_command(remainder: &str) -> TauIssueCommand {
     }
 }
 
+fn parse_artifacts_command(remainder: &str) -> TauIssueCommand {
+    match parse_shared_issue_artifacts_command(remainder, artifacts_command_usage()) {
+        Ok(ArtifactsIssueCommand::List) => TauIssueCommand::Artifacts {
+            purge: false,
+            run_id: None,
+        },
+        Ok(ArtifactsIssueCommand::Purge) => TauIssueCommand::Artifacts {
+            purge: true,
+            run_id: None,
+        },
+        Ok(ArtifactsIssueCommand::Run { run_id }) => TauIssueCommand::Artifacts {
+            purge: false,
+            run_id: Some(run_id),
+        },
+        Ok(ArtifactsIssueCommand::Show { artifact_id }) => {
+            TauIssueCommand::ArtifactShow { artifact_id }
+        }
+        Err(message) => TauIssueCommand::Invalid { message },
+    }
+}
+
 fn parse_demo_index_run_command(raw: &str) -> std::result::Result<DemoIndexRunCommand, String> {
     let usage = demo_index_command_usage();
     let parsed = parse_shared_demo_index_run_command(
@@ -5322,6 +5315,10 @@ fn demo_index_command_usage() -> String {
 
 fn tau_command_usage() -> String {
     tau_shared_command_usage("/tau")
+}
+
+fn artifacts_command_usage() -> &'static str {
+    "Usage: /tau artifacts [purge|run <run_id>|show <artifact_id>]"
 }
 
 fn build_summarize_prompt(
