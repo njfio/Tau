@@ -65,6 +65,9 @@ use tau_github_issues::issue_comment::{
     IssueCommentUsageView,
 };
 use tau_github_issues::issue_demo_index::parse_demo_index_run_command as parse_shared_demo_index_run_command;
+use tau_github_issues::issue_demo_index_command::{
+    parse_demo_index_issue_command as parse_shared_demo_index_issue_command, DemoIndexIssueCommand,
+};
 use tau_github_issues::issue_doctor_command::{
     parse_issue_doctor_command as parse_shared_issue_doctor_command, IssueDoctorCommand,
 };
@@ -5260,21 +5263,12 @@ fn parse_tau_issue_command(body: &str) -> Option<TauIssueCommand> {
 }
 
 fn parse_demo_index_command(remainder: &str) -> TauIssueCommand {
-    let mut parts = remainder.splitn(2, char::is_whitespace);
-    let subcommand = parts.next().unwrap_or_default().trim();
-    let sub_remainder = parts.next().unwrap_or_default().trim();
-    match subcommand {
-        "list" if sub_remainder.is_empty() => TauIssueCommand::DemoIndexList,
-        "report" if sub_remainder.is_empty() => TauIssueCommand::DemoIndexReport,
-        "run" => match parse_demo_index_run_command(sub_remainder) {
-            Ok(command) => TauIssueCommand::DemoIndexRun { command },
-            Err(error_message) => TauIssueCommand::Invalid {
-                message: error_message,
-            },
-        },
-        _ => TauIssueCommand::Invalid {
-            message: demo_index_command_usage(),
-        },
+    let usage = demo_index_command_usage();
+    match parse_shared_demo_index_issue_command(remainder, &usage, parse_demo_index_run_command) {
+        Ok(DemoIndexIssueCommand::List) => TauIssueCommand::DemoIndexList,
+        Ok(DemoIndexIssueCommand::Report) => TauIssueCommand::DemoIndexReport,
+        Ok(DemoIndexIssueCommand::Run(command)) => TauIssueCommand::DemoIndexRun { command },
+        Err(message) => TauIssueCommand::Invalid { message },
     }
 }
 
