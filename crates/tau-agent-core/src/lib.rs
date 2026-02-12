@@ -41,6 +41,7 @@ pub struct AgentConfig {
     pub tool_timeout_ms: Option<u64>,
     pub max_estimated_input_tokens: Option<u32>,
     pub max_estimated_total_tokens: Option<u32>,
+    pub structured_output_max_retries: usize,
 }
 
 impl Default for AgentConfig {
@@ -60,6 +61,7 @@ impl Default for AgentConfig {
             tool_timeout_ms: Some(120_000),
             max_estimated_input_tokens: Some(120_000),
             max_estimated_total_tokens: None,
+            structured_output_max_retries: 1,
         }
     }
 }
@@ -407,7 +409,8 @@ impl Agent {
         schema: &Value,
     ) -> Result<Value, AgentError> {
         let new_messages = self.prompt(text).await?;
-        parse_structured_output(&new_messages, schema)
+        self.parse_structured_output_with_retry(new_messages, schema)
+            .await
     }
 
     /// Runs a prompt while optionally streaming text deltas.
@@ -437,7 +440,8 @@ impl Agent {
     /// Continues the turn and parses the response as schema-validated JSON.
     pub async fn continue_turn_json(&mut self, schema: &Value) -> Result<Value, AgentError> {
         let new_messages = self.continue_turn().await?;
-        parse_structured_output(&new_messages, schema)
+        self.parse_structured_output_with_retry(new_messages, schema)
+            .await
     }
 
     /// Continues the current turn while optionally streaming text deltas.
@@ -481,6 +485,30 @@ impl Agent {
         }
 
         Ok(())
+    }
+
+    async fn parse_structured_output_with_retry(
+        &mut self,
+        mut new_messages: Vec<Message>,
+        schema: &Value,
+    ) -> Result<Value, AgentError> {
+        let max_retries = self.config.structured_output_max_retries;
+        for attempt in 0..=max_retries {
+            match parse_structured_output(&new_messages, schema) {
+                Ok(value) => return Ok(value),
+                Err(AgentError::StructuredOutput(error)) => {
+                    if attempt >= max_retries {
+                        return Err(AgentError::StructuredOutput(error));
+                    }
+                    let retry_prompt = build_structured_output_retry_prompt(schema, &error);
+                    new_messages = self.prompt(retry_prompt).await?;
+                }
+                Err(other) => return Err(other),
+            }
+        }
+        Err(AgentError::StructuredOutput(
+            "structured output retry loop exhausted unexpectedly".to_string(),
+        ))
     }
 
     async fn run_loop(
@@ -927,6 +955,14 @@ fn truncate_chars(text: &str, max_chars: usize) -> String {
     truncated
 }
 
+fn build_structured_output_retry_prompt(schema: &Value, error: &str) -> String {
+    let schema_text = serde_json::to_string(schema).unwrap_or_else(|_| schema.to_string());
+    format!(
+        "Your previous response could not be accepted as structured JSON ({error}). \
+Please reply with only valid JSON that matches this schema exactly:\n{schema_text}"
+    )
+}
+
 fn parse_structured_output(messages: &[Message], schema: &Value) -> Result<Value, AgentError> {
     let assistant = messages
         .iter()
@@ -1077,9 +1113,9 @@ mod tests {
     use tokio::sync::Mutex as AsyncMutex;
 
     use crate::{
-        bounded_messages, estimate_chat_request_tokens, extract_json_payload, truncate_chars,
-        Agent, AgentConfig, AgentError, AgentEvent, AgentTool, ToolExecutionResult,
-        CONTEXT_SUMMARY_MAX_CHARS, CONTEXT_SUMMARY_PREFIX,
+        bounded_messages, build_structured_output_retry_prompt, estimate_chat_request_tokens,
+        extract_json_payload, truncate_chars, Agent, AgentConfig, AgentError, AgentEvent,
+        AgentTool, ToolExecutionResult, CONTEXT_SUMMARY_MAX_CHARS, CONTEXT_SUMMARY_PREFIX,
     };
 
     struct MockClient {
@@ -1354,6 +1390,7 @@ mod tests {
         assert_eq!(config.tool_timeout_ms, Some(120_000));
         assert_eq!(config.max_estimated_input_tokens, Some(120_000));
         assert_eq!(config.max_estimated_total_tokens, None);
+        assert_eq!(config.structured_output_max_retries, 1);
     }
 
     #[test]
@@ -1928,6 +1965,19 @@ mod tests {
         assert_eq!(fenced["items"][1], 2);
     }
 
+    #[test]
+    fn unit_build_structured_output_retry_prompt_includes_error_and_schema() {
+        let schema = serde_json::json!({
+            "type": "object",
+            "required": ["mode"]
+        });
+        let prompt =
+            build_structured_output_retry_prompt(&schema, "did not contain parseable JSON");
+        assert!(prompt.contains("did not contain parseable JSON"));
+        assert!(prompt.contains("\"required\":[\"mode\"]"));
+        assert!(prompt.contains("reply with only valid JSON"));
+    }
+
     #[tokio::test]
     async fn functional_prompt_json_returns_validated_value() {
         let client = Arc::new(MockClient {
@@ -1960,6 +2010,57 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn functional_prompt_json_retries_after_non_json_and_succeeds() {
+        let client = Arc::new(CapturingMockClient {
+            responses: AsyncMutex::new(VecDeque::from([
+                ChatResponse {
+                    message: Message::assistant_text("not-json-response"),
+                    finish_reason: Some("stop".to_string()),
+                    usage: ChatUsage::default(),
+                },
+                ChatResponse {
+                    message: Message::assistant_text("{\"tasks\":[\"retry\"],\"ok\":true}"),
+                    finish_reason: Some("stop".to_string()),
+                    usage: ChatUsage::default(),
+                },
+            ])),
+            requests: AsyncMutex::new(Vec::new()),
+        });
+        let mut agent = Agent::new(
+            client.clone(),
+            AgentConfig {
+                structured_output_max_retries: 1,
+                ..AgentConfig::default()
+            },
+        );
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "tasks": {
+                    "type": "array",
+                    "items": { "type": "string" }
+                },
+                "ok": { "type": "boolean" }
+            },
+            "required": ["tasks", "ok"],
+            "additionalProperties": false
+        });
+
+        let value = agent
+            .prompt_json("return tasks", &schema)
+            .await
+            .expect("structured output retry should recover");
+        assert_eq!(value["ok"], true);
+        assert_eq!(value["tasks"][0], "retry");
+
+        let requests = client.requests.lock().await;
+        assert_eq!(requests.len(), 2, "prompt_json should perform one retry");
+        let retry_prompt = last_user_prompt(&requests[1]);
+        assert!(retry_prompt.contains("could not be accepted as structured JSON"));
+        assert!(retry_prompt.contains("\"tasks\""));
+    }
+
+    #[tokio::test]
     async fn integration_prompt_json_accepts_fenced_json_payload() {
         let client = Arc::new(MockClient {
             responses: AsyncMutex::new(VecDeque::from([ChatResponse {
@@ -1989,6 +2090,57 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn integration_continue_turn_json_retries_after_schema_failure_and_succeeds() {
+        let client = Arc::new(CapturingMockClient {
+            responses: AsyncMutex::new(VecDeque::from([
+                ChatResponse {
+                    message: Message::assistant_text("{\"mode\":\"apply\"}"),
+                    finish_reason: Some("stop".to_string()),
+                    usage: ChatUsage::default(),
+                },
+                ChatResponse {
+                    message: Message::assistant_text("{\"mode\":\"apply\",\"steps\":2}"),
+                    finish_reason: Some("stop".to_string()),
+                    usage: ChatUsage::default(),
+                },
+            ])),
+            requests: AsyncMutex::new(Vec::new()),
+        });
+        let mut agent = Agent::new(
+            client.clone(),
+            AgentConfig {
+                structured_output_max_retries: 1,
+                ..AgentConfig::default()
+            },
+        );
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "mode": { "type": "string" },
+                "steps": { "type": "integer" }
+            },
+            "required": ["mode", "steps"]
+        });
+
+        let value = agent
+            .continue_turn_json(&schema)
+            .await
+            .expect("continue_turn_json should recover via retry");
+        assert_eq!(value["mode"], "apply");
+        assert_eq!(value["steps"], 2);
+
+        let requests = client.requests.lock().await;
+        assert_eq!(
+            requests.len(),
+            2,
+            "continue_turn_json should perform one retry request"
+        );
+        let retry_prompt = last_user_prompt(&requests[1]);
+        assert!(retry_prompt.contains("schema validation failed"));
+        assert!(retry_prompt.contains("\"steps\""));
+    }
+
+    #[tokio::test]
     async fn regression_prompt_json_fails_closed_on_non_json_response() {
         let client = Arc::new(MockClient {
             responses: AsyncMutex::new(VecDeque::from([ChatResponse {
@@ -1997,7 +2149,13 @@ mod tests {
                 usage: ChatUsage::default(),
             }])),
         });
-        let mut agent = Agent::new(client, AgentConfig::default());
+        let mut agent = Agent::new(
+            client,
+            AgentConfig {
+                structured_output_max_retries: 0,
+                ..AgentConfig::default()
+            },
+        );
         let schema = serde_json::json!({ "type": "object" });
 
         let error = agent
@@ -2017,7 +2175,13 @@ mod tests {
                 usage: ChatUsage::default(),
             }])),
         });
-        let mut agent = Agent::new(client, AgentConfig::default());
+        let mut agent = Agent::new(
+            client,
+            AgentConfig {
+                structured_output_max_retries: 0,
+                ..AgentConfig::default()
+            },
+        );
         let schema = serde_json::json!({
             "type": "object",
             "properties": {
@@ -2036,6 +2200,43 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn regression_prompt_json_retry_exhaustion_fails_closed() {
+        let client = Arc::new(CapturingMockClient {
+            responses: AsyncMutex::new(VecDeque::from([
+                ChatResponse {
+                    message: Message::assistant_text("still-not-json"),
+                    finish_reason: Some("stop".to_string()),
+                    usage: ChatUsage::default(),
+                },
+                ChatResponse {
+                    message: Message::assistant_text("again-not-json"),
+                    finish_reason: Some("stop".to_string()),
+                    usage: ChatUsage::default(),
+                },
+            ])),
+            requests: AsyncMutex::new(Vec::new()),
+        });
+        let mut agent = Agent::new(
+            client.clone(),
+            AgentConfig {
+                structured_output_max_retries: 1,
+                ..AgentConfig::default()
+            },
+        );
+        let schema = serde_json::json!({ "type": "object" });
+
+        let error = agent
+            .prompt_json("return object", &schema)
+            .await
+            .expect_err("non-json output must fail after retries are exhausted");
+        assert!(matches!(error, AgentError::StructuredOutput(_)));
+        assert!(error.to_string().contains("did not contain parseable JSON"));
+
+        let requests = client.requests.lock().await;
+        assert_eq!(requests.len(), 2, "expected one retry attempt");
+    }
+
+    #[tokio::test]
     async fn regression_continue_turn_json_fails_closed_when_assistant_lacks_json() {
         let client = Arc::new(MockClient {
             responses: AsyncMutex::new(VecDeque::from([ChatResponse {
@@ -2044,7 +2245,13 @@ mod tests {
                 usage: ChatUsage::default(),
             }])),
         });
-        let mut agent = Agent::new(client, AgentConfig::default());
+        let mut agent = Agent::new(
+            client,
+            AgentConfig {
+                structured_output_max_retries: 0,
+                ..AgentConfig::default()
+            },
+        );
         let schema = serde_json::json!({ "type": "object" });
 
         let error = agent
