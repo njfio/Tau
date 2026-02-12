@@ -1,4 +1,4 @@
-//! Core library surface for the crates crate.
+//! Core runtime primitives for building tool-using LLM agents in Tau.
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
@@ -10,8 +10,22 @@ use tau_ai::{
 };
 use thiserror::Error;
 
-#[derive(Debug, Clone)]
 /// Public struct `AgentConfig` used across Tau components.
+///
+/// # Examples
+///
+/// ```
+/// use tau_agent_core::AgentConfig;
+///
+/// let config = AgentConfig {
+///     model: "openai/gpt-4o-mini".to_string(),
+///     max_turns: 12,
+///     ..AgentConfig::default()
+/// };
+///
+/// assert_eq!(config.max_turns, 12);
+/// ```
+#[derive(Debug, Clone)]
 pub struct AgentConfig {
     pub model: String,
     pub system_prompt: String,
@@ -42,14 +56,29 @@ impl Default for AgentConfig {
     }
 }
 
-#[derive(Debug, Clone)]
 /// Public struct `ToolExecutionResult` used across Tau components.
+///
+/// # Examples
+///
+/// ```
+/// use serde_json::json;
+/// use tau_agent_core::ToolExecutionResult;
+///
+/// let ok = ToolExecutionResult::ok(json!({ "status": "ok" }));
+/// assert!(!ok.is_error);
+///
+/// let err = ToolExecutionResult::error(json!("boom"));
+/// assert!(err.is_error);
+/// assert_eq!(err.as_text(), "boom");
+/// ```
+#[derive(Debug, Clone)]
 pub struct ToolExecutionResult {
     pub content: Value,
     pub is_error: bool,
 }
 
 impl ToolExecutionResult {
+    /// Creates a successful tool result.
     pub fn ok(content: Value) -> Self {
         Self {
             content,
@@ -57,6 +86,7 @@ impl ToolExecutionResult {
         }
     }
 
+    /// Creates a failed tool result.
     pub fn error(content: Value) -> Self {
         Self {
             content,
@@ -64,6 +94,7 @@ impl ToolExecutionResult {
         }
     }
 
+    /// Converts the payload to text for insertion into a tool message.
     pub fn as_text(&self) -> String {
         match &self.content {
             Value::String(text) => text.clone(),
@@ -72,15 +103,49 @@ impl ToolExecutionResult {
     }
 }
 
-#[async_trait]
 /// Trait contract for `AgentTool` behavior.
+///
+/// # Examples
+///
+/// ```
+/// use async_trait::async_trait;
+/// use serde_json::{json, Value};
+/// use tau_agent_core::{AgentTool, ToolExecutionResult};
+/// use tau_ai::ToolDefinition;
+///
+/// struct EchoTool;
+///
+/// #[async_trait]
+/// impl AgentTool for EchoTool {
+///     fn definition(&self) -> ToolDefinition {
+///         ToolDefinition {
+///             name: "echo".to_string(),
+///             description: "Echoes a message".to_string(),
+///             parameters: json!({
+///                 "type": "object",
+///                 "properties": {
+///                     "message": { "type": "string" }
+///                 }
+///             }),
+///         }
+///     }
+///
+///     async fn execute(&self, arguments: Value) -> ToolExecutionResult {
+///         ToolExecutionResult::ok(arguments)
+///     }
+/// }
+///
+/// let definition = EchoTool.definition();
+/// assert_eq!(definition.name, "echo");
+/// ```
+#[async_trait]
 pub trait AgentTool: Send + Sync {
     fn definition(&self) -> ToolDefinition;
     async fn execute(&self, arguments: Value) -> ToolExecutionResult;
 }
 
-#[derive(Debug, Clone)]
 /// Enumerates supported `AgentEvent` values.
+#[derive(Debug, Clone)]
 pub enum AgentEvent {
     AgentStart,
     AgentEnd {
@@ -111,8 +176,8 @@ pub enum AgentEvent {
     },
 }
 
-#[derive(Debug, Error)]
 /// Enumerates supported `AgentError` values.
+#[derive(Debug, Error)]
 pub enum AgentError {
     #[error(transparent)]
     Ai(#[from] TauAiError),
@@ -134,8 +199,33 @@ struct RegisteredTool {
     tool: Arc<dyn AgentTool>,
 }
 
-#[derive(Clone)]
 /// Public struct `Agent` used across Tau components.
+///
+/// # Examples
+///
+/// ```
+/// use async_trait::async_trait;
+/// use std::sync::Arc;
+/// use tau_agent_core::{Agent, AgentConfig};
+/// use tau_ai::{ChatRequest, ChatResponse, ChatUsage, LlmClient, Message, TauAiError};
+///
+/// struct StaticClient;
+///
+/// #[async_trait]
+/// impl LlmClient for StaticClient {
+///     async fn complete(&self, _request: ChatRequest) -> Result<ChatResponse, TauAiError> {
+///         Ok(ChatResponse {
+///             message: Message::assistant_text("ready"),
+///             finish_reason: Some("stop".to_string()),
+///             usage: ChatUsage::default(),
+///         })
+///     }
+/// }
+///
+/// let agent = Agent::new(Arc::new(StaticClient), AgentConfig::default());
+/// assert_eq!(agent.messages().len(), 1);
+/// ```
+#[derive(Clone)]
 pub struct Agent {
     client: Arc<dyn LlmClient>,
     config: AgentConfig,
@@ -145,6 +235,7 @@ pub struct Agent {
 }
 
 impl Agent {
+    /// Creates a new [`Agent`] with an initial system message when configured.
     pub fn new(client: Arc<dyn LlmClient>, config: AgentConfig) -> Self {
         let mut messages = Vec::new();
         if !config.system_prompt.trim().is_empty() {
@@ -160,6 +251,7 @@ impl Agent {
         }
     }
 
+    /// Adds an event subscriber that receives runtime lifecycle callbacks.
     pub fn subscribe<F>(&mut self, handler: F)
     where
         F: Fn(&AgentEvent) + Send + Sync + 'static,
@@ -167,6 +259,7 @@ impl Agent {
         self.handlers.push(Arc::new(handler));
     }
 
+    /// Registers a tool exposed to the language model.
     pub fn register_tool<T>(&mut self, tool: T)
     where
         T: AgentTool + 'static,
@@ -181,22 +274,53 @@ impl Agent {
         );
     }
 
+    /// Returns the current conversation history.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use async_trait::async_trait;
+    /// use std::sync::Arc;
+    /// use tau_agent_core::{Agent, AgentConfig};
+    /// use tau_ai::{ChatRequest, ChatResponse, ChatUsage, LlmClient, Message, TauAiError};
+    ///
+    /// struct StaticClient;
+    ///
+    /// #[async_trait]
+    /// impl LlmClient for StaticClient {
+    ///     async fn complete(&self, _request: ChatRequest) -> Result<ChatResponse, TauAiError> {
+    ///         Ok(ChatResponse {
+    ///             message: Message::assistant_text("ok"),
+    ///             finish_reason: Some("stop".to_string()),
+    ///             usage: ChatUsage::default(),
+    ///         })
+    ///     }
+    /// }
+    ///
+    /// let mut agent = Agent::new(Arc::new(StaticClient), AgentConfig::default());
+    /// agent.append_message(Message::user("hi"));
+    /// assert_eq!(agent.messages().len(), 2);
+    /// ```
     pub fn messages(&self) -> &[Message] {
         &self.messages
     }
 
+    /// Replaces the current conversation history with the provided messages.
     pub fn replace_messages(&mut self, messages: Vec<Message>) {
         self.messages = messages;
     }
 
+    /// Appends a message to the conversation history.
     pub fn append_message(&mut self, message: Message) {
         self.messages.push(message);
     }
 
+    /// Clones the agent state for independent execution.
     pub fn fork(&self) -> Self {
         self.clone()
     }
 
+    /// Executes multiple prompts in bounded parallel batches.
     pub async fn run_parallel_prompts<I, S>(
         &self,
         prompts: I,
@@ -252,10 +376,12 @@ impl Agent {
             .collect()
     }
 
+    /// Appends a user prompt and advances the agent until completion.
     pub async fn prompt(&mut self, text: impl Into<String>) -> Result<Vec<Message>, AgentError> {
         self.prompt_with_stream(text, None).await
     }
 
+    /// Runs a prompt and validates assistant output against a JSON schema.
     pub async fn prompt_json(
         &mut self,
         text: impl Into<String>,
@@ -265,6 +391,7 @@ impl Agent {
         parse_structured_output(&new_messages, schema)
     }
 
+    /// Runs a prompt while optionally streaming text deltas.
     pub async fn prompt_with_stream(
         &mut self,
         text: impl Into<String>,
@@ -283,15 +410,18 @@ impl Agent {
         result
     }
 
+    /// Continues the current turn without adding a new user message.
     pub async fn continue_turn(&mut self) -> Result<Vec<Message>, AgentError> {
         self.continue_turn_with_stream(None).await
     }
 
+    /// Continues the turn and parses the response as schema-validated JSON.
     pub async fn continue_turn_json(&mut self, schema: &Value) -> Result<Value, AgentError> {
         let new_messages = self.continue_turn().await?;
         parse_structured_output(&new_messages, schema)
     }
 
+    /// Continues the current turn while optionally streaming text deltas.
     pub async fn continue_turn_with_stream(
         &mut self,
         on_delta: Option<StreamDeltaHandler>,

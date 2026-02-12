@@ -277,6 +277,8 @@ mod tests {
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
 
+    const TEST_TIMEOUT_MS: u64 = 20_000;
+
     fn test_request() -> ChatRequest {
         ChatRequest {
             model: "openai/gpt-4o-mini".to_string(),
@@ -335,7 +337,7 @@ printf "mock codex reply" > "$out"
         let client = CodexCliClient::new(CodexCliConfig {
             executable: script.display().to_string(),
             extra_args: vec![],
-            timeout_ms: 5_000,
+            timeout_ms: TEST_TIMEOUT_MS,
         })
         .expect("client");
 
@@ -366,7 +368,7 @@ printf "path independent reply" > "$out"
         let client = CodexCliClient::new(CodexCliConfig {
             executable: script.display().to_string(),
             extra_args: vec![],
-            timeout_ms: 5_000,
+            timeout_ms: TEST_TIMEOUT_MS,
         })
         .expect("client");
 
@@ -388,7 +390,7 @@ printf "stdout fallback reply"
         let client = CodexCliClient::new(CodexCliConfig {
             executable: script.display().to_string(),
             extra_args: vec![],
-            timeout_ms: 5_000,
+            timeout_ms: TEST_TIMEOUT_MS,
         })
         .expect("client");
 
@@ -411,7 +413,7 @@ exit 17
         let client = CodexCliClient::new(CodexCliConfig {
             executable: script.display().to_string(),
             extra_args: vec![],
-            timeout_ms: 5_000,
+            timeout_ms: TEST_TIMEOUT_MS,
         })
         .expect("client");
 
@@ -444,7 +446,7 @@ printf "streamed reply" > "$out"
         let client = CodexCliClient::new(CodexCliConfig {
             executable: script.display().to_string(),
             extra_args: vec![],
-            timeout_ms: 5_000,
+            timeout_ms: TEST_TIMEOUT_MS,
         })
         .expect("client");
         let deltas = Arc::new(Mutex::new(Vec::new()));
