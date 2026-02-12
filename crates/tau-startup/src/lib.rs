@@ -21,12 +21,14 @@ use tau_gateway::{
 use tau_session::validate_session_file;
 
 pub mod runtime_types;
+pub mod startup_command_file_runtime;
 pub mod startup_model_catalog;
 pub mod startup_multi_channel_adapters;
 pub mod startup_multi_channel_commands;
 pub mod startup_rpc_capabilities_command;
 
 pub use runtime_types::*;
+pub use startup_command_file_runtime::*;
 pub use startup_model_catalog::*;
 pub use startup_multi_channel_adapters::*;
 pub use startup_multi_channel_commands::*;
