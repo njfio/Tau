@@ -12,6 +12,7 @@ use tau_session::{
     execute_session_diff_command, execute_session_search_command, execute_session_stats_command,
     parse_session_diff_args, parse_session_stats_args,
 };
+use tau_startup::{execute_command_file_with_handler, CommandFileAction};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CommandAction {
@@ -26,35 +27,9 @@ pub(crate) fn execute_command_file(
     session_runtime: &mut Option<SessionRuntime>,
     command_context: CommandExecutionContext<'_>,
 ) -> Result<CommandFileReport> {
-    let entries = tau_cli::parse_command_file(path)?;
-    let mut report = CommandFileReport {
-        total: entries.len(),
-        executed: 0,
-        succeeded: 0,
-        failed: 0,
-        halted_early: false,
-    };
-
-    for entry in entries {
-        report.executed += 1;
-
-        if !entry.command.starts_with('/') {
-            report.failed += 1;
-            println!(
-                "command file error: path={} line={} command={} error=command must start with '/'",
-                path.display(),
-                entry.line_number,
-                entry.command
-            );
-            if mode == CliCommandFileErrorMode::FailFast {
-                report.halted_early = true;
-                break;
-            }
-            continue;
-        }
-
+    execute_command_file_with_handler(path, mode, |command| {
         match handle_command_with_session_import_mode(
-            &entry.command,
+            command,
             agent,
             session_runtime,
             command_context.tool_policy_json,
@@ -64,58 +39,11 @@ pub(crate) fn execute_command_file(
             command_context.auth_command_config,
             command_context.model_catalog,
             command_context.extension_commands,
-        ) {
-            Ok(CommandAction::Continue) => {
-                report.succeeded += 1;
-            }
-            Ok(CommandAction::Exit) => {
-                report.succeeded += 1;
-                report.halted_early = true;
-                println!(
-                    "command file notice: path={} line={} command={} action=exit",
-                    path.display(),
-                    entry.line_number,
-                    entry.command
-                );
-                break;
-            }
-            Err(error) => {
-                report.failed += 1;
-                println!(
-                    "command file error: path={} line={} command={} error={error}",
-                    path.display(),
-                    entry.line_number,
-                    entry.command
-                );
-                if mode == CliCommandFileErrorMode::FailFast {
-                    report.halted_early = true;
-                    break;
-                }
-            }
+        )? {
+            CommandAction::Continue => Ok(CommandFileAction::Continue),
+            CommandAction::Exit => Ok(CommandFileAction::Exit),
         }
-    }
-
-    println!(
-        "command file summary: path={} mode={} total={} executed={} succeeded={} failed={} halted_early={}",
-        path.display(),
-        command_file_error_mode_label(mode),
-        report.total,
-        report.executed,
-        report.succeeded,
-        report.failed,
-        report.halted_early
-    );
-
-    if mode == CliCommandFileErrorMode::FailFast && report.failed > 0 {
-        bail!(
-            "command file execution failed: path={} failed={} mode={}",
-            path.display(),
-            report.failed,
-            command_file_error_mode_label(mode)
-        );
-    }
-
-    Ok(report)
+    })
 }
 
 #[cfg(test)]

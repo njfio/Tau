@@ -64,7 +64,7 @@ pub(crate) use tau_skills as skills_commands;
 pub(crate) use crate::auth_commands::execute_auth_command;
 #[cfg(test)]
 pub(crate) use crate::auth_commands::{parse_auth_command, AuthCommand};
-pub(crate) use crate::bootstrap_helpers::{command_file_error_mode_label, init_tracing};
+pub(crate) use crate::bootstrap_helpers::init_tracing;
 pub(crate) use crate::canvas::{
     execute_canvas_command, CanvasCommandConfig, CanvasEventOrigin, CanvasSessionLinkContext,
 };
@@ -369,6 +369,8 @@ pub(crate) use tau_session::{
     format_id_list, format_remap_ids, initialize_session, session_lineage_messages, SessionRuntime,
 };
 pub(crate) use tau_session::{session_message_preview, session_message_role};
+#[cfg(test)]
+pub(crate) use tau_startup::command_file_error_mode_label;
 
 pub(crate) fn normalize_daemon_subcommand_args(args: Vec<String>) -> Vec<String> {
     if args.len() < 3 || args[1] != "daemon" {
