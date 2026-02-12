@@ -7,11 +7,11 @@ use tokio::time::sleep;
 
 use crate::{
     retry::{
-        is_retryable_http_error, new_request_id, next_backoff_ms_with_jitter,
+        is_retryable_http_error, new_request_id, parse_retry_after_ms, provider_retry_delay_ms,
         retry_budget_allows_delay, should_retry_status,
     },
     ChatRequest, ChatResponse, ChatUsage, ContentBlock, LlmClient, Message, MessageRole,
-    StreamDeltaHandler, TauAiError, ToolDefinition,
+    StreamDeltaHandler, TauAiError, ToolChoice, ToolDefinition,
 };
 
 #[derive(Debug, Clone)]
@@ -139,10 +139,14 @@ impl AnthropicClient {
                         return parse_messages_response(&raw);
                     }
 
+                    let retry_after_ms = parse_retry_after_ms(response.headers());
                     let raw = response.text().await?;
                     if attempt < max_retries && should_retry_status(status.as_u16()) {
-                        let backoff_ms =
-                            next_backoff_ms_with_jitter(attempt, self.config.retry_jitter);
+                        let backoff_ms = provider_retry_delay_ms(
+                            attempt,
+                            self.config.retry_jitter,
+                            retry_after_ms,
+                        );
                         let elapsed_ms = started.elapsed().as_millis() as u64;
                         if retry_budget_allows_delay(
                             elapsed_ms,
@@ -162,7 +166,7 @@ impl AnthropicClient {
                 Err(error) => {
                     if attempt < max_retries && is_retryable_http_error(&error) {
                         let backoff_ms =
-                            next_backoff_ms_with_jitter(attempt, self.config.retry_jitter);
+                            provider_retry_delay_ms(attempt, self.config.retry_jitter, None);
                         let elapsed_ms = started.elapsed().as_millis() as u64;
                         if retry_budget_allows_delay(
                             elapsed_ms,
@@ -194,12 +198,28 @@ fn build_messages_request_body(request: &ChatRequest) -> Value {
         "max_tokens": request.max_tokens.unwrap_or(1024),
     });
 
-    if !system.is_empty() {
+    if request.json_mode {
+        let mut system_segments = vec![
+            "Respond with valid JSON only. Do not include markdown code fences or commentary."
+                .to_string(),
+        ];
+        if !system.is_empty() {
+            system_segments.push(system);
+        }
+        body["system"] = json!(system_segments.join("\n\n"));
+    } else if !system.is_empty() {
         body["system"] = json!(system);
     }
 
     if !request.tools.is_empty() {
         body["tools"] = to_anthropic_tools(&request.tools);
+        if let Some(tool_choice) = request
+            .tool_choice
+            .as_ref()
+            .and_then(to_anthropic_tool_choice)
+        {
+            body["tool_choice"] = tool_choice;
+        }
     }
 
     if let Some(temperature) = request.temperature {
@@ -207,6 +227,18 @@ fn build_messages_request_body(request: &ChatRequest) -> Value {
     }
 
     body
+}
+
+fn to_anthropic_tool_choice(tool_choice: &ToolChoice) -> Option<Value> {
+    match tool_choice {
+        ToolChoice::Auto => Some(json!({ "type": "auto" })),
+        ToolChoice::None => None,
+        ToolChoice::Required => Some(json!({ "type": "any" })),
+        ToolChoice::Tool { name } => Some(json!({
+            "type": "tool",
+            "name": name,
+        })),
+    }
 }
 
 fn extract_system_text(messages: &[Message]) -> String {
@@ -656,7 +688,7 @@ mod tests {
         apply_anthropic_stream_event, build_messages_request_body,
         finalize_anthropic_stream_response, parse_messages_response,
     };
-    use crate::{ChatRequest, ContentBlock, Message, ToolDefinition};
+    use crate::{ChatRequest, ContentBlock, Message, ToolChoice, ToolDefinition};
 
     #[test]
     fn serializes_tool_messages() {
@@ -677,6 +709,8 @@ mod tests {
                 description: "Read file".to_string(),
                 parameters: json!({"type":"object"}),
             }],
+            tool_choice: Some(ToolChoice::Required),
+            json_mode: true,
             max_tokens: Some(512),
             temperature: Some(0.0),
         };
@@ -685,7 +719,55 @@ mod tests {
         assert_eq!(body["messages"][1]["content"][0]["type"], "tool_use");
         assert_eq!(body["messages"][2]["content"][0]["type"], "tool_result");
         assert_eq!(body["tools"][0]["name"], "read");
-        assert_eq!(body["system"], "You are helpful");
+        assert_eq!(body["tool_choice"]["type"], "any");
+        let system = body["system"]
+            .as_str()
+            .expect("json mode system prompt should be a string");
+        assert!(system.contains("Respond with valid JSON only"));
+        assert!(system.contains("You are helpful"));
+    }
+
+    #[test]
+    fn functional_serializes_named_tool_choice_for_anthropic() {
+        let request = ChatRequest {
+            model: "claude-sonnet-4-20250514".to_string(),
+            messages: vec![Message::user("hello")],
+            tools: vec![ToolDefinition {
+                name: "read".to_string(),
+                description: "Read file".to_string(),
+                parameters: json!({"type":"object"}),
+            }],
+            tool_choice: Some(ToolChoice::Tool {
+                name: "read".to_string(),
+            }),
+            json_mode: false,
+            max_tokens: None,
+            temperature: None,
+        };
+
+        let body = build_messages_request_body(&request);
+        assert_eq!(body["tool_choice"]["type"], "tool");
+        assert_eq!(body["tool_choice"]["name"], "read");
+    }
+
+    #[test]
+    fn regression_none_tool_choice_is_not_serialized_for_anthropic() {
+        let request = ChatRequest {
+            model: "claude-sonnet-4-20250514".to_string(),
+            messages: vec![Message::user("hello")],
+            tools: vec![ToolDefinition {
+                name: "read".to_string(),
+                description: "Read file".to_string(),
+                parameters: json!({"type":"object"}),
+            }],
+            tool_choice: Some(ToolChoice::None),
+            json_mode: false,
+            max_tokens: None,
+            temperature: None,
+        };
+
+        let body = build_messages_request_body(&request);
+        assert!(body.get("tool_choice").is_none());
     }
 
     #[test]

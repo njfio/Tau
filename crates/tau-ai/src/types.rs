@@ -153,12 +153,26 @@ pub struct ToolDefinition {
     pub parameters: Value,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "type", rename_all = "snake_case")]
+/// Enumerates supported `ToolChoice` values.
+pub enum ToolChoice {
+    Auto,
+    None,
+    Required,
+    Tool { name: String },
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 /// Public struct `ChatRequest` used across Tau components.
 pub struct ChatRequest {
     pub model: String,
     pub messages: Vec<Message>,
     pub tools: Vec<ToolDefinition>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_choice: Option<ToolChoice>,
+    #[serde(default)]
+    pub json_mode: bool,
     pub max_tokens: Option<u32>,
     pub temperature: Option<f32>,
 }

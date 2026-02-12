@@ -279,6 +279,8 @@ mod tests {
                     "required": ["path"]
                 }),
             }],
+            tool_choice: Some(tau_ai::ToolChoice::Auto),
+            json_mode: false,
             max_tokens: None,
             temperature: None,
         }

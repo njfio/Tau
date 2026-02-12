@@ -6,7 +6,7 @@ use jsonschema::validator_for;
 use serde_json::{json, Value};
 use tau_ai::{
     ChatRequest, ChatUsage, LlmClient, Message, MessageRole, StreamDeltaHandler, TauAiError,
-    ToolCall, ToolDefinition,
+    ToolCall, ToolChoice, ToolDefinition,
 };
 use thiserror::Error;
 
@@ -443,7 +443,7 @@ impl Agent {
 
     /// Appends a user prompt and advances the agent until completion.
     pub async fn prompt(&mut self, text: impl Into<String>) -> Result<Vec<Message>, AgentError> {
-        self.prompt_with_stream(text, None).await
+        self.prompt_internal(text.into(), None, false).await
     }
 
     /// Runs a prompt and validates assistant output against a JSON schema.
@@ -452,7 +452,7 @@ impl Agent {
         text: impl Into<String>,
         schema: &Value,
     ) -> Result<Value, AgentError> {
-        let new_messages = self.prompt(text).await?;
+        let new_messages = self.prompt_internal(text.into(), None, true).await?;
         self.parse_structured_output_with_retry(new_messages, schema)
             .await
     }
@@ -463,13 +463,22 @@ impl Agent {
         text: impl Into<String>,
         on_delta: Option<StreamDeltaHandler>,
     ) -> Result<Vec<Message>, AgentError> {
+        self.prompt_internal(text.into(), on_delta, false).await
+    }
+
+    async fn prompt_internal(
+        &mut self,
+        text: String,
+        on_delta: Option<StreamDeltaHandler>,
+        json_mode: bool,
+    ) -> Result<Vec<Message>, AgentError> {
         let start_index = self.messages.len();
-        let user_message = Message::user(text.into());
+        let user_message = Message::user(text);
         self.messages.push(user_message.clone());
         self.emit(AgentEvent::MessageAdded {
             message: user_message,
         });
-        let result = self.run_loop(start_index, on_delta).await;
+        let result = self.run_loop(start_index, on_delta, json_mode).await;
         if result.is_ok() {
             self.compact_message_history();
         }
@@ -478,12 +487,12 @@ impl Agent {
 
     /// Continues the current turn without adding a new user message.
     pub async fn continue_turn(&mut self) -> Result<Vec<Message>, AgentError> {
-        self.continue_turn_with_stream(None).await
+        self.continue_turn_internal(None, false).await
     }
 
     /// Continues the turn and parses the response as schema-validated JSON.
     pub async fn continue_turn_json(&mut self, schema: &Value) -> Result<Value, AgentError> {
-        let new_messages = self.continue_turn().await?;
+        let new_messages = self.continue_turn_internal(None, true).await?;
         self.parse_structured_output_with_retry(new_messages, schema)
             .await
     }
@@ -493,8 +502,16 @@ impl Agent {
         &mut self,
         on_delta: Option<StreamDeltaHandler>,
     ) -> Result<Vec<Message>, AgentError> {
+        self.continue_turn_internal(on_delta, false).await
+    }
+
+    async fn continue_turn_internal(
+        &mut self,
+        on_delta: Option<StreamDeltaHandler>,
+        json_mode: bool,
+    ) -> Result<Vec<Message>, AgentError> {
         let start_index = self.messages.len();
-        let result = self.run_loop(start_index, on_delta).await;
+        let result = self.run_loop(start_index, on_delta, json_mode).await;
         if result.is_ok() {
             self.compact_message_history();
         }
@@ -545,7 +562,7 @@ impl Agent {
                         return Err(AgentError::StructuredOutput(error));
                     }
                     let retry_prompt = build_structured_output_retry_prompt(schema, &error);
-                    new_messages = self.prompt(retry_prompt).await?;
+                    new_messages = self.prompt_internal(retry_prompt, None, true).await?;
                 }
                 Err(other) => return Err(other),
             }
@@ -559,6 +576,7 @@ impl Agent {
         &mut self,
         start_index: usize,
         on_delta: Option<StreamDeltaHandler>,
+        json_mode: bool,
     ) -> Result<Vec<Message>, AgentError> {
         self.emit(AgentEvent::AgentStart);
         let mut pending_replan_on_tool_failure = false;
@@ -567,10 +585,17 @@ impl Agent {
         for turn in 1..=self.config.max_turns {
             self.emit(AgentEvent::TurnStart { turn });
 
+            let tools = self.tool_definitions();
             let request = ChatRequest {
                 model: self.config.model.clone(),
                 messages: self.request_messages(),
-                tools: self.tool_definitions(),
+                tool_choice: if tools.is_empty() {
+                    None
+                } else {
+                    Some(ToolChoice::Auto)
+                },
+                json_mode,
+                tools,
                 max_tokens: self.config.max_tokens,
                 temperature: self.config.temperature,
             };
@@ -1345,7 +1370,8 @@ mod tests {
 
     use async_trait::async_trait;
     use tau_ai::{
-        ChatRequest, ChatResponse, ChatUsage, ContentBlock, Message, MessageRole, ToolDefinition,
+        ChatRequest, ChatResponse, ChatUsage, ContentBlock, Message, MessageRole, ToolChoice,
+        ToolDefinition,
     };
     use tokio::sync::Mutex as AsyncMutex;
 
@@ -1660,6 +1686,8 @@ mod tests {
                     }
                 }),
             }],
+            tool_choice: Some(ToolChoice::Auto),
+            json_mode: false,
             max_tokens: Some(64),
             temperature: Some(0.0),
         };
@@ -2344,6 +2372,37 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn functional_prompt_json_enables_provider_json_mode_on_requests() {
+        let client = Arc::new(CapturingMockClient {
+            responses: AsyncMutex::new(VecDeque::from([ChatResponse {
+                message: Message::assistant_text("{\"ok\":true}"),
+                finish_reason: Some("stop".to_string()),
+                usage: ChatUsage::default(),
+            }])),
+            requests: AsyncMutex::new(Vec::new()),
+        });
+        let mut agent = Agent::new(client.clone(), AgentConfig::default());
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "ok": { "type": "boolean" }
+            },
+            "required": ["ok"],
+            "additionalProperties": false
+        });
+
+        let value = agent
+            .prompt_json("return ok", &schema)
+            .await
+            .expect("structured output should succeed");
+        assert_eq!(value["ok"], true);
+
+        let requests = client.requests.lock().await;
+        assert_eq!(requests.len(), 1);
+        assert!(requests[0].json_mode);
+    }
+
+    #[tokio::test]
     async fn integration_prompt_json_accepts_fenced_json_payload() {
         let client = Arc::new(MockClient {
             responses: AsyncMutex::new(VecDeque::from([ChatResponse {
@@ -2421,6 +2480,27 @@ mod tests {
         let retry_prompt = last_user_prompt(&requests[1]);
         assert!(retry_prompt.contains("schema validation failed"));
         assert!(retry_prompt.contains("\"steps\""));
+    }
+
+    #[tokio::test]
+    async fn integration_requests_with_registered_tools_use_auto_tool_choice() {
+        let client = Arc::new(CapturingMockClient {
+            responses: AsyncMutex::new(VecDeque::from([ChatResponse {
+                message: Message::assistant_text("done"),
+                finish_reason: Some("stop".to_string()),
+                usage: ChatUsage::default(),
+            }])),
+            requests: AsyncMutex::new(Vec::new()),
+        });
+        let mut agent = Agent::new(client.clone(), AgentConfig::default());
+        agent.register_tool(ReadTool);
+
+        let _ = agent.prompt("hello").await.expect("prompt should succeed");
+
+        let requests = client.requests.lock().await;
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].tool_choice, Some(ToolChoice::Auto));
+        assert!(!requests[0].json_mode);
     }
 
     #[tokio::test]
@@ -2517,6 +2597,25 @@ mod tests {
 
         let requests = client.requests.lock().await;
         assert_eq!(requests.len(), 2, "expected one retry attempt");
+    }
+
+    #[tokio::test]
+    async fn regression_requests_without_tools_keep_tool_choice_unset() {
+        let client = Arc::new(CapturingMockClient {
+            responses: AsyncMutex::new(VecDeque::from([ChatResponse {
+                message: Message::assistant_text("done"),
+                finish_reason: Some("stop".to_string()),
+                usage: ChatUsage::default(),
+            }])),
+            requests: AsyncMutex::new(Vec::new()),
+        });
+        let mut agent = Agent::new(client.clone(), AgentConfig::default());
+
+        let _ = agent.prompt("hello").await.expect("prompt should succeed");
+
+        let requests = client.requests.lock().await;
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].tool_choice, None);
     }
 
     #[tokio::test]
