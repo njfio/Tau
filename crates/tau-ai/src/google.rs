@@ -6,11 +6,11 @@ use tokio::time::sleep;
 
 use crate::{
     retry::{
-        is_retryable_http_error, new_request_id, next_backoff_ms_with_jitter,
+        is_retryable_http_error, new_request_id, parse_retry_after_ms, provider_retry_delay_ms,
         retry_budget_allows_delay, should_retry_status,
     },
     ChatRequest, ChatResponse, ChatUsage, ContentBlock, LlmClient, Message, MessageRole,
-    StreamDeltaHandler, TauAiError, ToolDefinition,
+    StreamDeltaHandler, TauAiError, ToolChoice, ToolDefinition,
 };
 
 #[derive(Debug, Clone)]
@@ -152,10 +152,14 @@ impl GoogleClient {
                         return parse_generate_content_response(&raw);
                     }
 
+                    let retry_after_ms = parse_retry_after_ms(response.headers());
                     let raw = response.text().await?;
                     if attempt < max_retries && should_retry_status(status.as_u16()) {
-                        let backoff_ms =
-                            next_backoff_ms_with_jitter(attempt, self.config.retry_jitter);
+                        let backoff_ms = provider_retry_delay_ms(
+                            attempt,
+                            self.config.retry_jitter,
+                            retry_after_ms,
+                        );
                         let elapsed_ms = started.elapsed().as_millis() as u64;
                         if retry_budget_allows_delay(
                             elapsed_ms,
@@ -175,7 +179,7 @@ impl GoogleClient {
                 Err(error) => {
                     if attempt < max_retries && is_retryable_http_error(&error) {
                         let backoff_ms =
-                            next_backoff_ms_with_jitter(attempt, self.config.retry_jitter);
+                            provider_retry_delay_ms(attempt, self.config.retry_jitter, None);
                         let elapsed_ms = started.elapsed().as_millis() as u64;
                         if retry_budget_allows_delay(
                             elapsed_ms,
@@ -215,10 +219,18 @@ fn build_generate_content_body(request: &ChatRequest) -> Value {
         body["tools"] = json!([{
             "functionDeclarations": request.tools.iter().map(to_google_function_declaration).collect::<Vec<_>>()
         }]);
+        if let Some(tool_choice) = request.tool_choice.as_ref() {
+            body["toolConfig"] = json!({
+                "functionCallingConfig": to_google_function_calling_config(tool_choice),
+            });
+        }
     }
 
-    if request.temperature.is_some() || request.max_tokens.is_some() {
+    if request.temperature.is_some() || request.max_tokens.is_some() || request.json_mode {
         let mut generation_config = json!({});
+        if request.json_mode {
+            generation_config["responseMimeType"] = json!("application/json");
+        }
         if let Some(temperature) = request.temperature {
             generation_config["temperature"] = json!(temperature);
         }
@@ -247,6 +259,24 @@ fn to_google_function_declaration(tool: &ToolDefinition) -> Value {
         "description": tool.description,
         "parameters": tool.parameters,
     })
+}
+
+fn to_google_function_calling_config(tool_choice: &ToolChoice) -> Value {
+    match tool_choice {
+        ToolChoice::Auto => json!({
+            "mode": "AUTO",
+        }),
+        ToolChoice::None => json!({
+            "mode": "NONE",
+        }),
+        ToolChoice::Required => json!({
+            "mode": "ANY",
+        }),
+        ToolChoice::Tool { name } => json!({
+            "mode": "ANY",
+            "allowedFunctionNames": [name],
+        }),
+    }
 }
 
 fn to_google_contents(messages: &[Message]) -> Value {
@@ -553,7 +583,7 @@ mod tests {
         apply_google_stream_data, build_generate_content_body, finalize_google_stream_response,
         parse_generate_content_response,
     };
-    use crate::{ChatRequest, ContentBlock, Message, ToolDefinition};
+    use crate::{ChatRequest, ContentBlock, Message, ToolChoice, ToolDefinition};
 
     #[test]
     fn serializes_tool_calls_and_responses() {
@@ -574,6 +604,10 @@ mod tests {
                 description: "Read file".to_string(),
                 parameters: json!({"type":"object"}),
             }],
+            tool_choice: Some(ToolChoice::Tool {
+                name: "read".to_string(),
+            }),
+            json_mode: true,
             max_tokens: Some(256),
             temperature: Some(0.1),
         };
@@ -588,6 +622,59 @@ mod tests {
             "read"
         );
         assert_eq!(body["tools"][0]["functionDeclarations"][0]["name"], "read");
+        assert_eq!(body["toolConfig"]["functionCallingConfig"]["mode"], "ANY");
+        assert_eq!(
+            body["toolConfig"]["functionCallingConfig"]["allowedFunctionNames"][0],
+            "read"
+        );
+        assert_eq!(
+            body["generationConfig"]["responseMimeType"],
+            "application/json"
+        );
+    }
+
+    #[test]
+    fn functional_google_tool_choice_none_serializes_to_mode_none() {
+        let request = ChatRequest {
+            model: "gemini-2.5-pro".to_string(),
+            messages: vec![Message::user("hello")],
+            tools: vec![ToolDefinition {
+                name: "read".to_string(),
+                description: "Read file".to_string(),
+                parameters: json!({"type":"object"}),
+            }],
+            tool_choice: Some(ToolChoice::None),
+            json_mode: false,
+            max_tokens: None,
+            temperature: None,
+        };
+
+        let body = build_generate_content_body(&request);
+        assert_eq!(body["toolConfig"]["functionCallingConfig"]["mode"], "NONE");
+    }
+
+    #[test]
+    fn regression_google_json_mode_preserves_generation_overrides() {
+        let request = ChatRequest {
+            model: "gemini-2.5-pro".to_string(),
+            messages: vec![Message::user("hello")],
+            tools: vec![],
+            tool_choice: None,
+            json_mode: true,
+            max_tokens: Some(64),
+            temperature: Some(0.2),
+        };
+
+        let body = build_generate_content_body(&request);
+        assert_eq!(
+            body["generationConfig"]["responseMimeType"],
+            "application/json"
+        );
+        assert_eq!(body["generationConfig"]["maxOutputTokens"], 64);
+        let temperature = body["generationConfig"]["temperature"]
+            .as_f64()
+            .expect("temperature should serialize as f64");
+        assert!((temperature - 0.2).abs() < 1e-6);
     }
 
     #[test]

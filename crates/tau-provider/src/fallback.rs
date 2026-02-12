@@ -321,6 +321,8 @@ mod tests {
             model: "placeholder-model".to_string(),
             messages: vec![Message::user("hello")],
             tools: Vec::new(),
+            tool_choice: None,
+            json_mode: false,
             max_tokens: None,
             temperature: None,
         }

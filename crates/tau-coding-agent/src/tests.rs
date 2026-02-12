@@ -293,6 +293,8 @@ fn test_chat_request() -> ChatRequest {
         model: "placeholder-model".to_string(),
         messages: vec![Message::user("hello")],
         tools: vec![],
+        tool_choice: None,
+        json_mode: false,
         max_tokens: None,
         temperature: None,
     }

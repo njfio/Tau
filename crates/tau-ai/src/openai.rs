@@ -7,11 +7,11 @@ use tokio::time::sleep;
 
 use crate::{
     retry::{
-        is_retryable_http_error, new_request_id, next_backoff_ms_with_jitter,
+        is_retryable_http_error, new_request_id, parse_retry_after_ms, provider_retry_delay_ms,
         retry_budget_allows_delay, should_retry_status,
     },
     ChatRequest, ChatResponse, ChatUsage, ContentBlock, LlmClient, Message, MessageRole,
-    StreamDeltaHandler, TauAiError, ToolDefinition,
+    StreamDeltaHandler, TauAiError, ToolChoice, ToolDefinition,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -172,10 +172,14 @@ impl OpenAiClient {
                         return parse_chat_response(&raw);
                     }
 
+                    let retry_after_ms = parse_retry_after_ms(response.headers());
                     let raw = response.text().await?;
                     if attempt < max_retries && should_retry_status(status.as_u16()) {
-                        let backoff_ms =
-                            next_backoff_ms_with_jitter(attempt, self.config.retry_jitter);
+                        let backoff_ms = provider_retry_delay_ms(
+                            attempt,
+                            self.config.retry_jitter,
+                            retry_after_ms,
+                        );
                         let elapsed_ms = started.elapsed().as_millis() as u64;
                         if retry_budget_allows_delay(
                             elapsed_ms,
@@ -195,7 +199,7 @@ impl OpenAiClient {
                 Err(error) => {
                     if attempt < max_retries && is_retryable_http_error(&error) {
                         let backoff_ms =
-                            next_backoff_ms_with_jitter(attempt, self.config.retry_jitter);
+                            provider_retry_delay_ms(attempt, self.config.retry_jitter, None);
                         let elapsed_ms = started.elapsed().as_millis() as u64;
                         if retry_budget_allows_delay(
                             elapsed_ms,
@@ -228,6 +232,18 @@ fn build_chat_request_body(request: &ChatRequest) -> Result<Value, TauAiError> {
         body["tools"] = to_openai_tools(&request.tools);
     }
 
+    if let Some(tool_choice) = request.tool_choice.as_ref() {
+        if !request.tools.is_empty() || matches!(tool_choice, ToolChoice::None) {
+            body["tool_choice"] = to_openai_tool_choice(tool_choice);
+        }
+    }
+
+    if request.json_mode {
+        body["response_format"] = json!({
+            "type": "json_object",
+        });
+    }
+
     if let Some(max_tokens) = request.max_tokens {
         body["max_tokens"] = json!(max_tokens);
     }
@@ -237,6 +253,20 @@ fn build_chat_request_body(request: &ChatRequest) -> Result<Value, TauAiError> {
     }
 
     Ok(body)
+}
+
+fn to_openai_tool_choice(tool_choice: &ToolChoice) -> Value {
+    match tool_choice {
+        ToolChoice::Auto => json!("auto"),
+        ToolChoice::None => json!("none"),
+        ToolChoice::Required => json!("required"),
+        ToolChoice::Tool { name } => json!({
+            "type": "function",
+            "function": {
+                "name": name,
+            }
+        }),
+    }
 }
 
 fn to_openai_tools(tools: &[ToolDefinition]) -> Value {
@@ -681,7 +711,7 @@ mod tests {
     use super::{
         apply_stream_data, build_chat_request_body, finalize_stream_response, parse_chat_response,
     };
-    use crate::{ChatRequest, ContentBlock, Message, ToolDefinition};
+    use crate::{ChatRequest, ContentBlock, Message, ToolChoice, ToolDefinition};
 
     #[test]
     fn serializes_assistant_tool_calls_for_openai() {
@@ -708,6 +738,8 @@ mod tests {
                     "required": ["path"]
                 }),
             }],
+            tool_choice: Some(ToolChoice::Required),
+            json_mode: true,
             max_tokens: Some(512),
             temperature: Some(0.0),
         };
@@ -719,6 +751,47 @@ mod tests {
         );
         assert_eq!(body["messages"][3]["role"], "tool");
         assert_eq!(body["tools"][0]["function"]["name"], "read");
+        assert_eq!(body["tool_choice"], json!("required"));
+        assert_eq!(body["response_format"]["type"], "json_object");
+    }
+
+    #[test]
+    fn functional_serializes_named_tool_choice() {
+        let request = ChatRequest {
+            model: "gpt-4o-mini".to_string(),
+            messages: vec![Message::user("hello")],
+            tools: vec![ToolDefinition {
+                name: "read".to_string(),
+                description: "Read a file".to_string(),
+                parameters: json!({"type":"object"}),
+            }],
+            tool_choice: Some(ToolChoice::Tool {
+                name: "read".to_string(),
+            }),
+            json_mode: false,
+            max_tokens: None,
+            temperature: None,
+        };
+
+        let body = build_chat_request_body(&request).expect("request body must serialize");
+        assert_eq!(body["tool_choice"]["type"], "function");
+        assert_eq!(body["tool_choice"]["function"]["name"], "read");
+    }
+
+    #[test]
+    fn regression_omits_non_none_tool_choice_when_tools_are_absent() {
+        let request = ChatRequest {
+            model: "gpt-4o-mini".to_string(),
+            messages: vec![Message::user("hello")],
+            tools: vec![],
+            tool_choice: Some(ToolChoice::Auto),
+            json_mode: false,
+            max_tokens: None,
+            temperature: None,
+        };
+
+        let body = build_chat_request_body(&request).expect("request body must serialize");
+        assert!(body.get("tool_choice").is_none());
     }
 
     #[test]
