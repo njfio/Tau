@@ -9,7 +9,6 @@ mod channel_store;
 mod channel_store_admin;
 mod cli_executable;
 mod commands;
-mod credentials;
 mod custom_command_contract;
 mod dashboard_contract;
 mod deployment_wasm;
@@ -81,12 +80,6 @@ pub(crate) use crate::commands::{
 pub(crate) use crate::commands::{
     render_command_help, render_help_overview, unknown_command_message,
 };
-pub(crate) use crate::credentials::{
-    execute_integration_auth_command, resolve_non_empty_cli_value,
-    resolve_secret_from_cli_or_store_id,
-};
-#[cfg(test)]
-pub(crate) use crate::credentials::{parse_integration_auth_command, IntegrationAuthCommand};
 use crate::events::{
     execute_events_dry_run_command, execute_events_inspect_command,
     execute_events_simulate_command, execute_events_template_write_command,
@@ -332,6 +325,10 @@ pub(crate) use tau_provider::{
     decrypt_credential_store_secret, encrypt_credential_store_secret,
     IntegrationCredentialStoreRecord,
 };
+pub(crate) use tau_provider::{
+    execute_integration_auth_command, resolve_non_empty_cli_value,
+    resolve_secret_from_cli_or_store_id,
+};
 #[cfg(test)]
 pub(crate) use tau_provider::{
     is_retryable_provider_error, resolve_store_backed_provider_credential, ClientRoute,
@@ -342,6 +339,8 @@ pub(crate) use tau_provider::{
     resolve_non_empty_secret_with_source, save_credential_store, CredentialStoreData,
     ProviderCredentialStoreRecord,
 };
+#[cfg(test)]
+pub(crate) use tau_provider::{parse_integration_auth_command, IntegrationAuthCommand};
 pub(crate) use tau_session::execute_session_graph_export_command;
 #[cfg(test)]
 pub(crate) use tau_session::validate_session_file;
