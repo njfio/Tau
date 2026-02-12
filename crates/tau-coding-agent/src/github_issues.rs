@@ -91,6 +91,7 @@ use tau_github_issues::issue_render::{
     render_issue_artifact_markdown as render_shared_issue_artifact_markdown,
     IssueArtifactAttachmentView, IssueEventPromptAttachmentView,
 };
+use tau_github_issues::issue_run_error_comment::render_issue_run_error_comment as render_shared_issue_run_error_comment;
 use tau_github_issues::issue_runtime_helpers::{
     is_expired_at as is_shared_expired_at, issue_session_id as issue_shared_session_id,
     normalize_artifact_retention_days as normalize_shared_artifact_retention_days,
@@ -5043,13 +5044,12 @@ fn render_issue_run_error_comment(
     run_id: &str,
     error: &anyhow::Error,
 ) -> String {
-    format!(
-        "Tau run `{}` failed for event `{}`.\n\nError: `{}`\n\n---\n{EVENT_KEY_MARKER_PREFIX}{}{EVENT_KEY_MARKER_SUFFIX}\n_Tau run `{}` | status `failed` | model `unavailable` | tokens in/out/total `0/0/0` | cost `unavailable`_",
+    render_shared_issue_run_error_comment(
+        &event.key,
         run_id,
-        event.key,
-        truncate_for_error(&error.to_string(), 600),
-        event.key,
-        run_id
+        &error.to_string(),
+        EVENT_KEY_MARKER_PREFIX,
+        EVENT_KEY_MARKER_SUFFIX,
     )
 }
 
