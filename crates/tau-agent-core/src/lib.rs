@@ -1,6 +1,6 @@
 //! Core runtime primitives for building tool-using LLM agents in Tau.
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     future::Future,
     pin::Pin,
     sync::{
@@ -36,6 +36,7 @@ use thiserror::Error;
 /// ```
 #[derive(Debug, Clone)]
 pub struct AgentConfig {
+    pub agent_id: String,
     pub model: String,
     pub system_prompt: String,
     pub max_turns: usize,
@@ -66,6 +67,7 @@ pub struct AgentConfig {
 impl Default for AgentConfig {
     fn default() -> Self {
         Self {
+            agent_id: "tau-agent".to_string(),
             model: "gpt-4o-mini".to_string(),
             system_prompt: "You are a helpful coding assistant.".to_string(),
             max_turns: 8,
@@ -280,12 +282,85 @@ pub enum AgentError {
     StructuredOutput(String),
 }
 
+/// Enumerates supported `AgentDirectMessageError` values.
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum AgentDirectMessageError {
+    #[error(
+        "direct message route from '{from_agent_id}' to '{to_agent_id}' is not allowed by policy"
+    )]
+    UnauthorizedRoute {
+        from_agent_id: String,
+        to_agent_id: String,
+    },
+    #[error("direct message content cannot be empty")]
+    EmptyContent,
+    #[error(
+        "direct message content exceeds policy max chars (actual={actual_chars}, max={max_chars})"
+    )]
+    MessageTooLong {
+        actual_chars: usize,
+        max_chars: usize,
+    },
+}
+
+/// Public struct `AgentDirectMessagePolicy` used across Tau components.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentDirectMessagePolicy {
+    pub allow_self_messages: bool,
+    pub max_message_chars: usize,
+    allowed_routes: HashSet<(String, String)>,
+}
+
+impl Default for AgentDirectMessagePolicy {
+    fn default() -> Self {
+        Self {
+            allow_self_messages: false,
+            max_message_chars: 4_000,
+            allowed_routes: HashSet::new(),
+        }
+    }
+}
+
+impl AgentDirectMessagePolicy {
+    /// Adds a directed route permission (`from_agent_id` -> `to_agent_id`).
+    pub fn allow_route(
+        &mut self,
+        from_agent_id: impl Into<String>,
+        to_agent_id: impl Into<String>,
+    ) {
+        self.allowed_routes
+            .insert((from_agent_id.into(), to_agent_id.into()));
+    }
+
+    /// Adds route permissions for both directions between `left_agent_id` and `right_agent_id`.
+    pub fn allow_bidirectional_route(
+        &mut self,
+        left_agent_id: impl Into<String>,
+        right_agent_id: impl Into<String>,
+    ) {
+        let left = left_agent_id.into();
+        let right = right_agent_id.into();
+        self.allow_route(left.clone(), right.clone());
+        self.allow_route(right, left);
+    }
+
+    /// Returns true when the policy allows direct messages from `from_agent_id` to `to_agent_id`.
+    pub fn allows(&self, from_agent_id: &str, to_agent_id: &str) -> bool {
+        if from_agent_id == to_agent_id {
+            return self.allow_self_messages;
+        }
+        self.allowed_routes
+            .contains(&(from_agent_id.to_string(), to_agent_id.to_string()))
+    }
+}
+
 type EventHandler = Arc<dyn Fn(&AgentEvent) + Send + Sync>;
 const CONTEXT_SUMMARY_PREFIX: &str = "[Tau context summary]";
 const CONTEXT_SUMMARY_MAX_CHARS: usize = 1_200;
 const CONTEXT_SUMMARY_SNIPPET_MAX_CHARS: usize = 160;
 const CONTEXT_SUMMARY_MAX_EXCERPTS: usize = 6;
 const MEMORY_RECALL_PREFIX: &str = "[Tau memory recall]";
+const DIRECT_MESSAGE_PREFIX: &str = "[Tau direct message]";
 const REPLAN_ON_TOOL_FAILURE_PROMPT: &str = "One or more tool calls failed. Replan and continue with an alternative approach using available tools. If no viable tool exists, explain what is missing and ask the user for clarification.";
 const FAILURE_SIGNAL_PHRASES: &[&str] = &[
     "can't",
@@ -353,6 +428,7 @@ struct MemoryRecallMatch {
 pub struct Agent {
     client: Arc<dyn LlmClient>,
     config: AgentConfig,
+    agent_id: String,
     messages: Vec<Message>,
     tools: HashMap<String, RegisteredTool>,
     response_cache: HashMap<String, tau_ai::ChatResponse>,
@@ -370,10 +446,12 @@ impl Agent {
         if !config.system_prompt.trim().is_empty() {
             messages.push(Message::system(config.system_prompt.clone()));
         }
+        let agent_id = config.agent_id.clone();
 
         Self {
             client,
             config,
+            agent_id,
             messages,
             tools: HashMap::new(),
             response_cache: HashMap::new(),
@@ -450,6 +528,57 @@ impl Agent {
         }
         self.tools.clear();
         self.clear_tool_result_cache();
+    }
+
+    /// Returns this agent's identifier for policy checks and direct messaging.
+    pub fn agent_id(&self) -> &str {
+        self.agent_id.as_str()
+    }
+
+    /// Sets this agent's identifier when `agent_id` is non-empty after trimming.
+    pub fn set_agent_id(&mut self, agent_id: impl Into<String>) {
+        let normalized = agent_id.into().trim().to_string();
+        if normalized.is_empty() {
+            return;
+        }
+        self.agent_id = normalized;
+    }
+
+    /// Sends a direct message to `recipient` when allowed by `policy`.
+    pub fn send_direct_message(
+        &self,
+        recipient: &mut Agent,
+        content: &str,
+        policy: &AgentDirectMessagePolicy,
+    ) -> Result<(), AgentDirectMessageError> {
+        recipient.receive_direct_message(self.agent_id(), content, policy)
+    }
+
+    /// Receives a direct message from another agent when allowed by `policy`.
+    pub fn receive_direct_message(
+        &mut self,
+        from_agent_id: &str,
+        content: &str,
+        policy: &AgentDirectMessagePolicy,
+    ) -> Result<(), AgentDirectMessageError> {
+        let to_agent_id = self.agent_id();
+        if !policy.allows(from_agent_id, to_agent_id) {
+            return Err(AgentDirectMessageError::UnauthorizedRoute {
+                from_agent_id: from_agent_id.to_string(),
+                to_agent_id: to_agent_id.to_string(),
+            });
+        }
+        let normalized_content =
+            normalize_direct_message_content(content, policy.max_message_chars)?;
+        let direct_message = Message::system(format!(
+            "{} from={} to={}\n{}",
+            DIRECT_MESSAGE_PREFIX, from_agent_id, to_agent_id, normalized_content
+        ));
+        self.messages.push(direct_message.clone());
+        self.emit(AgentEvent::MessageAdded {
+            message: direct_message,
+        });
+        Ok(())
     }
 
     /// Registers a temporary tool for the duration of `run` and restores prior state afterward.
@@ -1859,6 +1988,24 @@ fn validate_tool_arguments(definition: &ToolDefinition, arguments: &Value) -> Re
     Ok(())
 }
 
+fn normalize_direct_message_content(
+    content: &str,
+    max_message_chars: usize,
+) -> Result<String, AgentDirectMessageError> {
+    let normalized = content.trim();
+    if normalized.is_empty() {
+        return Err(AgentDirectMessageError::EmptyContent);
+    }
+    let actual_chars = normalized.chars().count();
+    if actual_chars > max_message_chars {
+        return Err(AgentDirectMessageError::MessageTooLong {
+            actual_chars,
+            max_chars: max_message_chars,
+        });
+    }
+    Ok(normalized.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use std::{
@@ -1881,9 +2028,10 @@ mod tests {
         assistant_text_suggests_failure, bounded_messages, build_structured_output_retry_prompt,
         cache_insert_with_limit, embed_text_vector, estimate_chat_request_tokens,
         extract_json_payload, retrieve_memory_matches, stream_retry_buffer_on_delta,
-        truncate_chars, Agent, AgentConfig, AgentError, AgentEvent, AgentTool,
-        CooperativeCancellationToken, StreamingRetryBufferState, ToolExecutionResult,
-        CONTEXT_SUMMARY_MAX_CHARS, CONTEXT_SUMMARY_PREFIX, MEMORY_RECALL_PREFIX,
+        truncate_chars, Agent, AgentConfig, AgentDirectMessageError, AgentDirectMessagePolicy,
+        AgentError, AgentEvent, AgentTool, CooperativeCancellationToken, StreamingRetryBufferState,
+        ToolExecutionResult, CONTEXT_SUMMARY_MAX_CHARS, CONTEXT_SUMMARY_PREFIX,
+        DIRECT_MESSAGE_PREFIX, MEMORY_RECALL_PREFIX,
     };
 
     struct MockClient {
@@ -2283,6 +2431,7 @@ mod tests {
     #[test]
     fn unit_agent_config_defaults_include_request_and_tool_timeouts() {
         let config = AgentConfig::default();
+        assert_eq!(config.agent_id, "tau-agent");
         assert_eq!(config.request_timeout_ms, Some(120_000));
         assert_eq!(config.tool_timeout_ms, Some(120_000));
         assert!(config.stream_retry_with_buffering);
@@ -2346,6 +2495,169 @@ mod tests {
         agent.register_tool(ReadTool);
         agent.clear_tools();
         assert!(agent.registered_tool_names().is_empty());
+    }
+
+    #[test]
+    fn unit_direct_message_policy_enforces_configured_routes() {
+        let mut policy = AgentDirectMessagePolicy::default();
+        assert!(!policy.allows("planner", "executor"));
+        assert!(!policy.allows("planner", "planner"));
+
+        policy.allow_route("planner", "executor");
+        assert!(policy.allows("planner", "executor"));
+        assert!(!policy.allows("executor", "planner"));
+
+        policy.allow_bidirectional_route("reviewer", "executor");
+        assert!(policy.allows("reviewer", "executor"));
+        assert!(policy.allows("executor", "reviewer"));
+
+        policy.allow_self_messages = true;
+        assert!(policy.allows("planner", "planner"));
+    }
+
+    #[test]
+    fn functional_send_direct_message_appends_system_message() {
+        let sender = Agent::new(
+            Arc::new(EchoClient),
+            AgentConfig {
+                agent_id: "planner".to_string(),
+                ..AgentConfig::default()
+            },
+        );
+        let mut recipient = Agent::new(
+            Arc::new(EchoClient),
+            AgentConfig {
+                agent_id: "executor".to_string(),
+                ..AgentConfig::default()
+            },
+        );
+        let mut policy = AgentDirectMessagePolicy::default();
+        policy.allow_route("planner", "executor");
+
+        sender
+            .send_direct_message(&mut recipient, "  review this step  ", &policy)
+            .expect("direct message should be accepted");
+
+        let direct_message = recipient
+            .messages()
+            .iter()
+            .find(|message| {
+                message.role == MessageRole::System
+                    && message.text_content().starts_with(DIRECT_MESSAGE_PREFIX)
+            })
+            .expect("direct message should be appended as a system message");
+        assert!(direct_message
+            .text_content()
+            .contains("from=planner to=executor"));
+        assert!(direct_message.text_content().contains("review this step"));
+    }
+
+    #[tokio::test]
+    async fn integration_direct_message_is_included_in_recipient_prompt_context() {
+        let sender = Agent::new(
+            Arc::new(EchoClient),
+            AgentConfig {
+                agent_id: "planner".to_string(),
+                ..AgentConfig::default()
+            },
+        );
+        let recipient_client = Arc::new(CapturingMockClient {
+            responses: AsyncMutex::new(VecDeque::from([ChatResponse {
+                message: Message::assistant_text("ack"),
+                finish_reason: Some("stop".to_string()),
+                usage: ChatUsage::default(),
+            }])),
+            requests: AsyncMutex::new(Vec::new()),
+        });
+        let mut recipient = Agent::new(
+            recipient_client.clone(),
+            AgentConfig {
+                agent_id: "executor".to_string(),
+                ..AgentConfig::default()
+            },
+        );
+        let mut policy = AgentDirectMessagePolicy::default();
+        policy.allow_route("planner", "executor");
+
+        sender
+            .send_direct_message(&mut recipient, "Focus on retry semantics", &policy)
+            .expect("route should be authorized");
+        let _ = recipient
+            .prompt("continue")
+            .await
+            .expect("recipient prompt should succeed");
+
+        let requests = recipient_client.requests.lock().await;
+        let request = requests.first().expect("captured request");
+        assert!(
+            request.messages.iter().any(|message| {
+                message.role == MessageRole::System
+                    && message
+                        .text_content()
+                        .contains("[Tau direct message] from=planner to=executor")
+            }),
+            "direct message should be included in prompt context"
+        );
+    }
+
+    #[test]
+    fn regression_unauthorized_direct_message_fails_closed_without_mutation() {
+        let sender = Agent::new(
+            Arc::new(EchoClient),
+            AgentConfig {
+                agent_id: "planner".to_string(),
+                ..AgentConfig::default()
+            },
+        );
+        let mut recipient = Agent::new(
+            Arc::new(EchoClient),
+            AgentConfig {
+                agent_id: "executor".to_string(),
+                ..AgentConfig::default()
+            },
+        );
+        let policy = AgentDirectMessagePolicy::default();
+        let baseline_count = recipient.messages().len();
+
+        let error = sender
+            .send_direct_message(&mut recipient, "unauthorized", &policy)
+            .expect_err("unauthorized route must fail closed");
+        assert!(matches!(
+            error,
+            AgentDirectMessageError::UnauthorizedRoute { .. }
+        ));
+        assert_eq!(recipient.messages().len(), baseline_count);
+    }
+
+    #[test]
+    fn regression_direct_message_policy_enforces_max_message_chars() {
+        let sender = Agent::new(
+            Arc::new(EchoClient),
+            AgentConfig {
+                agent_id: "planner".to_string(),
+                ..AgentConfig::default()
+            },
+        );
+        let mut recipient = Agent::new(
+            Arc::new(EchoClient),
+            AgentConfig {
+                agent_id: "executor".to_string(),
+                ..AgentConfig::default()
+            },
+        );
+        let mut policy = AgentDirectMessagePolicy::default();
+        policy.allow_route("planner", "executor");
+        policy.max_message_chars = 5;
+        let baseline_count = recipient.messages().len();
+
+        let error = sender
+            .send_direct_message(&mut recipient, "message too long", &policy)
+            .expect_err("oversized direct message must fail");
+        assert!(matches!(
+            error,
+            AgentDirectMessageError::MessageTooLong { .. }
+        ));
+        assert_eq!(recipient.messages().len(), baseline_count);
     }
 
     #[tokio::test]
