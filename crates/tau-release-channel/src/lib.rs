@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use tau_core::write_text_atomic;
 
 pub mod cache;
+pub mod command_runtime;
 
 pub const RELEASE_LOOKUP_CACHE_SCHEMA_VERSION: u32 = 1;
 pub const RELEASE_LOOKUP_CACHE_TTL_MS: u64 = 15 * 60 * 1_000;
@@ -11,6 +12,8 @@ pub const RELEASE_CHANNEL_SCHEMA_VERSION: u32 = 2;
 pub const RELEASE_LOOKUP_URL: &str = "https://api.github.com/repos/njfio/Tau/releases?per_page=30";
 pub const RELEASE_LOOKUP_USER_AGENT: &str = "tau-coding-agent/release-channel-check";
 pub const RELEASE_LOOKUP_TIMEOUT_MS: u64 = 8_000;
+
+pub use command_runtime::{execute_release_channel_command, RELEASE_CHANNEL_USAGE};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
