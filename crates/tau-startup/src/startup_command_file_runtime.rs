@@ -111,13 +111,12 @@ mod tests {
         command_file_error_mode_label, execute_command_file_with_handler, CommandFileAction,
     };
     use anyhow::{anyhow, Result};
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::{Arc, Mutex};
-    use std::{
-        fs,
-        path::PathBuf,
-        time::{SystemTime, UNIX_EPOCH},
-    };
+    use std::{fs, path::PathBuf};
     use tau_cli::CliCommandFileErrorMode;
+
+    static TEMP_COMMAND_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
     struct TempCommandFile {
         path: PathBuf,
@@ -126,13 +125,10 @@ mod tests {
 
     impl TempCommandFile {
         fn write(contents: &str) -> Self {
-            let unique = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("system clock should be after unix epoch")
-                .as_nanos();
+            let unique = TEMP_COMMAND_FILE_COUNTER.fetch_add(1, Ordering::Relaxed);
             let root = std::env::temp_dir()
                 .join("tau-startup-command-file-runtime")
-                .join(format!("case-{unique}"));
+                .join(format!("case-{}-{unique}", std::process::id()));
             fs::create_dir_all(&root).expect("create temp command file root");
             let path = root.join("commands.txt");
             fs::write(&path, contents).expect("write command file");
