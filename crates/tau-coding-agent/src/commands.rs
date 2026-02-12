@@ -10,10 +10,11 @@ use tau_cli::{canonical_command_name, normalize_help_topic, parse_command, Comma
 pub(crate) use tau_ops::COMMAND_NAMES;
 use tau_session::{
     execute_branch_switch_command, execute_branches_command, execute_resume_command,
-    execute_session_compact_command, execute_session_diff_command, execute_session_export_command,
-    execute_session_import_command, execute_session_repair_command, execute_session_search_command,
-    execute_session_stats_command, execute_session_status_command, parse_session_diff_args,
-    parse_session_stats_args,
+    execute_session_compact_command, execute_session_diff_runtime_command,
+    execute_session_export_command, execute_session_graph_export_runtime_command,
+    execute_session_import_command, execute_session_repair_command,
+    execute_session_search_runtime_command, execute_session_stats_runtime_command,
+    execute_session_status_command,
 };
 use tau_startup::{execute_command_file_with_handler, CommandFileAction};
 
@@ -326,12 +327,8 @@ pub(crate) fn handle_command_with_session_import_mode(
             println!("session is disabled");
             return Ok(CommandAction::Continue);
         };
-        if command_args.trim().is_empty() {
-            println!("usage: /session-search <query> [--role <role>] [--limit <n>]");
-            return Ok(CommandAction::Continue);
-        }
-
-        println!("{}", execute_session_search_command(runtime, command_args));
+        let outcome = execute_session_search_runtime_command(command_args, runtime);
+        println!("{}", outcome.message);
         return Ok(CommandAction::Continue);
     }
 
@@ -340,15 +337,8 @@ pub(crate) fn handle_command_with_session_import_mode(
             println!("session is disabled");
             return Ok(CommandAction::Continue);
         };
-        let format = match parse_session_stats_args(command_args) {
-            Ok(format) => format,
-            Err(_) => {
-                println!("usage: /session-stats [--json]");
-                return Ok(CommandAction::Continue);
-            }
-        };
-
-        println!("{}", execute_session_stats_command(runtime, format));
+        let outcome = execute_session_stats_runtime_command(command_args, runtime);
+        println!("{}", outcome.message);
         return Ok(CommandAction::Continue);
     }
 
@@ -357,15 +347,8 @@ pub(crate) fn handle_command_with_session_import_mode(
             println!("session is disabled");
             return Ok(CommandAction::Continue);
         };
-        let heads = match parse_session_diff_args(command_args) {
-            Ok(heads) => heads,
-            Err(_) => {
-                println!("usage: /session-diff [<left-id> <right-id>]");
-                return Ok(CommandAction::Continue);
-            }
-        };
-
-        println!("{}", execute_session_diff_command(runtime, heads));
+        let outcome = execute_session_diff_runtime_command(command_args, runtime);
+        println!("{}", outcome.message);
         return Ok(CommandAction::Continue);
     }
 
@@ -387,15 +370,8 @@ pub(crate) fn handle_command_with_session_import_mode(
             println!("session is disabled");
             return Ok(CommandAction::Continue);
         };
-        if command_args.trim().is_empty() {
-            println!("usage: /session-graph-export <path>");
-            return Ok(CommandAction::Continue);
-        }
-
-        println!(
-            "{}",
-            execute_session_graph_export_command(runtime, command_args)
-        );
+        let outcome = execute_session_graph_export_runtime_command(command_args, runtime);
+        println!("{}", outcome.message);
         return Ok(CommandAction::Continue);
     }
 

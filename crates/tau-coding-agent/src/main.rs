@@ -335,6 +335,7 @@ pub(crate) use tau_provider::{
 };
 #[cfg(test)]
 pub(crate) use tau_provider::{parse_integration_auth_command, IntegrationAuthCommand};
+#[cfg(test)]
 pub(crate) use tau_session::execute_session_graph_export_command;
 #[cfg(test)]
 pub(crate) use tau_session::format_id_list;
