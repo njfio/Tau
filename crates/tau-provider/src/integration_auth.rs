@@ -2,23 +2,22 @@ use std::collections::BTreeMap;
 
 use anyhow::{anyhow, bail, Context, Result};
 use serde::Serialize;
-use tau_provider::{
+use tau_cli::Cli;
+use tau_core::current_unix_timestamp;
+
+use crate::{
     load_credential_store, resolve_credential_store_encryption_mode, save_credential_store,
-    IntegrationCredentialStoreRecord,
+    AuthCommandConfig, IntegrationCredentialStoreRecord,
 };
 
-use crate::auth_commands::format_auth_state_counts;
-
-use super::{current_unix_timestamp, AuthCommandConfig, Cli};
-
-pub(crate) fn resolve_non_empty_cli_value(value: Option<&str>) -> Option<String> {
+pub fn resolve_non_empty_cli_value(value: Option<&str>) -> Option<String> {
     value
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(str::to_string)
 }
 
-pub(crate) fn resolve_secret_from_cli_or_store_id(
+pub fn resolve_secret_from_cli_or_store_id(
     cli: &Cli,
     direct_secret: Option<&str>,
     secret_id: Option<&str>,
@@ -89,7 +88,7 @@ const INTEGRATION_AUTH_REVOKE_USAGE: &str =
     "usage: /integration-auth revoke <integration-id> [--json]";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum IntegrationAuthCommand {
+pub enum IntegrationAuthCommand {
     Set {
         integration_id: String,
         secret: String,
@@ -121,7 +120,7 @@ struct IntegrationAuthStatusRow {
     revoked: bool,
 }
 
-pub(crate) fn normalize_integration_credential_id(raw: &str) -> Result<String> {
+pub fn normalize_integration_credential_id(raw: &str) -> Result<String> {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
         bail!("integration credential id must not be empty");
@@ -142,7 +141,7 @@ pub(crate) fn normalize_integration_credential_id(raw: &str) -> Result<String> {
     Ok(normalized)
 }
 
-pub(crate) fn parse_integration_auth_command(command_args: &str) -> Result<IntegrationAuthCommand> {
+pub fn parse_integration_auth_command(command_args: &str) -> Result<IntegrationAuthCommand> {
     let tokens = command_args
         .split_whitespace()
         .filter(|token| !token.is_empty())
@@ -466,6 +465,17 @@ fn integration_revoked_counts(rows: &[IntegrationAuthStatusRow]) -> BTreeMap<Str
     counts
 }
 
+fn format_auth_state_counts(state_counts: &BTreeMap<String, usize>) -> String {
+    if state_counts.is_empty() {
+        return "none".to_string();
+    }
+    state_counts
+        .iter()
+        .map(|(state, count)| format!("{state}:{count}"))
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
 fn execute_integration_auth_status_command(
     config: &AuthCommandConfig,
     integration_id: Option<String>,
@@ -632,10 +642,7 @@ fn execute_integration_auth_revoke_command(
     )
 }
 
-pub(crate) fn execute_integration_auth_command(
-    config: &AuthCommandConfig,
-    command_args: &str,
-) -> String {
+pub fn execute_integration_auth_command(config: &AuthCommandConfig, command_args: &str) -> String {
     let command = match parse_integration_auth_command(command_args) {
         Ok(command) => command,
         Err(error) => return format!("integration auth error: {error}"),
