@@ -37,6 +37,8 @@ pub struct AgentConfig {
     pub request_max_retries: usize,
     pub request_retry_initial_backoff_ms: u64,
     pub request_retry_max_backoff_ms: u64,
+    pub request_timeout_ms: Option<u64>,
+    pub tool_timeout_ms: Option<u64>,
 }
 
 impl Default for AgentConfig {
@@ -52,6 +54,8 @@ impl Default for AgentConfig {
             request_max_retries: 2,
             request_retry_initial_backoff_ms: 200,
             request_retry_max_backoff_ms: 2_000,
+            request_timeout_ms: Some(120_000),
+            tool_timeout_ms: Some(120_000),
         }
     }
 }
@@ -183,6 +187,8 @@ pub enum AgentError {
     Ai(#[from] TauAiError),
     #[error("agent exceeded max turns ({0})")]
     MaxTurnsExceeded(usize),
+    #[error("model request timed out after {timeout_ms}ms on attempt {attempt}")]
+    RequestTimeout { timeout_ms: u64, attempt: usize },
     #[error("structured output error: {0}")]
     StructuredOutput(String),
 }
@@ -532,26 +538,52 @@ impl Agent {
         &self,
         request: ChatRequest,
         on_delta: Option<StreamDeltaHandler>,
-    ) -> Result<tau_ai::ChatResponse, TauAiError> {
+    ) -> Result<tau_ai::ChatResponse, AgentError> {
         let max_retries = self.config.request_max_retries;
         let mut attempt = 0usize;
         let mut backoff_ms = self.config.request_retry_initial_backoff_ms.max(1);
         let max_backoff_ms = self.config.request_retry_max_backoff_ms.max(backoff_ms);
+        let request_timeout = timeout_duration_from_ms(self.config.request_timeout_ms);
 
         loop {
             let request_for_attempt = request.clone();
-            match self
-                .client
-                .complete_with_stream(request_for_attempt, on_delta.clone())
+            let response_result = if let Some(timeout) = request_timeout {
+                match tokio::time::timeout(
+                    timeout,
+                    self.client
+                        .complete_with_stream(request_for_attempt, on_delta.clone()),
+                )
                 .await
-            {
+                {
+                    Ok(result) => result,
+                    Err(_) => {
+                        let can_retry = attempt < max_retries && on_delta.is_none();
+                        if !can_retry {
+                            return Err(AgentError::RequestTimeout {
+                                timeout_ms: timeout.as_millis() as u64,
+                                attempt: attempt.saturating_add(1),
+                            });
+                        }
+                        tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
+                        backoff_ms = backoff_ms.saturating_mul(2).min(max_backoff_ms);
+                        attempt = attempt.saturating_add(1);
+                        continue;
+                    }
+                }
+            } else {
+                self.client
+                    .complete_with_stream(request_for_attempt, on_delta.clone())
+                    .await
+            };
+
+            match response_result {
                 Ok(response) => return Ok(response),
                 Err(error) => {
                     let can_retry = attempt < max_retries
                         && on_delta.is_none()
                         && is_retryable_ai_error(&error);
                     if !can_retry {
-                        return Err(error);
+                        return Err(AgentError::Ai(error));
                     }
 
                     tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
@@ -600,7 +632,8 @@ impl Agent {
             .tools
             .get(&call.name)
             .map(|tool| (tool.definition.clone(), Arc::clone(&tool.tool)));
-        tokio::spawn(async move { execute_tool_call_inner(call, registered).await })
+        let tool_timeout = timeout_duration_from_ms(self.config.tool_timeout_ms);
+        tokio::spawn(async move { execute_tool_call_inner(call, registered, tool_timeout).await })
     }
 
     async fn execute_tool_call(&mut self, call: ToolCall) {
@@ -866,17 +899,37 @@ fn validate_json_against_schema(schema: &Value, payload: &Value) -> Result<(), S
 async fn execute_tool_call_inner(
     call: ToolCall,
     registered: Option<(ToolDefinition, Arc<dyn AgentTool>)>,
+    tool_timeout: Option<Duration>,
 ) -> ToolExecutionResult {
     if let Some((definition, tool)) = registered {
         if let Err(error) = validate_tool_arguments(&definition, &call.arguments) {
             return ToolExecutionResult::error(json!({ "error": error }));
         }
-        tool.execute(call.arguments).await
+        if let Some(timeout) = tool_timeout {
+            match tokio::time::timeout(timeout, tool.execute(call.arguments)).await {
+                Ok(result) => result,
+                Err(_) => ToolExecutionResult::error(json!({
+                    "error": format!(
+                        "tool '{}' timed out after {}ms",
+                        definition.name,
+                        timeout.as_millis()
+                    )
+                })),
+            }
+        } else {
+            tool.execute(call.arguments).await
+        }
     } else {
         ToolExecutionResult::error(json!({
             "error": format!("Tool '{}' is not registered", call.name)
         }))
     }
+}
+
+fn timeout_duration_from_ms(timeout_ms: Option<u64>) -> Option<Duration> {
+    timeout_ms
+        .filter(|timeout_ms| *timeout_ms > 0)
+        .map(Duration::from_millis)
 }
 
 fn is_retryable_ai_error(error: &TauAiError) -> bool {
@@ -1011,6 +1064,38 @@ mod tests {
                     status: 503,
                     body: "service unavailable".to_string(),
                 });
+            }
+            Ok(self.response.clone())
+        }
+    }
+
+    struct TimeoutThenSuccessClient {
+        delays_ms: AsyncMutex<VecDeque<u64>>,
+        attempts: AsyncMutex<usize>,
+        response: ChatResponse,
+    }
+
+    #[async_trait]
+    impl tau_ai::LlmClient for TimeoutThenSuccessClient {
+        async fn complete(&self, request: ChatRequest) -> Result<ChatResponse, tau_ai::TauAiError> {
+            self.complete_with_stream(request, None).await
+        }
+
+        async fn complete_with_stream(
+            &self,
+            _request: ChatRequest,
+            _on_delta: Option<tau_ai::StreamDeltaHandler>,
+        ) -> Result<ChatResponse, tau_ai::TauAiError> {
+            {
+                let mut attempts = self.attempts.lock().await;
+                *attempts = attempts.saturating_add(1);
+            }
+            let delay_ms = {
+                let mut delays = self.delays_ms.lock().await;
+                delays.pop_front().unwrap_or(0)
+            };
+            if delay_ms > 0 {
+                tokio::time::sleep(Duration::from_millis(delay_ms)).await;
             }
             Ok(self.response.clone())
         }
@@ -1153,6 +1238,13 @@ mod tests {
         async fn execute(&self, _arguments: serde_json::Value) -> ToolExecutionResult {
             panic!("forced panic in tool");
         }
+    }
+
+    #[test]
+    fn unit_agent_config_defaults_include_request_and_tool_timeouts() {
+        let config = AgentConfig::default();
+        assert_eq!(config.request_timeout_ms, Some(120_000));
+        assert_eq!(config.tool_timeout_ms, Some(120_000));
     }
 
     #[tokio::test]
@@ -1455,6 +1547,30 @@ mod tests {
             "Hello"
         );
         assert_eq!(streamed.lock().expect("stream lock").as_str(), "Hello");
+    }
+
+    #[tokio::test]
+    async fn functional_request_timeout_fails_closed_for_slow_provider() {
+        let mut agent = Agent::new(
+            Arc::new(DelayedEchoClient { delay_ms: 80 }),
+            AgentConfig {
+                request_max_retries: 0,
+                request_timeout_ms: Some(10),
+                ..AgentConfig::default()
+            },
+        );
+
+        let error = agent
+            .prompt("timeout please")
+            .await
+            .expect_err("slow provider should time out");
+        match error {
+            AgentError::RequestTimeout {
+                timeout_ms: 10,
+                attempt: 1,
+            } => {}
+            other => panic!("expected request timeout on first attempt, got {other:?}"),
+        }
     }
 
     #[test]
@@ -1789,6 +1905,39 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn regression_request_timeout_retries_and_recovers_when_next_attempt_is_fast() {
+        let client = Arc::new(TimeoutThenSuccessClient {
+            delays_ms: AsyncMutex::new(VecDeque::from([40, 0])),
+            attempts: AsyncMutex::new(0),
+            response: ChatResponse {
+                message: Message::assistant_text("timeout-recovered"),
+                finish_reason: Some("stop".to_string()),
+                usage: ChatUsage::default(),
+            },
+        });
+        let mut agent = Agent::new(
+            client.clone(),
+            AgentConfig {
+                request_max_retries: 1,
+                request_retry_initial_backoff_ms: 1,
+                request_retry_max_backoff_ms: 1,
+                request_timeout_ms: Some(10),
+                ..AgentConfig::default()
+            },
+        );
+
+        let messages = agent
+            .prompt("recover after timeout")
+            .await
+            .expect("second attempt should succeed");
+        assert_eq!(
+            messages.last().expect("assistant response").text_content(),
+            "timeout-recovered"
+        );
+        assert_eq!(*client.attempts.lock().await, 2);
+    }
+
+    #[tokio::test]
     async fn regression_tool_panic_isolated_to_error_tool_result() {
         let first_assistant = Message::assistant_blocks(vec![ContentBlock::ToolCall {
             id: "call_1".to_string(),
@@ -1826,6 +1975,53 @@ mod tests {
         assert_eq!(
             messages.last().expect("assistant response").text_content(),
             "continued"
+        );
+    }
+
+    #[tokio::test]
+    async fn integration_tool_timeout_returns_error_tool_message_and_continues_turn() {
+        let first_assistant = Message::assistant_blocks(vec![ContentBlock::ToolCall {
+            id: "call_1".to_string(),
+            name: "slow_read".to_string(),
+            arguments: serde_json::json!({ "path": "README.md" }),
+        }]);
+        let second_assistant = Message::assistant_text("continued after timeout");
+        let client = Arc::new(MockClient {
+            responses: AsyncMutex::new(VecDeque::from([
+                ChatResponse {
+                    message: first_assistant,
+                    finish_reason: Some("tool_calls".to_string()),
+                    usage: ChatUsage::default(),
+                },
+                ChatResponse {
+                    message: second_assistant,
+                    finish_reason: Some("stop".to_string()),
+                    usage: ChatUsage::default(),
+                },
+            ])),
+        });
+        let mut agent = Agent::new(
+            client,
+            AgentConfig {
+                tool_timeout_ms: Some(10),
+                ..AgentConfig::default()
+            },
+        );
+        agent.register_tool(SlowReadTool { delay_ms: 75 });
+
+        let messages = agent
+            .prompt("slow read")
+            .await
+            .expect("prompt should continue after tool timeout");
+        let tool_message = messages
+            .iter()
+            .find(|message| message.role == MessageRole::Tool)
+            .expect("tool result should be present");
+        assert!(tool_message.is_error);
+        assert!(tool_message.text_content().contains("timed out after 10ms"));
+        assert_eq!(
+            messages.last().expect("assistant response").text_content(),
+            "continued after timeout"
         );
     }
 

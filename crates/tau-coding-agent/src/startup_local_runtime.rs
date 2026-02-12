@@ -4,7 +4,7 @@ use anyhow::Result;
 use serde_json::Value;
 #[cfg(test)]
 use tau_agent_core::Agent;
-use tau_agent_core::AgentEvent;
+use tau_agent_core::{AgentConfig, AgentEvent};
 use tau_ai::{LlmClient, ModelRef};
 use tau_cli::Cli;
 use tau_session::initialize_session;
@@ -68,6 +68,7 @@ pub(crate) async fn run_local_runtime(config: LocalRuntimeConfig<'_>) -> Result<
         skills_lock_path,
     } = config;
 
+    let agent_defaults = AgentConfig::default();
     let mut agent = build_onboarding_local_runtime_agent(
         client,
         model_ref,
@@ -79,6 +80,8 @@ pub(crate) async fn run_local_runtime(config: LocalRuntimeConfig<'_>) -> Result<
             request_max_retries: cli.agent_request_max_retries,
             request_retry_initial_backoff_ms: cli.agent_request_retry_initial_backoff_ms,
             request_retry_max_backoff_ms: cli.agent_request_retry_max_backoff_ms,
+            request_timeout_ms: agent_defaults.request_timeout_ms,
+            tool_timeout_ms: agent_defaults.tool_timeout_ms,
         },
         tool_policy,
     );

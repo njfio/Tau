@@ -25,6 +25,8 @@ pub struct LocalRuntimeAgentSettings {
     pub request_max_retries: usize,
     pub request_retry_initial_backoff_ms: u64,
     pub request_retry_max_backoff_ms: u64,
+    pub request_timeout_ms: Option<u64>,
+    pub tool_timeout_ms: Option<u64>,
 }
 
 pub fn build_local_runtime_agent(
@@ -47,6 +49,8 @@ pub fn build_local_runtime_agent(
             request_max_retries: settings.request_max_retries,
             request_retry_initial_backoff_ms: settings.request_retry_initial_backoff_ms,
             request_retry_max_backoff_ms: settings.request_retry_max_backoff_ms,
+            request_timeout_ms: settings.request_timeout_ms,
+            tool_timeout_ms: settings.tool_timeout_ms,
         },
     );
     register_builtin_tools(&mut agent, tool_policy);
@@ -1022,6 +1026,8 @@ mod tests {
                 request_max_retries: 2,
                 request_retry_initial_backoff_ms: 200,
                 request_retry_max_backoff_ms: 2_000,
+                request_timeout_ms: Some(120_000),
+                tool_timeout_ms: Some(120_000),
             },
             ToolPolicy::new(vec![std::env::temp_dir()]),
         );
@@ -1052,6 +1058,8 @@ mod tests {
                 request_max_retries: 2,
                 request_retry_initial_backoff_ms: 200,
                 request_retry_max_backoff_ms: 2_000,
+                request_timeout_ms: Some(120_000),
+                tool_timeout_ms: Some(120_000),
             },
             ToolPolicy::new(vec![std::env::temp_dir()]),
         );
@@ -1085,6 +1093,8 @@ mod tests {
                 request_max_retries: 2,
                 request_retry_initial_backoff_ms: 200,
                 request_retry_max_backoff_ms: 2_000,
+                request_timeout_ms: Some(120_000),
+                tool_timeout_ms: Some(120_000),
             },
             ToolPolicy::new(vec![std::env::temp_dir()]),
         );
@@ -1112,6 +1122,8 @@ mod tests {
                 request_max_retries: 2,
                 request_retry_initial_backoff_ms: 200,
                 request_retry_max_backoff_ms: 2_000,
+                request_timeout_ms: Some(120_000),
+                tool_timeout_ms: Some(120_000),
             },
             ToolPolicy::new(vec![std::env::temp_dir()]),
         );
