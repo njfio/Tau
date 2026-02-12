@@ -2,8 +2,7 @@ use std::path::Path;
 
 use anyhow::{anyhow, bail, Context, Result};
 use serde::{Deserialize, Serialize};
-
-use crate::write_text_atomic;
+use tau_core::write_text_atomic;
 
 use super::{ReleaseChannel, RELEASE_UPDATE_STATE_SCHEMA_VERSION};
 
