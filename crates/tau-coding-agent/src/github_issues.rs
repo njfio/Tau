@@ -43,6 +43,10 @@ use tau_github_issues::github_transport_helpers::{
     is_retryable_github_status, is_retryable_transport_error, parse_retry_after, retry_delay,
     truncate_for_error,
 };
+use tau_github_issues::issue_auth_command::{
+    parse_issue_auth_command as parse_shared_issue_auth_command, TauIssueAuthCommand,
+    TauIssueAuthCommandKind,
+};
 use tau_github_issues::issue_auth_helpers::{
     build_issue_auth_summary_line as build_shared_issue_auth_summary_line,
     ensure_auth_json_flag as ensure_shared_auth_json_flag, IssueAuthSummaryKind,
@@ -1003,18 +1007,6 @@ struct DemoIndexRunExecution {
     summary: Option<DemoIndexRunReport>,
     report_artifact: ChannelArtifactRecord,
     log_artifact: ChannelArtifactRecord,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum TauIssueAuthCommandKind {
-    Status,
-    Matrix,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct TauIssueAuthCommand {
-    kind: TauIssueAuthCommandKind,
-    args: String,
 }
 
 #[derive(Debug, Clone)]
@@ -5294,30 +5286,17 @@ fn parse_doctor_issue_command(remainder: &str) -> TauIssueCommand {
 }
 
 fn parse_issue_auth_command(remainder: &str) -> TauIssueCommand {
-    if remainder.trim().is_empty() {
-        return TauIssueCommand::Invalid {
-            message: issue_auth_command_usage(),
-        };
-    }
-    match parse_auth_command(remainder) {
-        Ok(AuthCommand::Status { .. }) => TauIssueCommand::Auth {
-            command: TauIssueAuthCommand {
-                kind: TauIssueAuthCommandKind::Status,
-                args: remainder.trim().to_string(),
-            },
-        },
-        Ok(AuthCommand::Matrix { .. }) => TauIssueCommand::Auth {
-            command: TauIssueAuthCommand {
-                kind: TauIssueAuthCommandKind::Matrix,
-                args: remainder.trim().to_string(),
-            },
-        },
-        Ok(_) => TauIssueCommand::Invalid {
-            message: issue_auth_command_usage(),
-        },
-        Err(error) => TauIssueCommand::Invalid {
-            message: format!("auth error: {error}\n\n{}", issue_auth_command_usage()),
-        },
+    let usage = issue_auth_command_usage();
+    match parse_shared_issue_auth_command(remainder, &usage, |args| {
+        match parse_auth_command(args) {
+            Ok(AuthCommand::Status { .. }) => Ok(Some(TauIssueAuthCommandKind::Status)),
+            Ok(AuthCommand::Matrix { .. }) => Ok(Some(TauIssueAuthCommandKind::Matrix)),
+            Ok(_) => Ok(None),
+            Err(error) => Err(error.to_string()),
+        }
+    }) {
+        Ok(command) => TauIssueCommand::Auth { command },
+        Err(message) => TauIssueCommand::Invalid { message },
     }
 }
 
