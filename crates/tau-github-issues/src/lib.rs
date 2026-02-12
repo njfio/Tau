@@ -15,5 +15,6 @@ pub mod issue_event_collection;
 pub mod issue_filter;
 pub mod issue_prompt_helpers;
 pub mod issue_render;
+pub mod issue_run_error_comment;
 pub mod issue_runtime_helpers;
 pub mod issue_session_helpers;
