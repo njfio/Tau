@@ -43,6 +43,10 @@ pub struct AgentConfig {
     pub max_estimated_total_tokens: Option<u32>,
     pub structured_output_max_retries: usize,
     pub react_max_replans_on_tool_failure: usize,
+    pub memory_retrieval_limit: usize,
+    pub memory_embedding_dimensions: usize,
+    pub memory_min_similarity: f32,
+    pub memory_max_chars_per_item: usize,
 }
 
 impl Default for AgentConfig {
@@ -64,6 +68,10 @@ impl Default for AgentConfig {
             max_estimated_total_tokens: None,
             structured_output_max_retries: 1,
             react_max_replans_on_tool_failure: 1,
+            memory_retrieval_limit: 3,
+            memory_embedding_dimensions: 128,
+            memory_min_similarity: 0.55,
+            memory_max_chars_per_item: 180,
         }
     }
 }
@@ -219,6 +227,7 @@ const CONTEXT_SUMMARY_PREFIX: &str = "[Tau context summary]";
 const CONTEXT_SUMMARY_MAX_CHARS: usize = 1_200;
 const CONTEXT_SUMMARY_SNIPPET_MAX_CHARS: usize = 160;
 const CONTEXT_SUMMARY_MAX_EXCERPTS: usize = 6;
+const MEMORY_RECALL_PREFIX: &str = "[Tau memory recall]";
 const REPLAN_ON_TOOL_FAILURE_PROMPT: &str = "One or more tool calls failed. Replan and continue with an alternative approach using available tools. If no viable tool exists, explain what is missing and ask the user for clarification.";
 const FAILURE_SIGNAL_PHRASES: &[&str] = &[
     "can't",
@@ -246,6 +255,13 @@ struct RegisteredTool {
 struct ToolExecutionStats {
     total: usize,
     errors: usize,
+}
+
+#[derive(Debug, Clone)]
+struct MemoryRecallMatch {
+    score: f32,
+    role: MessageRole,
+    text: String,
 }
 
 /// Public struct `Agent` used across Tau components.
@@ -634,7 +650,19 @@ impl Agent {
         let Some(limit) = self.config.max_context_messages else {
             return self.messages.clone();
         };
-        bounded_messages(&self.messages, limit)
+        let mut messages = bounded_messages(&self.messages, limit);
+        if self.config.memory_retrieval_limit == 0 || self.messages.len() <= limit {
+            return messages;
+        }
+        let Some(recall) = self.build_memory_recall_message(limit) else {
+            return messages;
+        };
+        let insert_at = messages
+            .iter()
+            .take_while(|message| message.role == MessageRole::System)
+            .count();
+        messages.insert(insert_at, Message::system(recall));
+        messages
     }
 
     fn compact_message_history(&mut self) {
@@ -645,6 +673,46 @@ impl Agent {
             return;
         }
         self.messages = bounded_messages(&self.messages, limit);
+    }
+
+    fn build_memory_recall_message(&self, context_limit: usize) -> Option<String> {
+        let query = self
+            .messages
+            .iter()
+            .rev()
+            .find(|message| message.role == MessageRole::User)
+            .map(|message| message.text_content())?;
+        if query.trim().is_empty() {
+            return None;
+        }
+        let dropped_cutoff = self.messages.len().saturating_sub(context_limit);
+        if dropped_cutoff == 0 {
+            return None;
+        }
+        let recalled = retrieve_memory_matches(
+            &self.messages[..dropped_cutoff],
+            &query,
+            self.config.memory_retrieval_limit,
+            self.config.memory_embedding_dimensions,
+            self.config.memory_min_similarity,
+        );
+        if recalled.is_empty() {
+            return None;
+        }
+
+        let mut lines = Vec::with_capacity(recalled.len().saturating_add(1));
+        lines.push(MEMORY_RECALL_PREFIX.to_string());
+        for memory in recalled {
+            let collapsed = collapse_whitespace(&memory.text);
+            let excerpt = truncate_chars(&collapsed, self.config.memory_max_chars_per_item);
+            lines.push(format!(
+                "- score={:.2} role={} text={}",
+                memory.score,
+                role_label(memory.role),
+                excerpt
+            ));
+        }
+        Some(lines.join("\n"))
     }
 
     async fn complete_with_retry(
@@ -1032,6 +1100,98 @@ fn assistant_text_suggests_failure(text: &str) -> bool {
         .any(|phrase| normalized.contains(phrase))
 }
 
+fn retrieve_memory_matches(
+    history: &[Message],
+    query: &str,
+    limit: usize,
+    dimensions: usize,
+    min_similarity: f32,
+) -> Vec<MemoryRecallMatch> {
+    if limit == 0 {
+        return Vec::new();
+    }
+    let query_embedding = embed_text_vector(query, dimensions);
+    if query_embedding.iter().all(|component| *component == 0.0) {
+        return Vec::new();
+    }
+
+    let mut matches = history
+        .iter()
+        .filter_map(|message| match message.role {
+            MessageRole::User | MessageRole::Assistant => {
+                let text = message.text_content();
+                if text.trim().is_empty() {
+                    return None;
+                }
+                let candidate_embedding = embed_text_vector(&text, dimensions);
+                let score = cosine_similarity(&query_embedding, &candidate_embedding);
+                if score >= min_similarity {
+                    Some(MemoryRecallMatch {
+                        score,
+                        role: message.role,
+                        text,
+                    })
+                } else {
+                    None
+                }
+            }
+            MessageRole::Tool | MessageRole::System => None,
+        })
+        .collect::<Vec<_>>();
+
+    matches.sort_by(|left, right| right.score.total_cmp(&left.score));
+    matches.truncate(limit);
+    matches
+}
+
+fn embed_text_vector(text: &str, dimensions: usize) -> Vec<f32> {
+    let dimensions = dimensions.max(1);
+    let mut vector = vec![0.0f32; dimensions];
+    for raw_token in text.split(|character: char| !character.is_alphanumeric()) {
+        if raw_token.is_empty() {
+            continue;
+        }
+        let token = raw_token.to_ascii_lowercase();
+        let hash = fnv1a_hash(token.as_bytes());
+        let index = (hash as usize) % dimensions;
+        let sign = if (hash & 1) == 0 { 1.0 } else { -1.0 };
+        vector[index] += sign;
+    }
+
+    let magnitude = vector
+        .iter()
+        .map(|component| component * component)
+        .sum::<f32>()
+        .sqrt();
+    if magnitude > 0.0 {
+        for component in &mut vector {
+            *component /= magnitude;
+        }
+    }
+    vector
+}
+
+fn cosine_similarity(left: &[f32], right: &[f32]) -> f32 {
+    if left.len() != right.len() {
+        return 0.0;
+    }
+    left.iter()
+        .zip(right)
+        .map(|(left, right)| left * right)
+        .sum()
+}
+
+fn fnv1a_hash(bytes: &[u8]) -> u64 {
+    const FNV_OFFSET_BASIS: u64 = 0xcbf29ce484222325;
+    const FNV_PRIME: u64 = 0x100000001b3;
+    let mut hash = FNV_OFFSET_BASIS;
+    for byte in bytes {
+        hash ^= *byte as u64;
+        hash = hash.wrapping_mul(FNV_PRIME);
+    }
+    hash
+}
+
 fn build_structured_output_retry_prompt(schema: &Value, error: &str) -> String {
     let schema_text = serde_json::to_string(schema).unwrap_or_else(|_| schema.to_string());
     format!(
@@ -1191,9 +1351,10 @@ mod tests {
 
     use crate::{
         assistant_text_suggests_failure, bounded_messages, build_structured_output_retry_prompt,
-        estimate_chat_request_tokens, extract_json_payload, truncate_chars, Agent, AgentConfig,
-        AgentError, AgentEvent, AgentTool, ToolExecutionResult, CONTEXT_SUMMARY_MAX_CHARS,
-        CONTEXT_SUMMARY_PREFIX,
+        embed_text_vector, estimate_chat_request_tokens, extract_json_payload,
+        retrieve_memory_matches, truncate_chars, Agent, AgentConfig, AgentError, AgentEvent,
+        AgentTool, ToolExecutionResult, CONTEXT_SUMMARY_MAX_CHARS, CONTEXT_SUMMARY_PREFIX,
+        MEMORY_RECALL_PREFIX,
     };
 
     struct MockClient {
@@ -1470,6 +1631,10 @@ mod tests {
         assert_eq!(config.max_estimated_total_tokens, None);
         assert_eq!(config.structured_output_max_retries, 1);
         assert_eq!(config.react_max_replans_on_tool_failure, 1);
+        assert_eq!(config.memory_retrieval_limit, 3);
+        assert_eq!(config.memory_embedding_dimensions, 128);
+        assert_eq!(config.memory_min_similarity, 0.55);
+        assert_eq!(config.memory_max_chars_per_item, 180);
     }
 
     #[test]
@@ -2058,6 +2223,32 @@ mod tests {
     }
 
     #[test]
+    fn unit_vector_retrieval_prefers_semantically_related_entries() {
+        let history = vec![
+            Message::user("rust tokio async runtime troubleshooting"),
+            Message::assistant_text("pasta recipe with basil and tomato"),
+        ];
+        let matches = retrieve_memory_matches(&history, "tokio runtime async rust", 1, 64, 0.0);
+        assert_eq!(matches.len(), 1);
+        assert!(matches[0].text.contains("tokio"));
+
+        let query = embed_text_vector("tokio runtime async rust", 64);
+        let related = embed_text_vector("rust tokio async runtime troubleshooting", 64);
+        let unrelated = embed_text_vector("pasta recipe with basil and tomato", 64);
+        let related_score = query
+            .iter()
+            .zip(&related)
+            .map(|(left, right)| left * right)
+            .sum::<f32>();
+        let unrelated_score = query
+            .iter()
+            .zip(&unrelated)
+            .map(|(left, right)| left * right)
+            .sum::<f32>();
+        assert!(related_score > unrelated_score);
+    }
+
+    #[test]
     fn unit_build_structured_output_retry_prompt_includes_error_and_schema() {
         let schema = serde_json::json!({
             "type": "object",
@@ -2420,6 +2611,54 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn functional_request_messages_attach_memory_recall_for_relevant_history() {
+        let client = Arc::new(CapturingMockClient {
+            responses: AsyncMutex::new(VecDeque::from([ChatResponse {
+                message: Message::assistant_text("ok"),
+                finish_reason: Some("stop".to_string()),
+                usage: ChatUsage::default(),
+            }])),
+            requests: AsyncMutex::new(Vec::new()),
+        });
+        let mut agent = Agent::new(
+            client.clone(),
+            AgentConfig {
+                max_context_messages: Some(4),
+                memory_retrieval_limit: 2,
+                memory_embedding_dimensions: 64,
+                memory_min_similarity: 0.2,
+                ..AgentConfig::default()
+            },
+        );
+        agent.append_message(Message::user(
+            "postgres retry configuration for orders service",
+        ));
+        agent.append_message(Message::assistant_text(
+            "increase postgres pool size for orders workloads",
+        ));
+        agent.append_message(Message::user("cache ttl cleanup"));
+        agent.append_message(Message::assistant_text("set ttl to 15m"));
+
+        let _ = agent
+            .prompt("postgres orders service retry policy")
+            .await
+            .expect("prompt should succeed");
+
+        let requests = client.requests.lock().await;
+        let first_request = requests.first().expect("request should be captured");
+        let recall = first_request
+            .messages
+            .iter()
+            .find(|message| {
+                message.role == MessageRole::System
+                    && message.text_content().starts_with(MEMORY_RECALL_PREFIX)
+            })
+            .expect("memory recall system message should be attached");
+        assert!(recall.text_content().contains("postgres"));
+        assert!(recall.text_content().contains("orders"));
+    }
+
+    #[tokio::test]
     async fn integration_parallel_tool_execution_runs_calls_concurrently_and_preserves_order() {
         let first_assistant = Message::assistant_blocks(vec![
             ContentBlock::ToolCall {
@@ -2544,6 +2783,49 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn integration_memory_recall_ranks_relevant_entries_ahead_of_unrelated_entries() {
+        let client = Arc::new(CapturingMockClient {
+            responses: AsyncMutex::new(VecDeque::from([ChatResponse {
+                message: Message::assistant_text("ok"),
+                finish_reason: Some("stop".to_string()),
+                usage: ChatUsage::default(),
+            }])),
+            requests: AsyncMutex::new(Vec::new()),
+        });
+        let mut agent = Agent::new(
+            client.clone(),
+            AgentConfig {
+                max_context_messages: Some(2),
+                memory_retrieval_limit: 1,
+                memory_embedding_dimensions: 64,
+                memory_min_similarity: 0.1,
+                ..AgentConfig::default()
+            },
+        );
+        agent.append_message(Message::user("rust tokio runtime diagnostics"));
+        agent.append_message(Message::user("pasta recipe tomato basil"));
+        agent.append_message(Message::assistant_text("acknowledged"));
+
+        let _ = agent
+            .prompt("tokio runtime troubleshooting")
+            .await
+            .expect("prompt should succeed");
+
+        let requests = client.requests.lock().await;
+        let first_request = requests.first().expect("request should be captured");
+        let recall = first_request
+            .messages
+            .iter()
+            .find(|message| {
+                message.role == MessageRole::System
+                    && message.text_content().starts_with(MEMORY_RECALL_PREFIX)
+            })
+            .expect("memory recall message should exist");
+        assert!(recall.text_content().contains("tokio"));
+        assert!(!recall.text_content().contains("pasta recipe"));
+    }
+
+    #[tokio::test]
     async fn regression_bug_1_max_parallel_tool_calls_zero_clamps_to_safe_serial_execution() {
         let first_assistant = Message::assistant_blocks(vec![
             ContentBlock::ToolCall {
@@ -2644,6 +2926,37 @@ mod tests {
         );
         assert_eq!(replan_count.load(Ordering::Relaxed), 0);
         assert_eq!(client.requests.lock().await.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn regression_memory_recall_disabled_when_limit_is_zero() {
+        let client = Arc::new(CapturingMockClient {
+            responses: AsyncMutex::new(VecDeque::from([ChatResponse {
+                message: Message::assistant_text("ok"),
+                finish_reason: Some("stop".to_string()),
+                usage: ChatUsage::default(),
+            }])),
+            requests: AsyncMutex::new(Vec::new()),
+        });
+        let mut agent = Agent::new(
+            client.clone(),
+            AgentConfig {
+                max_context_messages: Some(2),
+                memory_retrieval_limit: 0,
+                ..AgentConfig::default()
+            },
+        );
+        agent.append_message(Message::user("postgres connection issue"));
+        agent.append_message(Message::assistant_text("ack"));
+        agent.append_message(Message::user("retry strategy"));
+
+        let _ = agent.prompt("postgres retry policy").await.expect("prompt");
+        let requests = client.requests.lock().await;
+        let first_request = requests.first().expect("request should be captured");
+        assert!(first_request
+            .messages
+            .iter()
+            .all(|message| !message.text_content().starts_with(MEMORY_RECALL_PREFIX)));
     }
 
     #[tokio::test]
