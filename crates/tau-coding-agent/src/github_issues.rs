@@ -2161,13 +2161,17 @@ impl GithubIssuesBridgeRuntime {
                                     .to_string(),
                             );
                         }
-                        lines.push(render_issue_artifact_pointer_line(
+                        lines.push(render_shared_issue_artifact_pointer_line(
                             "report_artifact",
-                            &execution.report_artifact,
+                            &execution.report_artifact.id,
+                            &execution.report_artifact.relative_path,
+                            execution.report_artifact.bytes,
                         ));
-                        lines.push(render_issue_artifact_pointer_line(
+                        lines.push(render_shared_issue_artifact_pointer_line(
                             "log_artifact",
-                            &execution.log_artifact,
+                            &execution.log_artifact.id,
+                            &execution.log_artifact.relative_path,
+                            execution.log_artifact.bytes,
                         ));
                         lines.push(
                             "Use `/tau demo-index report` to inspect latest report pointers."
@@ -2302,13 +2306,17 @@ impl GithubIssuesBridgeRuntime {
                             execution.subscription_strict
                         ));
                         lines.extend(posture);
-                        lines.push(render_issue_artifact_pointer_line(
+                        lines.push(render_shared_issue_artifact_pointer_line(
                             "report_artifact",
-                            &execution.report_artifact,
+                            &execution.report_artifact.id,
+                            &execution.report_artifact.relative_path,
+                            execution.report_artifact.bytes,
                         ));
-                        lines.push(render_issue_artifact_pointer_line(
+                        lines.push(render_shared_issue_artifact_pointer_line(
                             "json_artifact",
-                            &execution.json_artifact,
+                            &execution.json_artifact.id,
+                            &execution.json_artifact.relative_path,
+                            execution.json_artifact.bytes,
                         ));
                         lines.push(
                             "Use `/tau artifacts show <artifact_id>` to inspect full diagnostics."
@@ -2411,13 +2419,17 @@ impl GithubIssuesBridgeRuntime {
                                 lines.push(format!("- {highlighted}"));
                             }
                         }
-                        lines.push(render_issue_artifact_pointer_line(
+                        lines.push(render_shared_issue_artifact_pointer_line(
                             "report_artifact",
-                            &execution.report_artifact,
+                            &execution.report_artifact.id,
+                            &execution.report_artifact.relative_path,
+                            execution.report_artifact.bytes,
                         ));
-                        lines.push(render_issue_artifact_pointer_line(
+                        lines.push(render_shared_issue_artifact_pointer_line(
                             "json_artifact",
-                            &execution.json_artifact,
+                            &execution.json_artifact.id,
+                            &execution.json_artifact.relative_path,
+                            execution.json_artifact.bytes,
                         ));
                         lines.push(
                             "Use `/tau artifacts show <artifact_id>` to inspect full diagnostics."
@@ -2815,7 +2827,7 @@ impl GithubIssuesBridgeRuntime {
                     &run_id,
                     "github-issue-chat-export",
                     "private",
-                    normalize_artifact_retention_days(self.config.artifact_retention_days),
+                    normalize_shared_artifact_retention_days(self.config.artifact_retention_days),
                     "jsonl",
                     &export_jsonl,
                 )?;
@@ -3968,7 +3980,8 @@ impl GithubIssuesBridgeRuntime {
             "github",
             &format!("issue-{issue_number}"),
         )?;
-        let retention_days = normalize_artifact_retention_days(self.config.artifact_retention_days);
+        let retention_days =
+            normalize_shared_artifact_retention_days(self.config.artifact_retention_days);
         let report_artifact = channel_store.write_text_artifact(
             &run_id,
             "github-issue-demo-index-report",
@@ -4110,7 +4123,8 @@ impl GithubIssuesBridgeRuntime {
             "github",
             &format!("issue-{issue_number}"),
         )?;
-        let retention_days = normalize_artifact_retention_days(self.config.artifact_retention_days);
+        let retention_days =
+            normalize_shared_artifact_retention_days(self.config.artifact_retention_days);
         let report_artifact = channel_store.write_text_artifact(
             &run_id,
             "github-issue-auth-report",
@@ -4232,7 +4246,8 @@ impl GithubIssuesBridgeRuntime {
             "github",
             &format!("issue-{issue_number}"),
         )?;
-        let retention_days = normalize_artifact_retention_days(self.config.artifact_retention_days);
+        let retention_days =
+            normalize_shared_artifact_retention_days(self.config.artifact_retention_days);
         let report_artifact = channel_store.write_text_artifact(
             &run_id,
             "github-issue-doctor-report",
@@ -4328,7 +4343,7 @@ impl GithubIssuesBridgeRuntime {
                 shared_short_key_hash(event_key)
             );
             let retention_days =
-                normalize_artifact_retention_days(self.config.artifact_retention_days);
+                normalize_shared_artifact_retention_days(self.config.artifact_retention_days);
             let artifact = channel_store.write_text_artifact(
                 &run_id,
                 "github-issue-command-overflow",
@@ -4339,7 +4354,12 @@ impl GithubIssuesBridgeRuntime {
             )?;
             let overflow_suffix = format!(
                 "output_truncated: true\n{}",
-                render_issue_artifact_pointer_line("overflow_artifact", &artifact)
+                render_shared_issue_artifact_pointer_line(
+                    "overflow_artifact",
+                    &artifact.id,
+                    &artifact.relative_path,
+                    artifact.bytes,
+                )
             );
             let mut excerpt_len = content.chars().count();
             loop {
@@ -4596,7 +4616,7 @@ async fn run_prompt_for_event(request: RunPromptForEventRequest<'_>) -> Result<P
         &format!("issue-{}", event.issue_number),
     )?;
     let attachment_retention_days =
-        normalize_artifact_retention_days(config.artifact_retention_days);
+        normalize_shared_artifact_retention_days(config.artifact_retention_days);
     let downloaded_attachments = download_issue_attachments(
         github_client,
         &channel_store,
@@ -4681,7 +4701,7 @@ async fn run_prompt_for_event(request: RunPromptForEventRequest<'_>) -> Result<P
     } else if status == PromptRunStatus::TimedOut {
         "Run timed out before completion.".to_string()
     } else {
-        collect_assistant_reply(&agent.messages()[start_index..])
+        collect_shared_assistant_reply(&agent.messages()[start_index..])
     };
     let usage = usage
         .lock()
@@ -4912,10 +4932,6 @@ fn initialize_issue_session_runtime(
     Ok(SessionRuntime { store, active_head })
 }
 
-fn collect_assistant_reply(messages: &[tau_ai::Message]) -> String {
-    collect_shared_assistant_reply(messages)
-}
-
 fn render_event_prompt(
     repo: &RepoRef,
     event: &GithubBridgeEvent,
@@ -4981,15 +4997,6 @@ fn render_issue_comment_response_parts(
     render_shared_issue_comment_response_parts(run_view, &attachment_views)
 }
 
-fn render_issue_artifact_pointer_line(label: &str, artifact: &ChannelArtifactRecord) -> String {
-    render_shared_issue_artifact_pointer_line(
-        label,
-        &artifact.id,
-        &artifact.relative_path,
-        artifact.bytes,
-    )
-}
-
 fn render_issue_comment_chunks(event: &GithubBridgeEvent, run: &PromptRunReport) -> Vec<String> {
     render_issue_comment_chunks_with_limit(event, run, GITHUB_COMMENT_MAX_CHARS)
 }
@@ -5036,10 +5043,6 @@ fn render_issue_artifact_markdown(
         assistant_reply,
         &attachment_views,
     )
-}
-
-fn normalize_artifact_retention_days(days: u64) -> Option<u64> {
-    normalize_shared_artifact_retention_days(days)
 }
 
 fn default_demo_index_repo_root() -> PathBuf {
@@ -5288,17 +5291,18 @@ mod tests {
         evaluate_attachment_url_policy, event_action_from_body, extract_attachment_urls,
         extract_footer_event_keys, is_retryable_github_status, issue_command_reason_code,
         issue_matches_required_labels, issue_matches_required_numbers, issue_shared_session_id,
-        normalize_artifact_retention_days, normalize_issue_command_status,
-        normalize_relative_channel_path, parse_shared_rfc3339_to_unix_ms, parse_tau_issue_command,
-        post_issue_comment_chunks, render_event_prompt, render_issue_command_comment,
-        render_issue_comment_chunks_with_limit, render_issue_comment_response_parts, retry_delay,
-        run_prompt_for_event, shared_sanitize_for_path, shared_session_path_for_issue,
-        DemoIndexRunCommand, DownloadedGithubAttachment, EventAction, GithubApiClient,
-        GithubBridgeEvent, GithubBridgeEventKind, GithubIssue, GithubIssueComment,
-        GithubIssueLabel, GithubIssuesBridgeRuntime, GithubIssuesBridgeRuntimeConfig,
-        GithubIssuesBridgeStateStore, GithubUser, IssueDoctorCommand, IssueEventOutcome,
-        PromptRunReport, PromptUsageSummary, RepoRef, RunPromptForEventRequest, SessionStore,
-        TauIssueAuthCommand, TauIssueAuthCommandKind, TauIssueCommand, CHAT_SHOW_DEFAULT_LIMIT,
+        normalize_issue_command_status, normalize_relative_channel_path,
+        normalize_shared_artifact_retention_days, parse_shared_rfc3339_to_unix_ms,
+        parse_tau_issue_command, post_issue_comment_chunks, render_event_prompt,
+        render_issue_command_comment, render_issue_comment_chunks_with_limit,
+        render_issue_comment_response_parts, retry_delay, run_prompt_for_event,
+        shared_sanitize_for_path, shared_session_path_for_issue, DemoIndexRunCommand,
+        DownloadedGithubAttachment, EventAction, GithubApiClient, GithubBridgeEvent,
+        GithubBridgeEventKind, GithubIssue, GithubIssueComment, GithubIssueLabel,
+        GithubIssuesBridgeRuntime, GithubIssuesBridgeRuntimeConfig, GithubIssuesBridgeStateStore,
+        GithubUser, IssueDoctorCommand, IssueEventOutcome, PromptRunReport, PromptUsageSummary,
+        RepoRef, RunPromptForEventRequest, SessionStore, TauIssueAuthCommand,
+        TauIssueAuthCommandKind, TauIssueCommand, CHAT_SHOW_DEFAULT_LIMIT,
         DEMO_INDEX_DEFAULT_TIMEOUT_SECONDS, DEMO_INDEX_SCENARIOS, EVENT_KEY_MARKER_PREFIX,
     };
     use crate::{
@@ -5513,8 +5517,8 @@ printf '%s\n' "${payload}"
 
     #[test]
     fn unit_normalize_artifact_retention_days_maps_zero_to_none() {
-        assert_eq!(normalize_artifact_retention_days(0), None);
-        assert_eq!(normalize_artifact_retention_days(30), Some(30));
+        assert_eq!(normalize_shared_artifact_retention_days(0), None);
+        assert_eq!(normalize_shared_artifact_retention_days(30), Some(30));
     }
 
     #[test]
