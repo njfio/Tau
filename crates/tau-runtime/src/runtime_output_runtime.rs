@@ -133,6 +133,11 @@ pub fn event_to_json(event: &AgentEvent) -> serde_json::Value {
             "is_error": result.is_error,
             "content": result.content,
         }),
+        AgentEvent::ReplanTriggered { turn, reason } => serde_json::json!({
+            "type": "replan_triggered",
+            "turn": turn,
+            "reason": reason,
+        }),
     }
 }
 
@@ -185,6 +190,18 @@ mod tests {
         assert_eq!(value["tool_name"], "write");
         assert_eq!(value["is_error"], false);
         assert_eq!(value["content"]["ok"], true);
+    }
+
+    #[test]
+    fn unit_event_to_json_maps_replan_triggered_shape() {
+        let event = AgentEvent::ReplanTriggered {
+            turn: 2,
+            reason: "tool failure".to_string(),
+        };
+        let value = event_to_json(&event);
+        assert_eq!(value["type"], "replan_triggered");
+        assert_eq!(value["turn"], 2);
+        assert_eq!(value["reason"], "tool failure");
     }
 
     #[test]
