@@ -305,7 +305,7 @@ jobs:
       line_coverage: ${{ steps.coverage.outputs.line_coverage }}
     needs: [quality-linux]
     env:
-      COVERAGE_MIN: "35.0"
+      COVERAGE_MIN: "60.0"
     steps:
       - name: Checkout
         uses: actions/checkout@v6
