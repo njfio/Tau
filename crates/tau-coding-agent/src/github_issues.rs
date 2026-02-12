@@ -58,7 +58,9 @@ use tau_github_issues::issue_chat_command::{
     parse_issue_chat_command as parse_shared_issue_chat_command, IssueChatCommand,
     IssueChatParseConfig,
 };
-use tau_github_issues::issue_command_envelope::parse_issue_command_envelope as parse_shared_issue_command_envelope;
+use tau_github_issues::issue_command_parser::{
+    parse_issue_command as parse_shared_issue_command, ParsedIssueCommand,
+};
 use tau_github_issues::issue_command_usage::{
     demo_index_command_usage as demo_index_shared_command_usage,
     doctor_command_usage as doctor_shared_command_usage,
@@ -5069,45 +5071,43 @@ fn event_action_from_body(body: &str) -> EventAction {
 
 fn parse_tau_issue_command(body: &str) -> Option<TauIssueCommand> {
     let usage = tau_command_usage();
-    let envelope = parse_shared_issue_command_envelope(body, "/tau", &usage)?;
-    let parsed = match envelope {
-        Err(message) => TauIssueCommand::Invalid { message },
-        Ok(envelope) => {
-            if let Some(core) =
-                parse_shared_issue_core_command(envelope.command, envelope.remainder)
-            {
-                match core {
-                    Ok(IssueCoreCommand::Run { prompt }) => TauIssueCommand::Run { prompt },
-                    Ok(IssueCoreCommand::Stop) => TauIssueCommand::Stop,
-                    Ok(IssueCoreCommand::Status) => TauIssueCommand::Status,
-                    Ok(IssueCoreCommand::Health) => TauIssueCommand::Health,
-                    Ok(IssueCoreCommand::Compact) => TauIssueCommand::Compact,
-                    Ok(IssueCoreCommand::Help) => TauIssueCommand::Help,
-                    Ok(IssueCoreCommand::Canvas { args }) => TauIssueCommand::Canvas { args },
-                    Ok(IssueCoreCommand::Summarize { focus }) => {
-                        TauIssueCommand::Summarize { focus }
-                    }
-                    Err(message) => TauIssueCommand::Invalid { message },
-                }
-            } else {
-                match envelope.command {
-                    "auth" => parse_issue_auth_command(envelope.remainder),
-                    "doctor" => parse_doctor_issue_command(envelope.remainder),
-                    "chat" => parse_chat_command(envelope.remainder),
-                    "artifacts" => parse_artifacts_command(envelope.remainder),
-                    "demo-index" => parse_demo_index_command(envelope.remainder),
-                    _ => TauIssueCommand::Invalid {
-                        message: format!(
-                            "Unknown command `{}`.\n\n{}",
-                            envelope.command,
-                            tau_command_usage()
-                        ),
-                    },
-                }
-            }
-        }
+    let parsed = parse_shared_issue_command(
+        body,
+        "/tau",
+        &usage,
+        parse_shared_issue_core_command,
+        |command, remainder| match command {
+            "auth" => Some(Ok(parse_issue_auth_command(remainder))),
+            "doctor" => Some(Ok(parse_doctor_issue_command(remainder))),
+            "chat" => Some(Ok(parse_chat_command(remainder))),
+            "artifacts" => Some(Ok(parse_artifacts_command(remainder))),
+            "demo-index" => Some(Ok(parse_demo_index_command(remainder))),
+            _ => None,
+        },
+    )?;
+
+    let parsed = match parsed {
+        ParsedIssueCommand::Core(core) => map_issue_core_command(core),
+        ParsedIssueCommand::Special(command) => command,
+        ParsedIssueCommand::Invalid { message } => TauIssueCommand::Invalid { message },
+        ParsedIssueCommand::Unknown { command } => TauIssueCommand::Invalid {
+            message: format!("Unknown command `{}`.\n\n{}", command, tau_command_usage()),
+        },
     };
     Some(parsed)
+}
+
+fn map_issue_core_command(command: IssueCoreCommand) -> TauIssueCommand {
+    match command {
+        IssueCoreCommand::Run { prompt } => TauIssueCommand::Run { prompt },
+        IssueCoreCommand::Stop => TauIssueCommand::Stop,
+        IssueCoreCommand::Status => TauIssueCommand::Status,
+        IssueCoreCommand::Health => TauIssueCommand::Health,
+        IssueCoreCommand::Compact => TauIssueCommand::Compact,
+        IssueCoreCommand::Help => TauIssueCommand::Help,
+        IssueCoreCommand::Canvas { args } => TauIssueCommand::Canvas { args },
+        IssueCoreCommand::Summarize { focus } => TauIssueCommand::Summarize { focus },
+    }
 }
 
 fn parse_demo_index_command(remainder: &str) -> TauIssueCommand {
