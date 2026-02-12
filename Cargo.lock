@@ -2978,6 +2978,7 @@ dependencies = [
  "anyhow",
  "serde",
  "serde_json",
+ "tau-cli",
  "tempfile",
  "wait-timeout",
 ]

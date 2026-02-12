@@ -13,7 +13,6 @@ mod custom_command_contract;
 mod dashboard_contract;
 mod deployment_wasm;
 mod events;
-mod extension_manifest;
 mod github_issues;
 mod macro_profile_commands;
 mod mcp_server;
@@ -31,7 +30,6 @@ mod rpc_protocol;
 mod runtime_loop;
 mod runtime_output;
 mod runtime_types;
-mod skills;
 mod skills_commands;
 mod slack;
 mod slack_helpers;
@@ -61,6 +59,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tau_agent_core::{Agent, AgentEvent};
 use tau_ai::{LlmClient, Message, MessageRole, ModelRef, Provider};
+pub(crate) use tau_extensions as extension_manifest;
+pub(crate) use tau_skills as skills;
 
 pub(crate) use crate::auth_commands::execute_auth_command;
 #[cfg(test)]
