@@ -51,6 +51,7 @@ pub fn build_local_runtime_agent(
             request_retry_max_backoff_ms: settings.request_retry_max_backoff_ms,
             request_timeout_ms: settings.request_timeout_ms,
             tool_timeout_ms: settings.tool_timeout_ms,
+            ..AgentConfig::default()
         },
     );
     register_builtin_tools(&mut agent, tool_policy);
