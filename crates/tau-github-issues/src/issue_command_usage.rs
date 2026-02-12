@@ -39,6 +39,28 @@ pub fn demo_index_command_usage(
     )
 }
 
+pub fn artifacts_command_usage(command_prefix: &str) -> String {
+    let prefix = normalize_prefix(command_prefix);
+    format!("Usage: {prefix} artifacts [purge|run <run_id>|show <artifact_id>]")
+}
+
+pub fn chat_command_usage(command_prefix: &str) -> String {
+    let prefix = normalize_prefix(command_prefix);
+    format!(
+        "Usage: {prefix} chat <start|resume|reset|export|status|summary|replay|show [limit]|search <query>>"
+    )
+}
+
+pub fn chat_show_command_usage(command_prefix: &str) -> String {
+    let prefix = normalize_prefix(command_prefix);
+    format!("Usage: {prefix} chat show [limit]")
+}
+
+pub fn chat_search_command_usage(command_prefix: &str) -> String {
+    let prefix = normalize_prefix(command_prefix);
+    format!("Usage: {prefix} chat search <query> [--role <role>] [--limit <n>]")
+}
+
 pub fn tau_command_usage(command_prefix: &str) -> String {
     let prefix = normalize_prefix(command_prefix);
     [
@@ -67,7 +89,9 @@ pub fn tau_command_usage(command_prefix: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        demo_index_command_usage, doctor_command_usage, issue_auth_command_usage, tau_command_usage,
+        artifacts_command_usage, chat_command_usage, chat_search_command_usage,
+        chat_show_command_usage, demo_index_command_usage, doctor_command_usage,
+        issue_auth_command_usage, tau_command_usage,
     };
 
     #[test]
@@ -97,6 +121,31 @@ mod tests {
         assert!(usage.contains("Usage: /tau demo-index"));
         assert!(usage.contains("Allowed scenarios: onboarding,gateway-auth,multi-channel-live"));
         assert!(usage.contains("Default run timeout: 180 seconds (max 900)."));
+    }
+
+    #[test]
+    fn functional_artifacts_command_usage_renders_prefix_specific_usage() {
+        assert_eq!(
+            artifacts_command_usage("/tau"),
+            "Usage: /tau artifacts [purge|run <run_id>|show <artifact_id>]".to_string()
+        );
+    }
+
+    #[test]
+    fn integration_chat_usage_helpers_include_expected_shapes() {
+        assert_eq!(
+            chat_command_usage("/tau"),
+            "Usage: /tau chat <start|resume|reset|export|status|summary|replay|show [limit]|search <query>>"
+                .to_string()
+        );
+        assert_eq!(
+            chat_show_command_usage("/tau"),
+            "Usage: /tau chat show [limit]".to_string()
+        );
+        assert_eq!(
+            chat_search_command_usage("/tau"),
+            "Usage: /tau chat search <query> [--role <role>] [--limit <n>]".to_string()
+        );
     }
 
     #[test]

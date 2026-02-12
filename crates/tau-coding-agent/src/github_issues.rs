@@ -62,6 +62,10 @@ use tau_github_issues::issue_command_parser::{
     parse_issue_command as parse_shared_issue_command, ParsedIssueCommand,
 };
 use tau_github_issues::issue_command_usage::{
+    artifacts_command_usage as artifacts_shared_command_usage,
+    chat_command_usage as chat_shared_command_usage,
+    chat_search_command_usage as chat_search_shared_command_usage,
+    chat_show_command_usage as chat_show_shared_command_usage,
     demo_index_command_usage as demo_index_shared_command_usage,
     doctor_command_usage as doctor_shared_command_usage,
     issue_auth_command_usage as issue_auth_shared_command_usage,
@@ -5143,15 +5147,18 @@ fn parse_issue_auth_command(remainder: &str) -> TauIssueCommand {
 }
 
 fn parse_chat_command(remainder: &str) -> TauIssueCommand {
+    let usage = chat_shared_command_usage("/tau");
+    let show_usage = chat_show_shared_command_usage("/tau");
+    let search_usage = chat_search_shared_command_usage("/tau");
     match parse_shared_issue_chat_command(
         remainder,
         IssueChatParseConfig {
             show_default_limit: CHAT_SHOW_DEFAULT_LIMIT,
             show_max_limit: CHAT_SHOW_MAX_LIMIT,
             search_max_limit: CHAT_SEARCH_MAX_LIMIT,
-            usage: chat_command_usage(),
-            show_usage: chat_show_command_usage(),
-            search_usage: chat_search_command_usage(),
+            usage: &usage,
+            show_usage: &show_usage,
+            search_usage: &search_usage,
         },
         |raw| {
             parse_session_search_args(raw)
@@ -5175,7 +5182,8 @@ fn parse_chat_command(remainder: &str) -> TauIssueCommand {
 }
 
 fn parse_artifacts_command(remainder: &str) -> TauIssueCommand {
-    match parse_shared_issue_artifacts_command(remainder, artifacts_command_usage()) {
+    let usage = artifacts_shared_command_usage("/tau");
+    match parse_shared_issue_artifacts_command(remainder, &usage) {
         Ok(ArtifactsIssueCommand::List) => TauIssueCommand::Artifacts {
             purge: false,
             run_id: None,
@@ -5229,22 +5237,6 @@ fn demo_index_command_usage() -> String {
 
 fn tau_command_usage() -> String {
     tau_shared_command_usage("/tau")
-}
-
-fn artifacts_command_usage() -> &'static str {
-    "Usage: /tau artifacts [purge|run <run_id>|show <artifact_id>]"
-}
-
-fn chat_command_usage() -> &'static str {
-    "Usage: /tau chat <start|resume|reset|export|status|summary|replay|show [limit]|search <query>>"
-}
-
-fn chat_show_command_usage() -> &'static str {
-    "Usage: /tau chat show [limit]"
-}
-
-fn chat_search_command_usage() -> &'static str {
-    "Usage: /tau chat search <query> [--role <role>] [--limit <n>]"
 }
 
 fn build_summarize_prompt(
