@@ -116,11 +116,13 @@ pub enum AgentError {
 
 type EventHandler = Arc<dyn Fn(&AgentEvent) + Send + Sync>;
 
+#[derive(Clone)]
 struct RegisteredTool {
     definition: ToolDefinition,
     tool: Arc<dyn AgentTool>,
 }
 
+#[derive(Clone)]
 pub struct Agent {
     client: Arc<dyn LlmClient>,
     config: AgentConfig,
@@ -176,6 +178,65 @@ impl Agent {
 
     pub fn append_message(&mut self, message: Message) {
         self.messages.push(message);
+    }
+
+    pub fn fork(&self) -> Self {
+        self.clone()
+    }
+
+    pub async fn run_parallel_prompts<I, S>(
+        &self,
+        prompts: I,
+        max_parallel_runs: usize,
+    ) -> Vec<Result<Vec<Message>, AgentError>>
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        let indexed_prompts = prompts
+            .into_iter()
+            .enumerate()
+            .map(|(index, prompt)| (index, prompt.into()))
+            .collect::<Vec<_>>();
+        if indexed_prompts.is_empty() {
+            return Vec::new();
+        }
+
+        let max_parallel_runs = max_parallel_runs.max(1);
+        let mut ordered = (0..indexed_prompts.len()).map(|_| None).collect::<Vec<_>>();
+
+        for chunk in indexed_prompts.chunks(max_parallel_runs) {
+            let mut handles = Vec::with_capacity(chunk.len());
+            for (index, prompt) in chunk {
+                let mut cloned = self.fork();
+                let prompt = prompt.clone();
+                let index = *index;
+                let handle = tokio::spawn(async move { cloned.prompt(prompt).await });
+                handles.push((index, handle));
+            }
+
+            for (index, handle) in handles {
+                let result = match handle.await {
+                    Ok(result) => result,
+                    Err(error) => Err(AgentError::Ai(TauAiError::InvalidResponse(format!(
+                        "parallel prompt at index {index} failed: {error}"
+                    )))),
+                };
+                ordered[index] = Some(result);
+            }
+        }
+
+        ordered
+            .into_iter()
+            .enumerate()
+            .map(|(index, result)| {
+                result.unwrap_or_else(|| {
+                    Err(AgentError::Ai(TauAiError::InvalidResponse(format!(
+                        "parallel prompt at index {index} did not complete"
+                    ))))
+                })
+            })
+            .collect()
     }
 
     pub async fn prompt(&mut self, text: impl Into<String>) -> Result<Vec<Message>, AgentError> {
@@ -589,6 +650,67 @@ mod tests {
             }
             Ok(self.response.clone())
         }
+    }
+
+    struct EchoClient;
+
+    #[async_trait]
+    impl tau_ai::LlmClient for EchoClient {
+        async fn complete(&self, request: ChatRequest) -> Result<ChatResponse, tau_ai::TauAiError> {
+            let prompt = last_user_prompt(&request);
+            Ok(ChatResponse {
+                message: Message::assistant_text(format!("echo:{prompt}")),
+                finish_reason: Some("stop".to_string()),
+                usage: ChatUsage::default(),
+            })
+        }
+    }
+
+    struct DelayedEchoClient {
+        delay_ms: u64,
+    }
+
+    #[async_trait]
+    impl tau_ai::LlmClient for DelayedEchoClient {
+        async fn complete(&self, request: ChatRequest) -> Result<ChatResponse, tau_ai::TauAiError> {
+            tokio::time::sleep(Duration::from_millis(self.delay_ms)).await;
+            let prompt = last_user_prompt(&request);
+            Ok(ChatResponse {
+                message: Message::assistant_text(format!("echo:{prompt}")),
+                finish_reason: Some("stop".to_string()),
+                usage: ChatUsage::default(),
+            })
+        }
+    }
+
+    struct SelectiveFailureEchoClient;
+
+    #[async_trait]
+    impl tau_ai::LlmClient for SelectiveFailureEchoClient {
+        async fn complete(&self, request: ChatRequest) -> Result<ChatResponse, tau_ai::TauAiError> {
+            let prompt = last_user_prompt(&request);
+            if prompt.contains("fail") {
+                return Err(tau_ai::TauAiError::HttpStatus {
+                    status: 503,
+                    body: "forced failure".to_string(),
+                });
+            }
+            Ok(ChatResponse {
+                message: Message::assistant_text(format!("echo:{prompt}")),
+                finish_reason: Some("stop".to_string()),
+                usage: ChatUsage::default(),
+            })
+        }
+    }
+
+    fn last_user_prompt(request: &ChatRequest) -> String {
+        request
+            .messages
+            .iter()
+            .rev()
+            .find(|message| message.role == MessageRole::User)
+            .map(|message| message.text_content().to_string())
+            .unwrap_or_default()
     }
 
     struct ReadTool;
@@ -1141,5 +1263,108 @@ mod tests {
             messages.last().expect("assistant response").text_content(),
             "continued"
         );
+    }
+
+    #[tokio::test]
+    async fn unit_agent_fork_clones_state_without_aliasing_messages() {
+        let first_assistant = Message::assistant_blocks(vec![ContentBlock::ToolCall {
+            id: "call_1".to_string(),
+            name: "read".to_string(),
+            arguments: serde_json::json!({ "path": "README.md" }),
+        }]);
+        let second_assistant = Message::assistant_text("done");
+        let client = Arc::new(MockClient {
+            responses: AsyncMutex::new(VecDeque::from([
+                ChatResponse {
+                    message: first_assistant,
+                    finish_reason: Some("tool_calls".to_string()),
+                    usage: ChatUsage::default(),
+                },
+                ChatResponse {
+                    message: second_assistant,
+                    finish_reason: Some("stop".to_string()),
+                    usage: ChatUsage::default(),
+                },
+            ])),
+        });
+
+        let mut base = Agent::new(client, AgentConfig::default());
+        base.register_tool(ReadTool);
+        base.append_message(Message::user("seed message"));
+
+        let mut fork = base.fork();
+        let fork_messages = fork.prompt("read").await.expect("fork prompt");
+        assert!(
+            fork_messages
+                .iter()
+                .any(|message| message.role == MessageRole::Tool),
+            "fork should inherit registered tools and execute tool calls"
+        );
+        assert_eq!(base.messages().len(), 2);
+        assert_eq!(fork.messages().len(), 6);
+    }
+
+    #[tokio::test]
+    async fn integration_run_parallel_prompts_executes_runs_concurrently_with_ordered_results() {
+        let agent = Agent::new(
+            Arc::new(DelayedEchoClient { delay_ms: 90 }),
+            AgentConfig::default(),
+        );
+
+        let started = Instant::now();
+        let results = agent
+            .run_parallel_prompts(vec!["prompt-1", "prompt-2", "prompt-3", "prompt-4"], 4)
+            .await;
+        let elapsed = started.elapsed();
+
+        assert!(
+            elapsed < Duration::from_millis(260),
+            "expected concurrent runs under 260ms, got {elapsed:?}"
+        );
+        assert_eq!(results.len(), 4);
+
+        for (index, result) in results.into_iter().enumerate() {
+            let messages = result.expect("parallel run should succeed");
+            assert_eq!(messages[0].role, MessageRole::User);
+            assert_eq!(
+                messages.last().expect("assistant reply").text_content(),
+                format!("echo:prompt-{}", index + 1)
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn regression_run_parallel_prompts_isolates_failures_per_prompt() {
+        let agent = Agent::new(
+            Arc::new(SelectiveFailureEchoClient),
+            AgentConfig {
+                request_max_retries: 0,
+                ..AgentConfig::default()
+            },
+        );
+
+        let results = agent
+            .run_parallel_prompts(vec!["ok-1", "fail-2", "ok-3"], 2)
+            .await;
+
+        assert_eq!(results.len(), 3);
+        assert!(results[0].as_ref().is_ok());
+        assert!(matches!(
+            results[1],
+            Err(AgentError::Ai(tau_ai::TauAiError::HttpStatus {
+                status: 503,
+                ..
+            }))
+        ));
+        assert!(results[2].as_ref().is_ok());
+    }
+
+    #[tokio::test]
+    async fn functional_run_parallel_prompts_returns_empty_for_empty_input() {
+        let agent = Agent::new(Arc::new(EchoClient), AgentConfig::default());
+        let results = agent
+            .run_parallel_prompts(std::iter::empty::<&str>(), 4)
+            .await;
+        assert!(results.is_empty());
     }
 }
