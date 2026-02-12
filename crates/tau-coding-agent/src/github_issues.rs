@@ -369,7 +369,7 @@ impl GithubIssuesBridgeStateStore {
             .issue_sessions
             .entry(issue_number.to_string())
             .or_insert_with(|| GithubIssueChatSessionState {
-                session_id: issue_session_id(issue_number),
+                session_id: issue_shared_session_id(issue_number),
                 last_comment_id: None,
                 last_run_id: None,
                 active_run_id: None,
@@ -1231,9 +1231,10 @@ impl GithubIssuesBridgeRuntime {
             Some(login) if !login.trim().is_empty() => login.trim().to_string(),
             _ => github_client.resolve_bot_login().await?,
         };
-        let repository_state_dir = config
-            .state_dir
-            .join(sanitize_for_path(&format!("{}__{}", repo.owner, repo.name)));
+        let repository_state_dir = config.state_dir.join(shared_sanitize_for_path(&format!(
+            "{}__{}",
+            repo.owner, repo.name
+        )));
         std::fs::create_dir_all(&repository_state_dir)
             .with_context(|| format!("failed to create {}", repository_state_dir.display()))?;
 
@@ -1706,7 +1707,7 @@ impl GithubIssuesBridgeRuntime {
                     );
                     if self.state_store.update_issue_session(
                         result.issue_number,
-                        issue_session_id(result.issue_number),
+                        issue_shared_session_id(result.issue_number),
                         result.posted_comment_id,
                         Some(result.run_id.clone()),
                     ) {
@@ -1838,7 +1839,7 @@ impl GithubIssuesBridgeRuntime {
             "gh-{}-{}-{}",
             event.issue_number,
             current_unix_timestamp_ms(),
-            short_key_hash(&event.key)
+            shared_short_key_hash(&event.key)
         );
         let started_unix_ms = current_unix_timestamp_ms();
         let working_comment = self
@@ -1889,7 +1890,7 @@ impl GithubIssuesBridgeRuntime {
         );
         if self.state_store.update_issue_session(
             event.issue_number,
-            issue_session_id(event.issue_number),
+            issue_shared_session_id(event.issue_number),
             Some(working_comment_id),
             Some(run_id.clone()),
         ) {
@@ -2495,7 +2496,7 @@ impl GithubIssuesBridgeRuntime {
             }
             TauIssueCommand::Canvas { args } => {
                 let session_path =
-                    session_path_for_issue(&self.repository_state_dir, event.issue_number);
+                    shared_session_path_for_issue(&self.repository_state_dir, event.issue_number);
                 let session_head_id = SessionStore::load(&session_path)
                     .ok()
                     .and_then(|store| store.head_id());
@@ -2507,9 +2508,9 @@ impl GithubIssuesBridgeRuntime {
                         principal: github_principal(&event.author_login),
                         origin: CanvasEventOrigin {
                             transport: "github".to_string(),
-                            channel: Some(issue_session_id(event.issue_number)),
+                            channel: Some(issue_shared_session_id(event.issue_number)),
                             source_event_key: Some(event.key.clone()),
-                            source_unix_ms: parse_rfc3339_to_unix_ms(&event.occurred_at),
+                            source_unix_ms: parse_shared_rfc3339_to_unix_ms(&event.occurred_at),
                         },
                         session_link: Some(CanvasSessionLinkContext {
                             session_path,
@@ -2540,7 +2541,7 @@ impl GithubIssuesBridgeRuntime {
             }
             TauIssueCommand::Compact => {
                 let session_path =
-                    session_path_for_issue(&self.repository_state_dir, event.issue_number);
+                    shared_session_path_for_issue(&self.repository_state_dir, event.issue_number);
                 let compact_report = shared_compact_issue_session(
                     &session_path,
                     self.config.session_lock_wait_ms,
@@ -2608,7 +2609,7 @@ impl GithubIssuesBridgeRuntime {
             }
             TauIssueCommand::ChatStart => {
                 let session_path =
-                    session_path_for_issue(&self.repository_state_dir, event.issue_number);
+                    shared_session_path_for_issue(&self.repository_state_dir, event.issue_number);
                 let (before_entries, after_entries, head_id) =
                     shared_ensure_issue_session_initialized(
                         &session_path,
@@ -2646,7 +2647,7 @@ impl GithubIssuesBridgeRuntime {
                     .await?;
                 if self.state_store.update_issue_session(
                     event.issue_number,
-                    issue_session_id(event.issue_number),
+                    issue_shared_session_id(event.issue_number),
                     Some(posted.id),
                     None,
                 ) {
@@ -2670,7 +2671,7 @@ impl GithubIssuesBridgeRuntime {
             }
             TauIssueCommand::ChatResume => {
                 let session_path =
-                    session_path_for_issue(&self.repository_state_dir, event.issue_number);
+                    shared_session_path_for_issue(&self.repository_state_dir, event.issue_number);
                 let (before_entries, after_entries, head_id) =
                     shared_ensure_issue_session_initialized(
                         &session_path,
@@ -2708,7 +2709,7 @@ impl GithubIssuesBridgeRuntime {
                     .await?;
                 if self.state_store.update_issue_session(
                     event.issue_number,
-                    issue_session_id(event.issue_number),
+                    issue_shared_session_id(event.issue_number),
                     Some(posted.id),
                     None,
                 ) {
@@ -2757,8 +2758,10 @@ impl GithubIssuesBridgeRuntime {
                         "active_run_id": active.run_id,
                     }))?;
                 } else {
-                    let session_path =
-                        session_path_for_issue(&self.repository_state_dir, event.issue_number);
+                    let session_path = shared_session_path_for_issue(
+                        &self.repository_state_dir,
+                        event.issue_number,
+                    );
                     let (removed_session, removed_lock) =
                         shared_reset_issue_session_files(&session_path)?;
                     if self.state_store.clear_issue_session(event.issue_number) {
@@ -2793,7 +2796,7 @@ impl GithubIssuesBridgeRuntime {
             }
             TauIssueCommand::ChatExport => {
                 let session_path =
-                    session_path_for_issue(&self.repository_state_dir, event.issue_number);
+                    shared_session_path_for_issue(&self.repository_state_dir, event.issue_number);
                 let mut store = SessionStore::load(&session_path)?;
                 store.set_lock_policy(
                     self.config.session_lock_wait_ms,
@@ -3247,7 +3250,7 @@ impl GithubIssuesBridgeRuntime {
             }
             TauIssueCommand::ChatShow { limit } => {
                 let session_path =
-                    session_path_for_issue(&self.repository_state_dir, event.issue_number);
+                    shared_session_path_for_issue(&self.repository_state_dir, event.issue_number);
                 let store = SessionStore::load(&session_path)?;
                 let head_id = store.head_id();
                 let lineage = store.lineage_entries(head_id)?;
@@ -3319,7 +3322,7 @@ impl GithubIssuesBridgeRuntime {
             }
             TauIssueCommand::ChatSearch { query, role, limit } => {
                 let session_path =
-                    session_path_for_issue(&self.repository_state_dir, event.issue_number);
+                    shared_session_path_for_issue(&self.repository_state_dir, event.issue_number);
                 let store = SessionStore::load(&session_path)?;
                 let entries = store.entries();
                 let has_session = self.state_store.issue_session(event.issue_number).is_some();
@@ -3421,7 +3424,7 @@ impl GithubIssuesBridgeRuntime {
         let mut records = loaded.records;
         let active_records = records
             .iter()
-            .filter(|record| !is_artifact_record_expired(record, now_unix_ms))
+            .filter(|record| !is_shared_expired_at(record.expires_unix_ms, now_unix_ms))
             .count();
         records.sort_by(|left, right| {
             right
@@ -3444,12 +3447,12 @@ impl GithubIssuesBridgeRuntime {
         &self,
         issue_number: u64,
     ) -> Result<IssueChatContinuitySummary> {
-        let session_path = session_path_for_issue(&self.repository_state_dir, issue_number);
+        let session_path = shared_session_path_for_issue(&self.repository_state_dir, issue_number);
         let store = SessionStore::load(&session_path)?;
         let head_id = store.head_id();
         let lineage = store.lineage_entries(head_id)?;
         let lineage_jsonl = store.export_lineage_jsonl(head_id)?;
-        let digest = sha256_hex(lineage_jsonl.as_bytes());
+        let digest = shared_sha256_hex(lineage_jsonl.as_bytes());
         let oldest_entry_id = lineage.first().map(|entry| entry.id);
         let newest_entry_id = lineage.last().map(|entry| entry.id);
         let newest_entry_role = lineage
@@ -3920,7 +3923,7 @@ impl GithubIssuesBridgeRuntime {
             "demo-index-{}-{}-{}",
             issue_number,
             current_unix_timestamp_ms(),
-            short_key_hash(event_key)
+            shared_short_key_hash(event_key)
         );
         let report_dir = self.repository_state_dir.join("demo-index-reports");
         std::fs::create_dir_all(&report_dir)
@@ -4034,7 +4037,7 @@ impl GithubIssuesBridgeRuntime {
             .records
             .into_iter()
             .filter(|artifact| artifact.artifact_type == "github-issue-demo-index-report")
-            .filter(|artifact| !is_artifact_record_expired(artifact, now_unix_ms))
+            .filter(|artifact| !is_shared_expired_at(artifact.expires_unix_ms, now_unix_ms))
             .collect::<Vec<_>>();
         reports.sort_by(|left, right| {
             right
@@ -4095,7 +4098,7 @@ impl GithubIssuesBridgeRuntime {
             command_key,
             issue_number,
             current_unix_timestamp_ms(),
-            short_key_hash(event_key)
+            shared_short_key_hash(event_key)
         );
         let report_payload = execute_auth_command(&self.config.auth_command_config, &command.args);
         let json_args = ensure_shared_auth_json_flag(&command.args);
@@ -4189,7 +4192,7 @@ impl GithubIssuesBridgeRuntime {
             "doctor-{}-{}-{}",
             issue_number,
             current_unix_timestamp_ms(),
-            short_key_hash(event_key)
+            shared_short_key_hash(event_key)
         );
         let checks = run_doctor_checks_with_options(
             &self.config.doctor_config,
@@ -4322,7 +4325,7 @@ impl GithubIssuesBridgeRuntime {
                 "command-overflow-{}-{}-{}",
                 issue_number,
                 current_unix_timestamp_ms(),
-                short_key_hash(event_key)
+                shared_short_key_hash(event_key)
             );
             let retention_days =
                 normalize_artifact_retention_days(self.config.artifact_retention_days);
@@ -4763,7 +4766,7 @@ async fn download_issue_attachments(
 
     let file_dir = channel_store
         .attachments_dir()
-        .join(sanitize_for_path(&event.key));
+        .join(shared_sanitize_for_path(&event.key));
     std::fs::create_dir_all(&file_dir)
         .with_context(|| format!("failed to create {}", file_dir.display()))?;
 
@@ -4815,7 +4818,7 @@ async fn download_issue_attachments(
         }
 
         let original_name = attachment_filename_from_url(url, index + 1);
-        let safe_name = sanitize_for_path(&original_name);
+        let safe_name = shared_sanitize_for_path(&original_name);
         let safe_name = if safe_name.is_empty() {
             format!("attachment-{}.bin", index + 1)
         } else {
@@ -4833,7 +4836,7 @@ async fn download_issue_attachments(
         let expires_unix_ms = retention_days
             .map(|days| days.saturating_mul(86_400_000))
             .map(|ttl| created_unix_ms.saturating_add(ttl));
-        let checksum_sha256 = sha256_hex(&payload.bytes);
+        let checksum_sha256 = shared_sha256_hex(&payload.bytes);
         let policy_reason_code = if content_policy.reason_code == "allow_content_type_default" {
             url_policy.reason_code
         } else {
@@ -4843,7 +4846,7 @@ async fn download_issue_attachments(
             id: format!(
                 "attachment-{}-{}",
                 created_unix_ms,
-                short_key_hash(&format!("{}:{}:{}:{}", run_id, event.key, index, url))
+                shared_short_key_hash(&format!("{}:{}:{}:{}", run_id, event.key, index, url))
             ),
             run_id: run_id.to_string(),
             event_key: event.key.clone(),
@@ -5264,34 +5267,6 @@ fn build_issue_auth_summary_line(kind: TauIssueAuthCommandKind, raw_json: &str) 
     build_shared_issue_auth_summary_line(summary_kind, raw_json)
 }
 
-fn session_path_for_issue(repo_state_dir: &Path, issue_number: u64) -> PathBuf {
-    shared_session_path_for_issue(repo_state_dir, issue_number)
-}
-
-fn issue_session_id(issue_number: u64) -> String {
-    issue_shared_session_id(issue_number)
-}
-
-fn parse_rfc3339_to_unix_ms(raw: &str) -> Option<u64> {
-    parse_shared_rfc3339_to_unix_ms(raw)
-}
-
-fn sanitize_for_path(raw: &str) -> String {
-    shared_sanitize_for_path(raw)
-}
-
-fn is_artifact_record_expired(record: &ChannelArtifactRecord, now_unix_ms: u64) -> bool {
-    is_shared_expired_at(record.expires_unix_ms, now_unix_ms)
-}
-
-fn sha256_hex(payload: &[u8]) -> String {
-    shared_sha256_hex(payload)
-}
-
-fn short_key_hash(key: &str) -> String {
-    shared_short_key_hash(key)
-}
-
 #[cfg(test)]
 mod tests {
     use std::{
@@ -5312,18 +5287,18 @@ mod tests {
         collect_shared_issue_events, evaluate_attachment_content_type_policy,
         evaluate_attachment_url_policy, event_action_from_body, extract_attachment_urls,
         extract_footer_event_keys, is_retryable_github_status, issue_command_reason_code,
-        issue_matches_required_labels, issue_matches_required_numbers, issue_session_id,
+        issue_matches_required_labels, issue_matches_required_numbers, issue_shared_session_id,
         normalize_artifact_retention_days, normalize_issue_command_status,
-        normalize_relative_channel_path, parse_rfc3339_to_unix_ms, parse_tau_issue_command,
+        normalize_relative_channel_path, parse_shared_rfc3339_to_unix_ms, parse_tau_issue_command,
         post_issue_comment_chunks, render_event_prompt, render_issue_command_comment,
         render_issue_comment_chunks_with_limit, render_issue_comment_response_parts, retry_delay,
-        run_prompt_for_event, sanitize_for_path, session_path_for_issue, DemoIndexRunCommand,
-        DownloadedGithubAttachment, EventAction, GithubApiClient, GithubBridgeEvent,
-        GithubBridgeEventKind, GithubIssue, GithubIssueComment, GithubIssueLabel,
-        GithubIssuesBridgeRuntime, GithubIssuesBridgeRuntimeConfig, GithubIssuesBridgeStateStore,
-        GithubUser, IssueDoctorCommand, IssueEventOutcome, PromptRunReport, PromptUsageSummary,
-        RepoRef, RunPromptForEventRequest, SessionStore, TauIssueAuthCommand,
-        TauIssueAuthCommandKind, TauIssueCommand, CHAT_SHOW_DEFAULT_LIMIT,
+        run_prompt_for_event, shared_sanitize_for_path, shared_session_path_for_issue,
+        DemoIndexRunCommand, DownloadedGithubAttachment, EventAction, GithubApiClient,
+        GithubBridgeEvent, GithubBridgeEventKind, GithubIssue, GithubIssueComment,
+        GithubIssueLabel, GithubIssuesBridgeRuntime, GithubIssuesBridgeRuntimeConfig,
+        GithubIssuesBridgeStateStore, GithubUser, IssueDoctorCommand, IssueEventOutcome,
+        PromptRunReport, PromptUsageSummary, RepoRef, RunPromptForEventRequest, SessionStore,
+        TauIssueAuthCommand, TauIssueAuthCommandKind, TauIssueCommand, CHAT_SHOW_DEFAULT_LIMIT,
         DEMO_INDEX_DEFAULT_TIMEOUT_SECONDS, DEMO_INDEX_SCENARIOS, EVENT_KEY_MARKER_PREFIX,
     };
     use crate::{
@@ -5868,8 +5843,8 @@ printf '%s\n' "${payload}"
 
     #[test]
     fn unit_parse_rfc3339_to_unix_ms_handles_valid_and_invalid_values() {
-        assert!(parse_rfc3339_to_unix_ms("2026-01-01T00:00:01Z").is_some());
-        assert_eq!(parse_rfc3339_to_unix_ms("invalid"), None);
+        assert!(parse_shared_rfc3339_to_unix_ms("2026-01-01T00:00:01Z").is_some());
+        assert_eq!(parse_shared_rfc3339_to_unix_ms("invalid"), None);
     }
 
     #[test]
@@ -5879,9 +5854,9 @@ printf '%s\n' "${payload}"
         assert_eq!(keys, vec!["abc".to_string(), "def".to_string()]);
 
         let root = Path::new("/tmp/state");
-        let session = session_path_for_issue(root, 9);
+        let session = shared_session_path_for_issue(root, 9);
         assert!(session.ends_with("sessions/issue-9.jsonl"));
-        assert_eq!(sanitize_for_path("owner/repo"), "owner_repo");
+        assert_eq!(shared_sanitize_for_path("owner/repo"), "owner_repo");
     }
 
     #[test]
@@ -6036,7 +6011,8 @@ printf '%s\n' "${payload}"
             .await
             .expect("runtime");
         let issue_number = 77_u64;
-        let session_path = session_path_for_issue(&runtime.repository_state_dir, issue_number);
+        let session_path =
+            shared_session_path_for_issue(&runtime.repository_state_dir, issue_number);
         if let Some(parent) = session_path.parent() {
             std::fs::create_dir_all(parent).expect("create session dir");
         }
@@ -6109,7 +6085,8 @@ printf '%s\n' "${payload}"
             .await
             .expect("runtime");
         let issue_number = 78_u64;
-        let session_path = session_path_for_issue(&runtime.repository_state_dir, issue_number);
+        let session_path =
+            shared_session_path_for_issue(&runtime.repository_state_dir, issue_number);
         if let Some(parent) = session_path.parent() {
             std::fs::create_dir_all(parent).expect("create session dir");
         }
@@ -7703,7 +7680,7 @@ printf '%s\n' "${payload}"
                 .expect("channel store");
         let attachment_dir = channel_store
             .attachments_dir()
-            .join(sanitize_for_path("issue-comment-created:1200"));
+            .join(shared_sanitize_for_path("issue-comment-created:1200"));
         assert!(attachment_dir.exists());
         let attachment_entries = std::fs::read_dir(&attachment_dir)
             .expect("read attachment dir")
@@ -8322,7 +8299,7 @@ printf '%s\n' "${payload}"
         chat_resume_post.assert_calls(1);
         chat_reset_post.assert_calls(1);
         assert!(runtime.state_store.issue_session(9).is_none());
-        let session_path = session_path_for_issue(&runtime.repository_state_dir, 9);
+        let session_path = shared_session_path_for_issue(&runtime.repository_state_dir, 9);
         assert!(!session_path.exists());
     }
 
@@ -8368,7 +8345,7 @@ printf '%s\n' "${payload}"
         let mut runtime = GithubIssuesBridgeRuntime::new(config)
             .await
             .expect("runtime");
-        let session_path = session_path_for_issue(&runtime.repository_state_dir, 11);
+        let session_path = shared_session_path_for_issue(&runtime.repository_state_dir, 11);
         if let Some(parent) = session_path.parent() {
             std::fs::create_dir_all(parent).expect("create session dir");
         }
@@ -8455,7 +8432,7 @@ printf '%s\n' "${payload}"
         let mut runtime = GithubIssuesBridgeRuntime::new(config)
             .await
             .expect("runtime");
-        let session_path = session_path_for_issue(&runtime.repository_state_dir, 12);
+        let session_path = shared_session_path_for_issue(&runtime.repository_state_dir, 12);
         if let Some(parent) = session_path.parent() {
             std::fs::create_dir_all(parent).expect("create session dir");
         }
@@ -8471,7 +8448,7 @@ printf '%s\n' "${payload}"
             .expect("append messages");
         runtime.state_store.update_issue_session(
             12,
-            issue_session_id(12),
+            issue_shared_session_id(12),
             Some(900),
             Some("run-12".to_string()),
         );
@@ -8579,7 +8556,7 @@ printf '%s\n' "${payload}"
         let mut runtime = GithubIssuesBridgeRuntime::new(config)
             .await
             .expect("runtime");
-        let session_path = session_path_for_issue(&runtime.repository_state_dir, 18);
+        let session_path = shared_session_path_for_issue(&runtime.repository_state_dir, 18);
         if let Some(parent) = session_path.parent() {
             std::fs::create_dir_all(parent).expect("create session dir");
         }
@@ -8595,7 +8572,7 @@ printf '%s\n' "${payload}"
             .expect("append messages");
         runtime.state_store.update_issue_session(
             18,
-            issue_session_id(18),
+            issue_shared_session_id(18),
             Some(1500),
             Some("run-18".to_string()),
         );
@@ -8676,7 +8653,7 @@ printf '%s\n' "${payload}"
             .mark_processed("issue-comment-created:seed-b");
         runtime.state_store.update_issue_session(
             19,
-            issue_session_id(19),
+            issue_shared_session_id(19),
             Some(1600),
             Some("run-19".to_string()),
         );
@@ -8737,7 +8714,7 @@ printf '%s\n' "${payload}"
         let mut runtime = GithubIssuesBridgeRuntime::new(config)
             .await
             .expect("runtime");
-        let session_path = session_path_for_issue(&runtime.repository_state_dir, 14);
+        let session_path = shared_session_path_for_issue(&runtime.repository_state_dir, 14);
         if let Some(parent) = session_path.parent() {
             std::fs::create_dir_all(parent).expect("create session dir");
         }
@@ -8850,7 +8827,7 @@ printf '%s\n' "${payload}"
         let mut runtime = GithubIssuesBridgeRuntime::new(config)
             .await
             .expect("runtime");
-        let session_path = session_path_for_issue(&runtime.repository_state_dir, 16);
+        let session_path = shared_session_path_for_issue(&runtime.repository_state_dir, 16);
         if let Some(parent) = session_path.parent() {
             std::fs::create_dir_all(parent).expect("create session dir");
         }
