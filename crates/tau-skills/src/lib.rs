@@ -12,9 +12,11 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 mod commands;
+mod package_manifest;
 pub mod trust_roots;
 
 pub use commands::*;
+pub use package_manifest::*;
 pub use trust_roots::*;
 
 #[derive(Debug, Clone, PartialEq, Eq)]

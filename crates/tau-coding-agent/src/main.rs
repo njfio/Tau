@@ -21,7 +21,6 @@ mod model_catalog;
 mod multi_agent_router;
 mod observability_loggers;
 mod orchestrator_bridge;
-mod package_manifest;
 mod project_index;
 mod qa_loop_commands;
 mod release_channel_commands;
@@ -59,6 +58,8 @@ use serde_json::Value;
 use tau_agent_core::{Agent, AgentEvent};
 use tau_ai::{LlmClient, Message, MessageRole, ModelRef, Provider};
 pub(crate) use tau_extensions as extension_manifest;
+pub(crate) use tau_skills as package_manifest;
+#[cfg(test)]
 pub(crate) use tau_skills as skills;
 pub(crate) use tau_skills as skills_commands;
 
@@ -159,7 +160,6 @@ pub(crate) use crate::runtime_types::{
 };
 #[cfg(test)]
 pub(crate) use crate::skills::default_skills_lock_path;
-use crate::skills::TrustedKey;
 #[cfg(test)]
 pub(crate) use crate::skills_commands::{
     derive_skills_prune_candidates, parse_skills_lock_diff_args, parse_skills_prune_args,
@@ -292,11 +292,11 @@ pub(crate) use tau_onboarding::startup_model_resolution::{
 pub(crate) use tau_onboarding::startup_prompt_composition::compose_startup_system_prompt;
 #[cfg(test)]
 pub(crate) use tau_onboarding::startup_resolution::apply_trust_root_mutations;
+pub(crate) use tau_onboarding::startup_resolution::ensure_non_empty_text;
+#[cfg(test)]
+pub(crate) use tau_onboarding::startup_resolution::resolve_skill_trust_roots;
 #[cfg(test)]
 pub(crate) use tau_onboarding::startup_resolution::resolve_system_prompt;
-pub(crate) use tau_onboarding::startup_resolution::{
-    ensure_non_empty_text, resolve_skill_trust_roots,
-};
 pub(crate) use tau_onboarding::startup_skills_bootstrap::run_startup_skills_bootstrap;
 #[cfg(test)]
 pub(crate) use tau_orchestrator::parse_numbered_plan_steps;

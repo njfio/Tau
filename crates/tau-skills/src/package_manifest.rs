@@ -9,13 +9,62 @@ use ed25519_dalek::{Signature, VerifyingKey};
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use tau_cli::Cli;
+use tau_core::{current_unix_timestamp, is_expired_unix};
 
-use crate::{Cli, TrustedKey};
+use crate::{
+    apply_trust_root_mutation_specs, load_trust_root_records, parse_trusted_root_spec,
+    save_trust_root_records, TrustedKey,
+};
 
 const PACKAGE_MANIFEST_SCHEMA_VERSION: u32 = 1;
 
+fn resolve_skill_trust_roots(cli: &Cli) -> Result<Vec<TrustedKey>> {
+    let has_store_mutation = !cli.skill_trust_add.is_empty()
+        || !cli.skill_trust_revoke.is_empty()
+        || !cli.skill_trust_rotate.is_empty();
+    if has_store_mutation && cli.skill_trust_root_file.is_none() {
+        bail!("--skill-trust-root-file is required when using trust lifecycle flags");
+    }
+
+    let mut roots = Vec::new();
+    for raw in &cli.skill_trust_root {
+        roots.push(parse_trusted_root_spec(raw)?);
+    }
+
+    if let Some(path) = &cli.skill_trust_root_file {
+        let mut records = load_trust_root_records(path)?;
+        if has_store_mutation {
+            let report = apply_trust_root_mutation_specs(
+                &mut records,
+                &cli.skill_trust_add,
+                &cli.skill_trust_revoke,
+                &cli.skill_trust_rotate,
+            )?;
+            save_trust_root_records(path, &records)?;
+            println!(
+                "skill trust store update: added={} updated={} revoked={} rotated={}",
+                report.added, report.updated, report.revoked, report.rotated
+            );
+        }
+
+        let now_unix = current_unix_timestamp();
+        for item in records {
+            if item.revoked || is_expired_unix(item.expires_unix, now_unix) {
+                continue;
+            }
+            roots.push(TrustedKey {
+                id: item.id,
+                public_key: item.public_key,
+            });
+        }
+    }
+
+    Ok(roots)
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct PackageManifestSummary {
+pub struct PackageManifestSummary {
     pub manifest_path: PathBuf,
     pub name: String,
     pub version: String,
@@ -27,7 +76,7 @@ pub(crate) struct PackageManifestSummary {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct PackageInstallReport {
+pub struct PackageInstallReport {
     pub manifest_path: PathBuf,
     pub install_root: PathBuf,
     pub package_dir: PathBuf,
@@ -41,7 +90,7 @@ pub(crate) struct PackageInstallReport {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct PackageListEntry {
+pub struct PackageListEntry {
     pub manifest_path: PathBuf,
     pub package_dir: PathBuf,
     pub name: String,
@@ -50,21 +99,21 @@ pub(crate) struct PackageListEntry {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct PackageListInvalidEntry {
+pub struct PackageListInvalidEntry {
     pub package_dir: PathBuf,
     pub manifest_path: PathBuf,
     pub error: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct PackageListReport {
+pub struct PackageListReport {
     pub list_root: PathBuf,
     pub packages: Vec<PackageListEntry>,
     pub invalid_entries: Vec<PackageListInvalidEntry>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct PackageConflictEntry {
+pub struct PackageConflictEntry {
     pub kind: String,
     pub path: String,
     pub winner: String,
@@ -72,7 +121,7 @@ pub(crate) struct PackageConflictEntry {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct PackageConflictReport {
+pub struct PackageConflictReport {
     pub conflict_root: PathBuf,
     pub packages: usize,
     pub invalid_entries: Vec<PackageListInvalidEntry>,
@@ -80,7 +129,7 @@ pub(crate) struct PackageConflictReport {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum PackageActivationConflictPolicy {
+pub enum PackageActivationConflictPolicy {
     Error,
     KeepFirst,
     KeepLast,
@@ -109,7 +158,7 @@ impl PackageActivationConflictPolicy {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct PackageActivationReport {
+pub struct PackageActivationReport {
     pub activation_root: PathBuf,
     pub destination_root: PathBuf,
     pub policy: PackageActivationConflictPolicy,
@@ -119,7 +168,7 @@ pub(crate) struct PackageActivationReport {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct PackageRemoveReport {
+pub struct PackageRemoveReport {
     pub remove_root: PathBuf,
     pub package_dir: PathBuf,
     pub name: String,
@@ -128,7 +177,7 @@ pub(crate) struct PackageRemoveReport {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum PackageRemoveStatus {
+pub enum PackageRemoveStatus {
     Removed,
     NotFound,
 }
@@ -143,7 +192,7 @@ impl PackageRemoveStatus {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct PackageRollbackReport {
+pub struct PackageRollbackReport {
     pub rollback_root: PathBuf,
     pub package_name: String,
     pub target_version: String,
@@ -152,7 +201,7 @@ pub(crate) struct PackageRollbackReport {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum PackageRollbackStatus {
+pub enum PackageRollbackStatus {
     RolledBack,
     AlreadyAtTarget,
 }
@@ -167,7 +216,7 @@ impl PackageRollbackStatus {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum FileUpsertOutcome {
+pub enum FileUpsertOutcome {
     Installed,
     Updated,
     Skipped,
@@ -220,7 +269,7 @@ struct PackageActivationSelection {
     source: PathBuf,
 }
 
-pub(crate) fn execute_package_validate_command(cli: &Cli) -> Result<()> {
+pub fn execute_package_validate_command(cli: &Cli) -> Result<()> {
     let Some(path) = cli.package_validate.as_ref() else {
         return Ok(());
     };
@@ -239,7 +288,7 @@ pub(crate) fn execute_package_validate_command(cli: &Cli) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn execute_package_show_command(cli: &Cli) -> Result<()> {
+pub fn execute_package_show_command(cli: &Cli) -> Result<()> {
     let Some(path) = cli.package_show.as_ref() else {
         return Ok(());
     };
@@ -248,11 +297,11 @@ pub(crate) fn execute_package_show_command(cli: &Cli) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn execute_package_install_command(cli: &Cli) -> Result<()> {
+pub fn execute_package_install_command(cli: &Cli) -> Result<()> {
     let Some(path) = cli.package_install.as_ref() else {
         return Ok(());
     };
-    let trusted_roots = crate::resolve_skill_trust_roots(cli)?;
+    let trusted_roots = resolve_skill_trust_roots(cli)?;
     let report = install_package_manifest_with_policy(
         path,
         &cli.package_install_root,
@@ -263,11 +312,11 @@ pub(crate) fn execute_package_install_command(cli: &Cli) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn execute_package_update_command(cli: &Cli) -> Result<()> {
+pub fn execute_package_update_command(cli: &Cli) -> Result<()> {
     let Some(path) = cli.package_update.as_ref() else {
         return Ok(());
     };
-    let trusted_roots = crate::resolve_skill_trust_roots(cli)?;
+    let trusted_roots = resolve_skill_trust_roots(cli)?;
     let report = update_package_manifest_with_policy(
         path,
         &cli.package_update_root,
@@ -278,7 +327,7 @@ pub(crate) fn execute_package_update_command(cli: &Cli) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn execute_package_list_command(cli: &Cli) -> Result<()> {
+pub fn execute_package_list_command(cli: &Cli) -> Result<()> {
     if !cli.package_list {
         return Ok(());
     }
@@ -287,7 +336,7 @@ pub(crate) fn execute_package_list_command(cli: &Cli) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn execute_package_remove_command(cli: &Cli) -> Result<()> {
+pub fn execute_package_remove_command(cli: &Cli) -> Result<()> {
     let Some(coordinate) = cli.package_remove.as_deref() else {
         return Ok(());
     };
@@ -296,7 +345,7 @@ pub(crate) fn execute_package_remove_command(cli: &Cli) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn execute_package_rollback_command(cli: &Cli) -> Result<()> {
+pub fn execute_package_rollback_command(cli: &Cli) -> Result<()> {
     let Some(coordinate) = cli.package_rollback.as_deref() else {
         return Ok(());
     };
@@ -305,7 +354,7 @@ pub(crate) fn execute_package_rollback_command(cli: &Cli) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn execute_package_conflicts_command(cli: &Cli) -> Result<()> {
+pub fn execute_package_conflicts_command(cli: &Cli) -> Result<()> {
     if !cli.package_conflicts {
         return Ok(());
     }
@@ -314,7 +363,7 @@ pub(crate) fn execute_package_conflicts_command(cli: &Cli) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn execute_package_activate_command(cli: &Cli) -> Result<()> {
+pub fn execute_package_activate_command(cli: &Cli) -> Result<()> {
     if !cli.package_activate {
         return Ok(());
     }
@@ -323,9 +372,7 @@ pub(crate) fn execute_package_activate_command(cli: &Cli) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn execute_package_activate_on_startup(
-    cli: &Cli,
-) -> Result<Option<PackageActivationReport>> {
+pub fn execute_package_activate_on_startup(cli: &Cli) -> Result<Option<PackageActivationReport>> {
     if !cli.package_activate_on_startup {
         return Ok(None);
     }
@@ -344,7 +391,7 @@ fn activate_packages_from_cli(cli: &Cli) -> Result<PackageActivationReport> {
     )
 }
 
-pub(crate) fn validate_package_manifest(path: &Path) -> Result<PackageManifestSummary> {
+pub fn validate_package_manifest(path: &Path) -> Result<PackageManifestSummary> {
     let (_, summary) = load_and_validate_manifest(path)?;
     Ok(summary)
 }
