@@ -67,7 +67,6 @@ pub(crate) use crate::auth_commands::{parse_auth_command, AuthCommand};
 pub(crate) use crate::bootstrap_helpers::{command_file_error_mode_label, init_tracing};
 pub(crate) use crate::canvas::{
     execute_canvas_command, CanvasCommandConfig, CanvasEventOrigin, CanvasSessionLinkContext,
-    CANVAS_USAGE,
 };
 pub(crate) use crate::channel_store_admin::execute_channel_store_admin_command;
 #[cfg(test)]
@@ -123,10 +122,10 @@ pub(crate) use crate::package_manifest::{
 };
 pub(crate) use crate::project_index::execute_project_index_command;
 pub(crate) use crate::qa_loop_commands::{
-    execute_qa_loop_cli_command, execute_qa_loop_preflight_command, QA_LOOP_USAGE,
+    execute_qa_loop_cli_command, execute_qa_loop_preflight_command,
 };
 pub(crate) use crate::release_channel_commands::{
-    default_release_channel_path, execute_release_channel_command, RELEASE_CHANNEL_USAGE,
+    default_release_channel_path, execute_release_channel_command,
 };
 pub(crate) use crate::rpc_capabilities::execute_rpc_capabilities_command;
 #[cfg(test)]
@@ -201,7 +200,6 @@ use github_issues::{run_github_issues_bridge, GithubIssuesBridgeRuntimeConfig};
 use slack::{run_slack_bridge, SlackBridgeRuntimeConfig};
 pub(crate) use tau_access::approvals::{
     evaluate_approval_gate, execute_approvals_command, ApprovalAction, ApprovalGateResult,
-    APPROVALS_USAGE,
 };
 pub(crate) use tau_access::pairing::{
     evaluate_pairing_access, execute_pair_command, execute_unpair_command,
@@ -210,7 +208,7 @@ pub(crate) use tau_access::pairing::{
 pub(crate) use tau_access::rbac::{
     authorize_action_for_principal_with_policy_path, authorize_command_for_principal,
     execute_rbac_command, github_principal, rbac_policy_path_for_state_dir,
-    resolve_local_principal, slack_principal, RbacDecision, RBAC_USAGE,
+    resolve_local_principal, slack_principal, RbacDecision,
 };
 #[cfg(test)]
 pub(crate) use tau_access::trust_roots::{
