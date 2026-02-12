@@ -42,6 +42,7 @@ pub struct AgentConfig {
     pub max_estimated_input_tokens: Option<u32>,
     pub max_estimated_total_tokens: Option<u32>,
     pub structured_output_max_retries: usize,
+    pub react_max_replans_on_tool_failure: usize,
 }
 
 impl Default for AgentConfig {
@@ -62,6 +63,7 @@ impl Default for AgentConfig {
             max_estimated_input_tokens: Some(120_000),
             max_estimated_total_tokens: None,
             structured_output_max_retries: 1,
+            react_max_replans_on_tool_failure: 1,
         }
     }
 }
@@ -184,6 +186,10 @@ pub enum AgentEvent {
         tool_name: String,
         result: ToolExecutionResult,
     },
+    ReplanTriggered {
+        turn: usize,
+        reason: String,
+    },
 }
 
 /// Enumerates supported `AgentError` values.
@@ -213,11 +219,33 @@ const CONTEXT_SUMMARY_PREFIX: &str = "[Tau context summary]";
 const CONTEXT_SUMMARY_MAX_CHARS: usize = 1_200;
 const CONTEXT_SUMMARY_SNIPPET_MAX_CHARS: usize = 160;
 const CONTEXT_SUMMARY_MAX_EXCERPTS: usize = 6;
+const REPLAN_ON_TOOL_FAILURE_PROMPT: &str = "One or more tool calls failed. Replan and continue with an alternative approach using available tools. If no viable tool exists, explain what is missing and ask the user for clarification.";
+const FAILURE_SIGNAL_PHRASES: &[&str] = &[
+    "can't",
+    "cannot",
+    "could not",
+    "couldn't",
+    "unable",
+    "failed",
+    "failure",
+    "error",
+    "not available",
+    "not possible",
+    "do not have",
+    "don't have",
+    "no tool",
+];
 
 #[derive(Clone)]
 struct RegisteredTool {
     definition: ToolDefinition,
     tool: Arc<dyn AgentTool>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ToolExecutionStats {
+    total: usize,
+    errors: usize,
 }
 
 /// Public struct `Agent` used across Tau components.
@@ -517,6 +545,8 @@ impl Agent {
         on_delta: Option<StreamDeltaHandler>,
     ) -> Result<Vec<Message>, AgentError> {
         self.emit(AgentEvent::AgentStart);
+        let mut pending_replan_on_tool_failure = false;
+        let mut replans_used = 0usize;
 
         for turn in 1..=self.config.max_turns {
             self.emit(AgentEvent::TurnStart { turn });
@@ -541,8 +571,35 @@ impl Agent {
                 message: assistant.clone(),
             });
 
+            let assistant_text = assistant.text_content();
             let tool_calls = assistant.tool_calls();
             if tool_calls.is_empty() {
+                if pending_replan_on_tool_failure
+                    && replans_used < self.config.react_max_replans_on_tool_failure
+                    && assistant_text_suggests_failure(&assistant_text)
+                {
+                    self.emit(AgentEvent::ReplanTriggered {
+                        turn,
+                        reason:
+                            "all tool calls in previous turn failed and assistant reported failure"
+                                .to_string(),
+                    });
+                    let replan_message = Message::user(REPLAN_ON_TOOL_FAILURE_PROMPT);
+                    self.messages.push(replan_message.clone());
+                    self.emit(AgentEvent::MessageAdded {
+                        message: replan_message,
+                    });
+                    replans_used = replans_used.saturating_add(1);
+                    pending_replan_on_tool_failure = false;
+                    self.emit(AgentEvent::TurnEnd {
+                        turn,
+                        tool_results: 0,
+                        request_duration_ms,
+                        usage,
+                        finish_reason,
+                    });
+                    continue;
+                }
                 self.emit(AgentEvent::TurnEnd {
                     turn,
                     tool_results: 0,
@@ -557,16 +614,13 @@ impl Agent {
                 return Ok(new_messages);
             }
 
-            self.execute_tool_calls(tool_calls).await;
+            let tool_stats = self.execute_tool_calls(tool_calls).await;
+            pending_replan_on_tool_failure =
+                tool_stats.total > 0 && tool_stats.errors == tool_stats.total;
 
             self.emit(AgentEvent::TurnEnd {
                 turn,
-                tool_results: self
-                    .messages
-                    .iter()
-                    .rev()
-                    .take_while(|message| message.role == tau_ai::MessageRole::Tool)
-                    .count(),
+                tool_results: tool_stats.total,
                 request_duration_ms,
                 usage,
                 finish_reason,
@@ -653,13 +707,20 @@ impl Agent {
         }
     }
 
-    async fn execute_tool_calls(&mut self, tool_calls: Vec<ToolCall>) {
+    async fn execute_tool_calls(&mut self, tool_calls: Vec<ToolCall>) -> ToolExecutionStats {
+        let mut stats = ToolExecutionStats {
+            total: 0,
+            errors: 0,
+        };
         let max_parallel = self.config.max_parallel_tool_calls.max(1);
         if max_parallel == 1 || tool_calls.len() <= 1 {
             for call in tool_calls {
-                self.execute_tool_call(call).await;
+                if self.execute_tool_call(call).await {
+                    stats.errors = stats.errors.saturating_add(1);
+                }
+                stats.total = stats.total.saturating_add(1);
             }
-            return;
+            return stats;
         }
 
         for chunk in tool_calls.chunks(max_parallel) {
@@ -681,9 +742,14 @@ impl Agent {
                         "error": format!("tool '{}' execution task failed: {error}", call.name)
                     })),
                 };
-                self.record_tool_result(call, result);
+                let is_error = self.record_tool_result(call, result);
+                if is_error {
+                    stats.errors = stats.errors.saturating_add(1);
+                }
+                stats.total = stats.total.saturating_add(1);
             }
         }
+        stats
     }
 
     fn spawn_tool_call_task(&self, call: ToolCall) -> tokio::task::JoinHandle<ToolExecutionResult> {
@@ -695,7 +761,7 @@ impl Agent {
         tokio::spawn(async move { execute_tool_call_inner(call, registered, tool_timeout).await })
     }
 
-    async fn execute_tool_call(&mut self, call: ToolCall) {
+    async fn execute_tool_call(&mut self, call: ToolCall) -> bool {
         self.emit(AgentEvent::ToolExecutionStart {
             tool_call_id: call.id.clone(),
             tool_name: call.name.clone(),
@@ -708,10 +774,10 @@ impl Agent {
                 "error": format!("tool '{}' execution task failed: {error}", call.name)
             })),
         };
-        self.record_tool_result(call, result);
+        self.record_tool_result(call, result)
     }
 
-    fn record_tool_result(&mut self, call: ToolCall, result: ToolExecutionResult) {
+    fn record_tool_result(&mut self, call: ToolCall, result: ToolExecutionResult) -> bool {
         self.emit(AgentEvent::ToolExecutionEnd {
             tool_call_id: call.id.clone(),
             tool_name: call.name.clone(),
@@ -724,6 +790,7 @@ impl Agent {
         self.emit(AgentEvent::MessageAdded {
             message: tool_message,
         });
+        result.is_error
     }
 }
 
@@ -955,6 +1022,16 @@ fn truncate_chars(text: &str, max_chars: usize) -> String {
     truncated
 }
 
+fn assistant_text_suggests_failure(text: &str) -> bool {
+    let normalized = collapse_whitespace(&text.to_lowercase());
+    if normalized.trim().is_empty() {
+        return true;
+    }
+    FAILURE_SIGNAL_PHRASES
+        .iter()
+        .any(|phrase| normalized.contains(phrase))
+}
+
 fn build_structured_output_retry_prompt(schema: &Value, error: &str) -> String {
     let schema_text = serde_json::to_string(schema).unwrap_or_else(|_| schema.to_string());
     format!(
@@ -1113,9 +1190,10 @@ mod tests {
     use tokio::sync::Mutex as AsyncMutex;
 
     use crate::{
-        bounded_messages, build_structured_output_retry_prompt, estimate_chat_request_tokens,
-        extract_json_payload, truncate_chars, Agent, AgentConfig, AgentError, AgentEvent,
-        AgentTool, ToolExecutionResult, CONTEXT_SUMMARY_MAX_CHARS, CONTEXT_SUMMARY_PREFIX,
+        assistant_text_suggests_failure, bounded_messages, build_structured_output_retry_prompt,
+        estimate_chat_request_tokens, extract_json_payload, truncate_chars, Agent, AgentConfig,
+        AgentError, AgentEvent, AgentTool, ToolExecutionResult, CONTEXT_SUMMARY_MAX_CHARS,
+        CONTEXT_SUMMARY_PREFIX,
     };
 
     struct MockClient {
@@ -1391,6 +1469,7 @@ mod tests {
         assert_eq!(config.max_estimated_input_tokens, Some(120_000));
         assert_eq!(config.max_estimated_total_tokens, None);
         assert_eq!(config.structured_output_max_retries, 1);
+        assert_eq!(config.react_max_replans_on_tool_failure, 1);
     }
 
     #[test]
@@ -1525,6 +1604,7 @@ mod tests {
                 AgentEvent::ToolExecutionEnd { tool_name, .. } => format!("tool_end:{tool_name}"),
                 AgentEvent::TurnStart { turn } => format!("turn_start:{turn}"),
                 AgentEvent::TurnEnd { turn, .. } => format!("turn_end:{turn}"),
+                AgentEvent::ReplanTriggered { turn, .. } => format!("replan:{turn}"),
                 AgentEvent::AgentStart => "agent_start".to_string(),
                 AgentEvent::AgentEnd { .. } => "agent_end".to_string(),
             };
@@ -1966,6 +2046,18 @@ mod tests {
     }
 
     #[test]
+    fn unit_assistant_text_suggests_failure_matches_common_markers() {
+        assert!(assistant_text_suggests_failure(
+            "Unable to continue after the error."
+        ));
+        assert!(assistant_text_suggests_failure(
+            "I can't proceed with this tool."
+        ));
+        assert!(assistant_text_suggests_failure("   "));
+        assert!(!assistant_text_suggests_failure("Completed successfully."));
+    }
+
+    #[test]
     fn unit_build_structured_output_retry_prompt_includes_error_and_schema() {
         let schema = serde_json::json!({
             "type": "object",
@@ -2262,6 +2354,72 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn functional_replan_prompt_injected_after_failed_tool_and_failure_response() {
+        let first_assistant = Message::assistant_blocks(vec![ContentBlock::ToolCall {
+            id: "call_1".to_string(),
+            name: "read".to_string(),
+            arguments: serde_json::json!({}),
+        }]);
+        let second_assistant =
+            Message::assistant_text("I cannot continue because the tool failed.");
+        let third_assistant = Message::assistant_text("recovered");
+        let client = Arc::new(CapturingMockClient {
+            responses: AsyncMutex::new(VecDeque::from([
+                ChatResponse {
+                    message: first_assistant,
+                    finish_reason: Some("tool_calls".to_string()),
+                    usage: ChatUsage::default(),
+                },
+                ChatResponse {
+                    message: second_assistant,
+                    finish_reason: Some("stop".to_string()),
+                    usage: ChatUsage::default(),
+                },
+                ChatResponse {
+                    message: third_assistant,
+                    finish_reason: Some("stop".to_string()),
+                    usage: ChatUsage::default(),
+                },
+            ])),
+            requests: AsyncMutex::new(Vec::new()),
+        });
+        let mut agent = Agent::new(
+            client.clone(),
+            AgentConfig {
+                react_max_replans_on_tool_failure: 1,
+                ..AgentConfig::default()
+            },
+        );
+        agent.register_tool(ReadTool);
+        let replan_count = Arc::new(AtomicUsize::new(0));
+        let replan_count_sink = replan_count.clone();
+        agent.subscribe(move |event| {
+            if matches!(event, AgentEvent::ReplanTriggered { .. }) {
+                replan_count_sink.fetch_add(1, Ordering::Relaxed);
+            }
+        });
+
+        let messages = agent
+            .prompt("read")
+            .await
+            .expect("replan flow should recover");
+        assert_eq!(
+            messages.last().expect("assistant response").text_content(),
+            "recovered"
+        );
+        assert_eq!(replan_count.load(Ordering::Relaxed), 1);
+
+        let requests = client.requests.lock().await;
+        assert_eq!(
+            requests.len(),
+            3,
+            "expected replan to trigger an extra turn"
+        );
+        let replan_prompt = last_user_prompt(&requests[2]);
+        assert!(replan_prompt.contains("One or more tool calls failed"));
+    }
+
+    #[tokio::test]
     async fn integration_parallel_tool_execution_runs_calls_concurrently_and_preserves_order() {
         let first_assistant = Message::assistant_blocks(vec![
             ContentBlock::ToolCall {
@@ -2322,6 +2480,70 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn integration_replan_flow_can_recover_with_follow_up_tool_call() {
+        let first_assistant = Message::assistant_blocks(vec![ContentBlock::ToolCall {
+            id: "call_1".to_string(),
+            name: "read".to_string(),
+            arguments: serde_json::json!({}),
+        }]);
+        let second_assistant = Message::assistant_text("Unable to continue after that tool error.");
+        let third_assistant = Message::assistant_blocks(vec![ContentBlock::ToolCall {
+            id: "call_2".to_string(),
+            name: "read".to_string(),
+            arguments: serde_json::json!({ "path": "README.md" }),
+        }]);
+        let fourth_assistant = Message::assistant_text("done after replan");
+        let client = Arc::new(MockClient {
+            responses: AsyncMutex::new(VecDeque::from([
+                ChatResponse {
+                    message: first_assistant,
+                    finish_reason: Some("tool_calls".to_string()),
+                    usage: ChatUsage::default(),
+                },
+                ChatResponse {
+                    message: second_assistant,
+                    finish_reason: Some("stop".to_string()),
+                    usage: ChatUsage::default(),
+                },
+                ChatResponse {
+                    message: third_assistant,
+                    finish_reason: Some("tool_calls".to_string()),
+                    usage: ChatUsage::default(),
+                },
+                ChatResponse {
+                    message: fourth_assistant,
+                    finish_reason: Some("stop".to_string()),
+                    usage: ChatUsage::default(),
+                },
+            ])),
+        });
+        let mut agent = Agent::new(
+            client,
+            AgentConfig {
+                react_max_replans_on_tool_failure: 1,
+                ..AgentConfig::default()
+            },
+        );
+        agent.register_tool(ReadTool);
+
+        let messages = agent
+            .prompt("read")
+            .await
+            .expect("replan flow should recover with second tool call");
+        let tool_messages = messages
+            .iter()
+            .filter(|message| message.role == MessageRole::Tool)
+            .collect::<Vec<_>>();
+        assert_eq!(tool_messages.len(), 2);
+        assert!(tool_messages[0].is_error);
+        assert!(!tool_messages[1].is_error);
+        assert_eq!(
+            messages.last().expect("assistant response").text_content(),
+            "done after replan"
+        );
+    }
+
+    #[tokio::test]
     async fn regression_bug_1_max_parallel_tool_calls_zero_clamps_to_safe_serial_execution() {
         let first_assistant = Message::assistant_blocks(vec![
             ContentBlock::ToolCall {
@@ -2371,6 +2593,57 @@ mod tests {
         assert_eq!(tool_messages.len(), 2);
         assert!(tool_messages[0].text_content().contains("read:a.txt"));
         assert!(tool_messages[1].text_content().contains("read:b.txt"));
+    }
+
+    #[tokio::test]
+    async fn regression_no_replan_when_assistant_reports_success_after_tool_failure() {
+        let first_assistant = Message::assistant_blocks(vec![ContentBlock::ToolCall {
+            id: "call_1".to_string(),
+            name: "read".to_string(),
+            arguments: serde_json::json!({}),
+        }]);
+        let second_assistant = Message::assistant_text("done");
+        let client = Arc::new(CapturingMockClient {
+            responses: AsyncMutex::new(VecDeque::from([
+                ChatResponse {
+                    message: first_assistant,
+                    finish_reason: Some("tool_calls".to_string()),
+                    usage: ChatUsage::default(),
+                },
+                ChatResponse {
+                    message: second_assistant,
+                    finish_reason: Some("stop".to_string()),
+                    usage: ChatUsage::default(),
+                },
+            ])),
+            requests: AsyncMutex::new(Vec::new()),
+        });
+        let mut agent = Agent::new(
+            client.clone(),
+            AgentConfig {
+                react_max_replans_on_tool_failure: 1,
+                ..AgentConfig::default()
+            },
+        );
+        agent.register_tool(ReadTool);
+        let replan_count = Arc::new(AtomicUsize::new(0));
+        let replan_count_sink = replan_count.clone();
+        agent.subscribe(move |event| {
+            if matches!(event, AgentEvent::ReplanTriggered { .. }) {
+                replan_count_sink.fetch_add(1, Ordering::Relaxed);
+            }
+        });
+
+        let messages = agent
+            .prompt("read")
+            .await
+            .expect("prompt should complete without forced replan");
+        assert_eq!(
+            messages.last().expect("assistant response").text_content(),
+            "done"
+        );
+        assert_eq!(replan_count.load(Ordering::Relaxed), 0);
+        assert_eq!(client.requests.lock().await.len(), 2);
     }
 
     #[tokio::test]
