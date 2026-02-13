@@ -200,6 +200,7 @@ pub(crate) fn handle_command(
     )
 }
 
+// Command execution keeps dependencies explicit to avoid hidden global state.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn handle_command_with_session_import_mode(
     command: &str,

@@ -505,6 +505,7 @@ where
     }
 }
 
+// Startup/runtime wiring intentionally threads explicit knobs rather than hidden config.
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn run_plan_first_prompt_with_runtime_hooks(
     agent: &mut Agent,

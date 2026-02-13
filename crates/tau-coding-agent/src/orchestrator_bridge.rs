@@ -67,6 +67,7 @@ impl OrchestratorRuntime for OrchestratorRuntimeAdapter<'_> {
     }
 }
 
+// Mirrors the orchestrator runtime API to keep call sites explicit and stable.
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn run_plan_first_prompt(
     agent: &mut Agent,
@@ -103,6 +104,7 @@ pub(crate) async fn run_plan_first_prompt(
     .await
 }
 
+// Mirrors the orchestrator runtime API to keep call sites explicit and stable.
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn run_plan_first_prompt_with_policy_context(
     agent: &mut Agent,
@@ -141,6 +143,7 @@ pub(crate) async fn run_plan_first_prompt_with_policy_context(
     .await
 }
 
+// Mirrors the orchestrator runtime API to keep call sites explicit and stable.
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn run_plan_first_prompt_with_policy_context_and_routing(
     agent: &mut Agent,
