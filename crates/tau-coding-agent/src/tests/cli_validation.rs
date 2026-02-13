@@ -33,6 +33,43 @@ fn functional_cli_provider_retry_flags_accept_overrides() {
 }
 
 #[test]
+fn unit_cli_agent_cost_budget_flags_default_values_are_stable() {
+    let cli = parse_cli_with_stack(["tau-rs"]);
+    assert_eq!(cli.agent_cost_budget_usd, None);
+    assert_eq!(cli.agent_cost_alert_threshold_percent, vec![80, 100]);
+}
+
+#[test]
+fn functional_cli_agent_cost_budget_flags_accept_overrides() {
+    let cli = parse_cli_with_stack([
+        "tau-rs",
+        "--agent-cost-budget-usd",
+        "25.5",
+        "--agent-cost-alert-threshold-percent",
+        "40,75,95",
+    ]);
+    assert_eq!(cli.agent_cost_budget_usd, Some(25.5));
+    assert_eq!(cli.agent_cost_alert_threshold_percent, vec![40, 75, 95]);
+}
+
+#[test]
+fn regression_cli_agent_cost_budget_rejects_non_positive_values() {
+    let error = try_parse_cli_with_stack(["tau-rs", "--agent-cost-budget-usd", "0"])
+        .expect_err("zero budget should be rejected");
+    assert!(error
+        .to_string()
+        .contains("value must be a finite number greater than 0"));
+}
+
+#[test]
+fn regression_cli_agent_cost_threshold_rejects_out_of_range_values() {
+    let error =
+        try_parse_cli_with_stack(["tau-rs", "--agent-cost-alert-threshold-percent", "0,101"])
+            .expect_err("out-of-range threshold should be rejected");
+    assert!(error.to_string().contains("value must be in range 1..=100"));
+}
+
+#[test]
 fn unit_cli_model_catalog_flags_default_values_are_stable() {
     let cli = parse_cli_with_stack(["tau-rs"]);
     assert_eq!(cli.model_catalog_url, None);

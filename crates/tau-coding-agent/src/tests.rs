@@ -364,6 +364,8 @@ pub(crate) fn test_cli() -> Cli {
         agent_request_max_retries: 2,
         agent_request_retry_initial_backoff_ms: 200,
         agent_request_retry_max_backoff_ms: 2_000,
+        agent_cost_budget_usd: None,
+        agent_cost_alert_threshold_percent: vec![80, 100],
         request_timeout_ms: 120_000,
         provider_max_retries: 2,
         provider_retry_budget_ms: 0,

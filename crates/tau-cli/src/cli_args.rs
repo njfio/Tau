@@ -32,6 +32,26 @@ fn parse_positive_u64(value: &str) -> Result<u64, String> {
     Ok(parsed)
 }
 
+fn parse_positive_f64(value: &str) -> Result<f64, String> {
+    let parsed = value
+        .parse::<f64>()
+        .map_err(|error| format!("failed to parse float: {error}"))?;
+    if !parsed.is_finite() || parsed <= 0.0 {
+        return Err("value must be a finite number greater than 0".to_string());
+    }
+    Ok(parsed)
+}
+
+fn parse_threshold_percent(value: &str) -> Result<u8, String> {
+    let parsed = value
+        .parse::<u8>()
+        .map_err(|error| format!("failed to parse percent: {error}"))?;
+    if !(1..=100).contains(&parsed) {
+        return Err("value must be in range 1..=100".to_string());
+    }
+    Ok(parsed)
+}
+
 #[derive(Debug, Parser)]
 #[command(
     name = "tau-rs",
@@ -550,6 +570,24 @@ pub struct Cli {
         help = "Maximum backoff delay in milliseconds for agent-level retryable request failures"
     )]
     pub agent_request_retry_max_backoff_ms: u64,
+
+    #[arg(
+        long = "agent-cost-budget-usd",
+        env = "TAU_AGENT_COST_BUDGET_USD",
+        value_parser = parse_positive_f64,
+        help = "Optional cumulative estimated model cost budget in USD that triggers alert events at configured thresholds"
+    )]
+    pub agent_cost_budget_usd: Option<f64>,
+
+    #[arg(
+        long = "agent-cost-alert-threshold-percent",
+        env = "TAU_AGENT_COST_ALERT_THRESHOLD_PERCENT",
+        value_delimiter = ',',
+        value_parser = parse_threshold_percent,
+        default_values_t = [80_u8, 100_u8],
+        help = "Comma-delimited budget alert thresholds as percentages (1-100)"
+    )]
+    pub agent_cost_alert_threshold_percent: Vec<u8>,
 
     #[arg(
         long,

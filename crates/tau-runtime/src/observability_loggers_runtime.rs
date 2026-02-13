@@ -90,6 +90,9 @@ struct PromptTelemetryRunState {
     input_tokens: u64,
     output_tokens: u64,
     total_tokens: u64,
+    estimated_cost_usd: f64,
+    cost_budget_usd: Option<f64>,
+    budget_alerts: u64,
     tool_calls: u64,
     tool_errors: u64,
     finish_reason: Option<String>,
@@ -156,6 +159,18 @@ impl PromptTelemetryLogger {
                 "output_tokens": active.output_tokens,
                 "total_tokens": active.total_tokens,
             },
+            "cost": {
+                "estimated_usd": active.estimated_cost_usd,
+                "budget_usd": active.cost_budget_usd,
+                "budget_utilization": active.cost_budget_usd.map(|budget| {
+                    if budget <= f64::EPSILON {
+                        0.0
+                    } else {
+                        active.estimated_cost_usd / budget
+                    }
+                }),
+                "budget_alerts": active.budget_alerts,
+            },
             "tool_calls": active.tool_calls,
             "tool_errors": active.tool_errors,
             "redaction_policy": {
@@ -189,6 +204,9 @@ impl PromptTelemetryLogger {
                         input_tokens: 0,
                         output_tokens: 0,
                         total_tokens: 0,
+                        estimated_cost_usd: 0.0,
+                        cost_budget_usd: None,
+                        budget_alerts: 0,
                         tool_calls: 0,
                         tool_errors: 0,
                         finish_reason: None,
@@ -212,6 +230,21 @@ impl PromptTelemetryLogger {
                         active.total_tokens =
                             active.total_tokens.saturating_add(usage.total_tokens);
                         active.finish_reason = finish_reason.clone();
+                    }
+                }
+                AgentEvent::CostUpdated {
+                    cumulative_cost_usd,
+                    budget_usd,
+                    ..
+                } => {
+                    if let Some(active) = state.active.as_mut() {
+                        active.estimated_cost_usd = *cumulative_cost_usd;
+                        active.cost_budget_usd = *budget_usd;
+                    }
+                }
+                AgentEvent::CostBudgetAlert { .. } => {
+                    if let Some(active) = state.active.as_mut() {
+                        active.budget_alerts = active.budget_alerts.saturating_add(1);
                     }
                 }
                 AgentEvent::ToolExecutionEnd { result, .. } => {
@@ -413,5 +446,58 @@ mod tests {
         assert_eq!(first["success"], false);
         assert_eq!(second["status"], "completed");
         assert_eq!(second["success"], true);
+    }
+
+    #[test]
+    fn functional_prompt_telemetry_logger_records_cost_fields_and_budget_alerts() {
+        let temp = tempdir().expect("tempdir");
+        let log_path = temp.path().join("prompt-telemetry-cost.jsonl");
+        let logger = PromptTelemetryLogger::open(log_path.clone(), "openai", "gpt-4o-mini")
+            .expect("logger open");
+
+        logger
+            .log_event(&AgentEvent::AgentStart)
+            .expect("start prompt");
+        logger
+            .log_event(&AgentEvent::TurnEnd {
+                turn: 1,
+                tool_results: 0,
+                request_duration_ms: 5,
+                usage: ChatUsage {
+                    input_tokens: 100,
+                    output_tokens: 40,
+                    total_tokens: 140,
+                },
+                finish_reason: Some("stop".to_string()),
+            })
+            .expect("turn end");
+        logger
+            .log_event(&AgentEvent::CostUpdated {
+                turn: 1,
+                turn_cost_usd: 0.12,
+                cumulative_cost_usd: 0.12,
+                budget_usd: Some(0.2),
+            })
+            .expect("cost update");
+        logger
+            .log_event(&AgentEvent::CostBudgetAlert {
+                turn: 1,
+                threshold_percent: 50,
+                cumulative_cost_usd: 0.12,
+                budget_usd: 0.2,
+            })
+            .expect("cost alert");
+        logger
+            .log_event(&AgentEvent::AgentEnd { new_messages: 1 })
+            .expect("end prompt");
+
+        let raw = std::fs::read_to_string(log_path).expect("read telemetry log");
+        let lines = raw.lines().collect::<Vec<_>>();
+        assert_eq!(lines.len(), 1);
+        let record: serde_json::Value = serde_json::from_str(lines[0]).expect("record");
+        assert_eq!(record["cost"]["estimated_usd"], 0.12);
+        assert_eq!(record["cost"]["budget_usd"], 0.2);
+        assert_eq!(record["cost"]["budget_alerts"], 1);
+        assert!(record["cost"]["budget_utilization"].as_f64().unwrap_or(0.0) > 0.0);
     }
 }
