@@ -19,10 +19,9 @@ use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tau_agent_core::{Agent, AgentConfig, AgentEvent};
-use tau_ai::{LlmClient, Message, MessageRole, StreamDeltaHandler};
+use tau_ai::{LlmClient, StreamDeltaHandler};
 use tau_core::{current_unix_timestamp, current_unix_timestamp_ms};
 use tau_runtime::TransportHealthSnapshot;
-use tau_session::SessionStore;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
@@ -31,8 +30,11 @@ use crate::remote_profile::GatewayOpenResponsesAuthMode;
 
 mod auth_runtime;
 mod multi_channel_status;
+mod request_translation;
+mod session_runtime;
 #[cfg(test)]
 mod tests;
+mod types;
 mod webchat_page;
 mod websocket;
 
@@ -41,6 +43,17 @@ use auth_runtime::{
     issue_gateway_session_token,
 };
 use multi_channel_status::collect_gateway_multi_channel_status_report;
+use request_translation::{sanitize_session_key, translate_openresponses_request};
+use session_runtime::{
+    collect_assistant_reply, gateway_session_path, initialize_gateway_session_runtime,
+    persist_messages,
+};
+use types::{
+    GatewayAuthSessionRequest, GatewayAuthSessionResponse, OpenResponsesApiError,
+    OpenResponsesExecutionResult, OpenResponsesOutputItem, OpenResponsesOutputTextItem,
+    OpenResponsesPrompt, OpenResponsesRequest, OpenResponsesResponse, OpenResponsesUsage,
+    OpenResponsesUsageSummary, SseFrame,
+};
 use webchat_page::render_gateway_webchat_page;
 use websocket::run_gateway_ws_connection;
 
@@ -109,26 +122,6 @@ pub struct GatewayOpenResponsesServerConfig {
     pub rate_limit_window_seconds: u64,
     pub rate_limit_max_requests: usize,
     pub max_input_chars: usize,
-}
-
-#[derive(Debug)]
-struct SessionRuntime {
-    store: SessionStore,
-    active_head: Option<u64>,
-}
-
-fn persist_messages(
-    session_runtime: &mut Option<SessionRuntime>,
-    new_messages: &[Message],
-) -> Result<()> {
-    let Some(runtime) = session_runtime.as_mut() else {
-        return Ok(());
-    };
-
-    runtime.active_head = runtime
-        .store
-        .append_messages(runtime.active_head, new_messages)?;
-    Ok(())
 }
 
 #[derive(Clone)]
@@ -289,176 +282,6 @@ struct GatewayMultiChannelConnectorsStateFile {
         String,
         tau_multi_channel::multi_channel_live_connectors::MultiChannelLiveConnectorChannelState,
     >,
-}
-
-#[derive(Debug)]
-struct OpenResponsesApiError {
-    status: StatusCode,
-    code: &'static str,
-    message: String,
-}
-
-impl OpenResponsesApiError {
-    fn new(status: StatusCode, code: &'static str, message: impl Into<String>) -> Self {
-        Self {
-            status,
-            code,
-            message: message.into(),
-        }
-    }
-
-    fn bad_request(code: &'static str, message: impl Into<String>) -> Self {
-        Self::new(StatusCode::BAD_REQUEST, code, message)
-    }
-
-    fn unauthorized() -> Self {
-        Self::new(
-            StatusCode::UNAUTHORIZED,
-            "unauthorized",
-            "missing or invalid bearer token",
-        )
-    }
-
-    fn payload_too_large(message: impl Into<String>) -> Self {
-        Self::new(StatusCode::PAYLOAD_TOO_LARGE, "input_too_large", message)
-    }
-
-    fn timeout(message: impl Into<String>) -> Self {
-        Self::new(StatusCode::REQUEST_TIMEOUT, "request_timeout", message)
-    }
-
-    fn gateway_failure(message: impl Into<String>) -> Self {
-        Self::new(StatusCode::BAD_GATEWAY, "gateway_runtime_error", message)
-    }
-
-    fn internal(message: impl Into<String>) -> Self {
-        Self::new(StatusCode::INTERNAL_SERVER_ERROR, "internal_error", message)
-    }
-}
-
-impl IntoResponse for OpenResponsesApiError {
-    fn into_response(self) -> Response {
-        let error_type = if self.status.is_client_error() {
-            "invalid_request_error"
-        } else {
-            "server_error"
-        };
-        (
-            self.status,
-            Json(json!({
-                "error": {
-                    "type": error_type,
-                    "code": self.code,
-                    "message": self.message,
-                }
-            })),
-        )
-            .into_response()
-    }
-}
-
-#[derive(Debug, Deserialize)]
-struct OpenResponsesRequest {
-    #[allow(dead_code)]
-    model: Option<String>,
-    #[serde(default)]
-    input: Value,
-    #[serde(default)]
-    stream: bool,
-    instructions: Option<String>,
-    #[serde(default)]
-    metadata: Value,
-    #[serde(default)]
-    conversation: Option<String>,
-    #[serde(default, rename = "previous_response_id")]
-    previous_response_id: Option<String>,
-    #[serde(flatten)]
-    extra: BTreeMap<String, Value>,
-}
-
-#[derive(Debug, Deserialize)]
-struct GatewayAuthSessionRequest {
-    password: String,
-}
-
-#[derive(Debug, Serialize)]
-struct GatewayAuthSessionResponse {
-    access_token: String,
-    token_type: &'static str,
-    expires_unix_ms: u64,
-    expires_in_seconds: u64,
-}
-
-#[derive(Debug)]
-struct OpenResponsesPrompt {
-    prompt: String,
-    session_key: String,
-    ignored_fields: Vec<String>,
-}
-
-#[derive(Debug, Clone, Default)]
-struct OpenResponsesUsageSummary {
-    input_tokens: u64,
-    output_tokens: u64,
-    total_tokens: u64,
-}
-
-#[derive(Debug, Serialize)]
-struct OpenResponsesOutputTextItem {
-    #[serde(rename = "type")]
-    kind: &'static str,
-    text: String,
-}
-
-#[derive(Debug, Serialize)]
-struct OpenResponsesOutputItem {
-    id: String,
-    #[serde(rename = "type")]
-    kind: &'static str,
-    role: &'static str,
-    content: Vec<OpenResponsesOutputTextItem>,
-}
-
-#[derive(Debug, Serialize)]
-struct OpenResponsesUsage {
-    input_tokens: u64,
-    output_tokens: u64,
-    total_tokens: u64,
-}
-
-#[derive(Debug, Serialize)]
-struct OpenResponsesResponse {
-    id: String,
-    object: &'static str,
-    created: u64,
-    status: &'static str,
-    model: String,
-    output: Vec<OpenResponsesOutputItem>,
-    output_text: String,
-    usage: OpenResponsesUsage,
-    ignored_fields: Vec<String>,
-}
-
-#[derive(Debug)]
-struct OpenResponsesExecutionResult {
-    response: OpenResponsesResponse,
-}
-
-#[derive(Debug)]
-enum SseFrame {
-    Json { event: &'static str, payload: Value },
-    Done,
-}
-
-impl SseFrame {
-    fn into_event(self) -> Event {
-        match self {
-            Self::Json { event, payload } => {
-                Event::default().event(event).data(payload.to_string())
-            }
-            Self::Done => Event::default().event("done").data("[DONE]"),
-        }
-    }
 }
 
 pub async fn run_gateway_openresponses_server(
@@ -884,321 +707,6 @@ async fn execute_openresponses_request(
     };
 
     Ok(OpenResponsesExecutionResult { response })
-}
-
-fn translate_openresponses_request(
-    request: &OpenResponsesRequest,
-    max_input_chars: usize,
-) -> Result<OpenResponsesPrompt, OpenResponsesApiError> {
-    let mut ignored_fields = request.extra.keys().cloned().collect::<Vec<_>>();
-    ignored_fields.sort();
-
-    let mut segments = Vec::new();
-    if let Some(instructions) = non_empty_trimmed(request.instructions.as_deref()) {
-        segments.push(format!("System instructions:\n{instructions}"));
-    }
-
-    if let Some(previous_response_id) = non_empty_trimmed(request.previous_response_id.as_deref()) {
-        segments.push(format!(
-            "Continuation context (previous_response_id):\n{previous_response_id}"
-        ));
-    }
-
-    let mut extracted = 0usize;
-    extract_openresponses_input_segments(
-        &request.input,
-        &mut segments,
-        &mut extracted,
-        &mut ignored_fields,
-    )?;
-
-    if extracted == 0 {
-        return Err(OpenResponsesApiError::bad_request(
-            "missing_input",
-            "input must include at least one textual message or function_call_output item",
-        ));
-    }
-
-    let prompt = segments
-        .iter()
-        .filter_map(|segment| {
-            let trimmed = segment.trim();
-            if trimmed.is_empty() {
-                None
-            } else {
-                Some(trimmed.to_string())
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n\n");
-    if prompt.is_empty() {
-        return Err(OpenResponsesApiError::bad_request(
-            "missing_input",
-            "input did not contain usable text",
-        ));
-    }
-
-    if prompt.chars().count() > max_input_chars {
-        return Err(OpenResponsesApiError::payload_too_large(format!(
-            "translated input exceeds max {} characters",
-            max_input_chars
-        )));
-    }
-
-    let session_seed = metadata_string(&request.metadata, "session_id")
-        .or_else(|| non_empty_trimmed(request.conversation.as_deref()))
-        .or_else(|| non_empty_trimmed(request.previous_response_id.as_deref()))
-        .unwrap_or(DEFAULT_SESSION_KEY);
-
-    Ok(OpenResponsesPrompt {
-        prompt,
-        session_key: sanitize_session_key(session_seed),
-        ignored_fields,
-    })
-}
-
-fn extract_openresponses_input_segments(
-    input: &Value,
-    segments: &mut Vec<String>,
-    extracted: &mut usize,
-    ignored_fields: &mut Vec<String>,
-) -> Result<(), OpenResponsesApiError> {
-    match input {
-        Value::Null => Err(OpenResponsesApiError::bad_request(
-            "missing_input",
-            "input is required",
-        )),
-        Value::String(text) => {
-            let text = text.trim();
-            if !text.is_empty() {
-                segments.push(format!("User:\n{text}"));
-                *extracted = extracted.saturating_add(1);
-            }
-            Ok(())
-        }
-        Value::Array(items) => {
-            for (index, item) in items.iter().enumerate() {
-                extract_openresponses_item(item, index, segments, extracted, ignored_fields)?;
-            }
-            Ok(())
-        }
-        Value::Object(_) => {
-            extract_openresponses_item(input, 0, segments, extracted, ignored_fields)
-        }
-        _ => Err(OpenResponsesApiError::bad_request(
-            "invalid_input",
-            "input must be a string, object, or array",
-        )),
-    }
-}
-
-fn extract_openresponses_item(
-    item: &Value,
-    index: usize,
-    segments: &mut Vec<String>,
-    extracted: &mut usize,
-    ignored_fields: &mut Vec<String>,
-) -> Result<(), OpenResponsesApiError> {
-    match item {
-        Value::String(text) => {
-            let text = text.trim();
-            if !text.is_empty() {
-                segments.push(format!("User:\n{text}"));
-                *extracted = extracted.saturating_add(1);
-            }
-            Ok(())
-        }
-        Value::Object(map) => {
-            let item_type = map.get("type").and_then(Value::as_str).unwrap_or_default();
-            if item_type == "function_call_output" {
-                let output = stringify_output(map.get("output").unwrap_or(&Value::Null));
-                if output.is_empty() {
-                    return Err(OpenResponsesApiError::bad_request(
-                        "invalid_function_call_output",
-                        format!(
-                            "input[{index}] function_call_output item requires non-empty output"
-                        ),
-                    ));
-                }
-                let call_id = map
-                    .get("call_id")
-                    .or_else(|| map.get("id"))
-                    .and_then(Value::as_str)
-                    .map(str::trim)
-                    .filter(|value| !value.is_empty())
-                    .unwrap_or("unknown");
-                segments.push(format!("Function output (call_id={call_id}):\n{output}"));
-                *extracted = extracted.saturating_add(1);
-                return Ok(());
-            }
-
-            if item_type == "message" || map.contains_key("role") || map.contains_key("content") {
-                let role = map.get("role").and_then(Value::as_str).unwrap_or("user");
-                let text = extract_message_content_text(map.get("content"));
-                if !text.is_empty() {
-                    segments.push(format!("{}:\n{}", role_label(role), text));
-                    *extracted = extracted.saturating_add(1);
-                } else {
-                    ignored_fields.push(format!("input[{index}].content"));
-                }
-                return Ok(());
-            }
-
-            ignored_fields.push(format!("input[{index}]"));
-            Ok(())
-        }
-        _ => {
-            ignored_fields.push(format!("input[{index}]"));
-            Ok(())
-        }
-    }
-}
-
-fn extract_message_content_text(content: Option<&Value>) -> String {
-    let Some(content) = content else {
-        return String::new();
-    };
-
-    match content {
-        Value::String(text) => text.trim().to_string(),
-        Value::Array(parts) => {
-            let mut segments = Vec::new();
-            for part in parts {
-                if let Some(text) = extract_message_content_part(part) {
-                    let trimmed = text.trim();
-                    if !trimmed.is_empty() {
-                        segments.push(trimmed.to_string());
-                    }
-                }
-            }
-            segments.join("\n")
-        }
-        Value::Object(_) => extract_message_content_part(content).unwrap_or_default(),
-        _ => String::new(),
-    }
-}
-
-fn extract_message_content_part(part: &Value) -> Option<String> {
-    match part {
-        Value::String(text) => Some(text.to_string()),
-        Value::Object(map) => {
-            let part_type = map.get("type").and_then(Value::as_str).unwrap_or("text");
-            match part_type {
-                "input_text" | "output_text" | "text" => map
-                    .get("text")
-                    .and_then(Value::as_str)
-                    .map(|value| value.to_string()),
-                "function_call_output" => {
-                    let output = stringify_output(map.get("output").unwrap_or(&Value::Null));
-                    if output.trim().is_empty() {
-                        return None;
-                    }
-                    let call_id = map
-                        .get("call_id")
-                        .or_else(|| map.get("id"))
-                        .and_then(Value::as_str)
-                        .map(str::trim)
-                        .filter(|value| !value.is_empty())
-                        .unwrap_or("unknown");
-                    Some(format!("Function output (call_id={call_id}):\n{output}"))
-                }
-                _ => None,
-            }
-        }
-        _ => None,
-    }
-}
-
-fn stringify_output(value: &Value) -> String {
-    match value {
-        Value::Null => String::new(),
-        Value::String(text) => text.trim().to_string(),
-        other => serde_json::to_string(other).unwrap_or_default(),
-    }
-}
-
-fn role_label(role: &str) -> &'static str {
-    match role.trim().to_ascii_lowercase().as_str() {
-        "assistant" => "Assistant context",
-        "system" => "System context",
-        "tool" => "Tool context",
-        _ => "User",
-    }
-}
-
-fn metadata_string<'a>(metadata: &'a Value, key: &str) -> Option<&'a str> {
-    metadata
-        .as_object()?
-        .get(key)?
-        .as_str()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-}
-
-fn non_empty_trimmed(raw: Option<&str>) -> Option<&str> {
-    raw.map(str::trim).filter(|value| !value.is_empty())
-}
-
-fn sanitize_session_key(raw: &str) -> String {
-    let mut normalized = String::new();
-    for ch in raw.trim().chars() {
-        if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
-            normalized.push(ch);
-        } else {
-            normalized.push('_');
-        }
-    }
-    let normalized = normalized.trim_matches('_').to_string();
-    if normalized.is_empty() {
-        DEFAULT_SESSION_KEY.to_string()
-    } else {
-        normalized
-    }
-}
-
-fn gateway_session_path(state_dir: &Path, session_key: &str) -> PathBuf {
-    state_dir
-        .join("openresponses")
-        .join("sessions")
-        .join(format!("{session_key}.jsonl"))
-}
-
-fn initialize_gateway_session_runtime(
-    session_path: &Path,
-    system_prompt: &str,
-    lock_wait_ms: u64,
-    lock_stale_ms: u64,
-    agent: &mut Agent,
-) -> Result<SessionRuntime> {
-    if let Some(parent) = session_path.parent() {
-        if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent)
-                .with_context(|| format!("failed to create {}", parent.display()))?;
-        }
-    }
-    let mut store = SessionStore::load(session_path)?;
-    store.set_lock_policy(lock_wait_ms.max(1), lock_stale_ms);
-    let active_head = store.ensure_initialized(system_prompt)?;
-    let lineage = store.lineage_messages(active_head)?;
-    if !lineage.is_empty() {
-        agent.replace_messages(lineage);
-    }
-    Ok(SessionRuntime { store, active_head })
-}
-
-fn collect_assistant_reply(messages: &[Message]) -> String {
-    let content = messages
-        .iter()
-        .filter(|message| message.role == MessageRole::Assistant)
-        .map(Message::text_content)
-        .filter(|text| !text.trim().is_empty())
-        .collect::<Vec<_>>()
-        .join("\n\n");
-    if content.trim().is_empty() {
-        "I couldn't generate a textual response for this request.".to_string()
-    } else {
-        content
-    }
 }
 
 #[cfg(test)]

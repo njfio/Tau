@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use futures_util::{SinkExt, StreamExt};
 use reqwest::Client;
 use serde_json::Value;
-use tau_ai::{ChatRequest, ChatResponse, ChatUsage, TauAiError};
+use tau_ai::{ChatRequest, ChatResponse, ChatUsage, Message, TauAiError};
 use tempfile::tempdir;
 use tokio_tungstenite::{
     connect_async,
