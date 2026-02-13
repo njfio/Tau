@@ -157,6 +157,7 @@ where
     })
 }
 
+// Generic startup resolver keeps each injected dependency explicit for testing.
 #[allow(clippy::too_many_arguments)]
 pub async fn resolve_startup_runtime_from_cli<
     TModelRef,
@@ -222,6 +223,7 @@ where
     })
 }
 
+// Generic startup resolver keeps each injected dependency explicit for testing.
 #[allow(clippy::too_many_arguments)]
 pub async fn execute_startup_runtime_from_cli_with_modes<
     TModelRef,

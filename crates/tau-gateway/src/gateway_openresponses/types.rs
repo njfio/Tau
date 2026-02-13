@@ -74,7 +74,6 @@ impl IntoResponse for OpenResponsesApiError {
 
 #[derive(Debug, Deserialize)]
 pub(super) struct OpenResponsesRequest {
-    #[allow(dead_code)]
     pub(super) model: Option<String>,
     #[serde(default)]
     pub(super) input: Value,

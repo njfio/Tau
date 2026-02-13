@@ -144,7 +144,6 @@ pub struct ChannelStore {
     channel_id: String,
 }
 
-#[allow(dead_code)]
 impl ChannelStore {
     pub fn open(base_dir: &Path, transport: &str, channel_id: &str) -> Result<Self> {
         let transport = transport.trim();
@@ -624,7 +623,6 @@ where
     write_text_atomic(path, &payload).with_context(|| format!("failed to write {}", path.display()))
 }
 
-#[allow(dead_code)]
 fn read_jsonl_records<T>(path: &Path) -> Result<Vec<T>>
 where
     T: for<'de> Deserialize<'de>,
