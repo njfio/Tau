@@ -1,4 +1,13 @@
-use super::*;
+use std::path::{Path, PathBuf};
+
+use tau_cli::{
+    CliCredentialStoreEncryptionMode, CliDaemonProfile, CliDeploymentWasmRuntimeProfile,
+    CliGatewayOpenResponsesAuthMode, CliGatewayRemoteProfile, CliMultiChannelLiveConnectorMode,
+    CliMultiChannelOutboundMode, CliMultiChannelTransport, CliProviderAuthMode,
+};
+use tau_cli::validation::validate_project_index_cli;
+
+use super::{parse_cli_with_stack, try_parse_cli_with_stack};
 
 #[test]
 fn unit_cli_provider_retry_flags_accept_explicit_baseline_values() {
