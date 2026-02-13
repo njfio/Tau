@@ -95,6 +95,14 @@ pub const COMMAND_SPECS: &[CommandSpec] = &[
         example: "/session-import /tmp/session-snapshot.jsonl",
     },
     CommandSpec {
+        name: "/session-merge",
+        usage: "/session-merge <source-id> [target-id] [--strategy <append|squash|fast-forward>]",
+        description: "Merge one branch head into another using explicit strategy",
+        details:
+            "Defaults target-id to the active head when omitted. append replays source-only entries, squash writes one summary entry, fast-forward requires target ancestry.",
+        example: "/session-merge 42 24 --strategy squash",
+    },
+    CommandSpec {
         name: "/policy",
         usage: "/policy",
         description: "Print the effective tool policy JSON",
@@ -361,6 +369,7 @@ pub const COMMAND_NAMES: &[&str] = &[
     "/session-graph-export",
     "/session-export",
     "/session-import",
+    "/session-merge",
     "/policy",
     "/audit-summary",
     "/models-list",
