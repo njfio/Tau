@@ -15,9 +15,7 @@ use tau_agent_core::{Agent, AgentConfig, AgentEvent};
 use tau_ai::LlmClient;
 use tokio::sync::watch;
 
-use crate::auth_commands::{
-    execute_auth_command, parse_auth_command, AuthCommand, AUTH_MATRIX_USAGE, AUTH_STATUS_USAGE,
-};
+use crate::auth_commands::execute_auth_command;
 use crate::channel_store::{
     ChannelArtifactRecord, ChannelAttachmentRecord, ChannelLogEntry, ChannelStore,
 };
@@ -29,7 +27,7 @@ use crate::{
     pairing_policy_for_state_dir, rbac_policy_path_for_state_dir, run_prompt_with_cancellation,
     session_message_preview, session_message_role, write_text_atomic, CanvasCommandConfig,
     CanvasEventOrigin, CanvasSessionLinkContext, PairingDecision, PromptRunStatus, RbacDecision,
-    RenderOptions, SessionRuntime, TransportHealthSnapshot,
+    RenderOptions, TransportHealthSnapshot,
 };
 use tau_diagnostics::{
     render_doctor_report, render_doctor_report_json, run_doctor_checks_with_options,
@@ -43,51 +41,17 @@ use tau_github_issues::github_transport_helpers::{
     is_retryable_github_status, is_retryable_transport_error, parse_retry_after, retry_delay,
     truncate_for_error,
 };
-use tau_github_issues::issue_artifacts_command::{
-    parse_issue_artifacts_command as parse_shared_issue_artifacts_command, ArtifactsIssueCommand,
-};
-use tau_github_issues::issue_auth_command::{
-    parse_issue_auth_command as parse_shared_issue_auth_command, TauIssueAuthCommand,
-    TauIssueAuthCommandKind,
-};
+use tau_github_issues::issue_auth_command::{TauIssueAuthCommand, TauIssueAuthCommandKind};
 use tau_github_issues::issue_auth_helpers::{
     build_issue_auth_summary_line as build_shared_issue_auth_summary_line,
     ensure_auth_json_flag as ensure_shared_auth_json_flag, IssueAuthSummaryKind,
 };
-use tau_github_issues::issue_chat_command::{
-    parse_issue_chat_command as parse_shared_issue_chat_command, IssueChatCommand,
-    IssueChatParseConfig,
-};
-use tau_github_issues::issue_command_parser::{
-    parse_issue_command as parse_shared_issue_command, ParsedIssueCommand,
-};
-use tau_github_issues::issue_command_usage::{
-    artifacts_command_usage as artifacts_shared_command_usage,
-    chat_command_usage as chat_shared_command_usage,
-    chat_search_command_usage as chat_search_shared_command_usage,
-    chat_show_command_usage as chat_show_shared_command_usage,
-    demo_index_command_usage as demo_index_shared_command_usage,
-    doctor_command_usage as doctor_shared_command_usage,
-    issue_auth_command_usage as issue_auth_shared_command_usage,
-    tau_command_usage as tau_shared_command_usage,
-};
+use tau_github_issues::issue_command_usage::tau_command_usage as tau_shared_command_usage;
 use tau_github_issues::issue_comment::{
     extract_footer_event_keys, issue_command_reason_code, normalize_issue_command_status,
-    render_issue_command_comment, render_issue_comment_chunks_with_footer,
-    render_issue_comment_response_parts as render_shared_issue_comment_response_parts,
-    IssueCommentArtifactView, IssueCommentAttachmentView, IssueCommentRunView,
-    IssueCommentUsageView,
+    render_issue_command_comment,
 };
-use tau_github_issues::issue_core_command::{
-    parse_issue_core_command as parse_shared_issue_core_command, IssueCoreCommand,
-};
-use tau_github_issues::issue_demo_index::parse_demo_index_run_command as parse_shared_demo_index_run_command;
-use tau_github_issues::issue_demo_index_command::{
-    parse_demo_index_issue_command as parse_shared_demo_index_issue_command, DemoIndexIssueCommand,
-};
-use tau_github_issues::issue_doctor_command::{
-    parse_issue_doctor_command as parse_shared_issue_doctor_command, IssueDoctorCommand,
-};
+use tau_github_issues::issue_doctor_command::IssueDoctorCommand;
 use tau_github_issues::issue_event_action::{
     event_action_from_body as event_action_from_shared_body, EventAction as SharedEventAction,
 };
@@ -106,11 +70,6 @@ use tau_github_issues::issue_prompt_helpers::{
     build_summarize_prompt as build_shared_summarize_prompt,
     collect_assistant_reply as collect_shared_assistant_reply,
 };
-use tau_github_issues::issue_render::{
-    render_event_prompt as render_shared_event_prompt,
-    render_issue_artifact_markdown as render_shared_issue_artifact_markdown,
-    IssueArtifactAttachmentView, IssueEventPromptAttachmentView,
-};
 use tau_github_issues::issue_run_error_comment::render_issue_run_error_comment as render_shared_issue_run_error_comment;
 use tau_github_issues::issue_runtime_helpers::{
     is_expired_at as is_shared_expired_at, issue_session_id as issue_shared_session_id,
@@ -127,8 +86,25 @@ use tau_github_issues::issue_session_helpers::{
     ensure_issue_session_initialized as shared_ensure_issue_session_initialized,
     reset_issue_session_files as shared_reset_issue_session_files,
 };
+use tau_session::search_session_entries;
 use tau_session::SessionStore;
-use tau_session::{parse_session_search_args, search_session_entries};
+
+mod issue_command_helpers;
+mod issue_render_helpers;
+mod issue_session_runtime;
+
+use issue_command_helpers::{
+    default_demo_index_binary_path, default_demo_index_repo_root, parse_tau_issue_command,
+};
+use issue_render_helpers::{
+    doctor_status_label, prompt_status_label, render_event_prompt, render_issue_artifact_markdown,
+    render_issue_comment_chunks,
+};
+#[cfg(test)]
+use issue_render_helpers::{
+    render_issue_comment_chunks_with_limit, render_issue_comment_response_parts,
+};
+use issue_session_runtime::initialize_issue_session_runtime;
 
 const GITHUB_STATE_SCHEMA_VERSION: u32 = 1;
 const GITHUB_COMMENT_MAX_CHARS: usize = 65_000;
@@ -4914,333 +4890,6 @@ async fn download_issue_attachments(
     }
 
     Ok(downloaded)
-}
-
-fn initialize_issue_session_runtime(
-    session_path: &Path,
-    system_prompt: &str,
-    lock_wait_ms: u64,
-    lock_stale_ms: u64,
-    agent: &mut Agent,
-) -> Result<SessionRuntime> {
-    if let Some(parent) = session_path.parent() {
-        if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent)
-                .with_context(|| format!("failed to create {}", parent.display()))?;
-        }
-    }
-    let mut store = SessionStore::load(session_path)?;
-    store.set_lock_policy(lock_wait_ms.max(1), lock_stale_ms);
-    let active_head = store.ensure_initialized(system_prompt)?;
-    let lineage = store.lineage_messages(active_head)?;
-    if !lineage.is_empty() {
-        agent.replace_messages(lineage);
-    }
-    Ok(SessionRuntime { store, active_head })
-}
-
-fn render_event_prompt(
-    repo: &RepoRef,
-    event: &GithubBridgeEvent,
-    prompt: &str,
-    downloaded_attachments: &[DownloadedGithubAttachment],
-) -> String {
-    let repo_slug = repo.as_slug();
-    let attachment_views = downloaded_attachments
-        .iter()
-        .map(|attachment| IssueEventPromptAttachmentView {
-            source_url: &attachment.source_url,
-            original_name: &attachment.original_name,
-            path: &attachment.path,
-            content_type: attachment.content_type.as_deref(),
-            bytes: attachment.bytes,
-            policy_reason_code: &attachment.policy_reason_code,
-            expires_unix_ms: attachment.expires_unix_ms,
-        })
-        .collect::<Vec<_>>();
-    render_shared_event_prompt(
-        &repo_slug,
-        event.issue_number,
-        &event.issue_title,
-        &event.author_login,
-        event.kind.as_str(),
-        prompt,
-        &attachment_views,
-    )
-}
-
-fn render_issue_comment_response_parts(
-    event: &GithubBridgeEvent,
-    run: &PromptRunReport,
-) -> (String, String) {
-    let usage = &run.usage;
-    let status = format!("{:?}", run.status).to_lowercase();
-    let usage_view = IssueCommentUsageView {
-        input_tokens: usage.input_tokens,
-        output_tokens: usage.output_tokens,
-        total_tokens: usage.total_tokens,
-    };
-    let artifact_view = IssueCommentArtifactView {
-        relative_path: &run.artifact.relative_path,
-        checksum_sha256: &run.artifact.checksum_sha256,
-        bytes: run.artifact.bytes,
-    };
-    let attachment_views = run
-        .downloaded_attachments
-        .iter()
-        .map(|attachment| IssueCommentAttachmentView {
-            policy_reason_code: &attachment.policy_reason_code,
-        })
-        .collect::<Vec<_>>();
-    let run_view = IssueCommentRunView {
-        event_key: &event.key,
-        run_id: &run.run_id,
-        status: &status,
-        model: &run.model,
-        assistant_reply: &run.assistant_reply,
-        usage: usage_view,
-        artifact: artifact_view,
-    };
-    render_shared_issue_comment_response_parts(run_view, &attachment_views)
-}
-
-fn render_issue_comment_chunks(event: &GithubBridgeEvent, run: &PromptRunReport) -> Vec<String> {
-    render_issue_comment_chunks_with_limit(event, run, GITHUB_COMMENT_MAX_CHARS)
-}
-
-fn render_issue_comment_chunks_with_limit(
-    event: &GithubBridgeEvent,
-    run: &PromptRunReport,
-    max_chars: usize,
-) -> Vec<String> {
-    let (content, footer) = render_issue_comment_response_parts(event, run);
-    render_issue_comment_chunks_with_footer(&content, &footer, max_chars)
-}
-
-fn render_issue_artifact_markdown(
-    repo: &RepoRef,
-    event: &GithubBridgeEvent,
-    run_id: &str,
-    status: PromptRunStatus,
-    assistant_reply: &str,
-    downloaded_attachments: &[DownloadedGithubAttachment],
-) -> String {
-    let repo_slug = repo.as_slug();
-    let attachment_views = downloaded_attachments
-        .iter()
-        .map(|attachment| IssueArtifactAttachmentView {
-            source_url: &attachment.source_url,
-            original_name: &attachment.original_name,
-            path: &attachment.path,
-            relative_path: &attachment.relative_path,
-            content_type: attachment.content_type.as_deref(),
-            bytes: attachment.bytes,
-            checksum_sha256: &attachment.checksum_sha256,
-            policy_reason_code: &attachment.policy_reason_code,
-            created_unix_ms: attachment.created_unix_ms,
-            expires_unix_ms: attachment.expires_unix_ms,
-        })
-        .collect::<Vec<_>>();
-    render_shared_issue_artifact_markdown(
-        &repo_slug,
-        event.issue_number,
-        &event.key,
-        run_id,
-        prompt_status_label(status),
-        assistant_reply,
-        &attachment_views,
-    )
-}
-
-fn default_demo_index_repo_root() -> PathBuf {
-    let manifest_root = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .to_path_buf();
-    if manifest_root.join("scripts/demo/index.sh").exists() {
-        return manifest_root;
-    }
-    if let Ok(current_dir) = std::env::current_dir() {
-        if current_dir.join("scripts/demo/index.sh").exists() {
-            return current_dir;
-        }
-    }
-    manifest_root
-}
-
-fn default_demo_index_binary_path() -> PathBuf {
-    std::env::current_exe().unwrap_or_else(|_| {
-        Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../target/debug/tau-coding-agent")
-            .to_path_buf()
-    })
-}
-
-fn parse_tau_issue_command(body: &str) -> Option<TauIssueCommand> {
-    let usage = tau_shared_command_usage("/tau");
-    let parsed = parse_shared_issue_command(
-        body,
-        "/tau",
-        &usage,
-        parse_shared_issue_core_command,
-        |command, remainder| match command {
-            "auth" => Some(Ok(parse_issue_auth_command(remainder))),
-            "doctor" => Some(Ok(parse_doctor_issue_command(remainder))),
-            "chat" => Some(Ok(parse_chat_command(remainder))),
-            "artifacts" => Some(Ok(parse_artifacts_command(remainder))),
-            "demo-index" => Some(Ok(parse_demo_index_command(remainder))),
-            _ => None,
-        },
-    )?;
-
-    let parsed = match parsed {
-        ParsedIssueCommand::Core(core) => map_issue_core_command(core),
-        ParsedIssueCommand::Special(command) => command,
-        ParsedIssueCommand::Invalid { message } => TauIssueCommand::Invalid { message },
-        ParsedIssueCommand::Unknown { command } => TauIssueCommand::Invalid {
-            message: format!(
-                "Unknown command `{}`.\n\n{}",
-                command,
-                tau_shared_command_usage("/tau")
-            ),
-        },
-    };
-    Some(parsed)
-}
-
-fn map_issue_core_command(command: IssueCoreCommand) -> TauIssueCommand {
-    match command {
-        IssueCoreCommand::Run { prompt } => TauIssueCommand::Run { prompt },
-        IssueCoreCommand::Stop => TauIssueCommand::Stop,
-        IssueCoreCommand::Status => TauIssueCommand::Status,
-        IssueCoreCommand::Health => TauIssueCommand::Health,
-        IssueCoreCommand::Compact => TauIssueCommand::Compact,
-        IssueCoreCommand::Help => TauIssueCommand::Help,
-        IssueCoreCommand::Canvas { args } => TauIssueCommand::Canvas { args },
-        IssueCoreCommand::Summarize { focus } => TauIssueCommand::Summarize { focus },
-    }
-}
-
-fn parse_demo_index_command(remainder: &str) -> TauIssueCommand {
-    let usage = demo_index_shared_command_usage(
-        "/tau",
-        &DEMO_INDEX_SCENARIOS,
-        DEMO_INDEX_DEFAULT_TIMEOUT_SECONDS,
-        DEMO_INDEX_MAX_TIMEOUT_SECONDS,
-    );
-    match parse_shared_demo_index_issue_command(remainder, &usage, |raw| {
-        let parsed = parse_shared_demo_index_run_command(
-            raw,
-            &DEMO_INDEX_SCENARIOS,
-            DEMO_INDEX_DEFAULT_TIMEOUT_SECONDS,
-            DEMO_INDEX_MAX_TIMEOUT_SECONDS,
-            &usage,
-        )?;
-        Ok(DemoIndexRunCommand {
-            scenarios: parsed.scenarios,
-            timeout_seconds: parsed.timeout_seconds,
-        })
-    }) {
-        Ok(DemoIndexIssueCommand::List) => TauIssueCommand::DemoIndexList,
-        Ok(DemoIndexIssueCommand::Report) => TauIssueCommand::DemoIndexReport,
-        Ok(DemoIndexIssueCommand::Run(command)) => TauIssueCommand::DemoIndexRun { command },
-        Err(message) => TauIssueCommand::Invalid { message },
-    }
-}
-
-fn parse_doctor_issue_command(remainder: &str) -> TauIssueCommand {
-    let usage = doctor_shared_command_usage("/tau");
-    match parse_shared_issue_doctor_command(remainder, &usage) {
-        Ok(command) => TauIssueCommand::Doctor { command },
-        Err(message) => TauIssueCommand::Invalid { message },
-    }
-}
-
-fn parse_issue_auth_command(remainder: &str) -> TauIssueCommand {
-    let usage = issue_auth_shared_command_usage("/tau", AUTH_STATUS_USAGE, AUTH_MATRIX_USAGE);
-    match parse_shared_issue_auth_command(remainder, &usage, |args| {
-        match parse_auth_command(args) {
-            Ok(AuthCommand::Status { .. }) => Ok(Some(TauIssueAuthCommandKind::Status)),
-            Ok(AuthCommand::Matrix { .. }) => Ok(Some(TauIssueAuthCommandKind::Matrix)),
-            Ok(_) => Ok(None),
-            Err(error) => Err(error.to_string()),
-        }
-    }) {
-        Ok(command) => TauIssueCommand::Auth { command },
-        Err(message) => TauIssueCommand::Invalid { message },
-    }
-}
-
-fn parse_chat_command(remainder: &str) -> TauIssueCommand {
-    let usage = chat_shared_command_usage("/tau");
-    let show_usage = chat_show_shared_command_usage("/tau");
-    let search_usage = chat_search_shared_command_usage("/tau");
-    match parse_shared_issue_chat_command(
-        remainder,
-        IssueChatParseConfig {
-            show_default_limit: CHAT_SHOW_DEFAULT_LIMIT,
-            show_max_limit: CHAT_SHOW_MAX_LIMIT,
-            search_max_limit: CHAT_SEARCH_MAX_LIMIT,
-            usage: &usage,
-            show_usage: &show_usage,
-            search_usage: &search_usage,
-        },
-        |raw| {
-            parse_session_search_args(raw)
-                .map(|args| (args.query, args.role, args.limit))
-                .map_err(|error| error.to_string())
-        },
-    ) {
-        Ok(IssueChatCommand::Start) => TauIssueCommand::ChatStart,
-        Ok(IssueChatCommand::Resume) => TauIssueCommand::ChatResume,
-        Ok(IssueChatCommand::Reset) => TauIssueCommand::ChatReset,
-        Ok(IssueChatCommand::Export) => TauIssueCommand::ChatExport,
-        Ok(IssueChatCommand::Status) => TauIssueCommand::ChatStatus,
-        Ok(IssueChatCommand::Summary) => TauIssueCommand::ChatSummary,
-        Ok(IssueChatCommand::Replay) => TauIssueCommand::ChatReplay,
-        Ok(IssueChatCommand::Show { limit }) => TauIssueCommand::ChatShow { limit },
-        Ok(IssueChatCommand::Search { query, role, limit }) => {
-            TauIssueCommand::ChatSearch { query, role, limit }
-        }
-        Err(message) => TauIssueCommand::Invalid { message },
-    }
-}
-
-fn parse_artifacts_command(remainder: &str) -> TauIssueCommand {
-    let usage = artifacts_shared_command_usage("/tau");
-    match parse_shared_issue_artifacts_command(remainder, &usage) {
-        Ok(ArtifactsIssueCommand::List) => TauIssueCommand::Artifacts {
-            purge: false,
-            run_id: None,
-        },
-        Ok(ArtifactsIssueCommand::Purge) => TauIssueCommand::Artifacts {
-            purge: true,
-            run_id: None,
-        },
-        Ok(ArtifactsIssueCommand::Run { run_id }) => TauIssueCommand::Artifacts {
-            purge: false,
-            run_id: Some(run_id),
-        },
-        Ok(ArtifactsIssueCommand::Show { artifact_id }) => {
-            TauIssueCommand::ArtifactShow { artifact_id }
-        }
-        Err(message) => TauIssueCommand::Invalid { message },
-    }
-}
-
-fn prompt_status_label(status: PromptRunStatus) -> &'static str {
-    match status {
-        PromptRunStatus::Completed => "completed",
-        PromptRunStatus::Cancelled => "cancelled",
-        PromptRunStatus::TimedOut => "timed_out",
-    }
-}
-
-fn doctor_status_label(status: DoctorStatus) -> &'static str {
-    match status {
-        DoctorStatus::Pass => "pass",
-        DoctorStatus::Warn => "warn",
-        DoctorStatus::Fail => "fail",
-    }
 }
 
 #[cfg(test)]
