@@ -69,6 +69,7 @@ pub(crate) async fn run_local_runtime(config: LocalRuntimeConfig<'_>) -> Result<
     } = config;
 
     let agent_defaults = AgentConfig::default();
+    let model_catalog_entry = model_catalog.find_model_ref(model_ref);
     let mut agent = build_onboarding_local_runtime_agent(
         client,
         model_ref,
@@ -82,6 +83,12 @@ pub(crate) async fn run_local_runtime(config: LocalRuntimeConfig<'_>) -> Result<
             request_retry_max_backoff_ms: cli.agent_request_retry_max_backoff_ms,
             request_timeout_ms: agent_defaults.request_timeout_ms,
             tool_timeout_ms: agent_defaults.tool_timeout_ms,
+            model_input_cost_per_million: model_catalog_entry
+                .and_then(|entry| entry.input_cost_per_million),
+            model_output_cost_per_million: model_catalog_entry
+                .and_then(|entry| entry.output_cost_per_million),
+            cost_budget_usd: cli.agent_cost_budget_usd,
+            cost_alert_thresholds_percent: cli.agent_cost_alert_threshold_percent.clone(),
         },
         tool_policy,
     );

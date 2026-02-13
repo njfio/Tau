@@ -16,7 +16,7 @@ use crate::startup_config::{build_auth_command_config, build_profile_defaults, P
 
 const EXTENSION_TOOL_HOOK_PAYLOAD_SCHEMA_VERSION: u32 = 1;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 /// Public struct `LocalRuntimeAgentSettings` used across Tau components.
 pub struct LocalRuntimeAgentSettings {
     pub max_turns: usize,
@@ -27,6 +27,10 @@ pub struct LocalRuntimeAgentSettings {
     pub request_retry_max_backoff_ms: u64,
     pub request_timeout_ms: Option<u64>,
     pub tool_timeout_ms: Option<u64>,
+    pub model_input_cost_per_million: Option<f64>,
+    pub model_output_cost_per_million: Option<f64>,
+    pub cost_budget_usd: Option<f64>,
+    pub cost_alert_thresholds_percent: Vec<u8>,
 }
 
 pub fn build_local_runtime_agent(
@@ -51,6 +55,10 @@ pub fn build_local_runtime_agent(
             request_retry_max_backoff_ms: settings.request_retry_max_backoff_ms,
             request_timeout_ms: settings.request_timeout_ms,
             tool_timeout_ms: settings.tool_timeout_ms,
+            model_input_cost_per_million: settings.model_input_cost_per_million,
+            model_output_cost_per_million: settings.model_output_cost_per_million,
+            cost_budget_usd: settings.cost_budget_usd,
+            cost_alert_thresholds_percent: settings.cost_alert_thresholds_percent,
             ..AgentConfig::default()
         },
     );
@@ -1029,11 +1037,56 @@ mod tests {
                 request_retry_max_backoff_ms: 2_000,
                 request_timeout_ms: Some(120_000),
                 tool_timeout_ms: Some(120_000),
+                model_input_cost_per_million: None,
+                model_output_cost_per_million: None,
+                cost_budget_usd: None,
+                cost_alert_thresholds_percent: vec![80, 100],
             },
             ToolPolicy::new(vec![std::env::temp_dir()]),
         );
         assert_eq!(agent.messages().len(), 1);
         assert_eq!(agent.messages()[0].text_content(), "system prompt");
+    }
+
+    #[tokio::test]
+    async fn functional_build_local_runtime_agent_applies_cost_budget_and_pricing_settings() {
+        let model_ref = ModelRef::parse("openai/gpt-4o-mini").expect("model ref");
+        let client = Arc::new(QueueClient {
+            responses: AsyncMutex::new(VecDeque::from([ChatResponse {
+                message: Message::assistant_text("ok"),
+                finish_reason: Some("stop".to_string()),
+                usage: ChatUsage {
+                    input_tokens: 100_000,
+                    output_tokens: 0,
+                    total_tokens: 100_000,
+                },
+            }])),
+        });
+        let mut agent = build_local_runtime_agent(
+            client,
+            &model_ref,
+            "system prompt",
+            LocalRuntimeAgentSettings {
+                max_turns: 4,
+                max_parallel_tool_calls: 4,
+                max_context_messages: Some(256),
+                request_max_retries: 2,
+                request_retry_initial_backoff_ms: 200,
+                request_retry_max_backoff_ms: 2_000,
+                request_timeout_ms: Some(120_000),
+                tool_timeout_ms: Some(120_000),
+                model_input_cost_per_million: Some(10.0),
+                model_output_cost_per_million: Some(0.0),
+                cost_budget_usd: Some(1.0),
+                cost_alert_thresholds_percent: vec![80, 100],
+            },
+            ToolPolicy::new(vec![std::env::temp_dir()]),
+        );
+
+        let _ = agent.prompt("hello").await.expect("prompt succeeds");
+        let snapshot = agent.cost_snapshot();
+        assert_eq!(snapshot.budget_usd, Some(1.0));
+        assert!((snapshot.estimated_cost_usd - 1.0).abs() < 1e-9);
     }
 
     #[tokio::test]
@@ -1061,6 +1114,10 @@ mod tests {
                 request_retry_max_backoff_ms: 2_000,
                 request_timeout_ms: Some(120_000),
                 tool_timeout_ms: Some(120_000),
+                model_input_cost_per_million: None,
+                model_output_cost_per_million: None,
+                cost_budget_usd: None,
+                cost_alert_thresholds_percent: vec![80, 100],
             },
             ToolPolicy::new(vec![std::env::temp_dir()]),
         );
@@ -1096,6 +1153,10 @@ mod tests {
                 request_retry_max_backoff_ms: 2_000,
                 request_timeout_ms: Some(120_000),
                 tool_timeout_ms: Some(120_000),
+                model_input_cost_per_million: None,
+                model_output_cost_per_million: None,
+                cost_budget_usd: None,
+                cost_alert_thresholds_percent: vec![80, 100],
             },
             ToolPolicy::new(vec![std::env::temp_dir()]),
         );
@@ -1125,6 +1186,10 @@ mod tests {
                 request_retry_max_backoff_ms: 2_000,
                 request_timeout_ms: Some(120_000),
                 tool_timeout_ms: Some(120_000),
+                model_input_cost_per_million: None,
+                model_output_cost_per_million: None,
+                cost_budget_usd: None,
+                cost_alert_thresholds_percent: vec![80, 100],
             },
             ToolPolicy::new(vec![std::env::temp_dir()]),
         );

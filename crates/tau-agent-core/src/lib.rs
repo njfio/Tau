@@ -62,6 +62,10 @@ pub struct AgentConfig {
     pub response_cache_max_entries: usize,
     pub tool_result_cache_enabled: bool,
     pub tool_result_cache_max_entries: usize,
+    pub model_input_cost_per_million: Option<f64>,
+    pub model_output_cost_per_million: Option<f64>,
+    pub cost_budget_usd: Option<f64>,
+    pub cost_alert_thresholds_percent: Vec<u8>,
 }
 
 impl Default for AgentConfig {
@@ -93,8 +97,23 @@ impl Default for AgentConfig {
             response_cache_max_entries: 128,
             tool_result_cache_enabled: true,
             tool_result_cache_max_entries: 256,
+            model_input_cost_per_million: None,
+            model_output_cost_per_million: None,
+            cost_budget_usd: None,
+            cost_alert_thresholds_percent: vec![80, 100],
         }
     }
+}
+
+/// Public struct `AgentCostSnapshot` used across Tau components.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AgentCostSnapshot {
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub total_tokens: u64,
+    pub estimated_cost_usd: f64,
+    pub budget_usd: Option<f64>,
+    pub budget_utilization: Option<f64>,
 }
 
 /// Cooperative cancellation token shared across runtime components.
@@ -255,6 +274,18 @@ pub enum AgentEvent {
     ReplanTriggered {
         turn: usize,
         reason: String,
+    },
+    CostUpdated {
+        turn: usize,
+        turn_cost_usd: f64,
+        cumulative_cost_usd: f64,
+        budget_usd: Option<f64>,
+    },
+    CostBudgetAlert {
+        turn: usize,
+        threshold_percent: u8,
+        cumulative_cost_usd: f64,
+        budget_usd: f64,
     },
 }
 
@@ -437,6 +468,9 @@ pub struct Agent {
     tool_result_cache_order: VecDeque<String>,
     handlers: Vec<EventHandler>,
     cancellation_token: Option<CooperativeCancellationToken>,
+    cumulative_usage: ChatUsage,
+    cumulative_cost_usd: f64,
+    emitted_cost_alert_thresholds: HashSet<u8>,
 }
 
 impl Agent {
@@ -460,6 +494,9 @@ impl Agent {
             tool_result_cache_order: VecDeque::new(),
             handlers: Vec::new(),
             cancellation_token: None,
+            cumulative_usage: ChatUsage::default(),
+            cumulative_cost_usd: 0.0,
+            emitted_cost_alert_thresholds: HashSet::new(),
         }
     }
 
@@ -657,6 +694,26 @@ impl Agent {
     /// ```
     pub fn messages(&self) -> &[Message] {
         &self.messages
+    }
+
+    /// Returns cumulative token usage and estimated model spend for this agent.
+    pub fn cost_snapshot(&self) -> AgentCostSnapshot {
+        let budget_usd = self.config.cost_budget_usd.filter(|budget| *budget > 0.0);
+        let budget_utilization = budget_usd.map(|budget| {
+            if budget <= f64::EPSILON {
+                0.0
+            } else {
+                self.cumulative_cost_usd / budget
+            }
+        });
+        AgentCostSnapshot {
+            input_tokens: self.cumulative_usage.input_tokens,
+            output_tokens: self.cumulative_usage.output_tokens,
+            total_tokens: self.cumulative_usage.total_tokens,
+            estimated_cost_usd: self.cumulative_cost_usd,
+            budget_usd,
+            budget_utilization,
+        }
     }
 
     /// Replaces the current conversation history with the provided messages.
@@ -927,6 +984,66 @@ impl Agent {
         self.tool_result_cache_order.clear();
     }
 
+    fn accumulate_usage_and_emit_cost_events(&mut self, turn: usize, usage: &ChatUsage) {
+        self.cumulative_usage.input_tokens = self
+            .cumulative_usage
+            .input_tokens
+            .saturating_add(usage.input_tokens);
+        self.cumulative_usage.output_tokens = self
+            .cumulative_usage
+            .output_tokens
+            .saturating_add(usage.output_tokens);
+        self.cumulative_usage.total_tokens = self
+            .cumulative_usage
+            .total_tokens
+            .saturating_add(usage.total_tokens);
+
+        let turn_cost_usd = estimate_usage_cost_usd(
+            usage,
+            self.config.model_input_cost_per_million,
+            self.config.model_output_cost_per_million,
+        );
+        self.cumulative_cost_usd += turn_cost_usd;
+
+        let budget_usd = self.config.cost_budget_usd.filter(|budget| *budget > 0.0);
+        if self.config.model_input_cost_per_million.is_none()
+            && self.config.model_output_cost_per_million.is_none()
+            && budget_usd.is_none()
+        {
+            return;
+        }
+
+        self.emit(AgentEvent::CostUpdated {
+            turn,
+            turn_cost_usd,
+            cumulative_cost_usd: self.cumulative_cost_usd,
+            budget_usd,
+        });
+
+        let Some(budget_usd) = budget_usd else {
+            return;
+        };
+        let utilization = if budget_usd <= f64::EPSILON {
+            0.0
+        } else {
+            self.cumulative_cost_usd / budget_usd
+        };
+        let utilization_percent = utilization * 100.0;
+        for threshold in normalize_cost_alert_thresholds(&self.config.cost_alert_thresholds_percent)
+        {
+            if utilization_percent >= f64::from(threshold)
+                && self.emitted_cost_alert_thresholds.insert(threshold)
+            {
+                self.emit(AgentEvent::CostBudgetAlert {
+                    turn,
+                    threshold_percent: threshold,
+                    cumulative_cost_usd: self.cumulative_cost_usd,
+                    budget_usd,
+                });
+            }
+        }
+    }
+
     fn tool_definitions(&self) -> Vec<ToolDefinition> {
         self.tools
             .values()
@@ -1028,6 +1145,7 @@ impl Agent {
             self.emit(AgentEvent::MessageAdded {
                 message: assistant.clone(),
             });
+            self.accumulate_usage_and_emit_cost_events(turn, &usage);
 
             let assistant_text = assistant.text_content();
             let tool_calls = assistant.tool_calls();
@@ -1492,6 +1610,38 @@ fn estimate_text_tokens(text: &str) -> u32 {
     }
     let chars = u32::try_from(text.chars().count()).unwrap_or(u32::MAX);
     chars.saturating_add(3) / 4
+}
+
+fn estimate_usage_cost_usd(
+    usage: &ChatUsage,
+    input_cost_per_million: Option<f64>,
+    output_cost_per_million: Option<f64>,
+) -> f64 {
+    let input = input_cost_per_million
+        .unwrap_or(0.0)
+        .max(0.0)
+        .mul_add(usage.input_tokens as f64, 0.0)
+        / 1_000_000.0;
+    let output = output_cost_per_million
+        .unwrap_or(0.0)
+        .max(0.0)
+        .mul_add(usage.output_tokens as f64, 0.0)
+        / 1_000_000.0;
+    input + output
+}
+
+fn normalize_cost_alert_thresholds(thresholds: &[u8]) -> Vec<u8> {
+    let mut normalized = thresholds
+        .iter()
+        .copied()
+        .filter(|threshold| (1..=100).contains(threshold))
+        .collect::<Vec<_>>();
+    if normalized.is_empty() {
+        normalized.push(100);
+    }
+    normalized.sort_unstable();
+    normalized.dedup();
+    normalized
 }
 
 fn bounded_messages(messages: &[Message], max_messages: usize) -> Vec<Message> {
@@ -2044,11 +2194,12 @@ mod tests {
     use crate::{
         assistant_text_suggests_failure, bounded_messages, build_structured_output_retry_prompt,
         cache_insert_with_limit, embed_text_vector, estimate_chat_request_tokens,
-        extract_json_payload, retrieve_memory_matches, stream_retry_buffer_on_delta,
-        truncate_chars, Agent, AgentConfig, AgentDirectMessageError, AgentDirectMessagePolicy,
-        AgentError, AgentEvent, AgentTool, CooperativeCancellationToken, StreamingRetryBufferState,
-        ToolExecutionResult, CONTEXT_SUMMARY_MAX_CHARS, CONTEXT_SUMMARY_PREFIX,
-        DIRECT_MESSAGE_PREFIX, MEMORY_RECALL_PREFIX,
+        estimate_usage_cost_usd, extract_json_payload, normalize_cost_alert_thresholds,
+        retrieve_memory_matches, stream_retry_buffer_on_delta, truncate_chars, Agent, AgentConfig,
+        AgentDirectMessageError, AgentDirectMessagePolicy, AgentError, AgentEvent, AgentTool,
+        CooperativeCancellationToken, StreamingRetryBufferState, ToolExecutionResult,
+        CONTEXT_SUMMARY_MAX_CHARS, CONTEXT_SUMMARY_PREFIX, DIRECT_MESSAGE_PREFIX,
+        MEMORY_RECALL_PREFIX,
     };
 
     struct MockClient {
@@ -2464,6 +2615,10 @@ mod tests {
         assert_eq!(config.response_cache_max_entries, 128);
         assert!(config.tool_result_cache_enabled);
         assert_eq!(config.tool_result_cache_max_entries, 256);
+        assert_eq!(config.model_input_cost_per_million, None);
+        assert_eq!(config.model_output_cost_per_million, None);
+        assert_eq!(config.cost_budget_usd, None);
+        assert_eq!(config.cost_alert_thresholds_percent, vec![80, 100]);
     }
 
     #[test]
@@ -3137,6 +3292,10 @@ mod tests {
                 AgentEvent::TurnStart { turn } => format!("turn_start:{turn}"),
                 AgentEvent::TurnEnd { turn, .. } => format!("turn_end:{turn}"),
                 AgentEvent::ReplanTriggered { turn, .. } => format!("replan:{turn}"),
+                AgentEvent::CostUpdated { turn, .. } => format!("cost:{turn}"),
+                AgentEvent::CostBudgetAlert {
+                    threshold_percent, ..
+                } => format!("cost_alert:{threshold_percent}"),
                 AgentEvent::AgentStart => "agent_start".to_string(),
                 AgentEvent::AgentEnd { .. } => "agent_end".to_string(),
             };
@@ -3743,6 +3902,208 @@ mod tests {
         assert!(
             client.requests.lock().await.is_empty(),
             "request should not be dispatched when total budget is exceeded"
+        );
+    }
+
+    #[test]
+    fn unit_estimate_usage_cost_usd_applies_input_and_output_rates() {
+        let usage = ChatUsage {
+            input_tokens: 2_000,
+            output_tokens: 500,
+            total_tokens: 2_500,
+        };
+        let cost = estimate_usage_cost_usd(&usage, Some(1.5), Some(6.0));
+        let expected = (2_000.0 * 1.5 + 500.0 * 6.0) / 1_000_000.0;
+        assert!((cost - expected).abs() < 1e-12);
+    }
+
+    #[test]
+    fn unit_normalize_cost_alert_thresholds_filters_invalid_and_deduplicates() {
+        assert_eq!(
+            normalize_cost_alert_thresholds(&[0, 80, 80, 120, 100]),
+            vec![80, 100]
+        );
+        assert_eq!(normalize_cost_alert_thresholds(&[]), vec![100]);
+    }
+
+    #[tokio::test]
+    async fn functional_prompt_emits_cost_update_event_when_model_pricing_present() {
+        let client = Arc::new(MockClient {
+            responses: AsyncMutex::new(VecDeque::from([ChatResponse {
+                message: Message::assistant_text("done"),
+                finish_reason: Some("stop".to_string()),
+                usage: ChatUsage {
+                    input_tokens: 200,
+                    output_tokens: 100,
+                    total_tokens: 300,
+                },
+            }])),
+        });
+        let mut agent = Agent::new(
+            client,
+            AgentConfig {
+                model_input_cost_per_million: Some(2.0),
+                model_output_cost_per_million: Some(4.0),
+                ..AgentConfig::default()
+            },
+        );
+        let observed = Arc::new(Mutex::new(Vec::<(usize, f64, f64, Option<f64>)>::new()));
+        let observed_clone = observed.clone();
+        agent.subscribe(move |event| {
+            if let AgentEvent::CostUpdated {
+                turn,
+                turn_cost_usd,
+                cumulative_cost_usd,
+                budget_usd,
+            } = event
+            {
+                observed_clone.lock().expect("events lock").push((
+                    *turn,
+                    *turn_cost_usd,
+                    *cumulative_cost_usd,
+                    *budget_usd,
+                ));
+            }
+        });
+
+        let _ = agent
+            .prompt("price this run")
+            .await
+            .expect("prompt should succeed");
+
+        let snapshot = agent.cost_snapshot();
+        let expected = (200.0 * 2.0 + 100.0 * 4.0) / 1_000_000.0;
+        assert_eq!(snapshot.input_tokens, 200);
+        assert_eq!(snapshot.output_tokens, 100);
+        assert_eq!(snapshot.total_tokens, 300);
+        assert!((snapshot.estimated_cost_usd - expected).abs() < 1e-12);
+        assert_eq!(snapshot.budget_usd, None);
+        assert_eq!(snapshot.budget_utilization, None);
+
+        let events = observed.lock().expect("events lock").clone();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].0, 1);
+        assert!((events[0].1 - expected).abs() < 1e-12);
+        assert!((events[0].2 - expected).abs() < 1e-12);
+        assert_eq!(events[0].3, None);
+    }
+
+    #[tokio::test]
+    async fn integration_budget_alerts_emit_once_per_threshold_across_multiple_prompts() {
+        let client = Arc::new(MockClient {
+            responses: AsyncMutex::new(VecDeque::from([
+                ChatResponse {
+                    message: Message::assistant_text("first"),
+                    finish_reason: Some("stop".to_string()),
+                    usage: ChatUsage {
+                        input_tokens: 80_000,
+                        output_tokens: 0,
+                        total_tokens: 80_000,
+                    },
+                },
+                ChatResponse {
+                    message: Message::assistant_text("second"),
+                    finish_reason: Some("stop".to_string()),
+                    usage: ChatUsage {
+                        input_tokens: 40_000,
+                        output_tokens: 0,
+                        total_tokens: 40_000,
+                    },
+                },
+                ChatResponse {
+                    message: Message::assistant_text("third"),
+                    finish_reason: Some("stop".to_string()),
+                    usage: ChatUsage {
+                        input_tokens: 40_000,
+                        output_tokens: 0,
+                        total_tokens: 40_000,
+                    },
+                },
+            ])),
+        });
+        let mut agent = Agent::new(
+            client,
+            AgentConfig {
+                model_input_cost_per_million: Some(10.0),
+                model_output_cost_per_million: Some(0.0),
+                cost_budget_usd: Some(1.5),
+                cost_alert_thresholds_percent: vec![50, 80, 100],
+                ..AgentConfig::default()
+            },
+        );
+        let thresholds = Arc::new(Mutex::new(Vec::<u8>::new()));
+        let thresholds_clone = thresholds.clone();
+        agent.subscribe(move |event| {
+            if let AgentEvent::CostBudgetAlert {
+                threshold_percent, ..
+            } = event
+            {
+                thresholds_clone
+                    .lock()
+                    .expect("threshold lock")
+                    .push(*threshold_percent);
+            }
+        });
+
+        let _ = agent.prompt("step 1").await.expect("first prompt");
+        let _ = agent.prompt("step 2").await.expect("second prompt");
+        let _ = agent.prompt("step 3").await.expect("third prompt");
+
+        let snapshot = agent.cost_snapshot();
+        assert!((snapshot.estimated_cost_usd - 1.6).abs() < 1e-9);
+        assert_eq!(snapshot.budget_usd, Some(1.5));
+        let utilization = snapshot.budget_utilization.expect("utilization");
+        assert!(utilization > 1.0);
+
+        assert_eq!(
+            thresholds.lock().expect("threshold lock").as_slice(),
+            &[50, 80, 100]
+        );
+    }
+
+    #[tokio::test]
+    async fn regression_cost_budget_alert_threshold_normalization_avoids_duplicates() {
+        let client = Arc::new(MockClient {
+            responses: AsyncMutex::new(VecDeque::from([ChatResponse {
+                message: Message::assistant_text("done"),
+                finish_reason: Some("stop".to_string()),
+                usage: ChatUsage {
+                    input_tokens: 150_000,
+                    output_tokens: 0,
+                    total_tokens: 150_000,
+                },
+            }])),
+        });
+        let mut agent = Agent::new(
+            client,
+            AgentConfig {
+                model_input_cost_per_million: Some(10.0),
+                cost_budget_usd: Some(1.0),
+                cost_alert_thresholds_percent: vec![0, 80, 80, 120, 100],
+                ..AgentConfig::default()
+            },
+        );
+        let thresholds = Arc::new(Mutex::new(Vec::<u8>::new()));
+        let thresholds_clone = thresholds.clone();
+        agent.subscribe(move |event| {
+            if let AgentEvent::CostBudgetAlert {
+                threshold_percent, ..
+            } = event
+            {
+                thresholds_clone
+                    .lock()
+                    .expect("threshold lock")
+                    .push(*threshold_percent);
+            }
+        });
+
+        let _ = agent
+            .prompt("single run")
+            .await
+            .expect("prompt should succeed");
+        assert_eq!(
+            thresholds.lock().expect("threshold lock").as_slice(),
+            &[80, 100]
         );
     }
 

@@ -138,6 +138,30 @@ pub fn event_to_json(event: &AgentEvent) -> serde_json::Value {
             "turn": turn,
             "reason": reason,
         }),
+        AgentEvent::CostUpdated {
+            turn,
+            turn_cost_usd,
+            cumulative_cost_usd,
+            budget_usd,
+        } => serde_json::json!({
+            "type": "cost_updated",
+            "turn": turn,
+            "turn_cost_usd": turn_cost_usd,
+            "cumulative_cost_usd": cumulative_cost_usd,
+            "budget_usd": budget_usd,
+        }),
+        AgentEvent::CostBudgetAlert {
+            turn,
+            threshold_percent,
+            cumulative_cost_usd,
+            budget_usd,
+        } => serde_json::json!({
+            "type": "cost_budget_alert",
+            "turn": turn,
+            "threshold_percent": threshold_percent,
+            "cumulative_cost_usd": cumulative_cost_usd,
+            "budget_usd": budget_usd,
+        }),
     }
 }
 
@@ -202,6 +226,22 @@ mod tests {
         assert_eq!(value["type"], "replan_triggered");
         assert_eq!(value["turn"], 2);
         assert_eq!(value["reason"], "tool failure");
+    }
+
+    #[test]
+    fn unit_event_to_json_maps_cost_budget_alert_shape() {
+        let event = AgentEvent::CostBudgetAlert {
+            turn: 3,
+            threshold_percent: 80,
+            cumulative_cost_usd: 1.25,
+            budget_usd: 1.5,
+        };
+        let value = event_to_json(&event);
+        assert_eq!(value["type"], "cost_budget_alert");
+        assert_eq!(value["turn"], 3);
+        assert_eq!(value["threshold_percent"], 80);
+        assert_eq!(value["cumulative_cost_usd"], 1.25);
+        assert_eq!(value["budget_usd"], 1.5);
     }
 
     #[test]
