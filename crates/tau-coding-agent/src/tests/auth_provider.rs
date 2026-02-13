@@ -8884,6 +8884,9 @@ fn functional_render_help_overview_lists_known_commands() {
     assert!(help.contains("/session-graph-export <path>"));
     assert!(help.contains("/session-export <path>"));
     assert!(help.contains("/session-import <path>"));
+    assert!(help.contains(
+        "/session-merge <source-id> [target-id] [--strategy <append|squash|fast-forward>]"
+    ));
     assert!(help.contains("/audit-summary <path>"));
     assert!(help.contains(MODELS_LIST_USAGE));
     assert!(help.contains(MODEL_SHOW_USAGE));
@@ -9028,6 +9031,16 @@ fn functional_render_command_help_supports_session_graph_export_topic_without_sl
     let help = render_command_help("session-graph-export").expect("render help");
     assert!(help.contains("command: /session-graph-export"));
     assert!(help.contains("usage: /session-graph-export <path>"));
+}
+
+#[test]
+fn functional_render_command_help_supports_session_merge_topic_without_slash() {
+    let help = render_command_help("session-merge").expect("render help");
+    assert!(help.contains("command: /session-merge"));
+    assert!(help.contains(
+        "usage: /session-merge <source-id> [target-id] [--strategy <append|squash|fast-forward>]"
+    ));
+    assert!(help.contains("example: /session-merge 42 24 --strategy squash"));
 }
 
 #[test]
@@ -17355,6 +17368,70 @@ fn functional_session_import_command_merges_snapshot_and_updates_active_head() {
     assert_eq!(agent.messages().len(), 2);
     assert_eq!(agent.messages()[0].text_content(), "import-root");
     assert_eq!(agent.messages()[1].text_content(), "import-user");
+}
+
+#[test]
+fn integration_session_merge_command_appends_branch_and_reloads_agent_messages() {
+    let temp = tempdir().expect("tempdir");
+    let session_path = temp.path().join("session-merge.jsonl");
+
+    let mut store = SessionStore::load(&session_path).expect("load");
+    let root = store
+        .append_messages(None, &[tau_ai::Message::system("sys")])
+        .expect("append root")
+        .expect("root");
+    let target = store
+        .append_messages(
+            Some(root),
+            &[
+                tau_ai::Message::user("target-u1"),
+                tau_ai::Message::assistant_text("target-a1"),
+            ],
+        )
+        .expect("append target")
+        .expect("target");
+    let source = store
+        .append_messages(
+            Some(root),
+            &[
+                tau_ai::Message::user("source-u1"),
+                tau_ai::Message::assistant_text("source-a1"),
+            ],
+        )
+        .expect("append source")
+        .expect("source");
+
+    let mut agent = Agent::new(Arc::new(NoopClient), AgentConfig::default());
+    let target_lineage = store
+        .lineage_messages(Some(target))
+        .expect("target lineage should resolve");
+    agent.replace_messages(target_lineage);
+
+    let mut runtime = Some(SessionRuntime {
+        store,
+        active_head: Some(target),
+    });
+    let tool_policy_json = test_tool_policy_json();
+
+    let action = handle_command(
+        &format!("/session-merge {source} {target} --strategy append"),
+        &mut agent,
+        &mut runtime,
+        &tool_policy_json,
+    )
+    .expect("session merge should succeed");
+    assert_eq!(action, CommandAction::Continue);
+
+    let runtime = runtime.expect("runtime should remain available");
+    assert!(runtime.active_head.expect("active head should exist") > target);
+    assert_eq!(
+        agent
+            .messages()
+            .last()
+            .expect("merged lineage tail should exist")
+            .text_content(),
+        "source-a1"
+    );
 }
 
 #[test]

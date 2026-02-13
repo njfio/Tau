@@ -7,7 +7,7 @@ use crate::{
     execute_session_diff_command, execute_session_graph_export_command,
     execute_session_search_command, execute_session_stats_command, format_id_list,
     format_remap_ids, parse_session_diff_args, parse_session_stats_args, SessionImportMode,
-    SessionRuntime,
+    SessionMergeStrategy, SessionRuntime,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -31,6 +31,83 @@ pub fn session_import_mode_label(mode: SessionImportMode) -> &'static str {
         SessionImportMode::Merge => "merge",
         SessionImportMode::Replace => "replace",
     }
+}
+
+pub fn session_merge_strategy_label(strategy: SessionMergeStrategy) -> &'static str {
+    strategy.label()
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SessionMergeCommandArgs {
+    source_head: u64,
+    target_head: Option<u64>,
+    strategy: SessionMergeStrategy,
+}
+
+fn parse_session_merge_strategy(raw: &str) -> Result<SessionMergeStrategy> {
+    let normalized = raw.trim().to_ascii_lowercase();
+    match normalized.as_str() {
+        "append" => Ok(SessionMergeStrategy::Append),
+        "squash" => Ok(SessionMergeStrategy::Squash),
+        "fast-forward" | "fast_forward" | "ff" => Ok(SessionMergeStrategy::FastForward),
+        _ => bail!(
+            "invalid merge strategy '{}'; expected append, squash, or fast-forward",
+            raw
+        ),
+    }
+}
+
+fn parse_session_merge_command_args(command_args: &str) -> Result<SessionMergeCommandArgs> {
+    let tokens = command_args
+        .split_whitespace()
+        .filter(|token| !token.is_empty())
+        .collect::<Vec<_>>();
+    if tokens.is_empty() {
+        bail!("usage: /session-merge <source-id> [target-id] [--strategy <append|squash|fast-forward>]");
+    }
+
+    let source_head = tokens[0].parse::<u64>().map_err(|_| {
+        anyhow!(
+            "invalid source session id '{}'; expected an integer",
+            tokens[0]
+        )
+    })?;
+    let mut target_head = None;
+    let mut strategy = SessionMergeStrategy::Append;
+
+    let mut index = 1usize;
+    if let Some(token) = tokens.get(index) {
+        if !token.starts_with("--") {
+            target_head = Some(token.parse::<u64>().map_err(|_| {
+                anyhow!("invalid target session id '{}'; expected an integer", token)
+            })?);
+            index += 1;
+        }
+    }
+
+    while index < tokens.len() {
+        let token = tokens[index];
+        if token == "--strategy" {
+            let value = tokens
+                .get(index + 1)
+                .ok_or_else(|| anyhow!("missing value for --strategy"))?;
+            strategy = parse_session_merge_strategy(value)?;
+            index += 2;
+            continue;
+        }
+        if let Some(value) = token.strip_prefix("--strategy=") {
+            strategy = parse_session_merge_strategy(value)?;
+            index += 1;
+            continue;
+        }
+        bail!("unknown flag '{}'", token);
+    }
+
+    Ok(SessionMergeCommandArgs {
+        source_head,
+        target_head,
+        strategy,
+    })
 }
 
 pub fn execute_resume_command(
@@ -228,6 +305,46 @@ pub fn execute_session_import_command(
     ))
 }
 
+pub fn execute_session_merge_command(
+    command_args: &str,
+    runtime: &mut SessionRuntime,
+) -> Result<SessionRuntimeCommandOutcome> {
+    let parsed = match parse_session_merge_command_args(command_args) {
+        Ok(parsed) => parsed,
+        Err(_) => {
+            return Ok(SessionRuntimeCommandOutcome::new(
+                "usage: /session-merge <source-id> [target-id] [--strategy <append|squash|fast-forward>]".to_string(),
+                false,
+            ));
+        }
+    };
+
+    let target_head = parsed.target_head.or(runtime.active_head).ok_or_else(|| {
+        anyhow!("target head is not set; provide explicit target id or set active head")
+    })?;
+    let previous_head = runtime.active_head;
+    let report = runtime
+        .store
+        .merge_branches(parsed.source_head, target_head, parsed.strategy)?;
+    runtime.active_head = Some(report.merged_head);
+
+    Ok(SessionRuntimeCommandOutcome::new(
+        format!(
+            "session merge complete: source={} target={} strategy={} common_ancestor={} appended_entries={} head={}",
+            report.source_head,
+            report.target_head,
+            session_merge_strategy_label(report.strategy),
+            report
+                .common_ancestor
+                .map(|id| id.to_string())
+                .unwrap_or_else(|| "none".to_string()),
+            report.appended_entries,
+            report.merged_head
+        ),
+        previous_head != runtime.active_head || report.appended_entries > 0,
+    ))
+}
+
 pub fn execute_branches_command(
     command_args: &str,
     runtime: &SessionRuntime,
@@ -347,11 +464,13 @@ mod tests {
         execute_branch_switch_command, execute_branches_command, execute_resume_command,
         execute_session_compact_command, execute_session_diff_runtime_command,
         execute_session_export_command, execute_session_graph_export_runtime_command,
-        execute_session_import_command, execute_session_repair_command,
-        execute_session_search_runtime_command, execute_session_stats_runtime_command,
-        execute_session_status_command, session_import_mode_label,
+        execute_session_import_command, execute_session_merge_command,
+        execute_session_repair_command, execute_session_search_runtime_command,
+        execute_session_stats_runtime_command, execute_session_status_command,
+        parse_session_merge_command_args, session_import_mode_label, session_merge_strategy_label,
+        SessionMergeCommandArgs,
     };
-    use crate::{SessionImportMode, SessionRuntime, SessionStore};
+    use crate::{SessionImportMode, SessionMergeStrategy, SessionRuntime, SessionStore};
     use std::{
         fs,
         path::PathBuf,
@@ -451,6 +570,47 @@ mod tests {
         assert_eq!(
             session_import_mode_label(SessionImportMode::Replace),
             "replace"
+        );
+    }
+
+    #[test]
+    fn unit_session_merge_strategy_label_matches_variants() {
+        assert_eq!(
+            session_merge_strategy_label(SessionMergeStrategy::Append),
+            "append"
+        );
+        assert_eq!(
+            session_merge_strategy_label(SessionMergeStrategy::Squash),
+            "squash"
+        );
+        assert_eq!(
+            session_merge_strategy_label(SessionMergeStrategy::FastForward),
+            "fast-forward"
+        );
+    }
+
+    #[test]
+    fn unit_parse_session_merge_command_args_supports_optional_target_and_strategy() {
+        let parsed = parse_session_merge_command_args("42 24 --strategy squash")
+            .expect("merge args should parse");
+        assert_eq!(
+            parsed,
+            SessionMergeCommandArgs {
+                source_head: 42,
+                target_head: Some(24),
+                strategy: SessionMergeStrategy::Squash,
+            }
+        );
+
+        let with_equals =
+            parse_session_merge_command_args("42 --strategy=ff").expect("merge args should parse");
+        assert_eq!(
+            with_equals,
+            SessionMergeCommandArgs {
+                source_head: 42,
+                target_head: None,
+                strategy: SessionMergeStrategy::FastForward,
+            }
         );
     }
 
@@ -583,6 +743,97 @@ mod tests {
                 .text_content(),
             "import-user"
         );
+    }
+
+    #[test]
+    fn functional_execute_session_merge_command_appends_source_branch_to_target_head() {
+        let mut fixture = SessionRuntimeFixture::with_diverged_branches();
+        let mut tips = fixture
+            .runtime
+            .store
+            .branch_tips()
+            .iter()
+            .map(|entry| entry.id)
+            .collect::<Vec<_>>();
+        tips.sort_unstable();
+        let target = *tips.first().expect("target tip should exist");
+        let source = *tips.last().expect("source tip should exist");
+        fixture.runtime.active_head = Some(target);
+        let before_entries = fixture.runtime.store.entries().len();
+
+        let outcome = execute_session_merge_command(
+            &format!("{source} {target} --strategy append"),
+            &mut fixture.runtime,
+        )
+        .expect("merge command should succeed");
+
+        assert!(outcome.reload_active_head);
+        assert!(outcome.message.contains("strategy=append"));
+        assert!(outcome.message.contains("appended_entries=1"));
+        assert!(fixture.runtime.store.entries().len() > before_entries);
+        assert_ne!(fixture.runtime.active_head, Some(target));
+    }
+
+    #[test]
+    fn integration_execute_session_merge_command_fast_forward_moves_active_head_without_append() {
+        let mut fixture = SessionRuntimeFixture::seeded();
+        let target = fixture
+            .runtime
+            .store
+            .entries()
+            .first()
+            .expect("system entry should exist")
+            .id;
+        let source = fixture
+            .runtime
+            .store
+            .head_id()
+            .expect("source head should exist");
+        fixture.runtime.active_head = Some(target);
+        let before_entries = fixture.runtime.store.entries().len();
+
+        let outcome = execute_session_merge_command(
+            &format!("{source} {target} --strategy fast-forward"),
+            &mut fixture.runtime,
+        )
+        .expect("fast-forward merge should succeed");
+
+        assert!(outcome.reload_active_head);
+        assert!(outcome.message.contains("strategy=fast-forward"));
+        assert!(outcome.message.contains("appended_entries=0"));
+        assert_eq!(fixture.runtime.active_head, Some(source));
+        assert_eq!(fixture.runtime.store.entries().len(), before_entries);
+    }
+
+    #[test]
+    fn regression_execute_session_merge_command_usage_and_non_ancestor_fast_forward_error() {
+        let mut fixture = SessionRuntimeFixture::with_diverged_branches();
+
+        let usage = execute_session_merge_command("", &mut fixture.runtime)
+            .expect("usage should be returned as non-error outcome");
+        assert_eq!(
+            usage.message,
+            "usage: /session-merge <source-id> [target-id] [--strategy <append|squash|fast-forward>]"
+        );
+        assert!(!usage.reload_active_head);
+
+        let mut tips = fixture
+            .runtime
+            .store
+            .branch_tips()
+            .iter()
+            .map(|entry| entry.id)
+            .collect::<Vec<_>>();
+        tips.sort_unstable();
+        let target = *tips.first().expect("target tip should exist");
+        let source = *tips.last().expect("source tip should exist");
+
+        let error = execute_session_merge_command(
+            &format!("{source} {target} --strategy fast-forward"),
+            &mut fixture.runtime,
+        )
+        .expect_err("fast-forward should fail for diverged branches");
+        assert!(error.to_string().contains("cannot fast-forward target"));
     }
 
     #[test]

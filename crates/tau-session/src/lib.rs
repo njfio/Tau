@@ -94,6 +94,24 @@ pub enum SessionImportMode {
     Replace,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Enumerates supported `SessionMergeStrategy` values.
+pub enum SessionMergeStrategy {
+    Append,
+    Squash,
+    FastForward,
+}
+
+impl SessionMergeStrategy {
+    pub fn label(self) -> &'static str {
+        match self {
+            SessionMergeStrategy::Append => "append",
+            SessionMergeStrategy::Squash => "squash",
+            SessionMergeStrategy::FastForward => "fast-forward",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 /// Public struct `ImportReport` used across Tau components.
 pub struct ImportReport {
@@ -103,6 +121,17 @@ pub struct ImportReport {
     pub replaced_entries: usize,
     pub resulting_entries: usize,
     pub active_head: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// Public struct `BranchMergeReport` used across Tau components.
+pub struct BranchMergeReport {
+    pub source_head: u64,
+    pub target_head: u64,
+    pub strategy: SessionMergeStrategy,
+    pub common_ancestor: Option<u64>,
+    pub appended_entries: usize,
+    pub merged_head: u64,
 }
 
 #[derive(Debug)]
@@ -341,6 +370,129 @@ impl SessionStore {
         Ok(report)
     }
 
+    pub fn merge_branches(
+        &mut self,
+        source_head: u64,
+        target_head: u64,
+        strategy: SessionMergeStrategy,
+    ) -> Result<BranchMergeReport> {
+        let lock_path = self.lock_path();
+        let _lock = acquire_lock(
+            &lock_path,
+            Duration::from_millis(self.lock_wait_ms),
+            Duration::from_millis(self.lock_stale_ms),
+        )?;
+
+        let mut entries = read_session_entries(&self.path)?;
+        let entry_by_id = entries
+            .iter()
+            .cloned()
+            .map(|entry| (entry.id, entry))
+            .collect::<HashMap<_, _>>();
+
+        if !entry_by_id.contains_key(&source_head) {
+            bail!("unknown source session id {}", source_head);
+        }
+        if !entry_by_id.contains_key(&target_head) {
+            bail!("unknown target session id {}", target_head);
+        }
+        if source_head == target_head {
+            bail!("source and target session ids must differ");
+        }
+
+        let source_lineage = lineage_ids_root_to_head(&entry_by_id, source_head)?;
+        let target_lineage = lineage_ids_root_to_head(&entry_by_id, target_head)?;
+
+        let source_set = source_lineage.iter().copied().collect::<HashSet<_>>();
+        let mut common_ancestor = None;
+        for id in &target_lineage {
+            if source_set.contains(id) {
+                common_ancestor = Some(*id);
+            }
+        }
+
+        let source_suffix_start = common_ancestor
+            .and_then(|id| source_lineage.iter().position(|entry_id| *entry_id == id))
+            .map(|index| index + 1)
+            .unwrap_or(0);
+        let source_unique_ids = source_lineage
+            .iter()
+            .skip(source_suffix_start)
+            .copied()
+            .collect::<Vec<_>>();
+
+        let mut appended_entries = 0usize;
+        let merged_head = match strategy {
+            SessionMergeStrategy::FastForward => {
+                if !source_lineage.contains(&target_head) {
+                    bail!(
+                        "cannot fast-forward target {} to source {} because target is not an ancestor",
+                        target_head,
+                        source_head
+                    );
+                }
+                source_head
+            }
+            SessionMergeStrategy::Append => {
+                let mut parent_id = Some(target_head);
+                let mut next_id = entries.iter().map(|entry| entry.id).max().unwrap_or(0) + 1;
+                for source_id in source_unique_ids {
+                    let source_entry = entry_by_id
+                        .get(&source_id)
+                        .ok_or_else(|| anyhow!("missing source session id {}", source_id))?;
+                    let new_entry = SessionEntry {
+                        id: next_id,
+                        parent_id,
+                        message: source_entry.message.clone(),
+                    };
+                    parent_id = Some(new_entry.id);
+                    entries.push(new_entry);
+                    next_id += 1;
+                    appended_entries += 1;
+                }
+                parent_id.unwrap_or(target_head)
+            }
+            SessionMergeStrategy::Squash => {
+                let mut parent_id = Some(target_head);
+                if source_unique_ids.is_empty() {
+                    parent_id.unwrap_or(target_head)
+                } else {
+                    let next_id = entries.iter().map(|entry| entry.id).max().unwrap_or(0) + 1;
+                    let summary = render_squash_merge_summary(
+                        &entry_by_id,
+                        source_head,
+                        target_head,
+                        &source_unique_ids,
+                    )?;
+                    let new_entry = SessionEntry {
+                        id: next_id,
+                        parent_id,
+                        message: Message::assistant_text(summary),
+                    };
+                    parent_id = Some(new_entry.id);
+                    entries.push(new_entry);
+                    appended_entries = 1;
+                    parent_id.unwrap_or(target_head)
+                }
+            }
+        };
+
+        if appended_entries > 0 {
+            write_session_entries_atomic(&self.path, &entries)?;
+        }
+        self.entries = entries;
+        self.next_id = self.entries.iter().map(|entry| entry.id).max().unwrap_or(0) + 1;
+
+        Ok(BranchMergeReport {
+            source_head,
+            target_head,
+            strategy,
+            common_ancestor,
+            appended_entries,
+            merged_head,
+        })
+    }
+
     pub fn validation_report(&self) -> SessionValidationReport {
         validation_report_for_entries(&self.entries)
     }
@@ -499,6 +651,74 @@ impl SessionStore {
     fn lock_path(&self) -> PathBuf {
         self.path.with_extension("lock")
     }
+}
+
+fn lineage_ids_root_to_head(
+    entries: &HashMap<u64, SessionEntry>,
+    head_id: u64,
+) -> Result<Vec<u64>> {
+    let mut lineage = Vec::new();
+    let mut visited = HashSet::new();
+    let mut current_id = head_id;
+
+    loop {
+        if !visited.insert(current_id) {
+            bail!(
+                "detected a cycle while resolving session lineage at id {}",
+                current_id
+            );
+        }
+
+        let entry = entries
+            .get(&current_id)
+            .ok_or_else(|| anyhow!("unknown session id {}", current_id))?;
+        lineage.push(current_id);
+        match entry.parent_id {
+            Some(parent_id) => current_id = parent_id,
+            None => break,
+        }
+    }
+
+    lineage.reverse();
+    Ok(lineage)
+}
+
+fn render_squash_merge_summary(
+    entry_by_id: &HashMap<u64, SessionEntry>,
+    source_head: u64,
+    target_head: u64,
+    source_unique_ids: &[u64],
+) -> Result<String> {
+    let mut lines = vec![format!(
+        "squash merge: source={} target={} entries={}",
+        source_head,
+        target_head,
+        source_unique_ids.len()
+    )];
+
+    for source_id in source_unique_ids.iter().take(6) {
+        let entry = entry_by_id
+            .get(source_id)
+            .ok_or_else(|| anyhow!("missing source session id {}", source_id))?;
+        let role = format!("{:?}", entry.message.role).to_ascii_lowercase();
+        let mut preview = entry.message.text_content().replace('\n', " ");
+        if preview.trim().is_empty() {
+            preview = "(no text)".to_string();
+        }
+        if preview.chars().count() > 72 {
+            preview = format!("{}...", preview.chars().take(72).collect::<String>());
+        }
+        lines.push(format!("- {}: {}", role, preview));
+    }
+
+    if source_unique_ids.len() > 6 {
+        lines.push(format!(
+            "- ... {} additional entries",
+            source_unique_ids.len() - 6
+        ));
+    }
+
+    Ok(lines.join("\n"))
 }
 
 pub use session_commands::*;

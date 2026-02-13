@@ -12,7 +12,7 @@ use tau_session::{
     execute_branch_switch_command, execute_branches_command, execute_resume_command,
     execute_session_compact_command, execute_session_diff_runtime_command,
     execute_session_export_command, execute_session_graph_export_runtime_command,
-    execute_session_import_command, execute_session_repair_command,
+    execute_session_import_command, execute_session_merge_command, execute_session_repair_command,
     execute_session_search_runtime_command, execute_session_stats_runtime_command,
     execute_session_status_command,
 };
@@ -315,6 +315,20 @@ pub(crate) fn handle_command_with_session_import_mode(
         };
 
         let outcome = execute_session_import_command(command_args, runtime, session_import_mode)?;
+        if outcome.reload_active_head {
+            agent.replace_messages(session_lineage_messages(runtime)?);
+        }
+        println!("{}", outcome.message);
+        return Ok(CommandAction::Continue);
+    }
+
+    if command_name == "/session-merge" {
+        let Some(runtime) = session_runtime.as_mut() else {
+            println!("session is disabled");
+            return Ok(CommandAction::Continue);
+        };
+
+        let outcome = execute_session_merge_command(command_args, runtime)?;
         if outcome.reload_active_head {
             agent.replace_messages(session_lineage_messages(runtime)?);
         }

@@ -4,8 +4,8 @@ use std::{collections::HashSet, fs, path::PathBuf, sync::Arc, thread, time::Dura
 use tempfile::tempdir;
 
 use super::{
-    acquire_lock, CompactReport, RepairReport, SessionEntry, SessionImportMode, SessionRecord,
-    SessionStore, SessionValidationReport,
+    acquire_lock, CompactReport, RepairReport, SessionEntry, SessionImportMode,
+    SessionMergeStrategy, SessionRecord, SessionStore, SessionValidationReport,
 };
 
 #[test]
@@ -74,6 +74,160 @@ fn supports_branching_from_older_id() {
         .collect::<Vec<_>>();
     assert_eq!(texts, vec!["sys", "q1", "a1", "q2b", "a2b"]);
     assert_eq!(store.branch_tips().len(), 2);
+}
+
+#[test]
+fn unit_merge_branches_append_replays_source_unique_entries_on_target_head() {
+    let temp = tempdir().expect("tempdir");
+    let path = temp.path().join("session-merge-append.jsonl");
+
+    let mut store = SessionStore::load(&path).expect("load");
+    let root = store
+        .append_messages(None, &[tau_ai::Message::system("sys")])
+        .expect("append")
+        .expect("root");
+    let main_tip = store
+        .append_messages(
+            Some(root),
+            &[
+                tau_ai::Message::user("main-u1"),
+                tau_ai::Message::assistant_text("main-a1"),
+            ],
+        )
+        .expect("append main")
+        .expect("main tip");
+    let branch_tip = store
+        .append_messages(
+            Some(root),
+            &[
+                tau_ai::Message::user("branch-u1"),
+                tau_ai::Message::assistant_text("branch-a1"),
+            ],
+        )
+        .expect("append branch")
+        .expect("branch tip");
+
+    let before = store.entries().len();
+    let report = store
+        .merge_branches(branch_tip, main_tip, SessionMergeStrategy::Append)
+        .expect("append merge should succeed");
+
+    assert_eq!(report.strategy, SessionMergeStrategy::Append);
+    assert_eq!(report.common_ancestor, Some(root));
+    assert_eq!(report.appended_entries, 2);
+    assert!(report.merged_head > main_tip);
+    assert_eq!(store.entries().len(), before + 2);
+    let merged_lineage = store
+        .lineage_messages(Some(report.merged_head))
+        .expect("merged lineage should resolve")
+        .into_iter()
+        .map(|message| message.text_content())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        merged_lineage,
+        vec!["sys", "main-u1", "main-a1", "branch-u1", "branch-a1"]
+    );
+}
+
+#[test]
+fn functional_merge_branches_squash_creates_single_summary_entry() {
+    let temp = tempdir().expect("tempdir");
+    let path = temp.path().join("session-merge-squash.jsonl");
+
+    let mut store = SessionStore::load(&path).expect("load");
+    let root = store
+        .append_messages(None, &[tau_ai::Message::system("sys")])
+        .expect("append")
+        .expect("root");
+    let target = store
+        .append_messages(Some(root), &[tau_ai::Message::user("target-u1")])
+        .expect("append target")
+        .expect("target tip");
+    let source = store
+        .append_messages(
+            Some(root),
+            &[
+                tau_ai::Message::user("source-u1"),
+                tau_ai::Message::assistant_text("source-a1"),
+            ],
+        )
+        .expect("append source")
+        .expect("source tip");
+
+    let report = store
+        .merge_branches(source, target, SessionMergeStrategy::Squash)
+        .expect("squash merge should succeed");
+
+    assert_eq!(report.appended_entries, 1);
+    let merged = store
+        .lineage_messages(Some(report.merged_head))
+        .expect("merged lineage should resolve");
+    let merged_tail = merged.last().expect("tail message should exist");
+    assert!(merged_tail.text_content().contains("squash merge:"));
+    assert!(merged_tail.text_content().contains("- user: source-u1"));
+}
+
+#[test]
+fn integration_merge_branches_fast_forward_moves_head_without_writes() {
+    let temp = tempdir().expect("tempdir");
+    let path = temp.path().join("session-merge-fast-forward.jsonl");
+
+    let mut store = SessionStore::load(&path).expect("load");
+    let root = store
+        .append_messages(None, &[tau_ai::Message::system("sys")])
+        .expect("append")
+        .expect("root");
+    let first = store
+        .append_messages(Some(root), &[tau_ai::Message::user("u1")])
+        .expect("append")
+        .expect("first");
+    let source = store
+        .append_messages(Some(first), &[tau_ai::Message::assistant_text("a1")])
+        .expect("append")
+        .expect("source");
+    let before_ids = store
+        .entries()
+        .iter()
+        .map(|entry| entry.id)
+        .collect::<Vec<_>>();
+
+    let report = store
+        .merge_branches(source, first, SessionMergeStrategy::FastForward)
+        .expect("fast-forward should succeed");
+
+    assert_eq!(report.appended_entries, 0);
+    assert_eq!(report.merged_head, source);
+    let after_ids = store
+        .entries()
+        .iter()
+        .map(|entry| entry.id)
+        .collect::<Vec<_>>();
+    assert_eq!(after_ids, before_ids);
+}
+
+#[test]
+fn regression_merge_branches_fast_forward_rejects_diverged_branches() {
+    let temp = tempdir().expect("tempdir");
+    let path = temp.path().join("session-merge-fast-forward-error.jsonl");
+
+    let mut store = SessionStore::load(&path).expect("load");
+    let root = store
+        .append_messages(None, &[tau_ai::Message::system("sys")])
+        .expect("append")
+        .expect("root");
+    let left = store
+        .append_messages(Some(root), &[tau_ai::Message::user("left")])
+        .expect("append left")
+        .expect("left");
+    let right = store
+        .append_messages(Some(root), &[tau_ai::Message::user("right")])
+        .expect("append right")
+        .expect("right");
+
+    let error = store
+        .merge_branches(right, left, SessionMergeStrategy::FastForward)
+        .expect_err("fast-forward should fail");
+    assert!(error.to_string().contains("cannot fast-forward target"));
 }
 
 #[test]
