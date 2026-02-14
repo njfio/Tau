@@ -4,6 +4,10 @@
 //! for channel and control-plane deployment deliverables.
 
 pub mod deployment_contract;
-pub mod deployment_runtime;
 pub mod deployment_wasm;
+pub mod deployment_wasm_identity;
+
+#[cfg(not(target_arch = "wasm32"))]
+pub mod deployment_runtime;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod deployment_wasm_runtime;

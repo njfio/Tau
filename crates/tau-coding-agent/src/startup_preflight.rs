@@ -20,7 +20,8 @@ use crate::channel_lifecycle::execute_multi_channel_channel_lifecycle_command;
 use crate::channel_send::execute_multi_channel_send_command;
 use crate::channel_store_admin::execute_channel_store_admin_command;
 use crate::deployment_wasm::{
-    execute_deployment_wasm_inspect_command, execute_deployment_wasm_package_command,
+    execute_deployment_wasm_browser_did_init_command, execute_deployment_wasm_inspect_command,
+    execute_deployment_wasm_package_command,
 };
 use crate::events::{
     execute_events_dry_run_command, execute_events_inspect_command,
@@ -47,6 +48,7 @@ pub(crate) fn execute_startup_preflight(cli: &Cli) -> Result<bool> {
         execute_multi_channel_channel_lifecycle_command,
         execute_deployment_wasm_package_command,
         execute_deployment_wasm_inspect_command,
+        execute_deployment_wasm_browser_did_init_command,
         execute_project_index_command,
         execute_channel_store_admin_command,
         execute_multi_channel_live_readiness_preflight_command,

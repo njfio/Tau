@@ -6,6 +6,10 @@ pub use crate::deployment_wasm::{
     render_deployment_wasm_inspect_report, render_deployment_wasm_package_report,
     DeploymentWasmPackageConfig,
 };
+pub use crate::deployment_wasm_identity::{
+    initialize_deployment_wasm_browser_did, render_deployment_wasm_browser_did_report,
+    DeploymentWasmBrowserDidConfig,
+};
 
 pub fn execute_deployment_wasm_package_command(cli: &Cli) -> Result<()> {
     let Some(module_path) = cli.deployment_wasm_package_module.clone() else {
@@ -50,13 +54,42 @@ pub fn execute_deployment_wasm_inspect_command(cli: &Cli) -> Result<()> {
     Ok(())
 }
 
+pub fn execute_deployment_wasm_browser_did_init_command(cli: &Cli) -> Result<()> {
+    if !cli.deployment_wasm_browser_did_init {
+        return Ok(());
+    }
+
+    let report = initialize_deployment_wasm_browser_did(&DeploymentWasmBrowserDidConfig {
+        method: match cli.deployment_wasm_browser_did_method {
+            tau_cli::CliDeploymentWasmBrowserDidMethod::Key => kamn_sdk::DidMethod::Key,
+            tau_cli::CliDeploymentWasmBrowserDidMethod::Web => kamn_sdk::DidMethod::Web,
+        },
+        network: cli.deployment_wasm_browser_did_network.trim().to_string(),
+        subject: cli.deployment_wasm_browser_did_subject.trim().to_string(),
+        entropy: cli.deployment_wasm_browser_did_entropy.trim().to_string(),
+        output_path: Some(cli.deployment_wasm_browser_did_output.clone()),
+    })?;
+
+    if cli.deployment_wasm_browser_did_json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&report)
+                .context("failed to render deployment wasm browser did report json")?
+        );
+    } else {
+        println!("{}", render_deployment_wasm_browser_did_report(&report));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::Path;
 
     use super::{
-        execute_deployment_wasm_inspect_command, execute_deployment_wasm_package_command,
-        package_deployment_wasm_artifact, DeploymentWasmPackageConfig,
+        execute_deployment_wasm_browser_did_init_command, execute_deployment_wasm_inspect_command,
+        execute_deployment_wasm_package_command, package_deployment_wasm_artifact,
+        DeploymentWasmPackageConfig,
     };
     use clap::Parser;
     use tau_cli::Cli;
@@ -81,6 +114,13 @@ mod tests {
     fn unit_execute_deployment_wasm_package_command_noops_without_module_flag() {
         let cli = parse_cli_with_stack();
         execute_deployment_wasm_package_command(&cli).expect("package command should noop");
+    }
+
+    #[test]
+    fn unit_execute_deployment_wasm_browser_did_init_noops_without_flag() {
+        let cli = parse_cli_with_stack();
+        execute_deployment_wasm_browser_did_init_command(&cli)
+            .expect("browser did init should noop");
     }
 
     #[test]
@@ -141,5 +181,23 @@ mod tests {
         assert!(error
             .to_string()
             .contains("failed to read deployment wasm manifest"));
+    }
+
+    #[test]
+    fn functional_execute_deployment_wasm_browser_did_init_writes_report() {
+        let temp = tempdir().expect("tempdir");
+        let mut cli = parse_cli_with_stack();
+        cli.deployment_wasm_browser_did_init = true;
+        cli.deployment_wasm_browser_did_output = temp.path().join("browser-did.json");
+        cli.deployment_wasm_browser_did_subject = "edge-agent".to_string();
+        cli.deployment_wasm_browser_did_entropy = "seed-42".to_string();
+        cli.deployment_wasm_browser_did_json = true;
+
+        execute_deployment_wasm_browser_did_init_command(&cli)
+            .expect("browser did init should succeed");
+
+        let payload = std::fs::read_to_string(&cli.deployment_wasm_browser_did_output)
+            .expect("read browser did report");
+        assert!(payload.contains("\"did\": \"did:key:"));
     }
 }

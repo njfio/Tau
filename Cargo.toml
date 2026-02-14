@@ -39,6 +39,8 @@ members = [
   "crates/tau-training-proxy",
   "crates/tau-trainer",
   "crates/tau-algorithm",
+  "crates/kamn-core",
+  "crates/kamn-sdk",
 ]
 resolver = "2"
 

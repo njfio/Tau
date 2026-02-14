@@ -1,11 +1,11 @@
 use anyhow::{bail, Context, Result};
 use tau_access::trust_roots::{
     apply_trust_root_mutation_specs, load_trust_root_records, parse_trusted_root_spec,
-    save_trust_root_records, TrustMutationReport, TrustedRootRecord,
+    save_trust_root_records, TrustMutationReport, TrustedKey as AccessTrustedKey,
+    TrustedRootRecord,
 };
 use tau_cli::Cli;
 use tau_core::{current_unix_timestamp, is_expired_unix};
-use tau_skills::TrustedKey;
 
 pub fn resolve_system_prompt(cli: &Cli) -> Result<String> {
     let Some(path) = cli.system_prompt_file.as_ref() else {
@@ -28,7 +28,7 @@ pub fn ensure_non_empty_text(text: String, source: String) -> Result<String> {
     Ok(text)
 }
 
-pub fn resolve_skill_trust_roots(cli: &Cli) -> Result<Vec<TrustedKey>> {
+pub fn resolve_skill_trust_roots(cli: &Cli) -> Result<Vec<tau_skills::TrustedKey>> {
     let has_store_mutation = !cli.skill_trust_add.is_empty()
         || !cli.skill_trust_revoke.is_empty()
         || !cli.skill_trust_rotate.is_empty();
@@ -57,14 +57,20 @@ pub fn resolve_skill_trust_roots(cli: &Cli) -> Result<Vec<TrustedKey>> {
             if item.revoked || is_expired_unix(item.expires_unix, now_unix) {
                 continue;
             }
-            roots.push(TrustedKey {
+            roots.push(AccessTrustedKey {
                 id: item.id,
                 public_key: item.public_key,
             });
         }
     }
 
-    Ok(roots)
+    Ok(roots
+        .into_iter()
+        .map(|root| tau_skills::TrustedKey {
+            id: root.id,
+            public_key: root.public_key,
+        })
+        .collect())
 }
 
 pub fn apply_trust_root_mutations(

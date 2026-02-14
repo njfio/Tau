@@ -6,12 +6,13 @@
 use anyhow::{anyhow, Context, Result};
 use tau_access::pairing::{evaluate_pairing_access, pairing_policy_for_state_dir, PairingDecision};
 use tau_cli::validation::{
-    validate_browser_automation_preflight_cli, validate_deployment_wasm_inspect_cli,
-    validate_deployment_wasm_package_cli, validate_event_webhook_ingest_cli,
-    validate_gateway_remote_plan_cli, validate_gateway_remote_profile_inspect_cli,
-    validate_gateway_service_cli, validate_multi_channel_channel_lifecycle_cli,
-    validate_multi_channel_incident_timeline_cli, validate_multi_channel_live_ingest_cli,
-    validate_multi_channel_send_cli, validate_project_index_cli,
+    validate_browser_automation_preflight_cli, validate_deployment_wasm_browser_did_init_cli,
+    validate_deployment_wasm_inspect_cli, validate_deployment_wasm_package_cli,
+    validate_event_webhook_ingest_cli, validate_gateway_remote_plan_cli,
+    validate_gateway_remote_profile_inspect_cli, validate_gateway_service_cli,
+    validate_multi_channel_channel_lifecycle_cli, validate_multi_channel_incident_timeline_cli,
+    validate_multi_channel_live_ingest_cli, validate_multi_channel_send_cli,
+    validate_project_index_cli,
 };
 use tau_cli::Cli;
 use tau_core::current_unix_timestamp_ms;
@@ -45,6 +46,7 @@ pub trait StartupPreflightActions {
     fn execute_multi_channel_channel_lifecycle_command(&self, cli: &Cli) -> Result<()>;
     fn execute_deployment_wasm_package_command(&self, cli: &Cli) -> Result<()>;
     fn execute_deployment_wasm_inspect_command(&self, cli: &Cli) -> Result<()>;
+    fn execute_deployment_wasm_browser_did_init_command(&self, cli: &Cli) -> Result<()>;
     fn execute_project_index_command(&self, cli: &Cli) -> Result<()>;
     fn execute_channel_store_admin_command(&self, cli: &Cli) -> Result<()>;
     fn execute_multi_channel_live_readiness_preflight_command(&self, cli: &Cli) -> Result<()>;
@@ -164,6 +166,12 @@ pub fn execute_startup_preflight(cli: &Cli, actions: &dyn StartupPreflightAction
     if cli.deployment_wasm_inspect_manifest.is_some() {
         validate_deployment_wasm_inspect_cli(cli)?;
         actions.execute_deployment_wasm_inspect_command(cli)?;
+        return Ok(true);
+    }
+
+    if cli.deployment_wasm_browser_did_init {
+        validate_deployment_wasm_browser_did_init_cli(cli)?;
+        actions.execute_deployment_wasm_browser_did_init_command(cli)?;
         return Ok(true);
     }
 
