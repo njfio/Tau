@@ -133,3 +133,6 @@ mod bridge_transports;
 
 #[path = "cli_integration/tooling_skills.rs"]
 mod tooling_skills;
+
+#[path = "cli_integration/mcp_server.rs"]
+mod mcp_server;
