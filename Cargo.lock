@@ -3109,7 +3109,6 @@ dependencies = [
  "tau-cli",
  "tau-core",
  "tau-custom-command",
- "tau-dashboard",
  "tau-deployment",
  "tau-diagnostics",
  "tau-gateway",
