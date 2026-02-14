@@ -28,7 +28,6 @@ const EXTENSION_TIMEOUT_MS_MAX: u64 = 300_000;
 const EXTENSION_HOOK_PAYLOAD_SCHEMA_VERSION: u32 = 1;
 const EXTENSION_COMMAND_RESPONSE_ACTION_CONTINUE: &str = "continue";
 const EXTENSION_COMMAND_RESPONSE_ACTION_EXIT: &str = "exit";
-const BUILTIN_TOOL_NAMES: &[&str] = &["read", "write", "edit", "bash"];
 
 pub fn execute_extension_list_command(cli: &Cli) -> Result<()> {
     if !cli.extension_list {
@@ -964,6 +963,7 @@ pub fn evaluate_extension_policy_override(
 
 pub fn discover_extension_runtime_registrations(
     root: &Path,
+    reserved_tool_names: &[&str],
     builtin_command_names: &[&str],
 ) -> ExtensionRuntimeRegistrationSummary {
     let mut summary = ExtensionRuntimeRegistrationSummary {
@@ -1041,13 +1041,14 @@ pub fn discover_extension_runtime_registrations(
                 ));
                 continue;
             }
-            if BUILTIN_TOOL_NAMES.contains(&tool_name.as_str()) {
+            if reserved_tool_names.contains(&tool_name.as_str()) {
                 summary.skipped_name_conflict += 1;
                 summary.diagnostics.push(format!(
-                    "extension runtime: tool={} id={} manifest={} denied: name conflicts with built-in tool",
+                    "extension runtime: tool={} id={} manifest={} denied: name conflicts with reserved built-in tool '{}'",
                     tool_name,
                     loaded_manifest.summary.id,
-                    loaded_manifest.summary.manifest_path.display()
+                    loaded_manifest.summary.manifest_path.display(),
+                    tool_name
                 ));
                 continue;
             }

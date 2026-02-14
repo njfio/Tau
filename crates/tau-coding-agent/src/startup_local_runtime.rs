@@ -154,7 +154,13 @@ pub(crate) async fn run_local_runtime(config: LocalRuntimeConfig<'_>) -> Result<
     } = build_onboarding_local_runtime_extension_startup(
         cli,
         load_multi_agent_route_table,
-        |root| discover_extension_runtime_registrations(root, crate::commands::COMMAND_NAMES),
+        |root| {
+            discover_extension_runtime_registrations(
+                root,
+                tools::builtin_agent_tool_names(),
+                crate::commands::COMMAND_NAMES,
+            )
+        },
         |root| ExtensionRuntimeRegistrationSummary {
             root: root.to_path_buf(),
             discovered: 0,

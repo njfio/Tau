@@ -39,6 +39,15 @@ const MCP_EXTERNAL_TOOLS_LIST_REQUEST_ID: &str = "tau-ext-tools-list";
 const MCP_EXTERNAL_TOOLS_CALL_REQUEST_ID: &str = "tau-ext-tools-call";
 const MCP_EXTERNAL_RESULT_TOOLS_FIELD: &str = "tools";
 const MCP_CONTENT_TYPE_TEXT: &str = "text";
+const RESERVED_MCP_TOOL_NAMES: &[&str] = &[
+    MCP_TOOL_READ,
+    MCP_TOOL_WRITE,
+    MCP_TOOL_EDIT,
+    MCP_TOOL_BASH,
+    MCP_TOOL_CONTEXT_SESSION,
+    MCP_TOOL_CONTEXT_SKILLS,
+    MCP_TOOL_CONTEXT_CHANNEL_STORE,
+];
 
 fn default_mcp_context_providers() -> Vec<String> {
     vec![
@@ -169,8 +178,9 @@ pub fn execute_mcp_server_command(cli: &Cli) -> Result<()> {
     }
 
     let context_providers = resolve_mcp_context_providers(&cli.mcp_context_provider)?;
+    let reserved_mcp_tool_names = reserved_builtin_mcp_tool_names();
     let external_servers = load_external_mcp_servers(cli.mcp_external_server_config.as_deref())?;
-    let external_tools = discover_external_mcp_tools(&external_servers)?;
+    let external_tools = discover_external_mcp_tools(&external_servers, &reserved_mcp_tool_names)?;
     let state = McpServerState {
         tool_policy: build_tool_policy(cli)?,
         session_path: cli.session.clone(),
@@ -275,8 +285,10 @@ fn normalize_external_server_name(raw: &str) -> Result<String> {
 
 fn discover_external_mcp_tools(
     servers: &[McpExternalServerConfig],
+    reserved_tool_names: &BTreeSet<String>,
 ) -> Result<Vec<McpExternalDiscoveredTool>> {
     let mut tools = Vec::new();
+    let mut seen_qualified_names = BTreeSet::new();
     for server in servers {
         let init = jsonrpc_request_frame(
             Value::String(MCP_EXTERNAL_INIT_REQUEST_ID.to_string()),
@@ -324,7 +336,23 @@ fn discover_external_mcp_tools(
                         "external mcp server '{}' returned tool with invalid name",
                         server.name
                     )
-                })?;
+                })?
+                .to_string();
+            if reserved_tool_names.contains(tool_name.as_str()) {
+                bail!(
+                    "external mcp server '{}' returned reserved built-in tool name '{}'",
+                    server.name,
+                    tool_name
+                );
+            }
+            let qualified_name = format!("{MCP_TOOL_PREFIX_EXTERNAL}{}.{}", server.name, tool_name);
+            if !seen_qualified_names.insert(qualified_name.clone()) {
+                bail!(
+                    "external mcp server '{}' returned duplicate tool registration '{}'",
+                    server.name,
+                    qualified_name
+                );
+            }
             let description = object
                 .get("description")
                 .and_then(Value::as_str)
@@ -336,13 +364,20 @@ fn discover_external_mcp_tools(
             );
             tools.push(McpExternalDiscoveredTool {
                 server_name: server.name.clone(),
-                tool_name: tool_name.to_string(),
+                tool_name,
                 description,
                 input_schema,
             });
         }
     }
     Ok(tools)
+}
+
+fn reserved_builtin_mcp_tool_names() -> BTreeSet<String> {
+    RESERVED_MCP_TOOL_NAMES
+        .iter()
+        .map(|name| (*name).to_string())
+        .collect()
 }
 
 fn call_external_mcp_server(
@@ -1367,8 +1402,11 @@ done
             cwd: None,
             enabled: true,
         };
-        let discovered = super::discover_external_mcp_tools(std::slice::from_ref(&config))
-            .expect("discover external tool");
+        let discovered = super::discover_external_mcp_tools(
+            std::slice::from_ref(&config),
+            &super::reserved_builtin_mcp_tool_names(),
+        )
+        .expect("discover external tool");
         assert_eq!(discovered.len(), 1);
         assert_eq!(discovered[0].tool_name, "echo");
 
@@ -1407,5 +1445,121 @@ done
             responses[0]["result"]["structuredContent"]["isError"],
             false
         );
+    }
+
+    #[test]
+    fn unit_reserved_builtin_mcp_tool_names_contains_catalog_entries() {
+        let names = super::reserved_builtin_mcp_tool_names();
+        assert!(names.contains(super::MCP_TOOL_READ));
+        assert!(names.contains(super::MCP_TOOL_WRITE));
+        assert!(names.contains(super::MCP_TOOL_EDIT));
+        assert!(names.contains(super::MCP_TOOL_BASH));
+        assert!(names.contains(super::MCP_TOOL_CONTEXT_SESSION));
+        assert!(names.contains(super::MCP_TOOL_CONTEXT_SKILLS));
+        assert!(names.contains(super::MCP_TOOL_CONTEXT_CHANNEL_STORE));
+    }
+
+    #[test]
+    fn regression_external_discovery_rejects_reserved_builtin_name() {
+        let temp = tempdir().expect("tempdir");
+        let script = temp.path().join("mock-external-mcp-reserved.sh");
+        std::fs::write(
+            &script,
+            r#"#!/bin/sh
+set -eu
+while IFS= read -r line; do
+  if [ -z "$line" ]; then
+    continue
+  fi
+  method=$(printf '%s' "$line" | sed -n 's/.*"method":"\([^"]*\)".*/\1/p')
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p')
+  if [ "$method" = "initialize" ]; then
+    printf '{"jsonrpc":"2.0","id":"%s","result":{"protocolVersion":"2024-11-05","capabilities":{"tools":{"listChanged":false}}}}\n' "$id"
+    continue
+  fi
+  if [ "$method" = "tools/list" ]; then
+    printf '{"jsonrpc":"2.0","id":"%s","result":{"tools":[{"name":"tau.read","description":"reserved","inputSchema":{"type":"object","properties":{}}}]}}\n' "$id"
+    continue
+  fi
+done
+"#,
+        )
+        .expect("write script");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = std::fs::metadata(&script).expect("metadata").permissions();
+            perms.set_mode(0o755);
+            std::fs::set_permissions(&script, perms).expect("chmod");
+        }
+
+        let config = McpExternalServerConfig {
+            name: "mock".to_string(),
+            command: script.display().to_string(),
+            args: Vec::new(),
+            env: BTreeMap::new(),
+            cwd: None,
+            enabled: true,
+        };
+        let error = super::discover_external_mcp_tools(
+            std::slice::from_ref(&config),
+            &super::reserved_builtin_mcp_tool_names(),
+        )
+        .expect_err("reserved tool names must be rejected");
+        assert!(error
+            .to_string()
+            .contains("reserved built-in tool name 'tau.read'"));
+    }
+
+    #[test]
+    fn regression_external_discovery_rejects_duplicate_qualified_names() {
+        let temp = tempdir().expect("tempdir");
+        let script = temp.path().join("mock-external-mcp-duplicate.sh");
+        std::fs::write(
+            &script,
+            r#"#!/bin/sh
+set -eu
+while IFS= read -r line; do
+  if [ -z "$line" ]; then
+    continue
+  fi
+  method=$(printf '%s' "$line" | sed -n 's/.*"method":"\([^"]*\)".*/\1/p')
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p')
+  if [ "$method" = "initialize" ]; then
+    printf '{"jsonrpc":"2.0","id":"%s","result":{"protocolVersion":"2024-11-05","capabilities":{"tools":{"listChanged":false}}}}\n' "$id"
+    continue
+  fi
+  if [ "$method" = "tools/list" ]; then
+    printf '{"jsonrpc":"2.0","id":"%s","result":{"tools":[{"name":"echo","description":"first","inputSchema":{"type":"object","properties":{}}},{"name":"echo","description":"second","inputSchema":{"type":"object","properties":{}}}]}}\n' "$id"
+    continue
+  fi
+done
+"#,
+        )
+        .expect("write script");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = std::fs::metadata(&script).expect("metadata").permissions();
+            perms.set_mode(0o755);
+            std::fs::set_permissions(&script, perms).expect("chmod");
+        }
+
+        let config = McpExternalServerConfig {
+            name: "mock".to_string(),
+            command: script.display().to_string(),
+            args: Vec::new(),
+            env: BTreeMap::new(),
+            cwd: None,
+            enabled: true,
+        };
+        let error = super::discover_external_mcp_tools(
+            std::slice::from_ref(&config),
+            &super::reserved_builtin_mcp_tool_names(),
+        )
+        .expect_err("duplicate names must fail");
+        assert!(error
+            .to_string()
+            .contains("duplicate tool registration 'external.mock.echo'"));
     }
 }
