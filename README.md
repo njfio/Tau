@@ -24,6 +24,7 @@ Focused guides:
 - Contract pattern lifecycle: [`docs/guides/contract-pattern-lifecycle.md`](docs/guides/contract-pattern-lifecycle.md)
 - Multi-channel event pipeline: [`docs/guides/multi-channel-event-pipeline.md`](docs/guides/multi-channel-event-pipeline.md)
 - Operator control summary: [`docs/guides/operator-control-summary.md`](docs/guides/operator-control-summary.md)
+- Doc density scorecard: [`docs/guides/doc-density-scorecard.md`](docs/guides/doc-density-scorecard.md)
 - Packages and extensions: [`docs/guides/packages.md`](docs/guides/packages.md)
 - Events and scheduler: [`docs/guides/events.md`](docs/guides/events.md)
 

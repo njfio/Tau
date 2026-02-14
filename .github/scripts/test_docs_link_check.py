@@ -49,13 +49,15 @@ class DocsLinkCheckTests(unittest.TestCase):
                 "docs/guides/contract-pattern-lifecycle.md",
                 "--file",
                 "docs/guides/multi-channel-event-pipeline.md",
+                "--file",
+                "docs/guides/doc-density-scorecard.md",
             ],
             text=True,
             capture_output=True,
             check=False,
         )
         self.assertEqual(completed.returncode, 0, msg=completed.stderr)
-        self.assertIn("checked_files=6", completed.stdout)
+        self.assertIn("checked_files=7", completed.stdout)
         self.assertIn("issues=0", completed.stdout)
 
     def test_integration_docs_index_and_readme_links_stay_valid(self):
@@ -74,11 +76,13 @@ class DocsLinkCheckTests(unittest.TestCase):
         self.assertIn("guides/startup-di-pipeline.md", docs_index)
         self.assertIn("guides/contract-pattern-lifecycle.md", docs_index)
         self.assertIn("guides/multi-channel-event-pipeline.md", docs_index)
+        self.assertIn("guides/doc-density-scorecard.md", docs_index)
 
         readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
         self.assertIn("docs/guides/startup-di-pipeline.md", readme)
         self.assertIn("docs/guides/contract-pattern-lifecycle.md", readme)
         self.assertIn("docs/guides/multi-channel-event-pipeline.md", readme)
+        self.assertIn("docs/guides/doc-density-scorecard.md", readme)
 
     def test_regression_cli_reports_missing_link_and_fails(self):
         script_path = SCRIPT_DIR / "docs_link_check.py"
