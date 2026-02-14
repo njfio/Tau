@@ -105,3 +105,4 @@ Merge gate blocks when:
 Use unified harness outputs as mandatory evidence in:
 
 - [Release Sign-Off Checklist](release-signoff-checklist.md)
+- [Final Validation Package Guide](final-validation-package.md)

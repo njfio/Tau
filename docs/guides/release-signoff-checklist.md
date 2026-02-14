@@ -19,6 +19,7 @@ Related runbooks:
 - [Dashboard Operations Runbook](dashboard-ops.md)
 - [Custom Command Operations Runbook](custom-command-ops.md)
 - [Memory Operations Runbook](memory-ops.md)
+- [Final Validation Package Guide](final-validation-package.md)
 
 ## Mandatory Evidence Contract
 
@@ -96,3 +97,5 @@ Run one rehearsal before first production use of a new release train:
 3. Collect per-surface status evidence from each runbook's inspect commands.
 4. Fill the full checklist template with rehearsal evidence.
 5. Attach checklist to the release issue/PR and request reviewer acknowledgment.
+6. Assemble and attach the final package using:
+   `docs/guides/final-validation-package.md`
