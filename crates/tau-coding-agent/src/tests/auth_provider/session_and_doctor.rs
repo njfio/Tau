@@ -1,3 +1,5 @@
+//! Session and doctor command tests for auth/provider diagnostics and report rendering.
+
 use super::super::{
     build_doctor_command_config, compute_session_entry_depths, compute_session_stats,
     current_unix_timestamp, default_skills_lock_path, ensure_non_empty_text, escape_graph_label,

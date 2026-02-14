@@ -1,3 +1,5 @@
+//! Extension and RPC CLI parsing tests for flag normalization and invalid combinations.
+
 use std::path::PathBuf;
 
 use tau_cli::CliDeploymentWasmRuntimeProfile;

@@ -1,3 +1,5 @@
+//! Core OpenResponses gateway request/response/error types used across handlers and translation.
+
 use std::collections::BTreeMap;
 
 use axum::http::StatusCode;

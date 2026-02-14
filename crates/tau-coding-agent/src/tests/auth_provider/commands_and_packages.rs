@@ -1,3 +1,5 @@
+//! Command/package validation tests covering skills, bridges, and runtime command surfaces.
+
 use super::super::{
     branch_alias_path_for_session, build_multi_channel_incident_timeline_report,
     build_multi_channel_route_inspect_report, command_file_error_mode_label,

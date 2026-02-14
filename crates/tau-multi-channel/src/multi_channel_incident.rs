@@ -1,3 +1,5 @@
+//! Incident timeline execution and reporting helpers for multi-channel runtime artifacts.
+
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 

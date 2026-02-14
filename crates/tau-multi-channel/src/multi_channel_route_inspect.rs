@@ -1,3 +1,5 @@
+//! Route-inspection execution and report builders for multi-channel transport/runtime state.
+
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};

@@ -1,3 +1,5 @@
+//! CLI integration tests for bridge transport startup requirements and failure modes.
+
 use super::*;
 
 #[test]

@@ -1,3 +1,5 @@
+//! Auth/provider test module grouping for command, runtime, and doctor/session coverage.
+
 use std::path::Path;
 
 mod auth_and_provider;

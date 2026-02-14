@@ -1,3 +1,5 @@
+//! Runtime/startup auth-provider tests for dispatch, policy guards, and startup preflight behavior.
+
 use super::super::{
     apply_trust_root_mutations, build_tool_policy, default_skills_lock_path,
     discover_extension_runtime_registrations, execute_rpc_capabilities_command,

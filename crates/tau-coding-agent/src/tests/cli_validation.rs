@@ -1,3 +1,5 @@
+//! CLI validation tests for transport/runtime mode flag compatibility and guardrails.
+
 use std::path::{Path, PathBuf};
 
 use tau_cli::validation::validate_project_index_cli;
