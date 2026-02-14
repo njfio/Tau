@@ -89,6 +89,15 @@ pub(crate) async fn run_local_runtime(config: LocalRuntimeConfig<'_>) -> Result<
                 .and_then(|entry| entry.output_cost_per_million),
             cost_budget_usd: cli.agent_cost_budget_usd,
             cost_alert_thresholds_percent: cli.agent_cost_alert_threshold_percent.clone(),
+            memory_backend_state_dir: Some(cli.memory_state_dir.clone()),
+            memory_backend_workspace_id: cli
+                .session
+                .file_stem()
+                .and_then(|value| value.to_str())
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .unwrap_or("default")
+                .to_string(),
         },
         tool_policy,
     );
