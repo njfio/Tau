@@ -34,9 +34,9 @@ SURFACE_PLANS: dict[str, SurfacePlan] = {
     ),
     "dashboard": SurfacePlan(
         surface="dashboard",
-        primary_wrapper="scripts/demo/dashboard.sh",
-        fallback_wrapper="",
-        artifact_dirs=(".tau/demo-dashboard",),
+        primary_wrapper="scripts/demo/dashboard-live.sh",
+        fallback_wrapper="scripts/demo/dashboard.sh",
+        artifact_dirs=(".tau/demo-dashboard-live", ".tau/demo-dashboard"),
         timeout_seconds=180,
     ),
     "custom-command": SurfacePlan(

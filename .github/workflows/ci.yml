@@ -324,7 +324,7 @@ jobs:
         run: |
           set -euo pipefail
           cargo build -p tau-coding-agent
-          if [[ "${{ matrix.surface }}" == "browser" ]]; then
+          if [[ "${{ matrix.surface }}" == "browser" || "${{ matrix.surface }}" == "dashboard" ]]; then
             cargo build -p tau-browser-automation --bin browser_automation_live_harness
           fi
 

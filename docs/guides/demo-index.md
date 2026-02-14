@@ -93,6 +93,21 @@ Primary outputs:
 - `.tau/demo-browser-automation-live/browser-live-report.json`
 - `.tau/demo-browser-automation-live/browser-live-transcript.log`
 
+`dashboard-live` is a standalone wrapper (not part of `index.sh` scenario allowlist)
+used for dashboard browser-E2E proof and fallback `/webchat` artifact capture:
+
+```bash
+./scripts/demo/dashboard-live.sh
+```
+
+Primary outputs:
+
+- `.tau/demo-dashboard-live/dashboard-live-summary.json`
+- `.tau/demo-dashboard-live/dashboard-live-report.json`
+- `.tau/demo-dashboard-live/dashboard-live-transcript.log`
+- `.tau/demo-dashboard-live/dashboard-action-audit.json`
+- `.tau/demo-dashboard-live/webchat-fallback-check.json`
+
 ## Unified Live-Run Harness
 
 Cross-surface validation wrapper (voice/browser/dashboard/custom-command/memory):

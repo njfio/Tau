@@ -365,6 +365,35 @@ async fn functional_webchat_endpoint_returns_html_shell() {
 }
 
 #[tokio::test]
+async fn regression_webchat_endpoint_remains_available_after_unauthorized_request() {
+    let temp = tempdir().expect("tempdir");
+    let state = test_state(temp.path(), 10_000, "secret");
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+
+    let client = Client::new();
+    let unauthorized = client
+        .post(format!("http://{addr}/v1/responses"))
+        .json(&json!({"input":"hello"}))
+        .send()
+        .await
+        .expect("send unauthorized request");
+    assert_eq!(unauthorized.status(), StatusCode::UNAUTHORIZED);
+
+    let webchat = client
+        .get(format!("http://{addr}{WEBCHAT_ENDPOINT}"))
+        .send()
+        .await
+        .expect("send webchat request");
+    assert_eq!(webchat.status(), StatusCode::OK);
+    let body = webchat.text().await.expect("read webchat body");
+    assert!(body.contains("Tau Gateway Webchat"));
+    assert!(body.contains("Refresh status"));
+    assert!(body.contains("clearOutput"));
+
+    handle.abort();
+}
+
+#[tokio::test]
 async fn functional_openresponses_endpoint_rejects_unauthorized_requests() {
     let temp = tempdir().expect("tempdir");
     let state = test_state(temp.path(), 10_000, "secret");
