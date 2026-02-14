@@ -67,6 +67,12 @@ fn project_index_mode_requested(cli: &Cli) -> bool {
     cli.project_index_build || cli.project_index_query.is_some() || cli.project_index_inspect
 }
 
+fn deployment_wasm_mode_requested(cli: &Cli) -> bool {
+    cli.deployment_wasm_package_module.is_some()
+        || cli.deployment_wasm_inspect_manifest.is_some()
+        || cli.deployment_wasm_browser_did_init
+}
+
 pub fn validate_project_index_cli(cli: &Cli) -> Result<()> {
     let mode_requested = project_index_mode_requested(cli);
     if !mode_requested && !cli.project_index_json {
@@ -128,8 +134,7 @@ pub fn validate_project_index_cli(cli: &Cli) -> Result<()> {
         || cli.gateway_contract_runner
         || cli.gateway_openresponses_server
         || cli.deployment_contract_runner
-        || cli.deployment_wasm_package_module.is_some()
-        || cli.deployment_wasm_inspect_manifest.is_some()
+        || deployment_wasm_mode_requested(cli)
         || cli.custom_command_contract_runner
         || cli.voice_contract_runner
         || cli.voice_live_runner
@@ -614,8 +619,7 @@ pub fn validate_multi_channel_incident_timeline_cli(cli: &Cli) -> Result<()> {
         || cli.dashboard_contract_runner
         || cli.gateway_contract_runner
         || cli.deployment_contract_runner
-        || cli.deployment_wasm_package_module.is_some()
-        || cli.deployment_wasm_inspect_manifest.is_some()
+        || deployment_wasm_mode_requested(cli)
         || project_index_mode_requested(cli)
         || cli.custom_command_contract_runner
         || cli.voice_contract_runner
@@ -711,8 +715,7 @@ pub fn validate_multi_channel_channel_lifecycle_cli(cli: &Cli) -> Result<()> {
         || cli.dashboard_contract_runner
         || cli.gateway_contract_runner
         || cli.deployment_contract_runner
-        || cli.deployment_wasm_package_module.is_some()
-        || cli.deployment_wasm_inspect_manifest.is_some()
+        || deployment_wasm_mode_requested(cli)
         || cli.custom_command_contract_runner
         || cli.voice_contract_runner
         || cli.voice_live_runner
@@ -804,8 +807,7 @@ pub fn validate_multi_channel_send_cli(cli: &Cli) -> Result<()> {
         || cli.dashboard_contract_runner
         || cli.gateway_contract_runner
         || cli.deployment_contract_runner
-        || cli.deployment_wasm_package_module.is_some()
-        || cli.deployment_wasm_inspect_manifest.is_some()
+        || deployment_wasm_mode_requested(cli)
         || project_index_mode_requested(cli)
         || cli.custom_command_contract_runner
         || cli.voice_contract_runner
@@ -1074,8 +1076,7 @@ pub fn validate_daemon_cli(cli: &Cli) -> Result<()> {
         || cli.gateway_contract_runner
         || cli.gateway_openresponses_server
         || cli.deployment_contract_runner
-        || cli.deployment_wasm_package_module.is_some()
-        || cli.deployment_wasm_inspect_manifest.is_some()
+        || deployment_wasm_mode_requested(cli)
         || cli.custom_command_contract_runner
         || cli.voice_contract_runner
         || cli.voice_live_runner
@@ -1212,8 +1213,7 @@ pub fn validate_gateway_remote_profile_inspect_cli(cli: &Cli) -> Result<()> {
         || cli.dashboard_contract_runner
         || cli.gateway_contract_runner
         || cli.deployment_contract_runner
-        || cli.deployment_wasm_package_module.is_some()
-        || cli.deployment_wasm_inspect_manifest.is_some()
+        || deployment_wasm_mode_requested(cli)
         || project_index_mode_requested(cli)
         || cli.custom_command_contract_runner
         || cli.voice_contract_runner
@@ -1279,8 +1279,7 @@ pub fn validate_gateway_remote_plan_cli(cli: &Cli) -> Result<()> {
         || cli.dashboard_contract_runner
         || cli.gateway_contract_runner
         || cli.deployment_contract_runner
-        || cli.deployment_wasm_package_module.is_some()
-        || cli.deployment_wasm_inspect_manifest.is_some()
+        || deployment_wasm_mode_requested(cli)
         || project_index_mode_requested(cli)
         || cli.custom_command_contract_runner
         || cli.voice_contract_runner
@@ -1563,6 +1562,7 @@ pub fn validate_deployment_wasm_inspect_cli(cli: &Cli) -> Result<()> {
         || cli.gateway_contract_runner
         || cli.deployment_contract_runner
         || cli.deployment_wasm_package_module.is_some()
+        || cli.deployment_wasm_browser_did_init
         || cli.custom_command_contract_runner
         || cli.voice_contract_runner
         || cli.voice_live_runner
@@ -1585,6 +1585,59 @@ pub fn validate_deployment_wasm_inspect_cli(cli: &Cli) -> Result<()> {
         bail!(
             "--deployment-wasm-inspect-manifest '{}' must point to a file",
             manifest_path.display()
+        );
+    }
+    Ok(())
+}
+
+pub fn validate_deployment_wasm_browser_did_init_cli(cli: &Cli) -> Result<()> {
+    if !cli.deployment_wasm_browser_did_init {
+        return Ok(());
+    }
+
+    if has_prompt_or_command_input(cli) {
+        bail!("--deployment-wasm-browser-did-init cannot be combined with --prompt, --prompt-file, --prompt-template-file, or --command-file");
+    }
+    if gateway_service_mode_requested(cli)
+        || daemon_mode_requested(cli)
+        || gateway_openresponses_mode_requested(cli)
+        || cli.github_issues_bridge
+        || cli.slack_bridge
+        || cli.events_runner
+        || cli.multi_channel_contract_runner
+        || cli.multi_channel_live_runner
+        || cli.multi_agent_contract_runner
+        || cli.browser_automation_contract_runner
+        || cli.browser_automation_preflight
+        || cli.memory_contract_runner
+        || cli.dashboard_contract_runner
+        || cli.gateway_contract_runner
+        || cli.deployment_contract_runner
+        || cli.deployment_wasm_package_module.is_some()
+        || cli.deployment_wasm_inspect_manifest.is_some()
+        || cli.custom_command_contract_runner
+        || cli.voice_contract_runner
+        || cli.voice_live_runner
+    {
+        bail!(
+            "--deployment-wasm-browser-did-init cannot be combined with active transport/runtime commands"
+        );
+    }
+    if cli.deployment_wasm_browser_did_network.trim().is_empty() {
+        bail!("--deployment-wasm-browser-did-network cannot be empty");
+    }
+    if cli.deployment_wasm_browser_did_subject.trim().is_empty() {
+        bail!("--deployment-wasm-browser-did-subject cannot be empty");
+    }
+    if cli.deployment_wasm_browser_did_entropy.trim().is_empty() {
+        bail!("--deployment-wasm-browser-did-entropy cannot be empty");
+    }
+    if cli.deployment_wasm_browser_did_output.exists()
+        && !cli.deployment_wasm_browser_did_output.is_file()
+    {
+        bail!(
+            "--deployment-wasm-browser-did-output '{}' must point to a file path",
+            cli.deployment_wasm_browser_did_output.display()
         );
     }
     Ok(())

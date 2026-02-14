@@ -3,10 +3,11 @@ use std::path::PathBuf;
 use clap::{ArgAction, Parser};
 
 use crate::{
-    CliCommandFileErrorMode, CliCredentialStoreEncryptionMode, CliDeploymentWasmRuntimeProfile,
-    CliEventTemplateSchedule, CliGatewayOpenResponsesAuthMode, CliGatewayRemoteProfile,
-    CliMultiChannelLiveConnectorMode, CliMultiChannelOutboundMode, CliMultiChannelTransport,
-    CliOrchestratorMode, CliPromptSanitizerMode, CliProviderAuthMode, CliWebhookSignatureAlgorithm,
+    CliCommandFileErrorMode, CliCredentialStoreEncryptionMode, CliDeploymentWasmBrowserDidMethod,
+    CliDeploymentWasmRuntimeProfile, CliEventTemplateSchedule, CliGatewayOpenResponsesAuthMode,
+    CliGatewayRemoteProfile, CliMultiChannelLiveConnectorMode, CliMultiChannelOutboundMode,
+    CliMultiChannelTransport, CliOrchestratorMode, CliPromptSanitizerMode, CliProviderAuthMode,
+    CliWebhookSignatureAlgorithm,
 };
 
 mod gateway_daemon_flags;
@@ -3554,6 +3555,77 @@ pub struct Cli {
         help = "Emit --deployment-wasm-inspect-manifest output as pretty JSON"
     )]
     pub deployment_wasm_inspect_json: bool,
+
+    #[arg(
+        long = "deployment-wasm-browser-did-init",
+        env = "TAU_DEPLOYMENT_WASM_BROWSER_DID_INIT",
+        default_value_t = false,
+        conflicts_with = "deployment_contract_runner",
+        conflicts_with = "deployment_wasm_package_module",
+        conflicts_with = "deployment_wasm_inspect_manifest",
+        help = "Initialize a browser-native DID identity payload for WASM deployment bootstrap and exit"
+    )]
+    pub deployment_wasm_browser_did_init: bool,
+
+    #[arg(
+        long = "deployment-wasm-browser-did-method",
+        env = "TAU_DEPLOYMENT_WASM_BROWSER_DID_METHOD",
+        value_enum,
+        default_value_t = CliDeploymentWasmBrowserDidMethod::Key,
+        requires = "deployment_wasm_browser_did_init",
+        help = "DID method used for browser-native WASM identity bootstrap"
+    )]
+    pub deployment_wasm_browser_did_method: CliDeploymentWasmBrowserDidMethod,
+
+    #[arg(
+        long = "deployment-wasm-browser-did-network",
+        env = "TAU_DEPLOYMENT_WASM_BROWSER_DID_NETWORK",
+        default_value = "tau-devnet",
+        requires = "deployment_wasm_browser_did_init",
+        help = "Network namespace used when deriving browser-native DID identity"
+    )]
+    pub deployment_wasm_browser_did_network: String,
+
+    #[arg(
+        long = "deployment-wasm-browser-did-subject",
+        env = "TAU_DEPLOYMENT_WASM_BROWSER_DID_SUBJECT",
+        default_value = "browser-agent",
+        requires = "deployment_wasm_browser_did_init",
+        help = "Subject identifier used when deriving browser-native DID identity"
+    )]
+    pub deployment_wasm_browser_did_subject: String,
+
+    #[arg(
+        long = "deployment-wasm-browser-did-entropy",
+        env = "TAU_DEPLOYMENT_WASM_BROWSER_DID_ENTROPY",
+        default_value = "tau-browser-seed",
+        requires = "deployment_wasm_browser_did_init",
+        hide_env_values = true,
+        help = "Entropy seed used for deterministic browser-native DID derivation"
+    )]
+    pub deployment_wasm_browser_did_entropy: String,
+
+    #[arg(
+        long = "deployment-wasm-browser-did-output",
+        env = "TAU_DEPLOYMENT_WASM_BROWSER_DID_OUTPUT",
+        default_value = ".tau/deployment/browser-did.json",
+        requires = "deployment_wasm_browser_did_init",
+        help = "Output path where browser-native DID bootstrap payload is written"
+    )]
+    pub deployment_wasm_browser_did_output: PathBuf,
+
+    #[arg(
+        long = "deployment-wasm-browser-did-json",
+        env = "TAU_DEPLOYMENT_WASM_BROWSER_DID_JSON",
+        default_value_t = false,
+        action = ArgAction::Set,
+        num_args = 0..=1,
+        require_equals = true,
+        default_missing_value = "true",
+        requires = "deployment_wasm_browser_did_init",
+        help = "Emit --deployment-wasm-browser-did-init output as pretty JSON"
+    )]
+    pub deployment_wasm_browser_did_json: bool,
 
     #[arg(
         long = "deployment-queue-limit",

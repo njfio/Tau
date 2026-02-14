@@ -4,7 +4,14 @@ use anyhow::{anyhow, bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use tau_core::write_text_atomic;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// Public struct `TrustedKey` used across Tau components.
+pub struct TrustedKey {
+    pub id: String,
+    pub public_key: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 /// Public struct `TrustedRootRecord` used across Tau components.
 pub struct TrustedRootRecord {
     pub id: String,
@@ -30,13 +37,6 @@ pub struct TrustMutationReport {
     pub updated: usize,
     pub revoked: usize,
     pub rotated: usize,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-/// Public struct `TrustedKey` used across Tau components.
-pub struct TrustedKey {
-    pub id: String,
-    pub public_key: String,
 }
 
 pub fn parse_trusted_root_spec(raw: &str) -> Result<TrustedKey> {
@@ -170,4 +170,89 @@ pub fn apply_trust_root_mutation_specs(
     }
 
     Ok(report)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use tempfile::tempdir;
+
+    use super::{
+        apply_trust_root_mutation_specs, load_trust_root_records, parse_trust_rotation_spec,
+        parse_trusted_root_spec, save_trust_root_records, TrustedRootRecord,
+    };
+
+    #[test]
+    fn unit_parse_trusted_root_spec_accepts_key_id_and_key() {
+        let key = parse_trusted_root_spec("root_a=ZmFrZV9rZXk=").expect("parse trusted root");
+        assert_eq!(key.id, "root_a");
+        assert_eq!(key.public_key, "ZmFrZV9rZXk=");
+    }
+
+    #[test]
+    fn functional_save_and_load_trust_root_records_roundtrip() {
+        let temp = tempdir().expect("tempdir");
+        let path = temp.path().join("trust-roots.json");
+        let records = vec![TrustedRootRecord {
+            id: "root_a".to_string(),
+            public_key: "ZmFrZV9rZXk=".to_string(),
+            revoked: false,
+            expires_unix: Some(123),
+            rotated_from: None,
+        }];
+
+        save_trust_root_records(&path, &records).expect("save trust roots");
+        let loaded = load_trust_root_records(&path).expect("load trust roots");
+        assert_eq!(loaded, records);
+    }
+
+    #[test]
+    fn integration_apply_trust_root_mutations_tracks_add_revoke_rotate() {
+        let mut records = vec![TrustedRootRecord {
+            id: "root_a".to_string(),
+            public_key: "old".to_string(),
+            revoked: false,
+            expires_unix: None,
+            rotated_from: None,
+        }];
+
+        let report = apply_trust_root_mutation_specs(
+            &mut records,
+            &["root_b=new".to_string()],
+            &["root_a".to_string()],
+            &["root_a:root_c=rotated".to_string()],
+        )
+        .expect("apply mutations");
+
+        assert_eq!(report.added, 2);
+        assert_eq!(report.revoked, 1);
+        assert_eq!(report.rotated, 1);
+        assert!(records
+            .iter()
+            .any(|record| record.id == "root_a" && record.revoked));
+        assert!(records.iter().any(
+            |record| record.id == "root_c" && record.rotated_from.as_deref() == Some("root_a")
+        ));
+    }
+
+    #[test]
+    fn regression_load_trust_root_records_rejects_invalid_payload() {
+        let temp = tempdir().expect("tempdir");
+        let path = temp.path().join("trust-roots-invalid.json");
+        std::fs::write(&path, "{not-json").expect("write invalid payload");
+
+        let error = load_trust_root_records(Path::new(&path))
+            .expect_err("invalid trust root payload should fail");
+        assert!(error
+            .to_string()
+            .contains("failed to parse trusted root file"));
+    }
+
+    #[test]
+    fn regression_parse_trust_rotation_spec_rejects_missing_delimiter() {
+        let error = parse_trust_rotation_spec("root_a=next")
+            .expect_err("rotation spec without ':' should fail");
+        assert!(error.to_string().contains("invalid --skill-trust-rotate"));
+    }
 }

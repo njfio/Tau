@@ -1491,6 +1491,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "kamn-core"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64",
+ "serde",
+ "sha2",
+]
+
+[[package]]
+name = "kamn-sdk"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "kamn-core",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "lazy_static"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2931,6 +2952,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "clap",
+ "kamn-sdk",
  "serde",
  "serde_json",
  "sha2",

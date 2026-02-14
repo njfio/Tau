@@ -13,6 +13,7 @@ pub struct StartupPreflightCallbacks {
     pub execute_multi_channel_channel_lifecycle_command: StartupCommandFn,
     pub execute_deployment_wasm_package_command: StartupCommandFn,
     pub execute_deployment_wasm_inspect_command: StartupCommandFn,
+    pub execute_deployment_wasm_browser_did_init_command: StartupCommandFn,
     pub execute_project_index_command: StartupCommandFn,
     pub execute_channel_store_admin_command: StartupCommandFn,
     pub execute_multi_channel_live_readiness_preflight_command: StartupCommandFn,
@@ -71,6 +72,12 @@ impl tau_startup::StartupPreflightActions for CallbackStartupPreflightActions<'_
 
     fn execute_deployment_wasm_inspect_command(&self, cli: &Cli) -> Result<()> {
         (self.callbacks.execute_deployment_wasm_inspect_command)(cli)
+    }
+
+    fn execute_deployment_wasm_browser_did_init_command(&self, cli: &Cli) -> Result<()> {
+        (self
+            .callbacks
+            .execute_deployment_wasm_browser_did_init_command)(cli)
     }
 
     fn execute_project_index_command(&self, cli: &Cli) -> Result<()> {
@@ -275,6 +282,7 @@ mod tests {
             execute_multi_channel_channel_lifecycle_command: noop_command,
             execute_deployment_wasm_package_command: noop_command,
             execute_deployment_wasm_inspect_command: noop_command,
+            execute_deployment_wasm_browser_did_init_command: noop_command,
             execute_project_index_command: noop_command,
             execute_channel_store_admin_command: noop_command,
             execute_multi_channel_live_readiness_preflight_command: noop_command,

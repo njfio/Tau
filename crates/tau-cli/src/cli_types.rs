@@ -258,3 +258,19 @@ impl CliDeploymentWasmRuntimeProfile {
         }
     }
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+/// Enumerates supported `CliDeploymentWasmBrowserDidMethod` values.
+pub enum CliDeploymentWasmBrowserDidMethod {
+    Key,
+    Web,
+}
+
+impl CliDeploymentWasmBrowserDidMethod {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            CliDeploymentWasmBrowserDidMethod::Key => "key",
+            CliDeploymentWasmBrowserDidMethod::Web => "web",
+        }
+    }
+}

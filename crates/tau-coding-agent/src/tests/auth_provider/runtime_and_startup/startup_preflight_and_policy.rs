@@ -498,6 +498,35 @@ fn functional_execute_startup_preflight_runs_deployment_wasm_inspect_mode() {
 }
 
 #[test]
+fn integration_execute_startup_preflight_runs_deployment_wasm_browser_did_init_mode() {
+    let temp = tempdir().expect("tempdir");
+
+    let mut cli = test_cli();
+    set_workspace_tau_paths(&mut cli, temp.path());
+    cli.deployment_wasm_browser_did_init = true;
+    cli.deployment_wasm_browser_did_subject = "edge-browser-agent".to_string();
+    cli.deployment_wasm_browser_did_entropy = "seed-browser-01".to_string();
+    cli.deployment_wasm_browser_did_output = temp.path().join("browser-did.json");
+    cli.deployment_wasm_browser_did_json = true;
+
+    let handled =
+        execute_startup_preflight(&cli).expect("deployment wasm browser did init preflight");
+    assert!(handled);
+
+    let raw = std::fs::read_to_string(&cli.deployment_wasm_browser_did_output)
+        .expect("read browser did output");
+    let payload: serde_json::Value = serde_json::from_str(&raw).expect("parse browser did output");
+    assert_eq!(
+        payload
+            .get("identity")
+            .and_then(|value| value.get("did"))
+            .and_then(serde_json::Value::as_str)
+            .map(|value| value.starts_with("did:key:")),
+        Some(true)
+    );
+}
+
+#[test]
 fn regression_execute_startup_preflight_deployment_wasm_package_fails_closed() {
     let temp = tempdir().expect("tempdir");
     let invalid_module_path = temp.path().join("invalid.bin");
@@ -529,6 +558,22 @@ fn regression_execute_startup_preflight_deployment_wasm_inspect_fails_closed() {
     assert!(error
         .to_string()
         .contains("invalid deployment wasm manifest"));
+}
+
+#[test]
+fn regression_execute_startup_preflight_deployment_wasm_browser_did_init_fails_closed() {
+    let temp = tempdir().expect("tempdir");
+    let mut cli = test_cli();
+    set_workspace_tau_paths(&mut cli, temp.path());
+    cli.deployment_wasm_browser_did_init = true;
+    cli.deployment_wasm_browser_did_subject = "invalid subject".to_string();
+    cli.deployment_wasm_browser_did_output = temp.path().join("browser-did.json");
+
+    let error = execute_startup_preflight(&cli)
+        .expect_err("invalid browser did subject should fail in preflight");
+    assert!(error
+        .to_string()
+        .contains("subject contains unsupported characters"));
 }
 
 #[test]

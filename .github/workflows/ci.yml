@@ -40,6 +40,8 @@ jobs:
       run_coverage: ${{ steps.quality_mode.outputs.run_coverage }}
       run_cross_platform: ${{ steps.quality_mode.outputs.run_cross_platform }}
       heavy_reason: ${{ steps.quality_mode.outputs.heavy_reason }}
+      rust_changed: ${{ steps.rust_scope.outputs.rust_changed }}
+      run_wasm_smoke: ${{ steps.wasm_scope.outputs.wasm_smoke_needed }}
     steps:
       - name: Checkout (attempt 1)
         id: checkout_attempt_1
@@ -145,6 +147,18 @@ jobs:
             fast_validate:
               - "scripts/dev/fast-validate.sh"
               - "scripts/dev/test-fast-validate.sh"
+            wasm_smoke:
+              - "crates/kamn-core/**"
+              - "crates/kamn-sdk/**"
+              - "crates/tau-access/**"
+              - "crates/tau-deployment/**"
+              - "crates/tau-cli/**"
+              - "crates/tau-startup/**"
+              - "crates/tau-onboarding/**"
+              - "scripts/dev/wasm-smoke.sh"
+              - "scripts/dev/test-wasm-smoke.sh"
+              - "scripts/edge/**"
+              - ".github/workflows/ci.yml"
 
       - name: Determine rust scope
         id: rust_scope
@@ -205,6 +219,25 @@ jobs:
       - name: Validate fast-validate script
         if: steps.fast_validate_scope.outputs.fast_validate_tests_needed == 'true'
         run: ./scripts/dev/test-fast-validate.sh
+
+      - name: Determine wasm smoke scope
+        id: wasm_scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          wasm_smoke_needed="${{ steps.change_scope.outputs.wasm_smoke }}"
+          if [[ "${{ github.event_name }}" != "pull_request" ]]; then
+            wasm_smoke_needed="true"
+          elif [[ -z "${wasm_smoke_needed}" ]]; then
+            wasm_smoke_needed="false"
+          fi
+          echo "wasm_smoke_needed=${wasm_smoke_needed}" >> "$GITHUB_OUTPUT"
+          echo "### WASM Smoke Scope" >> "$GITHUB_STEP_SUMMARY"
+          echo "- WASM smoke needed: ${wasm_smoke_needed}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Validate wasm-smoke scripts
+        if: steps.wasm_scope.outputs.wasm_smoke_needed == 'true'
+        run: ./scripts/dev/test-wasm-smoke.sh
 
       - name: Determine quality mode
         id: quality_mode
@@ -321,6 +354,27 @@ jobs:
           name: demo-smoke-logs
           path: ci-artifacts/demo-smoke
           if-no-files-found: ignore
+
+  wasm-smoke:
+    name: WASM compile smoke
+    needs: [quality-linux]
+    if: needs.quality-linux.outputs.run_wasm_smoke == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Rust + wasm target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run wasm smoke harness
+        run: ./scripts/dev/wasm-smoke.sh
 
   cross-platform-smoke:
     name: Cross-platform compile smoke (${{ matrix.os }})

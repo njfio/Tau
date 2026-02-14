@@ -1913,21 +1913,21 @@ fn regression_parse_skills_trust_list_args_requires_path_without_configuration()
 
 #[test]
 fn unit_trust_record_status_reports_active_revoked_and_expired() {
-    let active = TrustedRootRecord {
+    let active = tau_skills::TrustedRootRecord {
         id: "active".to_string(),
         public_key: "YQ==".to_string(),
         revoked: false,
         expires_unix: None,
         rotated_from: None,
     };
-    let revoked = TrustedRootRecord {
+    let revoked = tau_skills::TrustedRootRecord {
         id: "revoked".to_string(),
         public_key: "Yg==".to_string(),
         revoked: true,
         expires_unix: None,
         rotated_from: None,
     };
-    let expired = TrustedRootRecord {
+    let expired = tau_skills::TrustedRootRecord {
         id: "expired".to_string(),
         public_key: "Yw==".to_string(),
         revoked: false,

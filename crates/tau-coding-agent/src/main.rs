@@ -315,9 +315,10 @@ pub(crate) use tau_cli::CliOrchestratorMode;
 pub(crate) use tau_cli::CliProviderAuthMode;
 #[cfg(test)]
 pub(crate) use tau_cli::{
-    CliBashProfile, CliCredentialStoreEncryptionMode, CliDeploymentWasmRuntimeProfile,
-    CliGatewayOpenResponsesAuthMode, CliMultiChannelLiveConnectorMode, CliMultiChannelTransport,
-    CliOsSandboxMode, CliSessionImportMode, CliToolPolicyPreset,
+    CliBashProfile, CliCredentialStoreEncryptionMode, CliDeploymentWasmBrowserDidMethod,
+    CliDeploymentWasmRuntimeProfile, CliGatewayOpenResponsesAuthMode,
+    CliMultiChannelLiveConnectorMode, CliMultiChannelTransport, CliOsSandboxMode,
+    CliSessionImportMode, CliToolPolicyPreset,
 };
 #[cfg(test)]
 pub(crate) use tau_cli::{CliDaemonProfile, CliGatewayRemoteProfile};

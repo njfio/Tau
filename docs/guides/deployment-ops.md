@@ -119,6 +119,46 @@ Inspect report fields include:
 - `required_feature_gates`
 - `max_artifact_size_bytes`
 
+## Browser-native DID bootstrap (KAMN)
+
+Initialize a browser/edge DID payload and persist it to deployment state:
+
+```bash
+cargo run -p tau-coding-agent -- \
+  --deployment-wasm-browser-did-init \
+  --deployment-wasm-browser-did-method key \
+  --deployment-wasm-browser-did-network tau-devnet \
+  --deployment-wasm-browser-did-subject browser-agent \
+  --deployment-wasm-browser-did-entropy local-dev-seed \
+  --deployment-wasm-browser-did-output .tau/deployment/browser-did.json \
+  --deployment-wasm-browser-did-json
+```
+
+Output guarantees:
+
+- deterministic DID derivation for identical `(method, network, subject, entropy)` input
+- persisted bootstrap payload at `--deployment-wasm-browser-did-output`
+- portability across native and wasm builds through `kamn-core`/`kamn-sdk`
+
+## WASM compile + edge smoke harness
+
+Run the consolidated smoke harness:
+
+```bash
+./scripts/dev/wasm-smoke.sh
+```
+
+Harness coverage:
+
+- `cargo check --target wasm32-unknown-unknown` for `kamn-core`, `kamn-sdk`, `tau-access`, `tau-deployment`
+- Cloudflare probe (`scripts/edge/cloudflare-wasm-smoke.sh`)
+- Deno probe (`scripts/edge/deno-wasm-smoke.sh`)
+
+Edge runtime matrix:
+
+- Cloudflare Workers: probe passes when `wrangler` is installed, otherwise explicit skip
+- Deno: probe passes when `deno` is installed, otherwise explicit skip
+
 ## Deterministic demo path
 
 ```bash
