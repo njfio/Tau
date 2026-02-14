@@ -1,3 +1,5 @@
+//! Runtime agent CLI tests covering model resolution, routing, and execution-mode flags.
+
 use std::path::Path;
 
 use tau_cli::CliOrchestratorMode;

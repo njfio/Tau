@@ -1,3 +1,5 @@
+//! Session runtime orchestration for OpenResponses requests, response streaming, and persistence.
+
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};

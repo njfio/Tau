@@ -1,3 +1,5 @@
+//! CLI integration coverage for auth/provider workflows and models/status commands.
+
 use super::*;
 
 #[test]

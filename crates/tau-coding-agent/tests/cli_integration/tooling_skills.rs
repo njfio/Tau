@@ -1,3 +1,5 @@
+//! CLI integration tests for tooling/skills commands, lockfiles, and package operations.
+
 use super::*;
 
 #[test]

@@ -1,3 +1,5 @@
+//! Miscellaneous unit tests for shared argument normalization helpers.
+
 use crate::normalize_daemon_subcommand_args;
 
 #[test]

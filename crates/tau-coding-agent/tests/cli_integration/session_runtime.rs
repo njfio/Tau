@@ -1,3 +1,5 @@
+//! CLI integration tests for session runtime persistence, restore, and help behavior.
+
 use super::*;
 
 #[test]

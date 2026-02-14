@@ -1,3 +1,5 @@
+//! Auth/provider command tests covering mode handling, client wiring, and fallback routing.
+
 use super::super::{
     auth_availability_counts, auth_mode_counts, auth_provider_counts, auth_revoked_counts,
     auth_source_kind, auth_source_kind_counts, auth_state_counts, auth_status_row_for_provider,

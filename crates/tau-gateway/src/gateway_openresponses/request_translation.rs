@@ -1,3 +1,5 @@
+//! Request translation helpers converting OpenResponses payloads into Tau runtime requests.
+
 use serde_json::Value;
 
 use super::{

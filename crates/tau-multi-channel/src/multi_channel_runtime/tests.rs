@@ -1,3 +1,5 @@
+//! Multi-channel runtime integration-style tests for contracts, live ingress, and routing behavior.
+
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
