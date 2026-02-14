@@ -116,6 +116,7 @@ Use this area when adding a new integration channel or adjusting bridge behavior
 ### Tool policy and observability
 
 - `tools.rs`: built-in tool registration and tool policy primitives.
+- `tools.rs` reserved built-in tool registry is reused by extension runtime startup (`discover_extension_runtime_registrations`) to deny name-shadow conflicts.
 - `tool_policy_config.rs`: CLI/preset/env policy assembly.
 - `observability_loggers.rs`: telemetry and tool audit log subscribers.
 - `startup_policy.rs`: startup policy packaging and optional policy printing.

@@ -15,6 +15,18 @@ use super::{
 use std::{fs, path::PathBuf};
 use tempfile::tempdir;
 
+const RESERVED_BUILTIN_TOOL_NAMES: &[&str] = &[
+    "read",
+    "write",
+    "edit",
+    "sessions_list",
+    "sessions_history",
+    "sessions_search",
+    "sessions_stats",
+    "sessions_send",
+    "bash",
+];
+
 #[test]
 fn unit_validate_extension_manifest_accepts_minimal_schema() {
     let temp = tempdir().expect("tempdir");
@@ -1203,7 +1215,8 @@ fn functional_discover_extension_runtime_registrations_collects_tools_and_comman
     )
     .expect("write manifest");
 
-    let summary = discover_extension_runtime_registrations(&root, &["/help"]);
+    let summary =
+        discover_extension_runtime_registrations(&root, RESERVED_BUILTIN_TOOL_NAMES, &["/help"]);
     assert_eq!(summary.discovered, 1);
     assert_eq!(summary.registered_tools.len(), 1);
     assert_eq!(summary.registered_tools[0].name, "issue_triage");
@@ -1253,18 +1266,63 @@ fn regression_discover_extension_runtime_registrations_blocks_builtin_name_confl
     )
     .expect("write manifest");
 
-    let summary = discover_extension_runtime_registrations(&root, &["/help"]);
+    let summary =
+        discover_extension_runtime_registrations(&root, RESERVED_BUILTIN_TOOL_NAMES, &["/help"]);
     assert!(summary.registered_tools.is_empty());
     assert!(summary.registered_commands.is_empty());
     assert_eq!(summary.skipped_name_conflict, 2);
     assert!(summary
         .diagnostics
         .iter()
-        .any(|line| line.contains("name conflicts with built-in tool")));
+        .any(|line| line.contains("name conflicts with reserved built-in tool 'read'")));
     assert!(summary
         .diagnostics
         .iter()
         .any(|line| line.contains("name conflicts with built-in command")));
+}
+
+#[test]
+fn regression_discover_extension_runtime_registrations_blocks_sessions_builtin_conflicts() {
+    let temp = tempdir().expect("tempdir");
+    let root = temp.path().join("extensions");
+    let extension_dir = root.join("sessions-conflict");
+    fs::create_dir_all(&extension_dir).expect("create extension dir");
+
+    let script_path = extension_dir.join("runtime.sh");
+    fs::write(
+        &script_path,
+        "#!/bin/sh\nread -r _input\nprintf '{\"output\":\"ok\",\"content\":{\"status\":\"ok\"}}'\n",
+    )
+    .expect("write script");
+    make_executable(&script_path);
+
+    fs::write(
+        extension_dir.join("extension.json"),
+        r#"{
+  "schema_version": 1,
+  "id": "sessions-conflict",
+  "version": "1.0.0",
+  "runtime": "process",
+  "entrypoint": "runtime.sh",
+  "permissions": ["run-commands"],
+  "tools": [
+{
+  "name": "sessions_list",
+  "description": "conflict",
+  "parameters": {"type":"object","properties":{}}
+}
+  ]
+}"#,
+    )
+    .expect("write manifest");
+
+    let summary = discover_extension_runtime_registrations(&root, RESERVED_BUILTIN_TOOL_NAMES, &[]);
+    assert!(summary.registered_tools.is_empty());
+    assert_eq!(summary.skipped_name_conflict, 1);
+    assert!(summary
+        .diagnostics
+        .iter()
+        .any(|line| line.contains("reserved built-in tool 'sessions_list'")));
 }
 
 #[test]
@@ -1301,7 +1359,7 @@ fn functional_dispatch_extension_registered_command_returns_output() {
     )
     .expect("write manifest");
 
-    let summary = discover_extension_runtime_registrations(&root, &[]);
+    let summary = discover_extension_runtime_registrations(&root, RESERVED_BUILTIN_TOOL_NAMES, &[]);
     let result =
         dispatch_extension_registered_command(&summary.registered_commands, "/triage-now", "123")
             .expect("dispatch should succeed")
@@ -1345,7 +1403,7 @@ fn integration_execute_extension_registered_tool_returns_content() {
     )
     .expect("write manifest");
 
-    let summary = discover_extension_runtime_registrations(&root, &[]);
+    let summary = discover_extension_runtime_registrations(&root, RESERVED_BUILTIN_TOOL_NAMES, &[]);
     let tool = summary
         .registered_tools
         .first()
@@ -1392,7 +1450,7 @@ fn regression_execute_extension_registered_tool_rejects_missing_content_field() 
     )
     .expect("write manifest");
 
-    let summary = discover_extension_runtime_registrations(&root, &[]);
+    let summary = discover_extension_runtime_registrations(&root, RESERVED_BUILTIN_TOOL_NAMES, &[]);
     let tool = summary
         .registered_tools
         .first()

@@ -59,6 +59,17 @@ const TOOL_RATE_LIMIT_MAX_REQUESTS_PERMISSIVE: u32 = 240;
 const TOOL_RATE_LIMIT_MAX_REQUESTS_BALANCED: u32 = 120;
 const TOOL_RATE_LIMIT_MAX_REQUESTS_STRICT: u32 = 60;
 const TOOL_RATE_LIMIT_MAX_REQUESTS_HARDENED: u32 = 30;
+const BUILTIN_AGENT_TOOL_NAMES: &[&str] = &[
+    "read",
+    "write",
+    "edit",
+    "sessions_list",
+    "sessions_history",
+    "sessions_search",
+    "sessions_stats",
+    "sessions_send",
+    "bash",
+];
 
 #[derive(Debug, Clone, Serialize)]
 struct SessionInventoryEntry {
@@ -424,6 +435,11 @@ pub fn register_builtin_tools(agent: &mut Agent, policy: ToolPolicy) {
     agent.register_tool(SessionsStatsTool::new(policy.clone()));
     agent.register_tool(SessionsSendTool::new(policy.clone()));
     agent.register_tool(BashTool::new(policy));
+}
+
+/// Returns the reserved registry of built-in agent tool names.
+pub fn builtin_agent_tool_names() -> &'static [&'static str] {
+    BUILTIN_AGENT_TOOL_NAMES
 }
 
 pub fn register_extension_tools(agent: &mut Agent, tools: &[ExtensionRegisteredTool]) {

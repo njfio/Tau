@@ -6,13 +6,14 @@ use proptest::prelude::*;
 use tempfile::tempdir;
 
 use super::{
-    bash_profile_name, build_spec_from_command_template, canonicalize_best_effort,
-    command_available, evaluate_tool_approval_gate, evaluate_tool_rate_limit_gate,
-    evaluate_tool_rbac_gate, is_command_allowed, is_session_candidate_path, leading_executable,
-    os_sandbox_mode_name, redact_secrets, resolve_sandbox_spec, truncate_bytes, AgentTool,
-    BashCommandProfile, BashTool, EditTool, OsSandboxMode, SessionsHistoryTool, SessionsListTool,
-    SessionsSearchTool, SessionsSendTool, SessionsStatsTool, ToolExecutionResult, ToolPolicy,
-    ToolPolicyPreset, ToolRateLimitExceededBehavior, WriteTool,
+    bash_profile_name, build_spec_from_command_template, builtin_agent_tool_names,
+    canonicalize_best_effort, command_available, evaluate_tool_approval_gate,
+    evaluate_tool_rate_limit_gate, evaluate_tool_rbac_gate, is_command_allowed,
+    is_session_candidate_path, leading_executable, os_sandbox_mode_name, redact_secrets,
+    resolve_sandbox_spec, truncate_bytes, AgentTool, BashCommandProfile, BashTool, EditTool,
+    OsSandboxMode, SessionsHistoryTool, SessionsListTool, SessionsSearchTool, SessionsSendTool,
+    SessionsStatsTool, ToolExecutionResult, ToolPolicy, ToolPolicyPreset,
+    ToolRateLimitExceededBehavior, WriteTool,
 };
 use tau_access::ApprovalAction;
 use tau_ai::Message;
@@ -54,6 +55,20 @@ fn unit_tool_policy_hardened_preset_applies_expected_configuration() {
         policy.tool_rate_limit_exceeded_behavior,
         ToolRateLimitExceededBehavior::Reject
     );
+}
+
+#[test]
+fn unit_builtin_agent_tool_name_registry_includes_session_tools() {
+    let names = builtin_agent_tool_names();
+    assert!(names.contains(&"read"));
+    assert!(names.contains(&"write"));
+    assert!(names.contains(&"edit"));
+    assert!(names.contains(&"sessions_list"));
+    assert!(names.contains(&"sessions_history"));
+    assert!(names.contains(&"sessions_search"));
+    assert!(names.contains(&"sessions_stats"));
+    assert!(names.contains(&"sessions_send"));
+    assert!(names.contains(&"bash"));
 }
 
 #[test]
