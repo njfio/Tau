@@ -21,6 +21,14 @@ class LiveSmokeMatrixTests(unittest.TestCase):
         self.assertEqual(plan.fallback_wrapper, "scripts/demo/browser-automation.sh")
         self.assertIn(".tau/demo-browser-automation-live", plan.artifact_dirs)
 
+    def test_unit_resolve_surface_plan_returns_expected_dashboard_primary_and_fallback(self) -> None:
+        plan = live_smoke_matrix.resolve_surface_plan("dashboard")
+        self.assertEqual(plan.surface, "dashboard")
+        self.assertEqual(plan.primary_wrapper, "scripts/demo/dashboard-live.sh")
+        self.assertEqual(plan.fallback_wrapper, "scripts/demo/dashboard.sh")
+        self.assertIn(".tau/demo-dashboard-live", plan.artifact_dirs)
+        self.assertIn(".tau/demo-dashboard", plan.artifact_dirs)
+
     def test_functional_cli_json_output_includes_surface_plan_fields(self) -> None:
         completed = subprocess.run(
             [sys.executable, str(RUNNER_SCRIPT), "--surface", "voice", "--json"],

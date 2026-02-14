@@ -95,6 +95,11 @@ Browser matrix lane includes fallback behavior:
 - primary: `scripts/demo/browser-automation-live.sh`
 - fallback: `scripts/demo/browser-automation.sh`
 
+Dashboard matrix lane includes fallback behavior:
+
+- primary: `scripts/demo/dashboard-live.sh`
+- fallback: `scripts/demo/dashboard.sh`
+
 Merge gate blocks when:
 
 - any required surface fails both primary and fallback mode, or

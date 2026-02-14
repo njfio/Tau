@@ -4,7 +4,8 @@ Run all commands from repository root.
 
 ## Scope
 
-This runbook covers the fixture-driven dashboard runtime (`--dashboard-contract-runner`).
+This runbook covers the fixture-driven dashboard runtime (`--dashboard-contract-runner`) and
+the browser-E2E live proof harness for fallback webchat validation.
 
 ## Health and observability signals
 
@@ -55,18 +56,42 @@ Guardrail interpretation:
 ./scripts/demo/dashboard.sh
 ```
 
+## Browser E2E live proof harness
+
+```bash
+./scripts/demo/dashboard-live.sh
+```
+
+Primary proof artifacts:
+
+- `.tau/demo-dashboard-live/dashboard-live-summary.json`
+- `.tau/demo-dashboard-live/dashboard-live-report.json`
+- `.tau/demo-dashboard-live/dashboard-live-transcript.log`
+- `.tau/demo-dashboard-live/dashboard-action-audit.json`
+- `.tau/demo-dashboard-live/webchat-fallback-check.json`
+- `.tau/demo-dashboard-live/browser-state/channel-store/channels/browser-automation/live/artifacts/index.jsonl`
+
+This harness validates:
+
+- dashboard load path (fallback webchat shell)
+- live update snapshot collection
+- control actions (`#refreshStatus`, `#clearOutput`)
+- action-audit extraction from dashboard channel-store logs
+
 ## Rollout plan with guardrails
 
 1. Validate fixture contract and runtime locally:
    `cargo test -p tau-coding-agent dashboard_contract -- --test-threads=1`
 2. Validate runtime behavior coverage:
    `cargo test -p tau-coding-agent dashboard_runtime -- --test-threads=1`
-3. Run deterministic demo:
+3. Run deterministic dashboard runtime demo:
    `./scripts/demo/dashboard.sh`
-4. Verify transport health and status gate:
+4. Run browser-E2E live proof package:
+   `./scripts/demo/dashboard-live.sh`
+5. Verify transport health and status gate:
    `--transport-health-inspect dashboard --transport-health-json`
    `--dashboard-status-inspect --dashboard-status-json`
-5. Promote by increasing fixture complexity gradually while monitoring:
+6. Promote by increasing fixture complexity gradually while monitoring:
    `failure_streak`, `last_cycle_failed`, `queue_depth`, `rollout_gate`.
 
 ## Canary rollout profile
