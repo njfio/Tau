@@ -38,7 +38,11 @@ pub fn resolve_skill_trust_roots(cli: &Cli) -> Result<Vec<tau_skills::TrustedKey
 
     let mut roots = Vec::new();
     for raw in &cli.skill_trust_root {
-        roots.push(parse_trusted_root_spec(raw)?);
+        let parsed = parse_trusted_root_spec(raw)?;
+        roots.push(AccessTrustedKey {
+            id: parsed.id,
+            public_key: parsed.public_key,
+        });
     }
 
     if let Some(path) = &cli.skill_trust_root_file {

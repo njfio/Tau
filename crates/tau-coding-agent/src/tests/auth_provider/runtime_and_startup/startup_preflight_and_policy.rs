@@ -1566,7 +1566,7 @@ fn unit_tool_policy_to_json_includes_key_limits_and_modes() {
 
     let policy = build_tool_policy(&cli).expect("policy should build");
     let payload = tool_policy_to_json(&policy);
-    assert_eq!(payload["schema_version"], 2);
+    assert_eq!(payload["schema_version"], 3);
     assert_eq!(payload["preset"], "balanced");
     assert_eq!(payload["bash_profile"], "strict");
     assert_eq!(payload["os_sandbox_mode"], "auto");
@@ -1578,6 +1578,9 @@ fn unit_tool_policy_to_json_includes_key_limits_and_modes() {
         payload["extension_policy_override_root"],
         "/tmp/policy-overrides"
     );
+    assert_eq!(payload["tool_rate_limit"]["max_requests"], 120);
+    assert_eq!(payload["tool_rate_limit"]["window_ms"], 60000);
+    assert_eq!(payload["tool_rate_limit"]["exceeded_behavior"], "reject");
 }
 
 #[test]
@@ -1600,6 +1603,8 @@ fn functional_build_tool_policy_hardened_preset_applies_hardened_defaults() {
     assert_eq!(policy.max_command_length, 1_024);
     assert_eq!(policy.max_command_output_bytes, 4_000);
     assert_eq!(policy.os_sandbox_mode, OsSandboxMode::Force);
+    assert_eq!(policy.tool_rate_limit_max_requests, 30);
+    assert_eq!(policy.tool_rate_limit_window_ms, 60_000);
 }
 
 #[test]
