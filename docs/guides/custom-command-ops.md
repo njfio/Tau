@@ -45,6 +45,17 @@ Primary state files:
 - `command_registry_mutated`
 - `command_runs_recorded`
 
+Policy contract defaults (`--custom-command-contract-runner`):
+
+- `--custom-command-policy-require-approval=true`
+- `--custom-command-policy-allow-shell=false`
+- `--custom-command-policy-sandbox-profile=restricted`
+- `--custom-command-policy-allowed-env` optional allowlist
+- `--custom-command-policy-denied-env` optional denylist override
+
+By default, unsafe shell control operators in command templates are rejected
+deterministically as malformed policy-denied definitions.
+
 Guardrail interpretation:
 
 - `rollout_gate=pass`: health is `healthy`, promotion can continue.

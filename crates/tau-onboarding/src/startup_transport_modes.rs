@@ -19,6 +19,10 @@ use tau_cli::validation::{
 };
 use tau_cli::Cli;
 use tau_cli::CliGatewayOpenResponsesAuthMode;
+use tau_custom_command::custom_command_policy::{
+    default_custom_command_execution_policy, normalize_sandbox_profile,
+    CustomCommandExecutionPolicy,
+};
 use tau_custom_command::custom_command_runtime::{
     run_custom_command_contract_runner, CustomCommandRuntimeConfig,
 };
@@ -720,6 +724,21 @@ pub fn build_custom_command_contract_runner_config(cli: &Cli) -> StandardContrac
     }
 }
 
+fn build_custom_command_default_execution_policy(cli: &Cli) -> CustomCommandExecutionPolicy {
+    let mut policy = default_custom_command_execution_policy();
+    policy.require_approval = cli.custom_command_policy_require_approval;
+    policy.allow_shell = cli.custom_command_policy_allow_shell;
+    policy.sandbox_profile =
+        normalize_sandbox_profile(cli.custom_command_policy_sandbox_profile.as_str());
+    if !cli.custom_command_policy_allowed_env.is_empty() {
+        policy.allowed_env = cli.custom_command_policy_allowed_env.clone();
+    }
+    if !cli.custom_command_policy_denied_env.is_empty() {
+        policy.denied_env = cli.custom_command_policy_denied_env.clone();
+    }
+    policy
+}
+
 pub async fn run_custom_command_contract_runner_if_requested(cli: &Cli) -> Result<bool> {
     if !cli.custom_command_contract_runner {
         return Ok(false);
@@ -732,6 +751,7 @@ pub async fn run_custom_command_contract_runner_if_requested(cli: &Cli) -> Resul
         processed_case_cap: config.processed_case_cap,
         retry_max_attempts: config.retry_max_attempts,
         retry_base_delay_ms: config.retry_base_delay_ms,
+        default_execution_policy: build_custom_command_default_execution_policy(cli),
     })
     .await?;
     Ok(true)
@@ -1234,20 +1254,20 @@ fn resolve_non_empty_cli_value(value: Option<&str>) -> Option<String> {
 mod tests {
     use super::{
         build_browser_automation_contract_runner_config,
-        build_custom_command_contract_runner_config, build_dashboard_contract_runner_config,
-        build_deployment_contract_runner_config, build_events_runner_cli_config,
-        build_gateway_contract_runner_config, build_gateway_openresponses_server_config,
-        build_github_issues_bridge_cli_config, build_memory_contract_runner_config,
-        build_multi_agent_contract_runner_config, build_multi_channel_contract_runner_config,
-        build_multi_channel_live_connectors_config, build_multi_channel_live_runner_config,
-        build_multi_channel_media_config, build_multi_channel_outbound_config,
-        build_multi_channel_runtime_dependencies, build_multi_channel_telemetry_config,
-        build_slack_bridge_cli_config, build_transport_doctor_config,
-        build_transport_runtime_defaults, build_voice_contract_runner_config,
-        build_voice_live_runner_config, execute_transport_runtime_mode,
-        map_gateway_openresponses_auth_mode, resolve_bridge_transport_mode,
-        resolve_contract_transport_mode, resolve_gateway_openresponses_auth,
-        resolve_github_issues_bridge_repo_and_token_from_cli,
+        build_custom_command_contract_runner_config, build_custom_command_default_execution_policy,
+        build_dashboard_contract_runner_config, build_deployment_contract_runner_config,
+        build_events_runner_cli_config, build_gateway_contract_runner_config,
+        build_gateway_openresponses_server_config, build_github_issues_bridge_cli_config,
+        build_memory_contract_runner_config, build_multi_agent_contract_runner_config,
+        build_multi_channel_contract_runner_config, build_multi_channel_live_connectors_config,
+        build_multi_channel_live_runner_config, build_multi_channel_media_config,
+        build_multi_channel_outbound_config, build_multi_channel_runtime_dependencies,
+        build_multi_channel_telemetry_config, build_slack_bridge_cli_config,
+        build_transport_doctor_config, build_transport_runtime_defaults,
+        build_voice_contract_runner_config, build_voice_live_runner_config,
+        execute_transport_runtime_mode, map_gateway_openresponses_auth_mode,
+        resolve_bridge_transport_mode, resolve_contract_transport_mode,
+        resolve_gateway_openresponses_auth, resolve_github_issues_bridge_repo_and_token_from_cli,
         resolve_multi_channel_outbound_secret, resolve_multi_channel_transport_mode,
         resolve_slack_bridge_tokens_from_cli, resolve_transport_runtime_mode,
         run_events_runner_if_requested, run_events_runner_with_runtime_defaults_if_requested,
@@ -2785,6 +2805,27 @@ mod tests {
         assert_eq!(voice_live.wake_word, "tau".to_string());
         assert_eq!(voice_live.max_turns, 11);
         assert!(!voice_live.tts_output_enabled);
+    }
+
+    #[test]
+    fn integration_build_custom_command_default_execution_policy_preserves_cli_overrides() {
+        let mut cli = parse_cli_with_stack();
+        cli.custom_command_policy_require_approval = false;
+        cli.custom_command_policy_allow_shell = true;
+        cli.custom_command_policy_sandbox_profile = "workspace_write".to_string();
+        cli.custom_command_policy_allowed_env =
+            vec!["DEPLOY_ENV".to_string(), "REGION".to_string()];
+        cli.custom_command_policy_denied_env = vec!["OPENAI_API_KEY".to_string()];
+
+        let policy = build_custom_command_default_execution_policy(&cli);
+        assert!(!policy.require_approval);
+        assert!(policy.allow_shell);
+        assert_eq!(policy.sandbox_profile, "workspace_write".to_string());
+        assert_eq!(
+            policy.allowed_env,
+            vec!["DEPLOY_ENV".to_string(), "REGION".to_string()]
+        );
+        assert_eq!(policy.denied_env, vec!["OPENAI_API_KEY".to_string()]);
     }
 
     #[test]

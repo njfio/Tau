@@ -1704,7 +1704,77 @@ pub fn validate_custom_command_contract_runner_cli(cli: &Cli) -> Result<()> {
         );
     }
 
+    let sandbox_profile = normalize_custom_command_policy_sandbox_profile(
+        cli.custom_command_policy_sandbox_profile.as_str(),
+    );
+    if sandbox_profile != "restricted"
+        && sandbox_profile != "workspace_write"
+        && sandbox_profile != "unrestricted"
+    {
+        bail!(
+            "--custom-command-policy-sandbox-profile must be one of restricted, workspace_write, unrestricted"
+        );
+    }
+
+    let mut allowed = std::collections::BTreeSet::new();
+    for key in &cli.custom_command_policy_allowed_env {
+        if !is_valid_custom_command_policy_env_key(key) {
+            bail!(
+                "--custom-command-policy-allowed-env contains invalid key '{}'",
+                key
+            );
+        }
+        let normalized = key.trim().to_ascii_lowercase();
+        if !allowed.insert(normalized.clone()) {
+            bail!(
+                "--custom-command-policy-allowed-env contains duplicate key '{}'",
+                key
+            );
+        }
+    }
+
+    let mut denied = std::collections::BTreeSet::new();
+    for key in &cli.custom_command_policy_denied_env {
+        if !is_valid_custom_command_policy_env_key(key) {
+            bail!(
+                "--custom-command-policy-denied-env contains invalid key '{}'",
+                key
+            );
+        }
+        let normalized = key.trim().to_ascii_lowercase();
+        if !denied.insert(normalized.clone()) {
+            bail!(
+                "--custom-command-policy-denied-env contains duplicate key '{}'",
+                key
+            );
+        }
+        if allowed.contains(&normalized) {
+            bail!(
+                "custom command policy key '{}' cannot appear in both allow and deny lists",
+                key
+            );
+        }
+    }
+
     Ok(())
+}
+
+fn normalize_custom_command_policy_sandbox_profile(raw: &str) -> String {
+    raw.trim().to_ascii_lowercase()
+}
+
+fn is_valid_custom_command_policy_env_key(raw: &str) -> bool {
+    if raw.trim().is_empty() {
+        return false;
+    }
+    let mut chars = raw.trim().chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    if !first.is_ascii_alphabetic() && first != '_' {
+        return false;
+    }
+    chars.all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
 }
 
 pub fn validate_voice_contract_runner_cli(cli: &Cli) -> Result<()> {

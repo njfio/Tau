@@ -8,10 +8,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::custom_command_contract::{
-    evaluate_custom_command_case, load_custom_command_contract_fixture,
+    evaluate_custom_command_case_with_policy, load_custom_command_contract_fixture,
     validate_custom_command_case_result_against_contract, CustomCommandContractCase,
     CustomCommandContractFixture, CustomCommandReplayResult, CustomCommandReplayStep,
 };
+use crate::custom_command_policy::CustomCommandExecutionPolicy;
 use tau_core::{current_unix_timestamp_ms, write_text_atomic};
 use tau_runtime::channel_store::{ChannelContextEntry, ChannelLogEntry, ChannelStore};
 use tau_runtime::transport_health::TransportHealthSnapshot;
@@ -32,6 +33,7 @@ pub struct CustomCommandRuntimeConfig {
     pub processed_case_cap: usize,
     pub retry_max_attempts: usize,
     pub retry_base_delay_ms: u64,
+    pub default_execution_policy: CustomCommandExecutionPolicy,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -77,6 +79,8 @@ struct CustomCommandRecord {
     case_id: String,
     command_name: String,
     template: String,
+    #[serde(default)]
+    execution_policy: CustomCommandExecutionPolicy,
     operation: String,
     last_status_code: u16,
     last_outcome: String,
@@ -207,7 +211,10 @@ impl CustomCommandRuntime {
 
             let mut attempt = 1usize;
             loop {
-                let result = evaluate_custom_command_case(&case);
+                let result = evaluate_custom_command_case_with_policy(
+                    &case,
+                    &self.config.default_execution_policy,
+                );
                 validate_custom_command_case_result_against_contract(&case, &result)?;
                 match result.step {
                     CustomCommandReplayStep::Success => {
@@ -280,6 +287,10 @@ impl CustomCommandRuntime {
         let operation = normalize_operation(&case.operation);
         let command_name = case.command_name.trim().to_string();
         let timestamp_unix_ms = current_unix_timestamp_ms();
+        let effective_policy = case
+            .execution_policy
+            .clone()
+            .unwrap_or_else(|| self.config.default_execution_policy.clone());
         let mut mutation = CustomCommandMutationCounts::default();
 
         match operation.as_str() {
@@ -289,6 +300,7 @@ impl CustomCommandRuntime {
                     case_id: case.case_id.clone(),
                     command_name: command_name.clone(),
                     template: case.template.trim().to_string(),
+                    execution_policy: effective_policy.clone(),
                     operation: operation.clone(),
                     last_status_code: result.status_code,
                     last_outcome: "success".to_string(),
@@ -328,6 +340,7 @@ impl CustomCommandRuntime {
                 {
                     existing.case_key = case_key.to_string();
                     existing.case_id = case.case_id.clone();
+                    existing.execution_policy = effective_policy.clone();
                     existing.operation = operation.clone();
                     existing.last_status_code = result.status_code;
                     existing.last_outcome = "success".to_string();
@@ -339,6 +352,7 @@ impl CustomCommandRuntime {
                         case_id: case.case_id.clone(),
                         command_name: command_name.clone(),
                         template: String::new(),
+                        execution_policy: effective_policy.clone(),
                         operation: operation.clone(),
                         last_status_code: result.status_code,
                         last_outcome: "success".to_string(),
@@ -631,13 +645,29 @@ fn render_custom_command_snapshot(records: &[CustomCommandRecord], channel_id: &
         String::new(),
     ];
     for record in filtered {
+        let allowed_env = if record.execution_policy.allowed_env.is_empty() {
+            "none".to_string()
+        } else {
+            record.execution_policy.allowed_env.join(",")
+        };
+        let denied_env = if record.execution_policy.denied_env.is_empty() {
+            "none".to_string()
+        } else {
+            record.execution_policy.denied_env.join(",")
+        };
         lines.push(format!(
-            "- {} op={} status={} runs={} template={}",
+            "- {} op={} status={} runs={} template={} policy=approval:{}|shell:{}|network:{}|sandbox:{}|allow_env:{}|deny_env:{}",
             record.command_name,
             record.operation.to_ascii_lowercase(),
             record.last_status_code,
             record.run_count,
-            record.template
+            record.template,
+            record.execution_policy.require_approval,
+            record.execution_policy.allow_shell,
+            record.execution_policy.allow_network,
+            record.execution_policy.sandbox_profile,
+            allowed_env,
+            denied_env
         ));
     }
     lines.join("\n")
@@ -726,6 +756,7 @@ mod tests {
     use crate::custom_command_contract::{
         load_custom_command_contract_fixture, parse_custom_command_contract_fixture,
     };
+    use crate::custom_command_policy::default_custom_command_execution_policy;
     use tau_runtime::channel_store::ChannelStore;
     use tau_runtime::transport_health::TransportHealthState;
 
@@ -744,6 +775,7 @@ mod tests {
             processed_case_cap: 10_000,
             retry_max_attempts: 2,
             retry_base_delay_ms: 0,
+            default_execution_policy: default_custom_command_execution_policy(),
         }
     }
 
@@ -890,6 +922,44 @@ mod tests {
             .await
             .expect_err("drift should fail");
         assert!(error.to_string().contains("expected response_body"));
+    }
+
+    #[tokio::test]
+    async fn regression_runner_default_policy_rejects_unsafe_create_template() {
+        let temp = tempdir().expect("tempdir");
+        let config = build_config(temp.path());
+        let fixture = parse_custom_command_contract_fixture(
+            r#"{
+  "schema_version": 1,
+  "name": "policy-deny-template",
+  "cases": [
+    {
+      "schema_version": 1,
+      "case_id": "custom-command-policy-deny",
+      "operation": "create",
+      "command_name": "deploy_release",
+      "template": "deploy {{env}} && curl https://example.invalid",
+      "arguments": {"env":"prod"},
+      "expected": {
+        "outcome": "malformed_input",
+        "status_code": 403,
+        "error_code": "custom_command_policy_denied",
+        "response_body": {"status":"rejected","reason":"policy_denied"}
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("parse fixture");
+        let mut runtime = CustomCommandRuntime::new(config.clone()).expect("runtime");
+        let summary = runtime.run_once(&fixture).await.expect("run once");
+        assert_eq!(summary.discovered_cases, 1);
+        assert_eq!(summary.applied_cases, 0);
+        assert_eq!(summary.malformed_cases, 1);
+
+        let state = load_custom_command_runtime_state(&config.state_dir.join("state.json"))
+            .expect("load state");
+        assert!(state.commands.is_empty());
     }
 
     #[tokio::test]

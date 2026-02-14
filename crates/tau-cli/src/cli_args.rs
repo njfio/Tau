@@ -3727,6 +3727,59 @@ pub struct Cli {
     pub custom_command_retry_base_delay_ms: u64,
 
     #[arg(
+        long = "custom-command-policy-require-approval",
+        env = "TAU_CUSTOM_COMMAND_POLICY_REQUIRE_APPROVAL",
+        default_value_t = true,
+        action = ArgAction::Set,
+        num_args = 0..=1,
+        require_equals = true,
+        default_missing_value = "true",
+        requires = "custom_command_contract_runner",
+        help = "Require approval gate for custom-command RUN operations in policy contract"
+    )]
+    pub custom_command_policy_require_approval: bool,
+
+    #[arg(
+        long = "custom-command-policy-allow-shell",
+        env = "TAU_CUSTOM_COMMAND_POLICY_ALLOW_SHELL",
+        default_value_t = false,
+        action = ArgAction::Set,
+        num_args = 0..=1,
+        require_equals = true,
+        default_missing_value = "true",
+        requires = "custom_command_contract_runner",
+        help = "Allow shell control operators in command templates (disabled by default)"
+    )]
+    pub custom_command_policy_allow_shell: bool,
+
+    #[arg(
+        long = "custom-command-policy-sandbox-profile",
+        env = "TAU_CUSTOM_COMMAND_POLICY_SANDBOX_PROFILE",
+        default_value = "restricted",
+        requires = "custom_command_contract_runner",
+        help = "Default sandbox profile for custom-command policy (restricted|workspace_write|unrestricted)"
+    )]
+    pub custom_command_policy_sandbox_profile: String,
+
+    #[arg(
+        long = "custom-command-policy-allowed-env",
+        env = "TAU_CUSTOM_COMMAND_POLICY_ALLOWED_ENV",
+        value_delimiter = ',',
+        requires = "custom_command_contract_runner",
+        help = "Optional allowlist of template/env variable keys for custom command specs"
+    )]
+    pub custom_command_policy_allowed_env: Vec<String>,
+
+    #[arg(
+        long = "custom-command-policy-denied-env",
+        env = "TAU_CUSTOM_COMMAND_POLICY_DENIED_ENV",
+        value_delimiter = ',',
+        requires = "custom_command_contract_runner",
+        help = "Optional denylist override for template/env variable keys in custom command policy"
+    )]
+    pub custom_command_policy_denied_env: Vec<String>,
+
+    #[arg(
         long = "voice-contract-runner",
         env = "TAU_VOICE_CONTRACT_RUNNER",
         default_value_t = false,

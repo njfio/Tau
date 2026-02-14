@@ -1373,6 +1373,11 @@ fn unit_cli_custom_command_runner_flags_default_to_disabled() {
     assert_eq!(cli.custom_command_processed_case_cap, 10_000);
     assert_eq!(cli.custom_command_retry_max_attempts, 4);
     assert_eq!(cli.custom_command_retry_base_delay_ms, 0);
+    assert!(cli.custom_command_policy_require_approval);
+    assert!(!cli.custom_command_policy_allow_shell);
+    assert_eq!(cli.custom_command_policy_sandbox_profile, "restricted");
+    assert!(cli.custom_command_policy_allowed_env.is_empty());
+    assert!(cli.custom_command_policy_denied_env.is_empty());
 }
 
 #[test]
@@ -1392,6 +1397,14 @@ fn functional_cli_custom_command_runner_flags_accept_explicit_overrides() {
         "8",
         "--custom-command-retry-base-delay-ms",
         "35",
+        "--custom-command-policy-require-approval=false",
+        "--custom-command-policy-allow-shell=true",
+        "--custom-command-policy-sandbox-profile",
+        "workspace_write",
+        "--custom-command-policy-allowed-env",
+        "DEPLOY_ENV,REGION",
+        "--custom-command-policy-denied-env",
+        "OPENAI_API_KEY,ANTHROPIC_API_KEY",
     ]);
     assert!(cli.custom_command_contract_runner);
     assert_eq!(
@@ -1406,6 +1419,20 @@ fn functional_cli_custom_command_runner_flags_accept_explicit_overrides() {
     assert_eq!(cli.custom_command_processed_case_cap, 42_000);
     assert_eq!(cli.custom_command_retry_max_attempts, 8);
     assert_eq!(cli.custom_command_retry_base_delay_ms, 35);
+    assert!(!cli.custom_command_policy_require_approval);
+    assert!(cli.custom_command_policy_allow_shell);
+    assert_eq!(cli.custom_command_policy_sandbox_profile, "workspace_write");
+    assert_eq!(
+        cli.custom_command_policy_allowed_env,
+        vec!["DEPLOY_ENV".to_string(), "REGION".to_string()]
+    );
+    assert_eq!(
+        cli.custom_command_policy_denied_env,
+        vec![
+            "OPENAI_API_KEY".to_string(),
+            "ANTHROPIC_API_KEY".to_string()
+        ]
+    );
 }
 
 #[test]
