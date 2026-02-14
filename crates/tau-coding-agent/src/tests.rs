@@ -684,6 +684,11 @@ pub(crate) fn test_cli() -> Cli {
         custom_command_processed_case_cap: 10_000,
         custom_command_retry_max_attempts: 4,
         custom_command_retry_base_delay_ms: 0,
+        custom_command_policy_require_approval: true,
+        custom_command_policy_allow_shell: false,
+        custom_command_policy_sandbox_profile: "restricted".to_string(),
+        custom_command_policy_allowed_env: vec![],
+        custom_command_policy_denied_env: vec![],
         voice_contract_runner: false,
         voice_fixture: PathBuf::from(
             "crates/tau-coding-agent/testdata/voice-contract/mixed-outcomes.json",

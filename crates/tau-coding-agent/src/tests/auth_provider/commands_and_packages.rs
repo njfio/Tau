@@ -5411,6 +5411,43 @@ fn regression_validate_custom_command_contract_runner_cli_requires_fixture_file(
 }
 
 #[test]
+fn regression_validate_custom_command_contract_runner_cli_rejects_invalid_policy_sandbox_profile() {
+    let temp = tempdir().expect("tempdir");
+    let fixture_path = temp.path().join("fixture.json");
+    std::fs::write(&fixture_path, "{}").expect("write fixture");
+
+    let mut cli = test_cli();
+    cli.custom_command_contract_runner = true;
+    cli.custom_command_fixture = fixture_path;
+    cli.custom_command_policy_sandbox_profile = "forbidden-profile".to_string();
+
+    let error = validate_custom_command_contract_runner_cli(&cli)
+        .expect_err("invalid sandbox profile should fail");
+    assert!(error
+        .to_string()
+        .contains("--custom-command-policy-sandbox-profile must be one of"));
+}
+
+#[test]
+fn regression_validate_custom_command_contract_runner_cli_rejects_policy_allow_deny_overlap() {
+    let temp = tempdir().expect("tempdir");
+    let fixture_path = temp.path().join("fixture.json");
+    std::fs::write(&fixture_path, "{}").expect("write fixture");
+
+    let mut cli = test_cli();
+    cli.custom_command_contract_runner = true;
+    cli.custom_command_fixture = fixture_path;
+    cli.custom_command_policy_allowed_env = vec!["DEPLOY_ENV".to_string()];
+    cli.custom_command_policy_denied_env = vec!["deploy_env".to_string()];
+
+    let error = validate_custom_command_contract_runner_cli(&cli)
+        .expect_err("allow/deny overlap should fail");
+    assert!(error
+        .to_string()
+        .contains("cannot appear in both allow and deny lists"));
+}
+
+#[test]
 fn unit_validate_voice_contract_runner_cli_accepts_minimum_configuration() {
     let temp = tempdir().expect("tempdir");
     let fixture_path = temp.path().join("voice-fixture.json");

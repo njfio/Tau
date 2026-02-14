@@ -4,4 +4,5 @@
 //! command workflows in the operator control plane.
 
 pub mod custom_command_contract;
+pub mod custom_command_policy;
 pub mod custom_command_runtime;
