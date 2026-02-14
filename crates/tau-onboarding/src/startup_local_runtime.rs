@@ -31,6 +31,8 @@ pub struct LocalRuntimeAgentSettings {
     pub model_output_cost_per_million: Option<f64>,
     pub cost_budget_usd: Option<f64>,
     pub cost_alert_thresholds_percent: Vec<u8>,
+    pub memory_backend_state_dir: Option<PathBuf>,
+    pub memory_backend_workspace_id: String,
 }
 
 pub fn build_local_runtime_agent(
@@ -59,6 +61,8 @@ pub fn build_local_runtime_agent(
             model_output_cost_per_million: settings.model_output_cost_per_million,
             cost_budget_usd: settings.cost_budget_usd,
             cost_alert_thresholds_percent: settings.cost_alert_thresholds_percent,
+            memory_backend_state_dir: settings.memory_backend_state_dir,
+            memory_backend_workspace_id: settings.memory_backend_workspace_id,
             ..AgentConfig::default()
         },
     );
@@ -1041,6 +1045,8 @@ mod tests {
                 model_output_cost_per_million: None,
                 cost_budget_usd: None,
                 cost_alert_thresholds_percent: vec![80, 100],
+                memory_backend_state_dir: None,
+                memory_backend_workspace_id: "default".to_string(),
             },
             ToolPolicy::new(vec![std::env::temp_dir()]),
         );
@@ -1079,6 +1085,8 @@ mod tests {
                 model_output_cost_per_million: Some(0.0),
                 cost_budget_usd: Some(1.0),
                 cost_alert_thresholds_percent: vec![80, 100],
+                memory_backend_state_dir: None,
+                memory_backend_workspace_id: "default".to_string(),
             },
             ToolPolicy::new(vec![std::env::temp_dir()]),
         );
@@ -1118,6 +1126,8 @@ mod tests {
                 model_output_cost_per_million: None,
                 cost_budget_usd: None,
                 cost_alert_thresholds_percent: vec![80, 100],
+                memory_backend_state_dir: None,
+                memory_backend_workspace_id: "default".to_string(),
             },
             ToolPolicy::new(vec![std::env::temp_dir()]),
         );
@@ -1157,6 +1167,8 @@ mod tests {
                 model_output_cost_per_million: None,
                 cost_budget_usd: None,
                 cost_alert_thresholds_percent: vec![80, 100],
+                memory_backend_state_dir: None,
+                memory_backend_workspace_id: "default".to_string(),
             },
             ToolPolicy::new(vec![std::env::temp_dir()]),
         );
@@ -1190,6 +1202,8 @@ mod tests {
                 model_output_cost_per_million: None,
                 cost_budget_usd: None,
                 cost_alert_thresholds_percent: vec![80, 100],
+                memory_backend_state_dir: None,
+                memory_backend_workspace_id: "default".to_string(),
             },
             ToolPolicy::new(vec![std::env::temp_dir()]),
         );

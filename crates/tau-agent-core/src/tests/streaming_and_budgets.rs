@@ -18,6 +18,9 @@ fn unit_agent_config_defaults_include_request_and_tool_timeouts() {
     assert_eq!(config.memory_embedding_model, None);
     assert_eq!(config.memory_embedding_api_base, None);
     assert_eq!(config.memory_embedding_api_key, None);
+    assert_eq!(config.memory_backend_state_dir, None);
+    assert_eq!(config.memory_backend_workspace_id, "default");
+    assert_eq!(config.memory_backend_max_entries, 10_000);
     assert!(config.response_cache_enabled);
     assert_eq!(config.response_cache_max_entries, 128);
     assert!(config.tool_result_cache_enabled);

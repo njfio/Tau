@@ -1387,3 +1387,197 @@ async fn functional_run_parallel_prompts_returns_empty_for_empty_input() {
         .await;
     assert!(results.is_empty());
 }
+
+#[tokio::test]
+async fn functional_memory_backend_persists_entries_and_recalls_across_sessions() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let memory_state_dir = temp.path().join("memory-state");
+    let config = AgentConfig {
+        max_context_messages: Some(2),
+        memory_retrieval_limit: 2,
+        memory_min_similarity: 0.0,
+        memory_backend_state_dir: Some(memory_state_dir.clone()),
+        memory_backend_workspace_id: "workspace-a".to_string(),
+        memory_backend_max_entries: 100,
+        ..AgentConfig::default()
+    };
+
+    let mut writer = Agent::new(
+        Arc::new(MockClient {
+            responses: AsyncMutex::new(VecDeque::from([ChatResponse {
+                message: Message::assistant_text("stored"),
+                finish_reason: Some("stop".to_string()),
+                usage: ChatUsage::default(),
+            }])),
+        }),
+        config.clone(),
+    );
+    writer
+        .prompt("tokio retry checklist for release rollback")
+        .await
+        .expect("writer prompt should succeed");
+
+    let backend_file = memory_state_dir
+        .join("live-backend")
+        .join("workspace-a.jsonl");
+    assert!(backend_file.exists(), "expected persisted backend file");
+    let raw_backend = std::fs::read_to_string(&backend_file).expect("read backend file");
+    assert!(raw_backend.contains("tokio retry checklist"));
+
+    let reader_client = Arc::new(CapturingMockClient {
+        responses: AsyncMutex::new(VecDeque::from([ChatResponse {
+            message: Message::assistant_text("ack"),
+            finish_reason: Some("stop".to_string()),
+            usage: ChatUsage::default(),
+        }])),
+        requests: AsyncMutex::new(Vec::new()),
+    });
+    let mut reader = Agent::new(reader_client.clone(), config);
+    reader
+        .prompt("what is our rollback checklist?")
+        .await
+        .expect("reader prompt should succeed");
+
+    let requests = reader_client.requests.lock().await;
+    let request = requests.first().expect("one request");
+    let memory_recall = request
+        .messages
+        .iter()
+        .find(|message| {
+            message.role == MessageRole::System
+                && message.text_content().contains(MEMORY_RECALL_PREFIX)
+        })
+        .expect("memory recall system message");
+    assert!(memory_recall.text_content().contains("tokio"));
+    assert!(memory_recall.text_content().contains("rollback"));
+}
+
+#[tokio::test]
+async fn integration_memory_backend_unavailable_falls_back_to_context_history_recall() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let memory_state_path = temp.path().join("memory-state-as-file");
+    std::fs::write(&memory_state_path, "not-a-directory").expect("write backend blocker file");
+
+    let reader_client = Arc::new(CapturingMockClient {
+        responses: AsyncMutex::new(VecDeque::from([
+            ChatResponse {
+                message: Message::assistant_text("stored"),
+                finish_reason: Some("stop".to_string()),
+                usage: ChatUsage::default(),
+            },
+            ChatResponse {
+                message: Message::assistant_text("recalled"),
+                finish_reason: Some("stop".to_string()),
+                usage: ChatUsage::default(),
+            },
+        ])),
+        requests: AsyncMutex::new(Vec::new()),
+    });
+    let mut agent = Agent::new(
+        reader_client.clone(),
+        AgentConfig {
+            system_prompt: String::new(),
+            max_context_messages: Some(2),
+            memory_retrieval_limit: 1,
+            memory_min_similarity: 0.0,
+            response_cache_enabled: false,
+            memory_backend_state_dir: Some(memory_state_path.clone()),
+            memory_backend_workspace_id: "ops".to_string(),
+            ..AgentConfig::default()
+        },
+    );
+
+    agent
+        .prompt("tokio rollback checklist")
+        .await
+        .expect("first prompt");
+    agent
+        .prompt("tokio rollback checklist")
+        .await
+        .expect("second prompt");
+
+    let requests = reader_client.requests.lock().await;
+    assert_eq!(requests.len(), 2);
+    let second = &requests[1];
+    let memory_recall = second
+        .messages
+        .iter()
+        .find(|message| {
+            message.role == MessageRole::System
+                && message.text_content().contains(MEMORY_RECALL_PREFIX)
+        })
+        .expect("history-backed recall system message");
+    assert!(memory_recall
+        .text_content()
+        .contains("tokio rollback checklist"));
+    assert!(
+        !memory_state_path.join("live-backend").exists(),
+        "backend path should stay disabled when state dir is not usable"
+    );
+}
+
+#[tokio::test]
+async fn regression_memory_backend_recall_falls_back_to_hash_when_embedding_api_fails() {
+    let server = MockServer::start();
+    let embedding_mock = server.mock(|when, then| {
+        when.method(POST).path("/embeddings");
+        then.status(500);
+    });
+
+    let temp = tempfile::tempdir().expect("tempdir");
+    let memory_state_dir = temp.path().join("memory-state");
+    let config = AgentConfig {
+        max_context_messages: Some(2),
+        memory_retrieval_limit: 1,
+        memory_min_similarity: 0.0,
+        memory_embedding_dimensions: 64,
+        memory_embedding_model: Some("text-embedding-3-small".to_string()),
+        memory_embedding_api_base: Some(server.url("")),
+        memory_embedding_api_key: Some("test-key".to_string()),
+        memory_backend_state_dir: Some(memory_state_dir.clone()),
+        memory_backend_workspace_id: "default".to_string(),
+        ..AgentConfig::default()
+    };
+
+    let mut writer = Agent::new(
+        Arc::new(MockClient {
+            responses: AsyncMutex::new(VecDeque::from([ChatResponse {
+                message: Message::assistant_text("stored"),
+                finish_reason: Some("stop".to_string()),
+                usage: ChatUsage::default(),
+            }])),
+        }),
+        config.clone(),
+    );
+    writer
+        .prompt("tokio runtime troubleshooting checklist")
+        .await
+        .expect("writer prompt");
+
+    let reader_client = Arc::new(CapturingMockClient {
+        responses: AsyncMutex::new(VecDeque::from([ChatResponse {
+            message: Message::assistant_text("ack"),
+            finish_reason: Some("stop".to_string()),
+            usage: ChatUsage::default(),
+        }])),
+        requests: AsyncMutex::new(Vec::new()),
+    });
+    let mut reader = Agent::new(reader_client.clone(), config);
+    reader
+        .prompt("tokio runtime?")
+        .await
+        .expect("reader prompt");
+
+    embedding_mock.assert();
+    let requests = reader_client.requests.lock().await;
+    let request = requests.first().expect("one request");
+    let memory_recall = request
+        .messages
+        .iter()
+        .find(|message| {
+            message.role == MessageRole::System
+                && message.text_content().contains(MEMORY_RECALL_PREFIX)
+        })
+        .expect("memory recall system message");
+    assert!(memory_recall.text_content().contains("tokio runtime"));
+}
