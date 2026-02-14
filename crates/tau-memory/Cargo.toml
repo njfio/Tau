@@ -13,6 +13,7 @@ tokio = { version = "1.43", features = ["time"] }
 
 tau-core = { path = "../tau-core" }
 tau-contract = { path = "../tau-contract" }
+tau-memory-backend = { path = "../tau-memory-backend" }
 tau-runtime = { path = "../tau-runtime" }
 tau-session = { path = "../tau-session" }
 

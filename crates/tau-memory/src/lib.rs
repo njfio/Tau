@@ -5,3 +5,8 @@
 
 pub mod memory_contract;
 pub mod memory_runtime;
+
+pub use tau_memory_backend::{
+    normalize_workspace_id, JsonlLiveMemoryBackend, LiveMemoryBackend, LiveMemoryMessage,
+    LiveMemoryRole,
+};

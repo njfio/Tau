@@ -2,22 +2,25 @@
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     future::Future,
-    path::{Path, PathBuf},
+    path::PathBuf,
     pin::Pin,
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
         Arc, Mutex,
     },
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::Duration,
 };
 
 use async_trait::async_trait;
 use jsonschema::validator_for;
-use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tau_ai::{
     ChatRequest, ChatUsage, LlmClient, Message, MessageRole, StreamDeltaHandler, TauAiError,
     ToolCall, ToolChoice, ToolDefinition,
+};
+use tau_memory_backend::{
+    normalize_workspace_id, JsonlLiveMemoryBackend, LiveMemoryBackend, LiveMemoryMessage,
+    LiveMemoryRole,
 };
 use thiserror::Error;
 
@@ -470,7 +473,6 @@ const CONTEXT_SUMMARY_MAX_CHARS: usize = 1_200;
 const CONTEXT_SUMMARY_SNIPPET_MAX_CHARS: usize = 160;
 const CONTEXT_SUMMARY_MAX_EXCERPTS: usize = 6;
 const MEMORY_RECALL_PREFIX: &str = "[Tau memory recall]";
-const MEMORY_BACKEND_SCHEMA_VERSION: u32 = 1;
 const DIRECT_MESSAGE_PREFIX: &str = "[Tau direct message]";
 const REPLAN_ON_TOOL_FAILURE_PROMPT: &str = "One or more tool calls failed. Replan and continue with an alternative approach using available tools. If no viable tool exists, explain what is missing and ask the user for clarification.";
 const FAILURE_SIGNAL_PHRASES: &[&str] = &[
@@ -509,16 +511,6 @@ struct MemoryRecallMatch {
     text: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct PersistedMemoryEntry {
-    schema_version: u32,
-    entry_id: String,
-    workspace_id: String,
-    role: String,
-    text: String,
-    created_unix_ms: u64,
-}
-
 /// Public struct `Agent` used across Tau components.
 ///
 /// # Examples
@@ -551,7 +543,7 @@ pub struct Agent {
     config: AgentConfig,
     agent_id: String,
     messages: Vec<Message>,
-    memory_backend_state_path: Option<PathBuf>,
+    memory_backend: Option<Arc<dyn LiveMemoryBackend>>,
     memory_backend_workspace_id: String,
     tools: HashMap<String, RegisteredTool>,
     response_cache: HashMap<String, tau_ai::ChatResponse>,
@@ -576,18 +568,19 @@ impl Agent {
         }
         let agent_id = config.agent_id.clone();
         let memory_backend_workspace_id =
-            normalize_memory_workspace_id(&config.memory_backend_workspace_id);
-        let memory_backend_state_path = resolve_memory_backend_state_path(
-            config.memory_backend_state_dir.as_deref(),
-            memory_backend_workspace_id.as_str(),
-        );
+            normalize_workspace_id(&config.memory_backend_workspace_id);
+        let memory_backend = config
+            .memory_backend_state_dir
+            .as_deref()
+            .and_then(JsonlLiveMemoryBackend::from_state_dir)
+            .map(|backend| Arc::new(backend) as Arc<dyn LiveMemoryBackend>);
 
         Self {
             client,
             config,
             agent_id,
             messages,
-            memory_backend_state_path,
+            memory_backend,
             memory_backend_workspace_id,
             tools: HashMap::new(),
             response_cache: HashMap::new(),
@@ -1463,7 +1456,7 @@ impl Agent {
         if self.config.memory_retrieval_limit == 0 {
             return messages;
         }
-        if self.messages.len() <= limit && self.memory_backend_state_path.is_none() {
+        if self.messages.len() <= limit && self.memory_backend.is_none() {
             return messages;
         }
         let Some(recall) = self.build_memory_recall_message(limit).await else {
@@ -1542,21 +1535,18 @@ impl Agent {
         &self,
         query: &str,
     ) -> Option<Vec<MemoryRecallMatch>> {
-        let state_path = self.memory_backend_state_path.as_ref()?;
-        let entries = load_persisted_memory_entries(
-            state_path.as_path(),
-            self.memory_backend_workspace_id.as_str(),
-        )
-        .ok()?;
+        let backend = self.memory_backend.as_ref()?;
+        let entries = backend
+            .load_messages(self.memory_backend_workspace_id.as_str())
+            .ok()?;
         if entries.is_empty() {
             return Some(Vec::new());
         }
         let history = entries
             .into_iter()
-            .filter_map(|entry| match entry.role.as_str() {
-                "user" => Some(Message::user(entry.text)),
-                "assistant" => Some(Message::assistant_text(entry.text)),
-                _ => None,
+            .map(|entry| match entry.role {
+                LiveMemoryRole::User => Message::user(entry.text),
+                LiveMemoryRole::Assistant => Message::assistant_text(entry.text),
             })
             .collect::<Vec<_>>();
         if history.is_empty() {
@@ -1577,13 +1567,29 @@ impl Agent {
     }
 
     fn persist_memory_backend_entries(&self, new_messages: &[Message]) {
-        let Some(state_path) = self.memory_backend_state_path.as_ref() else {
+        let Some(backend) = self.memory_backend.as_ref() else {
             return;
         };
-        let _ = persist_memory_entries(
-            state_path.as_path(),
+        let entries = new_messages
+            .iter()
+            .filter_map(|message| {
+                let role = match message.role {
+                    MessageRole::User => LiveMemoryRole::User,
+                    MessageRole::Assistant => LiveMemoryRole::Assistant,
+                    MessageRole::System | MessageRole::Tool => return None,
+                };
+                Some(LiveMemoryMessage {
+                    role,
+                    text: message.text_content(),
+                })
+            })
+            .collect::<Vec<_>>();
+        if entries.is_empty() {
+            return;
+        }
+        let _ = backend.append_messages(
             self.memory_backend_workspace_id.as_str(),
-            new_messages,
+            &entries,
             self.config.memory_backend_max_entries,
         );
     }
@@ -2369,144 +2375,6 @@ fn fnv1a_hash(bytes: &[u8]) -> u64 {
         hash = hash.wrapping_mul(FNV_PRIME);
     }
     hash
-}
-
-fn normalize_memory_workspace_id(raw: &str) -> String {
-    let trimmed = raw.trim();
-    if trimmed.is_empty() {
-        return "default".to_string();
-    }
-    let mut normalized = String::with_capacity(trimmed.len());
-    for character in trimmed.chars() {
-        if character.is_ascii_alphanumeric() || character == '-' || character == '_' {
-            normalized.push(character.to_ascii_lowercase());
-        } else {
-            normalized.push('-');
-        }
-    }
-    let normalized = normalized.trim_matches('-').to_string();
-    if normalized.is_empty() {
-        "default".to_string()
-    } else {
-        normalized
-    }
-}
-
-fn resolve_memory_backend_state_path(
-    state_dir: Option<&Path>,
-    workspace_id: &str,
-) -> Option<PathBuf> {
-    let state_dir = state_dir?;
-    if state_dir.as_os_str().is_empty() {
-        return None;
-    }
-    let backend_dir = state_dir.join("live-backend");
-    std::fs::create_dir_all(&backend_dir).ok()?;
-    Some(backend_dir.join(format!("{workspace_id}.jsonl")))
-}
-
-fn current_unix_timestamp_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_millis() as u64)
-        .unwrap_or(0)
-}
-
-fn load_persisted_memory_entries(
-    path: &Path,
-    workspace_id: &str,
-) -> Result<Vec<PersistedMemoryEntry>, String> {
-    if !path.exists() {
-        return Ok(Vec::new());
-    }
-    let raw = std::fs::read_to_string(path).map_err(|error| {
-        format!(
-            "failed to read memory backend state '{}': {error}",
-            path.display()
-        )
-    })?;
-    let mut entries = Vec::new();
-    for line in raw.lines() {
-        if line.trim().is_empty() {
-            continue;
-        }
-        let Ok(entry) = serde_json::from_str::<PersistedMemoryEntry>(line) else {
-            continue;
-        };
-        if entry.schema_version != MEMORY_BACKEND_SCHEMA_VERSION {
-            continue;
-        }
-        if entry.workspace_id.trim() != workspace_id {
-            continue;
-        }
-        if entry.text.trim().is_empty() {
-            continue;
-        }
-        if entry.role != "user" && entry.role != "assistant" {
-            continue;
-        }
-        entries.push(entry);
-    }
-    entries.sort_by(|left, right| left.created_unix_ms.cmp(&right.created_unix_ms));
-    Ok(entries)
-}
-
-fn persist_memory_entries(
-    path: &Path,
-    workspace_id: &str,
-    new_messages: &[Message],
-    max_entries: usize,
-) -> Result<(), String> {
-    if max_entries == 0 {
-        return Ok(());
-    }
-    let mut entries = load_persisted_memory_entries(path, workspace_id).unwrap_or_default();
-    let now_unix_ms = current_unix_timestamp_ms();
-    let mut appended = 0usize;
-    for message in new_messages {
-        let role = match message.role {
-            MessageRole::User => "user",
-            MessageRole::Assistant => "assistant",
-            MessageRole::System | MessageRole::Tool => continue,
-        };
-        let text = collapse_whitespace(&message.text_content());
-        if text.trim().is_empty() {
-            continue;
-        }
-        let created_unix_ms = now_unix_ms.saturating_add(appended as u64);
-        let hash_input = format!("{workspace_id}:{role}:{created_unix_ms}:{text}");
-        let entry_id = format!("mem_{:016x}", fnv1a_hash(hash_input.as_bytes()));
-        entries.push(PersistedMemoryEntry {
-            schema_version: MEMORY_BACKEND_SCHEMA_VERSION,
-            entry_id,
-            workspace_id: workspace_id.to_string(),
-            role: role.to_string(),
-            text,
-            created_unix_ms,
-        });
-        appended = appended.saturating_add(1);
-    }
-    if appended == 0 {
-        return Ok(());
-    }
-    if entries.len() > max_entries {
-        let drop_count = entries.len().saturating_sub(max_entries);
-        entries.drain(0..drop_count);
-    }
-    let mut payload = String::new();
-    for entry in entries {
-        let line = serde_json::to_string(&entry)
-            .map_err(|error| format!("failed to serialize memory backend entry: {error}"))?;
-        payload.push_str(line.as_str());
-        payload.push('\n');
-    }
-    std::fs::write(path, payload).map_err(|error| {
-        format!(
-            "failed to write memory backend state '{}': {error}",
-            path.display()
-        )
-    })?;
-    Ok(())
 }
 
 fn build_structured_output_retry_prompt(schema: &Value, error: &str) -> String {
