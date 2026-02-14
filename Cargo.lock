@@ -2781,6 +2781,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tau-ai",
+ "tau-memory-backend",
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
@@ -3079,10 +3080,20 @@ dependencies = [
  "serde_json",
  "tau-contract",
  "tau-core",
+ "tau-memory-backend",
  "tau-runtime",
  "tau-session",
  "tempfile",
  "tokio",
+]
+
+[[package]]
+name = "tau-memory-backend"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]
