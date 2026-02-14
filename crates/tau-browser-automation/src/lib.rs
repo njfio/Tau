@@ -4,4 +4,5 @@
 //! components used by diagnostics and integration workflows.
 
 pub mod browser_automation_contract;
+pub mod browser_automation_live;
 pub mod browser_automation_runtime;
