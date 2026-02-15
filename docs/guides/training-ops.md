@@ -45,7 +45,26 @@ Prompt optimization mode expects a JSON object:
   "poll_interval_ms": 50,
   "heartbeat_interval_ms": 1000,
   "completion_poll_interval_ms": 60,
-  "completion_timeout_secs": 30
+  "completion_timeout_secs": 30,
+  "safety_reward": {
+    "blocked_penalty": 1.0,
+    "default_reason_code_penalty": 0.25,
+    "prompt_injection_penalty": 1.0,
+    "secret_leak_penalty": 1.5,
+    "reason_code_penalties": {
+      "prompt_injection.ignore_instructions": 1.8
+    },
+    "hard_gate_reason_codes": [
+      "prompt_injection.system_prompt_exfiltration"
+    ],
+    "hard_gate_reason_prefixes": [
+      "secret_leak."
+    ],
+    "hard_gate_reward_ceiling": 0.0,
+    "hard_gate_penalty": 1.0,
+    "blocked_event_triggers_hard_gate": true,
+    "reject_rollout_on_hard_gate": false
+  }
 }
 ```
 
@@ -59,6 +78,18 @@ Fields:
 - `heartbeat_interval_ms`: optional worker heartbeat interval (`> 0`)
 - `completion_poll_interval_ms`: optional trainer completion poll interval (`> 0`)
 - `completion_timeout_secs`: optional trainer timeout (`> 0`)
+- `safety_reward`: optional safety reward shaping and hard-gate policy
+  - `blocked_penalty`: penalty per blocked safety event (`>= 0`)
+  - `default_reason_code_penalty`: fallback penalty per unmapped reason code (`>= 0`)
+  - `prompt_injection_penalty`: penalty per `prompt_injection.*` reason code (`>= 0`)
+  - `secret_leak_penalty`: penalty per `secret_leak.*` reason code (`>= 0`)
+  - `reason_code_penalties`: optional exact reason-code penalty overrides
+  - `hard_gate_reason_codes`: optional exact reason codes that trigger hard-gate
+  - `hard_gate_reason_prefixes`: optional reason-code prefixes that trigger hard-gate
+  - `hard_gate_reward_ceiling`: reward clamp ceiling on hard-gate (must be `<= 0`)
+  - `hard_gate_penalty`: additional hard-gate penalty (`>= 0`)
+  - `blocked_event_triggers_hard_gate`: treat blocked events as hard-gate triggers
+  - `reject_rollout_on_hard_gate`: fail rollout immediately when hard-gate triggers
 
 At least one of `optimize` or `validate` must be non-empty.
 
