@@ -175,6 +175,16 @@ Use this protocol with:
 - significance report JSON
 - consolidated benchmark proof JSON using the M24 template
 
+Generate a significance report artifact from baseline/trained sample vectors:
+
+```bash
+scripts/demo/m24-rl-benchmark-significance-report.sh \
+  --baseline-samples tasks/fixtures/m24/baseline-reward-samples.json \
+  --trained-samples tasks/fixtures/m24/trained-reward-samples.json \
+  --run-id m24-2026-02-15-significance-1 \
+  --output-report tasks/reports/m24-benchmark-significance.json
+```
+
 Validate the consolidated artifact:
 
 ```bash
