@@ -1,3 +1,9 @@
+//! Startup resolution for system prompt, trust roots, and related bootstrap data.
+//!
+//! This phase normalizes startup inputs before dispatch by resolving prompt
+//! sources and trust-root mutations with explicit validation. Resolution failures
+//! are surfaced early so runtime phases only consume validated state.
+
 use anyhow::{bail, Context, Result};
 use tau_access::trust_roots::{
     apply_trust_root_mutation_specs, load_trust_root_records, parse_trusted_root_spec,

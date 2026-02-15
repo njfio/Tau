@@ -1,3 +1,9 @@
+//! Startup preflight guards executed before model/policy resolution and dispatch.
+//!
+//! Preflight decides whether startup should continue, short-circuit for daemon
+//! commands, or stop due to missing prerequisites (for example, non-interactive
+//! onboarding constraints). This keeps later phases focused on execution only.
+
 use anyhow::Result;
 use std::io::IsTerminal;
 use tau_cli::Cli;

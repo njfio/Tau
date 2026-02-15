@@ -1,3 +1,10 @@
+//! Daemon bootstrap helpers used during onboarding.
+//!
+//! The command layer uses this module to inspect/install/start the daemon and to
+//! emit deterministic action summaries. Failures are surfaced as contextual
+//! onboarding errors so operators can distinguish install, start, and inspect
+//! failure modes.
+
 use anyhow::{Context, Result};
 use std::collections::BTreeSet;
 use tau_cli::Cli;

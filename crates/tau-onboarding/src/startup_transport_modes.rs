@@ -1,3 +1,9 @@
+//! Startup transport-mode executors and diagnostics.
+//!
+//! This module contains runtime branches for transport workflows (including
+//! browser automation and gateway-style execution), and reports mode-specific
+//! failure/timeout diagnostics so startup dispatch can return actionable errors.
+
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use std::future::Future;

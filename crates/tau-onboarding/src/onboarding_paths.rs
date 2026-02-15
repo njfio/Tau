@@ -1,3 +1,9 @@
+//! Onboarding path resolution and interactive input parsing helpers.
+//!
+//! These utilities define deterministic path boundaries (Tau root, bootstrap
+//! directories) and shared yes/no parsing semantics so onboarding flows produce
+//! consistent filesystem targets and operator prompts across commands.
+
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 

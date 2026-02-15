@@ -1,3 +1,9 @@
+//! Local runtime bootstrap and execution wiring for startup.
+//!
+//! This module materializes agent/runtime dependencies from resolved startup
+//! inputs and runs the local execution loop. It is the concrete implementation
+//! behind local dispatch mode and preserves startup report metadata boundaries.
+
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;

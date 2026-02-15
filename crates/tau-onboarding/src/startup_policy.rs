@@ -1,3 +1,9 @@
+//! Startup safety/tool policy resolution and precedence reporting.
+//!
+//! This module resolves effective policy from layered inputs and surfaces the
+//! precedence chain used to compute it. Startup dispatch consumes this bundle to
+//! ensure runtime behavior matches explicitly documented policy sources.
+
 use anyhow::Result;
 use serde_json::Value;
 use tau_cli::Cli;

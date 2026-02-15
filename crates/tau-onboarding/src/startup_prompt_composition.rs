@@ -1,3 +1,9 @@
+//! Startup prompt composition from resolved system prompt and identity artifacts.
+//!
+//! This module composes deterministic prompt sections (identity files, selected
+//! skills, and optional bootstrap context) after startup resolution. Composition
+//! failures are reported with file-path context for operator debugging.
+
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};

@@ -1,3 +1,9 @@
+//! Startup model and fallback resolution contract.
+//!
+//! This phase validates CLI model flags and yields a deterministic primary model
+//! with ordered fallback candidates. Invalid flag combinations fail fast before
+//! runtime dispatch so execution never starts in an ambiguous model state.
+
 use anyhow::{anyhow, bail, Result};
 use tau_ai::ModelRef;
 use tau_cli::Cli;

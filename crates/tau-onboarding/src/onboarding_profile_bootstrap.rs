@@ -1,3 +1,10 @@
+//! Profile bootstrap primitives used by onboarding.
+//!
+//! This module enforces profile-name validity and persistence invariants when
+//! creating initial profile entries. On success, profile store mutations are
+//! idempotent; on failure, callers receive contextual errors without partial
+//! profile-state assumptions.
+
 use anyhow::{bail, Context, Result};
 use std::path::Path;
 

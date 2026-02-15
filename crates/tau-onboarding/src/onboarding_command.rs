@@ -1,3 +1,10 @@
+//! `/onboard` command orchestration for Tau startup onboarding.
+//!
+//! This module coordinates wizard/bootstrap sub-steps (identity baseline, profile
+//! defaults, release channel, daemon bootstrap) and assembles a final report. It
+//! is the high-level phase boundary between CLI intent and concrete onboarding
+//! persistence/update actions.
+
 use anyhow::{Context, Result};
 use std::io::{self, Write};
 use tau_cli::Cli;
