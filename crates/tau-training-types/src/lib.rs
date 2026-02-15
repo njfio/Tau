@@ -7,6 +7,10 @@ use std::collections::HashMap;
 use thiserror::Error;
 
 /// Current schema version used by RL core payload types.
+///
+/// Migration guarantee:
+/// - payloads that omit `schema_version` default to this version
+/// - unknown versions fail closed during `validate()`
 pub const RL_SCHEMA_VERSION_V1: u32 = 1;
 
 fn default_rl_schema_version() -> u32 {
@@ -27,9 +31,7 @@ pub enum StatusTransitionError {
 /// Validation error for RL trajectory, advantage, and checkpoint payloads.
 #[derive(Debug, Clone, PartialEq, Error)]
 pub enum RlSchemaError {
-    #[error(
-        "{type_name} schema_version={found} is unsupported (supported versions: {supported:?})"
-    )]
+    #[error("{type_name} unsupported schema version {found} (supported versions: {supported:?})")]
     UnsupportedSchemaVersion {
         type_name: &'static str,
         found: u32,
@@ -822,5 +824,81 @@ mod tests {
             serde_json::from_value(payload).expect("decode trajectory");
         assert_eq!(decoded.schema_version, RL_SCHEMA_VERSION_V1);
         assert!(decoded.validate().is_ok());
+    }
+
+    #[test]
+    fn regression_advantage_batch_schema_version_defaults_for_legacy_payloads() {
+        let payload = json!({
+            "batch_id": "batch-legacy",
+            "trajectory_id": "trajectory-legacy",
+            "advantages": [0.5, 0.25],
+            "returns": [0.6, 0.3],
+            "normalized": false,
+            "created_at": "2026-02-15T00:00:00Z"
+        });
+
+        let decoded: AdvantageBatch =
+            serde_json::from_value(payload).expect("decode advantage batch");
+        assert_eq!(decoded.schema_version, RL_SCHEMA_VERSION_V1);
+        assert!(decoded.validate().is_ok());
+    }
+
+    #[test]
+    fn regression_checkpoint_schema_version_defaults_for_legacy_payloads() {
+        let payload = json!({
+            "checkpoint_id": "checkpoint-legacy",
+            "algorithm": "ppo",
+            "policy_version": "policy-v1",
+            "global_step": 42,
+            "episode_count": 3,
+            "mean_reward": 1.25,
+            "artifact_uri": "file:///tmp/ckpt.bin",
+            "created_at": "2026-02-15T00:00:00Z"
+        });
+
+        let decoded: CheckpointRecord = serde_json::from_value(payload).expect("decode checkpoint");
+        assert_eq!(decoded.schema_version, RL_SCHEMA_VERSION_V1);
+        assert!(decoded.validate().is_ok());
+    }
+
+    #[test]
+    fn regression_unknown_schema_versions_fail_with_deterministic_reason() {
+        let mut trajectory = EpisodeTrajectory::new(
+            "trajectory-unknown-version",
+            Some("rollout-1".to_string()),
+            Some("episode-1".to_string()),
+            vec![TrajectoryStep::new(
+                0,
+                json!({"state": 1}),
+                json!({"action": "a"}),
+                1.0,
+                true,
+            )],
+        );
+        trajectory.schema_version = 99;
+        let trajectory_error = trajectory.validate().expect_err("unsupported schema");
+        let trajectory_reason = trajectory_error.to_string();
+        assert!(trajectory_reason.contains("EpisodeTrajectory"));
+        assert!(trajectory_reason.contains("unsupported schema version"));
+
+        let mut advantages = AdvantageBatch::new(
+            "batch-unknown-version",
+            "trajectory-1",
+            vec![0.5],
+            vec![1.0],
+        );
+        advantages.schema_version = 99;
+        let advantage_error = advantages.validate().expect_err("unsupported schema");
+        let advantage_reason = advantage_error.to_string();
+        assert!(advantage_reason.contains("AdvantageBatch"));
+        assert!(advantage_reason.contains("unsupported schema version"));
+
+        let mut checkpoint =
+            CheckpointRecord::new("checkpoint-unknown-version", "ppo", "policy-v1", 1);
+        checkpoint.schema_version = 99;
+        let checkpoint_error = checkpoint.validate().expect_err("unsupported schema");
+        let checkpoint_reason = checkpoint_error.to_string();
+        assert!(checkpoint_reason.contains("CheckpointRecord"));
+        assert!(checkpoint_reason.contains("unsupported schema version"));
     }
 }
