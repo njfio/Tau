@@ -178,6 +178,22 @@ The benchmark proof is a pass only if all conditions hold:
 If any criterion fails, mark `significance.pass=false` and treat the run as a
 regression or non-significant improvement.
 
+### Interpretation Limits For Significance Reports
+
+Significance reports are guardrails, not causal proofs.
+
+- seed reproducibility checks compare bounded ranges of p-values and reward
+  deltas at fixed sample size
+- sample-size sensitivity checks compare adjacent sample-size drift for p-value
+  and reward delta
+- passing these checks means conclusions are stable within configured bands, not
+  universally true for all task distributions
+- failing checks means "insufficiently stable evidence", not necessarily "model
+  regression"
+
+Reference implementation for reproducibility checks:
+`tau_trainer::benchmark_significance`.
+
 ### Benchmark Report Publication And Archival Policy
 
 Use `scripts/demo/m24-rl-benchmark-report-template.json` for each published

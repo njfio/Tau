@@ -1,5 +1,7 @@
 //! Top-level orchestrator for rollout-based training jobs.
 
+pub mod benchmark_significance;
+
 use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::Value;
