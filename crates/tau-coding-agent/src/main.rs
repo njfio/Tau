@@ -283,6 +283,7 @@ pub(crate) use tau_access::rbac::{
 pub(crate) use tau_access::trust_roots::{
     load_trust_root_records, parse_trust_rotation_spec, parse_trusted_root_spec, TrustedRootRecord,
 };
+pub(crate) use tau_cli::normalize_legacy_training_aliases;
 #[cfg(test)]
 pub(crate) use tau_cli::parse_command;
 #[cfg(test)]
@@ -494,10 +495,20 @@ pub(crate) fn normalize_daemon_subcommand_args(args: Vec<String>) -> Vec<String>
     normalized
 }
 
+pub(crate) fn normalize_startup_cli_args(args: Vec<String>) -> (Vec<String>, Vec<String>) {
+    let daemon_normalized = normalize_daemon_subcommand_args(args);
+    normalize_legacy_training_aliases(daemon_normalized)
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     init_tracing();
-    let cli = Cli::parse_from(normalize_daemon_subcommand_args(std::env::args().collect()));
+    let (normalized_args, compatibility_warnings) =
+        normalize_startup_cli_args(std::env::args().collect());
+    for warning in compatibility_warnings {
+        eprintln!("{warning}");
+    }
+    let cli = Cli::parse_from(normalized_args);
     run_cli(cli).await
 }
 
