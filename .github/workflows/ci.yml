@@ -403,7 +403,17 @@ jobs:
   cross-platform-smoke:
     name: Cross-platform compile smoke (${{ matrix.name }})
     needs: [quality-linux]
-    if: needs.quality-linux.outputs.run_cross_platform == 'true'
+    if: |
+      always() && (
+        (
+          github.event_name == 'workflow_dispatch' &&
+          (inputs.run_cross_platform == true || inputs.run_cross_platform == 'true')
+        ) ||
+        (
+          needs.quality-linux.result == 'success' &&
+          needs.quality-linux.outputs.run_cross_platform == 'true'
+        )
+      )
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
