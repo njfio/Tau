@@ -105,6 +105,26 @@ Outputs:
 - `tasks/reports/m23-rustdoc-marker-count.json`
 - `tasks/reports/m23-rustdoc-marker-count.md`
 
+### Threshold Verification Artifact
+
+Compare current marker totals against a persisted baseline snapshot and record
+gate status (`PASS`/`FAIL`) plus per-crate deltas:
+
+```bash
+scripts/dev/rustdoc-marker-threshold-verify.sh \
+  --repo-root . \
+  --baseline-json tasks/reports/m23-rustdoc-marker-count-baseline.json \
+  --current-json tasks/reports/m23-rustdoc-marker-count.json \
+  --threshold 3000 \
+  --output-json tasks/reports/m23-rustdoc-marker-threshold-verify.json \
+  --output-md tasks/reports/m23-rustdoc-marker-threshold-verify.md
+```
+
+Outputs:
+
+- `tasks/reports/m23-rustdoc-marker-threshold-verify.json`
+- `tasks/reports/m23-rustdoc-marker-threshold-verify.md`
+
 This complements (does not replace) `rust_doc_density.py`, which measures
 documented-public-API coverage percentage.
 
