@@ -2819,17 +2819,11 @@ fn functional_cli_prompt_optimization_flags_accept_canonical_overrides() {
 
 #[test]
 fn regression_cli_prompt_optimization_flags_reject_legacy_train_aliases() {
-    let error = try_parse_cli_with_stack([
-        "tau-rs",
-        "--train-config",
-        ".tau/train-legacy.json",
-    ])
-    .expect_err("legacy --train-* aliases should be rejected");
-    assert!(
-        error
-            .to_string()
-            .contains("unexpected argument '--train-config' found")
-    );
+    let error = try_parse_cli_with_stack(["tau-rs", "--train-config", ".tau/train-legacy.json"])
+        .expect_err("legacy --train-* aliases should be rejected");
+    assert!(error
+        .to_string()
+        .contains("unexpected argument '--train-config' found"));
 }
 
 #[test]
@@ -2868,11 +2862,9 @@ fn regression_cli_prompt_optimization_proxy_flags_reject_legacy_training_aliases
         "127.0.0.1:8866",
     ])
     .expect_err("legacy --training-proxy-* aliases should be rejected");
-    assert!(
-        error
-            .to_string()
-            .contains("unexpected argument '--training-proxy-server' found")
-    );
+    assert!(error
+        .to_string()
+        .contains("unexpected argument '--training-proxy-server' found"));
 }
 
 #[test]
