@@ -87,6 +87,27 @@ python3 .github/scripts/rust_doc_density.py \
   --json
 ```
 
+## Raw Marker Count (M23 Gate)
+
+Use the marker-count command to measure raw rustdoc markers (`///`, `//!`)
+across crate `src` trees for `>=3,000` trajectory tracking:
+
+```bash
+scripts/dev/rustdoc-marker-count.sh \
+  --repo-root . \
+  --scan-root crates \
+  --output-json tasks/reports/m23-rustdoc-marker-count.json \
+  --output-md tasks/reports/m23-rustdoc-marker-count.md
+```
+
+Outputs:
+
+- `tasks/reports/m23-rustdoc-marker-count.json`
+- `tasks/reports/m23-rustdoc-marker-count.md`
+
+This complements (does not replace) `rust_doc_density.py`, which measures
+documented-public-API coverage percentage.
+
 ## Gate Reproducibility Artifact (M23)
 
 For milestone gate reviews, generate a standardized artifact bundle that records
