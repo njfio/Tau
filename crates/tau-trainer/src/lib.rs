@@ -3,6 +3,7 @@
 pub mod benchmark_driver;
 pub mod benchmark_fixtures;
 pub mod benchmark_significance;
+pub mod checkpoint_store;
 
 use anyhow::Result;
 use async_trait::async_trait;
