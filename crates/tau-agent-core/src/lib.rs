@@ -17,6 +17,7 @@ use tau_ai::{
     ChatRequest, ChatUsage, LlmClient, Message, MessageRole, StreamDeltaHandler, TauAiError,
     ToolCall, ToolChoice, ToolDefinition,
 };
+use tau_memory::runtime::{cosine_similarity, embed_text_vector};
 pub use tau_safety::{
     DefaultLeakDetector, DefaultSanitizer, LeakDetector, SafetyMode, SafetyPolicy, SafetyStage,
     Sanitizer,
@@ -2472,54 +2473,6 @@ fn resize_and_normalize_embedding(values: &[f32], dimensions: usize) -> Vec<f32>
         }
     }
     resized
-}
-
-fn embed_text_vector(text: &str, dimensions: usize) -> Vec<f32> {
-    let dimensions = dimensions.max(1);
-    let mut vector = vec![0.0f32; dimensions];
-    for raw_token in text.split(|character: char| !character.is_alphanumeric()) {
-        if raw_token.is_empty() {
-            continue;
-        }
-        let token = raw_token.to_ascii_lowercase();
-        let hash = fnv1a_hash(token.as_bytes());
-        let index = (hash as usize) % dimensions;
-        let sign = if (hash & 1) == 0 { 1.0 } else { -1.0 };
-        vector[index] += sign;
-    }
-
-    let magnitude = vector
-        .iter()
-        .map(|component| component * component)
-        .sum::<f32>()
-        .sqrt();
-    if magnitude > 0.0 {
-        for component in &mut vector {
-            *component /= magnitude;
-        }
-    }
-    vector
-}
-
-fn cosine_similarity(left: &[f32], right: &[f32]) -> f32 {
-    if left.len() != right.len() {
-        return 0.0;
-    }
-    left.iter()
-        .zip(right)
-        .map(|(left, right)| left * right)
-        .sum()
-}
-
-fn fnv1a_hash(bytes: &[u8]) -> u64 {
-    const FNV_OFFSET_BASIS: u64 = 0xcbf29ce484222325;
-    const FNV_PRIME: u64 = 0x100000001b3;
-    let mut hash = FNV_OFFSET_BASIS;
-    for byte in bytes {
-        hash ^= *byte as u64;
-        hash = hash.wrapping_mul(FNV_PRIME);
-    }
-    hash
 }
 
 fn build_structured_output_retry_prompt(schema: &Value, error: &str) -> String {

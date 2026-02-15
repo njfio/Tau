@@ -5,7 +5,17 @@ Run all commands from repository root.
 ## Scope
 
 `--memory-contract-runner` is removed. Runtime memory behavior is owned by `tau-agent-core`.
-`tau-memory` now owns only fixture schemas and replay helpers for contract validation.
+`tau-memory` provides file-backed memory store primitives, deterministic ranking helpers,
+and fixture schemas/replay helpers for contract validation.
+
+User-facing memory tools are available in runtime:
+
+- `memory_write`
+- `memory_read`
+- `memory_search`
+- `memory_tree`
+
+These tools persist under `--memory-state-dir` (default `.tau/memory`).
 
 ## Health and observability signals
 
@@ -21,6 +31,7 @@ cargo run -p tau-coding-agent -- \
 Primary state files:
 
 - `.tau/memory/state.json`
+- `.tau/memory/entries.jsonl`
 - Optional historical artifact logs under `.tau/memory/*.jsonl` if produced by older revisions.
 
 ## Deterministic demo path
@@ -32,14 +43,16 @@ Primary state files:
 ## Rollout plan with guardrails
 
 1. Validate memory fixture contracts (`tau-memory`):
-   `cargo test -p tau-memory memory_contract -- --test-threads=1`
+   `cargo test -p tau-memory -- --test-threads=1`
 2. Validate runtime memory behavior (`tau-agent-core`):
    `cargo test -p tau-agent-core memory -- --test-threads=1`
-3. Run deterministic diagnostics demo:
+3. Validate memory tools and policy wiring (`tau-tools`):
+   `cargo test -p tau-tools memory -- --test-threads=1`
+4. Run deterministic diagnostics demo:
    `./scripts/demo/memory.sh`
-4. Confirm health snapshot is `healthy` before promotion:
+5. Confirm health snapshot is `healthy` before promotion:
    `--transport-health-inspect memory --transport-health-json`
-5. Promote while monitoring:
+6. Promote while monitoring:
    `failure_streak`, `last_cycle_failed`, and `queue_depth`.
 
 ## Rollback plan

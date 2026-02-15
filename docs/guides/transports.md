@@ -291,8 +291,10 @@ Operational rollout and rollback guidance: `docs/guides/multi-agent-ops.md`.
 ## Semantic memory diagnostics (contract runner removed)
 
 `--memory-contract-runner` is removed. Runtime memory ownership is in `tau-agent-core`
-(auto recall, retrieval ranking, and embedding-backed matching), while `tau-memory` only
-owns fixture schemas for contract validation.
+(auto recall, retrieval ranking, and embedding-backed matching). `tau-memory` provides
+the shared file-backed memory store/runtime helpers plus fixture schemas for contract
+validation. Built-in tools (`memory_write`, `memory_read`, `memory_search`, `memory_tree`)
+operate against `--memory-state-dir`.
 
 Use transport-health inspection for deterministic operator diagnostics against persisted
 memory health artifacts.

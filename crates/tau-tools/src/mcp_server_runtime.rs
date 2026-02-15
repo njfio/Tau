@@ -14,7 +14,10 @@ use tau_agent_core::{AgentTool, ToolExecutionResult};
 use tau_cli::Cli;
 
 use crate::tool_policy_config::build_tool_policy;
-use crate::tools::{BashTool, EditTool, HttpTool, ReadTool, ToolPolicy, WriteTool};
+use crate::tools::{
+    BashTool, EditTool, HttpTool, MemoryReadTool, MemorySearchTool, MemoryTreeTool,
+    MemoryWriteTool, ReadTool, ToolPolicy, WriteTool,
+};
 
 const MCP_JSONRPC_VERSION: &str = "2.0";
 const MCP_PROTOCOL_VERSION: &str = "2024-11-05";
@@ -27,6 +30,10 @@ const MCP_TOOL_PREFIX_EXTERNAL: &str = "external.";
 const MCP_TOOL_READ: &str = "tau.read";
 const MCP_TOOL_WRITE: &str = "tau.write";
 const MCP_TOOL_EDIT: &str = "tau.edit";
+const MCP_TOOL_MEMORY_WRITE: &str = "tau.memory_write";
+const MCP_TOOL_MEMORY_READ: &str = "tau.memory_read";
+const MCP_TOOL_MEMORY_SEARCH: &str = "tau.memory_search";
+const MCP_TOOL_MEMORY_TREE: &str = "tau.memory_tree";
 const MCP_TOOL_HTTP: &str = "tau.http";
 const MCP_TOOL_BASH: &str = "tau.bash";
 const MCP_TOOL_CONTEXT_SESSION: &str = "tau.context.session";
@@ -44,6 +51,10 @@ const RESERVED_MCP_TOOL_NAMES: &[&str] = &[
     MCP_TOOL_READ,
     MCP_TOOL_WRITE,
     MCP_TOOL_EDIT,
+    MCP_TOOL_MEMORY_WRITE,
+    MCP_TOOL_MEMORY_READ,
+    MCP_TOOL_MEMORY_SEARCH,
+    MCP_TOOL_MEMORY_TREE,
     MCP_TOOL_HTTP,
     MCP_TOOL_BASH,
     MCP_TOOL_CONTEXT_SESSION,
@@ -914,6 +925,18 @@ fn execute_builtin_tool_call(
         MCP_TOOL_EDIT => Ok(block_on_tool_future(
             EditTool::new(policy).execute(arguments),
         )),
+        MCP_TOOL_MEMORY_WRITE => Ok(block_on_tool_future(
+            MemoryWriteTool::new(policy).execute(arguments),
+        )),
+        MCP_TOOL_MEMORY_READ => Ok(block_on_tool_future(
+            MemoryReadTool::new(policy).execute(arguments),
+        )),
+        MCP_TOOL_MEMORY_SEARCH => Ok(block_on_tool_future(
+            MemorySearchTool::new(policy).execute(arguments),
+        )),
+        MCP_TOOL_MEMORY_TREE => Ok(block_on_tool_future(
+            MemoryTreeTool::new(policy).execute(arguments),
+        )),
         MCP_TOOL_HTTP => Ok(block_on_tool_future(
             HttpTool::new(policy).execute(arguments),
         )),
@@ -950,6 +973,13 @@ fn builtin_mcp_tools(state: &McpServerState) -> Vec<McpToolDescriptor> {
         agent_tool_descriptor(MCP_TOOL_READ, &ReadTool::new(policy.clone())),
         agent_tool_descriptor(MCP_TOOL_WRITE, &WriteTool::new(policy.clone())),
         agent_tool_descriptor(MCP_TOOL_EDIT, &EditTool::new(policy.clone())),
+        agent_tool_descriptor(MCP_TOOL_MEMORY_WRITE, &MemoryWriteTool::new(policy.clone())),
+        agent_tool_descriptor(MCP_TOOL_MEMORY_READ, &MemoryReadTool::new(policy.clone())),
+        agent_tool_descriptor(
+            MCP_TOOL_MEMORY_SEARCH,
+            &MemorySearchTool::new(policy.clone()),
+        ),
+        agent_tool_descriptor(MCP_TOOL_MEMORY_TREE, &MemoryTreeTool::new(policy.clone())),
         agent_tool_descriptor(MCP_TOOL_HTTP, &HttpTool::new(policy.clone())),
         agent_tool_descriptor(MCP_TOOL_BASH, &BashTool::new(policy)),
     ];
@@ -1272,6 +1302,10 @@ mod tests {
             .as_array()
             .expect("tools array");
         assert!(tools.iter().any(|tool| tool["name"] == "tau.read"));
+        assert!(tools.iter().any(|tool| tool["name"] == "tau.memory_write"));
+        assert!(tools.iter().any(|tool| tool["name"] == "tau.memory_read"));
+        assert!(tools.iter().any(|tool| tool["name"] == "tau.memory_search"));
+        assert!(tools.iter().any(|tool| tool["name"] == "tau.memory_tree"));
         assert!(tools.iter().any(|tool| tool["name"] == "tau.http"));
         assert!(tools
             .iter()
@@ -1544,6 +1578,10 @@ done
         assert!(names.contains(super::MCP_TOOL_READ));
         assert!(names.contains(super::MCP_TOOL_WRITE));
         assert!(names.contains(super::MCP_TOOL_EDIT));
+        assert!(names.contains(super::MCP_TOOL_MEMORY_WRITE));
+        assert!(names.contains(super::MCP_TOOL_MEMORY_READ));
+        assert!(names.contains(super::MCP_TOOL_MEMORY_SEARCH));
+        assert!(names.contains(super::MCP_TOOL_MEMORY_TREE));
         assert!(names.contains(super::MCP_TOOL_HTTP));
         assert!(names.contains(super::MCP_TOOL_BASH));
         assert!(names.contains(super::MCP_TOOL_CONTEXT_SESSION));

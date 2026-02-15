@@ -2,7 +2,10 @@ use std::{
     collections::{BTreeMap, BTreeSet, HashMap, VecDeque},
     ffi::OsString,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex, OnceLock},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc, Mutex, OnceLock,
+    },
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
@@ -27,6 +30,8 @@ use tau_access::{
     evaluate_approval_gate, resolve_local_principal, ApprovalAction, ApprovalGateResult,
     RbacDecision,
 };
+use tau_memory::memory_contract::{MemoryEntry, MemoryScope};
+use tau_memory::runtime::{FileMemoryStore, MemoryScopeFilter, MemorySearchOptions};
 use tau_session::{
     compute_session_entry_depths, search_session_entries, session_message_preview,
     session_message_role, SessionStore,
@@ -60,6 +65,13 @@ const SESSION_STATS_SCAN_DEFAULT_LIMIT: usize = 64;
 const SESSION_STATS_SCAN_MAX_LIMIT: usize = 256;
 const SESSION_SCAN_MAX_DEPTH: usize = 8;
 const SESSION_SCAN_MAX_DIRECTORIES: usize = 2_000;
+const MEMORY_SEARCH_DEFAULT_LIMIT: usize = 5;
+const MEMORY_SEARCH_MAX_LIMIT: usize = 50;
+const MEMORY_WRITE_MAX_SUMMARY_CHARS: usize = 1_200;
+const MEMORY_WRITE_MAX_FACTS: usize = 32;
+const MEMORY_WRITE_MAX_TAGS: usize = 32;
+const MEMORY_WRITE_MAX_FACT_CHARS: usize = 400;
+const MEMORY_WRITE_MAX_TAG_CHARS: usize = 96;
 const TOOL_RATE_LIMIT_WINDOW_MS_DEFAULT: u64 = 60_000;
 const TOOL_RATE_LIMIT_MAX_REQUESTS_PERMISSIVE: u32 = 240;
 const TOOL_RATE_LIMIT_MAX_REQUESTS_BALANCED: u32 = 120;
@@ -81,6 +93,7 @@ const SANDBOX_REQUIRED_UNAVAILABLE_ERROR: &str =
     "OS sandbox policy mode 'required' is enabled but command would run without a sandbox launcher";
 const SANDBOX_FORCE_UNAVAILABLE_ERROR: &str =
     "OS sandbox mode 'force' is enabled but no sandbox launcher is configured or available";
+static MEMORY_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
 const DEFAULT_PROTECTED_RELATIVE_PATHS: &[&str] = &[
     "AGENTS.md",
     "SOUL.md",
@@ -93,6 +106,10 @@ const BUILTIN_AGENT_TOOL_NAMES: &[&str] = &[
     "read",
     "write",
     "edit",
+    "memory_write",
+    "memory_read",
+    "memory_search",
+    "memory_tree",
     "sessions_list",
     "sessions_history",
     "sessions_search",
@@ -307,6 +324,16 @@ pub struct ToolPolicy {
     pub protected_paths: Vec<PathBuf>,
     pub allow_protected_path_mutations: bool,
     pub policy_preset: ToolPolicyPreset,
+    pub memory_state_dir: PathBuf,
+    pub memory_search_default_limit: usize,
+    pub memory_search_max_limit: usize,
+    pub memory_embedding_dimensions: usize,
+    pub memory_min_similarity: f32,
+    pub memory_write_max_summary_chars: usize,
+    pub memory_write_max_facts: usize,
+    pub memory_write_max_tags: usize,
+    pub memory_write_max_fact_chars: usize,
+    pub memory_write_max_tag_chars: usize,
     pub max_file_read_bytes: usize,
     pub max_file_write_bytes: usize,
     pub max_command_output_bytes: usize,
@@ -342,6 +369,16 @@ impl ToolPolicy {
             allow_protected_path_mutations: false,
             allowed_roots,
             policy_preset: ToolPolicyPreset::Balanced,
+            memory_state_dir: PathBuf::from(".tau/memory"),
+            memory_search_default_limit: MEMORY_SEARCH_DEFAULT_LIMIT,
+            memory_search_max_limit: MEMORY_SEARCH_MAX_LIMIT,
+            memory_embedding_dimensions: 128,
+            memory_min_similarity: 0.55,
+            memory_write_max_summary_chars: MEMORY_WRITE_MAX_SUMMARY_CHARS,
+            memory_write_max_facts: MEMORY_WRITE_MAX_FACTS,
+            memory_write_max_tags: MEMORY_WRITE_MAX_TAGS,
+            memory_write_max_fact_chars: MEMORY_WRITE_MAX_FACT_CHARS,
+            memory_write_max_tag_chars: MEMORY_WRITE_MAX_TAG_CHARS,
             max_file_read_bytes: 1_000_000,
             max_file_write_bytes: 1_000_000,
             max_command_output_bytes: 16_000,
@@ -519,6 +556,10 @@ pub fn register_builtin_tools(agent: &mut Agent, policy: ToolPolicy) {
     agent.register_tool(ReadTool::new(policy.clone()));
     agent.register_tool(WriteTool::new(policy.clone()));
     agent.register_tool(EditTool::new(policy.clone()));
+    agent.register_tool(MemoryWriteTool::new(policy.clone()));
+    agent.register_tool(MemoryReadTool::new(policy.clone()));
+    agent.register_tool(MemorySearchTool::new(policy.clone()));
+    agent.register_tool(MemoryTreeTool::new(policy.clone()));
     agent.register_tool(SessionsListTool::new(policy.clone()));
     agent.register_tool(SessionsHistoryTool::new(policy.clone()));
     agent.register_tool(SessionsSearchTool::new(policy.clone()));
@@ -945,6 +986,568 @@ impl AgentTool for EditTool {
             "path": resolved.display().to_string(),
             "replacements": replacements,
         }))
+    }
+}
+
+/// Public struct `MemoryWriteTool` used across Tau components.
+pub struct MemoryWriteTool {
+    policy: Arc<ToolPolicy>,
+}
+
+impl MemoryWriteTool {
+    pub fn new(policy: Arc<ToolPolicy>) -> Self {
+        Self { policy }
+    }
+}
+
+#[async_trait]
+impl AgentTool for MemoryWriteTool {
+    fn definition(&self) -> ToolDefinition {
+        ToolDefinition {
+            name: "memory_write".to_string(),
+            description:
+                "Write or update a scoped semantic memory entry in the runtime memory store"
+                    .to_string(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "memory_id": {
+                        "type": "string",
+                        "description": "Optional stable memory id. A deterministic id is generated when omitted."
+                    },
+                    "summary": {
+                        "type": "string",
+                        "description": format!(
+                            "Memory summary text (max {} characters)",
+                            self.policy.memory_write_max_summary_chars
+                        )
+                    },
+                    "tags": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": format!(
+                            "Optional tags (max {} items, {} chars each)",
+                            self.policy.memory_write_max_tags,
+                            self.policy.memory_write_max_tag_chars
+                        )
+                    },
+                    "facts": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": format!(
+                            "Optional facts (max {} items, {} chars each)",
+                            self.policy.memory_write_max_facts,
+                            self.policy.memory_write_max_fact_chars
+                        )
+                    },
+                    "workspace_id": { "type": "string" },
+                    "channel_id": { "type": "string" },
+                    "actor_id": { "type": "string" },
+                    "source_event_key": { "type": "string" },
+                    "recency_weight_bps": {
+                        "type": "integer",
+                        "description": "Optional recency weight in basis points (0..=10000)"
+                    },
+                    "confidence_bps": {
+                        "type": "integer",
+                        "description": "Optional confidence score in basis points (0..=10000)"
+                    }
+                },
+                "required": ["summary"],
+                "additionalProperties": false
+            }),
+        }
+    }
+
+    async fn execute(&self, arguments: Value) -> ToolExecutionResult {
+        let summary = match required_string(&arguments, "summary") {
+            Ok(summary) => summary.trim().to_string(),
+            Err(error) => {
+                return ToolExecutionResult::error(json!({
+                    "tool": "memory_write",
+                    "reason_code": "memory_invalid_arguments",
+                    "error": error,
+                }))
+            }
+        };
+        if summary.is_empty() {
+            return ToolExecutionResult::error(json!({
+                "tool": "memory_write",
+                "reason_code": "memory_empty_summary",
+                "error": "summary must not be empty",
+            }));
+        }
+        if summary.chars().count() > self.policy.memory_write_max_summary_chars {
+            return ToolExecutionResult::error(json!({
+                "tool": "memory_write",
+                "reason_code": "memory_summary_too_large",
+                "max_summary_chars": self.policy.memory_write_max_summary_chars,
+                "error": format!(
+                    "summary exceeds max length of {} characters",
+                    self.policy.memory_write_max_summary_chars
+                ),
+            }));
+        }
+
+        let memory_id = arguments
+            .get("memory_id")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+            .unwrap_or_else(generate_memory_id);
+
+        let tags = match optional_string_array(
+            &arguments,
+            "tags",
+            self.policy.memory_write_max_tags,
+            self.policy.memory_write_max_tag_chars,
+        ) {
+            Ok(tags) => tags,
+            Err(error) => {
+                return ToolExecutionResult::error(json!({
+                    "tool": "memory_write",
+                    "reason_code": "memory_invalid_arguments",
+                    "error": error,
+                }))
+            }
+        };
+        let facts = match optional_string_array(
+            &arguments,
+            "facts",
+            self.policy.memory_write_max_facts,
+            self.policy.memory_write_max_fact_chars,
+        ) {
+            Ok(facts) => facts,
+            Err(error) => {
+                return ToolExecutionResult::error(json!({
+                    "tool": "memory_write",
+                    "reason_code": "memory_invalid_arguments",
+                    "error": error,
+                }))
+            }
+        };
+        let recency_weight_bps = match optional_basis_points(&arguments, "recency_weight_bps") {
+            Ok(value) => value.unwrap_or(0),
+            Err(error) => {
+                return ToolExecutionResult::error(json!({
+                    "tool": "memory_write",
+                    "reason_code": "memory_invalid_arguments",
+                    "error": error,
+                }))
+            }
+        };
+        let confidence_bps = match optional_basis_points(&arguments, "confidence_bps") {
+            Ok(value) => value.unwrap_or(0),
+            Err(error) => {
+                return ToolExecutionResult::error(json!({
+                    "tool": "memory_write",
+                    "reason_code": "memory_invalid_arguments",
+                    "error": error,
+                }))
+            }
+        };
+
+        let scope = MemoryScope {
+            workspace_id: arguments
+                .get("workspace_id")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string(),
+            channel_id: arguments
+                .get("channel_id")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string(),
+            actor_id: arguments
+                .get("actor_id")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string(),
+        };
+        let source_event_key = arguments
+            .get("source_event_key")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+        let entry = MemoryEntry {
+            memory_id: memory_id.clone(),
+            summary: summary.clone(),
+            tags,
+            facts,
+            source_event_key,
+            recency_weight_bps,
+            confidence_bps,
+        };
+        let store = FileMemoryStore::new(self.policy.memory_state_dir.clone());
+        let entries_path = store.root_dir().join("entries.jsonl");
+
+        if let Some(rbac_result) = evaluate_tool_rbac_gate(
+            self.policy.rbac_principal.as_deref(),
+            "memory_write",
+            self.policy.rbac_policy_path.as_deref(),
+            json!({
+                "memory_id": memory_id.clone(),
+                "scope": {
+                    "workspace_id": scope.workspace_id.clone(),
+                    "channel_id": scope.channel_id.clone(),
+                    "actor_id": scope.actor_id.clone(),
+                },
+                "summary_chars": summary.chars().count(),
+                "tags": entry.tags.clone(),
+                "facts": entry.facts.clone(),
+            }),
+        ) {
+            return rbac_result;
+        }
+
+        if let Some(approval_result) = evaluate_tool_approval_gate(ApprovalAction::ToolWrite {
+            path: entries_path.display().to_string(),
+            content_bytes: summary.len(),
+        }) {
+            return approval_result;
+        }
+
+        if let Some(rate_limit_result) = evaluate_tool_rate_limit_gate(
+            &self.policy,
+            "memory_write",
+            json!({
+                "scope": {
+                    "workspace_id": scope.workspace_id.clone(),
+                    "channel_id": scope.channel_id.clone(),
+                    "actor_id": scope.actor_id.clone(),
+                },
+                "summary_chars": summary.chars().count(),
+                "store_root": store.root_dir().display().to_string(),
+            }),
+        ) {
+            return rate_limit_result;
+        }
+
+        match store.write_entry(&scope, entry) {
+            Ok(result) => ToolExecutionResult::ok(json!({
+                "tool": "memory_write",
+                "created": result.created,
+                "memory_id": result.record.entry.memory_id,
+                "scope": result.record.scope,
+                "summary": result.record.entry.summary,
+                "tags": result.record.entry.tags,
+                "facts": result.record.entry.facts,
+                "source_event_key": result.record.entry.source_event_key,
+                "recency_weight_bps": result.record.entry.recency_weight_bps,
+                "confidence_bps": result.record.entry.confidence_bps,
+                "updated_unix_ms": result.record.updated_unix_ms,
+                "store_root": store.root_dir().display().to_string(),
+            })),
+            Err(error) => ToolExecutionResult::error(json!({
+                "tool": "memory_write",
+                "reason_code": "memory_backend_error",
+                "store_root": store.root_dir().display().to_string(),
+                "error": error.to_string(),
+            })),
+        }
+    }
+}
+
+/// Public struct `MemoryReadTool` used across Tau components.
+pub struct MemoryReadTool {
+    policy: Arc<ToolPolicy>,
+}
+
+impl MemoryReadTool {
+    pub fn new(policy: Arc<ToolPolicy>) -> Self {
+        Self { policy }
+    }
+}
+
+#[async_trait]
+impl AgentTool for MemoryReadTool {
+    fn definition(&self) -> ToolDefinition {
+        ToolDefinition {
+            name: "memory_read".to_string(),
+            description: "Read a scoped semantic memory entry by id".to_string(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "memory_id": { "type": "string", "description": "Memory id to load" },
+                    "workspace_id": { "type": "string" },
+                    "channel_id": { "type": "string" },
+                    "actor_id": { "type": "string" }
+                },
+                "required": ["memory_id"],
+                "additionalProperties": false
+            }),
+        }
+    }
+
+    async fn execute(&self, arguments: Value) -> ToolExecutionResult {
+        let memory_id = match required_string(&arguments, "memory_id") {
+            Ok(memory_id) => memory_id,
+            Err(error) => {
+                return ToolExecutionResult::error(json!({
+                    "tool": "memory_read",
+                    "reason_code": "memory_invalid_arguments",
+                    "error": error,
+                }))
+            }
+        };
+
+        let scope_filter = memory_scope_filter_from_arguments(&arguments);
+        if let Some(rbac_result) = evaluate_tool_rbac_gate(
+            self.policy.rbac_principal.as_deref(),
+            "memory_read",
+            self.policy.rbac_policy_path.as_deref(),
+            json!({
+                "memory_id": memory_id.clone(),
+                "scope_filter": scope_filter.clone(),
+            }),
+        ) {
+            return rbac_result;
+        }
+
+        if let Some(rate_limit_result) = evaluate_tool_rate_limit_gate(
+            &self.policy,
+            "memory_read",
+            json!({
+                "memory_id": memory_id.clone(),
+                "scope_filter": scope_filter.clone(),
+                "store_root": self.policy.memory_state_dir.display().to_string(),
+            }),
+        ) {
+            return rate_limit_result;
+        }
+
+        let store = FileMemoryStore::new(self.policy.memory_state_dir.clone());
+        match store.read_entry(memory_id.as_str(), scope_filter.as_ref()) {
+            Ok(Some(record)) => ToolExecutionResult::ok(json!({
+                "tool": "memory_read",
+                "found": true,
+                "memory_id": record.entry.memory_id,
+                "scope": record.scope,
+                "summary": record.entry.summary,
+                "tags": record.entry.tags,
+                "facts": record.entry.facts,
+                "source_event_key": record.entry.source_event_key,
+                "recency_weight_bps": record.entry.recency_weight_bps,
+                "confidence_bps": record.entry.confidence_bps,
+                "updated_unix_ms": record.updated_unix_ms,
+                "store_root": store.root_dir().display().to_string(),
+            })),
+            Ok(None) => ToolExecutionResult::ok(json!({
+                "tool": "memory_read",
+                "found": false,
+                "memory_id": memory_id,
+                "scope_filter": scope_filter.clone(),
+                "store_root": store.root_dir().display().to_string(),
+            })),
+            Err(error) => ToolExecutionResult::error(json!({
+                "tool": "memory_read",
+                "reason_code": "memory_backend_error",
+                "memory_id": memory_id,
+                "store_root": store.root_dir().display().to_string(),
+                "error": error.to_string(),
+            })),
+        }
+    }
+}
+
+/// Public struct `MemorySearchTool` used across Tau components.
+pub struct MemorySearchTool {
+    policy: Arc<ToolPolicy>,
+}
+
+impl MemorySearchTool {
+    pub fn new(policy: Arc<ToolPolicy>) -> Self {
+        Self { policy }
+    }
+}
+
+#[async_trait]
+impl AgentTool for MemorySearchTool {
+    fn definition(&self) -> ToolDefinition {
+        ToolDefinition {
+            name: "memory_search".to_string(),
+            description: "Search semantic memory entries using deterministic similarity ranking"
+                .to_string(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "query": { "type": "string", "description": "Semantic search query" },
+                    "workspace_id": { "type": "string" },
+                    "channel_id": { "type": "string" },
+                    "actor_id": { "type": "string" },
+                    "limit": {
+                        "type": "integer",
+                        "description": format!(
+                            "Maximum matches to return (default {}, max {})",
+                            self.policy.memory_search_default_limit,
+                            self.policy.memory_search_max_limit
+                        )
+                    }
+                },
+                "required": ["query"],
+                "additionalProperties": false
+            }),
+        }
+    }
+
+    async fn execute(&self, arguments: Value) -> ToolExecutionResult {
+        let query = match required_string(&arguments, "query") {
+            Ok(query) => query,
+            Err(error) => {
+                return ToolExecutionResult::error(json!({
+                    "tool": "memory_search",
+                    "reason_code": "memory_invalid_arguments",
+                    "error": error,
+                }))
+            }
+        };
+        if query.trim().is_empty() {
+            return ToolExecutionResult::error(json!({
+                "tool": "memory_search",
+                "reason_code": "memory_empty_query",
+                "error": "query must not be empty",
+            }));
+        }
+        let limit = match optional_usize(
+            &arguments,
+            "limit",
+            self.policy.memory_search_default_limit,
+            self.policy
+                .memory_search_max_limit
+                .max(self.policy.memory_search_default_limit),
+        ) {
+            Ok(limit) => limit,
+            Err(error) => {
+                return ToolExecutionResult::error(json!({
+                    "tool": "memory_search",
+                    "reason_code": "memory_invalid_arguments",
+                    "error": error,
+                }))
+            }
+        };
+        let scope = memory_scope_filter_from_arguments(&arguments).unwrap_or_default();
+
+        if let Some(rbac_result) = evaluate_tool_rbac_gate(
+            self.policy.rbac_principal.as_deref(),
+            "memory_search",
+            self.policy.rbac_policy_path.as_deref(),
+            json!({
+                "query": query.clone(),
+                "limit": limit,
+                "scope_filter": scope.clone(),
+            }),
+        ) {
+            return rbac_result;
+        }
+
+        if let Some(rate_limit_result) = evaluate_tool_rate_limit_gate(
+            &self.policy,
+            "memory_search",
+            json!({
+                "query": query.clone(),
+                "limit": limit,
+                "scope_filter": scope.clone(),
+                "store_root": self.policy.memory_state_dir.display().to_string(),
+            }),
+        ) {
+            return rate_limit_result;
+        }
+
+        let store = FileMemoryStore::new(self.policy.memory_state_dir.clone());
+        match store.search(
+            query.as_str(),
+            &MemorySearchOptions {
+                scope,
+                limit,
+                embedding_dimensions: self.policy.memory_embedding_dimensions,
+                min_similarity: self.policy.memory_min_similarity,
+            },
+        ) {
+            Ok(result) => ToolExecutionResult::ok(json!({
+                "tool": "memory_search",
+                "query": result.query,
+                "limit": limit,
+                "scanned": result.scanned,
+                "returned": result.returned,
+                "min_similarity": self.policy.memory_min_similarity,
+                "embedding_dimensions": self.policy.memory_embedding_dimensions,
+                "matches": result.matches,
+                "store_root": store.root_dir().display().to_string(),
+            })),
+            Err(error) => ToolExecutionResult::error(json!({
+                "tool": "memory_search",
+                "reason_code": "memory_backend_error",
+                "query": query,
+                "store_root": store.root_dir().display().to_string(),
+                "error": error.to_string(),
+            })),
+        }
+    }
+}
+
+/// Public struct `MemoryTreeTool` used across Tau components.
+pub struct MemoryTreeTool {
+    policy: Arc<ToolPolicy>,
+}
+
+impl MemoryTreeTool {
+    pub fn new(policy: Arc<ToolPolicy>) -> Self {
+        Self { policy }
+    }
+}
+
+#[async_trait]
+impl AgentTool for MemoryTreeTool {
+    fn definition(&self) -> ToolDefinition {
+        ToolDefinition {
+            name: "memory_tree".to_string(),
+            description: "Render memory store hierarchy (workspace -> channel -> actor)"
+                .to_string(),
+            parameters: json!({
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+            }),
+        }
+    }
+
+    async fn execute(&self, _arguments: Value) -> ToolExecutionResult {
+        if let Some(rbac_result) = evaluate_tool_rbac_gate(
+            self.policy.rbac_principal.as_deref(),
+            "memory_tree",
+            self.policy.rbac_policy_path.as_deref(),
+            json!({
+                "store_root": self.policy.memory_state_dir.display().to_string(),
+            }),
+        ) {
+            return rbac_result;
+        }
+        if let Some(rate_limit_result) = evaluate_tool_rate_limit_gate(
+            &self.policy,
+            "memory_tree",
+            json!({
+                "store_root": self.policy.memory_state_dir.display().to_string(),
+            }),
+        ) {
+            return rate_limit_result;
+        }
+
+        let store = FileMemoryStore::new(self.policy.memory_state_dir.clone());
+        match store.tree() {
+            Ok(tree) => ToolExecutionResult::ok(json!({
+                "tool": "memory_tree",
+                "total_entries": tree.total_entries,
+                "workspaces": tree.workspaces,
+                "store_root": store.root_dir().display().to_string(),
+            })),
+            Err(error) => ToolExecutionResult::error(json!({
+                "tool": "memory_tree",
+                "reason_code": "memory_backend_error",
+                "store_root": store.root_dir().display().to_string(),
+                "error": error.to_string(),
+            })),
+        }
     }
 }
 
@@ -3296,6 +3899,89 @@ fn optional_positive_usize(arguments: &Value, key: &str) -> Result<Option<usize>
     let parsed = usize::try_from(parsed_u64)
         .map_err(|_| format!("optional argument '{key}' exceeds host usize range"))?;
     Ok(Some(parsed))
+}
+
+fn optional_basis_points(arguments: &Value, key: &str) -> Result<Option<u16>, String> {
+    let Some(value) = arguments.get(key) else {
+        return Ok(None);
+    };
+    let Some(parsed) = value.as_u64() else {
+        return Err(format!("'{key}' must be an integer in range 0..=10000"));
+    };
+    if parsed > 10_000 {
+        return Err(format!("'{key}' must be <= 10000"));
+    }
+    Ok(Some(parsed as u16))
+}
+
+fn optional_string_array(
+    arguments: &Value,
+    key: &str,
+    max_items: usize,
+    max_chars_per_item: usize,
+) -> Result<Vec<String>, String> {
+    let Some(value) = arguments.get(key) else {
+        return Ok(Vec::new());
+    };
+    let Some(items) = value.as_array() else {
+        return Err(format!("'{key}' must be an array of strings"));
+    };
+    if items.len() > max_items {
+        return Err(format!("'{key}' exceeds max length of {max_items} items"));
+    }
+    let mut values = Vec::with_capacity(items.len());
+    for item in items {
+        let Some(raw) = item.as_str() else {
+            return Err(format!("'{key}' must be an array of strings"));
+        };
+        let normalized = raw.trim();
+        if normalized.is_empty() {
+            continue;
+        }
+        if normalized.chars().count() > max_chars_per_item {
+            return Err(format!(
+                "'{key}' entry exceeds max length of {max_chars_per_item} characters"
+            ));
+        }
+        values.push(normalized.to_string());
+    }
+    Ok(values)
+}
+
+fn memory_scope_filter_from_arguments(arguments: &Value) -> Option<MemoryScopeFilter> {
+    let workspace_id = arguments
+        .get("workspace_id")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    let channel_id = arguments
+        .get("channel_id")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    let actor_id = arguments
+        .get("actor_id")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+
+    if workspace_id.is_none() && channel_id.is_none() && actor_id.is_none() {
+        None
+    } else {
+        Some(MemoryScopeFilter {
+            workspace_id,
+            channel_id,
+            actor_id,
+        })
+    }
+}
+
+fn generate_memory_id() -> String {
+    let counter = MEMORY_ID_COUNTER.fetch_add(1, Ordering::Relaxed);
+    format!("memory-{}-{counter}", current_unix_timestamp_ms())
 }
 
 fn parse_http_method(arguments: &Value) -> Result<Method, String> {

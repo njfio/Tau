@@ -100,8 +100,9 @@ Use this area for skill packaging, verification, registry support, and lock work
 - `deployment_wasm.rs`: WASM artifact packaging, control-plane profile/ABI compliance checks, manifest inspect reporting, and deployment state deliverable tracking.
 - `browser_automation_contract.rs`: browser automation fixture/schema contract definitions shared by live browser execution.
 - `browser_automation_live.rs`: browser automation live execution adapter and policy guardrails for Playwright-compatible executors.
+- `crates/tau-memory/src/runtime.rs`: file-backed semantic-memory store primitives and deterministic ranking/search helpers.
 - `crates/tau-memory/src/memory_contract.rs`: semantic-memory fixture/schema contract definitions and validators.
-- `crates/tau-agent-core/src/lib.rs`: canonical semantic-memory runtime behavior (recall selection, retrieval ranking, embedding fallback).
+- `crates/tau-agent-core/src/lib.rs`: canonical semantic-memory recall behavior (selection, embedding API fallback, and ranking integration).
 - `crates/tau-multi-channel/src/multi_channel_contract.rs`: multi-channel (Telegram/Discord/WhatsApp) fixture/schema contract.
 - `crates/tau-multi-channel/src/multi_channel_runtime.rs`: multi-channel runtime loop (queueing, retry, dedupe, channel-store writes).
 - `crates/tau-multi-channel/src/multi_channel_media.rs`: media understanding envelope normalization, bounded attachment processing, and reason-coded media summary/transcription contracts.
@@ -143,6 +144,7 @@ Use this area for narrow utility behavior reused across startup/runtime modules.
 - `deployment_wasm.rs`: deployment WASM package/manifest tests (hash validation, constraints, regression guards).
 - `browser_automation_contract.rs`: browser automation schema/fixture compatibility tests for live fixture parsing.
 - `browser_automation_live.rs`: live browser automation execution tests for policy enforcement and executor integration.
+- `crates/tau-memory/src/runtime.rs`: semantic-memory runtime tests (store write/read/search/tree behavior).
 - `crates/tau-memory/src/memory_contract.rs`: semantic-memory schema/fixture compatibility and replay contract tests.
 - `crates/tau-agent-core/src/tests/structured_output_and_parallel.rs`: semantic-memory runtime tests (retrieval ranking, embedding API fallback, recall message injection).
 - `transport_conformance.rs`: replay conformance fixtures for bridge/scheduler flows.
