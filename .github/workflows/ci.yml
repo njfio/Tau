@@ -153,7 +153,6 @@ jobs:
               - "crates/tau-tools/src/tools/**"
               - "scripts/dev/tool-split-performance-smoke.sh"
               - "scripts/dev/test-tool-split-performance-smoke.sh"
-              - ".github/workflows/ci.yml"
             release_helpers:
               - "scripts/release/**"
               - ".github/workflows/release.yml"
