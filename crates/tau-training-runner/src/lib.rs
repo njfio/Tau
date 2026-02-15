@@ -230,6 +230,7 @@ impl TrainingRunner {
     pub async fn run(&self, mut shutdown: watch::Receiver<bool>) -> Result<()> {
         self.store.register_worker(&self.config.worker_id).await?;
         let mut poll_failure_count = 0u32;
+        let mut poll_backoff_accumulated_ms = 0u128;
 
         let mut heartbeat = tokio::time::interval(self.config.heartbeat_interval);
         let mut poll = tokio::time::interval(self.config.poll_interval);
@@ -253,9 +254,13 @@ impl TrainingRunner {
                         .await?;
                 }
                 _ = poll.tick() => {
-                    match self.process_once().await {
+                    match self
+                        .process_once(poll_failure_count, poll_backoff_accumulated_ms)
+                        .await
+                    {
                         Ok(()) => {
                             poll_failure_count = 0;
+                            poll_backoff_accumulated_ms = 0;
                         }
                         Err(error) => {
                             poll_failure_count = poll_failure_count.saturating_add(1);
@@ -264,6 +269,8 @@ impl TrainingRunner {
                                 self.config.transient_error_backoff_initial,
                                 self.config.transient_error_backoff_max,
                             );
+                            poll_backoff_accumulated_ms = poll_backoff_accumulated_ms
+                                .saturating_add(delay.as_millis());
                             let _ = error;
                             tokio::time::sleep(delay).await;
                         }
@@ -280,15 +287,25 @@ impl TrainingRunner {
         Ok(())
     }
 
-    async fn process_once(&self) -> Result<()> {
+    async fn process_once(
+        &self,
+        poll_failure_count: u32,
+        poll_backoff_accumulated_ms: u128,
+    ) -> Result<()> {
         let Some(item) = self.store.dequeue_rollout(&self.config.worker_id).await? else {
             return Ok(());
         };
 
-        self.process_dequeued(item).await
+        self.process_dequeued(item, poll_failure_count, poll_backoff_accumulated_ms)
+            .await
     }
 
-    async fn process_dequeued(&self, item: DequeuedRollout) -> Result<()> {
+    async fn process_dequeued(
+        &self,
+        item: DequeuedRollout,
+        poll_failure_count: u32,
+        poll_backoff_accumulated_ms: u128,
+    ) -> Result<()> {
         self.store
             .update_worker_heartbeat(
                 &self.config.worker_id,
@@ -354,6 +371,16 @@ impl TrainingRunner {
             Err(_) => {
                 tracer.emit_reward(Reward::new("runner.execution_success", 0.0));
             }
+        }
+        if poll_failure_count > 0 {
+            tracer.emit_reward(Reward::new(
+                "runner.poll_retry_failures_before_rollout",
+                poll_failure_count as f64,
+            ));
+            tracer.emit_reward(Reward::new(
+                "runner.poll_retry_backoff_ms_before_rollout",
+                poll_backoff_accumulated_ms as f64,
+            ));
         }
 
         tracer.flush(self.store.as_ref()).await?;
@@ -1038,6 +1065,117 @@ mod tests {
 
         tx.send(true).expect("shutdown");
         handle.await.expect("join").expect("runner");
+
+        let spans = store
+            .query_spans("r-flaky-1", Some("r-flaky-1:attempt-1"))
+            .await
+            .expect("spans");
+        assert_eq!(
+            reward_metric_values(&spans, "runner.poll_retry_failures_before_rollout"),
+            vec![1.0]
+        );
+        assert_eq!(
+            reward_metric_values(&spans, "runner.poll_retry_backoff_ms_before_rollout"),
+            vec![5.0]
+        );
+    }
+
+    #[tokio::test]
+    async fn spec_1958_c02_retry_metrics_capture_multi_failure_backoff_totals() {
+        let store: Arc<dyn TrainingStore> = Arc::new(FlakyDequeueStore::new(3));
+        store
+            .enqueue_rollout(Rollout::new(
+                "r-flaky-3",
+                json!({ "prompt": "recover-three" }),
+                Some(tau_training_types::RolloutMode::Train),
+            ))
+            .await
+            .expect("enqueue");
+
+        let runner = TrainingRunner::new(
+            store.clone(),
+            Arc::new(StaticExecutor),
+            RunnerConfig {
+                worker_id: "worker-flaky-3".to_string(),
+                poll_interval: Duration::from_millis(10),
+                heartbeat_interval: Duration::from_millis(25),
+                reassignment_interval: Duration::from_millis(20),
+                worker_timeout: Duration::from_millis(120),
+                transient_error_backoff_initial: Duration::from_millis(5),
+                transient_error_backoff_max: Duration::from_millis(20),
+            },
+        );
+
+        let (tx, rx) = watch::channel(false);
+        let handle = tokio::spawn(async move { runner.run(rx).await });
+
+        wait_for_rollout_status(store.clone(), "r-flaky-3", RolloutStatus::Succeeded)
+            .await
+            .expect("status wait");
+
+        tx.send(true).expect("shutdown");
+        handle.await.expect("join").expect("runner");
+
+        let spans = store
+            .query_spans("r-flaky-3", Some("r-flaky-3:attempt-1"))
+            .await
+            .expect("spans");
+        assert_eq!(
+            reward_metric_values(&spans, "runner.poll_retry_failures_before_rollout"),
+            vec![3.0]
+        );
+        assert_eq!(
+            reward_metric_values(&spans, "runner.poll_retry_backoff_ms_before_rollout"),
+            vec![35.0]
+        );
+    }
+
+    #[tokio::test]
+    async fn spec_1958_c03_clean_runs_do_not_emit_retry_recovery_metrics() {
+        let store: Arc<dyn TrainingStore> = Arc::new(InMemoryTrainingStore::new());
+        store
+            .enqueue_rollout(Rollout::new(
+                "r-clean-1",
+                json!({ "prompt": "clean-run" }),
+                Some(tau_training_types::RolloutMode::Train),
+            ))
+            .await
+            .expect("enqueue");
+
+        let runner = TrainingRunner::new(
+            store.clone(),
+            Arc::new(StaticExecutor),
+            RunnerConfig {
+                worker_id: "worker-clean-1".to_string(),
+                poll_interval: Duration::from_millis(10),
+                heartbeat_interval: Duration::from_millis(25),
+                reassignment_interval: Duration::from_millis(20),
+                worker_timeout: Duration::from_millis(120),
+                transient_error_backoff_initial: Duration::from_millis(5),
+                transient_error_backoff_max: Duration::from_millis(20),
+            },
+        );
+
+        let (tx, rx) = watch::channel(false);
+        let handle = tokio::spawn(async move { runner.run(rx).await });
+
+        wait_for_rollout_status(store.clone(), "r-clean-1", RolloutStatus::Succeeded)
+            .await
+            .expect("status wait");
+
+        tx.send(true).expect("shutdown");
+        handle.await.expect("join").expect("runner");
+
+        let spans = store
+            .query_spans("r-clean-1", Some("r-clean-1:attempt-1"))
+            .await
+            .expect("spans");
+        assert!(
+            reward_metric_values(&spans, "runner.poll_retry_failures_before_rollout").is_empty()
+        );
+        assert!(
+            reward_metric_values(&spans, "runner.poll_retry_backoff_ms_before_rollout").is_empty()
+        );
     }
 
     #[tokio::test]
@@ -1461,6 +1599,20 @@ mod tests {
 
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
+    }
+
+    fn reward_metric_values(spans: &[TrainingSpan], reward_name: &str) -> Vec<f64> {
+        spans
+            .iter()
+            .filter(|span| span.name == "reward.emit")
+            .filter_map(|span| {
+                let name = span.attributes.get("reward_name")?.as_str()?;
+                if name != reward_name {
+                    return None;
+                }
+                span.attributes.get("reward_value")?.as_f64()
+            })
+            .collect()
     }
 
     async fn run_collector_load_harness(
