@@ -192,7 +192,12 @@ Webchat/control surface:
 - Token mode: paste the configured bearer token (`local-dev-token` in this example).
 - Password-session mode: first issue a session token from `/gateway/auth/session`, then paste that token.
 - Localhost-dev mode: token can be left empty.
-- Use the status refresh control to inspect `/gateway/status` from the same page.
+- Use the multi-view tabs for:
+  - `Conversation` (OpenResponses + OpenAI-compatible send/stream)
+  - `Tools` (status/connector/reason-code diagnostics)
+  - `Sessions` (browse/detail/append/reset with policy gate)
+  - `Memory` (session-scoped memory note read/write with policy gate)
+  - `Configuration` (runtime endpoint/gate summary)
 
 Direct status endpoint check:
 
@@ -217,6 +222,41 @@ curl -sS http://127.0.0.1:8787/gateway/status \
 - endpoint paths (`chat_completions_endpoint`, `completions_endpoint`, `models_endpoint`)
 - runtime counters (`total_requests`, `chat_completions_requests`, `completions_requests`, `models_requests`, `stream_requests`)
 - diagnostics (`translation_failures`, `execution_failures`, `reason_code_counts`, `ignored_field_counts`, `last_reason_codes`)
+
+`/gateway/status` includes `gateway.web_ui` with:
+
+- endpoint paths (`sessions_endpoint`, `session_detail_endpoint`, `session_append_endpoint`, `session_reset_endpoint`, `memory_endpoint`, `ui_telemetry_endpoint`)
+- policy gates (`policy_gates.session_write`, `policy_gates.memory_write`)
+- UI telemetry runtime counters (`telemetry_runtime.total_events`, `last_event_unix_ms`, `view_counts`, `action_counts`, `reason_code_counts`)
+
+Session admin API examples:
+
+```bash
+curl -sS http://127.0.0.1:8787/gateway/sessions \
+  -H "Authorization: Bearer local-dev-token"
+
+curl -sS http://127.0.0.1:8787/gateway/sessions/default/append \
+  -H "Authorization: Bearer local-dev-token" \
+  -H "Content-Type: application/json" \
+  -d '{"role":"user","content":"manual session note","policy_gate":"allow_session_write"}'
+
+curl -sS http://127.0.0.1:8787/gateway/sessions/default/reset \
+  -H "Authorization: Bearer local-dev-token" \
+  -H "Content-Type: application/json" \
+  -d '{"policy_gate":"allow_session_write"}'
+```
+
+Memory admin API examples:
+
+```bash
+curl -sS http://127.0.0.1:8787/gateway/memory/default \
+  -H "Authorization: Bearer local-dev-token"
+
+curl -sS -X PUT http://127.0.0.1:8787/gateway/memory/default \
+  -H "Authorization: Bearer local-dev-token" \
+  -H "Content-Type: application/json" \
+  -d '{"content":"operator memory note","policy_gate":"allow_memory_write"}'
+```
 
 `/gateway/status` also includes a `runtime_heartbeat` block with:
 

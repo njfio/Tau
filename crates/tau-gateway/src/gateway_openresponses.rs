@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::convert::Infallible;
+use std::io::Write;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -9,7 +10,7 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use axum::body::Bytes;
 use axum::extract::ws::{Message as WsMessage, WebSocket, WebSocketUpgrade};
-use axum::extract::State;
+use axum::extract::{Path as AxumPath, Query, State};
 use axum::http::{header::AUTHORIZATION, HeaderMap, StatusCode};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{Html, IntoResponse, Response};
@@ -20,12 +21,13 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tau_agent_core::{Agent, AgentConfig, AgentEvent};
-use tau_ai::{LlmClient, StreamDeltaHandler};
+use tau_ai::{LlmClient, Message, MessageRole, StreamDeltaHandler};
 use tau_core::{current_unix_timestamp, current_unix_timestamp_ms};
 use tau_runtime::{
     inspect_runtime_heartbeat, start_runtime_heartbeat_scheduler, RuntimeHeartbeatSchedulerConfig,
     TransportHealthSnapshot,
 };
+use tau_session::SessionStore;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
@@ -65,10 +67,11 @@ use session_runtime::{
     persist_messages,
 };
 use types::{
-    GatewayAuthSessionRequest, GatewayAuthSessionResponse, OpenResponsesApiError,
-    OpenResponsesExecutionResult, OpenResponsesOutputItem, OpenResponsesOutputTextItem,
-    OpenResponsesPrompt, OpenResponsesRequest, OpenResponsesResponse, OpenResponsesUsage,
-    OpenResponsesUsageSummary, SseFrame,
+    GatewayAuthSessionRequest, GatewayAuthSessionResponse, GatewayMemoryUpdateRequest,
+    GatewaySessionAppendRequest, GatewaySessionResetRequest, GatewayUiTelemetryRequest,
+    OpenResponsesApiError, OpenResponsesExecutionResult, OpenResponsesOutputItem,
+    OpenResponsesOutputTextItem, OpenResponsesPrompt, OpenResponsesRequest, OpenResponsesResponse,
+    OpenResponsesUsage, OpenResponsesUsageSummary, SseFrame,
 };
 use webchat_page::render_gateway_webchat_page;
 use websocket::run_gateway_ws_connection;
@@ -81,6 +84,12 @@ const WEBCHAT_ENDPOINT: &str = "/webchat";
 const GATEWAY_STATUS_ENDPOINT: &str = "/gateway/status";
 const GATEWAY_WS_ENDPOINT: &str = "/gateway/ws";
 const GATEWAY_AUTH_SESSION_ENDPOINT: &str = "/gateway/auth/session";
+const GATEWAY_SESSIONS_ENDPOINT: &str = "/gateway/sessions";
+const GATEWAY_SESSION_DETAIL_ENDPOINT: &str = "/gateway/sessions/{session_key}";
+const GATEWAY_SESSION_APPEND_ENDPOINT: &str = "/gateway/sessions/{session_key}/append";
+const GATEWAY_SESSION_RESET_ENDPOINT: &str = "/gateway/sessions/{session_key}/reset";
+const GATEWAY_MEMORY_ENDPOINT: &str = "/gateway/memory/{session_key}";
+const GATEWAY_UI_TELEMETRY_ENDPOINT: &str = "/gateway/ui/telemetry";
 const DASHBOARD_HEALTH_ENDPOINT: &str = "/dashboard/health";
 const DASHBOARD_WIDGETS_ENDPOINT: &str = "/dashboard/widgets";
 const DASHBOARD_QUEUE_TIMELINE_ENDPOINT: &str = "/dashboard/queue-timeline";
@@ -92,6 +101,8 @@ const GATEWAY_EVENTS_STALE_IMMEDIATE_MAX_AGE_SECONDS: u64 = 86_400;
 const DEFAULT_SESSION_KEY: &str = "default";
 const INPUT_BODY_SIZE_MULTIPLIER: usize = 8;
 const GATEWAY_WS_HEARTBEAT_REQUEST_ID: &str = "gateway-heartbeat";
+const SESSION_WRITE_POLICY_GATE: &str = "allow_session_write";
+const MEMORY_WRITE_POLICY_GATE: &str = "allow_memory_write";
 
 /// Trait contract for `GatewayToolRegistrar` behavior.
 pub trait GatewayToolRegistrar: Send + Sync {
@@ -158,6 +169,7 @@ struct GatewayOpenResponsesServerState {
     response_sequence: Arc<AtomicU64>,
     auth_runtime: Arc<Mutex<GatewayAuthRuntimeState>>,
     compat_runtime: Arc<Mutex<GatewayOpenAiCompatRuntimeState>>,
+    ui_telemetry_runtime: Arc<Mutex<GatewayUiTelemetryRuntimeState>>,
 }
 
 impl GatewayOpenResponsesServerState {
@@ -167,6 +179,7 @@ impl GatewayOpenResponsesServerState {
             response_sequence: Arc::new(AtomicU64::new(0)),
             auth_runtime: Arc::new(Mutex::new(GatewayAuthRuntimeState::default())),
             compat_runtime: Arc::new(Mutex::new(GatewayOpenAiCompatRuntimeState::default())),
+            ui_telemetry_runtime: Arc::new(Mutex::new(GatewayUiTelemetryRuntimeState::default())),
         }
     }
 
@@ -267,6 +280,45 @@ impl GatewayOpenResponsesServerState {
             runtime.execution_failures = runtime.execution_failures.saturating_add(1);
         }
     }
+
+    fn record_ui_telemetry_event(&self, view: &str, action: &str, reason_code: &str) {
+        if let Ok(mut runtime) = self.ui_telemetry_runtime.lock() {
+            runtime.total_events = runtime.total_events.saturating_add(1);
+            runtime.last_event_unix_ms = Some(current_unix_timestamp_ms());
+
+            if !view.trim().is_empty() {
+                *runtime
+                    .view_counts
+                    .entry(view.trim().to_string())
+                    .or_default() += 1;
+            }
+            if !action.trim().is_empty() {
+                *runtime
+                    .action_counts
+                    .entry(action.trim().to_string())
+                    .or_default() += 1;
+            }
+            if !reason_code.trim().is_empty() {
+                *runtime
+                    .reason_code_counts
+                    .entry(reason_code.trim().to_string())
+                    .or_default() += 1;
+            }
+        }
+    }
+
+    fn collect_ui_telemetry_status_report(&self) -> GatewayUiTelemetryStatusReport {
+        if let Ok(runtime) = self.ui_telemetry_runtime.lock() {
+            return GatewayUiTelemetryStatusReport {
+                total_events: runtime.total_events,
+                last_event_unix_ms: runtime.last_event_unix_ms,
+                view_counts: runtime.view_counts.clone(),
+                action_counts: runtime.action_counts.clone(),
+                reason_code_counts: runtime.reason_code_counts.clone(),
+            };
+        }
+        GatewayUiTelemetryStatusReport::default()
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -288,6 +340,15 @@ struct GatewayOpenAiCompatRuntimeState {
     reason_code_counts: BTreeMap<String, u64>,
     ignored_field_counts: BTreeMap<String, u64>,
     last_reason_codes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default)]
+struct GatewayUiTelemetryRuntimeState {
+    total_events: u64,
+    last_event_unix_ms: Option<u64>,
+    view_counts: BTreeMap<String, u64>,
+    action_counts: BTreeMap<String, u64>,
+    reason_code_counts: BTreeMap<String, u64>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -337,6 +398,15 @@ struct GatewayOpenAiCompatStatusReport {
     reason_code_counts: BTreeMap<String, u64>,
     ignored_field_counts: BTreeMap<String, u64>,
     last_reason_codes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, Default)]
+struct GatewayUiTelemetryStatusReport {
+    total_events: u64,
+    last_event_unix_ms: Option<u64>,
+    view_counts: BTreeMap<String, u64>,
+    action_counts: BTreeMap<String, u64>,
+    reason_code_counts: BTreeMap<String, u64>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -526,6 +596,12 @@ struct GatewayEventExecutionRecord {
     reason_code: String,
 }
 
+#[derive(Debug, Clone, Deserialize, Default)]
+struct GatewaySessionsListQuery {
+    #[serde(default)]
+    limit: Option<usize>,
+}
+
 pub async fn run_gateway_openresponses_server(
     config: GatewayOpenResponsesServerConfig,
 ) -> Result<()> {
@@ -597,6 +673,27 @@ fn build_gateway_openresponses_router(state: Arc<GatewayOpenResponsesServerState
             GATEWAY_AUTH_SESSION_ENDPOINT,
             post(handle_gateway_auth_session),
         )
+        .route(GATEWAY_SESSIONS_ENDPOINT, get(handle_gateway_sessions_list))
+        .route(
+            GATEWAY_SESSION_DETAIL_ENDPOINT,
+            get(handle_gateway_session_detail),
+        )
+        .route(
+            GATEWAY_SESSION_APPEND_ENDPOINT,
+            post(handle_gateway_session_append),
+        )
+        .route(
+            GATEWAY_SESSION_RESET_ENDPOINT,
+            post(handle_gateway_session_reset),
+        )
+        .route(
+            GATEWAY_MEMORY_ENDPOINT,
+            get(handle_gateway_memory_read).put(handle_gateway_memory_write),
+        )
+        .route(
+            GATEWAY_UI_TELEMETRY_ENDPOINT,
+            post(handle_gateway_ui_telemetry),
+        )
         .route(WEBCHAT_ENDPOINT, get(handle_webchat_page))
         .route(GATEWAY_STATUS_ENDPOINT, get(handle_gateway_status))
         .route(DASHBOARD_HEALTH_ENDPOINT, get(handle_dashboard_health))
@@ -659,6 +756,19 @@ async fn handle_gateway_status(
                     "completions_endpoint": OPENAI_COMPLETIONS_ENDPOINT,
                     "models_endpoint": OPENAI_MODELS_ENDPOINT,
                     "runtime": state.collect_openai_compat_status_report(),
+                },
+                "web_ui": {
+                    "sessions_endpoint": GATEWAY_SESSIONS_ENDPOINT,
+                    "session_detail_endpoint": GATEWAY_SESSION_DETAIL_ENDPOINT,
+                    "session_append_endpoint": GATEWAY_SESSION_APPEND_ENDPOINT,
+                    "session_reset_endpoint": GATEWAY_SESSION_RESET_ENDPOINT,
+                    "memory_endpoint": GATEWAY_MEMORY_ENDPOINT,
+                    "ui_telemetry_endpoint": GATEWAY_UI_TELEMETRY_ENDPOINT,
+                    "policy_gates": {
+                        "session_write": SESSION_WRITE_POLICY_GATE,
+                        "memory_write": MEMORY_WRITE_POLICY_GATE,
+                    },
+                    "telemetry_runtime": state.collect_ui_telemetry_status_report(),
                 },
                 "webchat_endpoint": WEBCHAT_ENDPOINT,
                 "auth_session_endpoint": GATEWAY_AUTH_SESSION_ENDPOINT,
@@ -1279,6 +1389,437 @@ async fn handle_openai_models(
     (StatusCode::OK, Json(payload)).into_response()
 }
 
+async fn handle_gateway_sessions_list(
+    State(state): State<Arc<GatewayOpenResponsesServerState>>,
+    headers: HeaderMap,
+    Query(query): Query<GatewaySessionsListQuery>,
+) -> Response {
+    if let Err(error) = authorize_and_enforce_gateway_limits(&state, &headers) {
+        return error.into_response();
+    }
+
+    let limit = query.limit.unwrap_or(50).clamp(1, 200);
+    let sessions_root = state
+        .config
+        .state_dir
+        .join("openresponses")
+        .join("sessions");
+    let mut entries = Vec::<(u64, Value)>::new();
+
+    if sessions_root.is_dir() {
+        let dir_entries = match std::fs::read_dir(&sessions_root) {
+            Ok(entries) => entries,
+            Err(error) => {
+                return OpenResponsesApiError::internal(format!(
+                    "failed to list sessions directory {}: {error}",
+                    sessions_root.display()
+                ))
+                .into_response();
+            }
+        };
+
+        for dir_entry in dir_entries.flatten() {
+            let path = dir_entry.path();
+            if path.extension().and_then(|ext| ext.to_str()) != Some("jsonl") {
+                continue;
+            }
+            let Some(file_stem) = path.file_stem().and_then(|value| value.to_str()) else {
+                continue;
+            };
+            let session_key = sanitize_session_key(file_stem);
+            let metadata = match std::fs::metadata(&path) {
+                Ok(metadata) => metadata,
+                Err(_) => continue,
+            };
+            let modified_unix_ms = metadata
+                .modified()
+                .ok()
+                .and_then(system_time_to_unix_ms)
+                .unwrap_or(0);
+            let bytes = metadata.len();
+            let message_count = std::fs::read_to_string(&path)
+                .ok()
+                .map(|payload| {
+                    payload
+                        .lines()
+                        .filter(|line| !line.trim().is_empty())
+                        .count()
+                })
+                .unwrap_or(0);
+            entries.push((
+                modified_unix_ms,
+                json!({
+                    "session_key": session_key,
+                    "path": path.display().to_string(),
+                    "modified_unix_ms": modified_unix_ms,
+                    "bytes": bytes,
+                    "message_count": message_count,
+                }),
+            ));
+        }
+    }
+
+    entries.sort_by(|left, right| right.0.cmp(&left.0));
+    entries.truncate(limit);
+    let sessions = entries.into_iter().map(|entry| entry.1).collect::<Vec<_>>();
+
+    state.record_ui_telemetry_event("sessions", "list", "session_list_requested");
+    (
+        StatusCode::OK,
+        Json(json!({
+            "sessions": sessions,
+            "limit": limit,
+        })),
+    )
+        .into_response()
+}
+
+async fn handle_gateway_session_detail(
+    State(state): State<Arc<GatewayOpenResponsesServerState>>,
+    headers: HeaderMap,
+    AxumPath(session_key): AxumPath<String>,
+) -> Response {
+    if let Err(error) = authorize_and_enforce_gateway_limits(&state, &headers) {
+        return error.into_response();
+    }
+
+    let session_key = sanitize_session_key(session_key.as_str());
+    let session_path = gateway_session_path(&state.config.state_dir, &session_key);
+    if !session_path.exists() {
+        return OpenResponsesApiError::not_found(
+            "session_not_found",
+            format!("session '{session_key}' does not exist"),
+        )
+        .into_response();
+    }
+
+    let store = match SessionStore::load(&session_path) {
+        Ok(store) => store,
+        Err(error) => {
+            return OpenResponsesApiError::internal(format!(
+                "failed to load session '{}': {error}",
+                session_path.display()
+            ))
+            .into_response();
+        }
+    };
+    let entries = store
+        .entries()
+        .iter()
+        .map(|entry| {
+            json!({
+                "id": entry.id,
+                "parent_id": entry.parent_id,
+                "role": entry.message.role,
+                "text": entry.message.text_content(),
+                "message": entry.message,
+            })
+        })
+        .collect::<Vec<_>>();
+
+    state.record_ui_telemetry_event("sessions", "detail", "session_detail_requested");
+    (
+        StatusCode::OK,
+        Json(json!({
+            "session_key": session_key,
+            "path": session_path.display().to_string(),
+            "entry_count": entries.len(),
+            "head_id": store.head_id(),
+            "entries": entries,
+        })),
+    )
+        .into_response()
+}
+
+async fn handle_gateway_session_append(
+    State(state): State<Arc<GatewayOpenResponsesServerState>>,
+    headers: HeaderMap,
+    AxumPath(session_key): AxumPath<String>,
+    body: Bytes,
+) -> Response {
+    if let Err(error) = authorize_and_enforce_gateway_limits(&state, &headers) {
+        return error.into_response();
+    }
+    let request = match parse_gateway_json_body::<GatewaySessionAppendRequest>(&body) {
+        Ok(request) => request,
+        Err(error) => return error.into_response(),
+    };
+    if let Err(error) =
+        enforce_policy_gate(request.policy_gate.as_deref(), SESSION_WRITE_POLICY_GATE)
+    {
+        state.record_ui_telemetry_event("sessions", "append", "session_append_policy_gate_blocked");
+        return error.into_response();
+    }
+
+    let session_key = sanitize_session_key(session_key.as_str());
+    let content = request.content.trim();
+    if content.is_empty() {
+        return OpenResponsesApiError::bad_request("invalid_content", "content must be non-empty")
+            .into_response();
+    }
+    let role = match parse_message_role(request.role.as_str()) {
+        Ok(role) => role,
+        Err(error) => return error.into_response(),
+    };
+
+    let message = build_manual_session_message(role, content);
+    let session_path = gateway_session_path(&state.config.state_dir, &session_key);
+    let mut store = match SessionStore::load(&session_path) {
+        Ok(store) => store,
+        Err(error) => {
+            return OpenResponsesApiError::internal(format!(
+                "failed to load session '{}': {error}",
+                session_path.display()
+            ))
+            .into_response();
+        }
+    };
+    store.set_lock_policy(
+        state.config.session_lock_wait_ms,
+        state.config.session_lock_stale_ms,
+    );
+    if let Err(error) = store.ensure_initialized(&state.config.system_prompt) {
+        return OpenResponsesApiError::internal(format!(
+            "failed to initialize session '{}': {error}",
+            session_path.display()
+        ))
+        .into_response();
+    }
+    let parent_id = store.head_id();
+    let new_head = match store.append_messages(parent_id, &[message]) {
+        Ok(head) => head,
+        Err(error) => {
+            return OpenResponsesApiError::internal(format!(
+                "failed to append session message '{}': {error}",
+                session_path.display()
+            ))
+            .into_response();
+        }
+    };
+
+    state.record_ui_telemetry_event("sessions", "append", "session_message_appended");
+    (
+        StatusCode::OK,
+        Json(json!({
+            "session_key": session_key,
+            "path": session_path.display().to_string(),
+            "entry_count": store.entries().len(),
+            "head_id": new_head,
+        })),
+    )
+        .into_response()
+}
+
+async fn handle_gateway_session_reset(
+    State(state): State<Arc<GatewayOpenResponsesServerState>>,
+    headers: HeaderMap,
+    AxumPath(session_key): AxumPath<String>,
+    body: Bytes,
+) -> Response {
+    if let Err(error) = authorize_and_enforce_gateway_limits(&state, &headers) {
+        return error.into_response();
+    }
+    let request = match parse_gateway_json_body::<GatewaySessionResetRequest>(&body) {
+        Ok(request) => request,
+        Err(error) => return error.into_response(),
+    };
+    if let Err(error) =
+        enforce_policy_gate(request.policy_gate.as_deref(), SESSION_WRITE_POLICY_GATE)
+    {
+        state.record_ui_telemetry_event("sessions", "reset", "session_reset_policy_gate_blocked");
+        return error.into_response();
+    }
+
+    let session_key = sanitize_session_key(session_key.as_str());
+    let session_path = gateway_session_path(&state.config.state_dir, &session_key);
+    let lock_path = session_path.with_extension("lock");
+    let mut reset = false;
+
+    if session_path.exists() {
+        if let Err(error) = std::fs::remove_file(&session_path) {
+            return OpenResponsesApiError::internal(format!(
+                "failed to remove session '{}': {error}",
+                session_path.display()
+            ))
+            .into_response();
+        }
+        reset = true;
+    }
+    if lock_path.exists() {
+        let _ = std::fs::remove_file(&lock_path);
+    }
+
+    state.record_ui_telemetry_event("sessions", "reset", "session_reset_applied");
+    (
+        StatusCode::OK,
+        Json(json!({
+            "session_key": session_key,
+            "reset": reset,
+        })),
+    )
+        .into_response()
+}
+
+async fn handle_gateway_memory_read(
+    State(state): State<Arc<GatewayOpenResponsesServerState>>,
+    headers: HeaderMap,
+    AxumPath(session_key): AxumPath<String>,
+) -> Response {
+    if let Err(error) = authorize_and_enforce_gateway_limits(&state, &headers) {
+        return error.into_response();
+    }
+    let session_key = sanitize_session_key(session_key.as_str());
+    let path = gateway_memory_path(&state.config.state_dir, &session_key);
+    let exists = path.exists();
+    let content = if exists {
+        match std::fs::read_to_string(&path) {
+            Ok(content) => content,
+            Err(error) => {
+                return OpenResponsesApiError::internal(format!(
+                    "failed to read memory '{}': {error}",
+                    path.display()
+                ))
+                .into_response();
+            }
+        }
+    } else {
+        String::new()
+    };
+
+    state.record_ui_telemetry_event("memory", "read", "memory_read_requested");
+    (
+        StatusCode::OK,
+        Json(json!({
+            "session_key": session_key,
+            "path": path.display().to_string(),
+            "exists": exists,
+            "bytes": content.len(),
+            "content": content,
+        })),
+    )
+        .into_response()
+}
+
+async fn handle_gateway_memory_write(
+    State(state): State<Arc<GatewayOpenResponsesServerState>>,
+    headers: HeaderMap,
+    AxumPath(session_key): AxumPath<String>,
+    body: Bytes,
+) -> Response {
+    if let Err(error) = authorize_and_enforce_gateway_limits(&state, &headers) {
+        return error.into_response();
+    }
+    let request = match parse_gateway_json_body::<GatewayMemoryUpdateRequest>(&body) {
+        Ok(request) => request,
+        Err(error) => return error.into_response(),
+    };
+    if let Err(error) =
+        enforce_policy_gate(request.policy_gate.as_deref(), MEMORY_WRITE_POLICY_GATE)
+    {
+        state.record_ui_telemetry_event("memory", "write", "memory_write_policy_gate_blocked");
+        return error.into_response();
+    }
+
+    let session_key = sanitize_session_key(session_key.as_str());
+    let memory_path = gateway_memory_path(&state.config.state_dir, &session_key);
+    if let Some(parent) = memory_path.parent() {
+        if let Err(error) = std::fs::create_dir_all(parent) {
+            return OpenResponsesApiError::internal(format!(
+                "failed to create memory directory '{}': {error}",
+                parent.display()
+            ))
+            .into_response();
+        }
+    }
+    let mut content = request.content;
+    if !content.ends_with('\n') {
+        content.push('\n');
+    }
+    if let Err(error) = std::fs::write(&memory_path, content.as_bytes()) {
+        return OpenResponsesApiError::internal(format!(
+            "failed to write memory '{}': {error}",
+            memory_path.display()
+        ))
+        .into_response();
+    }
+
+    state.record_ui_telemetry_event("memory", "write", "memory_write_applied");
+    (
+        StatusCode::OK,
+        Json(json!({
+            "session_key": session_key,
+            "path": memory_path.display().to_string(),
+            "bytes": content.len(),
+            "updated_unix_ms": current_unix_timestamp_ms(),
+        })),
+    )
+        .into_response()
+}
+
+async fn handle_gateway_ui_telemetry(
+    State(state): State<Arc<GatewayOpenResponsesServerState>>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    let principal = match authorize_and_enforce_gateway_limits(&state, &headers) {
+        Ok(principal) => principal,
+        Err(error) => return error.into_response(),
+    };
+
+    let request = match parse_gateway_json_body::<GatewayUiTelemetryRequest>(&body) {
+        Ok(request) => request,
+        Err(error) => return error.into_response(),
+    };
+    let view = request.view.trim();
+    let action = request.action.trim();
+    if view.is_empty() || action.is_empty() {
+        return OpenResponsesApiError::bad_request(
+            "invalid_telemetry",
+            "view and action must be non-empty",
+        )
+        .into_response();
+    }
+    let reason_code = request
+        .reason_code
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("ui_event");
+    let session_key = request
+        .session_key
+        .as_deref()
+        .map(sanitize_session_key)
+        .unwrap_or_else(|| DEFAULT_SESSION_KEY.to_string());
+
+    let event = json!({
+        "timestamp_unix_ms": current_unix_timestamp_ms(),
+        "view": view,
+        "action": action,
+        "reason_code": reason_code,
+        "session_key": session_key,
+        "principal": principal,
+        "metadata": request.metadata,
+    });
+    let telemetry_path = gateway_ui_telemetry_path(&state.config.state_dir);
+    if let Err(error) = append_jsonl_record(&telemetry_path, &event) {
+        return OpenResponsesApiError::internal(format!(
+            "failed to append ui telemetry '{}': {error}",
+            telemetry_path.display()
+        ))
+        .into_response();
+    }
+
+    state.record_ui_telemetry_event(view, action, reason_code);
+    (
+        StatusCode::ACCEPTED,
+        Json(json!({
+            "accepted": true,
+            "reason_code": reason_code,
+        })),
+    )
+        .into_response()
+}
+
 fn authorize_and_enforce_gateway_limits(
     state: &Arc<GatewayOpenResponsesServerState>,
     headers: &HeaderMap,
@@ -1313,6 +1854,80 @@ fn parse_gateway_json_body<T: DeserializeOwned>(body: &Bytes) -> Result<T, OpenR
             format!("failed to parse request body: {error}"),
         )
     })
+}
+
+fn enforce_policy_gate(
+    provided: Option<&str>,
+    required: &'static str,
+) -> Result<(), OpenResponsesApiError> {
+    let Some(gate) = provided.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Err(OpenResponsesApiError::forbidden(
+            "policy_gate_required",
+            format!("set policy_gate='{required}' to perform this operation"),
+        ));
+    };
+    if gate != required {
+        return Err(OpenResponsesApiError::forbidden(
+            "policy_gate_mismatch",
+            format!("policy_gate must equal '{required}'"),
+        ));
+    }
+    Ok(())
+}
+
+fn parse_message_role(raw: &str) -> Result<MessageRole, OpenResponsesApiError> {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "system" => Ok(MessageRole::System),
+        "user" => Ok(MessageRole::User),
+        "assistant" => Ok(MessageRole::Assistant),
+        "tool" => Ok(MessageRole::Tool),
+        _ => Err(OpenResponsesApiError::bad_request(
+            "invalid_role",
+            "role must be one of: system, user, assistant, tool",
+        )),
+    }
+}
+
+fn build_manual_session_message(role: MessageRole, content: &str) -> Message {
+    match role {
+        MessageRole::System => Message::system(content),
+        MessageRole::User => Message::user(content),
+        MessageRole::Assistant => Message::assistant_text(content),
+        MessageRole::Tool => Message::tool_result("manual", "manual", content, false),
+    }
+}
+
+fn gateway_memory_path(state_dir: &Path, session_key: &str) -> PathBuf {
+    state_dir
+        .join("openresponses")
+        .join("memory")
+        .join(format!("{session_key}.md"))
+}
+
+fn gateway_ui_telemetry_path(state_dir: &Path) -> PathBuf {
+    state_dir.join("openresponses").join("ui-telemetry.jsonl")
+}
+
+fn append_jsonl_record(path: &Path, record: &Value) -> Result<(), anyhow::Error> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create {}", parent.display()))?;
+    }
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .with_context(|| format!("failed to open {}", path.display()))?;
+    file.write_all(record.to_string().as_bytes())
+        .with_context(|| format!("failed to write {}", path.display()))?;
+    file.write_all(b"\n")
+        .with_context(|| format!("failed to write newline {}", path.display()))?;
+    Ok(())
+}
+
+fn system_time_to_unix_ms(time: std::time::SystemTime) -> Option<u64> {
+    let duration = time.duration_since(std::time::UNIX_EPOCH).ok()?;
+    u64::try_from(duration.as_millis()).ok()
 }
 
 async fn stream_openai_chat_completions(
