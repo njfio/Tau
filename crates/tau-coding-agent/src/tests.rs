@@ -855,7 +855,12 @@ where
     I: IntoIterator<Item = T>,
     T: Into<std::ffi::OsString>,
 {
-    let owned_args = args.into_iter().map(Into::into).collect::<Vec<_>>();
+    let (owned_args, _) = normalize_startup_cli_args(
+        args.into_iter()
+            .map(Into::into)
+            .map(|value: std::ffi::OsString| value.to_string_lossy().into_owned())
+            .collect::<Vec<_>>(),
+    );
     thread::Builder::new()
         .name("tau-cli-parse".to_string())
         .stack_size(16 * 1024 * 1024)
@@ -870,7 +875,12 @@ where
     I: IntoIterator<Item = T>,
     T: Into<std::ffi::OsString>,
 {
-    let owned_args = args.into_iter().map(Into::into).collect::<Vec<_>>();
+    let (owned_args, _) = normalize_startup_cli_args(
+        args.into_iter()
+            .map(Into::into)
+            .map(|value: std::ffi::OsString| value.to_string_lossy().into_owned())
+            .collect::<Vec<_>>(),
+    );
     thread::Builder::new()
         .name("tau-cli-try-parse".to_string())
         .stack_size(16 * 1024 * 1024)
@@ -878,6 +888,10 @@ where
         .expect("spawn cli try-parse thread")
         .join()
         .expect("join cli try-parse thread")
+}
+
+fn normalize_startup_cli_args(args: Vec<String>) -> (Vec<String>, Vec<String>) {
+    crate::normalize_startup_cli_args(args)
 }
 
 fn set_workspace_tau_paths(cli: &mut Cli, workspace: &Path) {
