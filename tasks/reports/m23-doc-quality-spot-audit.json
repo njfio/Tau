@@ -1,0 +1,156 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-02-15T17:52:19Z",
+  "issue": 1656,
+  "rubric": {
+    "dimensions": [
+      "specificity",
+      "context",
+      "failure_semantics",
+      "operational_relevance"
+    ],
+    "scale": "0-2 per dimension",
+    "pass_threshold_average": 1.5
+  },
+  "baseline_helper_summary": {
+    "scanned_files": 318,
+    "scanned_doc_lines": 1486,
+    "patterns_configured": 4,
+    "findings_count": 37,
+    "suppressed_count": 0
+  },
+  "post_remediation_helper_summary": {
+    "scanned_files": 318,
+    "scanned_doc_lines": 1486,
+    "patterns_configured": 4,
+    "findings_count": 0,
+    "suppressed_count": 0
+  },
+  "remediation_actions": [
+    "Narrowed generic_sets_gets_returns heuristic to only single-token payload comments.",
+    "Re-ran helper with calibrated policy and regenerated artifacts.",
+    "Published scored spot-audit sample and checklist evidence."
+  ],
+  "samples": [
+    {
+      "path": "crates/tau-agent-core/src/lib.rs",
+      "line": 200,
+      "comment": "Returns true when cancellation has been requested.",
+      "scores": {
+        "specificity": 2,
+        "context": 2,
+        "failure_semantics": 1,
+        "operational_relevance": 2
+      },
+      "notes": "Conditioned boolean contract used by cancellation control flow.",
+      "total_score": 7,
+      "average_score": 1.75
+    },
+    {
+      "path": "crates/tau-core/src/time_utils.rs",
+      "line": 1,
+      "comment": "Returns the current Unix timestamp in milliseconds.",
+      "scores": {
+        "specificity": 2,
+        "context": 1,
+        "failure_semantics": 1,
+        "operational_relevance": 1
+      },
+      "notes": "Concise utility contract; explicit unit avoids ambiguity.",
+      "total_score": 5,
+      "average_score": 1.25
+    },
+    {
+      "path": "crates/tau-memory/src/runtime.rs",
+      "line": 117,
+      "comment": "Returns true when `scope` satisfies the configured filter dimensions.",
+      "scores": {
+        "specificity": 2,
+        "context": 2,
+        "failure_semantics": 1,
+        "operational_relevance": 2
+      },
+      "notes": "Documents filter invariant and boolean semantics for query path.",
+      "total_score": 7,
+      "average_score": 1.75
+    },
+    {
+      "path": "crates/tau-runtime/src/background_jobs_runtime.rs",
+      "line": 73,
+      "comment": "Returns the stable snake_case wire representation.",
+      "scores": {
+        "specificity": 2,
+        "context": 2,
+        "failure_semantics": 1,
+        "operational_relevance": 2
+      },
+      "notes": "Specifies wire-format contract stability.",
+      "total_score": 7,
+      "average_score": 1.75
+    },
+    {
+      "path": "crates/tau-startup/src/startup_safety_policy.rs",
+      "line": 21,
+      "comment": "Returns the canonical safety-policy precedence contract.",
+      "scores": {
+        "specificity": 2,
+        "context": 2,
+        "failure_semantics": 1,
+        "operational_relevance": 2
+      },
+      "notes": "Highlights policy precedence behavior used during startup composition.",
+      "total_score": 7,
+      "average_score": 1.75
+    },
+    {
+      "path": "crates/tau-tools/src/tools/registry_core.rs",
+      "line": 569,
+      "comment": "Returns the reserved registry of built-in agent tool names.",
+      "scores": {
+        "specificity": 2,
+        "context": 2,
+        "failure_semantics": 1,
+        "operational_relevance": 2
+      },
+      "notes": "Documents reserved-name registry semantics.",
+      "total_score": 7,
+      "average_score": 1.75
+    },
+    {
+      "path": "crates/tau-training-tracer/src/lib.rs",
+      "line": 289,
+      "comment": "Returns an in-memory snapshot of completed spans.",
+      "scores": {
+        "specificity": 2,
+        "context": 2,
+        "failure_semantics": 1,
+        "operational_relevance": 1
+      },
+      "notes": "Clarifies lifecycle state of traced spans.",
+      "total_score": 6,
+      "average_score": 1.5
+    },
+    {
+      "path": "crates/tau-training-types/src/lib.rs",
+      "line": 101,
+      "comment": "Returns true when this status can transition to `next`.",
+      "scores": {
+        "specificity": 2,
+        "context": 2,
+        "failure_semantics": 2,
+        "operational_relevance": 2
+      },
+      "notes": "State-machine transition guard contract is explicit.",
+      "total_score": 8,
+      "average_score": 2.0
+    }
+  ],
+  "summary": {
+    "sample_count": 8,
+    "average_score": 1.69,
+    "pass_threshold_average": 1.5,
+    "audit_passed": true,
+    "baseline_findings_count": 37,
+    "post_remediation_findings_count": 0
+  }
+}

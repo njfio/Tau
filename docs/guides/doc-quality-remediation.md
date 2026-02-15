@@ -60,6 +60,11 @@ scripts/dev/doc-quality-audit-helper.sh \
   --output-md tasks/reports/m23-doc-quality-audit-helper.md
 ```
 
+Spot-audit signoff artifacts for M23:
+
+- `tasks/reports/m23-doc-quality-spot-audit.json`
+- `tasks/reports/m23-doc-quality-spot-audit.md`
+
 ### False-Positive Handling
 
 1. Add or refine suppression entries in
