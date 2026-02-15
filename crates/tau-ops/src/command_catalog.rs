@@ -1,3 +1,9 @@
+//! Command catalog and usage contract constants for operator CLI surfaces.
+//!
+//! Centralizes command usage/help strings so admin/report commands present a
+//! consistent contract. This module is the source of truth for command discovery
+//! and prevents drift between runtime behavior and operator guidance.
+
 use tau_access::approvals::APPROVALS_USAGE;
 use tau_access::rbac::RBAC_USAGE;
 use tau_cli::CommandSpec;

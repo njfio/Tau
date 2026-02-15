@@ -1,3 +1,9 @@
+//! Daemon lifecycle command/runtime helpers for operator workflows.
+//!
+//! This module encapsulates daemon install/start/stop/status persistence with a
+//! versioned state contract. It defines fail-closed behavior for invalid daemon
+//! profiles and state-path errors used by startup/ops diagnostics.
+
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};

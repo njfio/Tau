@@ -1,3 +1,9 @@
+//! QA loop command orchestration for operator maintenance workflows.
+//!
+//! The module defines run/observe contracts for QA loops, including timeout and
+//! command execution safeguards. Diagnostic failures are surfaced with stage
+//! context to aid repair and incident triage.
+
 use std::{
     collections::HashSet,
     path::{Path, PathBuf},

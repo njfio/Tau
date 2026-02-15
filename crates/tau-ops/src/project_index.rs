@@ -1,3 +1,9 @@
+//! Project indexing and summary cache for operator introspection commands.
+//!
+//! This module builds deterministic project metadata snapshots used by status and
+//! maintenance tooling. It documents indexing boundaries and failure handling for
+//! filesystem traversal, hashing, and cache persistence.
+
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,

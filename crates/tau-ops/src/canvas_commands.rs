@@ -1,3 +1,9 @@
+//! Canvas command handlers and persistence/report contracts.
+//!
+//! This module processes canvas CRUD/repair flows with deterministic schema
+//! serialization and checksum tracking. Failures expose explicit reason context
+//! for malformed payloads, storage errors, and contract mismatches.
+
 use anyhow::{anyhow, bail, Context, Result};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
