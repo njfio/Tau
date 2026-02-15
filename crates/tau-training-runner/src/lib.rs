@@ -164,6 +164,149 @@ pub async fn audit_rollout_persistence(
     })
 }
 
+/// Aggregate rollout status counters for collector persistence proofs.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CollectorStatusTotals {
+    pub queuing: usize,
+    pub preparing: usize,
+    pub running: usize,
+    pub failed: usize,
+    pub succeeded: usize,
+    pub cancelled: usize,
+    pub requeuing: usize,
+}
+
+/// Deterministic aggregate persistence proof for a collector run.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CollectorPersistenceProof {
+    pub schema_version: u32,
+    pub rollout_ids: Vec<String>,
+    pub status_totals: CollectorStatusTotals,
+    pub total_rollouts: usize,
+    pub total_attempts: usize,
+    pub total_spans: usize,
+    pub has_persistence_gaps: bool,
+    pub gap_reasons: Vec<String>,
+    pub rollouts: Vec<RolloutPersistenceAuditReport>,
+}
+
+impl CollectorPersistenceProof {
+    pub const SCHEMA_VERSION_V1: u32 = 1;
+
+    /// Projects the proof into a machine-readable JSON artifact payload.
+    pub fn to_artifact_json(&self) -> Value {
+        json!({
+            "schema_version": self.schema_version,
+            "rollout_ids": self.rollout_ids,
+            "status_totals": {
+                "queuing": self.status_totals.queuing,
+                "preparing": self.status_totals.preparing,
+                "running": self.status_totals.running,
+                "failed": self.status_totals.failed,
+                "succeeded": self.status_totals.succeeded,
+                "cancelled": self.status_totals.cancelled,
+                "requeuing": self.status_totals.requeuing,
+            },
+            "total_rollouts": self.total_rollouts,
+            "total_attempts": self.total_attempts,
+            "total_spans": self.total_spans,
+            "has_persistence_gaps": self.has_persistence_gaps,
+            "gap_reasons": self.gap_reasons,
+            "rollouts": self.rollouts.iter().map(|rollout| {
+                json!({
+                    "rollout_id": rollout.rollout_id,
+                    "rollout_status": rollout_status_name(rollout.rollout_status),
+                    "expected_attempt_count": rollout.expected_attempt_count,
+                    "has_persistence_gaps": rollout.has_persistence_gaps,
+                    "gap_reasons": rollout.gap_reasons,
+                    "attempts": rollout.attempts.iter().map(|attempt| {
+                        json!({
+                            "attempt_id": attempt.attempt_id,
+                            "status": attempt.status.map(attempt_status_name),
+                            "span_count": attempt.span_count,
+                        })
+                    }).collect::<Vec<_>>(),
+                })
+            }).collect::<Vec<_>>(),
+        })
+    }
+}
+
+/// Builds an aggregate collector persistence proof from rollout ids.
+pub async fn build_collector_persistence_proof(
+    store: &dyn TrainingStore,
+    rollout_ids: &[String],
+) -> Result<CollectorPersistenceProof> {
+    let normalized_rollout_ids: Vec<String> = rollout_ids
+        .iter()
+        .cloned()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+
+    let mut status_totals = CollectorStatusTotals::default();
+    let mut total_attempts = 0usize;
+    let mut total_spans = 0usize;
+    let mut gap_reasons = Vec::new();
+    let mut rollout_reports = Vec::with_capacity(normalized_rollout_ids.len());
+
+    for rollout_id in &normalized_rollout_ids {
+        let report = audit_rollout_persistence(store, rollout_id).await?;
+        match report.rollout_status {
+            RolloutStatus::Queuing => status_totals.queuing += 1,
+            RolloutStatus::Preparing => status_totals.preparing += 1,
+            RolloutStatus::Running => status_totals.running += 1,
+            RolloutStatus::Failed => status_totals.failed += 1,
+            RolloutStatus::Succeeded => status_totals.succeeded += 1,
+            RolloutStatus::Cancelled => status_totals.cancelled += 1,
+            RolloutStatus::Requeuing => status_totals.requeuing += 1,
+        }
+        total_attempts += report.attempts.len();
+        total_spans += report
+            .attempts
+            .iter()
+            .map(|attempt| attempt.span_count)
+            .sum::<usize>();
+        gap_reasons.extend(report.gap_reasons.clone());
+        rollout_reports.push(report);
+    }
+
+    Ok(CollectorPersistenceProof {
+        schema_version: CollectorPersistenceProof::SCHEMA_VERSION_V1,
+        rollout_ids: normalized_rollout_ids,
+        status_totals,
+        total_rollouts: rollout_reports.len(),
+        total_attempts,
+        total_spans,
+        has_persistence_gaps: !gap_reasons.is_empty(),
+        gap_reasons,
+        rollouts: rollout_reports,
+    })
+}
+
+fn rollout_status_name(status: RolloutStatus) -> &'static str {
+    match status {
+        RolloutStatus::Queuing => "queuing",
+        RolloutStatus::Preparing => "preparing",
+        RolloutStatus::Running => "running",
+        RolloutStatus::Failed => "failed",
+        RolloutStatus::Succeeded => "succeeded",
+        RolloutStatus::Cancelled => "cancelled",
+        RolloutStatus::Requeuing => "requeuing",
+    }
+}
+
+fn attempt_status_name(status: AttemptStatus) -> &'static str {
+    match status {
+        AttemptStatus::Preparing => "preparing",
+        AttemptStatus::Running => "running",
+        AttemptStatus::Failed => "failed",
+        AttemptStatus::Succeeded => "succeeded",
+        AttemptStatus::Unresponsive => "unresponsive",
+        AttemptStatus::Timeout => "timeout",
+    }
+}
+
 /// Configures reward shaping from safety-policy events.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SafetyRewardPolicy {
@@ -729,8 +872,8 @@ fn parse_reason_codes(value: Option<&Value>) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        audit_rollout_persistence, RolloutExecutionOutcome, RolloutExecutor, RunnerConfig,
-        TauAgentExecutor, TrainingRunner,
+        audit_rollout_persistence, build_collector_persistence_proof, RolloutExecutionOutcome,
+        RolloutExecutor, RunnerConfig, TauAgentExecutor, TrainingRunner,
     };
     use anyhow::Result;
     use async_trait::async_trait;
@@ -1434,6 +1577,209 @@ mod tests {
         assert!(error
             .to_string()
             .contains("rollout 'r-missing-1960' not found for persistence audit"));
+    }
+
+    #[tokio::test]
+    async fn spec_1962_c01_collector_proof_reports_clean_rollout_totals() {
+        let store: Arc<dyn TrainingStore> = Arc::new(InMemoryTrainingStore::new());
+        store
+            .enqueue_rollout(Rollout::new(
+                "r-proof-1",
+                json!({ "prompt": "proof-clean" }),
+                Some(tau_training_types::RolloutMode::Train),
+            ))
+            .await
+            .expect("enqueue");
+
+        let runner = TrainingRunner::new(
+            store.clone(),
+            Arc::new(StaticExecutor),
+            RunnerConfig {
+                worker_id: "worker-proof-1".to_string(),
+                poll_interval: Duration::from_millis(10),
+                heartbeat_interval: Duration::from_millis(25),
+                reassignment_interval: Duration::from_millis(20),
+                worker_timeout: Duration::from_millis(120),
+                transient_error_backoff_initial: Duration::from_millis(5),
+                transient_error_backoff_max: Duration::from_millis(20),
+            },
+        );
+
+        let (tx, rx) = watch::channel(false);
+        let handle = tokio::spawn(async move { runner.run(rx).await });
+        wait_for_rollout_status(store.clone(), "r-proof-1", RolloutStatus::Succeeded)
+            .await
+            .expect("status wait");
+        tx.send(true).expect("shutdown");
+        handle.await.expect("join").expect("runner");
+
+        let proof = build_collector_persistence_proof(store.as_ref(), &[String::from("r-proof-1")])
+            .await
+            .expect("proof");
+        assert_eq!(proof.total_rollouts, 1);
+        assert_eq!(proof.status_totals.succeeded, 1);
+        assert_eq!(proof.total_attempts, 1);
+        assert!(proof.total_spans > 0);
+        assert!(!proof.has_persistence_gaps);
+        assert!(proof.gap_reasons.is_empty());
+    }
+
+    #[tokio::test]
+    async fn spec_1962_c02_collector_proof_retry_requeue_run_is_gap_free() {
+        let store: Arc<dyn TrainingStore> = Arc::new(InMemoryTrainingStore::new());
+        store
+            .enqueue_rollout(Rollout::new(
+                "r-proof-chaos-1",
+                json!({ "prompt": "proof-chaos" }),
+                Some(tau_training_types::RolloutMode::Train),
+            ))
+            .await
+            .expect("enqueue");
+
+        let slow_runner = TrainingRunner::new(
+            store.clone(),
+            Arc::new(SlowExecutor),
+            RunnerConfig {
+                worker_id: "worker-proof-slow".to_string(),
+                poll_interval: Duration::from_millis(20),
+                heartbeat_interval: Duration::from_millis(200),
+                reassignment_interval: Duration::from_millis(20),
+                worker_timeout: Duration::from_millis(50),
+                transient_error_backoff_initial: Duration::from_millis(5),
+                transient_error_backoff_max: Duration::from_millis(20),
+            },
+        );
+        let fast_runner = TrainingRunner::new(
+            store.clone(),
+            Arc::new(FastExecutor),
+            RunnerConfig {
+                worker_id: "worker-proof-fast".to_string(),
+                poll_interval: Duration::from_millis(20),
+                heartbeat_interval: Duration::from_millis(20),
+                reassignment_interval: Duration::from_millis(10),
+                worker_timeout: Duration::from_millis(50),
+                transient_error_backoff_initial: Duration::from_millis(5),
+                transient_error_backoff_max: Duration::from_millis(20),
+            },
+        );
+
+        let (slow_tx, slow_rx) = watch::channel(false);
+        let slow_handle = tokio::spawn(async move { slow_runner.run(slow_rx).await });
+        wait_for_worker_assignment(store.clone(), "worker-proof-slow", Duration::from_secs(2))
+            .await
+            .expect("assignment");
+
+        let (fast_tx, fast_rx) = watch::channel(false);
+        let fast_handle = tokio::spawn(async move { fast_runner.run(fast_rx).await });
+        wait_for_rollout_status(store.clone(), "r-proof-chaos-1", RolloutStatus::Succeeded)
+            .await
+            .expect("status wait");
+
+        slow_tx.send(true).expect("shutdown slow");
+        fast_tx.send(true).expect("shutdown fast");
+        slow_handle.await.expect("join slow").expect("slow runner");
+        fast_handle.await.expect("join fast").expect("fast runner");
+
+        let proof =
+            build_collector_persistence_proof(store.as_ref(), &[String::from("r-proof-chaos-1")])
+                .await
+                .expect("proof");
+        assert_eq!(proof.total_rollouts, 1);
+        assert_eq!(proof.total_attempts, 2);
+        assert_eq!(proof.status_totals.succeeded, 1);
+        assert!(!proof.has_persistence_gaps);
+    }
+
+    #[tokio::test]
+    async fn spec_1962_c03_collector_proof_propagates_gap_reasons() {
+        let store = Arc::new(FlakyDequeueStore::new(0));
+        let store_dyn: Arc<dyn TrainingStore> = store.clone();
+        store_dyn
+            .enqueue_rollout(Rollout::new(
+                "r-proof-gap-1",
+                json!({ "prompt": "proof-gap" }),
+                Some(tau_training_types::RolloutMode::Train),
+            ))
+            .await
+            .expect("enqueue");
+
+        let runner = TrainingRunner::new(
+            store_dyn.clone(),
+            Arc::new(StaticExecutor),
+            RunnerConfig {
+                worker_id: "worker-proof-gap".to_string(),
+                poll_interval: Duration::from_millis(10),
+                heartbeat_interval: Duration::from_millis(25),
+                reassignment_interval: Duration::from_millis(20),
+                worker_timeout: Duration::from_millis(120),
+                transient_error_backoff_initial: Duration::from_millis(5),
+                transient_error_backoff_max: Duration::from_millis(20),
+            },
+        );
+
+        let (tx, rx) = watch::channel(false);
+        let handle = tokio::spawn(async move { runner.run(rx).await });
+        wait_for_rollout_status(store_dyn.clone(), "r-proof-gap-1", RolloutStatus::Succeeded)
+            .await
+            .expect("status wait");
+        tx.send(true).expect("shutdown");
+        handle.await.expect("join").expect("runner");
+
+        store.hide_attempt_for_audit("r-proof-gap-1:attempt-1");
+        let proof =
+            build_collector_persistence_proof(store.as_ref(), &[String::from("r-proof-gap-1")])
+                .await
+                .expect("proof");
+        assert!(proof.has_persistence_gaps);
+        assert!(proof
+            .gap_reasons
+            .iter()
+            .any(|reason| reason == "missing attempt record: r-proof-gap-1:attempt-1"));
+    }
+
+    #[tokio::test]
+    async fn spec_1962_c04_collector_proof_json_artifact_is_machine_readable() {
+        let store: Arc<dyn TrainingStore> = Arc::new(InMemoryTrainingStore::new());
+        store
+            .enqueue_rollout(Rollout::new(
+                "r-proof-json-1",
+                json!({ "prompt": "proof-json" }),
+                Some(tau_training_types::RolloutMode::Train),
+            ))
+            .await
+            .expect("enqueue");
+
+        let runner = TrainingRunner::new(
+            store.clone(),
+            Arc::new(StaticExecutor),
+            RunnerConfig {
+                worker_id: "worker-proof-json".to_string(),
+                poll_interval: Duration::from_millis(10),
+                heartbeat_interval: Duration::from_millis(25),
+                reassignment_interval: Duration::from_millis(20),
+                worker_timeout: Duration::from_millis(120),
+                transient_error_backoff_initial: Duration::from_millis(5),
+                transient_error_backoff_max: Duration::from_millis(20),
+            },
+        );
+
+        let (tx, rx) = watch::channel(false);
+        let handle = tokio::spawn(async move { runner.run(rx).await });
+        wait_for_rollout_status(store.clone(), "r-proof-json-1", RolloutStatus::Succeeded)
+            .await
+            .expect("status wait");
+        tx.send(true).expect("shutdown");
+        handle.await.expect("join").expect("runner");
+
+        let proof =
+            build_collector_persistence_proof(store.as_ref(), &[String::from("r-proof-json-1")])
+                .await
+                .expect("proof");
+        let artifact = proof.to_artifact_json();
+        assert_eq!(artifact["schema_version"], json!(1));
+        assert_eq!(artifact["total_rollouts"], json!(1));
+        assert_eq!(artifact["status_totals"]["succeeded"], json!(1));
+        assert!(artifact["rollouts"].as_array().is_some());
     }
 
     #[tokio::test]
