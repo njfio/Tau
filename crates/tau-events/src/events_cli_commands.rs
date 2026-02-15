@@ -188,7 +188,7 @@ pub fn execute_events_dry_run_command(cli: &Cli) -> Result<()> {
 
 fn render_events_inspect_report(report: &EventsInspectReport) -> String {
     format!(
-        "events inspect: events_dir={} state_path={} now_unix_ms={} discovered_events={} malformed_events={} enabled_events={} disabled_events={} due_now_events={} queued_now_events={} not_due_events={} stale_immediate_events={} due_eval_failed_events={} schedule_immediate_events={} schedule_at_events={} schedule_periodic_events={} periodic_with_last_run_state={} periodic_missing_last_run_state={} queue_limit={} stale_immediate_max_age_seconds={}",
+        "events inspect: events_dir={} state_path={} now_unix_ms={} discovered_events={} malformed_events={} enabled_events={} disabled_events={} due_now_events={} queued_now_events={} not_due_events={} stale_immediate_events={} due_eval_failed_events={} schedule_immediate_events={} schedule_at_events={} schedule_periodic_events={} periodic_with_last_run_state={} periodic_missing_last_run_state={} execution_history_entries={} execution_history_limit={} executed_history_entries={} failed_history_entries={} skipped_history_entries={} last_execution_unix_ms={} last_execution_reason_code={} queue_limit={} stale_immediate_max_age_seconds={}",
         report.events_dir,
         report.state_path,
         report.now_unix_ms,
@@ -206,6 +206,20 @@ fn render_events_inspect_report(report: &EventsInspectReport) -> String {
         report.schedule_periodic_events,
         report.periodic_with_last_run_state,
         report.periodic_missing_last_run_state,
+        report.execution_history_entries,
+        report.execution_history_limit,
+        report.executed_history_entries,
+        report.failed_history_entries,
+        report.skipped_history_entries,
+        report
+            .last_execution_unix_ms
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "none".to_string()),
+        report
+            .last_execution_reason_code
+            .as_deref()
+            .filter(|value| !value.is_empty())
+            .unwrap_or("none"),
         report.queue_limit,
         report.stale_immediate_max_age_seconds,
     )

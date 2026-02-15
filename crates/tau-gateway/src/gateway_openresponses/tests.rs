@@ -264,6 +264,46 @@ fn write_training_runtime_fixture(root: &Path, failed: usize) -> PathBuf {
     training_root
 }
 
+fn write_events_runtime_fixture(root: &Path) -> PathBuf {
+    let events_root = root.join(".tau").join("events");
+    std::fs::create_dir_all(&events_root).expect("create events root");
+    std::fs::write(
+        events_root.join("deploy.json"),
+        r#"{
+  "id": "deploy-routine",
+  "channel": "slack/C123",
+  "prompt": "Post deployment status.",
+  "schedule": { "type": "immediate" },
+  "enabled": true,
+  "created_unix_ms": 1700000000000
+}
+"#,
+    )
+    .expect("write events definition");
+    std::fs::write(
+        events_root.join("state.json"),
+        r#"{
+  "schema_version": 1,
+  "periodic_last_run_unix_ms": {},
+  "debounce_last_seen_unix_ms": {},
+  "signature_replay_last_seen_unix_ms": {},
+  "recent_executions": [
+    {
+      "timestamp_unix_ms": 1700000005000,
+      "event_id": "deploy-routine",
+      "channel": "slack/C123",
+      "schedule": "immediate",
+      "outcome": "executed",
+      "reason_code": "event_executed"
+    }
+  ]
+}
+"#,
+    )
+    .expect("write events state");
+    events_root
+}
+
 async fn connect_gateway_ws(
     addr: SocketAddr,
     token: Option<&str>,
@@ -888,6 +928,14 @@ async fn integration_gateway_status_endpoint_returns_service_snapshot() {
         payload["multi_channel"]["processed_event_count"],
         Value::Number(serde_json::Number::from(0))
     );
+    assert_eq!(
+        payload["events"]["reason_code"],
+        Value::String("events_not_configured".to_string())
+    );
+    assert_eq!(
+        payload["events"]["rollout_gate"],
+        Value::String("pass".to_string())
+    );
     assert_eq!(payload["training"]["status_present"], Value::Bool(false));
     assert_eq!(
         payload["runtime_heartbeat"]["reason_code"],
@@ -896,6 +944,48 @@ async fn integration_gateway_status_endpoint_returns_service_snapshot() {
     assert_eq!(
         payload["runtime_heartbeat"]["run_state"],
         Value::String("unknown".to_string())
+    );
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn integration_gateway_status_endpoint_returns_events_status_when_configured() {
+    let temp = tempdir().expect("tempdir");
+    write_events_runtime_fixture(temp.path());
+    let state = test_state(temp.path(), 10_000, "secret");
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+
+    let payload = Client::new()
+        .get(format!("http://{addr}{GATEWAY_STATUS_ENDPOINT}"))
+        .bearer_auth("secret")
+        .send()
+        .await
+        .expect("send status request")
+        .json::<Value>()
+        .await
+        .expect("parse status response");
+
+    assert_eq!(
+        payload["events"]["reason_code"],
+        Value::String("events_ready".to_string())
+    );
+    assert_eq!(payload["events"]["state_present"], Value::Bool(true));
+    assert_eq!(
+        payload["events"]["discovered_events"],
+        Value::Number(serde_json::Number::from(1))
+    );
+    assert_eq!(
+        payload["events"]["execution_history_entries"],
+        Value::Number(serde_json::Number::from(1))
+    );
+    assert_eq!(
+        payload["events"]["executed_history_entries"],
+        Value::Number(serde_json::Number::from(1))
+    );
+    assert_eq!(
+        payload["events"]["last_execution_reason_code"],
+        Value::String("event_executed".to_string())
     );
 
     handle.abort();

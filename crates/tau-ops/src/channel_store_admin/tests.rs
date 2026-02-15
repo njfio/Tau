@@ -2246,6 +2246,7 @@ fn functional_operator_control_summary_render_includes_expected_sections() {
     assert!(rendered.contains("operator control policy posture:"));
     assert!(rendered.contains("operator control daemon:"));
     assert!(rendered.contains("operator control release channel:"));
+    assert!(rendered.contains("operator control component: component=events"));
     assert!(rendered.contains("operator control component: component=gateway"));
 }
 
@@ -2510,9 +2511,17 @@ fn regression_operator_control_summary_handles_missing_state_files_with_explicit
 
     let report = collect_operator_control_summary_report(&cli).expect("collect summary");
     assert_eq!(report.rollout_gate, "hold");
+    let events_row = report
+        .components
+        .iter()
+        .find(|row| row.component == "events")
+        .expect("events row");
+    assert_eq!(events_row.reason_code, "events_not_configured");
+    assert_eq!(events_row.rollout_gate, "pass");
     assert!(report
         .components
         .iter()
+        .filter(|row| row.component != "events")
         .all(|row| row.reason_code == "state_unavailable"));
     assert_eq!(report.health_state, "failing");
 

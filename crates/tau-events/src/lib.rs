@@ -25,6 +25,7 @@ mod events_cli_commands;
 pub use events_cli_commands::*;
 
 const EVENT_RUNNER_STATE_SCHEMA_VERSION: u32 = 1;
+const EVENT_EXECUTION_HISTORY_LIMIT: usize = 256;
 
 #[async_trait]
 /// Trait contract for `EventRunner` behavior.
@@ -122,6 +123,8 @@ struct EventRunnerState {
     debounce_last_seen_unix_ms: HashMap<String, u64>,
     #[serde(default)]
     signature_replay_last_seen_unix_ms: HashMap<String, u64>,
+    #[serde(default)]
+    recent_executions: Vec<EventExecutionRecord>,
 }
 
 impl Default for EventRunnerState {
@@ -131,8 +134,19 @@ impl Default for EventRunnerState {
             periodic_last_run_unix_ms: HashMap::new(),
             debounce_last_seen_unix_ms: HashMap::new(),
             signature_replay_last_seen_unix_ms: HashMap::new(),
+            recent_executions: Vec::new(),
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+struct EventExecutionRecord {
+    timestamp_unix_ms: u64,
+    event_id: String,
+    channel: String,
+    schedule: String,
+    outcome: String,
+    reason_code: String,
 }
 
 #[derive(Debug, Default)]
@@ -183,6 +197,13 @@ pub struct EventsInspectReport {
     pub due_eval_failed_events: usize,
     pub periodic_with_last_run_state: usize,
     pub periodic_missing_last_run_state: usize,
+    pub execution_history_entries: usize,
+    pub execution_history_limit: usize,
+    pub executed_history_entries: usize,
+    pub failed_history_entries: usize,
+    pub skipped_history_entries: usize,
+    pub last_execution_unix_ms: Option<u64>,
+    pub last_execution_reason_code: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -747,6 +768,17 @@ impl EventSchedulerRuntime {
                 }
                 DueDecision::SkipStaleRemove => {
                     report.stale_skipped = report.stale_skipped.saturating_add(1);
+                    append_execution_record(
+                        &mut self.state,
+                        EventExecutionRecord {
+                            timestamp_unix_ms: now_unix_ms,
+                            event_id: record.definition.id.clone(),
+                            channel: record.definition.channel.clone(),
+                            schedule: schedule_name(&record.definition.schedule).to_string(),
+                            outcome: "skipped".to_string(),
+                            reason_code: "stale_immediate".to_string(),
+                        },
+                    );
                     let _ = std::fs::remove_file(&record.path);
                 }
                 DueDecision::NotDue => {}
@@ -758,6 +790,17 @@ impl EventSchedulerRuntime {
             match execute_event(&self.config, &record.definition, now_unix_ms).await {
                 Ok(()) => {
                     report.executed = report.executed.saturating_add(1);
+                    append_execution_record(
+                        &mut self.state,
+                        EventExecutionRecord {
+                            timestamp_unix_ms: now_unix_ms,
+                            event_id: record.definition.id.clone(),
+                            channel: record.definition.channel.clone(),
+                            schedule: schedule_name(&record.definition.schedule).to_string(),
+                            outcome: "executed".to_string(),
+                            reason_code: "event_executed".to_string(),
+                        },
+                    );
                     match &record.definition.schedule {
                         EventSchedule::Immediate | EventSchedule::At { .. } => {
                             let _ = std::fs::remove_file(&record.path);
@@ -771,6 +814,17 @@ impl EventSchedulerRuntime {
                 }
                 Err(error) => {
                     report.failed = report.failed.saturating_add(1);
+                    append_execution_record(
+                        &mut self.state,
+                        EventExecutionRecord {
+                            timestamp_unix_ms: now_unix_ms,
+                            event_id: record.definition.id.clone(),
+                            channel: record.definition.channel.clone(),
+                            schedule: schedule_name(&record.definition.schedule).to_string(),
+                            outcome: "failed".to_string(),
+                            reason_code: "runner_error".to_string(),
+                        },
+                    );
                     eprintln!(
                         "event execution failed: id={} channel={} error={error}",
                         record.definition.id, record.definition.channel
@@ -842,7 +896,35 @@ pub fn inspect_events(
         due_eval_failed_events: 0,
         periodic_with_last_run_state: 0,
         periodic_missing_last_run_state: 0,
+        execution_history_entries: state.recent_executions.len(),
+        execution_history_limit: EVENT_EXECUTION_HISTORY_LIMIT,
+        executed_history_entries: 0,
+        failed_history_entries: 0,
+        skipped_history_entries: 0,
+        last_execution_unix_ms: state
+            .recent_executions
+            .last()
+            .map(|entry| entry.timestamp_unix_ms),
+        last_execution_reason_code: state
+            .recent_executions
+            .last()
+            .map(|entry| entry.reason_code.clone()),
     };
+
+    for execution in &state.recent_executions {
+        match execution.outcome.as_str() {
+            "executed" => {
+                report.executed_history_entries = report.executed_history_entries.saturating_add(1)
+            }
+            "failed" => {
+                report.failed_history_entries = report.failed_history_entries.saturating_add(1)
+            }
+            "skipped" => {
+                report.skipped_history_entries = report.skipped_history_entries.saturating_add(1)
+            }
+            _ => {}
+        }
+    }
 
     for record in records {
         let event = &record.definition;
@@ -900,7 +982,7 @@ pub fn inspect_events(
 #[cfg(test)]
 fn render_events_inspect_report(report: &EventsInspectReport) -> String {
     format!(
-        "events inspect: events_dir={} state_path={} now_unix_ms={} discovered_events={} malformed_events={} enabled_events={} disabled_events={} due_now_events={} queued_now_events={} not_due_events={} stale_immediate_events={} due_eval_failed_events={} schedule_immediate_events={} schedule_at_events={} schedule_periodic_events={} periodic_with_last_run_state={} periodic_missing_last_run_state={} queue_limit={} stale_immediate_max_age_seconds={}",
+        "events inspect: events_dir={} state_path={} now_unix_ms={} discovered_events={} malformed_events={} enabled_events={} disabled_events={} due_now_events={} queued_now_events={} not_due_events={} stale_immediate_events={} due_eval_failed_events={} schedule_immediate_events={} schedule_at_events={} schedule_periodic_events={} periodic_with_last_run_state={} periodic_missing_last_run_state={} execution_history_entries={} execution_history_limit={} executed_history_entries={} failed_history_entries={} skipped_history_entries={} last_execution_unix_ms={} last_execution_reason_code={} queue_limit={} stale_immediate_max_age_seconds={}",
         report.events_dir,
         report.state_path,
         report.now_unix_ms,
@@ -918,6 +1000,20 @@ fn render_events_inspect_report(report: &EventsInspectReport) -> String {
         report.schedule_periodic_events,
         report.periodic_with_last_run_state,
         report.periodic_missing_last_run_state,
+        report.execution_history_entries,
+        report.execution_history_limit,
+        report.executed_history_entries,
+        report.failed_history_entries,
+        report.skipped_history_entries,
+        report
+            .last_execution_unix_ms
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "none".to_string()),
+        report
+            .last_execution_reason_code
+            .as_deref()
+            .filter(|value| !value.is_empty())
+            .unwrap_or("none"),
         report.queue_limit,
         report.stale_immediate_max_age_seconds,
     )
@@ -1638,6 +1734,17 @@ fn due_decision(
                 Ok(DueDecision::NotDue)
             }
         }
+    }
+}
+
+fn append_execution_record(state: &mut EventRunnerState, record: EventExecutionRecord) {
+    state.recent_executions.push(record);
+    if state.recent_executions.len() > EVENT_EXECUTION_HISTORY_LIMIT {
+        let overflow = state
+            .recent_executions
+            .len()
+            .saturating_sub(EVENT_EXECUTION_HISTORY_LIMIT);
+        state.recent_executions.drain(0..overflow);
     }
 }
 

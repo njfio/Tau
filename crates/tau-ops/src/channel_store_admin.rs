@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use tau_access::pairing_policy_for_state_dir;
 use tau_cli::{Cli, CliGatewayRemoteProfile};
 use tau_core::current_unix_timestamp_ms;
+use tau_events::{inspect_events, EventsInspectConfig};
 use tau_release_channel::{default_release_channel_path, load_release_channel_store};
 use tau_runtime::channel_store::ChannelStore;
 
@@ -1807,6 +1808,7 @@ fn collect_deployment_status_report(cli: &Cli) -> Result<DeploymentStatusInspect
 
 fn collect_operator_control_summary_report(cli: &Cli) -> Result<OperatorControlSummaryReport> {
     let components = vec![
+        collect_operator_events_component(cli),
         collect_operator_dashboard_component(cli),
         collect_operator_multi_channel_component(cli),
         collect_operator_multi_agent_component(cli),
@@ -2125,6 +2127,94 @@ fn collect_operator_dashboard_component(cli: &Cli) -> OperatorControlComponentSu
             },
         ),
         Err(error) => operator_component_unavailable("dashboard", &state_path, &error),
+    }
+}
+
+fn collect_operator_events_component(cli: &Cli) -> OperatorControlComponentSummaryRow {
+    let state_path = cli.events_state_path.clone();
+    let events_dir_exists = cli.events_dir.is_dir();
+    let state_exists = state_path.is_file();
+    if !events_dir_exists && !state_exists {
+        return build_operator_component_row(
+            "events",
+            OperatorControlComponentInputs {
+                state_path: state_path.display().to_string(),
+                health_state: "healthy".to_string(),
+                health_reason: "events scheduler is not configured".to_string(),
+                rollout_gate: "pass".to_string(),
+                reason_code: "events_not_configured".to_string(),
+                recommendation:
+                    "create event definition files under --events-dir to enable routine scheduling"
+                        .to_string(),
+                queue_depth: 0,
+                failure_streak: 0,
+            },
+        );
+    }
+
+    match inspect_events(
+        &EventsInspectConfig {
+            events_dir: cli.events_dir.clone(),
+            state_path: state_path.clone(),
+            queue_limit: cli.events_queue_limit.max(1),
+            stale_immediate_max_age_seconds: cli.events_stale_immediate_max_age_seconds,
+        },
+        current_unix_timestamp_ms(),
+    ) {
+        Ok(report) => {
+            let mut health_state = "healthy".to_string();
+            let mut rollout_gate = "pass".to_string();
+            let mut reason_code = "events_ready".to_string();
+            let mut recommendation = "no immediate action required".to_string();
+            let mut health_reason = "events scheduler diagnostics are healthy".to_string();
+
+            if report.discovered_events == 0 {
+                reason_code = "events_none_discovered".to_string();
+                recommendation =
+                    "add event definition files under --events-dir to enable routines".to_string();
+                health_reason =
+                    "events scheduler is configured but no definitions were discovered".to_string();
+            }
+            if report.malformed_events > 0 || report.due_eval_failed_events > 0 {
+                health_state = "degraded".to_string();
+                rollout_gate = "hold".to_string();
+                reason_code = "events_definition_invalid".to_string();
+                recommendation =
+                    "run --events-validate and repair malformed/invalid event definitions"
+                        .to_string();
+                health_reason = format!(
+                    "events inspect found malformed={} due_eval_failed={}",
+                    report.malformed_events, report.due_eval_failed_events
+                );
+            }
+            if report.failed_history_entries > 0 {
+                health_state = "degraded".to_string();
+                rollout_gate = "hold".to_string();
+                reason_code = "events_recent_failures".to_string();
+                recommendation =
+                    "inspect channel-store logs and execution history for failing routines"
+                        .to_string();
+                health_reason = format!(
+                    "events execution history includes {} failed runs",
+                    report.failed_history_entries
+                );
+            }
+
+            build_operator_component_row(
+                "events",
+                OperatorControlComponentInputs {
+                    state_path: report.state_path,
+                    health_state,
+                    health_reason,
+                    rollout_gate,
+                    reason_code,
+                    recommendation,
+                    queue_depth: report.queued_now_events,
+                    failure_streak: report.failed_history_entries,
+                },
+            )
+        }
+        Err(error) => operator_component_unavailable("events", &state_path, &error),
     }
 }
 

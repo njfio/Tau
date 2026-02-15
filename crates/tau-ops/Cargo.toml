@@ -16,6 +16,7 @@ tau-access = { path = "../tau-access" }
 tau-ai = { path = "../tau-ai" }
 tau-cli = { path = "../tau-cli" }
 tau-core = { path = "../tau-core" }
+tau-events = { path = "../tau-events" }
 tau-runtime = { path = "../tau-runtime" }
 tau-session = { path = "../tau-session" }
 tau-multi-channel = { path = "../tau-multi-channel" }

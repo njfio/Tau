@@ -46,6 +46,10 @@ cargo run -p tau-coding-agent -- \
   --events-dry-run-json
 ```
 
+Inspect output now includes persisted execution-history counters (`execution_history_entries`,
+`executed_history_entries`, `failed_history_entries`, `skipped_history_entries`) sourced from
+`--events-state-path`.
+
 Strict dry-run gating for CI:
 
 ```bash
@@ -115,3 +119,8 @@ cargo run -p tau-coding-agent -- \
 ./scripts/demo/events.sh
 ./scripts/demo-smoke.sh
 ```
+
+## Gateway API visibility
+
+When `--gateway-openresponses-server` is running, `/gateway/status` includes an `events` block with
+routine scheduler diagnostics (definition counts, queue posture, and execution-history summaries).
