@@ -131,3 +131,29 @@ Reviewer checklist:
 - confirm each required artifact entry is `present`
 - confirm `summary.status == "pass"` for closure-ready proof packs
 - verify `issues[]` links and `producer` metadata match the reviewed run
+
+## Retained-capability proof summary collector
+
+Use `scripts/dev/m21-retained-capability-proof-summary.sh` to execute the retained
+proof run matrix and emit a machine-readable summary with exit/status/marker diagnostics.
+
+Example with explicit binary:
+
+```bash
+./scripts/dev/m21-retained-capability-proof-summary.sh \
+  --repo-root . \
+  --binary ./target/debug/tau-coding-agent
+```
+
+Default report path conventions:
+- JSON summary: `tasks/reports/m21-retained-capability-proof-summary.json`
+- Markdown summary: `tasks/reports/m21-retained-capability-proof-summary.md`
+- Per-run logs: `tasks/reports/m21-retained-capability-proof-logs/`
+- Generated run artifacts: `tasks/reports/m21-retained-capability-artifacts/`
+
+Each run entry in the JSON summary includes:
+- command line
+- expected vs actual exit code
+- pass/fail status
+- marker match results (`stdout`, `stderr`, `file`)
+- stdout/stderr log paths for direct triage

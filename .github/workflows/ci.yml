@@ -148,6 +148,12 @@ jobs:
             fast_validate:
               - "scripts/dev/fast-validate.sh"
               - "scripts/dev/test-fast-validate.sh"
+            retained_proof_summary:
+              - "scripts/dev/m21-retained-capability-proof-summary.sh"
+              - "scripts/dev/test-m21-retained-capability-proof-summary.sh"
+              - "scripts/demo/index.sh"
+              - "scripts/demo/all.sh"
+              - "scripts/demo/proof-pack-manifest.sh"
             tool_perf_smoke:
               - "crates/tau-tools/src/tools.rs"
               - "crates/tau-tools/src/tools/**"
@@ -266,6 +272,25 @@ jobs:
       - name: Validate fast-validate script
         if: steps.fast_validate_scope.outputs.fast_validate_tests_needed == 'true'
         run: ./scripts/dev/test-fast-validate.sh
+
+      - name: Determine retained-capability proof summary scope
+        id: retained_proof_summary_scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          retained_proof_summary_tests_needed="${{ steps.change_scope.outputs.retained_proof_summary }}"
+          if [[ "${{ github.event_name }}" != "pull_request" ]]; then
+            retained_proof_summary_tests_needed="true"
+          elif [[ -z "${retained_proof_summary_tests_needed}" ]]; then
+            retained_proof_summary_tests_needed="false"
+          fi
+          echo "retained_proof_summary_tests_needed=${retained_proof_summary_tests_needed}" >> "$GITHUB_OUTPUT"
+          echo "### Retained-Capability Proof Summary Scope" >> "$GITHUB_STEP_SUMMARY"
+          echo "- retained-capability proof summary tests needed: ${retained_proof_summary_tests_needed}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Validate retained-capability proof summary script
+        if: steps.retained_proof_summary_scope.outputs.retained_proof_summary_tests_needed == 'true'
+        run: ./scripts/dev/test-m21-retained-capability-proof-summary.sh
 
       - name: Determine tool split performance smoke scope
         id: tool_perf_scope
