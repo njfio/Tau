@@ -49,7 +49,7 @@ These crates exist but contain only contract fixtures, not real implementations.
 - **Action**: Either move agent-core's memory implementation into `tau-memory` as the real implementation, or remove `tau-memory` contract fixtures and let agent-core own memory entirely.
 
 ### 0.5 Training "RL" — Be Honest About Scope
-- **Current**: 6 crates (~2,500 lines). APO algorithm is prompt search (LLM critique → edit → score → repeat), not reinforcement learning. Infrastructure is real (SQLite store, worker pool, telemetry).
+- **Current**: 6 crates (~2,500 lines). APO algorithm is prompt search (LLM critique → edit → score → repeat), not true-RL policy learning. Infrastructure is real (SQLite store, worker pool, telemetry).
 - **Action**: Rename from "training/RL" to "prompt optimization" or "automated prompt engineering." The infrastructure is solid — don't misrepresent it. If actual RL is planned, document a roadmap separately.
 
 ---

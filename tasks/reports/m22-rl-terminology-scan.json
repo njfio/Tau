@@ -1,0 +1,50 @@
+{
+  "approved_matches": [
+    {
+      "excerpt": "- term: `reinforcement learning`",
+      "line": 28,
+      "path": "docs/guides/rl-terminology-allowlist.md",
+      "reason": "Allow forward-looking references for future true-RL planning documents only.",
+      "term": "reinforcement learning"
+    },
+    {
+      "excerpt": "- \"We plan reinforcement learning experiments in Q3\" within",
+      "line": 34,
+      "path": "docs/guides/rl-terminology-allowlist.md",
+      "reason": "Allow forward-looking references for future true-RL planning documents only.",
+      "term": "reinforcement learning"
+    },
+    {
+      "excerpt": "- `reinforcement learning` in operational guides like `docs/guides/` without",
+      "line": 41,
+      "path": "docs/guides/rl-terminology-allowlist.md",
+      "reason": "Allow forward-looking references for future true-RL planning documents only.",
+      "term": "reinforcement learning"
+    },
+    {
+      "excerpt": "- phrases from `disallowed_defaults` such as `current RL mode` and",
+      "line": 43,
+      "path": "docs/guides/rl-terminology-allowlist.md",
+      "reason": "Permit explicit mention inside non-example policy documentation only.",
+      "term": "current RL mode"
+    },
+    {
+      "excerpt": "`RL training loop` in current-state docs/help text.",
+      "line": 44,
+      "path": "docs/guides/rl-terminology-allowlist.md",
+      "reason": "Permit explicit mention inside non-example policy documentation only.",
+      "term": "RL training loop"
+    }
+  ],
+  "generated_at": "2026-02-15T17:17:22Z",
+  "policy_path": "tasks/policies/rl-terms-allowlist.json",
+  "scan_root": "/Users/n/RustroverProjects/rust_pi_i1705",
+  "schema_version": 1,
+  "stale_findings": [],
+  "summary": {
+    "approved_count": 5,
+    "scanned_files_total": 143,
+    "stale_count": 0,
+    "total_matches": 5
+  }
+}

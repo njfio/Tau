@@ -6,15 +6,43 @@
       "term": "reinforcement learning",
       "allowed_paths": [
         "docs/planning/",
-        "docs/research/"
+        "docs/research/",
+        "docs/guides/rl-terminology-allowlist.md"
       ],
       "required_context": [
         "future true-RL roadmap",
         "future RL roadmap",
         "Q3",
-        "planned"
+        "planned",
+        "Approved Examples",
+        "Non-Examples",
+        "allowlist"
       ],
       "rationale": "Allow forward-looking references for future true-RL planning documents only."
+    },
+    {
+      "term": "current RL mode",
+      "allowed_paths": [
+        "docs/guides/rl-terminology-allowlist.md"
+      ],
+      "required_context": [
+        "Non-Examples",
+        "disallowed_defaults",
+        "stale wording"
+      ],
+      "rationale": "Permit explicit mention inside non-example policy documentation only."
+    },
+    {
+      "term": "RL training loop",
+      "allowed_paths": [
+        "docs/guides/rl-terminology-allowlist.md"
+      ],
+      "required_context": [
+        "Non-Examples",
+        "disallowed_defaults",
+        "stale wording"
+      ],
+      "rationale": "Permit explicit mention inside non-example policy documentation only."
     }
   ],
   "disallowed_defaults": [
