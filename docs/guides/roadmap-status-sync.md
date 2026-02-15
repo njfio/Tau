@@ -14,6 +14,12 @@ Hierarchy drift/orphan detection rules are defined in:
 - `tasks/policies/issue-hierarchy-drift-rules.json`
 - `docs/guides/issue-hierarchy-drift-rules.md`
 
+To preview hierarchy drift findings locally before CI:
+
+```bash
+scripts/dev/dependency-drift-check.sh --mode dry-run
+```
+
 ## Prerequisites
 
 - `gh` authenticated for this repository.

@@ -71,3 +71,28 @@ Parent compatibility contract:
 
 - Align child state with lifecycle intent.
 - If parent is closed and child remains active, re-parent child to active owner issue.
+
+## Local Dry-Run Validation
+
+Use the drift-check command in dry-run mode before opening PRs:
+
+```bash
+scripts/dev/dependency-drift-check.sh --mode dry-run
+```
+
+Sample output:
+
+```text
+[dependency-drift-check] findings=3 errors=1 warnings=2 mode=dry-run
+[dependency-drift-check] DRY-RUN-WOULD-FAIL orphan.missing_parent_link issue=#1769: parent_issue_url is missing for hierarchy issue
+[dependency-drift-check] remediation: Add parent_issue_url metadata in the tracked hierarchy source.
+[dependency-drift-check] DRY-RUN would fail strict mode due to 1 error finding(s).
+```
+
+Strict enforcement mode:
+
+```bash
+scripts/dev/dependency-drift-check.sh --mode strict
+```
+
+`strict` exits non-zero when error-severity findings are present. `dry-run` always exits zero while still reporting whether strict mode would fail.
