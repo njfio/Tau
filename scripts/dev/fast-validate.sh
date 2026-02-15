@@ -10,10 +10,11 @@ BASE_REF=""
 PRINT_PACKAGES_FROM_STDIN="false"
 CHECK_ONLY="false"
 DIRECT_PACKAGES_ONLY="false"
+SKIP_FMT="false"
 
 usage() {
   cat <<'EOF'
-Usage: fast-validate.sh [--full] [--check-only] [--direct-packages-only] [--base <git-ref>] [--print-packages-from-stdin]
+Usage: fast-validate.sh [--full] [--check-only] [--direct-packages-only] [--skip-fmt] [--base <git-ref>] [--print-packages-from-stdin]
 
 Fast validation defaults to impacted-package scope:
   - cargo fmt --all -- --check
@@ -25,6 +26,7 @@ Options:
   --check-only                  Run `cargo check` instead of clippy + tests.
   --direct-packages-only        Keep package scope to directly changed crates
                                 (skip reverse-dependency expansion).
+  --skip-fmt                    Skip `cargo fmt --all -- --check`.
   --base <git-ref>              Compare changes against this base ref.
   --print-packages-from-stdin   Internal/test mode: read newline-delimited paths from stdin
                                 and print derived impacted package scope.
@@ -42,6 +44,9 @@ while [[ $# -gt 0 ]]; do
       ;;
     --direct-packages-only)
       DIRECT_PACKAGES_ONLY="true"
+      ;;
+    --skip-fmt)
+      SKIP_FMT="true"
       ;;
     --base)
       shift
@@ -255,9 +260,13 @@ if [[ "${DIRECT_PACKAGES_ONLY}" != "true" && "${FULL_MODE}" != "true" && "${FULL
   mapfile -t PACKAGES < <(expand_impacted_packages "${PACKAGES[@]}")
 fi
 
-echo "fast-validate base=${BASE} changed_files=${#CHANGED_FILES[@]} impacted_packages=${#PACKAGES[@]} check_only=${CHECK_ONLY} direct_packages_only=${DIRECT_PACKAGES_ONLY}"
+echo "fast-validate base=${BASE} changed_files=${#CHANGED_FILES[@]} impacted_packages=${#PACKAGES[@]} check_only=${CHECK_ONLY} direct_packages_only=${DIRECT_PACKAGES_ONLY} skip_fmt=${SKIP_FMT}"
 
-run_step "fmt-check" cargo fmt --all -- --check
+if [[ "${SKIP_FMT}" == "true" ]]; then
+  echo "skipping fmt check (--skip-fmt)"
+else
+  run_step "fmt-check" cargo fmt --all -- --check
+fi
 
 if [[ "${CHECK_ONLY}" == "true" ]]; then
   if [[ "${FULL_MODE}" == "true" || "${FULL_WORKSPACE_FROM_SCOPE}" == "1" ]]; then

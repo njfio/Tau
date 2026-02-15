@@ -48,9 +48,15 @@ output="$(printf 'docs/README.md\n' | "${FAST_VALIDATE}" --print-packages-from-s
 assert_contains "${output}" "full_workspace=0" "docs-only change should stay package-scoped"
 assert_not_contains "${output}" "package=" "docs-only change should not emit package scope"
 
+output="$(printf 'docs/README.md\n' | "${FAST_VALIDATE}" --print-packages-from-stdin --skip-fmt)"
+assert_contains "${output}" "full_workspace=0" "skip-fmt should not affect package scope derivation"
+
 output="$(printf 'crates/tau-cli/src/lib.rs\ncrates/tau-tools/src/lib.rs\n' | "${FAST_VALIDATE}" --print-packages-from-stdin)"
 assert_contains "${output}" "package=tau-cli" "multi-crate input should include tau-cli"
 assert_contains "${output}" "package=tau-tools" "multi-crate input should include tau-tools"
 assert_contains "${output}" "package=tau-coding-agent" "tau-tools impact scope should include coding-agent"
+
+help_output="$("${FAST_VALIDATE}" --help)"
+assert_contains "${help_output}" "--skip-fmt" "help output should document skip-fmt option"
 
 echo "fast-validate scope tests passed"
