@@ -201,7 +201,7 @@ jobs:
       - name: Check roadmap status sync blocks
         env:
           GH_TOKEN: ${{ github.token }}
-        run: scripts/dev/roadmap-status-sync.sh --check
+        run: scripts/dev/roadmap-status-sync.sh --check --quiet
 
       - name: Check rust doc density thresholds
         if: steps.rust_scope.outputs.rust_changed == 'true'
