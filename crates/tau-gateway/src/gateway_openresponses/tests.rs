@@ -361,6 +361,10 @@ async fn recv_gateway_ws_json(
     message
 }
 
+fn expand_session_template(template: &str, session_key: &str) -> String {
+    template.replace("{session_key}", session_key)
+}
+
 #[test]
 fn unit_translate_openresponses_request_supports_item_input_and_function_call_output() {
     let request = OpenResponsesRequest {
@@ -543,11 +547,206 @@ async fn functional_webchat_endpoint_returns_html_shell() {
     assert!(body.contains(GATEWAY_WS_ENDPOINT));
     assert!(body.contains("Connector Channels"));
     assert!(body.contains("Reason Code Counts"));
+    assert!(body.contains("Sessions"));
+    assert!(body.contains("Memory"));
+    assert!(body.contains("Configuration"));
     assert!(body.contains("id=\"healthStateValue\""));
     assert!(body.contains("multi-channel lifecycle summary"));
     assert!(body.contains("connector counters"));
     assert!(body.contains("recent reason codes"));
 
+    handle.abort();
+}
+
+#[tokio::test]
+async fn functional_gateway_sessions_endpoints_support_list_detail_append_and_reset() {
+    let temp = tempdir().expect("tempdir");
+    let state = test_state(temp.path(), 10_000, "secret");
+    let (addr, handle) = spawn_test_server(state.clone())
+        .await
+        .expect("spawn server");
+    let session_key = "functional-session";
+
+    let client = Client::new();
+    let empty_list = client
+        .get(format!("http://{addr}{GATEWAY_SESSIONS_ENDPOINT}"))
+        .bearer_auth("secret")
+        .send()
+        .await
+        .expect("request empty session list");
+    assert_eq!(empty_list.status(), StatusCode::OK);
+    let empty_payload = empty_list
+        .json::<Value>()
+        .await
+        .expect("parse empty list payload");
+    assert!(empty_payload["sessions"]
+        .as_array()
+        .expect("sessions array")
+        .is_empty());
+
+    let append_without_gate = client
+        .post(format!(
+            "http://{addr}{}",
+            expand_session_template(GATEWAY_SESSION_APPEND_ENDPOINT, session_key)
+        ))
+        .bearer_auth("secret")
+        .json(&json!({"role":"user","content":"hello"}))
+        .send()
+        .await
+        .expect("append without policy gate");
+    assert_eq!(append_without_gate.status(), StatusCode::FORBIDDEN);
+
+    let append_response = client
+        .post(format!(
+            "http://{addr}{}",
+            expand_session_template(GATEWAY_SESSION_APPEND_ENDPOINT, session_key)
+        ))
+        .bearer_auth("secret")
+        .json(&json!({
+            "role": "user",
+            "content": "hello from session admin",
+            "policy_gate": SESSION_WRITE_POLICY_GATE
+        }))
+        .send()
+        .await
+        .expect("append with policy gate");
+    assert_eq!(append_response.status(), StatusCode::OK);
+
+    let detail_response = client
+        .get(format!(
+            "http://{addr}{}",
+            expand_session_template(GATEWAY_SESSION_DETAIL_ENDPOINT, session_key)
+        ))
+        .bearer_auth("secret")
+        .send()
+        .await
+        .expect("fetch session detail");
+    assert_eq!(detail_response.status(), StatusCode::OK);
+    let detail_payload = detail_response
+        .json::<Value>()
+        .await
+        .expect("parse detail payload");
+    assert_eq!(detail_payload["session_key"].as_str(), Some(session_key));
+    assert!(detail_payload["entry_count"].as_u64().unwrap_or_default() >= 2);
+
+    let list_response = client
+        .get(format!("http://{addr}{GATEWAY_SESSIONS_ENDPOINT}"))
+        .bearer_auth("secret")
+        .send()
+        .await
+        .expect("request populated session list");
+    let list_payload = list_response
+        .json::<Value>()
+        .await
+        .expect("parse list payload");
+    assert!(list_payload["sessions"]
+        .as_array()
+        .expect("sessions array")
+        .iter()
+        .any(|entry| entry["session_key"] == session_key));
+
+    let reset_response = client
+        .post(format!(
+            "http://{addr}{}",
+            expand_session_template(GATEWAY_SESSION_RESET_ENDPOINT, session_key)
+        ))
+        .bearer_auth("secret")
+        .json(&json!({"policy_gate": SESSION_WRITE_POLICY_GATE}))
+        .send()
+        .await
+        .expect("reset session");
+    assert_eq!(reset_response.status(), StatusCode::OK);
+    let reset_payload = reset_response
+        .json::<Value>()
+        .await
+        .expect("parse reset payload");
+    assert_eq!(reset_payload["reset"], Value::Bool(true));
+
+    let detail_after_reset = client
+        .get(format!(
+            "http://{addr}{}",
+            expand_session_template(GATEWAY_SESSION_DETAIL_ENDPOINT, session_key)
+        ))
+        .bearer_auth("secret")
+        .send()
+        .await
+        .expect("fetch detail after reset");
+    assert_eq!(detail_after_reset.status(), StatusCode::NOT_FOUND);
+
+    let session_path = gateway_session_path(&state.config.state_dir, session_key);
+    assert!(!session_path.exists());
+    handle.abort();
+}
+
+#[tokio::test]
+async fn functional_gateway_memory_endpoint_supports_read_and_policy_gated_write() {
+    let temp = tempdir().expect("tempdir");
+    let state = test_state(temp.path(), 10_000, "secret");
+    let (addr, handle) = spawn_test_server(state.clone())
+        .await
+        .expect("spawn server");
+    let session_key = "memory-session";
+    let endpoint = expand_session_template(GATEWAY_MEMORY_ENDPOINT, session_key);
+
+    let client = Client::new();
+    let read_empty = client
+        .get(format!("http://{addr}{endpoint}"))
+        .bearer_auth("secret")
+        .send()
+        .await
+        .expect("read empty memory");
+    assert_eq!(read_empty.status(), StatusCode::OK);
+    let read_empty_payload = read_empty
+        .json::<Value>()
+        .await
+        .expect("parse empty memory payload");
+    assert_eq!(read_empty_payload["exists"], Value::Bool(false));
+
+    let write_forbidden = client
+        .put(format!("http://{addr}{endpoint}"))
+        .bearer_auth("secret")
+        .json(&json!({"content":"memory text"}))
+        .send()
+        .await
+        .expect("write memory without policy gate");
+    assert_eq!(write_forbidden.status(), StatusCode::FORBIDDEN);
+
+    let write_ok = client
+        .put(format!("http://{addr}{endpoint}"))
+        .bearer_auth("secret")
+        .json(&json!({
+            "content": "memory text",
+            "policy_gate": MEMORY_WRITE_POLICY_GATE
+        }))
+        .send()
+        .await
+        .expect("write memory");
+    assert_eq!(write_ok.status(), StatusCode::OK);
+
+    let read_written = client
+        .get(format!("http://{addr}{endpoint}"))
+        .bearer_auth("secret")
+        .send()
+        .await
+        .expect("read written memory");
+    assert_eq!(read_written.status(), StatusCode::OK);
+    let read_written_payload = read_written
+        .json::<Value>()
+        .await
+        .expect("parse written memory payload");
+    assert_eq!(read_written_payload["exists"], Value::Bool(true));
+    assert!(read_written_payload["content"]
+        .as_str()
+        .unwrap_or_default()
+        .contains("memory text"));
+
+    let memory_path = state
+        .config
+        .state_dir
+        .join("openresponses")
+        .join("memory")
+        .join(format!("{session_key}.md"));
+    assert!(memory_path.exists());
     handle.abort();
 }
 
@@ -1188,6 +1387,65 @@ async fn integration_gateway_status_endpoint_reports_openai_compat_runtime_count
 }
 
 #[tokio::test]
+async fn integration_gateway_ui_telemetry_endpoint_persists_events_and_status_counters() {
+    let temp = tempdir().expect("tempdir");
+    let state = test_state(temp.path(), 10_000, "secret");
+    let telemetry_path = state
+        .config
+        .state_dir
+        .join("openresponses")
+        .join("ui-telemetry.jsonl");
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+
+    let client = Client::new();
+    let telemetry_response = client
+        .post(format!("http://{addr}{GATEWAY_UI_TELEMETRY_ENDPOINT}"))
+        .bearer_auth("secret")
+        .json(&json!({
+            "view": "conversation",
+            "action": "send",
+            "reason_code": "integration_smoke",
+            "session_key": "ui-int",
+            "metadata": {"mode": "responses"}
+        }))
+        .send()
+        .await
+        .expect("send telemetry event");
+    assert_eq!(telemetry_response.status(), StatusCode::ACCEPTED);
+
+    let status = client
+        .get(format!("http://{addr}{GATEWAY_STATUS_ENDPOINT}"))
+        .bearer_auth("secret")
+        .send()
+        .await
+        .expect("fetch status")
+        .json::<Value>()
+        .await
+        .expect("parse status payload");
+    assert_eq!(
+        status["gateway"]["web_ui"]["ui_telemetry_endpoint"],
+        Value::String(GATEWAY_UI_TELEMETRY_ENDPOINT.to_string())
+    );
+    assert_eq!(
+        status["gateway"]["web_ui"]["telemetry_runtime"]["total_events"]
+            .as_u64()
+            .unwrap_or_default(),
+        1
+    );
+    assert!(
+        status["gateway"]["web_ui"]["telemetry_runtime"]["reason_code_counts"]
+            .as_object()
+            .expect("reason code counts")
+            .contains_key("integration_smoke")
+    );
+
+    let raw = std::fs::read_to_string(&telemetry_path).expect("read telemetry file");
+    assert!(raw.contains("\"integration_smoke\""));
+    assert!(raw.contains("\"conversation\""));
+    handle.abort();
+}
+
+#[tokio::test]
 async fn integration_gateway_status_endpoint_returns_service_snapshot() {
     let temp = tempdir().expect("tempdir");
     let state = test_state(temp.path(), 10_000, "secret");
@@ -1784,6 +2042,64 @@ async fn regression_openresponses_endpoint_rejects_oversized_input() {
         .expect("send oversized request");
 
     assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    handle.abort();
+}
+
+#[tokio::test]
+async fn regression_gateway_session_append_rejects_invalid_role() {
+    let temp = tempdir().expect("tempdir");
+    let state = test_state(temp.path(), 10_000, "secret");
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+
+    let client = Client::new();
+    let response = client
+        .post(format!(
+            "http://{addr}{}",
+            expand_session_template(GATEWAY_SESSION_APPEND_ENDPOINT, "invalid-role-session")
+        ))
+        .bearer_auth("secret")
+        .json(&json!({
+            "role": "bad-role",
+            "content": "hello",
+            "policy_gate": SESSION_WRITE_POLICY_GATE
+        }))
+        .send()
+        .await
+        .expect("send append request");
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let payload = response.json::<Value>().await.expect("parse response");
+    assert_eq!(payload["error"]["code"].as_str(), Some("invalid_role"));
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn regression_gateway_memory_write_rejects_policy_gate_mismatch() {
+    let temp = tempdir().expect("tempdir");
+    let state = test_state(temp.path(), 10_000, "secret");
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+
+    let client = Client::new();
+    let response = client
+        .put(format!(
+            "http://{addr}{}",
+            expand_session_template(GATEWAY_MEMORY_ENDPOINT, "memory-policy")
+        ))
+        .bearer_auth("secret")
+        .json(&json!({
+            "content": "text",
+            "policy_gate": "wrong_gate"
+        }))
+        .send()
+        .await
+        .expect("send memory write");
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    let payload = response.json::<Value>().await.expect("parse response");
+    assert_eq!(
+        payload["error"]["code"].as_str(),
+        Some("policy_gate_mismatch")
+    );
+
     handle.abort();
 }
 

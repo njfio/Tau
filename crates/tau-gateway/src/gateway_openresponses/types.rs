@@ -36,6 +36,14 @@ impl OpenResponsesApiError {
         )
     }
 
+    pub(super) fn forbidden(code: &'static str, message: impl Into<String>) -> Self {
+        Self::new(StatusCode::FORBIDDEN, code, message)
+    }
+
+    pub(super) fn not_found(code: &'static str, message: impl Into<String>) -> Self {
+        Self::new(StatusCode::NOT_FOUND, code, message)
+    }
+
     pub(super) fn payload_too_large(message: impl Into<String>) -> Self {
         Self::new(StatusCode::PAYLOAD_TOO_LARGE, "input_too_large", message)
     }
@@ -95,6 +103,39 @@ pub(super) struct OpenResponsesRequest {
 #[derive(Debug, Deserialize)]
 pub(super) struct GatewayAuthSessionRequest {
     pub(super) password: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct GatewaySessionAppendRequest {
+    pub(super) role: String,
+    pub(super) content: String,
+    #[serde(default)]
+    pub(super) policy_gate: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct GatewaySessionResetRequest {
+    #[serde(default)]
+    pub(super) policy_gate: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct GatewayMemoryUpdateRequest {
+    pub(super) content: String,
+    #[serde(default)]
+    pub(super) policy_gate: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct GatewayUiTelemetryRequest {
+    pub(super) view: String,
+    pub(super) action: String,
+    #[serde(default)]
+    pub(super) session_key: Option<String>,
+    #[serde(default)]
+    pub(super) reason_code: Option<String>,
+    #[serde(default)]
+    pub(super) metadata: Value,
 }
 
 #[derive(Debug, Serialize)]

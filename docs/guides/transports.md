@@ -415,6 +415,13 @@ Server endpoints:
 - `POST /v1/chat/completions` (OpenAI-compatible chat surface)
 - `POST /v1/completions` (OpenAI-compatible completions surface)
 - `GET /v1/models` (OpenAI-compatible model listing)
+- `GET /gateway/sessions`
+- `GET /gateway/sessions/{session_key}`
+- `POST /gateway/sessions/{session_key}/append` (requires `policy_gate=allow_session_write`)
+- `POST /gateway/sessions/{session_key}/reset` (requires `policy_gate=allow_session_write`)
+- `GET /gateway/memory/{session_key}`
+- `PUT /gateway/memory/{session_key}` (requires `policy_gate=allow_memory_write`)
+- `POST /gateway/ui/telemetry`
 - `POST /gateway/auth/session` (only when `--gateway-openresponses-auth-mode=password-session`)
 - `GET /gateway/status`
 - `GET /gateway/ws` (websocket control protocol)
