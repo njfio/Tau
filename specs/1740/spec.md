@@ -1,6 +1,6 @@
 # Issue 1740 Spec
 
-Status: Accepted
+Status: Implemented
 
 Issue: `#1740`  
 Milestone: `#24`  

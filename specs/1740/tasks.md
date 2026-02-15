@@ -1,6 +1,6 @@
 # Issue 1740 Tasks
 
-Status: Implementing
+Status: Implemented
 
 ## Ordered Tasks
 

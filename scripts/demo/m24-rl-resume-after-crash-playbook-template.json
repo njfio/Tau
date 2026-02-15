@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "artifact_kind": "m24_rl_resume_after_crash_playbook",
+  "run_id": "m24-recovery-2026-02-15-0001",
+  "crash_drill": {
+    "state_dir": ".tau/runtime/background-jobs",
+    "running_manifest_path": ".tau/runtime/background-jobs/jobs/job-recover-after-crash-1.json",
+    "crash_simulation_command": "pkill -9 tau-coding-agent"
+  },
+  "resume_drill": {
+    "restart_command": "cargo run -p tau-coding-agent -- --prompt-optimization-config .tau/prompt-optimization.json --prompt-optimization-store-sqlite .tau/training/store.sqlite",
+    "resumed_job_id": "job-recover-after-crash-1",
+    "checkpoint_path": ".tau/training/store.sqlite"
+  },
+  "evidence": {
+    "events_log_path": ".tau/runtime/background-jobs/events.jsonl",
+    "health_snapshot_path": ".tau/runtime/background-jobs/state.json",
+    "operator_log_path": "tasks/reports/m24-recovery-operator.log"
+  },
+  "outcome": {
+    "resume_status": "succeeded",
+    "recovery_reason_code": "job_recovered_after_restart"
+  }
+}
