@@ -1,3 +1,10 @@
+//! Onboarding identity baseline generation and first-run state handling.
+//!
+//! The wizard establishes deterministic bootstrap files under `.tau` and tracks
+//! first-run state via a versioned baseline contract. Invariants: generated
+//! identity artifacts are reproducible for the same inputs, and persisted state
+//! advertises schema/version metadata for forward-compatible upgrades.
+
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};

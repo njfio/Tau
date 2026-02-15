@@ -1,3 +1,9 @@
+//! Preflight handler for daemon-only startup commands.
+//!
+//! This phase runs before core startup dispatch: if daemon-mode flags are present
+//! it validates CLI input, executes daemon operations, and short-circuits normal
+//! agent startup. Errors are contextualized per daemon action for diagnostics.
+
 use anyhow::{Context, Result};
 use tau_cli::{validate_daemon_cli, Cli};
 use tau_ops::{

@@ -1,3 +1,9 @@
+//! Profile store schema, validation, and persistence operations.
+//!
+//! The profile store is versioned and validated on load/save. This module guards
+//! profile-name constraints and filesystem persistence semantics so onboarding and
+//! runtime profile commands operate on a consistent contract.
+
 use anyhow::{anyhow, bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;

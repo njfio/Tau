@@ -1,3 +1,9 @@
+//! Startup skill synchronization/bootstrap for local, registry, and remote sources.
+//!
+//! This module resolves and installs/syncs selected skills before runtime starts.
+//! It defines cache/lockfile boundaries and returns actionable diagnostics when
+//! source resolution or download/install operations fail.
+
 use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, bail, Result};

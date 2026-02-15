@@ -1,3 +1,9 @@
+//! Startup dispatch between local runtime and transport-mode execution paths.
+//!
+//! This module is the boundary after preflight/resolution: it composes startup
+//! policy and prompt state, then routes execution to the selected runtime mode.
+//! Dispatch failures preserve mode-specific context to aid operator triage.
+
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;

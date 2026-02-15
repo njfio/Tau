@@ -1,3 +1,9 @@
+//! `/profile` command parsing and execution over onboarding profile defaults.
+//!
+//! This module maps user commands to validated profile-store mutations while
+//! preserving profile naming/persistence invariants. Errors are explicit so
+//! callers can distinguish invalid command syntax from storage failures.
+
 use std::collections::BTreeMap;
 use std::path::Path;
 

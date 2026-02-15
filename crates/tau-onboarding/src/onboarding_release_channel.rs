@@ -1,3 +1,9 @@
+//! Release-channel bootstrap policy for onboarding runs.
+//!
+//! The onboarding flow resolves CLI overrides versus stored channel state and
+//! records whether the channel was reused or updated. This keeps release-channel
+//! mutations explicit and traceable in onboarding diagnostics.
+
 use anyhow::Result;
 use std::path::Path;
 use tau_release_channel::{load_release_channel_store, save_release_channel_store, ReleaseChannel};

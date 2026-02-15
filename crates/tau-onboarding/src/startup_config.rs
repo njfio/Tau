@@ -1,3 +1,9 @@
+//! Startup configuration derivation from CLI/options.
+//!
+//! This module defines defaults and serialization contracts for provider auth and
+//! profile bootstrap settings used by startup preflight, onboarding, and runtime
+//! dispatch phases.
+
 use serde::{Deserialize, Serialize};
 use tau_cli::Cli;
 use tau_provider::{

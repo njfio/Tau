@@ -1,3 +1,9 @@
+//! Onboarding report models and persistence helpers.
+//!
+//! This module defines the canonical onboarding report schema and write path used
+//! after bootstrap phases complete. It centralizes executable/provider/daemon
+//! diagnostics so startup investigation has one stable artifact per run.
+
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
