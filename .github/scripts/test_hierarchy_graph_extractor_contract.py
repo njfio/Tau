@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 import tempfile
 import unittest
@@ -103,6 +104,121 @@ class HierarchyGraphExtractorContractTests(unittest.TestCase):
             self.assertIn("#1678", markdown)
             self.assertIn("Missing Links", markdown)
             self.assertIn("Orphan Nodes", markdown)
+
+    def test_functional_live_mode_retries_on_transient_gh_failure(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            tmp = Path(temp_dir)
+            bin_dir = tmp / "bin"
+            bin_dir.mkdir(parents=True, exist_ok=True)
+            state_file = tmp / "gh-attempt-count"
+            state_file.write_text("0", encoding="utf-8")
+
+            fake_gh = bin_dir / "gh"
+            fake_gh.write_text(
+                r"""#!/usr/bin/env bash
+set -euo pipefail
+state_file="${FAKE_GH_STATE_FILE:?}"
+count="$(cat "${state_file}")"
+count="$((count + 1))"
+echo "${count}" >"${state_file}"
+
+if [[ "$1" != "api" ]]; then
+  echo "unsupported fake-gh command: $1" >&2
+  exit 2
+fi
+
+if [[ "${count}" -eq 1 ]]; then
+  echo "transient error" >&2
+  exit 1
+fi
+
+endpoint="$2"
+case "${endpoint}" in
+  repos/fixture/repository/issues\?state=all\&labels=roadmap\&per_page=100\&page=1)
+    cat <<'JSON'
+[
+  {
+    "number": 1761,
+    "title": "Dependency Graph Task",
+    "state": "open",
+    "html_url": "https://github.com/njfio/Tau/issues/1761",
+    "url": "https://api.github.com/repos/njfio/Tau/issues/1761",
+    "parent_issue_url": "https://api.github.com/repos/njfio/Tau/issues/1678",
+    "labels": [{"name":"task"},{"name":"roadmap"}]
+  },
+  {
+    "number": 1767,
+    "title": "Extractor Subtask",
+    "state": "open",
+    "html_url": "https://github.com/njfio/Tau/issues/1767",
+    "url": "https://api.github.com/repos/njfio/Tau/issues/1767",
+    "parent_issue_url": "https://api.github.com/repos/njfio/Tau/issues/1761",
+    "labels": [{"name":"task"},{"name":"roadmap"}]
+  }
+]
+JSON
+    ;;
+  repos/fixture/repository/issues\?state=all\&labels=roadmap\&per_page=100\&page=2)
+    echo '[]'
+    ;;
+  repos/fixture/repository/issues/1678)
+    cat <<'JSON'
+{
+  "number": 1678,
+  "title": "M21 Root",
+  "state": "open",
+  "html_url": "https://github.com/njfio/Tau/issues/1678",
+  "url": "https://api.github.com/repos/njfio/Tau/issues/1678",
+  "labels": [{"name":"epic"},{"name":"roadmap"}]
+}
+JSON
+    ;;
+  *)
+    echo "unexpected endpoint: ${endpoint}" >&2
+    exit 3
+    ;;
+esac
+""",
+                encoding="utf-8",
+            )
+            fake_gh.chmod(0o755)
+
+            output_json = tmp / "graph.json"
+            output_md = tmp / "graph.md"
+
+            env = os.environ.copy()
+            env["PATH"] = f"{bin_dir}:{env.get('PATH', '')}"
+            env["FAKE_GH_STATE_FILE"] = str(state_file)
+            completed = subprocess.run(
+                [
+                    "bash",
+                    str(EXTRACTOR_SCRIPT),
+                    "--root-issue",
+                    "1678",
+                    "--repo",
+                    "fixture/repository",
+                    "--output-json",
+                    str(output_json),
+                    "--output-md",
+                    str(output_md),
+                    "--max-retries",
+                    "2",
+                    "--quiet",
+                ],
+                text=True,
+                capture_output=True,
+                check=False,
+                env=env,
+            )
+            self.assertEqual(completed.returncode, 0, msg=completed.stderr)
+            self.assertTrue(output_json.is_file())
+            self.assertTrue(output_md.is_file())
+
+            payload = json.loads(output_json.read_text(encoding="utf-8"))
+            self.assertEqual(payload["summary"]["in_scope_nodes"], 3)
+            self.assertEqual(payload["summary"]["in_scope_edges"], 2)
+            self.assertEqual(payload["source_mode"], "live")
+            self.assertGreaterEqual(int(state_file.read_text(encoding="utf-8")), 3)
 
     def test_integration_roadmap_sync_guide_references_extractor(self):
         guide_text = ROADMAP_SYNC_GUIDE.read_text(encoding="utf-8")
