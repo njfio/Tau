@@ -10,7 +10,7 @@ use tau_cli::{
     CliOsSandboxPolicyMode, CliPromptSanitizerMode, CliProviderAuthMode,
 };
 
-use super::{parse_cli_with_stack, try_parse_cli_with_stack};
+use super::{normalize_startup_cli_args, parse_cli_with_stack, try_parse_cli_with_stack};
 
 #[test]
 fn unit_cli_provider_retry_flags_accept_explicit_baseline_values() {
@@ -2818,12 +2818,32 @@ fn functional_cli_prompt_optimization_flags_accept_canonical_overrides() {
 }
 
 #[test]
-fn regression_cli_prompt_optimization_flags_reject_legacy_train_aliases() {
-    let error = try_parse_cli_with_stack(["tau-rs", "--train-config", ".tau/train-legacy.json"])
-        .expect_err("legacy --train-* aliases should be rejected");
-    assert!(error
-        .to_string()
-        .contains("unexpected argument '--train-config' found"));
+fn functional_cli_prompt_optimization_flags_accept_legacy_train_aliases_with_warning_snapshot() {
+    let (normalized, warnings) = normalize_startup_cli_args(vec![
+        "tau-rs".to_string(),
+        "--train-config".to_string(),
+        ".tau/train-legacy.json".to_string(),
+    ]);
+    assert_eq!(
+        normalized,
+        vec![
+            "tau-rs",
+            "--prompt-optimization-config",
+            ".tau/train-legacy.json"
+        ]
+    );
+    assert_eq!(
+        warnings,
+        vec![String::from(
+            "deprecated CLI alias '--train-config' detected; use '--prompt-optimization-config' instead."
+        )]
+    );
+
+    let cli = parse_cli_with_stack(["tau-rs", "--train-config", ".tau/train-legacy.json"]);
+    assert_eq!(
+        cli.prompt_optimization_config.as_deref(),
+        Some(Path::new(".tau/train-legacy.json"))
+    );
 }
 
 #[test]
@@ -2854,17 +2874,52 @@ fn functional_cli_prompt_optimization_proxy_flags_accept_canonical_overrides() {
 }
 
 #[test]
-fn regression_cli_prompt_optimization_proxy_flags_reject_legacy_training_aliases() {
-    let error = try_parse_cli_with_stack([
+fn functional_cli_prompt_optimization_proxy_flags_accept_legacy_training_aliases_with_warning_snapshot(
+) {
+    let (normalized, warnings) = normalize_startup_cli_args(vec![
+        "tau-rs".to_string(),
+        "--training-proxy-server".to_string(),
+        "--training-proxy-bind".to_string(),
+        "127.0.0.1:8866".to_string(),
+    ]);
+    assert_eq!(
+        normalized,
+        vec![
+            "tau-rs",
+            "--prompt-optimization-proxy-server",
+            "--prompt-optimization-proxy-bind",
+            "127.0.0.1:8866",
+        ]
+    );
+    assert_eq!(
+        warnings,
+        vec![
+            String::from(
+                "deprecated CLI alias '--training-proxy-server' detected; use '--prompt-optimization-proxy-server' instead."
+            ),
+            String::from(
+                "deprecated CLI alias '--training-proxy-bind' detected; use '--prompt-optimization-proxy-bind' instead."
+            ),
+        ]
+    );
+
+    let cli = parse_cli_with_stack([
         "tau-rs",
         "--training-proxy-server",
         "--training-proxy-bind",
         "127.0.0.1:8866",
-    ])
-    .expect_err("legacy --training-proxy-* aliases should be rejected");
+    ]);
+    assert!(cli.prompt_optimization_proxy_server);
+    assert_eq!(cli.prompt_optimization_proxy_bind, "127.0.0.1:8866");
+}
+
+#[test]
+fn regression_cli_prompt_optimization_alias_normalization_keeps_unknown_flags_fail_closed() {
+    let error = try_parse_cli_with_stack(["tau-rs", "--training-proxy-unknown"])
+        .expect_err("unknown alias-like flags must remain fail-closed");
     assert!(error
         .to_string()
-        .contains("unexpected argument '--training-proxy-server' found"));
+        .contains("unexpected argument '--training-proxy-unknown' found"));
 }
 
 #[test]
