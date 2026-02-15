@@ -7,9 +7,9 @@ use std::{
 
 use serde::Deserialize;
 use serde_json::{json, Value};
-use tempfile::{tempdir, TempDir};
 use tau_ai::Message;
 use tau_session::SessionStore;
+use tempfile::{tempdir, TempDir};
 
 use super::*;
 
