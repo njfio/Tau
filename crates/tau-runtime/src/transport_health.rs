@@ -1,3 +1,9 @@
+//! Transport health classification and status-line rendering contracts.
+//!
+//! The health snapshots here are consumed by operators and dashboards; reason
+//! text and recommendation fields are part of the observable error-contract
+//! surface and must remain stable across regressions.
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

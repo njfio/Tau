@@ -1,3 +1,9 @@
+//! Helpers for rendering/persisting runtime output and event snapshots.
+//!
+//! These functions form a presentation boundary: they should not mutate agent
+//! behavior, but they do preserve operator-visible traces and message summaries
+//! used by troubleshooting and post-run audits.
+
 use std::io::Write;
 
 use anyhow::Result;
