@@ -10,6 +10,7 @@ CONFIG_PATH="${REPO_ROOT}/tasks/roadmap-status-config.json"
 FIXTURE_JSON=""
 REPO_SLUG=""
 CHECK_MODE="false"
+QUIET_MODE="false"
 
 TODO_BEGIN="<!-- ROADMAP_STATUS:BEGIN -->"
 TODO_END="<!-- ROADMAP_STATUS:END -->"
@@ -40,6 +41,7 @@ Options:
   --config-path <path>    Override roadmap config path.
   --repo <owner/name>     Override repository for gh queries.
   --fixture-json <path>   Read issue states from fixture JSON instead of GitHub.
+  --quiet                 Suppress informational output.
   --check                 Verify docs are up to date (no writes).
   --help                  Show this message.
 
@@ -58,6 +60,12 @@ require_cmd() {
   if ! command -v "${name}" >/dev/null 2>&1; then
     echo "error: required command '${name}' not found" >&2
     exit 1
+  fi
+}
+
+log_info() {
+  if [[ "${QUIET_MODE}" != "true" ]]; then
+    echo "$@"
   fi
 }
 
@@ -362,6 +370,9 @@ while [[ $# -gt 0 ]]; do
       shift
       FIXTURE_JSON="$1"
       ;;
+    --quiet)
+      QUIET_MODE="true"
+      ;;
     --check)
       CHECK_MODE="true"
       ;;
@@ -410,12 +421,12 @@ if [[ "${CHECK_MODE}" == "true" ]]; then
     exit 1
   fi
 
-  echo "roadmap status docs are up to date"
+  log_info "roadmap status docs are up to date"
   exit 0
 fi
 
 mv "${tmp_todo}" "${TODO_PATH}"
 mv "${tmp_gap}" "${GAP_PATH}"
-echo "updated roadmap status blocks:"
-echo "  - ${TODO_PATH}"
-echo "  - ${GAP_PATH}"
+log_info "updated roadmap status blocks:"
+log_info "  - ${TODO_PATH}"
+log_info "  - ${GAP_PATH}"

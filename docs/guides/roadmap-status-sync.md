@@ -33,6 +33,12 @@ scripts/dev/roadmap-status-sync.sh --check
 
 `--check` exits non-zero when either generated block is stale and prints a diff.
 
+Use `--quiet` to suppress informational success output in CI:
+
+```bash
+scripts/dev/roadmap-status-sync.sh --check --quiet
+```
+
 ## Fixture Mode (Deterministic Tests)
 
 ```bash
