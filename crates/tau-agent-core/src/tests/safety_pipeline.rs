@@ -146,6 +146,72 @@ fn inbound_safety_fixture_corpus() -> InboundSafetyFixtureCorpus {
     }
 }
 
+const OUTBOUND_SECRET_FIXTURE_MATRIX_JSON: &str =
+    include_str!("../../../tau-tools/src/outbound_secret_fixture_matrix.json");
+const OUTBOUND_FIXTURE_OBFUSCATION_MARKER: &str = "[TAU-OBFUSCATED]";
+
+fn decode_outbound_fixture_secret(value: &str) -> String {
+    value.replace(OUTBOUND_FIXTURE_OBFUSCATION_MARKER, "")
+}
+
+#[derive(Debug)]
+struct OutboundSecretFixtureMatrix {
+    schema_version: u32,
+    cases: Vec<OutboundSecretFixtureCase>,
+}
+
+#[derive(Debug)]
+struct OutboundSecretFixtureCase {
+    case_id: String,
+    payload: String,
+    expected_reason_code: String,
+    marker: String,
+}
+
+fn outbound_secret_fixture_matrix() -> OutboundSecretFixtureMatrix {
+    let root: serde_json::Value = serde_json::from_str(OUTBOUND_SECRET_FIXTURE_MATRIX_JSON)
+        .expect("outbound secret fixture matrix");
+    let schema_version = root
+        .get("schema_version")
+        .and_then(serde_json::Value::as_u64)
+        .and_then(|value| u32::try_from(value).ok())
+        .expect("schema_version");
+    let cases = root
+        .get("cases")
+        .and_then(serde_json::Value::as_array)
+        .expect("cases array")
+        .iter()
+        .map(|value| {
+            let payload = value
+                .get("payload")
+                .and_then(serde_json::Value::as_str)
+                .expect("payload");
+            let marker = value
+                .get("marker")
+                .and_then(serde_json::Value::as_str)
+                .expect("marker");
+            OutboundSecretFixtureCase {
+                case_id: value
+                    .get("case_id")
+                    .and_then(serde_json::Value::as_str)
+                    .expect("case_id")
+                    .to_string(),
+                payload: decode_outbound_fixture_secret(payload),
+                expected_reason_code: value
+                    .get("expected_reason_code")
+                    .and_then(serde_json::Value::as_str)
+                    .expect("expected_reason_code")
+                    .to_string(),
+                marker: decode_outbound_fixture_secret(marker),
+            }
+        })
+        .collect::<Vec<_>>();
+    OutboundSecretFixtureMatrix {
+        schema_version,
+        cases,
+    }
+}
+
 fn prompt_ready_agent() -> Agent {
     let client = Arc::new(MockClient {
         responses: AsyncMutex::new(VecDeque::from([ChatResponse {
@@ -449,6 +515,131 @@ async fn functional_secret_leak_policy_redacts_outbound_http_payload() {
     let rendered = serde_json::to_string(request).expect("serialize request");
     assert!(rendered.contains("[TAU-SECRET-REDACTED]"));
     assert!(!rendered.contains("sk-abc123abc123abc123abc123"));
+}
+
+#[tokio::test]
+async fn integration_outbound_secret_fixture_matrix_blocks_all_cases() {
+    let matrix = outbound_secret_fixture_matrix();
+    assert_eq!(matrix.schema_version, 1);
+    assert!(!matrix.cases.is_empty());
+
+    for case in &matrix.cases {
+        let client = Arc::new(MockClient {
+            responses: AsyncMutex::new(VecDeque::from([ChatResponse {
+                message: Message::assistant_text("should never be returned"),
+                finish_reason: Some("stop".to_string()),
+                usage: ChatUsage::default(),
+            }])),
+        });
+        let mut agent = Agent::new(client, AgentConfig::default());
+        agent.set_safety_policy(SafetyPolicy {
+            secret_leak_mode: SafetyMode::Block,
+            ..SafetyPolicy::default()
+        });
+
+        let error = agent
+            .prompt(case.payload.as_str())
+            .await
+            .expect_err("outbound payload should be blocked");
+        match error {
+            AgentError::SafetyViolation {
+                stage,
+                reason_codes,
+            } => {
+                assert_eq!(stage, "outbound_http_payload");
+                assert!(
+                    reason_codes
+                        .iter()
+                        .any(|code| code == &case.expected_reason_code),
+                    "expected reason code {} for {}",
+                    case.expected_reason_code,
+                    case.case_id
+                );
+            }
+            other => panic!("expected safety violation for {}: {other:?}", case.case_id),
+        }
+    }
+}
+
+#[tokio::test]
+async fn functional_outbound_secret_fixture_matrix_redacts_all_cases() {
+    let matrix = outbound_secret_fixture_matrix();
+    for case in &matrix.cases {
+        let client = Arc::new(CapturingMockClient {
+            responses: AsyncMutex::new(VecDeque::from([ChatResponse {
+                message: Message::assistant_text("ok"),
+                finish_reason: Some("stop".to_string()),
+                usage: ChatUsage::default(),
+            }])),
+            requests: AsyncMutex::new(Vec::new()),
+        });
+        let client_for_agent: Arc<dyn tau_ai::LlmClient> = client.clone();
+        let mut agent = Agent::new(client_for_agent, AgentConfig::default());
+        agent.set_safety_policy(SafetyPolicy {
+            secret_leak_mode: SafetyMode::Redact,
+            ..SafetyPolicy::default()
+        });
+
+        let _ = agent
+            .prompt(case.payload.as_str())
+            .await
+            .expect("prompt should succeed in redact mode");
+        let requests = client.requests.lock().await.clone();
+        let request = requests.first().expect("captured request");
+        let rendered = serde_json::to_string(request).expect("serialize request");
+        assert!(
+            rendered.contains("[TAU-SECRET-REDACTED]"),
+            "redaction token missing for {}",
+            case.case_id
+        );
+        assert!(
+            !rendered.contains(case.marker.as_str()),
+            "secret marker leaked for {}",
+            case.case_id
+        );
+    }
+}
+
+#[tokio::test]
+async fn regression_outbound_secret_fixture_matrix_reason_codes_are_stable() {
+    let matrix = outbound_secret_fixture_matrix();
+    for case in &matrix.cases {
+        let client = Arc::new(MockClient {
+            responses: AsyncMutex::new(VecDeque::from([ChatResponse {
+                message: Message::assistant_text("should never be returned"),
+                finish_reason: Some("stop".to_string()),
+                usage: ChatUsage::default(),
+            }])),
+        });
+        let mut agent = Agent::new(client, AgentConfig::default());
+        agent.set_safety_policy(SafetyPolicy {
+            secret_leak_mode: SafetyMode::Block,
+            ..SafetyPolicy::default()
+        });
+        let error = agent
+            .prompt(case.payload.as_str())
+            .await
+            .expect_err("outbound payload should be blocked");
+        let AgentError::SafetyViolation { reason_codes, .. } = error else {
+            panic!("expected safety violation for {}", case.case_id);
+        };
+        assert!(
+            reason_codes
+                .iter()
+                .all(|code| code.starts_with("secret_leak.")),
+            "non-secret leak reason code emitted for {}: {:?}",
+            case.case_id,
+            reason_codes
+        );
+        assert!(
+            reason_codes
+                .iter()
+                .any(|code| code == &case.expected_reason_code),
+            "expected reason code {} for {}",
+            case.expected_reason_code,
+            case.case_id
+        );
+    }
 }
 
 #[tokio::test]

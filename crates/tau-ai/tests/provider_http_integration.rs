@@ -7,6 +7,29 @@ use tau_ai::{
     OpenAiAuthScheme, OpenAiClient, OpenAiConfig, TauAiError, ToolChoice, ToolDefinition,
 };
 
+fn decode_outbound_fixture_secret(value: &str) -> String {
+    value.replace("[TAU-OBFUSCATED]", "")
+}
+
+fn outbound_secret_fixture_cases() -> Vec<(String, String)> {
+    let matrix: serde_json::Value = serde_json::from_str(include_str!(
+        "../../tau-tools/src/outbound_secret_fixture_matrix.json"
+    ))
+    .expect("outbound secret fixture matrix");
+    assert_eq!(matrix["schema_version"], 1);
+    matrix["cases"]
+        .as_array()
+        .expect("cases array")
+        .iter()
+        .map(|value| {
+            (
+                value["case_id"].as_str().expect("case_id").to_string(),
+                decode_outbound_fixture_secret(value["payload"].as_str().expect("payload")),
+            )
+        })
+        .collect::<Vec<_>>()
+}
+
 #[tokio::test]
 async fn openai_client_sends_expected_http_request() {
     let server = MockServer::start();
@@ -77,6 +100,77 @@ async fn openai_client_sends_expected_http_request() {
     mock.assert();
     assert_eq!(response.message.text_content(), "openai ok");
     assert_eq!(response.usage.total_tokens, 8);
+}
+
+#[tokio::test]
+async fn functional_openai_client_outbound_secret_fixture_matrix_preserves_usage_telemetry_fields()
+{
+    for (index, (case_id, payload)) in outbound_secret_fixture_cases().into_iter().enumerate() {
+        let server = MockServer::start();
+        let prompt_tokens = 7 + index as u64;
+        let completion_tokens = 3 + (index as u64 % 3);
+        let total_tokens = prompt_tokens + completion_tokens;
+        let payload_for_match = payload.clone();
+        let mock = server.mock(move |when, then| {
+            when.method(POST)
+                .path("/v1/chat/completions")
+                .header("authorization", "Bearer test-openai-key")
+                .header_exists("x-tau-request-id")
+                .header("x-tau-retry-attempt", "0")
+                .json_body_includes(
+                    json!({
+                        "model": "gpt-4o-mini",
+                        "messages": [{"role": "user", "content": payload_for_match}],
+                    })
+                    .to_string(),
+                );
+            then.status(200).json_body(json!({
+                "choices": [{
+                    "message": {
+                        "content": "openai ok"
+                    },
+                    "finish_reason": "stop"
+                }],
+                "usage": {
+                    "prompt_tokens": prompt_tokens,
+                    "completion_tokens": completion_tokens,
+                    "total_tokens": total_tokens
+                }
+            }));
+        });
+
+        let client = OpenAiClient::new(OpenAiConfig {
+            api_base: format!("{}/v1", server.base_url()),
+            api_key: "test-openai-key".to_string(),
+            organization: None,
+            request_timeout_ms: 5_000,
+            max_retries: 2,
+            retry_budget_ms: 0,
+            retry_jitter: false,
+            auth_scheme: OpenAiAuthScheme::Bearer,
+            api_version: None,
+        })
+        .expect("openai client should be created");
+
+        let response = client
+            .complete(ChatRequest {
+                model: "gpt-4o-mini".to_string(),
+                messages: vec![Message::user(payload)],
+                tools: vec![],
+                tool_choice: None,
+                json_mode: false,
+                max_tokens: None,
+                temperature: None,
+            })
+            .await
+            .unwrap_or_else(|error| panic!("completion should succeed for {case_id}: {error}"));
+
+        mock.assert_calls(1);
+        assert_eq!(response.message.text_content(), "openai ok");
+        assert_eq!(response.usage.input_tokens, prompt_tokens);
+        assert_eq!(response.usage.output_tokens, completion_tokens);
+        assert_eq!(response.usage.total_tokens, total_tokens);
+    }
 }
 
 #[tokio::test]
