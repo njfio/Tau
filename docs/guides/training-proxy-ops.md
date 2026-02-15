@@ -55,3 +55,13 @@ counts, latency, and upstream status/error outcome.
 - `--training-proxy-upstream-url` -> `--prompt-optimization-proxy-upstream-url`
 - `--training-proxy-state-dir` -> `--prompt-optimization-proxy-state-dir`
 - `--training-proxy-timeout-ms` -> `--prompt-optimization-proxy-timeout-ms`
+
+## Ownership
+
+Primary ownership surfaces:
+- `crates/tau-training-proxy` (attribution proxy runtime and log emission)
+- `crates/tau-gateway` (HTTP server integration boundary)
+- `crates/tau-provider` (upstream model/provider routing contracts)
+- `crates/tau-coding-agent` (CLI mode routing and startup surface)
+
+Ownership map: `docs/guides/runbook-ownership-map.md`.

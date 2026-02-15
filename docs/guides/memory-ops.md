@@ -120,3 +120,13 @@ Primary state files:
   Action: treat as rollout gate failure; pause promotion and investigate repeated runtime failures in active memory producers.
 - Symptom: non-zero `queue_depth`.
   Action: investigate upstream producers writing memory health artifacts and reduce backlog before promotion.
+
+## Ownership
+
+Primary ownership surfaces:
+- `crates/tau-agent-core` (runtime memory behavior, recall, ranking, embedding usage)
+- `crates/tau-memory` (shared storage/runtime helpers and fixture schema contracts)
+- `crates/tau-tools` (memory tool interfaces and policy wiring)
+- `crates/tau-coding-agent` (CLI transport diagnostics and operational entrypoints)
+
+Ownership map: `docs/guides/runbook-ownership-map.md`.

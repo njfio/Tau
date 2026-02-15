@@ -86,3 +86,13 @@ Gateway dashboard endpoints (`/dashboard/health`, `/dashboard/widgets`,
 - `--train-config` -> `--prompt-optimization-config`
 - `--train-store-sqlite` -> `--prompt-optimization-store-sqlite`
 - `--train-json` -> `--prompt-optimization-json`
+
+## Ownership
+
+Primary ownership surfaces:
+- `crates/tau-trainer` (top-level orchestration lifecycle)
+- `crates/tau-training-runner` and `crates/tau-training-store` (rollout execution + persistence)
+- `crates/tau-algorithm` (prompt optimization strategy)
+- `crates/tau-coding-agent` (CLI flag wiring and startup dispatch)
+
+Ownership map: `docs/guides/runbook-ownership-map.md`.
