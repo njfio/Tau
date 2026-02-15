@@ -3040,6 +3040,37 @@ fn regression_redact_secrets_preserves_prompt_injection_markers_for_safety_reinj
     assert!(!redacted.contains("sk-proj-AbCdEf0123456789_uvWXyZ9876543210"));
 }
 
+fn decode_outbound_fixture_secret(value: &str) -> String {
+    value.replace("[TAU-OBFUSCATED]", "")
+}
+
+#[test]
+fn functional_redact_secrets_outbound_fixture_matrix_covers_configured_patterns() {
+    let matrix: serde_json::Value =
+        serde_json::from_str(include_str!("../outbound_secret_fixture_matrix.json"))
+            .expect("outbound secret fixture matrix");
+    assert_eq!(matrix["schema_version"], 1);
+    let cases = matrix["cases"]
+        .as_array()
+        .expect("cases should be an array");
+    assert!(cases.len() >= 8);
+
+    for case in cases {
+        let case_id = case["case_id"].as_str().expect("case_id");
+        let payload = decode_outbound_fixture_secret(case["payload"].as_str().expect("payload"));
+        let marker = decode_outbound_fixture_secret(case["marker"].as_str().expect("marker"));
+        let redacted = redact_secrets(payload.as_str());
+        assert!(
+            redacted.contains("[REDACTED]"),
+            "marker missing for {case_id}"
+        );
+        assert!(
+            !redacted.contains(marker.as_str()),
+            "marker leaked for {case_id}"
+        );
+    }
+}
+
 #[test]
 fn canonicalize_best_effort_handles_non_existing_child() {
     let temp = tempdir().expect("tempdir");
