@@ -11,5 +11,14 @@
     "tau-tools": 37.0,
     "tau-multi-channel": 45.0,
     "tau-session": 23.0
+  },
+  "allocation_plan_file": "tasks/policies/m23-doc-allocation-plan.json",
+  "owner_domain_review_cadence_days": {
+    "runtime-core": 7,
+    "tools-cli": 10,
+    "transport-bridges": 10,
+    "gateway-provider": 10,
+    "operations": 14,
+    "training-runtime": 14
   }
 }

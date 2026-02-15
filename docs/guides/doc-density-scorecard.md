@@ -108,6 +108,18 @@ Outputs:
 This complements (does not replace) `rust_doc_density.py`, which measures
 documented-public-API coverage percentage.
 
+## Allocation Quotas (M23)
+
+Crate-level quota planning from baseline to `>=3,000` markers is tracked in:
+
+- `tasks/policies/m23-doc-allocation-plan.json`
+- `tasks/reports/m23-doc-allocation-plan.md`
+- guide: `docs/guides/doc-density-allocation-plan.md`
+
+Owner-domain cadence metadata is mirrored in
+`docs/guides/doc-density-targets.json` under
+`owner_domain_review_cadence_days`.
+
 ## Gate Reproducibility Artifact (M23)
 
 For milestone gate reviews, generate a standardized artifact bundle that records

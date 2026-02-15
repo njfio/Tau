@@ -1,0 +1,228 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-02-15T17:41:19Z",
+  "source_report": "tasks/reports/m23-rustdoc-marker-count.json",
+  "baseline_total_markers": 1438,
+  "current_total_markers": 1486,
+  "target_total_markers": 3000,
+  "target_floor_markers": 3000,
+  "owner_domain_cadence": {
+    "runtime-core": {
+      "review_cadence_days": 7,
+      "scope": [
+        "tau-coding-agent",
+        "tau-runtime",
+        "tau-onboarding",
+        "tau-agent-core",
+        "tau-session",
+        "tau-skills",
+        "tau-startup",
+        "tau-memory"
+      ]
+    },
+    "tools-cli": {
+      "review_cadence_days": 10,
+      "scope": [
+        "tau-tools",
+        "tau-cli"
+      ]
+    },
+    "transport-bridges": {
+      "review_cadence_days": 10,
+      "scope": [
+        "tau-multi-channel",
+        "tau-github-issues-runtime"
+      ]
+    },
+    "gateway-provider": {
+      "review_cadence_days": 10,
+      "scope": [
+        "tau-gateway",
+        "tau-provider"
+      ]
+    },
+    "operations": {
+      "review_cadence_days": 14,
+      "scope": [
+        "tau-ops"
+      ]
+    },
+    "training-runtime": {
+      "review_cadence_days": 14,
+      "scope": [
+        "tau-training-types"
+      ]
+    }
+  },
+  "checkpoint_schedule": [
+    {
+      "id": "m23-cp1",
+      "date": "2026-03-31",
+      "min_total_markers": 2000,
+      "review_mode": "domain-owner review + delta validation"
+    },
+    {
+      "id": "m23-cp2",
+      "date": "2026-04-30",
+      "min_total_markers": 2450,
+      "review_mode": "domain-owner review + quality spot audit sample"
+    },
+    {
+      "id": "m23-cp3",
+      "date": "2026-05-30",
+      "min_total_markers": 3000,
+      "review_mode": "gate readiness review (#1701)"
+    }
+  ],
+  "missed_target_escalation": [
+    "If a checkpoint misses target by <=5%, domain owner submits remediation plan within 72h and tags issue #1656.",
+    "If miss is >5% or repeats on consecutive checkpoints, open blocker under #1701 and escalate in tracker #1678.",
+    "If two domains miss in same checkpoint, freeze non-critical doc PR lanes until recovery plan is approved."
+  ],
+  "quota_allocations": [
+    {
+      "crate": "tau-agent-core",
+      "current_markers": 283,
+      "target_markers": 363,
+      "delta_required": 80,
+      "owner_domain": "runtime-core",
+      "review_cadence_days": 7,
+      "checkpoint_owner": "runtime-core-maintainers"
+    },
+    {
+      "crate": "tau-cli",
+      "current_markers": 36,
+      "target_markers": 96,
+      "delta_required": 60,
+      "owner_domain": "tools-cli",
+      "review_cadence_days": 10,
+      "checkpoint_owner": "tools-cli-maintainers"
+    },
+    {
+      "crate": "tau-coding-agent",
+      "current_markers": 21,
+      "target_markers": 301,
+      "delta_required": 280,
+      "owner_domain": "runtime-core",
+      "review_cadence_days": 7,
+      "checkpoint_owner": "runtime-core-maintainers"
+    },
+    {
+      "crate": "tau-gateway",
+      "current_markers": 37,
+      "target_markers": 127,
+      "delta_required": 90,
+      "owner_domain": "gateway-provider",
+      "review_cadence_days": 10,
+      "checkpoint_owner": "gateway-provider-maintainers"
+    },
+    {
+      "crate": "tau-github-issues-runtime",
+      "current_markers": 39,
+      "target_markers": 59,
+      "delta_required": 20,
+      "owner_domain": "transport-bridges",
+      "review_cadence_days": 10,
+      "checkpoint_owner": "transport-bridges-maintainers"
+    },
+    {
+      "crate": "tau-memory",
+      "current_markers": 48,
+      "target_markers": 118,
+      "delta_required": 70,
+      "owner_domain": "runtime-core",
+      "review_cadence_days": 7,
+      "checkpoint_owner": "runtime-core-maintainers"
+    },
+    {
+      "crate": "tau-multi-channel",
+      "current_markers": 105,
+      "target_markers": 235,
+      "delta_required": 130,
+      "owner_domain": "transport-bridges",
+      "review_cadence_days": 10,
+      "checkpoint_owner": "transport-bridges-maintainers"
+    },
+    {
+      "crate": "tau-onboarding",
+      "current_markers": 66,
+      "target_markers": 186,
+      "delta_required": 120,
+      "owner_domain": "runtime-core",
+      "review_cadence_days": 7,
+      "checkpoint_owner": "runtime-core-maintainers"
+    },
+    {
+      "crate": "tau-ops",
+      "current_markers": 20,
+      "target_markers": 104,
+      "delta_required": 84,
+      "owner_domain": "operations",
+      "review_cadence_days": 14,
+      "checkpoint_owner": "operations-maintainers"
+    },
+    {
+      "crate": "tau-provider",
+      "current_markers": 39,
+      "target_markers": 129,
+      "delta_required": 90,
+      "owner_domain": "gateway-provider",
+      "review_cadence_days": 10,
+      "checkpoint_owner": "gateway-provider-maintainers"
+    },
+    {
+      "crate": "tau-runtime",
+      "current_markers": 111,
+      "target_markers": 231,
+      "delta_required": 120,
+      "owner_domain": "runtime-core",
+      "review_cadence_days": 7,
+      "checkpoint_owner": "runtime-core-maintainers"
+    },
+    {
+      "crate": "tau-session",
+      "current_markers": 41,
+      "target_markers": 111,
+      "delta_required": 70,
+      "owner_domain": "runtime-core",
+      "review_cadence_days": 7,
+      "checkpoint_owner": "runtime-core-maintainers"
+    },
+    {
+      "crate": "tau-skills",
+      "current_markers": 43,
+      "target_markers": 113,
+      "delta_required": 70,
+      "owner_domain": "runtime-core",
+      "review_cadence_days": 7,
+      "checkpoint_owner": "runtime-core-maintainers"
+    },
+    {
+      "crate": "tau-startup",
+      "current_markers": 22,
+      "target_markers": 92,
+      "delta_required": 70,
+      "owner_domain": "runtime-core",
+      "review_cadence_days": 7,
+      "checkpoint_owner": "runtime-core-maintainers"
+    },
+    {
+      "crate": "tau-tools",
+      "current_markers": 45,
+      "target_markers": 165,
+      "delta_required": 120,
+      "owner_domain": "tools-cli",
+      "review_cadence_days": 10,
+      "checkpoint_owner": "tools-cli-maintainers"
+    },
+    {
+      "crate": "tau-training-types",
+      "current_markers": 77,
+      "target_markers": 117,
+      "delta_required": 40,
+      "owner_domain": "training-runtime",
+      "review_cadence_days": 14,
+      "checkpoint_owner": "training-runtime-maintainers"
+    }
+  ]
+}
