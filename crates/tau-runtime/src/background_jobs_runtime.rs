@@ -1325,10 +1325,11 @@ where
 #[cfg(test)]
 mod tests {
     use super::{
-        background_job_manifest_path, BackgroundJobCreateRequest, BackgroundJobRuntime,
-        BackgroundJobRuntimeConfig, BackgroundJobStatus, BackgroundJobStatusFilter,
-        BackgroundJobTraceContext,
+        background_job_manifest_path, BackgroundJobCreateRequest, BackgroundJobRecord,
+        BackgroundJobRuntime, BackgroundJobRuntimeConfig, BackgroundJobStatus,
+        BackgroundJobStatusFilter, BackgroundJobTraceContext,
     };
+    use std::collections::BTreeMap;
     use std::time::Duration;
     use tempfile::tempdir;
 
@@ -1527,5 +1528,73 @@ mod tests {
         let manifest_path =
             background_job_manifest_path(runtime.state_dir(), refreshed_second.job_id.as_str());
         assert!(manifest_path.exists());
+    }
+
+    #[tokio::test]
+    async fn integration_background_job_runtime_recovers_running_manifest_after_restart() {
+        let temp = tempdir().expect("tempdir");
+        let state_dir = temp.path().join("jobs");
+        let config = BackgroundJobRuntimeConfig {
+            state_dir: state_dir.clone(),
+            default_timeout_ms: 5_000,
+            max_timeout_ms: 10_000,
+            worker_poll_ms: 20,
+        };
+        let bootstrap = BackgroundJobRuntime::new(config.clone()).expect("bootstrap runtime");
+        drop(bootstrap);
+
+        let job_id = "job-recover-after-crash-1".to_string();
+        let (command, args) = shell_command("echo recovered-after-crash");
+        let stdout_path = state_dir.join("stdout").join(format!("{job_id}.log"));
+        let stderr_path = state_dir.join("stderr").join(format!("{job_id}.log"));
+        if let Some(parent) = stdout_path.parent() {
+            std::fs::create_dir_all(parent).expect("create stdout parent");
+        }
+        if let Some(parent) = stderr_path.parent() {
+            std::fs::create_dir_all(parent).expect("create stderr parent");
+        }
+
+        let record = BackgroundJobRecord {
+            schema_version: 1,
+            job_id: job_id.clone(),
+            command,
+            args,
+            env: BTreeMap::new(),
+            cwd: None,
+            requested_timeout_ms: 5_000,
+            effective_timeout_ms: 5_000,
+            status: BackgroundJobStatus::Running,
+            reason_code: "job_started".to_string(),
+            created_unix_ms: 1_700_000_000_000,
+            updated_unix_ms: 1_700_000_000_100,
+            started_unix_ms: Some(1_700_000_000_100),
+            finished_unix_ms: None,
+            exit_code: None,
+            error: None,
+            cancellation_requested: false,
+            stdout_path,
+            stderr_path,
+            trace: BackgroundJobTraceContext::default(),
+        };
+        let manifest_path = background_job_manifest_path(&state_dir, &job_id);
+        let payload = serde_json::to_string_pretty(&record).expect("serialize running manifest");
+        std::fs::write(&manifest_path, payload).expect("write running manifest");
+
+        let restarted = BackgroundJobRuntime::new(config).expect("restart runtime");
+        let status = wait_for_terminal_status(&restarted, &job_id, Duration::from_secs(5)).await;
+        assert_eq!(status, BackgroundJobStatus::Succeeded);
+
+        let refreshed = restarted
+            .get_job(&job_id)
+            .await
+            .expect("get recovered job")
+            .expect("recovered job should exist");
+        assert_eq!(refreshed.status, BackgroundJobStatus::Succeeded);
+        assert_eq!(refreshed.reason_code, "job_succeeded".to_string());
+
+        let events_raw = std::fs::read_to_string(restarted.events_path())
+            .expect("read events for recovered job");
+        assert!(events_raw.contains("\"event\":\"recovered\""));
+        assert!(events_raw.contains("\"reason_code\":\"job_recovered_after_restart\""));
     }
 }

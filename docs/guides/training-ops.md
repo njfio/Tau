@@ -228,6 +228,48 @@ scripts/demo/validate-m24-rl-benchmark-report.sh \
   .tau/reports/m24/<run_id>/m24-benchmark-report-<report_kind>.json
 ```
 
+## M24 Resume-After-Crash Drill Playbook
+
+This drill proves runtime restart recovery for in-flight jobs and captures an
+operator-ready artifact with exact commands and evidence paths.
+
+### Drill Procedure
+
+1. Run controlled crash-recovery integration proof:
+
+```bash
+cargo test -p tau-runtime \
+  integration_background_job_runtime_recovers_running_manifest_after_restart
+```
+
+2. Capture operator command transcript to a log file, for example:
+   `tasks/reports/m24-recovery-operator.log`.
+3. Populate the template:
+   `scripts/demo/m24-rl-resume-after-crash-playbook-template.json`.
+4. Save run-scoped artifact, for example:
+   `tasks/reports/m24-resume-after-crash-playbook-<run_id>.json`.
+5. Validate artifact:
+
+```bash
+scripts/demo/validate-m24-rl-resume-after-crash-playbook.sh \
+  tasks/reports/m24-resume-after-crash-playbook-<run_id>.json
+```
+
+### Required Evidence Fields
+
+- crash drill metadata:
+  `crash_drill.state_dir`, `crash_drill.running_manifest_path`,
+  `crash_drill.crash_simulation_command`
+- resume metadata:
+  `resume_drill.restart_command`, `resume_drill.resumed_job_id`,
+  `resume_drill.checkpoint_path`
+- evidence paths:
+  `evidence.events_log_path`, `evidence.health_snapshot_path`,
+  `evidence.operator_log_path`
+- pass outcome:
+  `outcome.resume_status == succeeded` and
+  `outcome.recovery_reason_code == job_recovered_after_restart`
+
 ## Ownership
 
 Primary ownership surfaces:
