@@ -4,7 +4,7 @@ use crate::{
     Cli, CliGatewayOpenResponsesAuthMode, CliMultiChannelOutboundMode, CliWebhookSignatureAlgorithm,
 };
 
-const MEMORY_CONTRACT_RUNNER_REMOVED_MESSAGE: &str = "--memory-contract-runner has been removed; memory runtime ownership is in tau-agent-core. Use --transport-health-inspect memory for diagnostics and configure runtime memory behavior with agent memory flags (for example --memory-retrieval-limit).";
+const MEMORY_CONTRACT_RUNNER_REMOVED_MESSAGE: &str = "--memory-contract-runner has been removed; memory recall is owned by tau-agent-core and user-facing memory tools persist under --memory-state-dir. Use --transport-health-inspect memory for diagnostics.";
 const CUSTOM_COMMAND_CONTRACT_RUNNER_REMOVED_MESSAGE: &str = "--custom-command-contract-runner has been removed; preserve existing state under --custom-command-state-dir and use --custom-command-status-inspect plus --transport-health-inspect custom-command for diagnostics";
 const BROWSER_AUTOMATION_CONTRACT_RUNNER_REMOVED_MESSAGE: &str = "--browser-automation-contract-runner has been removed; use --browser-automation-live-runner with --browser-automation-live-fixture and --browser-automation-playwright-cli";
 const DASHBOARD_CONTRACT_RUNNER_REMOVED_MESSAGE: &str = "--dashboard-contract-runner has been removed; use --gateway-openresponses-server for dashboard API/webchat surfaces and --dashboard-status-inspect plus --transport-health-inspect dashboard for diagnostics";

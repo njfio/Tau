@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "name": "memory-tool-roundtrip",
+  "operations": [
+    {
+      "tool": "memory_write",
+      "arguments": {
+        "memory_id": "memory-release",
+        "summary": "Release checklist requires smoke tests",
+        "tags": ["release", "checklist"],
+        "facts": ["run smoke before rollout"],
+        "workspace_id": "workspace-a",
+        "channel_id": "deploy",
+        "actor_id": "assistant"
+      }
+    },
+    {
+      "tool": "memory_write",
+      "arguments": {
+        "memory_id": "memory-support",
+        "summary": "Support rotation follows weekly handoff",
+        "tags": ["support"],
+        "facts": ["handoff every monday"],
+        "workspace_id": "workspace-a",
+        "channel_id": "support",
+        "actor_id": "assistant"
+      }
+    },
+    {
+      "tool": "memory_search",
+      "arguments": {
+        "query": "release smoke checklist",
+        "workspace_id": "workspace-a",
+        "limit": 5
+      }
+    },
+    {
+      "tool": "memory_read",
+      "arguments": {
+        "memory_id": "memory-release",
+        "workspace_id": "workspace-a"
+      }
+    },
+    {
+      "tool": "memory_tree",
+      "arguments": {}
+    }
+  ],
+  "expectations": {
+    "search_first_memory_id": "memory-release",
+    "read_summary": "Release checklist requires smoke tests",
+    "tree_total_entries": 2
+  }
+}

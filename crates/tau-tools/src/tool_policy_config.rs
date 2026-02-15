@@ -9,13 +9,13 @@ use crate::tools::{
     BashCommandProfile, OsSandboxMode, OsSandboxPolicyMode, ToolPolicy,
 };
 
-const TOOL_POLICY_SCHEMA_VERSION: u32 = 6;
+const TOOL_POLICY_SCHEMA_VERSION: u32 = 7;
 const PROTECTED_PATHS_ENV: &str = "TAU_PROTECTED_PATHS";
 const ALLOW_PROTECTED_PATH_MUTATIONS_ENV: &str = "TAU_ALLOW_PROTECTED_PATH_MUTATIONS";
 
 pub fn build_tool_policy(cli: &Cli) -> Result<ToolPolicy> {
     let cwd = std::env::current_dir().context("failed to resolve current directory")?;
-    let mut roots = vec![cwd];
+    let mut roots = vec![cwd.clone()];
     roots.extend(cli.allow_path.clone());
 
     let mut policy = ToolPolicy::new(roots);
@@ -93,6 +93,11 @@ pub fn build_tool_policy(cli: &Cli) -> Result<ToolPolicy> {
             }
         }
     }
+    policy.memory_state_dir = if cli.memory_state_dir.is_absolute() {
+        cli.memory_state_dir.clone()
+    } else {
+        cwd.join(cli.memory_state_dir.as_path())
+    };
 
     if let Some(allow_mutations) = parse_optional_env_bool(ALLOW_PROTECTED_PATH_MUTATIONS_ENV)? {
         policy.allow_protected_path_mutations = allow_mutations;
@@ -125,56 +130,181 @@ pub fn parse_sandbox_command_tokens(raw_tokens: &[String]) -> Result<Vec<String>
 
 pub fn tool_policy_to_json(policy: &ToolPolicy) -> serde_json::Value {
     let rate_limit_counters = policy.rate_limit_counters();
-    serde_json::json!({
-        "schema_version": TOOL_POLICY_SCHEMA_VERSION,
-        "preset": tool_policy_preset_name(policy.policy_preset),
-        "allowed_roots": policy
+    let mut payload = serde_json::Map::new();
+    payload.insert(
+        "schema_version".to_string(),
+        serde_json::json!(TOOL_POLICY_SCHEMA_VERSION),
+    );
+    payload.insert(
+        "preset".to_string(),
+        serde_json::json!(tool_policy_preset_name(policy.policy_preset)),
+    );
+    payload.insert(
+        "allowed_roots".to_string(),
+        serde_json::json!(policy
             .allowed_roots
             .iter()
             .map(|path| path.display().to_string())
-            .collect::<Vec<_>>(),
-        "protected_paths": policy
+            .collect::<Vec<_>>()),
+    );
+    payload.insert(
+        "protected_paths".to_string(),
+        serde_json::json!(policy
             .protected_paths
             .iter()
             .map(|path| path.display().to_string())
-            .collect::<Vec<_>>(),
-        "allow_protected_path_mutations": policy.allow_protected_path_mutations,
-        "max_file_read_bytes": policy.max_file_read_bytes,
-        "max_file_write_bytes": policy.max_file_write_bytes,
-        "max_command_output_bytes": policy.max_command_output_bytes,
-        "bash_timeout_ms": policy.bash_timeout_ms,
-        "max_command_length": policy.max_command_length,
-        "allow_command_newlines": policy.allow_command_newlines,
-        "bash_profile": format!("{:?}", policy.bash_profile).to_lowercase(),
-        "allowed_commands": policy.allowed_commands.clone(),
-        "os_sandbox_mode": format!("{:?}", policy.os_sandbox_mode).to_lowercase(),
-        "os_sandbox_policy_mode": os_sandbox_policy_mode_name(policy.os_sandbox_policy_mode),
-        "os_sandbox_command": policy.os_sandbox_command.clone(),
-        "http_timeout_ms": policy.http_timeout_ms,
-        "http_max_response_bytes": policy.http_max_response_bytes,
-        "http_max_redirects": policy.http_max_redirects,
-        "http_allow_http": policy.http_allow_http,
-        "http_allow_private_network": policy.http_allow_private_network,
-        "enforce_regular_files": policy.enforce_regular_files,
-        "bash_dry_run": policy.bash_dry_run,
-        "tool_policy_trace": policy.tool_policy_trace,
-        "extension_policy_override_root": policy
+            .collect::<Vec<_>>()),
+    );
+    payload.insert(
+        "allow_protected_path_mutations".to_string(),
+        serde_json::json!(policy.allow_protected_path_mutations),
+    );
+    payload.insert(
+        "memory_state_dir".to_string(),
+        serde_json::json!(policy.memory_state_dir.display().to_string()),
+    );
+    payload.insert(
+        "memory_search_default_limit".to_string(),
+        serde_json::json!(policy.memory_search_default_limit),
+    );
+    payload.insert(
+        "memory_search_max_limit".to_string(),
+        serde_json::json!(policy.memory_search_max_limit),
+    );
+    payload.insert(
+        "memory_embedding_dimensions".to_string(),
+        serde_json::json!(policy.memory_embedding_dimensions),
+    );
+    payload.insert(
+        "memory_min_similarity".to_string(),
+        serde_json::json!(policy.memory_min_similarity),
+    );
+    payload.insert(
+        "memory_write_max_summary_chars".to_string(),
+        serde_json::json!(policy.memory_write_max_summary_chars),
+    );
+    payload.insert(
+        "memory_write_max_facts".to_string(),
+        serde_json::json!(policy.memory_write_max_facts),
+    );
+    payload.insert(
+        "memory_write_max_tags".to_string(),
+        serde_json::json!(policy.memory_write_max_tags),
+    );
+    payload.insert(
+        "memory_write_max_fact_chars".to_string(),
+        serde_json::json!(policy.memory_write_max_fact_chars),
+    );
+    payload.insert(
+        "memory_write_max_tag_chars".to_string(),
+        serde_json::json!(policy.memory_write_max_tag_chars),
+    );
+    payload.insert(
+        "max_file_read_bytes".to_string(),
+        serde_json::json!(policy.max_file_read_bytes),
+    );
+    payload.insert(
+        "max_file_write_bytes".to_string(),
+        serde_json::json!(policy.max_file_write_bytes),
+    );
+    payload.insert(
+        "max_command_output_bytes".to_string(),
+        serde_json::json!(policy.max_command_output_bytes),
+    );
+    payload.insert(
+        "bash_timeout_ms".to_string(),
+        serde_json::json!(policy.bash_timeout_ms),
+    );
+    payload.insert(
+        "max_command_length".to_string(),
+        serde_json::json!(policy.max_command_length),
+    );
+    payload.insert(
+        "allow_command_newlines".to_string(),
+        serde_json::json!(policy.allow_command_newlines),
+    );
+    payload.insert(
+        "bash_profile".to_string(),
+        serde_json::json!(format!("{:?}", policy.bash_profile).to_lowercase()),
+    );
+    payload.insert(
+        "allowed_commands".to_string(),
+        serde_json::json!(policy.allowed_commands.clone()),
+    );
+    payload.insert(
+        "os_sandbox_mode".to_string(),
+        serde_json::json!(format!("{:?}", policy.os_sandbox_mode).to_lowercase()),
+    );
+    payload.insert(
+        "os_sandbox_policy_mode".to_string(),
+        serde_json::json!(os_sandbox_policy_mode_name(policy.os_sandbox_policy_mode)),
+    );
+    payload.insert(
+        "os_sandbox_command".to_string(),
+        serde_json::json!(policy.os_sandbox_command.clone()),
+    );
+    payload.insert(
+        "http_timeout_ms".to_string(),
+        serde_json::json!(policy.http_timeout_ms),
+    );
+    payload.insert(
+        "http_max_response_bytes".to_string(),
+        serde_json::json!(policy.http_max_response_bytes),
+    );
+    payload.insert(
+        "http_max_redirects".to_string(),
+        serde_json::json!(policy.http_max_redirects),
+    );
+    payload.insert(
+        "http_allow_http".to_string(),
+        serde_json::json!(policy.http_allow_http),
+    );
+    payload.insert(
+        "http_allow_private_network".to_string(),
+        serde_json::json!(policy.http_allow_private_network),
+    );
+    payload.insert(
+        "enforce_regular_files".to_string(),
+        serde_json::json!(policy.enforce_regular_files),
+    );
+    payload.insert(
+        "bash_dry_run".to_string(),
+        serde_json::json!(policy.bash_dry_run),
+    );
+    payload.insert(
+        "tool_policy_trace".to_string(),
+        serde_json::json!(policy.tool_policy_trace),
+    );
+    payload.insert(
+        "extension_policy_override_root".to_string(),
+        serde_json::json!(policy
             .extension_policy_override_root
             .as_ref()
-            .map(|path| path.display().to_string()),
-        "rbac_principal": policy.rbac_principal.clone(),
-        "rbac_policy_path": policy
+            .map(|path| path.display().to_string())),
+    );
+    payload.insert(
+        "rbac_principal".to_string(),
+        serde_json::json!(policy.rbac_principal.clone()),
+    );
+    payload.insert(
+        "rbac_policy_path".to_string(),
+        serde_json::json!(policy
             .rbac_policy_path
             .as_ref()
-            .map(|path| path.display().to_string()),
-        "tool_rate_limit": {
+            .map(|path| path.display().to_string())),
+    );
+    payload.insert(
+        "tool_rate_limit".to_string(),
+        serde_json::json!({
             "max_requests": policy.tool_rate_limit_max_requests,
             "window_ms": policy.tool_rate_limit_window_ms,
             "exceeded_behavior": tool_rate_limit_behavior_name(policy.tool_rate_limit_exceeded_behavior),
             "throttle_events_total": rate_limit_counters.throttle_events_total,
             "tracked_principals": rate_limit_counters.tracked_principals,
-        },
-    })
+        }),
+    );
+
+    serde_json::Value::Object(payload)
 }
 
 fn parse_optional_env_bool(name: &str) -> Result<Option<bool>> {
@@ -266,8 +396,19 @@ mod tests {
         policy.allow_protected_path_mutations = true;
         let payload = tool_policy_to_json(&policy);
 
-        assert_eq!(payload["schema_version"], 6);
+        assert_eq!(payload["schema_version"], 7);
         assert_eq!(payload["allow_protected_path_mutations"], true);
+        assert_eq!(payload["memory_search_default_limit"], 5);
+        assert_eq!(payload["memory_search_max_limit"], 50);
+        assert_eq!(payload["memory_embedding_dimensions"], 128);
+        let min_similarity = payload["memory_min_similarity"]
+            .as_f64()
+            .expect("memory_min_similarity as f64");
+        assert!((min_similarity - 0.55).abs() < 1e-6);
+        assert!(payload["memory_state_dir"]
+            .as_str()
+            .map(|value| value.ends_with(".tau/memory"))
+            .unwrap_or(false));
         assert_eq!(payload["os_sandbox_policy_mode"], "best-effort");
         assert_eq!(payload["http_timeout_ms"], 20_000);
         assert_eq!(payload["http_max_response_bytes"], 256_000);

@@ -1575,11 +1575,18 @@ fn unit_tool_policy_to_json_includes_key_limits_and_modes() {
 
     let policy = build_tool_policy(&cli).expect("policy should build");
     let payload = tool_policy_to_json(&policy);
-    assert_eq!(payload["schema_version"], 6);
+    assert_eq!(payload["schema_version"], 7);
     assert_eq!(payload["preset"], "balanced");
     assert_eq!(payload["bash_profile"], "strict");
     assert_eq!(payload["os_sandbox_mode"], "auto");
     assert_eq!(payload["os_sandbox_policy_mode"], "best-effort");
+    assert_eq!(payload["memory_search_default_limit"], 5);
+    assert_eq!(payload["memory_search_max_limit"], 50);
+    assert_eq!(payload["memory_embedding_dimensions"], 128);
+    let min_similarity = payload["memory_min_similarity"]
+        .as_f64()
+        .expect("memory_min_similarity as f64");
+    assert!((min_similarity - 0.55).abs() < 1e-6);
     assert_eq!(payload["http_timeout_ms"], 20_000);
     assert_eq!(payload["http_max_response_bytes"], 256_000);
     assert_eq!(payload["http_max_redirects"], 5);

@@ -18,9 +18,10 @@ use super::{
     evaluate_tool_rate_limit_gate, evaluate_tool_rbac_gate, is_command_allowed,
     is_session_candidate_path, leading_executable, os_sandbox_mode_name,
     os_sandbox_policy_mode_name, redact_secrets, resolve_sandbox_spec, truncate_bytes, AgentTool,
-    BashCommandProfile, BashTool, EditTool, HttpTool, OsSandboxMode, OsSandboxPolicyMode,
-    SessionsHistoryTool, SessionsListTool, SessionsSearchTool, SessionsSendTool, SessionsStatsTool,
-    ToolExecutionResult, ToolPolicy, ToolPolicyPreset, ToolRateLimitExceededBehavior, WriteTool,
+    BashCommandProfile, BashTool, EditTool, HttpTool, MemoryReadTool, MemorySearchTool,
+    MemoryTreeTool, MemoryWriteTool, OsSandboxMode, OsSandboxPolicyMode, SessionsHistoryTool,
+    SessionsListTool, SessionsSearchTool, SessionsSendTool, SessionsStatsTool, ToolExecutionResult,
+    ToolPolicy, ToolPolicyPreset, ToolRateLimitExceededBehavior, WriteTool,
 };
 use tau_access::ApprovalAction;
 use tau_ai::Message;
@@ -28,6 +29,12 @@ use tau_session::{session_message_preview, session_message_role, SessionStore};
 
 fn test_policy(path: &Path) -> Arc<ToolPolicy> {
     Arc::new(ToolPolicy::new(vec![path.to_path_buf()]))
+}
+
+fn test_policy_with_memory(path: &Path) -> Arc<ToolPolicy> {
+    let mut policy = ToolPolicy::new(vec![path.to_path_buf()]);
+    policy.memory_state_dir = path.join(".tau/memory");
+    Arc::new(policy)
 }
 
 fn make_executable(path: &Path) {
@@ -188,6 +195,10 @@ fn unit_builtin_agent_tool_name_registry_includes_session_tools() {
     assert!(names.contains(&"read"));
     assert!(names.contains(&"write"));
     assert!(names.contains(&"edit"));
+    assert!(names.contains(&"memory_write"));
+    assert!(names.contains(&"memory_read"));
+    assert!(names.contains(&"memory_search"));
+    assert!(names.contains(&"memory_tree"));
     assert!(names.contains(&"sessions_list"));
     assert!(names.contains(&"sessions_history"));
     assert!(names.contains(&"sessions_search"));
@@ -1131,6 +1142,202 @@ async fn regression_sessions_send_tool_rejects_unknown_parent_id() {
         .content
         .to_string()
         .contains("failed to append handoff message"));
+}
+
+#[tokio::test]
+async fn unit_memory_write_tool_rejects_empty_summary() {
+    let temp = tempdir().expect("tempdir");
+    let tool = MemoryWriteTool::new(test_policy_with_memory(temp.path()));
+    let result = tool
+        .execute(serde_json::json!({
+            "summary": "   ",
+        }))
+        .await;
+    assert!(result.is_error);
+    assert_eq!(result.content["reason_code"], "memory_empty_summary");
+}
+
+#[tokio::test]
+async fn functional_memory_write_and_read_tools_round_trip_record() {
+    let temp = tempdir().expect("tempdir");
+    let policy = test_policy_with_memory(temp.path());
+    let write_tool = MemoryWriteTool::new(policy.clone());
+    let write = write_tool
+        .execute(serde_json::json!({
+            "memory_id": "memory-release",
+            "summary": "release checklist requires smoke tests",
+            "tags": ["release", "nightly"],
+            "facts": ["run smoke tests first"],
+            "workspace_id": "workspace-a",
+            "channel_id": "deploy",
+            "actor_id": "assistant",
+            "source_event_key": "evt-1",
+            "confidence_bps": 9000
+        }))
+        .await;
+    assert!(!write.is_error);
+    assert_eq!(write.content["memory_id"], "memory-release");
+
+    let read_tool = MemoryReadTool::new(policy);
+    let read = read_tool
+        .execute(serde_json::json!({
+            "memory_id": "memory-release",
+            "workspace_id": "workspace-a",
+            "channel_id": "deploy",
+            "actor_id": "assistant"
+        }))
+        .await;
+    assert!(!read.is_error);
+    assert_eq!(read.content["found"], true);
+    assert_eq!(
+        read.content["summary"],
+        "release checklist requires smoke tests"
+    );
+    assert_eq!(read.content["source_event_key"], "evt-1");
+}
+
+#[tokio::test]
+async fn integration_memory_search_tool_honors_scope_filter() {
+    let temp = tempdir().expect("tempdir");
+    let policy = test_policy_with_memory(temp.path());
+    let write_tool = MemoryWriteTool::new(policy.clone());
+    let _ = write_tool
+        .execute(serde_json::json!({
+            "memory_id": "memory-1",
+            "summary": "tokio runtime troubleshooting",
+            "workspace_id": "workspace-a",
+            "channel_id": "engineering"
+        }))
+        .await;
+    let _ = write_tool
+        .execute(serde_json::json!({
+            "memory_id": "memory-2",
+            "summary": "pasta recipe tomato basil",
+            "workspace_id": "workspace-b",
+            "channel_id": "kitchen"
+        }))
+        .await;
+
+    let search_tool = MemorySearchTool::new(policy);
+    let result = search_tool
+        .execute(serde_json::json!({
+            "query": "tokio runtime async",
+            "workspace_id": "workspace-a",
+            "limit": 5
+        }))
+        .await;
+    assert!(!result.is_error);
+    assert_eq!(result.content["returned"], 1);
+    assert_eq!(result.content["matches"][0]["memory_id"], "memory-1");
+    assert_eq!(
+        result.content["matches"][0]["scope"]["workspace_id"],
+        "workspace-a"
+    );
+}
+
+#[tokio::test]
+async fn regression_memory_tree_tool_reports_unique_latest_entries() {
+    let temp = tempdir().expect("tempdir");
+    let policy = test_policy_with_memory(temp.path());
+    let write_tool = MemoryWriteTool::new(policy.clone());
+    let _ = write_tool
+        .execute(serde_json::json!({
+            "memory_id": "memory-1",
+            "summary": "first",
+            "workspace_id": "workspace-a",
+            "channel_id": "deploy",
+            "actor_id": "assistant"
+        }))
+        .await;
+    let _ = write_tool
+        .execute(serde_json::json!({
+            "memory_id": "memory-1",
+            "summary": "second",
+            "workspace_id": "workspace-a",
+            "channel_id": "deploy",
+            "actor_id": "assistant"
+        }))
+        .await;
+
+    let tree_tool = MemoryTreeTool::new(policy);
+    let tree = tree_tool.execute(serde_json::json!({})).await;
+    assert!(!tree.is_error);
+    assert_eq!(tree.content["total_entries"], 1);
+    assert_eq!(tree.content["workspaces"][0]["entry_count"], 1);
+}
+
+#[tokio::test]
+async fn integration_memory_tools_fixture_roundtrip_is_deterministic() {
+    let fixture_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("testdata")
+        .join("memory-tools")
+        .join("basic-roundtrip.json");
+    let fixture_raw = fs::read_to_string(&fixture_path).expect("read memory fixture");
+    let fixture: serde_json::Value =
+        serde_json::from_str(&fixture_raw).expect("parse memory fixture json");
+
+    assert_eq!(fixture["schema_version"], 1);
+    let operations = fixture["operations"]
+        .as_array()
+        .expect("operations as array")
+        .clone();
+    let expectations = fixture["expectations"].clone();
+
+    let temp = tempdir().expect("tempdir");
+    let policy = test_policy_with_memory(temp.path());
+    let mut search_payload = None;
+    let mut read_payload = None;
+    let mut tree_payload = None;
+
+    for operation in operations {
+        let tool = operation
+            .get("tool")
+            .and_then(serde_json::Value::as_str)
+            .expect("operation tool name");
+        let arguments = operation
+            .get("arguments")
+            .cloned()
+            .expect("operation arguments");
+        let result = match tool {
+            "memory_write" => {
+                MemoryWriteTool::new(policy.clone())
+                    .execute(arguments)
+                    .await
+            }
+            "memory_search" => {
+                MemorySearchTool::new(policy.clone())
+                    .execute(arguments)
+                    .await
+            }
+            "memory_read" => MemoryReadTool::new(policy.clone()).execute(arguments).await,
+            "memory_tree" => MemoryTreeTool::new(policy.clone()).execute(arguments).await,
+            other => panic!("unsupported fixture tool '{other}'"),
+        };
+        assert!(
+            !result.is_error,
+            "fixture operation '{tool}' should succeed: {}",
+            result.content
+        );
+        match tool {
+            "memory_search" => search_payload = Some(result.content),
+            "memory_read" => read_payload = Some(result.content),
+            "memory_tree" => tree_payload = Some(result.content),
+            _ => {}
+        }
+    }
+
+    let search_payload = search_payload.expect("search payload");
+    let read_payload = read_payload.expect("read payload");
+    let tree_payload = tree_payload.expect("tree payload");
+    assert_eq!(
+        search_payload["matches"][0]["memory_id"],
+        expectations["search_first_memory_id"]
+    );
+    assert_eq!(read_payload["summary"], expectations["read_summary"]);
+    assert_eq!(
+        tree_payload["total_entries"],
+        expectations["tree_total_entries"]
+    );
 }
 
 #[tokio::test]
