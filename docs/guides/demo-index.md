@@ -170,3 +170,12 @@ Each run entry in the JSON summary includes:
 - pass/fail status
 - marker match results (`stdout`, `stderr`, `file`)
 - stdout/stderr log paths for direct triage
+
+## Ownership
+
+Primary ownership surfaces:
+- `crates/tau-coding-agent` (CLI flags and runtime mode dispatch)
+- `scripts/demo/` (retained-capability proof wrappers and matrix contracts)
+- `crates/tau-gateway`, `crates/tau-multi-channel`, `crates/tau-deployment` (scenario-backed runtime surfaces)
+
+Ownership map: `docs/guides/runbook-ownership-map.md`.

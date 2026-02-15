@@ -12,6 +12,8 @@ on:
       - ".github/scripts/test_docs_link_check.py"
       - ".github/scripts/architecture_docs_check.py"
       - ".github/scripts/test_architecture_docs_check.py"
+      - ".github/scripts/runbook_ownership_docs_check.py"
+      - ".github/scripts/test_runbook_ownership_docs_check.py"
       - ".github/workflows/docs-quality.yml"
       - "README.md"
       - "crates/tau-startup/src/lib.rs"
@@ -41,6 +43,9 @@ jobs:
 
       - name: Check architecture docs freshness
         run: python3 .github/scripts/architecture_docs_check.py --repo-root .
+
+      - name: Check runbook ownership docs freshness
+        run: python3 .github/scripts/runbook_ownership_docs_check.py --repo-root .
 
       - name: Validate roadmap status sync script
         run: scripts/dev/test-roadmap-status-sync.sh

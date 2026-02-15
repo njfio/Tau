@@ -756,3 +756,13 @@ cat /tmp/rpc-frames.ndjson | cargo run -p tau-coding-agent -- --rpc-serve-ndjson
 ```
 
 RPC schema compatibility fixtures live under `crates/tau-coding-agent/testdata/rpc-schema-compat/`.
+
+## Ownership
+
+Primary ownership surfaces:
+- `crates/tau-coding-agent` (transport command dispatch and shared runtime entrypoints)
+- `crates/tau-github-issues-runtime`, `crates/tau-slack-runtime`, `crates/tau-multi-channel` (channel-specific runtimes)
+- `crates/tau-gateway` (gateway transport, auth, and remote access flows)
+- `crates/tau-memory` + `crates/tau-agent-core` (memory transport diagnostics and runtime ownership boundaries)
+
+Ownership map: `docs/guides/runbook-ownership-map.md`.
