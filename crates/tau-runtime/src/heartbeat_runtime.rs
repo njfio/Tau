@@ -1,3 +1,9 @@
+//! Runtime heartbeat scheduler, maintenance probes, and self-repair orchestration.
+//!
+//! This module emits durable heartbeat status/reason-code artifacts consumed by
+//! operator tooling. Maintenance and repair transitions are expected to be
+//! deterministic and audit-friendly.
+
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};

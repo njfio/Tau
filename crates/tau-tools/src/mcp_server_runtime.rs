@@ -1,3 +1,9 @@
+//! Hosts Tau tools behind an MCP server transport with policy-aware dispatch.
+//!
+//! This runtime binds built-in tool contracts to MCP methods, preserves stable
+//! error codes for protocol callers, and applies `ToolPolicy` enforcement
+//! before command/file/network actions execute.
+
 use std::{
     collections::{BTreeMap, BTreeSet},
     future::Future,

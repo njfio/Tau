@@ -1,3 +1,9 @@
+//! Composes runtime `ToolPolicy` from CLI/env inputs with fail-closed validation.
+//!
+//! This module is the policy resolution boundary between startup configuration
+//! and execution-time tool enforcement. It documents preset mapping, sandbox
+//! mode precedence, and guard-rail defaults used by downstream tool runtimes.
+
 use anyhow::{anyhow, Context, Result};
 use tau_cli::cli_args::Cli;
 use tau_cli::cli_types::{

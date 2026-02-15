@@ -1,3 +1,9 @@
+//! Core tool registry wiring and policy-gated dispatch helpers.
+//!
+//! This module centralizes built-in tool registration, reserved-name handling,
+//! and runtime metadata emitted for auditing/diagnostics when policy decisions
+//! allow or deny tool execution.
+
 use super::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

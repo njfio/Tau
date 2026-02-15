@@ -1,3 +1,9 @@
+//! Defines in-memory policy contracts used by tool executors.
+//!
+//! Policy objects produced here are consumed by bash/filesystem/http runtimes
+//! and encode fail-closed sandbox posture, command allowlists, rate limiting,
+//! and protected-path safeguards.
+
 use std::path::PathBuf;
 
 const BALANCED_COMMAND_ALLOWLIST: &[&str] = &[

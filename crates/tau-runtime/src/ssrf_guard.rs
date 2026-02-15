@@ -1,3 +1,9 @@
+//! Shared SSRF validation guard for outbound HTTP destinations.
+//!
+//! Validation failures return stable machine-readable reason codes so policy
+//! violations can be surfaced consistently in runtime telemetry and operator
+//! reports.
+
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 use tokio::net::lookup_host;

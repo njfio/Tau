@@ -1,3 +1,9 @@
+//! RPC frame parsing/validation and serve-loop orchestration for runtime control.
+//!
+//! Error-code contracts in this module are part of Tau's external integration
+//! surface; callers depend on consistent categories for compatibility and
+//! diagnostics.
+
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
     io::{BufRead, Write},

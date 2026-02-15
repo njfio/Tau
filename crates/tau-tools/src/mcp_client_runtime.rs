@@ -1,3 +1,9 @@
+//! Provides MCP client transport/auth orchestration and dynamic tool binding.
+//!
+//! This module is responsible for loading server definitions, negotiating
+//! capabilities, and mapping remote tool errors into deterministic Tau result
+//! envelopes suitable for operator diagnostics and retries.
+
 use std::{
     collections::{BTreeMap, BTreeSet},
     io::{BufRead, BufReader, Write},
