@@ -1,3 +1,9 @@
+//! `/macro` command parsing, validation, and persistence operations.
+//!
+//! Macro definitions are stored under a versioned schema and executed through
+//! validated command expansions. This module documents guardrails for invalid
+//! macro syntax, unknown commands, and storage failures.
+
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
