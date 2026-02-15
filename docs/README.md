@@ -24,6 +24,7 @@ This index maps Tau documentation by audience and task.
 | Runtime contributor | [Tool Policy Protected Paths](guides/tool-policy-protected-paths.md) | Protected identity/system file deny policy for write/edit with override controls and diagnostics |
 | Multi-channel contributor | [Multi-channel Event Pipeline](guides/multi-channel-event-pipeline.md) | Inbound normalization, policy/pairing, routing, persistence, outbound retry paths |
 | Runtime maintainer | [Doc Density Scorecard](guides/doc-density-scorecard.md) | Baseline/targets for public API docs coverage and CI regression guard policy |
+| Runtime maintainer | [Doc Density Allocation Plan](guides/doc-density-allocation-plan.md) | Per-crate marker quota allocations to >=3,000 with owner-domain cadence, checkpoints, and escalation policy |
 | Runtime maintainer | [Doc Quality Remediation Workflow](guides/doc-quality-remediation.md) | Severity taxonomy, SLA/checklist tracking, and standardized closure proof fields for doc audit findings |
 | Runtime maintainer | [RL Terminology Allowlist](guides/rl-terminology-allowlist.md) | Approved future-RL contexts, non-example stale wording, and scanner usage for M22 naming alignment |
 | Roadmap operator | [True RL Roadmap Skeleton](planning/true-rl-roadmap-skeleton.md) | Stage-by-stage future true-RL delivery plan with issue mappings and exit evidence gates |
