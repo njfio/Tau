@@ -3,6 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SIGNIFICANCE_SCRIPT="${SCRIPT_DIR}/m24-rl-benchmark-significance-report.sh"
+SAFETY_BENCHMARK_SCRIPT="${SCRIPT_DIR}/m24-rl-safety-regression-benchmark.sh"
 VALIDATE_REPORT_SCRIPT="${SCRIPT_DIR}/validate-m24-rl-benchmark-report.sh"
 VALIDATE_PROOF_SCRIPT="${SCRIPT_DIR}/validate-m24-rl-benchmark-proof-template.sh"
 
@@ -130,7 +131,10 @@ mkdir -p "${OUTPUT_DIR}"
 baseline_report="${OUTPUT_DIR}/m24-benchmark-baseline.json"
 trained_report="${OUTPUT_DIR}/m24-benchmark-trained.json"
 significance_report="${OUTPUT_DIR}/m24-benchmark-significance.json"
+safety_report="${OUTPUT_DIR}/m24-benchmark-safety-regression.json"
 proof_report="${OUTPUT_DIR}/m24-benchmark-proof-${RUN_ID}.json"
+safety_baseline_samples="${OUTPUT_DIR}/m24-safety-baseline-samples.json"
+safety_trained_samples="${OUTPUT_DIR}/m24-safety-trained-samples.json"
 
 python3 - "${BASELINE_SAMPLES}" "${TRAINED_SAMPLES}" "${RUN_ID}" "${GENERATED_AT}" "${SUITE_NAME}" "${SUITE_VERSION}" "${BASELINE_SAFETY_PENALTY}" "${TRAINED_SAFETY_PENALTY}" "${baseline_report}" "${trained_report}" <<'PY'
 import json
@@ -242,11 +246,50 @@ PY
   --trained-safety-penalty "${TRAINED_SAFETY_PENALTY}" \
   --output-report "${significance_report}"
 
+python3 - "${baseline_report}" "${BASELINE_SAFETY_PENALTY}" "${TRAINED_SAFETY_PENALTY}" "${safety_baseline_samples}" "${safety_trained_samples}" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+baseline_report_path, baseline_safety_raw, trained_safety_raw, baseline_samples_out, trained_samples_out = sys.argv[1:]
+baseline_report = json.loads(Path(baseline_report_path).read_text(encoding="utf-8"))
+count = int(baseline_report["metrics"]["episodes"])
+baseline_value = float(baseline_safety_raw)
+trained_value = float(trained_safety_raw)
+
+Path(baseline_samples_out).write_text(
+    json.dumps([baseline_value for _ in range(count)], indent=2) + "\n",
+    encoding="utf-8",
+)
+Path(trained_samples_out).write_text(
+    json.dumps([trained_value for _ in range(count)], indent=2) + "\n",
+    encoding="utf-8",
+)
+PY
+
+set +e
+safety_output="$(
+  "${SAFETY_BENCHMARK_SCRIPT}" \
+    --baseline-safety-samples "${safety_baseline_samples}" \
+    --trained-safety-samples "${safety_trained_samples}" \
+    --run-id "${RUN_ID}" \
+    --max-safety-regression "${MAX_SAFETY_REGRESSION}" \
+    --generated-at "${GENERATED_AT}" \
+    --output-report "${safety_report}" 2>&1
+)"
+safety_rc=$?
+set -e
+echo "${safety_output}"
+if [[ ! -f "${safety_report}" ]]; then
+  echo "error: safety benchmark did not produce report: ${safety_report}" >&2
+  exit 1
+fi
+
 "${VALIDATE_REPORT_SCRIPT}" "${baseline_report}"
 "${VALIDATE_REPORT_SCRIPT}" "${trained_report}"
 "${VALIDATE_REPORT_SCRIPT}" "${significance_report}"
 
-python3 - "${baseline_report}" "${trained_report}" "${significance_report}" "${proof_report}" "${RUN_ID}" "${GENERATED_AT}" "${SUITE_NAME}" "${SUITE_VERSION}" "${MIN_REWARD_DELTA}" "${MAX_SAFETY_REGRESSION}" "${MAX_P_VALUE}" "${MIN_CONFIDENCE_LEVEL}" <<'PY'
+python3 - "${baseline_report}" "${trained_report}" "${significance_report}" "${safety_report}" "${proof_report}" "${RUN_ID}" "${GENERATED_AT}" "${SUITE_NAME}" "${SUITE_VERSION}" "${MIN_REWARD_DELTA}" "${MAX_SAFETY_REGRESSION}" "${MAX_P_VALUE}" "${MIN_CONFIDENCE_LEVEL}" <<'PY'
 import json
 import math
 import sys
@@ -256,6 +299,7 @@ from pathlib import Path
     baseline_report_path,
     trained_report_path,
     significance_report_path,
+    safety_report_path,
     proof_report_path,
     run_id,
     generated_at,
@@ -270,7 +314,13 @@ from pathlib import Path
 baseline = json.loads(Path(baseline_report_path).read_text(encoding="utf-8"))
 trained = json.loads(Path(trained_report_path).read_text(encoding="utf-8"))
 significance_report = json.loads(Path(significance_report_path).read_text(encoding="utf-8"))
+safety_report = json.loads(Path(safety_report_path).read_text(encoding="utf-8"))
 significance_metrics = significance_report.get("significance", {})
+safety_reason_codes = [
+    str(item) for item in safety_report.get("reason_codes", []) if isinstance(item, str)
+]
+safety_promotion_allowed = bool(safety_report.get("promotion_allowed", False))
+safety_regression = float(safety_report.get("safety_regression_delta", 0.0))
 
 min_reward_delta = float(min_reward_delta_raw)
 max_safety_regression = float(max_safety_regression_raw)
@@ -284,19 +334,18 @@ if any(
 
 baseline_mean_reward = float(baseline["metrics"]["mean_reward"])
 trained_mean_reward = float(trained["metrics"]["mean_reward"])
-baseline_safety = float(baseline["metrics"]["mean_safety_penalty"])
-trained_safety = float(trained["metrics"]["mean_safety_penalty"])
+baseline_safety = float(safety_report.get("baseline_mean_safety_penalty", baseline["metrics"]["mean_safety_penalty"]))
+trained_safety = float(safety_report.get("trained_mean_safety_penalty", trained["metrics"]["mean_safety_penalty"]))
 p_value = float(significance_metrics.get("p_value", 1.0))
 confidence_level = float(significance_metrics.get("confidence_level", 0.0))
 
 reward_delta = trained_mean_reward - baseline_mean_reward
-safety_regression = trained_safety - baseline_safety
 
 reasons = []
 if reward_delta < min_reward_delta:
     reasons.append("reward_gain_below_threshold")
-if safety_regression > max_safety_regression:
-    reasons.append("safety_regression_above_threshold")
+if not safety_promotion_allowed:
+    reasons.extend(safety_reason_codes or ["checkpoint_promotion_blocked_safety_regression"])
 if p_value > max_p_value:
     reasons.append("p_value_above_threshold")
 if confidence_level < min_confidence_level:
@@ -339,6 +388,14 @@ proof = {
         "baseline_report": baseline_report_path,
         "trained_report": trained_report_path,
         "significance_report": significance_report_path,
+        "safety_regression_report": safety_report_path,
+    },
+    "safety_benchmark": {
+        "report_path": safety_report_path,
+        "promotion_allowed": safety_promotion_allowed,
+        "reason_codes": safety_reason_codes,
+        "safety_regression_delta": safety_regression,
+        "max_safety_regression": float(safety_report.get("max_safety_regression", max_safety_regression)),
     },
 }
 
