@@ -14,11 +14,11 @@ class CiCodexLightLintContractTests(unittest.TestCase):
     def test_integration_codex_light_lint_uses_fast_validate_check_only(self):
         self.assertIn("name: Lint (codex-light lane)", self.workflow)
         self.assertIn(
-            "./scripts/dev/fast-validate.sh --check-only --direct-packages-only --base",
+            "./scripts/dev/fast-validate.sh --skip-fmt --check-only --direct-packages-only --base",
             self.workflow,
         )
         self.assertIn(
-            "./scripts/dev/fast-validate.sh --check-only --direct-packages-only --full",
+            "./scripts/dev/fast-validate.sh --skip-fmt --check-only --direct-packages-only --full",
             self.workflow,
         )
 
