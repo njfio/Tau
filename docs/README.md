@@ -22,6 +22,7 @@ This index maps Tau documentation by audience and task.
 | Multi-channel contributor | [Multi-channel Event Pipeline](guides/multi-channel-event-pipeline.md) | Inbound normalization, policy/pairing, routing, persistence, outbound retry paths |
 | Runtime maintainer | [Doc Density Scorecard](guides/doc-density-scorecard.md) | Baseline/targets for public API docs coverage and CI regression guard policy |
 | Roadmap operator | [Roadmap Execution Index](guides/roadmap-execution-index.md) | End-to-end mapping from `tasks/todo.md` items to milestones/issues and execution wave ordering |
+| Roadmap operator | [Roadmap Status Sync](guides/roadmap-status-sync.md) | Generate/check roadmap status snapshots from tracked GitHub issue state |
 | Gateway auth operator | [Gateway Auth Session Smoke](guides/gateway-auth-session-smoke.md) | End-to-end password-session issuance, authorized status call, invalid/expired fail-closed checks |
 | Platform / integration engineer | [Transport Guide](guides/transports.md) | GitHub Issues bridge, Slack bridge, contract runners (multi-channel/multi-agent/gateway/deployment/voice), dashboard diagnostics/API, memory diagnostics, custom-command diagnostics, RPC, ChannelStore admin |
 | Package and extension author | [Packages Guide](guides/packages.md) | Extension manifests, package lifecycle, activation, signing |
