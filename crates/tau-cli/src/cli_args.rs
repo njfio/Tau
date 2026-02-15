@@ -2276,7 +2276,7 @@ pub struct Cli {
         long = "events-state-path",
         env = "TAU_EVENTS_STATE_PATH",
         default_value = ".tau/events/state.json",
-        help = "Persistent scheduler state path for periodic/debounce tracking"
+        help = "Persistent scheduler state path for periodic/debounce tracking and execution history"
     )]
     pub events_state_path: PathBuf,
 

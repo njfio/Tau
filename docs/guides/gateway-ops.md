@@ -199,6 +199,14 @@ curl -sS http://127.0.0.1:8787/gateway/status \
 - `reason_codes[]`
 - `diagnostics[]`
 
+`/gateway/status` includes an `events` block for routine scheduler posture:
+
+- `health_state`, `rollout_gate`, `reason_code`, `health_reason`
+- definition counters (`discovered_events`, `enabled_events`, `malformed_events`)
+- queue posture (`due_now_events`, `queued_now_events`, `not_due_events`)
+- execution history (`execution_history_entries`, `executed_history_entries`, `failed_history_entries`, `skipped_history_entries`, `last_execution_unix_ms`, `last_execution_reason_code`)
+- `diagnostics[]`
+
 ## Runtime heartbeat scheduler
 
 Enable/disable and tune scheduler cadence:

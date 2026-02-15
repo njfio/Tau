@@ -5,6 +5,7 @@ Run from repository root.
 ## Purpose
 
 `--operator-control-summary` gives one day-2 control-plane view that combines:
+- events scheduler (routine) queue/execution-history diagnostics
 - transport and runtime health for dashboard, multi-channel, multi-agent, gateway, deployment, custom-command, and voice
 - gateway remote-access policy posture
 - daemon lifecycle state
@@ -79,6 +80,10 @@ Common hold reason codes and actions:
   - action: initialize or repair component state (`state.json`) and rerun summary
 - `gateway:service_stopped`
   - action: start gateway service mode (`--gateway-service-start`) before resuming traffic
+- `events:events_definition_invalid`
+  - action: run `--events-validate --events-validate-json`, fix malformed/invalid schedules, then rerun summary
+- `events:events_recent_failures`
+  - action: inspect channel-store logs and `.tau/events/state.json` execution history for failing routines
 - `daemon:daemon_not_installed`
   - action: install daemon (`--daemon-install`) if background lifecycle management is required
 - `daemon:daemon_not_running`

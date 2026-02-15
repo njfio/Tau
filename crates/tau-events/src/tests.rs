@@ -230,6 +230,13 @@ fn unit_events_inspect_report_counts_due_and_schedule_buckets() {
     assert_eq!(report.due_eval_failed_events, 0);
     assert_eq!(report.periodic_with_last_run_state, 0);
     assert_eq!(report.periodic_missing_last_run_state, 1);
+    assert_eq!(report.execution_history_entries, 0);
+    assert_eq!(report.execution_history_limit, 256);
+    assert_eq!(report.executed_history_entries, 0);
+    assert_eq!(report.failed_history_entries, 0);
+    assert_eq!(report.skipped_history_entries, 0);
+    assert_eq!(report.last_execution_unix_ms, None);
+    assert_eq!(report.last_execution_reason_code, None);
 }
 
 #[test]
@@ -254,6 +261,13 @@ fn functional_events_inspect_render_includes_operator_fields() {
         due_eval_failed_events: 0,
         periodic_with_last_run_state: 1,
         periodic_missing_last_run_state: 0,
+        execution_history_entries: 3,
+        execution_history_limit: 256,
+        executed_history_entries: 2,
+        failed_history_entries: 1,
+        skipped_history_entries: 0,
+        last_execution_unix_ms: Some(1_111),
+        last_execution_reason_code: Some("event_executed".to_string()),
     });
 
     assert!(rendered.contains("events inspect:"));
@@ -261,6 +275,8 @@ fn functional_events_inspect_render_includes_operator_fields() {
     assert!(rendered.contains("due_now_events=2"));
     assert!(rendered.contains("queued_now_events=2"));
     assert!(rendered.contains("schedule_periodic_events=1"));
+    assert!(rendered.contains("execution_history_entries=3"));
+    assert!(rendered.contains("last_execution_reason_code=event_executed"));
     assert!(rendered.contains("queue_limit=8"));
 }
 
@@ -1238,6 +1254,17 @@ async fn integration_restart_recovery_runs_due_oneshot_and_keeps_periodic() {
         .await
         .expect("second poll");
     assert!(second.executed >= 1);
+    let state_payload = std::fs::read_to_string(&config.state_path).expect("read runtime state");
+    let state: serde_json::Value =
+        serde_json::from_str(&state_payload).expect("parse runtime state");
+    let history_len = state["recent_executions"]
+        .as_array()
+        .map(|entries| entries.len())
+        .unwrap_or_default();
+    assert!(
+        history_len >= 2,
+        "expected persisted execution history across restart, got {history_len}"
+    );
     assert!(!config.events_dir.join("oneshot.json").exists());
     assert!(config.events_dir.join("periodic.json").exists());
 }
