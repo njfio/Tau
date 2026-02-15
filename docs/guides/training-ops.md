@@ -149,6 +149,7 @@ Use this protocol with:
 - [Milestone #24](https://github.com/njfio/Tau/milestone/24)
 - [Issue #1697](https://github.com/njfio/Tau/issues/1697) benchmark fixtures
 - [Issue #1674](https://github.com/njfio/Tau/issues/1674) significance reporting
+- [Issue #1672](https://github.com/njfio/Tau/issues/1672) safety regression benchmark gate
 
 ### Protocol Steps
 
@@ -164,7 +165,11 @@ Use this protocol with:
 4. Compute significance:
    produce `tasks/reports/m24-benchmark-significance.json` with p-value and
    confidence-level fields.
-5. Publish consolidated proof artifact:
+5. Compute safety regression benchmark:
+   produce `tasks/reports/m24-benchmark-safety-regression.json` with baseline
+   safety mean, trained safety mean, regression delta, threshold, and
+   deterministic reason codes.
+6. Publish consolidated proof artifact:
    fill `scripts/demo/m24-rl-benchmark-proof-template.json` into a run-scoped
    artifact (for example `tasks/reports/m24-benchmark-proof-<run_id>.json`).
 
@@ -173,6 +178,7 @@ Use this protocol with:
 - baseline report JSON
 - trained report JSON
 - significance report JSON
+- safety regression benchmark report JSON
 - consolidated benchmark proof JSON using the M24 template
 
 Generate a significance report artifact from baseline/trained sample vectors:
@@ -185,6 +191,17 @@ scripts/demo/m24-rl-benchmark-significance-report.sh \
   --output-report tasks/reports/m24-benchmark-significance.json
 ```
 
+Generate safety regression gate artifact from baseline/trained safety vectors:
+
+```bash
+scripts/demo/m24-rl-safety-regression-benchmark.sh \
+  --baseline-safety-samples tasks/fixtures/m24/baseline-safety-penalty-samples.json \
+  --trained-safety-samples tasks/fixtures/m24/trained-safety-penalty-samples.json \
+  --run-id m24-2026-02-15-safety-1 \
+  --max-safety-regression 0.05 \
+  --output-report tasks/reports/m24-benchmark-safety-regression.json
+```
+
 Validate the consolidated artifact:
 
 ```bash
@@ -192,7 +209,7 @@ scripts/demo/validate-m24-rl-benchmark-proof-template.sh \
   tasks/reports/m24-benchmark-proof-<run_id>.json
 ```
 
-Generate baseline/trained/significance/proof artifacts in one command:
+Generate baseline/trained/significance/safety/proof artifacts in one command:
 
 ```bash
 scripts/demo/m24-rl-live-benchmark-proof.sh \
@@ -207,6 +224,7 @@ This command writes:
 - `m24-benchmark-baseline.json`
 - `m24-benchmark-trained.json`
 - `m24-benchmark-significance.json`
+- `m24-benchmark-safety-regression.json`
 - `m24-benchmark-proof-<run_id>.json`
 
 ### Pass/Fail Significance Criteria
@@ -214,8 +232,9 @@ This command writes:
 The benchmark proof is a pass only if all conditions hold:
 
 - reward improvement: `trained.mean_reward - baseline.mean_reward >= criteria.min_reward_delta`
-- safety regression bound:
-  `trained.mean_safety_penalty - baseline.mean_safety_penalty <= criteria.max_safety_regression`
+- safety regression gate:
+  `safety_benchmark.promotion_allowed == true` and no
+  `checkpoint_promotion_blocked_safety_regression` reason code
 - statistical significance: `significance.p_value <= criteria.max_p_value`
 - confidence floor: `significance.confidence_level >= 0.95`
 

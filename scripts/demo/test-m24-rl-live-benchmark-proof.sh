@@ -58,6 +58,7 @@ proof_pass="${pass_dir}/m24-benchmark-proof-m24-live-proof-pass-1.json"
 baseline_report="${pass_dir}/m24-benchmark-baseline.json"
 trained_report="${pass_dir}/m24-benchmark-trained.json"
 significance_report="${pass_dir}/m24-benchmark-significance.json"
+safety_report="${pass_dir}/m24-benchmark-safety-regression.json"
 
 "${VALIDATE_PROOF_SCRIPT}" "${proof_pass}"
 "${VALIDATE_REPORT_SCRIPT}" "${baseline_report}"
@@ -66,6 +67,10 @@ significance_report="${pass_dir}/m24-benchmark-significance.json"
 
 assert_equals "true" "$(jq -r '.significance.pass' "${proof_pass}")" "functional proof pass"
 assert_equals "true" "$(jq -r '.significance.pass' "${significance_report}")" "functional significance pass"
+assert_equals "${safety_report}" "$(jq -r '.artifacts.safety_regression_report' "${proof_pass}")" "functional safety artifact path"
+assert_equals "true" "$(jq -r '.promotion_allowed' "${safety_report}")" "functional safety benchmark pass"
+assert_equals "true" "$(jq -r '.safety_benchmark.promotion_allowed' "${proof_pass}")" "functional proof consumes safety gate"
+assert_equals "0" "$(jq -r '.safety_benchmark.reason_codes | length' "${proof_pass}")" "functional safety reason code length"
 
 fail_dir="${tmp_dir}/fail"
 mkdir -p "${fail_dir}"
@@ -90,5 +95,34 @@ proof_fail="${fail_dir}/m24-benchmark-proof-m24-live-proof-fail-1.json"
 assert_equals "false" "$(jq -r '.significance.pass' "${proof_fail}")" "regression significance fail"
 assert_contains "$(jq -r '.failure_analysis.summary' "${proof_fail}")" "did not meet criteria" "regression failure analysis summary"
 assert_contains "$(jq -r '.failure_analysis.reasons | join(",")' "${proof_fail}")" "reward_gain_below_threshold" "regression failure reason"
+
+safety_fail_dir="${tmp_dir}/safety-fail"
+mkdir -p "${safety_fail_dir}"
+set +e
+safety_fail_output="$(
+  "${GENERATOR_SCRIPT}" \
+    --baseline-samples "${tmp_dir}/baseline.json" \
+    --trained-samples "${tmp_dir}/trained-pass.json" \
+    --run-id "m24-live-proof-safety-fail-1" \
+    --generated-at "2026-02-15T23:15:00Z" \
+    --max-safety-regression 0.05 \
+    --baseline-safety-penalty 0.00 \
+    --trained-safety-penalty 0.20 \
+    --output-dir "${safety_fail_dir}" 2>&1
+)"
+safety_fail_rc=$?
+set -e
+if [[ "${safety_fail_rc}" -eq 0 ]]; then
+  echo "expected safety-regression breach to fail proof gate" >&2
+  exit 1
+fi
+assert_contains "${safety_fail_output}" "proof_status=fail" "safety regression fail marker"
+
+proof_safety_fail="${safety_fail_dir}/m24-benchmark-proof-m24-live-proof-safety-fail-1.json"
+safety_report_fail="${safety_fail_dir}/m24-benchmark-safety-regression.json"
+assert_equals "false" "$(jq -r '.safety_benchmark.promotion_allowed' "${proof_safety_fail}")" "safety regression proof gate blocked"
+assert_contains "$(jq -r '.failure_analysis.reasons | join(",")' "${proof_safety_fail}")" "checkpoint_promotion_blocked_safety_regression" "safety regression proof reason"
+assert_equals "false" "$(jq -r '.promotion_allowed' "${safety_report_fail}")" "safety benchmark blocked"
+assert_contains "$(jq -r '.reason_codes | join(",")' "${safety_report_fail}")" "checkpoint_promotion_blocked_safety_regression" "safety benchmark reason code"
 
 echo "m24 live benchmark proof tests passed"
