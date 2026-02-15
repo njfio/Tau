@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "policy_id": "hierarchy-graph-publication-policy",
+  "description": "Publication and retention contract for #1678 hierarchy graph artifacts.",
+  "artifact_basename": "issue-hierarchy-graph",
+  "snapshot_dir_pattern": "{timestamp}-root{root_issue_number}",
+  "artifacts": {
+    "json_filename": "issue-hierarchy-graph.json",
+    "markdown_filename": "issue-hierarchy-graph.md"
+  },
+  "history": {
+    "directory": "tasks/reports/issue-hierarchy-history",
+    "index_json": "index.json",
+    "index_markdown": "index.md"
+  },
+  "retention_days": 30,
+  "tracker_issue_number": 1678,
+  "publication_steps": [
+    "Run scripts/dev/hierarchy-graph-extractor.sh to refresh current graph outputs.",
+    "Run scripts/dev/hierarchy-graph-publish.sh to snapshot and prune history.",
+    "Reference tasks/reports/issue-hierarchy-history/index.json in tracker updates."
+  ]
+}
