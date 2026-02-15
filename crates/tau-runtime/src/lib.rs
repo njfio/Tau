@@ -9,6 +9,7 @@ pub mod rpc_capabilities_runtime;
 pub mod rpc_protocol_runtime;
 pub mod runtime_output_runtime;
 pub mod slack_helpers_runtime;
+pub mod ssrf_guard;
 pub mod transport_conformance_runtime;
 pub mod transport_health;
 
@@ -18,5 +19,6 @@ pub use rpc_capabilities_runtime::*;
 pub use rpc_protocol_runtime::*;
 pub use runtime_output_runtime::*;
 pub use slack_helpers_runtime::*;
+pub use ssrf_guard::*;
 pub use transport_conformance_runtime::*;
 pub use transport_health::*;
