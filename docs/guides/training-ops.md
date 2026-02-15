@@ -90,6 +90,20 @@ Gateway dashboard endpoints (`/dashboard/health`, `/dashboard/widgets`,
 Resume/recovery lifecycle controls and guardrail procedures are documented in:
 `docs/guides/prompt-optimization-recovery-runbook.md`.
 
+## M24 Operational Safety Proof Command
+
+Run deterministic operational-safety proof checks (control actions + safety
+promotion constraints + operator playbook validation):
+
+```bash
+scripts/demo/m24-rl-operational-safety-proof.sh \
+  --output-json tasks/reports/m24-rl-operational-safety-proof.json \
+  --output-md tasks/reports/m24-rl-operational-safety-proof.md
+```
+
+The proof artifact includes per-check command/status/duration plus runbook
+evidence for `docs/guides/prompt-optimization-recovery-runbook.md`.
+
 ## Flag Notes
 
 Canonical flags for current automation:
