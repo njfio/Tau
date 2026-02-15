@@ -1,12 +1,12 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-02-15T18:46:11Z",
-  "policy_file": "./tasks/policies/m23-doc-ratchet-policy.json",
-  "baseline_artifact": "tasks/reports/m23-rustdoc-marker-count-ratchet-baseline.json",
-  "current_artifact": "./tasks/reports/m23-rustdoc-marker-count.json",
-  "floor_markers": 1964,
-  "baseline_total_markers": 1964,
-  "current_total_markers": 1964,
+  "generated_at": "2026-02-15T18:58:13Z",
+  "policy_file": "/Users/n/RustroverProjects/rust_pi_mainline/tasks/policies/m23-doc-ratchet-policy.json",
+  "baseline_artifact": "/Users/n/RustroverProjects/rust_pi_mainline/tasks/reports/m23-rustdoc-marker-count-ratchet-baseline.json",
+  "current_artifact": "/Users/n/RustroverProjects/rust_pi_mainline/tasks/reports/m23-rustdoc-marker-count.json",
+  "floor_markers": 3249,
+  "baseline_total_markers": 3249,
+  "current_total_markers": 3249,
   "delta_total_markers": 0,
   "below_floor_by": 0,
   "meets_floor": true,
@@ -150,8 +150,8 @@
     },
     {
       "crate": "tau-gateway",
-      "baseline_markers": 62,
-      "current_markers": 62,
+      "baseline_markers": 297,
+      "current_markers": 297,
       "delta_markers": 0,
       "baseline_files_scanned": 16,
       "current_files_scanned": 16
@@ -182,8 +182,8 @@
     },
     {
       "crate": "tau-multi-channel",
-      "baseline_markers": 160,
-      "current_markers": 160,
+      "baseline_markers": 555,
+      "current_markers": 555,
       "delta_markers": 0,
       "baseline_files_scanned": 15,
       "current_files_scanned": 15
@@ -198,8 +198,8 @@
     },
     {
       "crate": "tau-ops",
-      "baseline_markers": 54,
-      "current_markers": 54,
+      "baseline_markers": 249,
+      "current_markers": 249,
       "delta_markers": 0,
       "baseline_files_scanned": 13,
       "current_files_scanned": 13
@@ -214,8 +214,8 @@
     },
     {
       "crate": "tau-provider",
-      "baseline_markers": 104,
-      "current_markers": 104,
+      "baseline_markers": 564,
+      "current_markers": 564,
       "delta_markers": 0,
       "baseline_files_scanned": 14,
       "current_files_scanned": 14

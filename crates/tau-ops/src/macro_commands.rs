@@ -12,7 +12,17 @@ use serde::{Deserialize, Serialize};
 use tau_cli::{canonical_command_name, parse_command};
 use tau_core::write_text_atomic;
 
+/// Public `const` `MACRO_SCHEMA_VERSION` in `tau-ops`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub const MACRO_SCHEMA_VERSION: u32 = 1;
+/// Public `const` `MACRO_USAGE` in `tau-ops`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub const MACRO_USAGE: &str = "usage: /macro <save|run|list|show|delete> ...";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -49,6 +59,11 @@ pub struct MacroFile {
     pub macros: BTreeMap<String, Vec<String>>,
 }
 
+/// Public `fn` `default_macro_config_path` in `tau-ops`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn default_macro_config_path() -> Result<PathBuf> {
     Ok(std::env::current_dir()
         .context("failed to resolve current working directory")?
@@ -56,6 +71,11 @@ pub fn default_macro_config_path() -> Result<PathBuf> {
         .join("macros.json"))
 }
 
+/// Public `fn` `validate_macro_name` in `tau-ops`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn validate_macro_name(name: &str) -> Result<()> {
     let mut chars = name.chars();
     let Some(first) = chars.next() else {
@@ -73,6 +93,11 @@ pub fn validate_macro_name(name: &str) -> Result<()> {
     Ok(())
 }
 
+/// Public `fn` `parse_macro_command` in `tau-ops`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn parse_macro_command(command_args: &str) -> Result<MacroCommand> {
     const USAGE_LIST: &str = "usage: /macro list";
     const USAGE_SAVE: &str = "usage: /macro save <name> <commands_file>";
@@ -145,6 +170,11 @@ pub fn parse_macro_command(command_args: &str) -> Result<MacroCommand> {
     }
 }
 
+/// Public `fn` `load_macro_file` in `tau-ops`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn load_macro_file(path: &Path) -> Result<BTreeMap<String, Vec<String>>> {
     if !path.exists() {
         return Ok(BTreeMap::new());
@@ -165,6 +195,11 @@ pub fn load_macro_file(path: &Path) -> Result<BTreeMap<String, Vec<String>>> {
     Ok(parsed.macros)
 }
 
+/// Public `fn` `save_macro_file` in `tau-ops`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn save_macro_file(path: &Path, macros: &BTreeMap<String, Vec<String>>) -> Result<()> {
     let payload = MacroFile {
         schema_version: MACRO_SCHEMA_VERSION,
@@ -187,6 +222,11 @@ pub fn save_macro_file(path: &Path, macros: &BTreeMap<String, Vec<String>>) -> R
     write_text_atomic(path, &encoded)
 }
 
+/// Public `fn` `load_macro_commands` in `tau-ops`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn load_macro_commands(commands_file: &Path) -> Result<Vec<String>> {
     let raw = std::fs::read_to_string(commands_file)
         .with_context(|| format!("failed to read commands file {}", commands_file.display()))?;
@@ -206,6 +246,11 @@ pub fn load_macro_commands(commands_file: &Path) -> Result<Vec<String>> {
     Ok(commands)
 }
 
+/// Public `fn` `validate_macro_command_entry` in `tau-ops`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn validate_macro_command_entry(command: &str, command_names: &[&str]) -> Result<()> {
     let parsed = parse_command(command)
         .ok_or_else(|| anyhow!("invalid macro command '{command}': command must start with '/'"))?;
@@ -222,6 +267,11 @@ pub fn validate_macro_command_entry(command: &str, command_names: &[&str]) -> Re
     Ok(())
 }
 
+/// Public `fn` `validate_macro_commands` in `tau-ops`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn validate_macro_commands(commands: &[String], command_names: &[&str]) -> Result<()> {
     for (index, command) in commands.iter().enumerate() {
         validate_macro_command_entry(command, command_names)
@@ -230,6 +280,11 @@ pub fn validate_macro_commands(commands: &[String], command_names: &[&str]) -> R
     Ok(())
 }
 
+/// Public `fn` `render_macro_list` in `tau-ops`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn render_macro_list(path: &Path, macros: &BTreeMap<String, Vec<String>>) -> String {
     let mut lines = vec![format!(
         "macro list: path={} count={}",
@@ -246,6 +301,11 @@ pub fn render_macro_list(path: &Path, macros: &BTreeMap<String, Vec<String>>) ->
     lines.join("\n")
 }
 
+/// Public `fn` `render_macro_show` in `tau-ops`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn render_macro_show(path: &Path, name: &str, commands: &[String]) -> String {
     let mut lines = vec![format!(
         "macro show: path={} name={} commands={}",
@@ -259,6 +319,11 @@ pub fn render_macro_show(path: &Path, name: &str, commands: &[String]) -> String
     lines.join("\n")
 }
 
+/// Public `fn` `execute_macro_command_with_runner` in `tau-ops`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn execute_macro_command_with_runner<F>(
     command_args: &str,
     macro_path: &Path,

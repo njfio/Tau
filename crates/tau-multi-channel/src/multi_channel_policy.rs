@@ -13,7 +13,17 @@ use serde_json::Value;
 
 use crate::multi_channel_contract::{MultiChannelEventKind, MultiChannelInboundEvent};
 
+/// Public `const` `MULTI_CHANNEL_POLICY_SCHEMA_VERSION` in `tau-multi-channel`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub const MULTI_CHANNEL_POLICY_SCHEMA_VERSION: u32 = 1;
+/// Public `const` `MULTI_CHANNEL_POLICY_FILE_NAME` in `tau-multi-channel`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub const MULTI_CHANNEL_POLICY_FILE_NAME: &str = "channel-policy.json";
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -26,6 +36,11 @@ pub enum MultiChannelDmPolicy {
 }
 
 impl MultiChannelDmPolicy {
+    /// Public `fn` `as_str` in `tau-multi-channel`.
+    ///
+    /// This item is part of the Wave 2 API surface for M23 documentation uplift.
+    /// Callers rely on its contract and failure semantics remaining stable.
+    /// Update this comment if behavior or integration expectations change.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Allow => "allow",
@@ -45,6 +60,11 @@ pub enum MultiChannelAllowFrom {
 }
 
 impl MultiChannelAllowFrom {
+    /// Public `fn` `as_str` in `tau-multi-channel`.
+    ///
+    /// This item is part of the Wave 2 API surface for M23 documentation uplift.
+    /// Callers rely on its contract and failure semantics remaining stable.
+    /// Update this comment if behavior or integration expectations change.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Any => "any",
@@ -64,6 +84,11 @@ pub enum MultiChannelGroupPolicy {
 }
 
 impl MultiChannelGroupPolicy {
+    /// Public `fn` `as_str` in `tau-multi-channel`.
+    ///
+    /// This item is part of the Wave 2 API surface for M23 documentation uplift.
+    /// Callers rely on its contract and failure semantics remaining stable.
+    /// Update this comment if behavior or integration expectations change.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Allow => "allow",
@@ -83,6 +108,11 @@ pub enum MultiChannelSecureMessagingMode {
 }
 
 impl MultiChannelSecureMessagingMode {
+    /// Public `fn` `as_str` in `tau-multi-channel`.
+    ///
+    /// This item is part of the Wave 2 API surface for M23 documentation uplift.
+    /// Callers rely on its contract and failure semantics remaining stable.
+    /// Update this comment if behavior or integration expectations change.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Disabled => "disabled",
@@ -182,6 +212,11 @@ pub enum MultiChannelConversationKind {
 }
 
 impl MultiChannelConversationKind {
+    /// Public `fn` `as_str` in `tau-multi-channel`.
+    ///
+    /// This item is part of the Wave 2 API surface for M23 documentation uplift.
+    /// Callers rely on its contract and failure semantics remaining stable.
+    /// Update this comment if behavior or integration expectations change.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Dm => "dm",
@@ -198,12 +233,22 @@ pub enum MultiChannelPolicyDecision {
 }
 
 impl MultiChannelPolicyDecision {
+    /// Public `fn` `reason_code` in `tau-multi-channel`.
+    ///
+    /// This item is part of the Wave 2 API surface for M23 documentation uplift.
+    /// Callers rely on its contract and failure semantics remaining stable.
+    /// Update this comment if behavior or integration expectations change.
     pub fn reason_code(&self) -> &str {
         match self {
             Self::Allow { reason_code } | Self::Deny { reason_code } => reason_code,
         }
     }
 
+    /// Public `fn` `as_str` in `tau-multi-channel`.
+    ///
+    /// This item is part of the Wave 2 API surface for M23 documentation uplift.
+    /// Callers rely on its contract and failure semantics remaining stable.
+    /// Update this comment if behavior or integration expectations change.
     pub fn as_str(&self) -> &'static str {
         if matches!(self, Self::Allow { .. }) {
             "allow"
@@ -224,6 +269,11 @@ pub struct MultiChannelPolicyEvaluation {
     pub decision: MultiChannelPolicyDecision,
 }
 
+/// Public `fn` `channel_policy_path_for_state_dir` in `tau-multi-channel`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn channel_policy_path_for_state_dir(state_dir: &Path) -> PathBuf {
     let state_name = state_dir.file_name().and_then(|value| value.to_str());
     let tau_root = match state_name {
@@ -242,12 +292,22 @@ pub fn channel_policy_path_for_state_dir(state_dir: &Path) -> PathBuf {
         .join(MULTI_CHANNEL_POLICY_FILE_NAME)
 }
 
+/// Public `fn` `load_multi_channel_policy_for_state_dir` in `tau-multi-channel`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn load_multi_channel_policy_for_state_dir(state_dir: &Path) -> Result<MultiChannelPolicyFile> {
     let path = channel_policy_path_for_state_dir(state_dir);
     load_multi_channel_policy_file(&path)
         .with_context(|| format!("failed to load multi-channel policy {}", path.display()))
 }
 
+/// Public `fn` `load_multi_channel_policy_file` in `tau-multi-channel`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn load_multi_channel_policy_file(path: &Path) -> Result<MultiChannelPolicyFile> {
     if !path.exists() {
         return Ok(MultiChannelPolicyFile::default());
@@ -276,6 +336,11 @@ fn validate_multi_channel_policy(policy: &MultiChannelPolicyFile) -> Result<()> 
     Ok(())
 }
 
+/// Public `fn` `evaluate_multi_channel_channel_policy` in `tau-multi-channel`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn evaluate_multi_channel_channel_policy(
     policy_file: &MultiChannelPolicyFile,
     event: &MultiChannelInboundEvent,
@@ -335,6 +400,11 @@ pub fn evaluate_multi_channel_channel_policy(
     }
 }
 
+/// Public `fn` `collect_open_dm_risk_channels` in `tau-multi-channel`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn collect_open_dm_risk_channels(policy_file: &MultiChannelPolicyFile) -> Vec<String> {
     let mut channels = Vec::new();
     if policy_file.default_policy.is_open_dm_combo() {

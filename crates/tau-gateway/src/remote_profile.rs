@@ -18,6 +18,11 @@ pub enum GatewayOpenResponsesAuthMode {
 }
 
 impl GatewayOpenResponsesAuthMode {
+    /// Public `fn` `as_str` in `tau-gateway`.
+    ///
+    /// This item is part of the Wave 2 API surface for M23 documentation uplift.
+    /// Callers rely on its contract and failure semantics remaining stable.
+    /// Update this comment if behavior or integration expectations change.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Token => "token",
@@ -38,6 +43,11 @@ pub enum GatewayRemoteProfile {
 }
 
 impl GatewayRemoteProfile {
+    /// Public `fn` `as_str` in `tau-gateway`.
+    ///
+    /// This item is part of the Wave 2 API surface for M23 documentation uplift.
+    /// Callers rely on its contract and failure semantics remaining stable.
+    /// Update this comment if behavior or integration expectations change.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::LocalOnly => "local-only",
@@ -98,11 +108,21 @@ fn mark_hold(
     push_unique(recommendations, recommendation);
 }
 
+/// Public `fn` `validate_gateway_openresponses_bind` in `tau-gateway`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn validate_gateway_openresponses_bind(bind: &str) -> Result<SocketAddr> {
     bind.parse::<SocketAddr>()
         .with_context(|| format!("invalid gateway socket address '{bind}'"))
 }
 
+/// Public `fn` `evaluate_gateway_remote_profile_config` in `tau-gateway`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn evaluate_gateway_remote_profile_config(
     config: &GatewayRemoteProfileConfig,
 ) -> Result<GatewayRemoteProfileReport> {

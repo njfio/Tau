@@ -27,6 +27,11 @@ pub enum MultiChannelOutboundMode {
 }
 
 impl MultiChannelOutboundMode {
+    /// Public `fn` `as_str` in `tau-multi-channel`.
+    ///
+    /// This item is part of the Wave 2 API surface for M23 documentation uplift.
+    /// Callers rely on its contract and failure semantics remaining stable.
+    /// Update this comment if behavior or integration expectations change.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::ChannelStore => "channel_store",
@@ -150,6 +155,11 @@ pub struct MultiChannelOutboundDispatcher {
 }
 
 impl MultiChannelOutboundDispatcher {
+    /// Public `fn` `new` in `tau-multi-channel`.
+    ///
+    /// This item is part of the Wave 2 API surface for M23 documentation uplift.
+    /// Callers rely on its contract and failure semantics remaining stable.
+    /// Update this comment if behavior or integration expectations change.
     pub fn new(config: MultiChannelOutboundConfig) -> Result<Self> {
         if config.max_chars == 0 {
             return Err(anyhow!(
@@ -184,10 +194,20 @@ impl MultiChannelOutboundDispatcher {
         })
     }
 
+    /// Public `fn` `mode` in `tau-multi-channel`.
+    ///
+    /// This item is part of the Wave 2 API surface for M23 documentation uplift.
+    /// Callers rely on its contract and failure semantics remaining stable.
+    /// Update this comment if behavior or integration expectations change.
     pub fn mode(&self) -> MultiChannelOutboundMode {
         self.config.mode
     }
 
+    /// Public `fn` `deliver` in `tau-multi-channel`.
+    ///
+    /// This item is part of the Wave 2 API surface for M23 documentation uplift.
+    /// Callers rely on its contract and failure semantics remaining stable.
+    /// Update this comment if behavior or integration expectations change.
     pub async fn deliver(
         &self,
         event: &MultiChannelInboundEvent,

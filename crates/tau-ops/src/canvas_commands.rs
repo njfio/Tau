@@ -27,6 +27,11 @@ const CANVAS_ROOT_TYPE: &str = "canvas";
 const CANVAS_NODES_KEY: &str = "nodes";
 const CANVAS_EDGES_KEY: &str = "edges";
 
+/// Public `const` `CANVAS_USAGE` in `tau-ops`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub const CANVAS_USAGE: &str =
     "/canvas <create|update|show|export|import> <canvas_id> ... (run /help /canvas)";
 
@@ -231,6 +236,11 @@ impl CanvasExportFormat {
     }
 }
 
+/// Public `fn` `execute_canvas_command` in `tau-ops`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn execute_canvas_command(command_args: &str, config: &CanvasCommandConfig) -> String {
     match parse_canvas_command(command_args) {
         Ok(command) => match run_canvas_command(command, config) {

@@ -1,11 +1,11 @@
 # M23 Rustdoc Marker Count
 
-Generated at: 2026-02-15T18:30:01Z
+Generated at: 2026-02-15T18:58:07Z
 
 ## Summary
 
 - Scan root: `crates`
-- Total markers: `1964`
+- Total markers: `3249`
 - Crates scanned: `42`
 
 ## Per-Crate Breakdown
@@ -29,15 +29,15 @@ Generated at: 2026-02-15T18:30:01Z
 | tau-diagnostics | 22 | 1 |
 | tau-events | 27 | 3 |
 | tau-extensions | 20 | 2 |
-| tau-gateway | 62 | 16 |
+| tau-gateway | 297 | 16 |
 | tau-github-issues | 29 | 23 |
 | tau-github-issues-runtime | 39 | 17 |
 | tau-memory | 48 | 3 |
-| tau-multi-channel | 160 | 15 |
+| tau-multi-channel | 555 | 15 |
 | tau-onboarding | 170 | 23 |
-| tau-ops | 54 | 13 |
+| tau-ops | 249 | 13 |
 | tau-orchestrator | 23 | 5 |
-| tau-provider | 104 | 14 |
+| tau-provider | 564 | 14 |
 | tau-release-channel | 15 | 4 |
 | tau-runtime | 136 | 14 |
 | tau-safety | 13 | 1 |

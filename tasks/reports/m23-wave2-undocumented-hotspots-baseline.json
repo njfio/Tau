@@ -1,0 +1,1578 @@
+{
+  "generated_at": "2026-02-15T18:56:33.317662Z",
+  "target_crates": [
+    "tau-gateway",
+    "tau-multi-channel",
+    "tau-ops",
+    "tau-provider"
+  ],
+  "total_undocumented": 257,
+  "crates": [
+    {
+      "crate": "tau-gateway",
+      "undocumented_count": 47,
+      "items": [
+        {
+          "file": "crates/tau-gateway/src/gateway_contract.rs",
+          "line": 18,
+          "kind": "const",
+          "signature": "pub const GATEWAY_CONTRACT_SCHEMA_VERSION: u32 = 1;"
+        },
+        {
+          "file": "crates/tau-gateway/src/gateway_contract.rs",
+          "line": 20,
+          "kind": "const",
+          "signature": "pub const GATEWAY_ERROR_INVALID_REQUEST: &str = \"gateway_invalid_request\";"
+        },
+        {
+          "file": "crates/tau-gateway/src/gateway_contract.rs",
+          "line": 21,
+          "kind": "const",
+          "signature": "pub const GATEWAY_ERROR_UNSUPPORTED_METHOD: &str = \"gateway_unsupported_method\";"
+        },
+        {
+          "file": "crates/tau-gateway/src/gateway_contract.rs",
+          "line": 22,
+          "kind": "const",
+          "signature": "pub const GATEWAY_ERROR_BACKEND_UNAVAILABLE: &str = \"gateway_backend_unavailable\";"
+        },
+        {
+          "file": "crates/tau-gateway/src/gateway_contract.rs",
+          "line": 116,
+          "kind": "fn",
+          "signature": "pub fn parse_gateway_contract_fixture(raw: &str) -> Result<GatewayContractFixture> {"
+        },
+        {
+          "file": "crates/tau-gateway/src/gateway_contract.rs",
+          "line": 124,
+          "kind": "fn",
+          "signature": "pub fn load_gateway_contract_fixture(path: &Path) -> Result<GatewayContractFixture> {"
+        },
+        {
+          "file": "crates/tau-gateway/src/gateway_contract.rs",
+          "line": 128,
+          "kind": "fn",
+          "signature": "pub fn gateway_contract_capabilities() -> GatewayContractCapabilities {"
+        },
+        {
+          "file": "crates/tau-gateway/src/gateway_contract.rs",
+          "line": 149,
+          "kind": "fn",
+          "signature": "pub fn validate_gateway_contract_compatibility(fixture: &GatewayContractFixture) -> Result<()> {"
+        },
+        {
+          "file": "crates/tau-gateway/src/gateway_contract.rs",
+          "line": 192,
+          "kind": "fn",
+          "signature": "pub fn validate_gateway_contract_fixture(fixture: &GatewayContractFixture) -> Result<()> {"
+        },
+        {
+          "file": "crates/tau-gateway/src/gateway_contract.rs",
+          "line": 209,
+          "kind": "fn",
+          "signature": "pub fn evaluate_gateway_case(case: &GatewayContractCase) -> GatewayReplayResult {"
+        },
+        {
+          "file": "crates/tau-gateway/src/gateway_contract.rs",
+          "line": 258,
+          "kind": "fn",
+          "signature": "pub fn validate_gateway_case_result_against_contract("
+        },
+        {
+          "file": "crates/tau-gateway/src/gateway_contract.rs",
+          "line": 321,
+          "kind": "fn",
+          "signature": "pub fn run_gateway_contract_replay<D: GatewayContractDriver>("
+        },
+        {
+          "file": "crates/tau-gateway/src/gateway_openresponses.rs",
+          "line": 133,
+          "kind": "fn",
+          "signature": "pub fn new<F>(handler: F) -> Self"
+        },
+        {
+          "file": "crates/tau-gateway/src/gateway_openresponses.rs",
+          "line": 611,
+          "kind": "fn",
+          "signature": "pub async fn run_gateway_openresponses_server("
+        },
+        {
+          "file": "crates/tau-gateway/src/gateway_runtime.rs",
+          "line": 203,
+          "kind": "fn",
+          "signature": "pub async fn run_gateway_contract_runner(config: GatewayRuntimeConfig) -> Result<()> {"
+        },
+        {
+          "file": "crates/tau-gateway/src/gateway_runtime.rs",
+          "line": 233,
+          "kind": "fn",
+          "signature": "pub fn start_gateway_service_mode(state_dir: &Path) -> Result<GatewayServiceStatusReport> {"
+        },
+        {
+          "file": "crates/tau-gateway/src/gateway_runtime.rs",
+          "line": 252,
+          "kind": "fn",
+          "signature": "pub fn stop_gateway_service_mode("
+        },
+        {
+          "file": "crates/tau-gateway/src/gateway_runtime.rs",
+          "line": 272,
+          "kind": "fn",
+          "signature": "pub fn inspect_gateway_service_mode(state_dir: &Path) -> Result<GatewayServiceStatusReport> {"
+        },
+        {
+          "file": "crates/tau-gateway/src/gateway_runtime.rs",
+          "line": 281,
+          "kind": "fn",
+          "signature": "pub fn render_gateway_service_status_report(report: &GatewayServiceStatusReport) -> String {"
+        },
+        {
+          "file": "crates/tau-gateway/src/gateway_ws_protocol.rs",
+          "line": 13,
+          "kind": "const",
+          "signature": "pub const GATEWAY_WS_REQUEST_SCHEMA_VERSION: u32 = 1;"
+        },
+        {
+          "file": "crates/tau-gateway/src/gateway_ws_protocol.rs",
+          "line": 14,
+          "kind": "const",
+          "signature": "pub const GATEWAY_WS_RESPONSE_SCHEMA_VERSION: u32 = 1;"
+        },
+        {
+          "file": "crates/tau-gateway/src/gateway_ws_protocol.rs",
+          "line": 15,
+          "kind": "const",
+          "signature": "pub const GATEWAY_WS_PROTOCOL_VERSION: &str = \"0.1.0\";"
+        },
+        {
+          "file": "crates/tau-gateway/src/gateway_ws_protocol.rs",
+          "line": 16,
+          "kind": "const",
+          "signature": "pub const GATEWAY_WS_HEARTBEAT_INTERVAL_SECONDS: u64 = 15;"
+        },
+        {
+          "file": "crates/tau-gateway/src/gateway_ws_protocol.rs",
+          "line": 21,
+          "kind": "const",
+          "signature": "pub const GATEWAY_WS_ERROR_CODE_INVALID_JSON: &str = \"invalid_json\";"
+        },
+        {
+          "file": "crates/tau-gateway/src/gateway_ws_protocol.rs",
+          "line": 22,
+          "kind": "const",
+          "signature": "pub const GATEWAY_WS_ERROR_CODE_UNSUPPORTED_SCHEMA: &str = \"unsupported_schema\";"
+        },
+        {
+          "file": "crates/tau-gateway/src/gateway_ws_protocol.rs",
+          "line": 23,
+          "kind": "const",
+          "signature": "pub const GATEWAY_WS_ERROR_CODE_UNSUPPORTED_KIND: &str = \"unsupported_kind\";"
+        },
+        {
+          "file": "crates/tau-gateway/src/gateway_ws_protocol.rs",
+          "line": 24,
+          "kind": "const",
+          "signature": "pub const GATEWAY_WS_ERROR_CODE_INVALID_REQUEST_ID: &str = \"invalid_request_id\";"
+        },
+        {
+          "file": "crates/tau-gateway/src/gateway_ws_protocol.rs",
+          "line": 25,
+          "kind": "const",
+          "signature": "pub const GATEWAY_WS_ERROR_CODE_INVALID_PAYLOAD: &str = \"invalid_payload\";"
+        },
+        {
+          "file": "crates/tau-gateway/src/gateway_ws_protocol.rs",
+          "line": 26,
+          "kind": "const",
+          "signature": "pub const GATEWAY_WS_ERROR_CODE_UNAUTHORIZED: &str = \"unauthorized\";"
+        },
+        {
+          "file": "crates/tau-gateway/src/gateway_ws_protocol.rs",
+          "line": 27,
+          "kind": "const",
+          "signature": "pub const GATEWAY_WS_ERROR_CODE_RATE_LIMITED: &str = \"rate_limited\";"
+        },
+        {
+          "file": "crates/tau-gateway/src/gateway_ws_protocol.rs",
+          "line": 28,
+          "kind": "const",
+          "signature": "pub const GATEWAY_WS_ERROR_CODE_INTERNAL_ERROR: &str = \"internal_error\";"
+        },
+        {
+          "file": "crates/tau-gateway/src/gateway_ws_protocol.rs",
+          "line": 110,
+          "kind": "fn",
+          "signature": "pub fn parse_gateway_ws_request_frame(raw: &str) -> Result<GatewayWsRequestFrame> {"
+        },
+        {
+          "file": "crates/tau-gateway/src/gateway_ws_protocol.rs",
+          "line": 143,
+          "kind": "fn",
+          "signature": "pub fn best_effort_gateway_ws_request_id(raw: &str) -> Option<String> {"
+        },
+        {
+          "file": "crates/tau-gateway/src/gateway_ws_protocol.rs",
+          "line": 154,
+          "kind": "fn",
+          "signature": "pub fn classify_gateway_ws_parse_error(message: &str) -> &'static str {"
+        },
+        {
+          "file": "crates/tau-gateway/src/gateway_ws_protocol.rs",
+          "line": 172,
+          "kind": "fn",
+          "signature": "pub fn build_gateway_ws_response_frame("
+        },
+        {
+          "file": "crates/tau-gateway/src/gateway_ws_protocol.rs",
+          "line": 185,
+          "kind": "fn",
+          "signature": "pub fn build_gateway_ws_error_frame("
+        },
+        {
+          "file": "crates/tau-gateway/src/gateway_ws_protocol.rs",
+          "line": 200,
+          "kind": "fn",
+          "signature": "pub fn parse_optional_session_key("
+        },
+        {
+          "file": "crates/tau-gateway/src/gateway_ws_protocol.rs",
+          "line": 217,
+          "kind": "fn",
+          "signature": "pub fn gateway_ws_capabilities_payload() -> Value {"
+        },
+        {
+          "file": "crates/tau-gateway/src/lib.rs",
+          "line": 6,
+          "kind": "mod",
+          "signature": "pub mod gateway_contract;"
+        },
+        {
+          "file": "crates/tau-gateway/src/lib.rs",
+          "line": 7,
+          "kind": "mod",
+          "signature": "pub mod gateway_openresponses;"
+        },
+        {
+          "file": "crates/tau-gateway/src/lib.rs",
+          "line": 8,
+          "kind": "mod",
+          "signature": "pub mod gateway_runtime;"
+        },
+        {
+          "file": "crates/tau-gateway/src/lib.rs",
+          "line": 9,
+          "kind": "mod",
+          "signature": "pub mod gateway_ws_protocol;"
+        },
+        {
+          "file": "crates/tau-gateway/src/lib.rs",
+          "line": 10,
+          "kind": "mod",
+          "signature": "pub mod remote_profile;"
+        },
+        {
+          "file": "crates/tau-gateway/src/remote_profile.rs",
+          "line": 21,
+          "kind": "fn",
+          "signature": "pub fn as_str(self) -> &'static str {"
+        },
+        {
+          "file": "crates/tau-gateway/src/remote_profile.rs",
+          "line": 41,
+          "kind": "fn",
+          "signature": "pub fn as_str(self) -> &'static str {"
+        },
+        {
+          "file": "crates/tau-gateway/src/remote_profile.rs",
+          "line": 101,
+          "kind": "fn",
+          "signature": "pub fn validate_gateway_openresponses_bind(bind: &str) -> Result<SocketAddr> {"
+        },
+        {
+          "file": "crates/tau-gateway/src/remote_profile.rs",
+          "line": 106,
+          "kind": "fn",
+          "signature": "pub fn evaluate_gateway_remote_profile_config("
+        }
+      ]
+    },
+    {
+      "crate": "tau-multi-channel",
+      "undocumented_count": 79,
+      "items": [
+        {
+          "file": "crates/tau-multi-channel/src/lib.rs",
+          "line": 36,
+          "kind": "mod",
+          "signature": "pub mod multi_channel_contract;"
+        },
+        {
+          "file": "crates/tau-multi-channel/src/lib.rs",
+          "line": 37,
+          "kind": "mod",
+          "signature": "pub mod multi_channel_credentials;"
+        },
+        {
+          "file": "crates/tau-multi-channel/src/lib.rs",
+          "line": 38,
+          "kind": "mod",
+          "signature": "pub mod multi_channel_incident;"
+        },
+        {
+          "file": "crates/tau-multi-channel/src/lib.rs",
+          "line": 39,
+          "kind": "mod",
+          "signature": "pub mod multi_channel_lifecycle;"
+        },
+        {
+          "file": "crates/tau-multi-channel/src/lib.rs",
+          "line": 40,
+          "kind": "mod",
+          "signature": "pub mod multi_channel_live_connectors;"
+        },
+        {
+          "file": "crates/tau-multi-channel/src/lib.rs",
+          "line": 41,
+          "kind": "mod",
+          "signature": "pub mod multi_channel_live_ingress;"
+        },
+        {
+          "file": "crates/tau-multi-channel/src/lib.rs",
+          "line": 42,
+          "kind": "mod",
+          "signature": "pub mod multi_channel_media;"
+        },
+        {
+          "file": "crates/tau-multi-channel/src/lib.rs",
+          "line": 43,
+          "kind": "mod",
+          "signature": "pub mod multi_channel_outbound;"
+        },
+        {
+          "file": "crates/tau-multi-channel/src/lib.rs",
+          "line": 44,
+          "kind": "mod",
+          "signature": "pub mod multi_channel_policy;"
+        },
+        {
+          "file": "crates/tau-multi-channel/src/lib.rs",
+          "line": 45,
+          "kind": "mod",
+          "signature": "pub mod multi_channel_route_inspect;"
+        },
+        {
+          "file": "crates/tau-multi-channel/src/lib.rs",
+          "line": 46,
+          "kind": "mod",
+          "signature": "pub mod multi_channel_routing;"
+        },
+        {
+          "file": "crates/tau-multi-channel/src/lib.rs",
+          "line": 47,
+          "kind": "mod",
+          "signature": "pub mod multi_channel_runtime;"
+        },
+        {
+          "file": "crates/tau-multi-channel/src/lib.rs",
+          "line": 48,
+          "kind": "mod",
+          "signature": "pub mod multi_channel_send;"
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_contract.rs",
+          "line": 18,
+          "kind": "const",
+          "signature": "pub const MULTI_CHANNEL_CONTRACT_SCHEMA_VERSION: u32 = 1;"
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_contract.rs",
+          "line": 34,
+          "kind": "fn",
+          "signature": "pub fn as_str(self) -> &'static str {"
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_contract.rs",
+          "line": 99,
+          "kind": "fn",
+          "signature": "pub fn parse_multi_channel_contract_fixture(raw: &str) -> Result<MultiChannelContractFixture> {"
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_contract.rs",
+          "line": 107,
+          "kind": "fn",
+          "signature": "pub fn load_multi_channel_contract_fixture(path: &Path) -> Result<MultiChannelContractFixture> {"
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_contract.rs",
+          "line": 111,
+          "kind": "fn",
+          "signature": "pub fn validate_multi_channel_contract_fixture("
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_contract.rs",
+          "line": 135,
+          "kind": "fn",
+          "signature": "pub fn validate_multi_channel_inbound_event(event: &MultiChannelInboundEvent) -> Result<()> {"
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_contract.rs",
+          "line": 198,
+          "kind": "fn",
+          "signature": "pub fn event_contract_key(event: &MultiChannelInboundEvent) -> String {"
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_credentials.rs",
+          "line": 36,
+          "kind": "fn",
+          "signature": "pub fn resolve_secret("
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_incident.rs",
+          "line": 142,
+          "kind": "fn",
+          "signature": "pub fn build_multi_channel_incident_timeline_report("
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_incident.rs",
+          "line": 636,
+          "kind": "fn",
+          "signature": "pub fn render_multi_channel_incident_timeline_report("
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_lifecycle.rs",
+          "line": 24,
+          "kind": "const",
+          "signature": "pub const MULTI_CHANNEL_LIFECYCLE_STATE_FILE_NAME: &str = \"channel-lifecycle.json\";"
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_lifecycle.rs",
+          "line": 171,
+          "kind": "fn",
+          "signature": "pub fn default_probe_timeout_ms() -> u64 {"
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_lifecycle.rs",
+          "line": 175,
+          "kind": "fn",
+          "signature": "pub fn default_probe_max_attempts() -> usize {"
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_lifecycle.rs",
+          "line": 179,
+          "kind": "fn",
+          "signature": "pub fn default_probe_retry_delay_ms() -> u64 {"
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_lifecycle.rs",
+          "line": 183,
+          "kind": "fn",
+          "signature": "pub fn execute_multi_channel_lifecycle_action("
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_lifecycle.rs",
+          "line": 912,
+          "kind": "fn",
+          "signature": "pub fn render_multi_channel_lifecycle_report(report: &MultiChannelLifecycleReport) -> String {"
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_live_connectors.rs",
+          "line": 66,
+          "kind": "fn",
+          "signature": "pub fn as_str(self) -> &'static str {"
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_live_connectors.rs",
+          "line": 74,
+          "kind": "fn",
+          "signature": "pub fn is_disabled(self) -> bool {"
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_live_connectors.rs",
+          "line": 78,
+          "kind": "fn",
+          "signature": "pub fn is_polling(self) -> bool {"
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_live_connectors.rs",
+          "line": 82,
+          "kind": "fn",
+          "signature": "pub fn is_webhook(self) -> bool {"
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_live_connectors.rs",
+          "line": 88,
+          "kind": "fn",
+          "signature": "pub fn as_str(self) -> &'static str {"
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_live_connectors.rs",
+          "line": 255,
+          "kind": "fn",
+          "signature": "pub fn load_multi_channel_live_connectors_status_report("
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_live_connectors.rs",
+          "line": 277,
+          "kind": "fn",
+          "signature": "pub async fn run_multi_channel_live_connectors_runner("
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_live_ingress.rs",
+          "line": 42,
+          "kind": "fn",
+          "signature": "pub fn as_str(self) -> &'static str {"
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_live_ingress.rs",
+          "line": 109,
+          "kind": "fn",
+          "signature": "pub fn default_multi_channel_live_provider_label(transport: MultiChannelTransport) -> &'static str {"
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_live_ingress.rs",
+          "line": 117,
+          "kind": "fn",
+          "signature": "pub fn build_multi_channel_live_envelope_from_raw_payload("
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_live_ingress.rs",
+          "line": 152,
+          "kind": "fn",
+          "signature": "pub fn ingest_multi_channel_live_raw_payload("
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_live_ingress.rs",
+          "line": 211,
+          "kind": "fn",
+          "signature": "pub fn parse_multi_channel_live_inbound_envelope("
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_live_ingress.rs",
+          "line": 224,
+          "kind": "fn",
+          "signature": "pub fn parse_multi_channel_live_inbound_envelope_value("
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_live_ingress.rs",
+          "line": 261,
+          "kind": "fn",
+          "signature": "pub fn load_multi_channel_live_inbound_envelope_fixture("
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_media.rs",
+          "line": 211,
+          "kind": "fn",
+          "signature": "pub fn process_media_attachments("
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_media.rs",
+          "line": 218,
+          "kind": "fn",
+          "signature": "pub fn process_media_attachments_with_provider<P: MediaUnderstandingProvider>("
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_media.rs",
+          "line": 303,
+          "kind": "fn",
+          "signature": "pub fn render_media_prompt_context(report: &MediaUnderstandingReport) -> Option<String> {"
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_outbound.rs",
+          "line": 30,
+          "kind": "fn",
+          "signature": "pub fn as_str(self) -> &'static str {"
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_outbound.rs",
+          "line": 153,
+          "kind": "fn",
+          "signature": "pub fn new(config: MultiChannelOutboundConfig) -> Result<Self> {"
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_outbound.rs",
+          "line": 187,
+          "kind": "fn",
+          "signature": "pub fn mode(&self) -> MultiChannelOutboundMode {"
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_outbound.rs",
+          "line": 191,
+          "kind": "fn",
+          "signature": "pub async fn deliver("
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_policy.rs",
+          "line": 16,
+          "kind": "const",
+          "signature": "pub const MULTI_CHANNEL_POLICY_SCHEMA_VERSION: u32 = 1;"
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_policy.rs",
+          "line": 17,
+          "kind": "const",
+          "signature": "pub const MULTI_CHANNEL_POLICY_FILE_NAME: &str = \"channel-policy.json\";"
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_policy.rs",
+          "line": 29,
+          "kind": "fn",
+          "signature": "pub fn as_str(self) -> &'static str {"
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_policy.rs",
+          "line": 48,
+          "kind": "fn",
+          "signature": "pub fn as_str(self) -> &'static str {"
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_policy.rs",
+          "line": 67,
+          "kind": "fn",
+          "signature": "pub fn as_str(self) -> &'static str {"
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_policy.rs",
+          "line": 86,
+          "kind": "fn",
+          "signature": "pub fn as_str(self) -> &'static str {"
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_policy.rs",
+          "line": 185,
+          "kind": "fn",
+          "signature": "pub fn as_str(self) -> &'static str {"
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_policy.rs",
+          "line": 201,
+          "kind": "fn",
+          "signature": "pub fn reason_code(&self) -> &str {"
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_policy.rs",
+          "line": 207,
+          "kind": "fn",
+          "signature": "pub fn as_str(&self) -> &'static str {"
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_policy.rs",
+          "line": 227,
+          "kind": "fn",
+          "signature": "pub fn channel_policy_path_for_state_dir(state_dir: &Path) -> PathBuf {"
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_policy.rs",
+          "line": 245,
+          "kind": "fn",
+          "signature": "pub fn load_multi_channel_policy_for_state_dir(state_dir: &Path) -> Result<MultiChannelPolicyFile> {"
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_policy.rs",
+          "line": 251,
+          "kind": "fn",
+          "signature": "pub fn load_multi_channel_policy_file(path: &Path) -> Result<MultiChannelPolicyFile> {"
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_policy.rs",
+          "line": 279,
+          "kind": "fn",
+          "signature": "pub fn evaluate_multi_channel_channel_policy("
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_policy.rs",
+          "line": 338,
+          "kind": "fn",
+          "signature": "pub fn collect_open_dm_risk_channels(policy_file: &MultiChannelPolicyFile) -> Vec<String> {"
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_route_inspect.rs",
+          "line": 44,
+          "kind": "fn",
+          "signature": "pub fn build_multi_channel_route_inspect_report("
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_route_inspect.rs",
+          "line": 74,
+          "kind": "fn",
+          "signature": "pub fn render_multi_channel_route_inspect_report("
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_routing.rs",
+          "line": 20,
+          "kind": "const",
+          "signature": "pub const MULTI_CHANNEL_ROUTE_BINDINGS_FILE_NAME: &str = \"multi-channel-route-bindings.json\";"
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_routing.rs",
+          "line": 105,
+          "kind": "fn",
+          "signature": "pub fn load_multi_channel_route_bindings_for_state_dir("
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_routing.rs",
+          "line": 115,
+          "kind": "fn",
+          "signature": "pub fn load_multi_channel_route_bindings(path: &Path) -> Result<MultiChannelRouteBindingFile> {"
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_routing.rs",
+          "line": 129,
+          "kind": "fn",
+          "signature": "pub fn parse_multi_channel_route_bindings(raw: &str) -> Result<MultiChannelRouteBindingFile> {"
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_routing.rs",
+          "line": 136,
+          "kind": "fn",
+          "signature": "pub fn resolve_multi_channel_event_route("
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_routing.rs",
+          "line": 236,
+          "kind": "fn",
+          "signature": "pub fn resolve_multi_channel_account_id(event: &MultiChannelInboundEvent) -> String {"
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_routing.rs",
+          "line": 254,
+          "kind": "fn",
+          "signature": "pub fn route_decision_trace_payload("
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_runtime.rs",
+          "line": 92,
+          "kind": "fn",
+          "signature": "pub fn reason_code(&self) -> &str {"
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_runtime.rs",
+          "line": 401,
+          "kind": "fn",
+          "signature": "pub async fn run_multi_channel_contract_runner(config: MultiChannelRuntimeConfig) -> Result<()> {"
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_runtime.rs",
+          "line": 437,
+          "kind": "fn",
+          "signature": "pub async fn run_multi_channel_live_runner(config: MultiChannelLiveRuntimeConfig) -> Result<()> {"
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_send.rs",
+          "line": 91,
+          "kind": "fn",
+          "signature": "pub fn execute_multi_channel_send_action("
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_send.rs",
+          "line": 215,
+          "kind": "fn",
+          "signature": "pub fn resolve_multi_channel_send_text("
+        },
+        {
+          "file": "crates/tau-multi-channel/src/multi_channel_send.rs",
+          "line": 490,
+          "kind": "fn",
+          "signature": "pub fn render_multi_channel_send_report(report: &MultiChannelSendReport) -> String {"
+        }
+      ]
+    },
+    {
+      "crate": "tau-ops",
+      "undocumented_count": 39,
+      "items": [
+        {
+          "file": "crates/tau-ops/src/canvas_commands.rs",
+          "line": 30,
+          "kind": "const",
+          "signature": "pub const CANVAS_USAGE: &str ="
+        },
+        {
+          "file": "crates/tau-ops/src/canvas_commands.rs",
+          "line": 234,
+          "kind": "fn",
+          "signature": "pub fn execute_canvas_command(command_args: &str, config: &CanvasCommandConfig) -> String {"
+        },
+        {
+          "file": "crates/tau-ops/src/channel_store_admin.rs",
+          "line": 912,
+          "kind": "fn",
+          "signature": "pub fn execute_channel_store_admin_command(cli: &Cli) -> Result<()> {"
+        },
+        {
+          "file": "crates/tau-ops/src/command_catalog.rs",
+          "line": 14,
+          "kind": "const",
+          "signature": "pub const MODELS_LIST_USAGE: &str = \"/models-list [query] [--provider <name>] [--tools <true|false>] [--multimodal <true|false>] [--reasoning <true|false>] [--limit <n>]\";"
+        },
+        {
+          "file": "crates/tau-ops/src/command_catalog.rs",
+          "line": 15,
+          "kind": "const",
+          "signature": "pub const MODEL_SHOW_USAGE: &str = \"/model-show <provider/model>\";"
+        },
+        {
+          "file": "crates/tau-ops/src/command_catalog.rs",
+          "line": 17,
+          "kind": "const",
+          "signature": "pub const COMMAND_SPECS: &[CommandSpec] = &["
+        },
+        {
+          "file": "crates/tau-ops/src/command_catalog.rs",
+          "line": 382,
+          "kind": "const",
+          "signature": "pub const COMMAND_NAMES: &[&str] = &["
+        },
+        {
+          "file": "crates/tau-ops/src/command_catalog.rs",
+          "line": 433,
+          "kind": "fn",
+          "signature": "pub fn render_help_overview() -> String {"
+        },
+        {
+          "file": "crates/tau-ops/src/command_catalog.rs",
+          "line": 437,
+          "kind": "fn",
+          "signature": "pub fn render_command_help(topic: &str) -> Option<String> {"
+        },
+        {
+          "file": "crates/tau-ops/src/command_catalog.rs",
+          "line": 441,
+          "kind": "fn",
+          "signature": "pub fn unknown_help_topic_message(topic: &str) -> String {"
+        },
+        {
+          "file": "crates/tau-ops/src/command_catalog.rs",
+          "line": 445,
+          "kind": "fn",
+          "signature": "pub fn unknown_command_message(command: &str) -> String {"
+        },
+        {
+          "file": "crates/tau-ops/src/daemon_runtime.rs",
+          "line": 93,
+          "kind": "fn",
+          "signature": "pub fn resolve_tau_daemon_profile(profile: CliDaemonProfile) -> CliDaemonProfile {"
+        },
+        {
+          "file": "crates/tau-ops/src/daemon_runtime.rs",
+          "line": 104,
+          "kind": "fn",
+          "signature": "pub fn tau_daemon_mode_requested(cli: &Cli) -> bool {"
+        },
+        {
+          "file": "crates/tau-ops/src/daemon_runtime.rs",
+          "line": 112,
+          "kind": "fn",
+          "signature": "pub fn install_tau_daemon(config: &TauDaemonConfig) -> Result<TauDaemonStatusReport> {"
+        },
+        {
+          "file": "crates/tau-ops/src/daemon_runtime.rs",
+          "line": 158,
+          "kind": "fn",
+          "signature": "pub fn uninstall_tau_daemon(config: &TauDaemonConfig) -> Result<TauDaemonStatusReport> {"
+        },
+        {
+          "file": "crates/tau-ops/src/daemon_runtime.rs",
+          "line": 189,
+          "kind": "fn",
+          "signature": "pub fn start_tau_daemon(config: &TauDaemonConfig) -> Result<TauDaemonStatusReport> {"
+        },
+        {
+          "file": "crates/tau-ops/src/daemon_runtime.rs",
+          "line": 215,
+          "kind": "fn",
+          "signature": "pub fn stop_tau_daemon("
+        },
+        {
+          "file": "crates/tau-ops/src/daemon_runtime.rs",
+          "line": 243,
+          "kind": "fn",
+          "signature": "pub fn inspect_tau_daemon(config: &TauDaemonConfig) -> Result<TauDaemonStatusReport> {"
+        },
+        {
+          "file": "crates/tau-ops/src/daemon_runtime.rs",
+          "line": 301,
+          "kind": "fn",
+          "signature": "pub fn render_tau_daemon_status_report(report: &TauDaemonStatusReport) -> String {"
+        },
+        {
+          "file": "crates/tau-ops/src/daemon_runtime.rs",
+          "line": 349,
+          "kind": "fn",
+          "signature": "pub fn render_launchd_plist(label: &str, executable: &Path, state_dir: &Path) -> String {"
+        },
+        {
+          "file": "crates/tau-ops/src/daemon_runtime.rs",
+          "line": 387,
+          "kind": "fn",
+          "signature": "pub fn render_systemd_user_unit(label: &str, executable: &Path, state_dir: &Path) -> String {"
+        },
+        {
+          "file": "crates/tau-ops/src/macro_commands.rs",
+          "line": 15,
+          "kind": "const",
+          "signature": "pub const MACRO_SCHEMA_VERSION: u32 = 1;"
+        },
+        {
+          "file": "crates/tau-ops/src/macro_commands.rs",
+          "line": 16,
+          "kind": "const",
+          "signature": "pub const MACRO_USAGE: &str = \"usage: /macro <save|run|list|show|delete> ...\";"
+        },
+        {
+          "file": "crates/tau-ops/src/macro_commands.rs",
+          "line": 52,
+          "kind": "fn",
+          "signature": "pub fn default_macro_config_path() -> Result<PathBuf> {"
+        },
+        {
+          "file": "crates/tau-ops/src/macro_commands.rs",
+          "line": 59,
+          "kind": "fn",
+          "signature": "pub fn validate_macro_name(name: &str) -> Result<()> {"
+        },
+        {
+          "file": "crates/tau-ops/src/macro_commands.rs",
+          "line": 76,
+          "kind": "fn",
+          "signature": "pub fn parse_macro_command(command_args: &str) -> Result<MacroCommand> {"
+        },
+        {
+          "file": "crates/tau-ops/src/macro_commands.rs",
+          "line": 148,
+          "kind": "fn",
+          "signature": "pub fn load_macro_file(path: &Path) -> Result<BTreeMap<String, Vec<String>>> {"
+        },
+        {
+          "file": "crates/tau-ops/src/macro_commands.rs",
+          "line": 168,
+          "kind": "fn",
+          "signature": "pub fn save_macro_file(path: &Path, macros: &BTreeMap<String, Vec<String>>) -> Result<()> {"
+        },
+        {
+          "file": "crates/tau-ops/src/macro_commands.rs",
+          "line": 190,
+          "kind": "fn",
+          "signature": "pub fn load_macro_commands(commands_file: &Path) -> Result<Vec<String>> {"
+        },
+        {
+          "file": "crates/tau-ops/src/macro_commands.rs",
+          "line": 209,
+          "kind": "fn",
+          "signature": "pub fn validate_macro_command_entry(command: &str, command_names: &[&str]) -> Result<()> {"
+        },
+        {
+          "file": "crates/tau-ops/src/macro_commands.rs",
+          "line": 225,
+          "kind": "fn",
+          "signature": "pub fn validate_macro_commands(commands: &[String], command_names: &[&str]) -> Result<()> {"
+        },
+        {
+          "file": "crates/tau-ops/src/macro_commands.rs",
+          "line": 233,
+          "kind": "fn",
+          "signature": "pub fn render_macro_list(path: &Path, macros: &BTreeMap<String, Vec<String>>) -> String {"
+        },
+        {
+          "file": "crates/tau-ops/src/macro_commands.rs",
+          "line": 249,
+          "kind": "fn",
+          "signature": "pub fn render_macro_show(path: &Path, name: &str, commands: &[String]) -> String {"
+        },
+        {
+          "file": "crates/tau-ops/src/macro_commands.rs",
+          "line": 262,
+          "kind": "fn",
+          "signature": "pub fn execute_macro_command_with_runner<F>("
+        },
+        {
+          "file": "crates/tau-ops/src/project_index.rs",
+          "line": 95,
+          "kind": "fn",
+          "signature": "pub fn execute_project_index_command(cli: &Cli) -> Result<()> {"
+        },
+        {
+          "file": "crates/tau-ops/src/project_index.rs",
+          "line": 708,
+          "kind": "fn",
+          "signature": "pub fn build_index() {}"
+        },
+        {
+          "file": "crates/tau-ops/src/qa_loop_commands.rs",
+          "line": 21,
+          "kind": "const",
+          "signature": "pub const QA_LOOP_USAGE: &str = \"usage: /qa-loop [--json] [--config <path>] [--stage-timeout-ms <ms>] [--retry-failures <n>] [--max-output-bytes <bytes>] [--changed-file-limit <n>]\";"
+        },
+        {
+          "file": "crates/tau-ops/src/qa_loop_commands.rs",
+          "line": 308,
+          "kind": "fn",
+          "signature": "pub fn execute_qa_loop_cli_command(command_args: &str) -> String {"
+        },
+        {
+          "file": "crates/tau-ops/src/qa_loop_commands.rs",
+          "line": 320,
+          "kind": "fn",
+          "signature": "pub fn execute_qa_loop_preflight_command(cli: &Cli) -> Result<()> {"
+        }
+      ]
+    },
+    {
+      "crate": "tau-provider",
+      "undocumented_count": 92,
+      "items": [
+        {
+          "file": "crates/tau-provider/src/auth.rs",
+          "line": 98,
+          "kind": "fn",
+          "signature": "pub fn provider_auth_capability("
+        },
+        {
+          "file": "crates/tau-provider/src/auth.rs",
+          "line": 113,
+          "kind": "fn",
+          "signature": "pub fn provider_supported_auth_modes(provider: Provider) -> Vec<ProviderAuthMethod> {"
+        },
+        {
+          "file": "crates/tau-provider/src/auth.rs",
+          "line": 121,
+          "kind": "fn",
+          "signature": "pub fn configured_provider_auth_method(cli: &Cli, provider: Provider) -> ProviderAuthMethod {"
+        },
+        {
+          "file": "crates/tau-provider/src/auth.rs",
+          "line": 129,
+          "kind": "fn",
+          "signature": "pub fn configured_provider_auth_method_from_config("
+        },
+        {
+          "file": "crates/tau-provider/src/auth.rs",
+          "line": 140,
+          "kind": "fn",
+          "signature": "pub fn provider_auth_mode_flag(provider: Provider) -> &'static str {"
+        },
+        {
+          "file": "crates/tau-provider/src/auth.rs",
+          "line": 148,
+          "kind": "fn",
+          "signature": "pub fn missing_provider_api_key_message(provider: Provider) -> &'static str {"
+        },
+        {
+          "file": "crates/tau-provider/src/auth.rs",
+          "line": 162,
+          "kind": "fn",
+          "signature": "pub fn provider_api_key_candidates_with_inputs("
+        },
+        {
+          "file": "crates/tau-provider/src/auth.rs",
+          "line": 203,
+          "kind": "fn",
+          "signature": "pub fn provider_api_key_candidates("
+        },
+        {
+          "file": "crates/tau-provider/src/auth.rs",
+          "line": 216,
+          "kind": "fn",
+          "signature": "pub fn resolve_api_key(candidates: Vec<Option<String>>) -> Option<String> {"
+        },
+        {
+          "file": "crates/tau-provider/src/auth.rs",
+          "line": 223,
+          "kind": "fn",
+          "signature": "pub fn provider_api_key_candidates_from_auth_config("
+        },
+        {
+          "file": "crates/tau-provider/src/auth.rs",
+          "line": 236,
+          "kind": "fn",
+          "signature": "pub fn provider_login_access_token_candidates("
+        },
+        {
+          "file": "crates/tau-provider/src/auth.rs",
+          "line": 273,
+          "kind": "fn",
+          "signature": "pub fn provider_login_refresh_token_candidates("
+        },
+        {
+          "file": "crates/tau-provider/src/auth.rs",
+          "line": 310,
+          "kind": "fn",
+          "signature": "pub fn provider_login_expires_candidates("
+        },
+        {
+          "file": "crates/tau-provider/src/auth.rs",
+          "line": 347,
+          "kind": "fn",
+          "signature": "pub fn resolve_auth_login_expires_unix(provider: Provider) -> Result<Option<u64>> {"
+        },
+        {
+          "file": "crates/tau-provider/src/auth_commands_runtime.rs",
+          "line": 18,
+          "kind": "const",
+          "signature": "pub const AUTH_USAGE: &str = \"usage: /auth <login|reauth|status|logout|matrix> ...\";"
+        },
+        {
+          "file": "crates/tau-provider/src/auth_commands_runtime.rs",
+          "line": 19,
+          "kind": "const",
+          "signature": "pub const AUTH_LOGIN_USAGE: &str ="
+        },
+        {
+          "file": "crates/tau-provider/src/auth_commands_runtime.rs",
+          "line": 21,
+          "kind": "const",
+          "signature": "pub const AUTH_REAUTH_USAGE: &str ="
+        },
+        {
+          "file": "crates/tau-provider/src/auth_commands_runtime.rs",
+          "line": 23,
+          "kind": "const",
+          "signature": "pub const AUTH_STATUS_USAGE: &str ="
+        },
+        {
+          "file": "crates/tau-provider/src/auth_commands_runtime.rs",
+          "line": 25,
+          "kind": "const",
+          "signature": "pub const AUTH_LOGOUT_USAGE: &str = \"usage: /auth logout <provider> [--json]\";"
+        },
+        {
+          "file": "crates/tau-provider/src/auth_commands_runtime.rs",
+          "line": 26,
+          "kind": "const",
+          "signature": "pub const AUTH_MATRIX_USAGE: &str ="
+        },
+        {
+          "file": "crates/tau-provider/src/auth_commands_runtime.rs",
+          "line": 38,
+          "kind": "fn",
+          "signature": "pub fn as_str(self) -> &'static str {"
+        },
+        {
+          "file": "crates/tau-provider/src/auth_commands_runtime.rs",
+          "line": 56,
+          "kind": "fn",
+          "signature": "pub fn as_str(self) -> &'static str {"
+        },
+        {
+          "file": "crates/tau-provider/src/auth_commands_runtime.rs",
+          "line": 76,
+          "kind": "fn",
+          "signature": "pub fn as_str(self) -> &'static str {"
+        },
+        {
+          "file": "crates/tau-provider/src/auth_commands_runtime.rs",
+          "line": 96,
+          "kind": "fn",
+          "signature": "pub fn as_str(self) -> &'static str {"
+        },
+        {
+          "file": "crates/tau-provider/src/auth_commands_runtime.rs",
+          "line": 217,
+          "kind": "fn",
+          "signature": "pub fn parse_auth_provider(token: &str) -> Result<Provider> {"
+        },
+        {
+          "file": "crates/tau-provider/src/auth_commands_runtime.rs",
+          "line": 231,
+          "kind": "fn",
+          "signature": "pub fn parse_provider_auth_method_token(token: &str) -> Result<ProviderAuthMethod> {"
+        },
+        {
+          "file": "crates/tau-provider/src/auth_commands_runtime.rs",
+          "line": 244,
+          "kind": "fn",
+          "signature": "pub fn parse_auth_command(command_args: &str) -> Result<AuthCommand> {"
+        },
+        {
+          "file": "crates/tau-provider/src/auth_commands_runtime.rs",
+          "line": 578,
+          "kind": "fn",
+          "signature": "pub fn parse_auth_matrix_availability_filter(token: &str) -> Result<AuthMatrixAvailabilityFilter> {"
+        },
+        {
+          "file": "crates/tau-provider/src/auth_commands_runtime.rs",
+          "line": 590,
+          "kind": "fn",
+          "signature": "pub fn parse_auth_matrix_mode_support_filter(token: &str) -> Result<AuthMatrixModeSupportFilter> {"
+        },
+        {
+          "file": "crates/tau-provider/src/auth_commands_runtime.rs",
+          "line": 602,
+          "kind": "fn",
+          "signature": "pub fn parse_auth_matrix_state_filter(token: &str) -> Result<String> {"
+        },
+        {
+          "file": "crates/tau-provider/src/auth_commands_runtime.rs",
+          "line": 610,
+          "kind": "fn",
+          "signature": "pub fn parse_auth_source_kind_filter(token: &str) -> Result<AuthSourceKindFilter> {"
+        },
+        {
+          "file": "crates/tau-provider/src/auth_commands_runtime.rs",
+          "line": 624,
+          "kind": "fn",
+          "signature": "pub fn parse_auth_revoked_filter(token: &str) -> Result<AuthRevokedFilter> {"
+        },
+        {
+          "file": "crates/tau-provider/src/auth_commands_runtime.rs",
+          "line": 768,
+          "kind": "fn",
+          "signature": "pub fn execute_auth_login_command("
+        },
+        {
+          "file": "crates/tau-provider/src/auth_commands_runtime.rs",
+          "line": 1602,
+          "kind": "fn",
+          "signature": "pub fn execute_auth_reauth_command("
+        },
+        {
+          "file": "crates/tau-provider/src/auth_commands_runtime.rs",
+          "line": 1723,
+          "kind": "fn",
+          "signature": "pub fn auth_status_row_for_provider("
+        },
+        {
+          "file": "crates/tau-provider/src/auth_commands_runtime.rs",
+          "line": 2040,
+          "kind": "fn",
+          "signature": "pub fn auth_state_counts(rows: &[AuthStatusRow]) -> std::collections::BTreeMap<String, usize> {"
+        },
+        {
+          "file": "crates/tau-provider/src/auth_commands_runtime.rs",
+          "line": 2048,
+          "kind": "fn",
+          "signature": "pub fn auth_mode_counts(rows: &[AuthStatusRow]) -> std::collections::BTreeMap<String, usize> {"
+        },
+        {
+          "file": "crates/tau-provider/src/auth_commands_runtime.rs",
+          "line": 2056,
+          "kind": "fn",
+          "signature": "pub fn auth_provider_counts(rows: &[AuthStatusRow]) -> std::collections::BTreeMap<String, usize> {"
+        },
+        {
+          "file": "crates/tau-provider/src/auth_commands_runtime.rs",
+          "line": 2064,
+          "kind": "fn",
+          "signature": "pub fn auth_availability_counts("
+        },
+        {
+          "file": "crates/tau-provider/src/auth_commands_runtime.rs",
+          "line": 2079,
+          "kind": "fn",
+          "signature": "pub fn auth_source_kind(source: &str) -> &'static str {"
+        },
+        {
+          "file": "crates/tau-provider/src/auth_commands_runtime.rs",
+          "line": 2103,
+          "kind": "fn",
+          "signature": "pub fn auth_source_kind_counts("
+        },
+        {
+          "file": "crates/tau-provider/src/auth_commands_runtime.rs",
+          "line": 2115,
+          "kind": "fn",
+          "signature": "pub fn auth_revoked_counts(rows: &[AuthStatusRow]) -> std::collections::BTreeMap<String, usize> {"
+        },
+        {
+          "file": "crates/tau-provider/src/auth_commands_runtime.rs",
+          "line": 2128,
+          "kind": "fn",
+          "signature": "pub fn format_auth_state_counts("
+        },
+        {
+          "file": "crates/tau-provider/src/auth_commands_runtime.rs",
+          "line": 2141,
+          "kind": "fn",
+          "signature": "pub fn execute_auth_status_command("
+        },
+        {
+          "file": "crates/tau-provider/src/auth_commands_runtime.rs",
+          "line": 2370,
+          "kind": "fn",
+          "signature": "pub fn execute_auth_matrix_command("
+        },
+        {
+          "file": "crates/tau-provider/src/auth_commands_runtime.rs",
+          "line": 2579,
+          "kind": "fn",
+          "signature": "pub fn execute_auth_logout_command("
+        },
+        {
+          "file": "crates/tau-provider/src/auth_commands_runtime.rs",
+          "line": 2657,
+          "kind": "fn",
+          "signature": "pub fn execute_auth_command(config: &AuthCommandConfig, command_args: &str) -> String {"
+        },
+        {
+          "file": "crates/tau-provider/src/claude_cli_client.rs",
+          "line": 34,
+          "kind": "fn",
+          "signature": "pub fn new(config: ClaudeCliConfig) -> Result<Self, TauAiError> {"
+        },
+        {
+          "file": "crates/tau-provider/src/cli_executable.rs",
+          "line": 29,
+          "kind": "fn",
+          "signature": "pub fn is_executable_available(executable: &str) -> bool {"
+        },
+        {
+          "file": "crates/tau-provider/src/client.rs",
+          "line": 269,
+          "kind": "fn",
+          "signature": "pub fn build_provider_client(cli: &Cli, provider: Provider) -> Result<Arc<dyn LlmClient>> {"
+        },
+        {
+          "file": "crates/tau-provider/src/codex_cli_client.rs",
+          "line": 46,
+          "kind": "fn",
+          "signature": "pub fn new(config: CodexCliConfig) -> Result<Self, TauAiError> {"
+        },
+        {
+          "file": "crates/tau-provider/src/credential_store.rs",
+          "line": 87,
+          "kind": "fn",
+          "signature": "pub fn resolve_credential_store_encryption_mode(cli: &Cli) -> CredentialStoreEncryptionMode {"
+        },
+        {
+          "file": "crates/tau-provider/src/credential_store.rs",
+          "line": 182,
+          "kind": "fn",
+          "signature": "pub fn encrypt_credential_store_secret("
+        },
+        {
+          "file": "crates/tau-provider/src/credential_store.rs",
+          "line": 215,
+          "kind": "fn",
+          "signature": "pub fn decrypt_credential_store_secret("
+        },
+        {
+          "file": "crates/tau-provider/src/credential_store.rs",
+          "line": 262,
+          "kind": "fn",
+          "signature": "pub fn load_credential_store("
+        },
+        {
+          "file": "crates/tau-provider/src/credential_store.rs",
+          "line": 354,
+          "kind": "fn",
+          "signature": "pub fn save_credential_store("
+        },
+        {
+          "file": "crates/tau-provider/src/credential_store.rs",
+          "line": 433,
+          "kind": "fn",
+          "signature": "pub fn refresh_provider_access_token("
+        },
+        {
+          "file": "crates/tau-provider/src/credential_store.rs",
+          "line": 458,
+          "kind": "fn",
+          "signature": "pub fn reauth_required_error(provider: Provider, reason: &str) -> anyhow::Error {"
+        },
+        {
+          "file": "crates/tau-provider/src/credentials.rs",
+          "line": 26,
+          "kind": "fn",
+          "signature": "pub fn resolve_store_backed_provider_credential("
+        },
+        {
+          "file": "crates/tau-provider/src/credentials.rs",
+          "line": 142,
+          "kind": "fn",
+          "signature": "pub fn resolve_non_empty_secret_with_source("
+        },
+        {
+          "file": "crates/tau-provider/src/credentials.rs",
+          "line": 392,
+          "kind": "fn",
+          "signature": "pub fn provider_auth_snapshot_for_status("
+        },
+        {
+          "file": "crates/tau-provider/src/fallback.rs",
+          "line": 70,
+          "kind": "fn",
+          "signature": "pub fn new(routes: Vec<ClientRoute>, event_sink: Option<FallbackEventSink>) -> Self {"
+        },
+        {
+          "file": "crates/tau-provider/src/fallback.rs",
+          "line": 74,
+          "kind": "fn",
+          "signature": "pub fn with_circuit_breaker("
+        },
+        {
+          "file": "crates/tau-provider/src/fallback.rs",
+          "line": 281,
+          "kind": "fn",
+          "signature": "pub fn is_retryable_provider_error(error: &TauAiError) -> bool {"
+        },
+        {
+          "file": "crates/tau-provider/src/fallback.rs",
+          "line": 312,
+          "kind": "fn",
+          "signature": "pub fn resolve_fallback_models(cli: &Cli, primary: &ModelRef) -> Result<Vec<ModelRef>> {"
+        },
+        {
+          "file": "crates/tau-provider/src/fallback.rs",
+          "line": 333,
+          "kind": "fn",
+          "signature": "pub fn build_client_with_fallbacks("
+        },
+        {
+          "file": "crates/tau-provider/src/gemini_cli_client.rs",
+          "line": 34,
+          "kind": "fn",
+          "signature": "pub fn new(config: GeminiCliConfig) -> Result<Self, TauAiError> {"
+        },
+        {
+          "file": "crates/tau-provider/src/integration_auth.rs",
+          "line": 19,
+          "kind": "fn",
+          "signature": "pub fn resolve_non_empty_cli_value(value: Option<&str>) -> Option<String> {"
+        },
+        {
+          "file": "crates/tau-provider/src/integration_auth.rs",
+          "line": 26,
+          "kind": "fn",
+          "signature": "pub fn resolve_secret_from_cli_or_store_id("
+        },
+        {
+          "file": "crates/tau-provider/src/integration_auth.rs",
+          "line": 130,
+          "kind": "fn",
+          "signature": "pub fn normalize_integration_credential_id(raw: &str) -> Result<String> {"
+        },
+        {
+          "file": "crates/tau-provider/src/integration_auth.rs",
+          "line": 151,
+          "kind": "fn",
+          "signature": "pub fn parse_integration_auth_command(command_args: &str) -> Result<IntegrationAuthCommand> {"
+        },
+        {
+          "file": "crates/tau-provider/src/integration_auth.rs",
+          "line": 652,
+          "kind": "fn",
+          "signature": "pub fn execute_integration_auth_command(config: &AuthCommandConfig, command_args: &str) -> String {"
+        },
+        {
+          "file": "crates/tau-provider/src/model_catalog.rs",
+          "line": 19,
+          "kind": "const",
+          "signature": "pub const MODEL_CATALOG_SCHEMA_VERSION: u32 = 1;"
+        },
+        {
+          "file": "crates/tau-provider/src/model_catalog.rs",
+          "line": 20,
+          "kind": "const",
+          "signature": "pub const MODELS_LIST_USAGE: &str = \"/models-list [query] [--provider <name>] [--tools <true|false>] [--multimodal <true|false>] [--reasoning <true|false>] [--limit <n>]\";"
+        },
+        {
+          "file": "crates/tau-provider/src/model_catalog.rs",
+          "line": 21,
+          "kind": "const",
+          "signature": "pub const MODEL_SHOW_USAGE: &str = \"/model-show <provider/model>\";"
+        },
+        {
+          "file": "crates/tau-provider/src/model_catalog.rs",
+          "line": 99,
+          "kind": "fn",
+          "signature": "pub fn built_in() -> Self {"
+        },
+        {
+          "file": "crates/tau-provider/src/model_catalog.rs",
+          "line": 118,
+          "kind": "fn",
+          "signature": "pub fn entries(&self) -> &[ModelCatalogEntry] {"
+        },
+        {
+          "file": "crates/tau-provider/src/model_catalog.rs",
+          "line": 122,
+          "kind": "fn",
+          "signature": "pub fn source(&self) -> &ModelCatalogSource {"
+        },
+        {
+          "file": "crates/tau-provider/src/model_catalog.rs",
+          "line": 126,
+          "kind": "fn",
+          "signature": "pub fn find(&self, provider: &str, model: &str) -> Option<&ModelCatalogEntry> {"
+        },
+        {
+          "file": "crates/tau-provider/src/model_catalog.rs",
+          "line": 133,
+          "kind": "fn",
+          "signature": "pub fn find_model_ref(&self, model_ref: &ModelRef) -> Option<&ModelCatalogEntry> {"
+        },
+        {
+          "file": "crates/tau-provider/src/model_catalog.rs",
+          "line": 137,
+          "kind": "fn",
+          "signature": "pub fn is_stale(&self, stale_after_hours: u64) -> bool {"
+        },
+        {
+          "file": "crates/tau-provider/src/model_catalog.rs",
+          "line": 142,
+          "kind": "fn",
+          "signature": "pub fn diagnostics_line(&self, stale_after_hours: u64) -> String {"
+        },
+        {
+          "file": "crates/tau-provider/src/model_catalog.rs",
+          "line": 170,
+          "kind": "fn",
+          "signature": "pub fn from_file("
+        },
+        {
+          "file": "crates/tau-provider/src/model_catalog.rs",
+          "line": 198,
+          "kind": "fn",
+          "signature": "pub fn default_model_catalog_cache_path() -> PathBuf {"
+        },
+        {
+          "file": "crates/tau-provider/src/model_catalog.rs",
+          "line": 202,
+          "kind": "fn",
+          "signature": "pub fn parse_model_catalog_payload(payload: &str) -> Result<ModelCatalogFile> {"
+        },
+        {
+          "file": "crates/tau-provider/src/model_catalog.rs",
+          "line": 215,
+          "kind": "fn",
+          "signature": "pub fn validate_model_catalog_file(file: &ModelCatalogFile) -> Result<()> {"
+        },
+        {
+          "file": "crates/tau-provider/src/model_catalog.rs",
+          "line": 272,
+          "kind": "fn",
+          "signature": "pub async fn load_model_catalog_with_cache("
+        },
+        {
+          "file": "crates/tau-provider/src/model_catalog.rs",
+          "line": 322,
+          "kind": "fn",
+          "signature": "pub fn ensure_model_supports_tools(catalog: &ModelCatalog, model_ref: &ModelRef) -> Result<()> {"
+        },
+        {
+          "file": "crates/tau-provider/src/model_catalog.rs",
+          "line": 342,
+          "kind": "fn",
+          "signature": "pub fn parse_models_list_args(input: &str) -> Result<ModelListArgs> {"
+        },
+        {
+          "file": "crates/tau-provider/src/model_catalog.rs",
+          "line": 408,
+          "kind": "fn",
+          "signature": "pub fn render_models_list(catalog: &ModelCatalog, args: &ModelListArgs) -> String {"
+        },
+        {
+          "file": "crates/tau-provider/src/model_catalog.rs",
+          "line": 457,
+          "kind": "fn",
+          "signature": "pub fn render_model_show(catalog: &ModelCatalog, raw_model: &str) -> Result<String> {"
+        },
+        {
+          "file": "crates/tau-provider/src/types.rs",
+          "line": 30,
+          "kind": "fn",
+          "signature": "pub fn as_str(self) -> &'static str {"
+        }
+      ]
+    }
+  ]
+}

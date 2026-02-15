@@ -1,0 +1,32 @@
+{
+  "generated_at": "2026-02-15T18:58:02.058466Z",
+  "target_crates": [
+    "tau-gateway",
+    "tau-multi-channel",
+    "tau-ops",
+    "tau-provider"
+  ],
+  "total_undocumented": 0,
+  "crates": [
+    {
+      "crate": "tau-gateway",
+      "undocumented_count": 0,
+      "items": []
+    },
+    {
+      "crate": "tau-multi-channel",
+      "undocumented_count": 0,
+      "items": []
+    },
+    {
+      "crate": "tau-ops",
+      "undocumented_count": 0,
+      "items": []
+    },
+    {
+      "crate": "tau-provider",
+      "undocumented_count": 0,
+      "items": []
+    }
+  ]
+}

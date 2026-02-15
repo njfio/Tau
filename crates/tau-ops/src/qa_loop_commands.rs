@@ -18,6 +18,11 @@ use serde_json::Value;
 use tau_cli::Cli;
 use wait_timeout::ChildExt;
 
+/// Public `const` `QA_LOOP_USAGE` in `tau-ops`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub const QA_LOOP_USAGE: &str = "usage: /qa-loop [--json] [--config <path>] [--stage-timeout-ms <ms>] [--retry-failures <n>] [--max-output-bytes <bytes>] [--changed-file-limit <n>]";
 
 const QA_LOOP_CONFIG_SCHEMA_VERSION: u32 = 1;
@@ -305,6 +310,11 @@ pub(crate) fn parse_qa_loop_command_args(command_args: &str) -> Result<QaLoopCom
     Ok(options)
 }
 
+/// Public `fn` `execute_qa_loop_cli_command` in `tau-ops`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn execute_qa_loop_cli_command(command_args: &str) -> String {
     let options = match parse_qa_loop_command_args(command_args) {
         Ok(options) => options,
@@ -317,6 +327,11 @@ pub fn execute_qa_loop_cli_command(command_args: &str) -> String {
     }
 }
 
+/// Public `fn` `execute_qa_loop_preflight_command` in `tau-ops`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn execute_qa_loop_preflight_command(cli: &Cli) -> Result<()> {
     let options = qa_loop_options_from_cli(cli);
     let cwd = std::env::current_dir().context("failed to resolve current working directory")?;

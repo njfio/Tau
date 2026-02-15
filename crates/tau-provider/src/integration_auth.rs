@@ -16,6 +16,11 @@ use crate::{
     AuthCommandConfig, IntegrationCredentialStoreRecord,
 };
 
+/// Public `fn` `resolve_non_empty_cli_value` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn resolve_non_empty_cli_value(value: Option<&str>) -> Option<String> {
     value
         .map(str::trim)
@@ -23,6 +28,11 @@ pub fn resolve_non_empty_cli_value(value: Option<&str>) -> Option<String> {
         .map(str::to_string)
 }
 
+/// Public `fn` `resolve_secret_from_cli_or_store_id` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn resolve_secret_from_cli_or_store_id(
     cli: &Cli,
     direct_secret: Option<&str>,
@@ -127,6 +137,11 @@ struct IntegrationAuthStatusRow {
     revoked: bool,
 }
 
+/// Public `fn` `normalize_integration_credential_id` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn normalize_integration_credential_id(raw: &str) -> Result<String> {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
@@ -148,6 +163,11 @@ pub fn normalize_integration_credential_id(raw: &str) -> Result<String> {
     Ok(normalized)
 }
 
+/// Public `fn` `parse_integration_auth_command` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn parse_integration_auth_command(command_args: &str) -> Result<IntegrationAuthCommand> {
     let tokens = command_args
         .split_whitespace()
@@ -649,6 +669,11 @@ fn execute_integration_auth_revoke_command(
     )
 }
 
+/// Public `fn` `execute_integration_auth_command` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn execute_integration_auth_command(config: &AuthCommandConfig, command_args: &str) -> String {
     let command = match parse_integration_auth_command(command_args) {
         Ok(command) => command,

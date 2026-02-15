@@ -90,6 +90,11 @@ impl TauDaemonLifecycleState {
     }
 }
 
+/// Public `fn` `resolve_tau_daemon_profile` in `tau-ops`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn resolve_tau_daemon_profile(profile: CliDaemonProfile) -> CliDaemonProfile {
     if !matches!(profile, CliDaemonProfile::Auto) {
         return profile;
@@ -101,6 +106,11 @@ pub fn resolve_tau_daemon_profile(profile: CliDaemonProfile) -> CliDaemonProfile
     }
 }
 
+/// Public `fn` `tau_daemon_mode_requested` in `tau-ops`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn tau_daemon_mode_requested(cli: &Cli) -> bool {
     cli.daemon_install
         || cli.daemon_uninstall
@@ -109,6 +119,11 @@ pub fn tau_daemon_mode_requested(cli: &Cli) -> bool {
         || cli.daemon_status
 }
 
+/// Public `fn` `install_tau_daemon` in `tau-ops`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn install_tau_daemon(config: &TauDaemonConfig) -> Result<TauDaemonStatusReport> {
     let profile = resolve_tau_daemon_profile(config.profile);
     let service_file_path = daemon_service_file_path(&config.state_dir, profile);
@@ -155,6 +170,11 @@ pub fn install_tau_daemon(config: &TauDaemonConfig) -> Result<TauDaemonStatusRep
     inspect_tau_daemon(config)
 }
 
+/// Public `fn` `uninstall_tau_daemon` in `tau-ops`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn uninstall_tau_daemon(config: &TauDaemonConfig) -> Result<TauDaemonStatusReport> {
     let profile = resolve_tau_daemon_profile(config.profile);
     let state_path = daemon_state_path(&config.state_dir);
@@ -186,6 +206,11 @@ pub fn uninstall_tau_daemon(config: &TauDaemonConfig) -> Result<TauDaemonStatusR
     inspect_tau_daemon(config)
 }
 
+/// Public `fn` `start_tau_daemon` in `tau-ops`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn start_tau_daemon(config: &TauDaemonConfig) -> Result<TauDaemonStatusReport> {
     let profile = resolve_tau_daemon_profile(config.profile);
     let state_path = daemon_state_path(&config.state_dir);
@@ -212,6 +237,11 @@ pub fn start_tau_daemon(config: &TauDaemonConfig) -> Result<TauDaemonStatusRepor
     inspect_tau_daemon(config)
 }
 
+/// Public `fn` `stop_tau_daemon` in `tau-ops`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn stop_tau_daemon(
     config: &TauDaemonConfig,
     reason: Option<&str>,
@@ -240,6 +270,11 @@ pub fn stop_tau_daemon(
     inspect_tau_daemon(config)
 }
 
+/// Public `fn` `inspect_tau_daemon` in `tau-ops`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn inspect_tau_daemon(config: &TauDaemonConfig) -> Result<TauDaemonStatusReport> {
     let profile = resolve_tau_daemon_profile(config.profile);
     let state_path = daemon_state_path(&config.state_dir);
@@ -298,6 +333,11 @@ pub fn inspect_tau_daemon(config: &TauDaemonConfig) -> Result<TauDaemonStatusRep
     })
 }
 
+/// Public `fn` `render_tau_daemon_status_report` in `tau-ops`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn render_tau_daemon_status_report(report: &TauDaemonStatusReport) -> String {
     format!(
         "tau daemon status: state_path={} installed={} running={} profile={} profile_supported_on_host={} service_label={} service_file={} service_file_exists={} pid_file={} pid_file_exists={} pid={} executable={} executable_exists={} state_dir_exists={} state_dir_writable={} start_attempts={} stop_attempts={} last_install_unix_ms={} last_start_unix_ms={} last_stop_unix_ms={} last_stop_reason={} diagnostics={}",
@@ -346,6 +386,11 @@ pub fn render_tau_daemon_status_report(report: &TauDaemonStatusReport) -> String
     )
 }
 
+/// Public `fn` `render_launchd_plist` in `tau-ops`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn render_launchd_plist(label: &str, executable: &Path, state_dir: &Path) -> String {
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -384,6 +429,11 @@ pub fn render_launchd_plist(label: &str, executable: &Path, state_dir: &Path) ->
     )
 }
 
+/// Public `fn` `render_systemd_user_unit` in `tau-ops`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn render_systemd_user_unit(label: &str, executable: &Path, state_dir: &Path) -> String {
     format!(
         r#"[Unit]

@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-02-15T18:30:01Z",
-  "repo_root": ".",
+  "generated_at": "2026-02-15T18:58:07Z",
+  "repo_root": "/Users/n/RustroverProjects/rust_pi_mainline",
   "scan_root": "crates",
-  "total_markers": 1964,
+  "total_markers": 3249,
   "crates": [
     {
       "crate": "kamn-core",
@@ -92,7 +92,7 @@
     },
     {
       "crate": "tau-gateway",
-      "markers": 62,
+      "markers": 297,
       "files_scanned": 16
     },
     {
@@ -112,7 +112,7 @@
     },
     {
       "crate": "tau-multi-channel",
-      "markers": 160,
+      "markers": 555,
       "files_scanned": 15
     },
     {
@@ -122,7 +122,7 @@
     },
     {
       "crate": "tau-ops",
-      "markers": 54,
+      "markers": 249,
       "files_scanned": 13
     },
     {
@@ -132,7 +132,7 @@
     },
     {
       "crate": "tau-provider",
-      "markers": 104,
+      "markers": 564,
       "files_scanned": 14
     },
     {

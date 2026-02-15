@@ -39,6 +39,11 @@ pub enum MultiChannelLiveIngressReasonCode {
 }
 
 impl MultiChannelLiveIngressReasonCode {
+    /// Public `fn` `as_str` in `tau-multi-channel`.
+    ///
+    /// This item is part of the Wave 2 API surface for M23 documentation uplift.
+    /// Callers rely on its contract and failure semantics remaining stable.
+    /// Update this comment if behavior or integration expectations change.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::InvalidJson => "invalid_json",
@@ -106,6 +111,11 @@ pub struct MultiChannelLivePayloadIngestReport {
     pub conversation_id: String,
 }
 
+/// Public `fn` `default_multi_channel_live_provider_label` in `tau-multi-channel`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn default_multi_channel_live_provider_label(transport: MultiChannelTransport) -> &'static str {
     match transport {
         MultiChannelTransport::Telegram => "telegram-bot-api",
@@ -114,6 +124,11 @@ pub fn default_multi_channel_live_provider_label(transport: MultiChannelTranspor
     }
 }
 
+/// Public `fn` `build_multi_channel_live_envelope_from_raw_payload` in `tau-multi-channel`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn build_multi_channel_live_envelope_from_raw_payload(
     transport: MultiChannelTransport,
     provider: &str,
@@ -149,6 +164,11 @@ pub fn build_multi_channel_live_envelope_from_raw_payload(
     Ok(envelope)
 }
 
+/// Public `fn` `ingest_multi_channel_live_raw_payload` in `tau-multi-channel`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn ingest_multi_channel_live_raw_payload(
     config: &MultiChannelLivePayloadIngestConfig,
 ) -> Result<MultiChannelLivePayloadIngestReport> {
@@ -208,6 +228,11 @@ pub fn ingest_multi_channel_live_raw_payload(
     })
 }
 
+/// Public `fn` `parse_multi_channel_live_inbound_envelope` in `tau-multi-channel`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn parse_multi_channel_live_inbound_envelope(
     raw: &str,
 ) -> Result<MultiChannelInboundEvent, MultiChannelLiveIngressParseError> {
@@ -221,6 +246,11 @@ pub fn parse_multi_channel_live_inbound_envelope(
     parse_multi_channel_live_inbound_envelope_value(&envelope)
 }
 
+/// Public `fn` `parse_multi_channel_live_inbound_envelope_value` in `tau-multi-channel`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn parse_multi_channel_live_inbound_envelope_value(
     envelope: &MultiChannelLiveInboundEnvelope,
 ) -> Result<MultiChannelInboundEvent, MultiChannelLiveIngressParseError> {
@@ -258,6 +288,11 @@ pub fn parse_multi_channel_live_inbound_envelope_value(
 }
 
 #[cfg(test)]
+/// Public `fn` `load_multi_channel_live_inbound_envelope_fixture` in `tau-multi-channel`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn load_multi_channel_live_inbound_envelope_fixture(
     path: &Path,
 ) -> Result<MultiChannelInboundEvent, MultiChannelLiveIngressParseError> {

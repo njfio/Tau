@@ -15,6 +15,11 @@ use tau_contract::{
     validate_fixture_header_with_empty_message,
 };
 
+/// Public `const` `MULTI_CHANNEL_CONTRACT_SCHEMA_VERSION` in `tau-multi-channel`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub const MULTI_CHANNEL_CONTRACT_SCHEMA_VERSION: u32 = 1;
 
 fn multi_channel_contract_schema_version() -> u32 {
@@ -31,6 +36,11 @@ pub enum MultiChannelTransport {
 }
 
 impl MultiChannelTransport {
+    /// Public `fn` `as_str` in `tau-multi-channel`.
+    ///
+    /// This item is part of the Wave 2 API surface for M23 documentation uplift.
+    /// Callers rely on its contract and failure semantics remaining stable.
+    /// Update this comment if behavior or integration expectations change.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Telegram => "telegram",
@@ -96,6 +106,11 @@ pub struct MultiChannelContractFixture {
     pub events: Vec<MultiChannelInboundEvent>,
 }
 
+/// Public `fn` `parse_multi_channel_contract_fixture` in `tau-multi-channel`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn parse_multi_channel_contract_fixture(raw: &str) -> Result<MultiChannelContractFixture> {
     parse_fixture_with_validation(
         raw,
@@ -104,10 +119,20 @@ pub fn parse_multi_channel_contract_fixture(raw: &str) -> Result<MultiChannelCon
     )
 }
 
+/// Public `fn` `load_multi_channel_contract_fixture` in `tau-multi-channel`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn load_multi_channel_contract_fixture(path: &Path) -> Result<MultiChannelContractFixture> {
     load_fixture_from_path(path, parse_multi_channel_contract_fixture)
 }
 
+/// Public `fn` `validate_multi_channel_contract_fixture` in `tau-multi-channel`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn validate_multi_channel_contract_fixture(
     fixture: &MultiChannelContractFixture,
 ) -> Result<()> {
@@ -132,6 +157,11 @@ pub fn validate_multi_channel_contract_fixture(
     Ok(())
 }
 
+/// Public `fn` `validate_multi_channel_inbound_event` in `tau-multi-channel`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn validate_multi_channel_inbound_event(event: &MultiChannelInboundEvent) -> Result<()> {
     validate_multi_channel_event_with_label(event, "live ingress event")
 }
@@ -195,6 +225,11 @@ fn validate_attachment(attachment: &MultiChannelAttachment, label: &str) -> Resu
     Ok(())
 }
 
+/// Public `fn` `event_contract_key` in `tau-multi-channel`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn event_contract_key(event: &MultiChannelInboundEvent) -> String {
     format!("{}:{}", event.transport.as_str(), event.event_id.trim())
 }

@@ -89,6 +89,11 @@ pub enum MultiChannelPairingDecision {
 }
 
 impl MultiChannelPairingDecision {
+    /// Public `fn` `reason_code` in `tau-multi-channel`.
+    ///
+    /// This item is part of the Wave 2 API surface for M23 documentation uplift.
+    /// Callers rely on its contract and failure semantics remaining stable.
+    /// Update this comment if behavior or integration expectations change.
     pub fn reason_code(&self) -> &str {
         match self {
             Self::Allow { reason_code } | Self::Deny { reason_code } => reason_code,
@@ -398,6 +403,11 @@ struct MultiChannelCommandExecution {
     response_text: String,
 }
 
+/// Public `fn` `run_multi_channel_contract_runner` in `tau-multi-channel`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub async fn run_multi_channel_contract_runner(config: MultiChannelRuntimeConfig) -> Result<()> {
     let fixture = load_multi_channel_contract_fixture(&config.fixture_path)?;
     let mut runtime = MultiChannelRuntime::new(config)?;
@@ -434,6 +444,11 @@ pub async fn run_multi_channel_contract_runner(config: MultiChannelRuntimeConfig
     Ok(())
 }
 
+/// Public `fn` `run_multi_channel_live_runner` in `tau-multi-channel`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub async fn run_multi_channel_live_runner(config: MultiChannelLiveRuntimeConfig) -> Result<()> {
     let live_events = load_multi_channel_live_events(&config.ingress_dir)?;
     let mut runtime = MultiChannelRuntime::new(MultiChannelRuntimeConfig {

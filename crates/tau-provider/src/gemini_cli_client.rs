@@ -31,6 +31,11 @@ pub struct GeminiCliClient {
 }
 
 impl GeminiCliClient {
+    /// Public `fn` `new` in `tau-provider`.
+    ///
+    /// This item is part of the Wave 2 API surface for M23 documentation uplift.
+    /// Callers rely on its contract and failure semantics remaining stable.
+    /// Update this comment if behavior or integration expectations change.
     pub fn new(config: GeminiCliConfig) -> Result<Self, TauAiError> {
         if config.executable.trim().is_empty() {
             return Err(TauAiError::InvalidResponse(

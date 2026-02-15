@@ -1,14 +1,14 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-02-15T18:33:59Z",
+  "generated_at": "2026-02-15T18:58:13Z",
   "threshold_markers": 3000,
-  "baseline_artifact": "./tasks/reports/m23-rustdoc-marker-count-baseline.json",
-  "current_artifact": "./tasks/reports/m23-rustdoc-marker-count.json",
+  "baseline_artifact": "/Users/n/RustroverProjects/rust_pi_mainline/tasks/reports/m23-rustdoc-marker-count-baseline.json",
+  "current_artifact": "/Users/n/RustroverProjects/rust_pi_mainline/tasks/reports/m23-rustdoc-marker-count.json",
   "baseline_total_markers": 1486,
-  "current_total_markers": 1964,
-  "delta_total_markers": 478,
-  "remaining_to_threshold": 1036,
-  "meets_threshold": false,
+  "current_total_markers": 3249,
+  "delta_total_markers": 1763,
+  "remaining_to_threshold": 0,
+  "meets_threshold": true,
   "crate_deltas": [
     {
       "crate": "kamn-core",
@@ -149,8 +149,8 @@
     {
       "crate": "tau-gateway",
       "baseline_markers": 37,
-      "current_markers": 62,
-      "delta_markers": 25,
+      "current_markers": 297,
+      "delta_markers": 260,
       "baseline_files_scanned": 16,
       "current_files_scanned": 16
     },
@@ -181,8 +181,8 @@
     {
       "crate": "tau-multi-channel",
       "baseline_markers": 105,
-      "current_markers": 160,
-      "delta_markers": 55,
+      "current_markers": 555,
+      "delta_markers": 450,
       "baseline_files_scanned": 15,
       "current_files_scanned": 15
     },
@@ -197,8 +197,8 @@
     {
       "crate": "tau-ops",
       "baseline_markers": 20,
-      "current_markers": 54,
-      "delta_markers": 34,
+      "current_markers": 249,
+      "delta_markers": 229,
       "baseline_files_scanned": 13,
       "current_files_scanned": 13
     },
@@ -213,8 +213,8 @@
     {
       "crate": "tau-provider",
       "baseline_markers": 39,
-      "current_markers": 104,
-      "delta_markers": 65,
+      "current_markers": 564,
+      "delta_markers": 525,
       "baseline_files_scanned": 14,
       "current_files_scanned": 14
     },
@@ -349,6 +349,38 @@
   ],
   "top_positive_deltas": [
     {
+      "crate": "tau-provider",
+      "baseline_markers": 39,
+      "current_markers": 564,
+      "delta_markers": 525,
+      "baseline_files_scanned": 14,
+      "current_files_scanned": 14
+    },
+    {
+      "crate": "tau-multi-channel",
+      "baseline_markers": 105,
+      "current_markers": 555,
+      "delta_markers": 450,
+      "baseline_files_scanned": 15,
+      "current_files_scanned": 15
+    },
+    {
+      "crate": "tau-gateway",
+      "baseline_markers": 37,
+      "current_markers": 297,
+      "delta_markers": 260,
+      "baseline_files_scanned": 16,
+      "current_files_scanned": 16
+    },
+    {
+      "crate": "tau-ops",
+      "baseline_markers": 20,
+      "current_markers": 249,
+      "delta_markers": 229,
+      "baseline_files_scanned": 13,
+      "current_files_scanned": 13
+    },
+    {
       "crate": "tau-coding-agent",
       "baseline_markers": 21,
       "current_markers": 166,
@@ -363,38 +395,6 @@
       "delta_markers": 104,
       "baseline_files_scanned": 23,
       "current_files_scanned": 23
-    },
-    {
-      "crate": "tau-provider",
-      "baseline_markers": 39,
-      "current_markers": 104,
-      "delta_markers": 65,
-      "baseline_files_scanned": 14,
-      "current_files_scanned": 14
-    },
-    {
-      "crate": "tau-multi-channel",
-      "baseline_markers": 105,
-      "current_markers": 160,
-      "delta_markers": 55,
-      "baseline_files_scanned": 15,
-      "current_files_scanned": 15
-    },
-    {
-      "crate": "tau-ops",
-      "baseline_markers": 20,
-      "current_markers": 54,
-      "delta_markers": 34,
-      "baseline_files_scanned": 13,
-      "current_files_scanned": 13
-    },
-    {
-      "crate": "tau-gateway",
-      "baseline_markers": 37,
-      "current_markers": 62,
-      "delta_markers": 25,
-      "baseline_files_scanned": 16,
-      "current_files_scanned": 16
     },
     {
       "crate": "tau-runtime",

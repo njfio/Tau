@@ -26,6 +26,11 @@ fn is_executable_file(path: &Path) -> bool {
     }
 }
 
+/// Public `fn` `is_executable_available` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn is_executable_available(executable: &str) -> bool {
     let trimmed = executable.trim();
     if trimmed.is_empty() {

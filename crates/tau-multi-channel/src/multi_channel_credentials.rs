@@ -33,6 +33,11 @@ fn resolve_non_empty_value(raw: Option<&str>) -> Option<String> {
         .map(str::to_string)
 }
 
+/// Public `fn` `resolve_secret` in `tau-multi-channel`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn resolve_secret(
     direct_secret: Option<&str>,
     integration_id: &str,

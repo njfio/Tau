@@ -200,6 +200,11 @@ impl Default for GatewayRuntimeState {
     }
 }
 
+/// Public `fn` `run_gateway_contract_runner` in `tau-gateway`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub async fn run_gateway_contract_runner(config: GatewayRuntimeConfig) -> Result<()> {
     let fixture = load_gateway_contract_fixture(&config.fixture_path)?;
     let mut runtime = GatewayRuntime::new(config)?;
@@ -230,6 +235,11 @@ pub async fn run_gateway_contract_runner(config: GatewayRuntimeConfig) -> Result
     Ok(())
 }
 
+/// Public `fn` `start_gateway_service_mode` in `tau-gateway`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn start_gateway_service_mode(state_dir: &Path) -> Result<GatewayServiceStatusReport> {
     std::fs::create_dir_all(state_dir)
         .with_context(|| format!("failed to create {}", state_dir.display()))?;
@@ -249,6 +259,11 @@ pub fn start_gateway_service_mode(state_dir: &Path) -> Result<GatewayServiceStat
     Ok(build_gateway_service_status_report(&state_path, &state))
 }
 
+/// Public `fn` `stop_gateway_service_mode` in `tau-gateway`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn stop_gateway_service_mode(
     state_dir: &Path,
     stop_reason: Option<&str>,
@@ -269,6 +284,11 @@ pub fn stop_gateway_service_mode(
     Ok(build_gateway_service_status_report(&state_path, &state))
 }
 
+/// Public `fn` `inspect_gateway_service_mode` in `tau-gateway`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn inspect_gateway_service_mode(state_dir: &Path) -> Result<GatewayServiceStatusReport> {
     std::fs::create_dir_all(state_dir)
         .with_context(|| format!("failed to create {}", state_dir.display()))?;
@@ -278,6 +298,11 @@ pub fn inspect_gateway_service_mode(state_dir: &Path) -> Result<GatewayServiceSt
     Ok(build_gateway_service_status_report(&state_path, &state))
 }
 
+/// Public `fn` `render_gateway_service_status_report` in `tau-gateway`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn render_gateway_service_status_report(report: &GatewayServiceStatusReport) -> String {
     format!(
         "gateway service status: state_path={} service_status={} rollout_gate={} rollout_reason_code={} guardrail_gate={} guardrail_reason_code={} startup_attempts={} startup_failure_streak={} last_startup_error={} last_started_unix_ms={} last_stopped_unix_ms={} last_transition_unix_ms={} last_stop_reason={} queue_depth={} failure_streak={} last_cycle_failed={} last_cycle_completed={}",

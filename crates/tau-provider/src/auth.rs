@@ -95,6 +95,11 @@ fn provider_auth_capabilities(provider: Provider) -> &'static [ProviderAuthCapab
     }
 }
 
+/// Public `fn` `provider_auth_capability` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn provider_auth_capability(
     provider: Provider,
     method: ProviderAuthMethod,
@@ -110,6 +115,11 @@ pub fn provider_auth_capability(
         })
 }
 
+/// Public `fn` `provider_supported_auth_modes` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn provider_supported_auth_modes(provider: Provider) -> Vec<ProviderAuthMethod> {
     provider_auth_capabilities(provider)
         .iter()
@@ -118,6 +128,11 @@ pub fn provider_supported_auth_modes(provider: Provider) -> Vec<ProviderAuthMeth
         .collect()
 }
 
+/// Public `fn` `configured_provider_auth_method` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn configured_provider_auth_method(cli: &Cli, provider: Provider) -> ProviderAuthMethod {
     match provider {
         Provider::OpenAi => cli.openai_auth_mode.into(),
@@ -126,6 +141,11 @@ pub fn configured_provider_auth_method(cli: &Cli, provider: Provider) -> Provide
     }
 }
 
+/// Public `fn` `configured_provider_auth_method_from_config` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn configured_provider_auth_method_from_config(
     config: &AuthCommandConfig,
     provider: Provider,
@@ -137,6 +157,11 @@ pub fn configured_provider_auth_method_from_config(
     }
 }
 
+/// Public `fn` `provider_auth_mode_flag` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn provider_auth_mode_flag(provider: Provider) -> &'static str {
     match provider {
         Provider::OpenAi => "--openai-auth-mode",
@@ -145,6 +170,11 @@ pub fn provider_auth_mode_flag(provider: Provider) -> &'static str {
     }
 }
 
+/// Public `fn` `missing_provider_api_key_message` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn missing_provider_api_key_message(provider: Provider) -> &'static str {
     match provider {
         Provider::OpenAi => {
@@ -159,6 +189,11 @@ pub fn missing_provider_api_key_message(provider: Provider) -> &'static str {
     }
 }
 
+/// Public `fn` `provider_api_key_candidates_with_inputs` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn provider_api_key_candidates_with_inputs(
     provider: Provider,
     api_key: Option<String>,
@@ -200,6 +235,11 @@ pub fn provider_api_key_candidates_with_inputs(
     }
 }
 
+/// Public `fn` `provider_api_key_candidates` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn provider_api_key_candidates(
     cli: &Cli,
     provider: Provider,
@@ -213,6 +253,11 @@ pub fn provider_api_key_candidates(
     )
 }
 
+/// Public `fn` `resolve_api_key` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn resolve_api_key(candidates: Vec<Option<String>>) -> Option<String> {
     candidates
         .into_iter()
@@ -220,6 +265,11 @@ pub fn resolve_api_key(candidates: Vec<Option<String>>) -> Option<String> {
         .find(|value| !value.trim().is_empty())
 }
 
+/// Public `fn` `provider_api_key_candidates_from_auth_config` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn provider_api_key_candidates_from_auth_config(
     config: &AuthCommandConfig,
     provider: Provider,
@@ -233,6 +283,11 @@ pub fn provider_api_key_candidates_from_auth_config(
     )
 }
 
+/// Public `fn` `provider_login_access_token_candidates` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn provider_login_access_token_candidates(
     provider: Provider,
 ) -> Vec<(&'static str, Option<String>)> {
@@ -270,6 +325,11 @@ pub fn provider_login_access_token_candidates(
     }
 }
 
+/// Public `fn` `provider_login_refresh_token_candidates` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn provider_login_refresh_token_candidates(
     provider: Provider,
 ) -> Vec<(&'static str, Option<String>)> {
@@ -307,6 +367,11 @@ pub fn provider_login_refresh_token_candidates(
     }
 }
 
+/// Public `fn` `provider_login_expires_candidates` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn provider_login_expires_candidates(
     provider: Provider,
 ) -> Vec<(&'static str, Option<String>)> {
@@ -344,6 +409,11 @@ pub fn provider_login_expires_candidates(
     }
 }
 
+/// Public `fn` `resolve_auth_login_expires_unix` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn resolve_auth_login_expires_unix(provider: Provider) -> Result<Option<u64>> {
     for (source, value) in provider_login_expires_candidates(provider) {
         let Some(value) = value else {
