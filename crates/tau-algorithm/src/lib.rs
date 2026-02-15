@@ -8,11 +8,13 @@ use tau_training_types::ResourcesUpdate;
 
 mod adapters;
 mod apo;
+mod gae;
 mod ppo;
 mod safety_penalty_calibration;
 
 pub use adapters::{SpansToMessages, SpansToTrajectories, SpansToTriplets, TraceAdapter};
 pub use apo::{ApoAlgorithm, ApoConfig, ApoTemplates, PromptEvaluator, VersionedPrompt};
+pub use gae::{compute_gae_batch_from_slices, compute_gae_batch_from_trajectory, GaeConfig};
 pub use ppo::{
     compute_ppo_loss, compute_ppo_update, PpoConfig, PpoLossBreakdown, PpoOptimizerStep, PpoSample,
     PpoUpdateSummary,
