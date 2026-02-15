@@ -1,0 +1,636 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-02-15T09:50:16Z",
+  "repository": "njfio/Tau",
+  "window": {
+    "limit": 60,
+    "since_days": 30,
+    "source_pr_count": 200,
+    "merged_pr_count": 60
+  },
+  "metrics": {
+    "pr_age": {
+      "count": 60,
+      "avg_seconds": 2793.733333333333,
+      "p50_seconds": 110,
+      "min_seconds": 14,
+      "max_seconds": 20295
+    },
+    "review_latency": {
+      "count": 60,
+      "avg_seconds": 309.06666666666666,
+      "p50_seconds": 276,
+      "min_seconds": 95,
+      "max_seconds": 756
+    },
+    "merge_interval": {
+      "count": 59,
+      "avg_seconds": 685.2203389830509,
+      "p50_seconds": 494,
+      "min_seconds": 2,
+      "max_seconds": 2910
+    }
+  },
+  "pull_requests": [
+    {
+      "number": 1532,
+      "title": "Task 8.2: trust-weighted multi-agent routing and telemetry",
+      "url": "https://github.com/njfio/Tau/pull/1532",
+      "created_at": "2026-02-14T18:33:02Z",
+      "merged_at": "2026-02-14T22:29:34Z",
+      "first_review_at": "2026-02-14T18:36:01Z",
+      "pr_age_seconds": 14192,
+      "review_latency_seconds": 179
+    },
+    {
+      "number": 1533,
+      "title": "Task 8.3: escrow-backed multi-agent settlement lifecycle and audit artifacts",
+      "url": "https://github.com/njfio/Tau/pull/1533",
+      "created_at": "2026-02-14T18:52:33Z",
+      "merged_at": "2026-02-14T22:29:37Z",
+      "first_review_at": "2026-02-14T18:59:45Z",
+      "pr_age_seconds": 13024,
+      "review_latency_seconds": 432
+    },
+    {
+      "number": 1534,
+      "title": "Issue #1503: enforce signed-envelope secure messaging with replay guard",
+      "url": "https://github.com/njfio/Tau/pull/1534",
+      "created_at": "2026-02-14T19:13:25Z",
+      "merged_at": "2026-02-14T22:29:41Z",
+      "first_review_at": "2026-02-14T19:23:30Z",
+      "pr_age_seconds": 11776,
+      "review_latency_seconds": 605
+    },
+    {
+      "number": 1537,
+      "title": "docs: enforce Rust doc density targets and uplift API docs",
+      "url": "https://github.com/njfio/Tau/pull/1537",
+      "created_at": "2026-02-14T20:34:13Z",
+      "merged_at": "2026-02-14T22:29:44Z",
+      "first_review_at": "2026-02-14T20:39:42Z",
+      "pr_age_seconds": 6931,
+      "review_latency_seconds": 329
+    },
+    {
+      "number": 1538,
+      "title": "refactor: split tau-tools tools.rs into policy/session/bash modules",
+      "url": "https://github.com/njfio/Tau/pull/1538",
+      "created_at": "2026-02-14T20:45:49Z",
+      "merged_at": "2026-02-14T22:29:47Z",
+      "first_review_at": "2026-02-14T20:49:25Z",
+      "pr_age_seconds": 6238,
+      "review_latency_seconds": 216
+    },
+    {
+      "number": 1539,
+      "title": "test: split tooling_skills.rs integration monolith into domain modules",
+      "url": "https://github.com/njfio/Tau/pull/1539",
+      "created_at": "2026-02-14T20:58:19Z",
+      "merged_at": "2026-02-14T22:29:51Z",
+      "first_review_at": "2026-02-14T20:59:54Z",
+      "pr_age_seconds": 5492,
+      "review_latency_seconds": 95
+    },
+    {
+      "number": 1540,
+      "title": "fix(training): remove production expect/unwrap panic paths",
+      "url": "https://github.com/njfio/Tau/pull/1540",
+      "created_at": "2026-02-14T21:07:10Z",
+      "merged_at": "2026-02-14T22:29:54Z",
+      "first_review_at": "2026-02-14T21:12:04Z",
+      "pr_age_seconds": 4964,
+      "review_latency_seconds": 294
+    },
+    {
+      "number": 1542,
+      "title": "test: add fixture-driven REPL process harness",
+      "url": "https://github.com/njfio/Tau/pull/1542",
+      "created_at": "2026-02-14T21:38:45Z",
+      "merged_at": "2026-02-14T22:30:00Z",
+      "first_review_at": "2026-02-14T21:43:24Z",
+      "pr_age_seconds": 3075,
+      "review_latency_seconds": 279
+    },
+    {
+      "number": 1544,
+      "title": "test: add fixture-driven OpenAI HTTP provider e2e coverage",
+      "url": "https://github.com/njfio/Tau/pull/1544",
+      "created_at": "2026-02-14T21:50:35Z",
+      "merged_at": "2026-02-14T22:30:06Z",
+      "first_review_at": "2026-02-14T21:54:36Z",
+      "pr_age_seconds": 2371,
+      "review_latency_seconds": 241
+    },
+    {
+      "number": 1527,
+      "title": "Phase 0.2: remove custom-command contract-runner runtime path",
+      "url": "https://github.com/njfio/Tau/pull/1527",
+      "created_at": "2026-02-14T17:02:18Z",
+      "merged_at": "2026-02-14T22:40:33Z",
+      "first_review_at": "2026-02-14T17:07:18Z",
+      "pr_age_seconds": 20295,
+      "review_latency_seconds": 300
+    },
+    {
+      "number": 1543,
+      "title": "test: add CLI MCP server JSON-RPC integration coverage",
+      "url": "https://github.com/njfio/Tau/pull/1543",
+      "created_at": "2026-02-14T21:45:46Z",
+      "merged_at": "2026-02-14T22:40:35Z",
+      "first_review_at": "2026-02-14T21:49:13Z",
+      "pr_age_seconds": 3289,
+      "review_latency_seconds": 207
+    },
+    {
+      "number": 1528,
+      "title": "Phase 0.3: remove dashboard contract-runner runtime path",
+      "url": "https://github.com/njfio/Tau/pull/1528",
+      "created_at": "2026-02-14T17:15:56Z",
+      "merged_at": "2026-02-14T22:47:47Z",
+      "first_review_at": "2026-02-14T17:19:59Z",
+      "pr_age_seconds": 19911,
+      "review_latency_seconds": 243
+    },
+    {
+      "number": 1545,
+      "title": "test: add orchestrator harness coverage for plan-first route flows",
+      "url": "https://github.com/njfio/Tau/pull/1545",
+      "created_at": "2026-02-14T22:05:44Z",
+      "merged_at": "2026-02-14T22:47:50Z",
+      "first_review_at": "2026-02-14T22:09:24Z",
+      "pr_age_seconds": 2526,
+      "review_latency_seconds": 220
+    },
+    {
+      "number": 1529,
+      "title": "Phase 0.4: consolidate memory ownership and remove runner path",
+      "url": "https://github.com/njfio/Tau/pull/1529",
+      "created_at": "2026-02-14T17:44:16Z",
+      "merged_at": "2026-02-14T22:53:52Z",
+      "first_review_at": "2026-02-14T17:48:35Z",
+      "pr_age_seconds": 18576,
+      "review_latency_seconds": 259
+    },
+    {
+      "number": 1546,
+      "title": "docs: add roadmap execution index for tasks/todo coverage",
+      "url": "https://github.com/njfio/Tau/pull/1546",
+      "created_at": "2026-02-14T22:12:02Z",
+      "merged_at": "2026-02-14T22:56:15Z",
+      "first_review_at": "2026-02-14T22:16:19Z",
+      "pr_age_seconds": 2653,
+      "review_latency_seconds": 257
+    },
+    {
+      "number": 1541,
+      "title": "feat(tools): add per-principal tool rate limiting",
+      "url": "https://github.com/njfio/Tau/pull/1541",
+      "created_at": "2026-02-14T21:26:07Z",
+      "merged_at": "2026-02-14T23:02:21Z",
+      "first_review_at": "2026-02-14T21:30:18Z",
+      "pr_age_seconds": 5774,
+      "review_latency_seconds": 251
+    },
+    {
+      "number": 1536,
+      "title": "docs: add startup/contract/event architecture docs with CI guard",
+      "url": "https://github.com/njfio/Tau/pull/1536",
+      "created_at": "2026-02-14T20:09:40Z",
+      "merged_at": "2026-02-14T23:03:42Z",
+      "first_review_at": "2026-02-14T20:14:57Z",
+      "pr_age_seconds": 10442,
+      "review_latency_seconds": 317
+    },
+    {
+      "number": 1535,
+      "title": "Task 8.5: WASM readiness + KAMN browser DID bootstrap",
+      "url": "https://github.com/njfio/Tau/pull/1535",
+      "created_at": "2026-02-14T19:48:30Z",
+      "merged_at": "2026-02-14T23:07:13Z",
+      "first_review_at": "2026-02-14T19:54:27Z",
+      "pr_age_seconds": 11923,
+      "review_latency_seconds": 357
+    },
+    {
+      "number": 1547,
+      "title": "Story 1.7: enforce reserved built-in tool name registry",
+      "url": "https://github.com/njfio/Tau/pull/1547",
+      "created_at": "2026-02-14T23:24:05Z",
+      "merged_at": "2026-02-14T23:24:55Z",
+      "first_review_at": "2026-02-14T23:27:44Z",
+      "pr_age_seconds": 50,
+      "review_latency_seconds": 219
+    },
+    {
+      "number": 1548,
+      "title": "Story 1.6: enforce protected identity/system paths in tool policy",
+      "url": "https://github.com/njfio/Tau/pull/1548",
+      "created_at": "2026-02-14T23:34:21Z",
+      "merged_at": "2026-02-14T23:37:11Z",
+      "first_review_at": "2026-02-14T23:39:45Z",
+      "pr_age_seconds": 170,
+      "review_latency_seconds": 324
+    },
+    {
+      "number": 1549,
+      "title": "feat: fail-closed sandbox policy mode",
+      "url": "https://github.com/njfio/Tau/pull/1549",
+      "created_at": "2026-02-14T23:53:11Z",
+      "merged_at": "2026-02-14T23:54:36Z",
+      "first_review_at": "2026-02-14T23:59:20Z",
+      "pr_age_seconds": 85,
+      "review_latency_seconds": 369
+    },
+    {
+      "number": 1550,
+      "title": "feat: add outbound SSRF guardrails and redirect checks",
+      "url": "https://github.com/njfio/Tau/pull/1550",
+      "created_at": "2026-02-15T00:01:17Z",
+      "merged_at": "2026-02-15T00:02:50Z",
+      "first_review_at": "2026-02-15T00:05:53Z",
+      "pr_age_seconds": 93,
+      "review_latency_seconds": 276
+    },
+    {
+      "number": 1551,
+      "title": "feat: add secret leak detection and redaction pipeline",
+      "url": "https://github.com/njfio/Tau/pull/1551",
+      "created_at": "2026-02-15T00:09:39Z",
+      "merged_at": "2026-02-15T00:11:04Z",
+      "first_review_at": "2026-02-15T00:17:09Z",
+      "pr_age_seconds": 85,
+      "review_latency_seconds": 450
+    },
+    {
+      "number": 1552,
+      "title": "Story 2.1: Native HttpTool with SSRF guardrails and policy controls",
+      "url": "https://github.com/njfio/Tau/pull/1552",
+      "created_at": "2026-02-15T00:31:55Z",
+      "merged_at": "2026-02-15T00:33:38Z",
+      "first_review_at": "2026-02-15T00:39:43Z",
+      "pr_age_seconds": 103,
+      "review_latency_seconds": 468
+    },
+    {
+      "number": 1553,
+      "title": "feat(memory): add user-facing memory_write/read/search/tree suite",
+      "url": "https://github.com/njfio/Tau/pull/1553",
+      "created_at": "2026-02-15T00:59:10Z",
+      "merged_at": "2026-02-15T00:59:35Z",
+      "first_review_at": "2026-02-15T01:06:54Z",
+      "pr_age_seconds": 25,
+      "review_latency_seconds": 464
+    },
+    {
+      "number": 1554,
+      "title": "feat(mcp): ship MCP client mode with OAuth 2.1 PKCE",
+      "url": "https://github.com/njfio/Tau/pull/1554",
+      "created_at": "2026-02-15T01:23:03Z",
+      "merged_at": "2026-02-15T01:24:11Z",
+      "first_review_at": "2026-02-15T01:31:33Z",
+      "pr_age_seconds": 68,
+      "review_latency_seconds": 510
+    },
+    {
+      "number": 1555,
+      "title": "feat: add session undo/redo runtime commands and agent tools",
+      "url": "https://github.com/njfio/Tau/pull/1555",
+      "created_at": "2026-02-15T01:42:45Z",
+      "merged_at": "2026-02-15T01:44:38Z",
+      "first_review_at": "2026-02-15T01:47:36Z",
+      "pr_age_seconds": 113,
+      "review_latency_seconds": 291
+    },
+    {
+      "number": 1556,
+      "title": "feat(memory): real embedding integration and migration telemetry",
+      "url": "https://github.com/njfio/Tau/pull/1556",
+      "created_at": "2026-02-15T02:03:14Z",
+      "merged_at": "2026-02-15T02:03:52Z",
+      "first_review_at": "2026-02-15T02:10:56Z",
+      "pr_age_seconds": 38,
+      "review_latency_seconds": 462
+    },
+    {
+      "number": 1557,
+      "title": "feat(memory): hybrid BM25 + vector retrieval with RRF",
+      "url": "https://github.com/njfio/Tau/pull/1557",
+      "created_at": "2026-02-15T02:14:31Z",
+      "merged_at": "2026-02-15T02:14:56Z",
+      "first_review_at": "2026-02-15T02:19:52Z",
+      "pr_age_seconds": 25,
+      "review_latency_seconds": 321
+    },
+    {
+      "number": 1558,
+      "title": "Task 3.3: SQLite-backed persistence, backend abstraction, and JSONL migration",
+      "url": "https://github.com/njfio/Tau/pull/1558",
+      "created_at": "2026-02-15T02:37:37Z",
+      "merged_at": "2026-02-15T02:40:01Z",
+      "first_review_at": "2026-02-15T02:46:40Z",
+      "pr_age_seconds": 144,
+      "review_latency_seconds": 543
+    },
+    {
+      "number": 1559,
+      "title": "Task 3.4: startup identity file composition and diagnostics",
+      "url": "https://github.com/njfio/Tau/pull/1559",
+      "created_at": "2026-02-15T02:55:02Z",
+      "merged_at": "2026-02-15T02:56:14Z",
+      "first_review_at": "2026-02-15T02:59:37Z",
+      "pr_age_seconds": 72,
+      "review_latency_seconds": 275
+    },
+    {
+      "number": 1560,
+      "title": "feat: add runtime heartbeat scheduler and gateway diagnostics",
+      "url": "https://github.com/njfio/Tau/pull/1560",
+      "created_at": "2026-02-15T03:20:39Z",
+      "merged_at": "2026-02-15T03:22:10Z",
+      "first_review_at": "2026-02-15T03:26:47Z",
+      "pr_age_seconds": 91,
+      "review_latency_seconds": 368
+    },
+    {
+      "number": 1561,
+      "title": "Runtime self-repair services for heartbeat operations (4.2)",
+      "url": "https://github.com/njfio/Tau/pull/1561",
+      "created_at": "2026-02-15T03:39:07Z",
+      "merged_at": "2026-02-15T03:40:30Z",
+      "first_review_at": "2026-02-15T03:41:55Z",
+      "pr_age_seconds": 83,
+      "review_latency_seconds": 168
+    },
+    {
+      "number": 1562,
+      "title": "feat: implement interactive onboarding wizard and first-run auto entry",
+      "url": "https://github.com/njfio/Tau/pull/1562",
+      "created_at": "2026-02-15T03:59:23Z",
+      "merged_at": "2026-02-15T04:02:51Z",
+      "first_review_at": "2026-02-15T04:04:22Z",
+      "pr_age_seconds": 208,
+      "review_latency_seconds": 299
+    },
+    {
+      "number": 1563,
+      "title": "Routine scheduling: persist execution history and expose diagnostics",
+      "url": "https://github.com/njfio/Tau/pull/1563",
+      "created_at": "2026-02-15T04:19:54Z",
+      "merged_at": "2026-02-15T04:21:26Z",
+      "first_review_at": "2026-02-15T04:24:13Z",
+      "pr_age_seconds": 92,
+      "review_latency_seconds": 259
+    },
+    {
+      "number": 1564,
+      "title": "feat(gateway): add OpenAI-compatible REST adapters",
+      "url": "https://github.com/njfio/Tau/pull/1564",
+      "created_at": "2026-02-15T04:37:39Z",
+      "merged_at": "2026-02-15T04:41:01Z",
+      "first_review_at": "2026-02-15T04:43:53Z",
+      "pr_age_seconds": 202,
+      "review_latency_seconds": 374
+    },
+    {
+      "number": 1565,
+      "title": "feat(gateway): deliver multi-view runtime web UI operations",
+      "url": "https://github.com/njfio/Tau/pull/1565",
+      "created_at": "2026-02-15T04:54:58Z",
+      "merged_at": "2026-02-15T04:57:53Z",
+      "first_review_at": "2026-02-15T05:04:43Z",
+      "pr_age_seconds": 175,
+      "review_latency_seconds": 585
+    },
+    {
+      "number": 1566,
+      "title": "feat(ci): complete 5.3 release automation pipeline and installers",
+      "url": "https://github.com/njfio/Tau/pull/1566",
+      "created_at": "2026-02-15T05:10:09Z",
+      "merged_at": "2026-02-15T05:11:42Z",
+      "first_review_at": "2026-02-15T05:16:18Z",
+      "pr_age_seconds": 93,
+      "review_latency_seconds": 369
+    },
+    {
+      "number": 1568,
+      "title": "fix(ci): add windows arm64 release artifacts and cross-arch smoke policy",
+      "url": "https://github.com/njfio/Tau/pull/1568",
+      "created_at": "2026-02-15T05:32:23Z",
+      "merged_at": "2026-02-15T05:34:25Z",
+      "first_review_at": "2026-02-15T05:37:44Z",
+      "pr_age_seconds": 122,
+      "review_latency_seconds": 321
+    },
+    {
+      "number": 1569,
+      "title": "issue-1453: deliver background job management runtime and tooling",
+      "url": "https://github.com/njfio/Tau/pull/1569",
+      "created_at": "2026-02-15T05:56:50Z",
+      "merged_at": "2026-02-15T06:03:05Z",
+      "first_review_at": "2026-02-15T06:09:01Z",
+      "pr_age_seconds": 375,
+      "review_latency_seconds": 731
+    },
+    {
+      "number": 1570,
+      "title": "issue-1439: add docker-backed sandbox backend for bash tool",
+      "url": "https://github.com/njfio/Tau/pull/1570",
+      "created_at": "2026-02-15T06:21:01Z",
+      "merged_at": "2026-02-15T06:21:41Z",
+      "first_review_at": "2026-02-15T06:27:22Z",
+      "pr_age_seconds": 40,
+      "review_latency_seconds": 381
+    },
+    {
+      "number": 1571,
+      "title": "feat: integrate wasm sandbox runtime for extension hooks and tools",
+      "url": "https://github.com/njfio/Tau/pull/1571",
+      "created_at": "2026-02-15T06:43:10Z",
+      "merged_at": "2026-02-15T06:43:24Z",
+      "first_review_at": "2026-02-15T06:50:58Z",
+      "pr_age_seconds": 14,
+      "review_latency_seconds": 468
+    },
+    {
+      "number": 1572,
+      "title": "feat(tools): self-building WASM tool builder workflow",
+      "url": "https://github.com/njfio/Tau/pull/1572",
+      "created_at": "2026-02-15T07:01:53Z",
+      "merged_at": "2026-02-15T07:02:13Z",
+      "first_review_at": "2026-02-15T07:14:29Z",
+      "pr_age_seconds": 20,
+      "review_latency_seconds": 756
+    },
+    {
+      "number": 1574,
+      "title": "docs(tasks): import roadmap docs and sync completion state",
+      "url": "https://github.com/njfio/Tau/pull/1574",
+      "created_at": "2026-02-15T07:09:00Z",
+      "merged_at": "2026-02-15T07:09:24Z",
+      "first_review_at": "2026-02-15T07:11:36Z",
+      "pr_age_seconds": 24,
+      "review_latency_seconds": 156
+    },
+    {
+      "number": 1576,
+      "title": "chore(roadmap): automate tasks status sync from GitHub state",
+      "url": "https://github.com/njfio/Tau/pull/1576",
+      "created_at": "2026-02-15T07:16:11Z",
+      "merged_at": "2026-02-15T07:16:48Z",
+      "first_review_at": "2026-02-15T07:23:42Z",
+      "pr_age_seconds": 37,
+      "review_latency_seconds": 451
+    },
+    {
+      "number": 1578,
+      "title": "ci(docs): enforce roadmap status sync check in docs quality",
+      "url": "https://github.com/njfio/Tau/pull/1578",
+      "created_at": "2026-02-15T07:18:53Z",
+      "merged_at": "2026-02-15T07:19:40Z",
+      "first_review_at": "2026-02-15T07:21:26Z",
+      "pr_age_seconds": 47,
+      "review_latency_seconds": 153
+    },
+    {
+      "number": 1580,
+      "title": "ci: enforce roadmap status sync check in main quality lane",
+      "url": "https://github.com/njfio/Tau/pull/1580",
+      "created_at": "2026-02-15T07:21:58Z",
+      "merged_at": "2026-02-15T07:23:34Z",
+      "first_review_at": "2026-02-15T07:24:11Z",
+      "pr_age_seconds": 96,
+      "review_latency_seconds": 133
+    },
+    {
+      "number": 1582,
+      "title": "test(ci): lock roadmap status workflow gates with contract tests",
+      "url": "https://github.com/njfio/Tau/pull/1582",
+      "created_at": "2026-02-15T07:26:47Z",
+      "merged_at": "2026-02-15T07:27:39Z",
+      "first_review_at": "2026-02-15T07:29:47Z",
+      "pr_age_seconds": 52,
+      "review_latency_seconds": 180
+    },
+    {
+      "number": 1584,
+      "title": "chore(roadmap): externalize sync tracked issues into config",
+      "url": "https://github.com/njfio/Tau/pull/1584",
+      "created_at": "2026-02-15T07:31:40Z",
+      "merged_at": "2026-02-15T07:32:15Z",
+      "first_review_at": "2026-02-15T07:35:42Z",
+      "pr_age_seconds": 35,
+      "review_latency_seconds": 242
+    },
+    {
+      "number": 1586,
+      "title": "chore(roadmap): add quiet mode to status sync checks",
+      "url": "https://github.com/njfio/Tau/pull/1586",
+      "created_at": "2026-02-15T07:35:00Z",
+      "merged_at": "2026-02-15T07:37:05Z",
+      "first_review_at": "2026-02-15T07:37:06Z",
+      "pr_age_seconds": 125,
+      "review_latency_seconds": 126
+    },
+    {
+      "number": 1588,
+      "title": "refactor(slack-runtime): split command/render helpers",
+      "url": "https://github.com/njfio/Tau/pull/1588",
+      "created_at": "2026-02-15T07:44:29Z",
+      "merged_at": "2026-02-15T07:48:28Z",
+      "first_review_at": "2026-02-15T07:47:46Z",
+      "pr_age_seconds": 239,
+      "review_latency_seconds": 197
+    },
+    {
+      "number": 1591,
+      "title": "refactor(runtime): remove heartbeat too-many-args suppressions",
+      "url": "https://github.com/njfio/Tau/pull/1591",
+      "created_at": "2026-02-15T07:55:02Z",
+      "merged_at": "2026-02-15T07:59:04Z",
+      "first_review_at": "2026-02-15T07:56:47Z",
+      "pr_age_seconds": 242,
+      "review_latency_seconds": 105
+    },
+    {
+      "number": 1594,
+      "title": "ci: gate codex-light demo smoke to relevant changes",
+      "url": "https://github.com/njfio/Tau/pull/1594",
+      "created_at": "2026-02-15T08:02:24Z",
+      "merged_at": "2026-02-15T08:04:05Z",
+      "first_review_at": "2026-02-15T08:05:41Z",
+      "pr_age_seconds": 101,
+      "review_latency_seconds": 197
+    },
+    {
+      "number": 1596,
+      "title": "ci: speed up codex-light lint with fast-validate check-only",
+      "url": "https://github.com/njfio/Tau/pull/1596",
+      "created_at": "2026-02-15T08:31:53Z",
+      "merged_at": "2026-02-15T08:33:33Z",
+      "first_review_at": "2026-02-15T08:37:12Z",
+      "pr_age_seconds": 100,
+      "review_latency_seconds": 319
+    },
+    {
+      "number": 1598,
+      "title": "ci: skip duplicate fmt in codex-light fast-validate lint",
+      "url": "https://github.com/njfio/Tau/pull/1598",
+      "created_at": "2026-02-15T08:35:37Z",
+      "merged_at": "2026-02-15T08:37:14Z",
+      "first_review_at": "2026-02-15T08:38:15Z",
+      "pr_age_seconds": 97,
+      "review_latency_seconds": 158
+    },
+    {
+      "number": 1600,
+      "title": "ci: decouple wasm smoke trigger from generic workflow edits",
+      "url": "https://github.com/njfio/Tau/pull/1600",
+      "created_at": "2026-02-15T08:39:02Z",
+      "merged_at": "2026-02-15T08:39:50Z",
+      "first_review_at": "2026-02-15T08:42:24Z",
+      "pr_age_seconds": 48,
+      "review_latency_seconds": 202
+    },
+    {
+      "number": 1602,
+      "title": "ci: add allow-pragma guard for crates policy",
+      "url": "https://github.com/njfio/Tau/pull/1602",
+      "created_at": "2026-02-15T08:41:50Z",
+      "merged_at": "2026-02-15T08:42:36Z",
+      "first_review_at": "2026-02-15T08:44:28Z",
+      "pr_age_seconds": 46,
+      "review_latency_seconds": 158
+    },
+    {
+      "number": 1604,
+      "title": "docs: refresh README for current runtime and feature state",
+      "url": "https://github.com/njfio/Tau/pull/1604",
+      "created_at": "2026-02-15T08:48:10Z",
+      "merged_at": "2026-02-15T08:50:00Z",
+      "first_review_at": "2026-02-15T08:51:38Z",
+      "pr_age_seconds": 110,
+      "review_latency_seconds": 208
+    },
+    {
+      "number": 1851,
+      "title": "ci: publish rust doc density JSON artifact",
+      "url": "https://github.com/njfio/Tau/pull/1851",
+      "created_at": "2026-02-15T09:36:12Z",
+      "merged_at": "2026-02-15T09:38:30Z",
+      "first_review_at": "2026-02-15T09:39:29Z",
+      "pr_age_seconds": 138,
+      "review_latency_seconds": 197
+    },
+    {
+      "number": 1852,
+      "title": "rl: add versioned trajectory/advantage/checkpoint core types",
+      "url": "https://github.com/njfio/Tau/pull/1852",
+      "created_at": "2026-02-15T09:42:33Z",
+      "merged_at": "2026-02-15T09:43:22Z",
+      "first_review_at": "2026-02-15T09:46:23Z",
+      "pr_age_seconds": 49,
+      "review_latency_seconds": 230
+    }
+  ]
+}
