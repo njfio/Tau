@@ -16,8 +16,23 @@ use tau_ai::ModelRef;
 
 use tau_core::write_text_atomic;
 
+/// Public `const` `MODEL_CATALOG_SCHEMA_VERSION` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub const MODEL_CATALOG_SCHEMA_VERSION: u32 = 1;
+/// Public `const` `MODELS_LIST_USAGE` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub const MODELS_LIST_USAGE: &str = "/models-list [query] [--provider <name>] [--tools <true|false>] [--multimodal <true|false>] [--reasoning <true|false>] [--limit <n>]";
+/// Public `const` `MODEL_SHOW_USAGE` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub const MODEL_SHOW_USAGE: &str = "/model-show <provider/model>";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -96,6 +111,11 @@ impl Default for ModelListArgs {
 }
 
 impl ModelCatalog {
+    /// Public `fn` `built_in` in `tau-provider`.
+    ///
+    /// This item is part of the Wave 2 API surface for M23 documentation uplift.
+    /// Callers rely on its contract and failure semantics remaining stable.
+    /// Update this comment if behavior or integration expectations change.
     pub fn built_in() -> Self {
         match Self::from_file(
             built_in_model_catalog_file(),
@@ -115,14 +135,29 @@ impl ModelCatalog {
         }
     }
 
+    /// Public `fn` `entries` in `tau-provider`.
+    ///
+    /// This item is part of the Wave 2 API surface for M23 documentation uplift.
+    /// Callers rely on its contract and failure semantics remaining stable.
+    /// Update this comment if behavior or integration expectations change.
     pub fn entries(&self) -> &[ModelCatalogEntry] {
         &self.entries
     }
 
+    /// Public `fn` `source` in `tau-provider`.
+    ///
+    /// This item is part of the Wave 2 API surface for M23 documentation uplift.
+    /// Callers rely on its contract and failure semantics remaining stable.
+    /// Update this comment if behavior or integration expectations change.
     pub fn source(&self) -> &ModelCatalogSource {
         &self.source
     }
 
+    /// Public `fn` `find` in `tau-provider`.
+    ///
+    /// This item is part of the Wave 2 API surface for M23 documentation uplift.
+    /// Callers rely on its contract and failure semantics remaining stable.
+    /// Update this comment if behavior or integration expectations change.
     pub fn find(&self, provider: &str, model: &str) -> Option<&ModelCatalogEntry> {
         let key = normalize_model_key(provider, model);
         self.index
@@ -130,15 +165,30 @@ impl ModelCatalog {
             .and_then(|index| self.entries.get(*index))
     }
 
+    /// Public `fn` `find_model_ref` in `tau-provider`.
+    ///
+    /// This item is part of the Wave 2 API surface for M23 documentation uplift.
+    /// Callers rely on its contract and failure semantics remaining stable.
+    /// Update this comment if behavior or integration expectations change.
     pub fn find_model_ref(&self, model_ref: &ModelRef) -> Option<&ModelCatalogEntry> {
         self.find(model_ref.provider.as_str(), &model_ref.model)
     }
 
+    /// Public `fn` `is_stale` in `tau-provider`.
+    ///
+    /// This item is part of the Wave 2 API surface for M23 documentation uplift.
+    /// Callers rely on its contract and failure semantics remaining stable.
+    /// Update this comment if behavior or integration expectations change.
     pub fn is_stale(&self, stale_after_hours: u64) -> bool {
         let threshold = Duration::from_secs(stale_after_hours.saturating_mul(60 * 60));
         self.cache_age.map(|age| age >= threshold).unwrap_or(false)
     }
 
+    /// Public `fn` `diagnostics_line` in `tau-provider`.
+    ///
+    /// This item is part of the Wave 2 API surface for M23 documentation uplift.
+    /// Callers rely on its contract and failure semantics remaining stable.
+    /// Update this comment if behavior or integration expectations change.
     pub fn diagnostics_line(&self, stale_after_hours: u64) -> String {
         let source = match &self.source {
             ModelCatalogSource::BuiltIn => "built-in".to_string(),
@@ -167,6 +217,11 @@ impl ModelCatalog {
         }
     }
 
+    /// Public `fn` `from_file` in `tau-provider`.
+    ///
+    /// This item is part of the Wave 2 API surface for M23 documentation uplift.
+    /// Callers rely on its contract and failure semantics remaining stable.
+    /// Update this comment if behavior or integration expectations change.
     pub fn from_file(
         mut file: ModelCatalogFile,
         source: ModelCatalogSource,
@@ -195,10 +250,20 @@ impl ModelCatalog {
     }
 }
 
+/// Public `fn` `default_model_catalog_cache_path` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn default_model_catalog_cache_path() -> PathBuf {
     PathBuf::from(".tau/models/catalog.json")
 }
 
+/// Public `fn` `parse_model_catalog_payload` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn parse_model_catalog_payload(payload: &str) -> Result<ModelCatalogFile> {
     if let Ok(file) = serde_json::from_str::<ModelCatalogFile>(payload) {
         return Ok(file);
@@ -212,6 +277,11 @@ pub fn parse_model_catalog_payload(payload: &str) -> Result<ModelCatalogFile> {
     })
 }
 
+/// Public `fn` `validate_model_catalog_file` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn validate_model_catalog_file(file: &ModelCatalogFile) -> Result<()> {
     if file.schema_version != MODEL_CATALOG_SCHEMA_VERSION {
         bail!(
@@ -269,6 +339,11 @@ pub fn validate_model_catalog_file(file: &ModelCatalogFile) -> Result<()> {
     Ok(())
 }
 
+/// Public `fn` `load_model_catalog_with_cache` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub async fn load_model_catalog_with_cache(
     options: &ModelCatalogLoadOptions,
 ) -> Result<ModelCatalog> {
@@ -319,6 +394,11 @@ pub async fn load_model_catalog_with_cache(
     Ok(ModelCatalog::built_in())
 }
 
+/// Public `fn` `ensure_model_supports_tools` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn ensure_model_supports_tools(catalog: &ModelCatalog, model_ref: &ModelRef) -> Result<()> {
     let Some(entry) = catalog.find_model_ref(model_ref) else {
         println!(
@@ -339,6 +419,11 @@ pub fn ensure_model_supports_tools(catalog: &ModelCatalog, model_ref: &ModelRef)
     Ok(())
 }
 
+/// Public `fn` `parse_models_list_args` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn parse_models_list_args(input: &str) -> Result<ModelListArgs> {
     if input.trim().is_empty() {
         return Ok(ModelListArgs::default());
@@ -405,6 +490,11 @@ pub fn parse_models_list_args(input: &str) -> Result<ModelListArgs> {
     Ok(args)
 }
 
+/// Public `fn` `render_models_list` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn render_models_list(catalog: &ModelCatalog, args: &ModelListArgs) -> String {
     let mut rows = catalog
         .entries()
@@ -454,6 +544,11 @@ pub fn render_models_list(catalog: &ModelCatalog, args: &ModelListArgs) -> Strin
     lines.join("\n")
 }
 
+/// Public `fn` `render_model_show` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn render_model_show(catalog: &ModelCatalog, raw_model: &str) -> Result<String> {
     let parsed = ModelRef::parse(raw_model)
         .map_err(|error| anyhow!("invalid model reference '{}': {error}", raw_model))?;

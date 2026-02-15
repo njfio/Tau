@@ -1,12 +1,12 @@
 # M23 Rustdoc Marker Ratchet Check
 
-Generated at: 2026-02-15T18:46:11Z
+Generated at: 2026-02-15T18:58:13Z
 
 ## Summary
 
-- Floor markers: `1964`
-- Baseline total markers: `1964`
-- Current total markers: `1964`
+- Floor markers: `3249`
+- Baseline total markers: `3249`
+- Current total markers: `3249`
 - Delta markers: `+0`
 - Below floor by: `0`
 - Ratchet status: `PASS`

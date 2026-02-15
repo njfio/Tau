@@ -208,6 +208,11 @@ impl MediaUnderstandingProvider for DeterministicMediaUnderstandingProvider {
     }
 }
 
+/// Public `fn` `process_media_attachments` in `tau-multi-channel`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn process_media_attachments(
     event: &MultiChannelInboundEvent,
     config: &MultiChannelMediaUnderstandingConfig,
@@ -215,6 +220,11 @@ pub fn process_media_attachments(
     process_media_attachments_with_provider(event, config, &DeterministicMediaUnderstandingProvider)
 }
 
+/// Public `fn` `process_media_attachments_with_provider` in `tau-multi-channel`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn process_media_attachments_with_provider<P: MediaUnderstandingProvider>(
     event: &MultiChannelInboundEvent,
     config: &MultiChannelMediaUnderstandingConfig,
@@ -300,6 +310,11 @@ pub fn process_media_attachments_with_provider<P: MediaUnderstandingProvider>(
     report
 }
 
+/// Public `fn` `render_media_prompt_context` in `tau-multi-channel`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn render_media_prompt_context(report: &MediaUnderstandingReport) -> Option<String> {
     if report.outcomes.is_empty() {
         return None;

@@ -88,6 +88,11 @@ struct ParsedSendTarget {
     metadata: BTreeMap<String, Value>,
 }
 
+/// Public `fn` `execute_multi_channel_send_action` in `tau-multi-channel`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn execute_multi_channel_send_action(
     config: &MultiChannelSendCommandConfig,
 ) -> Result<MultiChannelSendReport> {
@@ -212,6 +217,11 @@ pub fn execute_multi_channel_send_action(
     })
 }
 
+/// Public `fn` `resolve_multi_channel_send_text` in `tau-multi-channel`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn resolve_multi_channel_send_text(
     text: Option<&str>,
     text_file: Option<&Path>,
@@ -487,6 +497,11 @@ fn is_e164_like(value: &str) -> bool {
     value[1..].chars().all(|ch| ch.is_ascii_digit())
 }
 
+/// Public `fn` `render_multi_channel_send_report` in `tau-multi-channel`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn render_multi_channel_send_report(report: &MultiChannelSendReport) -> String {
     format!(
         "multi-channel send: action={} transport={} target={} mode={} status={} reason_code={} text_chars={} chunk_count={} event_key={} channel_store_ref={} channel_store_log_path={} audit_artifact_relative_path={} state_persisted={} updated_unix_ms={}",

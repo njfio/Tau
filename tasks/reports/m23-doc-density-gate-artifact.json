@@ -1,0 +1,316 @@
+{
+  "command": {
+    "rendered": "python3 .github/scripts/rust_doc_density.py --repo-root /Users/n/RustroverProjects/rust_pi_mainline --targets-file docs/guides/doc-density-targets.json --json",
+    "script": ".github/scripts/rust_doc_density.py",
+    "targets_file": "docs/guides/doc-density-targets.json"
+  },
+  "context": {
+    "git_branch": "codex/issue-1654-wave2-doc-uplift-v2",
+    "git_commit": "c2136ccb43ff4f4f6500021226eb5964323f444a",
+    "git_dirty": true,
+    "os": "Darwin 25.0.0 arm64"
+  },
+  "density_report": {
+    "crate_count": 42,
+    "crate_targets": {
+      "tau-core": 100.0,
+      "tau-github-issues-runtime": 100.0,
+      "tau-multi-channel": 45.0,
+      "tau-onboarding": 23.0,
+      "tau-provider": 27.0,
+      "tau-runtime": 28.0,
+      "tau-session": 23.0,
+      "tau-slack-runtime": 100.0,
+      "tau-startup": 45.0,
+      "tau-tools": 37.0
+    },
+    "global_min_percent": 35.0,
+    "issues": [],
+    "overall_documented_items": 1076,
+    "overall_percent": 49.07,
+    "overall_public_items": 2193,
+    "repo_root": "/Users/n/RustroverProjects/rust_pi_mainline",
+    "reports": [
+      {
+        "crate": "tau-github-issues",
+        "documented_public_items": 26,
+        "percent": 22.81,
+        "total_public_items": 114
+      },
+      {
+        "crate": "tau-session",
+        "documented_public_items": 27,
+        "percent": 23.08,
+        "total_public_items": 117
+      },
+      {
+        "crate": "tau-access",
+        "documented_public_items": 17,
+        "percent": 24.64,
+        "total_public_items": 69
+      },
+      {
+        "crate": "tau-training-store",
+        "documented_public_items": 2,
+        "percent": 25.0,
+        "total_public_items": 8
+      },
+      {
+        "crate": "tau-release-channel",
+        "documented_public_items": 11,
+        "percent": 26.19,
+        "total_public_items": 42
+      },
+      {
+        "crate": "tau-onboarding",
+        "documented_public_items": 60,
+        "percent": 26.79,
+        "total_public_items": 224
+      },
+      {
+        "crate": "tau-custom-command",
+        "documented_public_items": 13,
+        "percent": 28.89,
+        "total_public_items": 45
+      },
+      {
+        "crate": "tau-tui",
+        "documented_public_items": 13,
+        "percent": 28.89,
+        "total_public_items": 45
+      },
+      {
+        "crate": "tau-cli",
+        "documented_public_items": 30,
+        "percent": 31.58,
+        "total_public_items": 95
+      },
+      {
+        "crate": "tau-deployment",
+        "documented_public_items": 18,
+        "percent": 32.73,
+        "total_public_items": 55
+      },
+      {
+        "crate": "kamn-sdk",
+        "documented_public_items": 2,
+        "percent": 33.33,
+        "total_public_items": 6
+      },
+      {
+        "crate": "tau-skills",
+        "documented_public_items": 39,
+        "percent": 33.33,
+        "total_public_items": 117
+      },
+      {
+        "crate": "tau-diagnostics",
+        "documented_public_items": 18,
+        "percent": 35.29,
+        "total_public_items": 51
+      },
+      {
+        "crate": "tau-orchestrator",
+        "documented_public_items": 19,
+        "percent": 38.0,
+        "total_public_items": 50
+      },
+      {
+        "crate": "tau-safety",
+        "documented_public_items": 7,
+        "percent": 38.89,
+        "total_public_items": 18
+      },
+      {
+        "crate": "tau-browser-automation",
+        "documented_public_items": 16,
+        "percent": 39.02,
+        "total_public_items": 41
+      },
+      {
+        "crate": "tau-runtime",
+        "documented_public_items": 71,
+        "percent": 41.52,
+        "total_public_items": 171
+      },
+      {
+        "crate": "tau-algorithm",
+        "documented_public_items": 7,
+        "percent": 43.75,
+        "total_public_items": 16
+      },
+      {
+        "crate": "tau-ai",
+        "documented_public_items": 22,
+        "percent": 44.0,
+        "total_public_items": 50
+      },
+      {
+        "crate": "tau-tools",
+        "documented_public_items": 40,
+        "percent": 44.44,
+        "total_public_items": 90
+      },
+      {
+        "crate": "tau-extensions",
+        "documented_public_items": 15,
+        "percent": 45.45,
+        "total_public_items": 33
+      },
+      {
+        "crate": "kamn-core",
+        "documented_public_items": 3,
+        "percent": 50.0,
+        "total_public_items": 6
+      },
+      {
+        "crate": "tau-trainer",
+        "documented_public_items": 3,
+        "percent": 50.0,
+        "total_public_items": 6
+      },
+      {
+        "crate": "tau-training-types",
+        "documented_public_items": 19,
+        "percent": 50.0,
+        "total_public_items": 38
+      },
+      {
+        "crate": "tau-dashboard",
+        "documented_public_items": 18,
+        "percent": 51.43,
+        "total_public_items": 35
+      },
+      {
+        "crate": "tau-startup",
+        "documented_public_items": 13,
+        "percent": 52.0,
+        "total_public_items": 25
+      },
+      {
+        "crate": "tau-voice",
+        "documented_public_items": 25,
+        "percent": 52.08,
+        "total_public_items": 48
+      },
+      {
+        "crate": "tau-memory",
+        "documented_public_items": 31,
+        "percent": 54.39,
+        "total_public_items": 57
+      },
+      {
+        "crate": "tau-training-runner",
+        "documented_public_items": 5,
+        "percent": 55.56,
+        "total_public_items": 9
+      },
+      {
+        "crate": "tau-events",
+        "documented_public_items": 22,
+        "percent": 62.86,
+        "total_public_items": 35
+      },
+      {
+        "crate": "tau-training-tracer",
+        "documented_public_items": 6,
+        "percent": 75.0,
+        "total_public_items": 8
+      },
+      {
+        "crate": "tau-agent-core",
+        "documented_public_items": 41,
+        "percent": 78.85,
+        "total_public_items": 52
+      },
+      {
+        "crate": "tau-coding-agent",
+        "documented_public_items": 0,
+        "percent": 100.0,
+        "total_public_items": 0
+      },
+      {
+        "crate": "tau-contract",
+        "documented_public_items": 5,
+        "percent": 100.0,
+        "total_public_items": 5
+      },
+      {
+        "crate": "tau-core",
+        "documented_public_items": 6,
+        "percent": 100.0,
+        "total_public_items": 6
+      },
+      {
+        "crate": "tau-gateway",
+        "documented_public_items": 70,
+        "percent": 100.0,
+        "total_public_items": 70
+      },
+      {
+        "crate": "tau-github-issues-runtime",
+        "documented_public_items": 5,
+        "percent": 100.0,
+        "total_public_items": 5
+      },
+      {
+        "crate": "tau-multi-channel",
+        "documented_public_items": 147,
+        "percent": 100.0,
+        "total_public_items": 147
+      },
+      {
+        "crate": "tau-ops",
+        "documented_public_items": 48,
+        "percent": 100.0,
+        "total_public_items": 48
+      },
+      {
+        "crate": "tau-provider",
+        "documented_public_items": 127,
+        "percent": 100.0,
+        "total_public_items": 127
+      },
+      {
+        "crate": "tau-slack-runtime",
+        "documented_public_items": 5,
+        "percent": 100.0,
+        "total_public_items": 5
+      },
+      {
+        "crate": "tau-training-proxy",
+        "documented_public_items": 4,
+        "percent": 100.0,
+        "total_public_items": 4
+      }
+    ],
+    "schema_version": 1
+  },
+  "generated_at": "2026-02-15T18:58:07Z",
+  "repo_root": "/Users/n/RustroverProjects/rust_pi_mainline",
+  "schema_version": 1,
+  "troubleshooting": [
+    {
+      "action": "verify targets file path and compare rendered command with CI logs",
+      "id": "targets-mismatch",
+      "symptom": "density output differs from CI artifact"
+    },
+    {
+      "action": "compare python/rustc/cargo versions in artifact context and rerun with aligned toolchain",
+      "id": "tool-version-drift",
+      "symptom": "unexpected parser or formatting behavior"
+    },
+    {
+      "action": "confirm git commit and dirty state, then rerun on the gate commit",
+      "id": "workspace-drift",
+      "symptom": "local run differs from gate branch output"
+    }
+  ],
+  "versions": {
+    "cargo": "cargo 1.90.0 (Homebrew)",
+    "gh": "gh version 2.61.0 (2024-11-06)",
+    "jq": "jq-1.7.1",
+    "python3": "Python 3.14.2",
+    "rustc": "rustc 1.90.0 (1159e78c4 2025-09-14) (Homebrew)"
+  }
+}

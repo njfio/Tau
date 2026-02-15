@@ -11,9 +11,24 @@ use tau_release_channel::RELEASE_CHANNEL_USAGE;
 
 use crate::{CANVAS_USAGE, QA_LOOP_USAGE};
 
+/// Public `const` `MODELS_LIST_USAGE` in `tau-ops`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub const MODELS_LIST_USAGE: &str = "/models-list [query] [--provider <name>] [--tools <true|false>] [--multimodal <true|false>] [--reasoning <true|false>] [--limit <n>]";
+/// Public `const` `MODEL_SHOW_USAGE` in `tau-ops`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub const MODEL_SHOW_USAGE: &str = "/model-show <provider/model>";
 
+/// Public `const` `COMMAND_SPECS` in `tau-ops`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub const COMMAND_SPECS: &[CommandSpec] = &[
     CommandSpec {
         name: "/help",
@@ -379,6 +394,11 @@ pub const COMMAND_SPECS: &[CommandSpec] = &[
     },
 ];
 
+/// Public `const` `COMMAND_NAMES` in `tau-ops`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub const COMMAND_NAMES: &[&str] = &[
     "/help",
     "/session",
@@ -430,18 +450,38 @@ pub const COMMAND_NAMES: &[&str] = &[
     "/exit",
 ];
 
+/// Public `fn` `render_help_overview` in `tau-ops`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn render_help_overview() -> String {
     tau_cli::render_help_overview(COMMAND_SPECS)
 }
 
+/// Public `fn` `render_command_help` in `tau-ops`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn render_command_help(topic: &str) -> Option<String> {
     tau_cli::render_command_help(topic, COMMAND_SPECS)
 }
 
+/// Public `fn` `unknown_help_topic_message` in `tau-ops`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn unknown_help_topic_message(topic: &str) -> String {
     tau_cli::unknown_help_topic_message(topic, COMMAND_NAMES)
 }
 
+/// Public `fn` `unknown_command_message` in `tau-ops`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn unknown_command_message(command: &str) -> String {
     tau_cli::unknown_command_message(command, COMMAND_NAMES)
 }

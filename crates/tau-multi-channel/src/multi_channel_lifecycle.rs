@@ -21,6 +21,11 @@ use crate::multi_channel_credentials::{
 };
 use tau_core::{current_unix_timestamp_ms, write_text_atomic};
 
+/// Public `const` `MULTI_CHANNEL_LIFECYCLE_STATE_FILE_NAME` in `tau-multi-channel`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub const MULTI_CHANNEL_LIFECYCLE_STATE_FILE_NAME: &str = "channel-lifecycle.json";
 const MULTI_CHANNEL_LIFECYCLE_STATE_SCHEMA_VERSION: u32 = 1;
 
@@ -168,18 +173,38 @@ fn multi_channel_lifecycle_state_schema_version() -> u32 {
     MULTI_CHANNEL_LIFECYCLE_STATE_SCHEMA_VERSION
 }
 
+/// Public `fn` `default_probe_timeout_ms` in `tau-multi-channel`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn default_probe_timeout_ms() -> u64 {
     ONLINE_PROBE_TIMEOUT_MS
 }
 
+/// Public `fn` `default_probe_max_attempts` in `tau-multi-channel`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn default_probe_max_attempts() -> usize {
     ONLINE_PROBE_MAX_ATTEMPTS
 }
 
+/// Public `fn` `default_probe_retry_delay_ms` in `tau-multi-channel`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn default_probe_retry_delay_ms() -> u64 {
     ONLINE_PROBE_RETRY_DELAY_MS
 }
 
+/// Public `fn` `execute_multi_channel_lifecycle_action` in `tau-multi-channel`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn execute_multi_channel_lifecycle_action(
     config: &MultiChannelLifecycleCommandConfig,
     action: MultiChannelLifecycleAction,
@@ -909,6 +934,11 @@ fn resolve_lifecycle_secret(
     )
 }
 
+/// Public `fn` `render_multi_channel_lifecycle_report` in `tau-multi-channel`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn render_multi_channel_lifecycle_report(report: &MultiChannelLifecycleReport) -> String {
     let reason_codes = if report.reason_codes.is_empty() {
         "none".to_string()

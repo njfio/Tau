@@ -23,6 +23,11 @@ use crate::credential_store::{
 use crate::types::{AuthCommandConfig, ProviderAuthMethod};
 use crate::CredentialStoreData;
 
+/// Public `fn` `resolve_store_backed_provider_credential` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn resolve_store_backed_provider_credential(
     cli: &Cli,
     provider: Provider,
@@ -139,6 +144,11 @@ pub fn resolve_store_backed_provider_credential(
     })
 }
 
+/// Public `fn` `resolve_non_empty_secret_with_source` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn resolve_non_empty_secret_with_source(
     candidates: Vec<(&'static str, Option<String>)>,
 ) -> Option<(String, String)> {
@@ -389,6 +399,11 @@ fn anthropic_claude_backend_snapshot(
     }
 }
 
+/// Public `fn` `provider_auth_snapshot_for_status` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn provider_auth_snapshot_for_status(
     config: &AuthCommandConfig,
     provider: Provider,

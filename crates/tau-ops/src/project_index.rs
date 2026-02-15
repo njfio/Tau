@@ -92,6 +92,11 @@ struct ProjectIndexQueryReport {
     results: Vec<ProjectIndexQueryResult>,
 }
 
+/// Public `fn` `execute_project_index_command` in `tau-ops`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn execute_project_index_command(cli: &Cli) -> Result<()> {
     let root = resolve_project_index_root(&cli.project_index_root)?;
     let index_path = project_index_file_path(&cli.project_index_state_dir);
@@ -705,6 +710,11 @@ mod tests {
         let text = r#"
             /// Public struct `IndexReport` used across Tau components.
             pub struct IndexReport { value: usize }
+/// Public `fn` `build_index` in `tau-ops`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
             pub fn build_index() {}
             fn private_helper() {}
         "#;

@@ -266,6 +266,11 @@ fn build_google_http_client(
     Ok(Arc::new(client))
 }
 
+/// Public `fn` `build_provider_client` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn build_provider_client(cli: &Cli, provider: Provider) -> Result<Arc<dyn LlmClient>> {
     let auth_mode = configured_provider_auth_method(cli, provider);
     let capability = provider_auth_capability(provider, auth_mode);

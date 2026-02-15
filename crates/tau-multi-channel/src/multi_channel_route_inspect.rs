@@ -41,6 +41,11 @@ pub struct MultiChannelRouteInspectConfig {
     pub orchestrator_route_table_path: Option<PathBuf>,
 }
 
+/// Public `fn` `build_multi_channel_route_inspect_report` in `tau-multi-channel`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn build_multi_channel_route_inspect_report(
     config: &MultiChannelRouteInspectConfig,
 ) -> Result<MultiChannelRouteInspectReport> {
@@ -71,6 +76,11 @@ pub fn build_multi_channel_route_inspect_report(
     })
 }
 
+/// Public `fn` `render_multi_channel_route_inspect_report` in `tau-multi-channel`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn render_multi_channel_route_inspect_report(
     report: &MultiChannelRouteInspectReport,
 ) -> String {

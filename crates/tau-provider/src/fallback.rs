@@ -67,10 +67,20 @@ pub struct FallbackRoutingClient {
 }
 
 impl FallbackRoutingClient {
+    /// Public `fn` `new` in `tau-provider`.
+    ///
+    /// This item is part of the Wave 2 API surface for M23 documentation uplift.
+    /// Callers rely on its contract and failure semantics remaining stable.
+    /// Update this comment if behavior or integration expectations change.
     pub fn new(routes: Vec<ClientRoute>, event_sink: Option<FallbackEventSink>) -> Self {
         Self::with_circuit_breaker(routes, event_sink, CircuitBreakerConfig::default())
     }
 
+    /// Public `fn` `with_circuit_breaker` in `tau-provider`.
+    ///
+    /// This item is part of the Wave 2 API surface for M23 documentation uplift.
+    /// Callers rely on its contract and failure semantics remaining stable.
+    /// Update this comment if behavior or integration expectations change.
     pub fn with_circuit_breaker(
         routes: Vec<ClientRoute>,
         event_sink: Option<FallbackEventSink>,
@@ -278,6 +288,11 @@ fn is_retryable_status(status: u16) -> bool {
     status == 408 || status == 409 || status == 425 || status == 429 || status >= 500
 }
 
+/// Public `fn` `is_retryable_provider_error` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn is_retryable_provider_error(error: &TauAiError) -> bool {
     match error {
         TauAiError::HttpStatus { status, .. } => is_retryable_status(*status),
@@ -309,6 +324,11 @@ fn lock_or_recover_mutex<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     }
 }
 
+/// Public `fn` `resolve_fallback_models` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn resolve_fallback_models(cli: &Cli, primary: &ModelRef) -> Result<Vec<ModelRef>> {
     let mut resolved = Vec::new();
     for raw in &cli.fallback_model {
@@ -330,6 +350,11 @@ pub fn resolve_fallback_models(cli: &Cli, primary: &ModelRef) -> Result<Vec<Mode
     Ok(resolved)
 }
 
+/// Public `fn` `build_client_with_fallbacks` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn build_client_with_fallbacks(
     cli: &Cli,
     primary: &ModelRef,

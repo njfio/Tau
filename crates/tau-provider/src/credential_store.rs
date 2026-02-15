@@ -84,6 +84,11 @@ pub struct RefreshedProviderCredential {
     pub expires_unix: Option<u64>,
 }
 
+/// Public `fn` `resolve_credential_store_encryption_mode` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn resolve_credential_store_encryption_mode(cli: &Cli) -> CredentialStoreEncryptionMode {
     match cli.credential_store_encryption {
         CliCredentialStoreEncryptionMode::None => CredentialStoreEncryptionMode::None,
@@ -179,6 +184,11 @@ fn timing_safe_equal(left: &[u8], right: &[u8]) -> bool {
     diff == 0
 }
 
+/// Public `fn` `encrypt_credential_store_secret` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn encrypt_credential_store_secret(
     secret: &str,
     mode: CredentialStoreEncryptionMode,
@@ -212,6 +222,11 @@ pub fn encrypt_credential_store_secret(
     }
 }
 
+/// Public `fn` `decrypt_credential_store_secret` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn decrypt_credential_store_secret(
     encoded: &str,
     mode: CredentialStoreEncryptionMode,
@@ -259,6 +274,11 @@ pub fn decrypt_credential_store_secret(
     }
 }
 
+/// Public `fn` `load_credential_store` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn load_credential_store(
     path: &Path,
     default_mode: CredentialStoreEncryptionMode,
@@ -351,6 +371,11 @@ pub fn load_credential_store(
     })
 }
 
+/// Public `fn` `save_credential_store` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn save_credential_store(
     path: &Path,
     store: &CredentialStoreData,
@@ -430,6 +455,11 @@ pub fn save_credential_store(
     write_text_atomic(path, &encoded)
 }
 
+/// Public `fn` `refresh_provider_access_token` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn refresh_provider_access_token(
     provider: Provider,
     refresh_token: &str,
@@ -455,6 +485,11 @@ pub fn refresh_provider_access_token(
     })
 }
 
+/// Public `fn` `reauth_required_error` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn reauth_required_error(provider: Provider, reason: &str) -> anyhow::Error {
     anyhow!(
         "provider '{}' requires re-authentication: {reason}",

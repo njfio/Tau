@@ -17,6 +17,11 @@ use tau_orchestrator::multi_agent_router::{
     MultiAgentRouteTable, MultiAgentRouteTrustInput,
 };
 
+/// Public `const` `MULTI_CHANNEL_ROUTE_BINDINGS_FILE_NAME` in `tau-multi-channel`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub const MULTI_CHANNEL_ROUTE_BINDINGS_FILE_NAME: &str = "multi-channel-route-bindings.json";
 const MULTI_CHANNEL_ROUTE_BINDINGS_SCHEMA_VERSION: u32 = 1;
 const WILDCARD_SELECTOR: &str = "*";
@@ -102,6 +107,11 @@ pub struct MultiChannelRouteDecision {
     pub trust_input_source: Option<String>,
 }
 
+/// Public `fn` `load_multi_channel_route_bindings_for_state_dir` in `tau-multi-channel`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn load_multi_channel_route_bindings_for_state_dir(
     state_dir: &Path,
 ) -> Result<MultiChannelRouteBindingFile> {
@@ -112,6 +122,11 @@ pub fn load_multi_channel_route_bindings_for_state_dir(
     )
 }
 
+/// Public `fn` `load_multi_channel_route_bindings` in `tau-multi-channel`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn load_multi_channel_route_bindings(path: &Path) -> Result<MultiChannelRouteBindingFile> {
     if !path.exists() {
         return Ok(MultiChannelRouteBindingFile::default());
@@ -126,6 +141,11 @@ pub fn load_multi_channel_route_bindings(path: &Path) -> Result<MultiChannelRout
         .with_context(|| format!("invalid multi-channel route bindings {}", path.display()))
 }
 
+/// Public `fn` `parse_multi_channel_route_bindings` in `tau-multi-channel`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn parse_multi_channel_route_bindings(raw: &str) -> Result<MultiChannelRouteBindingFile> {
     let mut parsed = serde_json::from_str::<MultiChannelRouteBindingFile>(raw)
         .context("failed to parse multi-channel route bindings")?;
@@ -133,6 +153,11 @@ pub fn parse_multi_channel_route_bindings(raw: &str) -> Result<MultiChannelRoute
     Ok(parsed)
 }
 
+/// Public `fn` `resolve_multi_channel_event_route` in `tau-multi-channel`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn resolve_multi_channel_event_route(
     bindings: &MultiChannelRouteBindingFile,
     route_table: &MultiAgentRouteTable,
@@ -233,6 +258,11 @@ pub fn resolve_multi_channel_event_route(
     }
 }
 
+/// Public `fn` `resolve_multi_channel_account_id` in `tau-multi-channel`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn resolve_multi_channel_account_id(event: &MultiChannelInboundEvent) -> String {
     for key in [
         "account_id",
@@ -251,6 +281,11 @@ pub fn resolve_multi_channel_account_id(event: &MultiChannelInboundEvent) -> Str
     String::new()
 }
 
+/// Public `fn` `route_decision_trace_payload` in `tau-multi-channel`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn route_decision_trace_payload(
     event: &MultiChannelInboundEvent,
     event_key: &str,

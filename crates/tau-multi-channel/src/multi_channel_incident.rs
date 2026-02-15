@@ -139,6 +139,11 @@ struct MultiChannelIncidentReplayEvent {
     records: Vec<ChannelLogEntry>,
 }
 
+/// Public `fn` `build_multi_channel_incident_timeline_report` in `tau-multi-channel`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn build_multi_channel_incident_timeline_report(
     query: &MultiChannelIncidentTimelineQuery,
 ) -> Result<MultiChannelIncidentTimelineReport> {
@@ -633,6 +638,11 @@ fn push_multi_channel_incident_diagnostic(diagnostics: &mut Vec<String>, message
     diagnostics.push(message);
 }
 
+/// Public `fn` `render_multi_channel_incident_timeline_report` in `tau-multi-channel`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn render_multi_channel_incident_timeline_report(
     report: &MultiChannelIncidentTimelineReport,
 ) -> String {

@@ -909,6 +909,11 @@ struct PairingRegistrySummaryFile {
     pairings: Vec<serde_json::Value>,
 }
 
+/// Public `fn` `execute_channel_store_admin_command` in `tau-ops`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn execute_channel_store_admin_command(cli: &Cli) -> Result<()> {
     if let Some(raw_target) = cli.transport_health_inspect.as_deref() {
         let target = parse_transport_health_inspect_target(raw_target)?;

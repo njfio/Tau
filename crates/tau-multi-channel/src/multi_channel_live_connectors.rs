@@ -63,6 +63,11 @@ pub enum MultiChannelLiveConnectorMode {
 }
 
 impl MultiChannelLiveConnectorMode {
+    /// Public `fn` `as_str` in `tau-multi-channel`.
+    ///
+    /// This item is part of the Wave 2 API surface for M23 documentation uplift.
+    /// Callers rely on its contract and failure semantics remaining stable.
+    /// Update this comment if behavior or integration expectations change.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Disabled => "disabled",
@@ -71,20 +76,40 @@ impl MultiChannelLiveConnectorMode {
         }
     }
 
+    /// Public `fn` `is_disabled` in `tau-multi-channel`.
+    ///
+    /// This item is part of the Wave 2 API surface for M23 documentation uplift.
+    /// Callers rely on its contract and failure semantics remaining stable.
+    /// Update this comment if behavior or integration expectations change.
     pub fn is_disabled(self) -> bool {
         matches!(self, Self::Disabled)
     }
 
+    /// Public `fn` `is_polling` in `tau-multi-channel`.
+    ///
+    /// This item is part of the Wave 2 API surface for M23 documentation uplift.
+    /// Callers rely on its contract and failure semantics remaining stable.
+    /// Update this comment if behavior or integration expectations change.
     pub fn is_polling(self) -> bool {
         matches!(self, Self::Polling)
     }
 
+    /// Public `fn` `is_webhook` in `tau-multi-channel`.
+    ///
+    /// This item is part of the Wave 2 API surface for M23 documentation uplift.
+    /// Callers rely on its contract and failure semantics remaining stable.
+    /// Update this comment if behavior or integration expectations change.
     pub fn is_webhook(self) -> bool {
         matches!(self, Self::Webhook)
     }
 }
 
 impl MultiChannelLiveConnectorErrorCode {
+    /// Public `fn` `as_str` in `tau-multi-channel`.
+    ///
+    /// This item is part of the Wave 2 API surface for M23 documentation uplift.
+    /// Callers rely on its contract and failure semantics remaining stable.
+    /// Update this comment if behavior or integration expectations change.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::MissingConfig => "missing_config",
@@ -252,6 +277,11 @@ fn multi_channel_live_connectors_schema_version() -> u32 {
     LIVE_CONNECTORS_SCHEMA_VERSION
 }
 
+/// Public `fn` `load_multi_channel_live_connectors_status_report` in `tau-multi-channel`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn load_multi_channel_live_connectors_status_report(
     state_path: &Path,
 ) -> Result<MultiChannelLiveConnectorsStatusReport> {
@@ -274,6 +304,11 @@ pub fn load_multi_channel_live_connectors_status_report(
     })
 }
 
+/// Public `fn` `run_multi_channel_live_connectors_runner` in `tau-multi-channel`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub async fn run_multi_channel_live_connectors_runner(
     config: MultiChannelLiveConnectorsConfig,
 ) -> Result<()> {

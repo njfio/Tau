@@ -15,14 +15,44 @@ use wait_timeout::ChildExt;
 
 use crate::*;
 
+/// Public `const` `AUTH_USAGE` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub const AUTH_USAGE: &str = "usage: /auth <login|reauth|status|logout|matrix> ...";
+/// Public `const` `AUTH_LOGIN_USAGE` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub const AUTH_LOGIN_USAGE: &str =
     "usage: /auth login <provider> [--mode <mode>] [--launch] [--json]";
+/// Public `const` `AUTH_REAUTH_USAGE` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub const AUTH_REAUTH_USAGE: &str =
     "usage: /auth reauth <provider> [--mode <mode>] [--launch] [--json]";
+/// Public `const` `AUTH_STATUS_USAGE` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub const AUTH_STATUS_USAGE: &str =
     "usage: /auth status [provider] [--mode <mode>] [--mode-support <all|supported|unsupported>] [--availability <all|available|unavailable>] [--state <state>] [--source-kind <all|flag|env|credential-store|none>] [--revoked <all|revoked|not-revoked>] [--json]";
+/// Public `const` `AUTH_LOGOUT_USAGE` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub const AUTH_LOGOUT_USAGE: &str = "usage: /auth logout <provider> [--json]";
+/// Public `const` `AUTH_MATRIX_USAGE` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub const AUTH_MATRIX_USAGE: &str =
     "usage: /auth matrix [provider] [--mode <mode>] [--mode-support <all|supported|unsupported>] [--availability <all|available|unavailable>] [--state <state>] [--source-kind <all|flag|env|credential-store|none>] [--revoked <all|revoked|not-revoked>] [--json]";
 
@@ -35,6 +65,11 @@ pub enum AuthMatrixAvailabilityFilter {
 }
 
 impl AuthMatrixAvailabilityFilter {
+    /// Public `fn` `as_str` in `tau-provider`.
+    ///
+    /// This item is part of the Wave 2 API surface for M23 documentation uplift.
+    /// Callers rely on its contract and failure semantics remaining stable.
+    /// Update this comment if behavior or integration expectations change.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::All => "all",
@@ -53,6 +88,11 @@ pub enum AuthMatrixModeSupportFilter {
 }
 
 impl AuthMatrixModeSupportFilter {
+    /// Public `fn` `as_str` in `tau-provider`.
+    ///
+    /// This item is part of the Wave 2 API surface for M23 documentation uplift.
+    /// Callers rely on its contract and failure semantics remaining stable.
+    /// Update this comment if behavior or integration expectations change.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::All => "all",
@@ -73,6 +113,11 @@ pub enum AuthSourceKindFilter {
 }
 
 impl AuthSourceKindFilter {
+    /// Public `fn` `as_str` in `tau-provider`.
+    ///
+    /// This item is part of the Wave 2 API surface for M23 documentation uplift.
+    /// Callers rely on its contract and failure semantics remaining stable.
+    /// Update this comment if behavior or integration expectations change.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::All => "all",
@@ -93,6 +138,11 @@ pub enum AuthRevokedFilter {
 }
 
 impl AuthRevokedFilter {
+    /// Public `fn` `as_str` in `tau-provider`.
+    ///
+    /// This item is part of the Wave 2 API surface for M23 documentation uplift.
+    /// Callers rely on its contract and failure semantics remaining stable.
+    /// Update this comment if behavior or integration expectations change.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::All => "all",
@@ -214,6 +264,11 @@ const AUTH_MATRIX_MODES: [ProviderAuthMethod; 4] = [
     ProviderAuthMethod::SessionToken,
 ];
 
+/// Public `fn` `parse_auth_provider` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn parse_auth_provider(token: &str) -> Result<Provider> {
     match token.trim().to_ascii_lowercase().as_str() {
         "openai" | "openrouter" | "groq" | "xai" | "mistral" | "azure" | "azure-openai" => {
@@ -228,6 +283,11 @@ pub fn parse_auth_provider(token: &str) -> Result<Provider> {
     }
 }
 
+/// Public `fn` `parse_provider_auth_method_token` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn parse_provider_auth_method_token(token: &str) -> Result<ProviderAuthMethod> {
     match token.trim().to_ascii_lowercase().as_str() {
         "api-key" | "api_key" => Ok(ProviderAuthMethod::ApiKey),
@@ -241,6 +301,11 @@ pub fn parse_provider_auth_method_token(token: &str) -> Result<ProviderAuthMetho
     }
 }
 
+/// Public `fn` `parse_auth_command` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn parse_auth_command(command_args: &str) -> Result<AuthCommand> {
     let tokens = command_args
         .split_whitespace()
@@ -575,6 +640,11 @@ pub fn parse_auth_command(command_args: &str) -> Result<AuthCommand> {
     }
 }
 
+/// Public `fn` `parse_auth_matrix_availability_filter` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn parse_auth_matrix_availability_filter(token: &str) -> Result<AuthMatrixAvailabilityFilter> {
     match token.trim().to_ascii_lowercase().as_str() {
         "all" => Ok(AuthMatrixAvailabilityFilter::All),
@@ -587,6 +657,11 @@ pub fn parse_auth_matrix_availability_filter(token: &str) -> Result<AuthMatrixAv
     }
 }
 
+/// Public `fn` `parse_auth_matrix_mode_support_filter` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn parse_auth_matrix_mode_support_filter(token: &str) -> Result<AuthMatrixModeSupportFilter> {
     match token.trim().to_ascii_lowercase().as_str() {
         "all" => Ok(AuthMatrixModeSupportFilter::All),
@@ -599,6 +674,11 @@ pub fn parse_auth_matrix_mode_support_filter(token: &str) -> Result<AuthMatrixMo
     }
 }
 
+/// Public `fn` `parse_auth_matrix_state_filter` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn parse_auth_matrix_state_filter(token: &str) -> Result<String> {
     let normalized = token.trim().to_ascii_lowercase();
     if normalized.is_empty() {
@@ -607,6 +687,11 @@ pub fn parse_auth_matrix_state_filter(token: &str) -> Result<String> {
     Ok(normalized)
 }
 
+/// Public `fn` `parse_auth_source_kind_filter` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn parse_auth_source_kind_filter(token: &str) -> Result<AuthSourceKindFilter> {
     match token.trim().to_ascii_lowercase().as_str() {
         "all" => Ok(AuthSourceKindFilter::All),
@@ -621,6 +706,11 @@ pub fn parse_auth_source_kind_filter(token: &str) -> Result<AuthSourceKindFilter
     }
 }
 
+/// Public `fn` `parse_auth_revoked_filter` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn parse_auth_revoked_filter(token: &str) -> Result<AuthRevokedFilter> {
     match token.trim().to_ascii_lowercase().as_str() {
         "all" => Ok(AuthRevokedFilter::All),
@@ -765,6 +855,11 @@ fn build_auth_login_launch_spec(
     }
 }
 
+/// Public `fn` `execute_auth_login_command` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn execute_auth_login_command(
     config: &AuthCommandConfig,
     provider: Provider,
@@ -1599,6 +1694,11 @@ fn auth_reauth_status_label(row: &AuthStatusRow) -> &'static str {
     }
 }
 
+/// Public `fn` `execute_auth_reauth_command` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn execute_auth_reauth_command(
     config: &AuthCommandConfig,
     provider: Provider,
@@ -1720,6 +1820,11 @@ pub fn execute_auth_reauth_command(
     )
 }
 
+/// Public `fn` `auth_status_row_for_provider` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn auth_status_row_for_provider(
     config: &AuthCommandConfig,
     provider: Provider,
@@ -2037,6 +2142,11 @@ fn auth_next_action(snapshot: &ProviderAuthSnapshot) -> String {
     }
 }
 
+/// Public `fn` `auth_state_counts` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn auth_state_counts(rows: &[AuthStatusRow]) -> std::collections::BTreeMap<String, usize> {
     let mut counts = std::collections::BTreeMap::new();
     for row in rows {
@@ -2045,6 +2155,11 @@ pub fn auth_state_counts(rows: &[AuthStatusRow]) -> std::collections::BTreeMap<S
     counts
 }
 
+/// Public `fn` `auth_mode_counts` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn auth_mode_counts(rows: &[AuthStatusRow]) -> std::collections::BTreeMap<String, usize> {
     let mut counts = std::collections::BTreeMap::new();
     for row in rows {
@@ -2053,6 +2168,11 @@ pub fn auth_mode_counts(rows: &[AuthStatusRow]) -> std::collections::BTreeMap<St
     counts
 }
 
+/// Public `fn` `auth_provider_counts` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn auth_provider_counts(rows: &[AuthStatusRow]) -> std::collections::BTreeMap<String, usize> {
     let mut counts = std::collections::BTreeMap::new();
     for row in rows {
@@ -2061,6 +2181,11 @@ pub fn auth_provider_counts(rows: &[AuthStatusRow]) -> std::collections::BTreeMa
     counts
 }
 
+/// Public `fn` `auth_availability_counts` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn auth_availability_counts(
     rows: &[AuthStatusRow],
 ) -> std::collections::BTreeMap<String, usize> {
@@ -2076,6 +2201,11 @@ pub fn auth_availability_counts(
     counts
 }
 
+/// Public `fn` `auth_source_kind` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn auth_source_kind(source: &str) -> &'static str {
     let normalized = source.trim();
     if normalized == "credential_store" {
@@ -2100,6 +2230,11 @@ fn auth_source_kind_matches_filter(source: &str, source_kind_filter: AuthSourceK
     }
 }
 
+/// Public `fn` `auth_source_kind_counts` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn auth_source_kind_counts(
     rows: &[AuthStatusRow],
 ) -> std::collections::BTreeMap<String, usize> {
@@ -2112,6 +2247,11 @@ pub fn auth_source_kind_counts(
     counts
 }
 
+/// Public `fn` `auth_revoked_counts` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn auth_revoked_counts(rows: &[AuthStatusRow]) -> std::collections::BTreeMap<String, usize> {
     let mut counts = std::collections::BTreeMap::new();
     for row in rows {
@@ -2125,6 +2265,11 @@ pub fn auth_revoked_counts(rows: &[AuthStatusRow]) -> std::collections::BTreeMap
     counts
 }
 
+/// Public `fn` `format_auth_state_counts` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn format_auth_state_counts(
     state_counts: &std::collections::BTreeMap<String, usize>,
 ) -> String {
@@ -2138,6 +2283,11 @@ pub fn format_auth_state_counts(
         .join(",")
 }
 
+/// Public `fn` `execute_auth_status_command` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn execute_auth_status_command(
     config: &AuthCommandConfig,
     provider: Option<Provider>,
@@ -2367,6 +2517,11 @@ fn auth_config_with_provider_mode(
     overridden
 }
 
+/// Public `fn` `execute_auth_matrix_command` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn execute_auth_matrix_command(
     config: &AuthCommandConfig,
     provider: Option<Provider>,
@@ -2576,6 +2731,11 @@ pub fn execute_auth_matrix_command(
     lines.join("\n")
 }
 
+/// Public `fn` `execute_auth_logout_command` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn execute_auth_logout_command(
     config: &AuthCommandConfig,
     provider: Provider,
@@ -2654,6 +2814,11 @@ pub fn execute_auth_logout_command(
     )
 }
 
+/// Public `fn` `execute_auth_command` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn execute_auth_command(config: &AuthCommandConfig, command_args: &str) -> String {
     let command = match parse_auth_command(command_args) {
         Ok(command) => command,

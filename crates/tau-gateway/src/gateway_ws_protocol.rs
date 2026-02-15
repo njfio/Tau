@@ -10,21 +10,81 @@ use anyhow::{anyhow, bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
+/// Public `const` `GATEWAY_WS_REQUEST_SCHEMA_VERSION` in `tau-gateway`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub const GATEWAY_WS_REQUEST_SCHEMA_VERSION: u32 = 1;
+/// Public `const` `GATEWAY_WS_RESPONSE_SCHEMA_VERSION` in `tau-gateway`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub const GATEWAY_WS_RESPONSE_SCHEMA_VERSION: u32 = 1;
+/// Public `const` `GATEWAY_WS_PROTOCOL_VERSION` in `tau-gateway`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub const GATEWAY_WS_PROTOCOL_VERSION: &str = "0.1.0";
+/// Public `const` `GATEWAY_WS_HEARTBEAT_INTERVAL_SECONDS` in `tau-gateway`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub const GATEWAY_WS_HEARTBEAT_INTERVAL_SECONDS: u64 = 15;
 
 const GATEWAY_WS_COMPATIBLE_REQUEST_SCHEMA_VERSIONS: [u32; 2] =
     [0, GATEWAY_WS_REQUEST_SCHEMA_VERSION];
 
+/// Public `const` `GATEWAY_WS_ERROR_CODE_INVALID_JSON` in `tau-gateway`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub const GATEWAY_WS_ERROR_CODE_INVALID_JSON: &str = "invalid_json";
+/// Public `const` `GATEWAY_WS_ERROR_CODE_UNSUPPORTED_SCHEMA` in `tau-gateway`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub const GATEWAY_WS_ERROR_CODE_UNSUPPORTED_SCHEMA: &str = "unsupported_schema";
+/// Public `const` `GATEWAY_WS_ERROR_CODE_UNSUPPORTED_KIND` in `tau-gateway`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub const GATEWAY_WS_ERROR_CODE_UNSUPPORTED_KIND: &str = "unsupported_kind";
+/// Public `const` `GATEWAY_WS_ERROR_CODE_INVALID_REQUEST_ID` in `tau-gateway`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub const GATEWAY_WS_ERROR_CODE_INVALID_REQUEST_ID: &str = "invalid_request_id";
+/// Public `const` `GATEWAY_WS_ERROR_CODE_INVALID_PAYLOAD` in `tau-gateway`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub const GATEWAY_WS_ERROR_CODE_INVALID_PAYLOAD: &str = "invalid_payload";
+/// Public `const` `GATEWAY_WS_ERROR_CODE_UNAUTHORIZED` in `tau-gateway`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub const GATEWAY_WS_ERROR_CODE_UNAUTHORIZED: &str = "unauthorized";
+/// Public `const` `GATEWAY_WS_ERROR_CODE_RATE_LIMITED` in `tau-gateway`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub const GATEWAY_WS_ERROR_CODE_RATE_LIMITED: &str = "rate_limited";
+/// Public `const` `GATEWAY_WS_ERROR_CODE_INTERNAL_ERROR` in `tau-gateway`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub const GATEWAY_WS_ERROR_CODE_INTERNAL_ERROR: &str = "internal_error";
 
 const GATEWAY_WS_REQUEST_KINDS: &[&str] = &[
@@ -107,6 +167,11 @@ struct RawGatewayWsRequestFrame {
     payload: Value,
 }
 
+/// Public `fn` `parse_gateway_ws_request_frame` in `tau-gateway`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn parse_gateway_ws_request_frame(raw: &str) -> Result<GatewayWsRequestFrame> {
     let frame = serde_json::from_str::<RawGatewayWsRequestFrame>(raw)
         .context("failed to parse gateway websocket frame JSON")?;
@@ -140,6 +205,11 @@ pub fn parse_gateway_ws_request_frame(raw: &str) -> Result<GatewayWsRequestFrame
     })
 }
 
+/// Public `fn` `best_effort_gateway_ws_request_id` in `tau-gateway`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn best_effort_gateway_ws_request_id(raw: &str) -> Option<String> {
     let value = serde_json::from_str::<Value>(raw).ok()?;
     let request_id = value
@@ -151,6 +221,11 @@ pub fn best_effort_gateway_ws_request_id(raw: &str) -> Option<String> {
     Some(request_id.to_string())
 }
 
+/// Public `fn` `classify_gateway_ws_parse_error` in `tau-gateway`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn classify_gateway_ws_parse_error(message: &str) -> &'static str {
     if message.contains("failed to parse gateway websocket frame JSON") {
         GATEWAY_WS_ERROR_CODE_INVALID_JSON
@@ -169,6 +244,11 @@ pub fn classify_gateway_ws_parse_error(message: &str) -> &'static str {
     }
 }
 
+/// Public `fn` `build_gateway_ws_response_frame` in `tau-gateway`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn build_gateway_ws_response_frame(
     request_id: &str,
     kind: &str,
@@ -182,6 +262,11 @@ pub fn build_gateway_ws_response_frame(
     }
 }
 
+/// Public `fn` `build_gateway_ws_error_frame` in `tau-gateway`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn build_gateway_ws_error_frame(
     request_id: &str,
     code: &str,
@@ -197,6 +282,11 @@ pub fn build_gateway_ws_error_frame(
     )
 }
 
+/// Public `fn` `parse_optional_session_key` in `tau-gateway`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn parse_optional_session_key(
     payload: &serde_json::Map<String, Value>,
 ) -> Result<Option<String>> {
@@ -214,6 +304,11 @@ pub fn parse_optional_session_key(
     Ok(Some(trimmed.to_string()))
 }
 
+/// Public `fn` `gateway_ws_capabilities_payload` in `tau-gateway`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn gateway_ws_capabilities_payload() -> Value {
     json!({
         "schema_version": GATEWAY_WS_RESPONSE_SCHEMA_VERSION,

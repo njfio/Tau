@@ -27,6 +27,11 @@ pub enum ProviderAuthMethod {
 }
 
 impl ProviderAuthMethod {
+    /// Public `fn` `as_str` in `tau-provider`.
+    ///
+    /// This item is part of the Wave 2 API surface for M23 documentation uplift.
+    /// Callers rely on its contract and failure semantics remaining stable.
+    /// Update this comment if behavior or integration expectations change.
     pub fn as_str(self) -> &'static str {
         match self {
             ProviderAuthMethod::ApiKey => "api_key",

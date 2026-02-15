@@ -1,15 +1,15 @@
 # M23 Rustdoc Marker Threshold Verification
 
-Generated at: 2026-02-15T18:33:59Z
+Generated at: 2026-02-15T18:58:13Z
 
 ## Summary
 
 - Threshold markers: `3000`
 - Baseline total markers: `1486`
-- Current total markers: `1964`
-- Delta markers: `+478`
-- Remaining to threshold: `1036`
-- Gate status: `FAIL`
+- Current total markers: `3249`
+- Delta markers: `+1763`
+- Remaining to threshold: `0`
+- Gate status: `PASS`
 
 ## Per-Crate Delta Breakdown
 
@@ -32,15 +32,15 @@ Generated at: 2026-02-15T18:33:59Z
 | tau-diagnostics | 22 | 22 | +0 |
 | tau-events | 27 | 27 | +0 |
 | tau-extensions | 20 | 20 | +0 |
-| tau-gateway | 37 | 62 | +25 |
+| tau-gateway | 37 | 297 | +260 |
 | tau-github-issues | 29 | 29 | +0 |
 | tau-github-issues-runtime | 39 | 39 | +0 |
 | tau-memory | 48 | 48 | +0 |
-| tau-multi-channel | 105 | 160 | +55 |
+| tau-multi-channel | 105 | 555 | +450 |
 | tau-onboarding | 66 | 170 | +104 |
-| tau-ops | 20 | 54 | +34 |
+| tau-ops | 20 | 249 | +229 |
 | tau-orchestrator | 23 | 23 | +0 |
-| tau-provider | 39 | 104 | +65 |
+| tau-provider | 39 | 564 | +525 |
 | tau-release-channel | 15 | 15 | +0 |
 | tau-runtime | 111 | 136 | +25 |
 | tau-safety | 13 | 13 | +0 |

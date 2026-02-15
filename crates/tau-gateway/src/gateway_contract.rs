@@ -15,10 +15,30 @@ use tau_contract::{
     validate_fixture_header,
 };
 
+/// Public `const` `GATEWAY_CONTRACT_SCHEMA_VERSION` in `tau-gateway`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub const GATEWAY_CONTRACT_SCHEMA_VERSION: u32 = 1;
 
+/// Public `const` `GATEWAY_ERROR_INVALID_REQUEST` in `tau-gateway`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub const GATEWAY_ERROR_INVALID_REQUEST: &str = "gateway_invalid_request";
+/// Public `const` `GATEWAY_ERROR_UNSUPPORTED_METHOD` in `tau-gateway`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub const GATEWAY_ERROR_UNSUPPORTED_METHOD: &str = "gateway_unsupported_method";
+/// Public `const` `GATEWAY_ERROR_BACKEND_UNAVAILABLE` in `tau-gateway`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub const GATEWAY_ERROR_BACKEND_UNAVAILABLE: &str = "gateway_backend_unavailable";
 
 fn gateway_contract_schema_version() -> u32 {
@@ -113,6 +133,11 @@ pub trait GatewayContractDriver {
     fn apply_case(&mut self, case: &GatewayContractCase) -> Result<GatewayReplayResult>;
 }
 
+/// Public `fn` `parse_gateway_contract_fixture` in `tau-gateway`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn parse_gateway_contract_fixture(raw: &str) -> Result<GatewayContractFixture> {
     parse_fixture_with_validation(
         raw,
@@ -121,10 +146,20 @@ pub fn parse_gateway_contract_fixture(raw: &str) -> Result<GatewayContractFixtur
     )
 }
 
+/// Public `fn` `load_gateway_contract_fixture` in `tau-gateway`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn load_gateway_contract_fixture(path: &Path) -> Result<GatewayContractFixture> {
     load_fixture_from_path(path, parse_gateway_contract_fixture)
 }
 
+/// Public `fn` `gateway_contract_capabilities` in `tau-gateway`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn gateway_contract_capabilities() -> GatewayContractCapabilities {
     GatewayContractCapabilities {
         schema_version: GATEWAY_CONTRACT_SCHEMA_VERSION,
@@ -146,6 +181,11 @@ pub fn gateway_contract_capabilities() -> GatewayContractCapabilities {
     }
 }
 
+/// Public `fn` `validate_gateway_contract_compatibility` in `tau-gateway`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn validate_gateway_contract_compatibility(fixture: &GatewayContractFixture) -> Result<()> {
     let capabilities = gateway_contract_capabilities();
     if fixture.schema_version != capabilities.schema_version {
@@ -189,6 +229,11 @@ pub fn validate_gateway_contract_compatibility(fixture: &GatewayContractFixture)
     Ok(())
 }
 
+/// Public `fn` `validate_gateway_contract_fixture` in `tau-gateway`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn validate_gateway_contract_fixture(fixture: &GatewayContractFixture) -> Result<()> {
     validate_fixture_header(
         "gateway",
@@ -206,6 +251,11 @@ pub fn validate_gateway_contract_fixture(fixture: &GatewayContractFixture) -> Re
     Ok(())
 }
 
+/// Public `fn` `evaluate_gateway_case` in `tau-gateway`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn evaluate_gateway_case(case: &GatewayContractCase) -> GatewayReplayResult {
     if case.simulate_retryable_failure {
         return GatewayReplayResult {
@@ -255,6 +305,11 @@ pub fn evaluate_gateway_case(case: &GatewayContractCase) -> GatewayReplayResult 
     }
 }
 
+/// Public `fn` `validate_gateway_case_result_against_contract` in `tau-gateway`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn validate_gateway_case_result_against_contract(
     case: &GatewayContractCase,
     result: &GatewayReplayResult,
@@ -318,6 +373,11 @@ pub fn validate_gateway_case_result_against_contract(
 }
 
 #[cfg(test)]
+/// Public `fn` `run_gateway_contract_replay` in `tau-gateway`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
 pub fn run_gateway_contract_replay<D: GatewayContractDriver>(
     fixture: &GatewayContractFixture,
     driver: &mut D,
