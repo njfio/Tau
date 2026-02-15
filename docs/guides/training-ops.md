@@ -2,8 +2,8 @@
 
 This guide covers rollout-based prompt optimization mode with durable SQLite state.
 
-This mode executes and evaluates rollouts. It is not a full reinforcement learning policy-training
-pipeline.
+This mode executes and evaluates rollouts. It is not a full policy-learning
+training pipeline.
 
 ## Run Prompt Optimization Mode
 

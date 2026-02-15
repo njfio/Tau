@@ -26,7 +26,7 @@ Approved future-RL references are limited to planning/research paths and
 specific context phrases:
 
 - term: `reinforcement learning`
-- allowed_paths: `docs/planning/`, `docs/research/`
+- allowed_paths: `docs/planning/`, `docs/research/`, `docs/guides/rl-terminology-allowlist.md`
 - required_context: `future true-RL roadmap`, `future RL roadmap`, `Q3`, `planned`
 
 Example approved usage:
