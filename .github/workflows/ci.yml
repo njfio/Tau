@@ -346,6 +346,16 @@ jobs:
             exit 1
           fi
 
+      - name: Verify allow-pragma-free policy
+        if: steps.rust_scope.outputs.rust_changed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if rg -n --glob '!**/target/**' '^\s*#\[\s*allow\(' crates; then
+            echo "::error::#[allow(...)] pragmas are prohibited by repository policy"
+            exit 1
+          fi
+
       - name: Validate Rust scope (full lane)
         if: steps.rust_scope.outputs.rust_changed == 'true' && steps.quality_mode.outputs.mode != 'codex-light'
         env:
