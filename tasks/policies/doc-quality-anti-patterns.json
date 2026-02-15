@@ -10,8 +10,8 @@
     },
     {
       "id": "generic_sets_gets_returns",
-      "description": "Generic verb-first narration in doc comments.",
-      "regex": "^\\s*(Sets|Gets|Returns)\\b"
+      "description": "Generic verb-first narration with only a single-token payload.",
+      "regex": "^\\s*(Sets|Gets|Returns)\\s+[A-Za-z0-9_`'\"/:-]+\\.$"
     },
     {
       "id": "todo_marker",
