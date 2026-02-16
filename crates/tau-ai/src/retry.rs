@@ -2,20 +2,24 @@ use chrono::{DateTime, Utc};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+/// Default retry backoff base in milliseconds for provider HTTP requests.
 pub const BASE_BACKOFF_MS: u64 = 200;
 
 static REQUEST_COUNTER: AtomicU64 = AtomicU64::new(1);
 static JITTER_COUNTER: AtomicU64 = AtomicU64::new(1);
 
+/// Return true when an HTTP status should be retried by provider clients.
 pub fn should_retry_status(status: u16) -> bool {
     status == 408 || status == 409 || status == 425 || status == 429 || status >= 500
 }
 
+/// Compute deterministic exponential backoff delay in milliseconds.
 pub fn next_backoff_ms(attempt: usize) -> u64 {
     let shift = attempt.min(6);
     BASE_BACKOFF_MS.saturating_mul(1_u64 << shift)
 }
 
+/// Compute backoff delay with optional bounded jitter.
 pub fn next_backoff_ms_with_jitter(attempt: usize, jitter_enabled: bool) -> u64 {
     let base = next_backoff_ms(attempt);
     if !jitter_enabled || base <= 1 {
@@ -35,6 +39,7 @@ pub fn next_backoff_ms_with_jitter(attempt: usize, jitter_enabled: bool) -> u64 
     low.saturating_add(jitter)
 }
 
+/// Parse retry delay hints from `Retry-After` headers into milliseconds.
 pub fn parse_retry_after_ms(headers: &reqwest::header::HeaderMap) -> Option<u64> {
     let raw = headers.get("retry-after")?.to_str().ok()?.trim();
     if raw.is_empty() {
@@ -55,6 +60,7 @@ pub fn parse_retry_after_ms(headers: &reqwest::header::HeaderMap) -> Option<u64>
     u64::try_from(delay_ms).ok()
 }
 
+/// Resolve effective provider retry delay using backoff and optional header floor.
 pub fn provider_retry_delay_ms(
     attempt: usize,
     jitter_enabled: bool,
@@ -67,6 +73,7 @@ pub fn provider_retry_delay_ms(
     }
 }
 
+/// Check whether adding `delay_ms` stays within the retry budget window.
 pub fn retry_budget_allows_delay(elapsed_ms: u64, delay_ms: u64, retry_budget_ms: u64) -> bool {
     if retry_budget_ms == 0 {
         return true;
@@ -74,10 +81,12 @@ pub fn retry_budget_allows_delay(elapsed_ms: u64, delay_ms: u64, retry_budget_ms
     elapsed_ms.saturating_add(delay_ms) <= retry_budget_ms
 }
 
+/// Return true when a transport-layer reqwest error is retryable.
 pub fn is_retryable_http_error(error: &reqwest::Error) -> bool {
     error.is_timeout() || error.is_connect() || error.is_request() || error.is_body()
 }
 
+/// Build a monotonic request identifier for retry tracing and diagnostics.
 pub fn new_request_id() -> String {
     let millis = SystemTime::now()
         .duration_since(UNIX_EPOCH)
