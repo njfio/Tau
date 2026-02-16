@@ -9,8 +9,8 @@ Spec: specs/2070/spec.md
    parallel helper invocation are present.
 2. Update `ci.yml` rust-cache steps with lane-scoped `shared-key` and
    `cache-on-failure` settings.
-3. Change helper-suite step to parallel unittest execution while preserving the
-   same discovery scope/pattern.
+3. Change helper-suite step to a portable parallel helper runner while
+   preserving the same discovery scope/pattern.
 4. Add a local timing comparison script + report artifact for serial vs parallel
    helper loops.
 5. Add docs and rerun existing CI-workflow contract suites.

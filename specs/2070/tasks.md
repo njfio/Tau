@@ -1,6 +1,6 @@
 # Tasks #2070
 
-Status: Ready
+Status: Completed
 Spec: specs/2070/spec.md
 Plan: specs/2070/plan.md
 

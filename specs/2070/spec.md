@@ -1,6 +1,6 @@
 # Spec #2070
 
-Status: Accepted
+Status: Implemented
 Milestone: specs/milestones/m25/index.md
 Issue: https://github.com/njfio/Tau/issues/2070
 
@@ -39,8 +39,8 @@ Out:
 
 - C-01 (AC-1, integration): CI workflow contains explicit rust-cache shared-key
   configuration for all four rust-cache lanes.
-- C-02 (AC-2, functional): helper test step runs unittest discover with parallel
-  workers and unchanged discovery pattern.
+- C-02 (AC-2, functional): helper test step runs the parallel helper runner with
+  unchanged discovery scope/pattern (`.github/scripts`, `test_*.py`).
 - C-03 (AC-3, functional): comparison JSON + Markdown reports include serial and
   parallel medians plus improvement status.
 - C-04 (AC-2/AC-3, regression): malformed timing fixture fails closed with
