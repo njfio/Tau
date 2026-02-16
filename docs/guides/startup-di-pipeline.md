@@ -80,6 +80,22 @@ sequenceDiagram
     Resolver-->>Entry: StartupRuntimeResolution
 ```
 
+## Safety Policy Precedence Contract
+
+Startup safety policy resolution is centralized in `tau-startup`:
+
+- `resolve_startup_safety_policy`
+- `startup_safety_policy_precedence_layers`
+
+Canonical precedence layers (lowest to highest override):
+
+1. `profile_preset`
+2. `cli_flags_and_cli_env`
+3. `runtime_env_overrides`
+
+`tau-onboarding` packages this into startup policy context and passes
+`precedence_layers` through runtime dispatch diagnostics.
+
 ## Stage 3: Runtime mode dispatch
 
 `execute_startup_runtime_modes` performs the final decision:
