@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+/// Normalize a repository-relative channel artifact path for persisted pointers.
 pub fn normalize_relative_channel_path(
     path: &Path,
     channel_root: &Path,
@@ -21,6 +22,7 @@ pub fn normalize_relative_channel_path(
     Ok(normalized)
 }
 
+/// Normalize retention configuration where `0` means \"never expire\".
 pub fn normalize_artifact_retention_days(days: u64) -> Option<u64> {
     if days == 0 {
         None
@@ -29,6 +31,7 @@ pub fn normalize_artifact_retention_days(days: u64) -> Option<u64> {
     }
 }
 
+/// Render a stable artifact pointer line for issue comments and logs.
 pub fn render_issue_artifact_pointer_line(
     label: &str,
     artifact_id: &str,
@@ -38,21 +41,25 @@ pub fn render_issue_artifact_pointer_line(
     format!("{label}: id=`{artifact_id}` path=`{relative_path}` bytes=`{bytes}`")
 }
 
+/// Build the persisted session JSONL path for one issue number.
 pub fn session_path_for_issue(repo_state_dir: &Path, issue_number: u64) -> PathBuf {
     repo_state_dir
         .join("sessions")
         .join(format!("issue-{issue_number}.jsonl"))
 }
 
+/// Build the stable session identifier used by issue conversation state.
 pub fn issue_session_id(issue_number: u64) -> String {
     format!("issue-{issue_number}")
 }
 
+/// Parse an RFC3339 timestamp to unix milliseconds.
 pub fn parse_rfc3339_to_unix_ms(raw: &str) -> Option<u64> {
     let parsed = chrono::DateTime::parse_from_rfc3339(raw).ok()?;
     u64::try_from(parsed.timestamp_millis()).ok()
 }
 
+/// Convert arbitrary user values to a path-safe slug segment.
 pub fn sanitize_for_path(raw: &str) -> String {
     raw.chars()
         .map(|ch| {
@@ -65,12 +72,14 @@ pub fn sanitize_for_path(raw: &str) -> String {
         .collect()
 }
 
+/// Return whether the optional expiration timestamp has passed.
 pub fn is_expired_at(expires_unix_ms: Option<u64>, now_unix_ms: u64) -> bool {
     expires_unix_ms
         .map(|value| value <= now_unix_ms)
         .unwrap_or(false)
 }
 
+/// Compute a lowercase SHA-256 hex digest for arbitrary bytes.
 pub fn sha256_hex(payload: &[u8]) -> String {
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
@@ -82,6 +91,7 @@ pub fn sha256_hex(payload: &[u8]) -> String {
         .collect::<String>()
 }
 
+/// Build a short deterministic hash prefix used for key identifiers.
 pub fn short_key_hash(key: &str) -> String {
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();

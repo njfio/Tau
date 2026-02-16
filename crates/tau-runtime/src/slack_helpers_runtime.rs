@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+/// Parse Slack Retry-After header value (seconds) when present.
 pub fn parse_retry_after(headers: &reqwest::header::HeaderMap) -> Option<u64> {
     headers
         .get(reqwest::header::RETRY_AFTER)
@@ -7,6 +8,7 @@ pub fn parse_retry_after(headers: &reqwest::header::HeaderMap) -> Option<u64> {
         .and_then(|value| value.trim().parse::<u64>().ok())
 }
 
+/// Compute retry delay from retry-after override or exponential backoff.
 pub fn retry_delay(
     base_delay_ms: u64,
     attempt: usize,
@@ -20,18 +22,22 @@ pub fn retry_delay(
     Duration::from_millis(base_delay_ms.max(1).saturating_mul(scale))
 }
 
+/// Return true for Slack response status codes that should be retried.
 pub fn is_retryable_slack_status(status: u16) -> bool {
     status == 429 || (500..600).contains(&status)
 }
 
+/// Return true for reqwest transport failures considered retryable for Slack.
 pub fn is_retryable_transport_error(error: &reqwest::Error) -> bool {
     error.is_timeout() || error.is_connect() || error.is_request() || error.is_body()
 }
 
+/// Truncate error payload text using Slack-safe character boundaries.
 pub fn truncate_for_error(value: &str, max_chars: usize) -> String {
     truncate_for_slack(value, max_chars)
 }
 
+/// Truncate Slack-bound text and append `...` when it exceeds `max_chars`.
 pub fn truncate_for_slack(value: &str, max_chars: usize) -> String {
     if value.chars().count() <= max_chars {
         return value.to_string();
@@ -44,6 +50,7 @@ pub fn truncate_for_slack(value: &str, max_chars: usize) -> String {
     truncated
 }
 
+/// Build a deterministic path-safe slug for Slack channel identifiers.
 pub fn sanitize_for_path(raw: &str) -> String {
     let sanitized = raw
         .chars()

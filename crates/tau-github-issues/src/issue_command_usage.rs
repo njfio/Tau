@@ -7,11 +7,13 @@ fn normalize_prefix(command_prefix: &str) -> &str {
     }
 }
 
+/// Render doctor command usage for GitHub issue transport runtime commands.
 pub fn doctor_command_usage(command_prefix: &str) -> String {
     let prefix = normalize_prefix(command_prefix);
     format!("Usage: {prefix} doctor [--online]")
 }
 
+/// Render auth command usage, including supplied status/matrix help payloads.
 pub fn issue_auth_command_usage(
     command_prefix: &str,
     auth_status_usage: &str,
@@ -24,6 +26,7 @@ pub fn issue_auth_command_usage(
     )
 }
 
+/// Render demo-index usage with scenario list and timeout bounds.
 pub fn demo_index_command_usage(
     command_prefix: &str,
     scenarios: &[&str],
@@ -39,11 +42,13 @@ pub fn demo_index_command_usage(
     )
 }
 
+/// Render artifact command usage for purge/run/show operations.
 pub fn artifacts_command_usage(command_prefix: &str) -> String {
     let prefix = normalize_prefix(command_prefix);
     format!("Usage: {prefix} artifacts [purge|run <run_id>|show <artifact_id>]")
 }
 
+/// Render chat command usage for supported chat subcommands.
 pub fn chat_command_usage(command_prefix: &str) -> String {
     let prefix = normalize_prefix(command_prefix);
     format!(
@@ -51,16 +56,19 @@ pub fn chat_command_usage(command_prefix: &str) -> String {
     )
 }
 
+/// Render `chat show` usage.
 pub fn chat_show_command_usage(command_prefix: &str) -> String {
     let prefix = normalize_prefix(command_prefix);
     format!("Usage: {prefix} chat show [limit]")
 }
 
+/// Render `chat search` usage with optional filters.
 pub fn chat_search_command_usage(command_prefix: &str) -> String {
     let prefix = normalize_prefix(command_prefix);
     format!("Usage: {prefix} chat search <query> [--role <role>] [--limit <n>]")
 }
 
+/// Render top-level /tau help lines scoped to issue-transport commands.
 pub fn tau_command_usage(command_prefix: &str) -> String {
     let prefix = normalize_prefix(command_prefix);
     [
