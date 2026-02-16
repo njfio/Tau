@@ -54,6 +54,70 @@ pub struct BenchmarkArtifactExportSummary {
     pub bytes_written: usize,
 }
 
+/// Input counters used to evaluate manifest quality.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BenchmarkArtifactManifestQualityInput {
+    /// Number of valid artifact entries in the manifest.
+    pub valid_entries: usize,
+    /// Number of invalid artifact files in the manifest.
+    pub invalid_entries: usize,
+}
+
+/// Policy thresholds for manifest quality decisions.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BenchmarkArtifactManifestQualityPolicy {
+    /// Minimum number of valid entries required to pass.
+    pub min_valid_entries: usize,
+    /// Maximum acceptable invalid ratio in `[0.0, 1.0]`.
+    pub max_invalid_ratio: f64,
+}
+
+impl Default for BenchmarkArtifactManifestQualityPolicy {
+    fn default() -> Self {
+        Self {
+            min_valid_entries: 1,
+            max_invalid_ratio: 0.20,
+        }
+    }
+}
+
+/// Deterministic pass/fail decision for manifest quality.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BenchmarkArtifactManifestQualityDecision {
+    /// Whether the manifest passes quality policy.
+    pub pass: bool,
+    /// Number of valid entries considered.
+    pub valid_entries: usize,
+    /// Number of invalid entries considered.
+    pub invalid_entries: usize,
+    /// Total scanned entries (`valid + invalid`).
+    pub scanned_entries: usize,
+    /// Computed invalid ratio.
+    pub invalid_ratio: f64,
+    /// Policy threshold used for minimum valid entries.
+    pub min_valid_entries: usize,
+    /// Policy threshold used for maximum invalid ratio.
+    pub max_invalid_ratio: f64,
+    /// Deterministic reason codes for failures.
+    pub reason_codes: Vec<String>,
+}
+
+impl BenchmarkArtifactManifestQualityDecision {
+    /// Projects the decision into machine-readable JSON.
+    pub fn to_json_value(&self) -> Value {
+        json!({
+            "pass": self.pass,
+            "valid_entries": self.valid_entries,
+            "invalid_entries": self.invalid_entries,
+            "scanned_entries": self.scanned_entries,
+            "invalid_ratio": self.invalid_ratio,
+            "min_valid_entries": self.min_valid_entries,
+            "max_invalid_ratio": self.max_invalid_ratio,
+            "reason_codes": self.reason_codes,
+        })
+    }
+}
+
 impl BenchmarkEvaluationArtifact {
     /// Initial schema version for benchmark evaluation artifacts.
     pub const SCHEMA_VERSION_V1: u32 = 1;
@@ -191,6 +255,45 @@ pub fn validate_exported_benchmark_artifact(path: impl AsRef<Path>) -> Result<Va
     Ok(value)
 }
 
+/// Evaluates manifest counters against a deterministic quality policy.
+#[instrument(skip(manifest, policy))]
+pub fn evaluate_benchmark_manifest_quality(
+    manifest: &BenchmarkArtifactManifestQualityInput,
+    policy: &BenchmarkArtifactManifestQualityPolicy,
+) -> Result<BenchmarkArtifactManifestQualityDecision> {
+    if !policy.max_invalid_ratio.is_finite() || !(0.0..=1.0).contains(&policy.max_invalid_ratio) {
+        bail!("max_invalid_ratio must be finite and in [0.0, 1.0]");
+    }
+
+    let scanned_entries = manifest.valid_entries + manifest.invalid_entries;
+    let invalid_ratio = if scanned_entries == 0 {
+        0.0
+    } else {
+        manifest.invalid_entries as f64 / scanned_entries as f64
+    };
+
+    let mut reason_codes = Vec::new();
+    if manifest.valid_entries == 0 {
+        reason_codes.push("no_valid_artifacts".to_string());
+    } else if manifest.valid_entries < policy.min_valid_entries {
+        reason_codes.push("below_min_valid_entries".to_string());
+    }
+    if invalid_ratio > policy.max_invalid_ratio {
+        reason_codes.push("invalid_ratio_exceeded".to_string());
+    }
+
+    Ok(BenchmarkArtifactManifestQualityDecision {
+        pass: reason_codes.is_empty(),
+        valid_entries: manifest.valid_entries,
+        invalid_entries: manifest.invalid_entries,
+        scanned_entries,
+        invalid_ratio,
+        min_valid_entries: policy.min_valid_entries,
+        max_invalid_ratio: policy.max_invalid_ratio,
+        reason_codes,
+    })
+}
+
 fn seed_reproducibility_to_json(report: &SeedReproducibilityReport) -> Value {
     json!({
         "sample_size": report.sample_size,
@@ -261,8 +364,10 @@ fn sanitize_file_component(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_benchmark_evaluation_artifact, export_benchmark_evaluation_artifact,
-        validate_exported_benchmark_artifact, BenchmarkEvaluationArtifactInput,
+        build_benchmark_evaluation_artifact, evaluate_benchmark_manifest_quality,
+        export_benchmark_evaluation_artifact, validate_exported_benchmark_artifact,
+        BenchmarkArtifactManifestQualityInput, BenchmarkArtifactManifestQualityPolicy,
+        BenchmarkEvaluationArtifactInput,
     };
     use crate::benchmark_significance::{
         compare_policy_improvement, CheckpointPromotionDecision, SampleSizePoint,
@@ -619,5 +724,107 @@ mod tests {
         assert!(error.to_string().contains("top-level JSON object"));
 
         fs::remove_dir_all(output_dir).expect("cleanup");
+    }
+
+    #[test]
+    fn spec_1974_c01_quality_gate_passes_when_manifest_meets_thresholds() {
+        let decision = evaluate_benchmark_manifest_quality(
+            &BenchmarkArtifactManifestQualityInput {
+                valid_entries: 3,
+                invalid_entries: 0,
+            },
+            &BenchmarkArtifactManifestQualityPolicy {
+                min_valid_entries: 1,
+                max_invalid_ratio: 0.25,
+            },
+        )
+        .expect("decision");
+
+        assert!(decision.pass);
+        assert!(decision.reason_codes.is_empty());
+        assert_eq!(decision.valid_entries, 3);
+        assert_eq!(decision.invalid_entries, 0);
+    }
+
+    #[test]
+    fn spec_1974_c02_quality_gate_fails_with_no_valid_artifacts_reason() {
+        let decision = evaluate_benchmark_manifest_quality(
+            &BenchmarkArtifactManifestQualityInput {
+                valid_entries: 0,
+                invalid_entries: 2,
+            },
+            &BenchmarkArtifactManifestQualityPolicy {
+                min_valid_entries: 1,
+                max_invalid_ratio: 0.80,
+            },
+        )
+        .expect("decision");
+
+        assert!(!decision.pass);
+        assert!(decision
+            .reason_codes
+            .iter()
+            .any(|code| code == "no_valid_artifacts"));
+    }
+
+    #[test]
+    fn spec_1974_c03_quality_gate_fails_when_invalid_ratio_exceeds_policy() {
+        let decision = evaluate_benchmark_manifest_quality(
+            &BenchmarkArtifactManifestQualityInput {
+                valid_entries: 1,
+                invalid_entries: 2,
+            },
+            &BenchmarkArtifactManifestQualityPolicy {
+                min_valid_entries: 1,
+                max_invalid_ratio: 0.5,
+            },
+        )
+        .expect("decision");
+
+        assert!(!decision.pass);
+        assert!(decision
+            .reason_codes
+            .iter()
+            .any(|code| code == "invalid_ratio_exceeded"));
+    }
+
+    #[test]
+    fn spec_1974_c04_quality_gate_decision_json_is_machine_readable() {
+        let decision = evaluate_benchmark_manifest_quality(
+            &BenchmarkArtifactManifestQualityInput {
+                valid_entries: 2,
+                invalid_entries: 1,
+            },
+            &BenchmarkArtifactManifestQualityPolicy {
+                min_valid_entries: 1,
+                max_invalid_ratio: 0.6,
+            },
+        )
+        .expect("decision");
+
+        let payload = decision.to_json_value();
+        assert!(payload["pass"].is_boolean());
+        assert!(payload["valid_entries"].as_u64().is_some());
+        assert!(payload["invalid_entries"].as_u64().is_some());
+        assert!(payload["invalid_ratio"].is_number());
+        assert!(payload["reason_codes"].is_array());
+    }
+
+    #[test]
+    fn regression_quality_gate_handles_zero_scanned_without_division_errors() {
+        let decision = evaluate_benchmark_manifest_quality(
+            &BenchmarkArtifactManifestQualityInput {
+                valid_entries: 0,
+                invalid_entries: 0,
+            },
+            &BenchmarkArtifactManifestQualityPolicy {
+                min_valid_entries: 1,
+                max_invalid_ratio: 0.1,
+            },
+        )
+        .expect("decision");
+
+        assert!(decision.invalid_ratio.is_finite());
+        assert!(!decision.pass);
     }
 }
