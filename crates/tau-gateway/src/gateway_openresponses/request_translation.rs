@@ -6,6 +6,7 @@ use super::{
     OpenResponsesApiError, OpenResponsesPrompt, OpenResponsesRequest, DEFAULT_SESSION_KEY,
 };
 
+/// Translate OpenResponses input payload into normalized Tau prompt text and session key.
 pub(super) fn translate_openresponses_request(
     request: &OpenResponsesRequest,
     max_input_chars: usize,
@@ -259,6 +260,7 @@ fn non_empty_trimmed(raw: Option<&str>) -> Option<&str> {
     raw.map(str::trim).filter(|value| !value.is_empty())
 }
 
+/// Normalize session key to path-safe ASCII token for gateway session files.
 pub(super) fn sanitize_session_key(raw: &str) -> String {
     let mut normalized = String::new();
     for ch in raw.trim().chars() {

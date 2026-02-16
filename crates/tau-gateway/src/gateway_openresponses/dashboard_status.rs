@@ -325,6 +325,7 @@ fn resolve_training_root(gateway_state_dir: &Path) -> PathBuf {
     tau_root.join("training")
 }
 
+/// Collect dashboard snapshot from persisted runtime/training state artifacts.
 pub(super) fn collect_gateway_dashboard_snapshot(
     gateway_state_dir: &Path,
 ) -> GatewayDashboardSnapshot {
@@ -517,6 +518,7 @@ pub(super) fn collect_gateway_dashboard_snapshot(
     }
 }
 
+/// Apply dashboard control action and persist audit/control state updates.
 pub(super) fn apply_gateway_dashboard_action(
     gateway_state_dir: &Path,
     principal: &str,

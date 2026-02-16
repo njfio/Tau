@@ -46,6 +46,7 @@ pub(super) struct OpenAiCompatRequestTranslation {
     pub(super) stream: bool,
 }
 
+/// Translate OpenAI chat completions payload into OpenResponses runtime request envelope.
 pub(super) fn translate_chat_completions_request(
     request: OpenAiChatCompletionsRequest,
 ) -> Result<OpenAiCompatRequestTranslation, OpenResponsesApiError> {
@@ -175,6 +176,7 @@ pub(super) fn translate_completions_request(
     })
 }
 
+/// Build OpenAI chat.completions JSON payload from one OpenResponses result.
 pub(super) fn build_chat_completions_payload(response: &OpenResponsesResponse) -> Value {
     json!({
         "id": chat_completion_id(response.id.as_str()),
