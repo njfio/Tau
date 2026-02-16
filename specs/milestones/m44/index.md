@@ -1,6 +1,6 @@
 # Milestone M44: OpenAI Codex Native Support
 
-Status: Active
+Status: Implemented
 
 ## Objective
 
