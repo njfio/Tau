@@ -451,6 +451,73 @@ impl BenchmarkArtifactGateSummaryReportManifest {
     }
 }
 
+/// Policy thresholds for summary gate report manifest quality decisions.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BenchmarkArtifactGateSummaryReportManifestQualityPolicy {
+    /// Minimum number of passing reports required.
+    pub min_pass_reports: usize,
+    /// Maximum acceptable fail ratio in `[0.0, 1.0]`.
+    pub max_fail_ratio: f64,
+    /// Maximum acceptable invalid-file ratio in `[0.0, 1.0]`.
+    pub max_invalid_file_ratio: f64,
+}
+
+impl Default for BenchmarkArtifactGateSummaryReportManifestQualityPolicy {
+    fn default() -> Self {
+        Self {
+            min_pass_reports: 1,
+            max_fail_ratio: 0.50,
+            max_invalid_file_ratio: 0.20,
+        }
+    }
+}
+
+/// Deterministic quality decision for a summary gate report manifest.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BenchmarkArtifactGateSummaryReportManifestQualityDecision {
+    /// Whether the manifest passes policy thresholds.
+    pub pass: bool,
+    /// Number of passing reports considered.
+    pub pass_reports: usize,
+    /// Number of failing reports considered.
+    pub fail_reports: usize,
+    /// Number of invalid files considered.
+    pub invalid_files: usize,
+    /// Total number of evaluated reports (`pass + fail`).
+    pub total_reports: usize,
+    /// Computed fail ratio.
+    pub fail_ratio: f64,
+    /// Computed invalid-file ratio.
+    pub invalid_file_ratio: f64,
+    /// Policy threshold used for minimum pass reports.
+    pub min_pass_reports: usize,
+    /// Policy threshold used for maximum fail ratio.
+    pub max_fail_ratio: f64,
+    /// Policy threshold used for maximum invalid-file ratio.
+    pub max_invalid_file_ratio: f64,
+    /// Deterministic reason codes for failures.
+    pub reason_codes: Vec<String>,
+}
+
+impl BenchmarkArtifactGateSummaryReportManifestQualityDecision {
+    /// Projects the manifest-quality decision into machine-readable JSON.
+    pub fn to_json_value(&self) -> Value {
+        json!({
+            "pass": self.pass,
+            "pass_reports": self.pass_reports,
+            "fail_reports": self.fail_reports,
+            "invalid_files": self.invalid_files,
+            "total_reports": self.total_reports,
+            "fail_ratio": self.fail_ratio,
+            "invalid_file_ratio": self.invalid_file_ratio,
+            "min_pass_reports": self.min_pass_reports,
+            "max_fail_ratio": self.max_fail_ratio,
+            "max_invalid_file_ratio": self.max_invalid_file_ratio,
+            "reason_codes": self.reason_codes,
+        })
+    }
+}
+
 impl BenchmarkEvaluationArtifact {
     /// Initial schema version for benchmark evaluation artifacts.
     pub const SCHEMA_VERSION_V1: u32 = 1;
@@ -1054,6 +1121,63 @@ pub fn build_benchmark_artifact_gate_summary_report_manifest(
     })
 }
 
+/// Evaluates a summary gate report manifest against a deterministic quality policy.
+#[instrument(skip(manifest, policy))]
+pub fn evaluate_benchmark_gate_summary_report_manifest_quality(
+    manifest: &BenchmarkArtifactGateSummaryReportManifest,
+    policy: &BenchmarkArtifactGateSummaryReportManifestQualityPolicy,
+) -> Result<BenchmarkArtifactGateSummaryReportManifestQualityDecision> {
+    if !policy.max_fail_ratio.is_finite() || !(0.0..=1.0).contains(&policy.max_fail_ratio) {
+        bail!("max_fail_ratio must be finite and in [0.0, 1.0]");
+    }
+    if !policy.max_invalid_file_ratio.is_finite()
+        || !(0.0..=1.0).contains(&policy.max_invalid_file_ratio)
+    {
+        bail!("max_invalid_file_ratio must be finite and in [0.0, 1.0]");
+    }
+
+    let pass_reports = manifest.pass_reports;
+    let fail_reports = manifest.fail_reports;
+    let invalid_files = manifest.invalid_files.len();
+    let total_reports = pass_reports + fail_reports;
+
+    let fail_ratio = if total_reports == 0 {
+        0.0
+    } else {
+        fail_reports as f64 / total_reports as f64
+    };
+    let invalid_file_ratio = if manifest.scanned_json_files == 0 {
+        0.0
+    } else {
+        invalid_files as f64 / manifest.scanned_json_files as f64
+    };
+
+    let mut reason_codes = Vec::new();
+    if pass_reports < policy.min_pass_reports {
+        reason_codes.push("below_min_pass_reports".to_string());
+    }
+    if fail_ratio > policy.max_fail_ratio {
+        reason_codes.push("fail_ratio_exceeded".to_string());
+    }
+    if invalid_file_ratio > policy.max_invalid_file_ratio {
+        reason_codes.push("invalid_file_ratio_exceeded".to_string());
+    }
+
+    Ok(BenchmarkArtifactGateSummaryReportManifestQualityDecision {
+        pass: reason_codes.is_empty(),
+        pass_reports,
+        fail_reports,
+        invalid_files,
+        total_reports,
+        fail_ratio,
+        invalid_file_ratio,
+        min_pass_reports: policy.min_pass_reports,
+        max_fail_ratio: policy.max_fail_ratio,
+        max_invalid_file_ratio: policy.max_invalid_file_ratio,
+        reason_codes,
+    })
+}
+
 fn seed_reproducibility_to_json(report: &SeedReproducibilityReport) -> Value {
     json!({
         "sample_size": report.sample_size,
@@ -1303,14 +1427,20 @@ mod tests {
         build_benchmark_artifact_gate_summary_report,
         build_benchmark_artifact_gate_summary_report_manifest, build_benchmark_artifact_manifest,
         build_benchmark_evaluation_artifact, evaluate_benchmark_gate_report_summary_quality,
+        evaluate_benchmark_gate_summary_report_manifest_quality,
         evaluate_benchmark_manifest_quality, export_benchmark_artifact_gate_report,
         export_benchmark_artifact_gate_summary_report, export_benchmark_evaluation_artifact,
         validate_exported_benchmark_artifact, validate_exported_benchmark_artifact_gate_report,
         validate_exported_benchmark_artifact_gate_summary_report,
         BenchmarkArtifactGateReportSummaryEntry, BenchmarkArtifactGateReportSummaryInvalidFile,
         BenchmarkArtifactGateReportSummaryManifest,
-        BenchmarkArtifactGateReportSummaryQualityPolicy, BenchmarkArtifactManifestQualityInput,
-        BenchmarkArtifactManifestQualityPolicy, BenchmarkEvaluationArtifactInput,
+        BenchmarkArtifactGateReportSummaryQualityPolicy,
+        BenchmarkArtifactGateSummaryReportManifest,
+        BenchmarkArtifactGateSummaryReportManifestEntry,
+        BenchmarkArtifactGateSummaryReportManifestInvalidFile,
+        BenchmarkArtifactGateSummaryReportManifestQualityPolicy,
+        BenchmarkArtifactManifestQualityInput, BenchmarkArtifactManifestQualityPolicy,
+        BenchmarkEvaluationArtifactInput,
     };
     use crate::benchmark_significance::{
         compare_policy_improvement, CheckpointPromotionDecision, SampleSizePoint,
@@ -2611,6 +2741,100 @@ mod tests {
         fs::remove_dir_all(manifest_dir).expect("cleanup");
     }
 
+    #[test]
+    fn spec_1990_c01_manifest_quality_gate_passes_when_thresholds_met() {
+        let manifest = sample_summary_gate_report_manifest(2, 0, 0);
+        let decision = evaluate_benchmark_gate_summary_report_manifest_quality(
+            &manifest,
+            &BenchmarkArtifactGateSummaryReportManifestQualityPolicy {
+                min_pass_reports: 1,
+                max_fail_ratio: 0.5,
+                max_invalid_file_ratio: 0.2,
+            },
+        )
+        .expect("quality decision");
+        assert!(decision.pass);
+        assert_eq!(decision.pass_reports, 2);
+        assert_eq!(decision.fail_reports, 0);
+        assert_eq!(decision.invalid_files, 0);
+        assert!(decision.reason_codes.is_empty());
+    }
+
+    #[test]
+    fn spec_1990_c02_manifest_quality_gate_emits_reason_codes_for_failures() {
+        let manifest = sample_summary_gate_report_manifest(0, 2, 1);
+        let decision = evaluate_benchmark_gate_summary_report_manifest_quality(
+            &manifest,
+            &BenchmarkArtifactGateSummaryReportManifestQualityPolicy {
+                min_pass_reports: 1,
+                max_fail_ratio: 0.2,
+                max_invalid_file_ratio: 0.0,
+            },
+        )
+        .expect("quality decision");
+        assert!(!decision.pass);
+        assert!(decision
+            .reason_codes
+            .iter()
+            .any(|code| code == "below_min_pass_reports"));
+        assert!(decision
+            .reason_codes
+            .iter()
+            .any(|code| code == "fail_ratio_exceeded"));
+        assert!(decision
+            .reason_codes
+            .iter()
+            .any(|code| code == "invalid_file_ratio_exceeded"));
+    }
+
+    #[test]
+    fn spec_1990_c03_manifest_quality_gate_json_is_machine_readable() {
+        let manifest = sample_summary_gate_report_manifest(1, 0, 0);
+        let decision = evaluate_benchmark_gate_summary_report_manifest_quality(
+            &manifest,
+            &BenchmarkArtifactGateSummaryReportManifestQualityPolicy::default(),
+        )
+        .expect("quality decision");
+        let payload = decision.to_json_value();
+        assert!(payload["pass"].is_boolean());
+        assert!(payload["pass_reports"].as_u64().is_some());
+        assert!(payload["fail_reports"].as_u64().is_some());
+        assert!(payload["invalid_file_ratio"].is_number());
+        assert!(payload["reason_codes"].is_array());
+    }
+
+    #[test]
+    fn spec_1990_c04_manifest_quality_gate_rejects_invalid_policy_ratios() {
+        let manifest = sample_summary_gate_report_manifest(1, 0, 0);
+        let error = evaluate_benchmark_gate_summary_report_manifest_quality(
+            &manifest,
+            &BenchmarkArtifactGateSummaryReportManifestQualityPolicy {
+                min_pass_reports: 1,
+                max_fail_ratio: 1.5,
+                max_invalid_file_ratio: 0.0,
+            },
+        )
+        .expect_err("invalid policy should fail");
+        assert!(error.to_string().contains("max_fail_ratio"));
+    }
+
+    #[test]
+    fn regression_manifest_quality_gate_handles_zero_total_reports() {
+        let manifest = sample_summary_gate_report_manifest(0, 0, 0);
+        let decision = evaluate_benchmark_gate_summary_report_manifest_quality(
+            &manifest,
+            &BenchmarkArtifactGateSummaryReportManifestQualityPolicy {
+                min_pass_reports: 1,
+                max_fail_ratio: 0.5,
+                max_invalid_file_ratio: 0.5,
+            },
+        )
+        .expect("quality decision");
+        assert!(decision.fail_ratio.is_finite());
+        assert!(decision.invalid_file_ratio.is_finite());
+        assert!(!decision.pass);
+    }
+
     fn sample_summary_manifest(
         pass_entries: usize,
         fail_entries: usize,
@@ -2656,6 +2880,58 @@ mod tests {
             invalid_files: invalid,
             pass_entries,
             fail_entries,
+        }
+    }
+
+    fn sample_summary_gate_report_manifest(
+        pass_reports: usize,
+        fail_reports: usize,
+        invalid_files: usize,
+    ) -> BenchmarkArtifactGateSummaryReportManifest {
+        let mut entries = Vec::new();
+        for idx in 0..pass_reports {
+            entries.push(BenchmarkArtifactGateSummaryReportManifestEntry {
+                path: PathBuf::from(format!("pass-report-{idx}.json")),
+                pass: true,
+                pass_reports: 1,
+                fail_reports: 0,
+                invalid_files: 0,
+                total_reports: 1,
+                fail_ratio: 0.0,
+                invalid_file_ratio: 0.0,
+                reason_codes: Vec::new(),
+            });
+        }
+        for idx in 0..fail_reports {
+            entries.push(BenchmarkArtifactGateSummaryReportManifestEntry {
+                path: PathBuf::from(format!("fail-report-{idx}.json")),
+                pass: false,
+                pass_reports: 0,
+                fail_reports: 1,
+                invalid_files: 0,
+                total_reports: 1,
+                fail_ratio: 1.0,
+                invalid_file_ratio: 0.0,
+                reason_codes: vec!["below_min_pass_entries".to_string()],
+            });
+        }
+
+        let mut invalid = Vec::new();
+        for idx in 0..invalid_files {
+            invalid.push(BenchmarkArtifactGateSummaryReportManifestInvalidFile {
+                path: PathBuf::from(format!("invalid-report-{idx}.json")),
+                reason: "malformed summary gate report".to_string(),
+            });
+        }
+
+        BenchmarkArtifactGateSummaryReportManifest {
+            schema_version: 1,
+            directory: PathBuf::from("summary-report-manifest"),
+            scanned_json_files: entries.len() + invalid.len(),
+            entries,
+            invalid_files: invalid,
+            pass_reports,
+            fail_reports,
         }
     }
 }
