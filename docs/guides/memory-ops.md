@@ -21,6 +21,7 @@ Persistence backend selection:
 
 - `TAU_MEMORY_BACKEND` (`auto`, `sqlite`, `jsonl`)
 - `auto` prefers SQLite and imports legacy `entries.jsonl` into `entries.sqlite` on first load
+- `postgres` backend is unsupported and falls back to inferred backend with reason `memory_storage_backend_env_invalid_fallback`.
 - invalid backend values fall back to inferred backend with reason
   `memory_storage_backend_env_invalid_fallback`
 
