@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tau.local/schemas/m21-scaffold-merge-remove-decision-matrix.schema.json",
+  "title": "M21 Scaffold Merge/Remove Decision Matrix",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "generated_at",
+    "policy_id",
+    "summary",
+    "candidates"
+  ],
+  "properties": {
+    "schema_version": { "type": "integer", "const": 1 },
+    "generated_at": { "type": "string", "minLength": 1 },
+    "repository_root": { "type": "string" },
+    "schema_path": { "type": "string" },
+    "policy_path": { "type": "string" },
+    "policy_id": { "type": "string", "minLength": 1 },
+    "summary": {
+      "type": "object",
+      "required": [
+        "total_candidates",
+        "keep_count",
+        "merge_count",
+        "remove_count",
+        "unresolved_count"
+      ],
+      "properties": {
+        "total_candidates": { "type": "integer", "minimum": 0 },
+        "keep_count": { "type": "integer", "minimum": 0 },
+        "merge_count": { "type": "integer", "minimum": 0 },
+        "remove_count": { "type": "integer", "minimum": 0 },
+        "unresolved_count": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "weights": {
+      "type": "object",
+      "required": [
+        "operator_value",
+        "runtime_usage",
+        "maintenance_cost",
+        "test_posture"
+      ],
+      "properties": {
+        "operator_value": { "type": "integer", "minimum": 1 },
+        "runtime_usage": { "type": "integer", "minimum": 1 },
+        "maintenance_cost": { "type": "integer", "minimum": 1 },
+        "test_posture": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "thresholds": {
+      "type": "object",
+      "required": [
+        "remove_max_score",
+        "keep_min_score",
+        "keep_max_score",
+        "merge_min_score"
+      ],
+      "properties": {
+        "remove_max_score": { "type": "integer" },
+        "keep_min_score": { "type": "integer" },
+        "keep_max_score": { "type": "integer" },
+        "merge_min_score": { "type": "integer" }
+      },
+      "additionalProperties": false
+    },
+    "candidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "candidate_id",
+          "surface",
+          "owner",
+          "action",
+          "weighted_score",
+          "scores",
+          "rationale"
+        ],
+        "properties": {
+          "candidate_id": { "type": "string", "minLength": 1 },
+          "surface": { "type": "string", "minLength": 1 },
+          "owner": { "type": "string", "minLength": 1 },
+          "action": {
+            "type": "string",
+            "enum": ["keep", "merge", "remove", "unresolved"]
+          },
+          "merge_target": {
+            "anyOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }]
+          },
+          "weighted_score": { "type": "integer" },
+          "scores": {
+            "type": "object",
+            "required": [
+              "operator_value",
+              "runtime_usage",
+              "maintenance_cost",
+              "test_posture"
+            ],
+            "properties": {
+              "operator_value": { "type": "integer", "minimum": 0, "maximum": 5 },
+              "runtime_usage": { "type": "integer", "minimum": 0, "maximum": 5 },
+              "maintenance_cost": { "type": "integer", "minimum": 0, "maximum": 5 },
+              "test_posture": { "type": "integer", "minimum": 0, "maximum": 5 }
+            },
+            "additionalProperties": false
+          },
+          "rationale": { "type": "string", "minLength": 1 }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}
