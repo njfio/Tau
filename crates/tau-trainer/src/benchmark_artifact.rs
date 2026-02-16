@@ -54,6 +54,187 @@ pub struct BenchmarkArtifactExportSummary {
     pub bytes_written: usize,
 }
 
+/// Input section for benchmark gate evidence in the M24 exit bundle.
+#[derive(Debug, Clone, PartialEq)]
+pub struct M24RLGateEvidenceBenchmarkInput {
+    /// Whether benchmark evidence passed gate thresholds.
+    pub pass: bool,
+    /// Number of passing benchmark reports.
+    pub pass_reports: usize,
+    /// Number of failing benchmark reports.
+    pub fail_reports: usize,
+    /// Number of invalid benchmark files.
+    pub invalid_files: usize,
+    /// Deterministic benchmark reason codes.
+    pub reason_codes: Vec<String>,
+    /// Stable reference to benchmark evidence artifact.
+    pub report_ref: String,
+}
+
+/// Input section for safety gate evidence in the M24 exit bundle.
+#[derive(Debug, Clone, PartialEq)]
+pub struct M24RLGateEvidenceSafetyInput {
+    /// Whether safety evidence passed gate thresholds.
+    pub pass: bool,
+    /// Observed safety regression value.
+    pub observed_regression: f64,
+    /// Maximum allowed safety regression threshold.
+    pub max_allowed_regression: f64,
+    /// Deterministic safety reason codes.
+    pub reason_codes: Vec<String>,
+    /// Stable reference to safety evidence artifact.
+    pub report_ref: String,
+}
+
+/// Input section for operations evidence in the M24 exit bundle.
+#[derive(Debug, Clone, PartialEq)]
+pub struct M24RLGateEvidenceOperationsInput {
+    /// Whether pause/resume controls were proven.
+    pub pause_resume_proven: bool,
+    /// Whether rollback controls were proven.
+    pub rollback_proven: bool,
+    /// Whether crash recovery drill was proven.
+    pub recovery_drill_proven: bool,
+    /// Stable reference to operations recovery log.
+    pub recovery_log_ref: String,
+}
+
+/// Input section for runbook evidence in the M24 exit bundle.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct M24RLGateEvidenceRunbooksInput {
+    /// Stable operator runbook reference.
+    pub operator_runbook_ref: String,
+    /// Stable incident playbook reference.
+    pub incident_playbook_ref: String,
+}
+
+/// Input payload consumed by the M24 RL gate evidence bundle builder.
+#[derive(Debug, Clone, PartialEq)]
+pub struct M24RLGateEvidenceBundleInput {
+    /// Bundle generation timestamp in Unix milliseconds.
+    pub generated_at_epoch_ms: u64,
+    /// Benchmark evidence section.
+    pub benchmark: M24RLGateEvidenceBenchmarkInput,
+    /// Safety evidence section.
+    pub safety: M24RLGateEvidenceSafetyInput,
+    /// Operations evidence section.
+    pub operations: M24RLGateEvidenceOperationsInput,
+    /// Runbook evidence section.
+    pub runbooks: M24RLGateEvidenceRunbooksInput,
+}
+
+/// Benchmark section in the persisted M24 RL gate evidence bundle.
+#[derive(Debug, Clone, PartialEq)]
+pub struct M24RLGateEvidenceBenchmark {
+    /// Whether benchmark evidence passed gate thresholds.
+    pub pass: bool,
+    /// Number of passing benchmark reports.
+    pub pass_reports: usize,
+    /// Number of failing benchmark reports.
+    pub fail_reports: usize,
+    /// Number of invalid benchmark files.
+    pub invalid_files: usize,
+    /// Deterministic benchmark reason codes.
+    pub reason_codes: Vec<String>,
+    /// Stable reference to benchmark evidence artifact.
+    pub report_ref: String,
+}
+
+/// Safety section in the persisted M24 RL gate evidence bundle.
+#[derive(Debug, Clone, PartialEq)]
+pub struct M24RLGateEvidenceSafety {
+    /// Whether safety evidence passed gate thresholds.
+    pub pass: bool,
+    /// Observed safety regression value.
+    pub observed_regression: f64,
+    /// Maximum allowed safety regression threshold.
+    pub max_allowed_regression: f64,
+    /// Deterministic safety reason codes.
+    pub reason_codes: Vec<String>,
+    /// Stable reference to safety evidence artifact.
+    pub report_ref: String,
+}
+
+/// Operations section in the persisted M24 RL gate evidence bundle.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct M24RLGateEvidenceOperations {
+    /// Whether all operations controls passed.
+    pub pass: bool,
+    /// Whether pause/resume controls were proven.
+    pub pause_resume_proven: bool,
+    /// Whether rollback controls were proven.
+    pub rollback_proven: bool,
+    /// Whether crash recovery drill was proven.
+    pub recovery_drill_proven: bool,
+    /// Stable reference to operations recovery log.
+    pub recovery_log_ref: String,
+}
+
+/// Runbooks section in the persisted M24 RL gate evidence bundle.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct M24RLGateEvidenceRunbooks {
+    /// Stable operator runbook reference.
+    pub operator_runbook_ref: String,
+    /// Stable incident playbook reference.
+    pub incident_playbook_ref: String,
+}
+
+/// Machine-readable M24 RL gate evidence bundle payload.
+#[derive(Debug, Clone, PartialEq)]
+pub struct M24RLGateEvidenceBundle {
+    /// Bundle schema version for compatibility checks.
+    pub schema_version: u32,
+    /// Bundle generation timestamp in Unix milliseconds.
+    pub generated_at_epoch_ms: u64,
+    /// Benchmark evidence section.
+    pub benchmark: M24RLGateEvidenceBenchmark,
+    /// Safety evidence section.
+    pub safety: M24RLGateEvidenceSafety,
+    /// Operations evidence section.
+    pub operations: M24RLGateEvidenceOperations,
+    /// Runbooks evidence section.
+    pub runbooks: M24RLGateEvidenceRunbooks,
+}
+
+impl M24RLGateEvidenceBundle {
+    /// Stable schema version for the M24 evidence bundle payload.
+    pub const SCHEMA_VERSION_V1: u32 = 1;
+
+    /// Projects the evidence bundle into machine-readable JSON.
+    pub fn to_json_value(&self) -> Value {
+        json!({
+            "schema_version": self.schema_version,
+            "generated_at_epoch_ms": self.generated_at_epoch_ms,
+            "benchmark": {
+                "pass": self.benchmark.pass,
+                "pass_reports": self.benchmark.pass_reports,
+                "fail_reports": self.benchmark.fail_reports,
+                "invalid_files": self.benchmark.invalid_files,
+                "reason_codes": self.benchmark.reason_codes,
+                "report_ref": self.benchmark.report_ref,
+            },
+            "safety": {
+                "pass": self.safety.pass,
+                "observed_regression": self.safety.observed_regression,
+                "max_allowed_regression": self.safety.max_allowed_regression,
+                "reason_codes": self.safety.reason_codes,
+                "report_ref": self.safety.report_ref,
+            },
+            "operations": {
+                "pass": self.operations.pass,
+                "pause_resume_proven": self.operations.pause_resume_proven,
+                "rollback_proven": self.operations.rollback_proven,
+                "recovery_drill_proven": self.operations.recovery_drill_proven,
+                "recovery_log_ref": self.operations.recovery_log_ref,
+            },
+            "runbooks": {
+                "operator_runbook_ref": self.runbooks.operator_runbook_ref,
+                "incident_playbook_ref": self.runbooks.incident_playbook_ref,
+            },
+        })
+    }
+}
+
 /// Valid artifact entry discovered during manifest scans.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BenchmarkArtifactManifestEntry {
@@ -594,6 +775,144 @@ pub fn build_benchmark_evaluation_artifact(
         sample_size_sensitivity,
         checkpoint_promotion,
     })
+}
+
+/// Builds a deterministic M24 RL gate evidence bundle.
+#[instrument(skip(input))]
+pub fn build_m24_rl_gate_evidence_bundle(
+    input: M24RLGateEvidenceBundleInput,
+) -> Result<M24RLGateEvidenceBundle> {
+    let M24RLGateEvidenceBundleInput {
+        generated_at_epoch_ms,
+        benchmark,
+        safety,
+        operations,
+        runbooks,
+    } = input;
+
+    if benchmark.report_ref.trim().is_empty() {
+        bail!("m24 benchmark report_ref must not be blank");
+    }
+    if !safety.observed_regression.is_finite() {
+        bail!("m24 safety observed_regression must be finite");
+    }
+    if !safety.max_allowed_regression.is_finite() || safety.max_allowed_regression < 0.0 {
+        bail!("m24 safety max_allowed_regression must be finite and non-negative");
+    }
+    if safety.report_ref.trim().is_empty() {
+        bail!("m24 safety report_ref must not be blank");
+    }
+    if operations.recovery_log_ref.trim().is_empty() {
+        bail!("m24 operations recovery_log_ref must not be blank");
+    }
+    if runbooks.operator_runbook_ref.trim().is_empty() {
+        bail!("m24 runbooks operator_runbook_ref must not be blank");
+    }
+    if runbooks.incident_playbook_ref.trim().is_empty() {
+        bail!("m24 runbooks incident_playbook_ref must not be blank");
+    }
+
+    let operations_pass = operations.pause_resume_proven
+        && operations.rollback_proven
+        && operations.recovery_drill_proven;
+
+    Ok(M24RLGateEvidenceBundle {
+        schema_version: M24RLGateEvidenceBundle::SCHEMA_VERSION_V1,
+        generated_at_epoch_ms,
+        benchmark: M24RLGateEvidenceBenchmark {
+            pass: benchmark.pass,
+            pass_reports: benchmark.pass_reports,
+            fail_reports: benchmark.fail_reports,
+            invalid_files: benchmark.invalid_files,
+            reason_codes: benchmark.reason_codes,
+            report_ref: benchmark.report_ref,
+        },
+        safety: M24RLGateEvidenceSafety {
+            pass: safety.pass,
+            observed_regression: safety.observed_regression,
+            max_allowed_regression: safety.max_allowed_regression,
+            reason_codes: safety.reason_codes,
+            report_ref: safety.report_ref,
+        },
+        operations: M24RLGateEvidenceOperations {
+            pass: operations_pass,
+            pause_resume_proven: operations.pause_resume_proven,
+            rollback_proven: operations.rollback_proven,
+            recovery_drill_proven: operations.recovery_drill_proven,
+            recovery_log_ref: operations.recovery_log_ref,
+        },
+        runbooks: M24RLGateEvidenceRunbooks {
+            operator_runbook_ref: runbooks.operator_runbook_ref,
+            incident_playbook_ref: runbooks.incident_playbook_ref,
+        },
+    })
+}
+
+/// Persists an M24 RL gate evidence bundle to a deterministic JSON file.
+#[instrument(skip(bundle, output_dir))]
+pub fn export_m24_rl_gate_evidence_bundle(
+    bundle: &M24RLGateEvidenceBundle,
+    output_dir: impl AsRef<Path>,
+) -> Result<BenchmarkArtifactExportSummary> {
+    let output_dir = output_dir.as_ref();
+
+    if output_dir.exists() && !output_dir.is_dir() {
+        bail!(
+            "m24 rl gate evidence export destination is not a directory: {}",
+            output_dir.display()
+        );
+    }
+
+    std::fs::create_dir_all(output_dir).with_context(|| {
+        format!(
+            "failed to create m24 rl gate evidence output directory {}",
+            output_dir.display()
+        )
+    })?;
+
+    let path = output_dir.join(deterministic_m24_rl_gate_evidence_bundle_file_name(bundle));
+    let payload = serde_json::to_vec_pretty(&bundle.to_json_value())?;
+    std::fs::write(&path, &payload)
+        .with_context(|| format!("failed to write m24 rl gate evidence {}", path.display()))?;
+
+    Ok(BenchmarkArtifactExportSummary {
+        path,
+        bytes_written: payload.len(),
+    })
+}
+
+/// Loads and validates an exported M24 RL gate evidence bundle JSON file.
+#[instrument(skip(path))]
+pub fn validate_exported_m24_rl_gate_evidence_bundle(path: impl AsRef<Path>) -> Result<Value> {
+    const REQUIRED_KEYS: [&str; 4] = ["benchmark", "safety", "operations", "runbooks"];
+
+    let path = path.as_ref();
+    let raw = std::fs::read_to_string(path).with_context(|| {
+        format!(
+            "failed to read m24 rl gate evidence bundle {}",
+            path.display()
+        )
+    })?;
+    let value: Value = serde_json::from_str(&raw).with_context(|| {
+        format!(
+            "failed to parse m24 rl gate evidence bundle {}",
+            path.display()
+        )
+    })?;
+
+    let Value::Object(object) = &value else {
+        bail!("m24 rl gate evidence bundle must be a top-level JSON object");
+    };
+
+    for key in REQUIRED_KEYS {
+        match object.get(key) {
+            Some(Value::Object(_)) => {}
+            Some(_) => bail!("m24 rl gate evidence bundle key '{key}' must be an object"),
+            None => bail!("m24 rl gate evidence bundle missing required key: {key}"),
+        }
+    }
+
+    Ok(value)
 }
 
 /// Persists a benchmark artifact to a deterministic JSON file.
@@ -1471,6 +1790,20 @@ fn gate_report_required_string_vec(
     Ok(output)
 }
 
+fn deterministic_m24_rl_gate_evidence_bundle_file_name(bundle: &M24RLGateEvidenceBundle) -> String {
+    let benchmark_pass = if bundle.benchmark.pass { 1 } else { 0 };
+    let safety_pass = if bundle.safety.pass { 1 } else { 0 };
+    let operations_pass = if bundle.operations.pass { 1 } else { 0 };
+    format!(
+        "m24-rl-gate-evidence-bundle-v{}-benchmark-pass-{}-safety-pass-{}-operations-pass-{}-{}.json",
+        bundle.schema_version,
+        benchmark_pass,
+        safety_pass,
+        operations_pass,
+        bundle.generated_at_epoch_ms
+    )
+}
+
 fn deterministic_file_name(artifact: &BenchmarkEvaluationArtifact) -> String {
     format!(
         "benchmark-{}-{}-vs-{}-{}.json",
@@ -1545,24 +1878,26 @@ mod tests {
         build_benchmark_artifact_gate_summary_report_manifest,
         build_benchmark_artifact_gate_summary_report_manifest_report,
         build_benchmark_artifact_manifest, build_benchmark_evaluation_artifact,
-        evaluate_benchmark_gate_report_summary_quality,
+        build_m24_rl_gate_evidence_bundle, evaluate_benchmark_gate_report_summary_quality,
         evaluate_benchmark_gate_summary_report_manifest_quality,
         evaluate_benchmark_manifest_quality, export_benchmark_artifact_gate_report,
         export_benchmark_artifact_gate_summary_report,
         export_benchmark_artifact_gate_summary_report_manifest_report,
-        export_benchmark_evaluation_artifact, validate_exported_benchmark_artifact,
-        validate_exported_benchmark_artifact_gate_report,
+        export_benchmark_evaluation_artifact, export_m24_rl_gate_evidence_bundle,
+        validate_exported_benchmark_artifact, validate_exported_benchmark_artifact_gate_report,
         validate_exported_benchmark_artifact_gate_summary_report,
         validate_exported_benchmark_artifact_gate_summary_report_manifest_report,
-        BenchmarkArtifactGateReportSummaryEntry, BenchmarkArtifactGateReportSummaryInvalidFile,
-        BenchmarkArtifactGateReportSummaryManifest,
+        validate_exported_m24_rl_gate_evidence_bundle, BenchmarkArtifactGateReportSummaryEntry,
+        BenchmarkArtifactGateReportSummaryInvalidFile, BenchmarkArtifactGateReportSummaryManifest,
         BenchmarkArtifactGateReportSummaryQualityPolicy,
         BenchmarkArtifactGateSummaryReportManifest,
         BenchmarkArtifactGateSummaryReportManifestEntry,
         BenchmarkArtifactGateSummaryReportManifestInvalidFile,
         BenchmarkArtifactGateSummaryReportManifestQualityPolicy,
         BenchmarkArtifactManifestQualityInput, BenchmarkArtifactManifestQualityPolicy,
-        BenchmarkEvaluationArtifactInput,
+        BenchmarkEvaluationArtifactInput, M24RLGateEvidenceBenchmarkInput,
+        M24RLGateEvidenceBundleInput, M24RLGateEvidenceOperationsInput,
+        M24RLGateEvidenceRunbooksInput, M24RLGateEvidenceSafetyInput,
     };
     use crate::benchmark_significance::{
         compare_policy_improvement, CheckpointPromotionDecision, SampleSizePoint,
@@ -3162,6 +3497,132 @@ mod tests {
         assert!(error.to_string().contains("missing required key"));
 
         fs::remove_dir_all(output_dir).expect("cleanup");
+    }
+
+    #[test]
+    fn spec_1996_c01_bundle_builder_preserves_deterministic_sections_and_pass_signals() {
+        let input = sample_m24_bundle_input();
+        let bundle = build_m24_rl_gate_evidence_bundle(input).expect("build bundle");
+
+        assert_eq!(bundle.schema_version, 1);
+        assert!(bundle.benchmark.pass);
+        assert!(bundle.safety.pass);
+        assert!(bundle.operations.pass);
+        assert_eq!(
+            bundle.runbooks.operator_runbook_ref,
+            "docs/guides/training-ops.md"
+        );
+
+        let payload = bundle.to_json_value();
+        assert!(payload["benchmark"].is_object());
+        assert!(payload["safety"].is_object());
+        assert!(payload["operations"].is_object());
+        assert!(payload["runbooks"].is_object());
+    }
+
+    #[test]
+    fn spec_1996_c02_bundle_export_writes_deterministic_file_and_summary() {
+        let output_dir = temp_output_dir("m24-rl-gate-evidence-export-c02");
+        let bundle =
+            build_m24_rl_gate_evidence_bundle(sample_m24_bundle_input()).expect("build bundle");
+        let export = export_m24_rl_gate_evidence_bundle(&bundle, &output_dir).expect("export");
+
+        assert!(export.path.exists());
+        assert!(export.path.ends_with(
+            "m24-rl-gate-evidence-bundle-v1-benchmark-pass-1-safety-pass-1-operations-pass-1-1706000010000.json"
+        ));
+        assert!(export.bytes_written > 0);
+
+        fs::remove_dir_all(output_dir).expect("cleanup");
+    }
+
+    #[test]
+    fn spec_1996_c03_bundle_validator_accepts_exported_payload() {
+        let output_dir = temp_output_dir("m24-rl-gate-evidence-export-c03");
+        let bundle =
+            build_m24_rl_gate_evidence_bundle(sample_m24_bundle_input()).expect("build bundle");
+        let export = export_m24_rl_gate_evidence_bundle(&bundle, &output_dir).expect("export");
+        let value = validate_exported_m24_rl_gate_evidence_bundle(&export.path)
+            .expect("validator should accept export");
+
+        assert!(value["benchmark"].is_object());
+        assert!(value["safety"].is_object());
+        assert!(value["operations"].is_object());
+        assert!(value["runbooks"].is_object());
+
+        fs::remove_dir_all(output_dir).expect("cleanup");
+    }
+
+    #[test]
+    fn spec_1996_c04_bundle_validator_rejects_malformed_or_non_object_payloads() {
+        let output_dir = temp_output_dir("m24-rl-gate-evidence-export-c04");
+        fs::create_dir_all(&output_dir).expect("create output dir");
+
+        let malformed_path = output_dir.join("malformed.json");
+        fs::write(&malformed_path, "{ malformed").expect("write malformed payload");
+        let malformed_error = validate_exported_m24_rl_gate_evidence_bundle(&malformed_path)
+            .expect_err("malformed payload should fail");
+        assert!(malformed_error.to_string().contains("failed to parse"));
+
+        let non_object_path = output_dir.join("non-object.json");
+        fs::write(&non_object_path, "[]").expect("write non-object payload");
+        let non_object_error = validate_exported_m24_rl_gate_evidence_bundle(&non_object_path)
+            .expect_err("non-object payload should fail");
+        assert!(non_object_error
+            .to_string()
+            .contains("top-level JSON object"));
+
+        fs::remove_dir_all(output_dir).expect("cleanup");
+    }
+
+    #[test]
+    fn regression_m24_bundle_validator_rejects_missing_sections() {
+        let output_dir = temp_output_dir("m24-rl-gate-evidence-export-regression");
+        fs::create_dir_all(&output_dir).expect("create output dir");
+
+        let payload_path = output_dir.join("missing-sections.json");
+        fs::write(
+            &payload_path,
+            "{ \"benchmark\": {}, \"safety\": {}, \"operations\": {} }",
+        )
+        .expect("write payload");
+        let error = validate_exported_m24_rl_gate_evidence_bundle(&payload_path)
+            .expect_err("missing runbooks section should fail");
+        assert!(error.to_string().contains("missing required key"));
+
+        fs::remove_dir_all(output_dir).expect("cleanup");
+    }
+
+    fn sample_m24_bundle_input() -> M24RLGateEvidenceBundleInput {
+        M24RLGateEvidenceBundleInput {
+            generated_at_epoch_ms: 1_706_000_010_000,
+            benchmark: M24RLGateEvidenceBenchmarkInput {
+                pass: true,
+                pass_reports: 4,
+                fail_reports: 0,
+                invalid_files: 0,
+                reason_codes: Vec::new(),
+                report_ref: "artifacts/benchmark-artifact-gate-summary-manifest-report.json"
+                    .to_string(),
+            },
+            safety: M24RLGateEvidenceSafetyInput {
+                pass: true,
+                observed_regression: 0.01,
+                max_allowed_regression: 0.05,
+                reason_codes: Vec::new(),
+                report_ref: "artifacts/safety-regression-report.json".to_string(),
+            },
+            operations: M24RLGateEvidenceOperationsInput {
+                pause_resume_proven: true,
+                rollback_proven: true,
+                recovery_drill_proven: true,
+                recovery_log_ref: "artifacts/recovery-drill.log".to_string(),
+            },
+            runbooks: M24RLGateEvidenceRunbooksInput {
+                operator_runbook_ref: "docs/guides/training-ops.md".to_string(),
+                incident_playbook_ref: "docs/guides/incident-playbook.md".to_string(),
+            },
+        }
     }
 
     fn sample_summary_manifest(
