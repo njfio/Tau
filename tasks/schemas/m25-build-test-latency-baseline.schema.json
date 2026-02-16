@@ -1,0 +1,134 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tau.njf.io/schemas/m25-build-test-latency-baseline.schema.json",
+  "title": "M25 Build/Test Latency Baseline",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "generated_at",
+    "repository",
+    "source_mode",
+    "environment",
+    "summary",
+    "commands",
+    "hotspots"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "repository": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_mode": {
+      "type": "string",
+      "enum": ["fixture", "live"]
+    },
+    "environment": {
+      "$ref": "#/$defs/environment"
+    },
+    "summary": {
+      "$ref": "#/$defs/summary"
+    },
+    "commands": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/commandRow"
+      }
+    },
+    "hotspots": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/hotspot"
+      }
+    }
+  },
+  "$defs": {
+    "environment": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "os",
+        "arch",
+        "shell",
+        "rustc_version",
+        "cargo_version"
+      ],
+      "properties": {
+        "os": { "type": "string", "minLength": 1 },
+        "arch": { "type": "string", "minLength": 1 },
+        "shell": { "type": "string", "minLength": 1 },
+        "python_version": { "type": "string", "minLength": 1 },
+        "rustc_version": { "type": "string", "minLength": 1 },
+        "cargo_version": { "type": "string", "minLength": 1 },
+        "cpu_count": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "command_count",
+        "run_count",
+        "failing_runs",
+        "slowest_command_id"
+      ],
+      "properties": {
+        "command_count": { "type": "integer", "minimum": 0 },
+        "run_count": { "type": "integer", "minimum": 0 },
+        "failing_runs": { "type": "integer", "minimum": 0 },
+        "slowest_command_id": { "type": "string", "minLength": 1 }
+      }
+    },
+    "stats": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["count", "avg_ms", "p50_ms", "min_ms", "max_ms"],
+      "properties": {
+        "count": { "type": "integer", "minimum": 0 },
+        "avg_ms": { "type": "integer", "minimum": 0 },
+        "p50_ms": { "type": "integer", "minimum": 0 },
+        "min_ms": { "type": "integer", "minimum": 0 },
+        "max_ms": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "commandRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "command",
+        "run_count",
+        "stats",
+        "nonzero_exit_count",
+        "invocation"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "command": { "type": "string", "minLength": 1 },
+        "run_count": { "type": "integer", "minimum": 0 },
+        "stats": { "$ref": "#/$defs/stats" },
+        "nonzero_exit_count": { "type": "integer", "minimum": 0 },
+        "invocation": { "type": "string", "minLength": 1 }
+      }
+    },
+    "hotspot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rank", "id", "command", "avg_ms"],
+      "properties": {
+        "rank": { "type": "integer", "minimum": 1 },
+        "id": { "type": "string", "minLength": 1 },
+        "command": { "type": "string", "minLength": 1 },
+        "avg_ms": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

@@ -1,6 +1,6 @@
 # Plan #2068
 
-Status: Reviewed
+Status: Implemented
 Spec: specs/2068/spec.md
 
 ## Approach
