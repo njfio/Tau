@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-02-16T14:20:00Z",
+  "repository": "njfio/Tau",
+  "source_mode": "live",
+  "baseline_report_path": "tasks/reports/m25-build-test-latency-baseline.json",
+  "baseline_median_ms": 1006,
+  "fast_lane_median_ms": 995,
+  "improvement_ms": 11,
+  "improvement_percent": 1.09,
+  "status": "improved",
+  "wrappers": [
+    {
+      "id": "tools-check",
+      "command": "cargo check -p tau-tools --lib --target-dir target-fast",
+      "use_case": "Compile tau-tools quickly for tool-layer edits",
+      "duration_ms": 1003,
+      "exit_code": 0
+    },
+    {
+      "id": "trainer-check",
+      "command": "cargo check -p tau-trainer --lib --target-dir target-fast",
+      "use_case": "Compile tau-trainer library surfaces for trainer/runtime edits",
+      "duration_ms": 923,
+      "exit_code": 0
+    },
+    {
+      "id": "trainer-smoke",
+      "command": "cargo test -p tau-trainer --target-dir target-fast benchmark_artifact::tests::regression_summary_gate_report_manifest_ignores_non_json_files -- --nocapture",
+      "use_case": "Run targeted trainer regression smoke check",
+      "duration_ms": 995,
+      "exit_code": 0
+    }
+  ]
+}
