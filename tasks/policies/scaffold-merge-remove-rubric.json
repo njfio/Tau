@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "policy_id": "scaffold-merge-remove-rubric",
+  "score_scale": {
+    "min": 0,
+    "max": 5
+  },
+  "weights": {
+    "operator_value": 3,
+    "runtime_usage": 3,
+    "maintenance_cost": 2,
+    "test_posture": 2
+  },
+  "thresholds": {
+    "remove_max_score": 18,
+    "keep_min_score": 19,
+    "keep_max_score": 35,
+    "merge_min_score": 36
+  },
+  "unresolved_allowed": false,
+  "criteria": [
+    {
+      "id": "operator_value",
+      "description": "Operator-facing value and capability impact if retained or merged.",
+      "direction": "higher_better"
+    },
+    {
+      "id": "runtime_usage",
+      "description": "Observed runtime usage in retained execution paths and demos.",
+      "direction": "higher_better"
+    },
+    {
+      "id": "maintenance_cost",
+      "description": "Expected maintenance burden (higher score means higher cost).",
+      "direction": "lower_better"
+    },
+    {
+      "id": "test_posture",
+      "description": "Current depth and quality of automated test coverage for the surface.",
+      "direction": "higher_better"
+    }
+  ]
+}
