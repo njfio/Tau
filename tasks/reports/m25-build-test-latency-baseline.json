@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-02-16T12:30:00Z",
+  "generated_at": "2026-02-16T13:10:00Z",
   "repository": "njfio/Tau",
   "source_mode": "live",
   "environment": {
@@ -25,10 +25,10 @@
       "run_count": 1,
       "stats": {
         "count": 1,
-        "avg_ms": 3175,
-        "p50_ms": 3175,
-        "min_ms": 3175,
-        "max_ms": 3175
+        "avg_ms": 1006,
+        "p50_ms": 1006,
+        "min_ms": 1006,
+        "max_ms": 1006
       },
       "nonzero_exit_count": 0,
       "invocation": "/bin/bash -lc \"cargo check -p tau-tools --lib --target-dir target-fast\""
@@ -39,10 +39,10 @@
       "run_count": 1,
       "stats": {
         "count": 1,
-        "avg_ms": 4937,
-        "p50_ms": 4937,
-        "min_ms": 4937,
-        "max_ms": 4937
+        "avg_ms": 1073,
+        "p50_ms": 1073,
+        "min_ms": 1073,
+        "max_ms": 1073
       },
       "nonzero_exit_count": 0,
       "invocation": "/bin/bash -lc \"cargo test -p tau-github-issues-runtime --target-dir target-fast --no-run\""
@@ -53,10 +53,10 @@
       "run_count": 1,
       "stats": {
         "count": 1,
-        "avg_ms": 2252,
-        "p50_ms": 2252,
-        "min_ms": 2252,
-        "max_ms": 2252
+        "avg_ms": 933,
+        "p50_ms": 933,
+        "min_ms": 933,
+        "max_ms": 933
       },
       "nonzero_exit_count": 0,
       "invocation": "/bin/bash -lc \"cargo test -p tau-trainer --target-dir target-fast benchmark_artifact::tests::regression_summary_gate_report_manifest_ignores_non_json_files -- --nocapture\""
@@ -66,19 +66,19 @@
     {
       "id": "test-runtime-no-run",
       "command": "cargo test -p tau-github-issues-runtime --target-dir target-fast --no-run",
-      "avg_ms": 4937,
+      "avg_ms": 1073,
       "rank": 1
     },
     {
       "id": "check-tools",
       "command": "cargo check -p tau-tools --lib --target-dir target-fast",
-      "avg_ms": 3175,
+      "avg_ms": 1006,
       "rank": 2
     },
     {
       "id": "test-trainer-regression",
       "command": "cargo test -p tau-trainer --target-dir target-fast benchmark_artifact::tests::regression_summary_gate_report_manifest_ignores_non_json_files -- --nocapture",
-      "avg_ms": 2252,
+      "avg_ms": 933,
       "rank": 3
     }
   ]
