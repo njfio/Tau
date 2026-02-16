@@ -26,6 +26,7 @@ const EXTENSION_TOOL_HOOK_PAYLOAD_SCHEMA_VERSION: u32 = 1;
 /// Public struct `LocalRuntimeAgentSettings` used across Tau components.
 pub struct LocalRuntimeAgentSettings {
     pub max_turns: usize,
+    pub max_tokens: Option<u32>,
     pub max_parallel_tool_calls: usize,
     pub max_context_messages: Option<usize>,
     pub request_max_retries: usize,
@@ -59,7 +60,7 @@ pub fn build_local_runtime_agent(
             system_prompt: system_prompt.to_string(),
             max_turns: settings.max_turns,
             temperature: Some(0.0),
-            max_tokens: None,
+            max_tokens: settings.max_tokens,
             max_parallel_tool_calls: settings.max_parallel_tool_calls,
             max_context_messages: settings.max_context_messages,
             request_max_retries: settings.request_max_retries,

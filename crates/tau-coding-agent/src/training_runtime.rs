@@ -1131,6 +1131,7 @@ fn build_executor(
     let safety_reward_policy = resolve_safety_reward_policy(config.safety_reward.as_ref())?;
     let settings = LocalRuntimeAgentSettings {
         max_turns: cli.max_turns,
+        max_tokens: model_catalog_entry.and_then(|entry| entry.max_output_tokens),
         max_parallel_tool_calls: cli.agent_max_parallel_tool_calls,
         max_context_messages: cli.agent_max_context_messages,
         request_max_retries: cli.agent_request_max_retries,
