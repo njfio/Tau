@@ -8,6 +8,7 @@ use axum::Json;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
+/// Error payload mapped to OpenAI-compatible HTTP response envelope.
 #[derive(Debug)]
 pub(super) struct OpenResponsesApiError {
     pub(super) status: StatusCode,
@@ -82,6 +83,7 @@ impl IntoResponse for OpenResponsesApiError {
     }
 }
 
+/// Gateway request body for OpenResponses-compatible chat invocation.
 #[derive(Debug, Deserialize)]
 pub(super) struct OpenResponsesRequest {
     pub(super) model: Option<String>,
@@ -183,6 +185,7 @@ pub(super) struct OpenResponsesUsage {
     pub(super) total_tokens: u64,
 }
 
+/// Normalized OpenResponses response payload returned by gateway runtime.
 #[derive(Debug, Serialize)]
 pub(super) struct OpenResponsesResponse {
     pub(super) id: String,
@@ -201,6 +204,7 @@ pub(super) struct OpenResponsesExecutionResult {
     pub(super) response: OpenResponsesResponse,
 }
 
+/// Server-sent-event frame variants emitted by streaming endpoints.
 #[derive(Debug)]
 pub(super) enum SseFrame {
     Json { event: &'static str, payload: Value },

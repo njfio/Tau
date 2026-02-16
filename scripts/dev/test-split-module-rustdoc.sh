@@ -32,6 +32,10 @@ startup_daemon_preflight_file="crates/tau-onboarding/src/startup_daemon_prefligh
 startup_resolution_file="crates/tau-onboarding/src/startup_resolution.rs"
 tool_policy_config_file="crates/tau-tools/src/tool_policy_config.rs"
 tools_runtime_helpers_file="crates/tau-tools/src/tools/runtime_helpers.rs"
+gateway_openai_compat_file="crates/tau-gateway/src/gateway_openresponses/openai_compat.rs"
+gateway_request_translation_file="crates/tau-gateway/src/gateway_openresponses/request_translation.rs"
+gateway_types_file="crates/tau-gateway/src/gateway_openresponses/types.rs"
+gateway_dashboard_status_file="crates/tau-gateway/src/gateway_openresponses/dashboard_status.rs"
 
 assert_contains() {
   local haystack="$1"
@@ -71,7 +75,11 @@ for file in \
   "${startup_daemon_preflight_file}" \
   "${startup_resolution_file}" \
   "${tool_policy_config_file}" \
-  "${tools_runtime_helpers_file}"; do
+  "${tools_runtime_helpers_file}" \
+  "${gateway_openai_compat_file}" \
+  "${gateway_request_translation_file}" \
+  "${gateway_types_file}" \
+  "${gateway_dashboard_status_file}"; do
   if [[ ! -f "${file}" ]]; then
     echo "assertion failed (missing file): ${file}" >&2
     exit 1
@@ -106,6 +114,10 @@ startup_daemon_preflight_contents="$(cat "${startup_daemon_preflight_file}")"
 startup_resolution_contents="$(cat "${startup_resolution_file}")"
 tool_policy_config_contents="$(cat "${tool_policy_config_file}")"
 tools_runtime_helpers_contents="$(cat "${tools_runtime_helpers_file}")"
+gateway_openai_compat_contents="$(cat "${gateway_openai_compat_file}")"
+gateway_request_translation_contents="$(cat "${gateway_request_translation_file}")"
+gateway_types_contents="$(cat "${gateway_types_file}")"
+gateway_dashboard_status_contents="$(cat "${gateway_dashboard_status_file}")"
 
 assert_contains "${issue_runtime_contents}" "/// Normalize a repository-relative channel artifact path for persisted pointers." "issue runtime normalize doc"
 assert_contains "${issue_runtime_contents}" "/// Render a stable artifact pointer line for issue comments and logs." "issue runtime pointer doc"
@@ -160,5 +172,15 @@ assert_contains "${tool_policy_config_contents}" "/// Parse --os-sandbox-command
 assert_contains "${tool_policy_config_contents}" "/// Convert tool policy into JSON payload for diagnostics and audit output." "tool policy config json doc"
 assert_contains "${tools_runtime_helpers_contents}" "/// Return stable string label for OS sandbox policy mode." "tools runtime helpers policy mode name doc"
 assert_contains "${tools_runtime_helpers_contents}" "/// Return stable string label for OS sandbox docker network mode." "tools runtime helpers docker network name doc"
+assert_contains "${gateway_openai_compat_contents}" "/// Translate OpenAI chat completions payload into OpenResponses runtime request envelope." "gateway openai compat translate chat doc"
+assert_contains "${gateway_openai_compat_contents}" "/// Build OpenAI chat.completions JSON payload from one OpenResponses result." "gateway openai compat build chat payload doc"
+assert_contains "${gateway_request_translation_contents}" "/// Translate OpenResponses input payload into normalized Tau prompt text and session key." "gateway request translation translate doc"
+assert_contains "${gateway_request_translation_contents}" "/// Normalize session key to path-safe ASCII token for gateway session files." "gateway request translation sanitize session key doc"
+assert_contains "${gateway_types_contents}" "/// Error payload mapped to OpenAI-compatible HTTP response envelope." "gateway types api error doc"
+assert_contains "${gateway_types_contents}" "/// Gateway request body for OpenResponses-compatible chat invocation." "gateway types request doc"
+assert_contains "${gateway_types_contents}" "/// Normalized OpenResponses response payload returned by gateway runtime." "gateway types response doc"
+assert_contains "${gateway_types_contents}" "/// Server-sent-event frame variants emitted by streaming endpoints." "gateway types sse frame doc"
+assert_contains "${gateway_dashboard_status_contents}" "/// Collect dashboard snapshot from persisted runtime/training state artifacts." "gateway dashboard snapshot doc"
+assert_contains "${gateway_dashboard_status_contents}" "/// Apply dashboard control action and persist audit/control state updates." "gateway dashboard action doc"
 
 echo "split-module-rustdoc tests passed"
