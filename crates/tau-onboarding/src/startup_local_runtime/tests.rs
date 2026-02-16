@@ -131,6 +131,7 @@ fn unit_build_local_runtime_agent_preserves_system_prompt_message() {
         "system prompt",
         LocalRuntimeAgentSettings {
             max_turns: 4,
+            max_tokens: None,
             max_parallel_tool_calls: 4,
             max_context_messages: Some(256),
             request_max_retries: 2,
@@ -167,6 +168,7 @@ fn unit_build_local_runtime_agent_applies_prompt_sanitizer_settings() {
         "system prompt",
         LocalRuntimeAgentSettings {
             max_turns: 4,
+            max_tokens: None,
             max_parallel_tool_calls: 4,
             max_context_messages: Some(256),
             request_max_retries: 2,
@@ -218,6 +220,7 @@ async fn functional_build_local_runtime_agent_applies_cost_budget_and_pricing_se
         "system prompt",
         LocalRuntimeAgentSettings {
             max_turns: 4,
+            max_tokens: None,
             max_parallel_tool_calls: 4,
             max_context_messages: Some(256),
             request_max_retries: 2,
@@ -263,6 +266,7 @@ async fn functional_build_local_runtime_agent_registers_builtin_tools_with_model
         "system prompt",
         LocalRuntimeAgentSettings {
             max_turns: 4,
+            max_tokens: Some(777),
             max_parallel_tool_calls: 4,
             max_context_messages: Some(256),
             request_max_retries: 2,
@@ -290,6 +294,7 @@ async fn functional_build_local_runtime_agent_registers_builtin_tools_with_model
         .clone()
         .expect("captured request");
     assert_eq!(request.model, "gpt-4o-mini");
+    assert_eq!(request.max_tokens, Some(777));
     assert!(
         request.tools.iter().any(|tool| tool.name == "read"),
         "expected built-in read tool to be registered"
@@ -308,6 +313,7 @@ async fn integration_build_local_runtime_agent_respects_max_turns_limit() {
         "system prompt",
         LocalRuntimeAgentSettings {
             max_turns: 0,
+            max_tokens: None,
             max_parallel_tool_calls: 4,
             max_context_messages: Some(256),
             request_max_retries: 2,
@@ -347,6 +353,7 @@ fn regression_build_local_runtime_agent_skips_empty_system_prompt_message() {
         "   ",
         LocalRuntimeAgentSettings {
             max_turns: 4,
+            max_tokens: None,
             max_parallel_tool_calls: 4,
             max_context_messages: Some(256),
             request_max_retries: 2,

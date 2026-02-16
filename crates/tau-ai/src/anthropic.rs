@@ -195,7 +195,9 @@ fn build_messages_request_body(request: &ChatRequest) -> Value {
     let mut body = json!({
         "model": request.model,
         "messages": messages,
-        "max_tokens": request.max_tokens.unwrap_or(1024),
+        "max_tokens": request
+            .max_tokens
+            .unwrap_or_else(|| default_max_tokens_for_model(&request.model)),
     });
 
     if request.json_mode {
@@ -227,6 +229,19 @@ fn build_messages_request_body(request: &ChatRequest) -> Value {
     }
 
     body
+}
+
+fn default_max_tokens_for_model(model: &str) -> u32 {
+    match model {
+        "claude-opus-4-6" => 128_000,
+        "claude-opus-4-5-20251101"
+        | "claude-haiku-4-5-20251001"
+        | "claude-sonnet-4-5-20250929"
+        | "claude-sonnet-4-20250514"
+        | "claude-3-7-sonnet-20250219" => 64_000,
+        "claude-opus-4-1-20250805" | "claude-opus-4-20250514" => 32_000,
+        _ => 4_096,
+    }
 }
 
 fn to_anthropic_tool_choice(tool_choice: &ToolChoice) -> Option<Value> {
@@ -869,6 +884,49 @@ mod tests {
 
         let body = build_messages_request_body(&request);
         assert!(body.get("tool_choice").is_none());
+    }
+
+    #[test]
+    fn regression_anthropic_default_max_tokens_uses_model_specific_limit() {
+        let request = ChatRequest {
+            model: "claude-opus-4-6".to_string(),
+            messages: vec![Message::user("generate a multi-file project with tools")],
+            tools: vec![ToolDefinition {
+                name: "write".to_string(),
+                description: "Write content to a file".to_string(),
+                parameters: json!({
+                    "type": "object",
+                    "required": ["path", "content"],
+                    "properties": {
+                        "path": { "type": "string" },
+                        "content": { "type": "string" }
+                    }
+                }),
+            }],
+            tool_choice: Some(ToolChoice::Auto),
+            json_mode: false,
+            max_tokens: None,
+            temperature: None,
+        };
+
+        let body = build_messages_request_body(&request);
+        assert_eq!(body["max_tokens"], 128_000);
+    }
+
+    #[test]
+    fn regression_anthropic_default_max_tokens_falls_back_for_unknown_models() {
+        let request = ChatRequest {
+            model: "claude-unknown-model".to_string(),
+            messages: vec![Message::user("hello")],
+            tools: Vec::new(),
+            tool_choice: None,
+            json_mode: false,
+            max_tokens: None,
+            temperature: None,
+        };
+
+        let body = build_messages_request_body(&request);
+        assert_eq!(body["max_tokens"], 4_096);
     }
 
     #[test]
