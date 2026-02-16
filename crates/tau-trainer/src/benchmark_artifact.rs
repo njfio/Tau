@@ -235,6 +235,37 @@ impl M24RLGateEvidenceBundle {
     }
 }
 
+/// Deterministic M24 exit gate decision derived from bundle evidence.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct M24RLGateExitDecision {
+    /// Whether the M24 exit gate passes.
+    pub pass: bool,
+    /// Whether benchmark evidence passes gate checks.
+    pub benchmark_pass: bool,
+    /// Whether safety evidence passes gate checks.
+    pub safety_pass: bool,
+    /// Whether operations evidence passes gate checks.
+    pub operations_pass: bool,
+    /// Whether both required runbook references are present.
+    pub runbooks_present: bool,
+    /// Deterministic reason codes when the gate fails.
+    pub reason_codes: Vec<String>,
+}
+
+impl M24RLGateExitDecision {
+    /// Projects the decision into machine-readable JSON.
+    pub fn to_json_value(&self) -> Value {
+        json!({
+            "pass": self.pass,
+            "benchmark_pass": self.benchmark_pass,
+            "safety_pass": self.safety_pass,
+            "operations_pass": self.operations_pass,
+            "runbooks_present": self.runbooks_present,
+            "reason_codes": self.reason_codes,
+        })
+    }
+}
+
 /// Valid artifact entry discovered during manifest scans.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BenchmarkArtifactManifestEntry {
@@ -913,6 +944,40 @@ pub fn validate_exported_m24_rl_gate_evidence_bundle(path: impl AsRef<Path>) -> 
     }
 
     Ok(value)
+}
+
+/// Evaluates M24 exit readiness from a deterministic evidence bundle.
+#[instrument(skip(bundle))]
+pub fn evaluate_m24_rl_gate_exit(bundle: &M24RLGateEvidenceBundle) -> M24RLGateExitDecision {
+    let mut reason_codes = Vec::new();
+
+    if !bundle.benchmark.pass {
+        reason_codes.push("benchmark_failed".to_string());
+    }
+    if !bundle.safety.pass {
+        reason_codes.push("safety_failed".to_string());
+    }
+    if !bundle.operations.pass {
+        reason_codes.push("operations_failed".to_string());
+    }
+
+    let operator_runbook_present = !bundle.runbooks.operator_runbook_ref.trim().is_empty();
+    let incident_playbook_present = !bundle.runbooks.incident_playbook_ref.trim().is_empty();
+    if !operator_runbook_present {
+        reason_codes.push("operator_runbook_missing".to_string());
+    }
+    if !incident_playbook_present {
+        reason_codes.push("incident_playbook_missing".to_string());
+    }
+
+    M24RLGateExitDecision {
+        pass: reason_codes.is_empty(),
+        benchmark_pass: bundle.benchmark.pass,
+        safety_pass: bundle.safety.pass,
+        operations_pass: bundle.operations.pass,
+        runbooks_present: operator_runbook_present && incident_playbook_present,
+        reason_codes,
+    }
 }
 
 /// Persists a benchmark artifact to a deterministic JSON file.
@@ -1880,8 +1945,8 @@ mod tests {
         build_benchmark_artifact_manifest, build_benchmark_evaluation_artifact,
         build_m24_rl_gate_evidence_bundle, evaluate_benchmark_gate_report_summary_quality,
         evaluate_benchmark_gate_summary_report_manifest_quality,
-        evaluate_benchmark_manifest_quality, export_benchmark_artifact_gate_report,
-        export_benchmark_artifact_gate_summary_report,
+        evaluate_benchmark_manifest_quality, evaluate_m24_rl_gate_exit,
+        export_benchmark_artifact_gate_report, export_benchmark_artifact_gate_summary_report,
         export_benchmark_artifact_gate_summary_report_manifest_report,
         export_benchmark_evaluation_artifact, export_m24_rl_gate_evidence_bundle,
         validate_exported_benchmark_artifact, validate_exported_benchmark_artifact_gate_report,
@@ -3591,6 +3656,82 @@ mod tests {
         assert!(error.to_string().contains("missing required key"));
 
         fs::remove_dir_all(output_dir).expect("cleanup");
+    }
+
+    #[test]
+    fn spec_1998_c01_exit_gate_passes_when_bundle_sections_are_green() {
+        let bundle =
+            build_m24_rl_gate_evidence_bundle(sample_m24_bundle_input()).expect("build bundle");
+        let decision = evaluate_m24_rl_gate_exit(&bundle);
+
+        assert!(decision.pass);
+        assert!(decision.reason_codes.is_empty());
+    }
+
+    #[test]
+    fn spec_1998_c02_exit_gate_emits_reason_codes_for_failing_sections() {
+        let mut input = sample_m24_bundle_input();
+        input.benchmark.pass = false;
+        input.safety.pass = false;
+        input.operations.rollback_proven = false;
+        let bundle = build_m24_rl_gate_evidence_bundle(input).expect("build bundle");
+
+        let decision = evaluate_m24_rl_gate_exit(&bundle);
+        assert!(!decision.pass);
+        assert!(decision
+            .reason_codes
+            .iter()
+            .any(|code| code == "benchmark_failed"));
+        assert!(decision
+            .reason_codes
+            .iter()
+            .any(|code| code == "safety_failed"));
+        assert!(decision
+            .reason_codes
+            .iter()
+            .any(|code| code == "operations_failed"));
+    }
+
+    #[test]
+    fn spec_1998_c03_exit_gate_decision_json_is_machine_readable() {
+        let bundle =
+            build_m24_rl_gate_evidence_bundle(sample_m24_bundle_input()).expect("build bundle");
+        let decision = evaluate_m24_rl_gate_exit(&bundle);
+        let payload = decision.to_json_value();
+
+        assert!(payload["pass"].is_boolean());
+        assert!(payload["reason_codes"].is_array());
+    }
+
+    #[test]
+    fn spec_1998_c04_exit_gate_fails_closed_on_blank_runbook_refs() {
+        let mut bundle =
+            build_m24_rl_gate_evidence_bundle(sample_m24_bundle_input()).expect("build bundle");
+        bundle.runbooks.operator_runbook_ref = " ".to_string();
+        bundle.runbooks.incident_playbook_ref.clear();
+
+        let decision = evaluate_m24_rl_gate_exit(&bundle);
+        assert!(!decision.pass);
+        assert!(decision
+            .reason_codes
+            .iter()
+            .any(|code| code == "operator_runbook_missing"));
+        assert!(decision
+            .reason_codes
+            .iter()
+            .any(|code| code == "incident_playbook_missing"));
+    }
+
+    #[test]
+    fn regression_m24_exit_gate_detects_whitespace_only_runbook_refs() {
+        let mut bundle =
+            build_m24_rl_gate_evidence_bundle(sample_m24_bundle_input()).expect("build bundle");
+        bundle.runbooks.operator_runbook_ref = "\n\t".to_string();
+        bundle.runbooks.incident_playbook_ref = "    ".to_string();
+
+        let decision = evaluate_m24_rl_gate_exit(&bundle);
+        assert!(!decision.pass);
+        assert_eq!(decision.reason_codes.len(), 2);
     }
 
     fn sample_m24_bundle_input() -> M24RLGateEvidenceBundleInput {
