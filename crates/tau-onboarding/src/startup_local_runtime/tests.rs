@@ -4,8 +4,9 @@ use super::{
     build_local_runtime_agent, build_local_runtime_command_defaults,
     build_local_runtime_doctor_config, build_local_runtime_extension_bootstrap,
     build_local_runtime_extension_startup, build_local_runtime_interactive_defaults,
-    execute_command_file_entry_mode, execute_local_runtime_entry_mode_with_dispatch,
-    execute_prompt_entry_mode, execute_prompt_or_command_file_entry_mode,
+    derive_preflight_token_limits, execute_command_file_entry_mode,
+    execute_local_runtime_entry_mode_with_dispatch, execute_prompt_entry_mode,
+    execute_prompt_or_command_file_entry_mode,
     execute_prompt_or_command_file_entry_mode_with_dispatch, extension_tool_hook_diagnostics,
     extension_tool_hook_dispatch, register_runtime_event_reporter_if_configured,
     register_runtime_event_reporter_pair_if_configured, register_runtime_event_reporter_subscriber,
@@ -120,6 +121,69 @@ fn build_tool_loop_agent() -> Agent {
 }
 
 #[test]
+fn unit_derive_preflight_token_limits_prefers_model_context_window() {
+    let (max_input, max_total) =
+        derive_preflight_token_limits(Some(8_192), Some(1_024), Some(120_000), None);
+    assert_eq!(max_input, Some(7_168));
+    assert_eq!(max_total, Some(8_192));
+}
+
+#[test]
+fn regression_derive_preflight_token_limits_falls_back_to_defaults_without_context_window() {
+    let (max_input, max_total) =
+        derive_preflight_token_limits(None, Some(2_048), Some(120_000), Some(200_000));
+    assert_eq!(max_input, Some(120_000));
+    assert_eq!(max_total, Some(200_000));
+}
+
+#[tokio::test]
+async fn functional_build_local_runtime_agent_enforces_preflight_token_limits() {
+    let model_ref = ModelRef::parse("openai/gpt-4o-mini").expect("model ref");
+    let client = Arc::new(QueueClient {
+        responses: AsyncMutex::new(VecDeque::from([ChatResponse {
+            message: Message::assistant_text("ok"),
+            finish_reason: Some("stop".to_string()),
+            usage: ChatUsage::default(),
+        }])),
+    });
+    let mut agent = build_local_runtime_agent(
+        client,
+        &model_ref,
+        "system prompt",
+        LocalRuntimeAgentSettings {
+            max_turns: 4,
+            max_tokens: Some(4),
+            max_parallel_tool_calls: 4,
+            max_context_messages: Some(256),
+            max_estimated_input_tokens: Some(1),
+            max_estimated_total_tokens: Some(5),
+            request_max_retries: 2,
+            request_retry_initial_backoff_ms: 200,
+            request_retry_max_backoff_ms: 2_000,
+            request_timeout_ms: Some(120_000),
+            tool_timeout_ms: Some(120_000),
+            model_input_cost_per_million: None,
+            model_output_cost_per_million: None,
+            cost_budget_usd: None,
+            cost_alert_thresholds_percent: vec![80, 100],
+            prompt_sanitizer_enabled: true,
+            prompt_sanitizer_mode: SafetyMode::Warn,
+            prompt_sanitizer_redaction_token: "[TAU-SAFETY-REDACTED]".to_string(),
+            secret_leak_detector_enabled: true,
+            secret_leak_detector_mode: SafetyMode::Warn,
+            secret_leak_redaction_token: "[TAU-SECRET-REDACTED]".to_string(),
+        },
+        ToolPolicy::new(vec![std::env::temp_dir()]),
+    );
+
+    let error = agent
+        .prompt("token budget should fail")
+        .await
+        .expect_err("prompt should fail before provider request");
+    assert!(matches!(error, AgentError::TokenBudgetExceeded { .. }));
+}
+
+#[test]
 fn unit_build_local_runtime_agent_preserves_system_prompt_message() {
     let model_ref = ModelRef::parse("openai/gpt-4o-mini").expect("model ref");
     let client = Arc::new(QueueClient {
@@ -134,6 +198,8 @@ fn unit_build_local_runtime_agent_preserves_system_prompt_message() {
             max_tokens: None,
             max_parallel_tool_calls: 4,
             max_context_messages: Some(256),
+            max_estimated_input_tokens: None,
+            max_estimated_total_tokens: None,
             request_max_retries: 2,
             request_retry_initial_backoff_ms: 200,
             request_retry_max_backoff_ms: 2_000,
@@ -171,6 +237,8 @@ fn unit_build_local_runtime_agent_applies_prompt_sanitizer_settings() {
             max_tokens: None,
             max_parallel_tool_calls: 4,
             max_context_messages: Some(256),
+            max_estimated_input_tokens: None,
+            max_estimated_total_tokens: None,
             request_max_retries: 2,
             request_retry_initial_backoff_ms: 200,
             request_retry_max_backoff_ms: 2_000,
@@ -223,6 +291,8 @@ async fn functional_build_local_runtime_agent_applies_cost_budget_and_pricing_se
             max_tokens: None,
             max_parallel_tool_calls: 4,
             max_context_messages: Some(256),
+            max_estimated_input_tokens: None,
+            max_estimated_total_tokens: None,
             request_max_retries: 2,
             request_retry_initial_backoff_ms: 200,
             request_retry_max_backoff_ms: 2_000,
@@ -269,6 +339,8 @@ async fn functional_build_local_runtime_agent_registers_builtin_tools_with_model
             max_tokens: Some(777),
             max_parallel_tool_calls: 4,
             max_context_messages: Some(256),
+            max_estimated_input_tokens: None,
+            max_estimated_total_tokens: None,
             request_max_retries: 2,
             request_retry_initial_backoff_ms: 200,
             request_retry_max_backoff_ms: 2_000,
@@ -316,6 +388,8 @@ async fn integration_build_local_runtime_agent_respects_max_turns_limit() {
             max_tokens: None,
             max_parallel_tool_calls: 4,
             max_context_messages: Some(256),
+            max_estimated_input_tokens: None,
+            max_estimated_total_tokens: None,
             request_max_retries: 2,
             request_retry_initial_backoff_ms: 200,
             request_retry_max_backoff_ms: 2_000,
@@ -356,6 +430,8 @@ fn regression_build_local_runtime_agent_skips_empty_system_prompt_message() {
             max_tokens: None,
             max_parallel_tool_calls: 4,
             max_context_messages: Some(256),
+            max_estimated_input_tokens: None,
+            max_estimated_total_tokens: None,
             request_max_retries: 2,
             request_retry_initial_backoff_ms: 200,
             request_retry_max_backoff_ms: 2_000,

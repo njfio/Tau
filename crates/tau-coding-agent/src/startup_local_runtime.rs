@@ -34,6 +34,7 @@ use crate::tools::{self, ToolPolicy};
 use tau_onboarding::startup_local_runtime::{
     build_local_runtime_agent as build_onboarding_local_runtime_agent,
     build_local_runtime_extension_startup as build_onboarding_local_runtime_extension_startup,
+    derive_preflight_token_limits,
     execute_local_runtime_entry_mode_with_dispatch as execute_onboarding_local_runtime_entry_mode_with_dispatch,
     register_runtime_extension_pipeline as register_onboarding_runtime_extension_pipeline,
     register_runtime_observability_if_configured as register_onboarding_runtime_observability_if_configured,
@@ -86,15 +87,26 @@ pub(crate) async fn run_local_runtime(config: LocalRuntimeConfig<'_>) -> Result<
 
     let agent_defaults = AgentConfig::default();
     let model_catalog_entry = model_catalog.find_model_ref(model_ref);
+    let model_max_output_tokens = model_catalog_entry.and_then(|entry| entry.max_output_tokens);
+    let model_context_window_tokens =
+        model_catalog_entry.and_then(|entry| entry.context_window_tokens);
+    let (max_estimated_input_tokens, max_estimated_total_tokens) = derive_preflight_token_limits(
+        model_context_window_tokens,
+        model_max_output_tokens,
+        agent_defaults.max_estimated_input_tokens,
+        agent_defaults.max_estimated_total_tokens,
+    );
     let mut agent = build_onboarding_local_runtime_agent(
         client,
         model_ref,
         system_prompt,
         LocalRuntimeAgentSettings {
             max_turns: cli.max_turns,
-            max_tokens: model_catalog_entry.and_then(|entry| entry.max_output_tokens),
+            max_tokens: model_max_output_tokens,
             max_parallel_tool_calls: cli.agent_max_parallel_tool_calls,
             max_context_messages: cli.agent_max_context_messages,
+            max_estimated_input_tokens,
+            max_estimated_total_tokens,
             request_max_retries: cli.agent_request_max_retries,
             request_retry_initial_backoff_ms: cli.agent_request_retry_initial_backoff_ms,
             request_retry_max_backoff_ms: cli.agent_request_retry_max_backoff_ms,
