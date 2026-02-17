@@ -42,6 +42,25 @@ current codebase with executable tests.
 | No prompt caching | Resolved | `cargo test -p tau-ai spec_c01_openai_serializes_prompt_cache_key_when_enabled -- --nocapture`; `cargo test -p tau-ai spec_c02_anthropic_serializes_system_cache_control_when_enabled -- --nocapture`; `cargo test -p tau-ai spec_c03_google_serializes_cached_content_reference_when_enabled -- --nocapture` |
 | PPO/GAE never called from training loop | Resolved | `cargo test -p tau-coding-agent spec_c02_integration_prompt_optimization_mode_executes_rl_optimizer_when_enabled -- --nocapture`; call site `crates/tau-coding-agent/src/training_runtime.rs` |
 
+### Gap Revalidation Wave 2 (2026-02-17)
+
+Functional/distribution/ops claims (5-15) were revalidated with
+`scripts/dev/verify-gap-claims-wave2.sh`.
+
+| Claim | Status | Evidence |
+|---|---|---|
+| OpenRouter still alias, not first-class provider | Resolved | `cargo test -p tau-ai spec_c01_parses_openrouter_as_first_class_provider -- --nocapture`; `cargo test -p tau-ai spec_c06_openrouter_route_applies_dedicated_headers_when_configured -- --nocapture` |
+| PostgreSQL session backend scaffolded/not implemented | Partial | `cargo test -p tau-session spec_c05_postgres_invalid_dsn_reports_backend_error_not_scaffold -- --nocapture`; `cargo test -p tau-session integration_spec_c03_postgres_usage_summary_persists_when_dsn_provided -- --nocapture` (live persistence path requires `TAU_TEST_POSTGRES_DSN`) |
+| Onboarding wizard partial (state detection only) | Resolved | `cargo test -p tau-onboarding functional_spec_c01_c02_execute_onboarding_command_guided_flow_is_deterministic_and_applies_selected_workspace -- --nocapture` |
+| Dashboard scaffold only | Partial | `cargo test -p tau-gateway integration_dashboard_endpoints_return_state_health_widgets_timeline_and_alerts -- --nocapture` (runtime/dashboard APIs present; rich standalone UI scope remains product decision) |
+| WASI preview 1, not preview 2 | Resolved | `cargo test -p tau-deployment spec_c03_wasi_preview2_compliance_rejects_preview1_import_modules -- --nocapture` |
+| No Docker image | Resolved | `test -f Dockerfile`; `scripts/release/test-release-workflow-contract.sh` |
+| No Homebrew formula | Resolved | `scripts/release/test-release-workflow-contract.sh` (checks Homebrew render + `dist/tau.rb` release asset wiring) |
+| No shell completions | Resolved | `scripts/release/test-release-workflow-contract.sh` (checks generation and release assets for bash/zsh/fish) |
+| No systemd unit | Resolved | `cargo test -p tau-ops spec_c01_render_systemd_user_unit_includes_required_sections_and_gateway_flags -- --nocapture` |
+| No fuzz testing | Partial | `cargo test -p tau-runtime spec_c01_rpc_raw_fuzz_conformance_no_panic_for_10000_inputs -- --nocapture`; `cargo test -p tau-runtime spec_c02_rpc_ndjson_fuzz_conformance_no_panic_for_10000_inputs -- --nocapture`; `cargo test -p tau-gateway spec_c03_gateway_ws_parse_fuzz_conformance_no_panic_for_10000_inputs -- --nocapture` (deterministic fuzz-conformance exists; dedicated `cargo-fuzz` harness still optional follow-up) |
+| No log rotation | Resolved | `cargo test -p tau-runtime spec_c04_tool_audit_logger_rotates_and_keeps_writing_after_threshold -- --nocapture`; `cargo test -p tau-gateway spec_c04_gateway_cycle_report_rotates_and_keeps_latest_record -- --nocapture` |
+
 ---
 
 ## 1. Model Catalog — Update to Latest Models
