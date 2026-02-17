@@ -754,6 +754,7 @@ pub(crate) fn test_cli() -> Cli {
         multi_channel_retry_max_attempts: 4,
         multi_channel_retry_base_delay_ms: 0,
         multi_channel_retry_jitter_ms: 0,
+        multi_channel_coalescing_window_ms: 2_500,
         multi_channel_telemetry_typing_presence: true,
         multi_channel_telemetry_usage_summary: true,
         multi_channel_telemetry_include_identifiers: false,

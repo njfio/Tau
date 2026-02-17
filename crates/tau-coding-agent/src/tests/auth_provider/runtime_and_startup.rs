@@ -747,6 +747,89 @@ async fn functional_run_prompt_with_cancellation_records_session_usage_and_cost(
 }
 
 #[tokio::test]
+async fn integration_spec_c02_run_prompt_with_cancellation_accumulates_session_usage_and_cost() {
+    let temp = tempdir().expect("tempdir");
+    let session_path = temp.path().join("usage-session-c02.jsonl");
+    let mut store = SessionStore::load(&session_path).expect("load session");
+    let active_head = store
+        .append_messages(None, &[Message::system("sys")])
+        .expect("append system")
+        .expect("system head");
+    let mut runtime = Some(SessionRuntime {
+        store,
+        active_head: Some(active_head),
+    });
+
+    let responses = VecDeque::from(vec![
+        ChatResponse {
+            message: Message::assistant_text("first"),
+            finish_reason: Some("stop".to_string()),
+            usage: ChatUsage {
+                input_tokens: 30,
+                output_tokens: 10,
+                total_tokens: 40,
+                cached_input_tokens: 0,
+            },
+        },
+        ChatResponse {
+            message: Message::assistant_text("second"),
+            finish_reason: Some("stop".to_string()),
+            usage: ChatUsage {
+                input_tokens: 20,
+                output_tokens: 5,
+                total_tokens: 25,
+                cached_input_tokens: 0,
+            },
+        },
+    ]);
+    let mut agent = Agent::new(
+        Arc::new(QueueClient {
+            responses: AsyncMutex::new(responses),
+        }),
+        AgentConfig {
+            model_input_cost_per_million: Some(10.0),
+            model_cached_input_cost_per_million: None,
+            model_output_cost_per_million: Some(20.0),
+            ..AgentConfig::default()
+        },
+    );
+
+    let first = run_prompt_with_cancellation(
+        &mut agent,
+        &mut runtime,
+        "first turn",
+        0,
+        pending::<()>(),
+        test_render_options(),
+    )
+    .await
+    .expect("first prompt should complete");
+    assert_eq!(first, PromptRunStatus::Completed);
+
+    let second = run_prompt_with_cancellation(
+        &mut agent,
+        &mut runtime,
+        "second turn",
+        0,
+        pending::<()>(),
+        test_render_options(),
+    )
+    .await
+    .expect("second prompt should complete");
+    assert_eq!(second, PromptRunStatus::Completed);
+
+    let usage = runtime
+        .as_ref()
+        .expect("runtime should be present")
+        .store
+        .usage_summary();
+    assert_eq!(usage.input_tokens, 50);
+    assert_eq!(usage.output_tokens, 15);
+    assert_eq!(usage.total_tokens, 65);
+    assert!((usage.estimated_cost_usd - 0.0008).abs() < 1e-12);
+}
+
+#[tokio::test]
 async fn integration_tool_hook_subscriber_dispatches_pre_and_post_tool_call_hooks() {
     let temp = tempdir().expect("tempdir");
     let read_target = temp.path().join("README.md");
