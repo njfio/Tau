@@ -104,6 +104,35 @@ pub struct ModelCatalogLoadOptions {
     pub request_timeout_ms: u64,
 }
 
+#[derive(Debug, Deserialize)]
+struct OpenRouterModelsResponse {
+    #[serde(default)]
+    data: Vec<OpenRouterModel>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenRouterModel {
+    id: String,
+    context_length: Option<u32>,
+    pricing: Option<OpenRouterPricing>,
+    supported_parameters: Option<Vec<String>>,
+    architecture: Option<OpenRouterArchitecture>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenRouterPricing {
+    prompt: Option<String>,
+    completion: Option<String>,
+    #[serde(alias = "cached_prompt", alias = "prompt_cache_hit")]
+    cached_prompt: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenRouterArchitecture {
+    input_modalities: Option<Vec<String>>,
+    output_modalities: Option<Vec<String>>,
+}
+
 impl Default for ModelListArgs {
     fn default() -> Self {
         Self {
@@ -276,12 +305,15 @@ pub fn parse_model_catalog_payload(payload: &str) -> Result<ModelCatalogFile> {
         return Ok(file);
     }
 
-    let entries = serde_json::from_str::<Vec<ModelCatalogEntry>>(payload)
-        .context("failed to parse model catalog as object or entry array")?;
-    Ok(ModelCatalogFile {
-        schema_version: MODEL_CATALOG_SCHEMA_VERSION,
-        entries,
-    })
+    if let Ok(entries) = serde_json::from_str::<Vec<ModelCatalogEntry>>(payload) {
+        return Ok(ModelCatalogFile {
+            schema_version: MODEL_CATALOG_SCHEMA_VERSION,
+            entries,
+        });
+    }
+
+    parse_openrouter_models_payload(payload)
+        .context("failed to parse model catalog as object, entry array, or OpenRouter payload")
 }
 
 /// Public `fn` `validate_model_catalog_file` in `tau-provider`.
@@ -376,10 +408,12 @@ pub async fn load_model_catalog_with_cache(
         if !options.offline {
             match fetch_remote_catalog(url, options.request_timeout_ms).await {
                 Ok(file) => {
-                    write_model_catalog_cache(&options.cache_path, &file)?;
+                    let merged_file =
+                        merge_model_catalog_files(built_in_model_catalog_file(), file)?;
+                    write_model_catalog_cache(&options.cache_path, &merged_file)?;
                     let cache_age = read_cache_age(&options.cache_path);
                     return ModelCatalog::from_file(
-                        file,
+                        merged_file,
                         ModelCatalogSource::Remote {
                             url: url.to_string(),
                             cache_path: options.cache_path.clone(),
@@ -391,8 +425,10 @@ pub async fn load_model_catalog_with_cache(
                     if let Ok((cache_file, cache_age)) =
                         read_model_catalog_cache(&options.cache_path)
                     {
+                        let merged_cache =
+                            merge_model_catalog_files(built_in_model_catalog_file(), cache_file)?;
                         return ModelCatalog::from_file(
-                            cache_file,
+                            merged_cache,
                             ModelCatalogSource::CacheFallback {
                                 path: options.cache_path.clone(),
                                 reason: format!("{error:#}"),
@@ -406,8 +442,9 @@ pub async fn load_model_catalog_with_cache(
     }
 
     if let Ok((cache_file, cache_age)) = read_model_catalog_cache(&options.cache_path) {
+        let merged_cache = merge_model_catalog_files(built_in_model_catalog_file(), cache_file)?;
         return ModelCatalog::from_file(
-            cache_file,
+            merged_cache,
             ModelCatalogSource::Cache {
                 path: options.cache_path.clone(),
             },
@@ -757,6 +794,136 @@ fn read_cache_age(path: &Path) -> Option<Duration> {
 
 fn flatten_whitespace(value: &str) -> String {
     value.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn parse_openrouter_models_payload(payload: &str) -> Result<ModelCatalogFile> {
+    let response = serde_json::from_str::<OpenRouterModelsResponse>(payload)
+        .context("failed to parse OpenRouter models payload")?;
+    let entries = response
+        .data
+        .into_iter()
+        .filter_map(map_openrouter_model_to_catalog_entry)
+        .collect::<Vec<_>>();
+    Ok(ModelCatalogFile {
+        schema_version: MODEL_CATALOG_SCHEMA_VERSION,
+        entries,
+    })
+}
+
+fn map_openrouter_model_to_catalog_entry(model: OpenRouterModel) -> Option<ModelCatalogEntry> {
+    let id = model.id.trim();
+    if id.is_empty() {
+        return None;
+    }
+
+    let supported_parameters = model
+        .supported_parameters
+        .unwrap_or_default()
+        .into_iter()
+        .map(|value| value.trim().to_ascii_lowercase())
+        .collect::<Vec<_>>();
+
+    let supports_tools = supported_parameters
+        .iter()
+        .any(|value| matches!(value.as_str(), "tools" | "tool_choice"));
+    let supports_reasoning = supported_parameters.iter().any(|value| {
+        matches!(
+            value.as_str(),
+            "reasoning" | "reasoning_effort" | "thinking"
+        )
+    });
+    let supports_multimodal = model
+        .architecture
+        .as_ref()
+        .map(|architecture| {
+            has_non_text_modality(architecture.input_modalities.as_deref())
+                || has_non_text_modality(architecture.output_modalities.as_deref())
+        })
+        .unwrap_or(false);
+
+    let input_cost_per_million = parse_openrouter_price_per_million(
+        model
+            .pricing
+            .as_ref()
+            .and_then(|pricing| pricing.prompt.as_deref()),
+    );
+    let output_cost_per_million = parse_openrouter_price_per_million(
+        model
+            .pricing
+            .as_ref()
+            .and_then(|pricing| pricing.completion.as_deref()),
+    );
+    let cached_input_cost_per_million = parse_openrouter_price_per_million(
+        model
+            .pricing
+            .as_ref()
+            .and_then(|pricing| pricing.cached_prompt.as_deref()),
+    );
+
+    Some(ModelCatalogEntry {
+        provider: "openrouter".to_string(),
+        model: id.to_string(),
+        context_window_tokens: model.context_length,
+        supports_tools,
+        supports_multimodal,
+        supports_reasoning,
+        supports_extended_thinking: supports_reasoning,
+        max_output_tokens: None,
+        knowledge_cutoff: None,
+        deprecated: false,
+        cached_input_cost_per_million,
+        input_cost_per_million,
+        output_cost_per_million,
+    })
+}
+
+fn has_non_text_modality(modalities: Option<&[String]>) -> bool {
+    modalities
+        .map(|values| {
+            values
+                .iter()
+                .map(|value| value.trim().to_ascii_lowercase())
+                .any(|value| value != "text")
+        })
+        .unwrap_or(false)
+}
+
+fn parse_openrouter_price_per_million(value: Option<&str>) -> Option<f64> {
+    let parsed = value.and_then(|raw| raw.trim().parse::<f64>().ok())?;
+    if parsed.is_sign_negative() {
+        return None;
+    }
+    Some(parsed * 1_000_000.0)
+}
+
+fn merge_model_catalog_files(
+    base: ModelCatalogFile,
+    overlay: ModelCatalogFile,
+) -> Result<ModelCatalogFile> {
+    validate_model_catalog_file(&base)?;
+    validate_model_catalog_file(&overlay)?;
+
+    let mut merged_entries = base.entries;
+    let mut merged_index = HashMap::new();
+    for (index, entry) in merged_entries.iter().enumerate() {
+        merged_index.insert(normalize_model_key(&entry.provider, &entry.model), index);
+    }
+
+    for entry in overlay.entries {
+        let key = normalize_model_key(&entry.provider, &entry.model);
+        if let Some(existing_index) = merged_index.get(&key).copied() {
+            merged_entries[existing_index] = entry;
+        } else {
+            let next_index = merged_entries.len();
+            merged_entries.push(entry);
+            merged_index.insert(key, next_index);
+        }
+    }
+
+    Ok(ModelCatalogFile {
+        schema_version: MODEL_CATALOG_SCHEMA_VERSION,
+        entries: merged_entries,
+    })
 }
 
 fn built_in_model_catalog_file() -> ModelCatalogFile {
@@ -1392,6 +1559,44 @@ mod tests {
         );
     }
 
+    #[test]
+    fn spec_c01_parse_model_catalog_payload_accepts_openrouter_models_shape() {
+        let payload = serde_json::json!({
+            "data": [
+                {
+                    "id": "openai/gpt-4.1-mini",
+                    "context_length": 1048576,
+                    "pricing": {
+                        "prompt": "0.00000040",
+                        "completion": "0.00000160"
+                    },
+                    "supported_parameters": ["tools", "reasoning"]
+                }
+            ]
+        })
+        .to_string();
+
+        let parsed = parse_model_catalog_payload(&payload).expect("parse openrouter payload");
+        assert_eq!(parsed.schema_version, MODEL_CATALOG_SCHEMA_VERSION);
+        assert_eq!(parsed.entries.len(), 1);
+        let entry = &parsed.entries[0];
+        assert_eq!(entry.provider, "openrouter");
+        assert_eq!(entry.model, "openai/gpt-4.1-mini");
+        assert_eq!(entry.context_window_tokens, Some(1_048_576));
+        assert!(
+            (entry.input_cost_per_million.unwrap_or_default() - 0.4).abs() < 1e-9,
+            "unexpected input cost: {:?}",
+            entry.input_cost_per_million
+        );
+        assert!(
+            (entry.output_cost_per_million.unwrap_or_default() - 1.6).abs() < 1e-9,
+            "unexpected output cost: {:?}",
+            entry.output_cost_per_million
+        );
+        assert!(entry.supports_tools);
+        assert!(entry.supports_reasoning);
+    }
+
     #[tokio::test]
     async fn integration_model_catalog_remote_refresh_writes_cache_and_supports_offline_reuse() {
         let temp = tempdir().expect("tempdir");
@@ -1446,6 +1651,214 @@ mod tests {
             offline.find("openai", "gpt-4o-mini").is_some(),
             "cached model entry should be available offline"
         );
+    }
+
+    #[tokio::test]
+    async fn integration_spec_c02_remote_refresh_merges_openrouter_entries_with_builtin_catalog() {
+        let temp = tempdir().expect("tempdir");
+        let cache_path = temp.path().join("catalog-openrouter-merge.json");
+        let server = MockServer::start();
+        let refresh = server.mock(|when, then| {
+            when.method(GET).path("/openrouter-models");
+            then.status(200).json_body(serde_json::json!({
+                "data": [
+                    {
+                        "id": "openai/gpt-4.1-mini",
+                        "context_length": 1048576,
+                        "pricing": {
+                            "prompt": "0.00000040",
+                            "completion": "0.00000160"
+                        },
+                        "supported_parameters": ["tools", "reasoning"]
+                    }
+                ]
+            }));
+        });
+
+        let options = ModelCatalogLoadOptions {
+            cache_path,
+            refresh_url: Some(format!("{}/openrouter-models", server.base_url())),
+            offline: false,
+            stale_after_hours: 24,
+            request_timeout_ms: 5_000,
+        };
+        let catalog = load_model_catalog_with_cache(&options)
+            .await
+            .expect("remote refresh should succeed");
+        refresh.assert_calls(1);
+        assert!(
+            catalog.find("openrouter", "openai/gpt-4.1-mini").is_some(),
+            "OpenRouter discovered model should be present"
+        );
+        assert!(
+            catalog.find("openai", "gpt-5.2").is_some(),
+            "built-in entries should remain available after merge"
+        );
+    }
+
+    #[tokio::test]
+    async fn unit_spec_c03_remote_entries_override_matching_builtin_keys_after_merge() {
+        let temp = tempdir().expect("tempdir");
+        let cache_path = temp.path().join("catalog-override.json");
+        let server = MockServer::start();
+        let refresh = server.mock(|when, then| {
+            when.method(GET).path("/override");
+            then.status(200).json_body(serde_json::json!({
+                "schema_version": 1,
+                "entries": [
+                    {
+                        "provider": "openai",
+                        "model": "gpt-5.2",
+                        "context_window_tokens": 999,
+                        "supports_tools": true,
+                        "supports_multimodal": true,
+                        "supports_reasoning": true,
+                        "supports_extended_thinking": true,
+                        "max_output_tokens": 111,
+                        "knowledge_cutoff": "2099-01",
+                        "deprecated": false,
+                        "cached_input_cost_per_million": 0.001,
+                        "input_cost_per_million": 0.123,
+                        "output_cost_per_million": 0.456
+                    }
+                ]
+            }));
+        });
+
+        let options = ModelCatalogLoadOptions {
+            cache_path,
+            refresh_url: Some(format!("{}/override", server.base_url())),
+            offline: false,
+            stale_after_hours: 24,
+            request_timeout_ms: 5_000,
+        };
+        let catalog = load_model_catalog_with_cache(&options)
+            .await
+            .expect("remote refresh should succeed");
+        refresh.assert_calls(1);
+        let overridden = catalog
+            .find("openai", "gpt-5.2")
+            .expect("merged catalog should keep overridden key");
+        assert_eq!(overridden.context_window_tokens, Some(999));
+        assert_eq!(overridden.input_cost_per_million, Some(0.123));
+        assert_eq!(overridden.output_cost_per_million, Some(0.456));
+        assert!(
+            catalog.find("openai", "gpt-4.1").is_some(),
+            "non-overridden built-in entries should remain present"
+        );
+    }
+
+    #[tokio::test]
+    async fn integration_spec_c04_offline_cache_reuse_retains_merged_builtin_and_openrouter_entries(
+    ) {
+        let temp = tempdir().expect("tempdir");
+        let cache_path = temp.path().join("catalog-openrouter-offline.json");
+        let server = MockServer::start();
+        let refresh = server.mock(|when, then| {
+            when.method(GET).path("/openrouter-offline");
+            then.status(200).json_body(serde_json::json!({
+                "data": [
+                    {
+                        "id": "x-ai/grok-4",
+                        "context_length": 256000,
+                        "pricing": {
+                            "prompt": "0.00000300",
+                            "completion": "0.00001500"
+                        },
+                        "supported_parameters": ["tools", "reasoning"]
+                    }
+                ]
+            }));
+        });
+
+        let remote_options = ModelCatalogLoadOptions {
+            cache_path: cache_path.clone(),
+            refresh_url: Some(format!("{}/openrouter-offline", server.base_url())),
+            offline: false,
+            stale_after_hours: 24,
+            request_timeout_ms: 5_000,
+        };
+        let refreshed = load_model_catalog_with_cache(&remote_options)
+            .await
+            .expect("remote refresh should succeed");
+        refresh.assert_calls(1);
+        assert!(matches!(
+            refreshed.source(),
+            ModelCatalogSource::Remote { .. }
+        ));
+
+        let offline_options = ModelCatalogLoadOptions {
+            cache_path,
+            refresh_url: None,
+            offline: true,
+            stale_after_hours: 24,
+            request_timeout_ms: 5_000,
+        };
+        let offline = load_model_catalog_with_cache(&offline_options)
+            .await
+            .expect("offline cache load should succeed");
+        assert!(matches!(offline.source(), ModelCatalogSource::Cache { .. }));
+        assert!(offline.find("openrouter", "x-ai/grok-4").is_some());
+        assert!(offline.find("openai", "gpt-5.2").is_some());
+    }
+
+    #[tokio::test]
+    async fn regression_spec_c05_remote_failure_uses_cachefallback_with_preserved_merged_entries() {
+        let temp = tempdir().expect("tempdir");
+        let cache_path = temp.path().join("catalog-fallback-merged.json");
+        let cached = ModelCatalogFile {
+            schema_version: MODEL_CATALOG_SCHEMA_VERSION,
+            entries: vec![
+                ModelCatalogEntry {
+                    provider: "openai".to_string(),
+                    model: "gpt-5.2".to_string(),
+                    context_window_tokens: Some(400_000),
+                    supports_tools: true,
+                    supports_multimodal: true,
+                    supports_reasoning: true,
+                    supports_extended_thinking: true,
+                    max_output_tokens: Some(128_000),
+                    knowledge_cutoff: Some("2025-12".to_string()),
+                    deprecated: false,
+                    cached_input_cost_per_million: Some(0.175),
+                    input_cost_per_million: Some(1.75),
+                    output_cost_per_million: Some(14.0),
+                },
+                ModelCatalogEntry {
+                    provider: "openrouter".to_string(),
+                    model: "openai/gpt-4.1-mini".to_string(),
+                    context_window_tokens: Some(1_048_576),
+                    supports_tools: true,
+                    supports_multimodal: false,
+                    supports_reasoning: true,
+                    supports_extended_thinking: false,
+                    max_output_tokens: None,
+                    knowledge_cutoff: None,
+                    deprecated: false,
+                    cached_input_cost_per_million: None,
+                    input_cost_per_million: Some(0.4),
+                    output_cost_per_million: Some(1.6),
+                },
+            ],
+        };
+        write_model_catalog_cache(&cache_path, &cached).expect("write cache");
+
+        let options = ModelCatalogLoadOptions {
+            cache_path: cache_path.clone(),
+            refresh_url: Some("http://127.0.0.1:1/unreachable".to_string()),
+            offline: false,
+            stale_after_hours: 24,
+            request_timeout_ms: 200,
+        };
+        let catalog = load_model_catalog_with_cache(&options)
+            .await
+            .expect("cache fallback should succeed");
+        assert!(matches!(
+            catalog.source(),
+            ModelCatalogSource::CacheFallback { .. }
+        ));
+        assert!(catalog.find("openai", "gpt-5.2").is_some());
+        assert!(catalog.find("openrouter", "openai/gpt-4.1-mini").is_some());
     }
 
     #[tokio::test]
