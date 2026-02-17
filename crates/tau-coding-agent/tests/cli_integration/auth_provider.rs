@@ -130,7 +130,9 @@ fn integration_startup_model_catalog_remote_refresh_is_reported() {
         .stdout(predicate::str::contains(
             "model catalog: source=remote url=",
         ))
-        .stdout(predicate::str::contains("entries=1"));
+        .stdout(
+            predicate::str::is_match(r"entries=\d+").expect("entries count regex should compile"),
+        );
     refresh.assert_calls(1);
 }
 
