@@ -260,6 +260,25 @@ pub(super) fn optional_basis_points(arguments: &Value, key: &str) -> Result<Opti
     Ok(Some(parsed as u16))
 }
 
+pub(super) fn optional_unit_interval_f32(
+    arguments: &Value,
+    key: &str,
+) -> Result<Option<f32>, String> {
+    let Some(value) = arguments.get(key) else {
+        return Ok(None);
+    };
+    let parsed = value
+        .as_f64()
+        .ok_or_else(|| format!("'{key}' must be a number in range 0.0..=1.0"))?;
+    if !parsed.is_finite() {
+        return Err(format!("'{key}' must be finite"));
+    }
+    if !(0.0..=1.0).contains(&parsed) {
+        return Err(format!("'{key}' must be in range 0.0..=1.0"));
+    }
+    Ok(Some(parsed as f32))
+}
+
 pub(super) fn optional_string_array(
     arguments: &Value,
     key: &str,

@@ -446,6 +446,8 @@ impl FileMemoryStore {
                 updated_unix_ms: current_unix_timestamp_ms(),
                 scope: record.scope,
                 entry: record.entry,
+                memory_type: record.memory_type,
+                importance: record.importance,
                 embedding_source: MEMORY_EMBEDDING_SOURCE_PROVIDER.to_string(),
                 embedding_model: Some(config.model.clone()),
                 embedding_vector: vector,

@@ -82,6 +82,76 @@ fn default_embedding_reason_code() -> String {
     MEMORY_EMBEDDING_REASON_HASH_ONLY.to_string()
 }
 
+fn default_memory_importance() -> f32 {
+    MemoryType::default().default_importance()
+}
+
+/// Enumerates supported `MemoryType` values.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub enum MemoryType {
+    Identity,
+    Goal,
+    Decision,
+    Todo,
+    Preference,
+    Fact,
+    Event,
+    Observation,
+}
+
+impl MemoryType {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Identity => "identity",
+            Self::Goal => "goal",
+            Self::Decision => "decision",
+            Self::Todo => "todo",
+            Self::Preference => "preference",
+            Self::Fact => "fact",
+            Self::Event => "event",
+            Self::Observation => "observation",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "identity" => Some(Self::Identity),
+            "goal" => Some(Self::Goal),
+            "decision" => Some(Self::Decision),
+            "todo" => Some(Self::Todo),
+            "preference" => Some(Self::Preference),
+            "fact" => Some(Self::Fact),
+            "event" => Some(Self::Event),
+            "observation" => Some(Self::Observation),
+            _ => None,
+        }
+    }
+
+    pub fn default_importance(self) -> f32 {
+        match self {
+            Self::Identity => 1.0,
+            Self::Goal => 0.9,
+            Self::Decision => 0.85,
+            Self::Todo => 0.8,
+            Self::Preference => 0.7,
+            Self::Fact => 0.65,
+            Self::Event => 0.55,
+            Self::Observation => 0.3,
+        }
+    }
+}
+
+impl Default for MemoryType {
+    fn default() -> Self {
+        Self::Observation
+    }
+}
+
+pub(super) fn importance_rank_multiplier(importance: f32) -> f32 {
+    1.0 + importance.clamp(0.0, 1.0)
+}
+
 /// Public struct `MemoryEmbeddingProviderConfig` used across Tau components.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MemoryEmbeddingProviderConfig {
@@ -108,6 +178,10 @@ pub struct RuntimeMemoryRecord {
     pub updated_unix_ms: u64,
     pub scope: MemoryScope,
     pub entry: MemoryEntry,
+    #[serde(default)]
+    pub memory_type: MemoryType,
+    #[serde(default = "default_memory_importance")]
+    pub importance: f32,
     #[serde(default = "default_embedding_source")]
     pub embedding_source: String,
     #[serde(default)]
@@ -217,6 +291,8 @@ pub struct MemorySearchMatch {
     pub fused_score: Option<f32>,
     pub scope: MemoryScope,
     pub summary: String,
+    pub memory_type: MemoryType,
+    pub importance: f32,
     pub tags: Vec<String>,
     pub facts: Vec<String>,
     pub source_event_key: String,
@@ -385,8 +461,27 @@ impl FileMemoryStore {
         scope: &MemoryScope,
         entry: MemoryEntry,
     ) -> Result<MemoryWriteResult> {
+        self.write_entry_with_metadata(scope, entry, None, None)
+    }
+
+    /// Writes or updates a memory entry with optional typed-memory metadata.
+    pub fn write_entry_with_metadata(
+        &self,
+        scope: &MemoryScope,
+        entry: MemoryEntry,
+        memory_type: Option<MemoryType>,
+        importance: Option<f32>,
+    ) -> Result<MemoryWriteResult> {
         let normalized_scope = normalize_scope(scope);
         let normalized_entry = normalize_entry(entry)?;
+        let resolved_memory_type = memory_type.unwrap_or_default();
+        let resolved_importance = match importance {
+            Some(value) if value.is_finite() && (0.0..=1.0).contains(&value) => value,
+            Some(value) => {
+                bail!("importance must be within 0.0..=1.0 (received {value})")
+            }
+            None => resolved_memory_type.default_importance(),
+        };
 
         let created = self
             .read_entry(
@@ -412,6 +507,8 @@ impl FileMemoryStore {
             updated_unix_ms: current_unix_timestamp_ms(),
             scope: normalized_scope,
             entry: normalized_entry,
+            memory_type: resolved_memory_type,
+            importance: resolved_importance,
             embedding_source: computed_embedding.backend,
             embedding_model: computed_embedding.model,
             embedding_vector: computed_embedding.vector,
@@ -595,13 +692,15 @@ fn current_unix_timestamp_ms() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::{
-        embed_text_vector, rank_text_candidates, rank_text_candidates_bm25, FileMemoryStore,
-        MemoryEmbeddingProviderConfig, MemoryScopeFilter, MemorySearchOptions,
-        MemoryStorageBackend, RankedTextCandidate, MEMORY_BACKEND_ENV,
+        embed_text_vector, importance_rank_multiplier, rank_text_candidates,
+        rank_text_candidates_bm25, FileMemoryStore, MemoryEmbeddingProviderConfig,
+        MemoryScopeFilter, MemorySearchOptions, MemoryStorageBackend, MemoryType,
+        RankedTextCandidate, RuntimeMemoryRecord, MEMORY_BACKEND_ENV,
         MEMORY_STORAGE_REASON_ENV_INVALID_FALLBACK,
     };
     use crate::memory_contract::{MemoryEntry, MemoryScope};
     use httpmock::{Method::POST, MockServer};
+    use serde_json::json;
     use std::sync::{Mutex, OnceLock};
     use tempfile::tempdir;
 
@@ -642,6 +741,323 @@ mod tests {
             .sqrt();
         assert!(magnitude > 0.99);
         assert!(magnitude <= 1.001);
+    }
+
+    #[test]
+    fn unit_memory_type_parse_and_display_roundtrip() {
+        let cases = [
+            (MemoryType::Identity, "identity"),
+            (MemoryType::Goal, "goal"),
+            (MemoryType::Decision, "decision"),
+            (MemoryType::Todo, "todo"),
+            (MemoryType::Preference, "preference"),
+            (MemoryType::Fact, "fact"),
+            (MemoryType::Event, "event"),
+            (MemoryType::Observation, "observation"),
+        ];
+        for (memory_type, label) in cases {
+            let uppercase = label.to_ascii_uppercase();
+            let padded = format!(" {label} ");
+            assert_eq!(memory_type.as_str(), label);
+            assert_eq!(MemoryType::parse(label), Some(memory_type));
+            assert_eq!(MemoryType::parse(uppercase.as_str()), Some(memory_type));
+            assert_eq!(MemoryType::parse(padded.as_str()), Some(memory_type));
+        }
+        assert_eq!(MemoryType::parse("unknown"), None);
+    }
+
+    #[test]
+    fn unit_memory_type_default_importance_profile_and_record_defaults() {
+        let expectations = [
+            (MemoryType::Identity, 1.0f32),
+            (MemoryType::Goal, 0.9f32),
+            (MemoryType::Decision, 0.85f32),
+            (MemoryType::Todo, 0.8f32),
+            (MemoryType::Preference, 0.7f32),
+            (MemoryType::Fact, 0.65f32),
+            (MemoryType::Event, 0.55f32),
+            (MemoryType::Observation, 0.3f32),
+        ];
+        for (memory_type, expected_importance) in expectations {
+            assert!(
+                (memory_type.default_importance() - expected_importance).abs() <= 0.000_001,
+                "default importance mismatch for {}",
+                memory_type.as_str()
+            );
+        }
+        assert_eq!(MemoryType::default(), MemoryType::Observation);
+
+        let decoded: RuntimeMemoryRecord = serde_json::from_value(json!({
+            "schema_version": 1,
+            "updated_unix_ms": 123,
+            "scope": {
+                "workspace_id": "workspace",
+                "channel_id": "channel",
+                "actor_id": "assistant"
+            },
+            "entry": {
+                "memory_id": "memory-default",
+                "summary": "default metadata",
+                "tags": [],
+                "facts": [],
+                "source_event_key": "evt-default",
+                "recency_weight_bps": 0,
+                "confidence_bps": 1000
+            }
+        }))
+        .expect("deserialize runtime record with defaults");
+        assert_eq!(decoded.memory_type, MemoryType::Observation);
+        assert!((decoded.importance - 0.3).abs() <= 0.000_001);
+    }
+
+    #[test]
+    fn unit_importance_rank_multiplier_clamps_to_expected_range() {
+        assert!((importance_rank_multiplier(-1.0) - 1.0).abs() <= 0.000_001);
+        assert!((importance_rank_multiplier(0.0) - 1.0).abs() <= 0.000_001);
+        assert!((importance_rank_multiplier(0.5) - 1.5).abs() <= 0.000_001);
+        assert!((importance_rank_multiplier(1.0) - 2.0).abs() <= 0.000_001);
+        assert!((importance_rank_multiplier(3.0) - 2.0).abs() <= 0.000_001);
+    }
+
+    #[test]
+    fn regression_write_entry_with_metadata_rejects_invalid_importance_range() {
+        let temp = tempdir().expect("tempdir");
+        let store = FileMemoryStore::new(temp.path());
+        let scope = MemoryScope {
+            workspace_id: "workspace-a".to_string(),
+            channel_id: "channel-1".to_string(),
+            actor_id: "assistant".to_string(),
+        };
+        let base_entry = MemoryEntry {
+            memory_id: "memory-invalid-importance".to_string(),
+            summary: "importance must remain bounded".to_string(),
+            tags: vec!["validation".to_string()],
+            facts: vec!["range=0..1".to_string()],
+            source_event_key: "evt-invalid".to_string(),
+            recency_weight_bps: 0,
+            confidence_bps: 1_000,
+        };
+
+        let below = store.write_entry_with_metadata(
+            &scope,
+            base_entry.clone(),
+            Some(MemoryType::Goal),
+            Some(-0.01),
+        );
+        assert!(below.is_err());
+
+        let above = store.write_entry_with_metadata(
+            &scope,
+            base_entry.clone(),
+            Some(MemoryType::Goal),
+            Some(1.01),
+        );
+        assert!(above.is_err());
+
+        let nan = store.write_entry_with_metadata(
+            &scope,
+            base_entry.clone(),
+            Some(MemoryType::Goal),
+            Some(f32::NAN),
+        );
+        assert!(nan.is_err());
+
+        let valid = store
+            .write_entry_with_metadata(
+                &scope,
+                MemoryEntry {
+                    memory_id: "memory-valid-importance".to_string(),
+                    ..base_entry
+                },
+                Some(MemoryType::Goal),
+                Some(0.95),
+            )
+            .expect("valid importance should write successfully");
+        assert_eq!(valid.record.memory_type, MemoryType::Goal);
+        assert!((valid.record.importance - 0.95).abs() <= 0.000_001);
+    }
+
+    #[test]
+    fn integration_memory_search_importance_multiplier_prioritizes_high_importance_match() {
+        let temp = tempdir().expect("tempdir");
+        let store = FileMemoryStore::new(temp.path());
+        let scope = MemoryScope {
+            workspace_id: "workspace-a".to_string(),
+            channel_id: "deploy".to_string(),
+            actor_id: "assistant".to_string(),
+        };
+
+        let shared_summary = "release smoke checklist".to_string();
+        let shared_tags = vec!["release".to_string()];
+        let shared_facts = vec!["run smoke tests".to_string()];
+
+        store
+            .write_entry_with_metadata(
+                &scope,
+                MemoryEntry {
+                    memory_id: "a-low".to_string(),
+                    summary: shared_summary.clone(),
+                    tags: shared_tags.clone(),
+                    facts: shared_facts.clone(),
+                    source_event_key: "evt-low".to_string(),
+                    recency_weight_bps: 0,
+                    confidence_bps: 1_000,
+                },
+                Some(MemoryType::Observation),
+                Some(0.0),
+            )
+            .expect("write low importance");
+        store
+            .write_entry_with_metadata(
+                &scope,
+                MemoryEntry {
+                    memory_id: "z-high".to_string(),
+                    summary: shared_summary,
+                    tags: shared_tags,
+                    facts: shared_facts,
+                    source_event_key: "evt-high".to_string(),
+                    recency_weight_bps: 0,
+                    confidence_bps: 1_000,
+                },
+                Some(MemoryType::Goal),
+                Some(1.0),
+            )
+            .expect("write high importance");
+
+        let result = store
+            .search(
+                "release smoke checklist",
+                &MemorySearchOptions {
+                    scope: MemoryScopeFilter::default(),
+                    limit: 5,
+                    embedding_dimensions: 64,
+                    min_similarity: 0.0,
+                    enable_hybrid_retrieval: false,
+                    bm25_k1: 1.2,
+                    bm25_b: 0.75,
+                    bm25_min_score: 0.0,
+                    rrf_k: 60,
+                    rrf_vector_weight: 1.0,
+                    rrf_lexical_weight: 1.0,
+                    enable_embedding_migration: false,
+                    benchmark_against_hash: false,
+                    benchmark_against_vector_only: false,
+                },
+            )
+            .expect("search with importance ranking");
+
+        assert_eq!(result.returned, 2);
+        assert_eq!(result.matches[0].memory_id, "z-high");
+        assert!(result.matches[0].score > result.matches[1].score);
+        let low = result
+            .matches
+            .iter()
+            .find(|item| item.memory_id == "a-low")
+            .expect("low memory in ranked matches")
+            .score;
+        let high = result
+            .matches
+            .iter()
+            .find(|item| item.memory_id == "z-high")
+            .expect("high memory in ranked matches")
+            .score;
+        assert!(low > 0.0);
+        let ratio = high / low;
+        assert!(
+            (ratio - 2.0).abs() <= 0.05,
+            "importance multiplier ratio drifted: {ratio}"
+        );
+    }
+
+    #[test]
+    fn integration_migrate_records_to_provider_embeddings_reports_count_and_preserves_metadata() {
+        let server = MockServer::start();
+        let embeddings = server.mock(|when, then| {
+            when.method(POST).path("/embeddings");
+            then.status(200).json_body_obj(&json!({
+                "data": [
+                    { "embedding": [0.9, 0.1, 0.0, 0.0] },
+                    { "embedding": [0.8, 0.2, 0.0, 0.0] }
+                ]
+            }));
+        });
+
+        let temp = tempdir().expect("tempdir");
+        let scope = MemoryScope {
+            workspace_id: "workspace-a".to_string(),
+            channel_id: "ops".to_string(),
+            actor_id: "assistant".to_string(),
+        };
+        let seed_store = FileMemoryStore::new(temp.path());
+        seed_store
+            .write_entry_with_metadata(
+                &scope,
+                MemoryEntry {
+                    memory_id: "memory-migrate-a".to_string(),
+                    summary: "provider migration candidate a".to_string(),
+                    tags: vec!["migration".to_string()],
+                    facts: vec!["priority=high".to_string()],
+                    source_event_key: "evt-migrate-a".to_string(),
+                    recency_weight_bps: 0,
+                    confidence_bps: 1_000,
+                },
+                Some(MemoryType::Goal),
+                Some(0.9),
+            )
+            .expect("write migration candidate a");
+        seed_store
+            .write_entry_with_metadata(
+                &scope,
+                MemoryEntry {
+                    memory_id: "memory-migrate-b".to_string(),
+                    summary: "provider migration candidate b".to_string(),
+                    tags: vec!["migration".to_string()],
+                    facts: vec!["priority=medium".to_string()],
+                    source_event_key: "evt-migrate-b".to_string(),
+                    recency_weight_bps: 0,
+                    confidence_bps: 1_000,
+                },
+                Some(MemoryType::Fact),
+                Some(0.65),
+            )
+            .expect("write migration candidate b");
+
+        let records = seed_store
+            .list_latest_records(None, usize::MAX)
+            .expect("list seeded records");
+        assert_eq!(records.len(), 2);
+
+        let provider_store = FileMemoryStore::new_with_embedding_provider(
+            temp.path(),
+            Some(MemoryEmbeddingProviderConfig {
+                provider: "openai-compatible".to_string(),
+                model: "text-embedding-3-small".to_string(),
+                api_base: server.url(""),
+                api_key: "test-key".to_string(),
+                dimensions: 4,
+                timeout_ms: 5_000,
+            }),
+        );
+        let migrated = provider_store
+            .migrate_records_to_provider_embeddings(&records)
+            .expect("migrate records to provider embeddings");
+        assert_eq!(migrated, 2);
+        embeddings.assert();
+
+        let migrated_a = provider_store
+            .read_entry("memory-migrate-a", None)
+            .expect("read migrated a")
+            .expect("migrated a exists");
+        let migrated_b = provider_store
+            .read_entry("memory-migrate-b", None)
+            .expect("read migrated b")
+            .expect("migrated b exists");
+        assert_eq!(migrated_a.embedding_source, "provider-openai-compatible");
+        assert_eq!(migrated_b.embedding_source, "provider-openai-compatible");
+        assert_eq!(migrated_a.memory_type, MemoryType::Goal);
+        assert_eq!(migrated_b.memory_type, MemoryType::Fact);
+        assert!((migrated_a.importance - 0.9).abs() <= 0.000_001);
+        assert!((migrated_b.importance - 0.65).abs() <= 0.000_001);
     }
 
     #[test]

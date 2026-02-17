@@ -34,6 +34,7 @@ use tau_access::ApprovalAction;
 use tau_memory::memory_contract::{MemoryEntry, MemoryScope};
 use tau_memory::runtime::{
     FileMemoryStore, MemoryEmbeddingProviderConfig, MemoryScopeFilter, MemorySearchOptions,
+    MemoryType,
 };
 use tau_session::{
     redo_session_head, resolve_session_navigation_head, undo_session_head, SessionRuntime,
