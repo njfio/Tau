@@ -7,6 +7,44 @@ Run all commands from repository root.
 This runbook covers the fixture-driven deployment runtime (`--deployment-contract-runner`) for
 cloud and WASM rollout validation.
 
+## Fly.io gateway deployment baseline
+
+Repository default manifest: `fly.toml` (repo root).
+
+1. Set a unique app name in `fly.toml` (`app = "..."`).
+2. Bootstrap app metadata from the manifest:
+
+```bash
+fly launch --copy-config --no-deploy
+```
+
+3. Configure provider credentials as Fly secrets:
+
+```bash
+fly secrets set OPENAI_API_KEY=... ANTHROPIC_API_KEY=...
+```
+
+4. Deploy the gateway service:
+
+```bash
+fly deploy
+```
+
+5. Verify service status and health:
+
+```bash
+fly status
+fly logs
+curl -sS https://<your-app-name>.fly.dev/gateway/status
+```
+
+Fly manifest contract defaults in this repository:
+- Runs the existing `Dockerfile` image build.
+- Forces gateway transport mode via `TAU_TRANSPORT_MODE=gateway`.
+- Enables OpenResponses HTTP server on Fly internal port routing
+  (`TAU_GATEWAY_OPENRESPONSES_BIND=0.0.0.0:8080`).
+- Configures an HTTP check on `/gateway/status`.
+
 ## Health and observability signals
 
 Primary transport health signal:
