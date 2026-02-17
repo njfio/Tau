@@ -2,6 +2,29 @@
 
 use super::*;
 
+const MEMORY_TYPE_ENUM_VALUES: &[&str] = &[
+    "identity",
+    "goal",
+    "decision",
+    "todo",
+    "preference",
+    "fact",
+    "event",
+    "observation",
+];
+
+fn optional_memory_type(arguments: &Value) -> Result<Option<MemoryType>, String> {
+    let Some(value) = optional_string(arguments, "memory_type")? else {
+        return Ok(None);
+    };
+    MemoryType::parse(value.as_str()).map(Some).ok_or_else(|| {
+        format!(
+            "'memory_type' must be one of: {}",
+            MEMORY_TYPE_ENUM_VALUES.join(", ")
+        )
+    })
+}
+
 /// Public struct `MemoryWriteTool` used across Tau components.
 pub struct MemoryWriteTool {
     policy: Arc<ToolPolicy>,
@@ -64,6 +87,15 @@ impl AgentTool for MemoryWriteTool {
                     "confidence_bps": {
                         "type": "integer",
                         "description": "Optional confidence score in basis points (0..=10000)"
+                    },
+                    "memory_type": {
+                        "type": "string",
+                        "enum": MEMORY_TYPE_ENUM_VALUES,
+                        "description": "Optional typed-memory classification"
+                    },
+                    "importance": {
+                        "type": "number",
+                        "description": "Optional importance override in range 0.0..=1.0"
                     }
                 },
                 "required": ["summary"],
@@ -160,6 +192,26 @@ impl AgentTool for MemoryWriteTool {
                 }))
             }
         };
+        let memory_type = match optional_memory_type(&arguments) {
+            Ok(value) => value,
+            Err(error) => {
+                return ToolExecutionResult::error(json!({
+                    "tool": "memory_write",
+                    "reason_code": "memory_invalid_arguments",
+                    "error": error,
+                }))
+            }
+        };
+        let importance = match optional_unit_interval_f32(&arguments, "importance") {
+            Ok(value) => value,
+            Err(error) => {
+                return ToolExecutionResult::error(json!({
+                    "tool": "memory_write",
+                    "reason_code": "memory_invalid_arguments",
+                    "error": error,
+                }))
+            }
+        };
 
         let scope = MemoryScope {
             workspace_id: arguments
@@ -215,6 +267,8 @@ impl AgentTool for MemoryWriteTool {
                 "summary_chars": summary.chars().count(),
                 "tags": entry.tags.clone(),
                 "facts": entry.facts.clone(),
+                "memory_type": memory_type.map(MemoryType::as_str),
+                "importance": importance,
             }),
         ) {
             return rbac_result;
@@ -244,13 +298,15 @@ impl AgentTool for MemoryWriteTool {
             return rate_limit_result;
         }
 
-        match store.write_entry(&scope, entry) {
+        match store.write_entry_with_metadata(&scope, entry, memory_type, importance) {
             Ok(result) => ToolExecutionResult::ok(json!({
                 "tool": "memory_write",
                 "created": result.created,
                 "memory_id": result.record.entry.memory_id,
                 "scope": result.record.scope,
                 "summary": result.record.entry.summary,
+                "memory_type": result.record.memory_type.as_str(),
+                "importance": result.record.importance,
                 "tags": result.record.entry.tags,
                 "facts": result.record.entry.facts,
                 "source_event_key": result.record.entry.source_event_key,
@@ -362,6 +418,8 @@ impl AgentTool for MemoryReadTool {
                 "memory_id": record.entry.memory_id,
                 "scope": record.scope,
                 "summary": record.entry.summary,
+                "memory_type": record.memory_type.as_str(),
+                "importance": record.importance,
                 "tags": record.entry.tags,
                 "facts": record.entry.facts,
                 "source_event_key": record.entry.source_event_key,

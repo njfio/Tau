@@ -64,6 +64,14 @@ fn test_policy_with_tool_builder(path: &Path) -> Arc<ToolPolicy> {
     Arc::new(policy)
 }
 
+fn assert_json_number_close(value: &serde_json::Value, expected: f64) {
+    let parsed = value.as_f64().expect("number");
+    assert!(
+        (parsed - expected).abs() < 1e-6,
+        "expected {expected}, got {parsed}"
+    );
+}
+
 fn make_executable(path: &Path) {
     #[cfg(unix)]
     {
@@ -1542,6 +1550,178 @@ fn spec_c04_memory_embedding_provider_config_without_policy_is_none() {
     let temp = tempdir().expect("tempdir");
     let policy = ToolPolicy::new(vec![temp.path().to_path_buf()]);
     assert_eq!(policy.memory_embedding_provider_config(), None);
+}
+
+#[tokio::test]
+async fn spec_c01_memory_write_applies_type_default_importance() {
+    let temp = tempdir().expect("tempdir");
+    let policy = test_policy_with_memory(temp.path());
+    let write_tool = MemoryWriteTool::new(policy);
+    let result = write_tool
+        .execute(serde_json::json!({
+            "memory_id": "memory-identity",
+            "summary": "user name is Alice",
+            "memory_type": "identity",
+            "workspace_id": "workspace-a",
+            "channel_id": "profile",
+            "actor_id": "assistant"
+        }))
+        .await;
+    assert!(!result.is_error, "{}", result.content);
+    assert_eq!(result.content["memory_type"], "identity");
+    assert_json_number_close(&result.content["importance"], 1.0);
+}
+
+#[tokio::test]
+async fn spec_c02_memory_write_rejects_invalid_importance_override() {
+    let temp = tempdir().expect("tempdir");
+    let policy = test_policy_with_memory(temp.path());
+    let write_tool = MemoryWriteTool::new(policy);
+    let result = write_tool
+        .execute(serde_json::json!({
+            "memory_id": "memory-invalid-importance",
+            "summary": "invalid importance should fail",
+            "importance": 1.5
+        }))
+        .await;
+    assert!(result.is_error);
+    assert_eq!(result.content["reason_code"], "memory_invalid_arguments");
+}
+
+#[tokio::test]
+async fn spec_c03_memory_read_and_search_include_type_and_importance() {
+    let temp = tempdir().expect("tempdir");
+    let policy = test_policy_with_memory(temp.path());
+    let write_tool = MemoryWriteTool::new(policy.clone());
+    let write = write_tool
+        .execute(serde_json::json!({
+            "memory_id": "memory-decision",
+            "summary": "deploy go/no-go approved",
+            "memory_type": "decision",
+            "importance": 0.87,
+            "workspace_id": "workspace-a",
+            "channel_id": "release",
+            "actor_id": "assistant"
+        }))
+        .await;
+    assert!(!write.is_error, "{}", write.content);
+
+    let read_tool = MemoryReadTool::new(policy.clone());
+    let read = read_tool
+        .execute(serde_json::json!({
+            "memory_id": "memory-decision",
+            "workspace_id": "workspace-a",
+            "channel_id": "release",
+            "actor_id": "assistant"
+        }))
+        .await;
+    assert!(!read.is_error, "{}", read.content);
+    assert_eq!(read.content["memory_type"], "decision");
+    assert_json_number_close(&read.content["importance"], 0.87);
+
+    let search_tool = MemorySearchTool::new(policy);
+    let search = search_tool
+        .execute(serde_json::json!({
+            "query": "deploy go/no-go",
+            "workspace_id": "workspace-a",
+            "limit": 5
+        }))
+        .await;
+    assert!(!search.is_error, "{}", search.content);
+    assert_eq!(search.content["returned"], 1);
+    assert_eq!(search.content["matches"][0]["memory_type"], "decision");
+    assert_json_number_close(&search.content["matches"][0]["importance"], 0.87);
+}
+
+#[tokio::test]
+async fn spec_c04_memory_search_boosts_higher_importance_records() {
+    let temp = tempdir().expect("tempdir");
+    let policy = test_policy_with_memory(temp.path());
+    let write_tool = MemoryWriteTool::new(policy.clone());
+
+    let low = write_tool
+        .execute(serde_json::json!({
+            "memory_id": "a-low",
+            "summary": "incident runbook escalation policy",
+            "memory_type": "observation",
+            "importance": 0.3,
+            "workspace_id": "workspace-a",
+            "channel_id": "ops",
+            "actor_id": "assistant"
+        }))
+        .await;
+    assert!(!low.is_error, "{}", low.content);
+    let high = write_tool
+        .execute(serde_json::json!({
+            "memory_id": "z-high",
+            "summary": "incident runbook escalation policy",
+            "memory_type": "identity",
+            "importance": 1.0,
+            "workspace_id": "workspace-a",
+            "channel_id": "ops",
+            "actor_id": "assistant"
+        }))
+        .await;
+    assert!(!high.is_error, "{}", high.content);
+
+    let search_tool = MemorySearchTool::new(policy);
+    let search = search_tool
+        .execute(serde_json::json!({
+            "query": "incident runbook escalation policy",
+            "workspace_id": "workspace-a",
+            "channel_id": "ops",
+            "limit": 5
+        }))
+        .await;
+    assert!(!search.is_error, "{}", search.content);
+    assert_eq!(search.content["returned"], 2);
+    assert_eq!(search.content["matches"][0]["memory_id"], "z-high");
+}
+
+#[tokio::test]
+async fn spec_c05_default_paths_remain_backward_compatible() {
+    let temp = tempdir().expect("tempdir");
+    let policy = test_policy_with_memory(temp.path());
+    let write_tool = MemoryWriteTool::new(policy.clone());
+    let write = write_tool
+        .execute(serde_json::json!({
+            "memory_id": "memory-default",
+            "summary": "default memory metadata behavior",
+            "workspace_id": "workspace-a",
+            "channel_id": "general",
+            "actor_id": "assistant"
+        }))
+        .await;
+    assert!(!write.is_error, "{}", write.content);
+    assert_eq!(write.content["memory_type"], "observation");
+    assert_json_number_close(&write.content["importance"], 0.3);
+
+    let read_tool = MemoryReadTool::new(policy.clone());
+    let read = read_tool
+        .execute(serde_json::json!({
+            "memory_id": "memory-default",
+            "workspace_id": "workspace-a",
+            "channel_id": "general",
+            "actor_id": "assistant"
+        }))
+        .await;
+    assert!(!read.is_error, "{}", read.content);
+    assert_eq!(read.content["memory_type"], "observation");
+    assert_json_number_close(&read.content["importance"], 0.3);
+
+    let search_tool = MemorySearchTool::new(policy);
+    let search = search_tool
+        .execute(serde_json::json!({
+            "query": "default memory metadata",
+            "workspace_id": "workspace-a",
+            "channel_id": "general",
+            "limit": 5
+        }))
+        .await;
+    assert!(!search.is_error, "{}", search.content);
+    assert_eq!(search.content["returned"], 1);
+    assert_eq!(search.content["matches"][0]["memory_type"], "observation");
+    assert_json_number_close(&search.content["matches"][0]["importance"], 0.3);
 }
 
 #[tokio::test]

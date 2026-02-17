@@ -4,13 +4,13 @@ use std::time::Instant;
 use anyhow::{bail, Result};
 
 use super::{
-    rank_text_candidates, rank_text_candidates_bm25, reciprocal_rank_fuse, record_search_text,
-    resize_and_normalize_embedding, FileMemoryStore, MemoryScopeFilter, MemorySearchMatch,
-    MemorySearchOptions, MemorySearchResult, MemoryTree, MemoryTreeNode, RankedTextCandidate,
-    RankedTextMatch, RuntimeMemoryRecord, MEMORY_EMBEDDING_REASON_HASH_ONLY,
-    MEMORY_EMBEDDING_REASON_PROVIDER_FAILED, MEMORY_RETRIEVAL_BACKEND_HYBRID_BM25_RRF,
-    MEMORY_RETRIEVAL_BACKEND_VECTOR_ONLY, MEMORY_RETRIEVAL_REASON_HYBRID_ENABLED,
-    MEMORY_RETRIEVAL_REASON_VECTOR_ONLY,
+    importance_rank_multiplier, rank_text_candidates, rank_text_candidates_bm25,
+    reciprocal_rank_fuse, record_search_text, resize_and_normalize_embedding, FileMemoryStore,
+    MemoryScopeFilter, MemorySearchMatch, MemorySearchOptions, MemorySearchResult, MemoryTree,
+    MemoryTreeNode, RankedTextCandidate, RankedTextMatch, RuntimeMemoryRecord,
+    MEMORY_EMBEDDING_REASON_HASH_ONLY, MEMORY_EMBEDDING_REASON_PROVIDER_FAILED,
+    MEMORY_RETRIEVAL_BACKEND_HYBRID_BM25_RRF, MEMORY_RETRIEVAL_BACKEND_VECTOR_ONLY,
+    MEMORY_RETRIEVAL_REASON_HYBRID_ENABLED, MEMORY_RETRIEVAL_REASON_VECTOR_ONLY,
 };
 
 impl FileMemoryStore {
@@ -181,6 +181,17 @@ impl FileMemoryStore {
         } else {
             vector_ranked.clone()
         };
+        for item in &mut ranked {
+            if let Some(record) = by_memory_id.get(item.key.as_str()) {
+                item.score *= importance_rank_multiplier(record.importance);
+            }
+        }
+        ranked.sort_by(|left, right| {
+            right
+                .score
+                .total_cmp(&left.score)
+                .then_with(|| left.key.cmp(&right.key))
+        });
 
         ranked.truncate(options.limit);
         let ranking_latency_ms = ranking_started.elapsed().as_millis() as u64;
@@ -201,6 +212,8 @@ impl FileMemoryStore {
                     .flatten(),
                 scope: record.scope.clone(),
                 summary: record.entry.summary.clone(),
+                memory_type: record.memory_type,
+                importance: record.importance,
                 tags: record.entry.tags.clone(),
                 facts: record.entry.facts.clone(),
                 source_event_key: record.entry.source_event_key.clone(),
