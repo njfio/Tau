@@ -68,7 +68,8 @@ fi
 echo "==> waiting for postgres readiness (${wait_seconds}s max)"
 ready=false
 for _ in $(seq 1 "${wait_seconds}"); do
-  if docker exec "${container_name}" pg_isready -U "${postgres_user}" -d "${postgres_db}" >/dev/null 2>&1; then
+  if docker exec "${container_name}" pg_isready -U "${postgres_user}" -d "${postgres_db}" >/dev/null 2>&1 \
+    && docker exec "${container_name}" psql -U "${postgres_user}" -d "${postgres_db}" -tAc "select 1" >/dev/null 2>&1; then
     ready=true
     break
   fi
