@@ -70,7 +70,7 @@ use openai_compat::{
 use request_translation::{sanitize_session_key, translate_openresponses_request};
 use session_runtime::{
     collect_assistant_reply, gateway_session_path, initialize_gateway_session_runtime,
-    persist_messages,
+    persist_messages, persist_session_usage_delta,
 };
 use types::{
     GatewayAuthSessionRequest, GatewayAuthSessionResponse, GatewayMemoryUpdateRequest,
@@ -2283,6 +2283,7 @@ async fn execute_openresponses_request(
         }) as StreamDeltaHandler
     });
 
+    let pre_prompt_cost = agent.cost_snapshot();
     let prompt_result = if state.config.turn_timeout_ms == 0 {
         agent
             .prompt_with_stream(&translated.prompt, stream_handler)
@@ -2302,6 +2303,13 @@ async fn execute_openresponses_request(
             }
         }
     };
+    let post_prompt_cost = agent.cost_snapshot();
+    persist_session_usage_delta(&mut session_runtime, &pre_prompt_cost, &post_prompt_cost)
+        .map_err(|error| {
+            OpenResponsesApiError::internal(format!(
+                "failed to persist gateway session usage summary: {error}"
+            ))
+        })?;
 
     let new_messages = prompt_result.map_err(|error| {
         OpenResponsesApiError::gateway_failure(format!("gateway runtime failed: {error}"))
