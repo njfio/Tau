@@ -17,27 +17,27 @@ fi
 
 bash -n scripts/dev/docker-image-smoke.sh
 
-if ! rg -q '^FROM rust:.* AS builder$' Dockerfile; then
+if ! grep -Eq '^FROM rust:.* AS builder$' Dockerfile; then
   echo "error: Dockerfile must define a rust builder stage" >&2
   exit 1
 fi
 
-if ! rg -q '^FROM .*debian.*$' Dockerfile; then
+if ! grep -Eq '^FROM .*debian.*$' Dockerfile; then
   echo "error: Dockerfile must define a debian runtime stage" >&2
   exit 1
 fi
 
-if ! rg -q 'tau-coding-agent --help' scripts/dev/docker-image-smoke.sh; then
+if ! grep -q 'tau-coding-agent --help' scripts/dev/docker-image-smoke.sh; then
   echo "error: docker smoke script must verify tau-coding-agent --help" >&2
   exit 1
 fi
 
-if ! rg -q 'docker_packaging' .github/workflows/ci.yml; then
+if ! grep -q 'docker_packaging' .github/workflows/ci.yml; then
   echo "error: ci workflow missing docker_packaging change scope" >&2
   exit 1
 fi
 
-if ! rg -q 'ghcr.io' .github/workflows/release.yml; then
+if ! grep -q 'ghcr.io' .github/workflows/release.yml; then
   echo "error: release workflow missing ghcr publish wiring" >&2
   exit 1
 fi
