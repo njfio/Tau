@@ -163,6 +163,7 @@ async fn functional_build_local_runtime_agent_enforces_preflight_token_limits() 
             request_timeout_ms: Some(120_000),
             tool_timeout_ms: Some(120_000),
             model_input_cost_per_million: None,
+            model_cached_input_cost_per_million: None,
             model_output_cost_per_million: None,
             cost_budget_usd: None,
             cost_alert_thresholds_percent: vec![80, 100],
