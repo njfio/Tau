@@ -20,7 +20,7 @@ Training boundary status:
 ## What Tau Includes Today
 
 - Rust-first runtime architecture (no Node.js/TypeScript runtime dependency in core paths)
-- Provider-agnostic model routing (`openai/*`, `anthropic/*`, `google/*`) with multiple auth modes
+- Provider-aware model routing (`openai/*`, `openrouter/*`, `anthropic/*`, `google/*`) with OpenAI-compatible alias support (`deepseek/*`, `groq/*`, `xai/*`, `mistral/*`, `azure/*`) and multiple auth modes
 - Interactive prompt loop, one-shot prompt mode, and plan-first orchestration mode
 - Session persistence and lifecycle operations (branch, undo/redo, resume, export/import/repair)
 - Built-in tools and tool-policy controls (filesystem/shell/http/path/rate/sandbox controls)
