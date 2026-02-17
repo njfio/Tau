@@ -3,9 +3,9 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use tau_agent_core::Agent;
+use tau_agent_core::{Agent, AgentCostSnapshot};
 use tau_ai::{Message, MessageRole};
-use tau_session::SessionStore;
+use tau_session::{SessionStore, SessionUsageSummary};
 
 #[derive(Debug)]
 pub(super) struct SessionRuntime {
@@ -25,6 +25,32 @@ pub(super) fn persist_messages(
         .store
         .append_messages(runtime.active_head, new_messages)?;
     Ok(())
+}
+
+pub(super) fn persist_session_usage_delta(
+    session_runtime: &mut Option<SessionRuntime>,
+    pre_prompt_cost: &AgentCostSnapshot,
+    post_prompt_cost: &AgentCostSnapshot,
+) -> Result<()> {
+    let Some(runtime) = session_runtime.as_mut() else {
+        return Ok(());
+    };
+
+    let delta = SessionUsageSummary {
+        input_tokens: post_prompt_cost
+            .input_tokens
+            .saturating_sub(pre_prompt_cost.input_tokens),
+        output_tokens: post_prompt_cost
+            .output_tokens
+            .saturating_sub(pre_prompt_cost.output_tokens),
+        total_tokens: post_prompt_cost
+            .total_tokens
+            .saturating_sub(pre_prompt_cost.total_tokens),
+        estimated_cost_usd: (post_prompt_cost.estimated_cost_usd
+            - pre_prompt_cost.estimated_cost_usd)
+            .max(0.0),
+    };
+    runtime.store.record_usage_delta(delta)
 }
 
 pub(super) fn gateway_session_path(state_dir: &Path, session_key: &str) -> PathBuf {
