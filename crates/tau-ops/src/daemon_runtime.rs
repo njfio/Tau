@@ -435,6 +435,10 @@ pub fn render_launchd_plist(label: &str, executable: &Path, state_dir: &Path) ->
 /// Callers rely on its contract and failure semantics remaining stable.
 /// Update this comment if behavior or integration expectations change.
 pub fn render_systemd_user_unit(label: &str, executable: &Path, state_dir: &Path) -> String {
+    let executable_arg = quote_systemd_exec_arg(executable.display().to_string().as_str());
+    let gateway_state_dir = state_dir.join("gateway");
+    let gateway_state_dir_arg =
+        quote_systemd_exec_arg(gateway_state_dir.display().to_string().as_str());
     format!(
         r#"[Unit]
 Description=Tau Coding Agent daemon ({label})
@@ -442,7 +446,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart={executable} --model openai/gpt-4o-mini --gateway-openresponses-server --gateway-openresponses-auth-mode localhost-dev --gateway-openresponses-bind 127.0.0.1:8787 --gateway-state-dir {state_dir}/gateway
+ExecStart={executable_arg} --model openai/gpt-4o-mini --gateway-openresponses-server --gateway-openresponses-auth-mode localhost-dev --gateway-openresponses-bind 127.0.0.1:8787 --gateway-state-dir {gateway_state_dir_arg}
 Restart=on-failure
 RestartSec=2
 WorkingDirectory={state_dir}
@@ -453,9 +457,22 @@ StandardError=append:{state_dir}/logs/stderr.log
 WantedBy=default.target
 "#,
         label = label,
-        executable = executable.display(),
+        executable_arg = executable_arg,
+        gateway_state_dir_arg = gateway_state_dir_arg,
         state_dir = state_dir.display(),
     )
+}
+
+fn quote_systemd_exec_arg(value: &str) -> String {
+    if !value
+        .chars()
+        .any(|character| character.is_whitespace() || character == '"' || character == '\\')
+    {
+        return value.to_string();
+    }
+
+    let escaped = value.replace('\\', r"\\").replace('"', r#"\""#);
+    format!("\"{escaped}\"")
 }
 
 fn daemon_state_path(state_dir: &Path) -> PathBuf {
@@ -547,6 +564,75 @@ fn probe_state_dir_writable(state_dir: &Path) -> bool {
 mod tests {
     use super::*;
     use tempfile::tempdir;
+
+    #[test]
+    fn spec_c01_render_systemd_user_unit_includes_required_sections_and_gateway_flags() {
+        let executable = Path::new("/usr/bin/tau-coding-agent");
+        let state_dir = Path::new("/var/tmp/tau-daemon");
+        let rendered = render_systemd_user_unit("io.tau.coding-agent", executable, state_dir);
+        assert!(rendered.contains("[Unit]"));
+        assert!(rendered.contains("[Service]"));
+        assert!(rendered.contains("[Install]"));
+        assert!(rendered.contains("WantedBy=default.target"));
+        assert!(rendered.contains("--gateway-openresponses-server"));
+        assert!(rendered.contains("--gateway-openresponses-bind 127.0.0.1:8787"));
+        assert!(rendered.contains("/var/tmp/tau-daemon/gateway"));
+    }
+
+    #[test]
+    fn spec_c02_render_systemd_user_unit_escapes_execstart_path_with_spaces() {
+        let executable = Path::new("/opt/Tau Agent/bin/tau-coding-agent");
+        let state_dir = Path::new("/var/tmp/tau-daemon");
+        let rendered = render_systemd_user_unit("io.tau.coding-agent", executable, state_dir);
+        assert!(
+            rendered.contains("ExecStart=\"/opt/Tau Agent/bin/tau-coding-agent\""),
+            "expected quoted executable in ExecStart, got: {rendered}"
+        );
+    }
+
+    #[test]
+    fn spec_c03_tau_daemon_lifecycle_roundtrip_systemd_user_profile() {
+        let temp = tempdir().expect("tempdir");
+        let config = TauDaemonConfig {
+            state_dir: temp.path().join(".tau/daemon"),
+            profile: CliDaemonProfile::SystemdUser,
+        };
+
+        let installed = install_tau_daemon(&config).expect("install daemon");
+        assert!(installed.installed);
+        assert!(!installed.running);
+        assert!(installed.service_file_exists);
+
+        let started = start_tau_daemon(&config).expect("start daemon");
+        assert!(started.running);
+        assert!(started.pid_file_exists);
+
+        let stopped = stop_tau_daemon(&config, Some("maintenance_window")).expect("stop daemon");
+        assert!(!stopped.running);
+        assert!(!stopped.pid_file_exists);
+
+        let uninstalled = uninstall_tau_daemon(&config).expect("uninstall daemon");
+        assert!(!uninstalled.installed);
+        assert!(!uninstalled.running);
+    }
+
+    #[test]
+    fn spec_c04_tau_daemon_status_is_deterministic_across_reloads() {
+        let temp = tempdir().expect("tempdir");
+        let config = TauDaemonConfig {
+            state_dir: temp.path().join(".tau/daemon"),
+            profile: CliDaemonProfile::SystemdUser,
+        };
+
+        install_tau_daemon(&config).expect("install daemon");
+        start_tau_daemon(&config).expect("start daemon");
+        let first = inspect_tau_daemon(&config).expect("first status");
+        let second = inspect_tau_daemon(&config).expect("second status");
+        assert_eq!(first.installed, second.installed);
+        assert_eq!(first.running, second.running);
+        assert_eq!(first.profile, second.profile);
+        assert_eq!(first.service_file_path, second.service_file_path);
+    }
 
     #[test]
     fn unit_render_launchd_plist_includes_expected_command_and_paths() {
