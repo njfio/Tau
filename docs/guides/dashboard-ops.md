@@ -7,6 +7,17 @@ Run all commands from repository root.
 This runbook covers dashboard diagnostics and gateway-backed API surfaces for preserved state
 artifacts. The fixture-driven contract runner (`--dashboard-contract-runner`) has been removed.
 
+## Direction Decision
+
+Dashboard access is consolidated on the gateway path for production usage:
+
+- Production/operator clients use gateway dashboard endpoints and SSE:
+  `/dashboard/health`, `/dashboard/widgets`, `/dashboard/queue-timeline`,
+  `/dashboard/alerts`, `/dashboard/actions`, `/dashboard/stream`.
+- `tau-dashboard` remains the deterministic state/event processing and contract
+  validation runtime behind those gateway surfaces.
+- No separate standalone dashboard service is required for the M46 closure path.
+
 ## Health and observability signals
 
 Primary transport health signal:
