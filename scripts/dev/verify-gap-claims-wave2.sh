@@ -30,7 +30,7 @@ run_test "tau-ai" "spec_c06_openrouter_route_applies_dedicated_headers_when_conf
 
 # Claim 6: Postgres backend is implemented (not scaffold-only).
 run_test "tau-session" "spec_c05_postgres_invalid_dsn_reports_backend_error_not_scaffold"
-run_test "tau-session" "integration_spec_c03_postgres_usage_summary_persists_when_dsn_provided"
+run_cmd env CARGO_TARGET_DIR="${target_dir}" scripts/dev/verify-session-postgres-live.sh
 
 # Claim 7: Onboarding includes guided flow.
 run_test "tau-onboarding" "functional_spec_c01_c02_execute_onboarding_command_guided_flow_is_deterministic_and_applies_selected_workspace"
