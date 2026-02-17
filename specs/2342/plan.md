@@ -1,6 +1,6 @@
 # Plan #2342
 
-Status: Draft
+Status: Reviewed
 Spec: specs/2342/spec.md
 
 ## Approach
@@ -30,4 +30,4 @@ Spec: specs/2342/spec.md
 
 ## Current Status
 
-Blocked pending dependency approval per AGENTS boundary contract.
+Ready for implementation.
