@@ -78,6 +78,7 @@ const TELEMETRY_STATUS_PRESENCE_ACTIVE: &str = "presence_active";
 const TELEMETRY_STATUS_PRESENCE_IDLE: &str = "presence_idle";
 const COMMAND_STATUS_REPORTED: &str = "reported";
 const COMMAND_STATUS_FAILED: &str = "failed";
+const COMMAND_STATUS_SKIPPED: &str = "skipped";
 const COMMAND_REASON_UNKNOWN: &str = "command_unknown";
 const COMMAND_REASON_INVALID_ARGS: &str = "command_invalid_args";
 const COMMAND_REASON_RBAC_DENIED: &str = "command_rbac_denied";
@@ -94,6 +95,7 @@ const COMMAND_REASON_APPROVALS_UNKNOWN_REQUEST: &str = "command_approvals_unknow
 const COMMAND_REASON_APPROVALS_STALE_REQUEST: &str = "command_approvals_stale_request";
 const COMMAND_REASON_APPROVALS_ACTOR_MAPPING_FAILED: &str =
     "command_approvals_actor_mapping_failed";
+const COMMAND_REASON_SKIP_SUPPRESSED: &str = "command_skip_suppressed";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// Enumerates supported `MultiChannelPairingDecision` values.
@@ -399,6 +401,9 @@ struct CoalescedInboundEvent {
 enum MultiChannelTauCommand {
     Help,
     Status,
+    Skip {
+        reason: Option<String>,
+    },
     AuthStatus {
         provider: Option<String>,
     },
@@ -424,6 +429,8 @@ struct MultiChannelCommandExecution {
     status: String,
     reason_code: String,
     response_text: String,
+    suppress_outbound_delivery: bool,
+    skip_reason: Option<String>,
 }
 
 /// Public `fn` `run_multi_channel_contract_runner` in `tau-multi-channel`.
@@ -1089,6 +1096,9 @@ impl MultiChannelRuntime {
                 COMMAND_REASON_STATUS_REPORTED,
                 self.render_multi_channel_status_command_report().as_str(),
             )),
+            MultiChannelTauCommand::Skip { reason } => Some(
+                build_multi_channel_command_skip_execution(reason.as_deref()),
+            ),
             MultiChannelTauCommand::AuthStatus { provider } => {
                 let Some(auth_handler) = &self.config.command_handlers.auth else {
                     let response = "command unavailable: auth status handler is not configured.";
@@ -1338,10 +1348,67 @@ impl MultiChannelRuntime {
         let command_payload = command_execution
             .as_ref()
             .map(multi_channel_command_payload);
+        let suppress_outbound_delivery = command_execution
+            .as_ref()
+            .is_some_and(|execution| execution.suppress_outbound_delivery);
         let response_text = command_execution
             .as_ref()
             .map(|execution| execution.response_text.clone())
             .unwrap_or_else(|| render_response(event));
+        if suppress_outbound_delivery {
+            if let Some(user_context_text) = user_context_text.as_ref() {
+                if !context_contains_entry(&existing_context, "user", user_context_text) {
+                    store.append_context_entry(&ChannelContextEntry {
+                        timestamp_unix_ms,
+                        role: "user".to_string(),
+                        text: user_context_text.clone(),
+                    })?;
+                }
+            }
+
+            let mut payload = json!({
+                "status": COMMAND_STATUS_SKIPPED,
+                "reason_code": command_execution
+                    .as_ref()
+                    .map(|execution| execution.reason_code.as_str())
+                    .unwrap_or(COMMAND_REASON_SKIP_SUPPRESSED),
+                "event_key": event_key,
+                "transport": event.transport.as_str(),
+                "conversation_id": event.conversation_id.trim(),
+                "route_session_key": route_decision.session_key.as_str(),
+                "route": route_payload.clone(),
+                "pairing": pairing_payload.clone(),
+                "secure_messaging": secure_messaging_payload.clone(),
+                "channel_policy": channel_policy_payload.clone(),
+                "media_understanding": media_payload.clone(),
+            });
+            if let Some(command_payload) = command_payload.as_ref() {
+                if let Value::Object(map) = &mut payload {
+                    map.insert("command".to_string(), command_payload.clone());
+                }
+            }
+            if let Some(skip_reason) = command_execution
+                .as_ref()
+                .and_then(|execution| execution.skip_reason.as_ref())
+            {
+                if let Value::Object(map) = &mut payload {
+                    map.insert(
+                        "skip_reason".to_string(),
+                        Value::String(skip_reason.clone()),
+                    );
+                }
+            }
+            if !log_contains_outbound_status(&existing_logs, event_key, COMMAND_STATUS_SKIPPED) {
+                store.append_log_entry(&ChannelLogEntry {
+                    timestamp_unix_ms: current_unix_timestamp_ms(),
+                    direction: "outbound".to_string(),
+                    event_key: Some(event_key.to_string()),
+                    source: "tau-multi-channel-runner".to_string(),
+                    payload,
+                })?;
+            }
+            return Ok(outcome);
+        }
         let response_chars = response_text.chars().count();
         let emit_lifecycle =
             should_emit_typing_presence_lifecycle(event, &response_text, &self.config.telemetry);
@@ -1477,12 +1544,12 @@ impl MultiChannelRuntime {
             }
         }
 
-        if let Some(user_context_text) = user_context_text {
-            if !context_contains_entry(&existing_context, "user", &user_context_text) {
+        if let Some(user_context_text) = user_context_text.as_ref() {
+            if !context_contains_entry(&existing_context, "user", user_context_text) {
                 store.append_context_entry(&ChannelContextEntry {
                     timestamp_unix_ms,
                     role: "user".to_string(),
-                    text: user_context_text,
+                    text: user_context_text.clone(),
                 })?;
             }
         }
@@ -1956,6 +2023,18 @@ fn parse_multi_channel_tau_command(
             }
             Ok(Some(MultiChannelTauCommand::Status))
         }
+        "skip" => {
+            let reason = tokens
+                .filter(|token| !token.trim().is_empty())
+                .collect::<Vec<_>>()
+                .join(" ");
+            let reason = if reason.is_empty() {
+                None
+            } else {
+                Some(reason)
+            };
+            Ok(Some(MultiChannelTauCommand::Skip { reason }))
+        }
         "auth" => {
             let Some(action) = tokens.next() else {
                 return Err(COMMAND_REASON_INVALID_ARGS.to_string());
@@ -2081,6 +2160,17 @@ fn render_multi_channel_tau_command_line(command: &MultiChannelTauCommand) -> St
     match command {
         MultiChannelTauCommand::Help => "help".to_string(),
         MultiChannelTauCommand::Status => "status".to_string(),
+        MultiChannelTauCommand::Skip { reason } => {
+            if let Some(reason) = reason.as_deref() {
+                if reason.trim().is_empty() {
+                    "skip".to_string()
+                } else {
+                    format!("skip {}", reason.trim())
+                }
+            } else {
+                "skip".to_string()
+            }
+        }
         MultiChannelTauCommand::AuthStatus { provider } => {
             if let Some(provider) = provider.as_deref() {
                 format!("auth status {provider}")
@@ -2104,6 +2194,7 @@ fn render_multi_channel_tau_command_help() -> String {
         "supported /tau commands:",
         "- /tau help",
         "- /tau status",
+        "- /tau skip [reason]",
         "- /tau auth status [openai|anthropic|google]",
         "- /tau doctor [--online]",
         "- /tau approvals list [--json] [--status pending|approved|rejected|expired|consumed]",
@@ -2145,6 +2236,31 @@ fn build_multi_channel_command_execution(
             reason_code,
             content,
         ),
+        suppress_outbound_delivery: false,
+        skip_reason: None,
+    }
+}
+
+fn build_multi_channel_command_skip_execution(
+    reason: Option<&str>,
+) -> MultiChannelCommandExecution {
+    let normalized_reason = reason.map(str::trim).filter(|value| !value.is_empty());
+    let summary = if let Some(reason) = normalized_reason {
+        format!("response suppressed by `/tau skip`: {reason}")
+    } else {
+        "response suppressed by `/tau skip`".to_string()
+    };
+    MultiChannelCommandExecution {
+        command_line: if let Some(reason) = normalized_reason {
+            format!("skip {reason}")
+        } else {
+            "skip".to_string()
+        },
+        status: COMMAND_STATUS_SKIPPED.to_string(),
+        reason_code: COMMAND_REASON_SKIP_SUPPRESSED.to_string(),
+        response_text: summary,
+        suppress_outbound_delivery: true,
+        skip_reason: normalized_reason.map(ToOwned::to_owned),
     }
 }
 
@@ -2163,12 +2279,19 @@ fn multi_channel_command_operator_allowed(access_decision: &MultiChannelAccessDe
 }
 
 fn multi_channel_command_payload(execution: &MultiChannelCommandExecution) -> Value {
-    json!({
+    let mut payload = json!({
         "schema": "multi_channel_tau_command_v1",
         "command": execution.command_line,
         "status": execution.status,
         "reason_code": execution.reason_code,
-    })
+        "suppressed": execution.suppress_outbound_delivery,
+    });
+    if let Some(reason) = execution.skip_reason.as_ref() {
+        if let Value::Object(map) = &mut payload {
+            map.insert("skip_reason".to_string(), Value::String(reason.clone()));
+        }
+    }
+    payload
 }
 
 fn load_multi_channel_runtime_state(path: &Path) -> Result<MultiChannelRuntimeState> {
