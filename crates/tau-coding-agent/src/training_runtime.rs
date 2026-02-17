@@ -15,7 +15,9 @@ use tau_access::{
 use tau_agent_core::{AgentConfig, SafetyMode};
 use tau_ai::{LlmClient, ModelRef};
 use tau_cli::{Cli, CliPromptSanitizerMode};
-use tau_onboarding::startup_local_runtime::{build_local_runtime_agent, LocalRuntimeAgentSettings};
+use tau_onboarding::startup_local_runtime::{
+    build_local_runtime_agent, derive_preflight_token_limits, LocalRuntimeAgentSettings,
+};
 use tau_trainer::checkpoint_store::{
     load_policy_checkpoint, load_policy_checkpoint_with_rollback, CheckpointSource,
 };
@@ -1128,12 +1130,23 @@ fn build_executor(
 ) -> Result<Arc<TauAgentExecutor>> {
     let agent_defaults = AgentConfig::default();
     let model_catalog_entry = model_catalog.find_model_ref(model_ref);
+    let model_max_output_tokens = model_catalog_entry.and_then(|entry| entry.max_output_tokens);
+    let model_context_window_tokens =
+        model_catalog_entry.and_then(|entry| entry.context_window_tokens);
+    let (max_estimated_input_tokens, max_estimated_total_tokens) = derive_preflight_token_limits(
+        model_context_window_tokens,
+        model_max_output_tokens,
+        agent_defaults.max_estimated_input_tokens,
+        agent_defaults.max_estimated_total_tokens,
+    );
     let safety_reward_policy = resolve_safety_reward_policy(config.safety_reward.as_ref())?;
     let settings = LocalRuntimeAgentSettings {
         max_turns: cli.max_turns,
-        max_tokens: model_catalog_entry.and_then(|entry| entry.max_output_tokens),
+        max_tokens: model_max_output_tokens,
         max_parallel_tool_calls: cli.agent_max_parallel_tool_calls,
         max_context_messages: cli.agent_max_context_messages,
+        max_estimated_input_tokens,
+        max_estimated_total_tokens,
         request_max_retries: cli.agent_request_max_retries,
         request_retry_initial_backoff_ms: cli.agent_request_retry_initial_backoff_ms,
         request_retry_max_backoff_ms: cli.agent_request_retry_max_backoff_ms,
@@ -1216,7 +1229,11 @@ mod tests {
     use std::time::Duration;
     use tau_ai::{ChatRequest, ChatResponse, ChatUsage, LlmClient, Message, ModelRef, TauAiError};
     use tau_cli::Cli;
+    use tau_provider::{
+        ModelCatalogEntry, ModelCatalogFile, ModelCatalogSource, MODEL_CATALOG_SCHEMA_VERSION,
+    };
     use tau_trainer::checkpoint_store::{save_policy_checkpoint, PolicyCheckpoint};
+    use tau_training_runner::RolloutExecutor;
     use tau_training_store::{RolloutQuery, RolloutStatus, SqliteTrainingStore, TrainingStore};
     use tempfile::tempdir;
     use tokio::time::sleep;
@@ -1360,6 +1377,100 @@ mod tests {
         let error = build_trainer_config(&config)
             .expect_err("negative safety reward penalties must fail closed");
         assert!(error.to_string().contains("safety_reward.blocked_penalty"));
+    }
+
+    #[tokio::test]
+    async fn integration_build_executor_enforces_model_derived_preflight_limits() {
+        let temp = tempdir().expect("create tempdir");
+        let config_path = temp.path().join("prompt-optimization-preflight.json");
+        let store_path = temp.path().join("train-preflight.sqlite");
+        let config_payload = json!({
+            "optimize": [
+                { "prompt": "this prompt should exceed tiny preflight limits" }
+            ],
+            "worker_count": 1,
+            "completion_timeout_secs": 5
+        });
+        std::fs::write(
+            &config_path,
+            serde_json::to_string_pretty(&config_payload).expect("encode config"),
+        )
+        .expect("write config");
+
+        let mut cli = parse_cli_with_stack(&["tau-rs"]);
+        cli.prompt_optimization_config = Some(config_path.clone());
+        cli.prompt_optimization_store_sqlite = store_path.clone();
+        cli.prompt_optimization_json = true;
+
+        let model_ref = ModelRef::parse("openai/tiny-preflight").expect("parse model");
+        let model_catalog = ModelCatalog::from_file(
+            ModelCatalogFile {
+                schema_version: MODEL_CATALOG_SCHEMA_VERSION,
+                entries: vec![ModelCatalogEntry {
+                    provider: "openai".to_string(),
+                    model: "tiny-preflight".to_string(),
+                    context_window_tokens: Some(12),
+                    supports_tools: true,
+                    supports_multimodal: false,
+                    supports_reasoning: false,
+                    supports_extended_thinking: false,
+                    max_output_tokens: Some(4),
+                    knowledge_cutoff: None,
+                    deprecated: false,
+                    cached_input_cost_per_million: None,
+                    input_cost_per_million: None,
+                    output_cost_per_million: None,
+                }],
+            },
+            ModelCatalogSource::BuiltIn,
+            None,
+        )
+        .expect("build model catalog");
+        let handled = run_prompt_optimization_mode_if_requested(
+            &cli,
+            Arc::new(MockClient),
+            &model_ref,
+            &model_catalog,
+            "You are helpful.",
+            &ToolPolicy::new(vec![temp.path().to_path_buf()]),
+        )
+        .await
+        .expect("run prompt optimization mode");
+        assert!(handled);
+
+        let store = SqliteTrainingStore::new(&store_path).expect("open sqlite store");
+        let failed_rollouts = store
+            .query_rollouts(RolloutQuery {
+                statuses: Some(vec![RolloutStatus::Failed]),
+                ..RolloutQuery::default()
+            })
+            .await
+            .expect("query failed rollouts");
+        assert_eq!(failed_rollouts.len(), 1);
+
+        let attempt = store
+            .get_attempt(&format!("{}:attempt-1", failed_rollouts[0].rollout_id))
+            .await
+            .expect("load attempt")
+            .expect("attempt exists");
+        let error_message = attempt.error_message.unwrap_or_default();
+        assert!(
+            error_message.contains("token budget exceeded"),
+            "expected token preflight failure, got: {error_message}"
+        );
+
+        let status_path = store_path
+            .parent()
+            .expect("store path parent")
+            .join("status.json");
+        let status_raw = std::fs::read_to_string(&status_path).expect("read status file");
+        let status_json: serde_json::Value =
+            serde_json::from_str(&status_raw).expect("parse status payload");
+        assert_eq!(
+            status_json["total_rollouts"],
+            serde_json::Value::from(1_u64)
+        );
+        assert_eq!(status_json["failed"], serde_json::Value::from(1_u64));
     }
 
     #[tokio::test]

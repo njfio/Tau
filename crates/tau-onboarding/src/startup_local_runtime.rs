@@ -29,6 +29,8 @@ pub struct LocalRuntimeAgentSettings {
     pub max_tokens: Option<u32>,
     pub max_parallel_tool_calls: usize,
     pub max_context_messages: Option<usize>,
+    pub max_estimated_input_tokens: Option<u32>,
+    pub max_estimated_total_tokens: Option<u32>,
     pub request_max_retries: usize,
     pub request_retry_initial_backoff_ms: u64,
     pub request_retry_max_backoff_ms: u64,
@@ -44,6 +46,26 @@ pub struct LocalRuntimeAgentSettings {
     pub secret_leak_detector_enabled: bool,
     pub secret_leak_detector_mode: SafetyMode,
     pub secret_leak_redaction_token: String,
+}
+
+/// Derive model-aware pre-flight token ceilings.
+///
+/// When a model catalog entry provides `context_window_tokens`, we enforce:
+/// - `max_estimated_total_tokens = context_window_tokens`
+/// - `max_estimated_input_tokens = context_window_tokens - max_output_tokens`
+///
+/// If context metadata is unavailable, fall back to caller defaults.
+pub fn derive_preflight_token_limits(
+    context_window_tokens: Option<u32>,
+    max_output_tokens: Option<u32>,
+    default_max_estimated_input_tokens: Option<u32>,
+    default_max_estimated_total_tokens: Option<u32>,
+) -> (Option<u32>, Option<u32>) {
+    let max_estimated_input_tokens = context_window_tokens
+        .map(|context| context.saturating_sub(max_output_tokens.unwrap_or(0)))
+        .or(default_max_estimated_input_tokens);
+    let max_estimated_total_tokens = context_window_tokens.or(default_max_estimated_total_tokens);
+    (max_estimated_input_tokens, max_estimated_total_tokens)
 }
 
 pub fn build_local_runtime_agent(
@@ -63,6 +85,8 @@ pub fn build_local_runtime_agent(
             max_tokens: settings.max_tokens,
             max_parallel_tool_calls: settings.max_parallel_tool_calls,
             max_context_messages: settings.max_context_messages,
+            max_estimated_input_tokens: settings.max_estimated_input_tokens,
+            max_estimated_total_tokens: settings.max_estimated_total_tokens,
             request_max_retries: settings.request_max_retries,
             request_retry_initial_backoff_ms: settings.request_retry_initial_backoff_ms,
             request_retry_max_backoff_ms: settings.request_retry_max_backoff_ms,
