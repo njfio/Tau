@@ -190,7 +190,6 @@ jobs:
               - ".dockerignore"
               - "scripts/dev/docker-image-smoke.sh"
               - "scripts/dev/test-docker-image-packaging.sh"
-              - ".github/workflows/ci.yml"
               - ".github/workflows/release.yml"
             wasm_smoke:
               - "crates/kamn-core/**"

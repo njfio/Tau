@@ -154,4 +154,4 @@ Run release workflow lint/validation via PR CI:
 - Release helper test scope is automatically triggered when `scripts/release/**` or `.github/workflows/release.yml` changes.
 - Workflow contract checks (matrix + smoke policy) run in `scripts/release/test-release-workflow-contract.sh`.
 - Docker packaging scope is automatically triggered when `Dockerfile`, `.dockerignore`,
-  Docker packaging scripts, or release workflow files change.
+  Docker packaging scripts, or `.github/workflows/release.yml` changes.
