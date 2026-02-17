@@ -1089,8 +1089,22 @@ async fn functional_runner_executes_tau_skip_command_without_outbound_delivery()
         skip_entry.payload["command"]["reason_code"].as_str(),
         Some("command_skip_suppressed")
     );
+    assert_eq!(
+        skip_entry.payload["command"]["command"].as_str(),
+        Some("skip maintenance-window")
+    );
+    assert_eq!(
+        skip_entry.payload["command"]["skip_reason"].as_str(),
+        Some("maintenance-window")
+    );
 
     let contexts = store.load_context_entries().expect("load context");
+    assert!(
+        contexts
+            .iter()
+            .any(|entry| entry.role == "user" && entry.text == "/tau skip maintenance-window"),
+        "skip command should preserve user context entry for auditability"
+    );
     assert!(
         !contexts.iter().any(|entry| entry.role == "assistant"),
         "skip command should not persist assistant response text"
