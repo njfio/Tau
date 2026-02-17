@@ -1252,6 +1252,129 @@ async fn integration_openresponses_http_roundtrip_persists_session_state() {
 }
 
 #[tokio::test]
+async fn integration_spec_c01_openresponses_request_persists_session_usage_summary() {
+    let temp = tempdir().expect("tempdir");
+    let state = test_state(temp.path(), 10_000, "secret");
+    let (addr, handle) = spawn_test_server(state.clone())
+        .await
+        .expect("spawn server");
+
+    let client = Client::new();
+    let payload = client
+        .post(format!("http://{addr}/v1/responses"))
+        .bearer_auth("secret")
+        .json(&json!({
+            "input": "usage-c01",
+            "metadata": {"session_id": "usage-c01"}
+        }))
+        .send()
+        .await
+        .expect("send request")
+        .json::<Value>()
+        .await
+        .expect("parse response payload");
+
+    let usage_payload = &payload["usage"];
+    let expected_input = usage_payload["input_tokens"]
+        .as_u64()
+        .expect("input tokens present");
+    let expected_output = usage_payload["output_tokens"]
+        .as_u64()
+        .expect("output tokens present");
+    let expected_total = usage_payload["total_tokens"]
+        .as_u64()
+        .expect("total tokens present");
+
+    let session_path =
+        gateway_session_path(&state.config.state_dir, &sanitize_session_key("usage-c01"));
+    let reloaded = SessionStore::load(&session_path).expect("reload session store");
+    let usage = reloaded.usage_summary();
+
+    assert!(usage.total_tokens > 0);
+    assert_eq!(usage.input_tokens, expected_input);
+    assert_eq!(usage.output_tokens, expected_output);
+    assert_eq!(usage.total_tokens, expected_total);
+    assert!(usage.estimated_cost_usd >= 0.0);
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn integration_spec_c02_openresponses_usage_summary_accumulates_across_requests() {
+    let temp = tempdir().expect("tempdir");
+    let state = test_state(temp.path(), 10_000, "secret");
+    let (addr, handle) = spawn_test_server(state.clone())
+        .await
+        .expect("spawn server");
+
+    let client = Client::new();
+    let first_payload = client
+        .post(format!("http://{addr}/v1/responses"))
+        .bearer_auth("secret")
+        .json(&json!({
+            "input": "usage-c02 first",
+            "metadata": {"session_id": "usage-c02"}
+        }))
+        .send()
+        .await
+        .expect("send first request")
+        .json::<Value>()
+        .await
+        .expect("parse first response payload");
+
+    let second_payload = client
+        .post(format!("http://{addr}/v1/responses"))
+        .bearer_auth("secret")
+        .json(&json!({
+            "input": "usage-c02 second",
+            "metadata": {"session_id": "usage-c02"}
+        }))
+        .send()
+        .await
+        .expect("send second request")
+        .json::<Value>()
+        .await
+        .expect("parse second response payload");
+
+    let expected_input = first_payload["usage"]["input_tokens"]
+        .as_u64()
+        .expect("first input tokens")
+        .saturating_add(
+            second_payload["usage"]["input_tokens"]
+                .as_u64()
+                .expect("second input tokens"),
+        );
+    let expected_output = first_payload["usage"]["output_tokens"]
+        .as_u64()
+        .expect("first output tokens")
+        .saturating_add(
+            second_payload["usage"]["output_tokens"]
+                .as_u64()
+                .expect("second output tokens"),
+        );
+    let expected_total = first_payload["usage"]["total_tokens"]
+        .as_u64()
+        .expect("first total tokens")
+        .saturating_add(
+            second_payload["usage"]["total_tokens"]
+                .as_u64()
+                .expect("second total tokens"),
+        );
+
+    let session_path =
+        gateway_session_path(&state.config.state_dir, &sanitize_session_key("usage-c02"));
+    let reloaded = SessionStore::load(&session_path).expect("reload session store");
+    let usage = reloaded.usage_summary();
+
+    assert_eq!(usage.input_tokens, expected_input);
+    assert_eq!(usage.output_tokens, expected_output);
+    assert_eq!(usage.total_tokens, expected_total);
+    assert!(usage.estimated_cost_usd >= 0.0);
+
+    handle.abort();
+}
+
+#[tokio::test]
 async fn integration_openai_chat_completions_http_roundtrip_persists_session_state() {
     let temp = tempdir().expect("tempdir");
     let state = test_state(temp.path(), 10_000, "secret");
