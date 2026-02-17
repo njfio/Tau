@@ -661,7 +661,7 @@ fn integration_execute_session_stats_command_summarizes_branched_session() {
 }
 
 #[test]
-fn integration_execute_session_stats_command_includes_usage_totals() {
+fn integration_spec_c04_execute_session_stats_command_includes_usage_totals() {
     let temp = tempdir().expect("tempdir");
     let mut store =
         SessionStore::load(temp.path().join("session-usage-stats.jsonl")).expect("load");

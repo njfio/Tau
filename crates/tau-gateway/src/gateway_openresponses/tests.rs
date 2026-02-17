@@ -81,6 +81,9 @@ fn test_state_with_client_and_auth(
         GatewayOpenResponsesServerConfig {
             client,
             model: "openai/gpt-4o-mini".to_string(),
+            model_input_cost_per_million: Some(10.0),
+            model_cached_input_cost_per_million: None,
+            model_output_cost_per_million: Some(20.0),
             system_prompt: "You are Tau.".to_string(),
             max_turns: 4,
             tool_registrar: Arc::new(NoopGatewayToolRegistrar),
@@ -1427,7 +1430,7 @@ async fn integration_spec_c01_openresponses_request_persists_session_usage_summa
 }
 
 #[tokio::test]
-async fn integration_spec_c02_openresponses_usage_summary_accumulates_across_requests() {
+async fn integration_spec_c03_openresponses_usage_summary_accumulates_across_requests() {
     let temp = tempdir().expect("tempdir");
     let state = test_state(temp.path(), 10_000, "secret");
     let (addr, handle) = spawn_test_server(state.clone())
@@ -1448,6 +1451,11 @@ async fn integration_spec_c02_openresponses_usage_summary_accumulates_across_req
         .json::<Value>()
         .await
         .expect("parse first response payload");
+    let session_path =
+        gateway_session_path(&state.config.state_dir, &sanitize_session_key("usage-c02"));
+    let first_usage = SessionStore::load(&session_path)
+        .expect("reload session store after first request")
+        .usage_summary();
 
     let second_payload = client
         .post(format!("http://{addr}/v1/responses"))
@@ -1487,16 +1495,14 @@ async fn integration_spec_c02_openresponses_usage_summary_accumulates_across_req
                 .as_u64()
                 .expect("second total tokens"),
         );
-
-    let session_path =
-        gateway_session_path(&state.config.state_dir, &sanitize_session_key("usage-c02"));
     let reloaded = SessionStore::load(&session_path).expect("reload session store");
     let usage = reloaded.usage_summary();
 
     assert_eq!(usage.input_tokens, expected_input);
     assert_eq!(usage.output_tokens, expected_output);
     assert_eq!(usage.total_tokens, expected_total);
-    assert!(usage.estimated_cost_usd >= 0.0);
+    assert!(first_usage.estimated_cost_usd > 0.0);
+    assert!(usage.estimated_cost_usd > first_usage.estimated_cost_usd);
 
     handle.abort();
 }
@@ -2455,6 +2461,9 @@ async fn regression_gateway_password_session_token_expires_and_fails_closed() {
         GatewayOpenResponsesServerConfig {
             client: Arc::new(MockGatewayLlmClient::default()),
             model: "openai/gpt-4o-mini".to_string(),
+            model_input_cost_per_million: Some(10.0),
+            model_cached_input_cost_per_million: None,
+            model_output_cost_per_million: Some(20.0),
             system_prompt: "You are Tau.".to_string(),
             max_turns: 4,
             tool_registrar: Arc::new(NoopGatewayToolRegistrar),

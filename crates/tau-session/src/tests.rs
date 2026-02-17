@@ -1402,7 +1402,7 @@ fn integration_sqlite_backend_auto_imports_legacy_jsonl_snapshot() {
 }
 
 #[test]
-fn integration_session_usage_summary_persists_across_store_reload() {
+fn integration_spec_c01_session_usage_summary_persists_across_store_reload() {
     let temp = tempdir().expect("tempdir");
     let path = temp.path().join("usage-ledger.jsonl");
     let mut store = load_store(&path).expect("load");

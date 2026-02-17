@@ -1063,6 +1063,8 @@ fn integration_build_gateway_openresponses_server_config_preserves_runtime_field
     );
 
     assert_eq!(config.model, "gpt-4o-mini");
+    assert!(config.model_input_cost_per_million.is_some());
+    assert!(config.model_output_cost_per_million.is_some());
     assert_eq!(config.system_prompt, "system prompt");
     assert_eq!(config.max_turns, 7);
     assert_eq!(config.turn_timeout_ms, 20_000);
