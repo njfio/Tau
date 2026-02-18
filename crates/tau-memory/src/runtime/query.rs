@@ -6,8 +6,9 @@ use anyhow::{bail, Result};
 use super::{
     importance_rank_multiplier, rank_text_candidates, rank_text_candidates_bm25,
     reciprocal_rank_fuse, record_search_text, resize_and_normalize_embedding, FileMemoryStore,
-    MemoryScopeFilter, MemorySearchMatch, MemorySearchOptions, MemorySearchResult, MemoryTree,
-    MemoryTreeNode, RankedTextCandidate, RankedTextMatch, RuntimeMemoryRecord,
+    MemoryLifecycleMaintenancePolicy, MemoryLifecycleMaintenanceResult, MemoryScopeFilter,
+    MemorySearchMatch, MemorySearchOptions, MemorySearchResult, MemoryTree, MemoryTreeNode,
+    MemoryType, RankedTextCandidate, RankedTextMatch, RuntimeMemoryRecord,
     MEMORY_EMBEDDING_REASON_HASH_ONLY, MEMORY_EMBEDDING_REASON_PROVIDER_FAILED,
     MEMORY_RETRIEVAL_BACKEND_HYBRID_BM25_RRF, MEMORY_RETRIEVAL_BACKEND_VECTOR_ONLY,
     MEMORY_RETRIEVAL_REASON_HYBRID_ENABLED, MEMORY_RETRIEVAL_REASON_VECTOR_ONLY,
@@ -372,6 +373,113 @@ impl FileMemoryStore {
         })
     }
 
+    /// Applies lifecycle maintenance (decay/prune/orphan cleanup) to active records.
+    pub fn run_lifecycle_maintenance(
+        &self,
+        policy: &MemoryLifecycleMaintenancePolicy,
+        now_unix_ms: u64,
+    ) -> Result<MemoryLifecycleMaintenanceResult> {
+        validate_lifecycle_maintenance_policy(policy)?;
+
+        let active_records = self
+            .load_latest_records_including_forgotten()?
+            .into_iter()
+            .filter(|record| !record.forgotten)
+            .collect::<Vec<_>>();
+        let active_ids = active_records
+            .iter()
+            .map(|record| record.entry.memory_id.clone())
+            .collect::<BTreeSet<_>>();
+        let mut has_outgoing = BTreeSet::<String>::new();
+        let mut has_incoming = BTreeSet::<String>::new();
+        for record in &active_records {
+            for relation in &record.relations {
+                if relation.effective_weight <= 0.0 {
+                    continue;
+                }
+                if !active_ids.contains(relation.target_id.as_str()) {
+                    continue;
+                }
+                has_outgoing.insert(record.entry.memory_id.clone());
+                has_incoming.insert(relation.target_id.clone());
+            }
+        }
+        let duplicate_forgotten_ids = if policy.duplicate_cleanup_enabled {
+            collect_duplicate_memory_ids(
+                active_records.as_slice(),
+                policy.duplicate_similarity_threshold,
+            )
+        } else {
+            BTreeSet::new()
+        };
+
+        let mut result = MemoryLifecycleMaintenanceResult::default();
+        for record in active_records {
+            result.scanned_records = result.scanned_records.saturating_add(1);
+            if record.memory_type == MemoryType::Identity {
+                result.identity_exempt_records = result.identity_exempt_records.saturating_add(1);
+                result.unchanged_records = result.unchanged_records.saturating_add(1);
+                continue;
+            }
+
+            let mut updated_record = record.clone();
+            let mut changed = false;
+            let clamped_importance = updated_record.importance.clamp(0.0, 1.0);
+            if updated_record.importance != clamped_importance {
+                updated_record.importance = clamped_importance;
+                changed = true;
+            }
+
+            let memory_id = updated_record.entry.memory_id.clone();
+            if duplicate_forgotten_ids.contains(memory_id.as_str()) {
+                if !updated_record.forgotten {
+                    updated_record.forgotten = true;
+                    result.duplicate_forgotten_records =
+                        result.duplicate_forgotten_records.saturating_add(1);
+                    changed = true;
+                }
+            } else {
+                let last_accessed_unix_ms = updated_record
+                    .last_accessed_at_unix_ms
+                    .max(updated_record.updated_unix_ms);
+                if now_unix_ms.saturating_sub(last_accessed_unix_ms) >= policy.stale_after_unix_ms {
+                    let decayed_importance =
+                        (updated_record.importance * policy.decay_rate).clamp(0.0, 1.0);
+                    if decayed_importance != updated_record.importance {
+                        updated_record.importance = decayed_importance;
+                        result.decayed_records = result.decayed_records.saturating_add(1);
+                        changed = true;
+                    }
+                }
+
+                if updated_record.importance < policy.prune_importance_floor {
+                    updated_record.forgotten = true;
+                    result.pruned_records = result.pruned_records.saturating_add(1);
+                    changed = true;
+                } else if policy.orphan_cleanup_enabled
+                    && updated_record.importance <= policy.orphan_importance_floor
+                    && !has_outgoing.contains(memory_id.as_str())
+                    && !has_incoming.contains(memory_id.as_str())
+                {
+                    updated_record.forgotten = true;
+                    result.orphan_forgotten_records =
+                        result.orphan_forgotten_records.saturating_add(1);
+                    changed = true;
+                }
+            }
+
+            if changed {
+                updated_record.updated_unix_ms = now_unix_ms;
+                self.append_record_backend(&updated_record)?;
+                result.updated_records = result.updated_records.saturating_add(1);
+            } else {
+                result.unchanged_records = result.unchanged_records.saturating_add(1);
+            }
+        }
+
+        Ok(result)
+    }
+
     pub(super) fn load_latest_records(&self) -> Result<Vec<RuntimeMemoryRecord>> {
         self.load_latest_records_internal(false)
     }
@@ -413,6 +521,93 @@ impl FileMemoryStore {
         });
         Ok(latest)
     }
+}
+
+fn validate_lifecycle_maintenance_policy(policy: &MemoryLifecycleMaintenancePolicy) -> Result<()> {
+    if !policy.decay_rate.is_finite() || !(0.0..=1.0).contains(&policy.decay_rate) {
+        bail!(
+            "lifecycle decay_rate must be finite and within 0.0..=1.0 (received {})",
+            policy.decay_rate
+        );
+    }
+    if !policy.prune_importance_floor.is_finite()
+        || !(0.0..=1.0).contains(&policy.prune_importance_floor)
+    {
+        bail!(
+            "lifecycle prune_importance_floor must be finite and within 0.0..=1.0 (received {})",
+            policy.prune_importance_floor
+        );
+    }
+    if !policy.orphan_importance_floor.is_finite()
+        || !(0.0..=1.0).contains(&policy.orphan_importance_floor)
+    {
+        bail!(
+            "lifecycle orphan_importance_floor must be finite and within 0.0..=1.0 (received {})",
+            policy.orphan_importance_floor
+        );
+    }
+    if !policy.duplicate_similarity_threshold.is_finite()
+        || !(0.0..=1.0).contains(&policy.duplicate_similarity_threshold)
+    {
+        bail!(
+            "lifecycle duplicate_similarity_threshold must be finite and within 0.0..=1.0 (received {})",
+            policy.duplicate_similarity_threshold
+        );
+    }
+    Ok(())
+}
+
+fn collect_duplicate_memory_ids(
+    records: &[RuntimeMemoryRecord],
+    similarity_threshold: f32,
+) -> BTreeSet<String> {
+    let mut by_scope = BTreeMap::<(String, String, String), Vec<&RuntimeMemoryRecord>>::new();
+    for record in records {
+        if record.memory_type == MemoryType::Identity || record.embedding_vector.is_empty() {
+            continue;
+        }
+        by_scope
+            .entry((
+                record.scope.workspace_id.clone(),
+                record.scope.channel_id.clone(),
+                record.scope.actor_id.clone(),
+            ))
+            .or_default()
+            .push(record);
+    }
+
+    let mut duplicate_forgotten_ids = BTreeSet::<String>::new();
+    for scoped_records in by_scope.values_mut() {
+        scoped_records.sort_by(|left, right| {
+            right
+                .importance
+                .total_cmp(&left.importance)
+                .then_with(|| left.entry.memory_id.cmp(&right.entry.memory_id))
+        });
+
+        for (canonical_index, canonical) in scoped_records.iter().enumerate() {
+            if duplicate_forgotten_ids.contains(canonical.entry.memory_id.as_str()) {
+                continue;
+            }
+            for candidate in scoped_records
+                .iter()
+                .skip(canonical_index.saturating_add(1))
+            {
+                if duplicate_forgotten_ids.contains(candidate.entry.memory_id.as_str()) {
+                    continue;
+                }
+                let similarity = super::cosine_similarity(
+                    &canonical.embedding_vector,
+                    &candidate.embedding_vector,
+                );
+                if similarity >= similarity_threshold {
+                    duplicate_forgotten_ids.insert(candidate.entry.memory_id.clone());
+                }
+            }
+        }
+    }
+
+    duplicate_forgotten_ids
 }
 
 fn compute_graph_scores(records: &HashMap<String, RuntimeMemoryRecord>) -> HashMap<String, f32> {
