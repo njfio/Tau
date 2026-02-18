@@ -32,6 +32,10 @@ const RUNTIME_HEARTBEAT_REASON_STOPPED: &str = "heartbeat_stopped";
 const RUNTIME_HEARTBEAT_REASON_DISABLED: &str = "heartbeat_disabled";
 const RUNTIME_HEARTBEAT_REASON_STATE_MISSING: &str = "heartbeat_state_missing";
 const RUNTIME_HEARTBEAT_REASON_MEMORY_LIFECYCLE_FAILED: &str = "heartbeat_memory_lifecycle_failed";
+const RUNTIME_HEARTBEAT_REASON_HOT_RELOAD_POLICY_APPLIED: &str =
+    "heartbeat_hot_reload_policy_applied";
+const RUNTIME_HEARTBEAT_REASON_HOT_RELOAD_POLICY_INVALID: &str =
+    "heartbeat_hot_reload_policy_invalid";
 const DEFAULT_MAINTENANCE_TEMP_MAX_AGE_SECONDS: u64 = 3_600;
 const DEFAULT_SELF_REPAIR_TIMEOUT_SECONDS: u64 = 300;
 const DEFAULT_SELF_REPAIR_MAX_RETRIES: usize = 2;
@@ -288,6 +292,40 @@ struct RuntimeHeartbeatCycleResult {
     report: RuntimeHeartbeatCycleReport,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct RuntimeHeartbeatPolicyFingerprint {
+    modified_unix_ms: u128,
+    len_bytes: u64,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+struct RuntimeHeartbeatHotReloadPolicy {
+    #[serde(default)]
+    interval_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone)]
+struct RuntimeHeartbeatHotReloadState {
+    policy_path: PathBuf,
+    last_fingerprint: Option<RuntimeHeartbeatPolicyFingerprint>,
+}
+
+impl RuntimeHeartbeatHotReloadState {
+    fn new(policy_path: PathBuf) -> Self {
+        Self {
+            policy_path,
+            last_fingerprint: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+struct RuntimeHeartbeatHotReloadOutcome {
+    interval_updated: bool,
+    reason_codes: Vec<String>,
+    diagnostics: Vec<String>,
+}
+
 #[derive(Debug)]
 /// Public struct `RuntimeHeartbeatHandle` used across Tau components.
 pub struct RuntimeHeartbeatHandle {
@@ -487,24 +525,170 @@ pub fn inspect_runtime_heartbeat(state_path: &Path) -> RuntimeHeartbeatSnapshot 
     }
 }
 
+fn heartbeat_hot_reload_policy_path(state_path: &Path) -> PathBuf {
+    PathBuf::from(format!("{}.policy.json", state_path.display()))
+}
+
+fn read_hot_reload_policy_fingerprint(
+    path: &Path,
+) -> Result<Option<RuntimeHeartbeatPolicyFingerprint>> {
+    if !path.exists() {
+        return Ok(None);
+    }
+    let metadata = std::fs::metadata(path).with_context(|| {
+        format!(
+            "failed to stat heartbeat hot-reload policy {}",
+            path.display()
+        )
+    })?;
+    let modified_unix_ms = metadata
+        .modified()
+        .ok()
+        .and_then(|value| value.duration_since(SystemTime::UNIX_EPOCH).ok())
+        .map(|duration| duration.as_millis())
+        .unwrap_or(0);
+    Ok(Some(RuntimeHeartbeatPolicyFingerprint {
+        modified_unix_ms,
+        len_bytes: metadata.len(),
+    }))
+}
+
+fn evaluate_hot_reload_policy_if_changed(
+    config: &mut RuntimeHeartbeatSchedulerConfig,
+    hot_reload_state: &mut RuntimeHeartbeatHotReloadState,
+) -> RuntimeHeartbeatHotReloadOutcome {
+    let mut outcome = RuntimeHeartbeatHotReloadOutcome::default();
+    let fingerprint = match read_hot_reload_policy_fingerprint(&hot_reload_state.policy_path) {
+        Ok(fingerprint) => fingerprint,
+        Err(error) => {
+            push_unique_reason_code(
+                &mut outcome.reason_codes,
+                RUNTIME_HEARTBEAT_REASON_HOT_RELOAD_POLICY_INVALID,
+            );
+            outcome.diagnostics.push(format!(
+                "hot_reload_policy_stat_failed: path={} error={error}",
+                hot_reload_state.policy_path.display()
+            ));
+            return outcome;
+        }
+    };
+
+    if fingerprint == hot_reload_state.last_fingerprint {
+        return outcome;
+    }
+    hot_reload_state.last_fingerprint = fingerprint;
+
+    let Some(_fingerprint) = fingerprint else {
+        return outcome;
+    };
+
+    let raw = match std::fs::read_to_string(&hot_reload_state.policy_path) {
+        Ok(raw) => raw,
+        Err(error) => {
+            push_unique_reason_code(
+                &mut outcome.reason_codes,
+                RUNTIME_HEARTBEAT_REASON_HOT_RELOAD_POLICY_INVALID,
+            );
+            outcome.diagnostics.push(format!(
+                "hot_reload_policy_read_failed: path={} error={error}",
+                hot_reload_state.policy_path.display()
+            ));
+            return outcome;
+        }
+    };
+
+    let parsed = match serde_json::from_str::<RuntimeHeartbeatHotReloadPolicy>(&raw) {
+        Ok(parsed) => parsed,
+        Err(error) => {
+            push_unique_reason_code(
+                &mut outcome.reason_codes,
+                RUNTIME_HEARTBEAT_REASON_HOT_RELOAD_POLICY_INVALID,
+            );
+            outcome.diagnostics.push(format!(
+                "hot_reload_policy_parse_failed: path={} error={error}",
+                hot_reload_state.policy_path.display()
+            ));
+            return outcome;
+        }
+    };
+
+    let Some(interval_ms) = parsed.interval_ms else {
+        return outcome;
+    };
+    if interval_ms == 0 {
+        push_unique_reason_code(
+            &mut outcome.reason_codes,
+            RUNTIME_HEARTBEAT_REASON_HOT_RELOAD_POLICY_INVALID,
+        );
+        outcome.diagnostics.push(format!(
+            "hot_reload_policy_invalid_interval: path={} interval_ms=0",
+            hot_reload_state.policy_path.display()
+        ));
+        return outcome;
+    }
+
+    let updated_interval = Duration::from_millis(interval_ms);
+    if updated_interval == config.interval {
+        return outcome;
+    }
+    config.interval = updated_interval;
+    outcome.interval_updated = true;
+    push_unique_reason_code(
+        &mut outcome.reason_codes,
+        RUNTIME_HEARTBEAT_REASON_HOT_RELOAD_POLICY_APPLIED,
+    );
+    outcome.diagnostics.push(format!(
+        "hot_reload_policy_applied: path={} interval_ms={}",
+        hot_reload_state.policy_path.display(),
+        interval_ms
+    ));
+    outcome
+}
+
+fn merge_hot_reload_outcome_into_cycle(
+    cycle: &mut RuntimeHeartbeatCycleResult,
+    outcome: RuntimeHeartbeatHotReloadOutcome,
+) {
+    for reason_code in outcome.reason_codes {
+        push_unique_reason_code(&mut cycle.snapshot.reason_codes, reason_code.as_str());
+        push_unique_reason_code(&mut cycle.report.reason_codes, reason_code.as_str());
+    }
+    cycle
+        .snapshot
+        .diagnostics
+        .extend(outcome.diagnostics.clone());
+    cycle.report.diagnostics.extend(outcome.diagnostics);
+}
+
 async fn run_runtime_heartbeat_loop(
     config: RuntimeHeartbeatSchedulerConfig,
     mut shutdown_rx: oneshot::Receiver<()>,
 ) {
+    let mut active_config = config;
     let mut tick_count = 0_u64;
-    let mut interval = tokio::time::interval(config.interval);
+    let mut interval = tokio::time::interval(active_config.interval);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let mut hot_reload_state = RuntimeHeartbeatHotReloadState::new(
+        heartbeat_hot_reload_policy_path(active_config.state_path.as_path()),
+    );
 
     loop {
         tokio::select! {
             _ = interval.tick() => {
-                tick_count = tick_count.saturating_add(1);
-                let cycle = execute_runtime_heartbeat_cycle(&config, tick_count);
-                if let Err(error) = persist_runtime_heartbeat_snapshot(&config.state_path, &cycle.snapshot) {
-                    eprintln!("runtime heartbeat snapshot persist failed: path={} error={error}", config.state_path.display());
+                let hot_reload_outcome =
+                    evaluate_hot_reload_policy_if_changed(&mut active_config, &mut hot_reload_state);
+                if hot_reload_outcome.interval_updated {
+                    interval = tokio::time::interval(active_config.interval);
+                    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
                 }
-                if let Err(error) = append_runtime_heartbeat_cycle_report(&config.events_log_path(), &cycle.report) {
-                    eprintln!("runtime heartbeat cycle log append failed: path={} error={error}", config.events_log_path().display());
+                tick_count = tick_count.saturating_add(1);
+                let mut cycle = execute_runtime_heartbeat_cycle(&active_config, tick_count);
+                merge_hot_reload_outcome_into_cycle(&mut cycle, hot_reload_outcome);
+                if let Err(error) = persist_runtime_heartbeat_snapshot(&active_config.state_path, &cycle.snapshot) {
+                    eprintln!("runtime heartbeat snapshot persist failed: path={} error={error}", active_config.state_path.display());
+                }
+                if let Err(error) = append_runtime_heartbeat_cycle_report(&active_config.events_log_path(), &cycle.report) {
+                    eprintln!("runtime heartbeat cycle log append failed: path={} error={error}", active_config.events_log_path().display());
                 }
             }
             _ = &mut shutdown_rx => {
@@ -514,7 +698,7 @@ async fn run_runtime_heartbeat_loop(
                     enabled: true,
                     run_state: RUNTIME_HEARTBEAT_STATE_STOPPED.to_string(),
                     reason_code: RUNTIME_HEARTBEAT_REASON_STOPPED.to_string(),
-                    interval_ms: config.interval_ms(),
+                    interval_ms: active_config.interval_ms(),
                     tick_count,
                     last_tick_unix_ms: current_unix_timestamp_ms(),
                     queue_depth: 0,
@@ -536,12 +720,12 @@ async fn run_runtime_heartbeat_loop(
                     reason_codes: vec![RUNTIME_HEARTBEAT_REASON_STOPPED.to_string()],
                     diagnostics: vec![format!(
                         "heartbeat_stopped: state_path={} ticks={tick_count}",
-                        config.state_path.display()
+                        active_config.state_path.display()
                     )],
-                    state_path: config.state_path.display().to_string(),
+                    state_path: active_config.state_path.display().to_string(),
                 };
-                if let Err(error) = persist_runtime_heartbeat_snapshot(&config.state_path, &snapshot) {
-                    eprintln!("runtime heartbeat stop snapshot persist failed: path={} error={error}", config.state_path.display());
+                if let Err(error) = persist_runtime_heartbeat_snapshot(&active_config.state_path, &snapshot) {
+                    eprintln!("runtime heartbeat stop snapshot persist failed: path={} error={error}", active_config.state_path.display());
                 }
                 break;
             }
@@ -1406,8 +1590,8 @@ fn push_unique_reason_code(reason_codes: &mut Vec<String>, reason_code: &str) {
 #[cfg(test)]
 mod tests {
     use super::{
-        append_runtime_heartbeat_cycle_report, inspect_runtime_heartbeat,
-        start_runtime_heartbeat_scheduler, RuntimeHeartbeatCycleReport,
+        append_runtime_heartbeat_cycle_report, heartbeat_events_log_path,
+        inspect_runtime_heartbeat, start_runtime_heartbeat_scheduler, RuntimeHeartbeatCycleReport,
         RuntimeHeartbeatSchedulerConfig,
     };
     use serde_json::{json, Value};
@@ -1448,6 +1632,52 @@ mod tests {
         panic!(
             "runtime heartbeat did not report a tick before timeout for {}",
             state_path.display()
+        );
+    }
+
+    fn hot_reload_policy_path_for_state(state_path: &Path) -> PathBuf {
+        PathBuf::from(format!("{}.policy.json", state_path.display()))
+    }
+
+    async fn wait_for_interval_ms(
+        state_path: &Path,
+        expected_interval_ms: u64,
+        timeout: Duration,
+    ) -> super::RuntimeHeartbeatSnapshot {
+        let deadline = tokio::time::Instant::now() + timeout;
+        while tokio::time::Instant::now() < deadline {
+            let snapshot = inspect_runtime_heartbeat(state_path);
+            if snapshot.interval_ms == expected_interval_ms {
+                return snapshot;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        panic!(
+            "runtime heartbeat interval did not converge to {} before timeout for {}",
+            expected_interval_ms,
+            state_path.display()
+        );
+    }
+
+    async fn wait_for_events_log_reason_code(
+        state_path: &Path,
+        reason_code: &str,
+        timeout: Duration,
+    ) {
+        let events_log_path = heartbeat_events_log_path(state_path);
+        let deadline = tokio::time::Instant::now() + timeout;
+        while tokio::time::Instant::now() < deadline {
+            if let Ok(raw) = std::fs::read_to_string(&events_log_path) {
+                if raw.contains(reason_code) {
+                    return;
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        panic!(
+            "runtime heartbeat events log did not contain reason code '{}' before timeout for {}",
+            reason_code,
+            events_log_path.display()
         );
     }
 
@@ -1597,6 +1827,96 @@ mod tests {
             .reason_codes
             .iter()
             .any(|code| code == "stale_temp_files_cleaned"));
+
+        handle.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn integration_spec_2465_c01_runtime_heartbeat_hot_reload_applies_interval_updates() {
+        let temp = tempdir().expect("tempdir");
+        std::fs::create_dir_all(temp.path().join("queue")).expect("create queue dir");
+        std::fs::write(temp.path().join("queue/state.json"), "{}").expect("write queue state");
+
+        let mut config = scheduler_config(temp.path(), true);
+        config.interval = Duration::from_millis(80);
+
+        let mut handle =
+            start_runtime_heartbeat_scheduler(config.clone()).expect("start runtime heartbeat");
+        wait_for_tick(handle.state_path(), Duration::from_secs(2)).await;
+
+        let policy_path = hot_reload_policy_path_for_state(handle.state_path());
+        std::fs::write(&policy_path, r#"{"interval_ms": 20}"#).expect("write hot reload policy");
+
+        let snapshot = wait_for_interval_ms(handle.state_path(), 20, Duration::from_secs(3)).await;
+        assert_eq!(snapshot.run_state, "running");
+        wait_for_events_log_reason_code(
+            handle.state_path(),
+            "heartbeat_hot_reload_policy_applied",
+            Duration::from_secs(3),
+        )
+        .await;
+
+        handle.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn regression_spec_2465_c02_runtime_heartbeat_without_policy_change_keeps_interval_stable(
+    ) {
+        let temp = tempdir().expect("tempdir");
+        std::fs::create_dir_all(temp.path().join("queue")).expect("create queue dir");
+        std::fs::write(temp.path().join("queue/state.json"), "{}").expect("write queue state");
+
+        let mut config = scheduler_config(temp.path(), true);
+        config.interval = Duration::from_millis(30);
+
+        let mut handle =
+            start_runtime_heartbeat_scheduler(config.clone()).expect("start runtime heartbeat");
+        wait_for_tick(handle.state_path(), Duration::from_secs(2)).await;
+
+        let first = inspect_runtime_heartbeat(handle.state_path());
+        tokio::time::sleep(Duration::from_millis(120)).await;
+        let later = inspect_runtime_heartbeat(handle.state_path());
+
+        assert_eq!(first.interval_ms, 30);
+        assert_eq!(later.interval_ms, 30);
+        assert!(!later
+            .reason_codes
+            .iter()
+            .any(|code| code == "heartbeat_hot_reload_policy_applied"));
+
+        handle.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn regression_spec_2465_c03_runtime_heartbeat_invalid_hot_reload_policy_preserves_last_good_interval(
+    ) {
+        let temp = tempdir().expect("tempdir");
+        std::fs::create_dir_all(temp.path().join("queue")).expect("create queue dir");
+        std::fs::write(temp.path().join("queue/state.json"), "{}").expect("write queue state");
+
+        let mut config = scheduler_config(temp.path(), true);
+        config.interval = Duration::from_millis(50);
+
+        let mut handle =
+            start_runtime_heartbeat_scheduler(config.clone()).expect("start runtime heartbeat");
+        wait_for_tick(handle.state_path(), Duration::from_secs(2)).await;
+
+        let policy_path = hot_reload_policy_path_for_state(handle.state_path());
+        std::fs::write(&policy_path, r#"{"interval_ms": 25}"#).expect("write valid policy");
+        let _ = wait_for_interval_ms(handle.state_path(), 25, Duration::from_secs(3)).await;
+
+        std::fs::write(&policy_path, "{not-json").expect("write invalid policy");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        let snapshot = inspect_runtime_heartbeat(handle.state_path());
+
+        assert_eq!(snapshot.interval_ms, 25);
+        assert_eq!(snapshot.run_state, "running");
+        wait_for_events_log_reason_code(
+            handle.state_path(),
+            "heartbeat_hot_reload_policy_invalid",
+            Duration::from_secs(3),
+        )
+        .await;
 
         handle.shutdown().await;
     }
