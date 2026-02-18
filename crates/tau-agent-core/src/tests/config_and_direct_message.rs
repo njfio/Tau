@@ -794,6 +794,251 @@ async fn regression_2520_prompt_react_tool_without_directive_payload_does_not_su
 }
 
 #[tokio::test]
+async fn integration_spec_2525_c03_prompt_send_file_tool_call_terminates_run_without_follow_up_model_turn(
+) {
+    struct SendFileDirectiveTool;
+
+    #[async_trait]
+    impl AgentTool for SendFileDirectiveTool {
+        fn definition(&self) -> ToolDefinition {
+            ToolDefinition {
+                name: "send_file".to_string(),
+                description: "Dispatch file delivery without sending a textual reply".to_string(),
+                parameters: serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "file_path": { "type": "string" },
+                        "message": { "type": "string" }
+                    },
+                    "required": ["file_path"],
+                    "additionalProperties": false
+                }),
+            }
+        }
+
+        async fn execute(&self, arguments: serde_json::Value) -> ToolExecutionResult {
+            let file_path = arguments
+                .get("file_path")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default();
+            let message = arguments.get("message").and_then(serde_json::Value::as_str);
+            ToolExecutionResult::ok(serde_json::json!({
+                "send_file_response": true,
+                "file_path": file_path,
+                "message": message,
+                "reason_code": "send_file_requested",
+                "suppress_response": true
+            }))
+        }
+    }
+
+    let first_assistant = Message::assistant_blocks(vec![ContentBlock::ToolCall {
+        id: "call_send_file_1".to_string(),
+        name: "send_file".to_string(),
+        arguments: serde_json::json!({
+            "file_path": "https://example.com/report.pdf",
+            "message": "Q1 report"
+        }),
+    }]);
+
+    let client = Arc::new(MockClient {
+        responses: AsyncMutex::new(VecDeque::from([ChatResponse {
+            message: first_assistant,
+            finish_reason: Some("tool_calls".to_string()),
+            usage: ChatUsage::default(),
+        }])),
+    });
+
+    let mut agent = Agent::new(client, AgentConfig::default());
+    agent.register_tool(SendFileDirectiveTool);
+
+    let new_messages = agent
+        .prompt("send a report file")
+        .await
+        .expect("send_file directive should terminate turn without second model call");
+
+    assert_eq!(new_messages.len(), 3);
+    assert_eq!(new_messages[0].role, MessageRole::User);
+    assert_eq!(new_messages[1].role, MessageRole::Assistant);
+    assert_eq!(new_messages[2].role, MessageRole::Tool);
+    assert_eq!(new_messages[2].tool_name.as_deref(), Some("send_file"));
+}
+
+#[test]
+fn spec_2525_c04_extract_send_file_request_detects_valid_send_file_tool_payload() {
+    let messages = vec![Message::tool_result(
+        "call_send_file_1",
+        "send_file",
+        r#"{"send_file_response":true,"file_path":"https://example.com/report.pdf","message":"Q1 report","reason_code":"send_file_requested","suppress_response":true}"#,
+        false,
+    )];
+    let directive = crate::extract_send_file_response_directive(&messages)
+        .expect("expected valid send_file directive");
+    assert_eq!(directive.file_path, "https://example.com/report.pdf");
+    assert_eq!(directive.message.as_deref(), Some("Q1 report"));
+}
+
+#[test]
+fn spec_2525_c04_extract_send_file_request_accepts_action_only_payload() {
+    let messages = vec![Message::tool_result(
+        "call_send_file_2",
+        "send_file",
+        r#"{"action":"send_file_response","file_path":"https://example.com/report.pdf","suppress_response":true}"#,
+        false,
+    )];
+    let directive = crate::extract_send_file_response_directive(&messages)
+        .expect("expected action-based send_file directive");
+    assert_eq!(directive.file_path, "https://example.com/report.pdf");
+    assert_eq!(directive.message, None);
+    assert_eq!(directive.reason_code, "send_file_requested");
+}
+
+#[test]
+fn regression_2525_extract_send_file_request_ignores_error_tool_messages() {
+    let messages = vec![Message::tool_result(
+        "call_send_file_3",
+        "send_file",
+        r#"{"send_file_response":true,"file_path":"https://example.com/report.pdf","message":"Q1 report","suppress_response":true}"#,
+        true,
+    )];
+    let directive = crate::extract_send_file_response_directive(&messages);
+    assert!(directive.is_none());
+}
+
+#[test]
+fn regression_2525_extract_send_file_request_defaults_empty_reason_code() {
+    let messages = vec![Message::tool_result(
+        "call_send_file_4",
+        "send_file",
+        r#"{"send_file_response":true,"file_path":"https://example.com/report.pdf","reason_code":" ","suppress_response":true}"#,
+        false,
+    )];
+    let directive = crate::extract_send_file_response_directive(&messages)
+        .expect("expected valid send_file directive");
+    assert_eq!(directive.reason_code, "send_file_requested");
+}
+
+#[tokio::test]
+async fn regression_2525_prompt_send_file_tool_error_does_not_suppress_follow_up_model_turn() {
+    struct SendFileErrorTool;
+
+    #[async_trait]
+    impl AgentTool for SendFileErrorTool {
+        fn definition(&self) -> ToolDefinition {
+            ToolDefinition {
+                name: "send_file".to_string(),
+                description: "returns error for regression coverage".to_string(),
+                parameters: serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "file_path": { "type": "string" }
+                    },
+                    "required": ["file_path"],
+                    "additionalProperties": false
+                }),
+            }
+        }
+
+        async fn execute(&self, _arguments: serde_json::Value) -> ToolExecutionResult {
+            ToolExecutionResult::error(serde_json::json!({
+                "error": "file delivery rejected",
+                "reason_code": "send_file_rejected"
+            }))
+        }
+    }
+
+    let first_assistant = Message::assistant_blocks(vec![ContentBlock::ToolCall {
+        id: "call_send_file_err_1".to_string(),
+        name: "send_file".to_string(),
+        arguments: serde_json::json!({ "file_path": "https://example.com/report.pdf" }),
+    }]);
+    let second_assistant = Message::assistant_text("fallback response");
+    let client = Arc::new(MockClient {
+        responses: AsyncMutex::new(VecDeque::from([
+            ChatResponse {
+                message: first_assistant,
+                finish_reason: Some("tool_calls".to_string()),
+                usage: ChatUsage::default(),
+            },
+            ChatResponse {
+                message: second_assistant,
+                finish_reason: Some("stop".to_string()),
+                usage: ChatUsage::default(),
+            },
+        ])),
+    });
+    let mut agent = Agent::new(client, AgentConfig::default());
+    agent.register_tool(SendFileErrorTool);
+
+    let new_messages = agent
+        .prompt("send file if possible")
+        .await
+        .expect("send_file error should not suppress fallback model turn");
+    assert_eq!(new_messages.len(), 4);
+    assert_eq!(new_messages[3].text_content(), "fallback response");
+}
+
+#[tokio::test]
+async fn regression_2525_prompt_send_file_tool_without_directive_payload_does_not_suppress_follow_up_model_turn(
+) {
+    struct SendFileMalformedTool;
+
+    #[async_trait]
+    impl AgentTool for SendFileMalformedTool {
+        fn definition(&self) -> ToolDefinition {
+            ToolDefinition {
+                name: "send_file".to_string(),
+                description: "returns malformed payload for regression coverage".to_string(),
+                parameters: serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "file_path": { "type": "string" }
+                    },
+                    "required": ["file_path"],
+                    "additionalProperties": false
+                }),
+            }
+        }
+
+        async fn execute(&self, _arguments: serde_json::Value) -> ToolExecutionResult {
+            ToolExecutionResult::ok(serde_json::json!({
+                "status": "queued_without_directive_marker"
+            }))
+        }
+    }
+
+    let first_assistant = Message::assistant_blocks(vec![ContentBlock::ToolCall {
+        id: "call_send_file_bad_1".to_string(),
+        name: "send_file".to_string(),
+        arguments: serde_json::json!({ "file_path": "https://example.com/report.pdf" }),
+    }]);
+    let second_assistant = Message::assistant_text("fallback response");
+    let client = Arc::new(MockClient {
+        responses: AsyncMutex::new(VecDeque::from([
+            ChatResponse {
+                message: first_assistant,
+                finish_reason: Some("tool_calls".to_string()),
+                usage: ChatUsage::default(),
+            },
+            ChatResponse {
+                message: second_assistant,
+                finish_reason: Some("stop".to_string()),
+                usage: ChatUsage::default(),
+            },
+        ])),
+    });
+    let mut agent = Agent::new(client, AgentConfig::default());
+    agent.register_tool(SendFileMalformedTool);
+
+    let new_messages = agent
+        .prompt("send file if possible")
+        .await
+        .expect("malformed send_file payload should not suppress fallback model turn");
+    assert_eq!(new_messages.len(), 4);
+    assert_eq!(new_messages[3].text_content(), "fallback response");
+}
+
+#[tokio::test]
 async fn integration_scoped_tool_lifecycle_supports_prompt_execution() {
     let first_assistant = Message::assistant_blocks(vec![ContentBlock::ToolCall {
         id: "call_1".to_string(),

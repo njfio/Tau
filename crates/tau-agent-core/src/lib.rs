@@ -410,6 +410,80 @@ fn parse_react_response_directive_payload(payload: &Value) -> Option<ReactRespon
     })
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SendFileResponseDirective {
+    pub(crate) file_path: String,
+    pub(crate) message: Option<String>,
+    pub(crate) reason_code: String,
+}
+
+pub(crate) fn extract_send_file_response_directive(
+    messages: &[Message],
+) -> Option<SendFileResponseDirective> {
+    messages.iter().rev().find_map(|message| {
+        if message.role != MessageRole::Tool || message.is_error {
+            return None;
+        }
+        if message.tool_name.as_deref() != Some("send_file") {
+            return None;
+        }
+        let text = message.text_content();
+        if text.trim().is_empty() {
+            return None;
+        }
+        let parsed = serde_json::from_str::<Value>(text.trim()).ok()?;
+        parse_send_file_response_directive_payload(&parsed)
+    })
+}
+
+fn parse_send_file_response_directive_payload(
+    payload: &Value,
+) -> Option<SendFileResponseDirective> {
+    let object = payload.as_object()?;
+    let send_file_response = object
+        .get("send_file_response")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let action_send_file = object
+        .get("action")
+        .and_then(Value::as_str)
+        .is_some_and(|value| value.trim() == "send_file_response");
+    if !send_file_response && !action_send_file {
+        return None;
+    }
+    let suppress_response = object
+        .get("suppress_response")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    if !suppress_response {
+        return None;
+    }
+    let file_path = object
+        .get("file_path")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())?
+        .to_string();
+    let message = object
+        .get("message")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned);
+    let reason_code = object
+        .get("reason_code")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("send_file_requested")
+        .to_string();
+    Some(SendFileResponseDirective {
+        file_path,
+        message,
+        reason_code,
+    })
+}
+
 /// Trait contract for `AgentTool` behavior.
 ///
 /// # Examples
@@ -2257,6 +2331,11 @@ impl Agent {
             && extract_react_response_directive(std::slice::from_ref(&tool_message)).is_some()
         {
             self.skip_response_reason = Some("react_requested".to_string());
+        } else if tool_name == "send_file"
+            && !result.is_error
+            && extract_send_file_response_directive(std::slice::from_ref(&tool_message)).is_some()
+        {
+            self.skip_response_reason = Some("send_file_requested".to_string());
         }
         result.is_error
     }

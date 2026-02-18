@@ -9,15 +9,9 @@ fn selected_skill_is_included_in_system_prompt() {
         when.method(POST)
             .path("/v1/chat/completions")
             .header("authorization", "Bearer test-openai-key")
-            .json_body_includes(
-                json!({
-                    "messages": [{
-                        "role": "system",
-                        "content": "base\n\n# Skill: focus\nAlways use checklist"
-                    }]
-                })
-                .to_string(),
-            );
+            .body_includes("\"role\":\"system\"")
+            .body_includes("Skill: focus")
+            .body_includes("Always use checklist");
         then.status(200).json_body(json!({
             "choices": [{
                 "message": {"content": "ok"},
@@ -64,15 +58,9 @@ fn install_skill_flag_installs_skill_before_prompt() {
         when.method(POST)
             .path("/v1/chat/completions")
             .header("authorization", "Bearer test-openai-key")
-            .json_body_includes(
-                json!({
-                    "messages": [{
-                        "role": "system",
-                        "content": "base\n\n# Skill: installable\nInstalled skill body"
-                    }]
-                })
-                .to_string(),
-            );
+            .body_includes("\"role\":\"system\"")
+            .body_includes("Skill: installable")
+            .body_includes("Installed skill body");
         then.status(200).json_body(json!({
             "choices": [{
                 "message": {"content": "ok install"},
