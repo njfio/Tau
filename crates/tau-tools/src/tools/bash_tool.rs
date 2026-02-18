@@ -817,3 +817,24 @@ impl AgentTool for BashTool {
         ToolExecutionResult::ok(Value::Object(payload))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn regression_sandbox_reason_code_maps_force_unavailable_constant() {
+        assert_eq!(
+            sandbox_reason_code(SANDBOX_FORCE_UNAVAILABLE_ERROR),
+            "sandbox_force_unavailable"
+        );
+    }
+
+    #[test]
+    fn regression_sandbox_reason_code_maps_docker_unavailable_constant() {
+        assert_eq!(
+            sandbox_reason_code(SANDBOX_DOCKER_UNAVAILABLE_ERROR),
+            "sandbox_docker_unavailable"
+        );
+    }
+}
