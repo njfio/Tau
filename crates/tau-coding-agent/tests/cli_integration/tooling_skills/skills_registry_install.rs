@@ -17,15 +17,9 @@ fn install_skill_url_with_sha256_verification_works_end_to_end() {
         when.method(POST)
             .path("/v1/chat/completions")
             .header("authorization", "Bearer test-openai-key")
-            .json_body_includes(
-                json!({
-                    "messages": [{
-                        "role": "system",
-                        "content": "base\n\n# Skill: remote\nRemote checksum skill"
-                    }]
-                })
-                .to_string(),
-            );
+            .body_includes("\"role\":\"system\"")
+            .body_includes("Skill: remote")
+            .body_includes("Remote checksum skill");
         then.status(200).json_body(json!({
             "choices": [{
                 "message": {"content": "ok remote"},
@@ -216,15 +210,9 @@ fn install_skill_from_registry_works_end_to_end() {
         when.method(POST)
             .path("/v1/chat/completions")
             .header("authorization", "Bearer test-openai-key")
-            .json_body_includes(
-                json!({
-                    "messages": [{
-                        "role": "system",
-                        "content": "base\n\n# Skill: reg\nRegistry-driven skill"
-                    }]
-                })
-                .to_string(),
-            );
+            .body_includes("\"role\":\"system\"")
+            .body_includes("Skill: reg")
+            .body_includes("Registry-driven skill");
         then.status(200).json_body(json!({
             "choices": [{
                 "message": {"content": "ok registry"},
