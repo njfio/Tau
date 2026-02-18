@@ -15,3 +15,4 @@
 ## Interfaces / Contracts
 - Internal heartbeat policy file contract changes from polled JSON sidecar to watched TOML policy sidecar.
 - Existing snapshot reason-code contracts remain stable; invalid reloads continue to emit deterministic diagnostics.
+- ADR: `docs/architecture/adr-003-runtime-heartbeat-hot-reload-notify-arcswap.md`.

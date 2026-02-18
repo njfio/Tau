@@ -19,3 +19,4 @@
   - `heartbeat_hot_reload_policy_applied`
   - `heartbeat_hot_reload_policy_invalid`
 - Active cycle execution reads config through ArcSwap snapshot.
+- ADR: `docs/architecture/adr-003-runtime-heartbeat-hot-reload-notify-arcswap.md`.
