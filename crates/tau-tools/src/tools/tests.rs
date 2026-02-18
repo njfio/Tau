@@ -24,7 +24,7 @@ use super::{
     BashCommandProfile, BashTool, BranchTool, EditTool, HttpTool, JobsCancelTool, JobsCreateTool,
     JobsListTool, JobsStatusTool, MemoryDeleteTool, MemoryReadTool, MemorySearchTool,
     MemoryTreeTool, MemoryWriteTool, OsSandboxDockerNetwork, OsSandboxMode, OsSandboxPolicyMode,
-    ReactTool, RedoTool, SessionsHistoryTool, SessionsListTool, SessionsSearchTool,
+    ReactTool, RedoTool, SendFileTool, SessionsHistoryTool, SessionsListTool, SessionsSearchTool,
     SessionsSendTool, SessionsStatsTool, SkipTool, ToolBuilderTool, ToolExecutionResult,
     ToolPolicy, ToolPolicyPreset, ToolRateLimitExceededBehavior, UndoTool, WriteTool,
 };
@@ -266,6 +266,12 @@ fn spec_2520_c01_builtin_agent_tool_name_registry_includes_react_tool() {
 }
 
 #[test]
+fn spec_2525_c01_builtin_agent_tool_name_registry_includes_send_file_tool() {
+    let names = builtin_agent_tool_names();
+    assert!(names.contains(&"send_file"));
+}
+
+#[test]
 fn spec_2520_c01_register_builtin_tools_registers_react_tool() {
     struct NoopClient;
 
@@ -285,6 +291,28 @@ fn spec_2520_c01_register_builtin_tools_registers_react_tool() {
     let mut agent = Agent::new(Arc::new(NoopClient), AgentConfig::default());
     register_builtin_tools(&mut agent, ToolPolicy::new(vec![temp.path().to_path_buf()]));
     assert!(agent.has_tool("react"));
+}
+
+#[test]
+fn spec_2525_c01_register_builtin_tools_registers_send_file_tool() {
+    struct NoopClient;
+
+    #[async_trait]
+    impl tau_ai::LlmClient for NoopClient {
+        async fn complete(
+            &self,
+            _request: tau_ai::ChatRequest,
+        ) -> Result<tau_ai::ChatResponse, tau_ai::TauAiError> {
+            Err(tau_ai::TauAiError::InvalidResponse(
+                "noop client should not be invoked in registry test".to_string(),
+            ))
+        }
+    }
+
+    let temp = tempdir().expect("tempdir");
+    let mut agent = Agent::new(Arc::new(NoopClient), AgentConfig::default());
+    register_builtin_tools(&mut agent, ToolPolicy::new(vec![temp.path().to_path_buf()]));
+    assert!(agent.has_tool("send_file"));
 }
 
 #[tokio::test]
@@ -317,6 +345,26 @@ async fn spec_2520_c02_react_tool_returns_structured_reaction_payload() {
     assert_eq!(result.content["emoji"], "👍");
     assert_eq!(result.content["message_id"], "42");
     assert_eq!(result.content["reason_code"], "react_requested");
+}
+
+#[tokio::test]
+async fn spec_2525_c02_send_file_tool_returns_structured_file_delivery_payload() {
+    let temp = tempdir().expect("tempdir");
+    let tool = SendFileTool::new(test_policy(temp.path()));
+    let result = tool
+        .execute(serde_json::json!({
+            "file_path": "https://example.com/report.pdf",
+            "message": "Q1 report"
+        }))
+        .await;
+    assert!(!result.is_error);
+    assert_eq!(result.content["send_file_response"], true);
+    assert_eq!(
+        result.content["file_path"],
+        "https://example.com/report.pdf"
+    );
+    assert_eq!(result.content["message"], "Q1 report");
+    assert_eq!(result.content["reason_code"], "send_file_requested");
 }
 
 #[test]

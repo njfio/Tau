@@ -26,6 +26,7 @@ use crate::tools::ToolPolicy;
 
 const SKIP_REASON_CODE: &str = "skip_suppressed";
 const REACT_REASON_CODE: &str = "react_requested";
+const SEND_FILE_REASON_CODE: &str = "send_file_requested";
 
 pub(crate) use tau_events::{
     execute_events_dry_run_command, execute_events_inspect_command,
@@ -173,6 +174,11 @@ impl EventRunner for TauEventRunner {
         } else {
             None
         };
+        let send_file_directive = if status == PromptRunStatus::Completed {
+            extract_send_file_response_directive(&agent.messages()[start_index..])
+        } else {
+            None
+        };
 
         let (input_tokens, output_tokens, total_tokens) = usage
             .lock()
@@ -189,6 +195,7 @@ impl EventRunner for TauEventRunner {
             },
             skip_reason.as_deref(),
             react_directive.as_ref(),
+            send_file_directive.as_ref(),
         );
 
         channel_store.sync_context_from_messages(agent.messages())?;
@@ -211,6 +218,7 @@ fn build_outbound_event_payload(
     token_usage: EventTokenUsage,
     skip_reason: Option<&str>,
     react_directive: Option<&EventReactDirective>,
+    send_file_directive: Option<&EventSendFileDirective>,
 ) -> serde_json::Value {
     let mut payload = serde_json::json!({
         "event_id": event_id,
@@ -250,6 +258,20 @@ fn build_outbound_event_payload(
                 }),
             );
         }
+    } else if let Some(send_file_directive) = send_file_directive {
+        if let Some(map) = payload.as_object_mut() {
+            map.insert(
+                "reason_code".to_string(),
+                serde_json::Value::String(send_file_directive.reason_code.clone()),
+            );
+            map.insert(
+                "file_delivery".to_string(),
+                serde_json::json!({
+                    "file_path": send_file_directive.file_path,
+                    "message": send_file_directive.message,
+                }),
+            );
+        }
     }
     payload
 }
@@ -280,6 +302,7 @@ fn initialize_channel_session_runtime(
 fn collect_assistant_reply(messages: &[Message]) -> String {
     if extract_skip_response_reason(messages).is_some()
         || extract_react_response_directive(messages).is_some()
+        || extract_send_file_response_directive(messages).is_some()
     {
         return String::new();
     }
@@ -301,6 +324,13 @@ fn collect_assistant_reply(messages: &[Message]) -> String {
 struct EventReactDirective {
     emoji: String,
     message_id: Option<String>,
+    reason_code: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct EventSendFileDirective {
+    file_path: String,
+    message: Option<String>,
     reason_code: String,
 }
 
@@ -376,6 +406,71 @@ fn parse_react_response_directive_payload(
     })
 }
 
+fn extract_send_file_response_directive(messages: &[Message]) -> Option<EventSendFileDirective> {
+    messages.iter().rev().find_map(|message| {
+        if message.role != MessageRole::Tool || message.is_error {
+            return None;
+        }
+        if message.tool_name.as_deref() != Some("send_file") {
+            return None;
+        }
+        let text = message.text_content();
+        if text.trim().is_empty() {
+            return None;
+        }
+        let parsed = serde_json::from_str::<serde_json::Value>(text.trim()).ok()?;
+        parse_send_file_response_directive_payload(&parsed)
+    })
+}
+
+fn parse_send_file_response_directive_payload(
+    payload: &serde_json::Value,
+) -> Option<EventSendFileDirective> {
+    let object = payload.as_object()?;
+    let send_file_response = object
+        .get("send_file_response")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+    let action_send_file = object
+        .get("action")
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|value| value.trim() == "send_file_response");
+    if !send_file_response && !action_send_file {
+        return None;
+    }
+    let suppress_response = object
+        .get("suppress_response")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(true);
+    if !suppress_response {
+        return None;
+    }
+    let file_path = object
+        .get("file_path")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())?
+        .to_string();
+    let message = object
+        .get("message")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned);
+    let reason_code = object
+        .get("reason_code")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(SEND_FILE_REASON_CODE)
+        .to_string();
+    Some(EventSendFileDirective {
+        file_path,
+        message,
+        reason_code,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -425,6 +520,7 @@ mod tests {
             },
             skip_reason.as_deref(),
             None,
+            None,
         );
         assert_eq!(payload["skip_reason"].as_str(), Some("maintenance-window"));
         assert_eq!(payload["reason_code"].as_str(), Some("skip_suppressed"));
@@ -441,6 +537,7 @@ mod tests {
                 output: 2,
                 total: 3,
             },
+            None,
             None,
             None,
         );
@@ -507,6 +604,63 @@ mod tests {
 
         let directive = parse_react_response_directive_payload(&payload).expect("react directive");
         assert_eq!(directive.reason_code, REACT_REASON_CODE);
+    }
+
+    #[test]
+    fn regression_2525_collect_assistant_reply_ignores_error_send_file_tool_results() {
+        let messages = vec![
+            Message::tool_result(
+                "call_send_file_err_1",
+                "send_file",
+                r#"{"send_file_response":true,"file_path":"https://example.com/report.pdf","message":"Q1 report","suppress_response":true}"#,
+                true,
+            ),
+            Message::assistant_text("normal response"),
+        ];
+        assert_eq!(collect_assistant_reply(&messages), "normal response");
+    }
+
+    #[test]
+    fn spec_2525_collect_assistant_reply_suppresses_action_only_send_file_payload() {
+        let messages = vec![
+            Message::tool_result(
+                "call_send_file_action_1",
+                "send_file",
+                r#"{"action":"send_file_response","file_path":"https://example.com/report.pdf","message":"Q1 report","suppress_response":true}"#,
+                false,
+            ),
+            Message::assistant_text("normal response"),
+        ];
+        assert_eq!(collect_assistant_reply(&messages), "");
+    }
+
+    #[test]
+    fn regression_2525_collect_assistant_reply_rejects_invalid_send_file_action_marker() {
+        let messages = vec![
+            Message::tool_result(
+                "call_send_file_invalid_action_1",
+                "send_file",
+                r#"{"action":"not_send_file","file_path":"https://example.com/report.pdf","suppress_response":true}"#,
+                false,
+            ),
+            Message::assistant_text("normal response"),
+        ];
+        assert_eq!(collect_assistant_reply(&messages), "normal response");
+    }
+
+    #[test]
+    fn regression_2525_parse_send_file_payload_defaults_empty_reason_code() {
+        let payload = serde_json::json!({
+            "send_file_response": true,
+            "file_path": "https://example.com/report.pdf",
+            "message": "Q1 report",
+            "suppress_response": true,
+            "reason_code": "   ",
+        });
+
+        let directive =
+            parse_send_file_response_directive_payload(&payload).expect("send_file directive");
+        assert_eq!(directive.reason_code, SEND_FILE_REASON_CODE);
     }
 
     #[tokio::test]
@@ -640,6 +794,79 @@ mod tests {
         assert_eq!(
             outbound.payload["reaction"]["message_id"].as_str(),
             Some("42")
+        );
+        assert_eq!(outbound.payload["assistant_reply"].as_str(), Some(""));
+    }
+
+    #[tokio::test]
+    async fn integration_spec_2525_c05_runner_persists_send_file_payload_and_suppresses_text_reply()
+    {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let channel_store =
+            ChannelStore::open(temp.path(), "events", "send-file-channel").expect("channel store");
+        let event = EventDefinition {
+            id: "evt-send-file-1".to_string(),
+            channel: "events/send-file-channel".to_string(),
+            prompt: "Run send-file flow".to_string(),
+            schedule: EventSchedule::Immediate,
+            enabled: true,
+            created_unix_ms: Some(1),
+        };
+
+        let first_response = ChatResponse {
+            message: Message::assistant_blocks(vec![ContentBlock::ToolCall {
+                id: "call_send_file_1".to_string(),
+                name: "send_file".to_string(),
+                arguments: serde_json::json!({
+                    "file_path": "https://example.com/report.pdf",
+                    "message": "Q1 report"
+                }),
+            }]),
+            finish_reason: Some("tool_calls".to_string()),
+            usage: ChatUsage::default(),
+        };
+        let client = Arc::new(QueueClient {
+            responses: Arc::new(Mutex::new(VecDeque::from([first_response]))),
+        });
+
+        let runner = TauEventRunner {
+            client,
+            model: "openai/gpt-4o-mini".to_string(),
+            system_prompt: "base".to_string(),
+            max_turns: 4,
+            tool_policy: ToolPolicy::new(vec![temp.path().to_path_buf()]),
+            turn_timeout_ms: 10_000,
+            render_options: RenderOptions {
+                stream_output: false,
+                stream_delay_ms: 0,
+            },
+            session_lock_wait_ms: 1,
+            session_lock_stale_ms: 1,
+        };
+
+        runner
+            .run_event(&event, 123, &channel_store)
+            .await
+            .expect("run event");
+
+        let logs = channel_store.load_log_entries().expect("load logs");
+        let outbound = logs
+            .iter()
+            .find(|entry| {
+                entry.source == "events" && entry.event_key.as_deref() == Some("evt-send-file-1")
+            })
+            .expect("events outbound entry");
+        assert_eq!(
+            outbound.payload["reason_code"].as_str(),
+            Some("send_file_requested")
+        );
+        assert_eq!(
+            outbound.payload["file_delivery"]["file_path"].as_str(),
+            Some("https://example.com/report.pdf")
+        );
+        assert_eq!(
+            outbound.payload["file_delivery"]["message"].as_str(),
+            Some("Q1 report")
         );
         assert_eq!(outbound.payload["assistant_reply"].as_str(), Some(""));
     }

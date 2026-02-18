@@ -139,6 +139,7 @@ const BUILTIN_AGENT_TOOL_NAMES: &[&str] = &[
     "branch",
     "undo",
     "redo",
+    "send_file",
     "react",
     "skip",
     "http",
@@ -1357,6 +1358,68 @@ impl AgentTool for ReactTool {
             "emoji": emoji,
             "message_id": message_id,
             "reason_code": "react_requested",
+            "suppress_response": true,
+        }))
+    }
+}
+
+/// Public struct `SendFileTool` used across Tau components.
+pub struct SendFileTool {
+    _policy: Arc<ToolPolicy>,
+}
+
+impl SendFileTool {
+    pub fn new(policy: Arc<ToolPolicy>) -> Self {
+        Self { _policy: policy }
+    }
+}
+
+#[async_trait]
+impl AgentTool for SendFileTool {
+    fn definition(&self) -> ToolDefinition {
+        ToolDefinition {
+            name: "send_file".to_string(),
+            description: "Request file delivery and suppress textual reply".to_string(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "file_path": {
+                        "type": "string",
+                        "description": "Path or URL identifying the file to deliver"
+                    },
+                    "message": {
+                        "type": "string",
+                        "description": "Optional caption/message to include with the file"
+                    }
+                },
+                "required": ["file_path"],
+                "additionalProperties": false
+            }),
+        }
+    }
+
+    async fn execute(&self, arguments: Value) -> ToolExecutionResult {
+        let file_path = match required_string(&arguments, "file_path") {
+            Ok(value) => value.trim().to_string(),
+            Err(error) => return ToolExecutionResult::error(json!({ "error": error })),
+        };
+        if file_path.is_empty() {
+            return ToolExecutionResult::error(json!({
+                "error": "field 'file_path' must not be empty",
+                "reason_code": "send_file_invalid_path",
+            }));
+        }
+        let message = match optional_string(&arguments, "message") {
+            Ok(value) => value
+                .map(|raw| raw.trim().to_string())
+                .filter(|value| !value.is_empty()),
+            Err(error) => return ToolExecutionResult::error(json!({ "error": error })),
+        };
+        ToolExecutionResult::ok(json!({
+            "send_file_response": true,
+            "file_path": file_path,
+            "message": message,
+            "reason_code": "send_file_requested",
             "suppress_response": true,
         }))
     }
