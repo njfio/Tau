@@ -359,10 +359,10 @@ Spacebot is a Rust-based AI agent for teams, communities, and multi-user environ
 **What**: The agent can explicitly choose not to respond to a message, with a logged reason.
 **Why it matters**: In multi-user channels, the agent shouldn't respond to every message. It needs judgment about when to speak.
 **Pathway**:
-- [ ] Add `SkipTool` to `tau-tools` — takes a `reason: String` parameter
-- [ ] When invoked, the turn ends without sending any output to the user
-- [ ] Log the skip reason for debugging/tuning
-- [ ] Include in channel/multi-user tool sets
+- [x] Add `SkipTool` to `tau-tools` — takes a `reason: String` parameter
+- [x] When invoked, the turn ends without sending any output to the user
+- [x] Log the skip reason for debugging/tuning
+- [x] Include in channel/multi-user tool sets
 - **Files**: `tau-tools/src/tools/`
 - **Effort**: Small
 
