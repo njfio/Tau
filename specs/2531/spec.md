@@ -1,6 +1,6 @@
 # Spec #2531 - Subtask: RED/GREEN + live validation evidence for G14 adapters
 
-Status: Reviewed
+Status: Implemented
 
 ## Problem Statement
 Adapter changes must ship with explicit evidence that behavior was red-first, then green, and validated end-to-end.
