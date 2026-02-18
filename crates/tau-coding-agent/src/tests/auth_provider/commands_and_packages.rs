@@ -1674,8 +1674,10 @@ fn unit_render_skills_list_handles_empty_catalog() {
 fn unit_render_skills_show_includes_metadata_and_content() {
     let skill = crate::skills::Skill {
         name: "checklist".to_string(),
+        description: "Checklist skill".to_string(),
         content: "line one\nline two".to_string(),
         path: PathBuf::from("checklist.md"),
+        base_dir: PathBuf::from(".tau/skills"),
     };
     let rendered = render_skills_show(Path::new(".tau/skills"), &skill);
     assert!(rendered.contains("skills show: path=.tau/skills"));
@@ -1787,18 +1789,24 @@ fn unit_derive_skills_prune_candidates_filters_tracked_and_sorts() {
     let catalog = vec![
         crate::skills::Skill {
             name: "zeta".to_string(),
+            description: "zeta skill".to_string(),
             content: "zeta".to_string(),
             path: PathBuf::from(".tau/skills/zeta.md"),
+            base_dir: PathBuf::from(".tau/skills"),
         },
         crate::skills::Skill {
             name: "alpha".to_string(),
+            description: "alpha skill".to_string(),
             content: "alpha".to_string(),
             path: PathBuf::from(".tau/skills/alpha.md"),
+            base_dir: PathBuf::from(".tau/skills"),
         },
         crate::skills::Skill {
             name: "beta".to_string(),
+            description: "beta skill".to_string(),
             content: "beta".to_string(),
             path: PathBuf::from(".tau/skills/beta.md"),
+            base_dir: PathBuf::from(".tau/skills"),
         },
     ];
     let tracked = HashSet::from([String::from("alpha.md")]);

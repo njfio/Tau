@@ -74,6 +74,17 @@ High-level crates:
 
 Full workspace membership is defined in [`Cargo.toml`](Cargo.toml).
 
+## Examples and Starter Assets
+
+Repository-tracked examples used by integration tests and starter workflows:
+
+- `./examples/starter/package.json`
+- `./examples/extensions`
+- `./examples/extensions/issue-assistant/extension.json`
+- `./examples/extensions/issue-assistant/payload.json`
+- `./examples/events`
+- `./examples/events-state.json`
+
 ## Quickstart
 
 Run all commands from repository root.
