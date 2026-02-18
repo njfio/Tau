@@ -1,6 +1,6 @@
 # Spec #2530 - Task: add G14 send-file adapter wiring + validation
 
-Status: Reviewed
+Status: Implemented
 
 ## Problem Statement
 `SendFileTool` exists, but adapter wiring is incomplete: multi-channel outbound rejects Discord send-file and Slack runtime does not dispatch tool-driven file delivery.
@@ -34,9 +34,12 @@ Out of scope:
 - C-03 (AC-2, integration): `spec_2530_c03_integration_provider_mode_posts_telegram_send_file_request`
 - C-04 (AC-3, integration): `spec_2530_c04_slack_send_file_directive_dispatches_file_upload`
 - C-05 (AC-4, regression): `regression_2530_send_file_still_rejects_unsupported_transport`
+- C-06 (AC-4, regression): `spec_2530_c05_slack_send_file_whitespace_message_falls_back_to_file_path`
+- C-07 (AC-4, regression): `regression_2530_extract_send_file_response_directive_ignores_error_tool_messages`
+- C-08 (AC-4, functional): `spec_2530_c08_download_public_file_returns_response_bytes`
 
 ## Success Metrics
-- C-01..C-05 pass.
+- C-01..C-08 pass.
 - Full workspace tests pass after integration.
 - Diff-scoped mutation run reports zero missed mutants.
 - Live validation script completes successfully.
