@@ -389,13 +389,18 @@ mod tests {
         let logs = channel_store.load_log_entries().expect("load logs");
         let outbound = logs
             .iter()
-            .find(|entry| entry.source == "events" && entry.event_key.as_deref() == Some("evt-skip-1"))
+            .find(|entry| {
+                entry.source == "events" && entry.event_key.as_deref() == Some("evt-skip-1")
+            })
             .expect("events outbound entry");
         assert_eq!(
             outbound.payload["skip_reason"].as_str(),
             Some("maintenance-window")
         );
-        assert_eq!(outbound.payload["reason_code"].as_str(), Some("skip_suppressed"));
+        assert_eq!(
+            outbound.payload["reason_code"].as_str(),
+            Some("skip_suppressed")
+        );
         assert_eq!(outbound.payload["assistant_reply"].as_str(), Some(""));
     }
 }
