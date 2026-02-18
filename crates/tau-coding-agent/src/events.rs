@@ -24,6 +24,8 @@ use crate::runtime_loop::{run_prompt_with_cancellation, PromptRunStatus};
 use crate::runtime_types::RenderOptions;
 use crate::tools::ToolPolicy;
 
+const SKIP_REASON_CODE: &str = "skip_suppressed";
+
 pub(crate) use tau_events::{
     execute_events_dry_run_command, execute_events_inspect_command,
     execute_events_simulate_command, execute_events_template_write_command,
@@ -160,11 +162,25 @@ impl EventRunner for TauEventRunner {
         } else {
             collect_assistant_reply(&agent.messages()[start_index..])
         };
+        let skip_reason = if status == PromptRunStatus::Completed {
+            extract_skip_response_reason(&agent.messages()[start_index..])
+        } else {
+            None
+        };
 
         let (input_tokens, output_tokens, total_tokens) = usage
             .lock()
             .map_err(|_| anyhow!("usage lock poisoned"))?
             .to_owned();
+        let payload = build_outbound_event_payload(
+            &event.id,
+            status,
+            assistant_reply,
+            input_tokens,
+            output_tokens,
+            total_tokens,
+            skip_reason.as_deref(),
+        );
 
         channel_store.sync_context_from_messages(agent.messages())?;
         channel_store.append_log_entry(&ChannelLogEntry {
@@ -172,20 +188,48 @@ impl EventRunner for TauEventRunner {
             direction: "outbound".to_string(),
             event_key: Some(event.id.clone()),
             source: "events".to_string(),
-            payload: serde_json::json!({
-                "event_id": event.id,
-                "status": format!("{:?}", status).to_lowercase(),
-                "assistant_reply": assistant_reply,
-                "tokens": {
-                    "input": input_tokens,
-                    "output": output_tokens,
-                    "total": total_tokens,
-                }
-            }),
+            payload,
         })?;
 
         Ok(())
     }
+}
+
+fn build_outbound_event_payload(
+    event_id: &str,
+    status: PromptRunStatus,
+    assistant_reply: String,
+    input_tokens: u64,
+    output_tokens: u64,
+    total_tokens: u64,
+    skip_reason: Option<&str>,
+) -> serde_json::Value {
+    let mut payload = serde_json::json!({
+        "event_id": event_id,
+        "status": format!("{:?}", status).to_lowercase(),
+        "assistant_reply": assistant_reply,
+        "tokens": {
+            "input": input_tokens,
+            "output": output_tokens,
+            "total": total_tokens,
+        }
+    });
+    if let Some(reason) = skip_reason
+        .map(str::trim)
+        .filter(|reason| !reason.is_empty())
+    {
+        if let Some(map) = payload.as_object_mut() {
+            map.insert(
+                "skip_reason".to_string(),
+                serde_json::Value::String(reason.to_string()),
+            );
+            map.insert(
+                "reason_code".to_string(),
+                serde_json::Value::String(SKIP_REASON_CODE.to_string()),
+            );
+        }
+    }
+    payload
 }
 
 fn initialize_channel_session_runtime(
@@ -226,5 +270,137 @@ fn collect_assistant_reply(messages: &[Message]) -> String {
         "I couldn't generate a textual response for this event.".to_string()
     } else {
         content
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::VecDeque;
+    use std::sync::{Arc, Mutex};
+
+    use async_trait::async_trait;
+    use tau_ai::{ChatRequest, ChatResponse, ChatUsage, ContentBlock, LlmClient, TauAiError};
+    use tau_events::{EventDefinition, EventRunner, EventSchedule};
+    use tau_runtime::channel_store::ChannelStore;
+
+    #[derive(Clone)]
+    struct QueueClient {
+        responses: Arc<Mutex<VecDeque<ChatResponse>>>,
+    }
+
+    #[async_trait]
+    impl LlmClient for QueueClient {
+        async fn complete(&self, _request: ChatRequest) -> Result<ChatResponse, TauAiError> {
+            let mut guard = self.responses.lock().expect("queue lock");
+            Ok(guard.pop_front().unwrap_or(ChatResponse {
+                message: Message::assistant_text("done"),
+                finish_reason: Some("stop".to_string()),
+                usage: ChatUsage::default(),
+            }))
+        }
+    }
+
+    #[test]
+    fn spec_2514_c03_events_log_records_skip_reason_for_suppressed_reply() {
+        let messages = vec![Message::tool_result(
+            "call_skip_1",
+            "skip",
+            r#"{"skip_response":true,"reason":"maintenance-window","reason_code":"skip_suppressed"}"#,
+            false,
+        )];
+        let assistant_reply = collect_assistant_reply(&messages);
+        let skip_reason = extract_skip_response_reason(&messages);
+        let payload = build_outbound_event_payload(
+            "event-1",
+            PromptRunStatus::Completed,
+            assistant_reply,
+            1,
+            2,
+            3,
+            skip_reason.as_deref(),
+        );
+        assert_eq!(payload["skip_reason"].as_str(), Some("maintenance-window"));
+        assert_eq!(payload["reason_code"].as_str(), Some("skip_suppressed"));
+    }
+
+    #[test]
+    fn regression_2514_events_log_omits_skip_reason_when_not_suppressed() {
+        let payload = build_outbound_event_payload(
+            "event-1",
+            PromptRunStatus::Completed,
+            "normal response".to_string(),
+            1,
+            2,
+            3,
+            None,
+        );
+        assert!(payload.get("skip_reason").is_none());
+        assert!(payload.get("reason_code").is_none());
+    }
+
+    #[tokio::test]
+    async fn integration_spec_2514_c03_runner_persists_skip_reason_and_suppresses_reply() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let channel_store =
+            ChannelStore::open(temp.path(), "events", "skip-channel").expect("channel store");
+        let event = EventDefinition {
+            id: "evt-skip-1".to_string(),
+            channel: "events/skip-channel".to_string(),
+            prompt: "Run skip flow".to_string(),
+            schedule: EventSchedule::Immediate,
+            enabled: true,
+            created_unix_ms: Some(1),
+        };
+
+        let first_response = ChatResponse {
+            message: Message::assistant_blocks(vec![ContentBlock::ToolCall {
+                id: "call_skip_1".to_string(),
+                name: "skip".to_string(),
+                arguments: serde_json::json!({ "reason": "maintenance-window" }),
+            }]),
+            finish_reason: Some("tool_calls".to_string()),
+            usage: ChatUsage::default(),
+        };
+        let client = Arc::new(QueueClient {
+            responses: Arc::new(Mutex::new(VecDeque::from([first_response]))),
+        });
+
+        let runner = TauEventRunner {
+            client,
+            model: "openai/gpt-4o-mini".to_string(),
+            system_prompt: "base".to_string(),
+            max_turns: 4,
+            tool_policy: ToolPolicy::new(vec![temp.path().to_path_buf()]),
+            turn_timeout_ms: 10_000,
+            render_options: RenderOptions {
+                stream_output: false,
+                stream_delay_ms: 0,
+            },
+            session_lock_wait_ms: 1,
+            session_lock_stale_ms: 1,
+        };
+
+        runner
+            .run_event(&event, 123, &channel_store)
+            .await
+            .expect("run event");
+
+        let logs = channel_store.load_log_entries().expect("load logs");
+        let outbound = logs
+            .iter()
+            .find(|entry| {
+                entry.source == "events" && entry.event_key.as_deref() == Some("evt-skip-1")
+            })
+            .expect("events outbound entry");
+        assert_eq!(
+            outbound.payload["skip_reason"].as_str(),
+            Some("maintenance-window")
+        );
+        assert_eq!(
+            outbound.payload["reason_code"].as_str(),
+            Some("skip_suppressed")
+        );
+        assert_eq!(outbound.payload["assistant_reply"].as_str(), Some(""));
     }
 }
