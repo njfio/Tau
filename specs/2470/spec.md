@@ -1,6 +1,6 @@
 # Spec #2470 - render workspace startup system prompt templates with deterministic placeholders
 
-Status: Reviewed
+Status: Implemented
 
 ## Problem Statement
 Operators cannot shape startup system prompt structure from workspace files. Prompt composition is fixed in Rust.

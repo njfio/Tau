@@ -1,6 +1,6 @@
 # Spec #2472 - RED/GREEN conformance for G17 phase-1 startup prompt template rendering
 
-Status: Accepted
+Status: Implemented
 
 ## Problem Statement
 G17 phase-1 must include explicit RED/GREEN proof for template-rendering conformance before closure.

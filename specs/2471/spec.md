@@ -1,6 +1,6 @@
 # Spec #2471 - add startup prompt template loader/renderer in tau-onboarding
 
-Status: Accepted
+Status: Implemented
 
 ## Problem Statement
 Startup prompt composition currently supports only hardcoded composition order. Operators cannot provide a workspace template to control section arrangement.

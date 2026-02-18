@@ -1,6 +1,6 @@
 # Spec #2469 - G17 startup prompt template phase-1 orchestration
 
-Status: Reviewed
+Status: Implemented
 
 ## Problem Statement
 G17 requires startup prompt templates, but this phase must be delivered as a bounded, low-risk slice without dependency expansion.
