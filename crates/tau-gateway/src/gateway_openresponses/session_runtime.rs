@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use tau_agent_core::{Agent, AgentCostSnapshot};
+use tau_agent_core::{extract_skip_response_reason, Agent, AgentCostSnapshot};
 use tau_ai::{Message, MessageRole};
 use tau_session::{SessionStore, SessionUsageSummary};
 
@@ -84,6 +84,9 @@ pub(super) fn initialize_gateway_session_runtime(
 }
 
 pub(super) fn collect_assistant_reply(messages: &[Message]) -> String {
+    if extract_skip_response_reason(messages).is_some() {
+        return String::new();
+    }
     let content = messages
         .iter()
         .filter(|message| message.role == MessageRole::Assistant)
@@ -95,5 +98,24 @@ pub(super) fn collect_assistant_reply(messages: &[Message]) -> String {
         "I couldn't generate a textual response for this request.".to_string()
     } else {
         content
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::collect_assistant_reply;
+    use tau_ai::Message;
+
+    #[test]
+    fn integration_spec_c05_collect_assistant_reply_suppresses_output_when_skip_tool_result_present(
+    ) {
+        let messages = vec![Message::tool_result(
+            "call_skip_1",
+            "skip",
+            r#"{"skip_response":true,"reason":"already acknowledged","reason_code":"skip_suppressed"}"#,
+            false,
+        )];
+        let reply = collect_assistant_reply(&messages);
+        assert!(reply.is_empty());
     }
 }

@@ -7,7 +7,7 @@
 use std::io::Write;
 
 use anyhow::Result;
-use tau_agent_core::AgentEvent;
+use tau_agent_core::{extract_skip_response_reason, AgentEvent};
 use tau_ai::{Message, MessageRole};
 use tau_session::SessionRuntime;
 
@@ -51,6 +51,9 @@ pub fn print_assistant_messages(
     _stream_delay_ms: u64,
     suppress_first_streamed_text: bool,
 ) {
+    if extract_skip_response_reason(messages).is_some() {
+        return;
+    }
     let mut suppressed_once = false;
     for message in messages {
         if message.role != MessageRole::Assistant {
