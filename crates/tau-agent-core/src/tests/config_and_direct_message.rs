@@ -473,6 +473,80 @@ async fn prompt_executes_tool_calls_and_continues() {
 }
 
 #[tokio::test]
+async fn integration_spec_c03_prompt_skip_tool_call_terminates_run_without_follow_up_model_turn() {
+    struct SkipDirectiveTool;
+
+    #[async_trait]
+    impl AgentTool for SkipDirectiveTool {
+        fn definition(&self) -> ToolDefinition {
+            ToolDefinition {
+                name: "skip".to_string(),
+                description: "Suppress outbound response for this turn".to_string(),
+                parameters: serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "reason": { "type": "string" }
+                    },
+                    "additionalProperties": false
+                }),
+            }
+        }
+
+        async fn execute(&self, arguments: serde_json::Value) -> ToolExecutionResult {
+            let reason = arguments
+                .get("reason")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default();
+            ToolExecutionResult::ok(serde_json::json!({
+                "skip_response": true,
+                "reason": reason,
+                "reason_code": "skip_suppressed"
+            }))
+        }
+    }
+
+    let first_assistant = Message::assistant_blocks(vec![ContentBlock::ToolCall {
+        id: "call_skip_1".to_string(),
+        name: "skip".to_string(),
+        arguments: serde_json::json!({ "reason": "already acknowledged" }),
+    }]);
+
+    let client = Arc::new(MockClient {
+        responses: AsyncMutex::new(VecDeque::from([ChatResponse {
+            message: first_assistant,
+            finish_reason: Some("tool_calls".to_string()),
+            usage: ChatUsage::default(),
+        }])),
+    });
+
+    let mut agent = Agent::new(client, AgentConfig::default());
+    agent.register_tool(SkipDirectiveTool);
+
+    let new_messages = agent
+        .prompt("ack")
+        .await
+        .expect("skip directive should terminate turn without second model call");
+
+    assert_eq!(new_messages.len(), 3);
+    assert_eq!(new_messages[0].role, MessageRole::User);
+    assert_eq!(new_messages[1].role, MessageRole::Assistant);
+    assert_eq!(new_messages[2].role, MessageRole::Tool);
+    assert_eq!(new_messages[2].tool_name.as_deref(), Some("skip"));
+}
+
+#[test]
+fn spec_c04_extract_skip_response_reason_detects_valid_skip_tool_payload() {
+    let messages = vec![Message::tool_result(
+        "call_skip_1",
+        "skip",
+        r#"{"skip_response":true,"reason":"duplicate response","reason_code":"skip_suppressed"}"#,
+        false,
+    )];
+    let reason = crate::extract_skip_response_reason(&messages);
+    assert_eq!(reason.as_deref(), Some("duplicate response"));
+}
+
+#[tokio::test]
 async fn integration_scoped_tool_lifecycle_supports_prompt_execution() {
     let first_assistant = Message::assistant_blocks(vec![ContentBlock::ToolCall {
         id: "call_1".to_string(),

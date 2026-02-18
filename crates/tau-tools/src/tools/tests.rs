@@ -23,8 +23,9 @@ use super::{
     EditTool, HttpTool, JobsCancelTool, JobsCreateTool, JobsListTool, JobsStatusTool,
     MemoryReadTool, MemorySearchTool, MemoryTreeTool, MemoryWriteTool, OsSandboxDockerNetwork,
     OsSandboxMode, OsSandboxPolicyMode, RedoTool, SessionsHistoryTool, SessionsListTool,
-    SessionsSearchTool, SessionsSendTool, SessionsStatsTool, ToolBuilderTool, ToolExecutionResult,
-    ToolPolicy, ToolPolicyPreset, ToolRateLimitExceededBehavior, UndoTool, WriteTool,
+    SessionsSearchTool, SessionsSendTool, SessionsStatsTool, SkipTool, ToolBuilderTool,
+    ToolExecutionResult, ToolPolicy, ToolPolicyPreset, ToolRateLimitExceededBehavior, UndoTool,
+    WriteTool,
 };
 use tau_access::ApprovalAction;
 use tau_ai::Message;
@@ -247,6 +248,27 @@ fn unit_builtin_agent_tool_name_registry_includes_session_tools() {
     assert!(names.contains(&"http"));
     assert!(names.contains(&"tool_builder"));
     assert!(names.contains(&"bash"));
+}
+
+#[test]
+fn spec_c01_builtin_agent_tool_name_registry_includes_skip_tool() {
+    let names = builtin_agent_tool_names();
+    assert!(names.contains(&"skip"));
+}
+
+#[tokio::test]
+async fn spec_c02_skip_tool_returns_structured_suppression_payload() {
+    let temp = tempdir().expect("tempdir");
+    let tool = SkipTool::new(test_policy(temp.path()));
+    let result = tool
+        .execute(serde_json::json!({
+            "reason": "duplicate response"
+        }))
+        .await;
+    assert!(!result.is_error);
+    assert_eq!(result.content["skip_response"], true);
+    assert_eq!(result.content["reason"], "duplicate response");
+    assert_eq!(result.content["reason_code"], "skip_suppressed");
 }
 
 #[tokio::test]

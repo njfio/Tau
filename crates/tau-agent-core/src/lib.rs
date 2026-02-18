@@ -292,6 +292,49 @@ impl ToolExecutionResult {
     }
 }
 
+/// Extracts a successful skip-response directive reason from tool-result messages.
+///
+/// Returns `Some(reason)` when a successful `skip` tool result includes an explicit suppression
+/// marker (`skip_response: true` or `action: "skip_response"`). When suppression is requested
+/// without a reason, returns `Some(String::new())`.
+pub fn extract_skip_response_reason(messages: &[Message]) -> Option<String> {
+    messages.iter().rev().find_map(|message| {
+        if message.role != MessageRole::Tool || message.is_error {
+            return None;
+        }
+        if message.tool_name.as_deref() != Some("skip") {
+            return None;
+        }
+        let text = message.text_content();
+        if text.trim().is_empty() {
+            return None;
+        }
+        let parsed = serde_json::from_str::<Value>(text.trim()).ok()?;
+        parse_skip_response_reason_payload(&parsed)
+    })
+}
+
+fn parse_skip_response_reason_payload(payload: &Value) -> Option<String> {
+    let object = payload.as_object()?;
+    let skip_response = object
+        .get("skip_response")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let action_skip = object
+        .get("action")
+        .and_then(Value::as_str)
+        .is_some_and(|value| value.trim() == "skip_response");
+    if !skip_response && !action_skip {
+        return None;
+    }
+    let reason = object
+        .get("reason")
+        .and_then(Value::as_str)
+        .map(|value| value.trim().to_string())
+        .unwrap_or_default();
+    Some(reason)
+}
+
 /// Trait contract for `AgentTool` behavior.
 ///
 /// # Examples
@@ -610,6 +653,7 @@ pub struct Agent {
     cumulative_usage: ChatUsage,
     cumulative_cost_usd: f64,
     emitted_cost_alert_thresholds: HashSet<u8>,
+    skip_response_reason: Option<String>,
 }
 
 impl Agent {
@@ -641,6 +685,7 @@ impl Agent {
             cumulative_usage: ChatUsage::default(),
             cumulative_cost_usd: 0.0,
             emitted_cost_alert_thresholds: HashSet::new(),
+            skip_response_reason: None,
         }
     }
 
@@ -1635,6 +1680,7 @@ impl Agent {
         if self.is_cancelled() {
             return Err(AgentError::Cancelled);
         }
+        self.skip_response_reason = None;
         self.emit(AgentEvent::AgentStart);
         let mut pending_replan_on_tool_failure = false;
         let mut replans_used = 0usize;
@@ -1734,6 +1780,21 @@ impl Agent {
             let tool_stats = self.execute_tool_calls(tool_calls).await?;
             pending_replan_on_tool_failure =
                 tool_stats.total > 0 && tool_stats.errors == tool_stats.total;
+
+            if self.skip_response_reason.take().is_some() {
+                self.emit(AgentEvent::TurnEnd {
+                    turn,
+                    tool_results: tool_stats.total,
+                    request_duration_ms,
+                    usage,
+                    finish_reason,
+                });
+                let new_messages = self.messages[start_index..].to_vec();
+                self.emit(AgentEvent::AgentEnd {
+                    new_messages: new_messages.len(),
+                });
+                return Ok(new_messages);
+            }
 
             self.emit(AgentEvent::TurnEnd {
                 turn,
@@ -2102,12 +2163,21 @@ impl Agent {
             result: result.clone(),
         });
 
-        let tool_message =
-            Message::tool_result(call.id, call.name, result.as_text(), result.is_error);
+        let tool_name = call.name.clone();
+        let tool_message = Message::tool_result(
+            call.id,
+            tool_name.clone(),
+            result.as_text(),
+            result.is_error,
+        );
         self.messages.push(tool_message.clone());
         self.emit(AgentEvent::MessageAdded {
-            message: tool_message,
+            message: tool_message.clone(),
         });
+        if tool_name == "skip" && !result.is_error {
+            self.skip_response_reason =
+                extract_skip_response_reason(std::slice::from_ref(&tool_message));
+        }
         result.is_error
     }
 }

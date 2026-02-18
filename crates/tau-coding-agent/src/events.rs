@@ -11,7 +11,7 @@ use std::{
 
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
-use tau_agent_core::{Agent, AgentConfig, AgentEvent};
+use tau_agent_core::{extract_skip_response_reason, Agent, AgentConfig, AgentEvent};
 use tau_ai::{LlmClient, Message, MessageRole};
 use tau_events::{
     run_event_scheduler as run_core_event_scheduler, EventRunner,
@@ -212,6 +212,9 @@ fn initialize_channel_session_runtime(
 }
 
 fn collect_assistant_reply(messages: &[Message]) -> String {
+    if extract_skip_response_reason(messages).is_some() {
+        return String::new();
+    }
     let content = messages
         .iter()
         .filter(|message| message.role == MessageRole::Assistant)

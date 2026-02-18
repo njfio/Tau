@@ -136,6 +136,7 @@ const BUILTIN_AGENT_TOOL_NAMES: &[&str] = &[
     "jobs_cancel",
     "undo",
     "redo",
+    "skip",
     "http",
     "tool_builder",
     "bash",
@@ -1088,6 +1089,49 @@ impl AgentTool for RedoTool {
             "undo_depth": transition.undo_depth,
             "redo_depth": transition.redo_depth,
             "skipped_invalid_targets": transition.skipped_invalid_targets,
+        }))
+    }
+}
+
+/// Public struct `SkipTool` used across Tau components.
+pub struct SkipTool {
+    _policy: Arc<ToolPolicy>,
+}
+
+impl SkipTool {
+    pub fn new(policy: Arc<ToolPolicy>) -> Self {
+        Self { _policy: policy }
+    }
+}
+
+#[async_trait]
+impl AgentTool for SkipTool {
+    fn definition(&self) -> ToolDefinition {
+        ToolDefinition {
+            name: "skip".to_string(),
+            description: "Suppress outbound user-facing response for the current turn".to_string(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "reason": {
+                        "type": "string",
+                        "description": "Optional audit/debug reason for suppressing the response"
+                    }
+                },
+                "additionalProperties": false
+            }),
+        }
+    }
+
+    async fn execute(&self, arguments: Value) -> ToolExecutionResult {
+        let reason = match optional_string(&arguments, "reason") {
+            Ok(reason) => reason.unwrap_or_default(),
+            Err(error) => return ToolExecutionResult::error(json!({ "error": error })),
+        };
+        ToolExecutionResult::ok(json!({
+            "skip_response": true,
+            "reason": reason,
+            "reason_code": "skip_suppressed",
         }))
     }
 }
