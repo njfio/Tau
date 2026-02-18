@@ -181,9 +181,14 @@ impl FileMemoryStore {
         } else {
             vector_ranked.clone()
         };
+        let graph_scores = compute_graph_scores(&by_memory_id);
+        let safe_graph_weight = options.graph_signal_weight.max(0.0);
         for item in &mut ranked {
             if let Some(record) = by_memory_id.get(item.key.as_str()) {
                 item.score *= importance_rank_multiplier(record.importance);
+            }
+            if let Some(graph_score) = graph_scores.get(item.key.as_str()) {
+                item.score += safe_graph_weight * graph_score;
             }
         }
         ranked.sort_by(|left, right| {
@@ -210,6 +215,7 @@ impl FileMemoryStore {
                     .enable_hybrid_retrieval
                     .then(|| fused_scores.get(item.key.as_str()).copied())
                     .flatten(),
+                graph_score: graph_scores.get(item.key.as_str()).copied(),
                 scope: record.scope.clone(),
                 summary: record.entry.summary.clone(),
                 memory_type: record.memory_type,
@@ -219,6 +225,7 @@ impl FileMemoryStore {
                 source_event_key: record.entry.source_event_key.clone(),
                 embedding_source: record.embedding_source.clone(),
                 embedding_model: record.embedding_model.clone(),
+                relations: record.relations.clone(),
             });
         }
         let selected = matches
@@ -352,11 +359,19 @@ impl FileMemoryStore {
 
     pub(super) fn load_latest_records(&self) -> Result<Vec<RuntimeMemoryRecord>> {
         let records = self.load_records_backend()?;
+        let relation_map = self.load_relation_map_backend()?;
         let mut seen = BTreeSet::new();
         let mut latest = Vec::new();
         for record in records.into_iter().rev() {
             if seen.insert(record.entry.memory_id.clone()) {
                 latest.push(record);
+            }
+        }
+        if !relation_map.is_empty() {
+            for record in &mut latest {
+                if let Some(relations) = relation_map.get(record.entry.memory_id.as_str()) {
+                    record.relations = relations.clone();
+                }
             }
         }
         latest.sort_by(|left, right| {
@@ -367,4 +382,34 @@ impl FileMemoryStore {
         });
         Ok(latest)
     }
+}
+
+fn compute_graph_scores(records: &HashMap<String, RuntimeMemoryRecord>) -> HashMap<String, f32> {
+    let mut scores = HashMap::<String, f32>::new();
+    for source_record in records.values() {
+        for relation in &source_record.relations {
+            let Some(target_record) = records.get(relation.target_id.as_str()) else {
+                continue;
+            };
+            let relation_weight = relation.effective_weight.clamp(0.0, 1.0);
+            if relation_weight <= 0.0 {
+                continue;
+            }
+            let source_importance = source_record.importance.clamp(0.0, 1.0);
+            if source_importance > 0.0 {
+                *scores.entry(relation.target_id.clone()).or_default() +=
+                    source_importance * relation_weight;
+            }
+            let target_importance = target_record.importance.clamp(0.0, 1.0);
+            if target_importance > 0.0 {
+                *scores
+                    .entry(source_record.entry.memory_id.clone())
+                    .or_default() += target_importance * relation_weight;
+            }
+        }
+    }
+    for score in scores.values_mut() {
+        *score = score.clamp(0.0, 1.0);
+    }
+    scores
 }
