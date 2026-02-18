@@ -1,6 +1,6 @@
 # Spec #2509 - Implement/validate G11 conformance tests and runtime wiring
 
-Status: Accepted
+Status: Implemented
 
 ## Problem Statement
 G11 checklist closure requires explicit conformance tests proving coalescing behavior and typing lifecycle signaling for coalesced batches.

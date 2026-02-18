@@ -1,6 +1,6 @@
 # Spec #2507 - G11 message coalescing closure + validation
 
-Status: Accepted
+Status: Implemented
 
 ## Problem Statement
 G11 remains unchecked in the gap inventory despite existing coalescing implementations. We need contract-grade verification and any required hardening so closure is traceable and reproducible.

@@ -1,6 +1,6 @@
 # Spec #2510 - RED/GREEN + live validation evidence for G11 closure
 
-Status: Accepted
+Status: Implemented
 
 ## Problem Statement
 Task #2509 needs explicit RED/GREEN and live validation proof before closure.

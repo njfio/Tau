@@ -1,6 +1,6 @@
 # Spec #2508 - Validate multi-channel/slack coalescing against G11 checklist
 
-Status: Accepted
+Status: Implemented
 
 ## Problem Statement
 We need end-to-end verification that G11 checklist behavior is actually met in active channel runtimes.
