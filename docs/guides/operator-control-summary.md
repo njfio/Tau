@@ -88,6 +88,18 @@ Migration guidance:
 2. Consumers should keep compatibility acceptance for legacy v0 records during rollout windows.
 3. When introducing v2+, ship consumer support before enabling producers to emit the new schema.
 
+## OpenTelemetry-Compatible Export Contract
+
+When `--otel-export-log <path>` (or `TAU_OTEL_EXPORT_LOG`) is configured, Tau emits additive JSONL export records:
+
+- `record_type=otel_export_v1`
+- `schema_version=1`
+- `signal=trace|metric`
+- `resource.service.name=tau-runtime` for prompt runtime summaries
+- `resource.service.name=tau-gateway` for gateway contract-runner cycles
+
+These records are additive and do not replace `prompt_telemetry_v1` or gateway `runtime-events.jsonl`.
+
 ## Troubleshooting map
 
 Common hold reason codes and actions:

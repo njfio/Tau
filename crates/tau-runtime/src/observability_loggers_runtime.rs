@@ -14,6 +14,10 @@ use tau_core::{append_line_with_rotation, LogRotationPolicy};
 pub const PROMPT_TELEMETRY_RECORD_TYPE_V1: &str = "prompt_telemetry_v1";
 /// Current prompt telemetry diagnostics schema version emitted by runtime loggers.
 pub const PROMPT_TELEMETRY_SCHEMA_VERSION: u32 = 1;
+/// Stable record type for OpenTelemetry-compatible observability export payloads.
+pub const OTEL_EXPORT_RECORD_TYPE_V1: &str = "otel_export_v1";
+/// Current OpenTelemetry-compatible observability export schema version.
+pub const OTEL_EXPORT_SCHEMA_VERSION: u32 = 1;
 /// Stable record type for checkpoint promotion gate audit payloads.
 pub const CHECKPOINT_PROMOTION_GATE_RECORD_TYPE_V1: &str = "checkpoint_promotion_gate_v1";
 /// Current checkpoint promotion gate audit schema version.
@@ -130,7 +134,7 @@ struct PromptTelemetryState {
     active: Option<PromptTelemetryRunState>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct PromptTelemetryRunState {
     prompt_id: u64,
     started_unix_ms: u64,
@@ -153,7 +157,8 @@ struct PromptTelemetryRunState {
 #[derive(Clone)]
 /// Public struct `PromptTelemetryLogger` used across Tau components.
 pub struct PromptTelemetryLogger {
-    path: PathBuf,
+    path: Option<PathBuf>,
+    otel_export_path: Option<PathBuf>,
     provider: String,
     model: String,
     write_lock: Arc<Mutex<()>>,
@@ -162,23 +167,75 @@ pub struct PromptTelemetryLogger {
 
 impl PromptTelemetryLogger {
     pub fn open(path: PathBuf, provider: &str, model: &str) -> Result<Self> {
-        if let Some(parent) = path.parent() {
-            if !parent.as_os_str().is_empty() {
-                std::fs::create_dir_all(parent).with_context(|| {
+        Self::open_internal(Some(path), provider, model, None)
+    }
+
+    pub fn open_otel_only(otel_export_path: PathBuf, provider: &str, model: &str) -> Result<Self> {
+        Self::open_internal(None, provider, model, Some(otel_export_path))
+    }
+
+    pub fn open_with_otel_export(
+        path: PathBuf,
+        provider: &str,
+        model: &str,
+        otel_export_path: Option<PathBuf>,
+    ) -> Result<Self> {
+        Self::open_internal(Some(path), provider, model, otel_export_path)
+    }
+
+    fn open_internal(
+        path: Option<PathBuf>,
+        provider: &str,
+        model: &str,
+        otel_export_path: Option<PathBuf>,
+    ) -> Result<Self> {
+        if path.is_none() && otel_export_path.is_none() {
+            return Err(anyhow!(
+                "prompt telemetry logger requires at least one output path"
+            ));
+        }
+        if let Some(path) = path.as_ref() {
+            if let Some(parent) = path.parent() {
+                if !parent.as_os_str().is_empty() {
+                    std::fs::create_dir_all(parent).with_context(|| {
+                        format!(
+                            "failed to create telemetry log directory {}",
+                            parent.display()
+                        )
+                    })?;
+                }
+            }
+            std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(path)
+                .with_context(|| format!("failed to open telemetry log {}", path.display()))?;
+        }
+        if let Some(otel_export_path) = otel_export_path.as_ref() {
+            if let Some(parent) = otel_export_path.parent() {
+                if !parent.as_os_str().is_empty() {
+                    std::fs::create_dir_all(parent).with_context(|| {
+                        format!(
+                            "failed to create otel export directory {}",
+                            parent.display()
+                        )
+                    })?;
+                }
+            }
+            std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(otel_export_path)
+                .with_context(|| {
                     format!(
-                        "failed to create telemetry log directory {}",
-                        parent.display()
+                        "failed to open otel export log {}",
+                        otel_export_path.display()
                     )
                 })?;
-            }
         }
-        std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&path)
-            .with_context(|| format!("failed to open telemetry log {}", path.display()))?;
         Ok(Self {
             path,
+            otel_export_path,
             provider: provider.to_string(),
             model: model.to_string(),
             write_lock: Arc::new(Mutex::new(())),
@@ -237,8 +294,78 @@ impl PromptTelemetryLogger {
         })
     }
 
+    fn build_otel_records(
+        &self,
+        active: &PromptTelemetryRunState,
+        status: &'static str,
+        success: bool,
+    ) -> Vec<Value> {
+        let now = current_unix_timestamp_ms();
+        vec![
+            serde_json::json!({
+                "record_type": OTEL_EXPORT_RECORD_TYPE_V1,
+                "schema_version": OTEL_EXPORT_SCHEMA_VERSION,
+                "timestamp_unix_ms": now,
+                "signal": "trace",
+                "resource": {
+                    "service.name": "tau-runtime",
+                },
+                "scope": {
+                    "name": "tau.prompt.telemetry",
+                    "version": "1",
+                },
+                "span": {
+                    "name": "tau.prompt.run",
+                    "status": if success { "ok" } else { "error" },
+                    "start_unix_ms": active.started_unix_ms,
+                    "end_unix_ms": now,
+                    "duration_ms": active.started.elapsed().as_millis() as u64,
+                    "attributes": {
+                        "provider": self.provider,
+                        "model": self.model,
+                        "prompt_id": active.prompt_id,
+                        "status": status,
+                        "success": success,
+                        "turn_count": active.turn_count,
+                        "tool_calls": active.tool_calls,
+                        "tool_errors": active.tool_errors,
+                        "finish_reason": active.finish_reason.as_deref(),
+                        "budget_alerts": active.budget_alerts,
+                        "secret_leak_detections": active.secret_leak_detections,
+                    }
+                }
+            }),
+            serde_json::json!({
+                "record_type": OTEL_EXPORT_RECORD_TYPE_V1,
+                "schema_version": OTEL_EXPORT_SCHEMA_VERSION,
+                "timestamp_unix_ms": now,
+                "signal": "metric",
+                "resource": {
+                    "service.name": "tau-runtime",
+                },
+                "scope": {
+                    "name": "tau.prompt.telemetry",
+                    "version": "1",
+                },
+                "metric": {
+                    "name": "tau.prompt.tokens.total",
+                    "type": "sum",
+                    "unit": "1",
+                    "value": active.total_tokens,
+                    "attributes": {
+                        "provider": self.provider,
+                        "model": self.model,
+                        "status": status,
+                        "success": success,
+                    }
+                }
+            }),
+        ]
+    }
+
     pub fn log_event(&self, event: &AgentEvent) -> Result<()> {
         let mut records = Vec::new();
+        let mut otel_records = Vec::new();
         {
             let mut state = self
                 .state
@@ -247,7 +374,8 @@ impl PromptTelemetryLogger {
             match event {
                 AgentEvent::AgentStart => {
                     if let Some(active) = state.active.take() {
-                        records.push(self.build_record(active, "interrupted", false));
+                        records.push(self.build_record(active.clone(), "interrupted", false));
+                        otel_records.extend(self.build_otel_records(&active, "interrupted", false));
                     }
                     state.next_prompt_id = state.next_prompt_id.saturating_add(1);
                     let prompt_id = state.next_prompt_id;
@@ -337,27 +465,41 @@ impl PromptTelemetryLogger {
                         } else {
                             "completed_with_tool_errors"
                         };
-                        records.push(self.build_record(active, status, success));
+                        records.push(self.build_record(active.clone(), status, success));
+                        otel_records.extend(self.build_otel_records(&active, status, success));
                     }
                 }
                 _ => {}
             }
         }
 
-        if records.is_empty() {
+        if records.is_empty() && otel_records.is_empty() {
             return Ok(());
         }
         let _guard = self
             .write_lock
             .lock()
             .map_err(|_| anyhow!("telemetry write lock is poisoned"))?;
-        for record in records {
-            let line =
-                serde_json::to_string(&record).context("failed to encode telemetry event")?;
-            append_line_with_rotation(&self.path, &line, LogRotationPolicy::from_env())
-                .with_context(|| {
-                    format!("failed to write telemetry log {}", self.path.display())
+        if let Some(path) = self.path.as_ref() {
+            for record in records {
+                let line =
+                    serde_json::to_string(&record).context("failed to encode telemetry event")?;
+                append_line_with_rotation(path, &line, LogRotationPolicy::from_env())
+                    .with_context(|| format!("failed to write telemetry log {}", path.display()))?;
+            }
+        }
+        if let Some(otel_export_path) = self.otel_export_path.as_ref() {
+            for record in otel_records {
+                let line =
+                    serde_json::to_string(&record).context("failed to encode otel export event")?;
+                append_line_with_rotation(otel_export_path, &line, LogRotationPolicy::from_env())
+                    .with_context(|| {
+                    format!(
+                        "failed to write otel export log {}",
+                        otel_export_path.display()
+                    )
                 })?;
+            }
         }
         Ok(())
     }
@@ -960,5 +1102,120 @@ mod tests {
             record["schema_version"],
             super::PROMPT_TELEMETRY_SCHEMA_VERSION
         );
+    }
+
+    #[test]
+    fn functional_prompt_telemetry_logger_writes_otel_trace_and_metric_records_when_enabled() {
+        let temp = tempdir().expect("tempdir");
+        let log_path = temp.path().join("prompt-telemetry-otel.jsonl");
+        let otel_path = temp.path().join("otel-export.jsonl");
+        let logger = PromptTelemetryLogger::open_with_otel_export(
+            log_path.clone(),
+            "openai",
+            "gpt-4o-mini",
+            Some(otel_path.clone()),
+        )
+        .expect("logger open");
+
+        logger
+            .log_event(&AgentEvent::AgentStart)
+            .expect("start prompt");
+        logger
+            .log_event(&AgentEvent::TurnEnd {
+                turn: 1,
+                tool_results: 0,
+                request_duration_ms: 7,
+                usage: ChatUsage {
+                    input_tokens: 10,
+                    output_tokens: 5,
+                    total_tokens: 15,
+                    cached_input_tokens: 0,
+                },
+                finish_reason: Some("stop".to_string()),
+            })
+            .expect("turn end");
+        logger
+            .log_event(&AgentEvent::AgentEnd { new_messages: 1 })
+            .expect("end prompt");
+
+        let otel_raw = std::fs::read_to_string(otel_path).expect("read otel export");
+        let lines = otel_raw.lines().collect::<Vec<_>>();
+        assert_eq!(lines.len(), 2);
+
+        let trace: serde_json::Value = serde_json::from_str(lines[0]).expect("trace record");
+        assert_eq!(trace["record_type"], "otel_export_v1");
+        assert_eq!(trace["signal"], "trace");
+        assert_eq!(trace["resource"]["service.name"], "tau-runtime");
+        assert_eq!(trace["span"]["name"], "tau.prompt.run");
+        assert_eq!(trace["span"]["attributes"]["provider"], "openai");
+        assert_eq!(trace["span"]["attributes"]["model"], "gpt-4o-mini");
+
+        let metric: serde_json::Value = serde_json::from_str(lines[1]).expect("metric record");
+        assert_eq!(metric["record_type"], "otel_export_v1");
+        assert_eq!(metric["signal"], "metric");
+        assert_eq!(metric["resource"]["service.name"], "tau-runtime");
+        assert_eq!(metric["metric"]["name"], "tau.prompt.tokens.total");
+        assert_eq!(metric["metric"]["value"], 15);
+    }
+
+    #[test]
+    fn regression_prompt_telemetry_logger_skips_otel_export_when_not_configured() {
+        let temp = tempdir().expect("tempdir");
+        let log_path = temp.path().join("prompt-telemetry-no-otel.jsonl");
+        let otel_path = temp.path().join("otel-export.jsonl");
+        let logger = PromptTelemetryLogger::open_with_otel_export(
+            log_path.clone(),
+            "openai",
+            "gpt-4o-mini",
+            None,
+        )
+        .expect("logger open");
+
+        logger
+            .log_event(&AgentEvent::AgentStart)
+            .expect("start prompt");
+        logger
+            .log_event(&AgentEvent::AgentEnd { new_messages: 1 })
+            .expect("end prompt");
+
+        assert!(!otel_path.exists(), "otel export should remain disabled");
+    }
+
+    #[test]
+    fn functional_prompt_telemetry_logger_open_otel_only_writes_otel_records() {
+        let temp = tempdir().expect("tempdir");
+        let otel_path = temp.path().join("otel-only-export.jsonl");
+        let logger =
+            PromptTelemetryLogger::open_otel_only(otel_path.clone(), "openai", "gpt-4o-mini")
+                .expect("logger open");
+
+        logger
+            .log_event(&AgentEvent::AgentStart)
+            .expect("start prompt");
+        logger
+            .log_event(&AgentEvent::TurnEnd {
+                turn: 1,
+                tool_results: 0,
+                request_duration_ms: 4,
+                usage: ChatUsage {
+                    input_tokens: 3,
+                    output_tokens: 2,
+                    total_tokens: 5,
+                    cached_input_tokens: 0,
+                },
+                finish_reason: Some("stop".to_string()),
+            })
+            .expect("turn end");
+        logger
+            .log_event(&AgentEvent::AgentEnd { new_messages: 1 })
+            .expect("end prompt");
+
+        let otel_raw = std::fs::read_to_string(otel_path).expect("read otel export");
+        let lines = otel_raw.lines().collect::<Vec<_>>();
+        assert_eq!(lines.len(), 2);
+        let trace: serde_json::Value = serde_json::from_str(lines[0]).expect("trace record");
+        assert_eq!(trace["signal"], "trace");
+        let metric: serde_json::Value = serde_json::from_str(lines[1]).expect("metric record");
+        assert_eq!(metric["signal"], "metric");
     }
 }
