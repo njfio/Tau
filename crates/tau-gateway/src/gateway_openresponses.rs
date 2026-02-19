@@ -34,6 +34,12 @@ use tau_memory::runtime::{
     FileMemoryStore, MemoryRelationInput, MemoryScopeFilter, MemorySearchMatch,
     MemorySearchOptions, MemoryType, RuntimeMemoryRecord,
 };
+use tau_multi_channel::multi_channel_contract::MultiChannelTransport;
+use tau_multi_channel::multi_channel_lifecycle::{
+    default_probe_max_attempts, default_probe_retry_delay_ms, default_probe_timeout_ms,
+    execute_multi_channel_lifecycle_action, MultiChannelLifecycleAction,
+    MultiChannelLifecycleCommandConfig,
+};
 use tau_runtime::{
     inspect_runtime_heartbeat, start_runtime_heartbeat_scheduler, ExternalCodingAgentBridge,
     ExternalCodingAgentBridgeConfig, ExternalCodingAgentBridgeError,
@@ -80,7 +86,7 @@ use session_runtime::{
     persist_messages, persist_session_usage_delta,
 };
 use types::{
-    GatewayAuthSessionRequest, GatewayAuthSessionResponse,
+    GatewayAuthSessionRequest, GatewayAuthSessionResponse, GatewayChannelLifecycleRequest,
     GatewayExternalCodingAgentFollowupsDrainRequest, GatewayExternalCodingAgentMessageRequest,
     GatewayExternalCodingAgentReapRequest, GatewayExternalCodingAgentSessionOpenRequest,
     GatewayExternalCodingAgentStreamQuery, GatewayMemoryEntryDeleteRequest,
@@ -110,6 +116,7 @@ const GATEWAY_SESSION_RESET_ENDPOINT: &str = "/gateway/sessions/{session_key}/re
 const GATEWAY_MEMORY_ENDPOINT: &str = "/gateway/memory/{session_key}";
 const GATEWAY_MEMORY_ENTRY_ENDPOINT: &str = "/gateway/memory/{session_key}/{entry_id}";
 const GATEWAY_MEMORY_GRAPH_ENDPOINT: &str = "/gateway/memory-graph/{session_key}";
+const GATEWAY_CHANNEL_LIFECYCLE_ENDPOINT: &str = "/gateway/channels/{channel}/lifecycle";
 const GATEWAY_UI_TELEMETRY_ENDPOINT: &str = "/gateway/ui/telemetry";
 const DASHBOARD_HEALTH_ENDPOINT: &str = "/dashboard/health";
 const DASHBOARD_WIDGETS_ENDPOINT: &str = "/dashboard/widgets";
@@ -755,6 +762,10 @@ fn build_gateway_openresponses_router(state: Arc<GatewayOpenResponsesServerState
             get(handle_gateway_memory_graph),
         )
         .route(
+            GATEWAY_CHANNEL_LIFECYCLE_ENDPOINT,
+            post(handle_gateway_channel_lifecycle_action),
+        )
+        .route(
             GATEWAY_UI_TELEMETRY_ENDPOINT,
             post(handle_gateway_ui_telemetry),
         )
@@ -861,6 +872,7 @@ async fn handle_gateway_status(
                     "memory_endpoint": GATEWAY_MEMORY_ENDPOINT,
                     "memory_entry_endpoint": GATEWAY_MEMORY_ENTRY_ENDPOINT,
                     "memory_graph_endpoint": GATEWAY_MEMORY_GRAPH_ENDPOINT,
+                    "channel_lifecycle_endpoint": GATEWAY_CHANNEL_LIFECYCLE_ENDPOINT,
                     "ui_telemetry_endpoint": GATEWAY_UI_TELEMETRY_ENDPOINT,
                     "policy_gates": {
                         "session_write": SESSION_WRITE_POLICY_GATE,
@@ -2548,6 +2560,52 @@ async fn handle_gateway_memory_graph(
         .into_response()
 }
 
+async fn handle_gateway_channel_lifecycle_action(
+    State(state): State<Arc<GatewayOpenResponsesServerState>>,
+    headers: HeaderMap,
+    AxumPath(channel): AxumPath<String>,
+    body: Bytes,
+) -> Response {
+    if let Err(error) = authorize_and_enforce_gateway_limits(&state, &headers) {
+        return error.into_response();
+    }
+    let request = match parse_gateway_json_body::<GatewayChannelLifecycleRequest>(&body) {
+        Ok(request) => request,
+        Err(error) => return error.into_response(),
+    };
+    let channel = match parse_gateway_channel_transport(channel.as_str()) {
+        Ok(channel) => channel,
+        Err(error) => return error.into_response(),
+    };
+    let action_label = request.action.trim().to_ascii_lowercase();
+    let action = match parse_gateway_channel_lifecycle_action(action_label.as_str()) {
+        Ok(action) => action,
+        Err(error) => return error.into_response(),
+    };
+
+    let command_config =
+        build_gateway_multi_channel_lifecycle_command_config(&state.config.state_dir, &request);
+    match execute_multi_channel_lifecycle_action(&command_config, action, channel) {
+        Ok(report) => {
+            let reason_code = format!("channel_lifecycle_action_{}_applied", action_label);
+            state.record_ui_telemetry_event("channels", "lifecycle_action", reason_code.as_str());
+            (
+                StatusCode::OK,
+                Json(json!({
+                    "channel": channel.as_str(),
+                    "action": action_label,
+                    "report": report,
+                })),
+            )
+                .into_response()
+        }
+        Err(error) => OpenResponsesApiError::internal(format!(
+            "failed to execute channel lifecycle action: {error}"
+        ))
+        .into_response(),
+    }
+}
+
 async fn handle_gateway_ui_telemetry(
     State(state): State<Arc<GatewayOpenResponsesServerState>>,
     headers: HeaderMap,
@@ -2777,6 +2835,76 @@ fn normalize_memory_graph_relation_types(raw: Option<&str>) -> Vec<String> {
         relation_types.insert("keyword_overlap".to_string());
     }
     relation_types.into_iter().collect()
+}
+
+fn parse_gateway_channel_transport(
+    raw: &str,
+) -> Result<MultiChannelTransport, OpenResponsesApiError> {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "telegram" => Ok(MultiChannelTransport::Telegram),
+        "discord" => Ok(MultiChannelTransport::Discord),
+        "whatsapp" => Ok(MultiChannelTransport::Whatsapp),
+        _ => Err(OpenResponsesApiError::bad_request(
+            "invalid_channel",
+            "channel must be one of: telegram, discord, whatsapp",
+        )),
+    }
+}
+
+fn parse_gateway_channel_lifecycle_action(
+    raw: &str,
+) -> Result<MultiChannelLifecycleAction, OpenResponsesApiError> {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "status" => Ok(MultiChannelLifecycleAction::Status),
+        "login" => Ok(MultiChannelLifecycleAction::Login),
+        "logout" => Ok(MultiChannelLifecycleAction::Logout),
+        "probe" => Ok(MultiChannelLifecycleAction::Probe),
+        _ => Err(OpenResponsesApiError::bad_request(
+            "invalid_lifecycle_action",
+            "action must be one of: status, login, logout, probe",
+        )),
+    }
+}
+
+fn build_gateway_multi_channel_lifecycle_command_config(
+    gateway_state_dir: &Path,
+    request: &GatewayChannelLifecycleRequest,
+) -> MultiChannelLifecycleCommandConfig {
+    let tau_root = gateway_state_dir
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| gateway_state_dir.to_path_buf());
+    let probe_online = request.probe_online.unwrap_or(false);
+    let probe_online_timeout_ms = request
+        .probe_online_timeout_ms
+        .unwrap_or(default_probe_timeout_ms())
+        .clamp(100, 30_000);
+    let probe_online_max_attempts = request
+        .probe_online_max_attempts
+        .unwrap_or(default_probe_max_attempts())
+        .clamp(1, 5);
+    let probe_online_retry_delay_ms = request
+        .probe_online_retry_delay_ms
+        .unwrap_or(default_probe_retry_delay_ms())
+        .clamp(25, 5_000);
+
+    MultiChannelLifecycleCommandConfig {
+        state_dir: tau_root.join("multi-channel"),
+        ingress_dir: tau_root.join("channel-store"),
+        telegram_api_base: "https://api.telegram.org".to_string(),
+        discord_api_base: "https://discord.com/api/v10".to_string(),
+        whatsapp_api_base: "https://graph.facebook.com/v20.0".to_string(),
+        credential_store: None,
+        credential_store_unreadable: false,
+        telegram_bot_token: None,
+        discord_bot_token: None,
+        whatsapp_access_token: None,
+        whatsapp_phone_number_id: None,
+        probe_online,
+        probe_online_timeout_ms,
+        probe_online_max_attempts,
+        probe_online_retry_delay_ms,
+    }
 }
 
 fn build_memory_graph_nodes(content: &str, max_nodes: usize) -> Vec<GatewayMemoryGraphNode> {
