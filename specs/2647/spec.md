@@ -1,6 +1,6 @@
 # Spec: Issue #2647 - External coding-agent subprocess worker support in bridge runtime (G21 phase 3)
 
-Status: Reviewed
+Status: Implemented
 
 ## Problem Statement
 Tau's G21 bridge currently provides session lifecycle, follow-up queueing, and SSE-ready event replay, but does not execute a real external coding-agent subprocess per worker session. This leaves the final G21 parity item incomplete (`Add external coding agent subprocess support to worker system`) and prevents live worker process supervision through the existing bridge/session APIs.
