@@ -225,6 +225,22 @@ impl ExternalCodingAgentBridge {
         state.sessions.len()
     }
 
+    pub fn list_sessions(&self) -> Vec<ExternalCodingAgentSessionSnapshot> {
+        let mut state = lock_or_recover(&self.inner);
+        let mut session_ids = state.sessions.keys().cloned().collect::<Vec<_>>();
+        session_ids.sort();
+        for session_id in &session_ids {
+            sync_session_subprocess_state(&mut state, session_id);
+        }
+        let mut snapshots = state
+            .sessions
+            .values()
+            .map(|record| record.snapshot.clone())
+            .collect::<Vec<_>>();
+        snapshots.sort_by(|left, right| left.session_id.cmp(&right.session_id));
+        snapshots
+    }
+
     pub fn snapshot(&self, session_id: &str) -> Option<ExternalCodingAgentSessionSnapshot> {
         let mut state = lock_or_recover(&self.inner);
         sync_session_subprocess_state(&mut state, session_id);

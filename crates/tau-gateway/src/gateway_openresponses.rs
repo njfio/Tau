@@ -59,6 +59,7 @@ use crate::remote_profile::GatewayOpenResponsesAuthMode;
 mod audit_runtime;
 mod auth_runtime;
 mod dashboard_status;
+mod jobs_runtime;
 mod multi_channel_status;
 mod openai_compat;
 mod request_translation;
@@ -81,6 +82,7 @@ use dashboard_status::{
     apply_gateway_dashboard_action, collect_gateway_dashboard_snapshot,
     GatewayDashboardActionRequest,
 };
+use jobs_runtime::{handle_gateway_job_cancel, handle_gateway_jobs_list};
 use multi_channel_status::collect_gateway_multi_channel_status_report;
 use openai_compat::{
     build_chat_completions_payload, build_chat_completions_stream_chunks,
@@ -143,6 +145,8 @@ const GATEWAY_TRAINING_ROLLOUTS_ENDPOINT: &str = "/gateway/training/rollouts";
 const GATEWAY_TRAINING_CONFIG_ENDPOINT: &str = "/gateway/training/config";
 const GATEWAY_TOOLS_ENDPOINT: &str = "/gateway/tools";
 const GATEWAY_TOOLS_STATS_ENDPOINT: &str = "/gateway/tools/stats";
+const GATEWAY_JOBS_ENDPOINT: &str = "/gateway/jobs";
+const GATEWAY_JOB_CANCEL_ENDPOINT_TEMPLATE: &str = "/gateway/jobs/{job_id}/cancel";
 const GATEWAY_UI_TELEMETRY_ENDPOINT: &str = "/gateway/ui/telemetry";
 const DASHBOARD_HEALTH_ENDPOINT: &str = "/dashboard/health";
 const DASHBOARD_WIDGETS_ENDPOINT: &str = "/dashboard/widgets";
@@ -829,6 +833,11 @@ fn build_gateway_openresponses_router(state: Arc<GatewayOpenResponsesServerState
             GATEWAY_TOOLS_STATS_ENDPOINT,
             get(handle_gateway_tools_stats),
         )
+        .route(GATEWAY_JOBS_ENDPOINT, get(handle_gateway_jobs_list))
+        .route(
+            GATEWAY_JOB_CANCEL_ENDPOINT_TEMPLATE,
+            post(handle_gateway_job_cancel),
+        )
         .route(
             GATEWAY_UI_TELEMETRY_ENDPOINT,
             post(handle_gateway_ui_telemetry),
@@ -948,6 +957,8 @@ async fn handle_gateway_status(
                     "training_config_endpoint": GATEWAY_TRAINING_CONFIG_ENDPOINT,
                     "tools_endpoint": GATEWAY_TOOLS_ENDPOINT,
                     "tool_stats_endpoint": GATEWAY_TOOLS_STATS_ENDPOINT,
+                    "jobs_endpoint": GATEWAY_JOBS_ENDPOINT,
+                    "job_cancel_endpoint_template": GATEWAY_JOB_CANCEL_ENDPOINT_TEMPLATE,
                     "ui_telemetry_endpoint": GATEWAY_UI_TELEMETRY_ENDPOINT,
                     "policy_gates": {
                         "session_write": SESSION_WRITE_POLICY_GATE,
