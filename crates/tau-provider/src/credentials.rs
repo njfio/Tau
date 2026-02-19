@@ -464,6 +464,96 @@ pub fn provider_auth_snapshot_for_status(
                 secret: Some(secret),
             };
         }
+
+        if let Some(store) = store {
+            if let Some(entry) = store.providers.get(provider.as_str()) {
+                if entry.auth_method != mode {
+                    return ProviderAuthSnapshot {
+                        provider,
+                        method: mode,
+                        mode_supported: true,
+                        available: false,
+                        state: "mode_mismatch".to_string(),
+                        source: "credential_store".to_string(),
+                        reason: format!(
+                            "credential store entry mode '{}' does not match configured mode '{}'",
+                            entry.auth_method.as_str(),
+                            mode.as_str()
+                        ),
+                        expires_unix: entry.expires_unix,
+                        revoked: entry.revoked,
+                        refreshable: false,
+                        secret: None,
+                    };
+                }
+                if entry.revoked {
+                    return ProviderAuthSnapshot {
+                        provider,
+                        method: mode,
+                        mode_supported: true,
+                        available: false,
+                        state: "revoked".to_string(),
+                        source: "credential_store".to_string(),
+                        reason: "credential has been revoked".to_string(),
+                        expires_unix: entry.expires_unix,
+                        revoked: true,
+                        refreshable: false,
+                        secret: None,
+                    };
+                }
+                if let Some(secret) = entry
+                    .access_token
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(str::to_string)
+                {
+                    return ProviderAuthSnapshot {
+                        provider,
+                        method: mode,
+                        mode_supported: true,
+                        available: true,
+                        state: "ready".to_string(),
+                        source: "credential_store".to_string(),
+                        reason: "credential available".to_string(),
+                        expires_unix: None,
+                        revoked: false,
+                        refreshable: false,
+                        secret: Some(secret),
+                    };
+                }
+                return ProviderAuthSnapshot {
+                    provider,
+                    method: mode,
+                    mode_supported: true,
+                    available: false,
+                    state: "missing_access_token".to_string(),
+                    source: "credential_store".to_string(),
+                    reason: "credential store entry has no access token".to_string(),
+                    expires_unix: None,
+                    revoked: false,
+                    refreshable: false,
+                    secret: None,
+                };
+            }
+        }
+
+        if let Some(error) = store_error {
+            return ProviderAuthSnapshot {
+                provider,
+                method: mode,
+                mode_supported: true,
+                available: false,
+                state: "store_error".to_string(),
+                source: "none".to_string(),
+                reason: error.to_string(),
+                expires_unix: None,
+                revoked: false,
+                refreshable: false,
+                secret: None,
+            };
+        }
+
         return ProviderAuthSnapshot {
             provider,
             method: mode,
@@ -720,10 +810,37 @@ impl ProviderCredentialResolver for CliProviderCredentialResolver<'_> {
     ) -> Result<ProviderAuthCredential> {
         match method {
             ProviderAuthMethod::ApiKey => {
-                let (secret, source) = resolve_non_empty_secret_with_source(
+                if let Some((secret, source)) = resolve_non_empty_secret_with_source(
                     provider_api_key_candidates(self.cli, provider),
-                )
-                .ok_or_else(|| anyhow!(missing_provider_api_key_message(provider)))?;
+                ) {
+                    return Ok(ProviderAuthCredential {
+                        method,
+                        secret: Some(secret),
+                        source: Some(source),
+                        expires_unix: None,
+                        refreshable: false,
+                        revoked: false,
+                    });
+                }
+
+                let resolved_from_store =
+                    resolve_store_backed_provider_credential(self.cli, provider, method);
+                let (secret, source) = match resolved_from_store {
+                    Ok(resolved) => (
+                        resolved
+                            .secret
+                            .ok_or_else(|| anyhow!(missing_provider_api_key_message(provider)))?,
+                        resolved
+                            .source
+                            .unwrap_or_else(|| "credential_store".to_string()),
+                    ),
+                    Err(error) => {
+                        if error.to_string().contains("entry is missing") {
+                            return Err(anyhow!(missing_provider_api_key_message(provider)));
+                        }
+                        return Err(error);
+                    }
+                };
                 Ok(ProviderAuthCredential {
                     method,
                     secret: Some(secret),

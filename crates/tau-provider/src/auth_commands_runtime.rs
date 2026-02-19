@@ -851,53 +851,116 @@ pub fn execute_auth_login_command(
 
     match mode {
         ProviderAuthMethod::ApiKey => {
-            match resolve_non_empty_secret_with_source(
+            let Some((api_key, source)) = resolve_non_empty_secret_with_source(
                 provider_api_key_candidates_from_auth_config(config, provider),
-            ) {
-                Some((_secret, source)) => {
-                    if json_output {
-                        return serde_json::json!({
-                            "command": "auth.login",
-                            "provider": provider.as_str(),
-                            "mode": mode.as_str(),
-                            "status": "ready",
-                            "source": source,
-                            "persisted": false,
-                        })
-                        .to_string();
-                    }
-                    format!(
-                        "auth login: provider={} mode={} status=ready source={} persisted=false",
-                        provider.as_str(),
-                        mode.as_str(),
-                        source
-                    )
+            ) else {
+                let reason = redact_known_secrets(
+                    missing_provider_api_key_message(provider).to_string(),
+                    &redaction_secrets,
+                );
+                if json_output {
+                    return serde_json::json!({
+                        "command": "auth.login",
+                        "provider": provider.as_str(),
+                        "mode": mode.as_str(),
+                        "status": "error",
+                        "reason": reason,
+                    })
+                    .to_string();
                 }
-                None => {
-                    let reason = redact_known_secrets(
-                        missing_provider_api_key_message(provider).to_string(),
-                        &redaction_secrets,
-                    );
+                return redact_known_secrets(
+                    format!(
+                        "auth login error: provider={} mode={} error={reason}",
+                        provider.as_str(),
+                        mode.as_str()
+                    ),
+                    &redaction_secrets,
+                );
+            };
+
+            let mut store = match load_credential_store(
+                &config.credential_store,
+                config.credential_store_encryption,
+                config.credential_store_key.as_deref(),
+            ) {
+                Ok(store) => store,
+                Err(error) => {
                     if json_output {
                         return serde_json::json!({
                             "command": "auth.login",
                             "provider": provider.as_str(),
                             "mode": mode.as_str(),
                             "status": "error",
-                            "reason": reason,
+                            "reason": redact_known_secrets(error.to_string(), &redaction_secrets),
                         })
                         .to_string();
                     }
-                    redact_known_secrets(
+                    return redact_known_secrets(
                         format!(
-                            "auth login error: provider={} mode={} error={reason}",
+                            "auth login error: provider={} mode={} error={error}",
                             provider.as_str(),
                             mode.as_str()
                         ),
                         &redaction_secrets,
-                    )
+                    );
                 }
+            };
+
+            store.providers.insert(
+                provider.as_str().to_string(),
+                ProviderCredentialStoreRecord {
+                    auth_method: mode,
+                    access_token: Some(api_key),
+                    refresh_token: None,
+                    expires_unix: None,
+                    revoked: false,
+                },
+            );
+
+            if let Err(error) = save_credential_store(
+                &config.credential_store,
+                &store,
+                config.credential_store_key.as_deref(),
+            ) {
+                if json_output {
+                    return serde_json::json!({
+                        "command": "auth.login",
+                        "provider": provider.as_str(),
+                        "mode": mode.as_str(),
+                        "status": "error",
+                        "reason": redact_known_secrets(error.to_string(), &redaction_secrets),
+                    })
+                    .to_string();
+                }
+                return redact_known_secrets(
+                    format!(
+                        "auth login error: provider={} mode={} error={error}",
+                        provider.as_str(),
+                        mode.as_str()
+                    ),
+                    &redaction_secrets,
+                );
             }
+
+            if json_output {
+                return serde_json::json!({
+                    "command": "auth.login",
+                    "provider": provider.as_str(),
+                    "mode": mode.as_str(),
+                    "status": "saved",
+                    "source": source,
+                    "credential_store": config.credential_store.display().to_string(),
+                    "persisted": true,
+                })
+                .to_string();
+            }
+            format!(
+                "auth login: provider={} mode={} status=saved source={} credential_store={} persisted=true",
+                provider.as_str(),
+                mode.as_str(),
+                source,
+                config.credential_store.display()
+            )
         }
         ProviderAuthMethod::OauthToken | ProviderAuthMethod::SessionToken => {
             let Some((access_token, access_source)) = resolve_non_empty_secret_with_source(
@@ -1089,7 +1152,7 @@ pub fn execute_auth_reauth_command(
     let mode = mode_override
         .unwrap_or_else(|| configured_provider_auth_method_from_config(config, provider));
     let mode_config = auth_config_with_provider_mode(config, provider, mode);
-    let requires_store = mode != ProviderAuthMethod::ApiKey;
+    let requires_store = true;
     let (store, store_error) = if requires_store {
         match load_credential_store(
             &config.credential_store,
