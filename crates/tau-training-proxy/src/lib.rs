@@ -444,6 +444,20 @@ mod tests {
             .contains("missing required header 'x-attempt-id'"));
     }
 
+    #[test]
+    fn regression_spec_2609_c03_training_proxy_rejects_invalid_sequence_header() {
+        let mut headers = HeaderMap::new();
+        headers.insert(HEADER_ROLLOUT_ID, "rollout-1".parse().expect("header"));
+        headers.insert(HEADER_ATTEMPT_ID, "attempt-2".parse().expect("header"));
+        headers.insert(HEADER_SEQUENCE_ID, "invalid-seq".parse().expect("header"));
+
+        let error =
+            parse_training_proxy_attribution(&headers).expect_err("invalid sequence must fail");
+        assert!(error
+            .to_string()
+            .contains("header 'x-sequence-id' must be an unsigned integer"));
+    }
+
     #[tokio::test]
     async fn integration_proxy_forwards_request_and_persists_attribution_log() {
         let upstream = MockServer::start_async().await;
@@ -530,5 +544,54 @@ mod tests {
             parsed["error"]["code"],
             Value::String("training_proxy_missing_or_invalid_attribution_header".to_string())
         );
+    }
+
+    #[tokio::test]
+    async fn integration_spec_2609_c04_training_proxy_propagates_upstream_error_status_and_logs() {
+        let upstream = MockServer::start_async().await;
+        let forwarded = upstream.mock(|when, then| {
+            when.method(POST).path("/v1/chat/completions");
+            then.status(429)
+                .header("content-type", "application/json")
+                .body(r#"{"error":{"code":"rate_limit","message":"slow down"}}"#);
+        });
+
+        let temp = tempdir().expect("tempdir");
+        let state = Arc::new(
+            TrainingProxyState::from_config(&TrainingProxyConfig {
+                bind: "127.0.0.1:0".to_string(),
+                upstream_base_url: upstream.base_url(),
+                state_dir: temp.path().join(".tau"),
+                request_timeout_ms: 10_000,
+            })
+            .expect("build proxy state"),
+        );
+        let app = build_training_proxy_router(state.clone());
+
+        let request = Request::builder()
+            .method("POST")
+            .uri(OPENAI_CHAT_COMPLETIONS_ENDPOINT)
+            .header("content-type", "application/json")
+            .header(HEADER_ROLLOUT_ID, "rollout-err")
+            .header(HEADER_ATTEMPT_ID, "attempt-err")
+            .body(Body::from(r#"{"model":"gpt-4o-mini","messages":[]}"#))
+            .expect("request");
+
+        let response = app.oneshot(request).await.expect("proxy response");
+        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("read response body");
+        let parsed: serde_json::Value =
+            serde_json::from_slice(&body).expect("parse upstream body as json");
+        assert_eq!(parsed["error"]["code"], "rate_limit");
+
+        forwarded.assert();
+        let attribution_log =
+            std::fs::read_to_string(&state.attribution_log_path).expect("read attribution log");
+        assert!(attribution_log.contains("\"rollout_id\":\"rollout-err\""));
+        assert!(attribution_log.contains("\"attempt_id\":\"attempt-err\""));
+        assert!(attribution_log.contains("\"status_code\":429"));
+        assert!(!attribution_log.contains("\"error_code\""));
     }
 }

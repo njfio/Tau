@@ -458,8 +458,13 @@ pub fn build_provider_client(cli: &Cli, provider: Provider) -> Result<Arc<dyn Ll
 
 #[cfg(test)]
 mod tests {
-    use super::resolve_openrouter_api_base;
+    use super::{
+        is_azure_openai_endpoint, resolve_openrouter_api_base, resolved_secret_for_provider,
+    };
+    use crate::credentials::ProviderAuthCredential;
+    use crate::types::ProviderAuthMethod;
     use std::sync::{Mutex, OnceLock};
+    use tau_ai::Provider;
 
     fn env_lock() -> &'static Mutex<()> {
         static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -494,5 +499,40 @@ mod tests {
             Some(value) => std::env::set_var("TAU_OPENROUTER_API_BASE", value),
             None => std::env::remove_var("TAU_OPENROUTER_API_BASE"),
         }
+    }
+
+    #[test]
+    fn unit_spec_2609_c05_provider_client_auth_helper_decisions() {
+        assert!(is_azure_openai_endpoint(
+            "https://example.openai.azure.com/openai/deployments/deploy/chat/completions"
+        ));
+        assert!(is_azure_openai_endpoint(
+            "https://proxy.local/openai/deployments/deploy/chat/completions"
+        ));
+        assert!(!is_azure_openai_endpoint("https://api.openai.com/v1"));
+
+        let resolved = ProviderAuthCredential {
+            method: ProviderAuthMethod::ApiKey,
+            secret: Some("sk-test".to_string()),
+            source: Some("unit-test".to_string()),
+            expires_unix: None,
+            refreshable: false,
+            revoked: false,
+        };
+        let secret = resolved_secret_for_provider(&resolved, Provider::OpenAi)
+            .expect("resolved credential should include secret");
+        assert_eq!(secret, "sk-test");
+
+        let missing_secret = ProviderAuthCredential {
+            method: ProviderAuthMethod::OauthToken,
+            secret: None,
+            source: Some("credential_store".to_string()),
+            expires_unix: None,
+            refreshable: true,
+            revoked: false,
+        };
+        let error = resolved_secret_for_provider(&missing_secret, Provider::OpenAi)
+            .expect_err("missing secret must fail closed");
+        assert!(error.to_string().contains("did not provide a credential"));
     }
 }
