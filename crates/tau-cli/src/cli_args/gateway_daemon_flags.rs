@@ -640,6 +640,13 @@ pub struct CliGatewayDaemonFlags {
 
     #[arg(
         long,
+        env = "TAU_OTEL_EXPORT_LOG",
+        help = "Optional JSONL file path for OpenTelemetry-compatible runtime/gateway export records"
+    )]
+    pub otel_export_log: Option<PathBuf>,
+
+    #[arg(
+        long,
         env = "TAU_OS_SANDBOX_MODE",
         value_enum,
         default_value = "off",

@@ -20,7 +20,10 @@ use crate::gateway_contract::{
 use tau_core::{
     append_line_with_rotation, current_unix_timestamp_ms, write_text_atomic, LogRotationPolicy,
 };
-use tau_runtime::{ChannelContextEntry, ChannelLogEntry, ChannelStore, TransportHealthSnapshot};
+use tau_runtime::{
+    ChannelContextEntry, ChannelLogEntry, ChannelStore, TransportHealthSnapshot,
+    OTEL_EXPORT_RECORD_TYPE_V1, OTEL_EXPORT_SCHEMA_VERSION,
+};
 
 const GATEWAY_RUNTIME_STATE_SCHEMA_VERSION: u32 = 1;
 const GATEWAY_RUNTIME_EVENTS_LOG_FILE: &str = "runtime-events.jsonl";
@@ -39,6 +42,7 @@ fn gateway_runtime_state_schema_version() -> u32 {
 pub struct GatewayRuntimeConfig {
     pub fixture_path: PathBuf,
     pub state_dir: PathBuf,
+    pub otel_export_log: Option<PathBuf>,
     pub queue_limit: usize,
     pub processed_case_cap: usize,
     pub retry_max_attempts: usize,
@@ -457,6 +461,16 @@ impl GatewayRuntime {
             &classification.reason,
             &reason_codes,
         )?;
+        if let Some(otel_export_log) = self.config.otel_export_log.as_deref() {
+            append_gateway_cycle_otel_export(
+                otel_export_log,
+                &summary,
+                &health,
+                &guardrail,
+                &classification.reason,
+                &reason_codes,
+            )?;
+        }
 
         Ok(summary)
     }
@@ -798,6 +812,83 @@ fn append_gateway_cycle_report(
     Ok(())
 }
 
+fn append_gateway_cycle_otel_export(
+    path: &Path,
+    summary: &GatewayRuntimeSummary,
+    health: &TransportHealthSnapshot,
+    guardrail: &GatewayRolloutGuardrailState,
+    health_reason: &str,
+    reason_codes: &[String],
+) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("failed to create {}", parent.display()))?;
+        }
+    }
+
+    let now = current_unix_timestamp_ms();
+    let backlog_cases = summary
+        .discovered_cases
+        .saturating_sub(summary.queued_cases);
+    let trace = serde_json::json!({
+        "record_type": OTEL_EXPORT_RECORD_TYPE_V1,
+        "schema_version": OTEL_EXPORT_SCHEMA_VERSION,
+        "timestamp_unix_ms": now,
+        "signal": "trace",
+        "resource": {
+            "service.name": "tau-gateway",
+        },
+        "scope": {
+            "name": "tau.gateway.runtime",
+            "version": "1",
+        },
+        "span": {
+            "name": "tau.gateway.cycle",
+            "status": if guardrail.gate == "pass" { "ok" } else { "error" },
+            "attributes": {
+                "health_state": health.classify().state.as_str(),
+                "health_reason": health_reason,
+                "rollout_gate": guardrail.gate,
+                "rollout_reason_code": guardrail.reason_code,
+                "failure_streak": health.failure_streak,
+                "reason_codes": reason_codes,
+            }
+        }
+    });
+    let metric = serde_json::json!({
+        "record_type": OTEL_EXPORT_RECORD_TYPE_V1,
+        "schema_version": OTEL_EXPORT_SCHEMA_VERSION,
+        "timestamp_unix_ms": now,
+        "signal": "metric",
+        "resource": {
+            "service.name": "tau-gateway",
+        },
+        "scope": {
+            "name": "tau.gateway.runtime",
+            "version": "1",
+        },
+        "metric": {
+            "name": "tau.gateway.queue_depth",
+            "type": "gauge",
+            "unit": "1",
+            "value": backlog_cases,
+            "attributes": {
+                "health_state": health.classify().state.as_str(),
+                "rollout_gate": guardrail.gate,
+                "rollout_reason_code": guardrail.reason_code,
+            }
+        }
+    });
+
+    for record in [trace, metric] {
+        let line = serde_json::to_string(&record).context("serialize gateway otel export")?;
+        append_line_with_rotation(path, &line, LogRotationPolicy::from_env())
+            .with_context(|| format!("failed to append {}", path.display()))?;
+    }
+    Ok(())
+}
+
 fn evaluate_gateway_rollout_guardrail(
     summary: &GatewayRuntimeSummary,
     health: &TransportHealthSnapshot,
@@ -949,6 +1040,7 @@ mod tests {
         GatewayRuntimeConfig {
             fixture_path: fixture_path("mixed-outcomes.json"),
             state_dir: root.join(".tau/gateway"),
+            otel_export_log: None,
             queue_limit: 64,
             processed_case_cap: 10_000,
             retry_max_attempts: 2,
@@ -1459,5 +1551,65 @@ mod tests {
         assert!(reason_codes
             .iter()
             .any(|value| value.as_str() == Some("case_processing_failed")));
+    }
+
+    #[tokio::test]
+    async fn integration_runner_writes_otel_trace_and_metric_records_when_enabled() {
+        let temp = tempdir().expect("tempdir");
+        let mut config = build_config(temp.path());
+        config.otel_export_log = Some(config.state_dir.join("otel-export.jsonl"));
+        let fixture = parse_gateway_contract_fixture(
+            r#"{
+  "schema_version": 1,
+  "name": "single-success",
+  "cases": [
+    {
+      "schema_version": 1,
+      "case_id": "gateway-success-only",
+      "method": "GET",
+      "endpoint": "/v1/health",
+      "actor_id": "ops-bot",
+      "body": {},
+      "expected": {
+        "outcome": "success",
+        "status_code": 200,
+        "response_body": {
+          "status":"accepted",
+          "method":"GET",
+          "endpoint":"/v1/health",
+          "actor_id":"ops-bot"
+        }
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("parse fixture");
+
+        let mut runtime = GatewayRuntime::new(config.clone()).expect("runtime");
+        let summary = runtime.run_once(&fixture).await.expect("run once");
+        assert_eq!(summary.failed_cases, 0);
+
+        let otel_path = config.otel_export_log.expect("otel path");
+        let raw = std::fs::read_to_string(otel_path).expect("read otel export");
+        let lines = raw.lines().collect::<Vec<_>>();
+        assert_eq!(lines.len(), 2);
+
+        let trace: Value = serde_json::from_str(lines[0]).expect("trace json");
+        assert_eq!(trace["record_type"], "otel_export_v1");
+        assert_eq!(trace["signal"], "trace");
+        assert_eq!(trace["resource"]["service.name"], "tau-gateway");
+        assert_eq!(trace["span"]["name"], "tau.gateway.cycle");
+        assert_eq!(
+            trace["span"]["attributes"]["rollout_reason_code"],
+            "guardrail_checks_passing"
+        );
+
+        let metric: Value = serde_json::from_str(lines[1]).expect("metric json");
+        assert_eq!(metric["record_type"], "otel_export_v1");
+        assert_eq!(metric["signal"], "metric");
+        assert_eq!(metric["resource"]["service.name"], "tau-gateway");
+        assert_eq!(metric["metric"]["name"], "tau.gateway.queue_depth");
+        assert_eq!(metric["metric"]["value"], 0);
     }
 }

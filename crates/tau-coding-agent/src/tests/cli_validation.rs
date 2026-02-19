@@ -45,6 +45,30 @@ fn functional_cli_provider_retry_flags_accept_overrides() {
 }
 
 #[test]
+fn unit_cli_provider_rate_limit_flags_default_values_are_stable() {
+    let cli = parse_cli_with_stack(["tau-rs"]);
+    assert_eq!(cli.provider_rate_limit_capacity, 0);
+    assert_eq!(cli.provider_rate_limit_refill_per_second, 0);
+    assert_eq!(cli.provider_rate_limit_max_wait_ms, 0);
+}
+
+#[test]
+fn functional_cli_provider_rate_limit_flags_accept_overrides() {
+    let cli = parse_cli_with_stack([
+        "tau-rs",
+        "--provider-rate-limit-capacity",
+        "8",
+        "--provider-rate-limit-refill-per-second",
+        "4",
+        "--provider-rate-limit-max-wait-ms",
+        "250",
+    ]);
+    assert_eq!(cli.provider_rate_limit_capacity, 8);
+    assert_eq!(cli.provider_rate_limit_refill_per_second, 4);
+    assert_eq!(cli.provider_rate_limit_max_wait_ms, 250);
+}
+
+#[test]
 fn unit_cli_agent_cost_budget_flags_default_values_are_stable() {
     let cli = parse_cli_with_stack(["tau-rs"]);
     assert_eq!(cli.agent_cost_budget_usd, None);
@@ -1274,6 +1298,7 @@ fn unit_cli_gateway_runner_flags_default_to_disabled() {
         PathBuf::from("crates/tau-gateway/testdata/gateway-contract/mixed-outcomes.json")
     );
     assert_eq!(cli.gateway_state_dir, PathBuf::from(".tau/gateway"));
+    assert!(cli.otel_export_log.is_none());
     assert_eq!(cli.gateway_guardrail_failure_streak_threshold, 2);
     assert_eq!(cli.gateway_guardrail_retryable_failures_threshold, 2);
 }
@@ -1345,6 +1370,8 @@ fn functional_cli_gateway_runner_flags_accept_explicit_overrides() {
         "fixtures/gateway.json",
         "--gateway-state-dir",
         ".tau/gateway-custom",
+        "--otel-export-log",
+        ".tau/otel-export.jsonl",
         "--gateway-guardrail-failure-streak-threshold",
         "4",
         "--gateway-guardrail-retryable-failures-threshold",
@@ -1353,6 +1380,10 @@ fn functional_cli_gateway_runner_flags_accept_explicit_overrides() {
     assert!(cli.gateway_contract_runner);
     assert_eq!(cli.gateway_fixture, PathBuf::from("fixtures/gateway.json"));
     assert_eq!(cli.gateway_state_dir, PathBuf::from(".tau/gateway-custom"));
+    assert_eq!(
+        cli.otel_export_log,
+        Some(PathBuf::from(".tau/otel-export.jsonl"))
+    );
     assert_eq!(cli.gateway_guardrail_failure_streak_threshold, 4);
     assert_eq!(cli.gateway_guardrail_retryable_failures_threshold, 5);
 }

@@ -10,6 +10,7 @@ This runbook covers:
 - gateway service lifecycle control (`--gateway-service-start|stop|status`)
 - OpenResponses-compatible HTTP gateway (`--gateway-openresponses-server`)
 - gateway-served webchat/control endpoints (`/webchat`, `/gateway/status`)
+- optional OpenTelemetry-compatible JSON export (`--otel-export-log`)
 
 ## Service lifecycle commands
 
@@ -39,6 +40,24 @@ cargo run -p tau-coding-agent -- \
   --gateway-service-status-json
 ```
 
+## OpenTelemetry export path
+
+Enable OpenTelemetry-compatible export records for runtime/gateway observability:
+
+```bash
+cargo run -p tau-coding-agent -- \
+  --gateway-contract-runner \
+  --gateway-state-dir .tau/gateway \
+  --otel-export-log .tau/observability/otel-export.jsonl
+```
+
+Export stream shape (JSONL, additive to existing runtime logs):
+
+- `record_type=otel_export_v1`
+- `schema_version=1`
+- `signal=trace|metric`
+- `resource.service.name=tau-runtime|tau-gateway`
+
 ## OpenResponses endpoint (`/v1/responses`) and OpenAI-compatible adapters
 
 Start the OpenResponses endpoint in `token` auth mode:
@@ -51,6 +70,22 @@ cargo run -p tau-coding-agent -- \
   --gateway-openresponses-bind 127.0.0.1:8787 \
   --gateway-openresponses-auth-mode token \
   --gateway-openresponses-auth-token local-dev-token \
+  --gateway-openresponses-max-input-chars 32000
+```
+
+Preferred encrypted-secret workflow (credential-store IDs):
+
+```bash
+cargo run -p tau-coding-agent -- \
+  --integration-auth "/integration-auth set gateway-openresponses-auth-token local-dev-token"
+
+cargo run -p tau-coding-agent -- \
+  --model openai/gpt-4o-mini \
+  --gateway-state-dir .tau/gateway \
+  --gateway-openresponses-server \
+  --gateway-openresponses-bind 127.0.0.1:8787 \
+  --gateway-openresponses-auth-mode token \
+  --gateway-openresponses-auth-token-id gateway-openresponses-auth-token \
   --gateway-openresponses-max-input-chars 32000
 ```
 
@@ -86,8 +121,8 @@ cat docs/guides/gateway-remote-access.md
 
 Auth mode summary:
 
-- `token` (default): bearer token required on `/v1/responses`, `/v1/chat/completions`, `/v1/completions`, `/v1/models`, and `/gateway/status`.
-- `password-session`: exchange password once at `/gateway/auth/session`, then use returned bearer session token.
+- `token` (default): bearer token required on `/v1/responses`, `/v1/chat/completions`, `/v1/completions`, `/v1/models`, and `/gateway/status` (set direct token or `--gateway-openresponses-auth-token-id`).
+- `password-session`: exchange password once at `/gateway/auth/session`, then use returned bearer session token (set direct password or `--gateway-openresponses-auth-password-id`).
 - `localhost-dev`: no bearer required, but bind must be loopback (`127.0.0.1`/`::1`).
 
 Password-session startup example:
@@ -100,6 +135,24 @@ cargo run -p tau-coding-agent -- \
   --gateway-openresponses-bind 127.0.0.1:8787 \
   --gateway-openresponses-auth-mode password-session \
   --gateway-openresponses-auth-password "local-password" \
+  --gateway-openresponses-session-ttl-seconds 3600 \
+  --gateway-openresponses-rate-limit-window-seconds 60 \
+  --gateway-openresponses-rate-limit-max-requests 120
+```
+
+Password-session via credential-store ID:
+
+```bash
+cargo run -p tau-coding-agent -- \
+  --integration-auth "/integration-auth set gateway-openresponses-auth-password local-password"
+
+cargo run -p tau-coding-agent -- \
+  --model openai/gpt-4o-mini \
+  --gateway-state-dir .tau/gateway \
+  --gateway-openresponses-server \
+  --gateway-openresponses-bind 127.0.0.1:8787 \
+  --gateway-openresponses-auth-mode password-session \
+  --gateway-openresponses-auth-password-id gateway-openresponses-auth-password \
   --gateway-openresponses-session-ttl-seconds 3600 \
   --gateway-openresponses-rate-limit-window-seconds 60 \
   --gateway-openresponses-rate-limit-max-requests 120
