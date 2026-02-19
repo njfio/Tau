@@ -468,10 +468,11 @@ Spacebot is a Rust-based AI agent for teams, communities, and multi-user environ
 **Why it matters**: Enables specialized coding workflows that go beyond simple tool use.
 **Pathway**:
 - [ ] Add external coding agent subprocess support to worker system
-- [ ] HTTP+SSE communication protocol for streaming progress
-- [ ] Server pool for managing persistent processes per workspace
-- [ ] Interactive follow-up support (send additional context to running session)
-- [ ] 10-minute inactivity timeout with auto-cleanup
+- [x] HTTP+SSE communication protocol for streaming progress
+- [x] Server pool for managing persistent processes per workspace
+- [x] Interactive follow-up support (send additional context to running session)
+- [x] 10-minute inactivity timeout with auto-cleanup
+- Progress evidence: #2619 (runtime bridge staging) and #2638 (gateway HTTP+SSE integration)
 - **Files**: New module in `tau-tools/` or `tau-runtime/`
 - **Effort**: Medium-Large
 
@@ -490,8 +491,8 @@ Spacebot is a Rust-based AI agent for teams, communities, and multi-user environ
 **What**: Pre-configured `fly.toml` for one-command cloud deployment.
 **Why it matters**: Reduces deployment friction for teams who don't want to manage infrastructure.
 **Pathway**:
-- [ ] Add `fly.toml` to repo root with sensible defaults
-- [ ] Document in deployment guide
+- [x] Add `fly.toml` to repo root with sensible defaults
+- [x] Document in deployment guide
 - [ ] Add Fly.io to CI/CD pipeline (optional step)
 - **Files**: `fly.toml`, `.github/workflows/`
 - **Effort**: Small
