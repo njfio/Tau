@@ -6,7 +6,8 @@
 
 use std::{
     collections::BTreeMap,
-    path::Path,
+    fmt,
+    path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -24,6 +25,9 @@ const CREDENTIAL_STORE_SCHEMA_VERSION: u32 = 1;
 const CREDENTIAL_STORE_ENCRYPTED_PREFIX: &str = "enc:v1:";
 const CREDENTIAL_STORE_NONCE_BYTES: usize = 16;
 const CREDENTIAL_STORE_TAG_BYTES: usize = 32;
+const CREDENTIAL_STORE_MACHINE_KEY_CONTEXT: &str = "tau-credential-store-machine-key-v1";
+const CREDENTIAL_STORE_MACHINE_ID_CANDIDATE_PATHS: [&str; 2] =
+    ["/etc/machine-id", "/var/lib/dbus/machine-id"];
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 struct CredentialStoreFile {
@@ -84,6 +88,155 @@ pub struct RefreshedProviderCredential {
     pub expires_unix: Option<u64>,
 }
 
+/// Public struct `DecryptedSecret` used across Tau components.
+#[derive(Clone, PartialEq, Eq)]
+pub struct DecryptedSecret(String);
+
+impl DecryptedSecret {
+    /// Public `fn` `new` in `tau-provider`.
+    ///
+    /// This item is part of the G20 secret-store hardening API surface.
+    /// Callers rely on redacted formatting semantics and non-empty validation.
+    pub fn new(secret: impl Into<String>) -> Result<Self> {
+        let secret = secret.into();
+        if secret.trim().is_empty() {
+            bail!("decrypted secret must not be empty");
+        }
+        Ok(Self(secret))
+    }
+
+    /// Public `fn` `expose` in `tau-provider`.
+    ///
+    /// This item returns plaintext secret bytes for explicit use sites.
+    pub fn expose(&self) -> &str {
+        &self.0
+    }
+
+    /// Public `fn` `into_inner` in `tau-provider`.
+    ///
+    /// This item consumes the wrapper and returns plaintext.
+    pub fn into_inner(self) -> String {
+        self.0
+    }
+}
+
+impl fmt::Debug for DecryptedSecret {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("[REDACTED]")
+    }
+}
+
+impl fmt::Display for DecryptedSecret {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("[REDACTED]")
+    }
+}
+
+/// Public trait `SecretStore` in `tau-provider`.
+///
+/// This trait abstracts storage backends for provider/integration secrets while
+/// preserving existing credential-store schema behavior.
+pub trait SecretStore {
+    /// Public `fn` `load` in `tau-provider`.
+    fn load(
+        &self,
+        default_mode: CredentialStoreEncryptionMode,
+        key: Option<&str>,
+    ) -> Result<CredentialStoreData>;
+
+    /// Public `fn` `save` in `tau-provider`.
+    fn save(&self, store: &CredentialStoreData, key: Option<&str>) -> Result<()>;
+
+    /// Public `fn` `read_integration_secret` in `tau-provider`.
+    fn read_integration_secret(
+        &self,
+        integration_id: &str,
+        default_mode: CredentialStoreEncryptionMode,
+        key: Option<&str>,
+    ) -> Result<Option<DecryptedSecret>> {
+        let store = self.load(default_mode, key)?;
+        let Some(record) = store.integrations.get(integration_id) else {
+            return Ok(None);
+        };
+        let secret = record
+            .secret
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(DecryptedSecret::new)
+            .transpose()?;
+        Ok(secret)
+    }
+
+    /// Public `fn` `write_integration_secret` in `tau-provider`.
+    fn write_integration_secret(
+        &self,
+        integration_id: &str,
+        secret: &str,
+        default_mode: CredentialStoreEncryptionMode,
+        key: Option<&str>,
+        updated_unix: Option<u64>,
+    ) -> Result<()> {
+        let secret = DecryptedSecret::new(secret)?;
+        let mut store = self.load(default_mode, key)?;
+        store.integrations.insert(
+            integration_id.to_string(),
+            IntegrationCredentialStoreRecord {
+                secret: Some(secret.into_inner()),
+                revoked: false,
+                updated_unix,
+            },
+        );
+        self.save(&store, key)
+    }
+}
+
+/// Public struct `FileSecretStore` used across Tau components.
+#[derive(Debug, Clone)]
+pub struct FileSecretStore {
+    path: PathBuf,
+}
+
+impl FileSecretStore {
+    /// Public `fn` `new` in `tau-provider`.
+    pub fn new(path: impl Into<PathBuf>) -> Self {
+        Self { path: path.into() }
+    }
+
+    /// Public `fn` `path` in `tau-provider`.
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl SecretStore for FileSecretStore {
+    fn load(
+        &self,
+        default_mode: CredentialStoreEncryptionMode,
+        key: Option<&str>,
+    ) -> Result<CredentialStoreData> {
+        tracing::debug!(
+            credential_store = %self.path.display(),
+            encryption = ?default_mode,
+            has_key = key.is_some_and(|value| !value.trim().is_empty()),
+            "loading credential secret store"
+        );
+        load_credential_store(&self.path, default_mode, key)
+    }
+
+    fn save(&self, store: &CredentialStoreData, key: Option<&str>) -> Result<()> {
+        tracing::debug!(
+            credential_store = %self.path.display(),
+            encryption = ?store.encryption,
+            has_key = key.is_some_and(|value| !value.trim().is_empty()),
+            provider_entries = store.providers.len(),
+            integration_entries = store.integrations.len(),
+            "saving credential secret store"
+        );
+        save_credential_store(&self.path, store, key)
+    }
+}
+
 /// Public `fn` `resolve_credential_store_encryption_mode` in `tau-provider`.
 ///
 /// This item is part of the Wave 2 API surface for M23 documentation uplift.
@@ -93,35 +246,63 @@ pub fn resolve_credential_store_encryption_mode(cli: &Cli) -> CredentialStoreEnc
     match cli.credential_store_encryption {
         CliCredentialStoreEncryptionMode::None => CredentialStoreEncryptionMode::None,
         CliCredentialStoreEncryptionMode::Keyed => CredentialStoreEncryptionMode::Keyed,
-        CliCredentialStoreEncryptionMode::Auto => {
-            if cli
-                .credential_store_key
-                .as_ref()
-                .is_some_and(|value| !value.trim().is_empty())
-            {
-                CredentialStoreEncryptionMode::Keyed
-            } else {
-                CredentialStoreEncryptionMode::None
-            }
-        }
+        CliCredentialStoreEncryptionMode::Auto => CredentialStoreEncryptionMode::Keyed,
     }
 }
 
 fn derive_credential_store_key_material(key: Option<&str>) -> Result<[u8; 32]> {
-    let key = key
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| {
-            anyhow!("credential store key is required for keyed encryption (set --credential-store-key or TAU_CREDENTIAL_STORE_KEY)")
-        })?;
-    if key.len() < 8 {
-        bail!("credential store key must be at least 8 characters");
-    }
-
-    let digest = Sha256::digest(key.as_bytes());
+    let key_seed = match key.map(str::trim).filter(|value| !value.is_empty()) {
+        Some(value) => {
+            if value.len() < 8 {
+                bail!("credential store key must be at least 8 characters");
+            }
+            value.to_string()
+        }
+        None => machine_derived_credential_store_key_seed(),
+    };
+    let digest = Sha256::digest(key_seed.as_bytes());
     let mut material = [0u8; 32];
     material.copy_from_slice(&digest);
     Ok(material)
+}
+
+fn machine_derived_credential_store_key_seed() -> String {
+    let mut segments = vec![
+        CREDENTIAL_STORE_MACHINE_KEY_CONTEXT.to_string(),
+        format!("os={}", std::env::consts::OS),
+        format!("arch={}", std::env::consts::ARCH),
+    ];
+    for variable in [
+        "HOSTNAME",
+        "COMPUTERNAME",
+        "USER",
+        "USERNAME",
+        "HOME",
+        "USERPROFILE",
+    ] {
+        if let Ok(value) = std::env::var(variable) {
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                segments.push(format!("{variable}={trimmed}"));
+            }
+        }
+    }
+    if let Some(machine_id) = read_machine_id_file() {
+        segments.push(format!("machine_id={machine_id}"));
+    }
+    segments.join("|")
+}
+
+fn read_machine_id_file() -> Option<String> {
+    for path in CREDENTIAL_STORE_MACHINE_ID_CANDIDATE_PATHS {
+        if let Ok(raw) = std::fs::read_to_string(path) {
+            let value = raw.trim();
+            if !value.is_empty() {
+                return Some(value.to_string());
+            }
+        }
+    }
+    None
 }
 
 fn derive_credential_store_nonce() -> [u8; CREDENTIAL_STORE_NONCE_BYTES] {
