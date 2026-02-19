@@ -447,11 +447,12 @@ fn parse_discord_event(
         "ingress_provider".to_string(),
         Value::String(envelope.provider.trim().to_string()),
     );
+    let normalized_text = normalize_discord_content(payload);
 
     Ok(MultiChannelInboundEvent {
         schema_version: MULTI_CHANNEL_CONTRACT_SCHEMA_VERSION,
         transport: MultiChannelTransport::Discord,
-        event_kind: detect_event_kind(optional_string_field(payload, "content").as_deref()),
+        event_kind: detect_event_kind(Some(normalized_text.as_str())),
         event_id: required_string_field(
             payload,
             "id",
@@ -473,7 +474,7 @@ fn parse_discord_event(
         )?,
         actor_display: optional_string_field(author, "username").unwrap_or_default(),
         timestamp_ms,
-        text: optional_string_field(payload, "content").unwrap_or_default(),
+        text: normalized_text,
         attachments: parse_attachments(payload.get("attachments"))?,
         metadata,
     })
@@ -733,6 +734,42 @@ fn optional_string_value(value: Option<&Value>) -> Option<String> {
     }
 }
 
+fn resolve_discord_mention_display(mention: &Map<String, Value>) -> Option<String> {
+    optional_object_field(mention, "member")
+        .and_then(|member| optional_string_field(member, "nick"))
+        .or_else(|| optional_string_field(mention, "global_name"))
+        .or_else(|| optional_string_field(mention, "username"))
+}
+
+fn normalize_discord_content(payload: &Map<String, Value>) -> String {
+    let Some(mut content) = optional_string_field(payload, "content") else {
+        return String::new();
+    };
+    let Some(mentions) = payload.get("mentions").and_then(Value::as_array) else {
+        return content;
+    };
+
+    for mention in mentions {
+        let Some(mention) = mention.as_object() else {
+            continue;
+        };
+        let Some(mention_id) = optional_string_field(mention, "id") else {
+            continue;
+        };
+        let Some(display_name) = resolve_discord_mention_display(mention) else {
+            continue;
+        };
+
+        let resolved = format!("@{display_name}");
+        let token_plain = format!("<@{mention_id}>");
+        let token_nick = format!("<@!{mention_id}>");
+        content = content.replace(token_plain.as_str(), resolved.as_str());
+        content = content.replace(token_nick.as_str(), resolved.as_str());
+    }
+
+    content
+}
+
 fn optional_u64_value(value: Option<&Value>) -> Option<u64> {
     let value = value?;
     match value {
@@ -814,6 +851,55 @@ mod tests {
         assert_eq!(event.actor_id, "discord-user-3");
         assert_eq!(event.text, "/status");
         assert!(event.timestamp_ms > 0);
+    }
+
+    #[test]
+    fn conformance_spec_c01_parse_discord_envelope_resolves_mention_tokens_to_display_names() {
+        let raw = serde_json::json!({
+            "schema_version": 1,
+            "transport": "discord",
+            "provider": "discord-gateway",
+            "payload": {
+                "id": "discord-msg-mentions-1",
+                "channel_id": "discord-channel-88",
+                "timestamp": "2026-01-10T12:00:00Z",
+                "content": "hello <@111> and <@!222>",
+                "author": { "id": "discord-user-3", "username": "bot-operator" },
+                "mentions": [
+                    { "id": "111", "username": "alice", "global_name": "Alice" },
+                    { "id": "222", "username": "bob", "member": { "nick": "Bobby" } }
+                ],
+                "attachments": []
+            }
+        });
+
+        let event = parse_multi_channel_live_inbound_envelope(&raw.to_string())
+            .expect("discord payload with mentions should parse");
+        assert_eq!(event.text, "hello @Alice and @Bobby");
+    }
+
+    #[test]
+    fn regression_spec_c02_parse_discord_envelope_preserves_unmapped_mentions() {
+        let raw = serde_json::json!({
+            "schema_version": 1,
+            "transport": "discord",
+            "provider": "discord-gateway",
+            "payload": {
+                "id": "discord-msg-mentions-2",
+                "channel_id": "discord-channel-88",
+                "timestamp": "2026-01-10T12:00:00Z",
+                "content": "hello <@111> and <@999>",
+                "author": { "id": "discord-user-3", "username": "bot-operator" },
+                "mentions": [
+                    { "id": "111", "username": "alice" }
+                ],
+                "attachments": []
+            }
+        });
+
+        let event = parse_multi_channel_live_inbound_envelope(&raw.to_string())
+            .expect("discord payload with partial mentions should parse");
+        assert_eq!(event.text, "hello @alice and <@999>");
     }
 
     #[test]

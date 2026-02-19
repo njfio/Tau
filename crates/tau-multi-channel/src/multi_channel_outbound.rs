@@ -1251,6 +1251,43 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn functional_spec_c03_discord_delivery_caps_chunk_size_at_2000_chars() {
+        let dispatcher = MultiChannelOutboundDispatcher::new(MultiChannelOutboundConfig {
+            mode: MultiChannelOutboundMode::DryRun,
+            max_chars: 10_000,
+            discord_bot_token: Some("token".to_string()),
+            ..MultiChannelOutboundConfig::default()
+        })
+        .expect("dispatcher");
+        let mut event = sample_event(MultiChannelTransport::Discord);
+        event.conversation_id = "room-88".to_string();
+        let message = "a".repeat(2_501);
+
+        let result = dispatcher
+            .deliver(&event, &message)
+            .await
+            .expect("dry-run should succeed");
+
+        assert_eq!(result.chunk_count, 2);
+        assert_eq!(
+            result.receipts[0].request_body["content"]
+                .as_str()
+                .expect("chunk 1 text")
+                .chars()
+                .count(),
+            2_000
+        );
+        assert_eq!(
+            result.receipts[1].request_body["content"]
+                .as_str()
+                .expect("chunk 2 text")
+                .chars()
+                .count(),
+            501
+        );
+    }
+
+    #[tokio::test]
     async fn functional_dry_run_shapes_telegram_reaction_payload() {
         let dispatcher = MultiChannelOutboundDispatcher::new(MultiChannelOutboundConfig {
             mode: MultiChannelOutboundMode::DryRun,
