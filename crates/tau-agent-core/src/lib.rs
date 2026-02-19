@@ -2615,7 +2615,8 @@ mod tests {
         AgentDirectMessageError, AgentDirectMessagePolicy, AgentError, AgentEvent, AgentTool,
         AsyncEventDispatchMetrics, CooperativeCancellationToken, SafetyMode, SafetyPolicy,
         SafetyStage, StreamingRetryBufferState, ToolExecutionResult, CONTEXT_SUMMARY_MAX_CHARS,
-        CONTEXT_SUMMARY_PREFIX, DIRECT_MESSAGE_PREFIX, MEMORY_RECALL_PREFIX,
+        CONTEXT_SUMMARY_MAX_EXCERPTS, CONTEXT_SUMMARY_PREFIX, DIRECT_MESSAGE_PREFIX,
+        MEMORY_RECALL_PREFIX,
     };
 
     struct MockClient {

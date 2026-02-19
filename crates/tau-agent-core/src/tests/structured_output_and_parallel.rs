@@ -1474,6 +1474,22 @@ async fn spec_2572_c01_warn_compaction_persists_compaction_entry() {
 
     let entry = maybe_entry.expect("warn compaction should persist a compaction entry");
     assert!(entry.contains(CONTEXT_SUMMARY_PREFIX));
+    assert!(
+        entry.contains("tier=warn"),
+        "warn compaction entry should encode tier label"
+    );
+    let entry_count = agent
+        .messages()
+        .iter()
+        .filter(|message| {
+            message.role == MessageRole::System
+                && message.text_content().starts_with("[Tau compaction entry]")
+        })
+        .count();
+    assert_eq!(
+        entry_count, 1,
+        "warn compaction entry should only be persisted once for unchanged history"
+    );
 }
 
 #[tokio::test]
@@ -1512,9 +1528,10 @@ async fn spec_2572_c02_aggressive_compaction_persists_compaction_entry() {
         message.role == MessageRole::System
             && message.text_content().starts_with("[Tau compaction entry]")
     });
+    let entry = entry.expect("aggressive compaction should persist entry");
     assert!(
-        entry.is_some(),
-        "aggressive compaction should persist entry"
+        entry.text_content().contains("tier=aggressive"),
+        "aggressive compaction entry should encode tier label"
     );
 }
 
@@ -1566,7 +1583,36 @@ async fn spec_2572_c03_compaction_summary_extracts_memory_candidates() {
     }
 
     let memory_save = found_memory_save.expect("expected persisted memory save extraction entry");
-    assert!(memory_save.contains("- memory:"));
+    assert!(
+        memory_save.contains("tier=warn"),
+        "warn memory save artifact should encode tier label"
+    );
+    let memory_lines = memory_save
+        .lines()
+        .filter(|line| line.trim_start().starts_with("- memory:"))
+        .count();
+    assert!(
+        memory_lines >= 2,
+        "memory extraction should keep multiple excerpt candidates when available"
+    );
+    assert!(
+        memory_lines <= CONTEXT_SUMMARY_MAX_EXCERPTS,
+        "memory extraction should honor excerpt cap"
+    );
+    let memory_save_count = agent
+        .messages()
+        .iter()
+        .filter(|message| {
+            message.role == MessageRole::System
+                && message
+                    .text_content()
+                    .starts_with("[Tau compaction memory save]")
+        })
+        .count();
+    assert_eq!(
+        memory_save_count, 1,
+        "memory save artifact should only be persisted once for unchanged history"
+    );
 }
 
 #[tokio::test]
