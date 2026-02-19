@@ -37,7 +37,13 @@ Out of scope:
 - C-02 (AC-2, regression): `regression_spec_2541_c02_profile_policy_bridge_no_change_does_not_rewrite_policy_file`
 - C-03 (AC-3, regression): `regression_spec_2541_c03_profile_policy_bridge_invalid_profile_store_preserves_last_interval`
 - C-04 (AC-4, integration): `integration_spec_2541_c04_profile_policy_bridge_start_and_shutdown_is_clean`
+- C-05 (AC-2, regression): `regression_spec_2541_c05_profile_policy_bridge_detects_non_forced_profile_updates`
+- C-06 (AC-2, regression): `regression_spec_2541_c06_profile_policy_bridge_force_reload_bypasses_fingerprint_noop`
+- C-07 (AC-4, regression): `regression_spec_2541_c07_profile_policy_bridge_start_enabled_spawns_active_handle`
+- C-08 (AC-4, regression): `regression_spec_2541_c08_profile_policy_bridge_handle_shutdown_stops_task`
+- C-09 (AC-2/AC-3, regression): `regression_spec_2541_c09_profile_policy_bridge_outcome_reason_codes_are_stable`
+- C-10 (AC-3, regression): `regression_spec_2541_c10_emit_bridge_outcome_logs_reason_code_and_diagnostic`
 
 ## Success Metrics
-- C-01..C-04 all pass.
+- C-01..C-10 all pass.
 - `cargo fmt --check`, `cargo clippy -- -D warnings`, scoped tests, full `cargo test`, and live demo validation pass.

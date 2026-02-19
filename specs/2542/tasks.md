@@ -6,5 +6,3 @@
 4. [x] T4: execute `cargo mutants --in-diff` on touched crates.
 5. [x] T5: run live validation script and capture outcome.
 6. [x] T6: prepare PR evidence matrix.
-
-Note: workspace `cargo test` is currently blocked by reproducible `tau-runtime` heartbeat hot-reload test failures unrelated to files touched for `#2541`.
