@@ -1,6 +1,6 @@
 # Spec: Issue #2614 - Build production dashboard UI (G18) with auth and live status views
 
-Status: Accepted
+Status: Implemented
 
 ## Problem Statement
 Tau's gateway already exposes dashboard/status/action/stream APIs, but the web operator UI does not yet provide a dedicated, authenticated, live-updating dashboard workflow that operators can use for overview + control in one place.
