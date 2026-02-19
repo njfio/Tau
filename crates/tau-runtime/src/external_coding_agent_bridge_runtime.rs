@@ -118,8 +118,13 @@ impl ExternalCodingAgentBridge {
         let mut state = lock_or_recover(&self.inner);
         if let Some(existing_session_id) = state.workspace_to_session.get(normalized_workspace) {
             if let Some(existing) = state.sessions.get(existing_session_id) {
-                return Ok(existing.snapshot.clone());
+                if existing.snapshot.status == ExternalCodingAgentSessionStatus::Running {
+                    return Ok(existing.snapshot.clone());
+                }
             }
+            let stale_session_id = existing_session_id.clone();
+            state.sessions.remove(stale_session_id.as_str());
+            state.workspace_to_session.remove(normalized_workspace);
         }
         if state.sessions.len() >= state.config.max_active_sessions {
             return Err(ExternalCodingAgentBridgeError::SessionLimitReached {
@@ -401,6 +406,24 @@ mod tests {
             .expect("close completed session");
         assert_eq!(closed.status, ExternalCodingAgentSessionStatus::Closed);
         assert_eq!(bridge.active_session_count(), 0);
+    }
+
+    #[test]
+    fn spec_c01_reopen_after_terminal_state_creates_new_running_session() {
+        let bridge = ExternalCodingAgentBridge::new(ExternalCodingAgentBridgeConfig::default());
+        let first = bridge
+            .open_or_reuse_session("workspace-reopen")
+            .expect("open initial session");
+
+        bridge
+            .mark_completed(first.session_id.as_str())
+            .expect("complete initial session");
+
+        let reopened = bridge
+            .open_or_reuse_session("workspace-reopen")
+            .expect("open replacement session");
+        assert_ne!(reopened.session_id, first.session_id);
+        assert_eq!(reopened.status, ExternalCodingAgentSessionStatus::Running);
     }
 
     #[test]
