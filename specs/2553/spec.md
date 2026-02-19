@@ -1,6 +1,6 @@
 # Spec #2553 - Task: implement FastEmbed local embedding provider for tau-memory
 
-Status: Reviewed
+Status: Implemented
 
 ## Problem Statement
 `G8` in `tasks/spacebot-comparison.md` requires local embeddings as the default memory embedding path. Tau currently supports remote provider embeddings and hash fallback, but local mode (`provider=local`) still resolves to hash-only behavior.
