@@ -1,6 +1,6 @@
 # Spec #2590 - Subtask: package mutation/live-smoke/process evidence for configurable default-importance rollout
 
-Status: Reviewed
+Status: Implemented
 Priority: P1
 Milestone: M101
 Parent: #2589

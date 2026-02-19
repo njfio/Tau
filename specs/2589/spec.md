@@ -1,6 +1,6 @@
 # Spec #2589 - Task: implement G5 runtime-configurable memory-type default importance profile
 
-Status: Reviewed
+Status: Implemented
 Priority: P1
 Milestone: M101
 Parent: #2588
