@@ -13,7 +13,7 @@ use tau_core::current_unix_timestamp;
 
 use crate::{
     load_credential_store, resolve_credential_store_encryption_mode, save_credential_store,
-    AuthCommandConfig, IntegrationCredentialStoreRecord,
+    AuthCommandConfig, FileSecretStore, IntegrationCredentialStoreRecord, SecretStore,
 };
 
 /// Public `fn` `resolve_non_empty_cli_value` in `tau-provider`.
@@ -46,18 +46,19 @@ pub fn resolve_secret_from_cli_or_store_id(
         return Ok(None);
     };
     let normalized_secret_id = normalize_integration_credential_id(raw_secret_id)?;
-    let store = load_credential_store(
-        &cli.credential_store,
-        resolve_credential_store_encryption_mode(cli),
-        cli.credential_store_key.as_deref(),
-    )
-    .with_context(|| {
-        format!(
-            "failed to resolve {} from credential store {}",
-            secret_id_flag,
-            cli.credential_store.display()
+    let secret_store = FileSecretStore::new(cli.credential_store.clone());
+    let store = secret_store
+        .load(
+            resolve_credential_store_encryption_mode(cli),
+            cli.credential_store_key.as_deref(),
         )
-    })?;
+        .with_context(|| {
+            format!(
+                "failed to resolve {} from credential store {}",
+                secret_id_flag,
+                cli.credential_store.display()
+            )
+        })?;
     let entry = store
         .integrations
         .get(&normalized_secret_id)
