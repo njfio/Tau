@@ -10,6 +10,7 @@ This runbook covers:
 - gateway service lifecycle control (`--gateway-service-start|stop|status`)
 - OpenResponses-compatible HTTP gateway (`--gateway-openresponses-server`)
 - gateway-served webchat/control endpoints (`/webchat`, `/gateway/status`)
+- optional OpenTelemetry-compatible JSON export (`--otel-export-log`)
 
 ## Service lifecycle commands
 
@@ -38,6 +39,24 @@ cargo run -p tau-coding-agent -- \
   --gateway-service-status \
   --gateway-service-status-json
 ```
+
+## OpenTelemetry export path
+
+Enable OpenTelemetry-compatible export records for runtime/gateway observability:
+
+```bash
+cargo run -p tau-coding-agent -- \
+  --gateway-contract-runner \
+  --gateway-state-dir .tau/gateway \
+  --otel-export-log .tau/observability/otel-export.jsonl
+```
+
+Export stream shape (JSONL, additive to existing runtime logs):
+
+- `record_type=otel_export_v1`
+- `schema_version=1`
+- `signal=trace|metric`
+- `resource.service.name=tau-runtime|tau-gateway`
 
 ## OpenResponses endpoint (`/v1/responses`) and OpenAI-compatible adapters
 

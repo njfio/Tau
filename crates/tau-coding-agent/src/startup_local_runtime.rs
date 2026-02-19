@@ -40,6 +40,7 @@ use tau_onboarding::startup_local_runtime::{
     build_local_runtime_extension_startup as build_onboarding_local_runtime_extension_startup,
     derive_preflight_token_limits,
     execute_local_runtime_entry_mode_with_dispatch as execute_onboarding_local_runtime_entry_mode_with_dispatch,
+    register_runtime_event_reporter_if_configured as register_onboarding_runtime_event_reporter_if_configured,
     register_runtime_extension_pipeline as register_onboarding_runtime_extension_pipeline,
     register_runtime_observability_if_configured as register_onboarding_runtime_observability_if_configured,
     resolve_local_runtime_startup_from_cli as resolve_onboarding_local_runtime_startup_from_cli,
@@ -163,7 +164,12 @@ pub(crate) async fn run_local_runtime(config: LocalRuntimeConfig<'_>) -> Result<
         RuntimeEventReporterRegistrationConfig {
             path: cli.telemetry_log.clone(),
             open_reporter: |path| {
-                PromptTelemetryLogger::open(path, model_ref.provider.as_str(), &model_ref.model)
+                PromptTelemetryLogger::open_with_otel_export(
+                    path,
+                    model_ref.provider.as_str(),
+                    &model_ref.model,
+                    cli.otel_export_log.clone(),
+                )
             },
             report_event: |logger: &PromptTelemetryLogger, event: &AgentEvent| {
                 logger.log_event(event)
@@ -174,6 +180,21 @@ pub(crate) async fn run_local_runtime(config: LocalRuntimeConfig<'_>) -> Result<
         event_to_json,
         |value| println!("{value}"),
     )?;
+    if cli.telemetry_log.is_none() {
+        register_onboarding_runtime_event_reporter_if_configured(
+            &mut agent,
+            cli.otel_export_log.clone(),
+            |path| {
+                PromptTelemetryLogger::open_otel_only(
+                    path,
+                    model_ref.provider.as_str(),
+                    &model_ref.model,
+                )
+            },
+            |logger: &PromptTelemetryLogger, event: &AgentEvent| logger.log_event(event),
+            |error: &str| eprintln!("otel export logger error: {error}"),
+        )?;
+    }
     let mut session_runtime = resolve_onboarding_session_runtime_from_cli(
         cli,
         system_prompt,

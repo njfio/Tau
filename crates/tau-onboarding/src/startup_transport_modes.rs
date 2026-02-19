@@ -513,6 +513,7 @@ pub fn build_gateway_contract_runner_config(cli: &Cli) -> GatewayRuntimeConfig {
     GatewayRuntimeConfig {
         fixture_path: cli.gateway_fixture.clone(),
         state_dir: cli.gateway_state_dir.clone(),
+        otel_export_log: cli.otel_export_log.clone(),
         queue_limit: 64,
         processed_case_cap: 10_000,
         retry_max_attempts: 4,

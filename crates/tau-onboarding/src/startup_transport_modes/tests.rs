@@ -1695,12 +1695,14 @@ fn integration_build_gateway_contract_runner_config_preserves_runtime_fields() {
     let mut cli = parse_cli_with_stack();
     cli.gateway_fixture = temp.path().join("gateway-fixture.json");
     cli.gateway_state_dir = temp.path().join("gateway-state");
+    cli.otel_export_log = Some(temp.path().join("otel-export.jsonl"));
     cli.gateway_guardrail_failure_streak_threshold = 7;
     cli.gateway_guardrail_retryable_failures_threshold = 9;
 
     let config = build_gateway_contract_runner_config(&cli);
     assert_eq!(config.fixture_path, cli.gateway_fixture);
     assert_eq!(config.state_dir, cli.gateway_state_dir);
+    assert_eq!(config.otel_export_log, cli.otel_export_log);
     assert_eq!(config.queue_limit, 64);
     assert_eq!(config.processed_case_cap, 10_000);
     assert_eq!(config.retry_max_attempts, 4);

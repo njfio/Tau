@@ -549,6 +549,7 @@ pub(crate) fn test_cli() -> Cli {
                 print_tool_policy: false,
                 tool_audit_log: None,
                 telemetry_log: None,
+                otel_export_log: None,
                 os_sandbox_mode: CliOsSandboxMode::Off,
                 os_sandbox_command: vec![],
                 os_sandbox_policy_mode: None,
