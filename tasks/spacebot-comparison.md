@@ -456,9 +456,9 @@ Spacebot is a Rust-based AI agent for teams, communities, and multi-user environ
 **Why it matters**: API keys stored in plain text in config files is a security concern.
 **Pathway**:
 - [ ] Add `aes-gcm` and `redb` as dependencies (or use existing rusqlite)
-- [ ] Create `SecretStore` trait in `tau-provider` or `tau-safety`
-- [ ] Encrypt secrets at rest with machine-derived key or user-provided passphrase
-- [ ] `DecryptedSecret` wrapper type that implements `Debug`/`Display` as `"[REDACTED]"`
+- [x] Create `SecretStore` trait in `tau-provider` or `tau-safety` (`#2652`)
+- [x] Encrypt secrets at rest with machine-derived key or user-provided passphrase (`#2652`)
+- [x] `DecryptedSecret` wrapper type that implements `Debug`/`Display` as `"[REDACTED]"` (`#2652`)
 - [ ] Migrate API key storage from plain-text TOML to encrypted store
 - **Files**: `tau-provider/src/` or `tau-safety/src/`
 - **Effort**: Medium
