@@ -416,11 +416,11 @@ Spacebot is a Rust-based AI agent for teams, communities, and multi-user environ
 **What**: System prompts as Jinja2 templates that users can edit without recompiling.
 **Why it matters**: Hardcoded prompts require code changes to customize. Templates let operators tune behavior.
 **Pathway**:
-- [ ] Add `minijinja` as workspace dependency
-- [ ] Move system prompts from Rust string literals to `.md.j2` template files
-- [ ] Load from `{workspace}/prompts/` with built-in defaults
-- [ ] Template variables: `{identity}`, `{memory_bulletin}`, `{tools}`, `{active_workers}`, etc.
-- [ ] Hot-reload templates when files change (combine with G16)
+- [x] Add `minijinja` as workspace dependency (`#2482`)
+- [x] Move system prompts from Rust string literals to `.md.j2` template files (`#2471`)
+- [x] Load from `{workspace}/prompts/` with built-in defaults (`#2476`)
+- [x] Template variables: `{identity}`, `{memory_bulletin}`, `{tools}`, `{active_workers}`, etc. (`#2482`)
+- [x] Hot-reload templates when files change (combine with G16) (`#2548`)
 - **Files**: New `prompts/` directory, `tau-agent-core/src/`
 - **Effort**: Medium
 
