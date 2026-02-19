@@ -11,6 +11,7 @@ fn unit_agent_config_defaults_include_request_and_tool_timeouts() {
     assert_eq!(config.max_estimated_total_tokens, None);
     assert_eq!(config.structured_output_max_retries, 1);
     assert_eq!(config.react_max_replans_on_tool_failure, 1);
+    assert_eq!(config.max_concurrent_branches_per_session, 2);
     assert_eq!(config.memory_retrieval_limit, 3);
     assert_eq!(config.memory_embedding_dimensions, 128);
     assert_eq!(config.memory_min_similarity, 0.55);
