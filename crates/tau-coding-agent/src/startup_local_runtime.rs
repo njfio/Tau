@@ -34,6 +34,7 @@ use crate::runtime_profile_policy_bridge::start_runtime_heartbeat_profile_policy
 use crate::runtime_prompt_template_bridge::start_runtime_prompt_template_hot_reload_bridge;
 use crate::runtime_types::{CommandExecutionContext, RenderOptions, SkillsSyncCommandConfig};
 use crate::tools::{self, ToolPolicy};
+use tau_onboarding::startup_config::build_profile_defaults as build_onboarding_profile_defaults;
 use tau_onboarding::startup_local_runtime::{
     build_local_runtime_agent as build_onboarding_local_runtime_agent,
     build_local_runtime_extension_startup as build_onboarding_local_runtime_extension_startup,
@@ -89,6 +90,7 @@ pub(crate) async fn run_local_runtime(config: LocalRuntimeConfig<'_>) -> Result<
     } = config;
 
     let agent_defaults = AgentConfig::default();
+    let profile_defaults_for_agent = build_onboarding_profile_defaults(cli);
     let model_catalog_entry = model_catalog.find_model_ref(model_ref);
     let model_max_output_tokens = model_catalog_entry.and_then(|entry| entry.max_output_tokens);
     let model_context_window_tokens =
@@ -110,6 +112,24 @@ pub(crate) async fn run_local_runtime(config: LocalRuntimeConfig<'_>) -> Result<
             max_context_messages: cli.agent_max_context_messages,
             max_estimated_input_tokens,
             max_estimated_total_tokens,
+            context_compaction_warn_threshold_percent: profile_defaults_for_agent
+                .policy
+                .context_compaction_warn_threshold_percent,
+            context_compaction_aggressive_threshold_percent: profile_defaults_for_agent
+                .policy
+                .context_compaction_aggressive_threshold_percent,
+            context_compaction_emergency_threshold_percent: profile_defaults_for_agent
+                .policy
+                .context_compaction_emergency_threshold_percent,
+            context_compaction_warn_retain_percent: profile_defaults_for_agent
+                .policy
+                .context_compaction_warn_retain_percent,
+            context_compaction_aggressive_retain_percent: profile_defaults_for_agent
+                .policy
+                .context_compaction_aggressive_retain_percent,
+            context_compaction_emergency_retain_percent: profile_defaults_for_agent
+                .policy
+                .context_compaction_emergency_retain_percent,
             request_max_retries: cli.agent_request_max_retries,
             request_retry_initial_backoff_ms: cli.agent_request_retry_initial_backoff_ms,
             request_retry_max_backoff_ms: cli.agent_request_retry_max_backoff_ms,

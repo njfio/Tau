@@ -76,6 +76,18 @@ pub struct ProfilePolicyDefaults {
     pub runtime_self_repair_tool_builds_dir: String,
     #[serde(default = "default_runtime_self_repair_orphan_max_age_seconds")]
     pub runtime_self_repair_orphan_max_age_seconds: u64,
+    #[serde(default = "default_context_compaction_warn_threshold_percent")]
+    pub context_compaction_warn_threshold_percent: u8,
+    #[serde(default = "default_context_compaction_aggressive_threshold_percent")]
+    pub context_compaction_aggressive_threshold_percent: u8,
+    #[serde(default = "default_context_compaction_emergency_threshold_percent")]
+    pub context_compaction_emergency_threshold_percent: u8,
+    #[serde(default = "default_context_compaction_warn_retain_percent")]
+    pub context_compaction_warn_retain_percent: u8,
+    #[serde(default = "default_context_compaction_aggressive_retain_percent")]
+    pub context_compaction_aggressive_retain_percent: u8,
+    #[serde(default = "default_context_compaction_emergency_retain_percent")]
+    pub context_compaction_emergency_retain_percent: u8,
 }
 
 fn default_runtime_heartbeat_enabled() -> bool {
@@ -108,6 +120,30 @@ fn default_runtime_self_repair_tool_builds_dir() -> String {
 
 fn default_runtime_self_repair_orphan_max_age_seconds() -> u64 {
     3_600
+}
+
+fn default_context_compaction_warn_threshold_percent() -> u8 {
+    80
+}
+
+fn default_context_compaction_aggressive_threshold_percent() -> u8 {
+    85
+}
+
+fn default_context_compaction_emergency_threshold_percent() -> u8 {
+    95
+}
+
+fn default_context_compaction_warn_retain_percent() -> u8 {
+    70
+}
+
+fn default_context_compaction_aggressive_retain_percent() -> u8 {
+    50
+}
+
+fn default_context_compaction_emergency_retain_percent() -> u8 {
+    50
 }
 
 fn default_profile_mcp_context_providers() -> Vec<String> {
@@ -227,6 +263,18 @@ pub fn build_profile_defaults(cli: &Cli) -> ProfileDefaults {
                 .to_string(),
             runtime_self_repair_orphan_max_age_seconds: cli
                 .runtime_self_repair_orphan_max_age_seconds,
+            context_compaction_warn_threshold_percent:
+                default_context_compaction_warn_threshold_percent(),
+            context_compaction_aggressive_threshold_percent:
+                default_context_compaction_aggressive_threshold_percent(),
+            context_compaction_emergency_threshold_percent:
+                default_context_compaction_emergency_threshold_percent(),
+            context_compaction_warn_retain_percent: default_context_compaction_warn_retain_percent(
+            ),
+            context_compaction_aggressive_retain_percent:
+                default_context_compaction_aggressive_retain_percent(),
+            context_compaction_emergency_retain_percent:
+                default_context_compaction_emergency_retain_percent(),
         },
         mcp: ProfileMcpDefaults {
             context_providers: if cli.mcp_context_provider.is_empty() {
@@ -289,6 +337,31 @@ mod tests {
             defaults.policy.runtime_self_repair_orphan_max_age_seconds,
             3_600
         );
+        assert_eq!(
+            defaults.policy.context_compaction_warn_threshold_percent,
+            80
+        );
+        assert_eq!(
+            defaults
+                .policy
+                .context_compaction_aggressive_threshold_percent,
+            85
+        );
+        assert_eq!(
+            defaults
+                .policy
+                .context_compaction_emergency_threshold_percent,
+            95
+        );
+        assert_eq!(defaults.policy.context_compaction_warn_retain_percent, 70);
+        assert_eq!(
+            defaults.policy.context_compaction_aggressive_retain_percent,
+            50
+        );
+        assert_eq!(
+            defaults.policy.context_compaction_emergency_retain_percent,
+            50
+        );
     }
 
     #[test]
@@ -320,6 +393,31 @@ mod tests {
         assert_eq!(
             defaults.policy.runtime_self_repair_orphan_max_age_seconds,
             120
+        );
+        assert_eq!(
+            defaults.policy.context_compaction_warn_threshold_percent,
+            80
+        );
+        assert_eq!(
+            defaults
+                .policy
+                .context_compaction_aggressive_threshold_percent,
+            85
+        );
+        assert_eq!(
+            defaults
+                .policy
+                .context_compaction_emergency_threshold_percent,
+            95
+        );
+        assert_eq!(defaults.policy.context_compaction_warn_retain_percent, 70);
+        assert_eq!(
+            defaults.policy.context_compaction_aggressive_retain_percent,
+            50
+        );
+        assert_eq!(
+            defaults.policy.context_compaction_emergency_retain_percent,
+            50
         );
     }
 
@@ -471,5 +569,121 @@ mod tests {
             Some("openai/gpt-4.1-mini")
         );
         assert!(parsed.routing.task_overrides.is_empty());
+    }
+
+    #[test]
+    fn spec_2561_c01_profile_defaults_compaction_policy_defaults_when_missing() {
+        let parsed: super::ProfileDefaults = serde_json::from_value(json!({
+            "model": "openai/gpt-4o-mini",
+            "fallback_models": [],
+            "session": {
+                "enabled": true,
+                "path": ".tau/sessions/default.sqlite",
+                "import_mode": "merge"
+            },
+            "policy": {
+                "tool_policy_preset": "balanced",
+                "bash_profile": "balanced",
+                "bash_dry_run": false,
+                "os_sandbox_mode": "off",
+                "enforce_regular_files": true,
+                "bash_timeout_ms": 120000,
+                "max_command_length": 8192,
+                "max_tool_output_bytes": 262144,
+                "max_file_read_bytes": 262144,
+                "max_file_write_bytes": 262144,
+                "allow_command_newlines": true,
+                "runtime_heartbeat_enabled": true,
+                "runtime_heartbeat_interval_ms": 5000,
+                "runtime_heartbeat_state_path": ".tau/runtime-heartbeat/state.json",
+                "runtime_self_repair_enabled": true,
+                "runtime_self_repair_timeout_ms": 300000,
+                "runtime_self_repair_max_retries": 2,
+                "runtime_self_repair_tool_builds_dir": ".tau/tool-builds",
+                "runtime_self_repair_orphan_max_age_seconds": 3600
+            }
+        }))
+        .expect("parse profile defaults without explicit compaction policy");
+        assert_eq!(parsed.policy.context_compaction_warn_threshold_percent, 80);
+        assert_eq!(
+            parsed
+                .policy
+                .context_compaction_aggressive_threshold_percent,
+            85
+        );
+        assert_eq!(
+            parsed.policy.context_compaction_emergency_threshold_percent,
+            95
+        );
+        assert_eq!(parsed.policy.context_compaction_warn_retain_percent, 70);
+        assert_eq!(
+            parsed.policy.context_compaction_aggressive_retain_percent,
+            50
+        );
+        assert_eq!(
+            parsed.policy.context_compaction_emergency_retain_percent,
+            50
+        );
+    }
+
+    #[test]
+    fn spec_2561_c02_profile_defaults_parses_explicit_compaction_policy_values() {
+        let parsed: super::ProfileDefaults = serde_json::from_value(json!({
+            "model": "openai/gpt-4o-mini",
+            "fallback_models": [],
+            "session": {
+                "enabled": true,
+                "path": ".tau/sessions/default.sqlite",
+                "import_mode": "merge"
+            },
+            "policy": {
+                "tool_policy_preset": "balanced",
+                "bash_profile": "balanced",
+                "bash_dry_run": false,
+                "os_sandbox_mode": "off",
+                "enforce_regular_files": true,
+                "bash_timeout_ms": 120000,
+                "max_command_length": 8192,
+                "max_tool_output_bytes": 262144,
+                "max_file_read_bytes": 262144,
+                "max_file_write_bytes": 262144,
+                "allow_command_newlines": true,
+                "runtime_heartbeat_enabled": true,
+                "runtime_heartbeat_interval_ms": 5000,
+                "runtime_heartbeat_state_path": ".tau/runtime-heartbeat/state.json",
+                "runtime_self_repair_enabled": true,
+                "runtime_self_repair_timeout_ms": 300000,
+                "runtime_self_repair_max_retries": 2,
+                "runtime_self_repair_tool_builds_dir": ".tau/tool-builds",
+                "runtime_self_repair_orphan_max_age_seconds": 3600,
+                "context_compaction_warn_threshold_percent": 72,
+                "context_compaction_aggressive_threshold_percent": 84,
+                "context_compaction_emergency_threshold_percent": 96,
+                "context_compaction_warn_retain_percent": 68,
+                "context_compaction_aggressive_retain_percent": 44,
+                "context_compaction_emergency_retain_percent": 33
+            }
+        }))
+        .expect("parse profile defaults with explicit compaction policy");
+        assert_eq!(parsed.policy.context_compaction_warn_threshold_percent, 72);
+        assert_eq!(
+            parsed
+                .policy
+                .context_compaction_aggressive_threshold_percent,
+            84
+        );
+        assert_eq!(
+            parsed.policy.context_compaction_emergency_threshold_percent,
+            96
+        );
+        assert_eq!(parsed.policy.context_compaction_warn_retain_percent, 68);
+        assert_eq!(
+            parsed.policy.context_compaction_aggressive_retain_percent,
+            44
+        );
+        assert_eq!(
+            parsed.policy.context_compaction_emergency_retain_percent,
+            33
+        );
     }
 }

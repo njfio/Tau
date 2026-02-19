@@ -225,11 +225,11 @@ Spacebot is a Rust-based AI agent for teams, communities, and multi-user environ
 **What**: Spacebot monitors context size and triggers tiered compaction (80% → background summarize, 85% → aggressive, 95% → emergency truncation).
 **Why it matters**: Long conversations eventually exceed context windows. Without compaction, the agent crashes or loses history.
 **Pathway**:
-- [ ] Add `ContextMonitor` to `tau-agent-core` that tracks token count per session
-- [ ] Implement 3-tier thresholds (configurable in profile TOML)
+- [x] Add `ContextMonitor` to `tau-agent-core` that tracks token count per session
+- [x] Implement 3-tier thresholds (configurable in profile TOML)
 - [ ] At 80%: spawn background compaction task that summarizes oldest 30% of context via LLM call
-- [ ] At 85%: aggressive compaction (50% of context)
-- [ ] At 95%: emergency hard truncation (drop oldest 50%, no LLM)
+- [x] At 85%: aggressive compaction (50% of context)
+- [x] At 95%: emergency hard truncation (drop oldest 50%, no LLM)
 - [ ] During compaction, extract and save memories (like Spacebot's compactor)
 - [ ] Compaction summaries stored as session entries with `compaction` role
 - **Files**: New `tau-agent-core/src/compaction.rs`, modify turn loop to check thresholds

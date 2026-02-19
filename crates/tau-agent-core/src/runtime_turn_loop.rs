@@ -158,21 +158,57 @@ pub(crate) struct ContextCompactionConfig {
     pub(crate) emergency_retain_percent: u8,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ContextPressureSnapshot {
+    pub(crate) estimated_input_tokens: u32,
+    pub(crate) max_input_tokens: Option<u32>,
+    pub(crate) utilization_percent: u32,
+    pub(crate) tier: ContextCompactionTier,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ContextMonitor {
+    max_input_tokens: Option<u32>,
+    thresholds: [u8; 3],
+}
+
+impl ContextMonitor {
+    pub(crate) fn from_compaction_config(config: ContextCompactionConfig) -> Self {
+        Self {
+            max_input_tokens: config.max_input_tokens,
+            thresholds: normalize_compaction_thresholds(
+                config.warn_threshold_percent,
+                config.aggressive_threshold_percent,
+                config.emergency_threshold_percent,
+            ),
+        }
+    }
+
+    pub(crate) fn snapshot(&self, estimated_input_tokens: u32) -> ContextPressureSnapshot {
+        let utilization_percent =
+            context_utilization_percent(estimated_input_tokens, self.max_input_tokens);
+        let tier = select_context_compaction_tier(
+            estimated_input_tokens,
+            self.max_input_tokens,
+            self.thresholds,
+        );
+        ContextPressureSnapshot {
+            estimated_input_tokens,
+            max_input_tokens: self.max_input_tokens,
+            utilization_percent,
+            tier,
+        }
+    }
+}
+
 pub(crate) fn compact_messages_for_token_pressure(
     messages: &[Message],
     estimated_input_tokens: u32,
     config: ContextCompactionConfig,
 ) -> Vec<Message> {
-    let thresholds = normalize_compaction_thresholds(
-        config.warn_threshold_percent,
-        config.aggressive_threshold_percent,
-        config.emergency_threshold_percent,
-    );
-    match select_context_compaction_tier(
-        estimated_input_tokens,
-        config.max_input_tokens,
-        thresholds,
-    ) {
+    let monitor = ContextMonitor::from_compaction_config(config);
+    let snapshot = monitor.snapshot(estimated_input_tokens);
+    match snapshot.tier {
         ContextCompactionTier::None => messages.to_vec(),
         ContextCompactionTier::Warn => {
             let retain = normalize_retain_percent(config.warn_retain_percent);
@@ -207,12 +243,7 @@ fn select_context_compaction_tier(
     max_input_tokens: Option<u32>,
     thresholds: [u8; 3],
 ) -> ContextCompactionTier {
-    let Some(max_input_tokens) = max_input_tokens.filter(|value| *value > 0) else {
-        return ContextCompactionTier::None;
-    };
-    let utilization_percent = estimated_input_tokens
-        .saturating_mul(100)
-        .saturating_div(max_input_tokens);
+    let utilization_percent = context_utilization_percent(estimated_input_tokens, max_input_tokens);
     if utilization_percent >= u32::from(thresholds[2]) {
         return ContextCompactionTier::Emergency;
     }
@@ -223,6 +254,15 @@ fn select_context_compaction_tier(
         return ContextCompactionTier::Warn;
     }
     ContextCompactionTier::None
+}
+
+fn context_utilization_percent(estimated_input_tokens: u32, max_input_tokens: Option<u32>) -> u32 {
+    let Some(max_input_tokens) = max_input_tokens.filter(|value| *value > 0) else {
+        return 0;
+    };
+    estimated_input_tokens
+        .saturating_mul(100)
+        .saturating_div(max_input_tokens)
 }
 
 fn retained_message_count(total_messages: usize, retain_percent: u8) -> usize {
@@ -542,5 +582,56 @@ pub(crate) fn is_retryable_ai_error(error: &TauAiError) -> bool {
             *status == 408 || *status == 409 || *status == 425 || *status == 429 || *status >= 500
         }
         TauAiError::MissingApiKey | TauAiError::Serde(_) | TauAiError::InvalidResponse(_) => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        ContextCompactionConfig, ContextCompactionTier, ContextMonitor, ContextPressureSnapshot,
+    };
+
+    fn assert_snapshot(
+        snapshot: ContextPressureSnapshot,
+        utilization_percent: u32,
+        tier: ContextCompactionTier,
+    ) {
+        assert_eq!(snapshot.utilization_percent, utilization_percent);
+        assert_eq!(snapshot.tier, tier);
+    }
+
+    #[test]
+    fn spec_2561_c03_context_monitor_snapshot_selects_expected_tiers() {
+        let monitor = ContextMonitor::from_compaction_config(ContextCompactionConfig {
+            max_input_tokens: Some(100),
+            warn_threshold_percent: 80,
+            aggressive_threshold_percent: 85,
+            emergency_threshold_percent: 95,
+            warn_retain_percent: 70,
+            aggressive_retain_percent: 50,
+            emergency_retain_percent: 50,
+        });
+
+        assert_snapshot(monitor.snapshot(79), 79, ContextCompactionTier::None);
+        assert_snapshot(monitor.snapshot(80), 80, ContextCompactionTier::Warn);
+        assert_snapshot(monitor.snapshot(85), 85, ContextCompactionTier::Aggressive);
+        assert_snapshot(monitor.snapshot(95), 95, ContextCompactionTier::Emergency);
+    }
+
+    #[test]
+    fn regression_2561_context_monitor_normalizes_unsorted_thresholds() {
+        let monitor = ContextMonitor::from_compaction_config(ContextCompactionConfig {
+            max_input_tokens: Some(100),
+            warn_threshold_percent: 95,
+            aggressive_threshold_percent: 80,
+            emergency_threshold_percent: 85,
+            warn_retain_percent: 70,
+            aggressive_retain_percent: 50,
+            emergency_retain_percent: 50,
+        });
+
+        assert_snapshot(monitor.snapshot(80), 80, ContextCompactionTier::Warn);
+        assert_snapshot(monitor.snapshot(85), 85, ContextCompactionTier::Aggressive);
+        assert_snapshot(monitor.snapshot(95), 95, ContextCompactionTier::Emergency);
     }
 }
