@@ -2337,3 +2337,111 @@ pub fn execute_auth_command(config: &AuthCommandConfig, command_args: &str) -> S
         ),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::Value;
+    use tempfile::TempDir;
+
+    fn test_auth_config(temp_dir: &TempDir) -> AuthCommandConfig {
+        AuthCommandConfig {
+            credential_store: temp_dir.path().join("credentials.toml"),
+            credential_store_key: Some("unit-test-store-key".to_string()),
+            credential_store_encryption: CredentialStoreEncryptionMode::Keyed,
+            api_key: None,
+            openai_api_key: Some("sk-openai-test-key".to_string()),
+            anthropic_api_key: None,
+            google_api_key: None,
+            openai_auth_mode: ProviderAuthMethod::ApiKey,
+            anthropic_auth_mode: ProviderAuthMethod::ApiKey,
+            google_auth_mode: ProviderAuthMethod::ApiKey,
+            provider_subscription_strict: false,
+            openai_codex_backend: true,
+            openai_codex_cli: "codex".to_string(),
+            anthropic_claude_backend: true,
+            anthropic_claude_cli: "claude".to_string(),
+            google_gemini_backend: true,
+            google_gemini_cli: "gemini".to_string(),
+            google_gcloud_cli: "gcloud".to_string(),
+        }
+    }
+
+    #[test]
+    fn unit_execute_auth_login_command_api_key_json_status_saved() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let config = test_auth_config(&temp_dir);
+
+        let result = execute_auth_login_command(
+            &config,
+            Provider::OpenAi,
+            Some(ProviderAuthMethod::ApiKey),
+            false,
+            true,
+        );
+        let parsed: Value = serde_json::from_str(&result).expect("valid json output");
+
+        assert_eq!(
+            parsed.get("command").and_then(Value::as_str),
+            Some("auth.login")
+        );
+        assert_eq!(
+            parsed.get("provider").and_then(Value::as_str),
+            Some("openai")
+        );
+        assert_eq!(parsed.get("mode").and_then(Value::as_str), Some("api_key"));
+        assert_eq!(parsed.get("status").and_then(Value::as_str), Some("saved"));
+        assert_eq!(parsed.get("persisted").and_then(Value::as_bool), Some(true));
+    }
+
+    #[test]
+    fn unit_execute_auth_reauth_command_json_includes_status_and_entry() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let config = test_auth_config(&temp_dir);
+
+        let login_result = execute_auth_login_command(
+            &config,
+            Provider::OpenAi,
+            Some(ProviderAuthMethod::ApiKey),
+            false,
+            true,
+        );
+        let login_json: Value =
+            serde_json::from_str(&login_result).expect("valid login json output");
+        assert_eq!(
+            login_json.get("status").and_then(Value::as_str),
+            Some("saved")
+        );
+
+        let result = execute_auth_reauth_command(
+            &config,
+            Provider::OpenAi,
+            Some(ProviderAuthMethod::ApiKey),
+            false,
+            true,
+        );
+        let parsed: Value = serde_json::from_str(&result).expect("valid reauth json output");
+
+        assert_eq!(
+            parsed.get("command").and_then(Value::as_str),
+            Some("auth.reauth")
+        );
+        assert_eq!(
+            parsed.get("provider").and_then(Value::as_str),
+            Some("openai")
+        );
+        assert_eq!(parsed.get("mode").and_then(Value::as_str), Some("api_key"));
+        assert_eq!(parsed.get("status").and_then(Value::as_str), Some("ready"));
+        assert_eq!(
+            parsed.get("launch_requested").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            parsed
+                .get("entry")
+                .and_then(|entry| entry.get("state"))
+                .and_then(Value::as_str),
+            Some("ready")
+        );
+    }
+}
