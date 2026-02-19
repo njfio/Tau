@@ -7,10 +7,10 @@ Related roadmap items: `tasks/spacebot-comparison.md` -> G16 (profile config hot
 Complete the remaining unchecked G16 parity work by wiring notify-based profile file watching into runtime configuration hot-reload with atomic `ArcSwap` updates and deterministic diagnostics.
 
 ## Issue Map
-- Epic: TBD
-- Story: TBD
-- Task: TBD
-- Subtask: TBD
+- Epic: #2595
+- Story: #2596
+- Task: #2597
+- Subtask: #2598
 
 ## Deliverables
 - Notify-backed watcher for active profile TOML changes.
