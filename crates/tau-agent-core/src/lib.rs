@@ -4,7 +4,7 @@ use std::{
     future::Future,
     pin::Pin,
     sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
         Arc, Mutex,
     },
     time::Duration,
@@ -89,6 +89,7 @@ pub struct AgentConfig {
     pub context_compaction_emergency_retain_percent: u8,
     pub structured_output_max_retries: usize,
     pub react_max_replans_on_tool_failure: usize,
+    pub max_concurrent_branches_per_session: usize,
     pub memory_retrieval_limit: usize,
     pub memory_embedding_dimensions: usize,
     pub memory_min_similarity: f32,
@@ -137,6 +138,7 @@ impl Default for AgentConfig {
             context_compaction_emergency_retain_percent: 50,
             structured_output_max_retries: 1,
             react_max_replans_on_tool_failure: 1,
+            max_concurrent_branches_per_session: 2,
             memory_retrieval_limit: 3,
             memory_embedding_dimensions: 128,
             memory_min_similarity: 0.55,
@@ -717,6 +719,12 @@ const MEMORY_RECALL_PREFIX: &str = "[Tau memory recall]";
 const DIRECT_MESSAGE_PREFIX: &str = "[Tau direct message]";
 const REPLAN_ON_TOOL_FAILURE_PROMPT: &str = "One or more tool calls failed. Replan and continue with an alternative approach using available tools. If no viable tool exists, explain what is missing and ask the user for clarification.";
 const TOOL_OUTPUT_BLOCKED_ERROR: &str = "tool output blocked by safety policy";
+const BRANCH_CONCLUSION_MAX_CHARS: usize = 4_000;
+const BRANCH_REASON_CODE_CREATED: &str = "session_branch_created";
+const BRANCH_REASON_CODE_READY: &str = "branch_conclusion_ready";
+const BRANCH_REASON_CODE_LIMIT_EXCEEDED: &str = "branch_concurrency_limit_exceeded";
+const BRANCH_REASON_CODE_EXECUTION_FAILED: &str = "branch_execution_failed";
+const BRANCH_REASON_CODE_PROMPT_MISSING: &str = "branch_prompt_missing";
 const FAILURE_SIGNAL_PHRASES: &[&str] = &[
     "can't",
     "cannot",
@@ -778,6 +786,16 @@ struct WarnCompactionState {
     ready: Option<ReadyWarnCompaction>,
 }
 
+struct BranchRunSlotGuard {
+    active_branch_runs: Arc<AtomicUsize>,
+}
+
+impl Drop for BranchRunSlotGuard {
+    fn drop(&mut self) {
+        self.active_branch_runs.fetch_sub(1, Ordering::Release);
+    }
+}
+
 /// Public struct `Agent` used across Tau components.
 ///
 /// # Examples
@@ -827,6 +845,7 @@ pub struct Agent {
     emitted_cost_alert_thresholds: HashSet<u8>,
     skip_response_reason: Option<String>,
     warn_compaction_state: Arc<Mutex<WarnCompactionState>>,
+    active_branch_runs: Arc<AtomicUsize>,
 }
 
 impl Agent {
@@ -860,6 +879,7 @@ impl Agent {
             emitted_cost_alert_thresholds: HashSet::new(),
             skip_response_reason: None,
             warn_compaction_state: Arc::new(Mutex::new(WarnCompactionState::default())),
+            active_branch_runs: Arc::new(AtomicUsize::new(0)),
         }
     }
 
@@ -1758,6 +1778,197 @@ impl Agent {
         self.tool_result_cache_order.clear();
     }
 
+    fn max_concurrent_branches_per_session(&self) -> usize {
+        self.config.max_concurrent_branches_per_session.max(1)
+    }
+
+    fn try_acquire_branch_run_slot(&self) -> Option<BranchRunSlotGuard> {
+        let limit = self.max_concurrent_branches_per_session();
+        loop {
+            let current = self.active_branch_runs.load(Ordering::Acquire);
+            if current >= limit {
+                return None;
+            }
+            if self
+                .active_branch_runs
+                .compare_exchange(
+                    current,
+                    current.saturating_add(1),
+                    Ordering::AcqRel,
+                    Ordering::Acquire,
+                )
+                .is_ok()
+            {
+                return Some(BranchRunSlotGuard {
+                    active_branch_runs: Arc::clone(&self.active_branch_runs),
+                });
+            }
+        }
+    }
+
+    fn branch_result_payload_base(result: &ToolExecutionResult) -> serde_json::Map<String, Value> {
+        match &result.content {
+            Value::Object(object) => object.clone(),
+            other => {
+                let mut payload = serde_json::Map::new();
+                payload.insert("tool".to_string(), Value::String("branch".to_string()));
+                payload.insert("branch_base_result".to_string(), other.clone());
+                payload
+            }
+        }
+    }
+
+    fn branch_result_with_error(
+        base_result: &ToolExecutionResult,
+        reason_code: &str,
+        error: String,
+    ) -> ToolExecutionResult {
+        let mut payload = Self::branch_result_payload_base(base_result);
+        if let Some(existing_reason_code) = payload
+            .get("reason_code")
+            .and_then(Value::as_str)
+            .filter(|value| !value.trim().is_empty())
+        {
+            payload.insert(
+                "branch_creation_reason_code".to_string(),
+                Value::String(existing_reason_code.to_string()),
+            );
+        }
+        payload.insert(
+            "reason_code".to_string(),
+            Value::String(reason_code.to_string()),
+        );
+        payload.insert("error".to_string(), Value::String(error.clone()));
+        payload.insert(
+            "branch_followup".to_string(),
+            json!({
+                "status": "error",
+                "reason_code": reason_code,
+                "error": error,
+            }),
+        );
+        ToolExecutionResult::error(Value::Object(payload))
+    }
+
+    async fn maybe_execute_branch_followup(
+        &self,
+        call: &ToolCall,
+        result: ToolExecutionResult,
+        branch_slot_holders: &mut Vec<BranchRunSlotGuard>,
+    ) -> ToolExecutionResult {
+        if call.name != "branch" || result.is_error {
+            return result;
+        }
+
+        let Some(slot) = self.try_acquire_branch_run_slot() else {
+            return Self::branch_result_with_error(
+                &result,
+                BRANCH_REASON_CODE_LIMIT_EXCEEDED,
+                format!(
+                    "branch concurrency limit reached (active={} limit={})",
+                    self.active_branch_runs.load(Ordering::Acquire),
+                    self.max_concurrent_branches_per_session()
+                ),
+            );
+        };
+        branch_slot_holders.push(slot);
+        self.execute_branch_followup(call, result).await
+    }
+
+    fn branch_followup_prompt(call: &ToolCall) -> Option<String> {
+        call.arguments
+            .get("prompt")
+            .and_then(Value::as_str)
+            .map(|prompt| prompt.trim().to_string())
+            .filter(|prompt| !prompt.is_empty())
+    }
+
+    fn branch_followup_assistant_conclusion(messages: &[Message]) -> Option<String> {
+        messages.iter().rev().find_map(|message| {
+            if message.role != MessageRole::Assistant {
+                return None;
+            }
+            let text = collapse_whitespace(&message.text_content());
+            if text.trim().is_empty() {
+                return None;
+            }
+            Some(truncate_chars(&text, BRANCH_CONCLUSION_MAX_CHARS))
+        })
+    }
+
+    async fn execute_branch_followup(
+        &self,
+        call: &ToolCall,
+        result: ToolExecutionResult,
+    ) -> ToolExecutionResult {
+        let Some(prompt) = Self::branch_followup_prompt(call) else {
+            return Self::branch_result_with_error(
+                &result,
+                BRANCH_REASON_CODE_PROMPT_MISSING,
+                "branch call arguments must include non-empty prompt".to_string(),
+            );
+        };
+
+        let mut branch_agent = self.fork();
+        branch_agent.set_agent_id(format!("{}::branch", self.agent_id()));
+        branch_agent.skip_response_reason = None;
+        branch_agent.clear_tool_result_cache();
+        branch_agent
+            .tools
+            .retain(|tool_name, _| tool_name.starts_with("memory_"));
+
+        let available_tools = branch_agent.registered_tool_names();
+        let branch_messages = match Box::pin(branch_agent.prompt(prompt)).await {
+            Ok(messages) => messages,
+            Err(error) => {
+                return Self::branch_result_with_error(
+                    &result,
+                    BRANCH_REASON_CODE_EXECUTION_FAILED,
+                    format!("branch follow-up execution failed: {error}"),
+                );
+            }
+        };
+
+        let Some(branch_conclusion) = Self::branch_followup_assistant_conclusion(&branch_messages)
+        else {
+            return Self::branch_result_with_error(
+                &result,
+                BRANCH_REASON_CODE_EXECUTION_FAILED,
+                "branch follow-up produced no assistant conclusion".to_string(),
+            );
+        };
+
+        let mut payload = Self::branch_result_payload_base(&result);
+        if payload
+            .get("reason_code")
+            .and_then(Value::as_str)
+            .is_some_and(|value| value == BRANCH_REASON_CODE_CREATED)
+        {
+            payload.insert(
+                "branch_creation_reason_code".to_string(),
+                Value::String(BRANCH_REASON_CODE_CREATED.to_string()),
+            );
+        }
+        payload.insert(
+            "reason_code".to_string(),
+            Value::String(BRANCH_REASON_CODE_READY.to_string()),
+        );
+        payload.insert(
+            "branch_conclusion".to_string(),
+            Value::String(branch_conclusion),
+        );
+        payload.insert(
+            "branch_followup".to_string(),
+            json!({
+                "status": "completed",
+                "tools_mode": "memory_only",
+                "available_tools": available_tools,
+                "branch_message_count": branch_messages.len(),
+            }),
+        );
+        ToolExecutionResult::ok(Value::Object(payload))
+    }
+
     fn accumulate_usage_and_emit_cost_events(&mut self, turn: usize, usage: &ChatUsage) {
         self.cumulative_usage.input_tokens = self
             .cumulative_usage
@@ -2574,6 +2785,7 @@ impl Agent {
             if self.is_cancelled() {
                 return Err(AgentError::Cancelled);
             }
+            let mut branch_slot_holders = Vec::new();
             let mut pending = Vec::with_capacity(chunk.len());
             for call in chunk.iter().cloned() {
                 if self.is_cancelled() {
@@ -2602,6 +2814,9 @@ impl Agent {
                         })),
                     },
                 };
+                let result = self
+                    .maybe_execute_branch_followup(&call, result, &mut branch_slot_holders)
+                    .await;
                 self.store_tool_result_cache(&call, &result);
                 let is_error = self.record_tool_result(call, result);
                 if is_error {
@@ -2638,15 +2853,18 @@ impl Agent {
         let result = if let Some(cached) = self.lookup_tool_result_cache(&call) {
             cached
         } else {
-            let result = match self.spawn_tool_call_task(call.clone()).await {
+            match self.spawn_tool_call_task(call.clone()).await {
                 Ok(result) => result,
                 Err(error) => ToolExecutionResult::error(json!({
                     "error": format!("tool '{}' execution task failed: {error}", call.name)
                 })),
-            };
-            self.store_tool_result_cache(&call, &result);
-            result
+            }
         };
+        let mut branch_slot_holders = Vec::new();
+        let result = self
+            .maybe_execute_branch_followup(&call, result, &mut branch_slot_holders)
+            .await;
+        self.store_tool_result_cache(&call, &result);
         self.record_tool_result(call, result)
     }
 
