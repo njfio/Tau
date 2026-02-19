@@ -16,6 +16,7 @@ mod channel_store_admin;
 mod commands;
 mod deployment_wasm;
 mod events;
+mod live_rl_runtime;
 mod macro_profile_commands;
 mod mcp_client;
 mod mcp_server;

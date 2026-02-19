@@ -20,6 +20,7 @@ use crate::extension_manifest::{
     discover_extension_runtime_registrations, dispatch_extension_runtime_hook,
     ExtensionRuntimeRegistrationSummary,
 };
+use crate::live_rl_runtime::LiveRlRuntimeBridge;
 use crate::mcp_client::register_mcp_client_tools;
 use crate::model_catalog::ModelCatalog;
 use crate::multi_agent_router::load_multi_agent_route_table;
@@ -194,6 +195,18 @@ pub(crate) async fn run_local_runtime(config: LocalRuntimeConfig<'_>) -> Result<
             |logger: &PromptTelemetryLogger, event: &AgentEvent| logger.log_event(event),
             |error: &str| eprintln!("otel export logger error: {error}"),
         )?;
+    }
+    if let Some(snapshot) = LiveRlRuntimeBridge::register_if_enabled(
+        &mut agent,
+        cli.prompt_optimization_store_sqlite.as_path(),
+    )? {
+        eprintln!(
+            "live rl runtime bridge enabled: store={} gate={:?} completed_rollouts={} failure_streak={}",
+            snapshot.store_path.display(),
+            snapshot.gate,
+            snapshot.completed_rollouts,
+            snapshot.consecutive_failures
+        );
     }
     let mut session_runtime = resolve_onboarding_session_runtime_from_cli(
         cli,
