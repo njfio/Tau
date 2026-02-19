@@ -194,6 +194,19 @@ pub(super) struct GatewayMemoryGraphQuery {
     pub(super) relation_types: Option<String>,
 }
 
+#[derive(Debug, Deserialize, Default)]
+pub(super) struct GatewayChannelLifecycleRequest {
+    pub(super) action: String,
+    #[serde(default)]
+    pub(super) probe_online: Option<bool>,
+    #[serde(default)]
+    pub(super) probe_online_timeout_ms: Option<u64>,
+    #[serde(default)]
+    pub(super) probe_online_max_attempts: Option<usize>,
+    #[serde(default)]
+    pub(super) probe_online_retry_delay_ms: Option<u64>,
+}
+
 #[derive(Debug, Deserialize)]
 pub(super) struct GatewayUiTelemetryRequest {
     pub(super) view: String,
