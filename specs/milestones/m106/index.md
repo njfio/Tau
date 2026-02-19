@@ -1,6 +1,6 @@
 # M106 - Spacebot G21 External Worker Subprocess Integration
 
-Status: In Progress
+Status: Completed
 Related roadmap items: `tasks/spacebot-comparison.md` (G21 remaining subprocess worker item)
 
 ## Objective
