@@ -1,12 +1,12 @@
 //! Tests for startup local runtime assembly, hooks, and guardrails.
 
 use super::{
-    build_local_runtime_agent, build_local_runtime_command_defaults,
-    build_local_runtime_doctor_config, build_local_runtime_extension_bootstrap,
-    build_local_runtime_extension_startup, build_local_runtime_interactive_defaults,
-    derive_preflight_token_limits, execute_command_file_entry_mode,
-    execute_local_runtime_entry_mode_with_dispatch, execute_prompt_entry_mode,
-    execute_prompt_or_command_file_entry_mode,
+    build_local_runtime_agent, build_local_runtime_agent_config,
+    build_local_runtime_command_defaults, build_local_runtime_doctor_config,
+    build_local_runtime_extension_bootstrap, build_local_runtime_extension_startup,
+    build_local_runtime_interactive_defaults, derive_preflight_token_limits,
+    execute_command_file_entry_mode, execute_local_runtime_entry_mode_with_dispatch,
+    execute_prompt_entry_mode, execute_prompt_or_command_file_entry_mode,
     execute_prompt_or_command_file_entry_mode_with_dispatch, extension_tool_hook_diagnostics,
     extension_tool_hook_dispatch, register_runtime_event_reporter_if_configured,
     register_runtime_event_reporter_pair_if_configured, register_runtime_event_reporter_subscriber,
@@ -157,6 +157,12 @@ async fn functional_build_local_runtime_agent_enforces_preflight_token_limits() 
             max_context_messages: Some(256),
             max_estimated_input_tokens: Some(1),
             max_estimated_total_tokens: Some(5),
+            context_compaction_warn_threshold_percent: 80,
+            context_compaction_aggressive_threshold_percent: 85,
+            context_compaction_emergency_threshold_percent: 95,
+            context_compaction_warn_retain_percent: 70,
+            context_compaction_aggressive_retain_percent: 50,
+            context_compaction_emergency_retain_percent: 50,
             request_max_retries: 2,
             request_retry_initial_backoff_ms: 200,
             request_retry_max_backoff_ms: 2_000,
@@ -201,6 +207,12 @@ fn unit_build_local_runtime_agent_preserves_system_prompt_message() {
             max_context_messages: Some(256),
             max_estimated_input_tokens: None,
             max_estimated_total_tokens: None,
+            context_compaction_warn_threshold_percent: 80,
+            context_compaction_aggressive_threshold_percent: 85,
+            context_compaction_emergency_threshold_percent: 95,
+            context_compaction_warn_retain_percent: 70,
+            context_compaction_aggressive_retain_percent: 50,
+            context_compaction_emergency_retain_percent: 50,
             request_max_retries: 2,
             request_retry_initial_backoff_ms: 200,
             request_retry_max_backoff_ms: 2_000,
@@ -241,6 +253,12 @@ fn unit_build_local_runtime_agent_applies_prompt_sanitizer_settings() {
             max_context_messages: Some(256),
             max_estimated_input_tokens: None,
             max_estimated_total_tokens: None,
+            context_compaction_warn_threshold_percent: 80,
+            context_compaction_aggressive_threshold_percent: 85,
+            context_compaction_emergency_threshold_percent: 95,
+            context_compaction_warn_retain_percent: 70,
+            context_compaction_aggressive_retain_percent: 50,
+            context_compaction_emergency_retain_percent: 50,
             request_max_retries: 2,
             request_retry_initial_backoff_ms: 200,
             request_retry_max_backoff_ms: 2_000,
@@ -297,6 +315,12 @@ async fn functional_build_local_runtime_agent_applies_cost_budget_and_pricing_se
             max_context_messages: Some(256),
             max_estimated_input_tokens: None,
             max_estimated_total_tokens: None,
+            context_compaction_warn_threshold_percent: 80,
+            context_compaction_aggressive_threshold_percent: 85,
+            context_compaction_emergency_threshold_percent: 95,
+            context_compaction_warn_retain_percent: 70,
+            context_compaction_aggressive_retain_percent: 50,
+            context_compaction_emergency_retain_percent: 50,
             request_max_retries: 2,
             request_retry_initial_backoff_ms: 200,
             request_retry_max_backoff_ms: 2_000,
@@ -346,6 +370,12 @@ async fn functional_build_local_runtime_agent_registers_builtin_tools_with_model
             max_context_messages: Some(256),
             max_estimated_input_tokens: None,
             max_estimated_total_tokens: None,
+            context_compaction_warn_threshold_percent: 80,
+            context_compaction_aggressive_threshold_percent: 85,
+            context_compaction_emergency_threshold_percent: 95,
+            context_compaction_warn_retain_percent: 70,
+            context_compaction_aggressive_retain_percent: 50,
+            context_compaction_emergency_retain_percent: 50,
             request_max_retries: 2,
             request_retry_initial_backoff_ms: 200,
             request_retry_max_backoff_ms: 2_000,
@@ -380,6 +410,153 @@ async fn functional_build_local_runtime_agent_registers_builtin_tools_with_model
 }
 
 #[tokio::test]
+async fn spec_2561_c02_build_local_runtime_agent_applies_custom_compaction_policy() {
+    let model_ref = ModelRef::parse("openai/gpt-4o-mini").expect("model ref");
+    let captured_request = Arc::new(Mutex::new(None));
+    let client = Arc::new(RecordingRequestClient {
+        captured_request: captured_request.clone(),
+        response: ChatResponse {
+            message: Message::assistant_text("ok"),
+            finish_reason: Some("stop".to_string()),
+            usage: ChatUsage::default(),
+        },
+    });
+    let mut agent = build_local_runtime_agent(
+        client,
+        &model_ref,
+        "system prompt",
+        LocalRuntimeAgentSettings {
+            max_turns: 4,
+            max_tokens: Some(777),
+            max_parallel_tool_calls: 4,
+            max_context_messages: Some(256),
+            max_estimated_input_tokens: Some(8_000),
+            max_estimated_total_tokens: Some(10_000),
+            context_compaction_warn_threshold_percent: 1,
+            context_compaction_aggressive_threshold_percent: 99,
+            context_compaction_emergency_threshold_percent: 100,
+            context_compaction_warn_retain_percent: 60,
+            context_compaction_aggressive_retain_percent: 50,
+            context_compaction_emergency_retain_percent: 40,
+            request_max_retries: 2,
+            request_retry_initial_backoff_ms: 200,
+            request_retry_max_backoff_ms: 2_000,
+            request_timeout_ms: Some(120_000),
+            tool_timeout_ms: Some(120_000),
+            model_input_cost_per_million: None,
+            model_cached_input_cost_per_million: None,
+            model_output_cost_per_million: None,
+            cost_budget_usd: None,
+            cost_alert_thresholds_percent: vec![80, 100],
+            prompt_sanitizer_enabled: true,
+            prompt_sanitizer_mode: SafetyMode::Warn,
+            prompt_sanitizer_redaction_token: "[TAU-SAFETY-REDACTED]".to_string(),
+            secret_leak_detector_enabled: true,
+            secret_leak_detector_mode: SafetyMode::Warn,
+            secret_leak_redaction_token: "[TAU-SECRET-REDACTED]".to_string(),
+        },
+        ToolPolicy::new(vec![std::env::temp_dir()]),
+    );
+    let large_history_chunk = "history chunk ".repeat(300);
+    agent.append_message(Message::user(format!(
+        "history user one {large_history_chunk}"
+    )));
+    agent.append_message(Message::assistant_text(format!(
+        "history assistant one {large_history_chunk}"
+    )));
+    agent.append_message(Message::user(format!(
+        "history user two {large_history_chunk}"
+    )));
+    agent.append_message(Message::assistant_text(format!(
+        "history assistant two {large_history_chunk}"
+    )));
+
+    let _ = agent
+        .prompt("trigger compaction policy")
+        .await
+        .expect("prompt");
+    let request = captured_request
+        .lock()
+        .expect("captured request lock")
+        .clone()
+        .expect("captured request");
+    assert_eq!(
+        request.messages.len(),
+        4,
+        "warn retain policy should keep 60% of 6 messages -> 4 retained messages"
+    );
+    assert!(
+        request
+            .messages
+            .iter()
+            .any(|message| message.text_content().contains("summarized_messages=")),
+        "warn-tier summary compaction should be applied when policy threshold is very low"
+    );
+}
+
+#[test]
+fn spec_2561_c02_build_local_runtime_agent_config_maps_all_compaction_policy_fields() {
+    let model_ref = ModelRef::parse("openai/gpt-4.1-mini").expect("model ref");
+    let settings = LocalRuntimeAgentSettings {
+        max_turns: 11,
+        max_tokens: Some(777),
+        max_parallel_tool_calls: 9,
+        max_context_messages: Some(123),
+        max_estimated_input_tokens: Some(8_000),
+        max_estimated_total_tokens: Some(10_000),
+        context_compaction_warn_threshold_percent: 11,
+        context_compaction_aggressive_threshold_percent: 22,
+        context_compaction_emergency_threshold_percent: 33,
+        context_compaction_warn_retain_percent: 44,
+        context_compaction_aggressive_retain_percent: 55,
+        context_compaction_emergency_retain_percent: 66,
+        request_max_retries: 7,
+        request_retry_initial_backoff_ms: 321,
+        request_retry_max_backoff_ms: 6_543,
+        request_timeout_ms: Some(65_432),
+        tool_timeout_ms: Some(54_321),
+        model_input_cost_per_million: Some(1.1),
+        model_cached_input_cost_per_million: Some(0.22),
+        model_output_cost_per_million: Some(3.3),
+        cost_budget_usd: Some(12.34),
+        cost_alert_thresholds_percent: vec![33, 66, 99],
+        prompt_sanitizer_enabled: true,
+        prompt_sanitizer_mode: SafetyMode::Warn,
+        prompt_sanitizer_redaction_token: "[TAU-SAFETY-REDACTED]".to_string(),
+        secret_leak_detector_enabled: true,
+        secret_leak_detector_mode: SafetyMode::Warn,
+        secret_leak_redaction_token: "[TAU-SECRET-REDACTED]".to_string(),
+    };
+
+    let config = build_local_runtime_agent_config(&model_ref, "system prompt", &settings);
+
+    assert_eq!(config.model, "gpt-4.1-mini");
+    assert_eq!(config.system_prompt, "system prompt");
+    assert_eq!(config.max_turns, 11);
+    assert_eq!(config.max_tokens, Some(777));
+    assert_eq!(config.max_parallel_tool_calls, 9);
+    assert_eq!(config.max_context_messages, Some(123));
+    assert_eq!(config.max_estimated_input_tokens, Some(8_000));
+    assert_eq!(config.max_estimated_total_tokens, Some(10_000));
+    assert_eq!(config.context_compaction_warn_threshold_percent, 11);
+    assert_eq!(config.context_compaction_aggressive_threshold_percent, 22);
+    assert_eq!(config.context_compaction_emergency_threshold_percent, 33);
+    assert_eq!(config.context_compaction_warn_retain_percent, 44);
+    assert_eq!(config.context_compaction_aggressive_retain_percent, 55);
+    assert_eq!(config.context_compaction_emergency_retain_percent, 66);
+    assert_eq!(config.request_max_retries, 7);
+    assert_eq!(config.request_retry_initial_backoff_ms, 321);
+    assert_eq!(config.request_retry_max_backoff_ms, 6_543);
+    assert_eq!(config.request_timeout_ms, Some(65_432));
+    assert_eq!(config.tool_timeout_ms, Some(54_321));
+    assert_eq!(config.model_input_cost_per_million, Some(1.1));
+    assert_eq!(config.model_cached_input_cost_per_million, Some(0.22));
+    assert_eq!(config.model_output_cost_per_million, Some(3.3));
+    assert_eq!(config.cost_budget_usd, Some(12.34));
+    assert_eq!(config.cost_alert_thresholds_percent, vec![33, 66, 99]);
+}
+
+#[tokio::test]
 async fn integration_build_local_runtime_agent_respects_max_turns_limit() {
     let model_ref = ModelRef::parse("openai/gpt-4o-mini").expect("model ref");
     let client = Arc::new(QueueClient {
@@ -396,6 +573,12 @@ async fn integration_build_local_runtime_agent_respects_max_turns_limit() {
             max_context_messages: Some(256),
             max_estimated_input_tokens: None,
             max_estimated_total_tokens: None,
+            context_compaction_warn_threshold_percent: 80,
+            context_compaction_aggressive_threshold_percent: 85,
+            context_compaction_emergency_threshold_percent: 95,
+            context_compaction_warn_retain_percent: 70,
+            context_compaction_aggressive_retain_percent: 50,
+            context_compaction_emergency_retain_percent: 50,
             request_max_retries: 2,
             request_retry_initial_backoff_ms: 200,
             request_retry_max_backoff_ms: 2_000,
@@ -439,6 +622,12 @@ fn regression_build_local_runtime_agent_skips_empty_system_prompt_message() {
             max_context_messages: Some(256),
             max_estimated_input_tokens: None,
             max_estimated_total_tokens: None,
+            context_compaction_warn_threshold_percent: 80,
+            context_compaction_aggressive_threshold_percent: 85,
+            context_compaction_emergency_threshold_percent: 95,
+            context_compaction_warn_retain_percent: 70,
+            context_compaction_aggressive_retain_percent: 50,
+            context_compaction_emergency_retain_percent: 50,
             request_max_retries: 2,
             request_retry_initial_backoff_ms: 200,
             request_retry_max_backoff_ms: 2_000,

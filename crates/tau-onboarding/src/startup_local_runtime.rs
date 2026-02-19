@@ -31,6 +31,12 @@ pub struct LocalRuntimeAgentSettings {
     pub max_context_messages: Option<usize>,
     pub max_estimated_input_tokens: Option<u32>,
     pub max_estimated_total_tokens: Option<u32>,
+    pub context_compaction_warn_threshold_percent: u8,
+    pub context_compaction_aggressive_threshold_percent: u8,
+    pub context_compaction_emergency_threshold_percent: u8,
+    pub context_compaction_warn_retain_percent: u8,
+    pub context_compaction_aggressive_retain_percent: u8,
+    pub context_compaction_emergency_retain_percent: u8,
     pub request_max_retries: usize,
     pub request_retry_initial_backoff_ms: u64,
     pub request_retry_max_backoff_ms: u64,
@@ -69,6 +75,45 @@ pub fn derive_preflight_token_limits(
     (max_estimated_input_tokens, max_estimated_total_tokens)
 }
 
+pub(crate) fn build_local_runtime_agent_config(
+    model_ref: &ModelRef,
+    system_prompt: &str,
+    settings: &LocalRuntimeAgentSettings,
+) -> AgentConfig {
+    AgentConfig {
+        model: model_ref.model.clone(),
+        system_prompt: system_prompt.to_string(),
+        max_turns: settings.max_turns,
+        max_tokens: settings.max_tokens,
+        max_parallel_tool_calls: settings.max_parallel_tool_calls,
+        max_context_messages: settings.max_context_messages,
+        max_estimated_input_tokens: settings.max_estimated_input_tokens,
+        max_estimated_total_tokens: settings.max_estimated_total_tokens,
+        context_compaction_warn_threshold_percent: settings
+            .context_compaction_warn_threshold_percent,
+        context_compaction_aggressive_threshold_percent: settings
+            .context_compaction_aggressive_threshold_percent,
+        context_compaction_emergency_threshold_percent: settings
+            .context_compaction_emergency_threshold_percent,
+        context_compaction_warn_retain_percent: settings.context_compaction_warn_retain_percent,
+        context_compaction_aggressive_retain_percent: settings
+            .context_compaction_aggressive_retain_percent,
+        context_compaction_emergency_retain_percent: settings
+            .context_compaction_emergency_retain_percent,
+        request_max_retries: settings.request_max_retries,
+        request_retry_initial_backoff_ms: settings.request_retry_initial_backoff_ms,
+        request_retry_max_backoff_ms: settings.request_retry_max_backoff_ms,
+        request_timeout_ms: settings.request_timeout_ms,
+        tool_timeout_ms: settings.tool_timeout_ms,
+        model_input_cost_per_million: settings.model_input_cost_per_million,
+        model_cached_input_cost_per_million: settings.model_cached_input_cost_per_million,
+        model_output_cost_per_million: settings.model_output_cost_per_million,
+        cost_budget_usd: settings.cost_budget_usd,
+        cost_alert_thresholds_percent: settings.cost_alert_thresholds_percent.clone(),
+        ..AgentConfig::default()
+    }
+}
+
 pub fn build_local_runtime_agent(
     client: Arc<dyn LlmClient>,
     model_ref: &ModelRef,
@@ -76,31 +121,8 @@ pub fn build_local_runtime_agent(
     settings: LocalRuntimeAgentSettings,
     tool_policy: ToolPolicy,
 ) -> Agent {
-    let mut agent = Agent::new(
-        client,
-        AgentConfig {
-            model: model_ref.model.clone(),
-            system_prompt: system_prompt.to_string(),
-            max_turns: settings.max_turns,
-            temperature: Some(0.0),
-            max_tokens: settings.max_tokens,
-            max_parallel_tool_calls: settings.max_parallel_tool_calls,
-            max_context_messages: settings.max_context_messages,
-            max_estimated_input_tokens: settings.max_estimated_input_tokens,
-            max_estimated_total_tokens: settings.max_estimated_total_tokens,
-            request_max_retries: settings.request_max_retries,
-            request_retry_initial_backoff_ms: settings.request_retry_initial_backoff_ms,
-            request_retry_max_backoff_ms: settings.request_retry_max_backoff_ms,
-            request_timeout_ms: settings.request_timeout_ms,
-            tool_timeout_ms: settings.tool_timeout_ms,
-            model_input_cost_per_million: settings.model_input_cost_per_million,
-            model_cached_input_cost_per_million: settings.model_cached_input_cost_per_million,
-            model_output_cost_per_million: settings.model_output_cost_per_million,
-            cost_budget_usd: settings.cost_budget_usd,
-            cost_alert_thresholds_percent: settings.cost_alert_thresholds_percent,
-            ..AgentConfig::default()
-        },
-    );
+    let config = build_local_runtime_agent_config(model_ref, system_prompt, &settings);
+    let mut agent = Agent::new(client, config);
     agent.set_safety_policy(SafetyPolicy {
         enabled: settings.prompt_sanitizer_enabled,
         mode: settings.prompt_sanitizer_mode,

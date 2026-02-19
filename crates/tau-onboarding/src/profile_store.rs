@@ -125,6 +125,12 @@ mod tests {
                 runtime_self_repair_max_retries: 2,
                 runtime_self_repair_tool_builds_dir: ".tau/tool-builds".to_string(),
                 runtime_self_repair_orphan_max_age_seconds: 3_600,
+                context_compaction_warn_threshold_percent: 80,
+                context_compaction_aggressive_threshold_percent: 85,
+                context_compaction_emergency_threshold_percent: 95,
+                context_compaction_warn_retain_percent: 70,
+                context_compaction_aggressive_retain_percent: 50,
+                context_compaction_emergency_retain_percent: 50,
             },
             mcp: ProfileMcpDefaults::default(),
             auth: ProfileAuthDefaults::default(),
@@ -151,6 +157,89 @@ mod tests {
         save_profile_store(&path, &profiles).expect("save profile store");
         let loaded = load_profile_store(&path).expect("load profile store");
         assert_eq!(loaded, profiles);
+    }
+
+    #[test]
+    fn regression_spec_2561_c04_profile_store_backfills_compaction_policy_defaults() {
+        let temp = tempdir().expect("tempdir");
+        let path = temp.path().join(".tau/profiles.json");
+        std::fs::create_dir_all(path.parent().expect("profiles parent")).expect("create parent");
+        let legacy = serde_json::json!({
+            "schema_version": PROFILE_SCHEMA_VERSION,
+            "profiles": {
+                "legacy": {
+                    "model": "openai/gpt-4o-mini",
+                    "fallback_models": [],
+                    "session": {
+                        "enabled": true,
+                        "path": ".tau/sessions/default.sqlite",
+                        "import_mode": "merge"
+                    },
+                    "policy": {
+                        "tool_policy_preset": "balanced",
+                        "bash_profile": "balanced",
+                        "bash_dry_run": false,
+                        "os_sandbox_mode": "off",
+                        "enforce_regular_files": true,
+                        "bash_timeout_ms": 120000,
+                        "max_command_length": 8192,
+                        "max_tool_output_bytes": 262144,
+                        "max_file_read_bytes": 262144,
+                        "max_file_write_bytes": 262144,
+                        "allow_command_newlines": true,
+                        "runtime_heartbeat_enabled": true,
+                        "runtime_heartbeat_interval_ms": 5000,
+                        "runtime_heartbeat_state_path": ".tau/runtime-heartbeat/state.json",
+                        "runtime_self_repair_enabled": true,
+                        "runtime_self_repair_timeout_ms": 300000,
+                        "runtime_self_repair_max_retries": 2,
+                        "runtime_self_repair_tool_builds_dir": ".tau/tool-builds",
+                        "runtime_self_repair_orphan_max_age_seconds": 3600
+                    },
+                    "mcp": {
+                        "context_providers": ["session", "skills", "channel-store"]
+                    },
+                    "auth": {
+                        "openai": "api_key",
+                        "anthropic": "api_key",
+                        "google": "api_key"
+                    },
+                    "routing": {
+                        "task_overrides": {}
+                    }
+                }
+            }
+        });
+        std::fs::write(
+            &path,
+            serde_json::to_string_pretty(&legacy).expect("encode legacy profile store"),
+        )
+        .expect("write legacy profile store");
+
+        let loaded = load_profile_store(&path).expect("load legacy profile store");
+        let profile = loaded.get("legacy").expect("legacy profile");
+        assert_eq!(profile.policy.context_compaction_warn_threshold_percent, 80);
+        assert_eq!(
+            profile
+                .policy
+                .context_compaction_aggressive_threshold_percent,
+            85
+        );
+        assert_eq!(
+            profile
+                .policy
+                .context_compaction_emergency_threshold_percent,
+            95
+        );
+        assert_eq!(profile.policy.context_compaction_warn_retain_percent, 70);
+        assert_eq!(
+            profile.policy.context_compaction_aggressive_retain_percent,
+            50
+        );
+        assert_eq!(
+            profile.policy.context_compaction_emergency_retain_percent,
+            50
+        );
     }
 
     #[test]

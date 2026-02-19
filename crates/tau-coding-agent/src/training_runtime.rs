@@ -1433,6 +1433,18 @@ fn build_executor(
         max_context_messages: cli.agent_max_context_messages,
         max_estimated_input_tokens,
         max_estimated_total_tokens,
+        context_compaction_warn_threshold_percent: agent_defaults
+            .context_compaction_warn_threshold_percent,
+        context_compaction_aggressive_threshold_percent: agent_defaults
+            .context_compaction_aggressive_threshold_percent,
+        context_compaction_emergency_threshold_percent: agent_defaults
+            .context_compaction_emergency_threshold_percent,
+        context_compaction_warn_retain_percent: agent_defaults
+            .context_compaction_warn_retain_percent,
+        context_compaction_aggressive_retain_percent: agent_defaults
+            .context_compaction_aggressive_retain_percent,
+        context_compaction_emergency_retain_percent: agent_defaults
+            .context_compaction_emergency_retain_percent,
         request_max_retries: cli.agent_request_max_retries,
         request_retry_initial_backoff_ms: cli.agent_request_retry_initial_backoff_ms,
         request_retry_max_backoff_ms: cli.agent_request_retry_max_backoff_ms,
