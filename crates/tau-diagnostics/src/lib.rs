@@ -1862,11 +1862,14 @@ pub fn execute_policy_command(
 #[cfg(test)]
 mod tests {
     use super::{
-        summarize_audit_file, PROMPT_TELEMETRY_RECORD_TYPE_LEGACY_V0,
+        execute_policy_command, parse_doctor_command_args, percentile_duration_ms,
+        render_audit_summary, summarize_audit_file, AuditSummary, DoctorCommandOutputFormat,
+        ToolAuditAggregate, DOCTOR_USAGE, POLICY_USAGE, PROMPT_TELEMETRY_RECORD_TYPE_LEGACY_V0,
         PROMPT_TELEMETRY_RECORD_TYPE_V1, PROMPT_TELEMETRY_SCHEMA_VERSION,
     };
     use serde_json::Value;
     use std::io::Write;
+    use std::path::Path;
     use tempfile::tempdir;
 
     fn write_audit_fixture(lines: &[Value]) -> (tempfile::TempDir, std::path::PathBuf) {
@@ -1999,5 +2002,54 @@ mod tests {
         assert_eq!(summary.lifecycle_control_record_count, 2);
         assert_eq!(summary.lifecycle_control_compliant_count, 1);
         assert_eq!(summary.lifecycle_control_non_compliant_count, 1);
+    }
+
+    #[test]
+    fn unit_spec_2609_c01_diagnostics_doctor_arg_parser_and_policy_usage_fail_closed() {
+        let parsed = parse_doctor_command_args("--json --online").expect("parse valid args");
+        assert_eq!(parsed.output_format, DoctorCommandOutputFormat::Json);
+        assert!(parsed.online);
+
+        let duplicate = parse_doctor_command_args("--json --json")
+            .expect_err("duplicate output flag must fail closed");
+        assert_eq!(duplicate.to_string(), DOCTOR_USAGE);
+
+        let policy_json = serde_json::json!({
+            "policy_preset": "balanced",
+            "memory_search_default_limit": 5
+        });
+        let rendered = execute_policy_command("", &policy_json).expect("policy command");
+        assert_eq!(rendered, policy_json.to_string());
+
+        let usage_error = execute_policy_command("--unexpected", &policy_json)
+            .expect_err("policy command must reject extra args");
+        assert_eq!(usage_error.to_string(), POLICY_USAGE);
+    }
+
+    #[test]
+    fn regression_spec_2609_c02_diagnostics_percentile_and_render_edges() {
+        assert_eq!(percentile_duration_ms(&[], 95), 0);
+        assert_eq!(percentile_duration_ms(&[9, 1, 5, 3], 50), 3);
+        assert_eq!(percentile_duration_ms(&[9, 1, 5, 3], 95), 9);
+
+        let mut summary = AuditSummary {
+            record_count: 3,
+            tool_event_count: 3,
+            ..AuditSummary::default()
+        };
+        summary.tools.insert(
+            "memory_search".to_string(),
+            ToolAuditAggregate {
+                count: 3,
+                error_count: 1,
+                durations_ms: vec![3, 5, 21],
+            },
+        );
+        let rendered = render_audit_summary(Path::new("audit.jsonl"), &summary);
+        assert!(rendered.contains("audit summary: path=audit.jsonl records=3 tool_events=3"));
+        assert!(rendered.contains("tool_breakdown:"));
+        assert!(rendered.contains("memory_search count=3"));
+        assert!(rendered.contains("p95_ms=21"));
+        assert!(rendered.contains("provider_breakdown:"));
     }
 }
