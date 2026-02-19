@@ -1707,6 +1707,28 @@ async fn regression_spec_2572_c05_emergency_compaction_skips_summary_extraction(
     );
 }
 
+#[test]
+fn regression_spec_2572_c06_append_system_artifact_dedupes_identical_entries() {
+    let client = Arc::new(CapturingMockClient {
+        responses: AsyncMutex::new(VecDeque::new()),
+        requests: AsyncMutex::new(Vec::new()),
+    });
+    let mut agent = Agent::new(client, AgentConfig::default());
+    let artifact = "[Tau compaction entry] tier=warn\n[Tau context summary]\nstub".to_string();
+    agent.append_system_artifact_if_new(artifact.clone());
+    agent.append_system_artifact_if_new(artifact.clone());
+
+    let duplicate_count = agent
+        .messages()
+        .iter()
+        .filter(|message| message.role == MessageRole::System && message.text_content() == artifact)
+        .count();
+    assert_eq!(
+        duplicate_count, 1,
+        "system artifact dedupe should be stable"
+    );
+}
+
 #[tokio::test]
 async fn regression_context_pressure_below_warn_threshold_skips_tiered_compaction() {
     let client = Arc::new(CapturingMockClient {
