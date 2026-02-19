@@ -1,6 +1,6 @@
 # Spec #2580 - Subtask: conformance/mutation/live-validation evidence for G2 phase-5 warn-tier LLM compaction
 
-Status: Reviewed
+Status: Implemented
 Priority: P0
 Milestone: M99
 Parent: #2579

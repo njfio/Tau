@@ -1,6 +1,6 @@
 # Spec #2579 - Task: implement warn-tier background LLM summarization compaction path
 
-Status: Reviewed
+Status: Implemented
 Priority: P0
 Milestone: M99
 Parent: #2578
