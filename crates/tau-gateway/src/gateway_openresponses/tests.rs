@@ -1245,6 +1245,81 @@ async fn functional_spec_2810_c01_c02_c03_ops_shell_control_markers_reflect_dash
 }
 
 #[tokio::test]
+async fn functional_spec_2814_c01_c02_ops_shell_timeline_chart_markers_reflect_snapshot_and_range_query(
+) {
+    let temp = tempdir().expect("tempdir");
+    write_dashboard_runtime_fixture(temp.path());
+    write_training_runtime_fixture(temp.path(), 0);
+    let state = test_state(temp.path(), 4_096, "secret");
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+    let client = Client::new();
+
+    let response = client
+        .get(format!(
+            "http://{addr}/ops?theme=light&sidebar=collapsed&range=6h"
+        ))
+        .send()
+        .await
+        .expect("ops shell request");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.text().await.expect("read ops shell body");
+
+    assert!(body.contains("id=\"tau-ops-queue-timeline-chart\""));
+    assert!(body.contains("data-component=\"TimelineChart\""));
+    assert!(body.contains("data-timeline-point-count=\"2\""));
+    assert!(body.contains("data-timeline-last-timestamp=\"811\""));
+    assert!(body.contains("data-timeline-range=\"6h\""));
+    assert!(body.contains("id=\"tau-ops-timeline-range-1h\""));
+    assert!(body.contains("id=\"tau-ops-timeline-range-6h\""));
+    assert!(body.contains("id=\"tau-ops-timeline-range-24h\""));
+    assert!(body.contains(
+        "id=\"tau-ops-timeline-range-1h\" data-range-option=\"1h\" data-range-selected=\"false\""
+    ));
+    assert!(body.contains(
+        "id=\"tau-ops-timeline-range-6h\" data-range-option=\"6h\" data-range-selected=\"true\""
+    ));
+    assert!(body.contains(
+        "id=\"tau-ops-timeline-range-24h\" data-range-option=\"24h\" data-range-selected=\"false\""
+    ));
+    assert!(body.contains("href=\"/ops?theme=light&amp;sidebar=collapsed&amp;range=1h\""));
+    assert!(body.contains("href=\"/ops?theme=light&amp;sidebar=collapsed&amp;range=6h\""));
+    assert!(body.contains("href=\"/ops?theme=light&amp;sidebar=collapsed&amp;range=24h\""));
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn functional_spec_2814_c03_ops_shell_timeline_range_invalid_query_defaults_to_1h() {
+    let temp = tempdir().expect("tempdir");
+    write_dashboard_runtime_fixture(temp.path());
+    write_training_runtime_fixture(temp.path(), 0);
+    let state = test_state(temp.path(), 4_096, "secret");
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+    let client = Client::new();
+
+    let response = client
+        .get(format!("http://{addr}/ops?range=quarter"))
+        .send()
+        .await
+        .expect("ops shell request");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.text().await.expect("read ops shell body");
+
+    assert!(body.contains("data-timeline-range=\"1h\""));
+    assert!(body.contains(
+        "id=\"tau-ops-timeline-range-1h\" data-range-option=\"1h\" data-range-selected=\"true\""
+    ));
+    assert!(body.contains(
+        "id=\"tau-ops-timeline-range-6h\" data-range-option=\"6h\" data-range-selected=\"false\""
+    ));
+    assert!(body.contains(
+        "id=\"tau-ops-timeline-range-24h\" data-range-option=\"24h\" data-range-selected=\"false\""
+    ));
+
+    handle.abort();
+}
+
+#[tokio::test]
 async fn functional_webchat_endpoint_returns_html_shell() {
     let temp = tempdir().expect("tempdir");
     let state = test_state(temp.path(), 10_000, "secret");

@@ -208,6 +208,9 @@ pub struct TauOpsDashboardCommandCenterSnapshot {
     pub last_action_name: String,
     pub last_action_actor: String,
     pub last_action_timestamp_unix_ms: u64,
+    pub timeline_range: String,
+    pub timeline_point_count: usize,
+    pub timeline_last_timestamp_unix_ms: u64,
     pub queue_depth: usize,
     pub failure_streak: usize,
     pub processed_case_count: usize,
@@ -235,6 +238,9 @@ impl Default for TauOpsDashboardCommandCenterSnapshot {
             last_action_name: "none".to_string(),
             last_action_actor: "none".to_string(),
             last_action_timestamp_unix_ms: 0,
+            timeline_range: "1h".to_string(),
+            timeline_point_count: 0,
+            timeline_last_timestamp_unix_ms: 0,
             queue_depth: 0,
             failure_streak: 0,
             processed_case_count: 0,
@@ -343,6 +349,33 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
         .command_center
         .last_action_timestamp_unix_ms
         .to_string();
+    let timeline_range = context.command_center.timeline_range.clone();
+    let timeline_point_count_value = context.command_center.timeline_point_count.to_string();
+    let timeline_last_timestamp_value = context
+        .command_center
+        .timeline_last_timestamp_unix_ms
+        .to_string();
+    let range_1h_selected = if timeline_range == "1h" {
+        "true"
+    } else {
+        "false"
+    };
+    let range_6h_selected = if timeline_range == "6h" {
+        "true"
+    } else {
+        "false"
+    };
+    let range_24h_selected = if timeline_range == "24h" {
+        "true"
+    } else {
+        "false"
+    };
+    let range_1h_href =
+        format!("{active_shell_path}?theme={theme_attr}&sidebar={sidebar_state_attr}&range=1h");
+    let range_6h_href =
+        format!("{active_shell_path}?theme={theme_attr}&sidebar={sidebar_state_attr}&range=6h");
+    let range_24h_href =
+        format!("{active_shell_path}?theme={theme_attr}&sidebar={sidebar_state_attr}&range=24h");
     let queue_depth_value = context.command_center.queue_depth.to_string();
     let failure_streak_value = context.command_center.failure_streak.to_string();
     let processed_cases_value = context.command_center.processed_case_count.to_string();
@@ -502,6 +535,45 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     <h2>Timeline Cycles</h2>
                                     <p>{context.command_center.timeline_cycle_count}</p>
                                 </article>
+                            </section>
+                            <section
+                                id="tau-ops-queue-timeline-chart"
+                                data-component="TimelineChart"
+                                data-timeline-range=timeline_range
+                                data-timeline-point-count=timeline_point_count_value
+                                data-timeline-last-timestamp=timeline_last_timestamp_value
+                            >
+                                <h2>Queue Timeline</h2>
+                                <section
+                                    id="tau-ops-timeline-range-controls"
+                                    role="group"
+                                    aria-label="Timeline range"
+                                >
+                                    <a
+                                        id="tau-ops-timeline-range-1h"
+                                        data-range-option="1h"
+                                        data-range-selected=range_1h_selected
+                                        href=range_1h_href
+                                    >
+                                        1h
+                                    </a>
+                                    <a
+                                        id="tau-ops-timeline-range-6h"
+                                        data-range-option="6h"
+                                        data-range-selected=range_6h_selected
+                                        href=range_6h_href
+                                    >
+                                        6h
+                                    </a>
+                                    <a
+                                        id="tau-ops-timeline-range-24h"
+                                        data-range-option="24h"
+                                        data-range-selected=range_24h_selected
+                                        href=range_24h_href
+                                    >
+                                        24h
+                                    </a>
+                                </section>
                             </section>
                             <section
                                 id="tau-ops-control-panel"
@@ -819,6 +891,9 @@ mod tests {
                 last_action_name: "pause".to_string(),
                 last_action_actor: "ops-user".to_string(),
                 last_action_timestamp_unix_ms: 90210,
+                timeline_range: "1h".to_string(),
+                timeline_point_count: 9,
+                timeline_last_timestamp_unix_ms: 811,
                 queue_depth: 3,
                 failure_streak: 1,
                 processed_case_count: 8,
@@ -857,6 +932,11 @@ mod tests {
         assert!(html.contains("data-last-action-name=\"pause\""));
         assert!(html.contains("data-last-action-actor=\"ops-user\""));
         assert!(html.contains("data-last-action-timestamp=\"90210\""));
+        assert!(html.contains("id=\"tau-ops-queue-timeline-chart\""));
+        assert!(html.contains("data-component=\"TimelineChart\""));
+        assert!(html.contains("data-timeline-range=\"1h\""));
+        assert!(html.contains("data-timeline-point-count=\"9\""));
+        assert!(html.contains("data-timeline-last-timestamp=\"811\""));
     }
 
     #[test]
@@ -879,6 +959,9 @@ mod tests {
                 last_action_name: "pause".to_string(),
                 last_action_actor: "ops-user".to_string(),
                 last_action_timestamp_unix_ms: 90210,
+                timeline_range: "1h".to_string(),
+                timeline_point_count: 2,
+                timeline_last_timestamp_unix_ms: 811,
                 queue_depth: 1,
                 failure_streak: 0,
                 processed_case_count: 2,
@@ -903,5 +986,60 @@ mod tests {
         assert!(html.contains("data-last-action-name=\"pause\""));
         assert!(html.contains("data-last-action-actor=\"ops-user\""));
         assert!(html.contains("data-last-action-timestamp=\"90210\""));
+    }
+
+    #[test]
+    fn functional_spec_2814_c01_c02_c03_timeline_chart_and_range_markers_render() {
+        let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+            auth_mode: TauOpsDashboardAuthMode::Token,
+            active_route: TauOpsDashboardRoute::Ops,
+            theme: TauOpsDashboardTheme::Light,
+            sidebar_state: TauOpsDashboardSidebarState::Collapsed,
+            command_center: TauOpsDashboardCommandCenterSnapshot {
+                health_state: "healthy".to_string(),
+                health_reason: "no recent transport failures observed".to_string(),
+                rollout_gate: "pass".to_string(),
+                control_mode: "running".to_string(),
+                control_paused: false,
+                action_pause_enabled: true,
+                action_resume_enabled: false,
+                action_refresh_enabled: true,
+                last_action_request_id: "none".to_string(),
+                last_action_name: "none".to_string(),
+                last_action_actor: "none".to_string(),
+                last_action_timestamp_unix_ms: 0,
+                timeline_range: "6h".to_string(),
+                timeline_point_count: 2,
+                timeline_last_timestamp_unix_ms: 811,
+                queue_depth: 1,
+                failure_streak: 0,
+                processed_case_count: 2,
+                alert_count: 2,
+                widget_count: 2,
+                timeline_cycle_count: 2,
+                timeline_invalid_cycle_count: 1,
+                primary_alert_code: "dashboard_queue_backlog".to_string(),
+                primary_alert_severity: "warning".to_string(),
+                primary_alert_message: "runtime backlog detected (queue_depth=1)".to_string(),
+            },
+        });
+
+        assert!(html.contains("id=\"tau-ops-queue-timeline-chart\""));
+        assert!(html.contains("data-component=\"TimelineChart\""));
+        assert!(html.contains("data-timeline-range=\"6h\""));
+        assert!(html.contains("data-timeline-point-count=\"2\""));
+        assert!(html.contains("data-timeline-last-timestamp=\"811\""));
+        assert!(html.contains(
+            "id=\"tau-ops-timeline-range-1h\" data-range-option=\"1h\" data-range-selected=\"false\""
+        ));
+        assert!(html.contains(
+            "id=\"tau-ops-timeline-range-6h\" data-range-option=\"6h\" data-range-selected=\"true\""
+        ));
+        assert!(html.contains(
+            "id=\"tau-ops-timeline-range-24h\" data-range-option=\"24h\" data-range-selected=\"false\""
+        ));
+        assert!(html.contains("href=\"/ops?theme=light&amp;sidebar=collapsed&amp;range=1h\""));
+        assert!(html.contains("href=\"/ops?theme=light&amp;sidebar=collapsed&amp;range=6h\""));
+        assert!(html.contains("href=\"/ops?theme=light&amp;sidebar=collapsed&amp;range=24h\""));
     }
 }
