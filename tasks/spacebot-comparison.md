@@ -343,7 +343,7 @@ Spacebot is a Rust-based AI agent for teams, communities, and multi-user environ
 - [ ] Message history backfill (up to 100 messages before trigger)
 - [x] Mention resolution (`<@ID>` / `<@!ID>` → `@DisplayName`) (`#2662`)
 - [x] Auto-split messages at 2000 char limit (`#2662`)
-- [ ] Guild/channel filtering for permissions
+- [x] Guild/channel filtering for permissions (`#2750`)
 - **Files**: New crate or `tau-multi-channel/src/discord.rs`
 - **Effort**: Medium-Large
 
