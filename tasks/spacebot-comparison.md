@@ -439,9 +439,9 @@ Spacebot is a Rust-based AI agent for teams, communities, and multi-user environ
 - [ ] Priority pages: Overview dashboard, Session viewer, Memory browser, Configuration editor
 - [x] Stretch page: Memory graph visualization
 - [x] Stretch page: Cortex admin chat
-- [ ] Stretch page: Cron management
+- [x] Stretch page: Cron management
 - [ ] Serve embedded SPA from gateway (rust-embed or include_bytes)
-- Progress evidence: #2614 (gateway dashboard operator tab baseline), #2667 (PRD memory explorer API foundation: entry CRUD + filtered search), #2727 (memory graph force-layout + `/api/memories/graph` parity), #2730 (cortex admin webchat panel)
+- Progress evidence: #2614 (gateway dashboard operator tab baseline), #2667 (PRD memory explorer API foundation: entry CRUD + filtered search), #2727 (memory graph force-layout + `/api/memories/graph` parity), #2730 (cortex admin webchat panel), #2734 (webchat routines/cron management panel + live gateway status/jobs/cancel validation)
 - **Files**: `tau-dashboard/` or new `interface/` directory
 - **Effort**: Large
 
