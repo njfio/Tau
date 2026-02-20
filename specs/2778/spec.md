@@ -1,6 +1,6 @@
 # Spec: Issue #2778 - G23 Fly.io CI pipeline validation (optional)
 
-Status: Reviewed
+Status: Implemented
 
 ## Problem Statement
 `tasks/spacebot-comparison.md` has one remaining unchecked row: optional Fly.io CI/CD pipeline integration. The repository already includes `fly.toml` and deployment docs, but CI does not currently validate Fly manifest correctness.
@@ -47,3 +47,6 @@ Then G23 optional pipeline row is checked with `#2778` evidence.
 ## Success Metrics / Observable Signals
 - No unchecked rows remain in `tasks/spacebot-comparison.md`.
 - CI includes explicit, optional Fly validation behavior for relevant changes.
+
+## Approval Gate
+This task modified CI/CD workflow behavior and proceeded under explicit user direction to continue contract execution end-to-end.
