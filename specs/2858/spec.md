@@ -1,6 +1,6 @@
 # Spec: Issue #2858 - chat/sessions panel visibility-state contracts
 
-Status: Reviewed
+Status: Implemented
 
 ## Problem Statement
 Tau Ops chat and sessions panels already expose route and `aria-hidden` contracts, but they do not expose explicit panel visibility-state attributes for deterministic selector-based validation. Downstream validation harnesses currently infer state indirectly from `aria-hidden` only.
