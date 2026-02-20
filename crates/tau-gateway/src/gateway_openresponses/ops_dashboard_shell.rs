@@ -14,15 +14,18 @@ use tau_dashboard_ui::{
     TauOpsDashboardSessionTimelineRow, TauOpsDashboardShellContext, TauOpsDashboardSidebarState,
     TauOpsDashboardTheme,
 };
-use tau_memory::runtime::{MemoryScopeFilter, MemorySearchOptions};
+use tau_memory::memory_contract::{MemoryEntry, MemoryScope};
+use tau_memory::runtime::{
+    MemoryRelationInput, MemoryScopeFilter, MemorySearchOptions, MemoryType,
+};
 use tau_session::SessionStore;
 
 use super::{
     collect_tau_ops_dashboard_command_center_snapshot, gateway_memory_store, gateway_session_path,
-    record_cortex_session_append_event, record_cortex_session_reset_event, sanitize_session_key,
-    GatewayOpenResponsesServerState, OpenResponsesApiError, OpsShellControlsQuery,
-    DEFAULT_SESSION_KEY, OPS_DASHBOARD_CHAT_ENDPOINT, OPS_DASHBOARD_CHAT_NEW_ENDPOINT,
-    OPS_DASHBOARD_CHAT_SEND_ENDPOINT,
+    record_cortex_memory_entry_write_event, record_cortex_session_append_event,
+    record_cortex_session_reset_event, sanitize_session_key, GatewayOpenResponsesServerState,
+    OpenResponsesApiError, OpsShellControlsQuery, DEFAULT_SESSION_KEY, OPS_DASHBOARD_CHAT_ENDPOINT,
+    OPS_DASHBOARD_CHAT_NEW_ENDPOINT, OPS_DASHBOARD_CHAT_SEND_ENDPOINT,
 };
 use crate::remote_profile::GatewayOpenResponsesAuthMode;
 
@@ -109,6 +112,145 @@ impl OpsDashboardChatNewSessionForm {
 
     fn resolved_sidebar_state(&self) -> TauOpsDashboardSidebarState {
         resolve_chat_sidebar_state(self.sidebar.as_str())
+    }
+}
+
+#[derive(Debug, Deserialize, Default)]
+pub(super) struct OpsDashboardMemoryCreateForm {
+    #[serde(default)]
+    session: String,
+    #[serde(default)]
+    entry_id: String,
+    #[serde(default)]
+    summary: String,
+    #[serde(default)]
+    tags: String,
+    #[serde(default)]
+    facts: String,
+    #[serde(default)]
+    source_event_key: String,
+    #[serde(default)]
+    workspace_id: String,
+    #[serde(default)]
+    channel_id: String,
+    #[serde(default)]
+    actor_id: String,
+    #[serde(default)]
+    memory_type: String,
+    #[serde(default)]
+    importance: String,
+    #[serde(default)]
+    relation_target_id: String,
+    #[serde(default)]
+    relation_type: String,
+    #[serde(default)]
+    relation_weight: String,
+    #[serde(default)]
+    theme: String,
+    #[serde(default)]
+    sidebar: String,
+}
+
+fn split_memory_form_list(input: &str) -> Vec<String> {
+    input
+        .split([',', '|', '\n'])
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+fn normalize_memory_form_text(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+impl OpsDashboardMemoryCreateForm {
+    fn resolved_session_key(&self) -> String {
+        let requested = self.session.trim();
+        let resolved = if requested.is_empty() {
+            DEFAULT_SESSION_KEY
+        } else {
+            requested
+        };
+        sanitize_session_key(resolved)
+    }
+
+    fn resolved_theme(&self) -> TauOpsDashboardTheme {
+        resolve_chat_theme(self.theme.as_str())
+    }
+
+    fn resolved_sidebar_state(&self) -> TauOpsDashboardSidebarState {
+        resolve_chat_sidebar_state(self.sidebar.as_str())
+    }
+
+    fn resolved_entry_id(&self) -> String {
+        let requested = self.entry_id.trim();
+        if requested.is_empty() {
+            String::new()
+        } else {
+            sanitize_session_key(requested)
+        }
+    }
+
+    fn resolved_summary(&self) -> String {
+        self.summary.trim().to_string()
+    }
+
+    fn resolved_tags(&self) -> Vec<String> {
+        split_memory_form_list(self.tags.as_str())
+    }
+
+    fn resolved_facts(&self) -> Vec<String> {
+        split_memory_form_list(self.facts.as_str())
+    }
+
+    fn resolved_source_event_key(&self, entry_id: &str) -> String {
+        normalize_memory_form_text(self.source_event_key.as_str())
+            .unwrap_or_else(|| format!("ops-memory-create-{entry_id}"))
+    }
+
+    fn resolved_workspace_id(&self, session_key: &str) -> String {
+        normalize_memory_form_text(self.workspace_id.as_str())
+            .unwrap_or_else(|| session_key.to_string())
+    }
+
+    fn resolved_channel_id(&self) -> String {
+        normalize_memory_form_text(self.channel_id.as_str())
+            .unwrap_or_else(|| "gateway".to_string())
+    }
+
+    fn resolved_actor_id(&self) -> String {
+        normalize_memory_form_text(self.actor_id.as_str()).unwrap_or_else(|| "operator".to_string())
+    }
+
+    fn resolved_memory_type(&self) -> Option<MemoryType> {
+        normalize_memory_form_text(self.memory_type.as_str())
+            .and_then(|memory_type| MemoryType::parse(memory_type.as_str()))
+    }
+
+    fn resolved_importance(&self) -> Option<f32> {
+        self.importance
+            .trim()
+            .parse::<f32>()
+            .ok()
+            .map(|value| value.clamp(0.0, 1.0))
+    }
+
+    fn resolved_relations(&self) -> Vec<MemoryRelationInput> {
+        let Some(target_id) = normalize_memory_form_text(self.relation_target_id.as_str()) else {
+            return Vec::new();
+        };
+
+        vec![MemoryRelationInput {
+            target_id,
+            relation_type: normalize_memory_form_text(self.relation_type.as_str()),
+            weight: self.relation_weight.trim().parse::<f32>().ok(),
+        }]
     }
 }
 
@@ -312,6 +454,28 @@ fn build_ops_session_detail_redirect_path(
     )
 }
 
+fn build_ops_memory_redirect_path(
+    theme: TauOpsDashboardTheme,
+    sidebar_state: TauOpsDashboardSidebarState,
+    session_key: &str,
+    create_status: &str,
+    created_memory_id: Option<&str>,
+) -> String {
+    let mut redirect_path = format!(
+        "/ops/memory?theme={}&sidebar={}&session={session_key}&create_status={create_status}",
+        theme.as_str(),
+        sidebar_state.as_str()
+    );
+    if let Some(memory_id) = created_memory_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        redirect_path.push_str("&created_memory_id=");
+        redirect_path.push_str(memory_id);
+    }
+    redirect_path
+}
+
 fn tau_ops_chat_message_role_label(role: MessageRole) -> &'static str {
     match role {
         MessageRole::System => "system",
@@ -350,6 +514,14 @@ fn collect_tau_ops_dashboard_chat_snapshot(
     let memory_search_channel_id = controls.requested_memory_channel_id().unwrap_or_default();
     let memory_search_actor_id = controls.requested_memory_actor_id().unwrap_or_default();
     let memory_search_memory_type = controls.requested_memory_type().unwrap_or_default();
+    let memory_create_workspace_id = memory_search_workspace_id.clone();
+    let memory_create_channel_id = memory_search_channel_id.clone();
+    let memory_create_actor_id = memory_search_actor_id.clone();
+    let memory_create_memory_type = memory_search_memory_type.clone();
+    let memory_create_status = controls.requested_memory_create_status().to_string();
+    let memory_create_created_entry_id = controls
+        .requested_memory_created_entry_id()
+        .unwrap_or_default();
     let mut memory_search_rows = Vec::new();
 
     if !memory_search_query.trim().is_empty() {
@@ -460,6 +632,23 @@ fn collect_tau_ops_dashboard_chat_snapshot(
         memory_search_actor_id,
         memory_search_memory_type,
         memory_search_rows,
+        memory_create_form_action: "/ops/memory".to_string(),
+        memory_create_form_method: "post".to_string(),
+        memory_create_status,
+        memory_create_created_entry_id,
+        memory_create_entry_id: String::new(),
+        memory_create_summary: String::new(),
+        memory_create_tags: String::new(),
+        memory_create_facts: String::new(),
+        memory_create_source_event_key: String::new(),
+        memory_create_workspace_id,
+        memory_create_channel_id,
+        memory_create_actor_id,
+        memory_create_memory_type,
+        memory_create_importance: String::new(),
+        memory_create_relation_target_id: String::new(),
+        memory_create_relation_type: String::new(),
+        memory_create_relation_weight: String::new(),
     }
 }
 
@@ -585,6 +774,81 @@ pub(super) async fn handle_ops_dashboard_chat_send(
         session_key.as_str(),
         new_head,
         store.entries().len(),
+    );
+    Redirect::to(redirect_path.as_str()).into_response()
+}
+
+pub(super) async fn handle_ops_dashboard_memory_create(
+    State(state): State<Arc<GatewayOpenResponsesServerState>>,
+    Form(form): Form<OpsDashboardMemoryCreateForm>,
+) -> Response {
+    let session_key = form.resolved_session_key();
+    let fallback_redirect_path = build_ops_memory_redirect_path(
+        form.resolved_theme(),
+        form.resolved_sidebar_state(),
+        session_key.as_str(),
+        "idle",
+        None,
+    );
+
+    let entry_id = form.resolved_entry_id();
+    let summary = form.resolved_summary();
+    if entry_id.is_empty() || summary.is_empty() {
+        return Redirect::to(fallback_redirect_path.as_str()).into_response();
+    }
+
+    let scope = MemoryScope {
+        workspace_id: form.resolved_workspace_id(session_key.as_str()),
+        channel_id: form.resolved_channel_id(),
+        actor_id: form.resolved_actor_id(),
+    };
+    let entry = MemoryEntry {
+        memory_id: entry_id.clone(),
+        summary,
+        tags: form.resolved_tags(),
+        facts: form.resolved_facts(),
+        source_event_key: form.resolved_source_event_key(entry_id.as_str()),
+        recency_weight_bps: 0,
+        confidence_bps: 1000,
+    };
+    let relation_inputs = form.resolved_relations();
+
+    let store = gateway_memory_store(&state.config.state_dir, session_key.as_str());
+    let write_result = match store.write_entry_with_metadata_and_relations(
+        &scope,
+        entry,
+        form.resolved_memory_type(),
+        form.resolved_importance(),
+        relation_inputs.as_slice(),
+    ) {
+        Ok(result) => result,
+        Err(error) => {
+            return OpenResponsesApiError::internal(format!(
+                "failed to create memory entry '{}' for session '{}': {error}",
+                entry_id, session_key
+            ))
+            .into_response();
+        }
+    };
+
+    state.record_ui_telemetry_event("memory", "entry_write", "ops_memory_create_form_submitted");
+    record_cortex_memory_entry_write_event(
+        &state.config.state_dir,
+        session_key.as_str(),
+        entry_id.as_str(),
+        write_result.created,
+    );
+    let create_status = if write_result.created {
+        "created"
+    } else {
+        "updated"
+    };
+    let redirect_path = build_ops_memory_redirect_path(
+        form.resolved_theme(),
+        form.resolved_sidebar_state(),
+        session_key.as_str(),
+        create_status,
+        Some(entry_id.as_str()),
     );
     Redirect::to(redirect_path.as_str()).into_response()
 }

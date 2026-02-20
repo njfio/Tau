@@ -292,6 +292,23 @@ pub struct TauOpsDashboardChatSnapshot {
     pub memory_search_actor_id: String,
     pub memory_search_memory_type: String,
     pub memory_search_rows: Vec<TauOpsDashboardMemorySearchRow>,
+    pub memory_create_form_action: String,
+    pub memory_create_form_method: String,
+    pub memory_create_status: String,
+    pub memory_create_created_entry_id: String,
+    pub memory_create_entry_id: String,
+    pub memory_create_summary: String,
+    pub memory_create_tags: String,
+    pub memory_create_facts: String,
+    pub memory_create_source_event_key: String,
+    pub memory_create_workspace_id: String,
+    pub memory_create_channel_id: String,
+    pub memory_create_actor_id: String,
+    pub memory_create_memory_type: String,
+    pub memory_create_importance: String,
+    pub memory_create_relation_target_id: String,
+    pub memory_create_relation_type: String,
+    pub memory_create_relation_weight: String,
 }
 
 impl Default for TauOpsDashboardChatSnapshot {
@@ -333,6 +350,23 @@ impl Default for TauOpsDashboardChatSnapshot {
             memory_search_actor_id: String::new(),
             memory_search_memory_type: String::new(),
             memory_search_rows: vec![],
+            memory_create_form_action: "/ops/memory".to_string(),
+            memory_create_form_method: "post".to_string(),
+            memory_create_status: "idle".to_string(),
+            memory_create_created_entry_id: String::new(),
+            memory_create_entry_id: String::new(),
+            memory_create_summary: String::new(),
+            memory_create_tags: String::new(),
+            memory_create_facts: String::new(),
+            memory_create_source_event_key: String::new(),
+            memory_create_workspace_id: String::new(),
+            memory_create_channel_id: String::new(),
+            memory_create_actor_id: String::new(),
+            memory_create_memory_type: String::new(),
+            memory_create_importance: String::new(),
+            memory_create_relation_target_id: String::new(),
+            memory_create_relation_type: String::new(),
+            memory_create_relation_weight: String::new(),
         }
     }
 }
@@ -653,6 +687,32 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     let memory_type_input_value = memory_search_memory_type.clone();
     let memory_result_count_panel_attr = memory_result_count_value.clone();
     let memory_result_count_list_attr = memory_result_count_value.clone();
+    let memory_create_form_action = context.chat.memory_create_form_action.clone();
+    let memory_create_form_method = context.chat.memory_create_form_method.clone();
+    let memory_create_status = context.chat.memory_create_status.clone();
+    let memory_create_created_entry_id = context.chat.memory_create_created_entry_id.clone();
+    let memory_create_status_panel_attr = memory_create_status.clone();
+    let memory_create_created_entry_id_panel_attr = memory_create_created_entry_id.clone();
+    let memory_create_status_marker_attr = memory_create_status.clone();
+    let memory_create_created_entry_id_marker_attr = memory_create_created_entry_id.clone();
+    let memory_create_entry_id = context.chat.memory_create_entry_id.clone();
+    let memory_create_summary = context.chat.memory_create_summary.clone();
+    let memory_create_tags = context.chat.memory_create_tags.clone();
+    let memory_create_facts = context.chat.memory_create_facts.clone();
+    let memory_create_source_event_key = context.chat.memory_create_source_event_key.clone();
+    let memory_create_workspace_id = context.chat.memory_create_workspace_id.clone();
+    let memory_create_channel_id = context.chat.memory_create_channel_id.clone();
+    let memory_create_actor_id = context.chat.memory_create_actor_id.clone();
+    let memory_create_memory_type = context.chat.memory_create_memory_type.clone();
+    let memory_create_importance = context.chat.memory_create_importance.clone();
+    let memory_create_relation_target_id = context.chat.memory_create_relation_target_id.clone();
+    let memory_create_relation_type = context.chat.memory_create_relation_type.clone();
+    let memory_create_relation_weight = context.chat.memory_create_relation_weight.clone();
+    let memory_create_status_message = match memory_create_status.as_str() {
+        "created" => "Memory entry created.".to_string(),
+        "updated" => "Memory entry updated.".to_string(),
+        _ => "Create a memory entry.".to_string(),
+    };
     let memory_results_view = if memory_search_rows.is_empty() {
         leptos::either::Either::Left(view! {
             <li id="tau-ops-memory-empty-state" data-empty-state="true">
@@ -1438,6 +1498,8 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             data-channel-id=memory_channel_id_panel_attr
                             data-actor-id=memory_actor_id_panel_attr
                             data-memory-type=memory_type_panel_attr
+                            data-create-status=memory_create_status_panel_attr
+                            data-created-memory-id=memory_create_created_entry_id_panel_attr
                         >
                             <h2>Memory Explorer</h2>
                             <form
@@ -1495,6 +1557,128 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 />
                                 <button id="tau-ops-memory-search-button" type="submit">
                                     Search
+                                </button>
+                            </form>
+                            <p
+                                id="tau-ops-memory-create-status"
+                                data-create-status=memory_create_status_marker_attr
+                                data-created-memory-id=memory_create_created_entry_id_marker_attr
+                            >
+                                {memory_create_status_message}
+                            </p>
+                            <form
+                                id="tau-ops-memory-create-form"
+                                action=memory_create_form_action
+                                method=memory_create_form_method
+                            >
+                                <input id="tau-ops-memory-create-theme" type="hidden" name="theme" value=theme_attr />
+                                <input
+                                    id="tau-ops-memory-create-sidebar"
+                                    type="hidden"
+                                    name="sidebar"
+                                    value=sidebar_state_attr
+                                />
+                                <input
+                                    id="tau-ops-memory-create-session"
+                                    type="hidden"
+                                    name="session"
+                                    value=chat_session_key.clone()
+                                />
+                                <label for="tau-ops-memory-create-entry-id">Entry ID</label>
+                                <input
+                                    id="tau-ops-memory-create-entry-id"
+                                    type="text"
+                                    name="entry_id"
+                                    value=memory_create_entry_id
+                                />
+                                <label for="tau-ops-memory-create-summary">Summary</label>
+                                <input
+                                    id="tau-ops-memory-create-summary"
+                                    type="text"
+                                    name="summary"
+                                    value=memory_create_summary
+                                />
+                                <label for="tau-ops-memory-create-tags">Tags</label>
+                                <input
+                                    id="tau-ops-memory-create-tags"
+                                    type="text"
+                                    name="tags"
+                                    value=memory_create_tags
+                                />
+                                <label for="tau-ops-memory-create-facts">Facts</label>
+                                <input
+                                    id="tau-ops-memory-create-facts"
+                                    type="text"
+                                    name="facts"
+                                    value=memory_create_facts
+                                />
+                                <label for="tau-ops-memory-create-source-event-key">Source Event Key</label>
+                                <input
+                                    id="tau-ops-memory-create-source-event-key"
+                                    type="text"
+                                    name="source_event_key"
+                                    value=memory_create_source_event_key
+                                />
+                                <label for="tau-ops-memory-create-workspace-id">Workspace</label>
+                                <input
+                                    id="tau-ops-memory-create-workspace-id"
+                                    type="text"
+                                    name="workspace_id"
+                                    value=memory_create_workspace_id
+                                />
+                                <label for="tau-ops-memory-create-channel-id">Channel</label>
+                                <input
+                                    id="tau-ops-memory-create-channel-id"
+                                    type="text"
+                                    name="channel_id"
+                                    value=memory_create_channel_id
+                                />
+                                <label for="tau-ops-memory-create-actor-id">Actor</label>
+                                <input
+                                    id="tau-ops-memory-create-actor-id"
+                                    type="text"
+                                    name="actor_id"
+                                    value=memory_create_actor_id
+                                />
+                                <label for="tau-ops-memory-create-memory-type">Memory Type</label>
+                                <input
+                                    id="tau-ops-memory-create-memory-type"
+                                    type="text"
+                                    name="memory_type"
+                                    value=memory_create_memory_type
+                                />
+                                <label for="tau-ops-memory-create-importance">Importance</label>
+                                <input
+                                    id="tau-ops-memory-create-importance"
+                                    type="number"
+                                    step="0.01"
+                                    name="importance"
+                                    value=memory_create_importance
+                                />
+                                <label for="tau-ops-memory-create-relation-target-id">Relation Target</label>
+                                <input
+                                    id="tau-ops-memory-create-relation-target-id"
+                                    type="text"
+                                    name="relation_target_id"
+                                    value=memory_create_relation_target_id
+                                />
+                                <label for="tau-ops-memory-create-relation-type">Relation Type</label>
+                                <input
+                                    id="tau-ops-memory-create-relation-type"
+                                    type="text"
+                                    name="relation_type"
+                                    value=memory_create_relation_type
+                                />
+                                <label for="tau-ops-memory-create-relation-weight">Relation Weight</label>
+                                <input
+                                    id="tau-ops-memory-create-relation-weight"
+                                    type="number"
+                                    step="0.01"
+                                    name="relation_weight"
+                                    value=memory_create_relation_weight
+                                />
+                                <button id="tau-ops-memory-create-button" type="submit">
+                                    Create Entry
                                 </button>
                             </form>
                             <ul id="tau-ops-memory-results" data-result-count=memory_result_count_list_attr>
@@ -2603,6 +2787,107 @@ mod tests {
         assert!(html.contains(
             "id=\"tau-ops-memory-type-filter\" type=\"text\" name=\"memory_type\" value=\"\""
         ));
+    }
+
+    #[test]
+    fn functional_spec_2917_c01_c03_memory_route_renders_create_form_and_status_markers() {
+        let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+            auth_mode: TauOpsDashboardAuthMode::Token,
+            active_route: TauOpsDashboardRoute::Memory,
+            theme: TauOpsDashboardTheme::Light,
+            sidebar_state: TauOpsDashboardSidebarState::Collapsed,
+            command_center: TauOpsDashboardCommandCenterSnapshot::default(),
+            chat: TauOpsDashboardChatSnapshot::default(),
+        });
+
+        assert!(html.contains(
+            "id=\"tau-ops-memory-panel\" data-route=\"/ops/memory\" aria-hidden=\"false\" data-panel-visible=\"true\" data-query=\"\" data-result-count=\"0\" data-workspace-id=\"\" data-channel-id=\"\" data-actor-id=\"\" data-memory-type=\"\" data-create-status=\"idle\" data-created-memory-id=\"\""
+        ));
+        assert!(
+            html.contains("id=\"tau-ops-memory-create-status\" data-create-status=\"idle\" data-created-memory-id=\"\"")
+        );
+        assert!(html
+            .contains("id=\"tau-ops-memory-create-form\" action=\"/ops/memory\" method=\"post\""));
+        assert!(html.contains(
+            "id=\"tau-ops-memory-create-entry-id\" type=\"text\" name=\"entry_id\" value=\"\""
+        ));
+        assert!(html.contains(
+            "id=\"tau-ops-memory-create-summary\" type=\"text\" name=\"summary\" value=\"\""
+        ));
+        assert!(html
+            .contains("id=\"tau-ops-memory-create-tags\" type=\"text\" name=\"tags\" value=\"\""));
+        assert!(html.contains(
+            "id=\"tau-ops-memory-create-facts\" type=\"text\" name=\"facts\" value=\"\""
+        ));
+        assert!(html.contains(
+            "id=\"tau-ops-memory-create-source-event-key\" type=\"text\" name=\"source_event_key\" value=\"\""
+        ));
+        assert!(html.contains(
+            "id=\"tau-ops-memory-create-workspace-id\" type=\"text\" name=\"workspace_id\" value=\"\""
+        ));
+        assert!(html.contains(
+            "id=\"tau-ops-memory-create-channel-id\" type=\"text\" name=\"channel_id\" value=\"\""
+        ));
+        assert!(html.contains(
+            "id=\"tau-ops-memory-create-actor-id\" type=\"text\" name=\"actor_id\" value=\"\""
+        ));
+        assert!(html.contains(
+            "id=\"tau-ops-memory-create-memory-type\" type=\"text\" name=\"memory_type\" value=\"\""
+        ));
+        assert!(html.contains(
+            "id=\"tau-ops-memory-create-importance\" type=\"number\" step=\"0.01\" name=\"importance\" value=\"\""
+        ));
+        assert!(html.contains(
+            "id=\"tau-ops-memory-create-relation-target-id\" type=\"text\" name=\"relation_target_id\" value=\"\""
+        ));
+        assert!(html.contains(
+            "id=\"tau-ops-memory-create-relation-type\" type=\"text\" name=\"relation_type\" value=\"\""
+        ));
+        assert!(html.contains(
+            "id=\"tau-ops-memory-create-relation-weight\" type=\"number\" step=\"0.01\" name=\"relation_weight\" value=\"\""
+        ));
+    }
+
+    #[test]
+    fn regression_spec_2917_memory_create_status_created_renders_created_message_marker() {
+        let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+            auth_mode: TauOpsDashboardAuthMode::Token,
+            active_route: TauOpsDashboardRoute::Memory,
+            theme: TauOpsDashboardTheme::Light,
+            sidebar_state: TauOpsDashboardSidebarState::Collapsed,
+            command_center: TauOpsDashboardCommandCenterSnapshot::default(),
+            chat: TauOpsDashboardChatSnapshot {
+                memory_create_status: "created".to_string(),
+                memory_create_created_entry_id: "mem-create-1".to_string(),
+                ..TauOpsDashboardChatSnapshot::default()
+            },
+        });
+
+        assert!(html.contains(
+            "id=\"tau-ops-memory-create-status\" data-create-status=\"created\" data-created-memory-id=\"mem-create-1\""
+        ));
+        assert!(html.contains("Memory entry created."));
+    }
+
+    #[test]
+    fn regression_spec_2917_memory_create_status_updated_renders_updated_message_marker() {
+        let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+            auth_mode: TauOpsDashboardAuthMode::Token,
+            active_route: TauOpsDashboardRoute::Memory,
+            theme: TauOpsDashboardTheme::Light,
+            sidebar_state: TauOpsDashboardSidebarState::Collapsed,
+            command_center: TauOpsDashboardCommandCenterSnapshot::default(),
+            chat: TauOpsDashboardChatSnapshot {
+                memory_create_status: "updated".to_string(),
+                memory_create_created_entry_id: "mem-create-1".to_string(),
+                ..TauOpsDashboardChatSnapshot::default()
+            },
+        });
+
+        assert!(html.contains(
+            "id=\"tau-ops-memory-create-status\" data-create-status=\"updated\" data-created-memory-id=\"mem-create-1\""
+        ));
+        assert!(html.contains("Memory entry updated."));
     }
 
     #[test]
