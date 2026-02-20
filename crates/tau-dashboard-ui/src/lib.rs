@@ -223,6 +223,10 @@ pub struct TauOpsDashboardChatMessageRow {
 pub struct TauOpsDashboardChatSessionOptionRow {
     pub session_key: String,
     pub selected: bool,
+    pub entry_count: usize,
+    pub usage_total_tokens: u64,
+    pub validation_is_valid: bool,
+    pub updated_unix_ms: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -284,6 +288,10 @@ impl Default for TauOpsDashboardChatSnapshot {
             session_options: vec![TauOpsDashboardChatSessionOptionRow {
                 session_key: "default".to_string(),
                 selected: true,
+                entry_count: 0,
+                usage_total_tokens: 0,
+                validation_is_valid: true,
+                updated_unix_ms: 0,
             }],
             message_rows: vec![],
             session_detail_visible: false,
@@ -524,6 +532,10 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
         chat_session_options.push(TauOpsDashboardChatSessionOptionRow {
             session_key: chat_session_key.clone(),
             selected: true,
+            entry_count: 0,
+            usage_total_tokens: 0,
+            validation_is_valid: true,
+            updated_unix_ms: 0,
         });
     }
     let sessions_rows_view = if sessions_row_options.is_empty() {
@@ -544,6 +556,14 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     } else {
                         "false"
                     };
+                    let entry_count_attr = session_option.entry_count.to_string();
+                    let total_tokens_attr = session_option.usage_total_tokens.to_string();
+                    let is_valid_attr = if session_option.validation_is_valid {
+                        "true"
+                    } else {
+                        "false"
+                    };
+                    let updated_unix_ms_attr = session_option.updated_unix_ms.to_string();
                     let open_chat_href = format!(
                         "/ops/chat?theme={theme_attr}&sidebar={sidebar_state_attr}&session={}",
                         session_option.session_key
@@ -553,6 +573,10 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             id=row_id
                             data-session-key=session_option.session_key.clone()
                             data-selected=selected_attr
+                            data-entry-count=entry_count_attr
+                            data-total-tokens=total_tokens_attr
+                            data-is-valid=is_valid_attr
+                            data-updated-unix-ms=updated_unix_ms_attr
                         >
                             <a
                                 data-open-chat-session=session_option.session_key.clone()
@@ -2214,6 +2238,10 @@ mod tests {
                 session_options: vec![TauOpsDashboardChatSessionOptionRow {
                     session_key: "session-alpha".to_string(),
                     selected: false,
+                    entry_count: 0,
+                    usage_total_tokens: 0,
+                    validation_is_valid: true,
+                    updated_unix_ms: 0,
                 }],
                 message_rows: vec![TauOpsDashboardChatMessageRow {
                     role: "user".to_string(),
@@ -2251,10 +2279,18 @@ mod tests {
                     TauOpsDashboardChatSessionOptionRow {
                         session_key: "session-alpha".to_string(),
                         selected: false,
+                        entry_count: 0,
+                        usage_total_tokens: 0,
+                        validation_is_valid: true,
+                        updated_unix_ms: 0,
                     },
                     TauOpsDashboardChatSessionOptionRow {
                         session_key: "session-beta".to_string(),
                         selected: true,
+                        entry_count: 0,
+                        usage_total_tokens: 0,
+                        validation_is_valid: true,
+                        updated_unix_ms: 0,
                     },
                 ],
                 message_rows: vec![],
@@ -2308,6 +2344,49 @@ mod tests {
     }
 
     #[test]
+    fn functional_spec_2893_c01_sessions_route_renders_row_metadata_markers() {
+        let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+            auth_mode: TauOpsDashboardAuthMode::Token,
+            active_route: TauOpsDashboardRoute::Sessions,
+            theme: TauOpsDashboardTheme::Light,
+            sidebar_state: TauOpsDashboardSidebarState::Collapsed,
+            command_center: TauOpsDashboardCommandCenterSnapshot::default(),
+            chat: TauOpsDashboardChatSnapshot {
+                active_session_key: "session-beta".to_string(),
+                send_form_action: "/ops/chat/send".to_string(),
+                send_form_method: "post".to_string(),
+                session_options: vec![
+                    TauOpsDashboardChatSessionOptionRow {
+                        session_key: "session-alpha".to_string(),
+                        selected: false,
+                        entry_count: 0,
+                        usage_total_tokens: 0,
+                        validation_is_valid: true,
+                        updated_unix_ms: 0,
+                    },
+                    TauOpsDashboardChatSessionOptionRow {
+                        session_key: "session-beta".to_string(),
+                        selected: true,
+                        entry_count: 0,
+                        usage_total_tokens: 0,
+                        validation_is_valid: true,
+                        updated_unix_ms: 0,
+                    },
+                ],
+                message_rows: vec![],
+                ..TauOpsDashboardChatSnapshot::default()
+            },
+        });
+
+        assert!(html.contains(
+            "id=\"tau-ops-sessions-row-0\" data-session-key=\"session-alpha\" data-selected=\"false\" data-entry-count=\"0\" data-total-tokens=\"0\" data-is-valid=\"true\" data-updated-unix-ms=\"0\""
+        ));
+        assert!(html.contains(
+            "id=\"tau-ops-sessions-row-1\" data-session-key=\"session-beta\" data-selected=\"true\" data-entry-count=\"0\" data-total-tokens=\"0\" data-is-valid=\"true\" data-updated-unix-ms=\"0\""
+        ));
+    }
+
+    #[test]
     fn functional_spec_2842_c01_c03_c05_sessions_route_renders_detail_panel_and_empty_timeline_contracts(
     ) {
         let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
@@ -2323,6 +2402,10 @@ mod tests {
                 session_options: vec![TauOpsDashboardChatSessionOptionRow {
                     session_key: "session-empty".to_string(),
                     selected: true,
+                    entry_count: 0,
+                    usage_total_tokens: 0,
+                    validation_is_valid: true,
+                    updated_unix_ms: 0,
                 }],
                 message_rows: vec![],
                 session_detail_visible: true,
@@ -2362,6 +2445,10 @@ mod tests {
                 session_options: vec![TauOpsDashboardChatSessionOptionRow {
                     session_key: "session-alpha".to_string(),
                     selected: true,
+                    entry_count: 0,
+                    usage_total_tokens: 0,
+                    validation_is_valid: true,
+                    updated_unix_ms: 0,
                 }],
                 message_rows: vec![
                     TauOpsDashboardChatMessageRow {

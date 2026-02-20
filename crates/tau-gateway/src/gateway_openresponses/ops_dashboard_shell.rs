@@ -1,5 +1,6 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
+use std::time::UNIX_EPOCH;
 
 use axum::extract::{Form, Path as AxumPath, State};
 use axum::response::{Html, IntoResponse, Redirect, Response};
@@ -251,9 +252,36 @@ fn collect_ops_chat_session_option_rows(
 
     session_keys
         .into_iter()
-        .map(|session_key| TauOpsDashboardChatSessionOptionRow {
-            selected: session_key == active_session_key,
-            session_key,
+        .map(|session_key| {
+            let session_path = gateway_session_path(&state.config.state_dir, session_key.as_str());
+            let updated_unix_ms = std::fs::metadata(&session_path)
+                .and_then(|metadata| metadata.modified())
+                .ok()
+                .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
+                .map(|duration| duration.as_millis().min(u128::from(u64::MAX)) as u64)
+                .unwrap_or(0);
+            let (entry_count, usage_total_tokens, validation_is_valid) =
+                match SessionStore::load(&session_path) {
+                    Ok(store) => {
+                        let validation = store.validation_report();
+                        let usage = store.usage_summary();
+                        (
+                            validation.entries,
+                            usage.total_tokens,
+                            validation.is_valid(),
+                        )
+                    }
+                    Err(_) => (0, 0, false),
+                };
+
+            TauOpsDashboardChatSessionOptionRow {
+                selected: session_key == active_session_key,
+                session_key,
+                entry_count,
+                usage_total_tokens,
+                validation_is_valid,
+                updated_unix_ms,
+            }
         })
         .collect()
 }
