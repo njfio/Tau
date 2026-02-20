@@ -2003,6 +2003,104 @@ async fn integration_spec_2838_c02_c03_ops_sessions_shell_renders_discovered_row
 }
 
 #[tokio::test]
+async fn functional_spec_2893_c01_ops_sessions_shell_exposes_row_metadata_markers() {
+    let temp = tempdir().expect("tempdir");
+    let state = test_state(temp.path(), 4_096, "secret");
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+    let client = Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .expect("build client");
+
+    let send_response = client
+        .post(format!("http://{addr}/ops/chat/send"))
+        .form(&[
+            ("session_key", "session-alpha"),
+            ("message", "alpha sessions metadata row"),
+            ("theme", "light"),
+            ("sidebar", "collapsed"),
+        ])
+        .send()
+        .await
+        .expect("ops chat send request");
+    assert_eq!(send_response.status(), StatusCode::SEE_OTHER);
+
+    let response = client
+        .get(format!(
+            "http://{addr}/ops/sessions?theme=light&sidebar=collapsed&session=session-alpha"
+        ))
+        .send()
+        .await
+        .expect("ops sessions render request");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.text().await.expect("read ops sessions body");
+
+    assert!(body.contains(
+        "id=\"tau-ops-sessions-row-0\" data-session-key=\"session-alpha\" data-selected=\"true\" data-entry-count=\"2\" data-total-tokens=\"0\" data-is-valid=\"true\" data-updated-unix-ms=\""
+    ));
+    assert!(body.contains(
+        "href=\"/ops/chat?theme=light&amp;sidebar=collapsed&amp;session=session-alpha\""
+    ));
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn integration_spec_2893_c02_c03_c04_ops_sessions_shell_metadata_matches_session_state() {
+    let temp = tempdir().expect("tempdir");
+    let state = test_state(temp.path(), 4_096, "secret");
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+    let client = Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .expect("build client");
+
+    for (session_key, message) in [
+        ("session-alpha", "alpha sessions metadata row"),
+        ("session-beta", "beta sessions metadata row one"),
+        ("session-beta", "beta sessions metadata row two"),
+    ] {
+        let send_response = client
+            .post(format!("http://{addr}/ops/chat/send"))
+            .form(&[
+                ("session_key", session_key),
+                ("message", message),
+                ("theme", "light"),
+                ("sidebar", "collapsed"),
+            ])
+            .send()
+            .await
+            .expect("ops chat send request");
+        assert_eq!(send_response.status(), StatusCode::SEE_OTHER);
+    }
+
+    let response = client
+        .get(format!(
+            "http://{addr}/ops/sessions?theme=light&sidebar=collapsed&session=session-beta"
+        ))
+        .send()
+        .await
+        .expect("ops sessions render request");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.text().await.expect("read ops sessions body");
+
+    assert!(body.contains("id=\"tau-ops-sessions-list\" data-session-count=\"2\""));
+    assert!(body.contains(
+        "id=\"tau-ops-sessions-row-0\" data-session-key=\"session-alpha\" data-selected=\"false\" data-entry-count=\"2\" data-total-tokens=\"0\" data-is-valid=\"true\" data-updated-unix-ms=\""
+    ));
+    assert!(body.contains(
+        "id=\"tau-ops-sessions-row-1\" data-session-key=\"session-beta\" data-selected=\"true\" data-entry-count=\"3\" data-total-tokens=\"0\" data-is-valid=\"true\" data-updated-unix-ms=\""
+    ));
+    assert!(body.contains(
+        "href=\"/ops/chat?theme=light&amp;sidebar=collapsed&amp;session=session-alpha\""
+    ));
+    assert!(body
+        .contains("href=\"/ops/chat?theme=light&amp;sidebar=collapsed&amp;session=session-beta\""));
+
+    handle.abort();
+}
+
+#[tokio::test]
 async fn functional_spec_2842_c01_c03_c05_ops_session_detail_shell_exposes_panel_validation_and_empty_timeline_markers(
 ) {
     let temp = tempdir().expect("tempdir");
