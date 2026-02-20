@@ -339,7 +339,7 @@ Spacebot is a Rust-based AI agent for teams, communities, and multi-user environ
 - [ ] Add `serenity` as workspace dependency
 - [ ] Create `tau-discord-runtime` crate or add to `tau-multi-channel`
 - [ ] Implement: message send/receive, file attachments, thread creation, emoji reactions, typing indicators
-- [ ] Message streaming via placeholder message + progressive edits
+- [x] Message streaming via placeholder message + progressive edits (`#2762`)
 - [x] Message history backfill (up to 100 messages before trigger) (`#2758`)
 - [x] Mention resolution (`<@ID>` / `<@!ID>` → `@DisplayName`) (`#2662`)
 - [x] Auto-split messages at 2000 char limit (`#2662`)
