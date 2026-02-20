@@ -1,6 +1,6 @@
 //! Dashboard backend status and control helpers for gateway API surfaces.
 use super::*;
-use tau_dashboard_ui::TauOpsDashboardCommandCenterSnapshot;
+use tau_dashboard_ui::{TauOpsDashboardAlertFeedRow, TauOpsDashboardCommandCenterSnapshot};
 
 const DASHBOARD_SCHEMA_VERSION: u32 = 1;
 const DASHBOARD_STATE_FILE: &str = "state.json";
@@ -590,6 +590,15 @@ pub(super) fn collect_tau_ops_dashboard_command_center_snapshot(
         primary_alert_message: primary_alert
             .map(|alert| alert.message.clone())
             .unwrap_or_else(|| "No alerts loaded".to_string()),
+        alert_feed_rows: snapshot
+            .alerts
+            .iter()
+            .map(|alert| TauOpsDashboardAlertFeedRow {
+                code: alert.code.clone(),
+                severity: alert.severity.clone(),
+                message: alert.message.clone(),
+            })
+            .collect(),
     }
 }
 
@@ -1192,5 +1201,14 @@ invalid-json-line
             "dashboard_cycle_log_invalid_lines"
         );
         assert_eq!(snapshot.primary_alert_severity, "warning");
+        assert_eq!(snapshot.alert_feed_rows.len(), 2);
+        assert_eq!(
+            snapshot.alert_feed_rows[0].code,
+            "dashboard_cycle_log_invalid_lines"
+        );
+        assert_eq!(snapshot.alert_feed_rows[0].severity, "warning");
+        assert!(snapshot.alert_feed_rows[0]
+            .message
+            .contains("runtime events log contains 1 malformed line(s)"));
     }
 }
