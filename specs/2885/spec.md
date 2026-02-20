@@ -1,6 +1,6 @@
 # Spec: Issue #2885 - session branch creation and lineage contracts
 
-Status: Reviewed
+Status: Implemented
 
 ## Problem Statement
 Tau Ops sessions currently expose timeline/detail/graph contracts, but do not provide deterministic branch-action contracts to create a new session from a selected timeline message. This leaves the PRD checklist item “Branch creates a new session from selected message” unverifiable.
