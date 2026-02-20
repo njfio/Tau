@@ -226,6 +226,14 @@ pub struct TauOpsDashboardChatSessionOptionRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Public struct `TauOpsDashboardSessionTimelineRow` in `tau-dashboard-ui`.
+pub struct TauOpsDashboardSessionTimelineRow {
+    pub entry_id: u64,
+    pub role: String,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 /// Public struct `TauOpsDashboardChatSnapshot` in `tau-dashboard-ui`.
 pub struct TauOpsDashboardChatSnapshot {
     pub active_session_key: String,
@@ -233,6 +241,18 @@ pub struct TauOpsDashboardChatSnapshot {
     pub send_form_method: String,
     pub session_options: Vec<TauOpsDashboardChatSessionOptionRow>,
     pub message_rows: Vec<TauOpsDashboardChatMessageRow>,
+    pub session_detail_visible: bool,
+    pub session_detail_route: String,
+    pub session_detail_validation_entries: usize,
+    pub session_detail_validation_duplicates: usize,
+    pub session_detail_validation_invalid_parent: usize,
+    pub session_detail_validation_cycles: usize,
+    pub session_detail_validation_is_valid: bool,
+    pub session_detail_usage_input_tokens: u64,
+    pub session_detail_usage_output_tokens: u64,
+    pub session_detail_usage_total_tokens: u64,
+    pub session_detail_usage_estimated_cost_usd: String,
+    pub session_detail_timeline_rows: Vec<TauOpsDashboardSessionTimelineRow>,
 }
 
 impl Default for TauOpsDashboardChatSnapshot {
@@ -246,6 +266,18 @@ impl Default for TauOpsDashboardChatSnapshot {
                 selected: true,
             }],
             message_rows: vec![],
+            session_detail_visible: false,
+            session_detail_route: "/ops/sessions/default".to_string(),
+            session_detail_validation_entries: 0,
+            session_detail_validation_duplicates: 0,
+            session_detail_validation_invalid_parent: 0,
+            session_detail_validation_cycles: 0,
+            session_detail_validation_is_valid: true,
+            session_detail_usage_input_tokens: 0,
+            session_detail_usage_output_tokens: 0,
+            session_detail_usage_total_tokens: 0,
+            session_detail_usage_estimated_cost_usd: "0.000000".to_string(),
+            session_detail_timeline_rows: vec![],
         }
     }
 }
@@ -460,6 +492,69 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             >
                                 {session_option.session_key.clone()}
                             </a>
+                        </li>
+                    }
+                })
+                .collect_view(),
+        )
+    };
+    let session_detail_panel_hidden =
+        if matches!(context.active_route, TauOpsDashboardRoute::Sessions)
+            && context.chat.session_detail_visible
+        {
+            "false"
+        } else {
+            "true"
+        };
+    let session_detail_route = context.chat.session_detail_route.clone();
+    let session_detail_validation_entries =
+        context.chat.session_detail_validation_entries.to_string();
+    let session_detail_validation_duplicates = context
+        .chat
+        .session_detail_validation_duplicates
+        .to_string();
+    let session_detail_validation_invalid_parent = context
+        .chat
+        .session_detail_validation_invalid_parent
+        .to_string();
+    let session_detail_validation_cycles =
+        context.chat.session_detail_validation_cycles.to_string();
+    let session_detail_validation_is_valid = if context.chat.session_detail_validation_is_valid {
+        "true"
+    } else {
+        "false"
+    };
+    let session_detail_usage_input_tokens =
+        context.chat.session_detail_usage_input_tokens.to_string();
+    let session_detail_usage_output_tokens =
+        context.chat.session_detail_usage_output_tokens.to_string();
+    let session_detail_usage_total_tokens =
+        context.chat.session_detail_usage_total_tokens.to_string();
+    let session_detail_usage_estimated_cost_usd =
+        context.chat.session_detail_usage_estimated_cost_usd.clone();
+    let session_detail_timeline_rows = context.chat.session_detail_timeline_rows.clone();
+    let session_detail_timeline_count = session_detail_timeline_rows.len().to_string();
+    let session_detail_timeline_view = if session_detail_timeline_rows.is_empty() {
+        leptos::either::Either::Left(view! {
+            <li id="tau-ops-session-message-empty-state" data-empty-state="true">
+                No session timeline entries yet.
+            </li>
+        })
+    } else {
+        leptos::either::Either::Right(
+            session_detail_timeline_rows
+                .iter()
+                .enumerate()
+                .map(|(index, row)| {
+                    let row_id = format!("tau-ops-session-message-row-{index}");
+                    let entry_id = row.entry_id.to_string();
+                    view! {
+                        <li
+                            id=row_id
+                            data-entry-id=entry_id
+                            data-message-role=row.role.clone()
+                        >
+                            {row.content.clone()}
                         </li>
                     }
                 })
@@ -775,6 +870,39 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 {sessions_rows_view}
                             </ul>
                         </section>
+                        <section
+                            id="tau-ops-session-detail-panel"
+                            data-route=session_detail_route
+                            data-session-key=chat_session_key.clone()
+                            aria-hidden=session_detail_panel_hidden
+                        >
+                            <h2>Session Detail</h2>
+                            <article
+                                id="tau-ops-session-validation-report"
+                                data-entries=session_detail_validation_entries
+                                data-duplicates=session_detail_validation_duplicates
+                                data-invalid-parent=session_detail_validation_invalid_parent
+                                data-cycles=session_detail_validation_cycles
+                                data-is-valid=session_detail_validation_is_valid
+                            >
+                                Validation Summary
+                            </article>
+                            <article
+                                id="tau-ops-session-usage-summary"
+                                data-input-tokens=session_detail_usage_input_tokens
+                                data-output-tokens=session_detail_usage_output_tokens
+                                data-total-tokens=session_detail_usage_total_tokens
+                                data-estimated-cost-usd=session_detail_usage_estimated_cost_usd
+                            >
+                                Usage Summary
+                            </article>
+                            <ul
+                                id="tau-ops-session-message-timeline"
+                                data-entry-count=session_detail_timeline_count
+                            >
+                                {session_detail_timeline_view}
+                            </ul>
+                        </section>
                         <section id="tau-ops-command-center" aria-live="polite">
                             <section id="tau-ops-kpi-grid" data-kpi-card-count="6">
                                 <article
@@ -1025,8 +1153,8 @@ mod tests {
         TauOpsDashboardAlertFeedRow, TauOpsDashboardAuthMode, TauOpsDashboardChatMessageRow,
         TauOpsDashboardChatSessionOptionRow, TauOpsDashboardChatSnapshot,
         TauOpsDashboardCommandCenterSnapshot, TauOpsDashboardConnectorHealthRow,
-        TauOpsDashboardRoute, TauOpsDashboardShellContext, TauOpsDashboardSidebarState,
-        TauOpsDashboardTheme,
+        TauOpsDashboardRoute, TauOpsDashboardSessionTimelineRow, TauOpsDashboardShellContext,
+        TauOpsDashboardSidebarState, TauOpsDashboardTheme,
     };
 
     #[test]
@@ -1285,6 +1413,7 @@ mod tests {
                         content: "second message".to_string(),
                     },
                 ],
+                ..TauOpsDashboardChatSnapshot::default()
             },
         });
 
@@ -1345,6 +1474,7 @@ mod tests {
                     role: "user".to_string(),
                     content: "chat from beta".to_string(),
                 }],
+                ..TauOpsDashboardChatSnapshot::default()
             },
         });
 
@@ -1383,6 +1513,7 @@ mod tests {
                     role: "user".to_string(),
                     content: "zeta transcript".to_string(),
                 }],
+                ..TauOpsDashboardChatSnapshot::default()
             },
         });
 
@@ -1421,6 +1552,7 @@ mod tests {
                     },
                 ],
                 message_rows: vec![],
+                ..TauOpsDashboardChatSnapshot::default()
             },
         });
 
@@ -1457,6 +1589,7 @@ mod tests {
                 send_form_method: "post".to_string(),
                 session_options: vec![],
                 message_rows: vec![],
+                ..TauOpsDashboardChatSnapshot::default()
             },
         });
 
@@ -1466,6 +1599,125 @@ mod tests {
         assert!(html.contains("id=\"tau-ops-sessions-list\" data-session-count=\"0\""));
         assert!(html.contains("id=\"tau-ops-sessions-empty-state\" data-empty-state=\"true\""));
         assert!(html.contains("No sessions discovered yet."));
+    }
+
+    #[test]
+    fn functional_spec_2842_c01_c03_c05_sessions_route_renders_detail_panel_and_empty_timeline_contracts(
+    ) {
+        let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+            auth_mode: TauOpsDashboardAuthMode::Token,
+            active_route: TauOpsDashboardRoute::Sessions,
+            theme: TauOpsDashboardTheme::Light,
+            sidebar_state: TauOpsDashboardSidebarState::Collapsed,
+            command_center: TauOpsDashboardCommandCenterSnapshot::default(),
+            chat: TauOpsDashboardChatSnapshot {
+                active_session_key: "session-empty".to_string(),
+                send_form_action: "/ops/chat/send".to_string(),
+                send_form_method: "post".to_string(),
+                session_options: vec![TauOpsDashboardChatSessionOptionRow {
+                    session_key: "session-empty".to_string(),
+                    selected: true,
+                }],
+                message_rows: vec![],
+                session_detail_visible: true,
+                session_detail_route: "/ops/sessions/session-empty".to_string(),
+                ..TauOpsDashboardChatSnapshot::default()
+            },
+        });
+
+        assert!(html.contains(
+            "id=\"tau-ops-session-detail-panel\" data-route=\"/ops/sessions/session-empty\" data-session-key=\"session-empty\" aria-hidden=\"false\""
+        ));
+        assert!(html.contains(
+            "id=\"tau-ops-session-validation-report\" data-entries=\"0\" data-duplicates=\"0\" data-invalid-parent=\"0\" data-cycles=\"0\" data-is-valid=\"true\""
+        ));
+        assert!(html.contains(
+            "id=\"tau-ops-session-usage-summary\" data-input-tokens=\"0\" data-output-tokens=\"0\" data-total-tokens=\"0\" data-estimated-cost-usd=\"0.000000\""
+        ));
+        assert!(html.contains("id=\"tau-ops-session-message-timeline\" data-entry-count=\"0\""));
+        assert!(
+            html.contains("id=\"tau-ops-session-message-empty-state\" data-empty-state=\"true\"")
+        );
+    }
+
+    #[test]
+    fn functional_spec_2842_c02_c04_sessions_route_renders_detail_timeline_rows_and_usage_contracts(
+    ) {
+        let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+            auth_mode: TauOpsDashboardAuthMode::Token,
+            active_route: TauOpsDashboardRoute::Sessions,
+            theme: TauOpsDashboardTheme::Dark,
+            sidebar_state: TauOpsDashboardSidebarState::Expanded,
+            command_center: TauOpsDashboardCommandCenterSnapshot::default(),
+            chat: TauOpsDashboardChatSnapshot {
+                active_session_key: "session-alpha".to_string(),
+                send_form_action: "/ops/chat/send".to_string(),
+                send_form_method: "post".to_string(),
+                session_options: vec![TauOpsDashboardChatSessionOptionRow {
+                    session_key: "session-alpha".to_string(),
+                    selected: true,
+                }],
+                message_rows: vec![
+                    TauOpsDashboardChatMessageRow {
+                        role: "user".to_string(),
+                        content: "first detail message".to_string(),
+                    },
+                    TauOpsDashboardChatMessageRow {
+                        role: "assistant".to_string(),
+                        content: "second detail message".to_string(),
+                    },
+                ],
+                session_detail_visible: true,
+                session_detail_route: "/ops/sessions/session-alpha".to_string(),
+                session_detail_timeline_rows: vec![
+                    TauOpsDashboardSessionTimelineRow {
+                        entry_id: 0,
+                        role: "user".to_string(),
+                        content: "first detail message".to_string(),
+                    },
+                    TauOpsDashboardSessionTimelineRow {
+                        entry_id: 1,
+                        role: "assistant".to_string(),
+                        content: "second detail message".to_string(),
+                    },
+                ],
+                ..TauOpsDashboardChatSnapshot::default()
+            },
+        });
+
+        assert!(html.contains("id=\"tau-ops-session-message-timeline\" data-entry-count=\"2\""));
+        assert!(html.contains(
+            "id=\"tau-ops-session-message-row-0\" data-entry-id=\"0\" data-message-role=\"user\""
+        ));
+        assert!(html.contains(
+            "id=\"tau-ops-session-message-row-1\" data-entry-id=\"1\" data-message-role=\"assistant\""
+        ));
+        assert!(html.contains("first detail message"));
+        assert!(html.contains("second detail message"));
+        assert!(html.contains(
+            "id=\"tau-ops-session-usage-summary\" data-input-tokens=\"0\" data-output-tokens=\"0\" data-total-tokens=\"0\" data-estimated-cost-usd=\"0.000000\""
+        ));
+    }
+
+    #[test]
+    fn regression_spec_2842_session_detail_panel_stays_hidden_on_non_sessions_route() {
+        let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+            auth_mode: TauOpsDashboardAuthMode::Token,
+            active_route: TauOpsDashboardRoute::Chat,
+            theme: TauOpsDashboardTheme::Dark,
+            sidebar_state: TauOpsDashboardSidebarState::Expanded,
+            command_center: TauOpsDashboardCommandCenterSnapshot::default(),
+            chat: TauOpsDashboardChatSnapshot {
+                active_session_key: "session-alpha".to_string(),
+                session_detail_visible: true,
+                session_detail_route: "/ops/sessions/session-alpha".to_string(),
+                ..TauOpsDashboardChatSnapshot::default()
+            },
+        });
+
+        assert!(html.contains(
+            "id=\"tau-ops-session-detail-panel\" data-route=\"/ops/sessions/session-alpha\" data-session-key=\"session-alpha\" aria-hidden=\"true\""
+        ));
     }
 
     #[test]
