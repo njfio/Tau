@@ -1,6 +1,6 @@
 # Spec: Issue #2866 - chat inline tool-result card contracts
 
-Status: Reviewed
+Status: Implemented
 
 ## Problem Statement
 Tau Ops chat transcript includes tool-role messages as plain rows but does not expose explicit inline tool-result card markers. This prevents deterministic contract validation for the PRD requirement that tool use/results render inline in chat output.
