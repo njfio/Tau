@@ -1,12 +1,12 @@
 # Tasks: Issue #2726 - G19 phase-2 API parity and force-layout rendering
 
 ## Ordered Tasks
-1. [ ] T1 (RED): add failing conformance/regression tests for `/api/memories/graph` and force-layout script expectations.
-2. [ ] T2 (GREEN): add `/api/memories/graph` route + shared handler logic with existing graph payload behavior.
-3. [ ] T3 (GREEN): refactor webchat memory graph rendering from ring layout to deterministic force-layout simulation.
-4. [ ] T4 (REGRESSION): verify existing `/gateway/memory-graph/{session_key}` and auth behavior remain stable.
-5. [ ] T5 (VERIFY): run scoped fmt/clippy/targeted gateway tests for C-06.
-6. [ ] T6 (DOC): update `tasks/spacebot-comparison.md` G19 checklist lines completed by this slice.
+1. [x] T1 (RED): add failing conformance/regression tests for `/api/memories/graph` and force-layout script expectations.
+2. [x] T2 (GREEN): add `/api/memories/graph` route + shared handler logic with existing graph payload behavior.
+3. [x] T3 (GREEN): refactor webchat memory graph rendering from ring layout to deterministic force-layout simulation.
+4. [x] T4 (REGRESSION): verify existing `/gateway/memory-graph/{session_key}` and auth behavior remain stable.
+5. [x] T5 (VERIFY): run scoped fmt/clippy/targeted gateway tests for C-06.
+6. [x] T6 (DOC): update `tasks/spacebot-comparison.md` G19 checklist lines completed by this slice.
 
 ## Tier Mapping
 - Unit: C-04
