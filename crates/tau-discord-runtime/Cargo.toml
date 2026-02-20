@@ -1,0 +1,11 @@
+[package]
+name = "tau-discord-runtime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+serenity.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
