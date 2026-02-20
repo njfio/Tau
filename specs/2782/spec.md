@@ -1,6 +1,6 @@
 # Spec: Issue #2782 - PRD Phase 1A Leptos crate and /ops shell integration
 
-Status: Reviewed
+Status: Implemented
 
 ## Problem Statement
 The Tau Ops Dashboard PRD requires a Leptos-based dashboard foundation, but the repository currently serves dashboard/webchat shells from static HTML templates. A first migration slice is needed to establish a Leptos SSR crate and wire an `/ops` route in gateway without destabilizing existing runtime APIs.

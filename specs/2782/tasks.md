@@ -1,12 +1,12 @@
 # Tasks: Issue #2782 - PRD Phase 1A Leptos crate and /ops shell integration
 
 ## Ordered Tasks
-1. [ ] T1 (RED): capture failing checks for missing `tau-dashboard-ui` crate / `/ops` route contracts.
-2. [ ] T2 (GREEN): add `tau-dashboard-ui` crate and workspace/dependency wiring.
-3. [ ] T3 (GREEN): implement SSR shell render function with baseline markers and crate tests.
-4. [ ] T4 (GREEN): integrate `/ops` endpoint in gateway and add integration coverage.
-5. [ ] T5 (REGRESSION): run scoped gateway/dashboard shell regression tests.
-6. [ ] T6 (VERIFY): run fmt/clippy/tests and set spec implemented.
+1. [x] T1 (RED): capture failing checks for missing `tau-dashboard-ui` crate / `/ops` route contracts.
+2. [x] T2 (GREEN): add `tau-dashboard-ui` crate and workspace/dependency wiring.
+3. [x] T3 (GREEN): implement SSR shell render function with baseline markers and crate tests.
+4. [x] T4 (GREEN): integrate `/ops` endpoint in gateway and add integration coverage.
+5. [x] T5 (REGRESSION): run scoped gateway/dashboard shell regression tests.
+6. [x] T6 (VERIFY): run fmt/clippy/tests and set spec implemented.
 
 ## Tier Mapping
 - Unit: crate render marker assertions
