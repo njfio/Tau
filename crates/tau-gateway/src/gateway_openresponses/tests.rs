@@ -3712,6 +3712,117 @@ async fn regression_spec_2708_c04_c05_cortex_status_rejects_unauthorized_and_kee
 }
 
 #[tokio::test]
+async fn integration_spec_2717_c04_gateway_new_session_prompt_includes_latest_cortex_bulletin_snapshot(
+) {
+    let temp = tempdir().expect("tempdir");
+    let state = test_state(temp.path(), 10_000, "secret");
+    state
+        .cortex
+        .set_bulletin_for_test("## Cortex Memory Bulletin\n- prioritize release stabilization");
+    let (addr, handle) = spawn_test_server(state.clone())
+        .await
+        .expect("spawn server");
+    let client = Client::new();
+    let session_key = "cortex-2717-new-session";
+
+    let append = client
+        .post(format!(
+            "http://{addr}{}",
+            expand_session_template(GATEWAY_SESSION_APPEND_ENDPOINT, session_key)
+        ))
+        .bearer_auth("secret")
+        .json(&json!({
+            "role":"user",
+            "content":"seed bulletin session",
+            "policy_gate":"allow_session_write"
+        }))
+        .send()
+        .await
+        .expect("append response");
+    assert_eq!(append.status(), StatusCode::OK);
+
+    let session_path = gateway_session_path(&state.config.state_dir, session_key);
+    let store = SessionStore::load(&session_path).expect("load session");
+    let lineage = store
+        .lineage_messages(store.head_id())
+        .expect("lineage messages");
+    let system_message = lineage
+        .first()
+        .expect("system message")
+        .text_content()
+        .to_string();
+    assert!(system_message.contains("## Cortex Memory Bulletin"));
+    assert!(system_message.contains("prioritize release stabilization"));
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn regression_spec_2717_c05_gateway_existing_session_does_not_rewrite_initialized_system_prompt(
+) {
+    let temp = tempdir().expect("tempdir");
+    let state = test_state(temp.path(), 10_000, "secret");
+    state
+        .cortex
+        .set_bulletin_for_test("## Cortex Memory Bulletin\n- first bulletin");
+    let (addr, handle) = spawn_test_server(state.clone())
+        .await
+        .expect("spawn server");
+    let client = Client::new();
+    let session_key = "cortex-2717-existing-session";
+
+    let first_append = client
+        .post(format!(
+            "http://{addr}{}",
+            expand_session_template(GATEWAY_SESSION_APPEND_ENDPOINT, session_key)
+        ))
+        .bearer_auth("secret")
+        .json(&json!({
+            "role":"user",
+            "content":"first append",
+            "policy_gate":"allow_session_write"
+        }))
+        .send()
+        .await
+        .expect("first append response");
+    assert_eq!(first_append.status(), StatusCode::OK);
+
+    state
+        .cortex
+        .set_bulletin_for_test("## Cortex Memory Bulletin\n- second bulletin");
+
+    let second_append = client
+        .post(format!(
+            "http://{addr}{}",
+            expand_session_template(GATEWAY_SESSION_APPEND_ENDPOINT, session_key)
+        ))
+        .bearer_auth("secret")
+        .json(&json!({
+            "role":"user",
+            "content":"second append",
+            "policy_gate":"allow_session_write"
+        }))
+        .send()
+        .await
+        .expect("second append response");
+    assert_eq!(second_append.status(), StatusCode::OK);
+
+    let session_path = gateway_session_path(&state.config.state_dir, session_key);
+    let store = SessionStore::load(&session_path).expect("load session");
+    let entries = store.entries();
+    let system_messages = entries
+        .iter()
+        .filter(|entry| entry.message.role == MessageRole::System)
+        .map(|entry| entry.message.text_content())
+        .collect::<Vec<_>>();
+    assert_eq!(system_messages.len(), 1);
+    assert!(system_messages[0].contains("first bulletin"));
+    assert!(!system_messages[0].contains("second bulletin"));
+
+    handle.abort();
+}
+
+#[tokio::test]
 async fn regression_gateway_memory_graph_endpoint_rejects_unauthorized_requests() {
     let temp = tempdir().expect("tempdir");
     let state = test_state(temp.path(), 10_000, "secret");
