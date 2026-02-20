@@ -1495,6 +1495,112 @@ async fn integration_spec_2866_c04_ops_and_sessions_routes_preserve_hidden_inlin
 }
 
 #[tokio::test]
+async fn functional_spec_2870_c01_c03_ops_chat_shell_exposes_markdown_and_code_markers() {
+    let temp = tempdir().expect("tempdir");
+    let state = test_state(temp.path(), 4_096, "secret");
+    let session_path = gateway_session_path(&state.config.state_dir, "chat-markdown-code");
+    let mut store = SessionStore::load(&session_path).expect("load chat markdown session");
+    let root = store
+        .append_messages(None, &[Message::system("markdown-root")])
+        .expect("append root");
+    store
+        .append_messages(
+            root,
+            &[Message::assistant_text(
+                "## Build report\n- item one\n[docs](https://example.com)\n|k|v|\n|---|---|\n|a|b|\n```rust\nfn main() {}\n```",
+            )],
+        )
+        .expect("append markdown+code");
+
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+    let client = Client::new();
+    let response = client
+        .get(format!(
+            "http://{addr}/ops/chat?theme=dark&sidebar=expanded&session=chat-markdown-code"
+        ))
+        .send()
+        .await
+        .expect("ops chat markdown request");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.text().await.expect("read ops chat body");
+
+    assert!(body.contains(
+        "id=\"tau-ops-chat-panel\" data-route=\"/ops/chat\" aria-hidden=\"false\" data-active-session-key=\"chat-markdown-code\" data-panel-visible=\"true\""
+    ));
+    assert!(body.contains("id=\"tau-ops-chat-message-row-0\" data-message-role=\"assistant\""));
+    assert!(body.contains("id=\"tau-ops-chat-markdown-0\" data-markdown-rendered=\"true\""));
+    assert!(body.contains(
+        "id=\"tau-ops-chat-code-block-0\" data-code-block=\"true\" data-language=\"rust\" data-code=\"fn main() {}\""
+    ));
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn integration_spec_2870_c04_ops_and_sessions_routes_preserve_hidden_markdown_and_code_markers(
+) {
+    let temp = tempdir().expect("tempdir");
+    let state = test_state(temp.path(), 4_096, "secret");
+    let session_path = gateway_session_path(&state.config.state_dir, "chat-markdown-code");
+    let mut store = SessionStore::load(&session_path).expect("load chat markdown session");
+    let root = store
+        .append_messages(None, &[Message::system("markdown-root")])
+        .expect("append root");
+    store
+        .append_messages(
+            root,
+            &[Message::assistant_text(
+                "## Build report\n- item one\n[docs](https://example.com)\n|k|v|\n|---|---|\n|a|b|\n```rust\nfn main() {}\n```",
+            )],
+        )
+        .expect("append markdown+code");
+
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+    let client = Client::new();
+
+    let ops_response = client
+        .get(format!(
+            "http://{addr}/ops?theme=dark&sidebar=expanded&session=chat-markdown-code"
+        ))
+        .send()
+        .await
+        .expect("ops shell request");
+    assert_eq!(ops_response.status(), StatusCode::OK);
+    let ops_body = ops_response.text().await.expect("read ops shell body");
+    assert!(ops_body.contains(
+        "id=\"tau-ops-chat-panel\" data-route=\"/ops/chat\" aria-hidden=\"true\" data-active-session-key=\"chat-markdown-code\" data-panel-visible=\"false\""
+    ));
+    assert!(ops_body.contains("id=\"tau-ops-chat-markdown-0\" data-markdown-rendered=\"true\""));
+    assert!(ops_body.contains(
+        "id=\"tau-ops-chat-code-block-0\" data-code-block=\"true\" data-language=\"rust\" data-code=\"fn main() {}\""
+    ));
+
+    let sessions_response = client
+        .get(format!(
+            "http://{addr}/ops/sessions?theme=dark&sidebar=expanded&session=chat-markdown-code"
+        ))
+        .send()
+        .await
+        .expect("ops sessions shell request");
+    assert_eq!(sessions_response.status(), StatusCode::OK);
+    let sessions_body = sessions_response
+        .text()
+        .await
+        .expect("read ops sessions shell body");
+    assert!(sessions_body.contains(
+        "id=\"tau-ops-chat-panel\" data-route=\"/ops/chat\" aria-hidden=\"true\" data-active-session-key=\"chat-markdown-code\" data-panel-visible=\"false\""
+    ));
+    assert!(
+        sessions_body.contains("id=\"tau-ops-chat-markdown-0\" data-markdown-rendered=\"true\"")
+    );
+    assert!(sessions_body.contains(
+        "id=\"tau-ops-chat-code-block-0\" data-code-block=\"true\" data-language=\"rust\" data-code=\"fn main() {}\""
+    ));
+
+    handle.abort();
+}
+
+#[tokio::test]
 async fn functional_spec_2834_c01_ops_chat_shell_exposes_session_selector_markers() {
     let temp = tempdir().expect("tempdir");
     let state = test_state(temp.path(), 4_096, "secret");

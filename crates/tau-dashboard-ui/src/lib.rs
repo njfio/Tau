@@ -400,6 +400,37 @@ impl Default for TauOpsDashboardShellContext {
     }
 }
 
+fn contains_markdown_contract_syntax(content: &str) -> bool {
+    content.contains("```")
+        || content.starts_with('#')
+        || content.contains("\n#")
+        || content.starts_with("- ")
+        || content.contains("\n- ")
+        || content.contains("](")
+        || (content.contains('|') && content.contains("\n|---"))
+}
+
+fn extract_first_fenced_code_block(content: &str) -> Option<(String, String)> {
+    let fence_start = content.find("```")?;
+    let after_open_fence = &content[fence_start + 3..];
+    let fence_end = after_open_fence.find("```")?;
+    let fenced_block = &after_open_fence[..fence_end];
+    let (language, code) = if let Some((language, code)) = fenced_block.split_once('\n') {
+        (language.trim(), code.trim())
+    } else {
+        ("plain", fenced_block.trim())
+    };
+    if code.is_empty() {
+        return None;
+    }
+    let language = if language.is_empty() {
+        "plain"
+    } else {
+        language
+    };
+    Some((language.to_string(), code.to_string()))
+}
+
 /// Public `fn` `render_tau_ops_dashboard_shell` in `tau-dashboard-ui`.
 pub fn render_tau_ops_dashboard_shell() -> String {
     render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext::default())
@@ -955,6 +986,59 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                                 </li>
                                             }
                                             .into_any()
+                                        } else if message_row.role == "assistant" {
+                                            let markdown_contract =
+                                                contains_markdown_contract_syntax(&message_row.content);
+                                            let code_block_contract =
+                                                extract_first_fenced_code_block(&message_row.content);
+                                            if markdown_contract || code_block_contract.is_some() {
+                                                let content_view = if markdown_contract {
+                                                    let markdown_card_id =
+                                                        format!("tau-ops-chat-markdown-{index}");
+                                                    view! {
+                                                        <article
+                                                            id=markdown_card_id
+                                                            data-markdown-rendered="true"
+                                                        >
+                                                            {message_row.content.clone()}
+                                                        </article>
+                                                    }
+                                                    .into_any()
+                                                } else {
+                                                    view! { {message_row.content.clone()} }.into_any()
+                                                };
+                                                let code_view = code_block_contract.map(
+                                                    |(language, code)| {
+                                                        let code_block_id =
+                                                            format!("tau-ops-chat-code-block-{index}");
+                                                        let code_attribute = code.clone();
+                                                        view! {
+                                                            <pre
+                                                                id=code_block_id
+                                                                data-code-block="true"
+                                                                data-language=language.clone()
+                                                                data-code=code_attribute
+                                                            >
+                                                                {code}
+                                                            </pre>
+                                                        }
+                                                    },
+                                                );
+                                                view! {
+                                                    <li id=row_id data-message-role=message_row.role.clone()>
+                                                        {content_view}
+                                                        {code_view}
+                                                    </li>
+                                                }
+                                                .into_any()
+                                            } else {
+                                                view! {
+                                                    <li id=row_id data-message-role=message_row.role.clone()>
+                                                        {message_row.content.clone()}
+                                                    </li>
+                                                }
+                                                .into_any()
+                                            }
                                         } else {
                                             view! {
                                                 <li id=row_id data-message-role=message_row.role.clone()>
@@ -1299,6 +1383,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
 #[cfg(test)]
 mod tests {
     use super::{
+        contains_markdown_contract_syntax, extract_first_fenced_code_block,
         render_tau_ops_dashboard_shell, render_tau_ops_dashboard_shell_with_context,
         TauOpsDashboardAlertFeedRow, TauOpsDashboardAuthMode, TauOpsDashboardChatMessageRow,
         TauOpsDashboardChatSessionOptionRow, TauOpsDashboardChatSnapshot,
@@ -1307,6 +1392,42 @@ mod tests {
         TauOpsDashboardSessionGraphNodeRow, TauOpsDashboardSessionTimelineRow,
         TauOpsDashboardShellContext, TauOpsDashboardSidebarState, TauOpsDashboardTheme,
     };
+
+    #[test]
+    fn unit_contains_markdown_contract_syntax_rejects_plain_text() {
+        assert!(!contains_markdown_contract_syntax("plain response"));
+    }
+
+    #[test]
+    fn unit_contains_markdown_contract_syntax_accepts_fenced_code_only() {
+        assert!(contains_markdown_contract_syntax(
+            "```rust\nfn main() {}\n```"
+        ));
+    }
+
+    #[test]
+    fn unit_contains_markdown_contract_syntax_rejects_pipe_without_table_delimiter() {
+        assert!(!contains_markdown_contract_syntax("left|right"));
+    }
+
+    #[test]
+    fn unit_contains_markdown_contract_syntax_accepts_each_non_table_marker_path() {
+        assert!(contains_markdown_contract_syntax("# heading"));
+        assert!(contains_markdown_contract_syntax("intro\n# heading"));
+        assert!(contains_markdown_contract_syntax("- item"));
+        assert!(contains_markdown_contract_syntax("intro\n- item"));
+        assert!(contains_markdown_contract_syntax(
+            "[docs](https://example.com)"
+        ));
+    }
+
+    #[test]
+    fn unit_extract_first_fenced_code_block_parses_language_and_code_payload() {
+        assert_eq!(
+            extract_first_fenced_code_block("prefix ```rust\nfn main() {}\n``` suffix"),
+            Some(("rust".to_string(), "fn main() {}".to_string()))
+        );
+    }
 
     #[test]
     fn functional_render_shell_includes_foundation_markers() {
@@ -1738,6 +1859,97 @@ mod tests {
         ));
         assert!(sessions_html.contains(
             "id=\"tau-ops-chat-tool-card-0\" data-tool-card=\"true\" data-inline-result=\"true\""
+        ));
+    }
+
+    #[test]
+    fn functional_spec_2870_c01_c02_chat_route_renders_markdown_and_code_markers() {
+        let markdown_code_message = "## Build report\n- item one\n[docs](https://example.com)\n|k|v|\n|---|---|\n|a|b|\n```rust\nfn main() {}\n```";
+        let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+            auth_mode: TauOpsDashboardAuthMode::Token,
+            active_route: TauOpsDashboardRoute::Chat,
+            theme: TauOpsDashboardTheme::Dark,
+            sidebar_state: TauOpsDashboardSidebarState::Expanded,
+            command_center: TauOpsDashboardCommandCenterSnapshot::default(),
+            chat: TauOpsDashboardChatSnapshot {
+                active_session_key: "chat-markdown-code".to_string(),
+                message_rows: vec![
+                    TauOpsDashboardChatMessageRow {
+                        role: "user".to_string(),
+                        content: "show report".to_string(),
+                    },
+                    TauOpsDashboardChatMessageRow {
+                        role: "assistant".to_string(),
+                        content: markdown_code_message.to_string(),
+                    },
+                    TauOpsDashboardChatMessageRow {
+                        role: "assistant".to_string(),
+                        content: "plain response".to_string(),
+                    },
+                ],
+                ..TauOpsDashboardChatSnapshot::default()
+            },
+        });
+
+        assert!(html.contains("id=\"tau-ops-chat-message-row-1\" data-message-role=\"assistant\""));
+        assert!(html.contains("id=\"tau-ops-chat-markdown-1\" data-markdown-rendered=\"true\""));
+        assert!(html.contains(
+            "id=\"tau-ops-chat-code-block-1\" data-code-block=\"true\" data-language=\"rust\" data-code=\"fn main() {}\""
+        ));
+        assert!(!html.contains("id=\"tau-ops-chat-markdown-0\""));
+        assert!(!html.contains("id=\"tau-ops-chat-code-block-0\""));
+        assert!(!html.contains("id=\"tau-ops-chat-code-block-2\""));
+    }
+
+    #[test]
+    fn regression_spec_2870_c04_non_chat_routes_keep_hidden_markdown_and_code_markers() {
+        let markdown_code_message = "## Build report\n- item one\n[docs](https://example.com)\n|k|v|\n|---|---|\n|a|b|\n```rust\nfn main() {}\n```";
+        let ops_html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+            auth_mode: TauOpsDashboardAuthMode::Token,
+            active_route: TauOpsDashboardRoute::Ops,
+            theme: TauOpsDashboardTheme::Dark,
+            sidebar_state: TauOpsDashboardSidebarState::Expanded,
+            command_center: TauOpsDashboardCommandCenterSnapshot::default(),
+            chat: TauOpsDashboardChatSnapshot {
+                active_session_key: "chat-markdown-code".to_string(),
+                message_rows: vec![TauOpsDashboardChatMessageRow {
+                    role: "assistant".to_string(),
+                    content: markdown_code_message.to_string(),
+                }],
+                ..TauOpsDashboardChatSnapshot::default()
+            },
+        });
+        assert!(ops_html.contains(
+            "id=\"tau-ops-chat-panel\" data-route=\"/ops/chat\" aria-hidden=\"true\" data-active-session-key=\"chat-markdown-code\" data-panel-visible=\"false\""
+        ));
+        assert!(ops_html.contains("id=\"tau-ops-chat-markdown-0\" data-markdown-rendered=\"true\""));
+        assert!(ops_html.contains(
+            "id=\"tau-ops-chat-code-block-0\" data-code-block=\"true\" data-language=\"rust\" data-code=\"fn main() {}\""
+        ));
+
+        let sessions_html =
+            render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+                auth_mode: TauOpsDashboardAuthMode::Token,
+                active_route: TauOpsDashboardRoute::Sessions,
+                theme: TauOpsDashboardTheme::Dark,
+                sidebar_state: TauOpsDashboardSidebarState::Expanded,
+                command_center: TauOpsDashboardCommandCenterSnapshot::default(),
+                chat: TauOpsDashboardChatSnapshot {
+                    active_session_key: "chat-markdown-code".to_string(),
+                    message_rows: vec![TauOpsDashboardChatMessageRow {
+                        role: "assistant".to_string(),
+                        content: markdown_code_message.to_string(),
+                    }],
+                    ..TauOpsDashboardChatSnapshot::default()
+                },
+            });
+        assert!(sessions_html.contains(
+            "id=\"tau-ops-chat-panel\" data-route=\"/ops/chat\" aria-hidden=\"true\" data-active-session-key=\"chat-markdown-code\" data-panel-visible=\"false\""
+        ));
+        assert!(sessions_html
+            .contains("id=\"tau-ops-chat-markdown-0\" data-markdown-rendered=\"true\""));
+        assert!(sessions_html.contains(
+            "id=\"tau-ops-chat-code-block-0\" data-code-block=\"true\" data-language=\"rust\" data-code=\"fn main() {}\""
         ));
     }
 
