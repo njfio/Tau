@@ -758,6 +758,8 @@ fn unit_spec_2730_c01_c02_c03_webchat_page_includes_cortex_admin_panel_and_strea
     assert!(html.contains("cortex.response.created"));
     assert!(html.contains("cortex.response.output_text.delta"));
     assert!(html.contains("cortex.response.output_text.done"));
+    assert!(html.contains("cortex request failed: status="));
+    assert!(html.contains("cortex status failed:"));
 }
 
 #[tokio::test]
