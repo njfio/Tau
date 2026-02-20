@@ -240,11 +240,11 @@ Spacebot is a Rust-based AI agent for teams, communities, and multi-user environ
 **What**: A background process that sees across all channels/sessions, generates memory bulletins, detects patterns, and provides admin chat.
 **Why it matters**: Without it, each session is an island. The agent can't learn from one conversation and apply it to another.
 **Pathway**:
-- [ ] Create `Cortex` struct in `tau-agent-core` or new `tau-cortex` crate
-- [ ] Runs on heartbeat interval (already exists in tau-runtime)
-- [ ] Queries memory store across all sessions
-- [ ] Generates periodic "memory bulletin" via LLM summarization
-- [ ] Bulletin injected into all new session system prompts via `ArcSwap<String>`
+- [x] Create `Cortex` struct in `tau-agent-core` or new `tau-cortex` crate
+- [x] Runs on heartbeat interval (already exists in tau-runtime)
+- [x] Queries memory store across all sessions
+- [x] Generates periodic "memory bulletin" via LLM summarization
+- [x] Bulletin injected into all new session system prompts via `ArcSwap<String>`
 - [x] Add admin chat endpoint in gateway (`POST /cortex/chat` returning SSE)
 - [x] Add cortex observer status endpoint in gateway (`GET /cortex/status` with deterministic counters/fallback diagnostics)
 - [x] Track core gateway cortex observer events (`cortex.chat.request`, `session.append`, `session.reset`, `external_coding_agent.session_opened`, `external_coding_agent.session_closed`)
