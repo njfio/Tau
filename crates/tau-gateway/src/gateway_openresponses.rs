@@ -1,8 +1,5 @@
 //! OpenResponses-compatible gateway server and request flow handlers.
-//!
-//! This module defines HTTP/WebSocket serving boundaries, auth handling, and
-//! response streaming behavior for gateway mode. Failure paths retain structured
-//! context to support operator diagnostics and incident replay.
+//! Defines HTTP/WebSocket boundaries, auth handling, and streaming diagnostics behavior.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::convert::Infallible;
@@ -153,7 +150,6 @@ const OPS_DASHBOARD_CHAT_ENDPOINT: &str = "/ops/chat";
 const OPS_DASHBOARD_CHAT_NEW_ENDPOINT: &str = "/ops/chat/new";
 const OPS_DASHBOARD_CHAT_SEND_ENDPOINT: &str = "/ops/chat/send";
 const OPS_DASHBOARD_SESSIONS_ENDPOINT: &str = "/ops/sessions";
-const OPS_DASHBOARD_SESSIONS_BRANCH_ENDPOINT: &str = "/ops/sessions/branch";
 const OPS_DASHBOARD_SESSION_DETAIL_ENDPOINT: &str = "/ops/sessions/{session_key}";
 const OPS_DASHBOARD_MEMORY_ENDPOINT: &str = "/ops/memory";
 const OPS_DASHBOARD_MEMORY_GRAPH_ENDPOINT: &str = "/ops/memory-graph";
@@ -976,7 +972,7 @@ fn build_gateway_openresponses_router(state: Arc<GatewayOpenResponsesServerState
             get(handle_ops_dashboard_sessions_shell_page),
         )
         .route(
-            OPS_DASHBOARD_SESSIONS_BRANCH_ENDPOINT,
+            "/ops/sessions/branch",
             post(handle_ops_dashboard_sessions_branch),
         )
         .route(

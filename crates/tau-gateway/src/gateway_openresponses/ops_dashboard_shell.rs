@@ -19,7 +19,6 @@ use super::{
     record_cortex_session_append_event, sanitize_session_key, GatewayOpenResponsesServerState,
     OpenResponsesApiError, OpsShellControlsQuery, DEFAULT_SESSION_KEY, OPS_DASHBOARD_CHAT_ENDPOINT,
     OPS_DASHBOARD_CHAT_NEW_ENDPOINT, OPS_DASHBOARD_CHAT_SEND_ENDPOINT,
-    OPS_DASHBOARD_SESSIONS_BRANCH_ENDPOINT,
 };
 use crate::remote_profile::GatewayOpenResponsesAuthMode;
 
@@ -526,11 +525,7 @@ pub(super) async fn handle_ops_dashboard_sessions_branch(
         .into_response();
     }
 
-    state.record_ui_telemetry_event(
-        "sessions",
-        "branch",
-        OPS_DASHBOARD_SESSIONS_BRANCH_ENDPOINT.trim_start_matches('/'),
-    );
+    state.record_ui_telemetry_event("sessions", "branch", "session_branch_created");
     let redirect_path = build_ops_chat_redirect_path(
         redirect_theme,
         redirect_sidebar_state,
