@@ -451,6 +451,11 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     } else {
         "true"
     };
+    let command_center_panel_hidden = if matches!(context.active_route, TauOpsDashboardRoute::Ops) {
+        "false"
+    } else {
+        "true"
+    };
     let chat_message_rows = if context.chat.message_rows.is_empty() {
         vec![TauOpsDashboardChatMessageRow {
             role: "system".to_string(),
@@ -990,7 +995,12 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 {session_graph_edges_view}
                             </ul>
                         </section>
-                        <section id="tau-ops-command-center" aria-live="polite">
+                        <section
+                            id="tau-ops-command-center"
+                            data-route="/ops"
+                            aria-hidden=command_center_panel_hidden
+                            aria-live="polite"
+                        >
                             <section id="tau-ops-kpi-grid" data-kpi-card-count="6">
                                 <article
                                     id="tau-ops-kpi-health"
@@ -1975,6 +1985,47 @@ mod tests {
         assert!(html.contains("data-timeline-range=\"1h\""));
         assert!(html.contains("data-timeline-point-count=\"9\""));
         assert!(html.contains("data-timeline-last-timestamp=\"811\""));
+    }
+
+    #[test]
+    fn functional_spec_2854_c01_command_center_panel_visible_on_ops_route() {
+        let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+            auth_mode: TauOpsDashboardAuthMode::Token,
+            active_route: TauOpsDashboardRoute::Ops,
+            theme: TauOpsDashboardTheme::Dark,
+            sidebar_state: TauOpsDashboardSidebarState::Expanded,
+            command_center: TauOpsDashboardCommandCenterSnapshot::default(),
+            chat: TauOpsDashboardChatSnapshot::default(),
+        });
+
+        assert!(html
+            .contains("id=\"tau-ops-command-center\" data-route=\"/ops\" aria-hidden=\"false\""));
+    }
+
+    #[test]
+    fn functional_spec_2854_c02_c03_command_center_panel_hidden_on_non_ops_routes() {
+        let chat_html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+            auth_mode: TauOpsDashboardAuthMode::Token,
+            active_route: TauOpsDashboardRoute::Chat,
+            theme: TauOpsDashboardTheme::Light,
+            sidebar_state: TauOpsDashboardSidebarState::Collapsed,
+            command_center: TauOpsDashboardCommandCenterSnapshot::default(),
+            chat: TauOpsDashboardChatSnapshot::default(),
+        });
+        assert!(chat_html
+            .contains("id=\"tau-ops-command-center\" data-route=\"/ops\" aria-hidden=\"true\""));
+
+        let sessions_html =
+            render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+                auth_mode: TauOpsDashboardAuthMode::Token,
+                active_route: TauOpsDashboardRoute::Sessions,
+                theme: TauOpsDashboardTheme::Dark,
+                sidebar_state: TauOpsDashboardSidebarState::Expanded,
+                command_center: TauOpsDashboardCommandCenterSnapshot::default(),
+                chat: TauOpsDashboardChatSnapshot::default(),
+            });
+        assert!(sessions_html
+            .contains("id=\"tau-ops-command-center\" data-route=\"/ops\" aria-hidden=\"true\""));
     }
 
     #[test]

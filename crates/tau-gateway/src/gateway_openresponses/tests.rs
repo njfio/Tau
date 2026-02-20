@@ -1718,6 +1718,68 @@ async fn functional_spec_2806_c01_c02_c03_ops_shell_command_center_markers_refle
 }
 
 #[tokio::test]
+async fn functional_spec_2854_c01_ops_shell_command_center_panel_visible_on_ops_route() {
+    let temp = tempdir().expect("tempdir");
+    write_dashboard_runtime_fixture(temp.path());
+    write_training_runtime_fixture(temp.path(), 0);
+    let state = test_state(temp.path(), 4_096, "secret");
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+    let client = Client::new();
+
+    let response = client
+        .get(format!("http://{addr}/ops"))
+        .send()
+        .await
+        .expect("ops shell request");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.text().await.expect("read ops shell body");
+
+    assert!(
+        body.contains("id=\"tau-ops-command-center\" data-route=\"/ops\" aria-hidden=\"false\"")
+    );
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn integration_spec_2854_c02_c03_command_center_panel_hidden_on_chat_and_sessions_routes() {
+    let temp = tempdir().expect("tempdir");
+    write_dashboard_runtime_fixture(temp.path());
+    write_training_runtime_fixture(temp.path(), 0);
+    let state = test_state(temp.path(), 4_096, "secret");
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+    let client = Client::new();
+
+    let chat_response = client
+        .get(format!("http://{addr}/ops/chat"))
+        .send()
+        .await
+        .expect("ops chat shell request");
+    assert_eq!(chat_response.status(), StatusCode::OK);
+    let chat_body = chat_response
+        .text()
+        .await
+        .expect("read ops chat shell body");
+    assert!(chat_body
+        .contains("id=\"tau-ops-command-center\" data-route=\"/ops\" aria-hidden=\"true\""));
+
+    let sessions_response = client
+        .get(format!("http://{addr}/ops/sessions"))
+        .send()
+        .await
+        .expect("ops sessions shell request");
+    assert_eq!(sessions_response.status(), StatusCode::OK);
+    let sessions_body = sessions_response
+        .text()
+        .await
+        .expect("read ops sessions shell body");
+    assert!(sessions_body
+        .contains("id=\"tau-ops-command-center\" data-route=\"/ops\" aria-hidden=\"true\""));
+
+    handle.abort();
+}
+
+#[tokio::test]
 async fn functional_spec_2810_c01_c02_c03_ops_shell_control_markers_reflect_dashboard_control_snapshot(
 ) {
     let temp = tempdir().expect("tempdir");
