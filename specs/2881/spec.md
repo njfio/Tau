@@ -1,6 +1,6 @@
 # Spec: Issue #2881 - chat multi-line input contracts
 
-Status: Reviewed
+Status: Implemented
 
 ## Problem Statement
 Tau Ops chat supports message send and session workflows, but does not expose deterministic multiline compose contracts nor explicit newline-preservation validation for submitted chat content. This leaves the PRD checklist item “Multi-line input works (Shift+Enter)” unverifiable.
