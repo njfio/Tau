@@ -1,6 +1,6 @@
 # Spec: Issue #2862 - chat token-counter marker contracts
 
-Status: Reviewed
+Status: Implemented
 
 ## Problem Statement
 Tau Ops chat currently renders transcript and session selector contracts but lacks an explicit token-counter marker contract tied to active-session usage summary fields. This blocks deterministic selector-based validation for the PRD requirement that token counters update with conversation state.
