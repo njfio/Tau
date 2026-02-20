@@ -1413,6 +1413,240 @@ async fn integration_spec_2913_c01_c02_c03_ops_memory_type_filter_narrows_result
 }
 
 #[tokio::test]
+async fn integration_spec_2917_c02_c03_ops_memory_create_submission_persists_entry_and_sets_status_markers(
+) {
+    let temp = tempdir().expect("tempdir");
+    let state = test_state(temp.path(), 10_000, "secret");
+    let (addr, handle) = spawn_test_server(state.clone())
+        .await
+        .expect("spawn server");
+    let client = Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .expect("build client");
+
+    let session_key = "ops-memory-create";
+    let related_endpoint = expand_memory_entry_template(
+        GATEWAY_MEMORY_ENTRY_ENDPOINT,
+        session_key,
+        "mem-create-related",
+    );
+    let related_create = client
+        .put(format!("http://{addr}{related_endpoint}"))
+        .bearer_auth("secret")
+        .json(&json!({
+            "summary": "CreateToken relation target",
+            "memory_type": "fact",
+            "workspace_id": "workspace-create",
+            "channel_id": "channel-create",
+            "actor_id": "operator",
+            "policy_gate": MEMORY_WRITE_POLICY_GATE
+        }))
+        .send()
+        .await
+        .expect("create related memory entry");
+    assert_eq!(related_create.status(), StatusCode::CREATED);
+
+    let create_response = client
+        .post(format!("http://{addr}/ops/memory"))
+        .form(&[
+            ("theme", "light"),
+            ("sidebar", "collapsed"),
+            ("session", session_key),
+            ("entry_id", "mem-create-1"),
+            ("summary", "CreateToken summary"),
+            ("tags", "alpha,beta"),
+            ("facts", "fact-one|fact-two"),
+            ("source_event_key", "evt-create-1"),
+            ("workspace_id", "workspace-create"),
+            ("channel_id", "channel-create"),
+            ("actor_id", "operator"),
+            ("memory_type", "fact"),
+            ("importance", "0.75"),
+            ("relation_target_id", "mem-create-related"),
+            ("relation_type", "supports"),
+            ("relation_weight", "0.42"),
+        ])
+        .send()
+        .await
+        .expect("submit memory create form");
+    assert_eq!(create_response.status(), StatusCode::SEE_OTHER);
+    let location = create_response
+        .headers()
+        .get(reqwest::header::LOCATION)
+        .and_then(|value| value.to_str().ok())
+        .expect("ops memory create redirect location");
+    assert!(location.contains("/ops/memory?"));
+    assert!(location.contains("create_status=created"));
+    assert!(location.contains("created_memory_id=mem-create-1"));
+
+    let redirect_response = client
+        .get(format!("http://{addr}{location}"))
+        .send()
+        .await
+        .expect("load ops memory create redirect body");
+    assert_eq!(redirect_response.status(), StatusCode::OK);
+    let redirect_body = redirect_response
+        .text()
+        .await
+        .expect("read ops memory create redirect body");
+    assert!(redirect_body.contains(
+        "id=\"tau-ops-memory-create-status\" data-create-status=\"created\" data-created-memory-id=\"mem-create-1\""
+    ));
+
+    let read_created_response = client
+        .get(format!(
+            "http://{addr}/gateway/memory/{session_key}/mem-create-1"
+        ))
+        .bearer_auth("secret")
+        .send()
+        .await
+        .expect("read created memory entry");
+    assert_eq!(read_created_response.status(), StatusCode::OK);
+    let read_created_payload: Value = read_created_response
+        .json()
+        .await
+        .expect("parse created memory entry payload");
+    assert_eq!(
+        read_created_payload["entry"]["summary"].as_str(),
+        Some("CreateToken summary")
+    );
+    assert_eq!(
+        read_created_payload["entry"]["source_event_key"].as_str(),
+        Some("evt-create-1")
+    );
+    assert_eq!(
+        read_created_payload["entry"]["scope"]["workspace_id"].as_str(),
+        Some("workspace-create")
+    );
+    assert_eq!(
+        read_created_payload["entry"]["scope"]["channel_id"].as_str(),
+        Some("channel-create")
+    );
+    assert_eq!(
+        read_created_payload["entry"]["scope"]["actor_id"].as_str(),
+        Some("operator")
+    );
+    assert_eq!(
+        read_created_payload["entry"]["memory_type"].as_str(),
+        Some("fact")
+    );
+    let importance = read_created_payload["entry"]["importance"]
+        .as_f64()
+        .expect("importance should be present for created entry");
+    assert!(
+        (importance - 0.75).abs() < f64::EPSILON,
+        "importance should preserve create-form value"
+    );
+    assert_eq!(
+        read_created_payload["entry"]["tags"],
+        json!(["alpha", "beta"])
+    );
+    assert_eq!(
+        read_created_payload["entry"]["facts"],
+        json!(["fact-one", "fact-two"])
+    );
+    assert_eq!(
+        read_created_payload["entry"]["relations"][0]["target_id"].as_str(),
+        Some("mem-create-related")
+    );
+
+    let search_response = client
+        .get(format!(
+            "http://{addr}/ops/memory?theme=light&sidebar=collapsed&session={session_key}&query=CreateToken&workspace_id=workspace-create&channel_id=channel-create&actor_id=operator&memory_type=fact"
+        ))
+        .send()
+        .await
+        .expect("query created memory through ops route");
+    assert_eq!(search_response.status(), StatusCode::OK);
+    let search_body = search_response
+        .text()
+        .await
+        .expect("read memory search body");
+    assert!(search_body.contains("data-memory-id=\"mem-create-1\" data-memory-type=\"fact\""));
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn regression_spec_2917_ops_memory_create_requires_entry_id_and_summary() {
+    let temp = tempdir().expect("tempdir");
+    let state = test_state(temp.path(), 10_000, "secret");
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+    let client = Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .expect("build client");
+
+    let session_key = "ops-memory-create-required-fields";
+    let missing_summary = client
+        .post(format!("http://{addr}/ops/memory"))
+        .form(&[
+            ("theme", "light"),
+            ("sidebar", "collapsed"),
+            ("session", session_key),
+            ("entry_id", "mem-missing-summary"),
+            ("summary", ""),
+        ])
+        .send()
+        .await
+        .expect("submit form with missing summary");
+    assert_eq!(missing_summary.status(), StatusCode::SEE_OTHER);
+    let missing_summary_location = missing_summary
+        .headers()
+        .get(reqwest::header::LOCATION)
+        .and_then(|value| value.to_str().ok())
+        .expect("missing-summary redirect location");
+    assert!(missing_summary_location.contains("create_status=idle"));
+    assert!(!missing_summary_location.contains("created_memory_id="));
+
+    let read_missing_summary = client
+        .get(format!(
+            "http://{addr}/gateway/memory/{session_key}/mem-missing-summary"
+        ))
+        .bearer_auth("secret")
+        .send()
+        .await
+        .expect("read missing-summary memory entry");
+    assert_eq!(read_missing_summary.status(), StatusCode::NOT_FOUND);
+
+    let missing_entry_id = client
+        .post(format!("http://{addr}/ops/memory"))
+        .form(&[
+            ("theme", "light"),
+            ("sidebar", "collapsed"),
+            ("session", session_key),
+            ("entry_id", ""),
+            ("summary", "CreateToken should not persist without entry id"),
+        ])
+        .send()
+        .await
+        .expect("submit form with missing entry_id");
+    assert_eq!(missing_entry_id.status(), StatusCode::SEE_OTHER);
+    let missing_entry_location = missing_entry_id
+        .headers()
+        .get(reqwest::header::LOCATION)
+        .and_then(|value| value.to_str().ok())
+        .expect("missing-entry redirect location");
+    assert!(missing_entry_location.contains("create_status=idle"));
+    assert!(!missing_entry_location.contains("created_memory_id="));
+
+    let redirect_body = client
+        .get(format!("http://{addr}{missing_entry_location}"))
+        .send()
+        .await
+        .expect("read missing-entry redirect body")
+        .text()
+        .await
+        .expect("extract missing-entry redirect body");
+    assert!(redirect_body.contains(
+        "id=\"tau-ops-memory-create-status\" data-create-status=\"idle\" data-created-memory-id=\"\""
+    ));
+
+    handle.abort();
+}
+
+#[tokio::test]
 async fn functional_spec_2798_c04_ops_shell_exposes_responsive_and_theme_contract_markers() {
     let temp = tempdir().expect("tempdir");
     let state = test_state(temp.path(), 4_096, "secret");

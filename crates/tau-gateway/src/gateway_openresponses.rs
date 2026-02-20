@@ -105,8 +105,9 @@ use openai_compat::{
 };
 use ops_dashboard_shell::{
     handle_ops_dashboard_chat_new, handle_ops_dashboard_chat_send,
-    handle_ops_dashboard_session_detail_reset, handle_ops_dashboard_sessions_branch,
-    render_tau_ops_dashboard_shell_for_route, resolve_tau_ops_dashboard_auth_mode,
+    handle_ops_dashboard_memory_create, handle_ops_dashboard_session_detail_reset,
+    handle_ops_dashboard_sessions_branch, render_tau_ops_dashboard_shell_for_route,
+    resolve_tau_ops_dashboard_auth_mode,
 };
 use ops_shell_controls::OpsShellControlsQuery;
 use request_translation::{sanitize_session_key, translate_openresponses_request};
@@ -981,7 +982,7 @@ fn build_gateway_openresponses_router(state: Arc<GatewayOpenResponsesServerState
         )
         .route(
             OPS_DASHBOARD_MEMORY_ENDPOINT,
-            get(handle_ops_dashboard_memory_shell_page),
+            get(handle_ops_dashboard_memory_shell_page).post(handle_ops_dashboard_memory_create),
         )
         .route(
             OPS_DASHBOARD_MEMORY_GRAPH_ENDPOINT,

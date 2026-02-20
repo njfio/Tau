@@ -26,6 +26,10 @@ pub(super) struct OpsShellControlsQuery {
     limit: String,
     #[serde(default)]
     memory_type: String,
+    #[serde(default)]
+    create_status: String,
+    #[serde(default)]
+    created_memory_id: String,
 }
 
 impl OpsShellControlsQuery {
@@ -115,6 +119,23 @@ impl OpsShellControlsQuery {
             return None;
         }
         MemoryType::parse(value).map(|memory_type| memory_type.as_str().to_string())
+    }
+
+    pub(super) fn requested_memory_create_status(&self) -> &'static str {
+        match self.create_status.trim() {
+            "created" => "created",
+            "updated" => "updated",
+            _ => "idle",
+        }
+    }
+
+    pub(super) fn requested_memory_created_entry_id(&self) -> Option<String> {
+        let value = self.created_memory_id.trim();
+        if value.is_empty() {
+            None
+        } else {
+            Some(value.to_string())
+        }
     }
 }
 
@@ -253,5 +274,44 @@ mod tests {
             ..OpsShellControlsQuery::default()
         };
         assert_eq!(invalid.requested_memory_type(), None);
+    }
+
+    #[test]
+    fn unit_requested_memory_create_status_defaults_to_idle_and_accepts_known_states() {
+        let idle = OpsShellControlsQuery::default();
+        assert_eq!(idle.requested_memory_create_status(), "idle");
+
+        let created = OpsShellControlsQuery {
+            create_status: "created".to_string(),
+            ..OpsShellControlsQuery::default()
+        };
+        assert_eq!(created.requested_memory_create_status(), "created");
+
+        let updated = OpsShellControlsQuery {
+            create_status: "updated".to_string(),
+            ..OpsShellControlsQuery::default()
+        };
+        assert_eq!(updated.requested_memory_create_status(), "updated");
+
+        let invalid = OpsShellControlsQuery {
+            create_status: "invalid".to_string(),
+            ..OpsShellControlsQuery::default()
+        };
+        assert_eq!(invalid.requested_memory_create_status(), "idle");
+    }
+
+    #[test]
+    fn unit_requested_memory_created_entry_id_trims_and_normalizes_empty_values() {
+        let valid = OpsShellControlsQuery {
+            created_memory_id: " mem-create-1 ".to_string(),
+            ..OpsShellControlsQuery::default()
+        };
+        assert_eq!(
+            valid.requested_memory_created_entry_id().as_deref(),
+            Some("mem-create-1")
+        );
+
+        let empty = OpsShellControlsQuery::default();
+        assert_eq!(empty.requested_memory_created_entry_id(), None);
     }
 }
