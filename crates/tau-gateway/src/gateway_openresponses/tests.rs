@@ -1483,6 +1483,117 @@ async fn integration_spec_2838_c02_c03_ops_sessions_shell_renders_discovered_row
 }
 
 #[tokio::test]
+async fn functional_spec_2842_c01_c03_c05_ops_session_detail_shell_exposes_panel_validation_and_empty_timeline_markers(
+) {
+    let temp = tempdir().expect("tempdir");
+    let state = test_state(temp.path(), 4_096, "secret");
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+    let client = Client::new();
+
+    let response = client
+        .get(format!(
+            "http://{addr}/ops/sessions/session-empty?theme=light&sidebar=collapsed"
+        ))
+        .send()
+        .await
+        .expect("ops session detail request");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response
+        .text()
+        .await
+        .expect("read ops session detail response body");
+
+    assert!(body.contains("data-active-route=\"sessions\""));
+    assert!(body.contains(
+        "id=\"tau-ops-session-detail-panel\" data-route=\"/ops/sessions/session-empty\" data-session-key=\"session-empty\" aria-hidden=\"false\""
+    ));
+    assert!(body.contains(
+        "id=\"tau-ops-session-validation-report\" data-entries=\"0\" data-duplicates=\"0\" data-invalid-parent=\"0\" data-cycles=\"0\" data-is-valid=\"true\""
+    ));
+    assert!(body.contains(
+        "id=\"tau-ops-session-usage-summary\" data-input-tokens=\"0\" data-output-tokens=\"0\" data-total-tokens=\"0\" data-estimated-cost-usd=\"0.000000\""
+    ));
+    assert!(body.contains("id=\"tau-ops-session-message-timeline\" data-entry-count=\"0\""));
+    assert!(body.contains("id=\"tau-ops-session-message-empty-state\" data-empty-state=\"true\""));
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn integration_spec_2842_c02_c04_ops_session_detail_shell_renders_lineage_rows_and_usage_markers(
+) {
+    let temp = tempdir().expect("tempdir");
+    let state = test_state(temp.path(), 10_000, "secret");
+    let (addr, handle) = spawn_test_server(state.clone())
+        .await
+        .expect("spawn server");
+    let client = Client::new();
+
+    let request_payload = json!({
+        "input": "detail usage contract",
+        "metadata": { "session_id": "session-detail" }
+    });
+    let response = client
+        .post(format!("http://{addr}/v1/responses"))
+        .bearer_auth("secret")
+        .json(&request_payload)
+        .send()
+        .await
+        .expect("openresponses request");
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let session_key = sanitize_session_key("session-detail");
+    let session_path = gateway_session_path(&state.config.state_dir, session_key.as_str());
+    let store = SessionStore::load(&session_path).expect("load detail session store");
+    let validation = store.validation_report();
+    let usage = store.usage_summary();
+    let expected_cost = format!("{:.6}", usage.estimated_cost_usd);
+
+    let response = client
+        .get(format!(
+            "http://{addr}/ops/sessions/{session_key}?theme=dark&sidebar=expanded"
+        ))
+        .send()
+        .await
+        .expect("ops session detail render request");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response
+        .text()
+        .await
+        .expect("read ops session detail render body");
+
+    assert!(body.contains(format!(
+        "id=\"tau-ops-session-detail-panel\" data-route=\"/ops/sessions/{session_key}\" data-session-key=\"{session_key}\" aria-hidden=\"false\""
+    ).as_str()));
+    assert!(body.contains(format!(
+        "id=\"tau-ops-session-validation-report\" data-entries=\"{}\" data-duplicates=\"{}\" data-invalid-parent=\"{}\" data-cycles=\"{}\" data-is-valid=\"{}\"",
+        validation.entries,
+        validation.duplicates,
+        validation.invalid_parent,
+        validation.cycles,
+        if validation.is_valid() { "true" } else { "false" },
+    ).as_str()));
+    assert!(body.contains(format!(
+        "id=\"tau-ops-session-usage-summary\" data-input-tokens=\"{}\" data-output-tokens=\"{}\" data-total-tokens=\"{}\" data-estimated-cost-usd=\"{expected_cost}\"",
+        usage.input_tokens,
+        usage.output_tokens,
+        usage.total_tokens,
+    ).as_str()));
+    assert!(body.contains(
+        format!(
+            "id=\"tau-ops-session-message-timeline\" data-entry-count=\"{}\"",
+            validation.entries
+        )
+        .as_str()
+    ));
+    assert!(body.contains("data-message-role=\"system\""));
+    assert!(body.contains("data-message-role=\"user\""));
+    assert!(body.contains("data-message-role=\"assistant\""));
+
+    handle.abort();
+}
+
+#[tokio::test]
 async fn functional_spec_2806_c01_c02_c03_ops_shell_command_center_markers_reflect_dashboard_snapshot(
 ) {
     let temp = tempdir().expect("tempdir");

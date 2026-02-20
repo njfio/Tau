@@ -8,8 +8,8 @@ use tau_ai::{Message, MessageRole};
 use tau_dashboard_ui::{
     render_tau_ops_dashboard_shell_with_context, TauOpsDashboardAuthMode,
     TauOpsDashboardChatMessageRow, TauOpsDashboardChatSessionOptionRow,
-    TauOpsDashboardChatSnapshot, TauOpsDashboardRoute, TauOpsDashboardShellContext,
-    TauOpsDashboardSidebarState, TauOpsDashboardTheme,
+    TauOpsDashboardChatSnapshot, TauOpsDashboardRoute, TauOpsDashboardSessionTimelineRow,
+    TauOpsDashboardShellContext, TauOpsDashboardSidebarState, TauOpsDashboardTheme,
 };
 use tau_session::SessionStore;
 
@@ -69,7 +69,16 @@ impl OpsDashboardChatSendForm {
     }
 }
 
-fn resolve_ops_chat_session_key(controls: &OpsShellControlsQuery) -> String {
+fn resolve_ops_chat_session_key(
+    controls: &OpsShellControlsQuery,
+    detail_session_key: Option<&str>,
+) -> String {
+    if let Some(detail_session_key) = detail_session_key {
+        let sanitized = sanitize_session_key(detail_session_key);
+        if !sanitized.is_empty() {
+            return sanitized;
+        }
+    }
     let requested = controls
         .requested_session_key()
         .unwrap_or(DEFAULT_SESSION_KEY);
@@ -139,36 +148,75 @@ fn tau_ops_chat_message_role_label(role: MessageRole) -> &'static str {
 fn collect_tau_ops_dashboard_chat_snapshot(
     state: &Arc<GatewayOpenResponsesServerState>,
     controls: &OpsShellControlsQuery,
+    detail_session_key: Option<&str>,
 ) -> TauOpsDashboardChatSnapshot {
-    let active_session_key = resolve_ops_chat_session_key(controls);
+    let active_session_key = resolve_ops_chat_session_key(controls, detail_session_key);
     let session_options = collect_ops_chat_session_option_rows(state, active_session_key.as_str());
     let session_path = gateway_session_path(&state.config.state_dir, active_session_key.as_str());
     let mut message_rows = Vec::new();
+    let mut session_detail_validation_entries: usize = 0;
+    let mut session_detail_validation_duplicates: usize = 0;
+    let mut session_detail_validation_invalid_parent: usize = 0;
+    let mut session_detail_validation_cycles: usize = 0;
+    let mut session_detail_validation_is_valid = true;
+    let mut session_detail_usage_input_tokens: u64 = 0;
+    let mut session_detail_usage_output_tokens: u64 = 0;
+    let mut session_detail_usage_total_tokens: u64 = 0;
+    let mut session_detail_usage_estimated_cost_usd = "0.000000".to_string();
+    let mut session_detail_timeline_rows = Vec::new();
 
     if let Ok(store) = SessionStore::load(&session_path) {
-        if let Ok(messages) = store.lineage_messages(store.head_id()) {
-            for message in messages {
-                if matches!(message.role, MessageRole::System) {
-                    continue;
-                }
-                let content = message.text_content();
+        let validation = store.validation_report();
+        session_detail_validation_entries = validation.entries;
+        session_detail_validation_duplicates = validation.duplicates;
+        session_detail_validation_invalid_parent = validation.invalid_parent;
+        session_detail_validation_cycles = validation.cycles;
+        session_detail_validation_is_valid = validation.is_valid();
+
+        let usage = store.usage_summary();
+        session_detail_usage_input_tokens = usage.input_tokens;
+        session_detail_usage_output_tokens = usage.output_tokens;
+        session_detail_usage_total_tokens = usage.total_tokens;
+        session_detail_usage_estimated_cost_usd = format!("{:.6}", usage.estimated_cost_usd);
+
+        if let Ok(lineage_entries) = store.lineage_entries(store.head_id()) {
+            for entry in lineage_entries {
+                let content = entry.message.text_content();
                 if content.trim().is_empty() {
                     continue;
                 }
-                message_rows.push(TauOpsDashboardChatMessageRow {
-                    role: tau_ops_chat_message_role_label(message.role).to_string(),
-                    content,
+                let role = tau_ops_chat_message_role_label(entry.message.role).to_string();
+                session_detail_timeline_rows.push(TauOpsDashboardSessionTimelineRow {
+                    entry_id: entry.id,
+                    role: role.clone(),
+                    content: content.clone(),
                 });
+                if matches!(entry.message.role, MessageRole::System) {
+                    continue;
+                }
+                message_rows.push(TauOpsDashboardChatMessageRow { role, content });
             }
         }
     }
 
     TauOpsDashboardChatSnapshot {
-        active_session_key,
+        active_session_key: active_session_key.clone(),
         send_form_action: OPS_DASHBOARD_CHAT_SEND_ENDPOINT.to_string(),
         send_form_method: "post".to_string(),
         session_options,
         message_rows,
+        session_detail_visible: detail_session_key.is_some(),
+        session_detail_route: format!("/ops/sessions/{active_session_key}"),
+        session_detail_validation_entries,
+        session_detail_validation_duplicates,
+        session_detail_validation_invalid_parent,
+        session_detail_validation_cycles,
+        session_detail_validation_is_valid,
+        session_detail_usage_input_tokens,
+        session_detail_usage_output_tokens,
+        session_detail_usage_total_tokens,
+        session_detail_usage_estimated_cost_usd,
+        session_detail_timeline_rows,
     }
 }
 
@@ -176,11 +224,12 @@ pub(super) fn render_tau_ops_dashboard_shell_for_route(
     state: &Arc<GatewayOpenResponsesServerState>,
     route: TauOpsDashboardRoute,
     controls: OpsShellControlsQuery,
+    detail_session_key: Option<&str>,
 ) -> Html<String> {
     let mut command_center =
         collect_tau_ops_dashboard_command_center_snapshot(&state.config.state_dir);
     command_center.timeline_range = controls.timeline_range().to_string();
-    let chat = collect_tau_ops_dashboard_chat_snapshot(state, &controls);
+    let chat = collect_tau_ops_dashboard_chat_snapshot(state, &controls, detail_session_key);
 
     Html(render_tau_ops_dashboard_shell_with_context(
         TauOpsDashboardShellContext {

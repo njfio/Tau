@@ -151,6 +151,7 @@ const OPS_DASHBOARD_AGENT_DETAIL_ENDPOINT: &str = "/ops/agents/{agent_id}";
 const OPS_DASHBOARD_CHAT_ENDPOINT: &str = "/ops/chat";
 const OPS_DASHBOARD_CHAT_SEND_ENDPOINT: &str = "/ops/chat/send";
 const OPS_DASHBOARD_SESSIONS_ENDPOINT: &str = "/ops/sessions";
+const OPS_DASHBOARD_SESSION_DETAIL_ENDPOINT: &str = "/ops/sessions/{session_key}";
 const OPS_DASHBOARD_MEMORY_ENDPOINT: &str = "/ops/memory";
 const OPS_DASHBOARD_MEMORY_GRAPH_ENDPOINT: &str = "/ops/memory-graph";
 const OPS_DASHBOARD_TOOLS_JOBS_ENDPOINT: &str = "/ops/tools-jobs";
@@ -968,6 +969,10 @@ fn build_gateway_openresponses_router(state: Arc<GatewayOpenResponsesServerState
             get(handle_ops_dashboard_sessions_shell_page),
         )
         .route(
+            OPS_DASHBOARD_SESSION_DETAIL_ENDPOINT,
+            get(handle_ops_dashboard_session_detail_shell_page),
+        )
+        .route(
             OPS_DASHBOARD_MEMORY_ENDPOINT,
             get(handle_ops_dashboard_memory_shell_page),
         )
@@ -1037,7 +1042,7 @@ macro_rules! define_ops_shell_handler {
             State(state): State<Arc<GatewayOpenResponsesServerState>>,
             Query(controls): Query<OpsShellControlsQuery>,
         ) -> Html<String> {
-            render_tau_ops_dashboard_shell_for_route(&state, $route, controls)
+            render_tau_ops_dashboard_shell_for_route(&state, $route, controls, None)
         }
     };
 }
@@ -1101,7 +1106,25 @@ async fn handle_ops_dashboard_agent_detail_shell_page(
     AxumPath(_agent_id): AxumPath<String>,
     Query(controls): Query<OpsShellControlsQuery>,
 ) -> Html<String> {
-    render_tau_ops_dashboard_shell_for_route(&state, TauOpsDashboardRoute::AgentDetail, controls)
+    render_tau_ops_dashboard_shell_for_route(
+        &state,
+        TauOpsDashboardRoute::AgentDetail,
+        controls,
+        None,
+    )
+}
+
+async fn handle_ops_dashboard_session_detail_shell_page(
+    State(state): State<Arc<GatewayOpenResponsesServerState>>,
+    AxumPath(session_key): AxumPath<String>,
+    Query(controls): Query<OpsShellControlsQuery>,
+) -> Html<String> {
+    render_tau_ops_dashboard_shell_for_route(
+        &state,
+        TauOpsDashboardRoute::Sessions,
+        controls,
+        Some(session_key.as_str()),
+    )
 }
 
 async fn handle_dashboard_shell_page() -> Html<String> {
