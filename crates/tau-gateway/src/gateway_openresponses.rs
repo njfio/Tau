@@ -1044,95 +1044,75 @@ fn render_tau_ops_dashboard_shell_for_route(
     ))
 }
 
-async fn handle_ops_dashboard_shell_page(
-    State(state): State<Arc<GatewayOpenResponsesServerState>>,
-) -> Html<String> {
-    render_tau_ops_dashboard_shell_for_route(&state, TauOpsDashboardRoute::Ops)
+macro_rules! define_ops_shell_handler {
+    ($handler_name:ident, $route:expr) => {
+        async fn $handler_name(
+            State(state): State<Arc<GatewayOpenResponsesServerState>>,
+        ) -> Html<String> {
+            render_tau_ops_dashboard_shell_for_route(&state, $route)
+        }
+    };
 }
 
-async fn handle_ops_dashboard_agents_shell_page(
-    State(state): State<Arc<GatewayOpenResponsesServerState>>,
-) -> Html<String> {
-    render_tau_ops_dashboard_shell_for_route(&state, TauOpsDashboardRoute::Agents)
-}
+define_ops_shell_handler!(handle_ops_dashboard_shell_page, TauOpsDashboardRoute::Ops);
+define_ops_shell_handler!(
+    handle_ops_dashboard_agents_shell_page,
+    TauOpsDashboardRoute::Agents
+);
+define_ops_shell_handler!(
+    handle_ops_dashboard_chat_shell_page,
+    TauOpsDashboardRoute::Chat
+);
+define_ops_shell_handler!(
+    handle_ops_dashboard_sessions_shell_page,
+    TauOpsDashboardRoute::Sessions
+);
+define_ops_shell_handler!(
+    handle_ops_dashboard_memory_shell_page,
+    TauOpsDashboardRoute::Memory
+);
+define_ops_shell_handler!(
+    handle_ops_dashboard_memory_graph_shell_page,
+    TauOpsDashboardRoute::MemoryGraph
+);
+define_ops_shell_handler!(
+    handle_ops_dashboard_tools_jobs_shell_page,
+    TauOpsDashboardRoute::ToolsJobs
+);
+define_ops_shell_handler!(
+    handle_ops_dashboard_channels_shell_page,
+    TauOpsDashboardRoute::Channels
+);
+define_ops_shell_handler!(
+    handle_ops_dashboard_config_shell_page,
+    TauOpsDashboardRoute::Config
+);
+define_ops_shell_handler!(
+    handle_ops_dashboard_training_shell_page,
+    TauOpsDashboardRoute::Training
+);
+define_ops_shell_handler!(
+    handle_ops_dashboard_safety_shell_page,
+    TauOpsDashboardRoute::Safety
+);
+define_ops_shell_handler!(
+    handle_ops_dashboard_diagnostics_shell_page,
+    TauOpsDashboardRoute::Diagnostics
+);
+define_ops_shell_handler!(
+    handle_ops_dashboard_deploy_shell_page,
+    TauOpsDashboardRoute::Deploy
+);
+define_ops_shell_handler!(
+    handle_ops_dashboard_login_shell_page,
+    TauOpsDashboardRoute::Login
+);
 
 async fn handle_ops_dashboard_agent_detail_shell_page(
     State(state): State<Arc<GatewayOpenResponsesServerState>>,
     AxumPath(_agent_id): AxumPath<String>,
 ) -> Html<String> {
     render_tau_ops_dashboard_shell_for_route(&state, TauOpsDashboardRoute::AgentDetail)
-}
-
-async fn handle_ops_dashboard_chat_shell_page(
-    State(state): State<Arc<GatewayOpenResponsesServerState>>,
-) -> Html<String> {
-    render_tau_ops_dashboard_shell_for_route(&state, TauOpsDashboardRoute::Chat)
-}
-
-async fn handle_ops_dashboard_sessions_shell_page(
-    State(state): State<Arc<GatewayOpenResponsesServerState>>,
-) -> Html<String> {
-    render_tau_ops_dashboard_shell_for_route(&state, TauOpsDashboardRoute::Sessions)
-}
-
-async fn handle_ops_dashboard_memory_shell_page(
-    State(state): State<Arc<GatewayOpenResponsesServerState>>,
-) -> Html<String> {
-    render_tau_ops_dashboard_shell_for_route(&state, TauOpsDashboardRoute::Memory)
-}
-
-async fn handle_ops_dashboard_memory_graph_shell_page(
-    State(state): State<Arc<GatewayOpenResponsesServerState>>,
-) -> Html<String> {
-    render_tau_ops_dashboard_shell_for_route(&state, TauOpsDashboardRoute::MemoryGraph)
-}
-
-async fn handle_ops_dashboard_tools_jobs_shell_page(
-    State(state): State<Arc<GatewayOpenResponsesServerState>>,
-) -> Html<String> {
-    render_tau_ops_dashboard_shell_for_route(&state, TauOpsDashboardRoute::ToolsJobs)
-}
-
-async fn handle_ops_dashboard_channels_shell_page(
-    State(state): State<Arc<GatewayOpenResponsesServerState>>,
-) -> Html<String> {
-    render_tau_ops_dashboard_shell_for_route(&state, TauOpsDashboardRoute::Channels)
-}
-
-async fn handle_ops_dashboard_config_shell_page(
-    State(state): State<Arc<GatewayOpenResponsesServerState>>,
-) -> Html<String> {
-    render_tau_ops_dashboard_shell_for_route(&state, TauOpsDashboardRoute::Config)
-}
-
-async fn handle_ops_dashboard_training_shell_page(
-    State(state): State<Arc<GatewayOpenResponsesServerState>>,
-) -> Html<String> {
-    render_tau_ops_dashboard_shell_for_route(&state, TauOpsDashboardRoute::Training)
-}
-
-async fn handle_ops_dashboard_safety_shell_page(
-    State(state): State<Arc<GatewayOpenResponsesServerState>>,
-) -> Html<String> {
-    render_tau_ops_dashboard_shell_for_route(&state, TauOpsDashboardRoute::Safety)
-}
-
-async fn handle_ops_dashboard_diagnostics_shell_page(
-    State(state): State<Arc<GatewayOpenResponsesServerState>>,
-) -> Html<String> {
-    render_tau_ops_dashboard_shell_for_route(&state, TauOpsDashboardRoute::Diagnostics)
-}
-
-async fn handle_ops_dashboard_deploy_shell_page(
-    State(state): State<Arc<GatewayOpenResponsesServerState>>,
-) -> Html<String> {
-    render_tau_ops_dashboard_shell_for_route(&state, TauOpsDashboardRoute::Deploy)
-}
-
-async fn handle_ops_dashboard_login_shell_page(
-    State(state): State<Arc<GatewayOpenResponsesServerState>>,
-) -> Html<String> {
-    render_tau_ops_dashboard_shell_for_route(&state, TauOpsDashboardRoute::Login)
 }
 
 async fn handle_dashboard_shell_page() -> Html<String> {
