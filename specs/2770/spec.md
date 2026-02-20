@@ -1,6 +1,6 @@
 # Spec: Issue #2770 - G10 serenity dependency and tau-discord-runtime foundation
 
-Status: Reviewed
+Status: Implemented
 
 ## Problem Statement
 G10 still has unresolved foundational work: no workspace `serenity` dependency and no dedicated `tau-discord-runtime` crate/module boundary. This blocks full Discord parity roadmap closure and prevents clean ownership of Discord-specific runtime logic.
@@ -51,4 +51,4 @@ Then `tasks/spacebot-comparison.md` marks the remaining G10 rows with issue evid
 - G10 checklist has no remaining unchecked implementation-foundation rows.
 
 ## Approval Gate
-This task requires explicit user approval before implementation because it introduces a new dependency (`serenity`) per `AGENTS.md` ask-first rules.
+This task required explicit user approval before implementation because it introduced a new dependency (`serenity`) per `AGENTS.md` ask-first rules. Approval was provided in-session before implementation proceeded.

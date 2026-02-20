@@ -29,6 +29,7 @@ members = [
   "crates/tau-browser-automation",
   "crates/tau-voice",
   "crates/tau-slack-runtime",
+  "crates/tau-discord-runtime",
   "crates/tau-tools",
   "crates/tau-onboarding",
   "crates/tau-coding-agent",
@@ -89,3 +90,4 @@ wasmtime = "25.0.3"
 wat = "1.225.0"
 rustyline = "14"
 fastembed = { version = "5.9.0", default-features = false, features = ["hf-hub-rustls-tls", "ort-download-binaries-rustls-tls"] }
+serenity = { version = "0.12", default-features = false, features = ["client", "gateway", "model", "rustls_backend"] }
