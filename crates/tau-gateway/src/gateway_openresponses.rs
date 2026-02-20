@@ -1039,15 +1039,17 @@ fn render_tau_ops_dashboard_shell_for_route(
     route: TauOpsDashboardRoute,
     controls: OpsShellControlsQuery,
 ) -> Html<String> {
+    let mut command_center =
+        collect_tau_ops_dashboard_command_center_snapshot(&state.config.state_dir);
+    command_center.timeline_range = controls.timeline_range().to_string();
+
     Html(render_tau_ops_dashboard_shell_with_context(
         TauOpsDashboardShellContext {
             auth_mode: resolve_tau_ops_dashboard_auth_mode(state.config.auth_mode),
             active_route: route,
             theme: controls.theme(),
             sidebar_state: controls.sidebar_state(),
-            command_center: collect_tau_ops_dashboard_command_center_snapshot(
-                &state.config.state_dir,
-            ),
+            command_center,
         },
     ))
 }

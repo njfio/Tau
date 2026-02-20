@@ -566,6 +566,14 @@ pub(super) fn collect_tau_ops_dashboard_command_center_snapshot(
         last_action_timestamp_unix_ms: last_action
             .map(|action| action.timestamp_unix_ms)
             .unwrap_or(0),
+        timeline_range: "1h".to_string(),
+        timeline_point_count: snapshot.queue_timeline.recent_cycles.len(),
+        timeline_last_timestamp_unix_ms: snapshot
+            .queue_timeline
+            .recent_cycles
+            .last()
+            .map(|cycle| cycle.timestamp_unix_ms)
+            .unwrap_or(0),
         queue_depth: snapshot.health.queue_depth,
         failure_streak: snapshot.health.failure_streak,
         processed_case_count: snapshot.health.processed_case_count,
@@ -1169,6 +1177,9 @@ invalid-json-line
         assert_eq!(snapshot.last_action_name, "none");
         assert_eq!(snapshot.last_action_actor, "none");
         assert_eq!(snapshot.last_action_timestamp_unix_ms, 0);
+        assert_eq!(snapshot.timeline_range, "1h");
+        assert_eq!(snapshot.timeline_point_count, 1);
+        assert_eq!(snapshot.timeline_last_timestamp_unix_ms, 1);
         assert_eq!(snapshot.queue_depth, 0);
         assert_eq!(snapshot.failure_streak, 0);
         assert_eq!(snapshot.processed_case_count, 2);
