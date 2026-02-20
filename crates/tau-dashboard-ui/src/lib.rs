@@ -194,6 +194,14 @@ impl TauOpsDashboardSidebarState {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Public struct `TauOpsDashboardAlertFeedRow` in `tau-dashboard-ui`.
+pub struct TauOpsDashboardAlertFeedRow {
+    pub code: String,
+    pub severity: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 /// Public struct `TauOpsDashboardCommandCenterSnapshot` in `tau-dashboard-ui`.
 pub struct TauOpsDashboardCommandCenterSnapshot {
     pub health_state: String,
@@ -221,6 +229,7 @@ pub struct TauOpsDashboardCommandCenterSnapshot {
     pub primary_alert_code: String,
     pub primary_alert_severity: String,
     pub primary_alert_message: String,
+    pub alert_feed_rows: Vec<TauOpsDashboardAlertFeedRow>,
 }
 
 impl Default for TauOpsDashboardCommandCenterSnapshot {
@@ -251,6 +260,11 @@ impl Default for TauOpsDashboardCommandCenterSnapshot {
             primary_alert_code: "none".to_string(),
             primary_alert_severity: "info".to_string(),
             primary_alert_message: "No alerts loaded".to_string(),
+            alert_feed_rows: vec![TauOpsDashboardAlertFeedRow {
+                code: "none".to_string(),
+                severity: "info".to_string(),
+                message: "No alerts loaded".to_string(),
+            }],
         }
     }
 }
@@ -381,6 +395,18 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     let processed_cases_value = context.command_center.processed_case_count.to_string();
     let alert_count_value = context.command_center.alert_count.to_string();
     let alert_count_feed_value = alert_count_value.clone();
+    let alert_feed_rows = if context.command_center.alert_feed_rows.is_empty() {
+        vec![TauOpsDashboardAlertFeedRow {
+            code: context.command_center.primary_alert_code.clone(),
+            severity: context.command_center.primary_alert_severity.clone(),
+            message: context.command_center.primary_alert_message.clone(),
+        }]
+    } else {
+        context.command_center.alert_feed_rows.clone()
+    };
+    let alert_row_count_value = alert_feed_rows.len().to_string();
+    let alert_row_count_section_value = alert_row_count_value.clone();
+    let alert_row_count_list_value = alert_row_count_value;
     let widget_count_value = context.command_center.widget_count.to_string();
     let timeline_cycle_count_value = context.command_center.timeline_cycle_count.to_string();
     let timeline_cycle_count_table_value = timeline_cycle_count_value.clone();
@@ -625,9 +651,28 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 data-alert-count=alert_count_feed_value
                                 data-primary-alert-code=primary_alert_code
                                 data-primary-alert-severity=primary_alert_severity
+                                data-alert-row-count=alert_row_count_section_value
                             >
                                 <h2>Alerts</h2>
                                 <p id="tau-ops-primary-alert-message">{primary_alert_message}</p>
+                                <ul id="tau-ops-alert-feed-list" data-alert-row-count=alert_row_count_list_value>
+                                    {alert_feed_rows
+                                        .iter()
+                                        .enumerate()
+                                        .map(|(index, alert_row)| {
+                                            let alert_row_id = format!("tau-ops-alert-row-{index}");
+                                            view! {
+                                                <li
+                                                    id=alert_row_id
+                                                    data-alert-code=alert_row.code.clone()
+                                                    data-alert-severity=alert_row.severity.clone()
+                                                >
+                                                    {alert_row.message.clone()}
+                                                </li>
+                                            }
+                                        })
+                                        .collect_view()}
+                                </ul>
                             </section>
                             <section
                                 id="tau-ops-data-table"
@@ -664,8 +709,9 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
 mod tests {
     use super::{
         render_tau_ops_dashboard_shell, render_tau_ops_dashboard_shell_with_context,
-        TauOpsDashboardAuthMode, TauOpsDashboardCommandCenterSnapshot, TauOpsDashboardRoute,
-        TauOpsDashboardShellContext, TauOpsDashboardSidebarState, TauOpsDashboardTheme,
+        TauOpsDashboardAlertFeedRow, TauOpsDashboardAuthMode, TauOpsDashboardCommandCenterSnapshot,
+        TauOpsDashboardRoute, TauOpsDashboardShellContext, TauOpsDashboardSidebarState,
+        TauOpsDashboardTheme,
     };
 
     #[test]
@@ -904,6 +950,7 @@ mod tests {
                 primary_alert_code: "dashboard_queue_backlog".to_string(),
                 primary_alert_severity: "warning".to_string(),
                 primary_alert_message: "runtime backlog detected (queue_depth=3)".to_string(),
+                alert_feed_rows: vec![],
             },
         });
 
@@ -972,6 +1019,7 @@ mod tests {
                 primary_alert_code: "dashboard_queue_backlog".to_string(),
                 primary_alert_severity: "warning".to_string(),
                 primary_alert_message: "runtime backlog detected (queue_depth=1)".to_string(),
+                alert_feed_rows: vec![],
             },
         });
 
@@ -1021,6 +1069,7 @@ mod tests {
                 primary_alert_code: "dashboard_queue_backlog".to_string(),
                 primary_alert_severity: "warning".to_string(),
                 primary_alert_message: "runtime backlog detected (queue_depth=1)".to_string(),
+                alert_feed_rows: vec![],
             },
         });
 
@@ -1041,5 +1090,111 @@ mod tests {
         assert!(html.contains("href=\"/ops?theme=light&amp;sidebar=collapsed&amp;range=1h\""));
         assert!(html.contains("href=\"/ops?theme=light&amp;sidebar=collapsed&amp;range=6h\""));
         assert!(html.contains("href=\"/ops?theme=light&amp;sidebar=collapsed&amp;range=24h\""));
+    }
+
+    #[test]
+    fn functional_spec_2818_c01_c02_alert_feed_row_markers_render_for_snapshot_alerts() {
+        let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+            auth_mode: TauOpsDashboardAuthMode::Token,
+            active_route: TauOpsDashboardRoute::Ops,
+            theme: TauOpsDashboardTheme::Dark,
+            sidebar_state: TauOpsDashboardSidebarState::Expanded,
+            command_center: TauOpsDashboardCommandCenterSnapshot {
+                health_state: "degraded".to_string(),
+                health_reason: "runtime backlog detected".to_string(),
+                rollout_gate: "hold".to_string(),
+                control_mode: "running".to_string(),
+                control_paused: false,
+                action_pause_enabled: true,
+                action_resume_enabled: false,
+                action_refresh_enabled: true,
+                last_action_request_id: "none".to_string(),
+                last_action_name: "none".to_string(),
+                last_action_actor: "none".to_string(),
+                last_action_timestamp_unix_ms: 0,
+                timeline_range: "1h".to_string(),
+                timeline_point_count: 1,
+                timeline_last_timestamp_unix_ms: 900,
+                queue_depth: 1,
+                failure_streak: 0,
+                processed_case_count: 1,
+                alert_count: 2,
+                widget_count: 1,
+                timeline_cycle_count: 1,
+                timeline_invalid_cycle_count: 0,
+                primary_alert_code: "dashboard_queue_backlog".to_string(),
+                primary_alert_severity: "warning".to_string(),
+                primary_alert_message: "runtime backlog detected (queue_depth=1)".to_string(),
+                alert_feed_rows: vec![
+                    TauOpsDashboardAlertFeedRow {
+                        code: "dashboard_queue_backlog".to_string(),
+                        severity: "warning".to_string(),
+                        message: "runtime backlog detected (queue_depth=1)".to_string(),
+                    },
+                    TauOpsDashboardAlertFeedRow {
+                        code: "dashboard_cycle_log_invalid_lines".to_string(),
+                        severity: "warning".to_string(),
+                        message: "runtime events log contains 1 malformed line(s)".to_string(),
+                    },
+                ],
+            },
+        });
+
+        assert!(html.contains("id=\"tau-ops-alert-feed-list\""));
+        assert!(html.contains(
+            "id=\"tau-ops-alert-row-0\" data-alert-code=\"dashboard_queue_backlog\" data-alert-severity=\"warning\""
+        ));
+        assert!(html.contains(
+            "id=\"tau-ops-alert-row-1\" data-alert-code=\"dashboard_cycle_log_invalid_lines\" data-alert-severity=\"warning\""
+        ));
+        assert!(html.contains("runtime backlog detected (queue_depth=1)"));
+    }
+
+    #[test]
+    fn functional_spec_2818_c03_alert_feed_row_markers_render_nominal_fallback_alert() {
+        let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+            auth_mode: TauOpsDashboardAuthMode::Token,
+            active_route: TauOpsDashboardRoute::Ops,
+            theme: TauOpsDashboardTheme::Dark,
+            sidebar_state: TauOpsDashboardSidebarState::Expanded,
+            command_center: TauOpsDashboardCommandCenterSnapshot {
+                health_state: "healthy".to_string(),
+                health_reason: "dashboard runtime health is nominal".to_string(),
+                rollout_gate: "pass".to_string(),
+                control_mode: "running".to_string(),
+                control_paused: false,
+                action_pause_enabled: true,
+                action_resume_enabled: false,
+                action_refresh_enabled: true,
+                last_action_request_id: "none".to_string(),
+                last_action_name: "none".to_string(),
+                last_action_actor: "none".to_string(),
+                last_action_timestamp_unix_ms: 0,
+                timeline_range: "1h".to_string(),
+                timeline_point_count: 1,
+                timeline_last_timestamp_unix_ms: 900,
+                queue_depth: 0,
+                failure_streak: 0,
+                processed_case_count: 1,
+                alert_count: 1,
+                widget_count: 1,
+                timeline_cycle_count: 1,
+                timeline_invalid_cycle_count: 0,
+                primary_alert_code: "dashboard_healthy".to_string(),
+                primary_alert_severity: "info".to_string(),
+                primary_alert_message: "dashboard runtime health is nominal".to_string(),
+                alert_feed_rows: vec![TauOpsDashboardAlertFeedRow {
+                    code: "dashboard_healthy".to_string(),
+                    severity: "info".to_string(),
+                    message: "dashboard runtime health is nominal".to_string(),
+                }],
+            },
+        });
+
+        assert!(html.contains("id=\"tau-ops-alert-feed-list\""));
+        assert!(html.contains(
+            "id=\"tau-ops-alert-row-0\" data-alert-code=\"dashboard_healthy\" data-alert-severity=\"info\""
+        ));
+        assert!(html.contains("dashboard runtime health is nominal"));
     }
 }

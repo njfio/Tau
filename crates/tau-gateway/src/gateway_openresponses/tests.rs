@@ -356,6 +356,51 @@ invalid-json-line
     dashboard_root
 }
 
+fn write_dashboard_runtime_fixture_nominal(root: &Path) -> PathBuf {
+    let dashboard_root = root.join(".tau").join("dashboard");
+    std::fs::create_dir_all(&dashboard_root).expect("create dashboard root");
+    std::fs::write(
+        dashboard_root.join("state.json"),
+        r#"{
+  "schema_version": 1,
+  "processed_case_keys": ["snapshot:s1"],
+  "widget_views": [
+    {
+      "widget_id": "health-summary",
+      "kind": "health_summary",
+      "title": "Runtime Health",
+      "query_key": "runtime.health",
+      "refresh_interval_ms": 3000,
+      "last_case_key": "snapshot:s1",
+      "updated_unix_ms": 900
+    }
+  ],
+  "control_audit": [],
+  "health": {
+    "updated_unix_ms": 901,
+    "cycle_duration_ms": 20,
+    "queue_depth": 0,
+    "active_runs": 0,
+    "failure_streak": 0,
+    "last_cycle_discovered": 1,
+    "last_cycle_processed": 1,
+    "last_cycle_completed": 1,
+    "last_cycle_failed": 0,
+    "last_cycle_duplicates": 0
+  }
+}
+"#,
+    )
+    .expect("write nominal dashboard state");
+    std::fs::write(
+        dashboard_root.join("runtime-events.jsonl"),
+        r#"{"timestamp_unix_ms":900,"health_state":"healthy","health_reason":"dashboard runtime health is nominal","reason_codes":[],"discovered_cases":1,"queued_cases":1,"backlog_cases":0,"applied_cases":1,"failed_cases":0}
+"#,
+    )
+    .expect("write nominal dashboard events");
+    dashboard_root
+}
+
 fn write_dashboard_control_state_fixture(root: &Path) -> PathBuf {
     let dashboard_root = root.join(".tau").join("dashboard");
     std::fs::create_dir_all(&dashboard_root).expect("create dashboard root");
@@ -1315,6 +1360,64 @@ async fn functional_spec_2814_c03_ops_shell_timeline_range_invalid_query_default
     assert!(body.contains(
         "id=\"tau-ops-timeline-range-24h\" data-range-option=\"24h\" data-range-selected=\"false\""
     ));
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn functional_spec_2818_c01_c02_ops_shell_alert_feed_row_markers_reflect_dashboard_snapshot()
+{
+    let temp = tempdir().expect("tempdir");
+    write_dashboard_runtime_fixture(temp.path());
+    write_training_runtime_fixture(temp.path(), 0);
+    let state = test_state(temp.path(), 4_096, "secret");
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+    let client = Client::new();
+
+    let response = client
+        .get(format!("http://{addr}/ops"))
+        .send()
+        .await
+        .expect("ops shell request");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.text().await.expect("read ops shell body");
+
+    assert!(body.contains("id=\"tau-ops-alert-feed-list\""));
+    assert!(body.contains("id=\"tau-ops-alert-row-0\""));
+    assert!(body.contains(
+        "id=\"tau-ops-alert-row-0\" data-alert-code=\"dashboard_queue_backlog\" data-alert-severity=\"warning\""
+    ));
+    assert!(body.contains("runtime backlog detected (queue_depth=1)"));
+    assert!(body.contains("id=\"tau-ops-alert-row-1\""));
+    assert!(body.contains(
+        "id=\"tau-ops-alert-row-1\" data-alert-code=\"dashboard_cycle_log_invalid_lines\" data-alert-severity=\"warning\""
+    ));
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn functional_spec_2818_c03_ops_shell_alert_feed_rows_include_nominal_fallback_alert() {
+    let temp = tempdir().expect("tempdir");
+    write_dashboard_runtime_fixture_nominal(temp.path());
+    write_training_runtime_fixture(temp.path(), 0);
+    let state = test_state(temp.path(), 4_096, "secret");
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+    let client = Client::new();
+
+    let response = client
+        .get(format!("http://{addr}/ops"))
+        .send()
+        .await
+        .expect("ops shell request");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.text().await.expect("read ops shell body");
+
+    assert!(body.contains("id=\"tau-ops-alert-feed-list\""));
+    assert!(body.contains(
+        "id=\"tau-ops-alert-row-0\" data-alert-code=\"dashboard_healthy\" data-alert-severity=\"info\""
+    ));
+    assert!(body.contains("dashboard runtime health is nominal"));
 
     handle.abort();
 }
