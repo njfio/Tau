@@ -226,6 +226,11 @@ impl MultiChannelOutboundDispatcher {
                 receipts: Vec::new(),
             });
         }
+        if self.should_use_discord_progressive_edits(event, response_text) {
+            return self
+                .deliver_discord_progressive_edits_provider(event, response_text)
+                .await;
+        }
 
         let requests = self.build_requests(event, response_text)?;
         if requests.is_empty() {
@@ -261,6 +266,122 @@ impl MultiChannelOutboundDispatcher {
                 }
                 MultiChannelOutboundMode::ChannelStore => {}
             }
+        }
+
+        Ok(MultiChannelOutboundDeliveryResult {
+            mode: self.config.mode.as_str().to_string(),
+            chunk_count: receipts.len(),
+            receipts,
+        })
+    }
+
+    fn should_use_discord_progressive_edits(
+        &self,
+        event: &MultiChannelInboundEvent,
+        response_text: &str,
+    ) -> bool {
+        if self.config.mode != MultiChannelOutboundMode::Provider
+            || event.transport != MultiChannelTransport::Discord
+        {
+            return false;
+        }
+        let trimmed = response_text.trim();
+        !trimmed.is_empty() && trimmed.chars().count() <= DISCORD_SAFE_MAX_CHARS
+    }
+
+    async fn deliver_discord_progressive_edits_provider(
+        &self,
+        event: &MultiChannelInboundEvent,
+        response_text: &str,
+    ) -> Result<MultiChannelOutboundDeliveryResult, MultiChannelOutboundDeliveryError> {
+        let trimmed = response_text.trim();
+        if trimmed.is_empty() {
+            return Ok(MultiChannelOutboundDeliveryResult {
+                mode: self.config.mode.as_str().to_string(),
+                chunk_count: 0,
+                receipts: Vec::new(),
+            });
+        }
+        let chunk_max = self.config.max_chars.clamp(1, DISCORD_SAFE_MAX_CHARS);
+        let chunks = chunk_text(trimmed, chunk_max);
+        if chunks.is_empty() {
+            return Ok(MultiChannelOutboundDeliveryResult {
+                mode: self.config.mode.as_str().to_string(),
+                chunk_count: 0,
+                receipts: Vec::new(),
+            });
+        }
+        let chunk_count = chunks.len();
+
+        let token = self
+            .config
+            .discord_bot_token
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| MultiChannelOutboundDeliveryError {
+                reason_code: "delivery_missing_discord_bot_token".to_string(),
+                detail: "Discord outbound requires TAU_DISCORD_BOT_TOKEN or credential-store integration id discord-bot-token".to_string(),
+                retryable: false,
+                chunk_index: 1,
+                chunk_count,
+                endpoint: "".to_string(),
+                request_body: None,
+                http_status: None,
+            })?;
+
+        let create_request = MultiChannelOutboundRequest {
+            method: Method::POST,
+            transport: event.transport,
+            endpoint: format!(
+                "{}/channels/{}/messages",
+                self.config.discord_api_base.trim_end_matches('/'),
+                event.conversation_id.trim()
+            ),
+            headers: vec![("Authorization".to_string(), format!("Bot {}", token))],
+            body: json!({"content":"..."}),
+            chunk_index: 1,
+            chunk_count,
+        };
+        let placeholder_receipt = self.send_request(&create_request).await?;
+        let placeholder_message_id = placeholder_receipt
+            .provider_message_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+            .ok_or_else(|| MultiChannelOutboundDeliveryError {
+                reason_code: "delivery_missing_provider_message_id".to_string(),
+                detail: "discord placeholder response did not include a message id".to_string(),
+                retryable: false,
+                chunk_index: 1,
+                chunk_count,
+                endpoint: create_request.endpoint.clone(),
+                request_body: Some(compact_request_body(&create_request.body)),
+                http_status: placeholder_receipt.http_status,
+            })?;
+
+        let mut accumulated = String::new();
+        let mut receipts = Vec::with_capacity(chunks.len());
+        for (index, chunk) in chunks.into_iter().enumerate() {
+            accumulated.push_str(chunk.as_str());
+            let chunk_index = index + 1;
+            let patch_request = MultiChannelOutboundRequest {
+                method: Method::PATCH,
+                transport: event.transport,
+                endpoint: format!(
+                    "{}/channels/{}/messages/{}",
+                    self.config.discord_api_base.trim_end_matches('/'),
+                    event.conversation_id.trim(),
+                    placeholder_message_id
+                ),
+                headers: vec![("Authorization".to_string(), format!("Bot {}", token))],
+                body: json!({"content": accumulated}),
+                chunk_index,
+                chunk_count,
+            };
+            let receipt = self.send_request(&patch_request).await?;
+            receipts.push(receipt);
         }
 
         Ok(MultiChannelOutboundDeliveryResult {
@@ -1186,9 +1307,9 @@ fn chunk_text(text: &str, max_chars: usize) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    use httpmock::Method::{POST, PUT};
+    use httpmock::Method::{PATCH, POST, PUT};
     use httpmock::MockServer;
-    use serde_json::json;
+    use serde_json::{json, Value};
 
     use super::{
         chunk_text, MultiChannelOutboundConfig, MultiChannelOutboundDispatcher,
@@ -1602,6 +1723,167 @@ mod tests {
             result.receipts[0].provider_message_id.as_deref(),
             Some("55")
         );
+    }
+
+    #[tokio::test]
+    async fn integration_provider_mode_discord_streaming_posts_placeholder_then_patches_final() {
+        let server = MockServer::start();
+        let placeholder = server.mock(|when, then| {
+            when.method(POST)
+                .path("/channels/room-88/messages")
+                .header("authorization", "Bot discord-token")
+                .json_body(json!({"content":"..."}));
+            then.status(200)
+                .json_body(json!({"id": "discord-message-1"}));
+        });
+        let patch = server.mock(|when, then| {
+            when.method(PATCH)
+                .path("/channels/room-88/messages/discord-message-1")
+                .header("authorization", "Bot discord-token")
+                .json_body(json!({"content":"hello discord"}));
+            then.status(200)
+                .json_body(json!({"id":"discord-message-1"}));
+        });
+
+        let dispatcher = MultiChannelOutboundDispatcher::new(MultiChannelOutboundConfig {
+            mode: MultiChannelOutboundMode::Provider,
+            max_chars: 1200,
+            discord_api_base: server.base_url(),
+            discord_bot_token: Some("discord-token".to_string()),
+            ssrf_allow_http: true,
+            ssrf_allow_private_network: true,
+            ..MultiChannelOutboundConfig::default()
+        })
+        .expect("dispatcher");
+        let mut event = sample_event(MultiChannelTransport::Discord);
+        event.conversation_id = "room-88".to_string();
+
+        let result = dispatcher
+            .deliver(&event, "hello discord")
+            .await
+            .expect("provider streaming send should succeed");
+
+        placeholder.assert_calls(1);
+        patch.assert_calls(1);
+        assert_eq!(result.chunk_count, 1);
+        assert_eq!(result.receipts.len(), 1);
+        assert_eq!(result.receipts[0].status, "sent");
+        assert_eq!(
+            result.receipts[0].provider_message_id.as_deref(),
+            Some("discord-message-1")
+        );
+        assert!(result.receipts[0]
+            .endpoint
+            .ends_with("/channels/room-88/messages/discord-message-1"));
+    }
+
+    #[tokio::test]
+    async fn integration_provider_mode_discord_streaming_progressive_edits_accumulate_chunks() {
+        let server = MockServer::start();
+        let placeholder = server.mock(|when, then| {
+            when.method(POST)
+                .path("/channels/room-88/messages")
+                .header("authorization", "Bot discord-token")
+                .json_body(json!({"content":"..."}));
+            then.status(200)
+                .json_body(json!({"id":"discord-message-progressive"}));
+        });
+        let patch_1 = server.mock(|when, then| {
+            when.method(PATCH)
+                .path("/channels/room-88/messages/discord-message-progressive")
+                .header("authorization", "Bot discord-token")
+                .json_body(json!({"content":"abcde"}));
+            then.status(200)
+                .json_body(json!({"id":"discord-message-progressive"}));
+        });
+        let patch_2 = server.mock(|when, then| {
+            when.method(PATCH)
+                .path("/channels/room-88/messages/discord-message-progressive")
+                .header("authorization", "Bot discord-token")
+                .json_body(json!({"content":"abcdefghij"}));
+            then.status(200)
+                .json_body(json!({"id":"discord-message-progressive"}));
+        });
+        let patch_3 = server.mock(|when, then| {
+            when.method(PATCH)
+                .path("/channels/room-88/messages/discord-message-progressive")
+                .header("authorization", "Bot discord-token")
+                .json_body(json!({"content":"abcdefghijk"}));
+            then.status(200)
+                .json_body(json!({"id":"discord-message-progressive"}));
+        });
+
+        let dispatcher = MultiChannelOutboundDispatcher::new(MultiChannelOutboundConfig {
+            mode: MultiChannelOutboundMode::Provider,
+            max_chars: 5,
+            discord_api_base: server.base_url(),
+            discord_bot_token: Some("discord-token".to_string()),
+            ssrf_allow_http: true,
+            ssrf_allow_private_network: true,
+            ..MultiChannelOutboundConfig::default()
+        })
+        .expect("dispatcher");
+        let mut event = sample_event(MultiChannelTransport::Discord);
+        event.conversation_id = "room-88".to_string();
+
+        let result = dispatcher
+            .deliver(&event, "abcdefghijk")
+            .await
+            .expect("provider streaming send should succeed");
+
+        placeholder.assert_calls(1);
+        patch_1.assert_calls(1);
+        patch_2.assert_calls(1);
+        patch_3.assert_calls(1);
+        assert_eq!(result.chunk_count, 3);
+        assert_eq!(result.receipts.len(), 3);
+        assert_eq!(
+            result.receipts[2].request_body["content"],
+            Value::String("abcdefghijk".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn regression_provider_mode_discord_long_message_keeps_chunked_post_fallback() {
+        let server = MockServer::start();
+        let post = server.mock(|when, then| {
+            when.method(POST)
+                .path("/channels/room-88/messages")
+                .header("authorization", "Bot discord-token");
+            then.status(200)
+                .json_body(json!({"id":"discord-chunk-message"}));
+        });
+        let patch = server.mock(|when, then| {
+            when.method(PATCH)
+                .path("/channels/room-88/messages/discord-chunk-message")
+                .header("authorization", "Bot discord-token");
+            then.status(200)
+                .json_body(json!({"id":"discord-chunk-message"}));
+        });
+
+        let dispatcher = MultiChannelOutboundDispatcher::new(MultiChannelOutboundConfig {
+            mode: MultiChannelOutboundMode::Provider,
+            max_chars: 10_000,
+            discord_api_base: server.base_url(),
+            discord_bot_token: Some("discord-token".to_string()),
+            ssrf_allow_http: true,
+            ssrf_allow_private_network: true,
+            ..MultiChannelOutboundConfig::default()
+        })
+        .expect("dispatcher");
+        let mut event = sample_event(MultiChannelTransport::Discord);
+        event.conversation_id = "room-88".to_string();
+        let long_message = "a".repeat(2_501);
+
+        let result = dispatcher
+            .deliver(&event, long_message.as_str())
+            .await
+            .expect("provider long-message send should succeed");
+
+        post.assert_calls(2);
+        patch.assert_calls(0);
+        assert_eq!(result.chunk_count, 2);
+        assert_eq!(result.receipts.len(), 2);
     }
 
     #[tokio::test]
