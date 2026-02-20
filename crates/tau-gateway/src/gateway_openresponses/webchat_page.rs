@@ -322,6 +322,7 @@ pub(super) fn render_gateway_webchat_page() -> String {
         <button class="tab" data-view="dashboard" role="tab" aria-selected="false">Dashboard</button>
         <button class="tab" data-view="tools" role="tab" aria-selected="false">Tools</button>
         <button class="tab" data-view="cortex" role="tab" aria-selected="false">Cortex</button>
+        <button class="tab" data-view="routines" role="tab" aria-selected="false">Routines</button>
         <button class="tab" data-view="sessions" role="tab" aria-selected="false">Sessions</button>
         <button class="tab" data-view="memory" role="tab" aria-selected="false">Memory</button>
         <button class="tab" data-view="configuration" role="tab" aria-selected="false">Configuration</button>
@@ -531,6 +532,67 @@ pub(super) fn render_gateway_webchat_page() -> String {
         <pre id="cortexStatus">Cortex status will appear here.</pre>
       </section>
 
+      <section id="view-routines" class="view" role="tabpanel" aria-hidden="true">
+        <p style="margin: 0 0 0.5rem 0; color: var(--ink-muted);">
+          Inspect scheduled routines diagnostics and manage active operational jobs.
+        </p>
+        <div class="actions" style="margin-top: 0;">
+          <button id="routinesRefresh" class="secondary">Refresh routines</button>
+          <button id="routinesJobsRefresh" class="secondary">Refresh jobs</button>
+        </div>
+        <div class="status-dashboard">
+          <div class="status-cards">
+            <article class="metric-card">
+              <div class="metric-label">Routines Health</div>
+              <div id="routinesHealthStateValue" class="metric-value">unknown</div>
+            </article>
+            <article class="metric-card">
+              <div class="metric-label">Routines Gate</div>
+              <div id="routinesRolloutGateValue" class="metric-value">unknown</div>
+            </article>
+            <article class="metric-card">
+              <div class="metric-label">Reason Code</div>
+              <div id="routinesReasonCodeValue" class="metric-value">unknown</div>
+            </article>
+            <article class="metric-card">
+              <div class="metric-label">Discovered</div>
+              <div id="routinesDiscoveredValue" class="metric-value tabular-nums">0</div>
+            </article>
+            <article class="metric-card">
+              <div class="metric-label">Due Now</div>
+              <div id="routinesDueNowValue" class="metric-value tabular-nums">0</div>
+            </article>
+            <article class="metric-card">
+              <div class="metric-label">Failed History</div>
+              <div id="routinesFailedHistoryValue" class="metric-value tabular-nums">0</div>
+            </article>
+          </div>
+        </div>
+        <h2 style="margin: 0.8rem 0 0.4rem 0; font-size: 1rem;">Routines status</h2>
+        <pre id="routinesStatus">Routines status will appear here.</pre>
+        <h2 style="margin: 0.8rem 0 0.4rem 0; font-size: 1rem;">Routine diagnostics</h2>
+        <pre id="routinesDiagnostics">Routine diagnostics will appear here.</pre>
+        <h2 style="margin: 0.8rem 0 0.4rem 0; font-size: 1rem;">Active jobs</h2>
+        <div class="table-scroll">
+          <table class="status-table" aria-label="Routines jobs table">
+            <thead>
+              <tr>
+                <th>Job ID</th>
+                <th>Workspace</th>
+                <th>Status</th>
+                <th>Started</th>
+                <th>Last Activity</th>
+                <th>Queued Followups</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="routinesJobsTableBody">
+              <tr><td colspan="7">No active jobs.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
       <section id="view-sessions" class="view" role="tabpanel" aria-hidden="true">
         <div class="split">
           <div>
@@ -625,6 +687,8 @@ pub(super) fn render_gateway_webchat_page() -> String {
     const DASHBOARD_STREAM_ENDPOINT = "{dashboard_stream_endpoint}";
     const CORTEX_CHAT_ENDPOINT = "{cortex_chat_endpoint}";
     const CORTEX_STATUS_ENDPOINT = "{cortex_status_endpoint}";
+    const JOBS_ENDPOINT = "{jobs_endpoint}";
+    const JOB_CANCEL_ENDPOINT_TEMPLATE = "{job_cancel_endpoint_template}";
     const WEBSOCKET_ENDPOINT = "{websocket_endpoint}";
     const SESSIONS_ENDPOINT = "{sessions_endpoint}";
     const MEMORY_ENDPOINT_TEMPLATE = "{memory_endpoint_template}";
@@ -668,6 +732,15 @@ pub(super) fn render_gateway_webchat_page() -> String {
     const cortexPromptInput = document.getElementById("cortexPrompt");
     const cortexOutputPre = document.getElementById("cortexOutput");
     const cortexStatusPre = document.getElementById("cortexStatus");
+    const routinesStatusPre = document.getElementById("routinesStatus");
+    const routinesDiagnosticsPre = document.getElementById("routinesDiagnostics");
+    const routinesJobsTableBody = document.getElementById("routinesJobsTableBody");
+    const routinesHealthStateValue = document.getElementById("routinesHealthStateValue");
+    const routinesRolloutGateValue = document.getElementById("routinesRolloutGateValue");
+    const routinesReasonCodeValue = document.getElementById("routinesReasonCodeValue");
+    const routinesDiscoveredValue = document.getElementById("routinesDiscoveredValue");
+    const routinesDueNowValue = document.getElementById("routinesDueNowValue");
+    const routinesFailedHistoryValue = document.getElementById("routinesFailedHistoryValue");
     const sessionsList = document.getElementById("sessionsList");
     const sessionDetailPre = document.getElementById("sessionDetail");
     const appendRoleInput = document.getElementById("appendRole");
@@ -692,6 +765,8 @@ pub(super) fn render_gateway_webchat_page() -> String {
     const dashboardControlRefreshButton = document.getElementById("dashboardControlRefresh");
     const sendCortexPromptButton = document.getElementById("sendCortexPrompt");
     const clearCortexOutputButton = document.getElementById("clearCortexOutput");
+    const routinesRefreshButton = document.getElementById("routinesRefresh");
+    const routinesJobsRefreshButton = document.getElementById("routinesJobsRefresh");
     const loadSessionsButton = document.getElementById("loadSessions");
     const loadSessionDetailButton = document.getElementById("loadSessionDetail");
     const appendSessionButton = document.getElementById("appendSession");
@@ -922,6 +997,88 @@ pub(super) fn render_gateway_webchat_page() -> String {
 
       renderConnectorTable(connectors);
       renderReasonCodeTable(mc.reason_code_counts || {{}});
+    }}
+
+    function resolveJobEndpoint(template, jobId) {{
+      return template.replace("{{job_id}}", encodeURIComponent(String(jobId || "")));
+    }}
+
+    function renderRoutinesFromGatewayStatusPayload(payload) {{
+      const events = payload && payload.events ? payload.events : {{}};
+      const healthState = String(events.health_state || "unknown");
+      const rolloutGate = String(events.rollout_gate || "hold");
+      const reasonCode = String(events.reason_code || "unknown");
+      const discoveredEvents = toSafeInteger(events.discovered_events);
+      const dueNowEvents = toSafeInteger(events.due_now_events);
+      const failedHistory = toSafeInteger(events.failed_history_entries);
+      const diagnostics = Array.isArray(events.diagnostics) ? events.diagnostics : [];
+
+      const healthTone = healthState === "healthy"
+        ? "ok"
+        : (healthState === "degraded" ? "warn" : "bad");
+      const gateTone = rolloutGate === "pass"
+        ? "ok"
+        : (rolloutGate === "hold" ? "warn" : "bad");
+      const failedTone = failedHistory === 0 ? "ok" : "warn";
+
+      applyMetricValue(routinesHealthStateValue, healthState, healthTone);
+      applyMetricValue(routinesRolloutGateValue, rolloutGate, gateTone);
+      applyMetricValue(routinesReasonCodeValue, reasonCode, gateTone);
+      applyMetricValue(routinesDiscoveredValue, discoveredEvents, discoveredEvents > 0 ? "ok" : "warn");
+      applyMetricValue(routinesDueNowValue, dueNowEvents, dueNowEvents > 0 ? "warn" : "ok");
+      applyMetricValue(routinesFailedHistoryValue, failedHistory, failedTone);
+
+      routinesStatusPre.textContent = [
+        "routines_status: health=" + healthState +
+          " rollout_gate=" + rolloutGate +
+          " reason_code=" + reasonCode,
+        "events_dir=" + String(events.events_dir || "n/a"),
+        "discovered=" + String(discoveredEvents) +
+          " enabled=" + String(toSafeInteger(events.enabled_events)) +
+          " due_now=" + String(dueNowEvents) +
+          " queued_now=" + String(toSafeInteger(events.queued_now_events)) +
+          " not_due=" + String(toSafeInteger(events.not_due_events)) +
+          " malformed=" + String(toSafeInteger(events.malformed_events)),
+        "",
+        JSON.stringify(events, null, 2)
+      ].join("\n");
+
+      routinesDiagnosticsPre.textContent = diagnostics.length > 0
+        ? diagnostics.join("\n")
+        : "No routine diagnostics.";
+    }}
+
+    function renderRoutinesJobsTable(payload) {{
+      const jobs = payload && Array.isArray(payload.jobs) ? payload.jobs : [];
+      if (jobs.length === 0) {{
+        routinesJobsTableBody.innerHTML = "<tr><td colspan=\"7\">No active jobs.</td></tr>";
+        return;
+      }}
+      routinesJobsTableBody.innerHTML = jobs.map((job) => {{
+        const jobId = String(job.job_id || "");
+        const status = String(job.status || "unknown");
+        const cancelDisabled = status !== "running";
+        const actionCell = cancelDisabled
+          ? "<span>n/a</span>"
+          : "<button type=\"button\" class=\"secondary routines-job-cancel\" data-job-id=\"" + escapeHtml(jobId) + "\">Cancel</button>";
+        return [
+          "<tr>",
+          "<td>" + escapeHtml(jobId) + "</td>",
+          "<td>" + escapeHtml(job.workspace_id || "n/a") + "</td>",
+          "<td>" + escapeHtml(status) + "</td>",
+          "<td>" + escapeHtml(formatDashboardTimestamp(job.started_unix_ms)) + "</td>",
+          "<td>" + escapeHtml(formatDashboardTimestamp(job.last_activity_unix_ms)) + "</td>",
+          "<td>" + String(toSafeInteger(job.queued_followups)) + "</td>",
+          "<td>" + actionCell + "</td>",
+          "</tr>"
+        ].join("");
+      }}).join("");
+
+      routinesJobsTableBody.querySelectorAll(".routines-job-cancel").forEach((button) => {{
+        button.addEventListener("click", () => {{
+          cancelRoutineJob(button.getAttribute("data-job-id") || "");
+        }});
+      }});
     }}
 
     function renderMultiChannelChannelRows(connectors) {{
@@ -1254,6 +1411,8 @@ pub(super) fn render_gateway_webchat_page() -> String {
           dashboard_stream: DASHBOARD_STREAM_ENDPOINT,
           cortex_chat: CORTEX_CHAT_ENDPOINT,
           cortex_status: CORTEX_STATUS_ENDPOINT,
+          jobs: JOBS_ENDPOINT,
+          job_cancel: JOB_CANCEL_ENDPOINT_TEMPLATE,
           sessions: SESSIONS_ENDPOINT,
           session_detail: SESSION_DETAIL_ENDPOINT_TEMPLATE,
           session_append: SESSION_APPEND_ENDPOINT_TEMPLATE,
@@ -1535,6 +1694,92 @@ pub(super) fn render_gateway_webchat_page() -> String {
       }}
     }}
 
+    async function loadRoutinesJobs() {{
+      routinesJobsTableBody.innerHTML = "<tr><td colspan=\"7\">Loading active jobs...</td></tr>";
+      try {{
+        const response = await fetch(JOBS_ENDPOINT, {{ headers: authHeaders() }});
+        const raw = await response.text();
+        let payload = null;
+        try {{
+          payload = JSON.parse(raw);
+        }} catch (_error) {{
+          payload = {{ raw: raw }};
+        }}
+        if (!response.ok) {{
+          routinesJobsTableBody.innerHTML = "<tr><td colspan=\"7\">No active jobs.</td></tr>";
+          routinesStatusPre.textContent = "routines jobs failed: status=" + String(response.status) + "\n" + raw;
+          await emitUiTelemetry("routines", "jobs_refresh", "routines_jobs_failed", {{ status: response.status }});
+          return;
+        }}
+        renderRoutinesJobsTable(payload);
+        await emitUiTelemetry("routines", "jobs_refresh", "routines_jobs_loaded", {{
+          total_jobs: toSafeInteger(payload.total_jobs)
+        }});
+      }} catch (error) {{
+        routinesJobsTableBody.innerHTML = "<tr><td colspan=\"7\">No active jobs.</td></tr>";
+        routinesStatusPre.textContent = "routines jobs failed: " + String(error);
+      }}
+    }}
+
+    async function cancelRoutineJob(jobId) {{
+      const normalizedJobId = String(jobId || "").trim();
+      if (normalizedJobId.length === 0) {{
+        return;
+      }}
+      const endpoint = resolveJobEndpoint(JOB_CANCEL_ENDPOINT_TEMPLATE, normalizedJobId);
+      routinesStatusPre.textContent = "Cancelling job " + normalizedJobId + "...";
+      try {{
+        const response = await fetch(endpoint, {{
+          method: "POST",
+          headers: Object.assign({{ "Content-Type": "application/json" }}, authHeaders()),
+          body: JSON.stringify({{}})
+        }});
+        const raw = await response.text();
+        let payload = null;
+        try {{
+          payload = JSON.parse(raw);
+        }} catch (_error) {{
+          payload = {{ raw: raw }};
+        }}
+        if (!response.ok) {{
+          routinesStatusPre.textContent =
+            "routines cancel failed: status=" + String(response.status) + "\n" + raw;
+          await emitUiTelemetry("routines", "job_cancel", "routines_job_cancel_failed", {{
+            status: response.status,
+            job_id: normalizedJobId
+          }});
+          return;
+        }}
+        routinesStatusPre.textContent = JSON.stringify(payload, null, 2);
+        await emitUiTelemetry("routines", "job_cancel", "routines_job_cancelled", {{
+          job_id: normalizedJobId
+        }});
+        await loadRoutinesJobs();
+      }} catch (error) {{
+        routinesStatusPre.textContent = "routines cancel failed: " + String(error);
+      }}
+    }}
+
+    async function refreshRoutinesPanel() {{
+      routinesStatusPre.textContent = "Loading routines status...";
+      try {{
+        const response = await fetch(STATUS_ENDPOINT, {{ headers: authHeaders() }});
+        const raw = await response.text();
+        if (!response.ok) {{
+          routinesStatusPre.textContent = "routines status failed: status=" + String(response.status) + "\n" + raw;
+          return;
+        }}
+        const payload = JSON.parse(raw);
+        renderRoutinesFromGatewayStatusPayload(payload);
+        await loadRoutinesJobs();
+        await emitUiTelemetry("routines", "refresh", "routines_refreshed", {{
+          reason_code: payload.events ? payload.events.reason_code : "unknown"
+        }});
+      }} catch (error) {{
+        routinesStatusPre.textContent = "routines status failed: " + String(error);
+      }}
+    }}
+
     async function refreshStatus() {{
       statusPre.textContent = "Loading gateway status...";
       try {{
@@ -1547,6 +1792,7 @@ pub(super) fn render_gateway_webchat_page() -> String {
         }}
         const payload = JSON.parse(raw);
         renderStatusDashboard(payload);
+        renderRoutinesFromGatewayStatusPayload(payload);
         statusPre.textContent = formatGatewayStatusSummary(payload) + "\n\nraw_payload:\n" + JSON.stringify(payload, null, 2);
         configViewPre.textContent = formatConfigView(payload);
         await emitUiTelemetry("tools", "refresh_status", "status_refreshed", {{ health_state: payload.multi_channel ? payload.multi_channel.health_state : "unknown" }});
@@ -1926,6 +2172,8 @@ pub(super) fn render_gateway_webchat_page() -> String {
     dashboardControlRefreshButton.addEventListener("click", () => postDashboardAction("refresh"));
     sendCortexPromptButton.addEventListener("click", sendCortexPrompt);
     clearCortexOutputButton.addEventListener("click", () => setCortexOutput("No cortex output yet."));
+    routinesRefreshButton.addEventListener("click", refreshRoutinesPanel);
+    routinesJobsRefreshButton.addEventListener("click", loadRoutinesJobs);
     loadSessionsButton.addEventListener("click", loadSessions);
     loadSessionDetailButton.addEventListener("click", loadSessionDetail);
     appendSessionButton.addEventListener("click", appendSessionMessage);
@@ -1954,6 +2202,7 @@ pub(super) fn render_gateway_webchat_page() -> String {
     refreshDashboard();
     updateDashboardLiveMode();
     refreshCortexStatus();
+    refreshRoutinesPanel();
     loadSessions();
     loadSessionDetail();
     loadMemory();
@@ -1975,6 +2224,8 @@ pub(super) fn render_gateway_webchat_page() -> String {
         dashboard_stream_endpoint = DASHBOARD_STREAM_ENDPOINT,
         cortex_chat_endpoint = CORTEX_CHAT_ENDPOINT,
         cortex_status_endpoint = CORTEX_STATUS_ENDPOINT,
+        jobs_endpoint = GATEWAY_JOBS_ENDPOINT,
+        job_cancel_endpoint_template = GATEWAY_JOB_CANCEL_ENDPOINT_TEMPLATE,
         websocket_endpoint = GATEWAY_WS_ENDPOINT,
         sessions_endpoint = GATEWAY_SESSIONS_ENDPOINT,
         memory_endpoint_template = GATEWAY_MEMORY_ENDPOINT,

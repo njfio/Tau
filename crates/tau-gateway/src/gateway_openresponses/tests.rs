@@ -704,6 +704,8 @@ fn unit_render_gateway_webchat_page_includes_expected_endpoints() {
     assert!(html.contains(DASHBOARD_STREAM_ENDPOINT));
     assert!(html.contains(CORTEX_CHAT_ENDPOINT));
     assert!(html.contains(CORTEX_STATUS_ENDPOINT));
+    assert!(html.contains(GATEWAY_JOBS_ENDPOINT));
+    assert!(html.contains(GATEWAY_JOB_CANCEL_ENDPOINT_TEMPLATE));
     assert!(html.contains(GATEWAY_WS_ENDPOINT));
     assert!(html.contains(GATEWAY_MEMORY_GRAPH_ENDPOINT));
     assert!(html.contains(DEFAULT_SESSION_KEY));
@@ -733,6 +735,10 @@ fn unit_render_gateway_webchat_page_includes_expected_endpoints() {
     assert!(html.contains("id=\"cortexPrompt\""));
     assert!(html.contains("id=\"cortexOutput\""));
     assert!(html.contains("id=\"cortexStatus\""));
+    assert!(html.contains("id=\"view-routines\""));
+    assert!(html.contains("id=\"routinesStatus\""));
+    assert!(html.contains("id=\"routinesDiagnostics\""));
+    assert!(html.contains("id=\"routinesJobsTableBody\""));
     assert!(html.contains("function relationColor(relationType)"));
     assert!(html.contains("function computeMemoryGraphForceLayout(nodes, edges, width, height)"));
     assert!(html.contains("const importanceSignal = Math.max(toSafeFloat(node.weight, 0)"));
@@ -760,6 +766,26 @@ fn unit_spec_2730_c01_c02_c03_webchat_page_includes_cortex_admin_panel_and_strea
     assert!(html.contains("cortex.response.output_text.done"));
     assert!(html.contains("cortex request failed: status="));
     assert!(html.contains("cortex status failed:"));
+}
+
+#[test]
+fn unit_spec_2734_c01_c02_c03_webchat_page_includes_routines_panel_and_job_handlers() {
+    let html = render_gateway_webchat_page();
+    assert!(html.contains("data-view=\"routines\""));
+    assert!(html.contains("id=\"view-routines\""));
+    assert!(html.contains("id=\"routinesRefresh\""));
+    assert!(html.contains("id=\"routinesJobsRefresh\""));
+    assert!(html.contains("id=\"routinesStatus\""));
+    assert!(html.contains("id=\"routinesDiagnostics\""));
+    assert!(html.contains("id=\"routinesJobsTableBody\""));
+    assert!(html.contains(GATEWAY_JOBS_ENDPOINT));
+    assert!(html.contains(GATEWAY_JOB_CANCEL_ENDPOINT_TEMPLATE));
+    assert!(html.contains("payload.events"));
+    assert!(html.contains("async function refreshRoutinesPanel()"));
+    assert!(html.contains("async function loadRoutinesJobs()"));
+    assert!(html.contains("async function cancelRoutineJob(jobId)"));
+    assert!(html.contains("routines status failed:"));
+    assert!(html.contains("routines jobs failed:"));
 }
 
 #[tokio::test]
@@ -800,6 +826,11 @@ async fn functional_webchat_endpoint_returns_html_shell() {
     assert!(body.contains("id=\"cortexPrompt\""));
     assert!(body.contains("id=\"cortexOutput\""));
     assert!(body.contains("id=\"cortexStatus\""));
+    assert!(body.contains("Routines"));
+    assert!(body.contains("id=\"view-routines\""));
+    assert!(body.contains("id=\"routinesStatus\""));
+    assert!(body.contains("id=\"routinesDiagnostics\""));
+    assert!(body.contains("id=\"routinesJobsTableBody\""));
     assert!(body.contains("id=\"dashboardStatus\""));
     assert!(body.contains("id=\"dashboardLive\""));
     assert!(body.contains("id=\"dashboardActionReason\""));
