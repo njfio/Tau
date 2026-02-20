@@ -1,6 +1,6 @@
 # Spec: Issue #2774 - G20 crypto/store dependency closure and AES-GCM hardening
 
-Status: Reviewed
+Status: Implemented
 
 ## Problem Statement
 `tasks/spacebot-comparison.md` still has one unchecked G20 pathway row for dependency/backend hardening. Current keyed credential-store encryption in `tau-provider` uses a custom XOR+SHA stream/tag construction, which is weaker and non-standard compared to an AEAD primitive.
@@ -57,3 +57,6 @@ Then G20 dependency pathway row is checked with `#2774` evidence.
 - No unchecked G20 dependency row remains in roadmap.
 - New keyed payloads are authenticated-encryption encoded.
 - Existing encrypted stores continue loading without manual intervention.
+
+## Approval Gate
+This task introduced new dependencies (`aes-gcm`, `redb`) and proceeded under explicit user direction to continue contract execution end-to-end.
