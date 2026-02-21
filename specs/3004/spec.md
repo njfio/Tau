@@ -1,6 +1,6 @@
 # Spec: Issue #3004 - Refresh Tau gaps revalidation doc to current closure state
 
-Status: Reviewed
+Status: Implemented
 
 ## Problem Statement
 `tasks/tau-gaps-issues-improvements.md` includes stale closure states and outdated metadata. It must be refreshed so roadmap statuses and follow-up issue references match current GitHub issue state and repository evidence.

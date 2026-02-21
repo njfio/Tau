@@ -1,10 +1,10 @@
 # Tasks: Issue #3004 - Refresh Tau gaps revalidation doc
 
 ## Ordered Tasks
-1. [ ] T1 (RED): add doc conformance script and run it against current doc to capture stale-status failure.
-2. [ ] T2 (GREEN): update `tasks/tau-gaps-issues-improvements.md` with current closure states and refreshed snapshot metadata.
-3. [ ] T3 (REGRESSION): re-run conformance script to ensure refreshed content remains enforced.
-4. [ ] T4 (VERIFY): run baseline quality gates for this slice (`cargo fmt --check`, `cargo check -q`).
+1. [x] T1 (RED): add doc conformance script and run it against current doc to capture stale-status failure.
+2. [x] T2 (GREEN): update `tasks/tau-gaps-issues-improvements.md` with current closure states and refreshed snapshot metadata.
+3. [x] T3 (REGRESSION): re-run conformance script to ensure refreshed content remains enforced.
+4. [x] T4 (VERIFY): run baseline quality gates for this slice (`cargo fmt --check`, `cargo check -q`).
 
 ## Tier Mapping
 - Unit: script assertion helpers in `test-tau-gaps-issues-improvements.sh`
