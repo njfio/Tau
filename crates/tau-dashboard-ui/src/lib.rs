@@ -598,6 +598,16 @@ fn derive_memory_graph_node_size_contracts(importance: &str) -> (&'static str, S
     (size_bucket, size_px)
 }
 
+fn derive_memory_graph_node_color_contracts(memory_type: &str) -> (&'static str, &'static str) {
+    match memory_type.trim() {
+        "goal" => ("goal", "#f59e0b"),
+        "fact" => ("fact", "#2563eb"),
+        "event" => ("event", "#7c3aed"),
+        "observation" => ("observation", "#0d9488"),
+        _ => ("unknown", "#6b7280"),
+    }
+}
+
 /// Public `fn` `render_tau_ops_dashboard_shell` in `tau-dashboard-ui`.
 pub fn render_tau_ops_dashboard_shell() -> String {
     render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext::default())
@@ -972,6 +982,8 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     let row_id = format!("tau-ops-memory-graph-node-{index}");
                     let (node_size_bucket, node_size_px) =
                         derive_memory_graph_node_size_contracts(row.importance.as_str());
+                    let (node_color_token, node_color_hex) =
+                        derive_memory_graph_node_color_contracts(row.memory_type.as_str());
                     view! {
                         <li
                             id=row_id
@@ -980,6 +992,8 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             data-importance=row.importance.clone()
                             data-node-size-bucket=node_size_bucket
                             data-node-size-px=node_size_px
+                            data-node-color-token=node_color_token
+                            data-node-color-hex=node_color_hex
                         ></li>
                     }
                 })
