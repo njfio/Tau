@@ -2724,6 +2724,39 @@ async fn integration_spec_3090_c02_ops_memory_graph_focus_marks_connected_edges_
 }
 
 #[tokio::test]
+async fn integration_spec_3094_c02_ops_memory_graph_zoom_query_clamps_and_updates_actions() {
+    let temp = tempdir().expect("tempdir");
+    let state = test_state(temp.path(), 10_000, "secret");
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+    let client = Client::new();
+
+    let response = client
+        .get(format!(
+            "http://{addr}/ops/memory-graph?theme=light&sidebar=collapsed&session=ops-zoom&workspace_id=workspace-zoom&channel_id=channel-zoom&actor_id=operator&memory_type=goal&graph_zoom=1.95"
+        ))
+        .send()
+        .await
+        .expect("load ops memory graph zoom route");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response
+        .text()
+        .await
+        .expect("read ops memory graph zoom body");
+
+    assert!(body.contains(
+        "id=\"tau-ops-memory-graph-zoom-controls\" data-zoom-level=\"1.95\" data-zoom-min=\"0.25\" data-zoom-max=\"2.00\" data-zoom-step=\"0.10\""
+    ));
+    assert!(body.contains("id=\"tau-ops-memory-graph-zoom-in\""));
+    assert!(body.contains("data-zoom-action=\"in\""));
+    assert!(body.contains("graph_zoom=2.00"));
+    assert!(body.contains("id=\"tau-ops-memory-graph-zoom-out\""));
+    assert!(body.contains("data-zoom-action=\"out\""));
+    assert!(body.contains("graph_zoom=1.85"));
+
+    handle.abort();
+}
+
+#[tokio::test]
 async fn functional_spec_2798_c04_ops_shell_exposes_responsive_and_theme_contract_markers() {
     let temp = tempdir().expect("tempdir");
     let state = test_state(temp.path(), 4_096, "secret");

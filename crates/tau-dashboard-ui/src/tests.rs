@@ -1494,6 +1494,35 @@ fn functional_spec_3090_c02_memory_graph_route_marks_connected_edges_and_neighbo
 }
 
 #[test]
+fn functional_spec_3094_c01_c02_memory_graph_route_renders_default_zoom_markers_and_actions() {
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        auth_mode: TauOpsDashboardAuthMode::Token,
+        active_route: TauOpsDashboardRoute::MemoryGraph,
+        theme: TauOpsDashboardTheme::Light,
+        sidebar_state: TauOpsDashboardSidebarState::Collapsed,
+        command_center: TauOpsDashboardCommandCenterSnapshot::default(),
+        chat: TauOpsDashboardChatSnapshot {
+            active_session_key: "ops-zoom".to_string(),
+            memory_search_workspace_id: "workspace-zoom".to_string(),
+            memory_search_channel_id: "channel-zoom".to_string(),
+            memory_search_actor_id: "operator".to_string(),
+            memory_search_memory_type: "goal".to_string(),
+            ..TauOpsDashboardChatSnapshot::default()
+        },
+    });
+
+    assert!(html.contains(
+        "id=\"tau-ops-memory-graph-zoom-controls\" data-zoom-level=\"1.00\" data-zoom-min=\"0.25\" data-zoom-max=\"2.00\" data-zoom-step=\"0.10\""
+    ));
+    assert!(html.contains("id=\"tau-ops-memory-graph-zoom-in\""));
+    assert!(html.contains("data-zoom-action=\"in\""));
+    assert!(html.contains("graph_zoom=1.10"));
+    assert!(html.contains("id=\"tau-ops-memory-graph-zoom-out\""));
+    assert!(html.contains("data-zoom-action=\"out\""));
+    assert!(html.contains("graph_zoom=0.90"));
+}
+
+#[test]
 fn functional_spec_2838_c01_c02_c03_sessions_route_renders_sessions_panel_list_rows_and_links() {
     let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
         auth_mode: TauOpsDashboardAuthMode::Token,
