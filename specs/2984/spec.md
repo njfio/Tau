@@ -1,6 +1,6 @@
 # Spec: Issue #2984 - Split gateway config handlers into config_runtime module
 
-Status: Reviewed
+Status: Implemented
 
 ## Problem Statement
 Gateway config endpoint handlers and override-policy helper plumbing are still implemented inline in `gateway_openresponses.rs`, increasing hotspot complexity and reducing maintainability.
