@@ -1,6 +1,6 @@
 # Spec: Issue #3090 - ops memory-graph hover highlight contracts
 
-Status: Reviewed
+Status: Implemented
 
 ## Problem Statement
 `/ops/memory-graph` now exposes deterministic node/edge contracts, size/color/style,
