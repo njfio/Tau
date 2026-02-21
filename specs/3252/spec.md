@@ -1,6 +1,6 @@
 # Spec: Issue #3252 - move shell/auth entry handlers to dedicated module
 
-Status: Reviewed
+Status: Implemented
 
 ## Problem Statement
 `gateway_openresponses.rs` still owns simple shell/auth entry handlers, mixing route-entry glue with broader request runtime logic and limiting continued module decomposition.
@@ -32,13 +32,13 @@ then root line count is under tightened threshold and moved shell/auth handler f
 |---|---|---|---|---|---|
 | C-01 | AC-1 | Functional/Conformance | gateway server fixture | `functional_webchat_endpoint_returns_html_shell` | webchat shell route behavior unchanged |
 | C-02 | AC-1 | Functional/Conformance | gateway server fixture | `functional_dashboard_shell_endpoint_returns_html_shell` | dashboard shell route behavior unchanged |
-| C-03 | AC-1 | Functional/Conformance | gateway server fixture | `functional_gateway_auth_bootstrap_endpoint_returns_gateway_auth_contract` | auth bootstrap payload contract remains stable |
+| C-03 | AC-1 | Functional/Conformance | gateway server fixture | `functional_spec_2786_c01_gateway_auth_bootstrap_endpoint_reports_token_mode_contract` | auth bootstrap payload contract remains stable |
 | C-04 | AC-2 | Functional/Regression | repo checkout | `scripts/dev/test-gateway-openresponses-size.sh` | tightened threshold + ownership checks pass |
 
 ## Success Metrics / Observable Signals
 - `scripts/dev/test-gateway-openresponses-size.sh`
 - `cargo test -p tau-gateway functional_webchat_endpoint_returns_html_shell`
 - `cargo test -p tau-gateway functional_dashboard_shell_endpoint_returns_html_shell`
-- `cargo test -p tau-gateway functional_gateway_auth_bootstrap_endpoint_returns_gateway_auth_contract`
+- `cargo test -p tau-gateway functional_spec_2786_c01_gateway_auth_bootstrap_endpoint_reports_token_mode_contract`
 - `cargo fmt --check`
 - `cargo clippy -- -D warnings`

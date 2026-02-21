@@ -19,6 +19,6 @@ Status: In Progress
 - `scripts/dev/test-gateway-openresponses-size.sh`
 - `cargo test -p tau-gateway functional_webchat_endpoint_returns_html_shell`
 - `cargo test -p tau-gateway functional_dashboard_shell_endpoint_returns_html_shell`
-- `cargo test -p tau-gateway functional_gateway_auth_bootstrap_endpoint_returns_gateway_auth_contract`
+- `cargo test -p tau-gateway functional_spec_2786_c01_gateway_auth_bootstrap_endpoint_reports_token_mode_contract`
 - `cargo fmt --check`
 - `cargo clippy -- -D warnings`

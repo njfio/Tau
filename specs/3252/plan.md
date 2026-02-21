@@ -4,12 +4,11 @@
 1. RED: tighten root guard to `650` and assert moved shell/auth handler definitions are not declared in root.
 2. Add `entry_handlers.rs` and move webchat/dashboard/auth-bootstrap handlers.
 3. Import moved handlers from root for router wiring.
-4. Add/verify functional auth bootstrap contract test and run verification gates.
+4. Verify existing functional auth bootstrap contract test and run verification gates.
 
 ## Affected Modules
 - `crates/tau-gateway/src/gateway_openresponses.rs`
 - `crates/tau-gateway/src/gateway_openresponses/entry_handlers.rs` (new)
-- `crates/tau-gateway/src/gateway_openresponses/tests.rs`
 - `scripts/dev/test-gateway-openresponses-size.sh`
 - `specs/milestones/m240/index.md`
 - `specs/3252/spec.md`
