@@ -1,6 +1,6 @@
 # Spec: Issue #3068 - ops memory-graph nodes and edges contracts
 
-Status: Reviewed
+Status: Implemented
 
 ## Problem Statement
 Tau Ops includes a `/ops/memory-graph` route and navigation marker, but the
