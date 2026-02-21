@@ -977,6 +977,26 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     let memory_graph_edge_count = memory_graph_edge_rows.len().to_string();
     let memory_graph_node_count_panel_attr = memory_graph_node_count.clone();
     let memory_graph_edge_count_panel_attr = memory_graph_edge_count.clone();
+    let selected_memory_graph_detail_id = memory_detail_selected_entry_id.clone();
+    let memory_graph_node_detail_href_prefix = format!(
+        "/ops/memory-graph?theme={theme_attr}&sidebar={sidebar_state_attr}&session={chat_session_key}&workspace_id={memory_search_workspace_id}&channel_id={memory_search_channel_id}&actor_id={memory_search_actor_id}&memory_type={memory_search_memory_type}&detail_memory_id="
+    );
+    let memory_graph_detail_visible =
+        if matches!(context.active_route, TauOpsDashboardRoute::MemoryGraph)
+            && context.chat.memory_detail_visible
+        {
+            "true"
+        } else {
+            "false"
+        };
+    let memory_graph_detail_summary = memory_detail_summary.clone();
+    let memory_graph_detail_selected_entry_id = memory_detail_selected_entry_id.clone();
+    let memory_graph_detail_memory_type = memory_detail_memory_type.clone();
+    let memory_graph_detail_relation_count_panel_attr =
+        memory_detail_relation_count_panel_attr.clone();
+    let memory_graph_detail_open_memory_href = format!(
+        "/ops/memory?theme={theme_attr}&sidebar={sidebar_state_attr}&session={chat_session_key}&workspace_id={memory_search_workspace_id}&channel_id={memory_search_channel_id}&actor_id={memory_search_actor_id}&memory_type={memory_search_memory_type}&detail_memory_id={memory_graph_detail_selected_entry_id}"
+    );
     let memory_graph_nodes_view = if memory_graph_node_rows.is_empty() {
         leptos::either::Either::Left(view! {
             <li id="tau-ops-memory-graph-empty-state" data-empty-state="true">
@@ -994,6 +1014,15 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                         derive_memory_graph_node_size_contracts(row.importance.as_str());
                     let (node_color_token, node_color_hex) =
                         derive_memory_graph_node_color_contracts(row.memory_type.as_str());
+                    let node_selected = if memory_graph_detail_visible == "true"
+                        && row.memory_id.as_str() == selected_memory_graph_detail_id.as_str()
+                    {
+                        "true"
+                    } else {
+                        "false"
+                    };
+                    let node_detail_href =
+                        format!("{memory_graph_node_detail_href_prefix}{}", row.memory_id);
                     view! {
                         <li
                             id=row_id
@@ -1004,6 +1033,9 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             data-node-size-px=node_size_px
                             data-node-color-token=node_color_token
                             data-node-color-hex=node_color_hex
+                            data-node-selected=node_selected
+                            data-node-detail-target="tau-ops-memory-graph-detail-panel"
+                            data-node-detail-href=node_detail_href
                         ></li>
                     }
                 })
@@ -2210,8 +2242,8 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             <section
                                 id="tau-ops-memory-detail-panel"
                                 data-detail-visible=memory_detail_visible
-                                data-memory-id=memory_detail_selected_entry_id
-                                data-memory-type=memory_detail_memory_type
+                                data-memory-id=memory_detail_selected_entry_id.clone()
+                                data-memory-type=memory_detail_memory_type.clone()
                                 data-embedding-source=memory_detail_embedding_source_panel_attr
                                 data-embedding-model=memory_detail_embedding_model_panel_attr
                                 data-embedding-reason-code=memory_detail_embedding_reason_code_panel_attr
@@ -2225,7 +2257,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     data-embedding-reason-code=memory_detail_embedding_reason_code
                                     data-embedding-dimensions=memory_detail_embedding_dimensions
                                 >
-                                    {memory_detail_summary}
+                                    {memory_detail_summary.clone()}
                                 </p>
                                 <ul id="tau-ops-memory-relations" data-relation-count=memory_detail_relation_count>
                                     {memory_detail_relations_view}
@@ -2250,6 +2282,27 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             <ul id="tau-ops-memory-graph-edges" data-edge-count=memory_graph_edge_count>
                                 {memory_graph_edges_view}
                             </ul>
+                            <section
+                                id="tau-ops-memory-graph-detail-panel"
+                                data-detail-visible=memory_graph_detail_visible
+                                data-memory-id=memory_graph_detail_selected_entry_id.clone()
+                                data-memory-type=memory_graph_detail_memory_type
+                                data-relation-count=memory_graph_detail_relation_count_panel_attr
+                            >
+                                <p
+                                    id="tau-ops-memory-graph-detail-summary"
+                                    data-memory-id=memory_graph_detail_selected_entry_id.clone()
+                                >
+                                    {memory_graph_detail_summary}
+                                </p>
+                                <a
+                                    id="tau-ops-memory-graph-detail-open-memory"
+                                    href=memory_graph_detail_open_memory_href
+                                    data-detail-memory-id=memory_graph_detail_selected_entry_id.clone()
+                                >
+                                    Open in Memory Explorer
+                                </a>
+                            </section>
                         </section>
                         <section
                             id="tau-ops-command-center"
