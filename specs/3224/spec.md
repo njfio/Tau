@@ -1,6 +1,6 @@
 # Spec: Issue #3224 - move gateway multi-channel status/report types into module
 
-Status: Reviewed
+Status: Implemented
 
 ## Problem Statement
 `gateway_openresponses.rs` still defines multi-channel status/report structs and DTOs that are consumed only by `gateway_openresponses/multi_channel_status.rs`. This keeps the root module larger than needed and leaves internal status-modeling concerns in the root file.
