@@ -50,6 +50,8 @@ pub(super) struct OpsShellControlsQuery {
     tool: String,
     #[serde(default)]
     job: String,
+    #[serde(default)]
+    cancel_job: String,
 }
 
 impl OpsShellControlsQuery {
@@ -241,6 +243,15 @@ impl OpsShellControlsQuery {
 
     pub(super) fn requested_job_id(&self) -> Option<String> {
         let value = self.job.trim();
+        if value.is_empty() {
+            None
+        } else {
+            Some(value.to_string())
+        }
+    }
+
+    pub(super) fn requested_cancel_job_id(&self) -> Option<String> {
+        let value = self.cancel_job.trim();
         if value.is_empty() {
             None
         } else {
@@ -596,5 +607,20 @@ mod tests {
 
         let empty = OpsShellControlsQuery::default();
         assert_eq!(empty.requested_job_id(), None);
+    }
+
+    #[test]
+    fn unit_requested_cancel_job_id_returns_trimmed_value_or_none() {
+        let controls = OpsShellControlsQuery {
+            cancel_job: " job-001 ".to_string(),
+            ..OpsShellControlsQuery::default()
+        };
+        assert_eq!(
+            controls.requested_cancel_job_id(),
+            Some("job-001".to_string())
+        );
+
+        let empty = OpsShellControlsQuery::default();
+        assert_eq!(empty.requested_cancel_job_id(), None);
     }
 }

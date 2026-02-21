@@ -650,6 +650,14 @@ fn resolve_ops_selected_job_id(
     controls: &OpsShellControlsQuery,
     jobs_rows: &[TauOpsDashboardJobRow],
 ) -> String {
+    if let Some(requested_cancel_job_id) = controls.requested_cancel_job_id() {
+        if jobs_rows
+            .iter()
+            .any(|row| row.job_id == requested_cancel_job_id)
+        {
+            return requested_cancel_job_id;
+        }
+    }
     if let Some(requested_job_id) = controls.requested_job_id() {
         if jobs_rows.iter().any(|row| row.job_id == requested_job_id) {
             return requested_job_id;
@@ -659,6 +667,29 @@ fn resolve_ops_selected_job_id(
         .first()
         .map(|row| row.job_id.clone())
         .unwrap_or_default()
+}
+
+fn apply_ops_cancel_job_request(
+    controls: &OpsShellControlsQuery,
+    jobs_rows: &mut [TauOpsDashboardJobRow],
+) {
+    let Some(requested_cancel_job_id) = controls.requested_cancel_job_id() else {
+        return;
+    };
+
+    let Some(job_row) = jobs_rows
+        .iter_mut()
+        .find(|row| row.job_id.as_str() == requested_cancel_job_id.as_str())
+    else {
+        return;
+    };
+
+    if job_row.job_status.as_str() == "running" {
+        job_row.job_status = "cancelled".to_string();
+        if job_row.finished_unix_ms == 0 {
+            job_row.finished_unix_ms = job_row.started_unix_ms.saturating_add(5);
+        }
+    }
 }
 
 fn collect_ops_job_detail_output_contracts(
@@ -679,6 +710,7 @@ fn collect_ops_job_detail_output_contracts(
         "running" => ("indexing...".to_string(), String::new()),
         "completed" => ("prune complete".to_string(), String::new()),
         "failed" => (String::new(), "connector timeout".to_string()),
+        "cancelled" => ("cancel requested".to_string(), String::new()),
         _ => (String::new(), String::new()),
     };
     (selected_row.job_status.clone(), duration_ms, stdout, stderr)
@@ -762,7 +794,8 @@ fn collect_tau_ops_dashboard_chat_snapshot(
     );
     let tool_detail_recent_invocation_rows =
         collect_ops_tool_detail_recent_invocation_rows(tool_detail_selected_tool_name.as_str());
-    let jobs_rows = collect_ops_jobs_rows();
+    let mut jobs_rows = collect_ops_jobs_rows();
+    apply_ops_cancel_job_request(controls, jobs_rows.as_mut_slice());
     let job_detail_selected_job_id = resolve_ops_selected_job_id(controls, jobs_rows.as_slice());
     let (job_detail_status, job_detail_duration_ms, job_detail_stdout, job_detail_stderr) =
         collect_ops_job_detail_output_contracts(
