@@ -1953,6 +1953,80 @@ fn regression_spec_3120_c04_non_tools_routes_keep_hidden_job_detail_markers() {
 }
 
 #[test]
+fn functional_spec_3124_c01_c02_tools_route_renders_job_cancel_action_markers() {
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        auth_mode: TauOpsDashboardAuthMode::Token,
+        active_route: TauOpsDashboardRoute::ToolsJobs,
+        theme: TauOpsDashboardTheme::Light,
+        sidebar_state: TauOpsDashboardSidebarState::Collapsed,
+        command_center: TauOpsDashboardCommandCenterSnapshot::default(),
+        chat: TauOpsDashboardChatSnapshot {
+            jobs_rows: vec![
+                TauOpsDashboardJobRow {
+                    job_id: "job-001".to_string(),
+                    job_name: "memory-index".to_string(),
+                    job_status: "running".to_string(),
+                    started_unix_ms: 1000,
+                    finished_unix_ms: 0,
+                },
+                TauOpsDashboardJobRow {
+                    job_id: "job-002".to_string(),
+                    job_name: "session-prune".to_string(),
+                    job_status: "completed".to_string(),
+                    started_unix_ms: 900,
+                    finished_unix_ms: 950,
+                },
+                TauOpsDashboardJobRow {
+                    job_id: "job-003".to_string(),
+                    job_name: "connector-retry".to_string(),
+                    job_status: "cancelled".to_string(),
+                    started_unix_ms: 800,
+                    finished_unix_ms: 805,
+                },
+            ],
+            job_detail_selected_job_id: "job-003".to_string(),
+            job_detail_status: "cancelled".to_string(),
+            ..TauOpsDashboardChatSnapshot::default()
+        },
+    });
+
+    assert!(html.contains(
+        "id=\"tau-ops-jobs-cancel-0\" data-action=\"cancel-job\" data-job-id=\"job-001\" data-cancel-enabled=\"true\""
+    ));
+    assert!(html.contains(
+        "id=\"tau-ops-jobs-cancel-1\" data-action=\"cancel-job\" data-job-id=\"job-002\" data-cancel-enabled=\"false\""
+    ));
+    assert!(html.contains(
+        "id=\"tau-ops-jobs-cancel-2\" data-action=\"cancel-job\" data-job-id=\"job-003\" data-cancel-enabled=\"false\""
+    ));
+    assert!(html.contains(
+        "id=\"tau-ops-job-cancel-panel\" data-requested-job-id=\"job-003\" data-cancel-status=\"cancelled\" data-panel-visible=\"true\" data-cancel-endpoint-template=\"/gateway/jobs/{job_id}/cancel\""
+    ));
+    assert!(html.contains(
+        "id=\"tau-ops-job-cancel-submit\" data-action=\"cancel-job\" data-job-id=\"job-003\" data-cancel-enabled=\"false\""
+    ));
+}
+
+#[test]
+fn regression_spec_3124_c04_non_tools_routes_keep_hidden_job_cancel_markers() {
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        auth_mode: TauOpsDashboardAuthMode::Token,
+        active_route: TauOpsDashboardRoute::Chat,
+        theme: TauOpsDashboardTheme::Dark,
+        sidebar_state: TauOpsDashboardSidebarState::Expanded,
+        command_center: TauOpsDashboardCommandCenterSnapshot::default(),
+        chat: TauOpsDashboardChatSnapshot::default(),
+    });
+
+    assert!(html.contains(
+        "id=\"tau-ops-job-cancel-panel\" data-requested-job-id=\"\" data-cancel-status=\"idle\" data-panel-visible=\"false\" data-cancel-endpoint-template=\"/gateway/jobs/{job_id}/cancel\""
+    ));
+    assert!(html.contains(
+        "id=\"tau-ops-job-cancel-submit\" data-action=\"cancel-job\" data-job-id=\"\" data-cancel-enabled=\"false\""
+    ));
+}
+
+#[test]
 fn functional_spec_2838_c01_c02_c03_sessions_route_renders_sessions_panel_list_rows_and_links() {
     let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
         auth_mode: TauOpsDashboardAuthMode::Token,
