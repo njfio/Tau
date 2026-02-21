@@ -1,6 +1,6 @@
 # Spec: Issue #3120 - ops job detail output contracts
 
-Status: Reviewed
+Status: Implemented
 
 ## Problem Statement
 `/ops/tools-jobs` now lists jobs (PRD `2100`) but does not expose deterministic job-detail output contracts required by PRD `2101`.
