@@ -1132,6 +1132,59 @@ fn regression_spec_2917_memory_create_status_updated_renders_updated_message_mar
 }
 
 #[test]
+fn functional_spec_3060_c01_memory_route_renders_delete_form_and_confirmation_markers() {
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        auth_mode: TauOpsDashboardAuthMode::Token,
+        active_route: TauOpsDashboardRoute::Memory,
+        theme: TauOpsDashboardTheme::Light,
+        sidebar_state: TauOpsDashboardSidebarState::Collapsed,
+        command_center: TauOpsDashboardCommandCenterSnapshot::default(),
+        chat: TauOpsDashboardChatSnapshot::default(),
+    });
+
+    assert!(html.contains(
+        "id=\"tau-ops-memory-panel\" data-route=\"/ops/memory\" aria-hidden=\"false\" data-panel-visible=\"true\" data-query=\"\" data-result-count=\"0\" data-workspace-id=\"\" data-channel-id=\"\" data-actor-id=\"\" data-memory-type=\"\" data-create-status=\"idle\" data-created-memory-id=\"\" data-edit-status=\"idle\" data-edited-memory-id=\"\" data-delete-status=\"idle\" data-deleted-memory-id=\"\""
+    ));
+    assert!(html.contains(
+        "id=\"tau-ops-memory-delete-status\" data-delete-status=\"idle\" data-deleted-memory-id=\"\""
+    ));
+    assert!(
+        html.contains("id=\"tau-ops-memory-delete-form\" action=\"/ops/memory\" method=\"post\"")
+    );
+    assert!(html.contains(
+        "id=\"tau-ops-memory-delete-operation\" type=\"hidden\" name=\"operation\" value=\"delete\""
+    ));
+    assert!(html.contains(
+        "id=\"tau-ops-memory-delete-entry-id\" type=\"text\" name=\"entry_id\" value=\"\""
+    ));
+    assert!(html.contains(
+        "id=\"tau-ops-memory-delete-confirm\" type=\"checkbox\" name=\"confirm_delete\" value=\"true\""
+    ));
+}
+
+#[test]
+fn regression_spec_3060_c04_non_memory_routes_keep_hidden_memory_delete_markers() {
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        auth_mode: TauOpsDashboardAuthMode::Token,
+        active_route: TauOpsDashboardRoute::Chat,
+        theme: TauOpsDashboardTheme::Light,
+        sidebar_state: TauOpsDashboardSidebarState::Collapsed,
+        command_center: TauOpsDashboardCommandCenterSnapshot::default(),
+        chat: TauOpsDashboardChatSnapshot::default(),
+    });
+
+    assert!(html.contains(
+        "id=\"tau-ops-memory-panel\" data-route=\"/ops/memory\" aria-hidden=\"true\" data-panel-visible=\"false\""
+    ));
+    assert!(html.contains(
+        "id=\"tau-ops-memory-delete-status\" data-delete-status=\"idle\" data-deleted-memory-id=\"\""
+    ));
+    assert!(
+        html.contains("id=\"tau-ops-memory-delete-form\" action=\"/ops/memory\" method=\"post\"")
+    );
+}
+
+#[test]
 fn functional_spec_2838_c01_c02_c03_sessions_route_renders_sessions_panel_list_rows_and_links() {
     let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
         auth_mode: TauOpsDashboardAuthMode::Token,

@@ -1911,6 +1911,178 @@ async fn regression_spec_2921_ops_memory_edit_requires_existing_entry() {
 }
 
 #[tokio::test]
+async fn integration_spec_3060_c02_c03_ops_memory_delete_submission_requires_confirmation_and_deletes_confirmed_entry(
+) {
+    let temp = tempdir().expect("tempdir");
+    let state = test_state(temp.path(), 10_000, "secret");
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+    let client = Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .expect("build client");
+
+    let session_key = "ops-memory-delete";
+    let target_endpoint = expand_memory_entry_template(
+        GATEWAY_MEMORY_ENTRY_ENDPOINT,
+        session_key,
+        "mem-delete-target",
+    );
+    let target_create = client
+        .put(format!("http://{addr}{target_endpoint}"))
+        .bearer_auth("secret")
+        .json(&json!({
+            "summary": "DeleteToken summary",
+            "workspace_id": "workspace-delete",
+            "channel_id": "channel-delete",
+            "actor_id": "operator",
+            "memory_type": "fact",
+            "policy_gate": MEMORY_WRITE_POLICY_GATE
+        }))
+        .send()
+        .await
+        .expect("create target memory entry");
+    assert_eq!(target_create.status(), StatusCode::CREATED);
+
+    let missing_confirmation = client
+        .post(format!("http://{addr}/ops/memory"))
+        .form(&[
+            ("theme", "light"),
+            ("sidebar", "collapsed"),
+            ("session", session_key),
+            ("operation", "delete"),
+            ("entry_id", "mem-delete-target"),
+            ("confirm_delete", "false"),
+        ])
+        .send()
+        .await
+        .expect("submit unconfirmed delete form");
+    assert_eq!(missing_confirmation.status(), StatusCode::SEE_OTHER);
+    let missing_confirmation_location = missing_confirmation
+        .headers()
+        .get(reqwest::header::LOCATION)
+        .and_then(|value| value.to_str().ok())
+        .expect("missing-confirmation redirect location");
+    assert!(missing_confirmation_location.contains("/ops/memory?"));
+    assert!(missing_confirmation_location.contains("delete_status=idle"));
+    assert!(!missing_confirmation_location.contains("deleted_memory_id="));
+
+    let still_present = client
+        .get(format!(
+            "http://{addr}/gateway/memory/{session_key}/mem-delete-target"
+        ))
+        .bearer_auth("secret")
+        .send()
+        .await
+        .expect("read target memory entry after unconfirmed delete");
+    assert_eq!(still_present.status(), StatusCode::OK);
+
+    let confirmed_delete = client
+        .post(format!("http://{addr}/ops/memory"))
+        .form(&[
+            ("theme", "light"),
+            ("sidebar", "collapsed"),
+            ("session", session_key),
+            ("operation", "delete"),
+            ("entry_id", "mem-delete-target"),
+            ("confirm_delete", "true"),
+        ])
+        .send()
+        .await
+        .expect("submit confirmed delete form");
+    assert_eq!(confirmed_delete.status(), StatusCode::SEE_OTHER);
+    let confirmed_location = confirmed_delete
+        .headers()
+        .get(reqwest::header::LOCATION)
+        .and_then(|value| value.to_str().ok())
+        .expect("confirmed delete redirect location");
+    assert!(confirmed_location.contains("/ops/memory?"));
+    assert!(confirmed_location.contains("delete_status=deleted"));
+    assert!(confirmed_location.contains("deleted_memory_id=mem-delete-target"));
+
+    let redirect_body = client
+        .get(format!("http://{addr}{confirmed_location}"))
+        .send()
+        .await
+        .expect("load ops memory delete redirect body")
+        .text()
+        .await
+        .expect("read ops memory delete redirect body");
+    assert!(redirect_body.contains(
+        "id=\"tau-ops-memory-delete-status\" data-delete-status=\"deleted\" data-deleted-memory-id=\"mem-delete-target\""
+    ));
+
+    let deleted_entry = client
+        .get(format!(
+            "http://{addr}/gateway/memory/{session_key}/mem-delete-target"
+        ))
+        .bearer_auth("secret")
+        .send()
+        .await
+        .expect("read deleted memory entry");
+    assert_eq!(deleted_entry.status(), StatusCode::NOT_FOUND);
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn regression_spec_3060_ops_memory_delete_requires_existing_entry_id() {
+    let temp = tempdir().expect("tempdir");
+    let state = test_state(temp.path(), 10_000, "secret");
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+    let client = Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .expect("build client");
+
+    let session_key = "ops-memory-delete-required";
+    let missing_entry = client
+        .post(format!("http://{addr}/ops/memory"))
+        .form(&[
+            ("theme", "light"),
+            ("sidebar", "collapsed"),
+            ("session", session_key),
+            ("operation", "delete"),
+            ("entry_id", ""),
+            ("confirm_delete", "true"),
+        ])
+        .send()
+        .await
+        .expect("submit delete form without entry_id");
+    assert_eq!(missing_entry.status(), StatusCode::SEE_OTHER);
+    let missing_entry_location = missing_entry
+        .headers()
+        .get(reqwest::header::LOCATION)
+        .and_then(|value| value.to_str().ok())
+        .expect("missing-entry delete redirect location");
+    assert!(missing_entry_location.contains("delete_status=idle"));
+    assert!(!missing_entry_location.contains("deleted_memory_id="));
+
+    let missing_target = client
+        .post(format!("http://{addr}/ops/memory"))
+        .form(&[
+            ("theme", "light"),
+            ("sidebar", "collapsed"),
+            ("session", session_key),
+            ("operation", "delete"),
+            ("entry_id", "mem-does-not-exist"),
+            ("confirm_delete", "true"),
+        ])
+        .send()
+        .await
+        .expect("submit delete form for missing target");
+    assert_eq!(missing_target.status(), StatusCode::SEE_OTHER);
+    let missing_target_location = missing_target
+        .headers()
+        .get(reqwest::header::LOCATION)
+        .and_then(|value| value.to_str().ok())
+        .expect("missing-target delete redirect location");
+    assert!(missing_target_location.contains("delete_status=idle"));
+    assert!(!missing_target_location.contains("deleted_memory_id="));
+
+    handle.abort();
+}
+
+#[tokio::test]
 async fn functional_spec_2798_c04_ops_shell_exposes_responsive_and_theme_contract_markers() {
     let temp = tempdir().expect("tempdir");
     let state = test_state(temp.path(), 4_096, "secret");
