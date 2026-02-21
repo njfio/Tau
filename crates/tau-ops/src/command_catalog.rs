@@ -263,11 +263,11 @@ pub const COMMAND_SPECS: &[CommandSpec] = &[
     },
     CommandSpec {
         name: "/auth",
-        usage: "/auth <login|reauth|status|logout|matrix> ...",
+        usage: "/auth <login|reauth|status|logout|matrix|rotate-key> ...",
         description: "Manage provider authentication state and credential-store sessions",
         details:
-            "Supports login/reauth/status/logout flows plus provider-mode matrix diagnostics with optional --json output.",
-        example: "/auth reauth openai --mode oauth-token --launch --json",
+            "Supports login/reauth/status/logout flows, credential-store key rotation, and provider-mode matrix diagnostics with optional --json output.",
+        example: "/auth rotate-key --new-key next-store-key --json",
     },
     CommandSpec {
         name: "/canvas",

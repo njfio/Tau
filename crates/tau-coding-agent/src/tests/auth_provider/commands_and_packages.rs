@@ -1354,7 +1354,7 @@ fn functional_render_help_overview_lists_known_commands() {
     assert!(help.contains("/skills-lock-write [lockfile_path]"));
     assert!(help.contains("/skills-sync [lockfile_path]"));
     assert!(help.contains("/macro <save|run|list|show|delete> ..."));
-    assert!(help.contains("/auth <login|reauth|status|logout|matrix> ..."));
+    assert!(help.contains("/auth <login|reauth|status|logout|matrix|rotate-key> ..."));
     assert!(help.contains("/canvas <create|update|show|export|import>"));
     assert!(help.contains("/rbac <check|whoami> ..."));
     assert!(help.contains("/approvals <list|approve|reject> [--json] [--status <pending|approved|rejected|expired|consumed>] [request_id] [reason]"));
@@ -1414,6 +1414,14 @@ fn functional_render_command_help_supports_integration_auth_topic_without_slash(
     assert!(help.contains("command: /integration-auth"));
     assert!(help.contains("usage: /integration-auth <set|status|rotate|revoke> ..."));
     assert!(help.contains("example: /integration-auth status github-token --json"));
+}
+
+#[test]
+fn functional_render_command_help_supports_auth_topic_without_slash() {
+    let help = render_command_help("auth").expect("render help");
+    assert!(help.contains("command: /auth"));
+    assert!(help.contains("usage: /auth <login|reauth|status|logout|matrix|rotate-key> ..."));
+    assert!(help.contains("rotate-key"));
 }
 
 #[test]
