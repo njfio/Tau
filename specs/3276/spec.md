@@ -1,6 +1,6 @@
 # Spec: Issue #3276 - move openresponses execution handler to dedicated module
 
-Status: Reviewed
+Status: Implemented
 
 ## Problem Statement
 `gateway_openresponses.rs` still defines `execute_openresponses_request`, the largest execution-path helper in root. It can be extracted into a dedicated module without behavior changes.
