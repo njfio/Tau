@@ -1,6 +1,6 @@
 # Spec: Issue #3248 - move gateway ops shell handlers into module
 
-Status: Reviewed
+Status: Implemented
 
 ## Problem Statement
 `gateway_openresponses.rs` still contains Ops dashboard shell macro/handler glue. Keeping this shell route wrapper logic in root increases file size and mixes dashboard shell concerns with core runtime handlers.
