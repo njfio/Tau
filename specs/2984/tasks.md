@@ -1,10 +1,10 @@
 # Tasks: Issue #2984 - gateway config runtime extraction
 
-1. [ ] T1 (RED): capture baseline line-count and run scoped config tests.
-2. [ ] T2 (GREEN): extract config handlers + helper plumbing into `config_runtime.rs` and wire imports.
-3. [ ] T3 (REGRESSION): rerun targeted config/gateway regression tests.
-4. [ ] T4 (VERIFY): run fmt/clippy and confirm hotspot reduction.
-5. [ ] T5 (VALIDATE): run sanitized fast live validation command.
+1. [x] T1 (RED): capture baseline line-count and run scoped config tests.
+2. [x] T2 (GREEN): extract config handlers + helper plumbing into `config_runtime.rs` and wire imports.
+3. [x] T3 (REGRESSION): rerun targeted config/gateway regression tests.
+4. [x] T4 (VERIFY): run fmt/clippy and confirm hotspot reduction.
+5. [x] T5 (VALIDATE): run sanitized fast live validation command.
 
 ## Tier Mapping
 - Unit: targeted config endpoint tests.

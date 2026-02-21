@@ -15,9 +15,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tau_core::current_unix_timestamp_ms;
 
+use super::config_runtime::read_gateway_config_pending_overrides;
 use super::{
-    authorize_dashboard_request, parse_gateway_json_body, read_gateway_config_pending_overrides,
-    GatewayOpenResponsesServerState, OpenResponsesApiError,
+    authorize_dashboard_request, parse_gateway_json_body, GatewayOpenResponsesServerState,
+    OpenResponsesApiError,
 };
 
 const TRAINING_ROLLOUTS_FILE: &str = "rollouts.jsonl";
