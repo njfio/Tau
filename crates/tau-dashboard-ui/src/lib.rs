@@ -1882,6 +1882,67 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     let connector_row_count_value = connector_health_rows.len().to_string();
     let connector_row_count_table_value = connector_row_count_value.clone();
     let connector_row_count_body_value = connector_row_count_value;
+    let channels_panel_hidden = if matches!(context.active_route, TauOpsDashboardRoute::Channels) {
+        "false"
+    } else {
+        "true"
+    };
+    let channels_panel_visible = if matches!(context.active_route, TauOpsDashboardRoute::Channels) {
+        "true"
+    } else {
+        "false"
+    };
+    let channels_online_count = connector_health_rows
+        .iter()
+        .filter(|row| matches!(row.liveness.as_str(), "open" | "online"))
+        .count()
+        .to_string();
+    let channels_offline_count = connector_health_rows
+        .iter()
+        .filter(|row| matches!(row.liveness.as_str(), "offline" | "unknown"))
+        .count()
+        .to_string();
+    let channels_degraded_count = connector_health_rows
+        .iter()
+        .filter(|row| {
+            !matches!(
+                row.liveness.as_str(),
+                "open" | "online" | "offline" | "unknown"
+            )
+        })
+        .count()
+        .to_string();
+    let channels_row_count_value = connector_health_rows.len().to_string();
+    let channels_row_count_table_value = channels_row_count_value.clone();
+    let channels_row_count_body_value = channels_row_count_value.clone();
+    let channels_row_count_panel_value = channels_row_count_value;
+    let channels_rows_view = connector_health_rows
+        .iter()
+        .enumerate()
+        .map(|(index, row)| {
+            let row_id = format!("tau-ops-channels-row-{index}");
+            let events_ingested = row.events_ingested.to_string();
+            let provider_failures = row.provider_failures.to_string();
+            let events_ingested_attr = events_ingested.clone();
+            let provider_failures_attr = provider_failures.clone();
+            view! {
+                <tr
+                    id=row_id
+                    data-channel=row.channel.clone()
+                    data-mode=row.mode.clone()
+                    data-liveness=row.liveness.clone()
+                    data-events-ingested=events_ingested_attr
+                    data-provider-failures=provider_failures_attr
+                >
+                    <td>{row.channel.clone()}</td>
+                    <td>{row.mode.clone()}</td>
+                    <td>{row.liveness.clone()}</td>
+                    <td>{events_ingested}</td>
+                    <td>{provider_failures}</td>
+                </tr>
+            }
+        })
+        .collect_view();
     let widget_count_value = context.command_center.widget_count.to_string();
     let timeline_cycle_count_value = context.command_center.timeline_cycle_count.to_string();
     let timeline_cycle_count_table_value = timeline_cycle_count_value.clone();
@@ -3116,6 +3177,40 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     Cancel Selected Job
                                 </a>
                             </section>
+                        </section>
+                        <section
+                            id="tau-ops-channels-panel"
+                            data-route="/ops/channels"
+                            aria-hidden=channels_panel_hidden
+                            data-panel-visible=channels_panel_visible
+                            data-channel-count=channels_row_count_panel_value
+                        >
+                            <h2>Multi-Channel</h2>
+                            <p
+                                id="tau-ops-channels-summary"
+                                data-online-count=channels_online_count
+                                data-offline-count=channels_offline_count
+                                data-degraded-count=channels_degraded_count
+                            >
+                                Channel health summary for all configured connectors.
+                            </p>
+                            <table id="tau-ops-channels-table" data-row-count=channels_row_count_table_value>
+                                <thead>
+                                    <tr>
+                                        <th scope="col">Channel</th>
+                                        <th scope="col">Mode</th>
+                                        <th scope="col">Liveness</th>
+                                        <th scope="col">Events Ingested</th>
+                                        <th scope="col">Provider Failures</th>
+                                    </tr>
+                                </thead>
+                                <tbody
+                                    id="tau-ops-channels-body"
+                                    data-row-count=channels_row_count_body_value
+                                >
+                                    {channels_rows_view}
+                                </tbody>
+                            </table>
                         </section>
                         <section
                             id="tau-ops-command-center"
