@@ -17,9 +17,9 @@ Status: In Progress
 
 ## Success Signals
 - `scripts/dev/test-gateway-openresponses-size.sh`
-- `cargo test -p tau-gateway functional_gateway_ws_upgrade_missing_session_token_returns_unauthorized`
-- `cargo test -p tau-gateway functional_gateway_ws_upgrade_includes_session_token_when_present`
-- `cargo test -p tau-gateway functional_dashboard_stream_returns_sse_when_requested`
-- `cargo test -p tau-gateway functional_dashboard_stream_preserves_id_counter_across_events`
+- `cargo test -p tau-gateway functional_gateway_ws_endpoint_rejects_unauthorized_upgrade`
+- `cargo test -p tau-gateway functional_gateway_ws_endpoint_supports_capabilities_and_ping_pong`
+- `cargo test -p tau-gateway integration_dashboard_stream_supports_reconnect_reset_and_snapshot_updates`
+- `cargo test -p tau-gateway integration_gateway_ws_session_status_and_reset_roundtrip`
 - `cargo fmt --check`
 - `cargo clippy -- -D warnings`

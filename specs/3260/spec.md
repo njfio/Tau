@@ -30,17 +30,17 @@ then root line count is under tightened threshold and moved ws/stream function d
 ## Conformance Cases
 | Case | AC | Tier | Given | When | Then |
 |---|---|---|---|---|---|
-| C-01 | AC-1 | Functional/Conformance | missing session token request | `functional_gateway_ws_upgrade_missing_session_token_returns_unauthorized` | ws upgrade is rejected with unauthorized response |
-| C-02 | AC-1 | Functional/Conformance | valid session token request | `functional_gateway_ws_upgrade_includes_session_token_when_present` | upgrade path includes session token and preserves headers |
-| C-03 | AC-1 | Functional/Conformance | dashboard stream request | `functional_dashboard_stream_returns_sse_when_requested` | stream endpoint returns SSE contract |
-| C-04 | AC-1 | Regression/Conformance | multi-event stream request | `functional_dashboard_stream_preserves_id_counter_across_events` | event id counter remains monotonic/preserved |
+| C-01 | AC-1 | Functional/Conformance | missing auth token ws upgrade request | `functional_gateway_ws_endpoint_rejects_unauthorized_upgrade` | ws upgrade is rejected with unauthorized response |
+| C-02 | AC-1 | Functional/Conformance | authorized ws capability/ping request | `functional_gateway_ws_endpoint_supports_capabilities_and_ping_pong` | ws capability and ping/pong behavior remains stable |
+| C-03 | AC-1 | Functional/Conformance | dashboard stream reconnect request | `integration_dashboard_stream_supports_reconnect_reset_and_snapshot_updates` | stream endpoint emits reset and snapshot updates for reconnect flow |
+| C-04 | AC-1 | Regression/Conformance | ws session status + reset roundtrip request | `integration_gateway_ws_session_status_and_reset_roundtrip` | ws session status/reset behavior remains stable |
 | C-05 | AC-2 | Functional/Regression | repo checkout | `scripts/dev/test-gateway-openresponses-size.sh` | tightened threshold + ownership checks pass |
 
 ## Success Metrics / Observable Signals
 - `scripts/dev/test-gateway-openresponses-size.sh`
-- `cargo test -p tau-gateway functional_gateway_ws_upgrade_missing_session_token_returns_unauthorized`
-- `cargo test -p tau-gateway functional_gateway_ws_upgrade_includes_session_token_when_present`
-- `cargo test -p tau-gateway functional_dashboard_stream_returns_sse_when_requested`
-- `cargo test -p tau-gateway functional_dashboard_stream_preserves_id_counter_across_events`
+- `cargo test -p tau-gateway functional_gateway_ws_endpoint_rejects_unauthorized_upgrade`
+- `cargo test -p tau-gateway functional_gateway_ws_endpoint_supports_capabilities_and_ping_pong`
+- `cargo test -p tau-gateway integration_dashboard_stream_supports_reconnect_reset_and_snapshot_updates`
+- `cargo test -p tau-gateway integration_gateway_ws_session_status_and_reset_roundtrip`
 - `cargo fmt --check`
 - `cargo clippy -- -D warnings`
