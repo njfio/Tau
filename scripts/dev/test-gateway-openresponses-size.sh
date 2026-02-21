@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 ROOT_MODULE="${REPO_ROOT}/crates/tau-gateway/src/gateway_openresponses.rs"
 EVENTS_MODULE="${REPO_ROOT}/crates/tau-gateway/src/gateway_openresponses/events_status.rs"
-MAX_LINES=600
+MAX_LINES=540
 
 if [[ ! -f "${ROOT_MODULE}" ]]; then
   echo "assertion failed (root module exists): ${ROOT_MODULE}" >&2
@@ -136,5 +136,14 @@ if rg -q '^fn parse_gateway_json_body<' "${ROOT_MODULE}"; then
   echo "assertion failed (preflight helpers moved): found 'parse_gateway_json_body' in root module" >&2
   exit 1
 fi
+
+for function_name in \
+  handle_gateway_ws_upgrade \
+  run_dashboard_stream_loop; do
+  if rg -q "^async fn ${function_name}\\b" "${ROOT_MODULE}"; then
+    echo "assertion failed (ws/stream handlers moved): found '${function_name}' in root module" >&2
+    exit 1
+  fi
+done
 
 echo "gateway-openresponses size guard passed (${line_count} <= ${MAX_LINES})"
