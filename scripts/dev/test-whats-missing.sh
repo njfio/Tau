@@ -36,6 +36,7 @@ assert_contains "PostgreSQL session backend is implemented" "postgres resolution
 assert_contains "Dockerfile + release workflow assets are present" "distribution resolution marker"
 assert_contains "Fuzz harnesses and deterministic fuzz-conformance tests are present" "fuzz resolution marker"
 assert_contains "PPO/GAE runtime optimization is implemented in training and live RL paths" "ppo implementation marker"
+assert_contains "Dashboard consolidation is verified via gateway-owned runtime checks and ADR coverage" "dashboard consolidation resolution marker"
 
 # Stale markers that must never reappear.
 assert_not_contains "No Per-Session Cost Tracking" "old critical gap"
@@ -49,5 +50,6 @@ assert_not_contains "No Shell Completions" "old distribution gap"
 assert_not_contains "No Fuzz Testing" "old testing gap"
 assert_not_contains "No Log Rotation" "old testing gap"
 assert_not_contains "PPO/GAE math is implemented but still not wired into the runtime training loop" "stale ppo claim"
+assert_not_contains "Legacy dashboard crate consolidation is incomplete" "stale dashboard gap"
 
 echo "whats-missing conformance passed"
