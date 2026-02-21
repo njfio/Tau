@@ -1,6 +1,6 @@
 # Spec: Issue #3184 - deterministic directory-path rejection for browser DID report writer
 
-Status: Accepted
+Status: Implemented
 
 ## Problem Statement
 When `write_browser_did_init_report` is given a directory path, it currently fails indirectly via filesystem write errors. This produces non-deterministic OS-level error text and weakens fail-closed contract clarity.
