@@ -14,6 +14,12 @@ Audit current repository state:
 scripts/dev/panic-unsafe-audit.sh
 ```
 
+Render a human-readable path split (test-path vs non-test-path) for quick triage:
+
+```bash
+scripts/dev/audit-panic-unsafe.sh crates
+```
+
 Enforce baseline thresholds:
 
 ```bash
