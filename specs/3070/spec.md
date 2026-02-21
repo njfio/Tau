@@ -1,6 +1,6 @@
 # Spec: Issue #3070 - ops memory-graph node size importance contracts
 
-Status: Reviewed
+Status: Implemented
 
 ## Problem Statement
 `/ops/memory-graph` now exposes deterministic node/edge rows, but node-size

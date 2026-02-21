@@ -647,7 +647,7 @@ fn collect_tau_ops_dashboard_chat_snapshot(
             .map(|record| TauOpsDashboardMemoryGraphNodeRow {
                 memory_id: record.entry.memory_id.clone(),
                 memory_type: record.memory_type.as_str().to_string(),
-                importance: format!("{:.4}", record.importance),
+                importance: format!("{:.4}", record.importance.clamp(0.0, 1.0)),
             })
             .collect();
 
