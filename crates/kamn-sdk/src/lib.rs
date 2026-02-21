@@ -73,6 +73,12 @@ pub fn render_browser_did_init_report_json(report: &BrowserDidInitReport) -> Res
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn write_browser_did_init_report(path: &Path, report: &BrowserDidInitReport) -> Result<()> {
+    if path.is_dir() {
+        return Err(anyhow!(
+            "report output path must be a file path: {}",
+            path.display()
+        ));
+    }
     if let Some(parent) = path.parent() {
         if !parent.as_os_str().is_empty() {
             std::fs::create_dir_all(parent)
@@ -260,6 +266,31 @@ mod tests {
                 .and_then(serde_json::Value::as_str)
                 .map(|did| did.starts_with("did:web:edge:tau:operator")),
             Some(true)
+        );
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    // Regression: #3184
+    #[test]
+    fn spec_3184_c01_write_browser_did_init_report_rejects_directory_output_path() {
+        let temp = tempdir().expect("tempdir");
+        let output_dir = temp.path().join("report-dir");
+        std::fs::create_dir_all(&output_dir).expect("create output dir");
+        let report = initialize_browser_did(&BrowserDidInitRequest {
+            method: DidMethod::Key,
+            network: "tau-devnet".to_string(),
+            subject: "agent".to_string(),
+            entropy: "seed".to_string(),
+        })
+        .expect("initialize report");
+
+        let error = super::write_browser_did_init_report(&output_dir, &report)
+            .expect_err("directory output path must fail closed");
+        assert!(
+            error
+                .to_string()
+                .contains("report output path must be a file path"),
+            "unexpected error: {error}"
         );
     }
 }
