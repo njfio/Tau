@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 ROOT_MODULE="${REPO_ROOT}/crates/tau-gateway/src/gateway_openresponses.rs"
 EVENTS_MODULE="${REPO_ROOT}/crates/tau-gateway/src/gateway_openresponses/events_status.rs"
-MAX_LINES=1195
+MAX_LINES=1110
 
 if [[ ! -f "${ROOT_MODULE}" ]]; then
   echo "assertion failed (root module exists): ${ROOT_MODULE}" >&2
@@ -67,6 +67,13 @@ fi
 for type_name in NoopGatewayToolRegistrar GatewayToolRegistrarFn; do
   if rg -q "^pub struct ${type_name}" "${ROOT_MODULE}"; then
     echo "assertion failed (tool registrar api moved): found '${type_name}' in root module" >&2
+    exit 1
+  fi
+done
+
+for const_name in OPENRESPONSES_ENDPOINT GATEWAY_STATUS_ENDPOINT OPS_DASHBOARD_ENDPOINT; do
+  if rg -q "^const ${const_name}:" "${ROOT_MODULE}"; then
+    echo "assertion failed (endpoint constants moved): found '${const_name}' in root module" >&2
     exit 1
   fi
 done
