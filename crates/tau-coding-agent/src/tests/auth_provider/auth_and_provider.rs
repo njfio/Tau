@@ -155,6 +155,29 @@ fn unit_parse_auth_command_supports_login_status_logout_and_json() {
         }
     );
 
+    let rotate_key =
+        parse_auth_command("rotate-key --new-key next-key --old-key previous-key --json")
+            .expect("parse auth rotate-key");
+    assert_eq!(
+        rotate_key,
+        AuthCommand::RotateKey {
+            old_key: Some("previous-key".to_string()),
+            new_key: "next-key".to_string(),
+            json_output: true,
+        }
+    );
+
+    let rotate_key_default_old = parse_auth_command("rotate-key --new-key next-key")
+        .expect("parse auth rotate-key default old key");
+    assert_eq!(
+        rotate_key_default_old,
+        AuthCommand::RotateKey {
+            old_key: None,
+            new_key: "next-key".to_string(),
+            json_output: false,
+        }
+    );
+
     let reauth = parse_auth_command("reauth openai --mode oauth-token --launch --json")
         .expect("parse auth reauth");
     assert_eq!(
@@ -592,6 +615,37 @@ fn regression_parse_auth_command_rejects_unknown_provider_mode_and_usage_errors(
     assert!(unknown_matrix_revoked
         .to_string()
         .contains("unknown revoked filter"));
+
+    let missing_rotate_new_key =
+        parse_auth_command("rotate-key").expect_err("missing rotate-key new key");
+    assert!(missing_rotate_new_key
+        .to_string()
+        .contains("usage: /auth rotate-key"));
+
+    let missing_rotate_new_key_value =
+        parse_auth_command("rotate-key --new-key").expect_err("missing rotate-key new key value");
+    assert!(missing_rotate_new_key_value
+        .to_string()
+        .contains("usage: /auth rotate-key"));
+
+    let duplicate_rotate_new_key = parse_auth_command("rotate-key --new-key one --new-key two")
+        .expect_err("duplicate rotate-key new-key");
+    assert!(duplicate_rotate_new_key
+        .to_string()
+        .contains("usage: /auth rotate-key"));
+
+    let missing_rotate_old_key_value = parse_auth_command("rotate-key --new-key next --old-key")
+        .expect_err("missing rotate-key old-key value");
+    assert!(missing_rotate_old_key_value
+        .to_string()
+        .contains("usage: /auth rotate-key"));
+
+    let duplicate_rotate_old_key =
+        parse_auth_command("rotate-key --new-key next --old-key first --old-key second")
+            .expect_err("duplicate rotate-key old-key");
+    assert!(duplicate_rotate_old_key
+        .to_string()
+        .contains("usage: /auth rotate-key"));
 
     let unknown_subcommand = parse_auth_command("noop").expect_err("subcommand fail");
     assert!(unknown_subcommand.to_string().contains("usage: /auth"));
@@ -2432,6 +2486,131 @@ fn regression_auth_security_matrix_blocks_unsupported_mode_bypass_attempts() {
             .unwrap_or_default()
             .contains("not supported"));
     }
+}
+
+#[test]
+fn functional_execute_auth_command_rotate_key_rotates_store_without_data_loss() {
+    let temp = tempdir().expect("tempdir");
+    let mut config = test_auth_command_config();
+    config.credential_store = temp.path().join("credentials.json");
+    config.credential_store_encryption = CredentialStoreEncryptionMode::Keyed;
+    config.credential_store_key = Some("old-store-key".to_string());
+
+    let mut store = CredentialStoreData {
+        encryption: CredentialStoreEncryptionMode::Keyed,
+        providers: BTreeMap::new(),
+        integrations: BTreeMap::new(),
+    };
+    store.providers.insert(
+        Provider::OpenAi.as_str().to_string(),
+        ProviderCredentialStoreRecord {
+            auth_method: ProviderAuthMethod::ApiKey,
+            access_token: Some("openai-api-key".to_string()),
+            refresh_token: None,
+            expires_unix: None,
+            revoked: false,
+        },
+    );
+    store.integrations.insert(
+        "github-token".to_string(),
+        IntegrationCredentialStoreRecord {
+            secret: Some("ghp-secret".to_string()),
+            revoked: false,
+            updated_unix: Some(current_unix_timestamp()),
+        },
+    );
+    save_credential_store(&config.credential_store, &store, Some("old-store-key"))
+        .expect("seed credential store");
+
+    let rotate_output = execute_auth_command(
+        &config,
+        "rotate-key --new-key next-store-key --old-key old-store-key --json",
+    );
+    let payload: serde_json::Value = serde_json::from_str(&rotate_output).expect("json output");
+    assert_eq!(payload["command"], "auth.rotate_key");
+    assert_eq!(payload["status"], "rotated");
+    assert_eq!(payload["provider_entries"], 1);
+    assert_eq!(payload["integration_entries"], 1);
+    assert!(!rotate_output.contains("old-store-key"));
+    assert!(!rotate_output.contains("next-store-key"));
+
+    let rotated = load_credential_store(
+        &config.credential_store,
+        CredentialStoreEncryptionMode::Keyed,
+        Some("next-store-key"),
+    )
+    .expect("load rotated store with new key");
+    assert_eq!(rotated.providers.len(), 1);
+    assert_eq!(rotated.integrations.len(), 1);
+    assert_eq!(
+        rotated
+            .providers
+            .get(Provider::OpenAi.as_str())
+            .and_then(|entry| entry.access_token.as_deref()),
+        Some("openai-api-key")
+    );
+    assert_eq!(
+        rotated
+            .integrations
+            .get("github-token")
+            .and_then(|entry| entry.secret.as_deref()),
+        Some("ghp-secret")
+    );
+
+    let old_key_error = load_credential_store(
+        &config.credential_store,
+        CredentialStoreEncryptionMode::Keyed,
+        Some("old-store-key"),
+    )
+    .expect_err("old key should no longer decrypt rotated store");
+    assert!(old_key_error.to_string().contains("invalid or corrupted"));
+}
+
+#[test]
+fn regression_execute_auth_command_rotate_key_fails_closed_for_invalid_inputs() {
+    let temp = tempdir().expect("tempdir");
+    let mut config = test_auth_command_config();
+    config.credential_store = temp.path().join("credentials.json");
+    config.credential_store_encryption = CredentialStoreEncryptionMode::Keyed;
+    config.credential_store_key = Some("primary-key".to_string());
+
+    write_test_provider_credential(
+        &config.credential_store,
+        CredentialStoreEncryptionMode::Keyed,
+        Some("primary-key"),
+        Provider::OpenAi,
+        ProviderCredentialStoreRecord {
+            auth_method: ProviderAuthMethod::ApiKey,
+            access_token: Some("seed-secret".to_string()),
+            refresh_token: None,
+            expires_unix: None,
+            revoked: false,
+        },
+    );
+
+    let wrong_old_key_output =
+        execute_auth_command(&config, "rotate-key --new-key new-key --old-key wrong-key");
+    assert!(wrong_old_key_output.contains("auth rotate-key error:"));
+
+    let still_old = load_credential_store(
+        &config.credential_store,
+        CredentialStoreEncryptionMode::Keyed,
+        Some("primary-key"),
+    )
+    .expect("store should remain decryptable with original key after failed rotation");
+    assert_eq!(
+        still_old
+            .providers
+            .get(Provider::OpenAi.as_str())
+            .and_then(|entry| entry.access_token.as_deref()),
+        Some("seed-secret")
+    );
+
+    let mut unkeyed_config = config.clone();
+    unkeyed_config.credential_store_encryption = CredentialStoreEncryptionMode::None;
+    let unkeyed_output = execute_auth_command(&unkeyed_config, "rotate-key --new-key next-key");
+    assert!(unkeyed_output.contains("auth rotate-key error:"));
+    assert!(unkeyed_output.contains("credential store encryption mode"));
 }
 
 #[test]
