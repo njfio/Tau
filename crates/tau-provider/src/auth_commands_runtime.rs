@@ -28,7 +28,7 @@ use shared_runtime_core::{
 /// This item is part of the Wave 2 API surface for M23 documentation uplift.
 /// Callers rely on its contract and failure semantics remaining stable.
 /// Update this comment if behavior or integration expectations change.
-pub const AUTH_USAGE: &str = "usage: /auth <login|reauth|status|logout|matrix> ...";
+pub const AUTH_USAGE: &str = "usage: /auth <login|reauth|status|logout|matrix|rotate-key> ...";
 /// Public `const` `AUTH_LOGIN_USAGE` in `tau-provider`.
 ///
 /// This item is part of the Wave 2 API surface for M23 documentation uplift.
@@ -63,6 +63,13 @@ pub const AUTH_LOGOUT_USAGE: &str = "usage: /auth logout <provider> [--json]";
 /// Update this comment if behavior or integration expectations change.
 pub const AUTH_MATRIX_USAGE: &str =
     "usage: /auth matrix [provider] [--mode <mode>] [--mode-support <all|supported|unsupported>] [--availability <all|available|unavailable>] [--state <state>] [--source-kind <all|flag|env|credential-store|none>] [--revoked <all|revoked|not-revoked>] [--json]";
+/// Public `const` `AUTH_ROTATE_KEY_USAGE` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
+pub const AUTH_ROTATE_KEY_USAGE: &str =
+    "usage: /auth rotate-key --new-key <key> [--old-key <key>] [--json]";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// Enumerates supported `AuthMatrixAvailabilityFilter` values.
@@ -197,6 +204,11 @@ pub enum AuthCommand {
         state: Option<String>,
         source_kind: AuthSourceKindFilter,
         revoked: AuthRevokedFilter,
+        json_output: bool,
+    },
+    RotateKey {
+        old_key: Option<String>,
+        new_key: String,
         json_output: bool,
     },
 }
@@ -642,6 +654,61 @@ pub fn parse_auth_command(command_args: &str) -> Result<AuthCommand> {
                 state,
                 source_kind,
                 revoked,
+                json_output,
+            })
+        }
+        "rotate-key" => {
+            let mut old_key: Option<String> = None;
+            let mut old_key_explicit = false;
+            let mut new_key: Option<String> = None;
+            let mut new_key_explicit = false;
+            let mut json_output = false;
+            let mut index = 1usize;
+            while index < tokens.len() {
+                match tokens[index] {
+                    "--json" => {
+                        json_output = true;
+                        index += 1;
+                    }
+                    "--old-key" => {
+                        if old_key_explicit {
+                            bail!("duplicate --old-key flag; {AUTH_ROTATE_KEY_USAGE}");
+                        }
+                        let Some(raw_old_key) = tokens.get(index + 1) else {
+                            bail!("missing key after --old-key; {AUTH_ROTATE_KEY_USAGE}");
+                        };
+                        let old_key_value = raw_old_key.trim();
+                        if old_key_value.is_empty() {
+                            bail!("old key must not be empty; {AUTH_ROTATE_KEY_USAGE}");
+                        }
+                        old_key = Some(old_key_value.to_string());
+                        old_key_explicit = true;
+                        index += 2;
+                    }
+                    "--new-key" => {
+                        if new_key_explicit {
+                            bail!("duplicate --new-key flag; {AUTH_ROTATE_KEY_USAGE}");
+                        }
+                        let Some(raw_new_key) = tokens.get(index + 1) else {
+                            bail!("missing key after --new-key; {AUTH_ROTATE_KEY_USAGE}");
+                        };
+                        let new_key_value = raw_new_key.trim();
+                        if new_key_value.is_empty() {
+                            bail!("new key must not be empty; {AUTH_ROTATE_KEY_USAGE}");
+                        }
+                        new_key = Some(new_key_value.to_string());
+                        new_key_explicit = true;
+                        index += 2;
+                    }
+                    other => bail!("unexpected argument '{}'; {AUTH_ROTATE_KEY_USAGE}", other),
+                }
+            }
+            let Some(new_key) = new_key else {
+                bail!("missing --new-key flag; {AUTH_ROTATE_KEY_USAGE}");
+            };
+            Ok(AuthCommand::RotateKey {
+                old_key,
+                new_key,
                 json_output,
             })
         }
@@ -2263,6 +2330,116 @@ pub fn execute_auth_logout_command(
     )
 }
 
+/// Public `fn` `execute_auth_rotate_key_command` in `tau-provider`.
+///
+/// This item is part of the Wave 2 API surface for M23 documentation uplift.
+/// Callers rely on its contract and failure semantics remaining stable.
+/// Update this comment if behavior or integration expectations change.
+pub fn execute_auth_rotate_key_command(
+    config: &AuthCommandConfig,
+    old_key_override: Option<String>,
+    new_key: String,
+    json_output: bool,
+) -> String {
+    if config.credential_store_encryption != CredentialStoreEncryptionMode::Keyed {
+        let reason = "credential store encryption mode must be keyed for /auth rotate-key";
+        if json_output {
+            return serde_json::json!({
+                "command": "auth.rotate_key",
+                "status": "error",
+                "reason": reason,
+            })
+            .to_string();
+        }
+        return format!("auth rotate-key error: {reason}");
+    }
+
+    let normalized_new_key = new_key.trim();
+    if normalized_new_key.is_empty() {
+        let reason = format!("new key must not be empty; {AUTH_ROTATE_KEY_USAGE}");
+        if json_output {
+            return serde_json::json!({
+                "command": "auth.rotate_key",
+                "status": "error",
+                "reason": reason,
+            })
+            .to_string();
+        }
+        return format!("auth rotate-key error: {reason}");
+    }
+
+    let old_key = old_key_override
+        .as_deref()
+        .or(config.credential_store_key.as_deref());
+    let mut store = match load_credential_store(
+        &config.credential_store,
+        CredentialStoreEncryptionMode::Keyed,
+        old_key,
+    ) {
+        Ok(store) => store,
+        Err(error) => {
+            if json_output {
+                return serde_json::json!({
+                    "command": "auth.rotate_key",
+                    "status": "error",
+                    "reason": error.to_string(),
+                })
+                .to_string();
+            }
+            return format!("auth rotate-key error: {error}");
+        }
+    };
+
+    if store.encryption != CredentialStoreEncryptionMode::Keyed {
+        let reason =
+            "credential store is not keyed; rotate-key requires keyed credential-store data";
+        if json_output {
+            return serde_json::json!({
+                "command": "auth.rotate_key",
+                "status": "error",
+                "reason": reason,
+            })
+            .to_string();
+        }
+        return format!("auth rotate-key error: {reason}");
+    }
+
+    let provider_entries = store.providers.len();
+    let integration_entries = store.integrations.len();
+    store.encryption = CredentialStoreEncryptionMode::Keyed;
+    if let Err(error) =
+        save_credential_store(&config.credential_store, &store, Some(normalized_new_key))
+    {
+        if json_output {
+            return serde_json::json!({
+                "command": "auth.rotate_key",
+                "status": "error",
+                "reason": error.to_string(),
+            })
+            .to_string();
+        }
+        return format!("auth rotate-key error: {error}");
+    }
+
+    if json_output {
+        return serde_json::json!({
+            "command": "auth.rotate_key",
+            "status": "rotated",
+            "credential_store": config.credential_store.display().to_string(),
+            "provider_entries": provider_entries,
+            "integration_entries": integration_entries,
+        })
+        .to_string();
+    }
+
+    format!(
+        "auth rotate-key: status=rotated credential_store={} provider_entries={} integration_entries={}",
+        config.credential_store.display(),
+        provider_entries,
+        integration_entries
+    )
+}
+
 /// Public `fn` `execute_auth_command` in `tau-provider`.
 ///
 /// This item is part of the Wave 2 API surface for M23 documentation uplift.
@@ -2335,6 +2512,11 @@ pub fn execute_auth_command(config: &AuthCommandConfig, command_args: &str) -> S
             },
             json_output,
         ),
+        AuthCommand::RotateKey {
+            old_key,
+            new_key,
+            json_output,
+        } => execute_auth_rotate_key_command(config, old_key, new_key, json_output),
     }
 }
 
