@@ -18,7 +18,7 @@ Status: In Progress
 ## Success Signals
 - `scripts/dev/test-gateway-openresponses-size.sh`
 - `cargo test -p tau-gateway functional_gateway_auth_session_endpoint_issues_bearer_for_password_mode`
-- `cargo test -p tau-gateway regression_gateway_auth_session_endpoint_rejects_missing_password`
-- `cargo test -p tau-gateway regression_gateway_auth_session_endpoint_rejects_malformed_json`
+- `cargo test -p tau-gateway regression_gateway_auth_session_rejects_invalid_password`
+- `cargo test -p tau-gateway regression_gateway_password_session_token_expires_and_fails_closed`
 - `cargo fmt --check`
 - `cargo clippy -- -D warnings`
