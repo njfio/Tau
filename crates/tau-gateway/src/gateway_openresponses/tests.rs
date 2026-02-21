@@ -3006,6 +3006,40 @@ async fn integration_spec_3124_c03_ops_tools_route_renders_job_cancel_contracts(
 }
 
 #[tokio::test]
+async fn integration_spec_3128_c03_ops_channels_route_renders_channel_health_contracts() {
+    let temp = tempdir().expect("tempdir");
+    write_dashboard_runtime_fixture(temp.path());
+    write_training_runtime_fixture(temp.path(), 0);
+    write_multi_channel_runtime_fixture(temp.path(), true);
+    let state = test_state(temp.path(), 4_096, "secret");
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+    let client = Client::new();
+
+    let response = client
+        .get(format!(
+            "http://{addr}/ops/channels?theme=light&sidebar=collapsed&session=ops-channels"
+        ))
+        .send()
+        .await
+        .expect("load ops channels route");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.text().await.expect("read ops channels route body");
+
+    assert!(body.contains(
+        "id=\"tau-ops-channels-panel\" data-route=\"/ops/channels\" aria-hidden=\"false\" data-panel-visible=\"true\" data-channel-count=\"1\""
+    ));
+    assert!(body.contains(
+        "id=\"tau-ops-channels-summary\" data-online-count=\"1\" data-offline-count=\"0\" data-degraded-count=\"0\""
+    ));
+    assert!(body.contains("id=\"tau-ops-channels-table\" data-row-count=\"1\""));
+    assert!(body.contains(
+        "id=\"tau-ops-channels-row-0\" data-channel=\"telegram\" data-mode=\"polling\" data-liveness=\"open\" data-events-ingested=\"6\" data-provider-failures=\"2\""
+    ));
+
+    handle.abort();
+}
+
+#[tokio::test]
 async fn functional_spec_2798_c04_ops_shell_exposes_responsive_and_theme_contract_markers() {
     let temp = tempdir().expect("tempdir");
     let state = test_state(temp.path(), 4_096, "secret");
