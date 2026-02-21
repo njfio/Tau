@@ -1921,10 +1921,35 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
         .enumerate()
         .map(|(index, row)| {
             let row_id = format!("tau-ops-channels-row-{index}");
+            let login_id = format!("tau-ops-channels-login-{index}");
+            let logout_id = format!("tau-ops-channels-logout-{index}");
+            let probe_id = format!("tau-ops-channels-probe-{index}");
+            let channel = row.channel.clone();
+            let liveness = row.liveness.clone();
             let events_ingested = row.events_ingested.to_string();
             let provider_failures = row.provider_failures.to_string();
             let events_ingested_attr = events_ingested.clone();
             let provider_failures_attr = provider_failures.clone();
+            let login_enabled = if matches!(liveness.as_str(), "offline" | "unknown") {
+                "true"
+            } else {
+                "false"
+            };
+            let logout_enabled = if matches!(liveness.as_str(), "open" | "online") {
+                "true"
+            } else {
+                "false"
+            };
+            let probe_enabled = "true";
+            let login_href = format!(
+                "{active_shell_path}?theme={theme_attr}&sidebar={sidebar_state_attr}&session={chat_session_key}&channel={channel}&channel_action=login"
+            );
+            let logout_href = format!(
+                "{active_shell_path}?theme={theme_attr}&sidebar={sidebar_state_attr}&session={chat_session_key}&channel={channel}&channel_action=logout"
+            );
+            let probe_href = format!(
+                "{active_shell_path}?theme={theme_attr}&sidebar={sidebar_state_attr}&session={chat_session_key}&channel={channel}&channel_action=probe"
+            );
             view! {
                 <tr
                     id=row_id
@@ -1939,6 +1964,35 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     <td>{row.liveness.clone()}</td>
                     <td>{events_ingested}</td>
                     <td>{provider_failures}</td>
+                    <td>
+                        <a
+                            id=login_id
+                            data-action="channel-login"
+                            data-channel=row.channel.clone()
+                            data-action-enabled=login_enabled
+                            href=login_href
+                        >
+                            Login
+                        </a>
+                        <a
+                            id=logout_id
+                            data-action="channel-logout"
+                            data-channel=row.channel.clone()
+                            data-action-enabled=logout_enabled
+                            href=logout_href
+                        >
+                            Logout
+                        </a>
+                        <a
+                            id=probe_id
+                            data-action="channel-probe"
+                            data-channel=row.channel.clone()
+                            data-action-enabled=probe_enabled
+                            href=probe_href
+                        >
+                            Probe
+                        </a>
+                    </td>
                 </tr>
             }
         })
@@ -3202,6 +3256,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                         <th scope="col">Liveness</th>
                                         <th scope="col">Events Ingested</th>
                                         <th scope="col">Provider Failures</th>
+                                        <th scope="col">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody
