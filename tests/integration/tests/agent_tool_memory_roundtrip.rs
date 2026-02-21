@@ -120,6 +120,22 @@ fn latest_tool_payload(agent: &Agent, tool_name: &str) -> Value {
         .unwrap_or_else(|error| panic!("tool payload should be valid json: {error}"))
 }
 
+fn successful_tool_payloads(agent: &Agent, tool_name: &str) -> Vec<Value> {
+    agent
+        .messages()
+        .iter()
+        .filter(|message| {
+            message.role == MessageRole::Tool
+                && !message.is_error
+                && message.tool_name.as_deref() == Some(tool_name)
+        })
+        .map(|message| {
+            serde_json::from_str(message.text_content().trim())
+                .unwrap_or_else(|error| panic!("tool payload should be valid json: {error}"))
+        })
+        .collect()
+}
+
 fn latest_assistant_text(messages: &[Message]) -> String {
     messages
         .iter()
@@ -275,4 +291,120 @@ async fn functional_spec_2608_c04_pattern_is_composable_for_new_scenarios() {
     assert_eq!(client.request_count().await, 2);
     let write_payload = latest_tool_payload(&agent, "memory_write");
     assert_eq!(write_payload["memory_id"], "memory-2608-composable");
+}
+
+#[tokio::test]
+async fn integration_spec_3055_c01_agent_multi_step_search_preserves_ordered_payloads() {
+    let workspace = IsolatedWorkspace::new("c01-ordered-search");
+    let policy = integration_policy(workspace.root());
+    let client = Arc::new(ScriptedClient::new(vec![
+        scripted_tool_call(
+            "call-write-3055",
+            "memory_write",
+            json!({
+                "memory_id": "memory-3055-release",
+                "summary": "Release routing memory for ordered payload assertions.",
+                "workspace_id": "workspace-3055",
+                "channel_id": "release",
+                "actor_id": "integration-suite",
+            }),
+        ),
+        scripted_tool_call(
+            "call-search-qa-3055",
+            "memory_search",
+            json!({
+                "query": "Release routing memory for ordered payload assertions.",
+                "workspace_id": "workspace-3055",
+                "channel_id": "qa",
+                "actor_id": "integration-suite",
+                "limit": 5
+            }),
+        ),
+        scripted_tool_call(
+            "call-search-release-3055",
+            "memory_search",
+            json!({
+                "query": "Release routing memory for ordered payload assertions.",
+                "workspace_id": "workspace-3055",
+                "channel_id": "release",
+                "actor_id": "integration-suite",
+                "limit": 5
+            }),
+        ),
+        scripted_assistant_text("ordered search assertions complete"),
+    ]));
+    let mut agent = Agent::new(client.clone(), tau_agent_core::AgentConfig::default());
+    agent.register_tool(MemoryWriteTool::new(policy.clone()));
+    agent.register_tool(MemorySearchTool::new(policy));
+
+    let response = agent
+        .prompt("Write a release memory, then search qa and release channels in order.")
+        .await
+        .expect("prompt should succeed");
+
+    assert_eq!(
+        latest_assistant_text(&response),
+        "ordered search assertions complete"
+    );
+    assert_eq!(client.request_count().await, 4);
+
+    let search_payloads = successful_tool_payloads(&agent, "memory_search");
+    assert_eq!(search_payloads.len(), 2);
+    assert_eq!(search_payloads[0]["returned"], 0);
+    assert_eq!(search_payloads[1]["returned"], 1);
+    let matches = search_payloads[1]["matches"]
+        .as_array()
+        .expect("search payload includes matches");
+    assert!(
+        matches
+            .iter()
+            .any(|entry| entry["memory_id"] == "memory-3055-release"),
+        "release-channel search should include written release memory"
+    );
+}
+
+#[tokio::test]
+async fn integration_spec_3055_c02_channel_scope_filters_same_workspace_records() {
+    let workspace = IsolatedWorkspace::new("c02-channel-scope");
+    let policy = integration_policy(workspace.root());
+    let write_tool = MemoryWriteTool::new(policy.clone());
+    let search_tool = MemorySearchTool::new(policy);
+
+    let release_write = write_tool
+        .execute(json!({
+            "memory_id": "memory-3055-release",
+            "summary": "shared summary for scoped channel filtering",
+            "workspace_id": "workspace-3055",
+            "channel_id": "release",
+            "actor_id": "integration-suite"
+        }))
+        .await;
+    assert!(!release_write.is_error, "{}", release_write.content);
+
+    let qa_write = write_tool
+        .execute(json!({
+            "memory_id": "memory-3055-qa",
+            "summary": "shared summary for scoped channel filtering",
+            "workspace_id": "workspace-3055",
+            "channel_id": "qa",
+            "actor_id": "integration-suite"
+        }))
+        .await;
+    assert!(!qa_write.is_error, "{}", qa_write.content);
+
+    let release_search = search_tool
+        .execute(json!({
+            "query": "shared summary for scoped channel filtering",
+            "workspace_id": "workspace-3055",
+            "channel_id": "release",
+            "actor_id": "integration-suite",
+            "limit": 5
+        }))
+        .await;
+    assert!(!release_search.is_error, "{}", release_search.content);
+    assert_eq!(release_search.content["returned"], 1);
+    assert_eq!(
+        release_search.content["matches"][0]["memory_id"],
+        "memory-3055-release"
+    );
 }
