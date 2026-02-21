@@ -366,6 +366,7 @@ pub struct TauOpsDashboardChatSnapshot {
     pub memory_detail_embedding_reason_code: String,
     pub memory_detail_embedding_dimensions: usize,
     pub memory_detail_relation_rows: Vec<TauOpsDashboardMemoryRelationRow>,
+    pub memory_graph_zoom_level: String,
     pub memory_graph_node_rows: Vec<TauOpsDashboardMemoryGraphNodeRow>,
     pub memory_graph_edge_rows: Vec<TauOpsDashboardMemoryGraphEdgeRow>,
 }
@@ -437,6 +438,7 @@ impl Default for TauOpsDashboardChatSnapshot {
             memory_detail_embedding_reason_code: String::new(),
             memory_detail_embedding_dimensions: 0,
             memory_detail_relation_rows: vec![],
+            memory_graph_zoom_level: "1.00".to_string(),
             memory_graph_node_rows: vec![],
             memory_graph_edge_rows: vec![],
         }
@@ -973,6 +975,28 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     };
     let memory_graph_node_rows = context.chat.memory_graph_node_rows.clone();
     let memory_graph_edge_rows = context.chat.memory_graph_edge_rows.clone();
+    let memory_graph_zoom_level_value = context
+        .chat
+        .memory_graph_zoom_level
+        .parse::<f32>()
+        .ok()
+        .unwrap_or(1.0)
+        .clamp(0.25, 2.0);
+    let memory_graph_zoom_level = format!("{:.2}", memory_graph_zoom_level_value);
+    let memory_graph_zoom_min = "0.25";
+    let memory_graph_zoom_max = "2.00";
+    let memory_graph_zoom_step = "0.10";
+    let memory_graph_zoom_in_level =
+        format!("{:.2}", (memory_graph_zoom_level_value + 0.10).min(2.0));
+    let memory_graph_zoom_out_level =
+        format!("{:.2}", (memory_graph_zoom_level_value - 0.10).max(0.25));
+    let memory_graph_zoom_href_base = format!(
+        "/ops/memory-graph?theme={theme_attr}&sidebar={sidebar_state_attr}&session={chat_session_key}&workspace_id={memory_search_workspace_id}&channel_id={memory_search_channel_id}&actor_id={memory_search_actor_id}&memory_type={memory_search_memory_type}"
+    );
+    let memory_graph_zoom_in_href =
+        format!("{memory_graph_zoom_href_base}&graph_zoom={memory_graph_zoom_in_level}");
+    let memory_graph_zoom_out_href =
+        format!("{memory_graph_zoom_href_base}&graph_zoom={memory_graph_zoom_out_level}");
     let memory_graph_node_count = memory_graph_node_rows.len().to_string();
     let memory_graph_edge_count = memory_graph_edge_rows.len().to_string();
     let memory_graph_node_count_panel_attr = memory_graph_node_count.clone();
@@ -2320,6 +2344,28 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             <ul id="tau-ops-memory-graph-edges" data-edge-count=memory_graph_edge_count>
                                 {memory_graph_edges_view}
                             </ul>
+                            <div
+                                id="tau-ops-memory-graph-zoom-controls"
+                                data-zoom-level=memory_graph_zoom_level
+                                data-zoom-min=memory_graph_zoom_min
+                                data-zoom-max=memory_graph_zoom_max
+                                data-zoom-step=memory_graph_zoom_step
+                            >
+                                <a
+                                    id="tau-ops-memory-graph-zoom-in"
+                                    data-zoom-action="in"
+                                    href=memory_graph_zoom_in_href
+                                >
+                                    Zoom +
+                                </a>
+                                <a
+                                    id="tau-ops-memory-graph-zoom-out"
+                                    data-zoom-action="out"
+                                    href=memory_graph_zoom_out_href
+                                >
+                                    Zoom -
+                                </a>
+                            </div>
                             <section
                                 id="tau-ops-memory-graph-detail-panel"
                                 data-detail-visible=memory_graph_detail_visible

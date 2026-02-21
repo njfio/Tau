@@ -36,6 +36,8 @@ pub(super) struct OpsShellControlsQuery {
     deleted_memory_id: String,
     #[serde(default)]
     detail_memory_id: String,
+    #[serde(default)]
+    graph_zoom: String,
 }
 
 impl OpsShellControlsQuery {
@@ -167,6 +169,15 @@ impl OpsShellControlsQuery {
         } else {
             Some(value.to_string())
         }
+    }
+
+    pub(super) fn requested_memory_graph_zoom_level(&self) -> f32 {
+        self.graph_zoom
+            .trim()
+            .parse::<f32>()
+            .ok()
+            .map(|value| value.clamp(0.25, 2.0))
+            .unwrap_or(1.0)
     }
 }
 
@@ -392,5 +403,29 @@ mod tests {
 
         let empty = OpsShellControlsQuery::default();
         assert_eq!(empty.requested_memory_detail_entry_id(), None);
+    }
+
+    #[test]
+    fn unit_requested_memory_graph_zoom_level_defaults_and_clamps_values() {
+        let default_zoom = OpsShellControlsQuery::default();
+        assert_eq!(default_zoom.requested_memory_graph_zoom_level(), 1.0);
+
+        let valid = OpsShellControlsQuery {
+            graph_zoom: "1.55".to_string(),
+            ..OpsShellControlsQuery::default()
+        };
+        assert_eq!(valid.requested_memory_graph_zoom_level(), 1.55);
+
+        let too_low = OpsShellControlsQuery {
+            graph_zoom: "0.01".to_string(),
+            ..OpsShellControlsQuery::default()
+        };
+        assert_eq!(too_low.requested_memory_graph_zoom_level(), 0.25);
+
+        let too_high = OpsShellControlsQuery {
+            graph_zoom: "9.99".to_string(),
+            ..OpsShellControlsQuery::default()
+        };
+        assert_eq!(too_high.requested_memory_graph_zoom_level(), 2.0);
     }
 }
