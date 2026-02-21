@@ -1,6 +1,6 @@
 # Spec: Issue #3082 - ops memory-graph edge style relation contracts
 
-Status: Reviewed
+Status: Implemented
 
 ## Problem Statement
 `/ops/memory-graph` currently exposes deterministic node/edge contracts, node-size,
