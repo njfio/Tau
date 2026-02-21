@@ -1,6 +1,6 @@
 # Spec: Issue #3164 - tau-training-proxy malformed-header and attribution-log resilience conformance
 
-Status: Accepted
+Status: Implemented
 
 ## Problem Statement
 `tau-training-proxy` has baseline request/attribution tests, but explicit conformance for malformed attribution headers and log append recovery is still thin. This leaves quality evidence gaps versus the repository quality tracker expectations.

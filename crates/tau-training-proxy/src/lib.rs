@@ -731,6 +731,7 @@ mod tests {
         assert!(!attribution_log.contains("\"status_code\""));
     }
 
+    // Regression: #3164
     #[tokio::test]
     async fn integration_spec_3164_c03_training_proxy_recreates_missing_log_directory() {
         let upstream = MockServer::start_async().await;
