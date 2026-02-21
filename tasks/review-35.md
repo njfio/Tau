@@ -184,11 +184,11 @@ The dashboard now has a **full memory graph visualization** with interactive con
 | Deploy endpoint | Stubbed | Stubbed | Real | **Real** |
 | Cortex LLM wiring | Stubbed | Stubbed | Partial | **Done** |
 | `panic!` audit | Untracked | Flagged | Flagged | **Policy documented** |
-| Property-based testing | Minimal | Minimal | Minimal | **Improved** |
+| Property-based testing | Minimal | Minimal | Minimal | **Done** |
 | OpenTelemetry | Missing | Missing | Missing | **Done** |
 | Provider rate limiting | Missing | Missing | Missing | **Done** |
 
-**11 items closed in this sprint.** Remaining: property-based testing depth expansion beyond core rate-limit invariants.
+**12 items closed in this sprint.** Remaining: none in this tracker.
 
 ---
 

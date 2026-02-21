@@ -36,10 +36,10 @@ doc_contents="$(cat "${DOC_PATH}")"
 assert_contains "${doc_contents}" "| Cortex LLM wiring | Stubbed | Stubbed | Partial | **Done** |" "cortex llm resolved"
 assert_contains "${doc_contents}" "| OpenTelemetry | Missing | Missing | Missing | **Done** |" "otel resolved"
 assert_contains "${doc_contents}" "| Provider rate limiting | Missing | Missing | Missing | **Done** |" "provider rate limiting resolved"
-assert_contains "${doc_contents}" "| Property-based testing | Minimal | Minimal | Minimal | **Improved** |" "property depth improved"
+assert_contains "${doc_contents}" "| Property-based testing | Minimal | Minimal | Minimal | **Done** |" "property depth closed"
 
 # Stale unresolved summary must be removed.
 assert_not_contains "${doc_contents}" "Remaining: Cortex LLM (partial), property-based testing, OpenTelemetry, provider rate limiting." "remove stale remaining list"
-assert_contains "${doc_contents}" "Remaining: property-based testing depth expansion beyond core rate-limit invariants." "updated remaining list"
+assert_contains "${doc_contents}" "Remaining: none in this tracker." "updated remaining list"
 
 echo "review-35 conformance passed"
