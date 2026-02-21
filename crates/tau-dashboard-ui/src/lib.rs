@@ -581,6 +581,23 @@ fn extract_assistant_stream_tokens(content: &str) -> Vec<String> {
         .collect()
 }
 
+fn derive_memory_graph_node_size_contracts(importance: &str) -> (&'static str, String) {
+    let normalized_importance = importance
+        .parse::<f32>()
+        .ok()
+        .unwrap_or(0.5)
+        .clamp(0.0, 1.0);
+    let size_bucket = if normalized_importance < 0.34 {
+        "small"
+    } else if normalized_importance < 0.67 {
+        "medium"
+    } else {
+        "large"
+    };
+    let size_px = format!("{:.2}", 12.0 + (normalized_importance * 16.0));
+    (size_bucket, size_px)
+}
+
 /// Public `fn` `render_tau_ops_dashboard_shell` in `tau-dashboard-ui`.
 pub fn render_tau_ops_dashboard_shell() -> String {
     render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext::default())
@@ -953,12 +970,16 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                 .enumerate()
                 .map(|(index, row)| {
                     let row_id = format!("tau-ops-memory-graph-node-{index}");
+                    let (node_size_bucket, node_size_px) =
+                        derive_memory_graph_node_size_contracts(row.importance.as_str());
                     view! {
                         <li
                             id=row_id
                             data-memory-id=row.memory_id.clone()
                             data-memory-type=row.memory_type.clone()
                             data-importance=row.importance.clone()
+                            data-node-size-bucket=node_size_bucket
+                            data-node-size-px=node_size_px
                         ></li>
                     }
                 })
