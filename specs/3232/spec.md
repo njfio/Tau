@@ -1,6 +1,6 @@
 # Spec: Issue #3232 - move gateway tool registrar api types into module
 
-Status: Reviewed
+Status: Implemented
 
 ## Problem Statement
 `gateway_openresponses.rs` still owns tool registrar public API definitions that are orthogonal to request routing/runtime logic. This keeps root module size high and mixes API type definitions with server internals.
