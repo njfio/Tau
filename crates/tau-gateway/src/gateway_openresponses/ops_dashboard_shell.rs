@@ -567,6 +567,7 @@ fn collect_tau_ops_dashboard_chat_snapshot(
     let mut memory_detail_relation_rows = Vec::new();
     let mut memory_graph_node_rows = Vec::new();
     let mut memory_graph_edge_rows = Vec::new();
+    let memory_graph_zoom_level = format!("{:.2}", controls.requested_memory_graph_zoom_level());
     let memory_scope_filter = MemoryScopeFilter {
         workspace_id: (!memory_search_workspace_id.is_empty())
             .then_some(memory_search_workspace_id.clone()),
@@ -774,6 +775,7 @@ fn collect_tau_ops_dashboard_chat_snapshot(
         memory_detail_embedding_reason_code,
         memory_detail_embedding_dimensions,
         memory_detail_relation_rows,
+        memory_graph_zoom_level,
         memory_graph_node_rows,
         memory_graph_edge_rows,
     }
