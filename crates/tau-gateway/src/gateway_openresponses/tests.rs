@@ -2983,7 +2983,10 @@ async fn integration_spec_3124_c03_ops_tools_route_renders_job_cancel_contracts(
         .await
         .expect("load ops jobs cancel route");
     assert_eq!(response.status(), StatusCode::OK);
-    let body = response.text().await.expect("read ops jobs cancel route body");
+    let body = response
+        .text()
+        .await
+        .expect("read ops jobs cancel route body");
 
     assert!(body.contains(
         "id=\"tau-ops-jobs-row-0\" data-job-id=\"job-001\" data-job-name=\"memory-index\" data-job-status=\"cancelled\" data-started-unix-ms=\"1000\" data-finished-unix-ms=\"1005\""

@@ -1498,7 +1498,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     let jobs_rows_view = if jobs_rows.is_empty() {
         leptos::either::Either::Left(view! {
             <tr id="tau-ops-jobs-empty-state" data-empty-state="true">
-                <td colspan="5">No jobs recorded.</td>
+                <td colspan="6">No jobs recorded.</td>
             </tr>
         })
     } else {
@@ -1508,10 +1508,24 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                 .enumerate()
                 .map(|(index, row)| {
                     let row_id = format!("tau-ops-jobs-row-{index}");
+                    let view_output_id = format!("tau-ops-jobs-view-output-{index}");
+                    let cancel_id = format!("tau-ops-jobs-cancel-{index}");
+                    let job_id = row.job_id.clone();
                     let started_unix_ms = row.started_unix_ms.to_string();
                     let finished_unix_ms = row.finished_unix_ms.to_string();
                     let started_unix_ms_attr = started_unix_ms.clone();
                     let finished_unix_ms_attr = finished_unix_ms.clone();
+                    let view_output_href = format!(
+                        "{active_shell_path}?theme={theme_attr}&sidebar={sidebar_state_attr}&session={chat_session_key}&job={job_id}"
+                    );
+                    let cancel_href = format!(
+                        "{active_shell_path}?theme={theme_attr}&sidebar={sidebar_state_attr}&session={chat_session_key}&job={job_id}&cancel_job={job_id}"
+                    );
+                    let cancel_enabled = if row.job_status.as_str() == "running" {
+                        "true"
+                    } else {
+                        "false"
+                    };
                     view! {
                         <tr
                             id=row_id
@@ -1526,6 +1540,25 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             <td>{row.job_status.clone()}</td>
                             <td>{started_unix_ms}</td>
                             <td>{finished_unix_ms}</td>
+                            <td>
+                                <a
+                                    id=view_output_id
+                                    data-action="view-job-output"
+                                    data-job-id=row.job_id.clone()
+                                    href=view_output_href
+                                >
+                                    View Output
+                                </a>
+                                <a
+                                    id=cancel_id
+                                    data-action="cancel-job"
+                                    data-job-id=row.job_id.clone()
+                                    data-cancel-enabled=cancel_enabled
+                                    href=cancel_href
+                                >
+                                    Cancel
+                                </a>
+                            </td>
                         </tr>
                     }
                 })
@@ -1570,6 +1603,28 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     } else {
         "false"
     };
+    let job_cancel_status = if job_detail_status.as_str() == "cancelled" {
+        "cancelled"
+    } else {
+        "idle"
+    };
+    let job_cancel_panel_visible = if tools_jobs_route_active {
+        "true"
+    } else {
+        "false"
+    };
+    let job_cancel_enabled = if tools_jobs_route_active
+        && selected_job_row
+            .map(|row| row.job_status.as_str() == "running")
+            .unwrap_or(false)
+    {
+        "true"
+    } else {
+        "false"
+    };
+    let job_cancel_submit_href = format!(
+        "{active_shell_path}?theme={theme_attr}&sidebar={sidebar_state_attr}&session={chat_session_key}&job={job_detail_selected_job_id}&cancel_job={job_detail_selected_job_id}"
+    );
     let session_detail_panel_hidden =
         if matches!(context.active_route, TauOpsDashboardRoute::Sessions)
             && context.chat.session_detail_visible
@@ -3010,6 +3065,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                             <th scope="col">Status</th>
                                             <th scope="col">Started (unix ms)</th>
                                             <th scope="col">Finished (unix ms)</th>
+                                            <th scope="col">Actions</th>
                                         </tr>
                                     </thead>
                                     <tbody id="tau-ops-jobs-body" data-row-count=jobs_row_count_body_attr>
@@ -3042,6 +3098,23 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 >
                                     {job_detail_stderr}
                                 </pre>
+                            </section>
+                            <section
+                                id="tau-ops-job-cancel-panel"
+                                data-requested-job-id=job_detail_selected_job_id.clone()
+                                data-cancel-status=job_cancel_status
+                                data-panel-visible=job_cancel_panel_visible
+                                data-cancel-endpoint-template="/gateway/jobs/{job_id}/cancel"
+                            >
+                                <a
+                                    id="tau-ops-job-cancel-submit"
+                                    data-action="cancel-job"
+                                    data-job-id=job_detail_selected_job_id.clone()
+                                    data-cancel-enabled=job_cancel_enabled
+                                    href=job_cancel_submit_href
+                                >
+                                    Cancel Selected Job
+                                </a>
                             </section>
                         </section>
                         <section
