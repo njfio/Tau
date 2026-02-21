@@ -1,6 +1,6 @@
 # Spec: Issue #3256 - move openresponses preflight helpers to dedicated module
 
-Status: Reviewed
+Status: Implemented
 
 ## Problem Statement
 `gateway_openresponses.rs` still owns preflight helper functions used by openresponses request handling (auth/rate-limit checks, body-size validation, JSON parse, policy gate construction, timestamp conversion). Keeping these helpers in root increases module density and obscures runtime boundaries.
