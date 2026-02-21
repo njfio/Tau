@@ -1,6 +1,6 @@
 # Spec: Issue #2980 - Split OpenAI compatibility handlers into openai_compat_runtime module
 
-Status: Reviewed
+Status: Implemented
 
 ## Problem Statement
 `crates/tau-gateway/src/gateway_openresponses.rs` still contains OpenAI compatibility handler logic inline, increasing hotspot complexity and making routing/runtime behavior harder to reason about.
