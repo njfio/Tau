@@ -570,6 +570,8 @@ fn collect_tau_ops_dashboard_chat_snapshot(
     let memory_graph_zoom_level = format!("{:.2}", controls.requested_memory_graph_zoom_level());
     let memory_graph_pan_x_level = format!("{:.2}", controls.requested_memory_graph_pan_x_level());
     let memory_graph_pan_y_level = format!("{:.2}", controls.requested_memory_graph_pan_y_level());
+    let memory_graph_filter_memory_type = controls.requested_memory_graph_filter_memory_type();
+    let memory_graph_filter_relation_type = controls.requested_memory_graph_filter_relation_type();
     let memory_scope_filter = MemoryScopeFilter {
         workspace_id: (!memory_search_workspace_id.is_empty())
             .then_some(memory_search_workspace_id.clone()),
@@ -780,6 +782,8 @@ fn collect_tau_ops_dashboard_chat_snapshot(
         memory_graph_zoom_level,
         memory_graph_pan_x_level,
         memory_graph_pan_y_level,
+        memory_graph_filter_memory_type,
+        memory_graph_filter_relation_type,
         memory_graph_node_rows,
         memory_graph_edge_rows,
     }
