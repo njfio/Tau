@@ -1,6 +1,6 @@
 # Spec: Issue #3099 - ops memory-graph pan contracts
 
-Status: Reviewed
+Status: Implemented
 
 ## Problem Statement
 `/ops/memory-graph` currently supports deterministic graph structure, focus/highlight,
