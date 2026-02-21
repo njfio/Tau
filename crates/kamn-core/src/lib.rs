@@ -115,6 +115,19 @@ fn normalize_identifier(label: &str, value: &str) -> Result<String> {
     {
         bail!("{label} contains unsupported characters");
     }
+    for segment in trimmed.split('.') {
+        let starts_alnum = segment
+            .chars()
+            .next()
+            .is_some_and(|ch| ch.is_ascii_alphanumeric());
+        let ends_alnum = segment
+            .chars()
+            .last()
+            .is_some_and(|ch| ch.is_ascii_alphanumeric());
+        if !(starts_alnum && ends_alnum) {
+            bail!("{label} label segments must start and end with alphanumeric characters");
+        }
+    }
     Ok(trimmed.to_ascii_lowercase())
 }
 
@@ -263,5 +276,58 @@ mod tests {
             canonical.proof_material,
             normalized_equivalent.proof_material
         );
+    }
+
+    // Regression: #3168
+    #[test]
+    fn spec_3168_c01_rejects_network_label_with_leading_boundary_marker() {
+        let mut request = base_request(DidMethod::Web);
+        request.network = "-edge.tau".to_string();
+
+        let error = build_browser_did_identity(&request)
+            .expect_err("network label with leading boundary marker must fail");
+        assert!(error
+            .to_string()
+            .contains("network label segments must start and end with alphanumeric characters"));
+    }
+
+    #[test]
+    fn spec_3168_c02_rejects_network_label_with_trailing_boundary_marker() {
+        let mut request = base_request(DidMethod::Web);
+        request.network = "edge_.tau".to_string();
+
+        let error = build_browser_did_identity(&request)
+            .expect_err("network label with trailing boundary marker must fail");
+        assert!(error
+            .to_string()
+            .contains("network label segments must start and end with alphanumeric characters"));
+    }
+
+    #[test]
+    fn spec_3168_c03_rejects_subject_label_with_trailing_boundary_marker() {
+        let mut request = base_request(DidMethod::Web);
+        request.network = "edge.tau".to_string();
+        request.subject = "agent-primary-".to_string();
+
+        let error = build_browser_did_identity(&request)
+            .expect_err("subject label with trailing boundary marker must fail");
+        assert!(error
+            .to_string()
+            .contains("subject label segments must start and end with alphanumeric characters"));
+    }
+
+    #[test]
+    fn spec_3168_c04_accepts_valid_boundary_alphanumeric_identifiers() {
+        let identity = build_browser_did_identity(&BrowserDidIdentityRequest {
+            method: DidMethod::Web,
+            network: "  Edge.Tau_1  ".to_string(),
+            subject: "  Operator_One  ".to_string(),
+            entropy: "seed-001".to_string(),
+        })
+        .expect("valid labels with alphanumeric boundaries should succeed");
+
+        assert_eq!(identity.network, "edge.tau_1");
+        assert_eq!(identity.subject, "operator_one");
+        assert!(identity.did.starts_with("did:web:edge:tau_1:operator_one"));
     }
 }
