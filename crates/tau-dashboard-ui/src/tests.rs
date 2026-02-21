@@ -2259,6 +2259,78 @@ fn regression_spec_3140_c05_non_target_routes_keep_hidden_route_panels() {
 }
 
 #[test]
+fn functional_spec_3144_c01_config_route_renders_profile_control_contracts() {
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        auth_mode: TauOpsDashboardAuthMode::Token,
+        active_route: TauOpsDashboardRoute::Config,
+        theme: TauOpsDashboardTheme::Light,
+        sidebar_state: TauOpsDashboardSidebarState::Collapsed,
+        command_center: TauOpsDashboardCommandCenterSnapshot::default(),
+        chat: TauOpsDashboardChatSnapshot::default(),
+    });
+
+    assert!(html.contains(
+        "id=\"tau-ops-config-profile-controls\" data-model-ref=\"gpt-4.1-mini\" data-fallback-model-count=\"2\" data-system-prompt-chars=\"0\" data-max-turns=\"64\""
+    ));
+    assert!(html.contains(
+        "id=\"tau-ops-config-profile-model-ref\" name=\"model_ref\" data-control=\"select\""
+    ));
+    assert!(html
+        .contains("id=\"tau-ops-config-profile-fallback-models\" data-control=\"ordered-list\""));
+    assert!(html.contains(
+        "id=\"tau-ops-config-profile-system-prompt\" name=\"system_prompt\" data-control=\"textarea\""
+    ));
+    assert!(html.contains(
+        "id=\"tau-ops-config-profile-max-turns\" name=\"max_turns\" data-control=\"number\""
+    ));
+}
+
+#[test]
+fn functional_spec_3144_c02_config_route_renders_policy_control_contracts() {
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        auth_mode: TauOpsDashboardAuthMode::Token,
+        active_route: TauOpsDashboardRoute::Config,
+        theme: TauOpsDashboardTheme::Dark,
+        sidebar_state: TauOpsDashboardSidebarState::Expanded,
+        command_center: TauOpsDashboardCommandCenterSnapshot::default(),
+        chat: TauOpsDashboardChatSnapshot::default(),
+    });
+
+    assert!(html.contains(
+        "id=\"tau-ops-config-policy-controls\" data-tool-policy-preset=\"balanced\" data-bash-profile=\"balanced\" data-os-sandbox-mode=\"auto\""
+    ));
+    assert!(html.contains(
+        "id=\"tau-ops-config-policy-limits\" data-bash-timeout-ms=\"120000\" data-max-command-length=\"8192\" data-max-tool-output-bytes=\"32768\" data-max-file-read-bytes=\"262144\" data-max-file-write-bytes=\"262144\""
+    ));
+    assert!(html.contains(
+        "id=\"tau-ops-config-policy-heartbeat\" data-runtime-heartbeat-enabled=\"true\" data-runtime-heartbeat-interval-ms=\"5000\" data-runtime-self-repair-enabled=\"true\""
+    ));
+    assert!(html.contains(
+        "id=\"tau-ops-config-policy-compaction\" data-warn-threshold=\"70\" data-aggressive-threshold=\"85\" data-emergency-threshold=\"95\""
+    ));
+}
+
+#[test]
+fn regression_spec_3144_c04_non_config_routes_keep_config_controls_hidden() {
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        auth_mode: TauOpsDashboardAuthMode::Token,
+        active_route: TauOpsDashboardRoute::Ops,
+        theme: TauOpsDashboardTheme::Dark,
+        sidebar_state: TauOpsDashboardSidebarState::Expanded,
+        command_center: TauOpsDashboardCommandCenterSnapshot::default(),
+        chat: TauOpsDashboardChatSnapshot::default(),
+    });
+
+    assert!(html.contains(
+        "id=\"tau-ops-config-panel\" data-route=\"/ops/config\" aria-hidden=\"true\" data-panel-visible=\"false\""
+    ));
+    assert!(html.contains("id=\"tau-ops-config-profile-controls\" data-model-ref=\"gpt-4.1-mini\""));
+    assert!(
+        html.contains("id=\"tau-ops-config-policy-controls\" data-tool-policy-preset=\"balanced\"")
+    );
+}
+
+#[test]
 fn functional_spec_2838_c01_c02_c03_sessions_route_renders_sessions_panel_list_rows_and_links() {
     let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
         auth_mode: TauOpsDashboardAuthMode::Token,

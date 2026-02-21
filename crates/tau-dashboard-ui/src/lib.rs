@@ -3316,13 +3316,89 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             data-panel-visible=config_panel_visible
                         >
                             <h2>Configuration</h2>
-                            <p>Gateway runtime configuration read/write contracts.</p>
+                            <p>Gateway runtime configuration profile and policy contracts.</p>
                             <section
                                 id="tau-ops-config-endpoints"
                                 data-config-get-endpoint="/gateway/config"
                                 data-config-patch-endpoint="/gateway/config"
                             >
                                 <h3>Config Endpoints</h3>
+                            </section>
+                            <section
+                                id="tau-ops-config-profile-controls"
+                                data-model-ref="gpt-4.1-mini"
+                                data-fallback-model-count="2"
+                                data-system-prompt-chars="0"
+                                data-max-turns="64"
+                            >
+                                <h3>Profile</h3>
+                                <label for="tau-ops-config-profile-model-ref">Model</label>
+                                <select
+                                    id="tau-ops-config-profile-model-ref"
+                                    name="model_ref"
+                                    data-control="select"
+                                >
+                                    <option value="gpt-4.1-mini">gpt-4.1-mini</option>
+                                    <option value="gpt-4.1">gpt-4.1</option>
+                                </select>
+                                <section
+                                    id="tau-ops-config-profile-fallback-models"
+                                    data-control="ordered-list"
+                                >
+                                    <h4>Fallback Models</h4>
+                                    <ol>
+                                        <li data-model-ref="gpt-4.1">gpt-4.1</li>
+                                        <li data-model-ref="gpt-4o-mini">gpt-4o-mini</li>
+                                    </ol>
+                                </section>
+                                <label for="tau-ops-config-profile-system-prompt">System Prompt</label>
+                                <textarea
+                                    id="tau-ops-config-profile-system-prompt"
+                                    name="system_prompt"
+                                    data-control="textarea"
+                                ></textarea>
+                                <label for="tau-ops-config-profile-max-turns">Max Turns</label>
+                                <input
+                                    id="tau-ops-config-profile-max-turns"
+                                    name="max_turns"
+                                    data-control="number"
+                                    type="number"
+                                    value="64"
+                                />
+                            </section>
+                            <section
+                                id="tau-ops-config-policy-controls"
+                                data-tool-policy-preset="balanced"
+                                data-bash-profile="balanced"
+                                data-os-sandbox-mode="auto"
+                            >
+                                <h3>Policy</h3>
+                                <section
+                                    id="tau-ops-config-policy-limits"
+                                    data-bash-timeout-ms="120000"
+                                    data-max-command-length="8192"
+                                    data-max-tool-output-bytes="32768"
+                                    data-max-file-read-bytes="262144"
+                                    data-max-file-write-bytes="262144"
+                                >
+                                    <h4>Limits</h4>
+                                </section>
+                                <section
+                                    id="tau-ops-config-policy-heartbeat"
+                                    data-runtime-heartbeat-enabled="true"
+                                    data-runtime-heartbeat-interval-ms="5000"
+                                    data-runtime-self-repair-enabled="true"
+                                >
+                                    <h4>Heartbeat</h4>
+                                </section>
+                                <section
+                                    id="tau-ops-config-policy-compaction"
+                                    data-warn-threshold="70"
+                                    data-aggressive-threshold="85"
+                                    data-emergency-threshold="95"
+                                >
+                                    <h4>Compaction Thresholds</h4>
+                                </section>
                             </section>
                         </section>
                         <section

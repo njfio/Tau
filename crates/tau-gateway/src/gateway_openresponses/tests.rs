@@ -3108,6 +3108,36 @@ async fn integration_spec_3140_c04_ops_routes_render_config_training_safety_diag
 }
 
 #[tokio::test]
+async fn integration_spec_3144_c03_ops_config_route_renders_profile_policy_contract_markers() {
+    let temp = tempdir().expect("tempdir");
+    let state = test_state(temp.path(), 4_096, "secret");
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+    let client = Client::new();
+
+    let response = client
+        .get(format!(
+            "http://{addr}/ops/config?theme=light&sidebar=collapsed&session=ops-config-contracts"
+        ))
+        .send()
+        .await
+        .expect("load ops config route");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.text().await.expect("read ops config route body");
+
+    assert!(body.contains(
+        "id=\"tau-ops-config-profile-controls\" data-model-ref=\"gpt-4.1-mini\" data-fallback-model-count=\"2\" data-system-prompt-chars=\"0\" data-max-turns=\"64\""
+    ));
+    assert!(body.contains(
+        "id=\"tau-ops-config-policy-controls\" data-tool-policy-preset=\"balanced\" data-bash-profile=\"balanced\" data-os-sandbox-mode=\"auto\""
+    ));
+    assert!(body.contains(
+        "id=\"tau-ops-config-policy-limits\" data-bash-timeout-ms=\"120000\" data-max-command-length=\"8192\" data-max-tool-output-bytes=\"32768\" data-max-file-read-bytes=\"262144\" data-max-file-write-bytes=\"262144\""
+    ));
+
+    handle.abort();
+}
+
+#[tokio::test]
 async fn functional_spec_2798_c04_ops_shell_exposes_responsive_and_theme_contract_markers() {
     let temp = tempdir().expect("tempdir");
     let state = test_state(temp.path(), 4_096, "secret");
