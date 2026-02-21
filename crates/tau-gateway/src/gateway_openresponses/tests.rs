@@ -2796,6 +2796,41 @@ async fn integration_spec_3099_c02_ops_memory_graph_pan_query_clamps_and_updates
 }
 
 #[tokio::test]
+async fn integration_spec_3103_c02_ops_memory_graph_filter_query_updates_filter_contracts() {
+    let temp = tempdir().expect("tempdir");
+    let state = test_state(temp.path(), 10_000, "secret");
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+    let client = Client::new();
+
+    let response = client
+        .get(format!(
+            "http://{addr}/ops/memory-graph?theme=light&sidebar=collapsed&session=ops-filter&workspace_id=workspace-filter&channel_id=channel-filter&actor_id=operator&memory_type=goal&graph_zoom=1.25&graph_pan_x=25&graph_pan_y=-25&graph_filter_memory_type=goal&graph_filter_relation_type=related_to"
+        ))
+        .send()
+        .await
+        .expect("load ops memory graph filter route");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response
+        .text()
+        .await
+        .expect("read ops memory graph filter body");
+
+    assert!(body.contains(
+        "id=\"tau-ops-memory-graph-filter-controls\" data-filter-memory-type=\"goal\" data-filter-relation-type=\"related_to\""
+    ));
+    assert!(body.contains("id=\"tau-ops-memory-graph-filter-memory-type-all\""));
+    assert!(body.contains("id=\"tau-ops-memory-graph-filter-memory-type-goal\""));
+    assert!(body.contains("id=\"tau-ops-memory-graph-filter-relation-type-all\""));
+    assert!(body.contains("id=\"tau-ops-memory-graph-filter-relation-type-related-to\""));
+    assert!(body.contains("graph_filter_memory_type=all"));
+    assert!(body.contains("graph_filter_memory_type=goal"));
+    assert!(body.contains("graph_filter_relation_type=all"));
+    assert!(body.contains("graph_filter_relation_type=related_to"));
+
+    handle.abort();
+}
+
+#[tokio::test]
 async fn functional_spec_2798_c04_ops_shell_exposes_responsive_and_theme_contract_markers() {
     let temp = tempdir().expect("tempdir");
     let state = test_state(temp.path(), 4_096, "secret");
