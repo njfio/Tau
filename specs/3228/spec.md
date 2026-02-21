@@ -1,6 +1,6 @@
 # Spec: Issue #3228 - move gateway auth runtime-state/status types into module
 
-Status: Reviewed
+Status: Implemented
 
 ## Problem Statement
 `gateway_openresponses.rs` still contains auth runtime-state and auth status-report type definitions even though auth behavior is implemented in `gateway_openresponses/auth_runtime.rs`. This keeps auth-modeling concerns in the root module and slows modularization progress.
