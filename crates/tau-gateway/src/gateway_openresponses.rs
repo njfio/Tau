@@ -65,6 +65,7 @@ mod ops_dashboard_shell;
 mod ops_shell_controls;
 mod request_translation;
 mod safety_runtime;
+mod server_state;
 mod session_api_runtime;
 mod session_runtime;
 mod status_runtime;
@@ -142,6 +143,8 @@ use safety_runtime::{
     handle_gateway_safety_policy_get, handle_gateway_safety_policy_put,
     handle_gateway_safety_rules_get, handle_gateway_safety_rules_put, handle_gateway_safety_test,
 };
+pub use server_state::GatewayOpenResponsesServerConfig;
+use server_state::GatewayOpenResponsesServerState;
 use session_api_runtime::{
     handle_gateway_session_append, handle_gateway_session_detail, handle_gateway_session_reset,
     handle_gateway_sessions_list,
@@ -166,81 +169,6 @@ use types::{
 };
 use webchat_page::render_gateway_webchat_page;
 use websocket::run_gateway_ws_connection;
-
-#[derive(Clone)]
-/// Public struct `GatewayOpenResponsesServerConfig` used across Tau components.
-pub struct GatewayOpenResponsesServerConfig {
-    pub client: Arc<dyn LlmClient>,
-    pub model: String,
-    pub model_input_cost_per_million: Option<f64>,
-    pub model_cached_input_cost_per_million: Option<f64>,
-    pub model_output_cost_per_million: Option<f64>,
-    pub system_prompt: String,
-    pub max_turns: usize,
-    pub tool_registrar: Arc<dyn GatewayToolRegistrar>,
-    pub turn_timeout_ms: u64,
-    pub session_lock_wait_ms: u64,
-    pub session_lock_stale_ms: u64,
-    pub state_dir: PathBuf,
-    pub bind: String,
-    pub auth_mode: GatewayOpenResponsesAuthMode,
-    pub auth_token: Option<String>,
-    pub auth_password: Option<String>,
-    pub session_ttl_seconds: u64,
-    pub rate_limit_window_seconds: u64,
-    pub rate_limit_max_requests: usize,
-    pub max_input_chars: usize,
-    pub runtime_heartbeat: RuntimeHeartbeatSchedulerConfig,
-    pub external_coding_agent_bridge: ExternalCodingAgentBridgeConfig,
-}
-
-#[derive(Clone)]
-struct GatewayOpenResponsesServerState {
-    config: GatewayOpenResponsesServerConfig,
-    response_sequence: Arc<AtomicU64>,
-    auth_runtime: Arc<Mutex<GatewayAuthRuntimeState>>,
-    compat_runtime: Arc<Mutex<GatewayOpenAiCompatRuntimeState>>,
-    ui_telemetry_runtime: Arc<Mutex<GatewayUiTelemetryRuntimeState>>,
-    external_coding_agent_bridge: Arc<ExternalCodingAgentBridge>,
-    cortex: Arc<Cortex>,
-}
-
-impl GatewayOpenResponsesServerState {
-    fn new(config: GatewayOpenResponsesServerConfig) -> Self {
-        let external_coding_agent_bridge = Arc::new(ExternalCodingAgentBridge::new(
-            config.external_coding_agent_bridge.clone(),
-        ));
-        let cortex = Arc::new(Cortex::new(CortexConfig::new(gateway_memory_stores_root(
-            &config.state_dir,
-        ))));
-        Self {
-            config,
-            response_sequence: Arc::new(AtomicU64::new(0)),
-            auth_runtime: Arc::new(Mutex::new(GatewayAuthRuntimeState::default())),
-            compat_runtime: Arc::new(Mutex::new(GatewayOpenAiCompatRuntimeState::default())),
-            ui_telemetry_runtime: Arc::new(Mutex::new(GatewayUiTelemetryRuntimeState::default())),
-            external_coding_agent_bridge,
-            cortex,
-        }
-    }
-
-    fn next_sequence(&self) -> u64 {
-        self.response_sequence.fetch_add(1, Ordering::Relaxed) + 1
-    }
-
-    fn next_response_id(&self) -> String {
-        format!("resp_{:016x}", self.next_sequence())
-    }
-
-    fn next_output_message_id(&self) -> String {
-        format!("msg_{:016x}", self.next_sequence())
-    }
-
-    fn resolved_system_prompt(&self) -> String {
-        self.cortex
-            .compose_system_prompt(self.config.system_prompt.as_str())
-    }
-}
 
 /// Public `fn` `run_gateway_openresponses_server` in `tau-gateway`.
 ///
