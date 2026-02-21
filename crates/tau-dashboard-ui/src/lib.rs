@@ -330,6 +330,8 @@ pub struct TauOpsDashboardChatSnapshot {
     pub memory_create_relation_target_id: String,
     pub memory_create_relation_type: String,
     pub memory_create_relation_weight: String,
+    pub memory_delete_status: String,
+    pub memory_delete_deleted_entry_id: String,
 }
 
 impl Default for TauOpsDashboardChatSnapshot {
@@ -388,6 +390,8 @@ impl Default for TauOpsDashboardChatSnapshot {
             memory_create_relation_target_id: String::new(),
             memory_create_relation_type: String::new(),
             memory_create_relation_weight: String::new(),
+            memory_delete_status: "idle".to_string(),
+            memory_delete_deleted_entry_id: String::new(),
         }
     }
 }
@@ -776,6 +780,19 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     let memory_edit_status_message = match memory_create_status.as_str() {
         "updated" => "Memory entry updated.".to_string(),
         _ => "Edit an existing memory entry.".to_string(),
+    };
+    let memory_delete_form_action = memory_edit_form_action.clone();
+    let memory_delete_form_method = memory_edit_form_method.clone();
+    let memory_delete_status = context.chat.memory_delete_status.clone();
+    let memory_delete_deleted_entry_id = context.chat.memory_delete_deleted_entry_id.clone();
+    let memory_delete_status_panel_attr = memory_delete_status.clone();
+    let memory_delete_deleted_entry_id_panel_attr = memory_delete_deleted_entry_id.clone();
+    let memory_delete_status_marker_attr = memory_delete_status.clone();
+    let memory_delete_deleted_entry_id_marker_attr = memory_delete_deleted_entry_id.clone();
+    let memory_delete_entry_id = memory_delete_deleted_entry_id.clone();
+    let memory_delete_status_message = match memory_delete_status.as_str() {
+        "deleted" => "Memory entry deleted.".to_string(),
+        _ => "Delete a memory entry.".to_string(),
     };
     let memory_results_view = if memory_search_rows.is_empty() {
         leptos::either::Either::Left(view! {
@@ -1615,6 +1632,8 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             data-created-memory-id=memory_create_created_entry_id_panel_attr
                             data-edit-status=memory_edit_status_panel_attr
                             data-edited-memory-id=memory_edit_edited_memory_id_panel_attr
+                            data-delete-status=memory_delete_status_panel_attr
+                            data-deleted-memory-id=memory_delete_deleted_entry_id_panel_attr
                         >
                             <h2>Memory Explorer</h2>
                             <form
@@ -1928,6 +1947,55 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 />
                                 <button id="tau-ops-memory-edit-button" type="submit">
                                     Update Entry
+                                </button>
+                            </form>
+                            <p
+                                id="tau-ops-memory-delete-status"
+                                data-delete-status=memory_delete_status_marker_attr
+                                data-deleted-memory-id=memory_delete_deleted_entry_id_marker_attr
+                            >
+                                {memory_delete_status_message}
+                            </p>
+                            <form
+                                id="tau-ops-memory-delete-form"
+                                action=memory_delete_form_action
+                                method=memory_delete_form_method
+                            >
+                                <input id="tau-ops-memory-delete-theme" type="hidden" name="theme" value=theme_attr />
+                                <input
+                                    id="tau-ops-memory-delete-sidebar"
+                                    type="hidden"
+                                    name="sidebar"
+                                    value=sidebar_state_attr
+                                />
+                                <input
+                                    id="tau-ops-memory-delete-session"
+                                    type="hidden"
+                                    name="session"
+                                    value=chat_session_key.clone()
+                                />
+                                <input
+                                    id="tau-ops-memory-delete-operation"
+                                    type="hidden"
+                                    name="operation"
+                                    value="delete"
+                                />
+                                <label for="tau-ops-memory-delete-entry-id">Entry ID</label>
+                                <input
+                                    id="tau-ops-memory-delete-entry-id"
+                                    type="text"
+                                    name="entry_id"
+                                    value=memory_delete_entry_id
+                                />
+                                <label for="tau-ops-memory-delete-confirm">Confirm Delete</label>
+                                <input
+                                    id="tau-ops-memory-delete-confirm"
+                                    type="checkbox"
+                                    name="confirm_delete"
+                                    value="true"
+                                />
+                                <button id="tau-ops-memory-delete-button" type="submit">
+                                    Delete Entry
                                 </button>
                             </form>
                             <ul id="tau-ops-memory-results" data-result-count=memory_result_count_list_attr>
