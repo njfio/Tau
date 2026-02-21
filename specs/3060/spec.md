@@ -1,6 +1,6 @@
 # Spec: Issue #3060 - ops memory delete confirmation contracts
 
-Status: Reviewed
+Status: Implemented
 
 ## Problem Statement
 The Tau Ops memory route currently supports search/create/edit contracts but does

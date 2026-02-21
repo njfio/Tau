@@ -22,10 +22,11 @@ use tau_session::SessionStore;
 
 use super::{
     collect_tau_ops_dashboard_command_center_snapshot, gateway_memory_store, gateway_session_path,
-    record_cortex_memory_entry_write_event, record_cortex_session_append_event,
-    record_cortex_session_reset_event, sanitize_session_key, GatewayOpenResponsesServerState,
-    OpenResponsesApiError, OpsShellControlsQuery, DEFAULT_SESSION_KEY, OPS_DASHBOARD_CHAT_ENDPOINT,
-    OPS_DASHBOARD_CHAT_NEW_ENDPOINT, OPS_DASHBOARD_CHAT_SEND_ENDPOINT,
+    record_cortex_memory_entry_delete_event, record_cortex_memory_entry_write_event,
+    record_cortex_session_append_event, record_cortex_session_reset_event, sanitize_session_key,
+    GatewayOpenResponsesServerState, OpenResponsesApiError, OpsShellControlsQuery,
+    DEFAULT_SESSION_KEY, OPS_DASHBOARD_CHAT_ENDPOINT, OPS_DASHBOARD_CHAT_NEW_ENDPOINT,
+    OPS_DASHBOARD_CHAT_SEND_ENDPOINT,
 };
 use crate::remote_profile::GatewayOpenResponsesAuthMode;
 
@@ -148,6 +149,8 @@ pub(super) struct OpsDashboardMemoryCreateForm {
     #[serde(default)]
     relation_weight: String,
     #[serde(default)]
+    confirm_delete: String,
+    #[serde(default)]
     theme: String,
     #[serde(default)]
     sidebar: String,
@@ -174,6 +177,14 @@ fn normalize_memory_form_text(value: &str) -> Option<String> {
 impl OpsDashboardMemoryCreateForm {
     fn is_edit_operation(&self) -> bool {
         self.operation.trim() == "edit"
+    }
+
+    fn is_delete_operation(&self) -> bool {
+        self.operation.trim() == "delete"
+    }
+
+    fn is_delete_confirmed(&self) -> bool {
+        self.confirm_delete.trim() == "true"
     }
 
     fn resolved_session_key(&self) -> String {
@@ -466,9 +477,11 @@ fn build_ops_memory_redirect_path(
     session_key: &str,
     create_status: &str,
     created_memory_id: Option<&str>,
+    delete_status: &str,
+    deleted_memory_id: Option<&str>,
 ) -> String {
     let mut redirect_path = format!(
-        "/ops/memory?theme={}&sidebar={}&session={session_key}&create_status={create_status}",
+        "/ops/memory?theme={}&sidebar={}&session={session_key}&create_status={create_status}&delete_status={delete_status}",
         theme.as_str(),
         sidebar_state.as_str()
     );
@@ -477,6 +490,13 @@ fn build_ops_memory_redirect_path(
         .filter(|value| !value.is_empty())
     {
         redirect_path.push_str("&created_memory_id=");
+        redirect_path.push_str(memory_id);
+    }
+    if let Some(memory_id) = deleted_memory_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        redirect_path.push_str("&deleted_memory_id=");
         redirect_path.push_str(memory_id);
     }
     redirect_path
@@ -527,6 +547,10 @@ fn collect_tau_ops_dashboard_chat_snapshot(
     let memory_create_status = controls.requested_memory_create_status().to_string();
     let memory_create_created_entry_id = controls
         .requested_memory_created_entry_id()
+        .unwrap_or_default();
+    let memory_delete_status = controls.requested_memory_delete_status().to_string();
+    let memory_delete_deleted_entry_id = controls
+        .requested_memory_deleted_entry_id()
         .unwrap_or_default();
     let mut memory_search_rows = Vec::new();
 
@@ -655,6 +679,8 @@ fn collect_tau_ops_dashboard_chat_snapshot(
         memory_create_relation_target_id: String::new(),
         memory_create_relation_type: String::new(),
         memory_create_relation_weight: String::new(),
+        memory_delete_status,
+        memory_delete_deleted_entry_id,
     }
 }
 
@@ -790,15 +816,58 @@ pub(super) async fn handle_ops_dashboard_memory_create(
 ) -> Response {
     let session_key = form.resolved_session_key();
     let is_edit_operation = form.is_edit_operation();
+    let is_delete_operation = form.is_delete_operation();
     let fallback_redirect_path = build_ops_memory_redirect_path(
         form.resolved_theme(),
         form.resolved_sidebar_state(),
         session_key.as_str(),
         "idle",
         None,
+        "idle",
+        None,
     );
 
     let entry_id = form.resolved_entry_id();
+    if is_delete_operation {
+        if entry_id.is_empty() || !form.is_delete_confirmed() {
+            return Redirect::to(fallback_redirect_path.as_str()).into_response();
+        }
+        let store = gateway_memory_store(&state.config.state_dir, session_key.as_str());
+        match store.soft_delete_entry(entry_id.as_str(), None) {
+            Ok(Some(_)) => {
+                state.record_ui_telemetry_event(
+                    "memory",
+                    "entry_delete",
+                    "ops_memory_delete_form_submitted",
+                );
+                record_cortex_memory_entry_delete_event(
+                    &state.config.state_dir,
+                    session_key.as_str(),
+                    entry_id.as_str(),
+                    true,
+                );
+                let redirect_path = build_ops_memory_redirect_path(
+                    form.resolved_theme(),
+                    form.resolved_sidebar_state(),
+                    session_key.as_str(),
+                    "idle",
+                    None,
+                    "deleted",
+                    Some(entry_id.as_str()),
+                );
+                return Redirect::to(redirect_path.as_str()).into_response();
+            }
+            Ok(None) => return Redirect::to(fallback_redirect_path.as_str()).into_response(),
+            Err(error) => {
+                return OpenResponsesApiError::internal(format!(
+                    "failed to delete memory entry '{}' for session '{}': {error}",
+                    entry_id, session_key
+                ))
+                .into_response();
+            }
+        }
+    }
+
     let summary = form.resolved_summary();
     if entry_id.is_empty() || summary.is_empty() {
         return Redirect::to(fallback_redirect_path.as_str()).into_response();
@@ -875,6 +944,8 @@ pub(super) async fn handle_ops_dashboard_memory_create(
         session_key.as_str(),
         create_status,
         Some(entry_id.as_str()),
+        "idle",
+        None,
     );
     Redirect::to(redirect_path.as_str()).into_response()
 }
