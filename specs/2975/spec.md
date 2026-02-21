@@ -1,6 +1,6 @@
 # Spec: Issue #2975 - Split gateway session handlers into session API runtime module
 
-Status: Reviewed
+Status: Implemented
 
 ## Problem Statement
 `crates/tau-gateway/src/gateway_openresponses.rs` remains above desired hotspot size after phase 1 extraction. Session endpoint handlers are still implemented inline and can be cleanly extracted into a dedicated runtime module.
