@@ -1,6 +1,6 @@
 # Spec: Issue #3086 - ops memory-graph node detail panel contracts
 
-Status: Reviewed
+Status: Implemented
 
 ## Problem Statement
 `/ops/memory-graph` exposes deterministic node/edge contracts (including size/color/style),
