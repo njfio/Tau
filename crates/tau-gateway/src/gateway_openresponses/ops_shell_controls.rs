@@ -1,6 +1,6 @@
 use serde::Deserialize;
 use tau_dashboard_ui::{TauOpsDashboardSidebarState, TauOpsDashboardTheme};
-use tau_memory::runtime::MemoryType;
+use tau_memory::runtime::{MemoryRelationType, MemoryType};
 
 #[derive(Debug, Clone, Deserialize, Default)]
 pub(super) struct OpsShellControlsQuery {
@@ -42,6 +42,10 @@ pub(super) struct OpsShellControlsQuery {
     graph_pan_x: String,
     #[serde(default)]
     graph_pan_y: String,
+    #[serde(default)]
+    graph_filter_memory_type: String,
+    #[serde(default)]
+    graph_filter_relation_type: String,
 }
 
 impl OpsShellControlsQuery {
@@ -200,6 +204,26 @@ impl OpsShellControlsQuery {
             .ok()
             .map(|value| value.clamp(-500.0, 500.0))
             .unwrap_or(0.0)
+    }
+
+    pub(super) fn requested_memory_graph_filter_memory_type(&self) -> String {
+        let value = self.graph_filter_memory_type.trim();
+        if value.is_empty() {
+            return "all".to_string();
+        }
+        MemoryType::parse(value)
+            .map(|memory_type| memory_type.as_str().to_string())
+            .unwrap_or_else(|| "all".to_string())
+    }
+
+    pub(super) fn requested_memory_graph_filter_relation_type(&self) -> String {
+        let value = self.graph_filter_relation_type.trim();
+        if value.is_empty() {
+            return "all".to_string();
+        }
+        MemoryRelationType::parse(value)
+            .map(|relation_type| relation_type.as_str().to_string())
+            .unwrap_or_else(|| "all".to_string())
     }
 }
 
@@ -472,5 +496,59 @@ mod tests {
         };
         assert_eq!(clamped.requested_memory_graph_pan_x_level(), 500.0);
         assert_eq!(clamped.requested_memory_graph_pan_y_level(), -500.0);
+    }
+
+    #[test]
+    fn unit_requested_memory_graph_filter_memory_type_defaults_and_normalizes_values() {
+        let default_filters = OpsShellControlsQuery::default();
+        assert_eq!(
+            default_filters.requested_memory_graph_filter_memory_type(),
+            "all"
+        );
+
+        let valid = OpsShellControlsQuery {
+            graph_filter_memory_type: "goal".to_string(),
+            ..OpsShellControlsQuery::default()
+        };
+        assert_eq!(valid.requested_memory_graph_filter_memory_type(), "goal");
+
+        let invalid = OpsShellControlsQuery {
+            graph_filter_memory_type: "unknown".to_string(),
+            ..OpsShellControlsQuery::default()
+        };
+        assert_eq!(invalid.requested_memory_graph_filter_memory_type(), "all");
+    }
+
+    #[test]
+    fn unit_requested_memory_graph_filter_relation_type_defaults_and_normalizes_values() {
+        let default_filters = OpsShellControlsQuery::default();
+        assert_eq!(
+            default_filters.requested_memory_graph_filter_relation_type(),
+            "all"
+        );
+
+        let valid = OpsShellControlsQuery {
+            graph_filter_relation_type: "related_to".to_string(),
+            ..OpsShellControlsQuery::default()
+        };
+        assert_eq!(
+            valid.requested_memory_graph_filter_relation_type(),
+            "related_to"
+        );
+
+        let alias = OpsShellControlsQuery {
+            graph_filter_relation_type: "supports".to_string(),
+            ..OpsShellControlsQuery::default()
+        };
+        assert_eq!(
+            alias.requested_memory_graph_filter_relation_type(),
+            "related_to"
+        );
+
+        let invalid = OpsShellControlsQuery {
+            graph_filter_relation_type: "unknown".to_string(),
+            ..OpsShellControlsQuery::default()
+        };
+        assert_eq!(invalid.requested_memory_graph_filter_relation_type(), "all");
     }
 }

@@ -369,6 +369,8 @@ pub struct TauOpsDashboardChatSnapshot {
     pub memory_graph_zoom_level: String,
     pub memory_graph_pan_x_level: String,
     pub memory_graph_pan_y_level: String,
+    pub memory_graph_filter_memory_type: String,
+    pub memory_graph_filter_relation_type: String,
     pub memory_graph_node_rows: Vec<TauOpsDashboardMemoryGraphNodeRow>,
     pub memory_graph_edge_rows: Vec<TauOpsDashboardMemoryGraphEdgeRow>,
 }
@@ -443,6 +445,8 @@ impl Default for TauOpsDashboardChatSnapshot {
             memory_graph_zoom_level: "1.00".to_string(),
             memory_graph_pan_x_level: "0.00".to_string(),
             memory_graph_pan_y_level: "0.00".to_string(),
+            memory_graph_filter_memory_type: "all".to_string(),
+            memory_graph_filter_relation_type: "all".to_string(),
             memory_graph_node_rows: vec![],
             memory_graph_edge_rows: vec![],
         }
@@ -1028,29 +1032,86 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
         "{:.2}",
         (memory_graph_pan_y_value + memory_graph_pan_step_value).min(500.0)
     );
+    let memory_graph_filter_memory_type = {
+        let value = context.chat.memory_graph_filter_memory_type.trim();
+        if value.is_empty() {
+            "all".to_string()
+        } else {
+            value.to_string()
+        }
+    };
+    let memory_graph_filter_relation_type = {
+        let value = context.chat.memory_graph_filter_relation_type.trim();
+        if value.is_empty() {
+            "all".to_string()
+        } else {
+            value.to_string()
+        }
+    };
+    let filtered_memory_graph_node_rows = if memory_graph_filter_memory_type == "all" {
+        memory_graph_node_rows.clone()
+    } else {
+        memory_graph_node_rows
+            .iter()
+            .filter(|row| row.memory_type.as_str() == memory_graph_filter_memory_type.as_str())
+            .cloned()
+            .collect::<Vec<_>>()
+    };
+    let filtered_memory_graph_node_ids = filtered_memory_graph_node_rows
+        .iter()
+        .map(|row| row.memory_id.clone())
+        .collect::<std::collections::BTreeSet<_>>();
+    let scope_edges_to_filtered_nodes = memory_graph_filter_memory_type != "all";
+    let filtered_memory_graph_edge_rows = memory_graph_edge_rows
+        .iter()
+        .filter(|row| {
+            let within_node_scope = if scope_edges_to_filtered_nodes {
+                filtered_memory_graph_node_ids.contains(&row.source_memory_id)
+                    && filtered_memory_graph_node_ids.contains(&row.target_memory_id)
+            } else {
+                true
+            };
+            (memory_graph_filter_relation_type == "all"
+                || row.relation_type.as_str() == memory_graph_filter_relation_type.as_str())
+                && within_node_scope
+        })
+        .cloned()
+        .collect::<Vec<_>>();
     let memory_graph_route_href_base = format!(
         "/ops/memory-graph?theme={theme_attr}&sidebar={sidebar_state_attr}&session={chat_session_key}&workspace_id={memory_search_workspace_id}&channel_id={memory_search_channel_id}&actor_id={memory_search_actor_id}&memory_type={memory_search_memory_type}"
     );
     let memory_graph_zoom_in_href = format!(
-        "{memory_graph_route_href_base}&graph_zoom={memory_graph_zoom_in_level}&graph_pan_x={memory_graph_pan_x_level}&graph_pan_y={memory_graph_pan_y_level}"
+        "{memory_graph_route_href_base}&graph_zoom={memory_graph_zoom_in_level}&graph_pan_x={memory_graph_pan_x_level}&graph_pan_y={memory_graph_pan_y_level}&graph_filter_memory_type={memory_graph_filter_memory_type}&graph_filter_relation_type={memory_graph_filter_relation_type}"
     );
     let memory_graph_zoom_out_href = format!(
-        "{memory_graph_route_href_base}&graph_zoom={memory_graph_zoom_out_level}&graph_pan_x={memory_graph_pan_x_level}&graph_pan_y={memory_graph_pan_y_level}"
+        "{memory_graph_route_href_base}&graph_zoom={memory_graph_zoom_out_level}&graph_pan_x={memory_graph_pan_x_level}&graph_pan_y={memory_graph_pan_y_level}&graph_filter_memory_type={memory_graph_filter_memory_type}&graph_filter_relation_type={memory_graph_filter_relation_type}"
     );
     let memory_graph_pan_left_href = format!(
-        "{memory_graph_route_href_base}&graph_zoom={memory_graph_zoom_level}&graph_pan_x={memory_graph_pan_left_x_level}&graph_pan_y={memory_graph_pan_y_level}"
+        "{memory_graph_route_href_base}&graph_zoom={memory_graph_zoom_level}&graph_pan_x={memory_graph_pan_left_x_level}&graph_pan_y={memory_graph_pan_y_level}&graph_filter_memory_type={memory_graph_filter_memory_type}&graph_filter_relation_type={memory_graph_filter_relation_type}"
     );
     let memory_graph_pan_right_href = format!(
-        "{memory_graph_route_href_base}&graph_zoom={memory_graph_zoom_level}&graph_pan_x={memory_graph_pan_right_x_level}&graph_pan_y={memory_graph_pan_y_level}"
+        "{memory_graph_route_href_base}&graph_zoom={memory_graph_zoom_level}&graph_pan_x={memory_graph_pan_right_x_level}&graph_pan_y={memory_graph_pan_y_level}&graph_filter_memory_type={memory_graph_filter_memory_type}&graph_filter_relation_type={memory_graph_filter_relation_type}"
     );
     let memory_graph_pan_up_href = format!(
-        "{memory_graph_route_href_base}&graph_zoom={memory_graph_zoom_level}&graph_pan_x={memory_graph_pan_x_level}&graph_pan_y={memory_graph_pan_up_y_level}"
+        "{memory_graph_route_href_base}&graph_zoom={memory_graph_zoom_level}&graph_pan_x={memory_graph_pan_x_level}&graph_pan_y={memory_graph_pan_up_y_level}&graph_filter_memory_type={memory_graph_filter_memory_type}&graph_filter_relation_type={memory_graph_filter_relation_type}"
     );
     let memory_graph_pan_down_href = format!(
-        "{memory_graph_route_href_base}&graph_zoom={memory_graph_zoom_level}&graph_pan_x={memory_graph_pan_x_level}&graph_pan_y={memory_graph_pan_down_y_level}"
+        "{memory_graph_route_href_base}&graph_zoom={memory_graph_zoom_level}&graph_pan_x={memory_graph_pan_x_level}&graph_pan_y={memory_graph_pan_down_y_level}&graph_filter_memory_type={memory_graph_filter_memory_type}&graph_filter_relation_type={memory_graph_filter_relation_type}"
     );
-    let memory_graph_node_count = memory_graph_node_rows.len().to_string();
-    let memory_graph_edge_count = memory_graph_edge_rows.len().to_string();
+    let memory_graph_filter_memory_type_all_href = format!(
+        "{memory_graph_route_href_base}&graph_zoom={memory_graph_zoom_level}&graph_pan_x={memory_graph_pan_x_level}&graph_pan_y={memory_graph_pan_y_level}&graph_filter_memory_type=all&graph_filter_relation_type={memory_graph_filter_relation_type}"
+    );
+    let memory_graph_filter_memory_type_goal_href = format!(
+        "{memory_graph_route_href_base}&graph_zoom={memory_graph_zoom_level}&graph_pan_x={memory_graph_pan_x_level}&graph_pan_y={memory_graph_pan_y_level}&graph_filter_memory_type=goal&graph_filter_relation_type={memory_graph_filter_relation_type}"
+    );
+    let memory_graph_filter_relation_type_all_href = format!(
+        "{memory_graph_route_href_base}&graph_zoom={memory_graph_zoom_level}&graph_pan_x={memory_graph_pan_x_level}&graph_pan_y={memory_graph_pan_y_level}&graph_filter_memory_type={memory_graph_filter_memory_type}&graph_filter_relation_type=all"
+    );
+    let memory_graph_filter_relation_type_related_to_href = format!(
+        "{memory_graph_route_href_base}&graph_zoom={memory_graph_zoom_level}&graph_pan_x={memory_graph_pan_x_level}&graph_pan_y={memory_graph_pan_y_level}&graph_filter_memory_type={memory_graph_filter_memory_type}&graph_filter_relation_type=related_to"
+    );
+    let memory_graph_node_count = filtered_memory_graph_node_rows.len().to_string();
+    let memory_graph_edge_count = filtered_memory_graph_edge_rows.len().to_string();
     let memory_graph_node_count_panel_attr = memory_graph_node_count.clone();
     let memory_graph_edge_count_panel_attr = memory_graph_edge_count.clone();
     let selected_memory_graph_detail_id = memory_detail_selected_entry_id.clone();
@@ -1079,7 +1140,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
         } else {
             None
         };
-    let memory_graph_nodes_view = if memory_graph_node_rows.is_empty() {
+    let memory_graph_nodes_view = if filtered_memory_graph_node_rows.is_empty() {
         leptos::either::Either::Left(view! {
             <li id="tau-ops-memory-graph-empty-state" data-empty-state="true">
                 No memory graph nodes available.
@@ -1087,7 +1148,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
         })
     } else {
         leptos::either::Either::Right(
-            memory_graph_node_rows
+            filtered_memory_graph_node_rows
                 .iter()
                 .enumerate()
                 .map(|(index, row)| {
@@ -1107,7 +1168,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                         focused_memory_graph_detail_id.as_deref()
                     {
                         let is_connected_neighbor = row.memory_id.as_str() == focused_memory_id
-                            || memory_graph_edge_rows.iter().any(|edge| {
+                            || filtered_memory_graph_edge_rows.iter().any(|edge| {
                                 (edge.source_memory_id.as_str() == focused_memory_id
                                     && edge.target_memory_id.as_str() == row.memory_id.as_str())
                                     || (edge.target_memory_id.as_str() == focused_memory_id
@@ -1143,7 +1204,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                 .collect_view(),
         )
     };
-    let memory_graph_edges_view = memory_graph_edge_rows
+    let memory_graph_edges_view = filtered_memory_graph_edge_rows
         .iter()
         .enumerate()
         .map(|(index, row)| {
@@ -2451,6 +2512,40 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     href=memory_graph_pan_down_href
                                 >
                                     Pan Down
+                                </a>
+                            </div>
+                            <div
+                                id="tau-ops-memory-graph-filter-controls"
+                                data-filter-memory-type=memory_graph_filter_memory_type
+                                data-filter-relation-type=memory_graph_filter_relation_type
+                            >
+                                <a
+                                    id="tau-ops-memory-graph-filter-memory-type-all"
+                                    data-filter-target="memory-type"
+                                    href=memory_graph_filter_memory_type_all_href
+                                >
+                                    Memory Type: All
+                                </a>
+                                <a
+                                    id="tau-ops-memory-graph-filter-memory-type-goal"
+                                    data-filter-target="memory-type"
+                                    href=memory_graph_filter_memory_type_goal_href
+                                >
+                                    Memory Type: Goal
+                                </a>
+                                <a
+                                    id="tau-ops-memory-graph-filter-relation-type-all"
+                                    data-filter-target="relation-type"
+                                    href=memory_graph_filter_relation_type_all_href
+                                >
+                                    Relation: All
+                                </a>
+                                <a
+                                    id="tau-ops-memory-graph-filter-relation-type-related-to"
+                                    data-filter-target="relation-type"
+                                    href=memory_graph_filter_relation_type_related_to_href
+                                >
+                                    Relation: related_to
                                 </a>
                             </div>
                             <section
