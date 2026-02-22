@@ -981,7 +981,9 @@ fn integration_compose_startup_system_prompt_uses_activated_skill_aliases() {
     let composed = compose_startup_system_prompt(&cli, &destination_root.join("skills"))
         .expect("compose startup prompt");
     assert!(composed.contains("base prompt"));
-    assert!(composed.contains("Always run tests"));
+    assert!(composed.contains("# Skill: checks"));
+    assert!(composed.contains("Description: (none)"));
+    assert!(!composed.contains("Always run tests"));
 }
 
 #[test]

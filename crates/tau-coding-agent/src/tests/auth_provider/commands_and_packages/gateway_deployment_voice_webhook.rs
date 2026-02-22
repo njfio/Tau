@@ -93,7 +93,7 @@ fn regression_validate_gateway_openresponses_server_cli_requires_auth_token() {
     let error = validate_gateway_openresponses_server_cli(&cli)
         .expect_err("missing auth token should fail");
     assert!(error.to_string().contains(
-        "--gateway-openresponses-auth-token is required when --gateway-openresponses-auth-mode=token"
+        "--gateway-openresponses-auth-token (or --gateway-openresponses-auth-token-id) is required when --gateway-openresponses-auth-mode=token"
     ));
 }
 
@@ -107,7 +107,7 @@ fn regression_validate_gateway_openresponses_server_cli_rejects_whitespace_auth_
     let error = validate_gateway_openresponses_server_cli(&cli)
         .expect_err("whitespace auth token should fail");
     assert!(error.to_string().contains(
-        "--gateway-openresponses-auth-token is required when --gateway-openresponses-auth-mode=token"
+        "--gateway-openresponses-auth-token (or --gateway-openresponses-auth-token-id) is required when --gateway-openresponses-auth-mode=token"
     ));
 }
 
@@ -132,7 +132,7 @@ fn regression_validate_gateway_openresponses_server_cli_requires_password_for_pa
     let error =
         validate_gateway_openresponses_server_cli(&cli).expect_err("missing password should fail");
     assert!(error.to_string().contains(
-        "--gateway-openresponses-auth-password is required when --gateway-openresponses-auth-mode=password-session"
+        "--gateway-openresponses-auth-password (or --gateway-openresponses-auth-password-id) is required when --gateway-openresponses-auth-mode=password-session"
     ));
 }
 

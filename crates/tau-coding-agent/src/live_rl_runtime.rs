@@ -1457,6 +1457,20 @@ mod tests {
         store.add_span(span).await.expect("add seeded span");
     }
 
+    async fn seed_live_rollouts(
+        store: &Arc<dyn TrainingStore + Send + Sync>,
+        id_prefix: &str,
+        rewards: &[f64],
+    ) -> Vec<String> {
+        let mut rollout_ids = Vec::with_capacity(rewards.len());
+        for (index, reward) in rewards.iter().copied().enumerate() {
+            let rollout_id = format!("live-rl-rollout-{id_prefix}-{index:04}");
+            seed_live_rollout(store, rollout_id.as_str(), reward).await;
+            rollout_ids.push(rollout_id);
+        }
+        rollout_ids
+    }
+
     #[test]
     fn spec_c04_unit_live_rl_env_defaults_to_disabled() {
         let env = BTreeMap::new();
@@ -1812,6 +1826,245 @@ mod tests {
             .get_latest_resources()
             .await
             .expect("get latest resources");
+        assert!(latest.is_none());
+    }
+
+    #[tokio::test]
+    async fn spec_c09_regression_live_apo_caps_samples_to_max_window() {
+        let store: Arc<dyn TrainingStore + Send + Sync> = Arc::new(InMemoryTrainingStore::new());
+        let rollout_ids = seed_live_rollouts(
+            &store,
+            "c09",
+            &[-1.0, -0.9, -0.8, -0.7, -0.6, -0.5, -0.4, -0.3],
+        )
+        .await;
+
+        let bridge = LiveRlRuntimeBridge::for_tests_with_apo(
+            store,
+            LiveRlRuntimeConfig {
+                enabled: true,
+                store_path: ".tau/training/store.sqlite".into(),
+                update_interval_rollouts: 1,
+                max_rollouts_per_update: 32,
+                max_failure_streak: 3,
+                apo_enabled: true,
+                apo_min_samples: 2,
+                apo_max_samples: 4,
+                apo_significance_alpha: 0.05,
+            },
+            Arc::new(ScriptedClient::new(vec![
+                "{\"score\":0.40}",
+                "Make the prompt concise and checklist-oriented.",
+                "You are Tau. Keep outputs concise with deterministic checks.",
+                "{\"score\":0.70}",
+            ])),
+            "You are Tau.",
+        );
+
+        let report = bridge
+            .run_live_apo_update(rollout_ids.as_slice())
+            .await
+            .expect("run APO update");
+        assert!(report.executed);
+        assert_eq!(report.sample_count, 4);
+    }
+
+    #[tokio::test]
+    async fn spec_c10_regression_live_apo_sample_thresholds_respect_min_and_hard_floor() {
+        {
+            let store: Arc<dyn TrainingStore + Send + Sync> =
+                Arc::new(InMemoryTrainingStore::new());
+            let rollout_ids = seed_live_rollouts(&store, "c10-min3", &[0.20, 0.30, 0.40]).await;
+            let bridge = LiveRlRuntimeBridge::for_tests_with_apo(
+                store,
+                LiveRlRuntimeConfig {
+                    enabled: true,
+                    store_path: ".tau/training/store.sqlite".into(),
+                    update_interval_rollouts: 1,
+                    max_rollouts_per_update: 32,
+                    max_failure_streak: 3,
+                    apo_enabled: true,
+                    apo_min_samples: 4,
+                    apo_max_samples: 32,
+                    apo_significance_alpha: 0.05,
+                },
+                Arc::new(ScriptedClient::new(vec![
+                    "{\"score\":0.50}",
+                    "n/a",
+                    "n/a",
+                    "{\"score\":0.50}",
+                ])),
+                "You are Tau.",
+            );
+            let report = bridge
+                .run_live_apo_update(rollout_ids.as_slice())
+                .await
+                .expect("run APO update");
+            assert!(!report.executed);
+            assert_eq!(report.sample_count, 3);
+            assert_eq!(
+                report.reason_code.as_deref(),
+                Some("apo_insufficient_samples")
+            );
+        }
+
+        {
+            let store: Arc<dyn TrainingStore + Send + Sync> =
+                Arc::new(InMemoryTrainingStore::new());
+            let rollout_ids =
+                seed_live_rollouts(&store, "c10-min4", &[0.20, 0.30, 0.40, 0.50]).await;
+            let bridge = LiveRlRuntimeBridge::for_tests_with_apo(
+                store,
+                LiveRlRuntimeConfig {
+                    enabled: true,
+                    store_path: ".tau/training/store.sqlite".into(),
+                    update_interval_rollouts: 1,
+                    max_rollouts_per_update: 32,
+                    max_failure_streak: 3,
+                    apo_enabled: true,
+                    apo_min_samples: 4,
+                    apo_max_samples: 32,
+                    apo_significance_alpha: 0.05,
+                },
+                Arc::new(ScriptedClient::new(vec![
+                    "{\"score\":0.45}",
+                    "Minor wording update.",
+                    "You are Tau. Verify and summarize clearly.",
+                    "{\"score\":0.46}",
+                ])),
+                "You are Tau.",
+            );
+            let report = bridge
+                .run_live_apo_update(rollout_ids.as_slice())
+                .await
+                .expect("run APO update");
+            assert_eq!(report.sample_count, 4);
+            assert_ne!(
+                report.reason_code.as_deref(),
+                Some("apo_insufficient_samples")
+            );
+        }
+
+        {
+            let store: Arc<dyn TrainingStore + Send + Sync> =
+                Arc::new(InMemoryTrainingStore::new());
+            let rollout_ids = seed_live_rollouts(&store, "c10-hard1", &[0.40]).await;
+            let bridge = LiveRlRuntimeBridge::for_tests_with_apo(
+                store,
+                LiveRlRuntimeConfig {
+                    enabled: true,
+                    store_path: ".tau/training/store.sqlite".into(),
+                    update_interval_rollouts: 1,
+                    max_rollouts_per_update: 32,
+                    max_failure_streak: 3,
+                    apo_enabled: true,
+                    apo_min_samples: 1,
+                    apo_max_samples: 32,
+                    apo_significance_alpha: 0.05,
+                },
+                Arc::new(ScriptedClient::new(vec![
+                    "{\"score\":0.50}",
+                    "n/a",
+                    "n/a",
+                    "{\"score\":0.51}",
+                ])),
+                "You are Tau.",
+            );
+            let report = bridge
+                .run_live_apo_update(rollout_ids.as_slice())
+                .await
+                .expect("run APO update");
+            assert!(!report.executed);
+            assert_eq!(report.sample_count, 1);
+            assert_eq!(
+                report.reason_code.as_deref(),
+                Some("apo_insufficient_samples")
+            );
+        }
+
+        {
+            let store: Arc<dyn TrainingStore + Send + Sync> =
+                Arc::new(InMemoryTrainingStore::new());
+            let rollout_ids = seed_live_rollouts(&store, "c10-hard2", &[0.40, 0.50]).await;
+            let bridge = LiveRlRuntimeBridge::for_tests_with_apo(
+                store,
+                LiveRlRuntimeConfig {
+                    enabled: true,
+                    store_path: ".tau/training/store.sqlite".into(),
+                    update_interval_rollouts: 1,
+                    max_rollouts_per_update: 32,
+                    max_failure_streak: 3,
+                    apo_enabled: true,
+                    apo_min_samples: 1,
+                    apo_max_samples: 32,
+                    apo_significance_alpha: 0.05,
+                },
+                Arc::new(ScriptedClient::new(vec![
+                    "{\"score\":0.45}",
+                    "Tiny wording refinement.",
+                    "You are Tau. Keep deterministic checks.",
+                    "{\"score\":0.46}",
+                ])),
+                "You are Tau.",
+            );
+            let report = bridge
+                .run_live_apo_update(rollout_ids.as_slice())
+                .await
+                .expect("run APO update");
+            assert_eq!(report.sample_count, 2);
+            assert_ne!(
+                report.reason_code.as_deref(),
+                Some("apo_insufficient_samples")
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn spec_c11_regression_live_apo_rejects_non_significant_positive_delta() {
+        let store: Arc<dyn TrainingStore + Send + Sync> = Arc::new(InMemoryTrainingStore::new());
+        let rollout_ids = seed_live_rollouts(&store, "c11", &[-1.0, -1.0, 1.0, 1.0]).await;
+
+        let bridge = LiveRlRuntimeBridge::for_tests_with_apo(
+            store.clone(),
+            LiveRlRuntimeConfig {
+                enabled: true,
+                store_path: ".tau/training/store.sqlite".into(),
+                update_interval_rollouts: 1,
+                max_rollouts_per_update: 32,
+                max_failure_streak: 3,
+                apo_enabled: true,
+                apo_min_samples: 4,
+                apo_max_samples: 32,
+                apo_significance_alpha: 0.05,
+            },
+            Arc::new(ScriptedClient::new(vec![
+                "{\"score\":0.50}",
+                "Add a small wording tweak.",
+                "You are Tau. Prefer deterministic checks and concise plans.",
+                "{\"score\":0.60}",
+            ])),
+            "You are Tau.",
+        );
+
+        let report = bridge
+            .run_live_apo_update(rollout_ids.as_slice())
+            .await
+            .expect("run APO update");
+        assert!(report.executed);
+        assert!(!report.adopted);
+        assert_eq!(
+            report.reason_code.as_deref(),
+            Some("apo_no_significant_improvement")
+        );
+        assert!(
+            report.candidate_mean_reward.expect("candidate mean reward")
+                > report.baseline_mean_reward.expect("baseline mean reward")
+        );
+
+        let latest = store
+            .get_latest_resources()
+            .await
+            .expect("read latest resources");
         assert!(latest.is_none());
     }
 }
