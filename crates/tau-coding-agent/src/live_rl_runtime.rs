@@ -56,6 +56,8 @@ pub(crate) struct LiveApoReport {
     pub executed: bool,
     pub adopted: bool,
     pub sample_count: usize,
+    pub curriculum_focus_category: Option<String>,
+    pub curriculum_focus_mean_reward: Option<f64>,
     pub baseline_mean_reward: Option<f64>,
     pub candidate_mean_reward: Option<f64>,
     pub best_prompt_version: Option<String>,
@@ -210,6 +212,15 @@ struct LiveApoSample {
     prompt: String,
     response: String,
     reward: f64,
+    category: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct LiveCategoryOutcome {
+    category: String,
+    reward: f64,
+    predicted_success_probability: f64,
+    actual_success: bool,
 }
 
 /// Proxy around the training store that suppresses resource persistence side effects.
@@ -602,7 +613,13 @@ impl LiveRlRuntimeBridge {
 
     async fn finalize_run(&self, run: LiveRlActiveRun, status: RolloutStatus) {
         if status == RolloutStatus::Succeeded {
-            let span = build_final_decision_span(&run);
+            let mut span = build_final_decision_span(&run);
+            if let Err(error) = self.enrich_final_decision_span(&mut span).await {
+                span.attributes.insert(
+                    "meta_cognition_enrichment_error".to_string(),
+                    json!(error.to_string()),
+                );
+            }
             if let Err(error) = self.inner.store.add_span(span).await {
                 self.register_failure(format!(
                     "live RL span persistence failed for {}: {error}",
@@ -648,6 +665,128 @@ impl LiveRlRuntimeBridge {
                 }
             }
         }
+    }
+
+    async fn enrich_final_decision_span(&self, span: &mut TrainingSpan) -> Result<()> {
+        let prompt = span
+            .attributes
+            .get("prompt")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .unwrap_or_default();
+        let category = span
+            .attributes
+            .get("task_category")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToString::to_string)
+            .unwrap_or_else(|| infer_task_category(prompt));
+
+        span.attributes
+            .insert("task_category".to_string(), json!(category.clone()));
+
+        let history = self
+            .collect_recent_category_outcomes(category.as_str(), 32)
+            .await?;
+        let trend = classify_learning_trend(
+            history
+                .iter()
+                .map(|outcome| outcome.reward)
+                .collect::<Vec<_>>()
+                .as_slice(),
+        );
+        span.attributes
+            .insert("learning_trend".to_string(), json!(trend));
+        span.attributes.insert(
+            "historical_category_samples".to_string(),
+            json!(u64::try_from(history.len()).unwrap_or(0)),
+        );
+
+        if !history.is_empty() {
+            let historical_success_rate = history
+                .iter()
+                .filter(|outcome| outcome.actual_success)
+                .count() as f64
+                / history.len() as f64;
+            span.attributes.insert(
+                "historical_success_rate".to_string(),
+                json!(historical_success_rate),
+            );
+            let historical_calibration_error = mean(
+                history
+                    .iter()
+                    .map(|outcome| {
+                        (outcome.predicted_success_probability
+                            - if outcome.actual_success { 1.0 } else { 0.0 })
+                        .abs()
+                    })
+                    .collect::<Vec<_>>()
+                    .as_slice(),
+            );
+            span.attributes.insert(
+                "historical_calibration_error".to_string(),
+                json!(historical_calibration_error),
+            );
+            let ask_for_help =
+                history.len() >= 4 && historical_success_rate < 0.55 && trend != "improving";
+            span.attributes
+                .insert("ask_for_help_recommended".to_string(), json!(ask_for_help));
+        }
+
+        Ok(())
+    }
+
+    async fn collect_recent_category_outcomes(
+        &self,
+        category: &str,
+        limit: usize,
+    ) -> Result<Vec<LiveCategoryOutcome>> {
+        let rollouts = self
+            .inner
+            .store
+            .query_rollouts(RolloutQuery {
+                statuses: Some(vec![RolloutStatus::Succeeded]),
+                ..RolloutQuery::default()
+            })
+            .await
+            .context("failed to query succeeded rollouts for category outcomes")?;
+
+        let mut rollout_ids = rollouts
+            .into_iter()
+            .filter(|rollout| rollout.rollout_id.starts_with(LIVE_ROLLOUT_PREFIX))
+            .map(|rollout| rollout.rollout_id)
+            .collect::<Vec<_>>();
+        rollout_ids.sort();
+        if rollout_ids.len() > limit {
+            let start = rollout_ids.len() - limit;
+            rollout_ids = rollout_ids[start..].to_vec();
+        }
+
+        let mut outcomes = Vec::new();
+        for rollout_id in rollout_ids {
+            let spans = self
+                .inner
+                .store
+                .query_spans(rollout_id.as_str(), None)
+                .await
+                .with_context(|| format!("failed to query spans for rollout '{rollout_id}'"))?;
+            let decision = spans
+                .iter()
+                .filter(|span| span.name == "live.agent.decision")
+                .max_by_key(|span| span.sequence_id);
+            let Some(decision) = decision else {
+                continue;
+            };
+            let Some(outcome) = parse_live_category_outcome(decision) else {
+                continue;
+            };
+            if outcome.category == category {
+                outcomes.push(outcome);
+            }
+        }
+
+        Ok(outcomes)
     }
 
     async fn clear_active_run(&self, rollout_id: &str) {
@@ -799,16 +938,16 @@ impl LiveRlRuntimeBridge {
             return Ok(LiveApoReport::skipped("apo_missing_runtime", 0));
         };
 
-        let mut samples = self.collect_live_apo_samples(rollout_ids).await?;
-        if samples.len() > self.inner.config.apo_max_samples {
-            let start = samples.len() - self.inner.config.apo_max_samples;
-            samples = samples[start..].to_vec();
-        }
+        let collected_samples = self.collect_live_apo_samples(rollout_ids).await?;
+        let (samples, curriculum_focus_category, curriculum_focus_mean_reward) =
+            select_curriculum_samples(collected_samples, self.inner.config.apo_max_samples);
 
         if samples.len() < self.inner.config.apo_min_samples || samples.len() < 2 {
-            return Ok(LiveApoReport::skipped(
+            return Ok(LiveApoReport::skipped_with_curriculum(
                 "apo_insufficient_samples",
                 samples.len(),
+                curriculum_focus_category,
+                curriculum_focus_mean_reward,
             ));
         }
 
@@ -861,15 +1000,22 @@ impl LiveRlRuntimeBridge {
         {
             Ok(summary) => summary,
             Err(error) => {
-                return Ok(LiveApoReport::skipped(
+                return Ok(LiveApoReport::skipped_with_curriculum(
                     format!("apo_run_failed:{error}"),
                     samples.len(),
+                    curriculum_focus_category,
+                    curriculum_focus_mean_reward,
                 ));
             }
         };
 
         let Some(best_prompt) = summary.best_prompt else {
-            return Ok(LiveApoReport::skipped("apo_no_best_prompt", samples.len()));
+            return Ok(LiveApoReport::skipped_with_curriculum(
+                "apo_no_best_prompt",
+                samples.len(),
+                curriculum_focus_category,
+                curriculum_focus_mean_reward,
+            ));
         };
         let best_prompt_version = best_prompt.version.clone();
         let best_prompt_text = best_prompt.prompt.clone();
@@ -894,9 +1040,11 @@ impl LiveRlRuntimeBridge {
         ) {
             Ok(report) => report,
             Err(error) => {
-                return Ok(LiveApoReport::skipped(
+                return Ok(LiveApoReport::skipped_with_curriculum(
                     format!("apo_significance_failed:{error}"),
                     samples.len(),
+                    curriculum_focus_category,
+                    curriculum_focus_mean_reward,
                 ));
             }
         };
@@ -906,6 +1054,8 @@ impl LiveRlRuntimeBridge {
                 executed: true,
                 adopted: false,
                 sample_count: samples.len(),
+                curriculum_focus_category,
+                curriculum_focus_mean_reward,
                 baseline_mean_reward: Some(baseline_mean),
                 candidate_mean_reward: Some(candidate_mean),
                 best_prompt_version: Some(best_prompt_version),
@@ -938,6 +1088,15 @@ impl LiveRlRuntimeBridge {
             "apo_samples".to_string(),
             json!(u64::try_from(samples.len()).unwrap_or(0)),
         );
+        if let Some(category) = curriculum_focus_category.as_ref() {
+            resources.insert("apo_curriculum_focus_category".to_string(), json!(category));
+        }
+        if let Some(mean_reward) = curriculum_focus_mean_reward {
+            resources.insert(
+                "apo_curriculum_focus_mean_reward".to_string(),
+                json!(mean_reward),
+            );
+        }
 
         self.inner
             .store
@@ -949,6 +1108,8 @@ impl LiveRlRuntimeBridge {
             executed: true,
             adopted: true,
             sample_count: samples.len(),
+            curriculum_focus_category,
+            curriculum_focus_mean_reward,
             baseline_mean_reward: Some(baseline_mean),
             candidate_mean_reward: Some(candidate_mean),
             best_prompt_version: Some(best_prompt_version),
@@ -1015,11 +1176,20 @@ impl LiveRlRuntimeBridge {
             if prompt.is_empty() || response.is_empty() || !reward.is_finite() {
                 continue;
             }
+            let category = span
+                .attributes
+                .get("task_category")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(ToString::to_string)
+                .unwrap_or_else(|| infer_task_category(prompt));
 
             samples.push(LiveApoSample {
                 prompt: prompt.to_string(),
                 response: response.to_string(),
                 reward,
+                category,
             });
         }
         Ok(samples)
@@ -1100,6 +1270,28 @@ impl LiveApoReport {
             executed: false,
             adopted: false,
             sample_count,
+            curriculum_focus_category: None,
+            curriculum_focus_mean_reward: None,
+            baseline_mean_reward: None,
+            candidate_mean_reward: None,
+            best_prompt_version: None,
+            best_prompt_score: None,
+            reason_code: Some(reason_code.into()),
+        }
+    }
+
+    fn skipped_with_curriculum(
+        reason_code: impl Into<String>,
+        sample_count: usize,
+        curriculum_focus_category: Option<String>,
+        curriculum_focus_mean_reward: Option<f64>,
+    ) -> Self {
+        Self {
+            executed: false,
+            adopted: false,
+            sample_count,
+            curriculum_focus_category,
+            curriculum_focus_mean_reward,
             baseline_mean_reward: None,
             candidate_mean_reward: None,
             best_prompt_version: None,
@@ -1235,8 +1427,198 @@ fn mean(values: &[f64]) -> f64 {
     values.iter().sum::<f64>() / values.len() as f64
 }
 
+fn infer_task_category(prompt: &str) -> String {
+    let normalized = prompt.to_ascii_lowercase();
+    let category = if [
+        "debug", "fix", "error", "panic", "trace", "failure", "flaky",
+    ]
+    .iter()
+    .any(|needle| normalized.contains(needle))
+    {
+        "debugging"
+    } else if ["refactor", "cleanup", "rename", "extract"]
+        .iter()
+        .any(|needle| normalized.contains(needle))
+    {
+        "refactoring"
+    } else if ["implement", "build", "create", "feature", "write code"]
+        .iter()
+        .any(|needle| normalized.contains(needle))
+    {
+        "code_generation"
+    } else if ["plan", "roadmap", "milestone", "spec", "tasks"]
+        .iter()
+        .any(|needle| normalized.contains(needle))
+    {
+        "planning"
+    } else if ["deploy", "release", "incident", "runbook", "ops"]
+        .iter()
+        .any(|needle| normalized.contains(needle))
+    {
+        "operations"
+    } else if ["why", "what", "summarize", "explain", "status", "question"]
+        .iter()
+        .any(|needle| normalized.contains(needle))
+    {
+        "qa"
+    } else {
+        "general"
+    };
+    category.to_string()
+}
+
+fn parse_live_category_outcome(span: &TrainingSpan) -> Option<LiveCategoryOutcome> {
+    let reward = span
+        .attributes
+        .get("reward")
+        .and_then(Value::as_f64)
+        .filter(|value| value.is_finite())?;
+    let prompt = span
+        .attributes
+        .get("prompt")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .unwrap_or_default();
+    let category = span
+        .attributes
+        .get("task_category")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+        .unwrap_or_else(|| infer_task_category(prompt));
+    let predicted_success_probability = span
+        .attributes
+        .get("predicted_success_probability")
+        .and_then(Value::as_f64)
+        .or_else(|| {
+            span.attributes
+                .get("reward_confidence")
+                .and_then(Value::as_f64)
+        })
+        .unwrap_or_else(|| normalize_reward_to_quality(reward))
+        .clamp(0.0, 1.0);
+    let actual_success = span
+        .attributes
+        .get("actual_success")
+        .and_then(Value::as_bool)
+        .unwrap_or(reward > 0.0);
+
+    Some(LiveCategoryOutcome {
+        category,
+        reward,
+        predicted_success_probability,
+        actual_success,
+    })
+}
+
+fn classify_learning_trend(rewards: &[f64]) -> &'static str {
+    if rewards.len() < 4 {
+        return "insufficient_data";
+    }
+    let window = (rewards.len() / 2).max(2);
+    if rewards.len() <= window {
+        return "insufficient_data";
+    }
+    let split = rewards.len() - window;
+    let prior_mean = mean(&rewards[..split]);
+    let recent_mean = mean(&rewards[split..]);
+    let delta = recent_mean - prior_mean;
+    if delta <= -0.15 {
+        "regressing"
+    } else if delta >= 0.10 {
+        "improving"
+    } else {
+        "plateau"
+    }
+}
+
+fn select_curriculum_samples(
+    samples: Vec<LiveApoSample>,
+    max_samples: usize,
+) -> (Vec<LiveApoSample>, Option<String>, Option<f64>) {
+    if samples.is_empty() || max_samples == 0 {
+        return (Vec::new(), None, None);
+    }
+
+    let mut grouped = BTreeMap::<String, Vec<LiveApoSample>>::new();
+    for sample in samples {
+        grouped
+            .entry(sample.category.clone())
+            .or_default()
+            .push(sample);
+    }
+
+    let mut category_means = grouped
+        .iter()
+        .map(|(category, grouped_samples)| {
+            let mean_reward = mean(
+                grouped_samples
+                    .iter()
+                    .map(|sample| sample.reward)
+                    .collect::<Vec<_>>()
+                    .as_slice(),
+            );
+            (category.clone(), mean_reward)
+        })
+        .collect::<Vec<_>>();
+    category_means.sort_by(|left, right| {
+        left.1
+            .partial_cmp(&right.1)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| left.0.cmp(&right.0))
+    });
+    let curriculum_focus_category = category_means.first().map(|entry| entry.0.clone());
+    let curriculum_focus_mean_reward = category_means.first().map(|entry| entry.1);
+
+    let total = grouped.values().map(Vec::len).sum::<usize>();
+    if total <= max_samples {
+        let mut selected = Vec::new();
+        for grouped_samples in grouped.into_values() {
+            selected.extend(grouped_samples);
+        }
+        return (
+            selected,
+            curriculum_focus_category,
+            curriculum_focus_mean_reward,
+        );
+    }
+
+    let mut selected = Vec::with_capacity(max_samples);
+    while selected.len() < max_samples {
+        let mut progressed = false;
+        for (category, _) in &category_means {
+            if selected.len() == max_samples {
+                break;
+            }
+            if let Some(grouped_samples) = grouped.get_mut(category) {
+                if let Some(sample) = grouped_samples.pop() {
+                    selected.push(sample);
+                    progressed = true;
+                }
+            }
+        }
+        if !progressed {
+            break;
+        }
+    }
+    selected.reverse();
+
+    (
+        selected,
+        curriculum_focus_category,
+        curriculum_focus_mean_reward,
+    )
+}
+
 fn build_final_decision_span(run: &LiveRlActiveRun) -> TrainingSpan {
     let reward = compute_live_reward_breakdown(run);
+    let prompt = run.prompt.clone().unwrap_or_default();
+    let task_category = infer_task_category(prompt.as_str());
+    let predicted_success_probability = reward.confidence.clamp(0.0, 1.0);
+    let actual_success = reward.composite > 0.0;
+    let confidence_calibration_error =
+        (predicted_success_probability - if actual_success { 1.0 } else { 0.0 }).abs();
     let mut span = TrainingSpan::new(
         run.rollout_id.as_str(),
         run.attempt_id.as_str(),
@@ -1246,14 +1628,13 @@ fn build_final_decision_span(run: &LiveRlActiveRun) -> TrainingSpan {
         None,
         "live.agent.decision",
     );
-    span.attributes.insert(
-        "prompt".to_string(),
-        json!(run.prompt.clone().unwrap_or_default()),
-    );
+    span.attributes.insert("prompt".to_string(), json!(prompt));
     span.attributes.insert(
         "assistant_text".to_string(),
         json!(run.assistant_reply.clone().unwrap_or_default()),
     );
+    span.attributes
+        .insert("task_category".to_string(), json!(task_category));
     span.attributes
         .insert("reward".to_string(), json!(reward.composite));
     span.attributes
@@ -1274,6 +1655,20 @@ fn build_final_decision_span(run: &LiveRlActiveRun) -> TrainingSpan {
     );
     span.attributes
         .insert("reward_confidence".to_string(), json!(reward.confidence));
+    span.attributes.insert(
+        "predicted_success_probability".to_string(),
+        json!(predicted_success_probability),
+    );
+    span.attributes
+        .insert("actual_success".to_string(), json!(actual_success));
+    span.attributes.insert(
+        "confidence_calibration_error".to_string(),
+        json!(confidence_calibration_error),
+    );
+    span.attributes
+        .insert("ask_for_help_recommended".to_string(), json!(false));
+    span.attributes
+        .insert("learning_trend".to_string(), json!("insufficient_data"));
     span.attributes
         .insert("turns".to_string(), json!(run.turns));
     span.attributes
@@ -1469,6 +1864,51 @@ mod tests {
             rollout_ids.push(rollout_id);
         }
         rollout_ids
+    }
+
+    async fn seed_live_rollout_with_category(
+        store: &Arc<dyn TrainingStore + Send + Sync>,
+        rollout_id: &str,
+        prompt: &str,
+        response: &str,
+        reward: f64,
+        category: &str,
+    ) {
+        let mut rollout = Rollout::new(rollout_id.to_string(), json!({"source":"seed"}), None);
+        rollout
+            .metadata
+            .insert("source".to_string(), json!("seeded_test"));
+        store
+            .enqueue_rollout(rollout)
+            .await
+            .expect("enqueue seeded rollout");
+        store
+            .update_rollout_status(rollout_id, RolloutStatus::Running)
+            .await
+            .expect("mark seeded rollout running");
+        store
+            .update_rollout_status(rollout_id, RolloutStatus::Succeeded)
+            .await
+            .expect("mark seeded rollout succeeded");
+
+        let mut span = TrainingSpan::new(
+            rollout_id,
+            &format!("{rollout_id}:attempt-live"),
+            1,
+            format!("trace:{rollout_id}"),
+            format!("span:{rollout_id}:1"),
+            None,
+            "live.agent.decision",
+        );
+        span.attributes.insert("prompt".to_string(), json!(prompt));
+        span.attributes
+            .insert("assistant_text".to_string(), json!(response));
+        span.attributes.insert("reward".to_string(), json!(reward));
+        span.attributes
+            .insert("task_category".to_string(), json!(category));
+        span.attributes.insert("done".to_string(), json!(true));
+        span.end_time = Some(Utc::now());
+        store.add_span(span).await.expect("add seeded span");
     }
 
     #[test]
@@ -2066,5 +2506,270 @@ mod tests {
             .await
             .expect("read latest resources");
         assert!(latest.is_none());
+    }
+
+    #[tokio::test]
+    async fn spec_c12_functional_live_span_persists_meta_cognition_fields() {
+        let store: Arc<dyn TrainingStore + Send + Sync> = Arc::new(InMemoryTrainingStore::new());
+        let bridge = LiveRlRuntimeBridge::for_tests(
+            store.clone(),
+            LiveRlRuntimeConfig {
+                enabled: true,
+                store_path: ".tau/training/store.sqlite".into(),
+                update_interval_rollouts: 8,
+                max_rollouts_per_update: 32,
+                max_failure_streak: 3,
+                apo_enabled: false,
+                apo_min_samples: 4,
+                apo_max_samples: 32,
+                apo_significance_alpha: 0.05,
+            },
+        );
+
+        bridge.handle_event(AgentEvent::AgentStart).await;
+        bridge
+            .handle_event(AgentEvent::MessageAdded {
+                message: Message::user("debug why this parser test fails intermittently"),
+            })
+            .await;
+        bridge
+            .handle_event(AgentEvent::MessageAdded {
+                message: Message::assistant_text("I found and fixed the flaky parser branch."),
+            })
+            .await;
+        bridge
+            .handle_event(AgentEvent::AgentEnd { new_messages: 2 })
+            .await;
+
+        let rollouts = store
+            .query_rollouts(RolloutQuery {
+                statuses: Some(vec![RolloutStatus::Succeeded]),
+                ..RolloutQuery::default()
+            })
+            .await
+            .expect("query succeeded rollouts");
+        assert_eq!(rollouts.len(), 1);
+
+        let spans = store
+            .query_spans(rollouts[0].rollout_id.as_str(), None)
+            .await
+            .expect("query spans");
+        assert_eq!(spans.len(), 1);
+        let attrs = &spans[0].attributes;
+        assert!(attrs.contains_key("task_category"));
+        assert!(attrs.contains_key("predicted_success_probability"));
+        assert!(attrs.contains_key("actual_success"));
+        assert!(attrs.contains_key("confidence_calibration_error"));
+        assert!(attrs.contains_key("ask_for_help_recommended"));
+        assert!(attrs.contains_key("learning_trend"));
+    }
+
+    #[tokio::test]
+    async fn spec_c13_regression_live_apo_curriculum_prioritizes_weak_categories() {
+        let store: Arc<dyn TrainingStore + Send + Sync> = Arc::new(InMemoryTrainingStore::new());
+        seed_live_rollout_with_category(
+            &store,
+            "live-rl-rollout-c13-0000",
+            "debug failing auth flow",
+            "debug fix 1",
+            -1.0,
+            "debugging",
+        )
+        .await;
+        seed_live_rollout_with_category(
+            &store,
+            "live-rl-rollout-c13-0001",
+            "debug memory corruption",
+            "debug fix 2",
+            -0.9,
+            "debugging",
+        )
+        .await;
+        seed_live_rollout_with_category(
+            &store,
+            "live-rl-rollout-c13-0002",
+            "summarize status report",
+            "status output",
+            -0.4,
+            "qa",
+        )
+        .await;
+        seed_live_rollout_with_category(
+            &store,
+            "live-rl-rollout-c13-0003",
+            "summarize status report",
+            "status output",
+            -0.3,
+            "qa",
+        )
+        .await;
+        seed_live_rollout_with_category(
+            &store,
+            "live-rl-rollout-c13-0004",
+            "summarize status report",
+            "status output",
+            -0.2,
+            "qa",
+        )
+        .await;
+        seed_live_rollout_with_category(
+            &store,
+            "live-rl-rollout-c13-0005",
+            "summarize status report",
+            "status output",
+            -0.1,
+            "qa",
+        )
+        .await;
+        let rollout_ids = vec![
+            "live-rl-rollout-c13-0000".to_string(),
+            "live-rl-rollout-c13-0001".to_string(),
+            "live-rl-rollout-c13-0002".to_string(),
+            "live-rl-rollout-c13-0003".to_string(),
+            "live-rl-rollout-c13-0004".to_string(),
+            "live-rl-rollout-c13-0005".to_string(),
+        ];
+
+        let bridge = LiveRlRuntimeBridge::for_tests_with_apo(
+            store.clone(),
+            LiveRlRuntimeConfig {
+                enabled: true,
+                store_path: ".tau/training/store.sqlite".into(),
+                update_interval_rollouts: 1,
+                max_rollouts_per_update: 32,
+                max_failure_streak: 3,
+                apo_enabled: true,
+                apo_min_samples: 2,
+                apo_max_samples: 4,
+                apo_significance_alpha: 0.05,
+            },
+            Arc::new(ScriptedClient::new(vec![
+                "{\"score\":0.10}",
+                "Strengthen deterministic debug guidance and verification steps.",
+                "You are Tau. Prioritize deterministic debugging checks and concise verification.",
+                "{\"score\":0.98}",
+            ])),
+            "You are Tau.",
+        );
+
+        let report = bridge
+            .run_live_apo_update(rollout_ids.as_slice())
+            .await
+            .expect("run APO update");
+        assert!(report.executed);
+        assert!(report.adopted);
+
+        let resources = store
+            .get_latest_resources()
+            .await
+            .expect("read resources")
+            .expect("resources should be persisted");
+        assert_eq!(
+            resources
+                .resources
+                .get("apo_curriculum_focus_category")
+                .and_then(serde_json::Value::as_str),
+            Some("debugging")
+        );
+    }
+
+    #[tokio::test]
+    async fn spec_c14_regression_live_span_learning_trend_regressing_when_recent_reward_drops() {
+        let store: Arc<dyn TrainingStore + Send + Sync> = Arc::new(InMemoryTrainingStore::new());
+        seed_live_rollout_with_category(
+            &store,
+            "live-rl-rollout-c14-0000",
+            "debug parser",
+            "baseline success",
+            0.8,
+            "debugging",
+        )
+        .await;
+        seed_live_rollout_with_category(
+            &store,
+            "live-rl-rollout-c14-0001",
+            "debug parser",
+            "baseline success",
+            0.7,
+            "debugging",
+        )
+        .await;
+        seed_live_rollout_with_category(
+            &store,
+            "live-rl-rollout-c14-0002",
+            "debug parser",
+            "recent failure",
+            -0.4,
+            "debugging",
+        )
+        .await;
+        seed_live_rollout_with_category(
+            &store,
+            "live-rl-rollout-c14-0003",
+            "debug parser",
+            "recent failure",
+            -0.5,
+            "debugging",
+        )
+        .await;
+
+        let bridge = LiveRlRuntimeBridge::for_tests(
+            store.clone(),
+            LiveRlRuntimeConfig {
+                enabled: true,
+                store_path: ".tau/training/store.sqlite".into(),
+                update_interval_rollouts: 8,
+                max_rollouts_per_update: 32,
+                max_failure_streak: 3,
+                apo_enabled: false,
+                apo_min_samples: 4,
+                apo_max_samples: 32,
+                apo_significance_alpha: 0.05,
+            },
+        );
+
+        bridge.handle_event(AgentEvent::AgentStart).await;
+        bridge
+            .handle_event(AgentEvent::MessageAdded {
+                message: Message::user("debug parser mismatch in integration tests"),
+            })
+            .await;
+        bridge
+            .handle_event(AgentEvent::MessageAdded {
+                message: Message::assistant_text("I found the mismatch and patched it."),
+            })
+            .await;
+        bridge
+            .handle_event(AgentEvent::AgentEnd { new_messages: 2 })
+            .await;
+
+        let rollouts = store
+            .query_rollouts(RolloutQuery {
+                statuses: Some(vec![RolloutStatus::Succeeded]),
+                ..RolloutQuery::default()
+            })
+            .await
+            .expect("query succeeded rollouts");
+        let latest_rollout_id = rollouts
+            .iter()
+            .map(|rollout| rollout.rollout_id.as_str())
+            .filter(|rollout_id| rollout_id.starts_with("live-rl-rollout-000"))
+            .max()
+            .expect("at least one runtime rollout");
+        let spans = store
+            .query_spans(latest_rollout_id, None)
+            .await
+            .expect("query spans");
+        let latest = spans
+            .iter()
+            .max_by_key(|span| span.sequence_id)
+            .expect("latest span");
+        assert_eq!(
+            latest
+                .attributes
+                .get("learning_trend")
+                .and_then(serde_json::Value::as_str),
+            Some("regressing")
+        );
     }
 }
