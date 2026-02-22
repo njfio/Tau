@@ -33,6 +33,8 @@ const LIVE_RL_APO_MIN_SAMPLES_ENV: &str = "TAU_LIVE_RL_APO_MIN_SAMPLES";
 const LIVE_RL_APO_MAX_SAMPLES_ENV: &str = "TAU_LIVE_RL_APO_MAX_SAMPLES";
 const LIVE_RL_APO_SIGNIFICANCE_ALPHA_ENV: &str = "TAU_LIVE_RL_APO_SIGNIFICANCE_ALPHA";
 const LIVE_ROLLOUT_PREFIX: &str = "live-rl-rollout";
+const LIVE_LEARNING_OUTCOME_LIMIT: usize = 128;
+const LIVE_CALIBRATION_BIN_COUNT: usize = 5;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LiveRlRuntimeGate {
@@ -221,6 +223,32 @@ struct LiveCategoryOutcome {
     reward: f64,
     predicted_success_probability: f64,
     actual_success: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct LiveCategorySummary {
+    samples: usize,
+    mean_reward: f64,
+    success_rate: f64,
+    calibration_error: f64,
+    trend: String,
+    difficulty_score: f64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct LiveLearningAlert {
+    code: String,
+    severity: String,
+    message: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct LiveLearningSummary {
+    category_stats: BTreeMap<String, LiveCategorySummary>,
+    difficulty_weights: HashMap<String, f64>,
+    calibration_curve: Vec<Value>,
+    global_calibration_error: f64,
+    alerts: Vec<LiveLearningAlert>,
 }
 
 /// Proxy around the training store that suppresses resource persistence side effects.
@@ -645,6 +673,14 @@ impl LiveRlRuntimeBridge {
         }
 
         if status == RolloutStatus::Succeeded {
+            if let Err(error) = self.persist_live_learning_resources().await {
+                self.register_failure(format!(
+                    "live RL curriculum persistence failed for {}: {error}",
+                    run.rollout_id
+                ))
+                .await;
+                return;
+            }
             let should_run_update = {
                 let mut state = self.inner.state.lock().await;
                 state.completed_rollouts = state.completed_rollouts.saturating_add(1);
@@ -734,6 +770,20 @@ impl LiveRlRuntimeBridge {
         category: &str,
         limit: usize,
     ) -> Result<Vec<LiveCategoryOutcome>> {
+        let canonical_category =
+            canonicalize_task_category(category).unwrap_or_else(|| "general".to_string());
+        let outcomes = self.collect_recent_live_outcomes(limit).await?;
+        Ok(outcomes
+            .into_iter()
+            .filter(|outcome| outcome.category == canonical_category)
+            .collect())
+    }
+
+    async fn collect_recent_live_outcomes(&self, limit: usize) -> Result<Vec<LiveCategoryOutcome>> {
+        if limit == 0 {
+            return Ok(Vec::new());
+        }
+
         let rollouts = self
             .inner
             .store
@@ -773,12 +823,133 @@ impl LiveRlRuntimeBridge {
             let Some(outcome) = parse_live_category_outcome(decision) else {
                 continue;
             };
-            if outcome.category == category {
-                outcomes.push(outcome);
-            }
+            outcomes.push(outcome);
         }
 
         Ok(outcomes)
+    }
+
+    async fn persist_live_learning_resources(&self) -> Result<()> {
+        let outcomes = self
+            .collect_recent_live_outcomes(LIVE_LEARNING_OUTCOME_LIMIT)
+            .await
+            .context("failed to collect live outcomes for curriculum persistence")?;
+        if outcomes.is_empty() {
+            return Ok(());
+        }
+
+        let summary = build_live_learning_summary(outcomes.as_slice());
+        if summary.category_stats.is_empty() {
+            return Ok(());
+        }
+
+        let category_stats = summary
+            .category_stats
+            .into_iter()
+            .map(|(category, stats)| {
+                (
+                    category,
+                    json!({
+                        "samples": u64::try_from(stats.samples).unwrap_or(0),
+                        "mean_reward": stats.mean_reward,
+                        "success_rate": stats.success_rate,
+                        "calibration_error": stats.calibration_error,
+                        "trend": stats.trend,
+                        "difficulty_score": stats.difficulty_score,
+                    }),
+                )
+            })
+            .collect::<serde_json::Map<String, Value>>();
+        let alerts = summary
+            .alerts
+            .into_iter()
+            .map(|alert| {
+                json!({
+                    "code": alert.code,
+                    "severity": alert.severity,
+                    "message": alert.message,
+                })
+            })
+            .collect::<Vec<_>>();
+
+        let mut patch = HashMap::new();
+        patch.insert(
+            "live_curriculum_category_stats".to_string(),
+            Value::Object(category_stats),
+        );
+        patch.insert(
+            "live_curriculum_difficulty_weights".to_string(),
+            json!(summary.difficulty_weights),
+        );
+        patch.insert(
+            "live_meta_cognition_calibration_curve".to_string(),
+            Value::Array(summary.calibration_curve),
+        );
+        patch.insert(
+            "live_meta_cognition_global_calibration_error".to_string(),
+            json!(summary.global_calibration_error),
+        );
+        patch.insert("live_learning_alerts".to_string(), Value::Array(alerts));
+        patch.insert(
+            "live_learning_summary_updated_unix_ms".to_string(),
+            json!(u64::try_from(Utc::now().timestamp_millis().max(0)).unwrap_or(0)),
+        );
+
+        self.update_resources_merged(patch)
+            .await
+            .context("failed to persist live learning curriculum summary")
+    }
+
+    async fn load_live_curriculum_difficulty_weights(&self) -> Result<HashMap<String, f64>> {
+        let latest = self
+            .inner
+            .store
+            .get_latest_resources()
+            .await
+            .context("failed to read latest resources for live curriculum weights")?;
+        let Some(latest) = latest else {
+            return Ok(HashMap::new());
+        };
+
+        let Some(weights) = latest
+            .resources
+            .get("live_curriculum_difficulty_weights")
+            .and_then(Value::as_object)
+        else {
+            return Ok(HashMap::new());
+        };
+
+        let mut parsed = HashMap::new();
+        for (raw_category, raw_weight) in weights {
+            let Some(category) = canonicalize_task_category(raw_category) else {
+                continue;
+            };
+            let Some(weight) = raw_weight.as_f64() else {
+                continue;
+            };
+            if weight.is_finite() {
+                parsed.insert(category, weight.clamp(0.0, 1.0));
+            }
+        }
+        Ok(parsed)
+    }
+
+    async fn update_resources_merged(&self, patch: HashMap<String, Value>) -> Result<()> {
+        let mut merged = self
+            .inner
+            .store
+            .get_latest_resources()
+            .await
+            .context("failed to read latest resources for merged update")?
+            .map(|resources| resources.resources)
+            .unwrap_or_default();
+        merged.extend(patch);
+        self.inner
+            .store
+            .update_resources(merged)
+            .await
+            .context("failed to persist merged live RL resources")?;
+        Ok(())
     }
 
     async fn clear_active_run(&self, rollout_id: &str) {
@@ -931,8 +1102,16 @@ impl LiveRlRuntimeBridge {
         };
 
         let collected_samples = self.collect_live_apo_samples(rollout_ids).await?;
+        let difficulty_weights = self
+            .load_live_curriculum_difficulty_weights()
+            .await
+            .unwrap_or_default();
         let (samples, curriculum_focus_category, curriculum_focus_mean_reward) =
-            select_curriculum_samples(collected_samples, self.inner.config.apo_max_samples);
+            select_curriculum_samples(
+                collected_samples,
+                self.inner.config.apo_max_samples,
+                &difficulty_weights,
+            );
 
         if samples.len() < self.inner.config.apo_min_samples || samples.len() < 2 {
             return Ok(LiveApoReport::skipped_with_curriculum(
@@ -1090,9 +1269,7 @@ impl LiveRlRuntimeBridge {
             );
         }
 
-        self.inner
-            .store
-            .update_resources(resources)
+        self.update_resources_merged(resources)
             .await
             .context("failed to persist live APO prompt adoption")?;
 
@@ -1172,9 +1349,7 @@ impl LiveRlRuntimeBridge {
                 .attributes
                 .get("task_category")
                 .and_then(Value::as_str)
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map(ToString::to_string)
+                .and_then(canonicalize_task_category)
                 .unwrap_or_else(|| infer_task_category(prompt));
 
             samples.push(LiveApoSample {
@@ -1456,7 +1631,44 @@ fn infer_task_category(prompt: &str) -> String {
     } else {
         "general"
     };
-    category.to_string()
+    canonicalize_task_category(category).unwrap_or_else(|| "general".to_string())
+}
+
+fn canonicalize_task_category(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let mut normalized = String::with_capacity(trimmed.len());
+    let mut prior_separator = false;
+    for ch in trimmed.chars() {
+        if ch.is_ascii_alphanumeric() {
+            normalized.push(ch.to_ascii_lowercase());
+            prior_separator = false;
+        } else if !prior_separator {
+            normalized.push('_');
+            prior_separator = true;
+        }
+    }
+    let normalized = normalized.trim_matches('_').to_string();
+    if normalized.is_empty() {
+        return None;
+    }
+
+    let canonical = match normalized.as_str() {
+        "debug" | "debugging" | "bugfix" | "bug_fix" => "debugging".to_string(),
+        "refactor" | "refactoring" => "refactoring".to_string(),
+        "codegen" | "implementation" | "implementing" => "code_generation".to_string(),
+        "plan" | "planning" => "planning".to_string(),
+        "ops" | "operational" | "operations" => "operations".to_string(),
+        "q_a" | "qa" | "question" | "question_answer" | "question_answering" => "qa".to_string(),
+        "general" | "misc" | "miscellaneous" => "general".to_string(),
+        _ if normalized.starts_with("debug_") => format!("debugging_{}", &normalized[6..]),
+        _ => normalized,
+    };
+
+    Some(canonical)
 }
 
 fn parse_live_category_outcome(span: &TrainingSpan) -> Option<LiveCategoryOutcome> {
@@ -1475,9 +1687,7 @@ fn parse_live_category_outcome(span: &TrainingSpan) -> Option<LiveCategoryOutcom
         .attributes
         .get("task_category")
         .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(ToString::to_string)
+        .and_then(canonicalize_task_category)
         .unwrap_or_else(|| infer_task_category(prompt));
     let predicted_success_probability = span
         .attributes
@@ -1529,9 +1739,167 @@ fn should_recommend_help(history_len: usize, historical_success_rate: f64, trend
     history_len >= 4 && historical_success_rate < 0.55 && trend != "improving"
 }
 
+fn compute_category_difficulty_score(
+    mean_reward: f64,
+    success_rate: f64,
+    calibration_error: f64,
+    trend: &str,
+) -> f64 {
+    let reward_component = 1.0 - normalize_reward_to_quality(mean_reward);
+    let success_component = (1.0 - success_rate).clamp(0.0, 1.0);
+    let calibration_component = calibration_error.clamp(0.0, 1.0);
+    let trend_component = match trend {
+        "regressing" => 0.15,
+        "plateau" => 0.05,
+        "improving" => -0.05,
+        _ => 0.0,
+    };
+    (0.45 * reward_component
+        + 0.35 * success_component
+        + 0.20 * calibration_component
+        + trend_component)
+        .clamp(0.0, 1.0)
+}
+
+fn build_calibration_curve(outcomes: &[LiveCategoryOutcome], bin_count: usize) -> Vec<Value> {
+    if outcomes.is_empty() || bin_count == 0 {
+        return Vec::new();
+    }
+    let mut bins = vec![(0_usize, 0.0_f64, 0_usize); bin_count];
+    for outcome in outcomes {
+        let probability = outcome.predicted_success_probability.clamp(0.0, 1.0);
+        let mut index = (probability * bin_count as f64).floor() as usize;
+        if index >= bin_count {
+            index = bin_count.saturating_sub(1);
+        }
+        let entry = &mut bins[index];
+        entry.0 = entry.0.saturating_add(1);
+        entry.1 += probability;
+        entry.2 = entry.2.saturating_add(usize::from(outcome.actual_success));
+    }
+
+    let mut curve = Vec::new();
+    for (index, (samples, predicted_sum, success_count)) in bins.into_iter().enumerate() {
+        if samples == 0 {
+            continue;
+        }
+        let lower_bound = index as f64 / bin_count as f64;
+        let upper_bound = (index + 1) as f64 / bin_count as f64;
+        let mean_predicted_success = predicted_sum / samples as f64;
+        let empirical_success_rate = success_count as f64 / samples as f64;
+        curve.push(json!({
+            "bin": format!("{lower_bound:.1}-{upper_bound:.1}"),
+            "lower_bound": lower_bound,
+            "upper_bound": upper_bound,
+            "samples": u64::try_from(samples).unwrap_or(0),
+            "mean_predicted_success": mean_predicted_success,
+            "empirical_success_rate": empirical_success_rate,
+            "calibration_gap": (mean_predicted_success - empirical_success_rate).abs(),
+        }));
+    }
+    curve
+}
+
+fn build_live_learning_summary(outcomes: &[LiveCategoryOutcome]) -> LiveLearningSummary {
+    let mut grouped = BTreeMap::<String, Vec<&LiveCategoryOutcome>>::new();
+    for outcome in outcomes {
+        grouped
+            .entry(outcome.category.clone())
+            .or_default()
+            .push(outcome);
+    }
+
+    let mut category_stats = BTreeMap::new();
+    let mut difficulty_weights = HashMap::new();
+    let mut alerts = Vec::new();
+    for (category, group) in grouped {
+        let rewards = group
+            .iter()
+            .map(|outcome| outcome.reward)
+            .collect::<Vec<_>>();
+        let mean_reward = mean(rewards.as_slice());
+        let success_rate = group
+            .iter()
+            .filter(|outcome| outcome.actual_success)
+            .count() as f64
+            / group.len() as f64;
+        let calibration_error = mean(
+            group
+                .iter()
+                .map(|outcome| {
+                    (outcome.predicted_success_probability
+                        - if outcome.actual_success { 1.0 } else { 0.0 })
+                    .abs()
+                })
+                .collect::<Vec<_>>()
+                .as_slice(),
+        );
+        let trend = classify_learning_trend(rewards.as_slice()).to_string();
+        let difficulty_score = compute_category_difficulty_score(
+            mean_reward,
+            success_rate,
+            calibration_error,
+            trend.as_str(),
+        );
+
+        if trend == "regressing" && group.len() >= 4 {
+            alerts.push(LiveLearningAlert {
+                code: "live_learning_regressing_category".to_string(),
+                severity: "warning".to_string(),
+                message: format!("{category} trend regressing over recent windows"),
+            });
+        }
+
+        category_stats.insert(
+            category.clone(),
+            LiveCategorySummary {
+                samples: group.len(),
+                mean_reward,
+                success_rate,
+                calibration_error,
+                trend,
+                difficulty_score,
+            },
+        );
+        difficulty_weights.insert(category, difficulty_score);
+    }
+
+    let global_calibration_error = mean(
+        outcomes
+            .iter()
+            .map(|outcome| {
+                (outcome.predicted_success_probability
+                    - if outcome.actual_success { 1.0 } else { 0.0 })
+                .abs()
+            })
+            .collect::<Vec<_>>()
+            .as_slice(),
+    );
+    if outcomes.len() >= 8 && global_calibration_error > 0.25 {
+        alerts.push(LiveLearningAlert {
+            code: "live_learning_poor_calibration".to_string(),
+            severity: "warning".to_string(),
+            message: format!(
+                "global calibration gap {:.3} exceeds threshold 0.250",
+                global_calibration_error
+            ),
+        });
+    }
+    alerts.truncate(8);
+
+    LiveLearningSummary {
+        category_stats,
+        difficulty_weights,
+        calibration_curve: build_calibration_curve(outcomes, LIVE_CALIBRATION_BIN_COUNT),
+        global_calibration_error,
+        alerts,
+    }
+}
+
 fn select_curriculum_samples(
     samples: Vec<LiveApoSample>,
     max_samples: usize,
+    difficulty_weights: &HashMap<String, f64>,
 ) -> (Vec<LiveApoSample>, Option<String>, Option<f64>) {
     if samples.is_empty() || max_samples == 0 {
         return (Vec::new(), None, None);
@@ -1539,13 +1907,12 @@ fn select_curriculum_samples(
 
     let mut grouped = BTreeMap::<String, Vec<LiveApoSample>>::new();
     for sample in samples {
-        grouped
-            .entry(sample.category.clone())
-            .or_default()
-            .push(sample);
+        let category = canonicalize_task_category(sample.category.as_str())
+            .unwrap_or_else(|| "general".to_string());
+        grouped.entry(category).or_default().push(sample);
     }
 
-    let mut category_means = grouped
+    let mut category_rankings = grouped
         .iter()
         .map(|(category, grouped_samples)| {
             let mean_reward = mean(
@@ -1555,23 +1922,34 @@ fn select_curriculum_samples(
                     .collect::<Vec<_>>()
                     .as_slice(),
             );
-            (category.clone(), mean_reward)
+            let base_difficulty = 1.0 - normalize_reward_to_quality(mean_reward);
+            let weight = difficulty_weights.get(category).copied().unwrap_or(1.0);
+            let weighted_difficulty = (base_difficulty * weight.max(0.05)).clamp(0.0, 1.0);
+            (category.clone(), mean_reward, weighted_difficulty)
         })
         .collect::<Vec<_>>();
-    category_means.sort_by(|left, right| {
-        left.1
-            .partial_cmp(&right.1)
+    category_rankings.sort_by(|left, right| {
+        right
+            .2
+            .partial_cmp(&left.2)
             .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| {
+                left.1
+                    .partial_cmp(&right.1)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
             .then_with(|| left.0.cmp(&right.0))
     });
-    let curriculum_focus_category = category_means.first().map(|entry| entry.0.clone());
-    let curriculum_focus_mean_reward = category_means.first().map(|entry| entry.1);
+    let curriculum_focus_category = category_rankings.first().map(|entry| entry.0.clone());
+    let curriculum_focus_mean_reward = category_rankings.first().map(|entry| entry.1);
 
     let total = grouped.values().map(Vec::len).sum::<usize>();
     if total <= max_samples {
         let mut selected = Vec::new();
-        for grouped_samples in grouped.into_values() {
-            selected.extend(grouped_samples);
+        for (category, _, _) in &category_rankings {
+            if let Some(grouped_samples) = grouped.remove(category) {
+                selected.extend(grouped_samples);
+            }
         }
         return (
             selected,
@@ -1581,16 +1959,35 @@ fn select_curriculum_samples(
     }
 
     let mut selected = Vec::with_capacity(max_samples);
+    for (category, _, _) in &category_rankings {
+        if selected.len() == max_samples {
+            break;
+        }
+        if let Some(grouped_samples) = grouped.get_mut(category) {
+            if let Some(sample) = grouped_samples.pop() {
+                selected.push(sample);
+            }
+        }
+    }
     while selected.len() < max_samples {
         let mut progressed = false;
-        for (category, _) in &category_means {
+        for (category, _, weighted_difficulty) in &category_rankings {
             if selected.len() == max_samples {
                 break;
             }
+            let burst = (weighted_difficulty * 2.0).ceil() as usize;
+            let burst = burst.max(1);
             if let Some(grouped_samples) = grouped.get_mut(category) {
-                if let Some(sample) = grouped_samples.pop() {
-                    selected.push(sample);
-                    progressed = true;
+                for _ in 0..burst {
+                    if selected.len() == max_samples {
+                        break;
+                    }
+                    if let Some(sample) = grouped_samples.pop() {
+                        selected.push(sample);
+                        progressed = true;
+                    } else {
+                        break;
+                    }
                 }
             }
         }
@@ -1764,8 +2161,7 @@ mod tests {
     use async_trait::async_trait;
     use chrono::Utc;
     use serde_json::json;
-    use std::collections::BTreeMap;
-    use std::collections::VecDeque;
+    use std::collections::{BTreeMap, HashMap, VecDeque};
     use std::sync::Arc;
     use std::sync::Mutex;
     use tau_agent_core::AgentEvent;
@@ -3044,5 +3440,272 @@ mod tests {
         assert!(!should_recommend_help(3, 0.50, "regressing"));
         assert!(!should_recommend_help(4, 0.60, "regressing"));
         assert!(!should_recommend_help(4, 0.50, "improving"));
+    }
+
+    #[tokio::test]
+    async fn spec_c18_regression_live_curriculum_aggregates_persisted_to_resources() {
+        let store: Arc<dyn TrainingStore + Send + Sync> = Arc::new(InMemoryTrainingStore::new());
+        seed_live_rollout_outcome(
+            &store,
+            "live-rl-rollout-c18-0000",
+            RolloutStatus::Succeeded,
+            "debug rust borrow checker mismatch",
+            "fixed borrow checker mismatch",
+            0.6,
+            "Debugging/Rust",
+            0.9,
+            true,
+        )
+        .await;
+        seed_live_rollout_outcome(
+            &store,
+            "live-rl-rollout-c18-0001",
+            RolloutStatus::Succeeded,
+            "debug rust trait bound regression",
+            "found trait bound root cause",
+            -0.4,
+            "debugging-rust",
+            0.8,
+            false,
+        )
+        .await;
+
+        let bridge = LiveRlRuntimeBridge::for_tests(
+            store.clone(),
+            LiveRlRuntimeConfig {
+                enabled: true,
+                store_path: ".tau/training/store.sqlite".into(),
+                update_interval_rollouts: 8,
+                max_rollouts_per_update: 32,
+                max_failure_streak: 3,
+                apo_enabled: false,
+                apo_min_samples: 4,
+                apo_max_samples: 32,
+                apo_significance_alpha: 0.05,
+            },
+        );
+
+        bridge.handle_event(AgentEvent::AgentStart).await;
+        bridge
+            .handle_event(AgentEvent::MessageAdded {
+                message: Message::user("debug rust panic in parser pipeline"),
+            })
+            .await;
+        bridge
+            .handle_event(AgentEvent::MessageAdded {
+                message: Message::assistant_text("patched parser pipeline panic"),
+            })
+            .await;
+        bridge
+            .handle_event(AgentEvent::AgentEnd { new_messages: 2 })
+            .await;
+
+        let resources = store
+            .get_latest_resources()
+            .await
+            .expect("read resources")
+            .expect("resources should be persisted");
+        let category_stats = resources
+            .resources
+            .get("live_curriculum_category_stats")
+            .and_then(serde_json::Value::as_object)
+            .expect("live curriculum category stats");
+        let debugging_rust = category_stats
+            .get("debugging_rust")
+            .and_then(serde_json::Value::as_object)
+            .expect("canonical debugging_rust category");
+        assert!(
+            debugging_rust
+                .get("samples")
+                .and_then(serde_json::Value::as_u64)
+                .expect("category samples")
+                >= 2
+        );
+        assert!(debugging_rust
+            .get("difficulty_score")
+            .and_then(serde_json::Value::as_f64)
+            .is_some());
+        assert!(debugging_rust
+            .get("trend")
+            .and_then(serde_json::Value::as_str)
+            .is_some());
+    }
+
+    #[tokio::test]
+    async fn spec_c19_regression_live_apo_progressive_difficulty_prioritizes_harder_category() {
+        let store: Arc<dyn TrainingStore + Send + Sync> = Arc::new(InMemoryTrainingStore::new());
+        seed_live_rollout_with_category(
+            &store,
+            "live-rl-rollout-c19-0000",
+            "debug intermittent crash",
+            "debug fix 1",
+            -0.2,
+            "debugging",
+        )
+        .await;
+        seed_live_rollout_with_category(
+            &store,
+            "live-rl-rollout-c19-0001",
+            "debug intermittent crash",
+            "debug fix 2",
+            -0.1,
+            "debugging",
+        )
+        .await;
+        seed_live_rollout_with_category(
+            &store,
+            "live-rl-rollout-c19-0002",
+            "summarize docs update",
+            "summary 1",
+            -0.9,
+            "qa",
+        )
+        .await;
+        seed_live_rollout_with_category(
+            &store,
+            "live-rl-rollout-c19-0003",
+            "summarize docs update",
+            "summary 2",
+            -0.8,
+            "qa",
+        )
+        .await;
+
+        store
+            .update_resources(HashMap::from([(
+                "live_curriculum_difficulty_weights".to_string(),
+                json!({"debugging": 0.95, "qa": 0.10}),
+            )]))
+            .await
+            .expect("seed curriculum weights");
+
+        let rollout_ids = vec![
+            "live-rl-rollout-c19-0000".to_string(),
+            "live-rl-rollout-c19-0001".to_string(),
+            "live-rl-rollout-c19-0002".to_string(),
+            "live-rl-rollout-c19-0003".to_string(),
+        ];
+
+        let bridge = LiveRlRuntimeBridge::for_tests_with_apo(
+            store,
+            LiveRlRuntimeConfig {
+                enabled: true,
+                store_path: ".tau/training/store.sqlite".into(),
+                update_interval_rollouts: 1,
+                max_rollouts_per_update: 32,
+                max_failure_streak: 3,
+                apo_enabled: true,
+                apo_min_samples: 2,
+                apo_max_samples: 2,
+                apo_significance_alpha: 0.05,
+            },
+            Arc::new(ScriptedClient::new(vec![
+                "{\"score\":0.20}",
+                "Prioritize deterministic debug narrowing and validation.",
+                "You are Tau. Focus on deterministic debug narrowing before broad edits.",
+                "{\"score\":0.99}",
+            ])),
+            "You are Tau.",
+        );
+
+        let report = bridge
+            .run_live_apo_update(rollout_ids.as_slice())
+            .await
+            .expect("run APO update");
+        assert_eq!(
+            report.curriculum_focus_category.as_deref(),
+            Some("debugging")
+        );
+    }
+
+    #[tokio::test]
+    async fn spec_c20_regression_live_calibration_curve_and_alerts_are_persisted() {
+        let store: Arc<dyn TrainingStore + Send + Sync> = Arc::new(InMemoryTrainingStore::new());
+        for index in 0..10 {
+            let rollout_id = format!("live-rl-rollout-c20-{index:04}");
+            seed_live_rollout_outcome(
+                &store,
+                rollout_id.as_str(),
+                RolloutStatus::Succeeded,
+                "debug parser crash",
+                "attempted parser fix",
+                if index < 4 { 0.5 } else { -0.6 },
+                "debugging",
+                0.95,
+                index < 4,
+            )
+            .await;
+        }
+
+        let bridge = LiveRlRuntimeBridge::for_tests(
+            store.clone(),
+            LiveRlRuntimeConfig {
+                enabled: true,
+                store_path: ".tau/training/store.sqlite".into(),
+                update_interval_rollouts: 8,
+                max_rollouts_per_update: 32,
+                max_failure_streak: 3,
+                apo_enabled: false,
+                apo_min_samples: 4,
+                apo_max_samples: 32,
+                apo_significance_alpha: 0.05,
+            },
+        );
+
+        bridge.handle_event(AgentEvent::AgentStart).await;
+        bridge
+            .handle_event(AgentEvent::MessageAdded {
+                message: Message::user("debug parser crash after dependency update"),
+            })
+            .await;
+        bridge
+            .handle_event(AgentEvent::MessageAdded {
+                message: Message::assistant_text("narrowed parser crash to decoding branch"),
+            })
+            .await;
+        bridge
+            .handle_event(AgentEvent::AgentEnd { new_messages: 2 })
+            .await;
+
+        let resources = store
+            .get_latest_resources()
+            .await
+            .expect("read resources")
+            .expect("resources should be persisted");
+        let calibration_curve = resources
+            .resources
+            .get("live_meta_cognition_calibration_curve")
+            .and_then(serde_json::Value::as_array)
+            .expect("calibration curve");
+        assert!(!calibration_curve.is_empty());
+        let first_bin = calibration_curve
+            .first()
+            .and_then(serde_json::Value::as_object)
+            .expect("calibration bin object");
+        assert!(first_bin
+            .get("samples")
+            .and_then(serde_json::Value::as_u64)
+            .is_some_and(|samples| samples > 0));
+        assert!(first_bin
+            .get("mean_predicted_success")
+            .and_then(serde_json::Value::as_f64)
+            .is_some());
+        assert!(first_bin
+            .get("empirical_success_rate")
+            .and_then(serde_json::Value::as_f64)
+            .is_some());
+
+        let alerts = resources
+            .resources
+            .get("live_learning_alerts")
+            .and_then(serde_json::Value::as_array)
+            .expect("live learning alerts");
+        assert!(!alerts.is_empty());
+        assert!(alerts.iter().any(|entry| {
+            entry
+                .get("code")
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|code| code == "live_learning_regressing_category")
+        }));
     }
 }
