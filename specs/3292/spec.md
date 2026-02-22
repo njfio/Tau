@@ -1,6 +1,6 @@
 # Spec: Issue #3292 - expand TraceBasedRewardInference with session completion and token efficiency
 
-Status: Reviewed
+Status: Implemented
 
 ## Problem Statement
 The current trace-based inference contract does not directly encode session completion and token efficiency despite these being key intrinsic signals from Review #35.
