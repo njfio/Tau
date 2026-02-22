@@ -625,12 +625,20 @@ fn build_final_decision_span(run: &LiveRlActiveRun) -> TrainingSpan {
         .insert("reward".to_string(), json!(reward.composite));
     span.attributes
         .insert("reward_completion".to_string(), json!(reward.completion));
+    span.attributes.insert(
+        "reward_session_completion".to_string(),
+        json!(reward.session_completion),
+    );
     span.attributes
         .insert("reward_reliability".to_string(), json!(reward.reliability));
     span.attributes
         .insert("reward_safety".to_string(), json!(reward.safety));
     span.attributes
         .insert("reward_efficiency".to_string(), json!(reward.efficiency));
+    span.attributes.insert(
+        "reward_token_efficiency".to_string(),
+        json!(reward.token_efficiency),
+    );
     span.attributes
         .insert("reward_confidence".to_string(), json!(reward.confidence));
     span.attributes
@@ -650,10 +658,13 @@ fn compute_live_reward(run: &LiveRlActiveRun) -> f64 {
 }
 
 fn compute_live_reward_breakdown(run: &LiveRlActiveRun) -> RewardInferenceOutput {
+    let has_assistant_reply = run
+        .assistant_reply
+        .as_ref()
+        .is_some_and(|reply| !reply.trim().is_empty());
     let input = RewardInferenceInput::new(
-        run.assistant_reply
-            .as_ref()
-            .is_some_and(|reply| !reply.trim().is_empty()),
+        has_assistant_reply,
+        has_assistant_reply,
         run.tool_errors,
         run.safety_blocked,
         run.turns,
@@ -830,8 +841,8 @@ mod tests {
         let run = LiveRlActiveRun {
             rollout_id: "live-rl-rollout-1".to_string(),
             attempt_id: "live-rl-rollout-1:attempt-1".to_string(),
-            prompt: Some("summarize release risks".to_string()),
-            assistant_reply: Some("Release risks summarized.".to_string()),
+            prompt: Some("plan".to_string()),
+            assistant_reply: Some("done".to_string()),
             turns: 1,
             tool_errors: 0,
             safety_blocked: false,
@@ -842,14 +853,14 @@ mod tests {
             tool_errors: 2,
             ..run.clone()
         };
-        assert_eq!(compute_live_reward(&noisy), 0.5);
+        assert_eq!(compute_live_reward(&noisy), 0.75);
 
         let no_reply = LiveRlActiveRun {
             assistant_reply: None,
             turns: 4,
             ..run.clone()
         };
-        assert_eq!(compute_live_reward(&no_reply), 0.25);
+        assert_eq!(compute_live_reward(&no_reply), 0.0);
 
         let blocked = LiveRlActiveRun {
             safety_blocked: true,
@@ -907,5 +918,7 @@ mod tests {
         assert!(attrs.contains_key("reward_safety"));
         assert!(attrs.contains_key("reward_efficiency"));
         assert!(attrs.contains_key("reward_confidence"));
+        assert!(attrs.contains_key("reward_session_completion"));
+        assert!(attrs.contains_key("reward_token_efficiency"));
     }
 }
