@@ -1,6 +1,6 @@
 # Spec: Issue #3284 - add composite live reward evaluator and span breakdown attributes
 
-Status: Reviewed
+Status: Implemented
 
 ## Problem Statement
 The live RL runtime reward signal is too coarse to guide autonomous improvements. A deterministic composite reward with per-dimension components is needed for better optimization signals while retaining safety hard-gate behavior.
