@@ -674,14 +674,7 @@ impl LiveRlRuntimeBridge {
             .and_then(Value::as_str)
             .map(str::trim)
             .unwrap_or_default();
-        let category = span
-            .attributes
-            .get("task_category")
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(ToString::to_string)
-            .unwrap_or_else(|| infer_task_category(prompt));
+        let category = infer_task_category(prompt);
 
         span.attributes
             .insert("task_category".to_string(), json!(category.clone()));
@@ -728,8 +721,7 @@ impl LiveRlRuntimeBridge {
                 "historical_calibration_error".to_string(),
                 json!(historical_calibration_error),
             );
-            let ask_for_help =
-                history.len() >= 4 && historical_success_rate < 0.55 && trend != "improving";
+            let ask_for_help = should_recommend_help(history.len(), historical_success_rate, trend);
             span.attributes
                 .insert("ask_for_help_recommended".to_string(), json!(ask_for_help));
         }
@@ -1533,6 +1525,10 @@ fn classify_learning_trend(rewards: &[f64]) -> &'static str {
     }
 }
 
+fn should_recommend_help(history_len: usize, historical_success_rate: f64, trend: &str) -> bool {
+    history_len >= 4 && historical_success_rate < 0.55 && trend != "improving"
+}
+
 fn select_curriculum_samples(
     samples: Vec<LiveApoSample>,
     max_samples: usize,
@@ -1761,8 +1757,8 @@ fn parse_significance_alpha_env(raw: Option<&str>, default: f64, key: &str) -> R
 #[cfg(test)]
 mod tests {
     use super::{
-        compute_live_reward, LiveRlActiveRun, LiveRlRuntimeBridge, LiveRlRuntimeConfig,
-        LiveRlRuntimeGate,
+        build_final_decision_span, compute_live_reward, should_recommend_help, LiveRlActiveRun,
+        LiveRlRuntimeBridge, LiveRlRuntimeConfig, LiveRlRuntimeGate,
     };
     use anyhow::Result;
     use async_trait::async_trait;
@@ -1906,6 +1902,60 @@ mod tests {
         span.attributes.insert("reward".to_string(), json!(reward));
         span.attributes
             .insert("task_category".to_string(), json!(category));
+        span.attributes.insert("done".to_string(), json!(true));
+        span.end_time = Some(Utc::now());
+        store.add_span(span).await.expect("add seeded span");
+    }
+
+    async fn seed_live_rollout_outcome(
+        store: &Arc<dyn TrainingStore + Send + Sync>,
+        rollout_id: &str,
+        status: RolloutStatus,
+        prompt: &str,
+        response: &str,
+        reward: f64,
+        category: &str,
+        predicted_success_probability: f64,
+        actual_success: bool,
+    ) {
+        let mut rollout = Rollout::new(rollout_id.to_string(), json!({"source":"seed"}), None);
+        rollout
+            .metadata
+            .insert("source".to_string(), json!("seeded_test"));
+        store
+            .enqueue_rollout(rollout)
+            .await
+            .expect("enqueue seeded rollout");
+        store
+            .update_rollout_status(rollout_id, RolloutStatus::Running)
+            .await
+            .expect("mark seeded rollout running");
+        store
+            .update_rollout_status(rollout_id, status)
+            .await
+            .expect("mark seeded rollout final status");
+
+        let mut span = TrainingSpan::new(
+            rollout_id,
+            &format!("{rollout_id}:attempt-live"),
+            1,
+            format!("trace:{rollout_id}"),
+            format!("span:{rollout_id}:1"),
+            None,
+            "live.agent.decision",
+        );
+        span.attributes.insert("prompt".to_string(), json!(prompt));
+        span.attributes
+            .insert("assistant_text".to_string(), json!(response));
+        span.attributes.insert("reward".to_string(), json!(reward));
+        span.attributes
+            .insert("task_category".to_string(), json!(category));
+        span.attributes.insert(
+            "predicted_success_probability".to_string(),
+            json!(predicted_success_probability),
+        );
+        span.attributes
+            .insert("actual_success".to_string(), json!(actual_success));
         span.attributes.insert("done".to_string(), json!(true));
         span.end_time = Some(Utc::now());
         store.add_span(span).await.expect("add seeded span");
@@ -2771,5 +2821,228 @@ mod tests {
                 .and_then(serde_json::Value::as_str),
             Some("regressing")
         );
+    }
+
+    #[tokio::test]
+    async fn spec_c15_regression_collect_recent_category_outcomes_filters_succeeded_and_caps_limit()
+    {
+        let store: Arc<dyn TrainingStore + Send + Sync> = Arc::new(InMemoryTrainingStore::new());
+        let bridge = LiveRlRuntimeBridge::for_tests(
+            store.clone(),
+            LiveRlRuntimeConfig {
+                enabled: true,
+                store_path: ".tau/training/store.sqlite".into(),
+                update_interval_rollouts: 8,
+                max_rollouts_per_update: 32,
+                max_failure_streak: 3,
+                apo_enabled: false,
+                apo_min_samples: 4,
+                apo_max_samples: 32,
+                apo_significance_alpha: 0.05,
+            },
+        );
+
+        for index in 0..40 {
+            let rollout_id = format!("live-rl-rollout-c15-{index:04}");
+            let reward = if index < 20 { 0.4 } else { -0.4 };
+            let actual_success = reward > 0.0;
+            seed_live_rollout_outcome(
+                &store,
+                rollout_id.as_str(),
+                RolloutStatus::Succeeded,
+                "debug parser",
+                "debug output",
+                reward,
+                "debugging",
+                0.75,
+                actual_success,
+            )
+            .await;
+        }
+        seed_live_rollout_outcome(
+            &store,
+            "live-rl-rollout-c15-failed",
+            RolloutStatus::Failed,
+            "debug parser",
+            "failed run",
+            -1.0,
+            "debugging",
+            0.99,
+            false,
+        )
+        .await;
+
+        let outcomes = bridge
+            .collect_recent_category_outcomes("debugging", 32)
+            .await
+            .expect("collect category outcomes");
+        assert_eq!(outcomes.len(), 32);
+        assert!(outcomes
+            .iter()
+            .all(|outcome| outcome.category == "debugging"));
+        assert!(
+            outcomes
+                .iter()
+                .all(|outcome| (outcome.reward - (-1.0_f64)).abs() > 1e-12),
+            "failed rollouts must not be included"
+        );
+    }
+
+    #[tokio::test]
+    async fn spec_c16_regression_meta_cognition_history_fields_and_help_thresholds() {
+        {
+            let store: Arc<dyn TrainingStore + Send + Sync> =
+                Arc::new(InMemoryTrainingStore::new());
+            let bridge = LiveRlRuntimeBridge::for_tests(
+                store.clone(),
+                LiveRlRuntimeConfig {
+                    enabled: true,
+                    store_path: ".tau/training/store.sqlite".into(),
+                    update_interval_rollouts: 8,
+                    max_rollouts_per_update: 32,
+                    max_failure_streak: 3,
+                    apo_enabled: false,
+                    apo_min_samples: 4,
+                    apo_max_samples: 32,
+                    apo_significance_alpha: 0.05,
+                },
+            );
+
+            let rewards = [0.8, 0.7, 0.6, -0.4, -0.5, -0.6];
+            for (index, reward) in rewards.into_iter().enumerate() {
+                let rollout_id = format!("live-rl-rollout-c16-a-{index:04}");
+                let actual_success = reward > 0.0;
+                seed_live_rollout_outcome(
+                    &store,
+                    rollout_id.as_str(),
+                    RolloutStatus::Succeeded,
+                    "debug parser mismatch",
+                    "debug output",
+                    reward,
+                    "debugging",
+                    0.9,
+                    actual_success,
+                )
+                .await;
+            }
+
+            let run = LiveRlActiveRun {
+                rollout_id: "live-rl-rollout-0000009999".to_string(),
+                attempt_id: "live-rl-rollout-0000009999:attempt-live".to_string(),
+                prompt: Some("debug parser mismatch".to_string()),
+                assistant_reply: Some("patched parser mismatch".to_string()),
+                turns: 2,
+                tool_errors: 0,
+                safety_blocked: false,
+            };
+            let mut span = build_final_decision_span(&run);
+            bridge
+                .enrich_final_decision_span(&mut span)
+                .await
+                .expect("enrich span");
+            let attrs = &span.attributes;
+
+            assert_eq!(
+                attrs
+                    .get("historical_category_samples")
+                    .and_then(serde_json::Value::as_u64),
+                Some(6)
+            );
+            assert_eq!(
+                attrs
+                    .get("learning_trend")
+                    .and_then(serde_json::Value::as_str),
+                Some("regressing")
+            );
+            let success_rate = attrs
+                .get("historical_success_rate")
+                .and_then(serde_json::Value::as_f64)
+                .expect("historical success rate");
+            assert!((success_rate - 0.5).abs() < 1e-12);
+            let calibration_error = attrs
+                .get("historical_calibration_error")
+                .and_then(serde_json::Value::as_f64)
+                .expect("historical calibration error");
+            assert!((calibration_error - 0.5).abs() < 1e-12);
+            assert_eq!(
+                attrs
+                    .get("ask_for_help_recommended")
+                    .and_then(serde_json::Value::as_bool),
+                Some(true)
+            );
+        }
+
+        {
+            let store: Arc<dyn TrainingStore + Send + Sync> =
+                Arc::new(InMemoryTrainingStore::new());
+            let bridge = LiveRlRuntimeBridge::for_tests(
+                store.clone(),
+                LiveRlRuntimeConfig {
+                    enabled: true,
+                    store_path: ".tau/training/store.sqlite".into(),
+                    update_interval_rollouts: 8,
+                    max_rollouts_per_update: 32,
+                    max_failure_streak: 3,
+                    apo_enabled: false,
+                    apo_min_samples: 4,
+                    apo_max_samples: 32,
+                    apo_significance_alpha: 0.05,
+                },
+            );
+
+            for index in 0..20 {
+                let rollout_id = format!("live-rl-rollout-c16-b-{index:04}");
+                let actual_success = index < 11;
+                let reward = if actual_success { 0.8 } else { -0.8 };
+                seed_live_rollout_outcome(
+                    &store,
+                    rollout_id.as_str(),
+                    RolloutStatus::Succeeded,
+                    "debug parser mismatch",
+                    "debug output",
+                    reward,
+                    "debugging",
+                    0.8,
+                    actual_success,
+                )
+                .await;
+            }
+
+            let run = LiveRlActiveRun {
+                rollout_id: "live-rl-rollout-0000009998".to_string(),
+                attempt_id: "live-rl-rollout-0000009998:attempt-live".to_string(),
+                prompt: Some("debug parser mismatch".to_string()),
+                assistant_reply: Some("patched parser mismatch".to_string()),
+                turns: 2,
+                tool_errors: 0,
+                safety_blocked: false,
+            };
+            let mut span = build_final_decision_span(&run);
+            bridge
+                .enrich_final_decision_span(&mut span)
+                .await
+                .expect("enrich span");
+            let attrs = &span.attributes;
+            assert_eq!(
+                attrs
+                    .get("historical_success_rate")
+                    .and_then(serde_json::Value::as_f64),
+                Some(0.55)
+            );
+            assert_eq!(
+                attrs
+                    .get("ask_for_help_recommended")
+                    .and_then(serde_json::Value::as_bool),
+                Some(false)
+            );
+        }
+    }
+
+    #[test]
+    fn spec_c17_unit_should_recommend_help_requires_all_conditions() {
+        assert!(should_recommend_help(4, 0.50, "regressing"));
+        assert!(!should_recommend_help(3, 0.50, "regressing"));
+        assert!(!should_recommend_help(4, 0.60, "regressing"));
+        assert!(!should_recommend_help(4, 0.50, "improving"));
     }
 }
