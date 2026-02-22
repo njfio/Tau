@@ -147,7 +147,7 @@ Top 5 crates by size:
 
 ## 6. Self-Improvement — Full Status
 
-### The Loop Is Closed (Phases 1–3 Complete)
+### Self-Improvement Roadmap Status (Phases 1–5)
 
 All three phases identified in Review #35 are now operational:
 
@@ -172,7 +172,12 @@ DONE ✓  Phase 3: Prompt Self-Optimization (R#37 — NEW)
         ├── Only adopts statistically validated improvements
         └── 2,070-line live RL runtime with full APO integration
 
-IN PROGRESS  Phase 4: Curriculum + Meta-Cognition (#3300 follow-up)
+DONE ✓  Phase 4: Curriculum + Meta-Cognition (completed in #3300 + #3302)
+        ├── Canonical taxonomy normalization for live category analytics
+        ├── Long-horizon per-category curriculum aggregates persisted to resources
+        ├── Progressive difficulty weighting wired into APO sample selection
+        ├── Calibration curves + deterministic live learning alerts persisted
+        └── Dashboard command-center alert feed now surfaces live learning alerts
 DONE ✓  Phase 5: OpenTelemetry Export
         ├── Prompt runtime OTel-compatible trace/metric export
         ├── Gateway cycle OTel-compatible trace/metric export
@@ -228,37 +233,35 @@ DONE ✓  Phase 5: OpenTelemetry Export
 └──────────────────────────────────────────────────────────────┘
 ```
 
-### What's Still Needed (~1,100 lines)
+### Remaining Work Status
 
 | Phase | Description | Status | Lines Needed |
 |-------|-------------|--------|-------------|
 | 1 | Intrinsic rewards | **Done** | 0 |
 | 2 | Cross-session synthesis | **Done** | 0 |
 | 3 | Prompt self-optimization | **Done** | 0 |
-| 4 | Curriculum + meta-cognition | In progress | ~1,100 |
+| 4 | Curriculum + meta-cognition | **Done** | 0 |
 | 5 | OpenTelemetry export | **Done** | 0 |
 
-#### Phase 4: Curriculum + Meta-Cognition (~1,100 lines remaining)
+#### Phase 4: Curriculum + Meta-Cognition (Done)
 
-The next frontier. With Phases 1–3 operational, the agent improves but doesn't focus its improvement. What's needed:
+Delivered in #3300 and closed in #3302:
 
-1. **Per-category success tracking** (**partially delivered**)
-   - ✅ Classify sessions by task type in live decision spans (`task_category`)
-   - ✅ Track category outcomes and identify weakest categories for APO focus
-   - Remaining: richer category taxonomy + long-horizon aggregation storage
+1. **Per-category success tracking** (**complete**)
+   - ✅ Canonical task taxonomy normalization (including composed categories like `debugging_rust`)
+   - ✅ Long-horizon category aggregates persisted (`samples`, `mean_reward`, `success_rate`, `trend`, `calibration_error`, `difficulty_score`)
 
-2. **Difficulty-weighted rollout scheduling** (**partially delivered**)
-   - ✅ APO sample capping now prioritizes weak categories (`apo_curriculum_focus_category`)
-   - Remaining: progressive difficulty scaling policy and scheduler controls
+2. **Difficulty-weighted rollout scheduling** (**complete**)
+   - ✅ APO capping consumes persisted `live_curriculum_difficulty_weights`
+   - ✅ Progressive weighted priority drives curriculum focus under sample caps
 
-3. **Confidence calibration** (**partially delivered**)
-   - ✅ Track predicted success, actual success, and calibration error per live decision
-   - ✅ Emit `ask_for_help_recommended` using historical category success rate
-   - Remaining: calibration curves and external reporting surfaces
+3. **Confidence calibration** (**complete**)
+   - ✅ Calibration-curve bins persisted (`live_meta_cognition_calibration_curve`)
+   - ✅ Global calibration error persisted with deterministic thresholding
 
-4. **Learning progress monitoring** (**partially delivered**)
-   - ✅ Emit per-category `learning_trend` (`improving|plateau|regressing|insufficient_data`)
-   - Remaining: alerting + dashboard visualization of learning curves
+4. **Learning progress monitoring** (**complete**)
+   - ✅ Persisted `live_learning_alerts` (including regressing-category and calibration alerts)
+   - ✅ Gateway dashboard snapshot and command-center feed surface these alerts
 
 #### Phase 5: OpenTelemetry (Done)
 
@@ -279,7 +282,7 @@ Tau is a **300K-line pure-Rust AI agent runtime** that now **autonomously improv
 
 **What's new:** APO live integration (PR #3297) closes the prompt self-optimization loop. The agent can now score its own performance, optimize its own prompts via LLM-critiqued beam search, and only adopt changes that pass statistical significance testing. This is combined with cross-session bulletin synthesis that carries learned patterns forward.
 
-**What's missing:** Remaining curriculum/meta-cognition depth (difficulty scaling, long-horizon calibration reporting, and dashboard/alert surfaces). OpenTelemetry export is already implemented and verified under #2616.
+**What's missing:** No open gaps remain for the Review #37 Phase 4/5 roadmap scope.
 
 **Grade: A+** — with a closed self-improvement loop, Tau is no longer just an agent runtime. It's a runtime that gets better at being an agent runtime.
 
