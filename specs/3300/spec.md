@@ -59,3 +59,4 @@ then OpenTelemetry is represented as already implemented with evidence pointers 
 - `cargo test -p tau-coding-agent --bin tau-coding-agent live_rl_runtime::tests::spec_c02_functional_optimizer_runs_on_update_interval`
 - `cargo fmt --check`
 - `cargo clippy -p tau-coding-agent --no-deps -- -D warnings`
+- `CARGO_TARGET_DIR=target-fast-3300-mutants cargo mutants --in-place --in-diff /tmp/issue3300-current.diff -p tau-coding-agent -f crates/tau-coding-agent/src/live_rl_runtime.rs --baseline skip --timeout 180 -- --test-threads=1 live_rl_runtime::tests::` (`101 tested: 82 caught, 19 unviable, 0 missed, 0 timeout`)
