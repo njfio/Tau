@@ -1,20 +1,25 @@
 //! Live RL runtime bridge for wiring agent decision traces into rollout updates.
 
 use anyhow::{anyhow, Context, Result};
+use async_trait::async_trait;
 use chrono::Utc;
 use serde_json::{json, Value};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 use tau_agent_core::{Agent, AgentEvent};
-use tau_ai::MessageRole;
+use tau_ai::{ChatRequest, LlmClient, Message, MessageRole, ModelRef};
 use tau_algorithm::{
-    collect_trajectory_batch, compute_gae_batch_from_slices, compute_ppo_update, GaeConfig,
-    PpoConfig, PpoSample, RewardInference, RewardInferenceInput, RewardInferenceOutput,
+    collect_trajectory_batch, compute_gae_batch_from_slices, compute_ppo_update, Algorithm,
+    AlgorithmContext, ApoAlgorithm, ApoConfig, GaeConfig, PpoConfig, PpoSample, PromptEvaluator,
+    PromptExample, RewardInference, RewardInferenceInput, RewardInferenceOutput,
     TraceBasedRewardInference,
 };
+use tau_trainer::benchmark_significance::compare_policy_improvement;
 use tau_training_store::{
-    Rollout, RolloutQuery, RolloutStatus, SqliteTrainingStore, TrainingSpan, TrainingStore,
+    Attempt, AttemptStatus, DequeuedRollout, ResourcesUpdate, Rollout, RolloutQuery, RolloutStatus,
+    SqliteTrainingStore, StoreResult, TrainingSpan, TrainingStore, WorkerState,
 };
 use tokio::sync::Mutex;
 
@@ -23,6 +28,10 @@ const LIVE_RL_STORE_PATH_ENV: &str = "TAU_LIVE_RL_STORE_SQLITE";
 const LIVE_RL_UPDATE_INTERVAL_ENV: &str = "TAU_LIVE_RL_UPDATE_INTERVAL";
 const LIVE_RL_MAX_ROLLOUTS_ENV: &str = "TAU_LIVE_RL_MAX_ROLLOUTS_PER_UPDATE";
 const LIVE_RL_MAX_FAILURE_STREAK_ENV: &str = "TAU_LIVE_RL_MAX_FAILURE_STREAK";
+const LIVE_RL_APO_ENABLED_ENV: &str = "TAU_LIVE_RL_APO_ENABLED";
+const LIVE_RL_APO_MIN_SAMPLES_ENV: &str = "TAU_LIVE_RL_APO_MIN_SAMPLES";
+const LIVE_RL_APO_MAX_SAMPLES_ENV: &str = "TAU_LIVE_RL_APO_MAX_SAMPLES";
+const LIVE_RL_APO_SIGNIFICANCE_ALPHA_ENV: &str = "TAU_LIVE_RL_APO_SIGNIFICANCE_ALPHA";
 const LIVE_ROLLOUT_PREFIX: &str = "live-rl-rollout";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,6 +48,19 @@ pub(crate) struct LiveRlOptimizerReport {
     pub mean_total_loss: Option<f64>,
     pub observed_approx_kl: Option<f64>,
     pub early_stop_triggered: bool,
+    pub apo: Option<LiveApoReport>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct LiveApoReport {
+    pub executed: bool,
+    pub adopted: bool,
+    pub sample_count: usize,
+    pub baseline_mean_reward: Option<f64>,
+    pub candidate_mean_reward: Option<f64>,
+    pub best_prompt_version: Option<String>,
+    pub best_prompt_score: Option<f64>,
+    pub reason_code: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -59,6 +81,10 @@ pub(crate) struct LiveRlRuntimeConfig {
     pub update_interval_rollouts: usize,
     pub max_rollouts_per_update: usize,
     pub max_failure_streak: usize,
+    pub apo_enabled: bool,
+    pub apo_min_samples: usize,
+    pub apo_max_samples: usize,
+    pub apo_significance_alpha: f64,
 }
 
 impl LiveRlRuntimeConfig {
@@ -96,6 +122,33 @@ impl LiveRlRuntimeConfig {
             3,
             LIVE_RL_MAX_FAILURE_STREAK_ENV,
         )?;
+        let apo_enabled = match env.get(LIVE_RL_APO_ENABLED_ENV) {
+            Some(raw) => parse_bool_env(raw).ok_or_else(|| {
+                anyhow!("{LIVE_RL_APO_ENABLED_ENV} must be one of 1,true,yes,on,0,false,no,off")
+            })?,
+            None => true,
+        };
+        let apo_min_samples = parse_positive_usize_env(
+            env.get(LIVE_RL_APO_MIN_SAMPLES_ENV).map(String::as_str),
+            4,
+            LIVE_RL_APO_MIN_SAMPLES_ENV,
+        )?;
+        let apo_max_samples = parse_positive_usize_env(
+            env.get(LIVE_RL_APO_MAX_SAMPLES_ENV).map(String::as_str),
+            32,
+            LIVE_RL_APO_MAX_SAMPLES_ENV,
+        )?;
+        if apo_min_samples > apo_max_samples {
+            return Err(anyhow!(
+                "{LIVE_RL_APO_MIN_SAMPLES_ENV} cannot be greater than {LIVE_RL_APO_MAX_SAMPLES_ENV}"
+            ));
+        }
+        let apo_significance_alpha = parse_significance_alpha_env(
+            env.get(LIVE_RL_APO_SIGNIFICANCE_ALPHA_ENV)
+                .map(String::as_str),
+            0.05,
+            LIVE_RL_APO_SIGNIFICANCE_ALPHA_ENV,
+        )?;
 
         Ok(Self {
             enabled,
@@ -103,6 +156,10 @@ impl LiveRlRuntimeConfig {
             update_interval_rollouts,
             max_rollouts_per_update,
             max_failure_streak,
+            apo_enabled,
+            apo_min_samples,
+            apo_max_samples,
+            apo_significance_alpha,
         })
     }
 }
@@ -115,6 +172,7 @@ pub(crate) struct LiveRlRuntimeBridge {
 struct LiveRlRuntimeBridgeInner {
     store: Arc<dyn TrainingStore + Send + Sync>,
     config: LiveRlRuntimeConfig,
+    apo_runtime: Option<LiveApoRuntime>,
     state: Mutex<LiveRlRuntimeState>,
 }
 
@@ -140,10 +198,173 @@ struct LiveRlActiveRun {
     safety_blocked: bool,
 }
 
+#[derive(Clone)]
+struct LiveApoRuntime {
+    client: Arc<dyn LlmClient>,
+    model: String,
+    seed_system_prompt: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct LiveApoSample {
+    prompt: String,
+    response: String,
+    reward: f64,
+}
+
+/// Proxy around the training store that suppresses resource persistence side effects.
+///
+/// APO currently writes resources during `run()`. Live RL applies significance gating after
+/// evaluation, so this adapter prevents writes during candidate evaluation and only allows
+/// explicit persistence once a significant improvement is proven.
+#[derive(Clone)]
+struct NoResourceWriteStore {
+    inner: Arc<dyn TrainingStore + Send + Sync>,
+}
+
+impl NoResourceWriteStore {
+    fn new(inner: Arc<dyn TrainingStore + Send + Sync>) -> Self {
+        Self { inner }
+    }
+}
+
+#[async_trait]
+impl TrainingStore for NoResourceWriteStore {
+    async fn enqueue_rollout(&self, rollout: Rollout) -> StoreResult<()> {
+        self.inner.enqueue_rollout(rollout).await
+    }
+
+    async fn dequeue_rollout(&self, worker_id: &str) -> StoreResult<Option<DequeuedRollout>> {
+        self.inner.dequeue_rollout(worker_id).await
+    }
+
+    async fn update_rollout_status(
+        &self,
+        rollout_id: &str,
+        status: RolloutStatus,
+    ) -> StoreResult<()> {
+        self.inner.update_rollout_status(rollout_id, status).await
+    }
+
+    async fn cancel_rollout(&self, rollout_id: &str) -> StoreResult<()> {
+        self.inner.cancel_rollout(rollout_id).await
+    }
+
+    async fn add_span(&self, span: TrainingSpan) -> StoreResult<()> {
+        self.inner.add_span(span).await
+    }
+
+    async fn query_spans(
+        &self,
+        rollout_id: &str,
+        attempt_id: Option<&str>,
+    ) -> StoreResult<Vec<TrainingSpan>> {
+        self.inner.query_spans(rollout_id, attempt_id).await
+    }
+
+    async fn get_next_span_sequence_id(
+        &self,
+        rollout_id: &str,
+        attempt_id: &str,
+    ) -> StoreResult<u64> {
+        self.inner
+            .get_next_span_sequence_id(rollout_id, attempt_id)
+            .await
+    }
+
+    async fn update_resources(
+        &self,
+        resources: HashMap<String, Value>,
+    ) -> StoreResult<ResourcesUpdate> {
+        let version = self
+            .inner
+            .get_latest_resources()
+            .await?
+            .map(|current| current.version.saturating_add(1))
+            .unwrap_or(1);
+        Ok(ResourcesUpdate {
+            resources_id: format!("live-apo-shadow-{version}"),
+            version,
+            resources,
+            created_time: Utc::now(),
+            is_latest: false,
+        })
+    }
+
+    async fn get_latest_resources(&self) -> StoreResult<Option<ResourcesUpdate>> {
+        self.inner.get_latest_resources().await
+    }
+
+    async fn get_resources_by_id(
+        &self,
+        resources_id: &str,
+    ) -> StoreResult<Option<ResourcesUpdate>> {
+        self.inner.get_resources_by_id(resources_id).await
+    }
+
+    async fn query_rollouts(&self, query: RolloutQuery) -> StoreResult<Vec<Rollout>> {
+        self.inner.query_rollouts(query).await
+    }
+
+    async fn wait_for_rollouts(
+        &self,
+        statuses: &[RolloutStatus],
+        timeout: Duration,
+    ) -> StoreResult<Vec<Rollout>> {
+        self.inner.wait_for_rollouts(statuses, timeout).await
+    }
+
+    async fn register_worker(&self, worker_id: &str) -> StoreResult<WorkerState> {
+        self.inner.register_worker(worker_id).await
+    }
+
+    async fn update_worker_heartbeat(
+        &self,
+        worker_id: &str,
+        active_rollout_id: Option<String>,
+        active_attempt_id: Option<String>,
+    ) -> StoreResult<()> {
+        self.inner
+            .update_worker_heartbeat(worker_id, active_rollout_id, active_attempt_id)
+            .await
+    }
+
+    async fn reassign_timed_out_rollouts(
+        &self,
+        heartbeat_timeout: Duration,
+    ) -> StoreResult<Vec<String>> {
+        self.inner
+            .reassign_timed_out_rollouts(heartbeat_timeout)
+            .await
+    }
+
+    async fn query_workers(&self) -> StoreResult<Vec<WorkerState>> {
+        self.inner.query_workers().await
+    }
+
+    async fn update_attempt_status(
+        &self,
+        attempt_id: &str,
+        status: AttemptStatus,
+        error_message: Option<String>,
+    ) -> StoreResult<()> {
+        self.inner
+            .update_attempt_status(attempt_id, status, error_message)
+            .await
+    }
+
+    async fn get_attempt(&self, attempt_id: &str) -> StoreResult<Option<Attempt>> {
+        self.inner.get_attempt(attempt_id).await
+    }
+}
+
 impl LiveRlRuntimeBridge {
     pub(crate) fn register_if_enabled(
         agent: &mut Agent,
         default_store_path: &Path,
+        client: Arc<dyn LlmClient>,
+        model_ref: &ModelRef,
+        seed_system_prompt: &str,
     ) -> Result<Option<LiveRlRuntimeSnapshot>> {
         let env = std::env::vars().collect::<BTreeMap<_, _>>();
         let config = LiveRlRuntimeConfig::from_env_map(&env, default_store_path)
@@ -161,16 +382,26 @@ impl LiveRlRuntimeBridge {
             })?,
         );
 
-        let bridge = Self::new(sqlite_store, config);
+        let apo_runtime = config.apo_enabled.then_some(LiveApoRuntime {
+            client,
+            model: model_ref.model.clone(),
+            seed_system_prompt: seed_system_prompt.to_string(),
+        });
+        let bridge = Self::new(sqlite_store, config, apo_runtime);
         bridge.register(agent);
         Ok(Some(bridge.snapshot_blocking()))
     }
 
-    fn new(store: Arc<dyn TrainingStore + Send + Sync>, config: LiveRlRuntimeConfig) -> Self {
+    fn new(
+        store: Arc<dyn TrainingStore + Send + Sync>,
+        config: LiveRlRuntimeConfig,
+        apo_runtime: Option<LiveApoRuntime>,
+    ) -> Self {
         Self {
             inner: Arc::new(LiveRlRuntimeBridgeInner {
                 store,
                 config,
+                apo_runtime,
                 state: Mutex::new(LiveRlRuntimeState {
                     gate: LiveRlRuntimeGate::Pass,
                     next_rollout_sequence: 0,
@@ -440,6 +671,7 @@ impl LiveRlRuntimeBridge {
                 mean_total_loss: None,
                 observed_approx_kl: None,
                 early_stop_triggered: false,
+                apo: None,
             })
             .await;
             return Ok(());
@@ -457,6 +689,7 @@ impl LiveRlRuntimeBridge {
                 mean_total_loss: None,
                 observed_approx_kl: None,
                 early_stop_triggered: false,
+                apo: None,
             })
             .await;
             return Ok(());
@@ -528,6 +761,7 @@ impl LiveRlRuntimeBridge {
                 mean_total_loss: None,
                 observed_approx_kl: None,
                 early_stop_triggered: false,
+                apo: None,
             })
             .await;
             return Ok(());
@@ -535,6 +769,17 @@ impl LiveRlRuntimeBridge {
 
         let update = compute_ppo_update(&ppo_config, &samples)
             .context("failed PPO update for live RL runtime")?;
+        let apo = if self.inner.config.apo_enabled {
+            Some(
+                self.run_live_apo_update(rollout_ids.as_slice())
+                    .await
+                    .unwrap_or_else(|error| {
+                        LiveApoReport::skipped(format!("apo_runtime_error:{error}"), 0)
+                    }),
+            )
+        } else {
+            None
+        };
         self.set_optimizer_report(LiveRlOptimizerReport {
             executed: true,
             trajectories: trajectory_batch.trajectories.len(),
@@ -542,10 +787,242 @@ impl LiveRlRuntimeBridge {
             mean_total_loss: Some(update.mean_loss.total_loss),
             observed_approx_kl: Some(update.observed_approx_kl),
             early_stop_triggered: update.early_stop_triggered,
+            apo,
         })
         .await;
 
         Ok(())
+    }
+
+    async fn run_live_apo_update(&self, rollout_ids: &[String]) -> Result<LiveApoReport> {
+        let Some(apo_runtime) = self.inner.apo_runtime.clone() else {
+            return Ok(LiveApoReport::skipped("apo_missing_runtime", 0));
+        };
+
+        let mut samples = self.collect_live_apo_samples(rollout_ids).await?;
+        if samples.len() > self.inner.config.apo_max_samples {
+            let start = samples.len() - self.inner.config.apo_max_samples;
+            samples = samples[start..].to_vec();
+        }
+
+        if samples.len() < self.inner.config.apo_min_samples || samples.len() < 2 {
+            return Ok(LiveApoReport::skipped(
+                "apo_insufficient_samples",
+                samples.len(),
+            ));
+        }
+
+        let train_examples = samples
+            .iter()
+            .enumerate()
+            .map(|(index, sample)| {
+                PromptExample::new(
+                    format!("sample_{}: {}", index + 1, sample.prompt),
+                    format!(
+                        "reward={:.4}; assistant_response={}",
+                        sample.reward, sample.response
+                    ),
+                )
+            })
+            .collect::<Vec<_>>();
+        let validation_examples = train_examples.clone();
+        let seed_prompt = self
+            .resolve_live_seed_prompt(apo_runtime.seed_system_prompt.as_str())
+            .await?;
+
+        let evaluator = Arc::new(LiveApoPromptEvaluator::new(
+            apo_runtime.client.clone(),
+            apo_runtime.model.clone(),
+        ));
+        let algorithm = ApoAlgorithm::new(
+            apo_runtime.client.clone(),
+            apo_runtime.client.clone(),
+            evaluator,
+            ApoConfig {
+                rounds: 1,
+                beam_width: 1,
+                candidates_per_parent: 1,
+                gradient_model: apo_runtime.model.clone(),
+                edit_model: apo_runtime.model.clone(),
+                temperature: Some(0.0),
+                max_tokens: Some(256),
+            },
+        );
+        let algorithm_store: Arc<dyn TrainingStore> =
+            Arc::new(NoResourceWriteStore::new(self.inner.store.clone()));
+        let summary = match algorithm
+            .run(AlgorithmContext::new(
+                algorithm_store,
+                seed_prompt,
+                train_examples,
+                validation_examples,
+            ))
+            .await
+        {
+            Ok(summary) => summary,
+            Err(error) => {
+                return Ok(LiveApoReport::skipped(
+                    format!("apo_run_failed:{error}"),
+                    samples.len(),
+                ));
+            }
+        };
+
+        let Some(best_prompt) = summary.best_prompt else {
+            return Ok(LiveApoReport::skipped("apo_no_best_prompt", samples.len()));
+        };
+        let best_prompt_version = best_prompt.version.clone();
+        let best_prompt_text = best_prompt.prompt.clone();
+        let best_prompt_score = best_prompt.score.unwrap_or(0.0).clamp(0.0, 1.0);
+
+        let baseline_scores = samples
+            .iter()
+            .map(|sample| normalize_reward_to_quality(sample.reward))
+            .collect::<Vec<_>>();
+        let baseline_mean = mean(baseline_scores.as_slice());
+        let delta = best_prompt_score - baseline_mean;
+        let candidate_scores = baseline_scores
+            .iter()
+            .map(|score| (*score + delta).clamp(0.0, 1.0))
+            .collect::<Vec<_>>();
+        let candidate_mean = mean(candidate_scores.as_slice());
+
+        let significance = match compare_policy_improvement(
+            baseline_scores.as_slice(),
+            candidate_scores.as_slice(),
+            self.inner.config.apo_significance_alpha,
+        ) {
+            Ok(report) => report,
+            Err(error) => {
+                return Ok(LiveApoReport::skipped(
+                    format!("apo_significance_failed:{error}"),
+                    samples.len(),
+                ));
+            }
+        };
+
+        if !significance.is_significant_improvement || significance.mean_delta <= 0.0 {
+            return Ok(LiveApoReport {
+                executed: true,
+                adopted: false,
+                sample_count: samples.len(),
+                baseline_mean_reward: Some(baseline_mean),
+                candidate_mean_reward: Some(candidate_mean),
+                best_prompt_version: Some(best_prompt_version),
+                best_prompt_score: Some(best_prompt_score),
+                reason_code: Some("apo_no_significant_improvement".to_string()),
+            });
+        }
+
+        let mut resources = HashMap::new();
+        resources.insert("system_prompt".to_string(), json!(best_prompt_text));
+        resources.insert(
+            "system_prompt_version".to_string(),
+            json!(best_prompt_version.clone()),
+        );
+        resources.insert("algorithm".to_string(), json!("apo_live_runtime"));
+        resources.insert("score".to_string(), json!(best_prompt_score));
+        resources.insert(
+            "apo_significance_alpha".to_string(),
+            json!(self.inner.config.apo_significance_alpha),
+        );
+        resources.insert(
+            "apo_significance_delta_ci_low".to_string(),
+            json!(significance.delta_ci_low),
+        );
+        resources.insert(
+            "apo_significance_delta_ci_high".to_string(),
+            json!(significance.delta_ci_high),
+        );
+        resources.insert(
+            "apo_samples".to_string(),
+            json!(u64::try_from(samples.len()).unwrap_or(0)),
+        );
+
+        self.inner
+            .store
+            .update_resources(resources)
+            .await
+            .context("failed to persist live APO prompt adoption")?;
+
+        Ok(LiveApoReport {
+            executed: true,
+            adopted: true,
+            sample_count: samples.len(),
+            baseline_mean_reward: Some(baseline_mean),
+            candidate_mean_reward: Some(candidate_mean),
+            best_prompt_version: Some(best_prompt_version),
+            best_prompt_score: Some(best_prompt_score),
+            reason_code: Some("apo_adopted".to_string()),
+        })
+    }
+
+    async fn resolve_live_seed_prompt(&self, fallback: &str) -> Result<String> {
+        let latest = self
+            .inner
+            .store
+            .get_latest_resources()
+            .await
+            .context("failed to read latest resources for APO seed prompt")?;
+        if let Some(resources) = latest {
+            if let Some(system_prompt) = resources
+                .resources
+                .get("system_prompt")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|prompt| !prompt.is_empty())
+            {
+                return Ok(system_prompt.to_string());
+            }
+        }
+        Ok(fallback.to_string())
+    }
+
+    async fn collect_live_apo_samples(&self, rollout_ids: &[String]) -> Result<Vec<LiveApoSample>> {
+        let mut samples = Vec::new();
+        for rollout_id in rollout_ids {
+            let spans = self
+                .inner
+                .store
+                .query_spans(rollout_id, None)
+                .await
+                .with_context(|| format!("failed to query spans for APO rollout '{rollout_id}'"))?;
+            let decision = spans
+                .into_iter()
+                .filter(|span| span.name == "live.agent.decision")
+                .max_by_key(|span| span.sequence_id);
+            let Some(span) = decision else {
+                continue;
+            };
+
+            let prompt = span
+                .attributes
+                .get("prompt")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .unwrap_or_default();
+            let response = span
+                .attributes
+                .get("assistant_text")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .unwrap_or_default();
+            let reward = span
+                .attributes
+                .get("reward")
+                .and_then(Value::as_f64)
+                .unwrap_or(0.0);
+            if prompt.is_empty() || response.is_empty() || !reward.is_finite() {
+                continue;
+            }
+
+            samples.push(LiveApoSample {
+                prompt: prompt.to_string(),
+                response: response.to_string(),
+                reward,
+            });
+        }
+        Ok(samples)
     }
 
     async fn collect_live_rollout_ids_for_update(&self) -> Result<Vec<String>> {
@@ -593,13 +1070,169 @@ impl LiveRlRuntimeBridge {
         store: Arc<dyn TrainingStore + Send + Sync>,
         config: LiveRlRuntimeConfig,
     ) -> Self {
-        Self::new(store, config)
+        Self::new(store, config, None)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn for_tests_with_apo(
+        store: Arc<dyn TrainingStore + Send + Sync>,
+        config: LiveRlRuntimeConfig,
+        client: Arc<dyn LlmClient>,
+        seed_system_prompt: &str,
+    ) -> Self {
+        let apo_runtime = config.apo_enabled.then_some(LiveApoRuntime {
+            client,
+            model: "gpt-4o-mini".to_string(),
+            seed_system_prompt: seed_system_prompt.to_string(),
+        });
+        Self::new(store, config, apo_runtime)
     }
 
     #[cfg(test)]
     pub(crate) async fn record_failure_for_tests(&self, message: &str) {
         self.register_failure(message.to_string()).await;
     }
+}
+
+impl LiveApoReport {
+    fn skipped(reason_code: impl Into<String>, sample_count: usize) -> Self {
+        Self {
+            executed: false,
+            adopted: false,
+            sample_count,
+            baseline_mean_reward: None,
+            candidate_mean_reward: None,
+            best_prompt_version: None,
+            best_prompt_score: None,
+            reason_code: Some(reason_code.into()),
+        }
+    }
+}
+
+struct LiveApoPromptEvaluator {
+    client: Arc<dyn LlmClient>,
+    model: String,
+}
+
+impl LiveApoPromptEvaluator {
+    fn new(client: Arc<dyn LlmClient>, model: String) -> Self {
+        Self { client, model }
+    }
+}
+
+#[async_trait]
+impl PromptEvaluator for LiveApoPromptEvaluator {
+    async fn score_prompt(&self, prompt: &str, dataset: &[PromptExample]) -> Result<f64> {
+        let rendered_examples = if dataset.is_empty() {
+            "(no examples)".to_string()
+        } else {
+            dataset
+                .iter()
+                .take(8)
+                .enumerate()
+                .map(|(index, example)| {
+                    format!(
+                        "{}. input={} expected={}",
+                        index + 1,
+                        example.input,
+                        example.expected
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+
+        let request = ChatRequest {
+            model: self.model.clone(),
+            messages: vec![
+                Message::system(
+                    "Score agent system prompts for expected task quality. Return JSON: {\"score\": <0..1>} only.",
+                ),
+                Message::user(format!(
+                    "Prompt:\n{prompt}\n\nExamples:\n{rendered_examples}\n\nReturn JSON score."
+                )),
+            ],
+            tools: Vec::new(),
+            tool_choice: None,
+            json_mode: true,
+            max_tokens: Some(64),
+            temperature: Some(0.0),
+            prompt_cache: Default::default(),
+        };
+
+        let llm_score = self
+            .client
+            .complete(request)
+            .await
+            .ok()
+            .and_then(|response| parse_score_from_text(&response.message.text_content()));
+        Ok(llm_score.unwrap_or_else(|| fallback_prompt_score(prompt, dataset)))
+    }
+}
+
+fn parse_score_from_text(text: &str) -> Option<f64> {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    if let Ok(value) = serde_json::from_str::<Value>(trimmed) {
+        if let Some(score) = value.get("score").and_then(Value::as_f64) {
+            return Some(score.clamp(0.0, 1.0));
+        }
+    }
+
+    if let Ok(score) = trimmed.parse::<f64>() {
+        return Some(score.clamp(0.0, 1.0));
+    }
+
+    for token in trimmed.split(|ch: char| !(ch.is_ascii_digit() || ch == '.' || ch == '-')) {
+        if token.is_empty() || token == "-" || token == "." {
+            continue;
+        }
+        if let Ok(score) = token.parse::<f64>() {
+            return Some(score.clamp(0.0, 1.0));
+        }
+    }
+
+    None
+}
+
+fn fallback_prompt_score(prompt: &str, dataset: &[PromptExample]) -> f64 {
+    let normalized_prompt = prompt.to_ascii_lowercase();
+    let keyword_hits = [
+        "verify",
+        "deterministic",
+        "concise",
+        "safe",
+        "error",
+        "tool",
+        "plan",
+    ]
+    .iter()
+    .filter(|keyword| normalized_prompt.contains(**keyword))
+    .count() as f64;
+    let keyword_score = (keyword_hits / 7.0).clamp(0.0, 1.0);
+
+    let length_score = ((prompt.chars().count() as f64) / 300.0).clamp(0.0, 1.0);
+    let dataset_score = if dataset.is_empty() {
+        0.0
+    } else {
+        (dataset.len() as f64 / 8.0).clamp(0.0, 1.0)
+    };
+
+    (0.3 + 0.4 * keyword_score + 0.2 * length_score + 0.1 * dataset_score).clamp(0.0, 1.0)
+}
+
+fn normalize_reward_to_quality(reward: f64) -> f64 {
+    ((reward + 1.0) / 2.0).clamp(0.0, 1.0)
+}
+
+fn mean(values: &[f64]) -> f64 {
+    if values.is_empty() {
+        return 0.0;
+    }
+    values.iter().sum::<f64>() / values.len() as f64
 }
 
 fn build_final_decision_span(run: &LiveRlActiveRun) -> TrainingSpan {
@@ -703,17 +1336,126 @@ fn parse_positive_usize_env(raw: Option<&str>, default: usize, key: &str) -> Res
     Ok(value)
 }
 
+fn parse_significance_alpha_env(raw: Option<&str>, default: f64, key: &str) -> Result<f64> {
+    let Some(raw) = raw else {
+        return Ok(default);
+    };
+    let normalized = raw.trim();
+    if normalized.is_empty() {
+        return Ok(default);
+    }
+    let value = normalized
+        .parse::<f64>()
+        .with_context(|| format!("{key} must be a floating-point alpha value"))?;
+    if !value.is_finite() {
+        return Err(anyhow!("{key} must be finite"));
+    }
+    let supported = [0.10_f64, 0.05_f64, 0.01_f64];
+    if supported
+        .iter()
+        .any(|candidate| (value - candidate).abs() < 1e-12)
+    {
+        Ok(value)
+    } else {
+        Err(anyhow!(
+            "{key} must be one of 0.10, 0.05, 0.01 (supported by significance engine)"
+        ))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         compute_live_reward, LiveRlActiveRun, LiveRlRuntimeBridge, LiveRlRuntimeConfig,
         LiveRlRuntimeGate,
     };
+    use anyhow::Result;
+    use async_trait::async_trait;
+    use chrono::Utc;
+    use serde_json::json;
     use std::collections::BTreeMap;
+    use std::collections::VecDeque;
     use std::sync::Arc;
+    use std::sync::Mutex;
     use tau_agent_core::AgentEvent;
-    use tau_ai::Message;
-    use tau_training_store::{InMemoryTrainingStore, RolloutQuery, RolloutStatus, TrainingStore};
+    use tau_ai::{ChatRequest, ChatResponse, ChatUsage, LlmClient, Message, TauAiError};
+    use tau_training_store::{
+        InMemoryTrainingStore, Rollout, RolloutQuery, RolloutStatus, TrainingSpan, TrainingStore,
+    };
+
+    #[derive(Clone)]
+    struct ScriptedClient {
+        outputs: Arc<Mutex<VecDeque<String>>>,
+    }
+
+    impl ScriptedClient {
+        fn new(lines: Vec<&str>) -> Self {
+            Self {
+                outputs: Arc::new(Mutex::new(
+                    lines
+                        .into_iter()
+                        .map(ToString::to_string)
+                        .collect::<VecDeque<_>>(),
+                )),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl LlmClient for ScriptedClient {
+        async fn complete(&self, _request: ChatRequest) -> Result<ChatResponse, TauAiError> {
+            let mut outputs = self.outputs.lock().expect("scripted client mutex poisoned");
+            let text = outputs
+                .pop_front()
+                .unwrap_or_else(|| "fallback output".to_string());
+            Ok(ChatResponse {
+                message: Message::assistant_text(text),
+                finish_reason: Some("stop".to_string()),
+                usage: ChatUsage::default(),
+            })
+        }
+    }
+
+    async fn seed_live_rollout(
+        store: &Arc<dyn TrainingStore + Send + Sync>,
+        rollout_id: &str,
+        reward: f64,
+    ) {
+        let mut rollout = Rollout::new(rollout_id.to_string(), json!({"source":"seed"}), None);
+        rollout
+            .metadata
+            .insert("source".to_string(), json!("seeded_test"));
+        store
+            .enqueue_rollout(rollout)
+            .await
+            .expect("enqueue seeded rollout");
+        store
+            .update_rollout_status(rollout_id, RolloutStatus::Running)
+            .await
+            .expect("mark seeded rollout running");
+        store
+            .update_rollout_status(rollout_id, RolloutStatus::Succeeded)
+            .await
+            .expect("mark seeded rollout succeeded");
+
+        let mut span = TrainingSpan::new(
+            rollout_id,
+            &format!("{rollout_id}:attempt-live"),
+            1,
+            format!("trace:{rollout_id}"),
+            format!("span:{rollout_id}:1"),
+            None,
+            "live.agent.decision",
+        );
+        span.attributes
+            .insert("prompt".to_string(), json!("seeded prompt"));
+        span.attributes
+            .insert("assistant_text".to_string(), json!("seeded response"));
+        span.attributes.insert("reward".to_string(), json!(reward));
+        span.attributes.insert("done".to_string(), json!(true));
+        span.end_time = Some(Utc::now());
+        store.add_span(span).await.expect("add seeded span");
+    }
 
     #[test]
     fn spec_c04_unit_live_rl_env_defaults_to_disabled() {
@@ -727,6 +1469,10 @@ mod tests {
         assert_eq!(config.update_interval_rollouts, 8);
         assert_eq!(config.max_rollouts_per_update, 64);
         assert_eq!(config.max_failure_streak, 3);
+        assert!(config.apo_enabled);
+        assert_eq!(config.apo_min_samples, 4);
+        assert_eq!(config.apo_max_samples, 32);
+        assert!((config.apo_significance_alpha - 0.05).abs() < 1e-12);
     }
 
     #[tokio::test]
@@ -740,6 +1486,10 @@ mod tests {
                 update_interval_rollouts: 8,
                 max_rollouts_per_update: 32,
                 max_failure_streak: 3,
+                apo_enabled: false,
+                apo_min_samples: 4,
+                apo_max_samples: 32,
+                apo_significance_alpha: 0.05,
             },
         );
 
@@ -788,6 +1538,10 @@ mod tests {
                 update_interval_rollouts: 1,
                 max_rollouts_per_update: 32,
                 max_failure_streak: 3,
+                apo_enabled: false,
+                apo_min_samples: 4,
+                apo_max_samples: 32,
+                apo_significance_alpha: 0.05,
             },
         );
 
@@ -826,6 +1580,10 @@ mod tests {
                 update_interval_rollouts: 4,
                 max_rollouts_per_update: 32,
                 max_failure_streak: 1,
+                apo_enabled: false,
+                apo_min_samples: 4,
+                apo_max_samples: 32,
+                apo_significance_alpha: 0.05,
             },
         );
 
@@ -880,6 +1638,10 @@ mod tests {
                 update_interval_rollouts: 8,
                 max_rollouts_per_update: 32,
                 max_failure_streak: 3,
+                apo_enabled: false,
+                apo_min_samples: 4,
+                apo_max_samples: 32,
+                apo_significance_alpha: 0.05,
             },
         );
 
@@ -920,5 +1682,136 @@ mod tests {
         assert!(attrs.contains_key("reward_confidence"));
         assert!(attrs.contains_key("reward_session_completion"));
         assert!(attrs.contains_key("reward_token_efficiency"));
+    }
+
+    #[tokio::test]
+    async fn spec_c07_functional_live_optimizer_runs_apo_and_persists_prompt_resources() {
+        let store: Arc<dyn TrainingStore + Send + Sync> = Arc::new(InMemoryTrainingStore::new());
+        seed_live_rollout(&store, "live-rl-rollout-0000000101", -0.90).await;
+        seed_live_rollout(&store, "live-rl-rollout-0000000102", -0.85).await;
+        seed_live_rollout(&store, "live-rl-rollout-0000000103", -0.80).await;
+        seed_live_rollout(&store, "live-rl-rollout-0000000104", -0.75).await;
+
+        let bridge = LiveRlRuntimeBridge::for_tests_with_apo(
+            store.clone(),
+            LiveRlRuntimeConfig {
+                enabled: true,
+                store_path: ".tau/training/store.sqlite".into(),
+                update_interval_rollouts: 1,
+                max_rollouts_per_update: 32,
+                max_failure_streak: 3,
+                apo_enabled: true,
+                apo_min_samples: 4,
+                apo_max_samples: 32,
+                apo_significance_alpha: 0.05,
+            },
+            Arc::new(ScriptedClient::new(vec![
+                "{\"score\":0.12}",
+                "Add deterministic verification and concise plan-first structure.",
+                "You are Tau. Verify outcomes, be concise, and include deterministic checks.",
+                "{\"score\":0.95}",
+            ])),
+            "You are Tau.",
+        );
+
+        bridge.handle_event(AgentEvent::AgentStart).await;
+        bridge
+            .handle_event(AgentEvent::MessageAdded {
+                message: Message::user("status"),
+            })
+            .await;
+        bridge
+            .handle_event(AgentEvent::MessageAdded {
+                message: Message::assistant_text("ok"),
+            })
+            .await;
+        bridge
+            .handle_event(AgentEvent::AgentEnd { new_messages: 2 })
+            .await;
+
+        let snapshot = bridge.snapshot().await;
+        let report = snapshot
+            .last_optimizer_report
+            .expect("optimizer report should be present");
+        let apo = report.apo.expect("apo report should be present");
+        assert!(apo.executed);
+        assert!(apo.adopted);
+        assert_eq!(apo.reason_code.as_deref(), Some("apo_adopted"));
+
+        let latest = store
+            .get_latest_resources()
+            .await
+            .expect("get latest resources")
+            .expect("resources should exist after adoption");
+        let persisted_prompt = latest
+            .resources
+            .get("system_prompt")
+            .and_then(serde_json::Value::as_str)
+            .expect("system_prompt should be persisted");
+        assert!(persisted_prompt.contains("deterministic checks"));
+    }
+
+    #[tokio::test]
+    async fn spec_c08_regression_live_apo_skips_adoption_without_significant_improvement() {
+        let store: Arc<dyn TrainingStore + Send + Sync> = Arc::new(InMemoryTrainingStore::new());
+        seed_live_rollout(&store, "live-rl-rollout-0000000011", 0.52).await;
+        seed_live_rollout(&store, "live-rl-rollout-0000000012", 0.54).await;
+        seed_live_rollout(&store, "live-rl-rollout-0000000013", 0.53).await;
+        seed_live_rollout(&store, "live-rl-rollout-0000000014", 0.55).await;
+
+        let bridge = LiveRlRuntimeBridge::for_tests_with_apo(
+            store.clone(),
+            LiveRlRuntimeConfig {
+                enabled: true,
+                store_path: ".tau/training/store.sqlite".into(),
+                update_interval_rollouts: 1,
+                max_rollouts_per_update: 32,
+                max_failure_streak: 3,
+                apo_enabled: true,
+                apo_min_samples: 4,
+                apo_max_samples: 32,
+                apo_significance_alpha: 0.05,
+            },
+            Arc::new(ScriptedClient::new(vec![
+                "{\"score\":0.53}",
+                "Tiny wording refinement.",
+                "You are Tau.",
+                "{\"score\":0.53}",
+            ])),
+            "You are Tau.",
+        );
+
+        bridge.handle_event(AgentEvent::AgentStart).await;
+        bridge
+            .handle_event(AgentEvent::MessageAdded {
+                message: Message::user("status"),
+            })
+            .await;
+        bridge
+            .handle_event(AgentEvent::MessageAdded {
+                message: Message::assistant_text("ok"),
+            })
+            .await;
+        bridge
+            .handle_event(AgentEvent::AgentEnd { new_messages: 2 })
+            .await;
+
+        let snapshot = bridge.snapshot().await;
+        let report = snapshot
+            .last_optimizer_report
+            .expect("optimizer report should be present");
+        let apo = report.apo.expect("apo report should be present");
+        assert!(apo.executed);
+        assert!(!apo.adopted);
+        assert_eq!(
+            apo.reason_code.as_deref(),
+            Some("apo_no_significant_improvement")
+        );
+
+        let latest = store
+            .get_latest_resources()
+            .await
+            .expect("get latest resources");
+        assert!(latest.is_none());
     }
 }
