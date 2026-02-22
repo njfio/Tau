@@ -1,6 +1,6 @@
 # M251 - Self-Improvement APO Live Integration (Phase 3A)
 
-Status: In Progress
+Status: Completed
 
 ## Context
 Review #36 identifies APO as implemented but not connected to the live RL runtime. Tau currently computes intrinsic rewards and PPO updates, but prompt self-optimization is not executed from live rollout traces.
@@ -17,6 +17,10 @@ Review #36 identifies APO as implemented but not connected to the live RL runtim
 - Task: #3298
 - Task: #3300
 - Task: #3302
+
+## Closeout
+- Milestone closed on GitHub with `open_issues=0` and `closed_issues=6`.
+- Final completion delivered via `#3303` (issues `#3300` + `#3302`).
 
 ## Success Signals
 - `cargo test -p tau-coding-agent spec_c07_functional_live_optimizer_runs_apo_and_persists_prompt_resources`
