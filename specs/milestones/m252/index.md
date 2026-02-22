@@ -1,6 +1,6 @@
 # M252 - Review #37 / M251 closeout consistency
 
-Status: In Progress
+Status: Completed
 
 ## Context
 Milestone `M251` was closed after completing APO live runtime integration and Review #37 Phase-4 follow-up work, but repository milestone-index status remained stale.
@@ -12,6 +12,10 @@ Milestone `M251` was closed after completing APO live runtime integration and Re
 
 ## Linked Issues
 - Task: #3304
+
+## Closeout
+- Milestone objective completed and merged via `#3305`.
+- Completion task `#3304` is closed with `status:done`.
 
 ## Success Signals
 - `specs/milestones/m251/index.md` reports completed status and closeout note.
