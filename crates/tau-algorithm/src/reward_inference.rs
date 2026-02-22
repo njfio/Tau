@@ -44,14 +44,21 @@ pub struct RewardInferenceOutput {
 }
 
 impl RewardInferenceOutput {
-    fn zero() -> Self {
+    fn new(
+        composite: f64,
+        completion: f64,
+        reliability: f64,
+        safety: f64,
+        efficiency: f64,
+        confidence: f64,
+    ) -> Self {
         Self {
-            composite: 0.0,
-            completion: 0.0,
-            reliability: 0.0,
-            safety: 0.0,
-            efficiency: 0.0,
-            confidence: 0.0,
+            composite,
+            completion,
+            reliability,
+            safety,
+            efficiency,
+            confidence,
         }
     }
 }
@@ -66,9 +73,47 @@ pub trait RewardInference: Send + Sync {
 pub struct TraceBasedRewardInference;
 
 impl RewardInference for TraceBasedRewardInference {
-    fn infer(&self, _input: &RewardInferenceInput) -> RewardInferenceOutput {
-        // RED phase placeholder; GREEN phase implements real deterministic scoring.
-        RewardInferenceOutput::zero()
+    fn infer(&self, input: &RewardInferenceInput) -> RewardInferenceOutput {
+        let completion = if input.has_assistant_reply { 0.5 } else { 0.0 };
+        let reliability = -0.25 * f64::from(input.tool_errors.min(2));
+        let efficiency = if input.turns <= 2 {
+            0.5
+        } else if input.turns <= 4 {
+            0.25
+        } else {
+            0.0
+        };
+        let safety = if input.safety_blocked { -1.0 } else { 0.0 };
+
+        let confidence = (0.5_f64
+            + if input.has_assistant_reply {
+                0.25_f64
+            } else {
+                0.0_f64
+            }
+            + if input.turns > 0 { 0.25_f64 } else { 0.0_f64 })
+        .clamp(0.0, 1.0);
+
+        if input.safety_blocked {
+            return RewardInferenceOutput::new(
+                -1.0,
+                completion,
+                reliability,
+                safety,
+                efficiency,
+                confidence,
+            );
+        }
+
+        let composite = (completion + reliability + efficiency).clamp(-1.0, 1.0);
+        RewardInferenceOutput::new(
+            composite,
+            completion,
+            reliability,
+            safety,
+            efficiency,
+            confidence,
+        )
     }
 }
 

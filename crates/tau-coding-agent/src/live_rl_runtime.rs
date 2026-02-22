@@ -10,7 +10,8 @@ use tau_agent_core::{Agent, AgentEvent};
 use tau_ai::MessageRole;
 use tau_algorithm::{
     collect_trajectory_batch, compute_gae_batch_from_slices, compute_ppo_update, GaeConfig,
-    PpoConfig, PpoSample,
+    PpoConfig, PpoSample, RewardInference, RewardInferenceInput, RewardInferenceOutput,
+    TraceBasedRewardInference,
 };
 use tau_training_store::{
     Rollout, RolloutQuery, RolloutStatus, SqliteTrainingStore, TrainingSpan, TrainingStore,
@@ -631,6 +632,8 @@ fn build_final_decision_span(run: &LiveRlActiveRun) -> TrainingSpan {
     span.attributes
         .insert("reward_efficiency".to_string(), json!(reward.efficiency));
     span.attributes
+        .insert("reward_confidence".to_string(), json!(reward.confidence));
+    span.attributes
         .insert("turns".to_string(), json!(run.turns));
     span.attributes
         .insert("tool_errors".to_string(), json!(run.tool_errors));
@@ -646,53 +649,22 @@ fn compute_live_reward(run: &LiveRlActiveRun) -> f64 {
     compute_live_reward_breakdown(run).composite
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct LiveRewardBreakdown {
-    composite: f64,
-    completion: f64,
-    reliability: f64,
-    safety: f64,
-    efficiency: f64,
-}
-
-fn compute_live_reward_breakdown(run: &LiveRlActiveRun) -> LiveRewardBreakdown {
-    let completion = if run
-        .assistant_reply
-        .as_ref()
-        .is_some_and(|reply| !reply.trim().is_empty())
-    {
-        0.5
-    } else {
-        0.0
-    };
-    let reliability = -0.25 * f64::from(run.tool_errors.min(2));
-    let efficiency = if run.turns <= 2 {
-        0.5
-    } else if run.turns <= 4 {
-        0.25
-    } else {
-        0.0
-    };
-    let safety = if run.safety_blocked { -1.0 } else { 0.0 };
-
-    if run.safety_blocked {
-        return LiveRewardBreakdown {
-            composite: -1.0,
-            completion,
-            reliability,
-            safety,
-            efficiency,
-        };
-    }
-
-    let composite = (completion + reliability + efficiency).clamp(-1.0, 1.0);
-    LiveRewardBreakdown {
-        composite,
-        completion,
-        reliability,
-        safety,
-        efficiency,
-    }
+fn compute_live_reward_breakdown(run: &LiveRlActiveRun) -> RewardInferenceOutput {
+    let input = RewardInferenceInput::new(
+        run.assistant_reply
+            .as_ref()
+            .is_some_and(|reply| !reply.trim().is_empty()),
+        run.tool_errors,
+        run.safety_blocked,
+        run.turns,
+        run.prompt
+            .as_ref()
+            .map_or(0, |prompt| prompt.chars().count()),
+        run.assistant_reply
+            .as_ref()
+            .map_or(0, |reply| reply.chars().count()),
+    );
+    TraceBasedRewardInference.infer(&input)
 }
 
 fn parse_bool_env(raw: &str) -> Option<bool> {
@@ -934,5 +906,6 @@ mod tests {
         assert!(attrs.contains_key("reward_reliability"));
         assert!(attrs.contains_key("reward_safety"));
         assert!(attrs.contains_key("reward_efficiency"));
+        assert!(attrs.contains_key("reward_confidence"));
     }
 }
