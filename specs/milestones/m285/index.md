@@ -1,6 +1,6 @@
 # M285 - Review #70 repository quality snapshot
 
-Status: In Progress
+Status: Completed
 
 ## Context
 Review #69 has been completed and merged. A fresh baseline snapshot is needed on current `origin/master` to capture immediate post-merge repository quality/status.
@@ -12,6 +12,9 @@ Review #69 has been completed and merged. A fresh baseline snapshot is needed on
 
 ## Linked Issues
 - Task: #3372
+
+## Closeout
+- Milestone objective delivered via issue `#3372` (`tasks/review-70.md`).
 
 ## Success Signals
 - `tasks/review-70.md` exists and references `origin/master` commit under review.
