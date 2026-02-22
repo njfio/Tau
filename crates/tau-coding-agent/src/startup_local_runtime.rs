@@ -107,7 +107,7 @@ pub(crate) async fn run_local_runtime(config: LocalRuntimeConfig<'_>) -> Result<
         agent_defaults.max_estimated_total_tokens,
     );
     let mut agent = build_onboarding_local_runtime_agent(
-        client,
+        client.clone(),
         model_ref,
         system_prompt,
         LocalRuntimeAgentSettings {
@@ -202,6 +202,9 @@ pub(crate) async fn run_local_runtime(config: LocalRuntimeConfig<'_>) -> Result<
     if let Some(snapshot) = LiveRlRuntimeBridge::register_if_enabled(
         &mut agent,
         cli.prompt_optimization_store_sqlite.as_path(),
+        client,
+        model_ref,
+        system_prompt,
     )? {
         eprintln!(
             "live rl runtime bridge enabled: store={} gate={:?} completed_rollouts={} failure_streak={}",
