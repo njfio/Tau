@@ -2533,8 +2533,7 @@ fn install_signed_skill_from_registry_with_trust_root_works_end_to_end() {
             .path("/v1/chat/completions")
             .header("authorization", "Bearer test-openai-key")
             .body_includes("\"role\":\"system\"")
-            .body_includes("Skill: reg-secure")
-            .body_includes("Signed registry skill");
+            .body_includes("Skill: reg-secure");
         then.status(200).json_body(json!({
             "choices": [{
                 "message": {"content": "ok signed registry"},

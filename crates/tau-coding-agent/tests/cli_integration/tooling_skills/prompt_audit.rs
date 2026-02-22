@@ -398,6 +398,7 @@ fn interactive_audit_summary_command_reports_aggregates() {
         }),
         json!({
             "record_type": "prompt_telemetry_v1",
+            "schema_version": 1,
             "provider": "openai",
             "status": "completed",
             "success": true,

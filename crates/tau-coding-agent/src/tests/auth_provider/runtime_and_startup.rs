@@ -466,6 +466,7 @@ fn functional_summarize_audit_file_aggregates_tool_and_provider_metrics() {
         }),
         serde_json::json!({
             "record_type": "prompt_telemetry_v1",
+            "schema_version": 1,
             "provider": "openai",
             "status": "completed",
             "success": true,
@@ -478,6 +479,7 @@ fn functional_summarize_audit_file_aggregates_tool_and_provider_metrics() {
         }),
         serde_json::json!({
             "record_type": "prompt_telemetry_v1",
+            "schema_version": 1,
             "provider": "openai",
             "status": "interrupted",
             "success": false,

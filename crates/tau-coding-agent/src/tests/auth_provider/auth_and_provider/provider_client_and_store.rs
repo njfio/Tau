@@ -528,7 +528,7 @@ fn unit_encrypt_and_decrypt_credential_store_secret_roundtrip_keyed() {
         Some("very-strong-key"),
     )
     .expect("encode credential");
-    assert!(encoded.starts_with("enc:v1:"));
+    assert!(encoded.starts_with("enc:v2:"));
     assert!(!encoded.contains(secret));
 
     let decoded = decrypt_credential_store_secret(

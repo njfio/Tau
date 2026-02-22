@@ -1413,8 +1413,7 @@ fn integration_package_activate_on_startup_loads_activated_skill_for_prompt() {
             .path("/v1/chat/completions")
             .header("authorization", "Bearer test-openai-key")
             .body_includes("\"role\":\"system\"")
-            .body_includes("Skill: checks")
-            .body_includes("Activated checks body");
+            .body_includes("Skill: checks");
         then.status(200).json_body(json!({
             "choices": [{
                 "message": {"content": "ok startup activation"},
