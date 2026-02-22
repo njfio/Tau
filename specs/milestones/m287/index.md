@@ -1,6 +1,6 @@
 # M287 - Review #72 repository quality snapshot
 
-Status: In Progress
+Status: Completed
 
 ## Context
 Review #71 has been completed and merged. A fresh baseline snapshot is needed on current `origin/master` to capture immediate post-merge repository quality/status.
@@ -12,6 +12,9 @@ Review #71 has been completed and merged. A fresh baseline snapshot is needed on
 
 ## Linked Issues
 - Task: #3376
+
+## Closeout
+- Milestone objective delivered via issue `#3376` (`tasks/review-72.md`).
 
 ## Success Signals
 - `tasks/review-72.md` exists and references `origin/master` commit under review.
