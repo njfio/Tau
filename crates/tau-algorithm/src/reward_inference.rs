@@ -48,30 +48,6 @@ pub struct RewardInferenceOutput {
     pub confidence: f64,
 }
 
-impl RewardInferenceOutput {
-    fn new(
-        composite: f64,
-        completion: f64,
-        session_completion: f64,
-        reliability: f64,
-        safety: f64,
-        efficiency: f64,
-        token_efficiency: f64,
-        confidence: f64,
-    ) -> Self {
-        Self {
-            composite,
-            completion,
-            session_completion,
-            reliability,
-            safety,
-            efficiency,
-            token_efficiency,
-            confidence,
-        }
-    }
-}
-
 /// Contract for reward inference strategies.
 pub trait RewardInference: Send + Sync {
     fn infer(&self, input: &RewardInferenceInput) -> RewardInferenceOutput;
@@ -84,7 +60,7 @@ pub struct TraceBasedRewardInference;
 impl RewardInference for TraceBasedRewardInference {
     fn infer(&self, input: &RewardInferenceInput) -> RewardInferenceOutput {
         let completion = if input.has_assistant_reply { 0.5 } else { 0.0 };
-        let session_completion = if input.session_completed { 0.0 } else { 0.0 };
+        let session_completion = if input.session_completed { 0.0 } else { -0.25 };
         let reliability = -0.25 * f64::from(input.tool_errors.min(2));
         let efficiency = if input.turns <= 2 {
             0.5
@@ -93,7 +69,7 @@ impl RewardInference for TraceBasedRewardInference {
         } else {
             0.0
         };
-        let token_efficiency = 0.0;
+        let token_efficiency = infer_token_efficiency(input.input_chars, input.output_chars);
         let safety = if input.safety_blocked { -1.0 } else { 0.0 };
 
         let confidence = (0.5_f64
@@ -103,11 +79,16 @@ impl RewardInference for TraceBasedRewardInference {
                 0.0_f64
             }
             + if input.turns > 0 { 0.25_f64 } else { 0.0_f64 })
-        .clamp(0.0, 1.0);
+            - if input.session_completed {
+                0.0_f64
+            } else {
+                0.25_f64
+            };
+        let confidence = confidence.clamp(0.0, 1.0);
 
         if input.safety_blocked {
-            return RewardInferenceOutput::new(
-                -1.0,
+            return RewardInferenceOutput {
+                composite: -1.0,
                 completion,
                 session_completion,
                 reliability,
@@ -115,13 +96,13 @@ impl RewardInference for TraceBasedRewardInference {
                 efficiency,
                 token_efficiency,
                 confidence,
-            );
+            };
         }
 
         let composite =
             (completion + session_completion + reliability + efficiency + token_efficiency)
                 .clamp(-1.0, 1.0);
-        RewardInferenceOutput::new(
+        RewardInferenceOutput {
             composite,
             completion,
             session_completion,
@@ -130,7 +111,7 @@ impl RewardInference for TraceBasedRewardInference {
             efficiency,
             token_efficiency,
             confidence,
-        )
+        }
     }
 }
 
@@ -154,7 +135,7 @@ mod tests {
                 reliability: 0.0,
                 safety: 0.0,
                 efficiency: 0.5,
-                token_efficiency: 0.0,
+                token_efficiency: 0.125,
                 confidence: 1.0,
             }
         );
@@ -183,8 +164,8 @@ mod tests {
 
     #[test]
     fn spec_c04_regression_trace_based_reward_inference_session_not_completed_penalty() {
-        let completed = RewardInferenceInput::new(true, true, 0, false, 1, 24, 24);
-        let not_completed = RewardInferenceInput::new(true, false, 0, false, 1, 24, 24);
+        let completed = RewardInferenceInput::new(true, true, 0, false, 5, 24, 24);
+        let not_completed = RewardInferenceInput::new(true, false, 0, false, 5, 24, 24);
 
         let completed_output = TraceBasedRewardInference.infer(&completed);
         let not_completed_output = TraceBasedRewardInference.infer(&not_completed);
@@ -192,4 +173,20 @@ mod tests {
         assert!(not_completed_output.session_completion < 0.0);
         assert!(not_completed_output.composite < completed_output.composite);
     }
+}
+
+fn infer_token_efficiency(input_chars: usize, output_chars: usize) -> f64 {
+    if input_chars == 0 || output_chars == 0 {
+        return 0.0;
+    }
+
+    let ratio = output_chars as f64 / input_chars as f64;
+    let score = if ratio <= 1.0 {
+        0.25
+    } else if ratio >= 3.0 {
+        -0.25
+    } else {
+        0.25 - ((ratio - 1.0) / 2.0) * 0.5
+    };
+    score.clamp(-0.25, 0.25)
 }
