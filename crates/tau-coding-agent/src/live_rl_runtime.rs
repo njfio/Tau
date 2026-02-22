@@ -654,6 +654,7 @@ fn compute_live_reward_breakdown(run: &LiveRlActiveRun) -> RewardInferenceOutput
         run.assistant_reply
             .as_ref()
             .is_some_and(|reply| !reply.trim().is_empty()),
+        true,
         run.tool_errors,
         run.safety_blocked,
         run.turns,
@@ -907,5 +908,7 @@ mod tests {
         assert!(attrs.contains_key("reward_safety"));
         assert!(attrs.contains_key("reward_efficiency"));
         assert!(attrs.contains_key("reward_confidence"));
+        assert!(attrs.contains_key("reward_session_completion"));
+        assert!(attrs.contains_key("reward_token_efficiency"));
     }
 }
