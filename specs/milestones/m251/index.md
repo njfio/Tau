@@ -16,6 +16,7 @@ Review #36 identifies APO as implemented but not connected to the live RL runtim
 - Task: #3296
 - Task: #3298
 - Task: #3300
+- Task: #3302
 
 ## Success Signals
 - `cargo test -p tau-coding-agent spec_c07_functional_live_optimizer_runs_apo_and_persists_prompt_resources`

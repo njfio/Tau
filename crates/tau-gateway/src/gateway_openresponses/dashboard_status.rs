@@ -74,6 +74,8 @@ pub(super) struct GatewayDashboardTrainingReport {
     pub(super) failed: usize,
     pub(super) cancelled: usize,
     pub(super) diagnostics: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(super) live_learning_alerts: Vec<GatewayDashboardAlert>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
@@ -247,6 +249,18 @@ struct GatewayDashboardTrainingStatusFile {
     failed: usize,
     #[serde(default)]
     cancelled: usize,
+    #[serde(default)]
+    live_learning_alerts: Vec<GatewayDashboardTrainingStatusAlert>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+struct GatewayDashboardTrainingStatusAlert {
+    #[serde(default)]
+    code: String,
+    #[serde(default)]
+    severity: String,
+    #[serde(default)]
+    message: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -459,6 +473,7 @@ pub(super) fn collect_gateway_dashboard_snapshot(
             ),
         });
     }
+    alerts.extend(training.live_learning_alerts.iter().cloned());
     if alerts.is_empty() {
         alerts.push(GatewayDashboardAlert {
             code: "dashboard_healthy".to_string(),
@@ -767,6 +782,7 @@ fn load_dashboard_training_report(
             failed: 0,
             cancelled: 0,
             diagnostics: training_diagnostics,
+            live_learning_alerts: Vec::new(),
         };
     }
 
@@ -788,6 +804,7 @@ fn load_dashboard_training_report(
                 failed: 0,
                 cancelled: 0,
                 diagnostics: training_diagnostics,
+                live_learning_alerts: Vec::new(),
             };
         }
     };
@@ -805,6 +822,9 @@ fn load_dashboard_training_report(
             failed: parsed.failed,
             cancelled: parsed.cancelled,
             diagnostics: training_diagnostics,
+            live_learning_alerts: normalize_training_live_learning_alerts(
+                parsed.live_learning_alerts,
+            ),
         },
         Err(error) => {
             let message = format!("training_status_parse_failed:{}:{error}", path.display());
@@ -822,6 +842,7 @@ fn load_dashboard_training_report(
                 failed: 0,
                 cancelled: 0,
                 diagnostics: training_diagnostics,
+                live_learning_alerts: Vec::new(),
             }
         }
     }
@@ -1026,6 +1047,34 @@ fn normalize_non_empty_string(raw: &str, fallback: &str) -> String {
     }
 }
 
+fn normalize_dashboard_alert_severity(raw: &str) -> String {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "critical" => "critical".to_string(),
+        "info" => "info".to_string(),
+        _ => "warning".to_string(),
+    }
+}
+
+fn normalize_training_live_learning_alerts(
+    alerts: Vec<GatewayDashboardTrainingStatusAlert>,
+) -> Vec<GatewayDashboardAlert> {
+    alerts
+        .into_iter()
+        .filter_map(|alert| {
+            let code = alert.code.trim();
+            let message = alert.message.trim();
+            if code.is_empty() || message.is_empty() {
+                return None;
+            }
+            Some(GatewayDashboardAlert {
+                code: code.to_string(),
+                severity: normalize_dashboard_alert_severity(alert.severity.as_str()),
+                message: message.to_string(),
+            })
+        })
+        .collect()
+}
+
 fn normalize_dashboard_control_mode(raw: &str) -> String {
     match raw.trim().to_ascii_lowercase().as_str() {
         DASHBOARD_CONTROL_MODE_PAUSED => DASHBOARD_CONTROL_MODE_PAUSED.to_string(),
@@ -1110,6 +1159,65 @@ invalid-json-line
         )
         .expect("write training status");
         dashboard_root
+    }
+
+    fn write_dashboard_state_with_live_learning_alerts(root: &Path) {
+        let dashboard_root = root.join(".tau").join("dashboard");
+        let training_root = root.join(".tau").join("training");
+        std::fs::create_dir_all(&dashboard_root).expect("create dashboard root");
+        std::fs::create_dir_all(&training_root).expect("create training root");
+        std::fs::write(
+            dashboard_root.join(DASHBOARD_STATE_FILE),
+            r#"{
+  "schema_version": 1,
+  "processed_case_keys": ["snapshot:a"],
+  "widget_views": [],
+  "control_audit": [],
+  "health": {
+    "updated_unix_ms": 800,
+    "cycle_duration_ms": 25,
+    "queue_depth": 0,
+    "active_runs": 0,
+    "failure_streak": 0,
+    "last_cycle_discovered": 1,
+    "last_cycle_processed": 1,
+    "last_cycle_completed": 1,
+    "last_cycle_failed": 0,
+    "last_cycle_duplicates": 0
+  }
+}
+"#,
+        )
+        .expect("write dashboard state");
+        std::fs::write(
+            dashboard_root.join(DASHBOARD_EVENTS_LOG_FILE),
+            r#"{"timestamp_unix_ms":2,"health_state":"healthy","health_reason":"no recent transport failures observed","reason_codes":["widget_views_updated"],"discovered_cases":1,"queued_cases":1,"backlog_cases":0,"applied_cases":1,"failed_cases":0}
+"#,
+        )
+        .expect("write dashboard events");
+        std::fs::write(
+            training_root.join(TRAINING_STATUS_FILE),
+            r#"{
+  "schema_version": 1,
+  "updated_unix_ms": 801,
+  "run_state": "running",
+  "model_ref": "openai/gpt-4o-mini",
+  "store_path": ".tau/training/store.sqlite",
+  "total_rollouts": 11,
+  "succeeded": 9,
+  "failed": 0,
+  "cancelled": 0,
+  "live_learning_alerts": [
+    {
+      "code": "live_learning_regressing_category",
+      "severity": "warning",
+      "message": "debugging_rust trend regressing over recent windows"
+    }
+  ]
+}
+"#,
+        )
+        .expect("write training status");
     }
 
     #[test]
@@ -1243,5 +1351,60 @@ invalid-json-line
         assert_eq!(snapshot.connector_health_rows[0].liveness, "unknown");
         assert_eq!(snapshot.connector_health_rows[0].events_ingested, 0);
         assert_eq!(snapshot.connector_health_rows[0].provider_failures, 0);
+    }
+
+    #[test]
+    fn spec_c22_unit_normalize_dashboard_alert_severity_maps_supported_levels() {
+        assert_eq!(normalize_dashboard_alert_severity("critical"), "critical");
+        assert_eq!(normalize_dashboard_alert_severity("warning"), "warning");
+        assert_eq!(normalize_dashboard_alert_severity("info"), "info");
+        assert_eq!(normalize_dashboard_alert_severity("unknown"), "warning");
+        assert_eq!(normalize_dashboard_alert_severity(""), "warning");
+    }
+
+    #[test]
+    fn spec_c23_unit_normalize_training_live_learning_alerts_rejects_incomplete_rows() {
+        let alerts = normalize_training_live_learning_alerts(vec![
+            GatewayDashboardTrainingStatusAlert {
+                code: String::new(),
+                severity: "critical".to_string(),
+                message: "missing code".to_string(),
+            },
+            GatewayDashboardTrainingStatusAlert {
+                code: "missing_message".to_string(),
+                severity: "warning".to_string(),
+                message: " ".to_string(),
+            },
+            GatewayDashboardTrainingStatusAlert {
+                code: "live_learning_regressing_category".to_string(),
+                severity: "critical".to_string(),
+                message: "regressing category".to_string(),
+            },
+        ]);
+
+        assert_eq!(alerts.len(), 1);
+        assert_eq!(alerts[0].code, "live_learning_regressing_category");
+        assert_eq!(alerts[0].severity, "critical");
+        assert_eq!(alerts[0].message, "regressing category");
+    }
+
+    #[test]
+    fn spec_c21_integration_dashboard_snapshot_includes_live_learning_alerts() {
+        let temp = tempdir().expect("tempdir");
+        write_dashboard_state_with_live_learning_alerts(temp.path());
+        let gateway_root = temp.path().join(".tau").join("gateway");
+        std::fs::create_dir_all(&gateway_root).expect("create gateway root");
+
+        let snapshot = collect_gateway_dashboard_snapshot(&gateway_root);
+        assert!(snapshot
+            .alerts
+            .iter()
+            .any(|alert| alert.code == "live_learning_regressing_category"));
+
+        let command_center = collect_tau_ops_dashboard_command_center_snapshot(&gateway_root);
+        assert!(command_center
+            .alert_feed_rows
+            .iter()
+            .any(|alert| alert.code == "live_learning_regressing_category"));
     }
 }
