@@ -1,6 +1,6 @@
 # Spec: Issue #3288 - add RewardInference trait and wire live RL runtime to TraceBasedRewardInference
 
-Status: Reviewed
+Status: Implemented
 
 ## Problem Statement
 Reward scoring for live RL is embedded in runtime-local logic, preventing reuse and independent evolution. A dedicated algorithm-layer inference contract is needed to compute deterministic reward breakdowns from trace-like inputs.
