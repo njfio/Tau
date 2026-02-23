@@ -3,33 +3,46 @@
 Status: In Progress
 
 ## Context
-Tau has broad runtime capabilities, but program-level delivery needs explicit integration across:
-- true RL production behavior and operator controls,
-- dashboard and TUI as one coherent operations plane,
-- complete auth lifecycle verification,
-- release/readiness gates that prove the system behaves as one program.
-
-Milestone `M296` is the integration and productionization program for that outcome.
+M296 is the integrated program milestone for delivering production-grade operator flows across:
+- true RL end-to-end runtime evidence,
+- dashboard and TUI operator-surface convergence,
+- auth lifecycle verification and hardening,
+- GA readiness gates with rollback and documentation contracts.
 
 ## Scope
-- Define and execute a phased program for RL, dashboard, auth, and TUI convergence.
-- Establish binding acceptance gates and conformance evidence for each phase.
-- Decompose execution into task issues with explicit dependencies and rollback posture.
-- Validate end-to-end operator workflows, not only component-level behavior.
+- Execute story `#3423` and its child task phases.
+- Ensure every phase ships with spec/plan/tasks artifacts and deterministic verification evidence.
+- Publish a final GA closeout path that operators can run from repository root.
 
 ## Linked Issues
-- Epic: #3422
-- Story: #3423
-- Task: #3424
+- Epic: `#3422`
+- Story: `#3423`
+- Task: `#3424` (execution plan authoring)
+- Task: `#3427` (true RL e2e productionization gates)
+- Task: `#3428` (dashboard + TUI convergence)
+- Task: `#3426` (auth lifecycle verification)
+- Task: `#3429` (integrated reliability + recovery proof)
+- Task: `#3430` (GA readiness gate, docs, rollback validation)
 
-## Exit Criteria
-- Program decomposition is complete and executable (phase plan + child tasks + dependencies).
-- True RL path is defined with measurable runtime and verification gates.
-- Dashboard and TUI convergence plan is defined with parity and integration criteria.
-- Auth workflows (token/password/bootstrap/rotation/expiry/logout) have explicit validation matrix.
-- Release gate checklist and rollback strategy are documented and test-backed.
+## Phase Outcomes
+| Phase | Issue | Goal |
+| --- | --- | --- |
+| 1 | `#3427` | RL end-to-end productionization gates |
+| 2 | `#3428` | Dashboard/TUI operator-flow parity contracts |
+| 3 | `#3426` | Full auth workflow conformance and hardening |
+| 4 | `#3429` | Integrated reliability and recovery verification |
+| 5 | `#3430` | Final GA gate, rollback criteria, docs, closeout summary |
 
-## Success Signals
-- `specs/3424/spec.md`, `specs/3424/plan.md`, `specs/3424/tasks.md` exist and are maintained.
-- Each child implementation issue under this milestone maps AC -> conformance -> tests.
-- Milestone closeout records passed gates for RL, dashboard/TUI, auth, and release readiness.
+## GA Exit Signals
+- M295 operator maturity wave verification passes:
+  - `scripts/verify/m295-operator-maturity-wave.sh`
+- M296 GA readiness gate verification passes:
+  - `scripts/verify/m296-ga-readiness-gate.sh`
+- Final GA report is generated and marked pass:
+  - `artifacts/operator-ga-readiness/verification-report.json`
+
+## Verification Artifacts
+- `scripts/verify/m295-operator-maturity-wave.sh`
+- `scripts/verify/m296-ga-readiness-gate.sh`
+- `artifacts/operator-maturity-wave/verification-report.json`
+- `artifacts/operator-ga-readiness/verification-report.json`
