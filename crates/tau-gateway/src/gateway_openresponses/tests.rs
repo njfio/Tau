@@ -13198,7 +13198,9 @@ async fn tier_weekly_ch15_chaos_matrix() {
         60,
         120,
     );
-    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+    let (addr, handle) = spawn_test_server(state.clone())
+        .await
+        .expect("spawn server");
     let client = Client::new();
 
     // CH15-03
@@ -13243,6 +13245,95 @@ async fn tier_weekly_ch15_chaos_matrix() {
         .await
         .expect("follow-up after disconnect");
     assert_eq!(followup.status(), StatusCode::OK);
+
+    // CH15-05
+    let locked_session_key = "ch15-lock-contention";
+    let normalized_session_key = sanitize_session_key(locked_session_key);
+    let locked_session_path =
+        gateway_session_path(&state.config.state_dir, normalized_session_key.as_str());
+    if let Some(parent) = locked_session_path.parent() {
+        std::fs::create_dir_all(parent).expect("create locked-session parent");
+    }
+    let lock_path = locked_session_path.with_extension("lock");
+    std::fs::write(&lock_path, "locked").expect("seed lock file");
+    assert!(lock_path.exists(), "seeded lock file must exist");
+    let release_lock_path = lock_path.clone();
+    let release_lock_thread = std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(75));
+        let _ = std::fs::remove_file(release_lock_path);
+    });
+
+    let locked_response = client
+        .post(format!("http://{addr}{OPENRESPONSES_ENDPOINT}"))
+        .bearer_auth("secret")
+        .json(&json!({
+            "input":"under lock contention",
+            "metadata": {"session_id": locked_session_key}
+        }))
+        .send()
+        .await
+        .expect("locked session response");
+    let locked_status = locked_response.status();
+    let locked_payload = locked_response
+        .json::<Value>()
+        .await
+        .expect("parse locked response payload");
+    assert_eq!(
+        locked_status,
+        StatusCode::OK,
+        "lock contention should recover once lock is released: {locked_payload}"
+    );
+    assert_eq!(
+        locked_payload["status"],
+        Value::String("completed".to_string())
+    );
+    let locked_message_count = locked_payload["output_text"]
+        .as_str()
+        .unwrap_or_default()
+        .trim_start_matches("messages=")
+        .parse::<usize>()
+        .expect("parse locked request message count");
+    release_lock_thread
+        .join()
+        .expect("join lock release thread");
+    assert!(
+        !lock_path.exists(),
+        "session lock should be removed after contention scenario"
+    );
+
+    let lock_followup = client
+        .post(format!("http://{addr}{OPENRESPONSES_ENDPOINT}"))
+        .bearer_auth("secret")
+        .json(&json!({
+            "input":"after lock contention",
+            "metadata": {"session_id": locked_session_key}
+        }))
+        .send()
+        .await
+        .expect("lock follow-up response");
+    let lock_followup_status = lock_followup.status();
+    let lock_followup_payload = lock_followup
+        .json::<Value>()
+        .await
+        .expect("parse lock follow-up payload");
+    assert_eq!(lock_followup_status, StatusCode::OK);
+    let lock_followup_message_count = lock_followup_payload["output_text"]
+        .as_str()
+        .unwrap_or_default()
+        .trim_start_matches("messages=")
+        .parse::<usize>()
+        .expect("parse lock follow-up message count");
+    assert!(
+        lock_followup_message_count > locked_message_count,
+        "follow-up request should observe persisted session context growth"
+    );
+
+    let lock_session_raw =
+        std::fs::read_to_string(&locked_session_path).expect("read locked session file");
+    assert!(
+        lock_session_raw.lines().count() >= 4,
+        "expected persisted session records after contention flow"
+    );
 
     handle.abort();
 

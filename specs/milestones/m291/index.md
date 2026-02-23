@@ -1,6 +1,6 @@
 # M291 - Tau E2E PRD Execution
 
-Status: Completed
+Status: In Progress
 
 ## Context
 `specs/tau-e2e-testing-prd.md` defines end-to-end coverage targets for Tau runtime behavior (gateway lifecycle, sessions, OpenAI compatibility, tools, safety, memory, training, cortex, dashboard, auth, and failure modes). The repository has broad gateway/integration tests, but no single PRD-aligned conformance suite and no complete scenario-to-test traceability.
@@ -9,6 +9,7 @@ Status: Completed
 - Execute issue `#3386` as the initial implementation task under `#3385`/`#3384`.
 - Execute issue `#3388` to close remaining P0 OpenAI compatibility scenario gaps (`O3-06`, `O3-07`, `O3-08`, `O3-10`).
 - Execute issue `#3390` to close Scenario Group 6 tool-call navigation gaps (`B6-03`, `B6-04`, `B6-05`).
+- Execute issue `#3392` to close Scenario Group 15 lock-contention chaos gap (`CH15-05`).
 - Add/extend deterministic E2E tests to cover all PRD scenario groups with explicit IDs.
 - Close uncovered scenario gaps or document strict `N/A` justifications when a scenario is not applicable to current runtime contracts.
 - Provide CI-tier runnable selectors (`tier_pr`, `tier_nightly`, `tier_weekly`) and verify targeted suites pass.
@@ -19,11 +20,13 @@ Status: Completed
 - Task: #3386
 - Task: #3388
 - Task: #3390
+- Task: #3392
 
 ## Closeout
 - Phase 1 delivered via issue `#3386` and PR `#3387`.
 - Phase 2 delivered via issue `#3388`, closing unresolved P0 OpenAI compatibility scenarios (`O3-06`, `O3-07`, `O3-08`, `O3-10`).
 - Phase 3 delivered via issue `#3390`, closing unresolved tool-call-driven branch/navigation scenarios (`B6-03`, `B6-04`, `B6-05`).
+- Phase 4 in progress via issue `#3392` for lock-contention chaos scenario coverage (`CH15-05`).
 
 ## Success Signals
 - `specs/3386/spec.md`, `specs/3386/plan.md`, and `specs/3386/tasks.md` exist and are implemented.
