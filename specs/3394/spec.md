@@ -1,6 +1,6 @@
 # Spec: Issue #3394 - Cover CH15-06 memory-pressure chaos scenario
 
-Status: Accepted
+Status: Implemented
 
 ## Problem Statement
 `specs/3386/conformance-matrix.md` still marks `CH15-06` as `N/A`. We need deterministic gateway E2E coverage for high session-cardinality pressure (`100` sessions with history) so resilience under memory pressure is exercised by executable tests.
