@@ -1,6 +1,6 @@
 # M291 - Tau E2E PRD Execution
 
-Status: In Progress
+Status: Completed
 
 ## Context
 `specs/tau-e2e-testing-prd.md` defines end-to-end coverage targets for Tau runtime behavior (gateway lifecycle, sessions, OpenAI compatibility, tools, safety, memory, training, cortex, dashboard, auth, and failure modes). The repository has broad gateway/integration tests, but no single PRD-aligned conformance suite and no complete scenario-to-test traceability.
@@ -41,9 +41,10 @@ Status: In Progress
 - Phase 6 delivered via issue `#3396`, closing MCP inventory scenario coverage (`E14-04`).
 - Phase 7 delivered via issue `#3398`, closing tool-builder/WASM scenario coverage (`E14-01`, `E14-02`, `E14-03`).
 - Phase 8 delivered via issue `#3400`, closing provider fallback/circuit-breaker scenario coverage (`F10-01`, `F10-02`, `F10-03`, `F10-04`, `F10-05`, `F10-08`).
-- Phase 9 in progress via issue `#3402` for remaining C5/K13/R8 scenario coverage.
+- Phase 9 delivered via issue `#3402`, closing remaining C5/K13/R8 scenario coverage.
 
 ## Success Signals
 - `specs/3386/spec.md`, `specs/3386/plan.md`, and `specs/3386/tasks.md` exist and are implemented.
 - PRD scenario IDs are traceable to executable tests (or justified `N/A`) with no silent gaps.
 - `cargo test -p tau-gateway` and targeted `cargo test -p tau-integration-tests` E2E runs pass for new/modified tests.
+- Final conformance matrix summary: `Covered=112`, `N/A=0`.
