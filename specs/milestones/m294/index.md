@@ -16,6 +16,7 @@ Tau has broad runtime, gateway, tooling, and operations capabilities, but the to
 ## Closeout
 - Issue `#3416` completed with a repository-wide feature/docs inventory pass and a user-first README rewrite.
 - README links/scripts/entrypoint references were validated from repository root.
+- README now includes integrated end-to-end operating paths, a capability maturity matrix, and explicit gap-closure links (`docs/planning/integration-gap-closure-plan.md`).
 
 ## Success Signals
 - `README.md` provides a concise product overview and capability map.

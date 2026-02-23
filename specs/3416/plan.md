@@ -11,10 +11,15 @@
    - capability summary with realistic boundaries,
    - 5-minute quickstart,
    - common workflows and doc map.
-4. Run GREEN conformance checks on:
+4. Add integration transparency sections:
+   - integrated end-to-end paths that work now,
+   - a maturity matrix by capability area,
+   - a gap/next-step table linking to concrete runbooks/plans for True RL, dashboard, auth verification, and TUI.
+5. Run GREEN conformance checks on:
    - required headings,
    - referenced links/scripts existence,
    - command entrypoints present in workspace.
+   - docs helper unittest suite used by CI.
 
 ## Affected Modules
 - `README.md`
