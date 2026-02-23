@@ -567,9 +567,17 @@ pub struct OperatorShellFrame {
     pub environment: String,
     pub profile: String,
     pub heartbeat: String,
+    pub health_reason: String,
+    pub auth_mode: String,
+    pub auth_required: bool,
     pub rollout_total: usize,
     pub rollout_succeeded: usize,
     pub rollout_failed: usize,
+    pub queue_depth: usize,
+    pub failure_streak: usize,
+    pub primary_alert_code: String,
+    pub primary_alert_severity: String,
+    pub primary_alert_message: String,
     pub auth_rows: Vec<OperatorShellAuthRow>,
     pub alerts: Vec<String>,
     pub actions: Vec<String>,
@@ -582,9 +590,17 @@ impl OperatorShellFrame {
             environment: "local".to_string(),
             profile,
             heartbeat: "healthy".to_string(),
+            health_reason: "dashboard runtime health is nominal".to_string(),
+            auth_mode: "token".to_string(),
+            auth_required: true,
             rollout_total: 12,
             rollout_succeeded: 11,
             rollout_failed: 1,
+            queue_depth: 0,
+            failure_streak: 1,
+            primary_alert_code: "rollout_failure_recent".to_string(),
+            primary_alert_severity: "warning".to_string(),
+            primary_alert_message: "1 rollout failed in last cycle".to_string(),
             auth_rows: vec![
                 OperatorShellAuthRow {
                     provider: "openai".to_string(),
@@ -629,11 +645,19 @@ pub fn render_operator_shell_frame(frame: &OperatorShellFrame, width: usize) -> 
         format!("environment : {}", frame.environment),
         format!("profile     : {}", frame.profile),
         format!("heartbeat   : {}", frame.heartbeat),
+        format!("health.reason : {}", frame.health_reason),
     ];
     output.extend(render_shell_panel("STATUS", &status_lines, panel_width));
     output.push(String::new());
 
-    let mut auth_lines = vec!["provider      mode          state      source".to_string()];
+    let mut auth_lines = vec![
+        format!("auth.mode     : {}", frame.auth_mode),
+        format!(
+            "auth.required : {}",
+            if frame.auth_required { "true" } else { "false" }
+        ),
+        "provider      mode          state      source".to_string(),
+    ];
     if frame.auth_rows.is_empty() {
         auth_lines.push("none".to_string());
     } else {
@@ -655,15 +679,22 @@ pub fn render_operator_shell_frame(frame: &OperatorShellFrame, width: usize) -> 
             "rollouts.pass_rate : {:.2}%",
             compute_pass_rate(frame.rollout_total, frame.rollout_succeeded)
         ),
+        format!("queue.depth        : {}", frame.queue_depth),
+        format!("failure.streak     : {}", frame.failure_streak),
     ];
     output.extend(render_shell_panel("TRAINING", &training_lines, panel_width));
     output.push(String::new());
 
-    let alert_lines = if frame.alerts.is_empty() {
-        vec!["none".to_string()]
+    let mut alert_lines = vec![
+        format!("primary_alert.code     : {}", frame.primary_alert_code),
+        format!("primary_alert.severity : {}", frame.primary_alert_severity),
+        format!("primary_alert.message  : {}", frame.primary_alert_message),
+    ];
+    if frame.alerts.is_empty() {
+        alert_lines.push("none".to_string());
     } else {
-        frame.alerts.clone()
-    };
+        alert_lines.extend(frame.alerts.clone());
+    }
     output.extend(render_shell_panel("ALERTS", &alert_lines, panel_width));
     output.push(String::new());
 
@@ -1158,9 +1189,17 @@ mod tests {
             environment: "staging".to_string(),
             profile: "ops-west".to_string(),
             heartbeat: "degraded".to_string(),
+            health_reason: "queue backlog observed".to_string(),
+            auth_mode: "password-session".to_string(),
+            auth_required: true,
             rollout_total: 4,
             rollout_succeeded: 3,
             rollout_failed: 1,
+            queue_depth: 2,
+            failure_streak: 1,
+            primary_alert_code: "dashboard_queue_backlog".to_string(),
+            primary_alert_severity: "warning".to_string(),
+            primary_alert_message: "runtime backlog detected (queue_depth=2)".to_string(),
             auth_rows: vec![OperatorShellAuthRow {
                 provider: "openrouter".to_string(),
                 mode: "api_key".to_string(),
@@ -1175,5 +1214,38 @@ mod tests {
         assert!(rendered.contains("openrouter"));
         assert!(rendered.contains("rollouts.total"));
         assert!(rendered.contains("75.00%"));
+    }
+
+    #[test]
+    fn spec_c28_regression_operator_shell_auth_panel_requires_auth_mode_and_required_markers() {
+        let frame = OperatorShellFrame::deterministic_fixture("ops-west".to_string());
+        let rendered = super::render_operator_shell_frame(&frame, 72).join("\n");
+
+        assert!(
+            rendered.contains("auth.mode"),
+            "missing auth.mode parity marker in:\n{rendered}"
+        );
+        assert!(
+            rendered.contains("auth.required"),
+            "missing auth.required parity marker in:\n{rendered}"
+        );
+    }
+
+    #[test]
+    fn spec_c28_regression_operator_shell_status_and_alert_panels_require_control_plane_markers() {
+        let frame = OperatorShellFrame::deterministic_fixture("ops-west".to_string());
+        let rendered = super::render_operator_shell_frame(&frame, 72).join("\n");
+
+        for marker in [
+            "health.reason",
+            "queue.depth",
+            "failure.streak",
+            "primary_alert.code",
+        ] {
+            assert!(
+                rendered.contains(marker),
+                "missing control-plane parity marker `{marker}` in:\n{rendered}"
+            );
+        }
     }
 }

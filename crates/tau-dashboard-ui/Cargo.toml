@@ -6,3 +6,6 @@ license.workspace = true
 
 [dependencies]
 leptos.workspace = true
+
+[dev-dependencies]
+tau-tui = { path = "../tau-tui" }
