@@ -9181,6 +9181,97 @@ async fn functional_gateway_auth_session_endpoint_issues_bearer_for_password_mod
 }
 
 #[tokio::test]
+async fn conformance_gateway_auth_session_endpoint_enforces_mode_and_password_lifecycle_contracts()
+{
+    let client = Client::new();
+
+    let token_temp = tempdir().expect("tempdir");
+    let token_state = test_state_with_auth(
+        token_temp.path(),
+        10_000,
+        GatewayOpenResponsesAuthMode::Token,
+        Some("secret"),
+        None,
+        60,
+        120,
+    );
+    let (token_addr, token_handle) = spawn_test_server(token_state).await.expect("spawn server");
+
+    let mode_mismatch = client
+        .post(format!(
+            "http://{token_addr}{GATEWAY_AUTH_SESSION_ENDPOINT}"
+        ))
+        .json(&json!({"password":"irrelevant"}))
+        .send()
+        .await
+        .expect("mode mismatch request");
+    assert_eq!(mode_mismatch.status(), StatusCode::BAD_REQUEST);
+    let mode_mismatch_payload = mode_mismatch
+        .json::<Value>()
+        .await
+        .expect("parse mode mismatch payload");
+    assert_eq!(
+        mode_mismatch_payload["error"]["code"].as_str(),
+        Some("auth_mode_mismatch")
+    );
+    token_handle.abort();
+
+    let password_temp = tempdir().expect("tempdir");
+    let password_state = test_state_with_auth(
+        password_temp.path(),
+        10_000,
+        GatewayOpenResponsesAuthMode::PasswordSession,
+        None,
+        Some("pw-secret"),
+        60,
+        120,
+    );
+    let (password_addr, password_handle) = spawn_test_server(password_state)
+        .await
+        .expect("spawn server");
+
+    let invalid = client
+        .post(format!(
+            "http://{password_addr}{GATEWAY_AUTH_SESSION_ENDPOINT}"
+        ))
+        .json(&json!({"password":"wrong"}))
+        .send()
+        .await
+        .expect("invalid password request");
+    assert_eq!(invalid.status(), StatusCode::UNAUTHORIZED);
+    let invalid_payload = invalid.json::<Value>().await.expect("invalid payload");
+    assert_eq!(
+        invalid_payload["error"]["code"].as_str(),
+        Some("invalid_credentials")
+    );
+
+    let issued = client
+        .post(format!(
+            "http://{password_addr}{GATEWAY_AUTH_SESSION_ENDPOINT}"
+        ))
+        .json(&json!({"password":"pw-secret"}))
+        .send()
+        .await
+        .expect("issue password session");
+    assert_eq!(issued.status(), StatusCode::OK);
+    let issued_payload = issued.json::<Value>().await.expect("issued payload");
+    let token = issued_payload["access_token"]
+        .as_str()
+        .expect("access_token")
+        .to_string();
+
+    let authorized = client
+        .get(format!("http://{password_addr}{GATEWAY_STATUS_ENDPOINT}"))
+        .bearer_auth(token)
+        .send()
+        .await
+        .expect("authorized status request");
+    assert_eq!(authorized.status(), StatusCode::OK);
+
+    password_handle.abort();
+}
+
+#[tokio::test]
 async fn functional_gateway_ws_endpoint_rejects_unauthorized_upgrade() {
     let temp = tempdir().expect("tempdir");
     let state = test_state(temp.path(), 10_000, "secret");
