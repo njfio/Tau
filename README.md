@@ -187,6 +187,19 @@ Clean generated local artifacts:
 ./scripts/dev/clean-local-artifacts.sh
 ```
 
+## Examples and Starter Assets
+
+Checked-in example assets and starter package references:
+
+- `./examples/starter/package.json`
+- `./examples/extensions`
+- `./examples/extensions/issue-assistant/extension.json`
+- `./examples/extensions/issue-assistant/payload.json`
+- `./examples/events`
+- `./examples/events-state.json`
+
+See `./examples/README.md` for package and asset walkthrough details.
+
 ## Docs by Role
 
 Primary docs index: [`docs/README.md`](docs/README.md)
