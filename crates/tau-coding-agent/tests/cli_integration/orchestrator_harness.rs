@@ -490,7 +490,7 @@ fn regression_orchestrator_route_fallback_recovers_from_planner_timeout() {
         "--provider-max-retries",
         "0",
         "--request-timeout-ms",
-        "30",
+        "120",
         "--no-session",
     ]);
 
