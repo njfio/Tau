@@ -41,7 +41,7 @@
 | E14-01 | P2 | N/A | n/a | Tool-builder/WASM sandbox/MCP inventory routes in PRD are not represented by current gateway-openresponses endpoint contract. |
 | E14-02 | P2 | N/A | n/a | Tool-builder/WASM sandbox/MCP inventory routes in PRD are not represented by current gateway-openresponses endpoint contract. |
 | E14-03 | P2 | N/A | n/a | Tool-builder/WASM sandbox/MCP inventory routes in PRD are not represented by current gateway-openresponses endpoint contract. |
-| E14-04 | P2 | N/A | n/a | Tool-builder/WASM sandbox/MCP inventory routes in PRD are not represented by current gateway-openresponses endpoint contract. |
+| E14-04 | P2 | Covered | integration_spec_3396_c01_c02_gateway_tools_inventory_includes_mcp_prefixed_tool | MCP-prefixed tool registrations are surfaced by `/gateway/tools` inventory contract. |
 | F10-01 | P1 | N/A | n/a | Provider fallback chain and circuit-breaker telemetry are not exposed via current gateway-openresponses public test surface. |
 | F10-02 | P1 | N/A | n/a | Provider fallback chain and circuit-breaker telemetry are not exposed via current gateway-openresponses public test surface. |
 | F10-03 | P1 | N/A | n/a | Provider fallback chain and circuit-breaker telemetry are not exposed via current gateway-openresponses public test surface. |

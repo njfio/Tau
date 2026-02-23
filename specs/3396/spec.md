@@ -1,6 +1,6 @@
 # Spec: Issue #3396 - Cover E14-04 MCP inventory scenario in gateway E2E
 
-Status: Accepted
+Status: Implemented
 
 ## Problem Statement
 `specs/3386/conformance-matrix.md` marks `E14-04` as `N/A`, but the current gateway contract already exposes `/gateway/tools` inventory. We need deterministic coverage proving MCP-style registered tools are surfaced by this endpoint.
