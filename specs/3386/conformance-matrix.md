@@ -38,9 +38,9 @@
 | D12-04 | P2 | Covered | tier_nightly_p2_observability_matrix | Dashboard status/widgets/alerts/stream/timeline covered. |
 | D12-05 | P2 | Covered | integration_dashboard_stream_supports_reconnect_reset_and_snapshot_updates | SSE reconnect behavior covered in existing integration test. |
 | D12-06 | P2 | Covered | tier_nightly_p2_observability_matrix | Dashboard status/widgets/alerts/stream/timeline covered. |
-| E14-01 | P2 | N/A | n/a | Tool-builder/WASM sandbox/MCP inventory routes in PRD are not represented by current gateway-openresponses endpoint contract. |
-| E14-02 | P2 | N/A | n/a | Tool-builder/WASM sandbox/MCP inventory routes in PRD are not represented by current gateway-openresponses endpoint contract. |
-| E14-03 | P2 | N/A | n/a | Tool-builder/WASM sandbox/MCP inventory routes in PRD are not represented by current gateway-openresponses endpoint contract. |
+| E14-01 | P2 | Covered | functional_tool_builder_tool_builds_wasm_artifacts | Tool builder generates deterministic WASM/module/manifest artifacts. |
+| E14-02 | P2 | Covered | integration_tool_builder_generated_tool_executes_through_extension_runtime | Generated tool executes through extension runtime with deterministic success payload. |
+| E14-03 | P2 | Covered | regression_build_generated_wasm_tool_fails_closed_when_wasm_spins_forever | Misbehaving infinite-loop WASM fails closed via sandbox validation guardrails. |
 | E14-04 | P2 | Covered | integration_spec_3396_c01_c02_gateway_tools_inventory_includes_mcp_prefixed_tool | MCP-prefixed tool registrations are surfaced by `/gateway/tools` inventory contract. |
 | F10-01 | P1 | N/A | n/a | Provider fallback chain and circuit-breaker telemetry are not exposed via current gateway-openresponses public test surface. |
 | F10-02 | P1 | N/A | n/a | Provider fallback chain and circuit-breaker telemetry are not exposed via current gateway-openresponses public test surface. |
