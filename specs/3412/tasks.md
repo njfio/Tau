@@ -42,8 +42,16 @@
 - `cargo test -p tau-tools tool_policy_config::tests::unit_tool_policy_json_exposes_protected_path_controls -- --exact --test-threads=1` -> `1 passed; 0 failed`
   - used as dependent compile-path proof after clearing memory/session unsigned SQLite compile errors.
 - Hygiene:
-  - `cargo fmt --check` -> passed
-  - `cargo clippy -p tau-memory -p tau-session -- -D warnings` -> passed
+  - `cargo fmt --all -- --check` -> passed
+  - `cargo clippy -p tau-memory -p tau-session --all-targets --all-features -- -D warnings` -> passed
+- Pre-PR workspace gate attempts:
+  - `cargo test --workspace` -> failed outside #3412 scope:
+    - `live_rl_runtime::tests::spec_c08_regression_live_apo_skips_adoption_without_significant_improvement`
+    - assertion failed at `crates/tau-coding-agent/src/live_rl_runtime.rs:2715` (`latest.is_none()`)
+    - targeted rerun reproduced the same failure deterministically.
+  - `cargo clippy --workspace --all-targets --all-features -- -D warnings` -> failed outside #3412 scope:
+    - `crates/tau-ai/tests/provider_http_integration.rs:120` (`clippy::await_holding_lock`)
+    - `crates/tau-algorithm/src/reward_inference.rs:119` (`clippy::items_after_test_module`)
 
 ### Test Tier Matrix
 
