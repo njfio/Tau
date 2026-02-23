@@ -1236,23 +1236,29 @@ mod tests {
 
     #[test]
     fn spec_c04_runner_config_validation_rejects_invalid_retry_backoff() {
-        let mut config = RunnerConfig::default();
-        config.transient_error_backoff_initial = Duration::from_millis(0);
+        let config = RunnerConfig {
+            transient_error_backoff_initial: Duration::from_millis(0),
+            ..RunnerConfig::default()
+        };
         let initial_error = config.validate().expect_err("zero initial should fail");
         assert!(initial_error
             .to_string()
             .contains("transient_error_backoff_initial"));
 
-        let mut config = RunnerConfig::default();
-        config.transient_error_backoff_max = Duration::from_millis(0);
+        let config = RunnerConfig {
+            transient_error_backoff_max: Duration::from_millis(0),
+            ..RunnerConfig::default()
+        };
         let max_error = config.validate().expect_err("zero max should fail");
         assert!(max_error
             .to_string()
             .contains("transient_error_backoff_max"));
 
-        let mut config = RunnerConfig::default();
-        config.transient_error_backoff_initial = Duration::from_millis(50);
-        config.transient_error_backoff_max = Duration::from_millis(10);
+        let config = RunnerConfig {
+            transient_error_backoff_initial: Duration::from_millis(50),
+            transient_error_backoff_max: Duration::from_millis(10),
+            ..RunnerConfig::default()
+        };
         let order_error = config.validate().expect_err("max<initial should fail");
         assert!(order_error
             .to_string()
@@ -2125,8 +2131,10 @@ mod tests {
 
     #[tokio::test]
     async fn functional_tau_agent_executor_rejects_rollout_on_hard_gate_when_configured() {
-        let mut policy = super::SafetyRewardPolicy::default();
-        policy.reject_rollout_on_hard_gate = true;
+        let policy = super::SafetyRewardPolicy {
+            reject_rollout_on_hard_gate: true,
+            ..super::SafetyRewardPolicy::default()
+        };
         let executor = TauAgentExecutor::new(|_resources| {
             Agent::new(Arc::new(MockClient), AgentConfig::default())
         })

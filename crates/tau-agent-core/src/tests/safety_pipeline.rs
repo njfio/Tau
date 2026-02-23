@@ -498,8 +498,10 @@ async fn regression_secret_leak_block_fails_closed_when_outbound_payload_seriali
             usage: ChatUsage::default(),
         }])),
     });
-    let mut config = AgentConfig::default();
-    config.temperature = Some(f32::NAN);
+    let config = AgentConfig {
+        temperature: Some(f32::NAN),
+        ..AgentConfig::default()
+    };
     let mut agent = Agent::new(client, config);
     agent.set_safety_policy(SafetyPolicy {
         secret_leak_mode: SafetyMode::Block,

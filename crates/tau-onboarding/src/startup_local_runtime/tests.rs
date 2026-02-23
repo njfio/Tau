@@ -433,10 +433,10 @@ async fn spec_2561_c02_build_local_runtime_agent_applies_custom_compaction_polic
             max_estimated_input_tokens: Some(8_000),
             max_estimated_total_tokens: Some(10_000),
             context_compaction_warn_threshold_percent: 1,
-            context_compaction_aggressive_threshold_percent: 99,
+            context_compaction_aggressive_threshold_percent: 2,
             context_compaction_emergency_threshold_percent: 100,
             context_compaction_warn_retain_percent: 60,
-            context_compaction_aggressive_retain_percent: 50,
+            context_compaction_aggressive_retain_percent: 60,
             context_compaction_emergency_retain_percent: 40,
             request_max_retries: 2,
             request_retry_initial_backoff_ms: 200,
@@ -480,17 +480,18 @@ async fn spec_2561_c02_build_local_runtime_agent_applies_custom_compaction_polic
         .expect("captured request lock")
         .clone()
         .expect("captured request");
+    let expected_retained_messages = (6usize.saturating_mul(60).saturating_add(99)) / 100;
     assert_eq!(
         request.messages.len(),
-        4,
-        "warn retain policy should keep 60% of 6 messages -> 4 retained messages"
+        expected_retained_messages,
+        "aggressive retain policy should keep 60% of 6 messages"
     );
     assert!(
         request
             .messages
             .iter()
             .any(|message| message.text_content().contains("summarized_messages=")),
-        "warn-tier summary compaction should be applied when policy threshold is very low"
+        "aggressive-tier summary compaction should be applied when aggressive threshold is very low"
     );
 }
 

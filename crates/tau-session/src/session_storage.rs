@@ -123,9 +123,16 @@ pub(super) fn maybe_import_legacy_jsonl_into_sqlite(
 
     let connection = open_session_sqlite_connection(path)?;
     initialize_session_sqlite_schema(&connection)?;
-    let existing_count: u64 = connection
+    let existing_count: i64 = connection
         .query_row("SELECT COUNT(1) FROM session_entries", [], |row| row.get(0))
         .context("failed to inspect sqlite session entry count")?;
+    if existing_count < 0 {
+        bail!(
+            "invalid sqlite session entry count {} in {}",
+            existing_count,
+            path.display()
+        );
+    }
     if existing_count > 0 {
         return Ok(0);
     }
@@ -410,8 +417,12 @@ fn read_session_entries_sqlite(path: &Path) -> Result<Vec<SessionEntry>> {
     let mut rows = statement.query([])?;
     let mut entries = Vec::new();
     while let Some(row) = rows.next()? {
-        let id: u64 = row.get(0)?;
-        let parent_id: Option<u64> = row.get(1)?;
+        let id_raw: i64 = row.get(0)?;
+        let parent_raw: Option<i64> = row.get(1)?;
+        let id = sqlite_i64_to_u64(id_raw, "id", path)?;
+        let parent_id = parent_raw
+            .map(|value| sqlite_i64_to_u64(value, "parent_id", path))
+            .transpose()?;
         let message_json: String = row.get(2)?;
         let message = serde_json::from_str::<Message>(&message_json).with_context(|| {
             format!(
@@ -435,6 +446,11 @@ fn write_session_entries_sqlite(path: &Path, entries: &[SessionEntry]) -> Result
     let transaction = connection.transaction()?;
     transaction.execute("DELETE FROM session_entries", [])?;
     for entry in entries {
+        let id = sqlite_u64_to_i64(entry.id, "id", path)?;
+        let parent_id = entry
+            .parent_id
+            .map(|value| sqlite_u64_to_i64(value, "parent_id", path))
+            .transpose()?;
         let message_json =
             serde_json::to_string(&entry.message).context("failed to encode session message")?;
         transaction.execute(
@@ -442,11 +458,33 @@ fn write_session_entries_sqlite(path: &Path, entries: &[SessionEntry]) -> Result
             INSERT INTO session_entries (id, parent_id, message_json)
             VALUES (?1, ?2, ?3)
             "#,
-            params![entry.id, entry.parent_id, message_json],
+            params![id, parent_id, message_json],
         )?;
     }
     transaction.commit()?;
     Ok(())
+}
+
+fn sqlite_i64_to_u64(value: i64, field: &str, path: &Path) -> Result<u64> {
+    u64::try_from(value).with_context(|| {
+        format!(
+            "invalid sqlite {} value {} in {}",
+            field,
+            value,
+            path.display()
+        )
+    })
+}
+
+fn sqlite_u64_to_i64(value: u64, field: &str, path: &Path) -> Result<i64> {
+    i64::try_from(value).with_context(|| {
+        format!(
+            "sqlite {} value {} exceeds INTEGER range in {}",
+            field,
+            value,
+            path.display()
+        )
+    })
 }
 
 fn read_session_entries_postgres(path: &Path) -> Result<Vec<SessionEntry>> {

@@ -5,7 +5,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use anyhow::{Context, Result};
 use arc_swap::ArcSwap;
@@ -20,6 +20,7 @@ use tracing::{info, warn};
 use tau_core::write_text_atomic;
 
 const DEFAULT_PROFILE_NAME: &str = "default";
+const PROFILE_POLICY_BRIDGE_POLL_INTERVAL_MS: u64 = 200;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct RuntimeHeartbeatActivePolicyConfig {
@@ -119,7 +120,7 @@ fn start_profile_store_watcher(
             let matches_profile = event.paths.is_empty()
                 || event.paths.iter().any(|candidate_path| {
                     candidate_path == &watched_profile_path
-                        || candidate_path == &watched_profile_parent
+                        || candidate_path.starts_with(&watched_profile_parent)
                         || watched_profile_name
                             .as_ref()
                             .is_some_and(|name| candidate_path.file_name() == Some(name))
@@ -336,6 +337,11 @@ pub(crate) fn start_runtime_heartbeat_profile_policy_bridge(
         for diagnostic in watcher_diagnostics {
             emit_bridge_outcome(&ProfilePolicyBridgeOutcome::Invalid { reason: diagnostic });
         }
+        let mut poll_tick = tokio::time::interval(Duration::from_millis(
+            PROFILE_POLICY_BRIDGE_POLL_INTERVAL_MS,
+        ));
+        poll_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        let _ = poll_tick.tick().await;
 
         loop {
             tokio::select! {
@@ -370,6 +376,12 @@ pub(crate) fn start_runtime_heartbeat_profile_policy_bridge(
                                 ),
                             });
                         }
+                    }
+                }
+                _ = poll_tick.tick() => {
+                    let outcome = bridge.evaluate_if_changed(false);
+                    if !matches!(outcome, ProfilePolicyBridgeOutcome::NoChange { .. }) {
+                        emit_bridge_outcome(&outcome);
                     }
                 }
                 _ = &mut shutdown_rx => {

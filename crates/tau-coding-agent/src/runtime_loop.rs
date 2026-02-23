@@ -1426,7 +1426,7 @@ mod tests {
     use std::path::{Path, PathBuf};
     use std::sync::{
         atomic::{AtomicUsize, Ordering},
-        Arc, Mutex,
+        Arc, OnceLock,
     };
     use tau_agent_core::{Agent, AgentConfig};
     use tau_ai::{ChatRequest, ChatResponse, ChatUsage, LlmClient, Message, Provider, TauAiError};
@@ -1520,7 +1520,11 @@ mod tests {
 
     static TTY_RUNNER_CALLS: AtomicUsize = AtomicUsize::new(0);
     static STDIN_RUNNER_CALLS: AtomicUsize = AtomicUsize::new(0);
-    static INTERACTIVE_RUNNER_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    fn interactive_runner_test_lock() -> &'static AsyncMutex<()> {
+        static INTERACTIVE_RUNNER_TEST_LOCK: OnceLock<AsyncMutex<()>> = OnceLock::new();
+        INTERACTIVE_RUNNER_TEST_LOCK.get_or_init(|| AsyncMutex::new(()))
+    }
 
     struct InteractiveRunnerHarness {
         tool_policy_json: serde_json::Value,
@@ -1707,9 +1711,7 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn regression_2548_run_interactive_with_runner_dispatches_tty_mode() {
-        let _guard = INTERACTIVE_RUNNER_TEST_LOCK
-            .lock()
-            .expect("interactive runner test lock");
+        let _guard = interactive_runner_test_lock().lock().await;
         TTY_RUNNER_CALLS.store(0, Ordering::Relaxed);
         STDIN_RUNNER_CALLS.store(0, Ordering::Relaxed);
 
@@ -1753,9 +1755,7 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn regression_2548_run_interactive_with_runner_dispatches_stdin_mode() {
-        let _guard = INTERACTIVE_RUNNER_TEST_LOCK
-            .lock()
-            .expect("interactive runner test lock");
+        let _guard = interactive_runner_test_lock().lock().await;
         TTY_RUNNER_CALLS.store(0, Ordering::Relaxed);
         STDIN_RUNNER_CALLS.store(0, Ordering::Relaxed);
 

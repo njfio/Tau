@@ -225,6 +225,7 @@ impl GatewayToolRegistrar for FixtureGatewayMcpToolRegistrar {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn test_state_with_client_and_auth(
     root: &Path,
     max_input_chars: usize,
@@ -7287,13 +7288,12 @@ async fn regression_spec_2685_c02_training_status_endpoint_returns_unavailable_p
         training_status_payload["training"]["run_state"],
         Value::String("unknown".to_string())
     );
-    assert_eq!(
+    assert!(
         training_status_payload["training"]["diagnostics"]
             .as_array()
             .map(Vec::len)
             .unwrap_or(0)
-            > 0,
-        true
+            > 0
     );
 
     handle.abort();

@@ -1119,7 +1119,7 @@ mod tests {
             &health,
             &guardrail,
             "cycle-one",
-            &[large_reason.clone()],
+            std::slice::from_ref(&large_reason),
         )
         .expect("append first gateway cycle report");
         append_gateway_cycle_report(

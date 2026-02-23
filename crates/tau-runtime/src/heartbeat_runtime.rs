@@ -10,7 +10,9 @@ use std::time::{Duration, SystemTime};
 
 use anyhow::{Context, Result};
 use arc_swap::ArcSwap;
-use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
+use notify::RecommendedWatcher;
+#[cfg(not(test))]
+use notify::{Event, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tau_agent_core::{
@@ -301,6 +303,7 @@ struct RuntimeHeartbeatHotReloadPolicy {
     interval_ms: Option<u64>,
 }
 
+#[cfg_attr(test, allow(dead_code))]
 #[derive(Debug)]
 enum RuntimeHeartbeatHotReloadWatcherEvent {
     PolicyChanged,
@@ -337,77 +340,86 @@ struct RuntimeHeartbeatHotReloadState {
     pending_policy_reload: bool,
     watcher: Option<RecommendedWatcher>,
     watcher_rx: Option<mpsc::UnboundedReceiver<RuntimeHeartbeatHotReloadWatcherEvent>>,
+    poll_fallback_enabled: bool,
     pending_watcher_diagnostics: Vec<String>,
     last_policy_fingerprint: Option<RuntimeHeartbeatHotReloadPolicyFingerprint>,
 }
 
 impl RuntimeHeartbeatHotReloadState {
     fn new(policy_path: PathBuf) -> Self {
+        #[allow(unused_mut)]
         let mut state = Self {
             pending_policy_reload: policy_path.exists(),
             policy_path: policy_path.clone(),
             watcher: None,
             watcher_rx: None,
+            poll_fallback_enabled: true,
             pending_watcher_diagnostics: Vec::new(),
             last_policy_fingerprint: Some(RuntimeHeartbeatHotReloadPolicyFingerprint::read(
                 &policy_path,
             )),
         };
 
-        let Some(policy_parent) = policy_path.parent().map(Path::to_path_buf) else {
-            state.pending_watcher_diagnostics.push(format!(
-                "hot_reload_policy_watch_parent_missing: path={}",
-                policy_path.display()
-            ));
-            return state;
-        };
-
-        let (watch_tx, watch_rx) =
-            mpsc::unbounded_channel::<RuntimeHeartbeatHotReloadWatcherEvent>();
-        let watched_policy_path = policy_path.clone();
-        let watched_policy_name = policy_path.file_name().map(std::ffi::OsStr::to_os_string);
-        let watcher =
-            notify::recommended_watcher(move |result: notify::Result<Event>| match result {
-                Ok(event) => {
-                    let matches_policy = event.paths.iter().any(|candidate_path| {
-                        candidate_path == &watched_policy_path
-                            || watched_policy_name
-                                .as_ref()
-                                .is_some_and(|name| candidate_path.file_name() == Some(name))
-                    });
-                    if matches_policy {
-                        let _ = watch_tx.send(RuntimeHeartbeatHotReloadWatcherEvent::PolicyChanged);
-                    }
-                }
-                Err(error) => {
-                    let _ = watch_tx.send(RuntimeHeartbeatHotReloadWatcherEvent::WatchError(
-                        error.to_string(),
-                    ));
-                }
-            });
-
-        let mut watcher = match watcher {
-            Ok(watcher) => watcher,
-            Err(error) => {
+        #[cfg(not(test))]
+        {
+            let Some(policy_parent) = policy_path.parent().map(Path::to_path_buf) else {
                 state.pending_watcher_diagnostics.push(format!(
-                    "hot_reload_policy_watch_init_failed: path={} error={error}",
+                    "hot_reload_policy_watch_parent_missing: path={}",
                     policy_path.display()
                 ));
                 return state;
-            }
-        };
+            };
 
-        if let Err(error) = watcher.watch(policy_parent.as_path(), RecursiveMode::NonRecursive) {
-            state.pending_watcher_diagnostics.push(format!(
-                "hot_reload_policy_watch_start_failed: path={} parent={} error={error}",
-                policy_path.display(),
-                policy_parent.display()
-            ));
-            return state;
+            let (watch_tx, watch_rx) =
+                mpsc::unbounded_channel::<RuntimeHeartbeatHotReloadWatcherEvent>();
+            let watched_policy_path = policy_path.clone();
+            let watched_policy_name = policy_path.file_name().map(std::ffi::OsStr::to_os_string);
+            let watcher =
+                notify::recommended_watcher(move |result: notify::Result<Event>| match result {
+                    Ok(event) => {
+                        let matches_policy = event.paths.iter().any(|candidate_path| {
+                            candidate_path == &watched_policy_path
+                                || watched_policy_name
+                                    .as_ref()
+                                    .is_some_and(|name| candidate_path.file_name() == Some(name))
+                        });
+                        if matches_policy {
+                            let _ =
+                                watch_tx.send(RuntimeHeartbeatHotReloadWatcherEvent::PolicyChanged);
+                        }
+                    }
+                    Err(error) => {
+                        let _ = watch_tx.send(RuntimeHeartbeatHotReloadWatcherEvent::WatchError(
+                            error.to_string(),
+                        ));
+                    }
+                });
+
+            let mut watcher = match watcher {
+                Ok(watcher) => watcher,
+                Err(error) => {
+                    state.pending_watcher_diagnostics.push(format!(
+                        "hot_reload_policy_watch_init_failed: path={} error={error}",
+                        policy_path.display()
+                    ));
+                    return state;
+                }
+            };
+
+            if let Err(error) = watcher.watch(policy_parent.as_path(), RecursiveMode::NonRecursive)
+            {
+                state.pending_watcher_diagnostics.push(format!(
+                    "hot_reload_policy_watch_start_failed: path={} parent={} error={error}",
+                    policy_path.display(),
+                    policy_parent.display()
+                ));
+                return state;
+            }
+
+            state.watcher = Some(watcher);
+            state.watcher_rx = Some(watch_rx);
         }
 
-        state.watcher = Some(watcher);
-        state.watcher_rx = Some(watch_rx);
         state
     }
 
@@ -420,45 +432,46 @@ impl RuntimeHeartbeatHotReloadState {
             outcome.diagnostics.push(diagnostic);
         }
 
-        let Some(watcher_rx) = self.watcher_rx.as_mut() else {
-            return;
-        };
-
-        loop {
-            match watcher_rx.try_recv() {
-                Ok(RuntimeHeartbeatHotReloadWatcherEvent::PolicyChanged) => {
-                    self.pending_policy_reload = true;
-                }
-                Ok(RuntimeHeartbeatHotReloadWatcherEvent::WatchError(error)) => {
-                    push_unique_reason_code(
-                        &mut outcome.reason_codes,
-                        RUNTIME_HEARTBEAT_REASON_HOT_RELOAD_POLICY_INVALID,
-                    );
-                    outcome.diagnostics.push(format!(
-                        "hot_reload_policy_watch_error: path={} error={error}",
-                        self.policy_path.display()
-                    ));
-                }
-                Err(mpsc::error::TryRecvError::Empty) => {
-                    break;
-                }
-                Err(mpsc::error::TryRecvError::Disconnected) => {
-                    self.watcher_rx = None;
-                    self.watcher = None;
-                    push_unique_reason_code(
-                        &mut outcome.reason_codes,
-                        RUNTIME_HEARTBEAT_REASON_HOT_RELOAD_POLICY_INVALID,
-                    );
-                    outcome.diagnostics.push(format!(
-                        "hot_reload_policy_watch_disconnected: path={}",
-                        self.policy_path.display()
-                    ));
-                    break;
+        if let Some(watcher_rx) = self.watcher_rx.as_mut() {
+            loop {
+                match watcher_rx.try_recv() {
+                    Ok(RuntimeHeartbeatHotReloadWatcherEvent::PolicyChanged) => {
+                        self.pending_policy_reload = true;
+                    }
+                    Ok(RuntimeHeartbeatHotReloadWatcherEvent::WatchError(error)) => {
+                        push_unique_reason_code(
+                            &mut outcome.reason_codes,
+                            RUNTIME_HEARTBEAT_REASON_HOT_RELOAD_POLICY_INVALID,
+                        );
+                        outcome.diagnostics.push(format!(
+                            "hot_reload_policy_watch_error: path={} error={error}",
+                            self.policy_path.display()
+                        ));
+                    }
+                    Err(mpsc::error::TryRecvError::Empty) => {
+                        break;
+                    }
+                    Err(mpsc::error::TryRecvError::Disconnected) => {
+                        self.watcher_rx = None;
+                        self.watcher = None;
+                        push_unique_reason_code(
+                            &mut outcome.reason_codes,
+                            RUNTIME_HEARTBEAT_REASON_HOT_RELOAD_POLICY_INVALID,
+                        );
+                        outcome.diagnostics.push(format!(
+                            "hot_reload_policy_watch_disconnected: path={}",
+                            self.policy_path.display()
+                        ));
+                        break;
+                    }
                 }
             }
         }
 
-        if self.pending_policy_reload || self.watcher_rx.is_none() {
+        if self.pending_policy_reload {
+            return;
+        }
+        if !self.poll_fallback_enabled {
             return;
         }
         let current_fingerprint =
@@ -1729,10 +1742,21 @@ mod tests {
     use arc_swap::ArcSwap;
     use serde_json::{json, Value};
     use std::path::{Path, PathBuf};
+    use std::sync::{Arc, LazyLock};
     use std::time::Duration;
     use tau_agent_core::{FileMemoryStore, MemoryLifecycleMaintenancePolicy};
     use tempfile::tempdir;
-    use tokio::sync::mpsc;
+    use tokio::sync::{mpsc, OwnedSemaphorePermit, Semaphore};
+
+    static HEARTBEAT_TEST_SERIAL: LazyLock<Arc<Semaphore>> =
+        LazyLock::new(|| Arc::new(Semaphore::new(1)));
+
+    async fn heartbeat_test_serial_guard() -> OwnedSemaphorePermit {
+        Arc::clone(&HEARTBEAT_TEST_SERIAL)
+            .acquire_owned()
+            .await
+            .expect("heartbeat test serial permit")
+    }
 
     fn scheduler_config(root: &Path, enabled: bool) -> RuntimeHeartbeatSchedulerConfig {
         RuntimeHeartbeatSchedulerConfig {
@@ -1756,16 +1780,23 @@ mod tests {
 
     async fn wait_for_tick(state_path: &Path, timeout: Duration) {
         let deadline = tokio::time::Instant::now() + timeout;
+        let mut last_snapshot = inspect_runtime_heartbeat(state_path);
         while tokio::time::Instant::now() < deadline {
             let snapshot = inspect_runtime_heartbeat(state_path);
+            last_snapshot = snapshot.clone();
             if snapshot.tick_count > 0 {
                 return;
             }
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
         panic!(
-            "runtime heartbeat did not report a tick before timeout for {}",
-            state_path.display()
+            "runtime heartbeat did not report a tick before timeout for {}; last_snapshot={{run_state={}, reason_code={}, interval_ms={}, tick_count={}, diagnostics={:?}}}",
+            state_path.display(),
+            last_snapshot.run_state,
+            last_snapshot.reason_code,
+            last_snapshot.interval_ms,
+            last_snapshot.tick_count,
+            last_snapshot.diagnostics
         );
     }
 
@@ -1909,6 +1940,7 @@ mod tests {
 
     #[tokio::test]
     async fn functional_runtime_heartbeat_scheduler_persists_tick_state_and_reason_codes() {
+        let _serial_guard = heartbeat_test_serial_guard().await;
         let temp = tempdir().expect("tempdir");
         std::fs::create_dir_all(temp.path().join("queue")).expect("create queue dir");
         std::fs::create_dir_all(temp.path().join("events")).expect("create events dir");
@@ -1945,6 +1977,7 @@ mod tests {
 
     #[tokio::test]
     async fn integration_runtime_heartbeat_scheduler_removes_temp_files_when_stale() {
+        let _serial_guard = heartbeat_test_serial_guard().await;
         let temp = tempdir().expect("tempdir");
         std::fs::create_dir_all(temp.path().join("queue")).expect("create queue dir");
         std::fs::create_dir_all(temp.path().join("tmp")).expect("create temp dir");
@@ -1971,6 +2004,7 @@ mod tests {
 
     #[tokio::test]
     async fn integration_spec_2465_c01_runtime_heartbeat_hot_reload_applies_interval_updates() {
+        let _serial_guard = heartbeat_test_serial_guard().await;
         let temp = tempdir().expect("tempdir");
         std::fs::create_dir_all(temp.path().join("queue")).expect("create queue dir");
         std::fs::write(temp.path().join("queue/state.json"), "{}").expect("write queue state");
@@ -2000,6 +2034,7 @@ mod tests {
     #[tokio::test]
     async fn regression_spec_2465_c02_runtime_heartbeat_without_policy_change_keeps_interval_stable(
     ) {
+        let _serial_guard = heartbeat_test_serial_guard().await;
         let temp = tempdir().expect("tempdir");
         std::fs::create_dir_all(temp.path().join("queue")).expect("create queue dir");
         std::fs::write(temp.path().join("queue/state.json"), "{}").expect("write queue state");
@@ -2028,6 +2063,7 @@ mod tests {
     #[tokio::test]
     async fn regression_spec_2465_c03_runtime_heartbeat_invalid_hot_reload_policy_preserves_last_good_interval(
     ) {
+        let _serial_guard = heartbeat_test_serial_guard().await;
         let temp = tempdir().expect("tempdir");
         std::fs::create_dir_all(temp.path().join("queue")).expect("create queue dir");
         std::fs::write(temp.path().join("queue/state.json"), "{}").expect("write queue state");
@@ -2062,6 +2098,7 @@ mod tests {
     #[tokio::test]
     async fn integration_spec_2487_c01_runtime_heartbeat_profile_toml_hot_reload_applies_interval_update(
     ) {
+        let _serial_guard = heartbeat_test_serial_guard().await;
         let temp = tempdir().expect("tempdir");
         std::fs::create_dir_all(temp.path().join("queue")).expect("create queue dir");
         std::fs::write(temp.path().join("queue/state.json"), "{}").expect("write queue state");
@@ -2090,6 +2127,7 @@ mod tests {
     #[tokio::test]
     async fn regression_spec_2487_c02_runtime_heartbeat_profile_toml_without_change_keeps_interval_stable(
     ) {
+        let _serial_guard = heartbeat_test_serial_guard().await;
         let temp = tempdir().expect("tempdir");
         std::fs::create_dir_all(temp.path().join("queue")).expect("create queue dir");
         std::fs::write(temp.path().join("queue/state.json"), "{}").expect("write queue state");
@@ -2118,6 +2156,7 @@ mod tests {
     #[tokio::test]
     async fn regression_spec_2487_c03_runtime_heartbeat_invalid_profile_toml_preserves_last_good_interval(
     ) {
+        let _serial_guard = heartbeat_test_serial_guard().await;
         let temp = tempdir().expect("tempdir");
         std::fs::create_dir_all(temp.path().join("queue")).expect("create queue dir");
         std::fs::write(temp.path().join("queue/state.json"), "{}").expect("write queue state");
@@ -2151,6 +2190,7 @@ mod tests {
 
     #[tokio::test]
     async fn functional_spec_2487_c04_runtime_heartbeat_hot_reload_uses_arc_swap_active_config() {
+        let _serial_guard = heartbeat_test_serial_guard().await;
         let temp = tempdir().expect("tempdir");
         std::fs::create_dir_all(temp.path().join("queue")).expect("create queue dir");
         std::fs::write(temp.path().join("queue/state.json"), "{}").expect("write queue state");
@@ -2197,6 +2237,7 @@ mod tests {
             pending_policy_reload: false,
             watcher: None,
             watcher_rx: None,
+            poll_fallback_enabled: false,
             pending_watcher_diagnostics: Vec::new(),
             last_policy_fingerprint: Some(RuntimeHeartbeatHotReloadPolicyFingerprint::read(
                 &policy_path,
@@ -2237,6 +2278,7 @@ mod tests {
             pending_policy_reload: false,
             watcher: None,
             watcher_rx: Some(watch_rx),
+            poll_fallback_enabled: true,
             pending_watcher_diagnostics: Vec::new(),
             last_policy_fingerprint: Some(RuntimeHeartbeatHotReloadPolicyFingerprint::read(
                 &policy_path,
@@ -2282,6 +2324,7 @@ mod tests {
             pending_policy_reload: false,
             watcher: None,
             watcher_rx: None,
+            poll_fallback_enabled: false,
             pending_watcher_diagnostics: Vec::new(),
             last_policy_fingerprint: Some(RuntimeHeartbeatHotReloadPolicyFingerprint::read(
                 &policy_path,
@@ -2321,6 +2364,7 @@ mod tests {
             pending_policy_reload: true,
             watcher: None,
             watcher_rx: Some(watch_rx),
+            poll_fallback_enabled: true,
             pending_watcher_diagnostics: Vec::new(),
             last_policy_fingerprint: Some(RuntimeHeartbeatHotReloadPolicyFingerprint::read(
                 &policy_path,
@@ -2371,6 +2415,7 @@ mod tests {
             pending_policy_reload: true,
             watcher: None,
             watcher_rx: Some(watch_rx),
+            poll_fallback_enabled: true,
             pending_watcher_diagnostics: Vec::new(),
             last_policy_fingerprint: Some(RuntimeHeartbeatHotReloadPolicyFingerprint::read(
                 &policy_path,
@@ -2397,6 +2442,7 @@ mod tests {
 
     #[tokio::test]
     async fn integration_runtime_heartbeat_scheduler_marks_stuck_jobs_and_queues_retry() {
+        let _serial_guard = heartbeat_test_serial_guard().await;
         let temp = tempdir().expect("tempdir");
         std::fs::create_dir_all(temp.path().join("queue")).expect("create queue dir");
         std::fs::create_dir_all(temp.path().join("jobs")).expect("create jobs dir");
@@ -2441,6 +2487,7 @@ mod tests {
 
     #[tokio::test]
     async fn functional_runtime_heartbeat_scheduler_rebuilds_tool_build_and_cleans_orphans() {
+        let _serial_guard = heartbeat_test_serial_guard().await;
         let temp = tempdir().expect("tempdir");
         std::fs::create_dir_all(temp.path().join("queue")).expect("create queue dir");
         std::fs::create_dir_all(temp.path().join("tool-builds")).expect("create tool-builds dir");
@@ -2488,6 +2535,7 @@ mod tests {
 
     #[tokio::test]
     async fn regression_runtime_heartbeat_scheduler_marks_failed_when_retry_budget_exhausted() {
+        let _serial_guard = heartbeat_test_serial_guard().await;
         let temp = tempdir().expect("tempdir");
         std::fs::create_dir_all(temp.path().join("queue")).expect("create queue dir");
         std::fs::create_dir_all(temp.path().join("jobs")).expect("create jobs dir");
@@ -2529,6 +2577,7 @@ mod tests {
 
     #[tokio::test]
     async fn integration_spec_2460_c03_runtime_heartbeat_executes_memory_lifecycle_maintenance() {
+        let _serial_guard = heartbeat_test_serial_guard().await;
         let temp = tempdir().expect("tempdir");
         std::fs::create_dir_all(temp.path().join("queue")).expect("create queue dir");
         std::fs::write(temp.path().join("queue/state.json"), "{}").expect("write queue state");
@@ -2593,6 +2642,7 @@ mod tests {
     #[tokio::test]
     async fn regression_spec_2460_c04_runtime_heartbeat_records_memory_lifecycle_failure_without_crash(
     ) {
+        let _serial_guard = heartbeat_test_serial_guard().await;
         let temp = tempdir().expect("tempdir");
         std::fs::create_dir_all(temp.path().join("queue")).expect("create queue dir");
         std::fs::write(temp.path().join("queue/state.json"), "{}").expect("write queue state");
@@ -2626,6 +2676,7 @@ mod tests {
 
     #[tokio::test]
     async fn regression_runtime_heartbeat_scheduler_disabled_mode_persists_disabled_snapshot() {
+        let _serial_guard = heartbeat_test_serial_guard().await;
         let temp = tempdir().expect("tempdir");
         let config = scheduler_config(temp.path(), false);
         let mut handle =
