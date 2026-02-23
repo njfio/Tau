@@ -39,7 +39,10 @@ pub(super) struct GatewayAuthStatusReport {
 fn bearer_token_from_headers(headers: &HeaderMap) -> Option<String> {
     let header = headers.get(AUTHORIZATION)?;
     let raw = header.to_str().ok()?;
-    let token = raw.strip_prefix("Bearer ")?;
+    let (scheme, token) = raw.split_once(' ')?;
+    if !scheme.eq_ignore_ascii_case("bearer") {
+        return None;
+    }
     let token = token.trim();
     if token.is_empty() {
         return None;

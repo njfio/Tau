@@ -1221,6 +1221,48 @@ async fn functional_spec_2786_c02_gateway_auth_bootstrap_maps_localhost_dev_to_n
 }
 
 #[tokio::test]
+async fn functional_spec_3426_c02_gateway_auth_bootstrap_reports_password_session_mode_contract() {
+    let temp = tempdir().expect("tempdir");
+    let state = test_state_with_auth(
+        temp.path(),
+        4_096,
+        GatewayOpenResponsesAuthMode::PasswordSession,
+        None,
+        Some("pw-secret"),
+        60,
+        120,
+    );
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+
+    let client = Client::new();
+    let response = client
+        .get(format!("http://{addr}{GATEWAY_AUTH_BOOTSTRAP_ENDPOINT}"))
+        .send()
+        .await
+        .expect("auth bootstrap request");
+    assert_eq!(response.status(), StatusCode::OK);
+    let payload = response
+        .json::<Value>()
+        .await
+        .expect("parse auth bootstrap payload");
+    assert_eq!(
+        payload["auth_mode"],
+        Value::String("password-session".to_string())
+    );
+    assert_eq!(
+        payload["ui_auth_mode"],
+        Value::String("password-session".to_string())
+    );
+    assert_eq!(payload["requires_authentication"], Value::Bool(true));
+    assert_eq!(
+        payload["auth_session_endpoint"],
+        Value::String(GATEWAY_AUTH_SESSION_ENDPOINT.to_string())
+    );
+
+    handle.abort();
+}
+
+#[tokio::test]
 async fn functional_spec_2786_c04_ops_login_shell_endpoint_returns_login_route_markers() {
     let temp = tempdir().expect("tempdir");
     let state = test_state(temp.path(), 4_096, "secret");
@@ -10670,6 +10712,171 @@ async fn regression_gateway_auth_session_rejects_invalid_password() {
     assert_eq!(
         payload["error"]["code"].as_str(),
         Some("invalid_credentials")
+    );
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn regression_spec_3426_c06_gateway_auth_session_rejects_mode_mismatch() {
+    let temp = tempdir().expect("tempdir");
+    let state = test_state_with_auth(
+        temp.path(),
+        10_000,
+        GatewayOpenResponsesAuthMode::Token,
+        Some("secret"),
+        None,
+        60,
+        120,
+    );
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+
+    let client = Client::new();
+    let response = client
+        .post(format!("http://{addr}{GATEWAY_AUTH_SESSION_ENDPOINT}"))
+        .json(&json!({"password":"unused"}))
+        .send()
+        .await
+        .expect("send auth session request");
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let payload = response.json::<Value>().await.expect("parse response");
+    assert_eq!(
+        payload["error"]["code"].as_str(),
+        Some("auth_mode_mismatch")
+    );
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn regression_spec_3426_c07_gateway_auth_session_rejects_malformed_json() {
+    let temp = tempdir().expect("tempdir");
+    let state = test_state_with_auth(
+        temp.path(),
+        10_000,
+        GatewayOpenResponsesAuthMode::PasswordSession,
+        None,
+        Some("pw-secret"),
+        60,
+        120,
+    );
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+
+    let client = Client::new();
+    let response = client
+        .post(format!("http://{addr}{GATEWAY_AUTH_SESSION_ENDPOINT}"))
+        .header(reqwest::header::CONTENT_TYPE, "application/json")
+        .body("{\"password\":")
+        .send()
+        .await
+        .expect("send malformed auth session request");
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let payload = response.json::<Value>().await.expect("parse response");
+    assert_eq!(payload["error"]["code"].as_str(), Some("malformed_json"));
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn regression_spec_3426_c08_gateway_accepts_lowercase_bearer_authorization_scheme() {
+    let temp = tempdir().expect("tempdir");
+    let state = test_state_with_auth(
+        temp.path(),
+        10_000,
+        GatewayOpenResponsesAuthMode::Token,
+        Some("secret"),
+        None,
+        60,
+        120,
+    );
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+
+    let client = Client::new();
+    let response = client
+        .get(format!("http://{addr}{GATEWAY_STATUS_ENDPOINT}"))
+        .header(reqwest::header::AUTHORIZATION, "bearer secret")
+        .send()
+        .await
+        .expect("status request with lowercase bearer scheme");
+    assert_eq!(response.status(), StatusCode::OK);
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn integration_spec_3426_c10_gateway_status_auth_counters_track_failures_and_session_issuance(
+) {
+    let temp = tempdir().expect("tempdir");
+    let state = test_state_with_auth(
+        temp.path(),
+        10_000,
+        GatewayOpenResponsesAuthMode::PasswordSession,
+        None,
+        Some("pw-secret"),
+        60,
+        120,
+    );
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+
+    let client = Client::new();
+    let first_issue = client
+        .post(format!("http://{addr}{GATEWAY_AUTH_SESSION_ENDPOINT}"))
+        .json(&json!({"password":"pw-secret"}))
+        .send()
+        .await
+        .expect("issue first session token");
+    assert_eq!(first_issue.status(), StatusCode::OK);
+
+    let _unauthorized = client
+        .get(format!("http://{addr}{GATEWAY_SESSIONS_ENDPOINT}"))
+        .send()
+        .await
+        .expect("unauthorized session list request");
+
+    let second_issue = client
+        .post(format!("http://{addr}{GATEWAY_AUTH_SESSION_ENDPOINT}"))
+        .json(&json!({"password":"pw-secret"}))
+        .send()
+        .await
+        .expect("issue second session token after ttl");
+    assert_eq!(second_issue.status(), StatusCode::OK);
+    let second_token = second_issue
+        .json::<Value>()
+        .await
+        .expect("parse second session token")["access_token"]
+        .as_str()
+        .expect("second access token")
+        .to_string();
+
+    let status_response = client
+        .get(format!("http://{addr}{GATEWAY_STATUS_ENDPOINT}"))
+        .bearer_auth(second_token)
+        .send()
+        .await
+        .expect("status request");
+    assert_eq!(status_response.status(), StatusCode::OK);
+    let payload = status_response
+        .json::<Value>()
+        .await
+        .expect("parse status payload");
+    assert_eq!(
+        payload["auth"]["mode"],
+        Value::String("password-session".to_string())
+    );
+    assert_eq!(
+        payload["auth"]["total_sessions_issued"],
+        Value::Number(2_u64.into())
+    );
+    assert_eq!(
+        payload["auth"]["active_sessions"],
+        Value::Number(2_u64.into())
+    );
+    assert!(
+        payload["auth"]["auth_failures"]
+            .as_u64()
+            .unwrap_or_default()
+            >= 1,
+        "expected auth_failures to record unauthorized attempts, payload={payload}"
     );
 
     handle.abort();
