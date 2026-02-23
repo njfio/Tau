@@ -1,20 +1,24 @@
 use std::{env, thread, time::Duration};
 
 use tau_tui::{
-    apply_overlay, Component, DiffRenderer, EditorBuffer, EditorView, LumaImage, Text, Theme,
-    ThemeRole,
+    apply_overlay, render_operator_shell_frame, Component, DiffRenderer, EditorBuffer, EditorView,
+    LumaImage, OperatorShellFrame, Text, Theme, ThemeRole,
 };
 
 const HELP: &str = "\
-tau-tui demo runner
+tau-tui operator terminal
 
 Usage:
-  cargo run -p tau-tui -- [--frames N] [--width N] [--sleep-ms N] [--no-color]
+  cargo run -p tau-tui -- [demo] [--frames N] [--width N] [--sleep-ms N] [--no-color]
+  cargo run -p tau-tui -- shell [--width N] [--profile NAME] [--no-color]
 
 Options:
-  --frames N    Number of demo frames to render (default: 3, min: 1)
-  --width N     Render width in characters (default: 72, min: 20)
-  --sleep-ms N  Delay between frames in milliseconds (default: 120)
+  demo          Animated rendering demo mode (default command)
+  shell         Operator shell mode with status/auth/training panels
+  --frames N    Demo: number of frames to render (default: 3, min: 1)
+  --width N     Demo/Shell: render width in characters (demo default: 72, shell default: 88)
+  --sleep-ms N  Demo: delay between frames in milliseconds (default: 120)
+  --profile N   Shell: operator profile label (default: local-dev)
   --no-color    Disable ANSI color output for CI/smoke runs
   --help, -h    Show this help message
 ";
@@ -38,17 +42,55 @@ impl Default for DemoArgs {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ShellArgs {
+    width: usize,
+    profile: String,
+    color: bool,
+}
+
+impl Default for ShellArgs {
+    fn default() -> Self {
+        Self {
+            width: 88,
+            profile: "local-dev".to_string(),
+            color: true,
+        }
+    }
+}
+
 #[derive(Debug)]
 enum ParseAction {
-    Run(DemoArgs),
+    RunDemo(DemoArgs),
+    RunShell(ShellArgs),
     Help,
 }
 
 fn parse_args(args: impl IntoIterator<Item = String>) -> Result<ParseAction, String> {
+    let mut values = args.into_iter();
+    let _ = values.next();
+    let mut values = values.collect::<Vec<_>>();
+    if values.is_empty() {
+        return Ok(ParseAction::RunDemo(DemoArgs::default()));
+    }
+
+    match values.first().map(String::as_str) {
+        Some("--help") | Some("-h") => Ok(ParseAction::Help),
+        Some("demo") => {
+            values.remove(0);
+            parse_demo_args(values)
+        }
+        Some("shell") => {
+            values.remove(0);
+            parse_shell_args(values)
+        }
+        _ => parse_demo_args(values),
+    }
+}
+
+fn parse_demo_args(args: Vec<String>) -> Result<ParseAction, String> {
     let mut parsed = DemoArgs::default();
     let mut it = args.into_iter();
-    let _ = it.next();
-
     while let Some(arg) = it.next() {
         match arg.as_str() {
             "--help" | "-h" => return Ok(ParseAction::Help),
@@ -84,7 +126,39 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<ParseAction, Str
         }
     }
 
-    Ok(ParseAction::Run(parsed))
+    Ok(ParseAction::RunDemo(parsed))
+}
+
+fn parse_shell_args(args: Vec<String>) -> Result<ParseAction, String> {
+    let mut parsed = ShellArgs::default();
+    let mut it = args.into_iter();
+    while let Some(arg) = it.next() {
+        match arg.as_str() {
+            "--help" | "-h" => return Ok(ParseAction::Help),
+            "--no-color" => parsed.color = false,
+            "--width" => {
+                let raw = it.next().ok_or("missing value for --width")?;
+                let value = raw
+                    .parse::<usize>()
+                    .map_err(|_| format!("invalid usize for --width: {raw}"))?;
+                if value < 40 {
+                    return Err("--width must be >= 40".to_string());
+                }
+                parsed.width = value;
+            }
+            "--profile" => {
+                let raw = it.next().ok_or("missing value for --profile")?;
+                let value = raw.trim();
+                if value.is_empty() {
+                    return Err("--profile must not be empty".to_string());
+                }
+                parsed.profile = value.to_string();
+            }
+            _ => return Err(format!("unknown argument: {arg}")),
+        }
+    }
+
+    Ok(ParseAction::RunShell(parsed))
 }
 
 fn paint(theme: &Theme, role: ThemeRole, text: impl Into<String>, color: bool) -> String {
@@ -190,6 +264,25 @@ fn run_demo(args: DemoArgs) -> Result<(), String> {
     Ok(())
 }
 
+fn run_shell(args: ShellArgs) {
+    let theme = Theme::default();
+    let frame = OperatorShellFrame::deterministic_fixture(args.profile.clone());
+    let rendered = render_operator_shell_frame(&frame, args.width);
+    let header = paint(
+        &theme,
+        ThemeRole::Accent,
+        format!(
+            "Tau Operator Shell - profile={} env={}",
+            frame.profile, frame.environment
+        ),
+        args.color,
+    );
+    println!("{header}");
+    for line in rendered {
+        println!("{}", paint(&theme, ThemeRole::Primary, line, args.color));
+    }
+}
+
 fn main() {
     let action = match parse_args(env::args()) {
         Ok(action) => action,
@@ -205,24 +298,25 @@ fn main() {
         ParseAction::Help => {
             println!("{HELP}");
         }
-        ParseAction::Run(args) => {
+        ParseAction::RunDemo(args) => {
             if let Err(err) = run_demo(args) {
                 eprintln!("{err}");
                 std::process::exit(1);
             }
         }
+        ParseAction::RunShell(args) => run_shell(args),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{compose_frame, parse_args, ParseAction};
-    use tau_tui::{EditorBuffer, LumaImage};
+    use tau_tui::{render_operator_shell_frame, EditorBuffer, LumaImage, OperatorShellFrame};
 
     #[test]
     fn unit_parse_args_defaults_are_stable() {
         let action = parse_args(vec!["tau-tui".to_string()]).expect("parse succeeds");
-        let ParseAction::Run(parsed) = action else {
+        let ParseAction::RunDemo(parsed) = action else {
             panic!("expected run action");
         };
         assert_eq!(parsed.frames, 3);
@@ -244,7 +338,7 @@ mod tests {
             "--no-color".to_string(),
         ])
         .expect("parse succeeds");
-        let ParseAction::Run(parsed) = action else {
+        let ParseAction::RunDemo(parsed) = action else {
             panic!("expected run action");
         };
         assert_eq!(parsed.frames, 5);
@@ -280,5 +374,51 @@ mod tests {
         assert!(!frame.is_empty());
         assert!(frame[0].contains("frame=1/2"));
         assert!(frame.iter().any(|line| line.contains("ascii preview")));
+    }
+
+    #[test]
+    fn spec_c01_parse_args_accepts_shell_mode_and_overrides() {
+        let action = parse_args(vec![
+            "tau-tui".to_string(),
+            "shell".to_string(),
+            "--width".to_string(),
+            "96".to_string(),
+            "--profile".to_string(),
+            "prod-west".to_string(),
+            "--no-color".to_string(),
+        ])
+        .expect("parse succeeds");
+
+        let ParseAction::RunShell(args) = action else {
+            panic!("expected shell action");
+        };
+        assert_eq!(args.width, 96);
+        assert_eq!(args.profile, "prod-west");
+        assert!(!args.color);
+    }
+
+    #[test]
+    fn spec_c01_shell_renderer_includes_all_operator_panels() {
+        let frame = OperatorShellFrame::deterministic_fixture("local-dev".to_string());
+        let lines = render_operator_shell_frame(&frame, 78);
+        let rendered = lines.join("\n");
+
+        for panel in ["STATUS", "AUTH", "TRAINING", "ALERTS", "ACTIONS"] {
+            assert!(
+                rendered.contains(panel),
+                "missing shell panel header `{panel}` in:\n{rendered}"
+            );
+        }
+    }
+
+    #[test]
+    fn spec_c02_parse_args_rejects_shell_profile_without_value() {
+        let err = parse_args(vec![
+            "tau-tui".to_string(),
+            "shell".to_string(),
+            "--profile".to_string(),
+        ])
+        .expect_err("expected parse failure");
+        assert!(err.contains("missing value for --profile"));
     }
 }

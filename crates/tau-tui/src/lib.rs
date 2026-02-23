@@ -552,6 +552,130 @@ impl DiffRenderer {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Provider auth row shown in the operator shell auth panel.
+pub struct OperatorShellAuthRow {
+    pub provider: String,
+    pub mode: String,
+    pub state: String,
+    pub source: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Operator-shell view model for deterministic status rendering.
+pub struct OperatorShellFrame {
+    pub environment: String,
+    pub profile: String,
+    pub heartbeat: String,
+    pub rollout_total: usize,
+    pub rollout_succeeded: usize,
+    pub rollout_failed: usize,
+    pub auth_rows: Vec<OperatorShellAuthRow>,
+    pub alerts: Vec<String>,
+    pub actions: Vec<String>,
+}
+
+impl OperatorShellFrame {
+    /// Returns a deterministic fixture payload for local shell rendering.
+    pub fn deterministic_fixture(profile: String) -> Self {
+        Self {
+            environment: "local".to_string(),
+            profile,
+            heartbeat: "healthy".to_string(),
+            rollout_total: 12,
+            rollout_succeeded: 11,
+            rollout_failed: 1,
+            auth_rows: vec![
+                OperatorShellAuthRow {
+                    provider: "openai".to_string(),
+                    mode: "oauth_token".to_string(),
+                    state: "ready".to_string(),
+                    source: "credential_store".to_string(),
+                },
+                OperatorShellAuthRow {
+                    provider: "anthropic".to_string(),
+                    mode: "api_key".to_string(),
+                    state: "ready".to_string(),
+                    source: "env".to_string(),
+                },
+                OperatorShellAuthRow {
+                    provider: "google".to_string(),
+                    mode: "adc".to_string(),
+                    state: "ready".to_string(),
+                    source: "gcloud".to_string(),
+                },
+            ],
+            alerts: vec!["1 rollout failed in last cycle".to_string()],
+            actions: vec![
+                "press r: rerun failed rollout".to_string(),
+                "press a: open auth matrix".to_string(),
+                "press t: open training summary".to_string(),
+            ],
+        }
+    }
+}
+
+/// Renders a deterministic multi-panel operator shell frame.
+pub fn render_operator_shell_frame(frame: &OperatorShellFrame, width: usize) -> Vec<String> {
+    let panel_width = width.max(40);
+    let mut output = Vec::new();
+    output.push(format!(
+        "operator profile={} environment={} heartbeat={}",
+        frame.profile, frame.environment, frame.heartbeat
+    ));
+    output.push(String::new());
+
+    let status_lines = vec![
+        format!("environment : {}", frame.environment),
+        format!("profile     : {}", frame.profile),
+        format!("heartbeat   : {}", frame.heartbeat),
+    ];
+    output.extend(render_shell_panel("STATUS", &status_lines, panel_width));
+    output.push(String::new());
+
+    let mut auth_lines = vec!["provider      mode          state      source".to_string()];
+    if frame.auth_rows.is_empty() {
+        auth_lines.push("none".to_string());
+    } else {
+        auth_lines.extend(frame.auth_rows.iter().map(|row| {
+            format!(
+                "{:<12}  {:<12}  {:<9}  {}",
+                row.provider, row.mode, row.state, row.source
+            )
+        }));
+    }
+    output.extend(render_shell_panel("AUTH", &auth_lines, panel_width));
+    output.push(String::new());
+
+    let training_lines = vec![
+        format!("rollouts.total     : {}", frame.rollout_total),
+        format!("rollouts.succeeded : {}", frame.rollout_succeeded),
+        format!("rollouts.failed    : {}", frame.rollout_failed),
+        format!(
+            "rollouts.pass_rate : {:.2}%",
+            compute_pass_rate(frame.rollout_total, frame.rollout_succeeded)
+        ),
+    ];
+    output.extend(render_shell_panel("TRAINING", &training_lines, panel_width));
+    output.push(String::new());
+
+    let alert_lines = if frame.alerts.is_empty() {
+        vec!["none".to_string()]
+    } else {
+        frame.alerts.clone()
+    };
+    output.extend(render_shell_panel("ALERTS", &alert_lines, panel_width));
+    output.push(String::new());
+
+    let action_lines = if frame.actions.is_empty() {
+        vec!["none".to_string()]
+    } else {
+        frame.actions.clone()
+    };
+    output.extend(render_shell_panel("ACTIONS", &action_lines, panel_width));
+    output
+}
+
 pub fn wrap_text(text: &str, width: usize) -> Vec<String> {
     if width == 0 {
         return vec![String::new()];
@@ -679,6 +803,29 @@ fn is_valid_ansi_color_code(code: &str) -> bool {
         .all(|segment| !segment.is_empty() && segment.bytes().all(|byte| byte.is_ascii_digit()))
 }
 
+fn compute_pass_rate(total: usize, succeeded: usize) -> f64 {
+    if total == 0 {
+        return 0.0;
+    }
+    (succeeded as f64 / total as f64) * 100.0
+}
+
+fn render_shell_panel(title: &str, lines: &[String], width: usize) -> Vec<String> {
+    let inner_width = width.saturating_sub(4).max(16);
+    let mut rendered = Vec::with_capacity(lines.len() + 3);
+    rendered.push(format!("+{}+", "-".repeat(inner_width + 2)));
+    rendered.push(format!("| {:<inner_width$} |", title));
+    rendered.push(format!("+{}+", "-".repeat(inner_width + 2)));
+    for line in lines {
+        rendered.push(format!(
+            "| {:<inner_width$} |",
+            truncate_to_char_width(line, inner_width)
+        ));
+    }
+    rendered.push(format!("+{}+", "-".repeat(inner_width + 2)));
+    rendered
+}
+
 fn write_at(line: &mut String, left: usize, overlay: &str) {
     let mut chars = line.chars().collect::<Vec<_>>();
     while chars.len() < left {
@@ -703,7 +850,8 @@ mod tests {
 
     use super::{
         apply_overlay, wrap_text, Cursor, DiffRenderer, EditorBuffer, EditorView, ImageError,
-        LumaImage, RenderOp, Text, Theme, ThemeError, ThemeRole,
+        LumaImage, OperatorShellAuthRow, OperatorShellFrame, RenderOp, Text, Theme, ThemeError,
+        ThemeRole,
     };
     use crate::Component;
 
@@ -993,5 +1141,39 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn spec_c01_operator_shell_renderer_outputs_expected_panel_headers() {
+        let frame = OperatorShellFrame::deterministic_fixture("local-dev".to_string());
+        let rendered = super::render_operator_shell_frame(&frame, 72).join("\n");
+        for panel in ["STATUS", "AUTH", "TRAINING", "ALERTS", "ACTIONS"] {
+            assert!(rendered.contains(panel), "missing panel {panel}");
+        }
+    }
+
+    #[test]
+    fn functional_operator_shell_renderer_includes_auth_rows_and_training_metrics() {
+        let frame = OperatorShellFrame {
+            environment: "staging".to_string(),
+            profile: "ops-west".to_string(),
+            heartbeat: "degraded".to_string(),
+            rollout_total: 4,
+            rollout_succeeded: 3,
+            rollout_failed: 1,
+            auth_rows: vec![OperatorShellAuthRow {
+                provider: "openrouter".to_string(),
+                mode: "api_key".to_string(),
+                state: "ready".to_string(),
+                source: "env".to_string(),
+            }],
+            alerts: vec!["gateway latency elevated".to_string()],
+            actions: vec!["press a: open auth".to_string()],
+        };
+
+        let rendered = super::render_operator_shell_frame(&frame, 68).join("\n");
+        assert!(rendered.contains("openrouter"));
+        assert!(rendered.contains("rollouts.total"));
+        assert!(rendered.contains("75.00%"));
     }
 }

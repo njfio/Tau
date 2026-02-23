@@ -63,3 +63,32 @@ fn regression_tui_demo_binary_rejects_invalid_frames_argument() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("--frames must be >= 1"));
 }
+
+#[test]
+fn conformance_tui_shell_binary_renders_operator_panels() {
+    let binary = env!("CARGO_BIN_EXE_tau-tui");
+    let output = Command::new(binary)
+        .args([
+            "shell",
+            "--width",
+            "64",
+            "--profile",
+            "ops-staging",
+            "--no-color",
+        ])
+        .output()
+        .expect("binary executes");
+    assert!(
+        output.status.success(),
+        "status={} stderr={}",
+        output.status,
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Tau Operator Shell"));
+    assert!(stdout.contains("STATUS"));
+    assert!(stdout.contains("AUTH"));
+    assert!(stdout.contains("TRAINING"));
+    assert!(stdout.contains("ALERTS"));
+    assert!(stdout.contains("ACTIONS"));
+}
