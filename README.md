@@ -1,121 +1,125 @@
 # Tau
 
+Tau is a Rust-first agent runtime and operator control plane with a connected core path:
+CLI runtime -> sessions/tools/safety -> gateway APIs -> transport and operator workflows.
+
+Short answer to the integration question: the core runtime path is integrated and runnable today, while some subsystems are still staged or partial.
+
 ## What Tau Is
 
-Tau is a pure-Rust agent runtime and operator control plane for running model-driven workflows,
-multi-channel automations, and gateway-managed sessions with deterministic operational controls.
+Tau combines:
+- a primary CLI runtime (`tau-coding-agent`) for interactive and one-shot execution,
+- persistent session and tool-policy/safety controls,
+- gateway and operator surfaces for API and operations workflows,
+- deterministic demos and validation scripts for local and CI loops.
 
-The workspace includes core agent execution, multi-provider model access, transport bridges,
-gateway APIs, deterministic demo/contract workflows, and prompt-optimization training support.
+The workspace is intentionally multi-crate and contract-driven. Full crate membership is in [`Cargo.toml`](Cargo.toml).
 
-## Current Operator Surfaces
+## Who Tau Is For
 
-Operator deployment guide: `docs/guides/operator-deployment-guide.md`
+- Operators who need repeatable runtime controls, diagnostics, and rollback-friendly workflows.
+- Integrators who need OpenAI-compatible gateway routes and transport bridges.
+- Contributors working in a spec-driven, TDD-oriented Rust workspace.
 
-Gateway API reference (70+ routes): `docs/guides/gateway-api-reference.md`
+## Integrated End-to-End Paths
 
-Dashboard ops guide: `docs/guides/dashboard-ops.md`
+These are the paths that operate as connected flows today.
 
-Spec/branch archive workflow: `docs/guides/spec-branch-archive-ops.md`
+| Path | Start Point | Integrated Components | Primary Evidence |
+|---|---|---|---|
+| Local operator loop | `cargo run -p tau-coding-agent -- --onboard --onboard-non-interactive` then prompt mode | CLI runtime, agent core loop, sessions, tools, safety policies | [`docs/guides/quickstart.md`](docs/guides/quickstart.md), [`docs/guides/operator-control-summary.md`](docs/guides/operator-control-summary.md) |
+| Gateway auth/session loop | `./scripts/demo/gateway-auth-session.sh` | Gateway auth/session handling, API route contracts, runtime policies | [`docs/guides/gateway-auth-session-smoke.md`](docs/guides/gateway-auth-session-smoke.md), [`docs/guides/gateway-api-reference.md`](docs/guides/gateway-api-reference.md) |
+| Multi-channel ingress loop | `./scripts/demo/multi-channel.sh` | Multi-channel runtime, transport normalization, routing pipeline | [`docs/guides/multi-channel-event-pipeline.md`](docs/guides/multi-channel-event-pipeline.md), [`docs/guides/transports.md`](docs/guides/transports.md) |
+| Prompt optimization loop | [`docs/guides/training-ops.md`](docs/guides/training-ops.md) runbook flow | Training runner/store/tracer/proxy + rollout controls | [`docs/guides/training-ops.md`](docs/guides/training-ops.md), [`docs/guides/training-proxy-ops.md`](docs/guides/training-proxy-ops.md) |
 
-Contributor guide: `CONTRIBUTING.md`
+## What You Can Do Today
 
-Security policy: `SECURITY.md`
+- Run interactive and one-shot agent flows from `tau-coding-agent`.
+- Use session persistence and lifecycle operations (branch, resume, export/import/repair).
+- Route model calls across multiple provider/auth modes.
+- Run gateway API surfaces and operator routes.
+- Use built-in tools with policy controls (filesystem/shell/http/path/rate/sandbox).
+- Run channel and bridge runtimes (GitHub Issues, Slack, Discord, Telegram/WhatsApp paths).
+- Operate prompt-optimization workflows with SQLite-backed rollout state and optional proxy attribution.
+- Execute deterministic demo suites and validation scripts in local/CI loops.
 
-## Training Boundary Status
+## Capability Boundaries
 
-Training boundary status:
-- Canonical CLI training mode today is prompt optimization (`--prompt-optimization-*`).
-- True-RL building blocks are also present in-repo (PPO/GAE components in `tau-algorithm`,
-  collector/reward shaping runtime in `tau-training-runner`, and M24 proof tooling under
-  `scripts/demo/m24-rl-*`).
-- Historical true-RL delivery trackers are closed:
-  [Epic #1657](https://github.com/njfio/Tau/issues/1657) and
-  [Milestone #24](https://github.com/njfio/Tau/milestone/24)
-  (`True RL Wave 2026-Q3: Policy Learning in Production`).
-- Staged architecture/phase reference is documented in
-  [`docs/planning/true-rl-roadmap-skeleton.md`](docs/planning/true-rl-roadmap-skeleton.md).
+Some surfaces are intentionally diagnostics-first or staged:
 
-## What Tau Does Today
-
-- Rust-first runtime architecture (no Node.js/TypeScript runtime dependency in core paths)
-- Provider-aware model routing (`openai/*`, `openrouter/*`, `anthropic/*`, `google/*`) with OpenAI-compatible alias support (`deepseek/*`, `groq/*`, `xai/*`, `mistral/*`, `azure/*`) and multiple auth modes
-- Interactive prompt loop, one-shot prompt mode, and plan-first orchestration mode
-- Session persistence and lifecycle operations (branch, undo/redo, resume, export/import/repair)
-- Built-in tools and tool-policy controls (filesystem/shell/http/path/rate/sandbox controls)
-- GitHub Issues bridge and Slack Socket Mode bridge
-- Multi-channel runtime (Telegram/Discord/WhatsApp) with live-ingress and connector paths
-- Gateway OpenResponses/OpenAI-compatible HTTP APIs + websocket control plane + webchat shell
-- Leptos SSR Tau Ops Dashboard shell routes (`/ops`, `/ops/tools-jobs`, `/ops/channels`) with deterministic tools/jobs/channel operator contracts
-- Prompt optimization mode with SQLite-backed rollout state and optional attribution proxy
-- True-RL algorithm and benchmark primitives (PPO/GAE + benchmark/safety proof scripts)
-- Deterministic local demo scripts and CI smoke lanes
-
-## Capability Status (Important)
-
-Some subsystems are fully runnable in production-like loops, while others are currently
-diagnostics-first or fixture/live-input driven:
-
-- Voice:
-  - `--voice-contract-runner` and `--voice-live-runner` are available.
-  - Live mode consumes normalized input fixtures/files and writes deterministic artifacts.
-  - Built-in microphone capture and end-user speech UX are not bundled in this repo.
-- Browser automation:
-  - `--browser-automation-live-runner` is available.
-  - Execution is delegated to an external Playwright-compatible CLI (`--browser-automation-playwright-cli`).
-  - No embedded browser engine/DOM automation runtime is built into Tau itself.
+- True RL:
+  - primitives and proof tooling exist,
+  - not yet delivered as a single production-ready end-to-end operator workflow.
 - Dashboard:
-  - Gateway dashboard APIs and Leptos SSR ops shell routes are available (`/ops*`, including `/ops/tools-jobs` and `/ops/channels`).
-  - `--dashboard-contract-runner` is removed.
-  - Dashboard UX is route-based and contract-first; not all PRD surfaces are full live-mutation experiences yet.
-- Custom commands:
-  - Status/health inspection and state artifacts are available.
-  - `--custom-command-contract-runner` is removed from active dispatch.
-  - Runtime crate includes command policy + execution primitives used by control-plane flows.
-- Memory:
-  - Runtime memory behavior is owned by `tau-agent-core`.
-  - `tau-memory` provides memory store/retrieval primitives and contract fixtures/helpers.
-  - `--memory-contract-runner` is removed.
+  - route and diagnostics surfaces exist,
+  - not all desired product UX workflows are fully integrated live-mutation paths.
+- Auth verification:
+  - auth capabilities are implemented,
+  - comprehensive cross-mode verification is still a focused closure track.
+- TUI:
+  - useful as a deterministic demo/smoke surface,
+  - not a full operator dashboard replacement.
 
-For operational details and rollout/rollback guidance, use the runbooks in `docs/guides/`.
+## Maturity Matrix
 
-## Workspace Layout
+| Capability Area | Status | Meaning | Primary Reference |
+|---|---|---|---|
+| Core CLI runtime + sessions + tools | Integrated | Production-like operating loop available | [`docs/guides/quickstart.md`](docs/guides/quickstart.md) |
+| Gateway auth/session APIs | Integrated | Deterministic auth/session smoke flows and documented API contracts | [`docs/guides/gateway-auth-session-smoke.md`](docs/guides/gateway-auth-session-smoke.md) |
+| Multi-channel and bridge transports | Operational | Runnable with connector-specific maturity differences | [`docs/guides/transports.md`](docs/guides/transports.md) |
+| Dashboard operator UX | Partial | Ops routes and diagnostics available; broader UX still expanding | [`docs/guides/dashboard-ops.md`](docs/guides/dashboard-ops.md) |
+| Prompt optimization training | Integrated | Canonical training path today | [`docs/guides/training-ops.md`](docs/guides/training-ops.md) |
+| True RL | Staged | Building blocks/proof scripts exist; full delivery path in planning | [`docs/planning/true-rl-roadmap-skeleton.md`](docs/planning/true-rl-roadmap-skeleton.md) |
+| TUI | Demo | Smoke/demo terminal surface, not full ops UX | [`crates/tau-tui`](crates/tau-tui) |
 
-High-level crates:
+## Current Gaps and Execution Plan
 
-- `crates/tau-coding-agent`: main CLI runtime (`cargo run -p tau-coding-agent -- ...`)
-- `crates/tau-agent-core`: event-driven agent loop and runtime memory integration
-- `crates/tau-ai` + `crates/tau-provider`: model abstraction and provider auth/routing
-- `crates/tau-gateway`: HTTP/websocket gateway surfaces
-- `crates/tau-multi-channel`: Telegram/Discord/WhatsApp channel runtime
-- `crates/tau-github-issues-runtime` + `crates/tau-slack-runtime`: bridge runtimes
-- `crates/tau-training-*`, `crates/tau-algorithm`, `crates/tau-trainer`: prompt optimization pipeline
-- `crates/tau-tui`: standalone terminal UI demo
+| Gap | Current State | Execution Plan Links |
+|---|---|---|
+| True RL end-to-end delivery | primitives present, full operator loop pending | [`docs/planning/integration-gap-closure-plan.md`](docs/planning/integration-gap-closure-plan.md), [`docs/planning/true-rl-roadmap-skeleton.md`](docs/planning/true-rl-roadmap-skeleton.md), [`docs/guides/training-ops.md`](docs/guides/training-ops.md) |
+| Dashboard maturity expansion | ops routes exist, richer workflow UX pending | [`docs/planning/integration-gap-closure-plan.md`](docs/planning/integration-gap-closure-plan.md), [`docs/guides/dashboard-ops.md`](docs/guides/dashboard-ops.md), [`docs/guides/operator-deployment-guide.md`](docs/guides/operator-deployment-guide.md) |
+| Comprehensive auth workflow verification | capability matrix and smokes exist, full verification consolidation pending | [`docs/planning/integration-gap-closure-plan.md`](docs/planning/integration-gap-closure-plan.md), [`docs/provider-auth/provider-auth-capability-matrix.md`](docs/provider-auth/provider-auth-capability-matrix.md), [`docs/guides/gateway-auth-session-smoke.md`](docs/guides/gateway-auth-session-smoke.md) |
+| TUI UX improvements | demo utility available, broader UX improvements pending | [`docs/planning/integration-gap-closure-plan.md`](docs/planning/integration-gap-closure-plan.md), [`crates/tau-tui`](crates/tau-tui), [`docs/guides/demo-index.md`](docs/guides/demo-index.md) |
 
-Full workspace membership is defined in [`Cargo.toml`](Cargo.toml).
+## 5-Minute Quickstart
 
-## Examples and Starter Assets
+Run commands from repository root.
 
-Repository-tracked examples used by integration tests and starter workflows:
+1. Prerequisite
 
-- `./examples/starter/package.json`
-- `./examples/extensions`
-- `./examples/extensions/issue-assistant/extension.json`
-- `./examples/extensions/issue-assistant/payload.json`
-- `./examples/events`
-- `./examples/events-state.json`
+```bash
+rustup default stable
+```
 
-## Quickstart
-
-Run all commands from repository root.
-
-Build and validate fast (changed-scope default):
+2. Fast validation loop
 
 ```bash
 ./scripts/dev/fast-validate.sh
 ```
 
-Faster local compile-only loop:
+3. Initialize local Tau state
+
+```bash
+cargo run -p tau-coding-agent -- --onboard --onboard-non-interactive
+```
+
+4. Run your first prompt
+
+```bash
+cargo run -p tau-coding-agent -- --prompt "Summarize src/lib.rs"
+```
+
+5. Optional TUI smoke
+
+```bash
+cargo run -p tau-tui -- --frames 2 --sleep-ms 0 --width 56 --no-color
+```
+
+For a deeper walkthrough, use [`docs/guides/quickstart.md`](docs/guides/quickstart.md).
+
+## Common Workflows
+
+Fast local compile-focused loop:
 
 ```bash
 ./scripts/dev/fast-validate.sh --check-only --direct-packages-only --skip-fmt
@@ -127,126 +131,35 @@ Full pre-merge gate:
 ./scripts/dev/fast-validate.sh --full
 ```
 
-Initialize workspace state:
-
-```bash
-cargo run -p tau-coding-agent -- --onboard --onboard-non-interactive
-```
-
-Run interactive mode:
+Interactive runtime mode:
 
 ```bash
 cargo run -p tau-coding-agent -- --model openai/gpt-4o-mini
 ```
 
-Run one-shot mode:
+Gateway auth/session smoke:
 
 ```bash
-cargo run -p tau-coding-agent -- --prompt "Summarize src/lib.rs"
+./scripts/demo/gateway-auth-session.sh
 ```
 
-Run the standalone TUI demo:
+Dashboard demo path:
 
 ```bash
-cargo run -p tau-tui -- --frames 2 --sleep-ms 0 --width 56 --no-color
+./scripts/demo/dashboard.sh
 ```
 
-## Container Packaging
-
-Build and smoke-test the first-party Docker image locally:
+Demo index and selective runs:
 
 ```bash
-./scripts/dev/docker-image-smoke.sh --tag tau-coding-agent:local-smoke
-```
-
-Run the image directly:
-
-```bash
-docker run --rm --entrypoint tau-coding-agent tau-coding-agent:local-smoke --help
-```
-
-## Homebrew Packaging
-
-Each tagged release publishes a deterministic Homebrew formula asset (`tau.rb`)
-generated from release `SHA256SUMS`.
-
-```bash
-# Install a pinned release formula directly from GitHub Releases
-brew install --formula https://github.com/<owner>/Tau/releases/download/<release-tag>/tau.rb
-
-# Upgrade installed formula (when newer formula/release exists)
-brew upgrade tau
-
-# Remove Tau from Homebrew
-brew uninstall tau
-```
-
-## Shell Completions
-
-Each tagged release also publishes shell completion assets:
-
-- `tau-coding-agent.bash`
-- `tau-coding-agent.zsh`
-- `tau-coding-agent.fish`
-
-```bash
-# Bash
-curl -fsSL -o ~/.local/share/bash-completion/completions/tau-coding-agent \
-  https://github.com/<owner>/Tau/releases/download/<release-tag>/tau-coding-agent.bash
-
-# Zsh
-curl -fsSL -o ~/.zsh/completions/_tau-coding-agent \
-  https://github.com/<owner>/Tau/releases/download/<release-tag>/tau-coding-agent.zsh
-
-# Fish
-curl -fsSL -o ~/.config/fish/completions/tau-coding-agent.fish \
-  https://github.com/<owner>/Tau/releases/download/<release-tag>/tau-coding-agent.fish
-```
-
-## Demo Commands
-
-Fresh-clone validation index:
-
-```bash
-./scripts/demo/index.sh
 ./scripts/demo/index.sh --list
 ./scripts/demo/index.sh --only onboarding,gateway-auth,gateway-remote-access --fail-fast
-./scripts/demo/index.sh --json --report-file .tau/reports/demo-index-summary.json
 ```
-
-Run all wrappers (single build reuse, optional filtering):
 
 ```bash
-./scripts/demo/all.sh
 ./scripts/demo/all.sh --list
 ./scripts/demo/all.sh --only local,rpc,events --fail-fast
-./scripts/demo/all.sh --only browser-automation,browser-automation-live --fail-fast
-./scripts/demo/all.sh --only deployment,voice --fail-fast
-./scripts/demo/all.sh --json --report-file .tau/reports/demo-summary.json
 ```
-
-Individual wrappers:
-
-- `./scripts/demo/local.sh`
-- `./scripts/demo/rpc.sh`
-- `./scripts/demo/events.sh`
-- `./scripts/demo/package.sh`
-- `./scripts/demo/multi-channel.sh`
-- `./scripts/demo/multi-agent.sh`
-- `./scripts/demo/browser-automation.sh`
-- `./scripts/demo/browser-automation-live.sh`
-- `./scripts/demo/memory.sh`
-- `./scripts/demo/dashboard.sh`
-- `./scripts/demo/gateway.sh`
-- `./scripts/demo/gateway-auth.sh`
-- `./scripts/demo/gateway-auth-session.sh`
-- `./scripts/demo/gateway-remote-access.sh`
-- `./scripts/demo/deployment.sh`
-- `./scripts/demo/custom-command.sh`
-- `./scripts/demo/voice.sh`
-- `./scripts/demo/voice-live.sh`
-
-`all.sh --json` and `--report-file` include `duration_ms` per wrapper.
 
 Clean generated local artifacts:
 
@@ -254,58 +167,95 @@ Clean generated local artifacts:
 ./scripts/dev/clean-local-artifacts.sh
 ```
 
-## Documentation
+## Docs by Role
 
-Start here: [`docs/README.md`](docs/README.md)
+Primary docs index: [`docs/README.md`](docs/README.md)
 
-Core guides:
+Operator runbooks:
+- [`docs/guides/operator-deployment-guide.md`](docs/guides/operator-deployment-guide.md)
+- [`docs/guides/operator-control-summary.md`](docs/guides/operator-control-summary.md)
+- [`docs/guides/dashboard-ops.md`](docs/guides/dashboard-ops.md)
+- [`docs/guides/gateway-ops.md`](docs/guides/gateway-ops.md)
+- [`docs/guides/memory-ops.md`](docs/guides/memory-ops.md)
 
-- Quickstart: [`docs/guides/quickstart.md`](docs/guides/quickstart.md)
-- Demo index: [`docs/guides/demo-index.md`](docs/guides/demo-index.md)
-- Transport surfaces: [`docs/guides/transports.md`](docs/guides/transports.md)
-- Operator control summary: [`docs/guides/operator-control-summary.md`](docs/guides/operator-control-summary.md)
-- Project index workflow: [`docs/guides/project-index.md`](docs/guides/project-index.md)
-- Startup DI pipeline: [`docs/guides/startup-di-pipeline.md`](docs/guides/startup-di-pipeline.md)
-- Contract lifecycle: [`docs/guides/contract-pattern-lifecycle.md`](docs/guides/contract-pattern-lifecycle.md)
-- Multi-channel event pipeline: [`docs/guides/multi-channel-event-pipeline.md`](docs/guides/multi-channel-event-pipeline.md)
-- Prompt optimization ops: [`docs/guides/training-ops.md`](docs/guides/training-ops.md)
-- Prompt optimization proxy ops: [`docs/guides/training-proxy-ops.md`](docs/guides/training-proxy-ops.md)
-- True-RL staged roadmap reference: [`docs/planning/true-rl-roadmap-skeleton.md`](docs/planning/true-rl-roadmap-skeleton.md)
-- Memory ops: [`docs/guides/memory-ops.md`](docs/guides/memory-ops.md)
-- Dashboard ops: [`docs/guides/dashboard-ops.md`](docs/guides/dashboard-ops.md)
-- Custom command ops: [`docs/guides/custom-command-ops.md`](docs/guides/custom-command-ops.md)
-- Voice ops: [`docs/guides/voice-ops.md`](docs/guides/voice-ops.md)
-- Deployment ops: [`docs/guides/deployment-ops.md`](docs/guides/deployment-ops.md)
-- Doc density scorecard: [`docs/guides/doc-density-scorecard.md`](docs/guides/doc-density-scorecard.md)
+Integrator/API references:
+- [`docs/guides/gateway-api-reference.md`](docs/guides/gateway-api-reference.md)
+- [`docs/guides/transports.md`](docs/guides/transports.md)
+- [`docs/provider-auth/provider-auth-capability-matrix.md`](docs/provider-auth/provider-auth-capability-matrix.md)
 
 Contributor references:
+- [`CONTRIBUTING.md`](CONTRIBUTING.md)
+- [`AGENTS.md`](AGENTS.md)
+- [`docs/tau-coding-agent/code-map.md`](docs/tau-coding-agent/code-map.md)
+- [`docs/architecture/crate-dependency-diagram.md`](docs/architecture/crate-dependency-diagram.md)
+- [`docs/guides/startup-di-pipeline.md`](docs/guides/startup-di-pipeline.md)
+- [`docs/guides/contract-pattern-lifecycle.md`](docs/guides/contract-pattern-lifecycle.md)
+- [`docs/guides/multi-channel-event-pipeline.md`](docs/guides/multi-channel-event-pipeline.md)
+- [`docs/guides/doc-density-scorecard.md`](docs/guides/doc-density-scorecard.md)
 
-- `tau-coding-agent` code map: [`docs/tau-coding-agent/code-map.md`](docs/tau-coding-agent/code-map.md)
-- Provider auth matrix: [`docs/provider-auth/provider-auth-capability-matrix.md`](docs/provider-auth/provider-auth-capability-matrix.md)
+Planning and gap closure:
+- [`docs/planning/true-rl-roadmap-skeleton.md`](docs/planning/true-rl-roadmap-skeleton.md)
+- [`docs/guides/roadmap-execution-index.md`](docs/guides/roadmap-execution-index.md)
+- [`docs/planning/integration-gap-closure-plan.md`](docs/planning/integration-gap-closure-plan.md)
 
-## CI/CD
+## Workspace Feature Map
 
-- CI: [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
-  - Linux quality gate (`fmt`, strict `clippy`, tests)
-  - targeted `codex-light` and scoped smoke lanes
-  - optional manual coverage and cross-platform compile smoke
-- Security: [`.github/workflows/security.yml`](.github/workflows/security.yml)
-- Release: [`.github/workflows/release.yml`](.github/workflows/release.yml)
-  - Linux/macOS/Windows artifacts (`amd64`, `arm64`)
-  - GHCR Docker image publish (`ghcr.io/<owner>/tau-coding-agent:<release-tag>`, `latest`)
-  - Homebrew formula asset publish (`tau.rb`) derived from `SHA256SUMS`
-  - shell completion assets (`tau-coding-agent.bash`, `.zsh`, `.fish`)
-  - optional signing/notarization hooks (`scripts/release/hooks/*`)
-  - installer/update scripts for Unix and PowerShell
-- Dependabot: [`.github/dependabot.yml`](.github/dependabot.yml)
+Core runtime:
+- `crates/tau-coding-agent`
+- `crates/tau-agent-core`
+- `crates/tau-runtime`
+- `crates/tau-orchestrator`
 
-## Contributing Workflow
+Gateway and ops:
+- `crates/tau-gateway`
+- `crates/tau-dashboard`
+- `crates/tau-dashboard-ui`
+- `crates/tau-ops`
 
-This repository follows issue-first execution:
+Model and policy:
+- `crates/tau-ai`
+- `crates/tau-provider`
+- `crates/tau-tools`
+- `crates/tau-safety`
 
-- Create or identify a GitHub issue before implementation.
-- Use scoped branches (`codex/issue-<id>-<topic>`).
-- Link issues in PRs (`Closes #<id>`) and include validation evidence.
-- Merge only after CI passes and acceptance criteria are met.
+State and extension surfaces:
+- `crates/tau-session`
+- `crates/tau-memory`
+- `crates/tau-extensions`
+- `crates/tau-skills`
 
-Repository policy details are in [`AGENTS.md`](AGENTS.md).
+Transport/bridge runtimes:
+- `crates/tau-github-issues-runtime`
+- `crates/tau-slack-runtime`
+- `crates/tau-discord-runtime`
+- `crates/tau-multi-channel`
+
+Training and algorithms:
+- `crates/tau-training-types`
+- `crates/tau-training-store`
+- `crates/tau-training-tracer`
+- `crates/tau-training-runner`
+- `crates/tau-training-proxy`
+- `crates/tau-trainer`
+- `crates/tau-algorithm`
+
+## Packaging and Release Artifacts
+
+Local Docker smoke build:
+
+```bash
+./scripts/dev/docker-image-smoke.sh --tag tau-coding-agent:local-smoke
+```
+
+Release workflow and artifacts:
+- [`.github/workflows/release.yml`](.github/workflows/release.yml)
+- [`docs/guides/release-automation-ops.md`](docs/guides/release-automation-ops.md)
+- GitHub Releases: <https://github.com/njfio/Tau/releases>
+
+## Security and Contribution
+
+- Security reporting policy: [`SECURITY.md`](SECURITY.md)
+- Contribution guide: [`CONTRIBUTING.md`](CONTRIBUTING.md)
+- Issue/spec workflow contract: [`AGENTS.md`](AGENTS.md)
+
+This repository expects issue-first, spec-driven, test-driven changes with explicit validation evidence.
