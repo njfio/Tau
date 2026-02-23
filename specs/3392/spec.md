@@ -1,6 +1,6 @@
 # Spec: Issue #3392 - Cover CH15-05 lock-contention chaos scenario
 
-Status: Accepted
+Status: Implemented
 
 ## Problem Statement
 `specs/3386/conformance-matrix.md` currently marks `CH15-05` as `N/A` even though gateway session persistence uses deterministic lock acquisition/retry behavior that can be exercised through existing `/v1/responses` integration paths.
