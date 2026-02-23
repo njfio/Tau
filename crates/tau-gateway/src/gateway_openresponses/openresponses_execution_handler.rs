@@ -42,7 +42,6 @@ pub(super) async fn execute_openresponses_request(
             model_output_cost_per_million: state.config.model_output_cost_per_million,
             system_prompt: resolved_system_prompt.clone(),
             max_turns: state.config.max_turns,
-            temperature: Some(0.0),
             max_tokens: request.max_tokens,
             // Fail closed on preflight limits: reject over-budget requests instead of compacting them.
             max_estimated_input_tokens: None,
