@@ -73,7 +73,7 @@ regex = "1.11"
 redb = "2.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-rusqlite = { version = "0.32", features = ["bundled"] }
+rusqlite = { version = "0.38", features = ["bundled"] }
 shell-words = "1.1"
 thiserror = "2"
 tokio = { version = "1.43", features = ["macros", "rt-multi-thread", "process", "fs", "io-util", "io-std", "time", "signal", "sync"] }
