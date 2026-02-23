@@ -31,6 +31,8 @@ Status: Completed
 - Task: #3398
 - Task: #3400
 - Task: #3402
+- Task: #3404
+- Task: #3406
 
 ## Closeout
 - Phase 1 delivered via issue `#3386` and PR `#3387`.
@@ -42,6 +44,8 @@ Status: Completed
 - Phase 7 delivered via issue `#3398`, closing tool-builder/WASM scenario coverage (`E14-01`, `E14-02`, `E14-03`).
 - Phase 8 delivered via issue `#3400`, closing provider fallback/circuit-breaker scenario coverage (`F10-01`, `F10-02`, `F10-03`, `F10-04`, `F10-05`, `F10-08`).
 - Phase 9 delivered via issue `#3402`, closing remaining C5/K13/R8 scenario coverage.
+- Phase 10 delivered via issue `#3404`, finalizing milestone index closeout status and coverage summary.
+- Phase 11 delivered via issue `#3406`, formally closing GitHub milestone `M291` on 2026-02-23.
 
 ## Success Signals
 - `specs/3386/spec.md`, `specs/3386/plan.md`, and `specs/3386/tasks.md` exist and are implemented.
