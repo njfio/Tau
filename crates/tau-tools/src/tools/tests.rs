@@ -45,6 +45,11 @@ fn test_policy(path: &Path) -> Arc<ToolPolicy> {
 fn test_policy_with_memory(path: &Path) -> Arc<ToolPolicy> {
     let mut policy = ToolPolicy::new(vec![path.to_path_buf()]);
     policy.memory_state_dir = path.join(".tau/memory");
+    // Keep memory tests deterministic and offline under parallel/full-workspace load.
+    policy.memory_embedding_provider = Some("local".to_string());
+    policy.memory_embedding_model = Some("local-hash".to_string());
+    policy.memory_embedding_dimensions = 64;
+    policy.memory_embedding_timeout_ms = 500;
     Arc::new(policy)
 }
 
