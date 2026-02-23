@@ -3,7 +3,7 @@ use std::fs::{self, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use rusqlite::{params, Connection};
 
 use super::{
@@ -211,6 +211,7 @@ pub(super) fn append_record_sqlite(path: &Path, record: &RuntimeMemoryRecord) ->
     let transaction = connection.transaction()?;
     let updated_unix_ms = sqlite_i64_from_u64(record.updated_unix_ms, "updated_unix_ms", path)?;
     let encoded = serde_json::to_string(record).context("failed to encode memory record")?;
+    let updated_unix_ms = sqlite_i64_from_u64(record.updated_unix_ms, "updated_unix_ms", path)?;
     transaction.execute(
         r#"
         INSERT INTO memory_records (memory_id, updated_unix_ms, record_json)
@@ -369,6 +370,8 @@ pub(super) fn upsert_ingestion_checkpoint_sqlite(
 ) -> Result<()> {
     let connection = open_memory_sqlite_connection(path)?;
     initialize_memory_sqlite_schema(&connection)?;
+    let chunk_index = sqlite_i64_from_usize(chunk_index, "chunk_index", path)?;
+    let updated_unix_ms = sqlite_i64_from_u64(updated_unix_ms, "updated_unix_ms", path)?;
     connection.execute(
         r#"
         INSERT INTO memory_ingestion_checkpoints (
@@ -390,11 +393,29 @@ pub(super) fn upsert_ingestion_checkpoint_sqlite(
             checkpoint_key,
             checkpoint_sha256,
             source_path.display().to_string(),
-            chunk_index as i64,
-            updated_unix_ms as i64,
+            chunk_index,
+            updated_unix_ms,
         ],
     )?;
     Ok(())
+}
+
+fn sqlite_i64_from_u64(value: u64, field: &str, path: &Path) -> Result<i64> {
+    i64::try_from(value).map_err(|_| {
+        anyhow!(
+            "{field} value {value} exceeds SQLite INTEGER range for {}",
+            path.display()
+        )
+    })
+}
+
+fn sqlite_i64_from_usize(value: usize, field: &str, path: &Path) -> Result<i64> {
+    i64::try_from(value).map_err(|_| {
+        anyhow!(
+            "{field} value {value} exceeds SQLite INTEGER range for {}",
+            path.display()
+        )
+    })
 }
 
 /// Open SQLite memory store connection with WAL pragmas and busy timeout.
@@ -502,5 +523,42 @@ mod tests {
                 .to_string(),
         ]);
         assert_eq!(keys, expected);
+    }
+
+    #[test]
+    fn regression_spec_3412_checkpoint_upsert_rejects_updated_unix_ms_outside_sqlite_integer_range()
+    {
+        let temp = tempdir().expect("tempdir");
+        let sqlite_path = temp.path().join("entries.sqlite");
+
+        let error = upsert_ingestion_checkpoint_sqlite(
+            &sqlite_path,
+            "ingestion:chunk:overflow",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            Path::new("overflow.txt"),
+            0,
+            u64::MAX,
+        )
+        .expect_err("u64::MAX timestamp should fail conversion");
+        assert!(error.to_string().contains("updated_unix_ms value"));
+        assert!(error.to_string().contains("SQLite INTEGER range"));
+    }
+
+    #[test]
+    fn regression_spec_3412_checkpoint_upsert_rejects_chunk_index_outside_sqlite_integer_range() {
+        let temp = tempdir().expect("tempdir");
+        let sqlite_path = temp.path().join("entries.sqlite");
+
+        let error = upsert_ingestion_checkpoint_sqlite(
+            &sqlite_path,
+            "ingestion:chunk:overflow-index",
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            Path::new("overflow-index.txt"),
+            usize::MAX,
+            1,
+        )
+        .expect_err("oversized chunk index should fail conversion");
+        assert!(error.to_string().contains("chunk_index value"));
+        assert!(error.to_string().contains("SQLite INTEGER range"));
     }
 }
