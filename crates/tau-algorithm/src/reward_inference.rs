@@ -173,6 +173,19 @@ mod tests {
         assert!(not_completed_output.session_completion < 0.0);
         assert!(not_completed_output.composite < completed_output.composite);
     }
+
+    #[test]
+    fn spec_c05_regression_trace_based_reward_inference_tool_errors_reduce_reliability() {
+        let no_tool_errors = RewardInferenceInput::new(true, true, 0, false, 2, 24, 24);
+        let with_tool_errors = RewardInferenceInput::new(true, true, 2, false, 2, 24, 24);
+
+        let no_error_output = TraceBasedRewardInference.infer(&no_tool_errors);
+        let with_error_output = TraceBasedRewardInference.infer(&with_tool_errors);
+
+        assert_eq!(no_error_output.reliability, 0.0);
+        assert!(with_error_output.reliability < 0.0);
+        assert!(with_error_output.composite < no_error_output.composite);
+    }
 }
 
 fn infer_token_efficiency(input_chars: usize, output_chars: usize) -> f64 {

@@ -3982,6 +3982,65 @@ async fn functional_live_runner_processes_ingress_files_and_persists_state() {
 }
 
 #[tokio::test]
+async fn integration_spec_3402_c01_c02_c07_live_runner_routes_telegram_and_discord_to_distinct_sessions(
+) {
+    let temp = tempdir().expect("tempdir");
+    let config = build_live_config(temp.path());
+    write_live_ingress_file(&config.ingress_dir, "telegram", "telegram-valid.json");
+    write_live_ingress_file(&config.ingress_dir, "discord", "discord-valid.json");
+
+    run_multi_channel_live_runner(config.clone())
+        .await
+        .expect("live runner should route both transports");
+
+    let state =
+        load_multi_channel_runtime_state(&config.state_dir.join("state.json")).expect("state");
+    assert_eq!(state.health.last_cycle_discovered, 2);
+    assert_eq!(state.health.last_cycle_completed, 2);
+    assert_eq!(state.health.last_cycle_failed, 0);
+    assert!(
+        state
+            .processed_event_keys
+            .iter()
+            .any(|key| key.starts_with("telegram:")),
+        "expected telegram event key in processed set"
+    );
+    assert!(
+        state
+            .processed_event_keys
+            .iter()
+            .any(|key| key.starts_with("discord:")),
+        "expected discord event key in processed set"
+    );
+
+    let channel_store_root = config.state_dir.join("channel-store");
+    let telegram_store = ChannelStore::open(&channel_store_root, "telegram", "chat-100")
+        .expect("open telegram store");
+    let discord_store = ChannelStore::open(&channel_store_root, "discord", "discord-channel-88")
+        .expect("open discord store");
+
+    let telegram_logs = telegram_store.load_log_entries().expect("telegram logs");
+    let discord_logs = discord_store.load_log_entries().expect("discord logs");
+    assert_eq!(telegram_logs.len(), 2);
+    assert_eq!(discord_logs.len(), 2);
+    assert_eq!(telegram_logs[0].direction, "inbound");
+    assert_eq!(discord_logs[0].direction, "inbound");
+
+    let telegram_context = telegram_store
+        .load_context_entries()
+        .expect("telegram context");
+    let discord_context = discord_store
+        .load_context_entries()
+        .expect("discord context");
+    assert!(telegram_context
+        .iter()
+        .any(|entry| entry.role == "user" && entry.text.contains("hello from telegram")));
+    assert!(discord_context
+        .iter()
+        .any(|entry| entry.role == "user" && entry.text.contains("/status")));
+}
+
+#[tokio::test]
 async fn integration_spec_c05_live_runner_coalesces_rapid_messages_into_single_turn() {
     let temp = tempdir().expect("tempdir");
     let mut config = build_live_config(temp.path());
