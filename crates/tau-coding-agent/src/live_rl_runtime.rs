@@ -1170,9 +1170,9 @@ impl LiveRlRuntimeBridge {
             .await
         {
             Ok(summary) => summary,
-            Err(error) => {
+            Err(_) => {
                 return Ok(LiveApoReport::skipped_with_curriculum(
-                    format!("apo_run_failed:{error}"),
+                    "apo_run_failed",
                     samples.len(),
                     curriculum_focus_category,
                     curriculum_focus_mean_reward,
@@ -1210,9 +1210,9 @@ impl LiveRlRuntimeBridge {
             self.inner.config.apo_significance_alpha,
         ) {
             Ok(report) => report,
-            Err(error) => {
+            Err(_) => {
                 return Ok(LiveApoReport::skipped_with_curriculum(
-                    format!("apo_significance_failed:{error}"),
+                    "apo_significance_failed",
                     samples.len(),
                     curriculum_focus_category,
                     curriculum_focus_mean_reward,
@@ -2188,6 +2188,26 @@ mod tests {
         }
     }
 
+    #[derive(Clone)]
+    struct FailingClient {
+        message: String,
+    }
+
+    impl FailingClient {
+        fn new(message: &str) -> Self {
+            Self {
+                message: message.to_string(),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl LlmClient for FailingClient {
+        async fn complete(&self, _request: ChatRequest) -> Result<ChatResponse, TauAiError> {
+            Err(TauAiError::InvalidResponse(self.message.clone()))
+        }
+    }
+
     #[async_trait]
     impl LlmClient for ScriptedClient {
         async fn complete(&self, _request: ChatRequest) -> Result<ChatResponse, TauAiError> {
@@ -2961,6 +2981,105 @@ mod tests {
             .await
             .expect("read latest resources");
         assert!(latest.is_none());
+    }
+
+    #[tokio::test]
+    async fn spec_c20_regression_live_apo_missing_runtime_reports_deterministic_reason_code() {
+        let store: Arc<dyn TrainingStore + Send + Sync> = Arc::new(InMemoryTrainingStore::new());
+        let rollout_ids = seed_live_rollouts(&store, "c20", &[0.4, 0.5, 0.6, 0.7]).await;
+        let bridge = LiveRlRuntimeBridge::for_tests(
+            store,
+            LiveRlRuntimeConfig {
+                enabled: true,
+                store_path: ".tau/training/store.sqlite".into(),
+                update_interval_rollouts: 1,
+                max_rollouts_per_update: 32,
+                max_failure_streak: 3,
+                apo_enabled: false,
+                apo_min_samples: 4,
+                apo_max_samples: 32,
+                apo_significance_alpha: 0.05,
+            },
+        );
+
+        let report = bridge
+            .run_live_apo_update(rollout_ids.as_slice())
+            .await
+            .expect("run APO update");
+        assert!(!report.executed, "report={report:?}");
+        assert!(!report.adopted);
+        assert_eq!(report.sample_count, 0);
+        assert_eq!(report.reason_code.as_deref(), Some("apo_missing_runtime"));
+    }
+
+    #[tokio::test]
+    async fn spec_c21_regression_live_apo_algorithm_failure_reports_deterministic_reason_code() {
+        let store: Arc<dyn TrainingStore + Send + Sync> = Arc::new(InMemoryTrainingStore::new());
+        let rollout_ids = seed_live_rollouts(&store, "c21", &[0.2, 0.3, 0.4, 0.5]).await;
+        let bridge = LiveRlRuntimeBridge::for_tests_with_apo(
+            store,
+            LiveRlRuntimeConfig {
+                enabled: true,
+                store_path: ".tau/training/store.sqlite".into(),
+                update_interval_rollouts: 1,
+                max_rollouts_per_update: 32,
+                max_failure_streak: 3,
+                apo_enabled: true,
+                apo_min_samples: 4,
+                apo_max_samples: 32,
+                apo_significance_alpha: 0.05,
+            },
+            Arc::new(FailingClient::new("forced APO request failure")),
+            "You are Tau.",
+        );
+
+        let report = bridge
+            .run_live_apo_update(rollout_ids.as_slice())
+            .await
+            .expect("run APO update");
+        assert!(!report.executed, "report={report:?}");
+        assert!(!report.adopted);
+        assert_eq!(report.sample_count, 4);
+        assert_eq!(report.reason_code.as_deref(), Some("apo_run_failed"));
+    }
+
+    #[tokio::test]
+    async fn spec_c22_regression_live_apo_significance_failure_reports_deterministic_reason_code() {
+        let store: Arc<dyn TrainingStore + Send + Sync> = Arc::new(InMemoryTrainingStore::new());
+        let rollout_ids = seed_live_rollouts(&store, "c22", &[-0.9, -0.8, -0.7, -0.6]).await;
+        let bridge = LiveRlRuntimeBridge::for_tests_with_apo(
+            store,
+            LiveRlRuntimeConfig {
+                enabled: true,
+                store_path: ".tau/training/store.sqlite".into(),
+                update_interval_rollouts: 1,
+                max_rollouts_per_update: 32,
+                max_failure_streak: 3,
+                apo_enabled: true,
+                apo_min_samples: 4,
+                apo_max_samples: 32,
+                apo_significance_alpha: 0.02,
+            },
+            Arc::new(ScriptedClient::new(vec![
+                "{\"score\":0.10}",
+                "Improve deterministic checks.",
+                "You are Tau. Prefer deterministic checks and concise plans.",
+                "{\"score\":0.90}",
+            ])),
+            "You are Tau.",
+        );
+
+        let report = bridge
+            .run_live_apo_update(rollout_ids.as_slice())
+            .await
+            .expect("run APO update");
+        assert!(!report.executed);
+        assert!(!report.adopted);
+        assert_eq!(report.sample_count, 4);
+        assert_eq!(
+            report.reason_code.as_deref(),
+            Some("apo_significance_failed")
+        );
     }
 
     #[tokio::test]
