@@ -11,6 +11,7 @@ use super::{
     TauOpsDashboardTheme, TauOpsDashboardToolInventoryRow, TauOpsDashboardToolInvocationRow,
     TauOpsDashboardToolUsageHistogramRow,
 };
+use tau_tui::{render_operator_shell_frame, OperatorShellFrame};
 
 #[test]
 fn unit_contains_markdown_contract_syntax_rejects_plain_text() {
@@ -263,6 +264,61 @@ fn regression_spec_2786_c03_shell_none_mode_marks_auth_not_required() {
     });
     assert!(html.contains("data-auth-mode=\"none\""));
     assert!(html.contains("data-login-required=\"false\""));
+}
+
+#[test]
+fn spec_c28_regression_dashboard_and_tui_require_shared_operator_flow_markers() {
+    let context = TauOpsDashboardShellContext {
+        auth_mode: TauOpsDashboardAuthMode::PasswordSession,
+        active_route: TauOpsDashboardRoute::Ops,
+        theme: TauOpsDashboardTheme::Dark,
+        sidebar_state: TauOpsDashboardSidebarState::Expanded,
+        command_center: TauOpsDashboardCommandCenterSnapshot {
+            health_state: "degraded".to_string(),
+            health_reason: "queue backlog and connector retries observed".to_string(),
+            queue_depth: 3,
+            failure_streak: 2,
+            primary_alert_code: "dashboard_queue_backlog".to_string(),
+            primary_alert_severity: "warning".to_string(),
+            primary_alert_message: "runtime backlog detected (queue_depth=3)".to_string(),
+            ..TauOpsDashboardCommandCenterSnapshot::default()
+        },
+        chat: TauOpsDashboardChatSnapshot::default(),
+    };
+
+    let dashboard_html = render_tau_ops_dashboard_shell_with_context(context);
+    assert!(dashboard_html.contains("data-auth-mode=\"password-session\""));
+    assert!(dashboard_html
+        .contains("data-health-reason=\"queue backlog and connector retries observed\""));
+    assert!(dashboard_html.contains("id=\"tau-ops-kpi-queue-depth\""));
+    assert!(dashboard_html.contains("data-kpi-value=\"3\""));
+    assert!(dashboard_html.contains("data-primary-alert-code=\"dashboard_queue_backlog\""));
+
+    let mut shell_frame = OperatorShellFrame::deterministic_fixture("ops-west".to_string());
+    shell_frame.heartbeat = "degraded".to_string();
+    shell_frame.auth_mode = "password-session".to_string();
+    shell_frame.auth_required = true;
+    shell_frame.health_reason = "queue backlog and connector retries observed".to_string();
+    shell_frame.queue_depth = 3;
+    shell_frame.failure_streak = 2;
+    shell_frame.primary_alert_code = "dashboard_queue_backlog".to_string();
+    shell_frame.primary_alert_severity = "warning".to_string();
+    shell_frame.primary_alert_message = "runtime backlog detected (queue_depth=3)".to_string();
+    let tui_rendered = render_operator_shell_frame(&shell_frame, 80).join("\n");
+
+    for marker in [
+        "auth.mode     : password-session",
+        "auth.required : true",
+        "health.reason : queue backlog and connector retries observed",
+        "queue.depth        : 3",
+        "failure.streak     : 2",
+        "primary_alert.code     : dashboard_queue_backlog",
+    ] {
+        assert!(
+            tui_rendered.contains(marker),
+            "missing shared operator-flow marker `{marker}` in TUI output:\n{tui_rendered}"
+        );
+    }
 }
 
 #[test]
