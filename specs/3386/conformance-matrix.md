@@ -14,9 +14,9 @@
 | A2-10 | P0 | Covered | tier_pr_a2_agent_session_flow_matrix | Covers non-stream/stream/session continuity/append/reset/context-pressure. |
 | B6-01 | P1 | Covered | integration_spec_2885_c02_c03_c04_ops_sessions_branch_creates_lineage_derived_target_session | Ops branching behavior covered in existing integration tests. |
 | B6-02 | P1 | Covered | integration_spec_2885_c02_c03_c04_ops_sessions_branch_creates_lineage_derived_target_session | Ops branching behavior covered in existing integration tests. |
-| B6-03 | P1 | N/A | n/a | Branch/undo/redo as tool calls are not part of current registered gateway tool contract. |
-| B6-04 | P1 | N/A | n/a | Branch/undo/redo as tool calls are not part of current registered gateway tool contract. |
-| B6-05 | P1 | N/A | n/a | Branch/undo/redo as tool calls are not part of current registered gateway tool contract. |
+| B6-03 | P1 | Covered | tier_nightly_b6_tool_navigation_matrix | Branch tool-call flow creates target branch session with lineage and prompt continuity. |
+| B6-04 | P1 | Covered | tier_nightly_b6_tool_navigation_matrix | Undo tool-call flow reports applied transition and updates session navigation state. |
+| B6-05 | P1 | Covered | tier_nightly_b6_tool_navigation_matrix | Redo tool-call flow reports applied transition and restores active branch head. |
 | B6-06 | P1 | Covered | integration_openresponses_http_roundtrip_persists_session_state | Session persistence validated across requests; restart lifecycle not exposed as testable API event. |
 | C5-01 | P1 | N/A | n/a | Inbound channel webhook/polling message ingestion endpoints are outside current gateway-openresponses route surface. |
 | C5-02 | P1 | N/A | n/a | Inbound channel webhook/polling message ingestion endpoints are outside current gateway-openresponses route surface. |

@@ -11111,6 +11111,7 @@ fn regression_validate_gateway_openresponses_bind_rejects_invalid_socket_address
 struct FixturePipelineTool {
     name: &'static str,
     root: PathBuf,
+    state_dir: PathBuf,
     memories: Arc<Mutex<Vec<String>>>,
     jobs: Arc<Mutex<BTreeMap<String, String>>>,
 }
@@ -11118,6 +11119,34 @@ struct FixturePipelineTool {
 impl FixturePipelineTool {
     fn is_protected_path(path: &str) -> bool {
         path.starts_with('/') || path.contains("..")
+    }
+
+    fn load_navigation_runtime(
+        &self,
+        session_key: &str,
+    ) -> Result<tau_session::SessionRuntime, ToolExecutionResult> {
+        let normalized_session_key = sanitize_session_key(session_key);
+        let session_path = gateway_session_path(&self.state_dir, normalized_session_key.as_str());
+        let store = tau_session::SessionStore::load(&session_path).map_err(|error| {
+            ToolExecutionResult::error(json!({
+                "code": "session_load_error",
+                "message": error.to_string(),
+                "session_key": normalized_session_key,
+            }))
+        })?;
+        let resolved_active_head = tau_session::resolve_session_navigation_head(&store)
+            .map_err(|error| {
+                ToolExecutionResult::error(json!({
+                    "code": "navigation_state_error",
+                    "message": error.to_string(),
+                    "session_key": normalized_session_key,
+                }))
+            })?
+            .or(store.head_id());
+        Ok(tau_session::SessionRuntime {
+            store,
+            active_head: resolved_active_head,
+        })
     }
 }
 
@@ -11225,6 +11254,207 @@ impl AgentTool for FixturePipelineTool {
                     })),
                 }
             }
+            "branch" => {
+                let source_session_key = arguments
+                    .get("source_session_key")
+                    .or_else(|| arguments.get("session_key"))
+                    .and_then(Value::as_str)
+                    .unwrap_or("default");
+                let target_session_key = arguments
+                    .get("target_session_key")
+                    .and_then(Value::as_str)
+                    .unwrap_or("branch-tool-target");
+                let branch_prompt = arguments
+                    .get("prompt")
+                    .and_then(Value::as_str)
+                    .unwrap_or("branch prompt")
+                    .trim()
+                    .to_string();
+                if branch_prompt.is_empty() {
+                    return ToolExecutionResult::error(json!({
+                        "code": "invalid_args",
+                        "message": "prompt must be non-empty"
+                    }));
+                }
+
+                let source_session_key = sanitize_session_key(source_session_key);
+                let target_session_key = sanitize_session_key(target_session_key);
+                let source_path =
+                    gateway_session_path(&self.state_dir, source_session_key.as_str());
+                let target_path =
+                    gateway_session_path(&self.state_dir, target_session_key.as_str());
+                let target_navigation_path =
+                    tau_session::session_navigation_path_for_session(&target_path);
+
+                let source_store = match tau_session::SessionStore::load(&source_path) {
+                    Ok(store) => store,
+                    Err(error) => {
+                        return ToolExecutionResult::error(json!({
+                            "code": "session_load_error",
+                            "message": error.to_string(),
+                            "session_key": source_session_key,
+                        }));
+                    }
+                };
+                let source_head = source_store.head_id();
+                let source_lineage = match source_store.lineage_messages(source_head) {
+                    Ok(lineage) => lineage,
+                    Err(error) => {
+                        return ToolExecutionResult::error(json!({
+                            "code": "session_lineage_error",
+                            "message": error.to_string(),
+                            "session_key": source_session_key,
+                        }));
+                    }
+                };
+                let copied_messages = source_lineage
+                    .into_iter()
+                    .filter(|message| message.role != tau_ai::MessageRole::System)
+                    .collect::<Vec<_>>();
+
+                if target_path.exists() {
+                    let _ = std::fs::remove_file(&target_path);
+                }
+                if target_navigation_path.exists() {
+                    let _ = std::fs::remove_file(&target_navigation_path);
+                }
+
+                let mut target_store = match tau_session::SessionStore::load(&target_path) {
+                    Ok(store) => store,
+                    Err(error) => {
+                        return ToolExecutionResult::error(json!({
+                            "code": "session_load_error",
+                            "message": error.to_string(),
+                            "session_key": target_session_key,
+                        }));
+                    }
+                };
+                target_store.set_lock_policy(500, 10_000);
+                let mut target_head = match target_store.ensure_initialized("You are Tau.") {
+                    Ok(head) => head,
+                    Err(error) => {
+                        return ToolExecutionResult::error(json!({
+                            "code": "session_init_error",
+                            "message": error.to_string(),
+                            "session_key": target_session_key,
+                        }));
+                    }
+                };
+                if !copied_messages.is_empty() {
+                    target_head = match target_store
+                        .append_messages(target_head, copied_messages.as_slice())
+                    {
+                        Ok(head) => head,
+                        Err(error) => {
+                            return ToolExecutionResult::error(json!({
+                                "code": "session_copy_error",
+                                "message": error.to_string(),
+                                "session_key": target_session_key,
+                            }));
+                        }
+                    };
+                }
+                let before_branch_head = target_head;
+                target_head = match target_store
+                    .append_messages(target_head, &[Message::user(branch_prompt)])
+                {
+                    Ok(head) => head,
+                    Err(error) => {
+                        return ToolExecutionResult::error(json!({
+                            "code": "session_branch_error",
+                            "message": error.to_string(),
+                            "session_key": target_session_key,
+                        }));
+                    }
+                };
+
+                let resolved_active_head =
+                    tau_session::resolve_session_navigation_head(&target_store)
+                        .unwrap_or(None)
+                        .or(target_head);
+                let mut runtime = tau_session::SessionRuntime {
+                    store: target_store,
+                    active_head: resolved_active_head,
+                };
+                if let (Some(previous_head), Some(branch_head)) = (before_branch_head, target_head)
+                {
+                    if previous_head != branch_head {
+                        let _ =
+                            tau_session::navigate_session_head(&mut runtime, Some(previous_head));
+                        let _ = tau_session::navigate_session_head(&mut runtime, Some(branch_head));
+                    }
+                }
+
+                ToolExecutionResult::ok(json!({
+                    "tool": "branch",
+                    "reason_code": "session_branch_created",
+                    "source_session_key": source_session_key,
+                    "target_session_key": target_session_key,
+                    "before_branch_head": before_branch_head,
+                    "branch_head": target_head,
+                    "entry_count": runtime.store.entries().len(),
+                }))
+            }
+            "undo" => {
+                let session_key = arguments
+                    .get("session_key")
+                    .and_then(Value::as_str)
+                    .unwrap_or("default");
+                let mut runtime = match self.load_navigation_runtime(session_key) {
+                    Ok(runtime) => runtime,
+                    Err(result) => return result,
+                };
+                let transition = match tau_session::undo_session_head(&mut runtime) {
+                    Ok(transition) => transition,
+                    Err(error) => {
+                        return ToolExecutionResult::error(json!({
+                            "code": "session_undo_error",
+                            "message": error.to_string(),
+                            "session_key": sanitize_session_key(session_key),
+                        }));
+                    }
+                };
+                ToolExecutionResult::ok(json!({
+                    "tool": "undo",
+                    "reason_code": if transition.changed { "session_undo_applied" } else { "session_undo_empty_stack" },
+                    "session_key": sanitize_session_key(session_key),
+                    "changed": transition.changed,
+                    "previous_head": transition.previous_head,
+                    "active_head": transition.active_head,
+                    "undo_depth": transition.undo_depth,
+                    "redo_depth": transition.redo_depth,
+                }))
+            }
+            "redo" => {
+                let session_key = arguments
+                    .get("session_key")
+                    .and_then(Value::as_str)
+                    .unwrap_or("default");
+                let mut runtime = match self.load_navigation_runtime(session_key) {
+                    Ok(runtime) => runtime,
+                    Err(result) => return result,
+                };
+                let transition = match tau_session::redo_session_head(&mut runtime) {
+                    Ok(transition) => transition,
+                    Err(error) => {
+                        return ToolExecutionResult::error(json!({
+                            "code": "session_redo_error",
+                            "message": error.to_string(),
+                            "session_key": sanitize_session_key(session_key),
+                        }));
+                    }
+                };
+                ToolExecutionResult::ok(json!({
+                    "tool": "redo",
+                    "reason_code": if transition.changed { "session_redo_applied" } else { "session_redo_empty_stack" },
+                    "session_key": sanitize_session_key(session_key),
+                    "changed": transition.changed,
+                    "previous_head": transition.previous_head,
+                    "active_head": transition.active_head,
+                    "undo_depth": transition.undo_depth,
+                    "redo_depth": transition.redo_depth,
+                }))
+            }
             "memory_write" => {
                 let summary = arguments
                     .get("summary")
@@ -11314,14 +11544,16 @@ impl AgentTool for FixturePipelineTool {
 #[derive(Clone)]
 struct FixturePipelineToolRegistrar {
     root: PathBuf,
+    state_dir: PathBuf,
     memories: Arc<Mutex<Vec<String>>>,
     jobs: Arc<Mutex<BTreeMap<String, String>>>,
 }
 
 impl FixturePipelineToolRegistrar {
-    fn new(root: PathBuf) -> Self {
+    fn new(root: PathBuf, state_dir: PathBuf) -> Self {
         Self {
             root,
+            state_dir,
             memories: Arc::new(Mutex::new(Vec::new())),
             jobs: Arc::new(Mutex::new(BTreeMap::new())),
         }
@@ -11340,10 +11572,14 @@ impl GatewayToolRegistrar for FixturePipelineToolRegistrar {
             "bash",
             "jobs_create",
             "jobs_status",
+            "branch",
+            "undo",
+            "redo",
         ] {
             agent.register_tool(FixturePipelineTool {
                 name: tool_name,
                 root: self.root.clone(),
+                state_dir: self.state_dir.clone(),
                 memories: Arc::clone(&self.memories),
                 jobs: Arc::clone(&self.jobs),
             });
@@ -11475,11 +11711,15 @@ async fn tier_pr_t4_tool_pipeline_executes_read_write_edit_sequence() {
     ]));
     let tool_root = temp.path().join("workspace");
     std::fs::create_dir_all(&tool_root).expect("create tool workspace");
+    let state_dir = temp.path().join(".tau/gateway");
     let state = test_state_with_client_and_auth(
         temp.path(),
         10_000,
         scripted.clone(),
-        Arc::new(FixturePipelineToolRegistrar::new(tool_root.clone())),
+        Arc::new(FixturePipelineToolRegistrar::new(
+            tool_root.clone(),
+            state_dir,
+        )),
         GatewayOpenResponsesAuthMode::Token,
         Some("secret"),
         None,
@@ -11553,11 +11793,12 @@ async fn tier_pr_t4_memory_write_and_search_roundtrip() {
     ]));
     let tool_root = temp.path().join("workspace");
     std::fs::create_dir_all(&tool_root).expect("create tool workspace");
+    let state_dir = temp.path().join(".tau/gateway");
     let state = test_state_with_client_and_auth(
         temp.path(),
         10_000,
         scripted.clone(),
-        Arc::new(FixturePipelineToolRegistrar::new(tool_root)),
+        Arc::new(FixturePipelineToolRegistrar::new(tool_root, state_dir)),
         GatewayOpenResponsesAuthMode::Token,
         Some("secret"),
         None,
@@ -11629,11 +11870,12 @@ async fn tier_pr_t4_http_and_error_paths_continue_without_crash() {
     ]));
     let tool_root = temp.path().join("workspace");
     std::fs::create_dir_all(&tool_root).expect("create tool workspace");
+    let state_dir = temp.path().join(".tau/gateway");
     let state = test_state_with_client_and_auth(
         temp.path(),
         10_000,
         scripted,
-        Arc::new(FixturePipelineToolRegistrar::new(tool_root)),
+        Arc::new(FixturePipelineToolRegistrar::new(tool_root, state_dir)),
         GatewayOpenResponsesAuthMode::Token,
         Some("secret"),
         None,
@@ -11698,11 +11940,15 @@ async fn tier_pr_t4_policy_and_protected_path_enforcement() {
     ]));
     let tool_root = temp.path().join("workspace");
     std::fs::create_dir_all(&tool_root).expect("create tool workspace");
+    let state_dir = temp.path().join(".tau/gateway");
     let state = test_state_with_client_and_auth(
         temp.path(),
         10_000,
         scripted,
-        Arc::new(FixturePipelineToolRegistrar::new(tool_root.clone())),
+        Arc::new(FixturePipelineToolRegistrar::new(
+            tool_root.clone(),
+            state_dir,
+        )),
         GatewayOpenResponsesAuthMode::Token,
         Some("secret"),
         None,
@@ -11770,11 +12016,12 @@ async fn tier_pr_t4_jobs_create_and_status_roundtrip() {
     ]));
     let tool_root = temp.path().join("workspace");
     std::fs::create_dir_all(&tool_root).expect("create tool workspace");
+    let state_dir = temp.path().join(".tau/gateway");
     let state = test_state_with_client_and_auth(
         temp.path(),
         10_000,
         scripted,
-        Arc::new(FixturePipelineToolRegistrar::new(tool_root)),
+        Arc::new(FixturePipelineToolRegistrar::new(tool_root, state_dir)),
         GatewayOpenResponsesAuthMode::Token,
         Some("secret"),
         None,
@@ -12477,6 +12724,184 @@ async fn tier_pr_s11_safety_endpoint_matrix() {
             .contains("[MASK]"),
         "prompt text should be redacted in redact mode"
     );
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn tier_nightly_b6_tool_navigation_matrix() {
+    let temp = tempdir().expect("tempdir");
+    let state_dir = temp.path().join(".tau/gateway");
+    let source_session_key = sanitize_session_key("b6-tool-source");
+    let target_session_key = sanitize_session_key("b6-tool-target");
+    let source_path = gateway_session_path(&state_dir, source_session_key.as_str());
+    let mut source_store = SessionStore::load(&source_path).expect("load source session store");
+    source_store.set_lock_policy(500, 10_000);
+    let source_head = source_store
+        .ensure_initialized("You are Tau.")
+        .expect("initialize source session");
+    let source_head = source_store
+        .append_messages(source_head, &[Message::user("source root prompt")])
+        .expect("append source user message");
+    let source_head = source_store
+        .append_messages(
+            source_head,
+            &[Message::assistant_text("source assistant response")],
+        )
+        .expect("append source assistant message");
+    assert!(source_head.is_some());
+
+    let scripted = Arc::new(ScriptedGatewayLlmClient::new(vec![
+        ChatResponse {
+            message: Message::assistant_blocks(vec![ContentBlock::ToolCall {
+                id: "call-branch".to_string(),
+                name: "branch".to_string(),
+                arguments: json!({
+                    "source_session_key": source_session_key.clone(),
+                    "target_session_key": target_session_key.clone(),
+                    "prompt": "branch via tool prompt"
+                }),
+            }]),
+            finish_reason: Some("tool_calls".to_string()),
+            usage: ChatUsage::default(),
+        },
+        ChatResponse {
+            message: Message::assistant_text("branch follow-up ready"),
+            finish_reason: Some("stop".to_string()),
+            usage: ChatUsage::default(),
+        },
+        ChatResponse {
+            message: Message::assistant_blocks(vec![ContentBlock::ToolCall {
+                id: "call-undo".to_string(),
+                name: "undo".to_string(),
+                arguments: json!({
+                    "session_key": target_session_key.clone()
+                }),
+            }]),
+            finish_reason: Some("tool_calls".to_string()),
+            usage: ChatUsage::default(),
+        },
+        ChatResponse {
+            message: Message::assistant_blocks(vec![ContentBlock::ToolCall {
+                id: "call-redo".to_string(),
+                name: "redo".to_string(),
+                arguments: json!({
+                    "session_key": target_session_key.clone()
+                }),
+            }]),
+            finish_reason: Some("tool_calls".to_string()),
+            usage: ChatUsage::default(),
+        },
+        ChatResponse {
+            message: Message::assistant_text("b6 tool navigation complete"),
+            finish_reason: Some("stop".to_string()),
+            usage: ChatUsage::default(),
+        },
+    ]));
+    let tool_root = temp.path().join("workspace");
+    std::fs::create_dir_all(&tool_root).expect("create tool workspace");
+    let state = test_state_with_client_and_auth(
+        temp.path(),
+        10_000,
+        scripted.clone(),
+        Arc::new(FixturePipelineToolRegistrar::new(
+            tool_root,
+            state_dir.clone(),
+        )),
+        GatewayOpenResponsesAuthMode::Token,
+        Some("secret"),
+        None,
+        60,
+        120,
+    );
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+    let client = Client::new();
+
+    let response = client
+        .post(format!("http://{addr}{OPENRESPONSES_ENDPOINT}"))
+        .bearer_auth("secret")
+        .json(&json!({
+            "input": "run branch then undo then redo",
+            "metadata": {"session_id":"tier-nightly-b6-tool-nav"}
+        }))
+        .send()
+        .await
+        .expect("send b6 navigation request");
+    let status = response.status();
+    let payload = response
+        .json::<Value>()
+        .await
+        .expect("parse b6 navigation response");
+    assert_eq!(status, StatusCode::OK, "unexpected payload: {payload}");
+    assert_eq!(
+        payload["output_text"],
+        Value::String("b6 tool navigation complete".to_string())
+    );
+
+    let target_path = gateway_session_path(&state_dir, target_session_key.as_str());
+    let target_store = SessionStore::load(&target_path).expect("load target session store");
+    let target_lineage = target_store
+        .lineage_messages(target_store.head_id())
+        .expect("target lineage messages");
+    assert!(target_lineage
+        .iter()
+        .any(|message| message.text_content() == "source root prompt"));
+    assert!(target_lineage
+        .iter()
+        .any(|message| message.text_content() == "source assistant response"));
+    assert!(target_lineage
+        .iter()
+        .any(|message| message.text_content() == "branch via tool prompt"));
+
+    let navigation_path = tau_session::session_navigation_path_for_session(&target_path);
+    let navigation = tau_session::load_session_navigation_state(&navigation_path)
+        .expect("load target navigation state");
+    assert_eq!(navigation.current_head, target_store.head_id());
+    assert_eq!(navigation.redo_stack.len(), 0);
+    assert!(
+        !navigation.undo_stack.is_empty(),
+        "undo stack should retain at least one prior head after redo"
+    );
+    assert!(
+        navigation.undo_stack.first().copied().flatten().is_some(),
+        "undo stack should retain prior head after redo"
+    );
+
+    let captured_requests = scripted.captured_requests().await;
+    assert!(
+        captured_requests.len() >= 5,
+        "expected primary + branch-followup requests"
+    );
+    let tool_result_payloads = captured_requests
+        .iter()
+        .flat_map(|request| request.messages.iter())
+        .filter(|message| message.role == MessageRole::Tool && !message.is_error)
+        .filter_map(|message| {
+            let tool_name = message.tool_name.clone()?;
+            let payload = serde_json::from_str::<Value>(message.text_content().as_str()).ok()?;
+            Some((tool_name, payload))
+        })
+        .collect::<Vec<_>>();
+    assert!(tool_result_payloads.iter().any(|(tool_name, payload)| {
+        if tool_name != "branch" {
+            return false;
+        }
+        let reason_code = payload["reason_code"].as_str().unwrap_or_default();
+        reason_code == "session_branch_created"
+            || (reason_code == "branch_conclusion_ready"
+                && payload["branch_creation_reason_code"].as_str()
+                    == Some("session_branch_created"))
+    }));
+    assert!(tool_result_payloads.iter().any(|(tool_name, payload)| {
+        tool_name == "undo"
+            && payload["reason_code"].as_str() == Some("session_undo_applied")
+            && payload["changed"] == Value::Bool(true)
+    }));
+    assert!(tool_result_payloads.iter().any(|(tool_name, payload)| {
+        tool_name == "redo"
+            && payload["reason_code"].as_str() == Some("session_redo_applied")
+            && payload["changed"] == Value::Bool(true)
+    }));
 
     handle.abort();
 }

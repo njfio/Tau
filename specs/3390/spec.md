@@ -1,6 +1,6 @@
 # Spec: Issue #3390 - Cover B6 branch/undo/redo tool-call scenarios
 
-Status: Reviewed
+Status: Implemented
 
 ## Problem Statement
 `specs/3386/conformance-matrix.md` still marks `B6-03`, `B6-04`, and `B6-05` as `N/A` because tool-call-driven branch/undo/redo flows were not exercised in gateway end-to-end conformance tests.
