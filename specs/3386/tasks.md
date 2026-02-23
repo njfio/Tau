@@ -108,3 +108,26 @@
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings` -> passed
 - `cargo test --workspace` -> passed
 - `cargo fmt --all -- --check` -> passed
+
+## Verification Addendum (2026-02-23, post-rebase stability)
+
+### RED
+
+- Post-rebase full workspace regression surfaced deterministic CI-flake behavior in:
+  - `crates/tau-coding-agent/tests/cli_integration/orchestrator_harness.rs`
+  - failing test: `orchestrator_harness::regression_orchestrator_route_fallback_recovers_from_planner_timeout`
+  - root cause: fallback attempt also timed out under heavy workspace load with `--request-timeout-ms 30`, causing route exhaustion before recovery.
+
+### GREEN
+
+- Stabilization applied:
+  - `crates/tau-coding-agent/tests/cli_integration/orchestrator_harness.rs`
+    - increased timeout in the timeout-fallback regression fixture from `30` to `120` ms to preserve timeout semantics while making fallback deterministic under load.
+- Focused verification:
+  - `cargo test -p tau-coding-agent --test cli_integration orchestrator_harness::regression_orchestrator_route_fallback_recovers_from_planner_timeout -- --exact --nocapture` -> passed
+  - `cargo test -p tau-coding-agent --test cli_integration orchestrator_harness:: -- --nocapture` -> `4 passed; 0 failed`
+
+### REGRESSION
+
+- Full gate rerun after stabilization:
+  - `cargo test --workspace` -> passed (`0 failed` across unit/integration/doc tests)
