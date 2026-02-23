@@ -13196,7 +13196,7 @@ async fn tier_weekly_ch15_chaos_matrix() {
         Some("secret"),
         None,
         60,
-        120,
+        1_000,
     );
     let (addr, handle) = spawn_test_server(state.clone())
         .await
@@ -13334,6 +13334,82 @@ async fn tier_weekly_ch15_chaos_matrix() {
         lock_session_raw.lines().count() >= 4,
         "expected persisted session records after contention flow"
     );
+
+    // CH15-06
+    let pressure_session_prefix = "ch15-pressure";
+    for session_index in 0..100usize {
+        let session_id = format!("{pressure_session_prefix}-{session_index}");
+        for turn_index in 0..2usize {
+            let pressure_response = client
+                .post(format!("http://{addr}{OPENRESPONSES_ENDPOINT}"))
+                .bearer_auth("secret")
+                .json(&json!({
+                    "input": format!("pressure-{session_index}-turn-{turn_index}"),
+                    "metadata": {"session_id": session_id}
+                }))
+                .send()
+                .await
+                .expect("pressure response");
+            let pressure_status = pressure_response.status();
+            let pressure_payload = pressure_response
+                .json::<Value>()
+                .await
+                .expect("parse pressure response");
+            assert_eq!(
+                pressure_status,
+                StatusCode::OK,
+                "pressure session request failed: {pressure_payload}"
+            );
+        }
+    }
+
+    let pressure_sessions = client
+        .get(format!(
+            "http://{addr}{GATEWAY_SESSIONS_ENDPOINT}?limit=200"
+        ))
+        .bearer_auth("secret")
+        .send()
+        .await
+        .expect("pressure sessions list");
+    assert_eq!(pressure_sessions.status(), StatusCode::OK);
+    let pressure_sessions_payload = pressure_sessions
+        .json::<Value>()
+        .await
+        .expect("parse pressure sessions payload");
+    let pressure_session_count = pressure_sessions_payload["sessions"]
+        .as_array()
+        .expect("sessions array")
+        .iter()
+        .filter(|entry| {
+            entry["session_key"]
+                .as_str()
+                .is_some_and(|session_key| session_key.starts_with(pressure_session_prefix))
+        })
+        .count();
+    assert_eq!(pressure_session_count, 100);
+
+    let sample_pressure_session_path = gateway_session_path(
+        &state.config.state_dir,
+        &sanitize_session_key("ch15-pressure-0"),
+    );
+    let sample_pressure_session_raw =
+        std::fs::read_to_string(&sample_pressure_session_path).expect("read pressure session file");
+    assert!(
+        sample_pressure_session_raw.lines().count() >= 4,
+        "pressure sample session should contain multi-turn persisted history"
+    );
+
+    let pressure_followup = client
+        .post(format!("http://{addr}{OPENRESPONSES_ENDPOINT}"))
+        .bearer_auth("secret")
+        .json(&json!({
+            "input":"pressure follow-up health check",
+            "metadata": {"session_id":"ch15-pressure-0"}
+        }))
+        .send()
+        .await
+        .expect("pressure follow-up");
+    assert_eq!(pressure_followup.status(), StatusCode::OK);
 
     handle.abort();
 

@@ -31,7 +31,7 @@
 | CH15-03 | P3 | Covered | tier_weekly_ch15_chaos_matrix | Timeout/malformed provider/flood/disconnect chaos paths covered. |
 | CH15-04 | P3 | Covered | tier_weekly_ch15_chaos_matrix | Timeout/malformed provider/flood/disconnect chaos paths covered. |
 | CH15-05 | P3 | Covered | tier_weekly_ch15_chaos_matrix | Session lock-contention retry path is exercised with deterministic lock-file release and persisted-session assertions. |
-| CH15-06 | P3 | N/A | n/a | Deterministic SQLite lock-contention and memory-pressure GC assertions are not currently exposed through stable test hooks. |
+| CH15-06 | P3 | Covered | tier_weekly_ch15_chaos_matrix | High session-cardinality pressure run (`100` sessions, multi-turn history) validates persistence and post-pressure responsiveness. |
 | D12-01 | P2 | Covered | tier_nightly_p2_observability_matrix | Dashboard status/widgets/alerts/stream/timeline covered. |
 | D12-02 | P2 | Covered | tier_nightly_p2_observability_matrix | Dashboard status/widgets/alerts/stream/timeline covered. |
 | D12-03 | P2 | Covered | tier_nightly_p2_observability_matrix | Dashboard status/widgets/alerts/stream/timeline covered. |
