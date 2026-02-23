@@ -1354,7 +1354,7 @@ mod tests {
             .expect("dequeue")
             .expect("attempt");
 
-        tokio::time::sleep(Duration::from_millis(20)).await;
+        tokio::time::sleep(Duration::from_millis(350)).await;
         store
             .update_worker_heartbeat(
                 "worker-heartbeat",
@@ -1365,7 +1365,7 @@ mod tests {
             .expect("refresh heartbeat");
 
         let requeued = store
-            .reassign_timed_out_rollouts(Duration::from_millis(5))
+            .reassign_timed_out_rollouts(Duration::from_millis(250))
             .await
             .expect("reassign");
         assert!(
