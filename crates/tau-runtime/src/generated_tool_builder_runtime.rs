@@ -575,6 +575,7 @@ mod tests {
         GENERATED_TOOL_REASON_COMPILE_FAILED, GENERATED_TOOL_REASON_COMPILE_SUCCESS,
         GENERATED_TOOL_REASON_SANDBOX_VALIDATED,
     };
+    use crate::WasmSandboxLimits;
     use tempfile::tempdir;
 
     #[test]
@@ -670,5 +671,46 @@ mod tests {
         .expect_err("invalid tool name should fail");
 
         assert_eq!(error.reason_code, "generated_tool_name_invalid");
+    }
+
+    #[test]
+    fn regression_build_generated_wasm_tool_fails_closed_when_wasm_spins_forever() {
+        let temp = tempdir().expect("tempdir");
+        let error = build_generated_wasm_tool(GeneratedToolBuildRequest {
+            tool_name: "issue_triage".to_string(),
+            description: "Generated issue triage tool".to_string(),
+            spec: "Return structured triage recommendation".to_string(),
+            output_root: temp.path().join("generated-tools"),
+            extension_root: temp.path().join("extensions"),
+            wasm_limits: WasmSandboxLimits {
+                fuel_limit: 50_000_000,
+                timeout_ms: 1,
+                ..WasmSandboxLimits::default()
+            },
+            provided_wat_source: Some(
+                r#"(module
+  (memory (export "memory") 1)
+  (func (export "tau_extension_alloc") (param i32) (result i32) i32.const 0)
+  (func (export "tau_extension_invoke") (param i32 i32) (result i64)
+    (loop $spin
+      br $spin
+    )
+    i64.const 0)
+)"#
+                .to_string(),
+            ),
+            ..GeneratedToolBuildRequest::default()
+        })
+        .expect_err("infinite-loop wasm must fail closed in sandbox validation");
+
+        assert_eq!(
+            error.reason_code,
+            "generated_tool_sandbox_validation_failed"
+        );
+        assert!(
+            error.message.contains("reason_code=wasm_execution_timeout"),
+            "expected timeout reason in fail-closed sandbox message: {}",
+            error.message
+        );
     }
 }

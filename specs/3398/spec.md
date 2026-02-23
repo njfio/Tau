@@ -1,6 +1,6 @@
 # Spec: Issue #3398 - Cover E14-01..E14-03 tool-builder WASM scenarios
 
-Status: Accepted
+Status: Implemented
 
 ## Problem Statement
 `specs/3386/conformance-matrix.md` still marks `E14-01`, `E14-02`, and `E14-03` as `N/A`, even though the repository has deterministic tool-builder/WASM runtime coverage surfaces. We need explicit conformance mapping and deterministic sandbox-limit failure coverage for misbehaving WASM modules.
