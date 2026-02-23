@@ -781,6 +781,8 @@ impl FileMemoryStore {
                 initialize_memory_sqlite_schema(&connection)?;
                 let transaction = connection.transaction()?;
                 for record in &records {
+                    let updated_unix_ms =
+                        sqlite_i64_from_u64(record.updated_unix_ms, "updated_unix_ms")?;
                     let encoded =
                         serde_json::to_string(record).context("failed to encode memory record")?;
                     transaction.execute(
@@ -788,7 +790,7 @@ impl FileMemoryStore {
                         INSERT INTO memory_records (memory_id, updated_unix_ms, record_json)
                         VALUES (?1, ?2, ?3)
                         "#,
-                        params![record.entry.memory_id, record.updated_unix_ms, encoded],
+                        params![record.entry.memory_id, updated_unix_ms, encoded],
                     )?;
                 }
                 transaction.commit()?;
@@ -986,9 +988,16 @@ impl FileMemoryStore {
 
         let mut connection = open_memory_sqlite_connection(sqlite_path)?;
         initialize_memory_sqlite_schema(&connection)?;
-        let existing_count: u64 = connection
+        let existing_count: i64 = connection
             .query_row("SELECT COUNT(1) FROM memory_records", [], |row| row.get(0))
             .context("failed to inspect sqlite memory record count")?;
+        if existing_count < 0 {
+            bail!(
+                "invalid sqlite memory record count {} in {}",
+                existing_count,
+                sqlite_path.display()
+            );
+        }
         if existing_count > 0 {
             return Ok(0);
         }
@@ -1000,6 +1009,7 @@ impl FileMemoryStore {
 
         let transaction = connection.transaction()?;
         for record in &records {
+            let updated_unix_ms = sqlite_i64_from_u64(record.updated_unix_ms, "updated_unix_ms")?;
             let encoded =
                 serde_json::to_string(record).context("failed to encode memory sqlite record")?;
             transaction.execute(
@@ -1007,7 +1017,7 @@ impl FileMemoryStore {
                 INSERT INTO memory_records (memory_id, updated_unix_ms, record_json)
                 VALUES (?1, ?2, ?3)
                 "#,
-                params![record.entry.memory_id, record.updated_unix_ms, encoded],
+                params![record.entry.memory_id, updated_unix_ms, encoded],
             )?;
         }
         transaction.commit()?;
@@ -1049,6 +1059,11 @@ fn normalize_scope(scope: &MemoryScope) -> MemoryScope {
         channel_id: normalize_scope_component(&scope.channel_id, MEMORY_SCOPE_DEFAULT_CHANNEL),
         actor_id: normalize_scope_component(&scope.actor_id, MEMORY_SCOPE_DEFAULT_ACTOR),
     }
+}
+
+fn sqlite_i64_from_u64(value: u64, field: &str) -> Result<i64> {
+    i64::try_from(value)
+        .with_context(|| format!("sqlite {} value {} exceeds INTEGER range", field, value))
 }
 
 fn normalize_scope_component(value: &str, fallback: &str) -> String {
@@ -1913,22 +1928,28 @@ mod tests {
 
     #[test]
     fn unit_memory_type_importance_profile_validate_rejects_invalid_values() {
-        let mut non_finite = MemoryTypeImportanceProfile::default();
-        non_finite.identity = f32::INFINITY;
+        let non_finite = MemoryTypeImportanceProfile {
+            identity: f32::INFINITY,
+            ..MemoryTypeImportanceProfile::default()
+        };
         let non_finite_error = non_finite
             .validate()
             .expect_err("non-finite defaults must fail validation");
         assert!(non_finite_error.to_string().contains("identity"));
 
-        let mut out_of_range = MemoryTypeImportanceProfile::default();
-        out_of_range.goal = 1.5;
+        let out_of_range = MemoryTypeImportanceProfile {
+            goal: 1.5,
+            ..MemoryTypeImportanceProfile::default()
+        };
         let out_of_range_error = out_of_range
             .validate()
             .expect_err("out-of-range defaults must fail validation");
         assert!(out_of_range_error.to_string().contains("goal"));
 
-        let mut negative = MemoryTypeImportanceProfile::default();
-        negative.todo = -0.01;
+        let negative = MemoryTypeImportanceProfile {
+            todo: -0.01,
+            ..MemoryTypeImportanceProfile::default()
+        };
         let negative_error = negative
             .validate()
             .expect_err("negative defaults must fail validation");
@@ -1938,9 +1959,11 @@ mod tests {
     #[test]
     fn spec_2589_c02_file_memory_store_applies_configured_type_default_importance() {
         let temp = tempdir().expect("tempdir");
-        let mut profile = MemoryTypeImportanceProfile::default();
-        profile.identity = 0.42;
-        profile.observation = 0.18;
+        let profile = MemoryTypeImportanceProfile {
+            identity: 0.42,
+            observation: 0.18,
+            ..MemoryTypeImportanceProfile::default()
+        };
 
         let store = FileMemoryStore::new_with_embedding_provider_and_importance_profile(
             temp.path(),
@@ -2303,7 +2326,7 @@ mod tests {
                 INSERT INTO memory_records (memory_id, updated_unix_ms, record_json)
                 VALUES (?1, ?2, ?3)
                 "#,
-                rusqlite::params!["source-legacy", 100_u64, source_json],
+                rusqlite::params!["source-legacy", 100_i64, source_json],
             )
             .expect("insert source legacy record");
 
@@ -2338,7 +2361,7 @@ mod tests {
                 INSERT INTO memory_records (memory_id, updated_unix_ms, record_json)
                 VALUES (?1, ?2, ?3)
                 "#,
-                rusqlite::params!["target-legacy", 90_u64, target_json],
+                rusqlite::params!["target-legacy", 90_i64, target_json],
             )
             .expect("insert target legacy record");
 
@@ -2361,7 +2384,7 @@ mod tests {
                     "depends_on",
                     0.7_f32,
                     0.7_f32,
-                    100_u64
+                    100_i64
                 ],
             )
             .expect("insert relation edge");

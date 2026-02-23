@@ -115,6 +115,22 @@ impl RewardInference for TraceBasedRewardInference {
     }
 }
 
+fn infer_token_efficiency(input_chars: usize, output_chars: usize) -> f64 {
+    if input_chars == 0 || output_chars == 0 {
+        return 0.0;
+    }
+
+    let ratio = output_chars as f64 / input_chars as f64;
+    let score = if ratio <= 1.0 {
+        0.25
+    } else if ratio >= 3.0 {
+        -0.25
+    } else {
+        0.25 - ((ratio - 1.0) / 2.0) * 0.5
+    };
+    score.clamp(-0.25, 0.25)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -186,20 +202,10 @@ mod tests {
         assert!(with_error_output.reliability < 0.0);
         assert!(with_error_output.composite < no_error_output.composite);
     }
-}
 
-fn infer_token_efficiency(input_chars: usize, output_chars: usize) -> f64 {
-    if input_chars == 0 || output_chars == 0 {
-        return 0.0;
+    #[test]
+    fn regression_token_efficiency_guard_returns_zero_when_either_side_is_zero() {
+        assert_eq!(super::infer_token_efficiency(0, 24), 0.0);
+        assert_eq!(super::infer_token_efficiency(24, 0), 0.0);
     }
-
-    let ratio = output_chars as f64 / input_chars as f64;
-    let score = if ratio <= 1.0 {
-        0.25
-    } else if ratio >= 3.0 {
-        -0.25
-    } else {
-        0.25 - ((ratio - 1.0) / 2.0) * 0.5
-    };
-    score.clamp(-0.25, 0.25)
 }

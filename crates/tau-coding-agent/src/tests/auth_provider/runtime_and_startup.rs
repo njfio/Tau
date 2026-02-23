@@ -1344,7 +1344,10 @@ async fn regression_spec_2542_c03_run_local_runtime_prompt_executes_model_call()
     run_result.expect("run_local_runtime should execute prompt path");
 
     let recorded_models = recorded_models.lock().await.clone();
-    assert_eq!(recorded_models.as_slice(), &[model_ref.model.clone()]);
+    assert_eq!(
+        recorded_models.as_slice(),
+        std::slice::from_ref(&model_ref.model)
+    );
 }
 
 #[tokio::test]

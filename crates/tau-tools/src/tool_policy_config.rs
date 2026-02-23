@@ -1229,6 +1229,13 @@ mod tests {
 
     #[test]
     fn functional_build_tool_policy_applies_docker_sandbox_settings() {
+        let _guard = env_lock().lock().expect("env lock");
+        let vars = ["TAU_MEMORY_DEFAULT_IMPORTANCE_IDENTITY"];
+        let _snapshot = EnvSnapshot::capture(&vars);
+        for name in vars {
+            std::env::remove_var(name);
+        }
+
         let cli = parse_cli_with_stack_args(vec![
             "tau-rs",
             "--os-sandbox-docker-enabled=true",
@@ -1264,6 +1271,13 @@ mod tests {
 
     #[test]
     fn integration_tool_policy_json_exposes_docker_sandbox_settings() {
+        let _guard = env_lock().lock().expect("env lock");
+        let vars = ["TAU_MEMORY_DEFAULT_IMPORTANCE_IDENTITY"];
+        let _snapshot = EnvSnapshot::capture(&vars);
+        for name in vars {
+            std::env::remove_var(name);
+        }
+
         let cli = parse_cli_with_stack_args(vec![
             "tau-rs",
             "--os-sandbox-docker-enabled=true",
@@ -1296,6 +1310,13 @@ mod tests {
 
     #[test]
     fn functional_build_tool_policy_applies_tool_builder_settings() {
+        let _guard = env_lock().lock().expect("env lock");
+        let vars = ["TAU_MEMORY_DEFAULT_IMPORTANCE_IDENTITY"];
+        let _snapshot = EnvSnapshot::capture(&vars);
+        for name in vars {
+            std::env::remove_var(name);
+        }
+
         let cli = parse_cli_with_stack_args(vec![
             "tau-rs",
             "--tool-builder-enabled",
@@ -1319,6 +1340,13 @@ mod tests {
 
     #[test]
     fn regression_build_tool_policy_rejects_invalid_docker_cpu_limit() {
+        let _guard = env_lock().lock().expect("env lock");
+        let vars = ["TAU_MEMORY_DEFAULT_IMPORTANCE_IDENTITY"];
+        let _snapshot = EnvSnapshot::capture(&vars);
+        for name in vars {
+            std::env::remove_var(name);
+        }
+
         let cli = parse_cli_with_stack_args(vec![
             "tau-rs",
             "--os-sandbox-docker-enabled=true",
@@ -1331,6 +1359,13 @@ mod tests {
 
     #[test]
     fn regression_build_tool_policy_rejects_invalid_docker_env_allowlist_name() {
+        let _guard = env_lock().lock().expect("env lock");
+        let vars = ["TAU_MEMORY_DEFAULT_IMPORTANCE_IDENTITY"];
+        let _snapshot = EnvSnapshot::capture(&vars);
+        for name in vars {
+            std::env::remove_var(name);
+        }
+
         let cli = parse_cli_with_stack_args(vec![
             "tau-rs",
             "--os-sandbox-docker-enabled=true",

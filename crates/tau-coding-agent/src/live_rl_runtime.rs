@@ -2227,7 +2227,7 @@ mod tests {
 
         let mut span = TrainingSpan::new(
             rollout_id,
-            &format!("{rollout_id}:attempt-live"),
+            format!("{rollout_id}:attempt-live"),
             1,
             format!("trace:{rollout_id}"),
             format!("span:{rollout_id}:1"),
@@ -2285,7 +2285,7 @@ mod tests {
 
         let mut span = TrainingSpan::new(
             rollout_id,
-            &format!("{rollout_id}:attempt-live"),
+            format!("{rollout_id}:attempt-live"),
             1,
             format!("trace:{rollout_id}"),
             format!("span:{rollout_id}:1"),
@@ -2303,6 +2303,7 @@ mod tests {
         store.add_span(span).await.expect("add seeded span");
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn seed_live_rollout_outcome(
         store: &Arc<dyn TrainingStore + Send + Sync>,
         rollout_id: &str,
@@ -2333,7 +2334,7 @@ mod tests {
 
         let mut span = TrainingSpan::new(
             rollout_id,
-            &format!("{rollout_id}:attempt-live"),
+            format!("{rollout_id}:attempt-live"),
             1,
             format!("trace:{rollout_id}"),
             format!("span:{rollout_id}:1"),
@@ -2711,8 +2712,16 @@ mod tests {
         let latest = store
             .get_latest_resources()
             .await
-            .expect("get latest resources");
-        assert!(latest.is_none());
+            .expect("get latest resources")
+            .expect("live learning resources should still persist");
+        assert!(
+            !latest.resources.contains_key("system_prompt"),
+            "system_prompt should not be adopted without significant improvement"
+        );
+        assert!(
+            !latest.resources.contains_key("system_prompt_version"),
+            "system_prompt_version should not be persisted without prompt adoption"
+        );
     }
 
     #[tokio::test]

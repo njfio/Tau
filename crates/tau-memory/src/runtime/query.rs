@@ -1775,7 +1775,9 @@ mod tests {
             seed_id.clone(),
             build_record(seed_id.as_str(), 0.9, Vec::new()),
         )]);
-        assert!(compute_graph_scores(&HashMap::new(), &[seed_id.clone()], 2).is_empty());
+        assert!(
+            compute_graph_scores(&HashMap::new(), std::slice::from_ref(&seed_id), 2).is_empty()
+        );
         assert!(compute_graph_scores(&records, &[], 2).is_empty());
         assert!(compute_graph_scores(&records, &[seed_id], 0).is_empty());
     }
@@ -2426,9 +2428,10 @@ mod tests {
         let mut statement = connection
             .prepare("SELECT COUNT(*) FROM memory_ingestion_checkpoints")
             .expect("prepare checkpoint count statement");
-        statement
-            .query_row([], |row| row.get::<_, usize>(0))
-            .expect("query checkpoint row count")
+        let count: i64 = statement
+            .query_row([], |row| row.get(0))
+            .expect("query checkpoint row count");
+        usize::try_from(count).expect("checkpoint row count should be non-negative")
     }
 
     fn llm_ingestion_options(server: &MockServer) -> MemoryIngestionLlmOptions {

@@ -6,6 +6,7 @@ use tau_ai::{
     AnthropicClient, AnthropicConfig, ChatRequest, GoogleClient, GoogleConfig, LlmClient, Message,
     OpenAiAuthScheme, OpenAiClient, OpenAiConfig, TauAiError, ToolChoice, ToolDefinition,
 };
+use tokio::sync::Mutex as AsyncMutex;
 
 fn decode_outbound_fixture_secret(value: &str) -> String {
     value.replace("[TAU-OBFUSCATED]", "")
@@ -30,9 +31,9 @@ fn outbound_secret_fixture_cases() -> Vec<(String, String)> {
         .collect::<Vec<_>>()
 }
 
-fn env_lock() -> &'static Mutex<()> {
-    static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    ENV_LOCK.get_or_init(|| Mutex::new(()))
+fn env_lock() -> &'static AsyncMutex<()> {
+    static ENV_LOCK: OnceLock<AsyncMutex<()>> = OnceLock::new();
+    ENV_LOCK.get_or_init(|| AsyncMutex::new(()))
 }
 
 fn restore_env_var(name: &str, prior: Option<String>) {
@@ -117,7 +118,7 @@ async fn openai_client_sends_expected_http_request() {
 
 #[tokio::test]
 async fn spec_c06_openrouter_route_applies_dedicated_headers_when_configured() {
-    let _guard = env_lock().lock().expect("acquire env lock");
+    let _guard = env_lock().lock().await;
     let prior_base = std::env::var("TAU_OPENROUTER_API_BASE").ok();
     let prior_title = std::env::var("TAU_OPENROUTER_X_TITLE").ok();
     let prior_referer = std::env::var("TAU_OPENROUTER_HTTP_REFERER").ok();

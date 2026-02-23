@@ -209,13 +209,14 @@ pub(super) fn append_record_sqlite(path: &Path, record: &RuntimeMemoryRecord) ->
     let mut connection = open_memory_sqlite_connection(path)?;
     initialize_memory_sqlite_schema(&connection)?;
     let transaction = connection.transaction()?;
+    let updated_unix_ms = sqlite_i64_from_u64(record.updated_unix_ms, "updated_unix_ms", path)?;
     let encoded = serde_json::to_string(record).context("failed to encode memory record")?;
     transaction.execute(
         r#"
         INSERT INTO memory_records (memory_id, updated_unix_ms, record_json)
         VALUES (?1, ?2, ?3)
         "#,
-        params![record.entry.memory_id, record.updated_unix_ms, encoded],
+        params![record.entry.memory_id, updated_unix_ms, encoded],
     )?;
     transaction.execute(
         r#"
@@ -248,12 +249,23 @@ pub(super) fn append_record_sqlite(path: &Path, record: &RuntimeMemoryRecord) ->
                 relation.relation_type.as_str(),
                 relation.weight,
                 relation.effective_weight,
-                record.updated_unix_ms
+                updated_unix_ms
             ],
         )?;
     }
     transaction.commit()?;
     Ok(())
+}
+
+fn sqlite_i64_from_u64(value: u64, field: &str, path: &Path) -> Result<i64> {
+    i64::try_from(value).with_context(|| {
+        format!(
+            "sqlite {} value {} exceeds INTEGER range in {}",
+            field,
+            value,
+            path.display()
+        )
+    })
 }
 
 pub(super) fn load_records_sqlite(path: &Path) -> Result<Vec<RuntimeMemoryRecord>> {
