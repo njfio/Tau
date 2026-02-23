@@ -1,6 +1,6 @@
 # M296 - Full Program Delivery (RL + Dashboard + Auth + TUI GA)
 
-Status: In Progress
+Status: Closed (2026-02-23)
 
 ## Context
 M296 is the integrated program milestone for delivering production-grade operator flows across:
@@ -46,3 +46,10 @@ M296 is the integrated program milestone for delivering production-grade operato
 - `scripts/verify/m296-ga-readiness-gate.sh`
 - `artifacts/operator-maturity-wave/verification-report.json`
 - `artifacts/operator-ga-readiness/verification-report.json`
+
+## Closeout Summary
+- Milestone was closed with all linked issues completed:
+  - `#3424`, `#3426`, `#3427`, `#3428`, `#3429`, `#3430`.
+- GitHub milestone state: `closed`, `open_issues: 0`, `closed_issues: 8`.
+- Program gate signal:
+  - M295 maturity wave and M296 GA readiness scripts are the canonical operator verification entrypoints.
