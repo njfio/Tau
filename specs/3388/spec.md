@@ -1,6 +1,6 @@
 # Spec: Issue #3388 - Close remaining P0 OpenAI compatibility gaps
 
-Status: Accepted
+Status: Implemented
 
 ## Problem Statement
 Issue `#3386` delivered broad Tau E2E PRD coverage, but Scenario Group 3 still left P0 gaps (`O3-06`, `O3-07`, `O3-08`, `O3-10`) as `N/A` because behavior was either implicit, silently ignored, or not asserted with deterministic tests.
