@@ -186,10 +186,14 @@ Contributor references:
 - [`AGENTS.md`](AGENTS.md)
 - [`docs/tau-coding-agent/code-map.md`](docs/tau-coding-agent/code-map.md)
 - [`docs/architecture/crate-dependency-diagram.md`](docs/architecture/crate-dependency-diagram.md)
+- [`docs/guides/startup-di-pipeline.md`](docs/guides/startup-di-pipeline.md)
+- [`docs/guides/contract-pattern-lifecycle.md`](docs/guides/contract-pattern-lifecycle.md)
+- [`docs/guides/multi-channel-event-pipeline.md`](docs/guides/multi-channel-event-pipeline.md)
 
 Planning/roadmap references:
 - [`docs/planning/true-rl-roadmap-skeleton.md`](docs/planning/true-rl-roadmap-skeleton.md)
 - [`docs/guides/roadmap-execution-index.md`](docs/guides/roadmap-execution-index.md)
+- [`docs/guides/doc-density-scorecard.md`](docs/guides/doc-density-scorecard.md)
 
 ## Packaging and Release Artifacts
 
