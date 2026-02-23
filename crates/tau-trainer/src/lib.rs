@@ -5,6 +5,13 @@ pub mod benchmark_driver;
 pub mod benchmark_fixtures;
 pub mod benchmark_significance;
 pub mod checkpoint_store;
+pub mod rl_e2e;
+
+pub use rl_e2e::{
+    export_rl_e2e_harness_artifact, rl_e2e_harness_filename, run_deterministic_rl_e2e_harness,
+    RlE2eArtifact, RlE2eArtifactExportSummary, RlE2eCheck, RlE2eGaeSummary, RlE2eHarnessConfig,
+    RlE2ePpoSummary, RlE2eRolloutSummary,
+};
 
 use anyhow::Result;
 use async_trait::async_trait;

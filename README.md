@@ -48,17 +48,17 @@ These are the paths that operate as connected flows today.
 Some surfaces are intentionally diagnostics-first or staged:
 
 - True RL:
-  - primitives and proof tooling exist,
-  - not yet delivered as a single production-ready end-to-end operator workflow.
+  - deterministic end-to-end harness is now available (`tau-trainer`),
+  - broader production policy-optimization operating loops remain an expansion track.
 - Dashboard:
   - route and diagnostics surfaces exist,
   - not all desired product UX workflows are fully integrated live-mutation paths.
 - Auth verification:
-  - auth capabilities are implemented,
-  - comprehensive cross-mode verification is still a focused closure track.
+  - provider auth-mode matrix and gateway auth/session lifecycle conformance are covered in deterministic tests,
+  - live third-party credential/network validation remains environment-specific.
 - TUI:
-  - useful as a deterministic demo/smoke surface,
-  - not a full operator dashboard replacement.
+  - includes a practical operator-shell mode with status/auth/training/alerts/actions panels,
+  - still complements (not replaces) web dashboard workflows.
 
 ## Maturity Matrix
 
@@ -66,20 +66,21 @@ Some surfaces are intentionally diagnostics-first or staged:
 |---|---|---|---|
 | Core CLI runtime + sessions + tools | Integrated | Production-like operating loop available | [`docs/guides/quickstart.md`](docs/guides/quickstart.md) |
 | Gateway auth/session APIs | Integrated | Deterministic auth/session smoke flows and documented API contracts | [`docs/guides/gateway-auth-session-smoke.md`](docs/guides/gateway-auth-session-smoke.md) |
+| Auth workflow conformance | Integrated | Provider matrix + gateway session lifecycle validated by dedicated suites | [`crates/tau-provider/tests/auth_workflow_conformance.rs`](crates/tau-provider/tests/auth_workflow_conformance.rs), [`scripts/verify/m295-operator-maturity-wave.sh`](scripts/verify/m295-operator-maturity-wave.sh) |
 | Multi-channel and bridge transports | Operational | Runnable with connector-specific maturity differences | [`docs/guides/transports.md`](docs/guides/transports.md) |
 | Dashboard operator UX | Partial | Ops routes and diagnostics available; broader UX still expanding | [`docs/guides/dashboard-ops.md`](docs/guides/dashboard-ops.md) |
 | Prompt optimization training | Integrated | Canonical training path today | [`docs/guides/training-ops.md`](docs/guides/training-ops.md) |
-| True RL | Staged | Building blocks/proof scripts exist; full delivery path in planning | [`docs/planning/true-rl-roadmap-skeleton.md`](docs/planning/true-rl-roadmap-skeleton.md) |
-| TUI | Demo | Smoke/demo terminal surface, not full ops UX | [`crates/tau-tui`](crates/tau-tui) |
+| True RL | Integrated | Deterministic end-to-end harness emits rollout + GAE/PPO artifact evidence | [`crates/tau-trainer/src/rl_e2e.rs`](crates/tau-trainer/src/rl_e2e.rs), [`crates/tau-trainer/src/bin/rl_e2e_harness.rs`](crates/tau-trainer/src/bin/rl_e2e_harness.rs) |
+| TUI | Integrated | Operator-shell mode with structured panels and conformance tests | [`crates/tau-tui/src/main.rs`](crates/tau-tui/src/main.rs), [`crates/tau-tui/src/lib.rs`](crates/tau-tui/src/lib.rs) |
 
 ## Current Gaps and Execution Plan
 
 | Gap | Current State | Execution Plan Links |
 |---|---|---|
-| True RL end-to-end delivery | primitives present, full operator loop pending | [`docs/planning/integration-gap-closure-plan.md`](docs/planning/integration-gap-closure-plan.md), [`docs/planning/true-rl-roadmap-skeleton.md`](docs/planning/true-rl-roadmap-skeleton.md), [`docs/guides/training-ops.md`](docs/guides/training-ops.md) |
+| True RL productionization depth | deterministic end-to-end harness delivered; larger-scale policy operations still expanding | [`docs/planning/integration-gap-closure-plan.md`](docs/planning/integration-gap-closure-plan.md), [`docs/planning/true-rl-roadmap-skeleton.md`](docs/planning/true-rl-roadmap-skeleton.md), [`docs/guides/training-ops.md`](docs/guides/training-ops.md) |
 | Dashboard maturity expansion | ops routes exist, richer workflow UX pending | [`docs/planning/integration-gap-closure-plan.md`](docs/planning/integration-gap-closure-plan.md), [`docs/guides/dashboard-ops.md`](docs/guides/dashboard-ops.md), [`docs/guides/operator-deployment-guide.md`](docs/guides/operator-deployment-guide.md) |
-| Comprehensive auth workflow verification | capability matrix and smokes exist, full verification consolidation pending | [`docs/planning/integration-gap-closure-plan.md`](docs/planning/integration-gap-closure-plan.md), [`docs/provider-auth/provider-auth-capability-matrix.md`](docs/provider-auth/provider-auth-capability-matrix.md), [`docs/guides/gateway-auth-session-smoke.md`](docs/guides/gateway-auth-session-smoke.md) |
-| TUI UX improvements | demo utility available, broader UX improvements pending | [`docs/planning/integration-gap-closure-plan.md`](docs/planning/integration-gap-closure-plan.md), [`crates/tau-tui`](crates/tau-tui), [`docs/guides/demo-index.md`](docs/guides/demo-index.md) |
+| Extended auth live-env verification | deterministic matrix/lifecycle conformance delivered; external credential/live-env permutations still environment-specific | [`docs/planning/integration-gap-closure-plan.md`](docs/planning/integration-gap-closure-plan.md), [`docs/provider-auth/provider-auth-capability-matrix.md`](docs/provider-auth/provider-auth-capability-matrix.md), [`docs/guides/gateway-auth-session-smoke.md`](docs/guides/gateway-auth-session-smoke.md) |
+| TUI UX expansion | operator shell delivered; richer interactive workflows continue to evolve | [`docs/planning/integration-gap-closure-plan.md`](docs/planning/integration-gap-closure-plan.md), [`crates/tau-tui`](crates/tau-tui), [`docs/guides/demo-index.md`](docs/guides/demo-index.md) |
 
 ## 5-Minute Quickstart
 
@@ -109,10 +110,10 @@ cargo run -p tau-coding-agent -- --onboard --onboard-non-interactive
 cargo run -p tau-coding-agent -- --prompt "Summarize src/lib.rs"
 ```
 
-5. Optional TUI smoke
+5. Optional TUI operator shell
 
 ```bash
-cargo run -p tau-tui -- --frames 2 --sleep-ms 0 --width 56 --no-color
+cargo run -p tau-tui -- shell --width 88 --profile local-dev --no-color
 ```
 
 For a deeper walkthrough, use [`docs/guides/quickstart.md`](docs/guides/quickstart.md).
@@ -159,6 +160,18 @@ Demo index and selective runs:
 ```bash
 ./scripts/demo/all.sh --list
 ./scripts/demo/all.sh --only local,rpc,events --fail-fast
+```
+
+RL end-to-end deterministic harness:
+
+```bash
+cargo run -p tau-trainer --bin rl_e2e_harness -- --run-id local --output-dir artifacts/rl-e2e --print-json
+```
+
+Operator maturity wave verification (TUI + RL + auth):
+
+```bash
+./scripts/verify/m295-operator-maturity-wave.sh
 ```
 
 Clean generated local artifacts:

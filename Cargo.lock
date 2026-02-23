@@ -5733,6 +5733,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "serde_json",
+ "tau-algorithm",
  "tau-training-runner",
  "tau-training-store",
  "tau-training-tracer",
