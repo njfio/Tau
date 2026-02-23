@@ -202,4 +202,10 @@ mod tests {
         assert!(with_error_output.reliability < 0.0);
         assert!(with_error_output.composite < no_error_output.composite);
     }
+
+    #[test]
+    fn regression_token_efficiency_guard_returns_zero_when_either_side_is_zero() {
+        assert_eq!(super::infer_token_efficiency(0, 24), 0.0);
+        assert_eq!(super::infer_token_efficiency(24, 0), 0.0);
+    }
 }

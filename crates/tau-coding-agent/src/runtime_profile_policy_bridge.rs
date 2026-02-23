@@ -442,9 +442,9 @@ fn emit_bridge_outcome(outcome: &ProfilePolicyBridgeOutcome) {
 mod tests {
     use super::{
         emit_bridge_outcome, profile_store_path_for_runtime_heartbeat,
-        runtime_heartbeat_policy_path, start_runtime_heartbeat_profile_policy_bridge,
-        ProfilePolicyBridgeOutcome, RuntimeHeartbeatProfilePolicyBridge,
-        RuntimeHeartbeatProfilePolicyBridgeHandle,
+        runtime_heartbeat_policy_path, start_profile_store_watcher,
+        start_runtime_heartbeat_profile_policy_bridge, ProfilePolicyBridgeOutcome,
+        RuntimeHeartbeatProfilePolicyBridge, RuntimeHeartbeatProfilePolicyBridgeHandle,
     };
     use crate::tests::test_cli;
     use std::collections::BTreeMap;
@@ -936,6 +936,28 @@ mod tests {
         assert!(
             rendered.contains("profile_store_load_failed"),
             "logs should include diagnostic payload"
+        );
+    }
+
+    #[test]
+    fn regression_2597_c05_profile_policy_watcher_starts_with_receiver_for_valid_parent_path() {
+        let temp = tempdir().expect("tempdir");
+        let profile_path = temp.path().join(".tau/profiles.json");
+        std::fs::create_dir_all(profile_path.parent().expect("profile parent"))
+            .expect("create profile parent");
+
+        let (watcher, receiver, diagnostics) = start_profile_store_watcher(&profile_path);
+        assert!(
+            watcher.is_some(),
+            "watcher should initialize when profile parent exists"
+        );
+        assert!(
+            receiver.is_some(),
+            "watcher channel should initialize when watcher starts"
+        );
+        assert!(
+            diagnostics.is_empty(),
+            "valid watcher initialization should not emit diagnostics"
         );
     }
 
