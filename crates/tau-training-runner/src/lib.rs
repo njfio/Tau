@@ -9,7 +9,7 @@ use std::time::Duration;
 use tau_agent_core::Agent;
 use tau_ai::MessageRole;
 use tau_training_store::{DequeuedRollout, TrainingStore};
-use tau_training_tracer::TrainingTracer;
+pub use tau_training_tracer::TrainingTracer;
 use tau_training_types::{
     AttemptStatus, ResourcesUpdate, Reward, Rollout, RolloutStatus, TrainingSpan,
 };
