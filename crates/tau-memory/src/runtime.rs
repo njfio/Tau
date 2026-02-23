@@ -1063,12 +1063,12 @@ fn normalize_scope(scope: &MemoryScope) -> MemoryScope {
 
 fn sqlite_i64_from_u64(value: u64, field: &str) -> Result<i64> {
     i64::try_from(value)
-        .with_context(|| format!("sqlite {} value {} exceeds INTEGER range", field, value))
+        .with_context(|| format!("{field} value {value} exceeds SQLite INTEGER range"))
 }
 
 fn sqlite_u64_from_i64(value: i64, field: &str) -> Result<u64> {
     u64::try_from(value)
-        .with_context(|| format!("sqlite {} value {} must be non-negative", field, value))
+        .with_context(|| format!("{field} value {value} must be non-negative SQLite INTEGER"))
 }
 
 fn normalize_scope_component(value: &str, fallback: &str) -> String {
