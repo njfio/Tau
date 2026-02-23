@@ -988,16 +988,16 @@ impl FileMemoryStore {
 
         let mut connection = open_memory_sqlite_connection(sqlite_path)?;
         initialize_memory_sqlite_schema(&connection)?;
-        let existing_count: i64 = connection
+        let existing_count_i64: i64 = connection
             .query_row("SELECT COUNT(1) FROM memory_records", [], |row| row.get(0))
             .context("failed to inspect sqlite memory record count")?;
-        if existing_count < 0 {
-            bail!(
-                "invalid sqlite memory record count {} in {}",
-                existing_count,
-                sqlite_path.display()
-            );
-        }
+        let existing_count = sqlite_u64_from_i64(existing_count_i64, "memory_records_count")
+            .with_context(|| {
+                format!(
+                    "failed to parse sqlite memory record count from {}",
+                    sqlite_path.display()
+                )
+            })?;
         if existing_count > 0 {
             return Ok(0);
         }
@@ -1063,7 +1063,12 @@ fn normalize_scope(scope: &MemoryScope) -> MemoryScope {
 
 fn sqlite_i64_from_u64(value: u64, field: &str) -> Result<i64> {
     i64::try_from(value)
-        .with_context(|| format!("sqlite {} value {} exceeds INTEGER range", field, value))
+        .with_context(|| format!("{field} value {value} exceeds SQLite INTEGER range"))
+}
+
+fn sqlite_u64_from_i64(value: i64, field: &str) -> Result<u64> {
+    u64::try_from(value)
+        .with_context(|| format!("{field} value {value} must be non-negative SQLite INTEGER"))
 }
 
 fn normalize_scope_component(value: &str, fallback: &str) -> String {
@@ -1223,6 +1228,22 @@ mod tests {
     fn memory_backend_env_lock() -> &'static Mutex<()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
         LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    #[test]
+    fn regression_spec_3412_sqlite_i64_from_u64_rejects_values_outside_sqlite_integer_range() {
+        let error = super::sqlite_i64_from_u64(u64::MAX, "updated_unix_ms")
+            .expect_err("u64::MAX should fail sqlite integer conversion");
+        assert!(error.to_string().contains("updated_unix_ms value"));
+        assert!(error.to_string().contains("SQLite INTEGER range"));
+    }
+
+    #[test]
+    fn regression_spec_3412_sqlite_u64_from_i64_rejects_negative_sqlite_integer_values() {
+        let error = super::sqlite_u64_from_i64(-1, "memory_records_count")
+            .expect_err("negative sqlite integer should fail u64 conversion");
+        assert!(error.to_string().contains("memory_records_count value -1"));
+        assert!(error.to_string().contains("non-negative SQLite INTEGER"));
     }
 
     fn lifecycle_scope() -> MemoryScope {
@@ -1930,7 +1951,7 @@ mod tests {
     fn unit_memory_type_importance_profile_validate_rejects_invalid_values() {
         let non_finite = MemoryTypeImportanceProfile {
             identity: f32::INFINITY,
-            ..MemoryTypeImportanceProfile::default()
+            ..Default::default()
         };
         let non_finite_error = non_finite
             .validate()
@@ -1939,7 +1960,7 @@ mod tests {
 
         let out_of_range = MemoryTypeImportanceProfile {
             goal: 1.5,
-            ..MemoryTypeImportanceProfile::default()
+            ..Default::default()
         };
         let out_of_range_error = out_of_range
             .validate()
@@ -1948,7 +1969,7 @@ mod tests {
 
         let negative = MemoryTypeImportanceProfile {
             todo: -0.01,
-            ..MemoryTypeImportanceProfile::default()
+            ..Default::default()
         };
         let negative_error = negative
             .validate()
@@ -1962,7 +1983,7 @@ mod tests {
         let profile = MemoryTypeImportanceProfile {
             identity: 0.42,
             observation: 0.18,
-            ..MemoryTypeImportanceProfile::default()
+            ..Default::default()
         };
 
         let store = FileMemoryStore::new_with_embedding_provider_and_importance_profile(

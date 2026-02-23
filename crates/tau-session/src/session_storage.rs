@@ -123,16 +123,10 @@ pub(super) fn maybe_import_legacy_jsonl_into_sqlite(
 
     let connection = open_session_sqlite_connection(path)?;
     initialize_session_sqlite_schema(&connection)?;
-    let existing_count: i64 = connection
+    let existing_count_i64: i64 = connection
         .query_row("SELECT COUNT(1) FROM session_entries", [], |row| row.get(0))
         .context("failed to inspect sqlite session entry count")?;
-    if existing_count < 0 {
-        bail!(
-            "invalid sqlite session entry count {} in {}",
-            existing_count,
-            path.display()
-        );
-    }
+    let existing_count = sqlite_i64_to_u64(existing_count_i64, "session_entries_count", path)?;
     if existing_count > 0 {
         return Ok(0);
     }
