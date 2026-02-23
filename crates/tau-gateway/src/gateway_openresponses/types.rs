@@ -92,6 +92,8 @@ pub(super) struct OpenResponsesRequest {
     pub(super) input: Value,
     #[serde(default)]
     pub(super) stream: bool,
+    #[serde(default)]
+    pub(super) max_tokens: Option<u32>,
     pub(super) instructions: Option<String>,
     #[serde(default)]
     pub(super) metadata: Value,
@@ -383,6 +385,7 @@ pub(super) struct OpenResponsesResponse {
     pub(super) object: &'static str,
     pub(super) created: u64,
     pub(super) status: &'static str,
+    pub(super) finish_reason: String,
     pub(super) model: String,
     pub(super) output: Vec<OpenResponsesOutputItem>,
     pub(super) output_text: String,

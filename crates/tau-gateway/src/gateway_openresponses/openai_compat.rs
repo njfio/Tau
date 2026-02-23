@@ -51,6 +51,17 @@ pub(super) fn translate_chat_completions_request(
     request: OpenAiChatCompletionsRequest,
 ) -> Result<OpenAiCompatRequestTranslation, OpenResponsesApiError> {
     let mut ignored_fields = Vec::new();
+    let mut extra = request.extra;
+    if extra.contains_key("tools") || extra.contains_key("tool_choice") {
+        return Err(OpenResponsesApiError::bad_request(
+            "unsupported_tools",
+            "tools/tool_choice request fields are not supported by this compatibility surface",
+        ));
+    }
+
+    validate_single_choice_request(&mut extra)?;
+    let max_tokens = parse_optional_max_tokens(&mut extra)?;
+
     let messages = match request.messages {
         Value::Array(messages) => messages,
         _ => {
@@ -133,11 +144,12 @@ pub(super) fn translate_chat_completions_request(
             model: request.model,
             input: Value::Array(translated_messages),
             stream: request.stream,
+            max_tokens,
             instructions: None,
             metadata,
             conversation: session_user,
             previous_response_id: None,
-            extra: request.extra,
+            extra,
         },
     })
 }
@@ -145,6 +157,10 @@ pub(super) fn translate_chat_completions_request(
 pub(super) fn translate_completions_request(
     request: OpenAiCompletionsRequest,
 ) -> Result<OpenAiCompatRequestTranslation, OpenResponsesApiError> {
+    let mut extra = request.extra;
+    validate_single_choice_request(&mut extra)?;
+    let max_tokens = parse_optional_max_tokens(&mut extra)?;
+
     if is_effectively_empty_text(&request.prompt) {
         return Err(OpenResponsesApiError::bad_request(
             "missing_prompt",
@@ -167,17 +183,19 @@ pub(super) fn translate_completions_request(
             model: request.model,
             input: request.prompt,
             stream: request.stream,
+            max_tokens,
             instructions: None,
             metadata,
             conversation: session_user,
             previous_response_id: None,
-            extra: request.extra,
+            extra,
         },
     })
 }
 
 /// Build OpenAI chat.completions JSON payload from one OpenResponses result.
 pub(super) fn build_chat_completions_payload(response: &OpenResponsesResponse) -> Value {
+    let finish_reason = normalized_finish_reason(response);
     json!({
         "id": chat_completion_id(response.id.as_str()),
         "object": OPENAI_CHAT_COMPLETION_OBJECT,
@@ -189,7 +207,7 @@ pub(super) fn build_chat_completions_payload(response: &OpenResponsesResponse) -
                 "role": "assistant",
                 "content": response.output_text,
             },
-            "finish_reason": "stop",
+            "finish_reason": finish_reason,
         }],
         "usage": {
             "prompt_tokens": response.usage.input_tokens,
@@ -200,6 +218,7 @@ pub(super) fn build_chat_completions_payload(response: &OpenResponsesResponse) -
 }
 
 pub(super) fn build_completions_payload(response: &OpenResponsesResponse) -> Value {
+    let finish_reason = normalized_finish_reason(response);
     json!({
         "id": completion_id(response.id.as_str()),
         "object": OPENAI_COMPLETION_OBJECT,
@@ -209,7 +228,7 @@ pub(super) fn build_completions_payload(response: &OpenResponsesResponse) -> Val
             "index": 0,
             "text": response.output_text,
             "logprobs": Value::Null,
-            "finish_reason": "stop",
+            "finish_reason": finish_reason,
         }],
         "usage": {
             "prompt_tokens": response.usage.input_tokens,
@@ -220,6 +239,7 @@ pub(super) fn build_completions_payload(response: &OpenResponsesResponse) -> Val
 }
 
 pub(super) fn build_chat_completions_stream_chunks(response: &OpenResponsesResponse) -> Vec<Value> {
+    let finish_reason = normalized_finish_reason(response);
     vec![
         json!({
             "id": chat_completion_id(response.id.as_str()),
@@ -243,13 +263,14 @@ pub(super) fn build_chat_completions_stream_chunks(response: &OpenResponsesRespo
             "choices": [{
                 "index": 0,
                 "delta": {},
-                "finish_reason": "stop",
+                "finish_reason": finish_reason,
             }],
         }),
     ]
 }
 
 pub(super) fn build_completions_stream_chunks(response: &OpenResponsesResponse) -> Vec<Value> {
+    let finish_reason = normalized_finish_reason(response);
     vec![
         json!({
             "id": completion_id(response.id.as_str()),
@@ -272,7 +293,7 @@ pub(super) fn build_completions_stream_chunks(response: &OpenResponsesResponse) 
                 "index": 0,
                 "text": "",
                 "logprobs": Value::Null,
-                "finish_reason": "stop",
+                "finish_reason": finish_reason,
             }],
         }),
     ]
@@ -300,8 +321,71 @@ fn completion_id(response_id: &str) -> String {
     format!("cmpl_{suffix}")
 }
 
+fn normalized_finish_reason(response: &OpenResponsesResponse) -> &str {
+    let finish_reason = response.finish_reason.trim();
+    if finish_reason.is_empty() {
+        "stop"
+    } else {
+        finish_reason
+    }
+}
+
 fn non_empty_trimmed(raw: Option<&str>) -> Option<&str> {
     raw.map(str::trim).filter(|value| !value.is_empty())
+}
+
+fn validate_single_choice_request(
+    extra: &mut BTreeMap<String, Value>,
+) -> Result<(), OpenResponsesApiError> {
+    let Some(raw_n) = extra.remove("n") else {
+        return Ok(());
+    };
+    let Some(choice_count) = raw_n.as_u64() else {
+        return Err(OpenResponsesApiError::bad_request(
+            "invalid_n",
+            "n must be a positive integer",
+        ));
+    };
+    if choice_count == 0 {
+        return Err(OpenResponsesApiError::bad_request(
+            "invalid_n",
+            "n must be greater than zero",
+        ));
+    }
+    if choice_count > 1 {
+        return Err(OpenResponsesApiError::bad_request(
+            "unsupported_n",
+            "n greater than 1 is not supported by this compatibility surface",
+        ));
+    }
+    Ok(())
+}
+
+fn parse_optional_max_tokens(
+    extra: &mut BTreeMap<String, Value>,
+) -> Result<Option<u32>, OpenResponsesApiError> {
+    let Some(raw_max_tokens) = extra.remove("max_tokens") else {
+        return Ok(None);
+    };
+    let Some(max_tokens) = raw_max_tokens.as_u64() else {
+        return Err(OpenResponsesApiError::bad_request(
+            "invalid_max_tokens",
+            "max_tokens must be a positive integer",
+        ));
+    };
+    if max_tokens == 0 {
+        return Err(OpenResponsesApiError::bad_request(
+            "invalid_max_tokens",
+            "max_tokens must be greater than zero",
+        ));
+    }
+    let max_tokens = u32::try_from(max_tokens).map_err(|_| {
+        OpenResponsesApiError::bad_request(
+            "invalid_max_tokens",
+            "max_tokens exceeds supported range",
+        )
+    })?;
+    Ok(Some(max_tokens))
 }
 
 fn is_effectively_empty_text(value: &Value) -> bool {

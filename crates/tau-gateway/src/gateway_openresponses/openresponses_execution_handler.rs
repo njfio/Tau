@@ -43,7 +43,7 @@ pub(super) async fn execute_openresponses_request(
             system_prompt: resolved_system_prompt.clone(),
             max_turns: state.config.max_turns,
             temperature: Some(0.0),
-            max_tokens: None,
+            max_tokens: request.max_tokens,
             // Fail closed on preflight limits: reject over-budget requests instead of compacting them.
             max_estimated_input_tokens: None,
             max_estimated_total_tokens: preflight_input_tokens,
@@ -53,11 +53,15 @@ pub(super) async fn execute_openresponses_request(
     state.config.tool_registrar.register(&mut agent);
 
     let usage = Arc::new(Mutex::new(OpenResponsesUsageSummary::default()));
+    let finish_reason = Arc::new(Mutex::new(None::<String>));
     agent.subscribe({
         let usage = usage.clone();
+        let finish_reason = finish_reason.clone();
         move |event| {
             if let AgentEvent::TurnEnd {
-                usage: turn_usage, ..
+                usage: turn_usage,
+                finish_reason: turn_finish_reason,
+                ..
             } = event
             {
                 if let Ok(mut guard) = usage.lock() {
@@ -65,6 +69,9 @@ pub(super) async fn execute_openresponses_request(
                     guard.output_tokens =
                         guard.output_tokens.saturating_add(turn_usage.output_tokens);
                     guard.total_tokens = guard.total_tokens.saturating_add(turn_usage.total_tokens);
+                }
+                if let Ok(mut guard) = finish_reason.lock() {
+                    *guard = turn_finish_reason.clone();
                 }
             }
         }
@@ -147,6 +154,11 @@ pub(super) async fn execute_openresponses_request(
         .lock()
         .map_err(|_| OpenResponsesApiError::internal("prompt usage lock is poisoned"))?
         .clone();
+    let finish_reason = finish_reason
+        .lock()
+        .map_err(|_| OpenResponsesApiError::internal("prompt finish reason lock is poisoned"))?
+        .clone()
+        .unwrap_or_else(|| "stop".to_string());
 
     let mut ignored = BTreeSet::new();
     for field in translated.ignored_fields {
@@ -160,6 +172,7 @@ pub(super) async fn execute_openresponses_request(
         object: "response",
         created,
         status: "completed",
+        finish_reason,
         model: state.config.model.clone(),
         output: vec![OpenResponsesOutputItem {
             id: state.next_output_message_id(),
