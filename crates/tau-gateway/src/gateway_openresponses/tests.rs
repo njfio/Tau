@@ -205,6 +205,26 @@ impl GatewayToolRegistrar for FixtureGatewayToolRegistrar {
     }
 }
 
+#[derive(Clone, Default)]
+struct FixtureGatewayMcpToolRegistrar;
+
+impl GatewayToolRegistrar for FixtureGatewayMcpToolRegistrar {
+    fn register(&self, agent: &mut Agent) {
+        agent.register_tool(FixtureInventoryTool {
+            name: "memory_search",
+            description: "Searches memory entries.",
+        });
+        agent.register_tool(FixtureInventoryTool {
+            name: "bash",
+            description: "Runs shell commands.",
+        });
+        agent.register_tool(FixtureInventoryTool {
+            name: "mcp.demo.echo",
+            description: "Echoes payloads through MCP demo runtime.",
+        });
+    }
+}
+
 fn test_state_with_client_and_auth(
     root: &Path,
     max_input_chars: usize,
@@ -281,6 +301,24 @@ fn test_state_with_fixture_tools(
         max_input_chars,
         Arc::new(MockGatewayLlmClient::default()),
         Arc::new(FixtureGatewayToolRegistrar),
+        GatewayOpenResponsesAuthMode::Token,
+        Some(token),
+        None,
+        60,
+        120,
+    )
+}
+
+fn test_state_with_fixture_mcp_tools(
+    root: &Path,
+    max_input_chars: usize,
+    token: &str,
+) -> Arc<GatewayOpenResponsesServerState> {
+    test_state_with_client_and_auth(
+        root,
+        max_input_chars,
+        Arc::new(MockGatewayLlmClient::default()),
+        Arc::new(FixtureGatewayMcpToolRegistrar),
         GatewayOpenResponsesAuthMode::Token,
         Some(token),
         None,
@@ -7677,6 +7715,50 @@ async fn integration_spec_2691_c01_c02_c06_tools_inventory_and_stats_endpoints_r
         status_payload["gateway"]["web_ui"]["tool_stats_endpoint"],
         "/gateway/tools/stats"
     );
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn integration_spec_3396_c01_c02_gateway_tools_inventory_includes_mcp_prefixed_tool() {
+    let temp = tempdir().expect("tempdir");
+    let state = test_state_with_fixture_mcp_tools(temp.path(), 10_000, "secret");
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+
+    let client = Client::new();
+    let tools_response = client
+        .get("http://".to_string() + &addr.to_string() + "/gateway/tools")
+        .bearer_auth("secret")
+        .send()
+        .await
+        .expect("tools inventory response");
+    assert_eq!(tools_response.status(), StatusCode::OK);
+    let tools_payload = tools_response
+        .json::<Value>()
+        .await
+        .expect("parse tools inventory payload");
+    assert_eq!(tools_payload["schema_version"], Value::Number(1_u64.into()));
+    assert_eq!(tools_payload["total_tools"], Value::Number(3_u64.into()));
+
+    let tools = tools_payload["tools"].as_array().expect("tools array");
+    assert_eq!(tools.len(), 3);
+    let tool_names = tools
+        .iter()
+        .filter_map(|item| item["name"].as_str())
+        .collect::<Vec<_>>();
+    let mcp_tool = tools
+        .iter()
+        .find(|item| {
+            item["name"]
+                .as_str()
+                .is_some_and(|name| name.starts_with("mcp."))
+        })
+        .expect("mcp tool entry");
+    assert!(
+        tool_names.iter().any(|name| name.starts_with("mcp.")),
+        "expected at least one mcp-prefixed tool in inventory: {tools_payload}"
+    );
+    assert_eq!(mcp_tool["enabled"], Value::Bool(true));
 
     handle.abort();
 }
