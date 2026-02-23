@@ -75,3 +75,36 @@
 | Mutation | N/A | `cargo mutants --in-diff` on touched files produced no applicable mutants | Current delta is test-only/selective harness hardening |
 | Regression | ✅ | full `cargo test` after RED failures fixed | |
 | Performance | N/A | no perf-sensitive hot-path behavior changed | No benchmark delta introduced |
+
+## Verification Addendum (2026-02-23, continuation)
+
+### RED
+
+- Follow-up full gate surfaced additional strict clippy blockers in test/support code paths:
+  - `clippy::field-reassign-with-default` (`tau-memory`, `tau-agent-core`, `tau-training-runner`)
+  - `clippy::await_holding_lock` (`tau-ai`, `tau-coding-agent`)
+  - `clippy::items-after-test-module` (`tau-algorithm`)
+  - `clippy::needless-borrows-for-generic-args`, `clippy::too-many-arguments`, `clippy::unnecessary-get-then-check` (`tau-coding-agent`)
+  - `clippy::bool_assert_comparison`, `clippy::cloned_ref_to_slice_refs`, `clippy::too-many-arguments` (`tau-gateway`)
+
+### GREEN
+
+- Applied targeted fixes in:
+  - `crates/tau-agent-core/src/tests/safety_pipeline.rs`
+  - `crates/tau-ai/tests/provider_http_integration.rs`
+  - `crates/tau-algorithm/src/reward_inference.rs`
+  - `crates/tau-coding-agent/src/live_rl_runtime.rs`
+  - `crates/tau-coding-agent/src/runtime_loop.rs`
+  - `crates/tau-coding-agent/src/tests/auth_provider/runtime_and_startup.rs`
+  - `crates/tau-gateway/src/gateway_openresponses/tests.rs`
+  - `crates/tau-gateway/src/gateway_runtime.rs`
+  - `crates/tau-memory/src/runtime.rs`
+  - `crates/tau-memory/src/runtime/query.rs`
+  - `crates/tau-training-runner/src/lib.rs`
+- Also ran `cargo fmt --all` to satisfy format gate after strict-check failures.
+
+### REGRESSION
+
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings` -> passed
+- `cargo test --workspace` -> passed
+- `cargo fmt --all -- --check` -> passed
