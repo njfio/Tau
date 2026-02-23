@@ -13,6 +13,7 @@ Status: In Progress
 - Execute issue `#3394` to close Scenario Group 15 memory-pressure chaos gap (`CH15-06`).
 - Execute issue `#3396` to close Scenario Group 14 MCP inventory gap (`E14-04`).
 - Execute issue `#3398` to close remaining Scenario Group 14 tool-builder/WASM gaps (`E14-01`, `E14-02`, `E14-03`).
+- Execute issue `#3400` to close Scenario Group 10 provider fallback/circuit-breaker gaps (`F10-01`, `F10-02`, `F10-03`, `F10-04`, `F10-05`, `F10-08`).
 - Add/extend deterministic E2E tests to cover all PRD scenario groups with explicit IDs.
 - Close uncovered scenario gaps or document strict `N/A` justifications when a scenario is not applicable to current runtime contracts.
 - Provide CI-tier runnable selectors (`tier_pr`, `tier_nightly`, `tier_weekly`) and verify targeted suites pass.
@@ -27,6 +28,7 @@ Status: In Progress
 - Task: #3394
 - Task: #3396
 - Task: #3398
+- Task: #3400
 
 ## Closeout
 - Phase 1 delivered via issue `#3386` and PR `#3387`.
@@ -35,7 +37,8 @@ Status: In Progress
 - Phase 4 delivered via issue `#3392`, closing lock-contention chaos scenario coverage (`CH15-05`).
 - Phase 5 delivered via issue `#3394`, closing memory-pressure chaos scenario coverage (`CH15-06`).
 - Phase 6 delivered via issue `#3396`, closing MCP inventory scenario coverage (`E14-04`).
-- Phase 7 in progress via issue `#3398` for tool-builder/WASM scenario coverage (`E14-01`, `E14-02`, `E14-03`).
+- Phase 7 delivered via issue `#3398`, closing tool-builder/WASM scenario coverage (`E14-01`, `E14-02`, `E14-03`).
+- Phase 8 in progress via issue `#3400` for provider fallback/circuit-breaker scenario coverage (`F10-01`, `F10-02`, `F10-03`, `F10-04`, `F10-05`, `F10-08`).
 
 ## Success Signals
 - `specs/3386/spec.md`, `specs/3386/plan.md`, and `specs/3386/tasks.md` exist and are implemented.

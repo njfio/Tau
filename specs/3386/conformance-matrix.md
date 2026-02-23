@@ -42,14 +42,14 @@
 | E14-02 | P2 | Covered | integration_tool_builder_generated_tool_executes_through_extension_runtime | Generated tool executes through extension runtime with deterministic success payload. |
 | E14-03 | P2 | Covered | regression_build_generated_wasm_tool_fails_closed_when_wasm_spins_forever | Misbehaving infinite-loop WASM fails closed via sandbox validation guardrails. |
 | E14-04 | P2 | Covered | integration_spec_3396_c01_c02_gateway_tools_inventory_includes_mcp_prefixed_tool | MCP-prefixed tool registrations are surfaced by `/gateway/tools` inventory contract. |
-| F10-01 | P1 | N/A | n/a | Provider fallback chain and circuit-breaker telemetry are not exposed via current gateway-openresponses public test surface. |
-| F10-02 | P1 | N/A | n/a | Provider fallback chain and circuit-breaker telemetry are not exposed via current gateway-openresponses public test surface. |
-| F10-03 | P1 | N/A | n/a | Provider fallback chain and circuit-breaker telemetry are not exposed via current gateway-openresponses public test surface. |
-| F10-04 | P1 | N/A | n/a | Provider fallback chain and circuit-breaker telemetry are not exposed via current gateway-openresponses public test surface. |
-| F10-05 | P1 | N/A | n/a | Provider fallback chain and circuit-breaker telemetry are not exposed via current gateway-openresponses public test surface. |
+| F10-01 | P1 | Covered | functional_spec_3400_c01_primary_success_returns_without_fallback_invocation | Primary route success is returned directly without fallback route invocation. |
+| F10-02 | P1 | Covered | functional_fallback_client_handoffs_on_retryable_error_and_emits_event | Retryable primary failure falls back and returns secondary response. |
+| F10-03 | P1 | Covered | functional_spec_3400_c03_all_routes_fail_returns_terminal_error | Retryable failures across all configured routes return deterministic terminal error behavior. |
+| F10-04 | P1 | Covered | functional_circuit_breaker_opens_and_skips_temporarily_unhealthy_route | Circuit opens after threshold failures and skips unhealthy primary route. |
+| F10-05 | P1 | Covered | integration_circuit_breaker_retries_primary_after_cooldown_expires | Half-open cooldown probe retries primary route and recovers when healthy. |
 | F10-06 | P1 | Covered | tier_nightly_p1_runtime_matrix | Rate-limit enforcement exercised. |
 | F10-07 | P1 | Covered | tier_nightly_p1_runtime_matrix | Rate-limit enforcement exercised. |
-| F10-08 | P1 | N/A | n/a | Provider fallback chain and circuit-breaker telemetry are not exposed via current gateway-openresponses public test surface. |
+| F10-08 | P1 | Covered | functional_fallback_client_handoffs_on_retryable_error_and_emits_event | Fallback telemetry event contract (`from_model`/`to_model`/error metadata) is asserted. |
 | G1-01 | P0 | Covered | tier_pr_g1_gateway_lifecycle_matrix | Covers lifecycle/auth/models/stream completion. |
 | G1-02 | P0 | Covered | tier_pr_g1_gateway_lifecycle_matrix | Covers lifecycle/auth/models/stream completion. |
 | G1-03 | P0 | Covered | tier_pr_g1_gateway_lifecycle_matrix | Covers lifecycle/auth/models/stream completion. |

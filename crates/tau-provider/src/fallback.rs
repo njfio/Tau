@@ -561,6 +561,44 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn functional_spec_3400_c01_primary_success_returns_without_fallback_invocation() {
+        let primary =
+            MockLlmClient::new(vec![Ok(assistant_text_response("primary ok"))], Vec::new());
+        let secondary =
+            MockLlmClient::new(vec![Ok(assistant_text_response("secondary"))], Vec::new());
+
+        let events = Arc::new(Mutex::new(Vec::<Value>::new()));
+        let events_sink = events.clone();
+        let event_sink: FallbackEventSink =
+            Arc::new(move |event| events_sink.lock().expect("events lock").push(event));
+
+        let router = FallbackRoutingClient::new(
+            vec![
+                ClientRoute {
+                    provider: Provider::OpenAi,
+                    model: "gpt-4o-mini".to_string(),
+                    client: Arc::new(primary.clone()),
+                },
+                ClientRoute {
+                    provider: Provider::Anthropic,
+                    model: "claude-sonnet-4-20250514".to_string(),
+                    client: Arc::new(secondary.clone()),
+                },
+            ],
+            Some(event_sink),
+        );
+
+        let response = router
+            .complete(test_request())
+            .await
+            .expect("primary route should succeed");
+        assert_eq!(response.message.text_content(), "primary ok");
+        assert_eq!(primary.observed_models(), vec!["gpt-4o-mini".to_string()]);
+        assert!(secondary.observed_models().is_empty());
+        assert!(events.lock().expect("events lock").is_empty());
+    }
+
+    #[tokio::test]
     async fn functional_fallback_client_handoffs_on_retryable_error_and_emits_event() {
         let primary = MockLlmClient::new(
             vec![Err(TauAiError::HttpStatus {
@@ -613,6 +651,74 @@ mod tests {
         assert_eq!(events[0]["error_kind"], "http_status");
         assert_eq!(events[0]["status"], 429);
         assert_eq!(events[0]["fallback_index"], 1);
+    }
+
+    #[tokio::test]
+    async fn functional_spec_3400_c03_all_routes_fail_returns_terminal_error() {
+        let primary = MockLlmClient::new(
+            vec![Err(TauAiError::HttpStatus {
+                status: 503,
+                body: "primary unavailable".to_string(),
+            })],
+            Vec::new(),
+        );
+        let secondary = MockLlmClient::new(
+            vec![Err(TauAiError::HttpStatus {
+                status: 503,
+                body: "secondary unavailable".to_string(),
+            })],
+            Vec::new(),
+        );
+
+        let events = Arc::new(Mutex::new(Vec::<Value>::new()));
+        let events_sink = events.clone();
+        let event_sink: FallbackEventSink =
+            Arc::new(move |event| events_sink.lock().expect("events lock").push(event));
+
+        let router = FallbackRoutingClient::new(
+            vec![
+                ClientRoute {
+                    provider: Provider::OpenAi,
+                    model: "gpt-4o-mini".to_string(),
+                    client: Arc::new(primary.clone()),
+                },
+                ClientRoute {
+                    provider: Provider::Google,
+                    model: "gemini-2.5-pro".to_string(),
+                    client: Arc::new(secondary.clone()),
+                },
+            ],
+            Some(event_sink),
+        );
+
+        let error = router
+            .complete(test_request())
+            .await
+            .expect_err("all routes failing should return error");
+        match error {
+            TauAiError::HttpStatus { status, body } => {
+                assert_eq!(status, 503);
+                assert!(
+                    body.contains("secondary unavailable"),
+                    "expected last-route error body, got: {body}"
+                );
+            }
+            other => panic!("expected HttpStatus error, got {other:?}"),
+        }
+
+        assert_eq!(primary.observed_models(), vec!["gpt-4o-mini".to_string()]);
+        assert_eq!(
+            secondary.observed_models(),
+            vec!["gemini-2.5-pro".to_string()]
+        );
+
+        let events = events.lock().expect("events lock");
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0]["type"], "provider_fallback");
+        assert_eq!(events[0]["from_model"], "openai/gpt-4o-mini");
+        assert_eq!(events[0]["to_model"], "google/gemini-2.5-pro");
+        assert_eq!(events[0]["error_kind"], "http_status");
+        assert_eq!(events[0]["status"], 503);
     }
 
     #[tokio::test]
