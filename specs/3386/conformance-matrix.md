@@ -77,11 +77,11 @@
 | O3-03 | P0 | Covered | tier_pr_o3_openai_compatibility_matrix | OpenAI compatibility surfaces covered. |
 | O3-04 | P0 | Covered | tier_pr_o3_openai_compatibility_matrix | OpenAI compatibility surfaces covered. |
 | O3-05 | P0 | Covered | tier_pr_o3_openai_compatibility_matrix | OpenAI compatibility surfaces covered. |
-| O3-06 | P0 | N/A | n/a | Current OpenAI adapter exposes single-choice text-only compatibility; tool_calls/multi-choice/max_tokens limits are not modeled in exposed response contract. |
-| O3-07 | P0 | N/A | n/a | Current OpenAI adapter exposes single-choice text-only compatibility; tool_calls/multi-choice/max_tokens limits are not modeled in exposed response contract. |
-| O3-08 | P0 | N/A | n/a | Current OpenAI adapter exposes single-choice text-only compatibility; tool_calls/multi-choice/max_tokens limits are not modeled in exposed response contract. |
+| O3-06 | P0 | Covered | tier_pr_o3_openai_compatibility_matrix | Request-side `tools`/`tool_choice` now fail closed with deterministic `unsupported_tools` client error (no silent ignore). |
+| O3-07 | P0 | Covered | tier_pr_o3_openai_compatibility_matrix | Tool-role continuation message content is preserved and forwarded into provider request context. |
+| O3-08 | P0 | Covered | tier_pr_o3_openai_compatibility_matrix | Multi-choice requests (`n > 1`) fail gracefully with deterministic `unsupported_n` client error. |
 | O3-09 | P0 | Covered | tier_pr_o3_openai_compatibility_matrix | OpenAI compatibility surfaces covered. |
-| O3-10 | P0 | N/A | n/a | Current OpenAI adapter exposes single-choice text-only compatibility; tool_calls/multi-choice/max_tokens limits are not modeled in exposed response contract. |
+| O3-10 | P0 | Covered | tier_pr_o3_openai_compatibility_matrix | `max_tokens` is forwarded to provider request and OpenAI payload finish reason reflects provider completion reason (e.g., `length`). |
 | O3-11 | P0 | Covered | tier_pr_o3_openai_compatibility_matrix | OpenAI compatibility surfaces covered. |
 | O3-12 | P0 | Covered | tier_pr_o3_openai_compatibility_matrix | OpenAI compatibility surfaces covered. |
 | R8-01 | P1 | N/A | n/a | Per-rollout reward-dimension and optimizer interval internals are not exposed through stable gateway contract assertions. |

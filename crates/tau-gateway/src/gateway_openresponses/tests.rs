@@ -783,6 +783,7 @@ fn unit_translate_openresponses_request_supports_item_input_and_function_call_ou
             }
         ]),
         stream: false,
+        max_tokens: None,
         instructions: Some("be concise".to_string()),
         metadata: json!({"session_id": "issue-42"}),
         conversation: None,
@@ -806,6 +807,7 @@ fn unit_translate_openresponses_request_rejects_invalid_input_shape() {
         model: None,
         input: json!(42),
         stream: false,
+        max_tokens: None,
         instructions: None,
         metadata: json!({}),
         conversation: None,
@@ -11350,6 +11352,91 @@ impl GatewayToolRegistrar for FixturePipelineToolRegistrar {
 }
 
 #[tokio::test]
+async fn regression_openresponses_honors_configured_max_turns_limit() {
+    let temp = tempdir().expect("tempdir");
+    let scripted = Arc::new(ScriptedGatewayLlmClient::new(vec![
+        ChatResponse {
+            message: Message::assistant_blocks(vec![ContentBlock::ToolCall {
+                id: "call-max-turns".to_string(),
+                name: "memory_search".to_string(),
+                arguments: json!({}),
+            }]),
+            finish_reason: Some("tool_calls".to_string()),
+            usage: ChatUsage::default(),
+        },
+        ChatResponse {
+            message: Message::assistant_text("second turn should not execute"),
+            finish_reason: Some("stop".to_string()),
+            usage: ChatUsage::default(),
+        },
+    ]));
+    let state = Arc::new(GatewayOpenResponsesServerState::new(
+        GatewayOpenResponsesServerConfig {
+            client: scripted.clone(),
+            model: "openai/gpt-4o-mini".to_string(),
+            model_input_cost_per_million: Some(10.0),
+            model_cached_input_cost_per_million: None,
+            model_output_cost_per_million: Some(20.0),
+            system_prompt: "You are Tau.".to_string(),
+            max_turns: 1,
+            tool_registrar: Arc::new(FixtureGatewayToolRegistrar),
+            turn_timeout_ms: 0,
+            session_lock_wait_ms: 500,
+            session_lock_stale_ms: 10_000,
+            state_dir: temp.path().join(".tau/gateway-max-turns"),
+            bind: "127.0.0.1:0".to_string(),
+            auth_mode: GatewayOpenResponsesAuthMode::Token,
+            auth_token: Some("secret".to_string()),
+            auth_password: None,
+            session_ttl_seconds: 3_600,
+            rate_limit_window_seconds: 60,
+            rate_limit_max_requests: 120,
+            max_input_chars: 10_000,
+            runtime_heartbeat: RuntimeHeartbeatSchedulerConfig {
+                enabled: false,
+                interval: std::time::Duration::from_secs(5),
+                state_path: temp
+                    .path()
+                    .join(".tau/runtime-heartbeat-max-turns/state.json"),
+                ..RuntimeHeartbeatSchedulerConfig::default()
+            },
+            external_coding_agent_bridge: tau_runtime::ExternalCodingAgentBridgeConfig::default(),
+        },
+    ));
+    let (addr, handle) = spawn_test_server(state)
+        .await
+        .expect("spawn max-turns server");
+    let client = Client::new();
+
+    let response = client
+        .post(format!("http://{addr}{OPENRESPONSES_ENDPOINT}"))
+        .bearer_auth("secret")
+        .json(&json!({
+            "input": "run the memory_search tool"
+        }))
+        .send()
+        .await
+        .expect("max-turns request");
+    assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+    let payload = response
+        .json::<Value>()
+        .await
+        .expect("parse max-turns payload");
+    assert!(
+        payload["error"]["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("agent exceeded max turns"),
+        "expected max-turns error payload: {payload}"
+    );
+
+    let captured_requests = scripted.captured_requests().await;
+    assert_eq!(captured_requests.len(), 1);
+
+    handle.abort();
+}
+
+#[tokio::test]
 async fn tier_pr_t4_tool_pipeline_executes_read_write_edit_sequence() {
     let temp = tempdir().expect("tempdir");
     let scripted = Arc::new(ScriptedGatewayLlmClient::new(vec![
@@ -12060,6 +12147,75 @@ async fn tier_pr_o3_openai_compatibility_matrix() {
         .expect("models list");
     assert_eq!(models.status(), StatusCode::OK);
 
+    // O3-06 (unsupported request-side tool-call wiring fails closed)
+    let tools_request = client
+        .post(format!("http://{addr}{OPENAI_CHAT_COMPLETIONS_ENDPOINT}"))
+        .bearer_auth("secret")
+        .json(&json!({
+            "model":"openai/gpt-4o-mini",
+            "messages":[{"role":"user","content":"please call a tool"}],
+            "tools":[
+                {
+                    "type":"function",
+                    "function":{
+                        "name":"read_file",
+                        "description":"Read file",
+                        "parameters":{
+                            "type":"object",
+                            "properties":{"path":{"type":"string"}},
+                            "required":["path"]
+                        }
+                    }
+                }
+            ]
+        }))
+        .send()
+        .await
+        .expect("tools request");
+    assert_eq!(tools_request.status(), StatusCode::BAD_REQUEST);
+    let tools_error = tools_request
+        .json::<Value>()
+        .await
+        .expect("parse tools error payload");
+    assert_eq!(
+        tools_error["error"]["code"],
+        Value::String("unsupported_tools".to_string())
+    );
+
+    // O3-08 (multi-choice unsupported mode fails gracefully)
+    let multi_choice = client
+        .post(format!("http://{addr}{OPENAI_CHAT_COMPLETIONS_ENDPOINT}"))
+        .bearer_auth("secret")
+        .json(&json!({
+            "model":"openai/gpt-4o-mini",
+            "messages":[{"role":"user","content":"return two choices"}],
+            "n": 2
+        }))
+        .send()
+        .await
+        .expect("multi-choice request");
+    assert_eq!(multi_choice.status(), StatusCode::BAD_REQUEST);
+    let multi_choice_error = multi_choice
+        .json::<Value>()
+        .await
+        .expect("parse multi-choice error payload");
+    assert_eq!(
+        multi_choice_error["error"]["code"],
+        Value::String("unsupported_n".to_string())
+    );
+    let single_choice = client
+        .post(format!("http://{addr}{OPENAI_CHAT_COMPLETIONS_ENDPOINT}"))
+        .bearer_auth("secret")
+        .json(&json!({
+            "model":"openai/gpt-4o-mini",
+            "messages":[{"role":"user","content":"single explicit choice"}],
+            "n": 1
+        }))
+        .send()
+        .await
+        .expect("single-choice request");
+    assert_eq!(single_choice.status(), StatusCode::OK);
+
     // O3-11/O3-12
     let invalid_model = client
         .post(format!("http://{addr}{OPENAI_CHAT_COMPLETIONS_ENDPOINT}"))
@@ -12085,6 +12241,106 @@ async fn tier_pr_o3_openai_compatibility_matrix() {
     assert_eq!(malformed.status(), StatusCode::BAD_REQUEST);
 
     handle.abort();
+
+    // O3-07 (tool-role context is forwarded, not dropped)
+    let capture = Arc::new(CaptureGatewayLlmClient::new("tool context acknowledged"));
+    let tool_context_state = test_state_with_client_and_auth(
+        temp.path(),
+        10_000,
+        capture.clone(),
+        Arc::new(NoopGatewayToolRegistrar),
+        GatewayOpenResponsesAuthMode::Token,
+        Some("secret"),
+        None,
+        60,
+        120,
+    );
+    let (tool_context_addr, tool_context_handle) = spawn_test_server(tool_context_state)
+        .await
+        .expect("spawn tool-context server");
+
+    let tool_context = client
+        .post(format!(
+            "http://{tool_context_addr}{OPENAI_CHAT_COMPLETIONS_ENDPOINT}"
+        ))
+        .bearer_auth("secret")
+        .json(&json!({
+            "model":"openai/gpt-4o-mini",
+            "messages":[
+                {"role":"user","content":"continue after tool"},
+                {"role":"tool","tool_call_id":"call_1","content":"rows=42"}
+            ]
+        }))
+        .send()
+        .await
+        .expect("tool-context request");
+    assert_eq!(tool_context.status(), StatusCode::OK);
+    let captured = capture.captured_requests();
+    assert_eq!(captured.len(), 1);
+    let forwarded_tool_context = captured[0]
+        .messages
+        .iter()
+        .any(|message| message.text_content().contains("Tool context:\nrows=42"));
+    assert!(
+        forwarded_tool_context,
+        "tool-result context should be preserved in provider request"
+    );
+    tool_context_handle.abort();
+
+    // O3-10 (max_tokens is forwarded; finish_reason propagates to compatibility payload)
+    let scripted = Arc::new(ScriptedGatewayLlmClient::new(vec![ChatResponse {
+        message: Message::assistant_text("truncated reply"),
+        finish_reason: Some("length".to_string()),
+        usage: ChatUsage {
+            input_tokens: 12,
+            output_tokens: 10,
+            total_tokens: 22,
+            cached_input_tokens: 0,
+        },
+    }]));
+    let max_tokens_state = test_state_with_client_and_auth(
+        temp.path(),
+        10_000,
+        scripted.clone(),
+        Arc::new(NoopGatewayToolRegistrar),
+        GatewayOpenResponsesAuthMode::Token,
+        Some("secret"),
+        None,
+        60,
+        120,
+    );
+    let (max_tokens_addr, max_tokens_handle) = spawn_test_server(max_tokens_state)
+        .await
+        .expect("spawn max-tokens server");
+
+    let max_tokens_response = client
+        .post(format!(
+            "http://{max_tokens_addr}{OPENAI_CHAT_COMPLETIONS_ENDPOINT}"
+        ))
+        .bearer_auth("secret")
+        .json(&json!({
+            "model":"openai/gpt-4o-mini",
+            "messages":[{"role":"user","content":"long request"}],
+            "max_tokens": 10
+        }))
+        .send()
+        .await
+        .expect("max-tokens request");
+    assert_eq!(max_tokens_response.status(), StatusCode::OK);
+    let max_tokens_payload = max_tokens_response
+        .json::<Value>()
+        .await
+        .expect("parse max-tokens payload");
+    assert_eq!(
+        max_tokens_payload["choices"][0]["finish_reason"],
+        Value::String("length".to_string())
+    );
+
+    let scripted_requests = scripted.captured_requests().await;
+    assert_eq!(scripted_requests.len(), 1);
+    assert_eq!(scripted_requests[0].max_tokens, Some(10));
+    assert_eq!(scripted_requests[0].temperature, Some(0.0));
+    max_tokens_handle.abort();
 }
 
 #[tokio::test]
@@ -12372,8 +12628,8 @@ async fn tier_nightly_p1_runtime_matrix() {
         GatewayOpenResponsesAuthMode::Token,
         Some("secret"),
         None,
+        60,
         1,
-        2,
     );
     let (rate_limit_addr, rate_limit_handle) = spawn_test_server(rate_limit_state)
         .await
