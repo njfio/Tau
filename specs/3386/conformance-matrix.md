@@ -18,14 +18,14 @@
 | B6-04 | P1 | Covered | tier_nightly_b6_tool_navigation_matrix | Undo tool-call flow reports applied transition and updates session navigation state. |
 | B6-05 | P1 | Covered | tier_nightly_b6_tool_navigation_matrix | Redo tool-call flow reports applied transition and restores active branch head. |
 | B6-06 | P1 | Covered | integration_openresponses_http_roundtrip_persists_session_state | Session persistence validated across requests; restart lifecycle not exposed as testable API event. |
-| C5-01 | P1 | N/A | n/a | Inbound channel webhook/polling message ingestion endpoints are outside current gateway-openresponses route surface. |
-| C5-02 | P1 | N/A | n/a | Inbound channel webhook/polling message ingestion endpoints are outside current gateway-openresponses route surface. |
-| C5-03 | P1 | N/A | n/a | Inbound channel webhook/polling message ingestion endpoints are outside current gateway-openresponses route surface. |
-| C5-04 | P1 | N/A | n/a | Inbound channel webhook/polling message ingestion endpoints are outside current gateway-openresponses route surface. |
+| C5-01 | P1 | Covered | integration_spec_3402_c01_c02_c07_live_runner_routes_telegram_and_discord_to_distinct_sessions | Telegram inbound fixture is ingested and persisted to channel/session store with deterministic logs/context. |
+| C5-02 | P1 | Covered | integration_spec_3402_c01_c02_c07_live_runner_routes_telegram_and_discord_to_distinct_sessions | Discord inbound fixture is ingested and persisted to channel/session store with deterministic logs/context. |
+| C5-03 | P1 | Covered | integration_runner_secure_messaging_required_allows_valid_signed_envelope | Valid signed inbound envelope is accepted in required secure-messaging mode. |
+| C5-04 | P1 | Covered | regression_runner_secure_messaging_required_rejects_forged_signature | Forged/tampered signature is rejected fail-closed with deterministic denial reason. |
 | C5-05 | P1 | Covered | tier_nightly_p1_runtime_matrix | Lifecycle endpoint coverage via logout/status action contract. |
 | C5-06 | P1 | Covered | tier_nightly_p1_runtime_matrix | Lifecycle endpoint coverage via logout/status action contract. |
-| C5-07 | P1 | N/A | n/a | Inbound channel webhook/polling message ingestion endpoints are outside current gateway-openresponses route surface. |
-| C5-08 | P1 | N/A | n/a | Inbound channel webhook/polling message ingestion endpoints are outside current gateway-openresponses route surface. |
+| C5-07 | P1 | Covered | integration_spec_3402_c01_c02_c07_live_runner_routes_telegram_and_discord_to_distinct_sessions | Cross-transport ingress is routed to distinct transport/session stores deterministically. |
+| C5-08 | P1 | Covered | integration_runner_media_understanding_enriches_context_and_logs_reason_codes | Inbound attachment/media handling and enrichment reason codes are asserted. |
 | CH15-01 | P3 | Covered | tier_weekly_ch15_chaos_matrix | Timeout/malformed provider/flood/disconnect chaos paths covered. |
 | CH15-02 | P3 | Covered | tier_weekly_ch15_chaos_matrix | Timeout/malformed provider/flood/disconnect chaos paths covered. |
 | CH15-03 | P3 | Covered | tier_weekly_ch15_chaos_matrix | Timeout/malformed provider/flood/disconnect chaos paths covered. |
@@ -63,7 +63,7 @@
 | K13-03 | P1 | Covered | tier_nightly_p1_runtime_matrix | Password-session token issuance and protected endpoint access covered. |
 | K13-04 | P1 | Covered | regression_gateway_password_session_token_expires_and_fails_closed | Token expiry rejection covered by existing regression test. |
 | K13-05 | P1 | Covered | functional_spec_2786_c01_gateway_auth_bootstrap_endpoint_reports_token_mode_contract | Auth bootstrap contract covered. |
-| K13-06 | P1 | N/A | n/a | Credential rotation API route is not part of current gateway-openresponses endpoint contract. |
+| K13-06 | P1 | Covered | functional_execute_auth_command_rotate_key_rotates_store_without_data_loss | Credential rotation accepts new key, preserves entries, and old-key decryption fails closed. |
 | M7-01 | P1 | Covered | tier_nightly_p1_runtime_matrix | Memory CRUD and graph endpoint coverage. |
 | M7-02 | P1 | Covered | tier_nightly_p1_runtime_matrix | Memory CRUD and graph endpoint coverage. |
 | M7-03 | P1 | Covered | tier_nightly_p1_runtime_matrix | Memory CRUD and graph endpoint coverage. |
@@ -84,14 +84,14 @@
 | O3-10 | P0 | Covered | tier_pr_o3_openai_compatibility_matrix | `max_tokens` is forwarded to provider request and OpenAI payload finish reason reflects provider completion reason (e.g., `length`). |
 | O3-11 | P0 | Covered | tier_pr_o3_openai_compatibility_matrix | OpenAI compatibility surfaces covered. |
 | O3-12 | P0 | Covered | tier_pr_o3_openai_compatibility_matrix | OpenAI compatibility surfaces covered. |
-| R8-01 | P1 | N/A | n/a | Per-rollout reward-dimension and optimizer interval internals are not exposed through stable gateway contract assertions. |
-| R8-02 | P1 | N/A | n/a | Per-rollout reward-dimension and optimizer interval internals are not exposed through stable gateway contract assertions. |
-| R8-03 | P1 | N/A | n/a | Per-rollout reward-dimension and optimizer interval internals are not exposed through stable gateway contract assertions. |
-| R8-04 | P1 | N/A | n/a | Per-rollout reward-dimension and optimizer interval internals are not exposed through stable gateway contract assertions. |
-| R8-05 | P1 | N/A | n/a | Per-rollout reward-dimension and optimizer interval internals are not exposed through stable gateway contract assertions. |
+| R8-01 | P1 | Covered | spec_c01_functional_live_events_persist_rollout_and_span | Completed live session flow persists rollout and decision span deterministically. |
+| R8-02 | P1 | Covered | spec_c05_unit_live_reward_breakdown_scores_deterministically, spec_c06_functional_live_rollout_span_persists_reward_breakdown | Reward breakdown and persisted span fields are deterministic and include expected dimensions/signals. |
+| R8-03 | P1 | Covered | spec_c04_regression_trace_based_reward_inference_session_not_completed_penalty | Session-completion signal behavior is asserted via completed vs not-completed inference outcomes. |
+| R8-04 | P1 | Covered | spec_c05_regression_trace_based_reward_inference_tool_errors_reduce_reliability | Tool errors deterministically reduce reliability and composite reward. |
+| R8-05 | P1 | Covered | spec_c03_unit_trace_based_reward_inference_token_efficiency_signal | Token-efficiency signal is computed deterministically from input/output ratio. |
 | R8-06 | P1 | Covered | tier_nightly_p1_runtime_matrix | Training status/rollouts endpoint coverage. |
 | R8-07 | P1 | Covered | tier_nightly_p1_runtime_matrix | Training status/rollouts endpoint coverage. |
-| R8-08 | P1 | N/A | n/a | Per-rollout reward-dimension and optimizer interval internals are not exposed through stable gateway contract assertions. |
+| R8-08 | P1 | Covered | spec_c02_functional_optimizer_runs_on_update_interval | Optimizer executes on configured rollout interval and reports update evidence. |
 | S11-01 | P0 | Covered | tier_pr_s11_safety_endpoint_matrix | Safety policy/rules/test endpoints and redaction/blocking behavior. |
 | S11-02 | P0 | Covered | tier_pr_s11_safety_endpoint_matrix | Safety policy/rules/test endpoints and redaction/blocking behavior. |
 | S11-03 | P0 | Covered | tier_pr_s11_safety_endpoint_matrix | Safety policy/rules/test endpoints and redaction/blocking behavior. |
