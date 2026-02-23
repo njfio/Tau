@@ -31,6 +31,7 @@ These are the paths that operate as connected flows today.
 | Gateway auth/session loop | `./scripts/demo/gateway-auth-session.sh` | Gateway auth/session handling, API route contracts, runtime policies | [`docs/guides/gateway-auth-session-smoke.md`](docs/guides/gateway-auth-session-smoke.md), [`docs/guides/gateway-api-reference.md`](docs/guides/gateway-api-reference.md) |
 | Multi-channel ingress loop | `./scripts/demo/multi-channel.sh` | Multi-channel runtime, transport normalization, routing pipeline | [`docs/guides/multi-channel-event-pipeline.md`](docs/guides/multi-channel-event-pipeline.md), [`docs/guides/transports.md`](docs/guides/transports.md) |
 | Prompt optimization loop | [`docs/guides/training-ops.md`](docs/guides/training-ops.md) runbook flow | Training runner/store/tracer/proxy + rollout controls | [`docs/guides/training-ops.md`](docs/guides/training-ops.md), [`docs/guides/training-proxy-ops.md`](docs/guides/training-proxy-ops.md) |
+| Connected operator GA loop | `./scripts/verify/m296-ga-readiness-gate.sh` | RL maturity wave + auth/readiness checks + rollback trigger validation + closeout signoff criteria | [`docs/guides/m296-ga-readiness-gate.md`](docs/guides/m296-ga-readiness-gate.md), `artifacts/operator-ga-readiness/verification-report.json` |
 
 ## What You Can Do Today
 
@@ -174,6 +175,12 @@ Operator maturity wave verification (TUI + RL + auth):
 ./scripts/verify/m295-operator-maturity-wave.sh
 ```
 
+M296 GA readiness gate (Connected operator GA loop):
+
+```bash
+./scripts/verify/m296-ga-readiness-gate.sh
+```
+
 Clean generated local artifacts:
 
 ```bash
@@ -190,6 +197,7 @@ Operator runbooks:
 - [`docs/guides/dashboard-ops.md`](docs/guides/dashboard-ops.md)
 - [`docs/guides/gateway-ops.md`](docs/guides/gateway-ops.md)
 - [`docs/guides/memory-ops.md`](docs/guides/memory-ops.md)
+- [`docs/guides/m296-ga-readiness-gate.md`](docs/guides/m296-ga-readiness-gate.md)
 
 Integrator/API references:
 - [`docs/guides/gateway-api-reference.md`](docs/guides/gateway-api-reference.md)

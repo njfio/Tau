@@ -14,6 +14,12 @@ This runbook is the canonical P0 go/no-go procedure for runtime promotion. It co
 
 Use this runbook before production promotion and during incident recovery validation.
 
+For final M296 integrated signoff (RL + auth + rollback + docs closeout), run:
+
+```bash
+./scripts/verify/m296-ga-readiness-gate.sh
+```
+
 ## Prerequisites
 
 - Local build is available (`cargo build -p tau-coding-agent` completed once).
@@ -148,6 +154,7 @@ Suggested output path:
 
 ## Related runbooks
 
+- `docs/guides/m296-ga-readiness-gate.md`
 - `docs/guides/gateway-ops.md`
 - `docs/guides/deployment-ops.md`
 - `docs/guides/operator-control-summary.md`

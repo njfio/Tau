@@ -10,6 +10,7 @@ It provides a linear flow for prerequisites, startup, health validation, trouble
 Canonical promotion gate procedure:
 
 - `docs/guides/ops-readiness-live-validation.md`
+- `docs/guides/m296-ga-readiness-gate.md`
 
 ## Prerequisites
 
@@ -182,4 +183,5 @@ scripts/dev/operator-readiness-live-check.sh \
 - `docs/guides/dashboard-ops.md`
 - `docs/guides/deployment-ops.md`
 - `docs/guides/ops-readiness-live-validation.md`
+- `docs/guides/m296-ga-readiness-gate.md`
 - `docs/provider-auth/provider-auth-capability-matrix.md`

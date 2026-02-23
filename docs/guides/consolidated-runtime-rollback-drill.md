@@ -63,6 +63,12 @@ Generate rollback drill report and fail closed when rollback triggers are active
 ./scripts/demo/rollback-drill-checklist.sh --fail-on-trigger
 ```
 
+Run the final integrated GA gate (includes this rollback contract check):
+
+```bash
+./scripts/verify/m296-ga-readiness-gate.sh
+```
+
 ## Ownership
 
 Primary ownership surfaces:
@@ -71,3 +77,5 @@ Primary ownership surfaces:
 - `docs/guides/runbook-ownership-map.md` (consolidated runbook ownership map)
 
 Ownership map: `docs/guides/runbook-ownership-map.md`.
+
+Related runbook: `docs/guides/m296-ga-readiness-gate.md`.

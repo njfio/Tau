@@ -17,6 +17,7 @@ This index maps Tau documentation by audience and task.
 | Workspace operator | [Project Index Guide](guides/project-index.md) | Build/query/inspect deterministic local code index |
 | Runtime operator / SRE | [Operator Control Summary](guides/operator-control-summary.md) | Unified control-plane status, policy posture, daemon/release checks, triage map |
 | Runtime operator / SRE | [Operator Readiness Live Validation](guides/ops-readiness-live-validation.md) | Canonical P0 promotion gate across gateway, cortex, control summary, and deployment rollout checks |
+| Runtime operator / release manager | [M296 GA Readiness Gate](guides/m296-ga-readiness-gate.md) | Final integrated GA gate across RL/auth/readiness/rollback contracts with deterministic closeout report output |
 | Deployment operator / SRE | [Operator Deployment Guide](guides/operator-deployment-guide.md) | End-to-end deployment entrypoint for prerequisites, gateway/dashboard launch, readiness checks, troubleshooting, and rollback |
 | API integrator / gateway operator | [Gateway API Reference](guides/gateway-api-reference.md) | Canonical method/path inventory, auth mode contracts, policy-gate requirements, and route-coverage validation source |
 | Runtime operator / SRE | [Dashboard Operations Runbook](guides/dashboard-ops.md) | Dashboard diagnostics, gateway-backed API/SSE surfaces, rollout and rollback guardrails |
