@@ -1951,7 +1951,7 @@ mod tests {
     fn unit_memory_type_importance_profile_validate_rejects_invalid_values() {
         let non_finite = MemoryTypeImportanceProfile {
             identity: f32::INFINITY,
-            ..MemoryTypeImportanceProfile::default()
+            ..Default::default()
         };
         let non_finite_error = non_finite
             .validate()
@@ -1960,7 +1960,7 @@ mod tests {
 
         let out_of_range = MemoryTypeImportanceProfile {
             goal: 1.5,
-            ..MemoryTypeImportanceProfile::default()
+            ..Default::default()
         };
         let out_of_range_error = out_of_range
             .validate()
@@ -1969,7 +1969,7 @@ mod tests {
 
         let negative = MemoryTypeImportanceProfile {
             todo: -0.01,
-            ..MemoryTypeImportanceProfile::default()
+            ..Default::default()
         };
         let negative_error = negative
             .validate()
@@ -1983,7 +1983,7 @@ mod tests {
         let profile = MemoryTypeImportanceProfile {
             identity: 0.42,
             observation: 0.18,
-            ..MemoryTypeImportanceProfile::default()
+            ..Default::default()
         };
 
         let store = FileMemoryStore::new_with_embedding_provider_and_importance_profile(
