@@ -9,7 +9,7 @@ use tau_agent_core::{AgentTool, ToolExecutionResult};
 use tau_ai::{
     ChatRequest, ChatResponse, ChatUsage, ContentBlock, Message, TauAiError, ToolDefinition,
 };
-use tempfile::tempdir;
+use tempfile::{tempdir, TempDir};
 use tokio::sync::Mutex as AsyncMutex;
 use tokio_tungstenite::{
     connect_async,
@@ -162,6 +162,142 @@ impl LlmClient for ScriptedGatewayLlmClient {
             }
         }
         Ok(response)
+    }
+}
+
+fn scripted_gateway_response(text: &str) -> ChatResponse {
+    ChatResponse {
+        message: Message::assistant_text(text.to_string()),
+        finish_reason: Some("stop".to_string()),
+        usage: ChatUsage::default(),
+    }
+}
+
+struct TauE2eHarness {
+    workspace: TempDir,
+    addr: SocketAddr,
+    handle: tokio::task::JoinHandle<()>,
+    client: Client,
+    token: String,
+}
+
+impl TauE2eHarness {
+    async fn new(scripted_responses: Vec<ChatResponse>) -> Self {
+        let workspace = tempdir().expect("tempdir");
+        let token = "secret".to_string();
+        let scripted_client = Arc::new(ScriptedGatewayLlmClient::new(scripted_responses));
+        let state = test_state_with_client_and_auth(
+            workspace.path(),
+            10_000,
+            scripted_client,
+            Arc::new(NoopGatewayToolRegistrar),
+            GatewayOpenResponsesAuthMode::Token,
+            Some(token.as_str()),
+            None,
+            60,
+            120,
+        );
+        let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+        Self {
+            workspace,
+            addr,
+            handle,
+            client: Client::builder()
+                .redirect(reqwest::redirect::Policy::none())
+                .build()
+                .expect("build reqwest client"),
+            token,
+        }
+    }
+
+    fn workspace_root(&self) -> &Path {
+        self.workspace.path()
+    }
+
+    fn auth(&self, request: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+        request.bearer_auth(self.token.as_str())
+    }
+
+    async fn get_gateway_status(&self) -> reqwest::Response {
+        self.auth(
+            self.client
+                .get(format!("http://{}{}", self.addr, GATEWAY_STATUS_ENDPOINT)),
+        )
+        .send()
+        .await
+        .expect("gateway status")
+    }
+
+    async fn post_openresponses(
+        &self,
+        input: &str,
+        session_id: &str,
+        stream: bool,
+    ) -> reqwest::Response {
+        self.auth(
+            self.client
+                .post(format!("http://{}{}", self.addr, OPENRESPONSES_ENDPOINT)),
+        )
+        .json(&json!({
+            "input": input,
+            "stream": stream,
+            "metadata": {"session_id": session_id}
+        }))
+        .send()
+        .await
+        .expect("openresponses request")
+    }
+
+    async fn list_sessions(&self) -> reqwest::Response {
+        self.auth(self.client.get(format!(
+            "http://{}{}?limit=200",
+            self.addr, GATEWAY_SESSIONS_ENDPOINT
+        )))
+        .send()
+        .await
+        .expect("sessions list")
+    }
+
+    async fn get_ops_shell(&self) -> reqwest::Response {
+        self.auth(
+            self.client
+                .get(format!("http://{}{}", self.addr, OPS_DASHBOARD_ENDPOINT)),
+        )
+        .send()
+        .await
+        .expect("ops shell")
+    }
+
+    async fn post_ops_control_action(&self, action: &str) -> reqwest::Response {
+        self.auth(self.client.post(format!(
+            "http://{}{}",
+            self.addr, OPS_DASHBOARD_CONTROL_ACTION_ENDPOINT
+        )))
+        .form(&[
+            ("action", action),
+            ("reason", "spec-3448-wave1"),
+            ("theme", "dark"),
+            ("sidebar", "expanded"),
+        ])
+        .send()
+        .await
+        .expect("ops control action")
+    }
+
+    async fn get_dashboard_health(&self) -> reqwest::Response {
+        self.auth(
+            self.client
+                .get(format!("http://{}{}", self.addr, DASHBOARD_HEALTH_ENDPOINT)),
+        )
+        .send()
+        .await
+        .expect("dashboard health")
+    }
+}
+
+impl Drop for TauE2eHarness {
+    fn drop(&mut self) {
+        self.handle.abort();
     }
 }
 
@@ -13918,4 +14054,112 @@ async fn tier_weekly_ch15_chaos_matrix() {
         .expect("malformed request");
     assert_eq!(malformed_response.status(), StatusCode::BAD_GATEWAY);
     malformed_handle.abort();
+}
+
+#[tokio::test]
+async fn integration_spec_3448_c02_tau_e2e_harness_runs_gateway_lifecycle_and_session_flow() {
+    let harness = TauE2eHarness::new(vec![
+        scripted_gateway_response("wave1 hello"),
+        scripted_gateway_response("wave1 follow-up"),
+    ])
+    .await;
+
+    let status = harness.get_gateway_status().await;
+    assert_eq!(status.status(), StatusCode::OK);
+
+    let first = harness
+        .post_openresponses("hello", "spec-3448-c02", false)
+        .await;
+    assert_eq!(first.status(), StatusCode::OK);
+    let first_payload = first
+        .json::<Value>()
+        .await
+        .expect("parse first openresponses payload");
+    assert_eq!(
+        first_payload["output_text"],
+        Value::String("wave1 hello".to_string())
+    );
+
+    let second = harness
+        .post_openresponses("follow-up", "spec-3448-c02", false)
+        .await;
+    assert_eq!(second.status(), StatusCode::OK);
+    let second_payload = second
+        .json::<Value>()
+        .await
+        .expect("parse second openresponses payload");
+    assert_eq!(
+        second_payload["output_text"],
+        Value::String("wave1 follow-up".to_string())
+    );
+
+    let sessions = harness.list_sessions().await;
+    assert_eq!(sessions.status(), StatusCode::OK);
+    let sessions_payload = sessions
+        .json::<Value>()
+        .await
+        .expect("parse sessions payload");
+    assert!(
+        sessions_payload["sessions"]
+            .as_array()
+            .map(|rows| {
+                rows.iter().any(|row| {
+                    row["session_key"]
+                        .as_str()
+                        .is_some_and(|value| value == "spec-3448-c02")
+                })
+            })
+            .unwrap_or(false),
+        "expected session key to be discoverable in gateway session list"
+    );
+}
+
+#[tokio::test]
+async fn integration_spec_3448_c03_tau_e2e_harness_keeps_ops_control_and_dashboard_live_contracts()
+{
+    let harness = TauE2eHarness::new(vec![]).await;
+    write_dashboard_runtime_fixture(harness.workspace_root());
+    write_dashboard_control_state_fixture(harness.workspace_root());
+    write_training_runtime_fixture(harness.workspace_root(), 1);
+
+    let ops_shell = harness.get_ops_shell().await;
+    assert_eq!(ops_shell.status(), StatusCode::OK);
+    let ops_shell_body = ops_shell.text().await.expect("read ops shell body");
+    assert!(ops_shell_body.contains("id=\"tau-ops-command-center\""));
+    assert!(
+        ops_shell_body.contains("data-action-endpoint=\"/ops/control-action\""),
+        "ops shell should expose live control action endpoint marker"
+    );
+
+    let refresh = harness.post_ops_control_action("refresh").await;
+    assert_eq!(refresh.status(), StatusCode::SEE_OTHER);
+    let refresh_location = refresh
+        .headers()
+        .get(reqwest::header::LOCATION)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default()
+        .to_string();
+    assert!(
+        refresh_location.starts_with("/ops"),
+        "expected redirect back to ops shell, got: {refresh_location}"
+    );
+
+    let health = harness.get_dashboard_health().await;
+    assert_eq!(health.status(), StatusCode::OK);
+    let health_payload = health
+        .json::<Value>()
+        .await
+        .expect("parse dashboard health payload");
+    assert_eq!(
+        health_payload["schema_version"],
+        Value::Number(1_u64.into())
+    );
+    assert!(
+        health_payload["health"].is_object(),
+        "dashboard health payload should include health object"
+    );
+    assert!(
+        health_payload["control"].is_object(),
+        "dashboard health payload should include control object"
+    );
 }
