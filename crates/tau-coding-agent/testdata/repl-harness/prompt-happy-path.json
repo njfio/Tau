@@ -19,7 +19,8 @@
       "repl harness integration response"
     ],
     "stderr_not_contains": [
-      "panic"
+      "panic",
+      "interactive.turn="
     ]
   }
 }

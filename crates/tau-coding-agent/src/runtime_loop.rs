@@ -13,7 +13,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
         Arc,
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use anyhow::{anyhow, bail, Context, Result};
@@ -34,7 +34,7 @@ use tau_extensions::{apply_extension_message_transforms, dispatch_extension_runt
 use tau_onboarding::startup_resolution::ensure_non_empty_text;
 use tau_session::{SessionRuntime, SessionUsageSummary};
 use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 
 use crate::commands::{handle_command_with_session_import_mode, CommandAction, COMMAND_NAMES};
 use crate::multi_agent_router::MultiAgentRouteTable;
@@ -50,6 +50,7 @@ use crate::runtime_types::{CommandExecutionContext, ProfileDefaults, RenderOptio
 const EXTENSION_HOOK_PAYLOAD_SCHEMA_VERSION: u32 = 1;
 const REPL_PROMPT: &str = "tau> ";
 const REPL_CONTINUATION_PROMPT: &str = "...> ";
+const INTERACTIVE_TURN_HEARTBEAT_INTERVAL_MS: u64 = 2_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PromptRunStatus {
@@ -149,6 +150,98 @@ struct InteractiveRunnerContext<'a> {
 
 type InteractiveRunner =
     for<'a> fn(&'a mut InteractiveRunnerContext<'a>) -> InteractiveRunnerFuture<'a>;
+
+fn should_emit_interactive_turn_progress(
+    stdin_is_terminal: bool,
+    stdout_is_terminal: bool,
+) -> bool {
+    stdin_is_terminal && stdout_is_terminal
+}
+
+fn format_interactive_turn_start_line(turn_timeout_ms: u64) -> String {
+    format!("interactive.turn=start timeout_ms={turn_timeout_ms}")
+}
+
+fn format_interactive_turn_running_line(elapsed_ms: u64) -> String {
+    format!("interactive.turn=running elapsed_ms={elapsed_ms}")
+}
+
+fn format_interactive_turn_end_line(status: &str, elapsed_ms: u64) -> String {
+    format!("interactive.turn=end status={status} elapsed_ms={elapsed_ms}")
+}
+
+fn prompt_run_status_label(status: PromptRunStatus) -> &'static str {
+    match status {
+        PromptRunStatus::Completed => "completed",
+        PromptRunStatus::Cancelled => "cancelled",
+        PromptRunStatus::TimedOut => "timed-out",
+    }
+}
+
+struct InteractiveTurnProgressTracker {
+    enabled: bool,
+    started_at: Instant,
+    stop_signal: Option<oneshot::Sender<()>>,
+    heartbeat_task: Option<tokio::task::JoinHandle<()>>,
+}
+
+impl InteractiveTurnProgressTracker {
+    fn start(turn_timeout_ms: u64) -> Self {
+        let enabled = should_emit_interactive_turn_progress(
+            std::io::stdin().is_terminal(),
+            std::io::stdout().is_terminal(),
+        );
+        let started_at = Instant::now();
+        if !enabled {
+            return Self {
+                enabled: false,
+                started_at,
+                stop_signal: None,
+                heartbeat_task: None,
+            };
+        }
+
+        eprintln!("{}", format_interactive_turn_start_line(turn_timeout_ms));
+        let (tx, mut rx) = oneshot::channel::<()>();
+        let started = started_at;
+        let heartbeat_task = tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_millis(
+                INTERACTIVE_TURN_HEARTBEAT_INTERVAL_MS,
+            ));
+            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            loop {
+                tokio::select! {
+                    _ = &mut rx => break,
+                    _ = interval.tick() => {
+                        let elapsed_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
+                        eprintln!("{}", format_interactive_turn_running_line(elapsed_ms));
+                    }
+                }
+            }
+        });
+
+        Self {
+            enabled,
+            started_at,
+            stop_signal: Some(tx),
+            heartbeat_task: Some(heartbeat_task),
+        }
+    }
+
+    async fn finish(&mut self, status: &str) {
+        if !self.enabled {
+            return;
+        }
+        if let Some(tx) = self.stop_signal.take() {
+            let _ = tx.send(());
+        }
+        if let Some(task) = self.heartbeat_task.take() {
+            let _ = tokio::time::timeout(Duration::from_millis(250), task).await;
+        }
+        let elapsed_ms = u64::try_from(self.started_at.elapsed().as_millis()).unwrap_or(u64::MAX);
+        eprintln!("{}", format_interactive_turn_end_line(status, elapsed_ms));
+    }
+}
 
 fn resolve_interactive_io_mode(
     stdin_is_terminal: bool,
@@ -483,7 +576,8 @@ async fn dispatch_interactive_turn(
     }
 
     if config.orchestrator_mode == CliOrchestratorMode::PlanFirst {
-        run_plan_first_prompt_with_runtime_hooks(
+        let mut progress = InteractiveTurnProgressTracker::start(config.turn_timeout_ms);
+        let run_result = run_plan_first_prompt_with_runtime_hooks(
             agent,
             session_runtime,
             PlanFirstPromptRuntimeHooksConfig {
@@ -506,11 +600,21 @@ async fn dispatch_interactive_turn(
                 extension_runtime_hooks: config.extension_runtime_hooks,
             },
         )
-        .await?;
+        .await;
+        match run_result {
+            Ok(()) => {
+                progress.finish("completed").await;
+            }
+            Err(error) => {
+                progress.finish("failed").await;
+                return Err(error);
+            }
+        }
         return Ok(InteractiveLoopControl::Continue);
     }
 
-    let status = run_prompt_with_runtime_hooks(
+    let mut progress = InteractiveTurnProgressTracker::start(config.turn_timeout_ms);
+    let prompt_result = run_prompt_with_runtime_hooks(
         agent,
         session_runtime,
         input,
@@ -522,7 +626,17 @@ async fn dispatch_interactive_turn(
             profile_defaults: Some(config.command_context.profile_defaults),
         },
     )
-    .await?;
+    .await;
+    let status = match prompt_result {
+        Ok(status) => {
+            progress.finish(prompt_run_status_label(status)).await;
+            status
+        }
+        Err(error) => {
+            progress.finish("failed").await;
+            return Err(error);
+        }
+    };
     report_prompt_status(status);
     Ok(InteractiveLoopControl::Continue)
 }
@@ -1405,11 +1519,13 @@ fn report_prompt_status(status: PromptRunStatus) {
 mod tests {
     use super::{
         apply_runtime_message_transform, build_runtime_hook_payload, classify_prompt_complexity,
-        render_orchestrator_policy_inheritance_context, require_tty_streams,
-        resolve_interactive_io_mode, resolve_repl_history_path, run_interactive_tty,
-        run_interactive_with_runner, run_prompt_with_profile_routing, select_routed_dispatch_model,
-        InteractiveIoMode, InteractiveRunnerContext, InteractiveRunnerFuture, PromptComplexity,
-        PromptProcessType, ReplCommandCompleter, ReplMultilineState, RuntimeExtensionHooksConfig,
+        format_interactive_turn_end_line, format_interactive_turn_running_line,
+        format_interactive_turn_start_line, render_orchestrator_policy_inheritance_context,
+        require_tty_streams, resolve_interactive_io_mode, resolve_repl_history_path,
+        run_interactive_tty, run_interactive_with_runner, run_prompt_with_profile_routing,
+        select_routed_dispatch_model, should_emit_interactive_turn_progress, InteractiveIoMode,
+        InteractiveRunnerContext, InteractiveRunnerFuture, PromptComplexity, PromptProcessType,
+        ReplCommandCompleter, ReplMultilineState, RuntimeExtensionHooksConfig,
         RuntimeHookRunStatus,
     };
     use crate::runtime_prompt_template_bridge::start_runtime_prompt_template_hot_reload_bridge;
@@ -1658,6 +1774,26 @@ mod tests {
             ]),
         };
         profile
+    }
+
+    #[test]
+    fn unit_interactive_turn_progress_is_enabled_only_for_tty_streams() {
+        assert!(should_emit_interactive_turn_progress(true, true));
+        assert!(!should_emit_interactive_turn_progress(true, false));
+        assert!(!should_emit_interactive_turn_progress(false, true));
+        assert!(!should_emit_interactive_turn_progress(false, false));
+    }
+
+    #[test]
+    fn unit_interactive_turn_progress_line_contract_is_stable() {
+        let start = format_interactive_turn_start_line(45_000);
+        assert_eq!(start, "interactive.turn=start timeout_ms=45000");
+
+        let running = format_interactive_turn_running_line(2_500);
+        assert_eq!(running, "interactive.turn=running elapsed_ms=2500");
+
+        let end = format_interactive_turn_end_line("completed", 2_700);
+        assert_eq!(end, "interactive.turn=end status=completed elapsed_ms=2700");
     }
 
     #[test]
