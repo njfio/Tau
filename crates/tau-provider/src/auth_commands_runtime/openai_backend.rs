@@ -60,7 +60,7 @@ pub(super) fn execute_openai_login_backend_ready(
         );
     }
 
-    let action = "run codex --login";
+    let action = "run codex login";
     let launch_spec = match build_auth_login_launch_spec(config, provider, mode) {
         Ok(spec) => spec,
         Err(error) => {

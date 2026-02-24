@@ -40,11 +40,11 @@ fn functional_execute_auth_command_login_openai_launch_executes_codex_login_comm
     assert_eq!(payload["launch_executed"], true);
     assert_eq!(
         payload["launch_command"],
-        format!("{} --login", script.display())
+        format!("{} login", script.display())
     );
 
     let launched_args = std::fs::read_to_string(&args_file).expect("read codex login args");
-    assert_eq!(launched_args, "--login");
+    assert_eq!(launched_args, "login");
 }
 
 #[cfg(unix)]
