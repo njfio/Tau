@@ -10,3 +10,22 @@ ci-artifacts/
 *.pyc
 /=
 /]
+.DS_Store
+
+# Local generated verification/build outputs
+/artifacts/
+/mutants.out*/
+/target-fast-*/
+/target-full-gate/
+/target-m295-*/
+/target-m296-*/
+/target-rustup-wasm/
+/rust_pi_exec/
+
+# Local cache outputs
+/crates/*/.fastembed_cache/
+/tests/integration/.fastembed_cache/
+/crates/tau-tools/proptest-regressions/
+
+# Local backup scratch space
+/specs/_local_backups/
