@@ -178,7 +178,7 @@ Full pre-merge gate:
 Interactive runtime mode:
 
 ```bash
-cargo run -p tau-coding-agent -- --model openai/gpt-4o-mini
+cargo run -p tau-coding-agent -- --model openai/gpt-5.2
 ```
 
 Gateway auth/session smoke:

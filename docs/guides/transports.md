@@ -49,7 +49,7 @@ export TAU_LOG_ROTATION_MAX_FILES=3
 export GITHUB_TOKEN=...your-token...
 
 cargo run -p tau-coding-agent -- \
-  --model openai/gpt-4o-mini \
+  --model openai/gpt-5.2 \
   --github-issues-bridge \
   --github-repo owner/repo \
   --github-bot-login your-bot-login \
@@ -67,7 +67,7 @@ Run exactly one poll cycle (useful for CI smoke jobs and cron workflows):
 
 ```bash
 cargo run -p tau-coding-agent -- \
-  --model openai/gpt-4o-mini \
+  --model openai/gpt-5.2 \
   --github-issues-bridge \
   --github-repo owner/repo \
   --github-poll-once \
@@ -126,7 +126,7 @@ export TAU_SLACK_APP_TOKEN=...xapp-token...
 export TAU_SLACK_BOT_TOKEN=...xoxb-token...
 
 cargo run -p tau-coding-agent -- \
-  --model openai/gpt-4o-mini \
+  --model openai/gpt-5.2 \
   --slack-bridge \
   --slack-state-dir .tau/slack \
   --slack-artifact-retention-days 30 \
@@ -141,7 +141,7 @@ deduplication for supported transports.
 
 ```bash
 cargo run -p tau-coding-agent -- \
-  --model openai/gpt-4o-mini \
+  --model openai/gpt-5.2 \
   --multi-channel-contract-runner \
   --multi-channel-fixture crates/tau-multi-channel/testdata/multi-channel-contract/baseline-three-channel.json \
   --multi-channel-state-dir .tau/multi-channel \
@@ -255,7 +255,7 @@ The command validates payload shape and appends one normalized envelope line to:
 
 ```bash
 cargo run -p tau-coding-agent -- \
-  --model openai/gpt-4o-mini \
+  --model openai/gpt-5.2 \
   --multi-channel-live-runner \
   --multi-channel-live-ingress-dir .tau/multi-channel/live-ingress \
   --multi-channel-state-dir .tau/multi-channel \
@@ -283,7 +283,7 @@ retry handling, deduplication, and routed-case snapshot persistence.
 
 ```bash
 cargo run -p tau-coding-agent -- \
-  --model openai/gpt-4o-mini \
+  --model openai/gpt-5.2 \
   --multi-agent-contract-runner \
   --multi-agent-fixture crates/tau-coding-agent/testdata/multi-agent-contract/rollout-pass.json \
   --multi-agent-state-dir .tau/multi-agent \
@@ -345,7 +345,7 @@ Operational migration and diagnostics guidance: `docs/guides/memory-ops.md`.
 
 ```bash
 cargo run -p tau-coding-agent -- \
-  --model openai/gpt-4o-mini \
+  --model openai/gpt-5.2 \
   --browser-automation-live-runner \
   --browser-automation-live-fixture crates/tau-coding-agent/testdata/browser-automation-live/live-sequence.json \
   --browser-automation-playwright-cli playwright-cli \
@@ -430,7 +430,7 @@ Run the authenticated gateway server for HTTP OpenResponses plus websocket contr
 
 ```bash
 cargo run -p tau-coding-agent -- \
-  --model openai/gpt-4o-mini \
+  --model openai/gpt-5.2 \
   --gateway-openresponses-server \
   --gateway-openresponses-bind 127.0.0.1:8787 \
   --gateway-openresponses-auth-mode token \
@@ -543,7 +543,7 @@ state persistence, and channel-store snapshots.
 
 ```bash
 cargo run -p tau-coding-agent -- \
-  --model openai/gpt-4o-mini \
+  --model openai/gpt-5.2 \
   --gateway-contract-runner \
   --gateway-fixture crates/tau-gateway/testdata/gateway-contract/rollout-pass.json \
   --gateway-state-dir .tau/gateway \
@@ -584,7 +584,7 @@ retry outcomes, state persistence, and channel-store snapshots.
 
 ```bash
 cargo run -p tau-coding-agent -- \
-  --model openai/gpt-4o-mini \
+  --model openai/gpt-5.2 \
   --deployment-contract-runner \
   --deployment-fixture crates/tau-coding-agent/testdata/deployment-contract/rollout-pass.json \
   --deployment-state-dir .tau/deployment \
@@ -658,7 +658,7 @@ retry outcomes, state persistence, and channel-store snapshots.
 
 ```bash
 cargo run -p tau-coding-agent -- \
-  --model openai/gpt-4o-mini \
+  --model openai/gpt-5.2 \
   --voice-contract-runner \
   --voice-fixture crates/tau-coding-agent/testdata/voice-contract/rollout-pass.json \
   --voice-state-dir .tau/voice \
@@ -701,7 +701,7 @@ fallback behavior (invalid audio/provider outages).
 
 ```bash
 cargo run -p tau-coding-agent -- \
-  --model openai/gpt-4o-mini \
+  --model openai/gpt-5.2 \
   --voice-live-runner \
   --voice-live-input crates/tau-coding-agent/testdata/voice-live/single-turn.json \
   --voice-live-wake-word tau \

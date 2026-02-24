@@ -102,7 +102,7 @@ fn conformance_tui_agent_mode_dry_run_emits_interactive_launch_contract() {
             "--profile",
             "ops-interactive",
             "--model",
-            "openai/gpt-4o-mini",
+            "openai/gpt-5.2",
             "--dashboard-state-dir",
             ".tau/dashboard",
             "--gateway-state-dir",
@@ -122,7 +122,7 @@ fn conformance_tui_agent_mode_dry_run_emits_interactive_launch_contract() {
     assert!(stdout.contains("Tau Operator Shell (agent-interactive)"));
     assert!(stdout.contains("interactive.launch=ready"));
     assert!(stdout.contains("cargo run -p tau-coding-agent --"));
-    assert!(stdout.contains("--model openai/gpt-4o-mini"));
+    assert!(stdout.contains("--model openai/gpt-5.2"));
     assert!(stdout.contains("--dashboard-state-dir .tau/dashboard"));
     assert!(stdout.contains("--gateway-state-dir .tau/gateway"));
 }

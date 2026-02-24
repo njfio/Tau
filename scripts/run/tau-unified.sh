@@ -10,7 +10,7 @@ PID_FILE="${RUNTIME_DIR}/tau-unified.pid"
 LOG_FILE="${RUNTIME_DIR}/tau-unified.log"
 CMD_FILE="${RUNTIME_DIR}/tau-unified.last-cmd"
 
-MODEL_DEFAULT="${TAU_UNIFIED_MODEL:-openai/gpt-4o-mini}"
+MODEL_DEFAULT="${TAU_UNIFIED_MODEL:-openai/gpt-5.2}"
 BIND_DEFAULT="${TAU_UNIFIED_BIND:-127.0.0.1:8791}"
 AUTH_MODE_DEFAULT="${TAU_UNIFIED_AUTH_MODE:-localhost-dev}"
 AUTH_TOKEN_DEFAULT="${TAU_UNIFIED_AUTH_TOKEN:-local-dev-token}"
@@ -34,7 +34,7 @@ Commands:
   tui      Launch live TUI shell view using dashboard artifacts.
 
 Options for `up`:
-  --model <model>                 Model id (default: openai/gpt-4o-mini)
+  --model <model>                 Model id (default: openai/gpt-5.2)
   --bind <host:port>              Gateway bind (default: 127.0.0.1:8791)
   --auth-mode <mode>              Auth mode: localhost-dev|token|password-session
   --auth-token <token>            Token for token mode
@@ -49,7 +49,7 @@ Options for `tui`:
   --state-dir <path>              Dashboard state dir alias (default: .tau/dashboard)
   --dashboard-state-dir <path>    Dashboard state dir (default: .tau/dashboard)
   --gateway-state-dir <path>      Gateway state dir (default: .tau/gateway)
-  --model <id>                    Agent model id (default: openai/gpt-4o-mini)
+  --model <id>                    Agent model id (default: openai/gpt-5.2)
   --profile <name>                TUI profile (default: local-dev)
   --iterations <n>                Live-shell watch iterations (default: 3)
   --interval-ms <n>               Live-shell watch interval ms (default: 1000)

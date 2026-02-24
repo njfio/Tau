@@ -89,7 +89,7 @@ up_output="$(
   TAU_UNIFIED_RUNNER_LOG="${runner_log}" \
   TAU_UNIFIED_RUNNER_PID="${runner_pid}" \
   TAU_UNIFIED_RUNTIME_DIR="${runtime_dir}" \
-  "${LAUNCHER_SCRIPT}" up --profile test-profile --model openai/gpt-4o-mini --bind 127.0.0.1:8899 --auth-mode localhost-dev 2>&1
+  "${LAUNCHER_SCRIPT}" up --profile test-profile --model openai/gpt-5.2 --bind 127.0.0.1:8899 --auth-mode localhost-dev 2>&1
 )"
 up_rc=$?
 set -e

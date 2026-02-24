@@ -75,7 +75,7 @@ pub struct Cli {
     #[arg(
         long,
         env = "TAU_MODEL",
-        default_value = "openai/gpt-4o-mini",
+        default_value = "openai/gpt-5.2",
         help = "Model in provider/model format. Supported providers: openai, openrouter, deepseek (alias), groq (alias), xai (alias), mistral (alias), azure/azure-openai (alias), anthropic, google."
     )]
     pub model: String,
