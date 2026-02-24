@@ -43,6 +43,28 @@ For endpoint-specific details, see `docs/guides/gateway-api-reference.md`.
 
 ## Quick Start (Localhost-Dev)
 
+## One-Command Unified Entrypoint (Recommended)
+
+Use the unified lifecycle launcher when you want one command surface for runtime
+bring-up, status checks, optional live TUI, and shutdown:
+
+```bash
+./scripts/run/tau-unified.sh up --auth-mode localhost-dev
+./scripts/run/tau-unified.sh status
+./scripts/run/tau-unified.sh tui --iterations 3 --interval-ms 1000 --no-color
+./scripts/run/tau-unified.sh down
+```
+
+The `up` command prints the active web endpoints (`/webchat`, `/ops`, `/dashboard`)
+and persists runtime artifacts under `.tau/unified/`:
+
+- `tau-unified.pid`
+- `tau-unified.log`
+- `tau-unified.last-cmd`
+
+If you need explicit flag-level bring-up control, follow the manual step-by-step
+flow below.
+
 ## Step 1: Start gateway in local smoke posture
 
 Use `localhost-dev` auth for local bring-up validation:
