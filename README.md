@@ -58,6 +58,9 @@ Some surfaces are intentionally diagnostics-first or staged:
   - provider auth-mode matrix and gateway auth/session lifecycle conformance are covered in deterministic suites (`scripts/verify/m295-operator-maturity-wave.sh`),
   - auth-depth lifecycle and edge-path coverage is aggregated in `scripts/verify/m303-auth-workflow-depth.sh`,
   - live third-party credential/network validation remains environment-specific.
+- Multi-channel orchestration:
+  - deterministic C5 scenario-depth coverage is aggregated in `scripts/verify/m307-multi-channel-orchestration-depth.sh`,
+  - live connector/provider uptime and credential validation remain environment-specific.
 - TUI:
   - includes operator-shell and `shell-live` modes with status/auth/training/alerts/actions panels,
   - `shell-live` now reports deterministic malformed/missing artifact diagnostics for operator triage,
@@ -82,6 +85,7 @@ Some surfaces are intentionally diagnostics-first or staged:
 |---|---|---|
 | True RL productionization depth | deterministic end-to-end harness, promotion/rollback gate verification, and GA readiness gate are delivered; larger-scale policy operations still expanding | [`docs/planning/integration-gap-closure-plan.md`](docs/planning/integration-gap-closure-plan.md), [`docs/planning/true-rl-roadmap-skeleton.md`](docs/planning/true-rl-roadmap-skeleton.md), [`docs/guides/training-ops.md`](docs/guides/training-ops.md), [`scripts/verify/m301-rl-promotion-rollback-gate.sh`](scripts/verify/m301-rl-promotion-rollback-gate.sh), [`scripts/verify/m296-ga-readiness-gate.sh`](scripts/verify/m296-ga-readiness-gate.sh) |
 | Dashboard maturity expansion | ops routes exist, richer workflow UX pending | [`docs/planning/integration-gap-closure-plan.md`](docs/planning/integration-gap-closure-plan.md), [`docs/guides/dashboard-ops.md`](docs/guides/dashboard-ops.md), [`docs/guides/operator-deployment-guide.md`](docs/guides/operator-deployment-guide.md) |
+| Multi-channel orchestration depth | deterministic C5 Telegram/Discord routing, WhatsApp webhook verification, lifecycle, and media-handling coverage is aggregated in a dedicated gate; live provider-specific behavior still environment-bound | [`docs/planning/integration-gap-closure-plan.md`](docs/planning/integration-gap-closure-plan.md), [`docs/guides/transports.md`](docs/guides/transports.md), [`scripts/verify/m307-multi-channel-orchestration-depth.sh`](scripts/verify/m307-multi-channel-orchestration-depth.sh) |
 | Extended auth live-env verification | deterministic matrix/lifecycle conformance and auth-depth edge-path gating are delivered; external credential/live-env permutations remain environment-specific | [`docs/planning/integration-gap-closure-plan.md`](docs/planning/integration-gap-closure-plan.md), [`docs/provider-auth/provider-auth-capability-matrix.md`](docs/provider-auth/provider-auth-capability-matrix.md), [`docs/guides/gateway-auth-session-smoke.md`](docs/guides/gateway-auth-session-smoke.md), [`scripts/verify/m303-auth-workflow-depth.sh`](scripts/verify/m303-auth-workflow-depth.sh), [`scripts/verify/m296-live-auth-validation.sh`](scripts/verify/m296-live-auth-validation.sh) |
 | TUI interaction depth | operator shell and resilient `shell-live` diagnostics are delivered; richer interactive workflows continue to evolve | [`docs/planning/integration-gap-closure-plan.md`](docs/planning/integration-gap-closure-plan.md), [`crates/tau-tui`](crates/tau-tui), [`docs/guides/demo-index.md`](docs/guides/demo-index.md) |
 
