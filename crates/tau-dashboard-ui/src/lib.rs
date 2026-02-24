@@ -1881,6 +1881,10 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
         .command_center
         .last_action_timestamp_unix_ms
         .to_string();
+    let last_action_request_line = format!("request.id: {last_action_request_id}");
+    let last_action_name_line = format!("action: {last_action_name}");
+    let last_action_actor_line = format!("actor: {last_action_actor}");
+    let last_action_timestamp_line = format!("timestamp: {last_action_timestamp_value}");
     let timeline_range = context.command_center.timeline_range.clone();
     let timeline_point_count_value = context.command_center.timeline_point_count.to_string();
     let timeline_last_timestamp_value = context
@@ -3774,6 +3778,10 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     data-last-action-timestamp=last_action_timestamp_value
                                 >
                                     <h3>Last Action</h3>
+                                    <p id="tau-ops-last-action-request-id">{last_action_request_line}</p>
+                                    <p id="tau-ops-last-action-name">{last_action_name_line}</p>
+                                    <p id="tau-ops-last-action-actor">{last_action_actor_line}</p>
+                                    <p id="tau-ops-last-action-timestamp">{last_action_timestamp_line}</p>
                                 </section>
                             </section>
                             <section

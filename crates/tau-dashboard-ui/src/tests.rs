@@ -3283,6 +3283,49 @@ fn regression_spec_3466_c05_control_action_status_panel_defaults_to_idle_contrac
 }
 
 #[test]
+fn functional_spec_3478_c01_last_action_section_renders_readable_detail_rows() {
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        auth_mode: TauOpsDashboardAuthMode::Token,
+        active_route: TauOpsDashboardRoute::Ops,
+        theme: TauOpsDashboardTheme::Dark,
+        sidebar_state: TauOpsDashboardSidebarState::Expanded,
+        command_center: TauOpsDashboardCommandCenterSnapshot {
+            last_action_request_id: "dashboard-action-90210".to_string(),
+            last_action_name: "pause".to_string(),
+            last_action_actor: "ops-user".to_string(),
+            last_action_timestamp_unix_ms: 90210,
+            ..TauOpsDashboardCommandCenterSnapshot::default()
+        },
+        chat: TauOpsDashboardChatSnapshot::default(),
+    });
+
+    assert!(html.contains("id=\"tau-ops-control-last-action\""));
+    assert!(
+        html.contains("id=\"tau-ops-last-action-request-id\">request.id: dashboard-action-90210")
+    );
+    assert!(html.contains("id=\"tau-ops-last-action-name\">action: pause"));
+    assert!(html.contains("id=\"tau-ops-last-action-actor\">actor: ops-user"));
+    assert!(html.contains("id=\"tau-ops-last-action-timestamp\">timestamp: 90210"));
+}
+
+#[test]
+fn regression_spec_3478_c02_last_action_section_defaults_to_fallback_rows() {
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        auth_mode: TauOpsDashboardAuthMode::Token,
+        active_route: TauOpsDashboardRoute::Ops,
+        theme: TauOpsDashboardTheme::Dark,
+        sidebar_state: TauOpsDashboardSidebarState::Expanded,
+        command_center: TauOpsDashboardCommandCenterSnapshot::default(),
+        chat: TauOpsDashboardChatSnapshot::default(),
+    });
+
+    assert!(html.contains("id=\"tau-ops-last-action-request-id\">request.id: none"));
+    assert!(html.contains("id=\"tau-ops-last-action-name\">action: none"));
+    assert!(html.contains("id=\"tau-ops-last-action-actor\">actor: none"));
+    assert!(html.contains("id=\"tau-ops-last-action-timestamp\">timestamp: 0"));
+}
+
+#[test]
 fn functional_spec_2814_c01_c02_c03_timeline_chart_and_range_markers_render() {
     let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
         auth_mode: TauOpsDashboardAuthMode::Token,
