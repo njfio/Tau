@@ -1491,7 +1491,7 @@ fn provider_reauth_prerequisites(provider: Provider, method: ProviderAuthMethod)
             Provider::OpenAi | Provider::OpenRouter,
             ProviderAuthMethod::OauthToken | ProviderAuthMethod::SessionToken,
         ) => {
-            "codex cli installed; run codex --login; --openai-codex-backend=true".to_string()
+            "codex cli installed; run codex login; --openai-codex-backend=true".to_string()
         }
         (
             Provider::Anthropic,

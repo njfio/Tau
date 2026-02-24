@@ -46,11 +46,17 @@ Options for `up`:
 Options for `tui`:
   --agent                         Force interactive agent mode (default)
   --live-shell                    Use read-only dashboard watch shell mode
+  --bootstrap-runtime             Start runtime automatically before TUI (default: true)
+  --no-bootstrap-runtime          Do not start runtime automatically before TUI
   --state-dir <path>              Dashboard state dir alias (default: .tau/dashboard)
   --dashboard-state-dir <path>    Dashboard state dir (default: .tau/dashboard)
   --gateway-state-dir <path>      Gateway state dir (default: .tau/gateway)
   --model <id>                    Agent model id (default: openai/gpt-5.2)
   --profile <name>                TUI profile (default: local-dev)
+  --bind <host:port>              Runtime bind for bootstrap path (default: 127.0.0.1:8791)
+  --auth-mode <mode>              Runtime auth mode for bootstrap path
+  --auth-token <token>            Runtime auth token for bootstrap path
+  --auth-password <password>      Runtime auth password for bootstrap path
   --iterations <n>                Live-shell watch iterations (default: 3)
   --interval-ms <n>               Live-shell watch interval ms (default: 1000)
   --no-color                      Disable TUI color output
@@ -305,10 +311,70 @@ cmd_down() {
   log "tau-unified: stopped"
 }
 
+wait_for_dashboard_artifacts() {
+  local dashboard_state_dir="$1"
+  local timeout_ms="${2:-6000}"
+  local elapsed_ms=0
+  local step_ms=200
+
+  while (( elapsed_ms < timeout_ms )); do
+    if [[ -f "${dashboard_state_dir}/state.json" && -f "${dashboard_state_dir}/control-state.json" && -f "${dashboard_state_dir}/auth-status.json" ]]; then
+      return 0
+    fi
+    sleep 0.2
+    elapsed_ms=$((elapsed_ms + step_ms))
+  done
+
+  return 1
+}
+
+bootstrap_runtime_for_tui() {
+  local model="$1"
+  local bind="$2"
+  local auth_mode="$3"
+  local auth_token="$4"
+  local auth_password="$5"
+  local profile="$6"
+  local gateway_state_dir="$7"
+  local dashboard_state_dir="$8"
+
+  cleanup_stale_pid
+  if [[ -f "${PID_FILE}" ]]; then
+    local existing_pid
+    existing_pid="$(cat "${PID_FILE}")"
+    if pid_is_alive "${existing_pid}"; then
+      log "tau-unified: runtime already running (pid=${existing_pid})"
+      return 0
+    fi
+    rm -f "${PID_FILE}"
+  fi
+
+  log "tau-unified: bootstrapping runtime for tui"
+  cmd_up \
+    --model "${model}" \
+    --bind "${bind}" \
+    --auth-mode "${auth_mode}" \
+    --auth-token "${auth_token}" \
+    --auth-password "${auth_password}" \
+    --profile "${profile}" \
+    --gateway-state-dir "${gateway_state_dir}" \
+    --dashboard-state-dir "${dashboard_state_dir}"
+
+  if wait_for_dashboard_artifacts "${dashboard_state_dir}" 6000; then
+    log "tau-unified: dashboard artifacts ready (${dashboard_state_dir})"
+  else
+    log "tau-unified: continuing while dashboard artifacts initialize (${dashboard_state_dir})"
+  fi
+}
+
 cmd_tui() {
   local dashboard_state_dir="${DASHBOARD_STATE_DIR_DEFAULT}"
   local gateway_state_dir="${GATEWAY_STATE_DIR_DEFAULT}"
   local model="${MODEL_DEFAULT}"
+  local bind="${BIND_DEFAULT}"
+  local auth_mode="${AUTH_MODE_DEFAULT}"
+  local auth_token="${AUTH_TOKEN_DEFAULT}"
+  local auth_password="${AUTH_PASSWORD_DEFAULT}"
   local profile="${PROFILE_DEFAULT}"
   local iterations="3"
   local interval_ms="1000"
@@ -316,6 +382,14 @@ cmd_tui() {
   local tui_mode="agent"
   local saw_iterations="false"
   local saw_interval="false"
+  local bootstrap_runtime="${TAU_UNIFIED_TUI_BOOTSTRAP_RUNTIME:-}"
+  if [[ -z "${bootstrap_runtime}" ]]; then
+    if [[ -n "${RUNNER}" ]]; then
+      bootstrap_runtime="false"
+    else
+      bootstrap_runtime="true"
+    fi
+  fi
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -325,6 +399,14 @@ cmd_tui() {
         ;;
       --live-shell)
         tui_mode="live-shell"
+        shift
+        ;;
+      --bootstrap-runtime)
+        bootstrap_runtime="true"
+        shift
+        ;;
+      --no-bootstrap-runtime)
+        bootstrap_runtime="false"
         shift
         ;;
       --state-dir|--dashboard-state-dir)
@@ -337,6 +419,22 @@ cmd_tui() {
         ;;
       --model)
         model="$2"
+        shift 2
+        ;;
+      --bind)
+        bind="$2"
+        shift 2
+        ;;
+      --auth-mode)
+        auth_mode="$2"
+        shift 2
+        ;;
+      --auth-token)
+        auth_token="$2"
+        shift 2
+        ;;
+      --auth-password)
+        auth_password="$2"
         shift 2
         ;;
       --profile)
@@ -369,6 +467,34 @@ cmd_tui() {
 
   if [[ "${tui_mode}" == "agent" && ( "${saw_iterations}" == "true" || "${saw_interval}" == "true" ) ]]; then
     die "--iterations/--interval-ms require --live-shell"
+  fi
+
+  case "${auth_mode}" in
+    localhost-dev|token|password-session)
+      ;;
+    *)
+      die "invalid --auth-mode: ${auth_mode}"
+      ;;
+  esac
+
+  case "${bootstrap_runtime}" in
+    true|false)
+      ;;
+    *)
+      die "invalid bootstrap runtime setting: ${bootstrap_runtime} (expected true|false)"
+      ;;
+  esac
+
+  if [[ "${bootstrap_runtime}" == "true" ]]; then
+    bootstrap_runtime_for_tui \
+      "${model}" \
+      "${bind}" \
+      "${auth_mode}" \
+      "${auth_token}" \
+      "${auth_password}" \
+      "${profile}" \
+      "${gateway_state_dir}" \
+      "${dashboard_state_dir}"
   fi
 
   local tui_cmd=()

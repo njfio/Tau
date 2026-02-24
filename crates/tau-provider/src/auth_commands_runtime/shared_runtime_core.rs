@@ -116,7 +116,7 @@ pub(super) fn build_auth_login_launch_spec(
             ProviderAuthMethod::OauthToken | ProviderAuthMethod::SessionToken,
         ) => Ok(AuthLoginLaunchSpec {
             executable: config.openai_codex_cli.clone(),
-            args: vec!["--login".to_string()],
+            args: vec!["login".to_string()],
             timeout_ms,
         }),
         (
