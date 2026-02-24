@@ -29,7 +29,7 @@ These are the paths that operate as connected flows today.
 |---|---|---|---|
 | Local operator loop | `cargo run -p tau-coding-agent -- --onboard --onboard-non-interactive` then prompt mode | CLI runtime, agent core loop, sessions, tools, safety policies | [`docs/guides/quickstart.md`](docs/guides/quickstart.md), [`docs/guides/operator-control-summary.md`](docs/guides/operator-control-summary.md) |
 | Gateway auth/session loop | `./scripts/demo/gateway-auth-session.sh` | Gateway auth/session handling, API route contracts, runtime policies | [`docs/guides/gateway-auth-session-smoke.md`](docs/guides/gateway-auth-session-smoke.md), [`docs/guides/gateway-api-reference.md`](docs/guides/gateway-api-reference.md) |
-| Unified runtime lifecycle loop | `./scripts/run/tau-unified.sh up --auth-mode localhost-dev` | One-command runtime bring-up (`up/status/down`) for gateway/dashboard + optional live TUI shell | [`scripts/run/tau-unified.sh`](scripts/run/tau-unified.sh), [`docs/guides/operator-deployment-guide.md`](docs/guides/operator-deployment-guide.md) |
+| Unified runtime lifecycle loop | `./scripts/run/tau-unified.sh up --auth-mode localhost-dev` | One-command runtime bring-up (`up/status/down`) for gateway/dashboard + interactive TUI agent (`tui`) with explicit live-shell fallback | [`scripts/run/tau-unified.sh`](scripts/run/tau-unified.sh), [`docs/guides/operator-deployment-guide.md`](docs/guides/operator-deployment-guide.md) |
 | Multi-channel ingress loop | `./scripts/demo/multi-channel.sh` | Multi-channel runtime, transport normalization, routing pipeline | [`docs/guides/multi-channel-event-pipeline.md`](docs/guides/multi-channel-event-pipeline.md), [`docs/guides/transports.md`](docs/guides/transports.md) |
 | Prompt optimization loop | [`docs/guides/training-ops.md`](docs/guides/training-ops.md) runbook flow | Training runner/store/tracer/proxy + rollout controls | [`docs/guides/training-ops.md`](docs/guides/training-ops.md), [`docs/guides/training-proxy-ops.md`](docs/guides/training-proxy-ops.md) |
 | Connected operator GA loop | `./scripts/verify/m296-ga-readiness-gate.sh` | RL maturity wave + auth/readiness checks + rollback trigger validation + closeout signoff criteria | [`docs/guides/m296-ga-readiness-gate.md`](docs/guides/m296-ga-readiness-gate.md), `artifacts/operator-ga-readiness/verification-report.json` |
@@ -73,7 +73,7 @@ Some surfaces are intentionally diagnostics-first or staged:
   - deterministic operator-route scenario depth is aggregated in `scripts/verify/m315-e2e-operator-route-depth.sh`,
   - full PRD-wide scenario-group completion continues as an expansion track.
 - TUI:
-  - includes operator-shell and `shell-live` modes with status/auth/training/alerts/actions panels,
+  - includes operator-shell, interactive `agent`, and state-backed `shell-live` modes,
   - `shell-live` now reports deterministic malformed/missing artifact diagnostics for operator triage,
   - operator workflow depth (shell, shell-live watch, and artifact diagnostics) is aggregated in `scripts/verify/m311-tui-operator-workflow-depth.sh`,
   - scenario-expansion depth (demo mode behavior + parser/shell-live edge paths + workflow-depth chaining) is aggregated in `scripts/verify/m317-tui-scenario-expansion-depth.sh`,
@@ -90,7 +90,7 @@ Some surfaces are intentionally diagnostics-first or staged:
 | Dashboard operator UX | Partial | Ops routes and diagnostics available; broader UX still expanding | [`docs/guides/dashboard-ops.md`](docs/guides/dashboard-ops.md) |
 | Prompt optimization training | Integrated | Canonical training path today | [`docs/guides/training-ops.md`](docs/guides/training-ops.md) |
 | True RL | Integrated | Deterministic end-to-end harness emits rollout + GAE/PPO artifact evidence | [`crates/tau-trainer/src/rl_e2e.rs`](crates/tau-trainer/src/rl_e2e.rs), [`crates/tau-trainer/src/bin/rl_e2e_harness.rs`](crates/tau-trainer/src/bin/rl_e2e_harness.rs) |
-| TUI | Integrated | Operator-shell and state-backed `shell-live` modes with conformance-tested diagnostics | [`crates/tau-tui/src/main.rs`](crates/tau-tui/src/main.rs), [`crates/tau-tui/src/lib.rs`](crates/tau-tui/src/lib.rs), [`scripts/verify/m295-operator-maturity-wave.sh`](scripts/verify/m295-operator-maturity-wave.sh) |
+| TUI | Integrated | Operator-shell + interactive `agent` mode + state-backed `shell-live` diagnostics | [`crates/tau-tui/src/main.rs`](crates/tau-tui/src/main.rs), [`crates/tau-tui/src/lib.rs`](crates/tau-tui/src/lib.rs), [`scripts/verify/m295-operator-maturity-wave.sh`](scripts/verify/m295-operator-maturity-wave.sh) |
 
 ## Current Gaps and Execution Plan
 
@@ -101,7 +101,7 @@ Some surfaces are intentionally diagnostics-first or staged:
 | Multi-channel orchestration depth | deterministic C5 Telegram/Discord routing, WhatsApp webhook verification, lifecycle, and media-handling coverage is aggregated in a dedicated gate; live provider-specific behavior still environment-bound | [`docs/planning/integration-gap-closure-plan.md`](docs/planning/integration-gap-closure-plan.md), [`docs/guides/transports.md`](docs/guides/transports.md), [`scripts/verify/m307-multi-channel-orchestration-depth.sh`](scripts/verify/m307-multi-channel-orchestration-depth.sh) |
 | Extended auth live-env verification | deterministic matrix/lifecycle coverage, auth-depth edge-path gating, credential lifecycle depth verification, and live-env validation depth gating are delivered; external credential/live-env permutations remain environment-specific | [`docs/planning/integration-gap-closure-plan.md`](docs/planning/integration-gap-closure-plan.md), [`docs/provider-auth/provider-auth-capability-matrix.md`](docs/provider-auth/provider-auth-capability-matrix.md), [`docs/guides/gateway-auth-session-smoke.md`](docs/guides/gateway-auth-session-smoke.md), [`scripts/verify/m303-auth-workflow-depth.sh`](scripts/verify/m303-auth-workflow-depth.sh), [`scripts/verify/m309-auth-credential-lifecycle-depth.sh`](scripts/verify/m309-auth-credential-lifecycle-depth.sh), [`scripts/verify/m312-auth-live-env-depth.sh`](scripts/verify/m312-auth-live-env-depth.sh), [`scripts/verify/m296-live-auth-validation.sh`](scripts/verify/m296-live-auth-validation.sh) |
 | E2E scenario-group expansion | deterministic core scenario-depth and operator-route scenario-depth verification across integration memory/tool paths and gateway lifecycle/session/operator-route contracts are delivered; full scenario-group completion remains in progress | [`docs/planning/integration-gap-closure-plan.md`](docs/planning/integration-gap-closure-plan.md), [`specs/milestones/m298/index.md`](specs/milestones/m298/index.md), [`scripts/verify/m313-e2e-core-scenario-depth.sh`](scripts/verify/m313-e2e-core-scenario-depth.sh), [`scripts/verify/m315-e2e-operator-route-depth.sh`](scripts/verify/m315-e2e-operator-route-depth.sh) |
-| TUI interaction depth | operator shell, resilient `shell-live` diagnostics, deterministic workflow-depth verification, and deterministic scenario-expansion verification are delivered; richer interactive workflows continue to evolve | [`docs/planning/integration-gap-closure-plan.md`](docs/planning/integration-gap-closure-plan.md), [`crates/tau-tui`](crates/tau-tui), [`docs/guides/demo-index.md`](docs/guides/demo-index.md), [`scripts/verify/m311-tui-operator-workflow-depth.sh`](scripts/verify/m311-tui-operator-workflow-depth.sh), [`scripts/verify/m317-tui-scenario-expansion-depth.sh`](scripts/verify/m317-tui-scenario-expansion-depth.sh) |
+| TUI interaction depth | operator shell, interactive `agent` handoff, resilient `shell-live` diagnostics, deterministic workflow-depth verification, and deterministic scenario-expansion verification are delivered; richer UX flows continue to evolve | [`docs/planning/integration-gap-closure-plan.md`](docs/planning/integration-gap-closure-plan.md), [`crates/tau-tui`](crates/tau-tui), [`docs/guides/demo-index.md`](docs/guides/demo-index.md), [`scripts/verify/m311-tui-operator-workflow-depth.sh`](scripts/verify/m311-tui-operator-workflow-depth.sh), [`scripts/verify/m317-tui-scenario-expansion-depth.sh`](scripts/verify/m317-tui-scenario-expansion-depth.sh) |
 
 ## 5-Minute Quickstart
 
@@ -137,13 +137,13 @@ cargo run -p tau-coding-agent -- --prompt "Summarize src/lib.rs"
 cargo run -p tau-tui -- shell --width 88 --profile local-dev --no-color
 ```
 
-6. Optional live TUI shell from runtime artifacts
+6. Optional interactive TUI agent mode from runtime artifacts
 
 ```bash
-cargo run -p tau-tui -- shell-live --state-dir .tau/dashboard --width 88 --profile local-dev --no-color
+cargo run -p tau-tui -- agent --dashboard-state-dir .tau/dashboard --gateway-state-dir .tau/gateway --width 88 --profile local-dev --no-color
 ```
 
-7. Optional live TUI watch mode (multi-cycle refresh)
+7. Optional live TUI watch mode (read-only, multi-cycle refresh)
 
 ```bash
 cargo run -p tau-tui -- shell-live --state-dir .tau/dashboard --width 88 --profile local-dev --watch --iterations 3 --interval-ms 1000 --no-color
@@ -164,7 +164,8 @@ Unified one-command runtime entrypoint:
 ```bash
 ./scripts/run/tau-unified.sh up --auth-mode localhost-dev
 ./scripts/run/tau-unified.sh status
-./scripts/run/tau-unified.sh tui --iterations 3 --interval-ms 1000 --no-color
+./scripts/run/tau-unified.sh tui --no-color
+./scripts/run/tau-unified.sh tui --live-shell --iterations 3 --interval-ms 1000 --no-color
 ./scripts/run/tau-unified.sh down
 ```
 
@@ -214,6 +215,12 @@ Operator maturity wave verification (TUI + RL + auth):
 
 ```bash
 ./scripts/verify/m295-operator-maturity-wave.sh
+```
+
+TUI interactive agent loop from runtime artifacts:
+
+```bash
+cargo run -p tau-tui -- agent --dashboard-state-dir .tau/dashboard --gateway-state-dir .tau/gateway --profile local-dev --no-color
 ```
 
 TUI live watch loop from dashboard artifacts:

@@ -1,4 +1,4 @@
-use std::{env, path::Path, thread, time::Duration};
+use std::{env, path::Path, process::Command, process::Stdio, thread, time::Duration};
 
 use tau_tui::{
     apply_overlay, render_operator_shell_frame, Component, DiffRenderer, EditorBuffer, EditorView,
@@ -12,16 +12,22 @@ Usage:
   cargo run -p tau-tui -- [demo] [--frames N] [--width N] [--sleep-ms N] [--no-color]
   cargo run -p tau-tui -- shell [--width N] [--profile NAME] [--no-color]
   cargo run -p tau-tui -- shell-live [--state-dir PATH] [--width N] [--profile NAME] [--watch] [--iterations N] [--interval-ms N] [--no-color]
+  cargo run -p tau-tui -- agent [--dashboard-state-dir PATH] [--gateway-state-dir PATH] [--model ID] [--width N] [--profile NAME] [--dry-run] [--no-color]
 
 Options:
   demo          Animated rendering demo mode (default command)
   shell         Operator shell mode with status/auth/training panels
   shell-live    State-backed operator shell mode from dashboard artifacts
+  agent         Operator shell mode that launches interactive tau-coding-agent runtime
   --frames N    Demo: number of frames to render (default: 3, min: 1)
   --width N     Demo/Shell: render width in characters (demo default: 72, shell default: 88)
   --sleep-ms N  Demo: delay between frames in milliseconds (default: 120)
   --profile N   Shell: operator profile label (default: local-dev)
   --state-dir P Shell-live: dashboard state directory (default: .tau/dashboard)
+  --dashboard-state-dir P Agent: dashboard state directory (default: .tau/dashboard)
+  --gateway-state-dir P Agent: gateway state directory (default: .tau/gateway)
+  --model ID    Agent: model id for interactive runtime (default: openai/gpt-4o-mini)
+  --dry-run     Agent: print interactive launch command without executing it
   --watch       Shell-live: enable watch mode across multiple refresh cycles
   --iterations N Shell-live watch: number of render cycles (default: 3, min: 1)
   --interval-ms N Shell-live watch: delay between cycles in milliseconds (default: 1000)
@@ -90,11 +96,37 @@ impl Default for LiveShellArgs {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct AgentArgs {
+    width: usize,
+    profile: String,
+    dashboard_state_dir: String,
+    gateway_state_dir: String,
+    model: String,
+    dry_run: bool,
+    color: bool,
+}
+
+impl Default for AgentArgs {
+    fn default() -> Self {
+        Self {
+            width: 88,
+            profile: "local-dev".to_string(),
+            dashboard_state_dir: ".tau/dashboard".to_string(),
+            gateway_state_dir: ".tau/gateway".to_string(),
+            model: "openai/gpt-4o-mini".to_string(),
+            dry_run: false,
+            color: true,
+        }
+    }
+}
+
 #[derive(Debug)]
 enum ParseAction {
     RunDemo(DemoArgs),
     RunShell(ShellArgs),
     RunShellLive(LiveShellArgs),
+    RunAgent(AgentArgs),
     Help,
 }
 
@@ -119,6 +151,10 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<ParseAction, Str
         Some("shell-live") => {
             values.remove(0);
             parse_shell_live_args(values)
+        }
+        Some("agent") => {
+            values.remove(0);
+            parse_agent_args(values)
         }
         _ => parse_demo_args(values),
     }
@@ -261,6 +297,63 @@ fn parse_shell_live_args(args: Vec<String>) -> Result<ParseAction, String> {
     }
 
     Ok(ParseAction::RunShellLive(parsed))
+}
+
+fn parse_agent_args(args: Vec<String>) -> Result<ParseAction, String> {
+    let mut parsed = AgentArgs::default();
+    let mut it = args.into_iter();
+    while let Some(arg) = it.next() {
+        match arg.as_str() {
+            "--help" | "-h" => return Ok(ParseAction::Help),
+            "--no-color" => parsed.color = false,
+            "--dry-run" => parsed.dry_run = true,
+            "--width" => {
+                let raw = it.next().ok_or("missing value for --width")?;
+                let value = raw
+                    .parse::<usize>()
+                    .map_err(|_| format!("invalid usize for --width: {raw}"))?;
+                if value < 40 {
+                    return Err("--width must be >= 40".to_string());
+                }
+                parsed.width = value;
+            }
+            "--profile" => {
+                let raw = it.next().ok_or("missing value for --profile")?;
+                let value = raw.trim();
+                if value.is_empty() {
+                    return Err("--profile must not be empty".to_string());
+                }
+                parsed.profile = value.to_string();
+            }
+            "--state-dir" | "--dashboard-state-dir" => {
+                let raw = it.next().ok_or("missing value for --dashboard-state-dir")?;
+                let value = raw.trim();
+                if value.is_empty() {
+                    return Err("--dashboard-state-dir must not be empty".to_string());
+                }
+                parsed.dashboard_state_dir = value.to_string();
+            }
+            "--gateway-state-dir" => {
+                let raw = it.next().ok_or("missing value for --gateway-state-dir")?;
+                let value = raw.trim();
+                if value.is_empty() {
+                    return Err("--gateway-state-dir must not be empty".to_string());
+                }
+                parsed.gateway_state_dir = value.to_string();
+            }
+            "--model" => {
+                let raw = it.next().ok_or("missing value for --model")?;
+                let value = raw.trim();
+                if value.is_empty() {
+                    return Err("--model must not be empty".to_string());
+                }
+                parsed.model = value.to_string();
+            }
+            _ => return Err(format!("unknown argument: {arg}")),
+        }
+    }
+
+    Ok(ParseAction::RunAgent(parsed))
 }
 
 fn paint(theme: &Theme, role: ThemeRole, text: impl Into<String>, color: bool) -> String {
@@ -455,6 +548,89 @@ fn run_shell_live(args: LiveShellArgs) {
     }
 }
 
+fn build_agent_runtime_command(args: &AgentArgs) -> Vec<String> {
+    vec![
+        "cargo".to_string(),
+        "run".to_string(),
+        "-p".to_string(),
+        "tau-coding-agent".to_string(),
+        "--".to_string(),
+        "--model".to_string(),
+        args.model.clone(),
+        "--gateway-state-dir".to_string(),
+        args.gateway_state_dir.clone(),
+        "--dashboard-state-dir".to_string(),
+        args.dashboard_state_dir.clone(),
+    ]
+}
+
+fn format_shell_command(tokens: &[String]) -> String {
+    tokens.join(" ")
+}
+
+fn run_agent(args: AgentArgs) -> Result<(), String> {
+    let theme = Theme::default();
+    let frame = OperatorShellFrame::from_dashboard_state_dir(
+        args.profile.clone(),
+        Path::new(args.dashboard_state_dir.as_str()),
+    );
+    let rendered = render_operator_shell_frame(&frame, args.width);
+    let command_tokens = build_agent_runtime_command(&args);
+    let launch_command = format_shell_command(&command_tokens);
+
+    let header = paint(
+        &theme,
+        ThemeRole::Accent,
+        format!(
+            "Tau Operator Shell (agent-interactive) - profile={} env={} dashboard_state_dir={}",
+            frame.profile, frame.environment, args.dashboard_state_dir
+        ),
+        args.color,
+    );
+    println!("{header}");
+    println!(
+        "{}",
+        paint(
+            &theme,
+            ThemeRole::Muted,
+            "interactive.launch=ready mode=agent-interactive".to_string(),
+            args.color
+        )
+    );
+    println!(
+        "{}",
+        paint(
+            &theme,
+            ThemeRole::Muted,
+            format!("interactive.command={launch_command}"),
+            args.color
+        )
+    );
+    for line in rendered {
+        println!("{}", paint(&theme, ThemeRole::Primary, line, args.color));
+    }
+
+    if args.dry_run {
+        return Ok(());
+    }
+
+    let (program, remaining_args) = command_tokens
+        .split_first()
+        .ok_or_else(|| "interactive runtime command is empty".to_string())?;
+    let status = Command::new(program)
+        .args(remaining_args)
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status()
+        .map_err(|error| format!("failed to launch interactive runtime: {error}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("interactive runtime exited with status {status}"))
+    }
+}
+
 fn main() {
     let action = match parse_args(env::args()) {
         Ok(action) => action,
@@ -478,6 +654,12 @@ fn main() {
         }
         ParseAction::RunShell(args) => run_shell(args),
         ParseAction::RunShellLive(args) => run_shell_live(args),
+        ParseAction::RunAgent(args) => {
+            if let Err(err) = run_agent(args) {
+                eprintln!("{err}");
+                std::process::exit(1);
+            }
+        }
     }
 }
 
@@ -681,5 +863,76 @@ mod tests {
         assert!(HELP.contains("--watch"));
         assert!(HELP.contains("--iterations"));
         assert!(HELP.contains("--interval-ms"));
+    }
+
+    #[test]
+    fn spec_c05_parse_args_accepts_agent_mode_and_overrides() {
+        let action = parse_args(vec![
+            "tau-tui".to_string(),
+            "agent".to_string(),
+            "--profile".to_string(),
+            "ops-interactive".to_string(),
+            "--model".to_string(),
+            "openai/gpt-4o-mini".to_string(),
+            "--dashboard-state-dir".to_string(),
+            ".tau/custom-dashboard".to_string(),
+            "--gateway-state-dir".to_string(),
+            ".tau/custom-gateway".to_string(),
+            "--dry-run".to_string(),
+            "--no-color".to_string(),
+        ])
+        .expect("expected agent-mode parse success");
+
+        let ParseAction::RunAgent(args) = action else {
+            panic!("expected agent action");
+        };
+        assert_eq!(args.profile, "ops-interactive");
+        assert_eq!(args.model, "openai/gpt-4o-mini");
+        assert_eq!(args.dashboard_state_dir, ".tau/custom-dashboard");
+        assert_eq!(args.gateway_state_dir, ".tau/custom-gateway");
+        assert!(args.dry_run);
+        assert!(!args.color);
+    }
+
+    #[test]
+    fn functional_spec_c05_build_agent_runtime_command_contract_is_stable() {
+        let args = super::AgentArgs {
+            width: 88,
+            profile: "ops-interactive".to_string(),
+            dashboard_state_dir: ".tau/custom-dashboard".to_string(),
+            gateway_state_dir: ".tau/custom-gateway".to_string(),
+            model: "openai/gpt-4o-mini".to_string(),
+            dry_run: true,
+            color: false,
+        };
+        let command = super::build_agent_runtime_command(&args);
+        assert_eq!(command[0], "cargo");
+        assert_eq!(command[1], "run");
+        assert_eq!(command[3], "tau-coding-agent");
+        assert!(command.contains(&"--model".to_string()));
+        assert!(command.contains(&"openai/gpt-4o-mini".to_string()));
+        assert!(command.contains(&"--dashboard-state-dir".to_string()));
+        assert!(command.contains(&".tau/custom-dashboard".to_string()));
+        assert!(command.contains(&"--gateway-state-dir".to_string()));
+        assert!(command.contains(&".tau/custom-gateway".to_string()));
+    }
+
+    #[test]
+    fn regression_spec_c05_parse_args_rejects_agent_gateway_state_dir_without_value() {
+        let err = parse_args(vec![
+            "tau-tui".to_string(),
+            "agent".to_string(),
+            "--gateway-state-dir".to_string(),
+        ])
+        .expect_err("expected parse failure");
+        assert!(err.contains("missing value for --gateway-state-dir"));
+    }
+
+    #[test]
+    fn functional_spec_c05_help_text_exposes_agent_flags() {
+        assert!(HELP.contains("agent"));
+        assert!(HELP.contains("--dashboard-state-dir"));
+        assert!(HELP.contains("--gateway-state-dir"));
+        assert!(HELP.contains("--dry-run"));
     }
 }
