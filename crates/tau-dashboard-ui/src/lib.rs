@@ -542,6 +542,7 @@ pub struct TauOpsDashboardCommandCenterSnapshot {
     pub last_action_request_id: String,
     pub last_action_name: String,
     pub last_action_actor: String,
+    pub last_action_reason: String,
     pub last_action_timestamp_unix_ms: u64,
     pub timeline_range: String,
     pub timeline_point_count: usize,
@@ -574,6 +575,7 @@ impl Default for TauOpsDashboardCommandCenterSnapshot {
             last_action_request_id: "none".to_string(),
             last_action_name: "none".to_string(),
             last_action_actor: "none".to_string(),
+            last_action_reason: "none".to_string(),
             last_action_timestamp_unix_ms: 0,
             timeline_range: "1h".to_string(),
             timeline_point_count: 0,
@@ -1877,6 +1879,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     let last_action_request_id = context.command_center.last_action_request_id.clone();
     let last_action_name = context.command_center.last_action_name.clone();
     let last_action_actor = context.command_center.last_action_actor.clone();
+    let last_action_reason = context.command_center.last_action_reason.clone();
     let last_action_timestamp_value = context
         .command_center
         .last_action_timestamp_unix_ms
@@ -1884,6 +1887,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     let last_action_request_line = format!("request.id: {last_action_request_id}");
     let last_action_name_line = format!("action: {last_action_name}");
     let last_action_actor_line = format!("actor: {last_action_actor}");
+    let last_action_reason_line = format!("reason: {last_action_reason}");
     let last_action_timestamp_line = format!("timestamp: {last_action_timestamp_value}");
     let timeline_range = context.command_center.timeline_range.clone();
     let timeline_point_count_value = context.command_center.timeline_point_count.to_string();
@@ -3775,12 +3779,14 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     data-last-action-request-id=last_action_request_id
                                     data-last-action-name=last_action_name
                                     data-last-action-actor=last_action_actor
+                                    data-last-action-reason=last_action_reason
                                     data-last-action-timestamp=last_action_timestamp_value
                                 >
                                     <h3>Last Action</h3>
                                     <p id="tau-ops-last-action-request-id">{last_action_request_line}</p>
                                     <p id="tau-ops-last-action-name">{last_action_name_line}</p>
                                     <p id="tau-ops-last-action-actor">{last_action_actor_line}</p>
+                                    <p id="tau-ops-last-action-reason">{last_action_reason_line}</p>
                                     <p id="tau-ops-last-action-timestamp">{last_action_timestamp_line}</p>
                                 </section>
                             </section>

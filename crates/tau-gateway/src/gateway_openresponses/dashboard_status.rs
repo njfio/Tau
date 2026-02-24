@@ -604,6 +604,16 @@ pub(super) fn collect_tau_ops_dashboard_command_center_snapshot(
         last_action_actor: last_action
             .map(|action| action.actor.clone())
             .unwrap_or_else(|| "none".to_string()),
+        last_action_reason: last_action
+            .map(|action| {
+                let reason = action.reason.trim();
+                if reason.is_empty() {
+                    "none".to_string()
+                } else {
+                    reason.to_string()
+                }
+            })
+            .unwrap_or_else(|| "none".to_string()),
         last_action_timestamp_unix_ms: last_action
             .map(|action| action.timestamp_unix_ms)
             .unwrap_or(0),
@@ -1320,6 +1330,7 @@ invalid-json-line
         assert_eq!(snapshot.last_action_request_id, "none");
         assert_eq!(snapshot.last_action_name, "none");
         assert_eq!(snapshot.last_action_actor, "none");
+        assert_eq!(snapshot.last_action_reason, "none");
         assert_eq!(snapshot.last_action_timestamp_unix_ms, 0);
         assert_eq!(snapshot.timeline_range, "1h");
         assert_eq!(snapshot.timeline_point_count, 1);
@@ -1351,6 +1362,37 @@ invalid-json-line
         assert_eq!(snapshot.connector_health_rows[0].liveness, "unknown");
         assert_eq!(snapshot.connector_health_rows[0].events_ingested, 0);
         assert_eq!(snapshot.connector_health_rows[0].provider_failures, 0);
+    }
+
+    #[test]
+    fn functional_spec_3482_c01_collect_command_center_snapshot_maps_last_action_reason() {
+        let temp = tempdir().expect("tempdir");
+        write_dashboard_state(temp.path());
+        let gateway_root = temp.path().join(".tau").join("gateway");
+        std::fs::create_dir_all(&gateway_root).expect("create gateway root");
+
+        apply_gateway_dashboard_action(
+            &gateway_root,
+            "ops-user",
+            GatewayDashboardActionRequest {
+                action: "pause".to_string(),
+                reason: "maintenance-window".to_string(),
+            },
+        )
+        .expect("apply action");
+
+        let snapshot = collect_tau_ops_dashboard_command_center_snapshot(&gateway_root);
+        assert!(
+            snapshot
+                .last_action_request_id
+                .starts_with("dashboard-action-"),
+            "unexpected request id: {}",
+            snapshot.last_action_request_id
+        );
+        assert_eq!(snapshot.last_action_name, "pause");
+        assert_eq!(snapshot.last_action_actor, "ops-user");
+        assert_eq!(snapshot.last_action_reason, "maintenance-window");
+        assert!(snapshot.last_action_timestamp_unix_ms > 0);
     }
 
     #[test]

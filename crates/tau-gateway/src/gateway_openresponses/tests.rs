@@ -5552,6 +5552,7 @@ async fn functional_spec_2810_c01_c02_c03_ops_shell_control_markers_reflect_dash
     assert!(body.contains("data-last-action-request-id=\"dashboard-action-90210\""));
     assert!(body.contains("data-last-action-name=\"pause\""));
     assert!(body.contains("data-last-action-actor=\"ops-user\""));
+    assert!(body.contains("data-last-action-reason=\"maintenance\""));
     assert!(body.contains("data-last-action-timestamp=\"90210\""));
 
     handle.abort();
@@ -5612,7 +5613,33 @@ async fn integration_spec_3478_c03_ops_shell_last_action_section_renders_readabl
     );
     assert!(body.contains("id=\"tau-ops-last-action-name\">action: pause"));
     assert!(body.contains("id=\"tau-ops-last-action-actor\">actor: ops-user"));
+    assert!(body.contains("id=\"tau-ops-last-action-reason\">reason: maintenance"));
     assert!(body.contains("id=\"tau-ops-last-action-timestamp\">timestamp: 90210"));
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn integration_spec_3482_c03_ops_shell_last_action_reason_row_renders_fixture_reason() {
+    let temp = tempdir().expect("tempdir");
+    write_dashboard_runtime_fixture(temp.path());
+    write_dashboard_control_state_fixture(temp.path());
+    write_training_runtime_fixture(temp.path(), 0);
+    let state = test_state(temp.path(), 4_096, "secret");
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+    let client = Client::new();
+
+    let response = client
+        .get(format!("http://{addr}/ops"))
+        .send()
+        .await
+        .expect("ops shell request");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.text().await.expect("read ops shell body");
+
+    assert!(body.contains("id=\"tau-ops-control-last-action\""));
+    assert!(body.contains("data-last-action-reason=\"maintenance\""));
+    assert!(body.contains("id=\"tau-ops-last-action-reason\">reason: maintenance"));
 
     handle.abort();
 }
