@@ -5589,6 +5589,35 @@ async fn functional_spec_2826_c03_ops_shell_control_markers_include_confirmation
 }
 
 #[tokio::test]
+async fn integration_spec_3478_c03_ops_shell_last_action_section_renders_readable_rows() {
+    let temp = tempdir().expect("tempdir");
+    write_dashboard_runtime_fixture(temp.path());
+    write_dashboard_control_state_fixture(temp.path());
+    write_training_runtime_fixture(temp.path(), 0);
+    let state = test_state(temp.path(), 4_096, "secret");
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+    let client = Client::new();
+
+    let response = client
+        .get(format!("http://{addr}/ops"))
+        .send()
+        .await
+        .expect("ops shell request");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.text().await.expect("read ops shell body");
+
+    assert!(body.contains("id=\"tau-ops-control-last-action\""));
+    assert!(
+        body.contains("id=\"tau-ops-last-action-request-id\">request.id: dashboard-action-90210")
+    );
+    assert!(body.contains("id=\"tau-ops-last-action-name\">action: pause"));
+    assert!(body.contains("id=\"tau-ops-last-action-actor\">actor: ops-user"));
+    assert!(body.contains("id=\"tau-ops-last-action-timestamp\">timestamp: 90210"));
+
+    handle.abort();
+}
+
+#[tokio::test]
 async fn integration_spec_3466_c03_ops_control_action_form_submits_dashboard_mutation_and_redirects_with_applied_marker(
 ) {
     let temp = tempdir().expect("tempdir");

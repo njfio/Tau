@@ -80,6 +80,8 @@ Action endpoint side-effects:
 - appends audit events to `.tau/dashboard/actions-audit.jsonl`
 - updates `.tau/dashboard/control-state.json`
 - affects control-plane gate semantics (`pause` => `rollout_gate=hold`)
+- updates command-center Last Action rows (`request.id`, `action`, `actor`,
+  `timestamp`) in the `/ops` shell render.
 
 Stream reconnect semantics:
 
