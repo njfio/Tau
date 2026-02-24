@@ -185,6 +185,12 @@ Override defaults with flags above or env vars:
 - `TAU_UNIFIED_TUI_REQUEST_TIMEOUT_MS`
 - `TAU_UNIFIED_TUI_AGENT_REQUEST_MAX_RETRIES`
 
+Interactive TTY turns now emit progress markers to `stderr` while requests are
+in-flight:
+- `interactive.turn=start timeout_ms=...`
+- `interactive.turn=running elapsed_ms=...`
+- `interactive.turn=end status=... elapsed_ms=...`
+
 Full pre-merge gate:
 
 ```bash

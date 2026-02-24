@@ -78,6 +78,12 @@ Override via flags or env:
 - `TAU_UNIFIED_TUI_REQUEST_TIMEOUT_MS`
 - `TAU_UNIFIED_TUI_AGENT_REQUEST_MAX_RETRIES`
 
+When running in an interactive TTY, prompt turns emit runtime progress markers
+to `stderr`:
+- `interactive.turn=start timeout_ms=...`
+- `interactive.turn=running elapsed_ms=...`
+- `interactive.turn=end status=... elapsed_ms=...`
+
 ## Step 1: Start gateway in local smoke posture
 
 Use `localhost-dev` auth for local bring-up validation:
