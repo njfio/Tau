@@ -140,7 +140,14 @@ cargo run -p tau-tui -- shell --width 88 --profile local-dev --no-color
 6. Optional interactive TUI agent mode from runtime artifacts
 
 ```bash
-cargo run -p tau-tui -- agent --dashboard-state-dir .tau/dashboard --gateway-state-dir .tau/gateway --width 88 --profile local-dev --no-color
+cargo run -p tau-tui -- agent \
+  --dashboard-state-dir .tau/dashboard \
+  --gateway-state-dir .tau/gateway \
+  --request-timeout-ms 45000 \
+  --agent-request-max-retries 0 \
+  --width 88 \
+  --profile local-dev \
+  --no-color
 ```
 
 7. Optional live TUI watch mode (read-only, multi-cycle refresh)
@@ -165,9 +172,24 @@ Unified one-command runtime entrypoint:
 ./scripts/run/tau-unified.sh up --auth-mode localhost-dev
 ./scripts/run/tau-unified.sh status
 ./scripts/run/tau-unified.sh tui --no-color
+./scripts/run/tau-unified.sh tui --request-timeout-ms 90000 --agent-request-max-retries 1 --no-color
 ./scripts/run/tau-unified.sh tui --live-shell --iterations 3 --interval-ms 1000 --no-color
 ./scripts/run/tau-unified.sh down
 ```
+
+`tau-unified.sh tui` defaults to fast-fail interactive policy:
+- `--request-timeout-ms 45000`
+- `--agent-request-max-retries 0`
+
+Override defaults with flags above or env vars:
+- `TAU_UNIFIED_TUI_REQUEST_TIMEOUT_MS`
+- `TAU_UNIFIED_TUI_AGENT_REQUEST_MAX_RETRIES`
+
+Interactive TTY turns now emit progress markers to `stderr` while requests are
+in-flight:
+- `interactive.turn=start timeout_ms=...`
+- `interactive.turn=running elapsed_ms=...`
+- `interactive.turn=end status=... elapsed_ms=...`
 
 Full pre-merge gate:
 
@@ -220,7 +242,13 @@ Operator maturity wave verification (TUI + RL + auth):
 TUI interactive agent loop from runtime artifacts:
 
 ```bash
-cargo run -p tau-tui -- agent --dashboard-state-dir .tau/dashboard --gateway-state-dir .tau/gateway --profile local-dev --no-color
+cargo run -p tau-tui -- agent \
+  --dashboard-state-dir .tau/dashboard \
+  --gateway-state-dir .tau/gateway \
+  --request-timeout-ms 45000 \
+  --agent-request-max-retries 0 \
+  --profile local-dev \
+  --no-color
 ```
 
 TUI live watch loop from dashboard artifacts:

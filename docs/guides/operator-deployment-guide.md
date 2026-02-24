@@ -53,6 +53,7 @@ watch mode, and shutdown:
 ./scripts/run/tau-unified.sh up --auth-mode localhost-dev
 ./scripts/run/tau-unified.sh status
 ./scripts/run/tau-unified.sh tui --no-color
+./scripts/run/tau-unified.sh tui --request-timeout-ms 90000 --agent-request-max-retries 1 --no-color
 ./scripts/run/tau-unified.sh tui --live-shell --iterations 3 --interval-ms 1000 --no-color
 ./scripts/run/tau-unified.sh down
 ```
@@ -69,6 +70,19 @@ flow below.
 
 `./scripts/run/tau-unified.sh tui` now launches the interactive agent TUI path.
 Use `--live-shell` when you specifically want read-only dashboard watch output.
+Interactive TUI defaults to fast-fail policy unless overridden:
+- `--request-timeout-ms 45000`
+- `--agent-request-max-retries 0`
+
+Override via flags or env:
+- `TAU_UNIFIED_TUI_REQUEST_TIMEOUT_MS`
+- `TAU_UNIFIED_TUI_AGENT_REQUEST_MAX_RETRIES`
+
+When running in an interactive TTY, prompt turns emit runtime progress markers
+to `stderr`:
+- `interactive.turn=start timeout_ms=...`
+- `interactive.turn=running elapsed_ms=...`
+- `interactive.turn=end status=... elapsed_ms=...`
 
 ## Step 1: Start gateway in local smoke posture
 
