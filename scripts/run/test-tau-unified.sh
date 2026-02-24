@@ -156,13 +156,24 @@ tui_output="$(
   TAU_UNIFIED_RUNNER_LOG="${runner_log}" \
   TAU_UNIFIED_RUNNER_PID="${runner_pid}" \
   TAU_UNIFIED_RUNTIME_DIR="${runtime_dir}" \
-  "${LAUNCHER_SCRIPT}" tui --iterations 2 --interval-ms 15 --no-color 2>&1 || true
+  "${LAUNCHER_SCRIPT}" tui --no-color 2>&1 || true
 )"
-assert_contains "${tui_output}" "tau-unified: launching tui" "tui marker"
+assert_contains "${tui_output}" "tau-unified: launching tui (agent)" "tui agent marker"
+
+tui_live_output="$(
+  TAU_UNIFIED_RUNNER="${runner}" \
+  TAU_UNIFIED_RUNNER_LOG="${runner_log}" \
+  TAU_UNIFIED_RUNNER_PID="${runner_pid}" \
+  TAU_UNIFIED_RUNTIME_DIR="${runtime_dir}" \
+  "${LAUNCHER_SCRIPT}" tui --live-shell --iterations 2 --interval-ms 15 --no-color 2>&1 || true
+)"
+assert_contains "${tui_live_output}" "tau-unified: launching tui (live-shell)" "tui live marker"
 
 assert_contains "$(cat "${runner_log}")" "runner_mode=up" "runner up logged"
 assert_contains "$(cat "${runner_log}")" "runner_mode=status" "runner status logged"
 assert_contains "$(cat "${runner_log}")" "runner_mode=down" "runner down logged"
 assert_contains "$(cat "${runner_log}")" "runner_mode=tui" "runner tui logged"
+assert_contains "$(cat "${runner_log}")" "args=agent" "runner tui agent args"
+assert_contains "$(cat "${runner_log}")" "args=live-shell" "runner tui live-shell args"
 
 echo "tau-unified launcher tests passed"

@@ -92,3 +92,37 @@ fn conformance_tui_shell_binary_renders_operator_panels() {
     assert!(stdout.contains("ALERTS"));
     assert!(stdout.contains("ACTIONS"));
 }
+
+#[test]
+fn conformance_tui_agent_mode_dry_run_emits_interactive_launch_contract() {
+    let binary = env!("CARGO_BIN_EXE_tau-tui");
+    let output = Command::new(binary)
+        .args([
+            "agent",
+            "--profile",
+            "ops-interactive",
+            "--model",
+            "openai/gpt-4o-mini",
+            "--dashboard-state-dir",
+            ".tau/dashboard",
+            "--gateway-state-dir",
+            ".tau/gateway",
+            "--dry-run",
+            "--no-color",
+        ])
+        .output()
+        .expect("binary executes");
+    assert!(
+        output.status.success(),
+        "status={} stderr={}",
+        output.status,
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Tau Operator Shell (agent-interactive)"));
+    assert!(stdout.contains("interactive.launch=ready"));
+    assert!(stdout.contains("cargo run -p tau-coding-agent --"));
+    assert!(stdout.contains("--model openai/gpt-4o-mini"));
+    assert!(stdout.contains("--dashboard-state-dir .tau/dashboard"));
+    assert!(stdout.contains("--gateway-state-dir .tau/gateway"));
+}
