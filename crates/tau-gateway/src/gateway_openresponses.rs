@@ -150,8 +150,9 @@ use openresponses_entry_handler::handle_openresponses;
 use openresponses_execution_handler::execute_openresponses_request;
 use ops_dashboard_shell::{
     handle_ops_dashboard_chat_new, handle_ops_dashboard_chat_send,
-    handle_ops_dashboard_memory_create, handle_ops_dashboard_session_detail_reset,
-    handle_ops_dashboard_sessions_branch, render_tau_ops_dashboard_shell_for_route,
+    handle_ops_dashboard_control_action, handle_ops_dashboard_memory_create,
+    handle_ops_dashboard_session_detail_reset, handle_ops_dashboard_sessions_branch,
+    render_tau_ops_dashboard_shell_for_route,
 };
 use ops_shell_controls::OpsShellControlsQuery;
 use ops_shell_handlers::{

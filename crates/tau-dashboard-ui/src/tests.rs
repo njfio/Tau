@@ -3215,6 +3215,21 @@ fn functional_spec_2826_c01_c02_control_actions_expose_confirmation_markers() {
 
     assert!(html.contains("id=\"tau-ops-control-action-pause\""));
     assert!(html.contains(
+        "id=\"tau-ops-control-actions\" data-action-count=\"3\" data-action-endpoint=\"/ops/control-action\""
+    ));
+    assert!(html.contains(
+        "id=\"tau-ops-control-action-form-pause\" action=\"/ops/control-action\" method=\"post\" data-action=\"pause\""
+    ));
+    assert!(html.contains(
+        "id=\"tau-ops-control-action-pause-value\" type=\"hidden\" name=\"action\" value=\"pause\""
+    ));
+    assert!(html.contains(
+        "id=\"tau-ops-control-action-form-resume\" action=\"/ops/control-action\" method=\"post\" data-action=\"resume\""
+    ));
+    assert!(html.contains(
+        "id=\"tau-ops-control-action-form-refresh\" action=\"/ops/control-action\" method=\"post\" data-action=\"refresh\""
+    ));
+    assert!(html.contains(
             "id=\"tau-ops-control-action-pause\" data-action-enabled=\"true\" data-action=\"pause\" data-confirm-required=\"true\" data-confirm-title=\"Confirm pause action\" data-confirm-body=\"Pause command-center processing until resumed.\" data-confirm-verb=\"pause\""
         ));
     assert!(html.contains(

@@ -25,12 +25,13 @@ use tau_memory::runtime::{
 use tau_session::SessionStore;
 
 use super::{
-    collect_tau_ops_dashboard_command_center_snapshot, gateway_memory_store, gateway_session_path,
-    record_cortex_memory_entry_delete_event, record_cortex_memory_entry_write_event,
-    record_cortex_session_append_event, record_cortex_session_reset_event, sanitize_session_key,
+    apply_gateway_dashboard_action, collect_tau_ops_dashboard_command_center_snapshot,
+    gateway_memory_store, gateway_session_path, record_cortex_memory_entry_delete_event,
+    record_cortex_memory_entry_write_event, record_cortex_session_append_event,
+    record_cortex_session_reset_event, sanitize_session_key, GatewayDashboardActionRequest,
     GatewayOpenResponsesServerState, OpenResponsesApiError, OpsShellControlsQuery,
     DEFAULT_SESSION_KEY, OPS_DASHBOARD_CHAT_ENDPOINT, OPS_DASHBOARD_CHAT_NEW_ENDPOINT,
-    OPS_DASHBOARD_CHAT_SEND_ENDPOINT,
+    OPS_DASHBOARD_CHAT_SEND_ENDPOINT, OPS_DASHBOARD_ENDPOINT,
 };
 use crate::remote_profile::GatewayOpenResponsesAuthMode;
 
@@ -79,6 +80,43 @@ impl OpsDashboardChatSendForm {
             requested
         };
         sanitize_session_key(resolved)
+    }
+
+    fn resolved_theme(&self) -> TauOpsDashboardTheme {
+        resolve_chat_theme(self.theme.as_str())
+    }
+
+    fn resolved_sidebar_state(&self) -> TauOpsDashboardSidebarState {
+        resolve_chat_sidebar_state(self.sidebar.as_str())
+    }
+}
+
+#[derive(Debug, Deserialize, Default)]
+pub(super) struct OpsDashboardControlActionForm {
+    #[serde(default)]
+    action: String,
+    #[serde(default)]
+    reason: String,
+    #[serde(default)]
+    theme: String,
+    #[serde(default)]
+    sidebar: String,
+}
+
+impl OpsDashboardControlActionForm {
+    fn resolved_action_request(&self) -> Option<GatewayDashboardActionRequest> {
+        let action = self.action.trim();
+        if action.is_empty() {
+            return None;
+        }
+        Some(GatewayDashboardActionRequest {
+            action: action.to_string(),
+            reason: if self.reason.trim().is_empty() {
+                "ops-shell-control-panel".to_string()
+            } else {
+                self.reason.trim().to_string()
+            },
+        })
     }
 
     fn resolved_theme(&self) -> TauOpsDashboardTheme {
@@ -458,6 +496,17 @@ fn build_ops_chat_redirect_path(
 ) -> String {
     format!(
         "{OPS_DASHBOARD_CHAT_ENDPOINT}?theme={}&sidebar={}&session={session_key}",
+        theme.as_str(),
+        sidebar_state.as_str()
+    )
+}
+
+fn build_ops_root_redirect_path(
+    theme: TauOpsDashboardTheme,
+    sidebar_state: TauOpsDashboardSidebarState,
+) -> String {
+    format!(
+        "{OPS_DASHBOARD_ENDPOINT}?theme={}&sidebar={}",
         theme.as_str(),
         sidebar_state.as_str()
     )
@@ -1055,6 +1104,42 @@ pub(super) fn render_tau_ops_dashboard_shell_for_route(
             chat,
         },
     ))
+}
+
+pub(super) async fn handle_ops_dashboard_control_action(
+    State(state): State<Arc<GatewayOpenResponsesServerState>>,
+    Form(form): Form<OpsDashboardControlActionForm>,
+) -> Response {
+    let redirect_path =
+        build_ops_root_redirect_path(form.resolved_theme(), form.resolved_sidebar_state());
+    let Some(request) = form.resolved_action_request() else {
+        state.record_ui_telemetry_event(
+            "dashboard",
+            "control-action",
+            "control_action_form_missing_action",
+        );
+        return Redirect::to(redirect_path.as_str()).into_response();
+    };
+
+    let action = request.action.clone();
+    match apply_gateway_dashboard_action(&state.config.state_dir, "ops-shell", request) {
+        Ok(_) => {
+            state.record_ui_telemetry_event(
+                "dashboard",
+                "control-action",
+                "control_action_applied",
+            );
+            Redirect::to(redirect_path.as_str()).into_response()
+        }
+        Err(error) => {
+            state.record_ui_telemetry_event(
+                "dashboard",
+                "control-action",
+                format!("control_action_failed:{action}").as_str(),
+            );
+            error.into_response()
+        }
+    }
 }
 
 pub(super) async fn handle_ops_dashboard_chat_new(
