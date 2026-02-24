@@ -66,6 +66,7 @@ Some surfaces are intentionally diagnostics-first or staged:
 - TUI:
   - includes operator-shell and `shell-live` modes with status/auth/training/alerts/actions panels,
   - `shell-live` now reports deterministic malformed/missing artifact diagnostics for operator triage,
+  - operator workflow depth (shell, shell-live watch, and artifact diagnostics) is aggregated in `scripts/verify/m311-tui-operator-workflow-depth.sh`,
   - remains complementary to (not a replacement for) web dashboard workflows.
 
 ## Maturity Matrix
@@ -89,7 +90,7 @@ Some surfaces are intentionally diagnostics-first or staged:
 | Dashboard maturity expansion | deterministic live mutation depth verification now aggregates status/action/stream/ops-shell contracts; richer workflow UX still expanding | [`docs/planning/integration-gap-closure-plan.md`](docs/planning/integration-gap-closure-plan.md), [`docs/guides/dashboard-ops.md`](docs/guides/dashboard-ops.md), [`docs/guides/operator-deployment-guide.md`](docs/guides/operator-deployment-guide.md), [`scripts/verify/m308-dashboard-live-mutation-depth.sh`](scripts/verify/m308-dashboard-live-mutation-depth.sh) |
 | Multi-channel orchestration depth | deterministic C5 Telegram/Discord routing, WhatsApp webhook verification, lifecycle, and media-handling coverage is aggregated in a dedicated gate; live provider-specific behavior still environment-bound | [`docs/planning/integration-gap-closure-plan.md`](docs/planning/integration-gap-closure-plan.md), [`docs/guides/transports.md`](docs/guides/transports.md), [`scripts/verify/m307-multi-channel-orchestration-depth.sh`](scripts/verify/m307-multi-channel-orchestration-depth.sh) |
 | Extended auth live-env verification | deterministic matrix/lifecycle coverage, auth-depth edge-path gating, and credential lifecycle depth verification are delivered; external credential/live-env permutations remain environment-specific | [`docs/planning/integration-gap-closure-plan.md`](docs/planning/integration-gap-closure-plan.md), [`docs/provider-auth/provider-auth-capability-matrix.md`](docs/provider-auth/provider-auth-capability-matrix.md), [`docs/guides/gateway-auth-session-smoke.md`](docs/guides/gateway-auth-session-smoke.md), [`scripts/verify/m303-auth-workflow-depth.sh`](scripts/verify/m303-auth-workflow-depth.sh), [`scripts/verify/m309-auth-credential-lifecycle-depth.sh`](scripts/verify/m309-auth-credential-lifecycle-depth.sh), [`scripts/verify/m296-live-auth-validation.sh`](scripts/verify/m296-live-auth-validation.sh) |
-| TUI interaction depth | operator shell and resilient `shell-live` diagnostics are delivered; richer interactive workflows continue to evolve | [`docs/planning/integration-gap-closure-plan.md`](docs/planning/integration-gap-closure-plan.md), [`crates/tau-tui`](crates/tau-tui), [`docs/guides/demo-index.md`](docs/guides/demo-index.md) |
+| TUI interaction depth | operator shell, resilient `shell-live` diagnostics, and deterministic workflow-depth verification are delivered; richer interactive workflows continue to evolve | [`docs/planning/integration-gap-closure-plan.md`](docs/planning/integration-gap-closure-plan.md), [`crates/tau-tui`](crates/tau-tui), [`docs/guides/demo-index.md`](docs/guides/demo-index.md), [`scripts/verify/m311-tui-operator-workflow-depth.sh`](scripts/verify/m311-tui-operator-workflow-depth.sh) |
 
 ## 5-Minute Quickstart
 
