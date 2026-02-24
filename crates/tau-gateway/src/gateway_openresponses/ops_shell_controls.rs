@@ -52,6 +52,12 @@ pub(super) struct OpsShellControlsQuery {
     job: String,
     #[serde(default)]
     cancel_job: String,
+    #[serde(default)]
+    control_action_status: String,
+    #[serde(default)]
+    control_action: String,
+    #[serde(default)]
+    control_action_reason: String,
 }
 
 impl OpsShellControlsQuery {
@@ -256,6 +262,36 @@ impl OpsShellControlsQuery {
             None
         } else {
             Some(value.to_string())
+        }
+    }
+
+    pub(super) fn requested_control_action_status(&self) -> &'static str {
+        match self.control_action_status.trim() {
+            "applied" => "applied",
+            "missing" => "missing",
+            "failed" => "failed",
+            _ => "idle",
+        }
+    }
+
+    pub(super) fn requested_control_action(&self) -> &'static str {
+        match self.control_action.trim() {
+            "pause" => "pause",
+            "resume" => "resume",
+            "refresh" => "refresh",
+            _ => "none",
+        }
+    }
+
+    pub(super) fn requested_control_action_reason(&self) -> &'static str {
+        match self.control_action_reason.trim() {
+            "control_action_applied" => "control_action_applied",
+            "control_action_form_missing_action" => "missing_action",
+            "missing_action" => "missing_action",
+            "invalid_dashboard_action" => "invalid_dashboard_action",
+            "unauthorized" => "unauthorized",
+            "internal_error" => "internal_error",
+            _ => "none",
         }
     }
 }
@@ -622,5 +658,74 @@ mod tests {
 
         let empty = OpsShellControlsQuery::default();
         assert_eq!(empty.requested_cancel_job_id(), None);
+    }
+
+    #[test]
+    fn unit_requested_control_action_status_defaults_to_idle_and_normalizes_values() {
+        let idle = OpsShellControlsQuery::default();
+        assert_eq!(idle.requested_control_action_status(), "idle");
+
+        let applied = OpsShellControlsQuery {
+            control_action_status: "applied".to_string(),
+            ..OpsShellControlsQuery::default()
+        };
+        assert_eq!(applied.requested_control_action_status(), "applied");
+
+        let failed = OpsShellControlsQuery {
+            control_action_status: "failed".to_string(),
+            ..OpsShellControlsQuery::default()
+        };
+        assert_eq!(failed.requested_control_action_status(), "failed");
+
+        let invalid = OpsShellControlsQuery {
+            control_action_status: "unsupported".to_string(),
+            ..OpsShellControlsQuery::default()
+        };
+        assert_eq!(invalid.requested_control_action_status(), "idle");
+    }
+
+    #[test]
+    fn unit_requested_control_action_defaults_to_none_and_normalizes_values() {
+        let empty = OpsShellControlsQuery::default();
+        assert_eq!(empty.requested_control_action(), "none");
+
+        let pause = OpsShellControlsQuery {
+            control_action: "pause".to_string(),
+            ..OpsShellControlsQuery::default()
+        };
+        assert_eq!(pause.requested_control_action(), "pause");
+
+        let invalid = OpsShellControlsQuery {
+            control_action: "explode".to_string(),
+            ..OpsShellControlsQuery::default()
+        };
+        assert_eq!(invalid.requested_control_action(), "none");
+    }
+
+    #[test]
+    fn unit_requested_control_action_reason_defaults_and_normalizes_values() {
+        let empty = OpsShellControlsQuery::default();
+        assert_eq!(empty.requested_control_action_reason(), "none");
+
+        let applied = OpsShellControlsQuery {
+            control_action_reason: "control_action_applied".to_string(),
+            ..OpsShellControlsQuery::default()
+        };
+        assert_eq!(
+            applied.requested_control_action_reason(),
+            "control_action_applied"
+        );
+
+        let alias = OpsShellControlsQuery {
+            control_action_reason: "control_action_form_missing_action".to_string(),
+            ..OpsShellControlsQuery::default()
+        };
+        assert_eq!(alias.requested_control_action_reason(), "missing_action");
+
+        let invalid = OpsShellControlsQuery {
+            control_action_reason: "custom".to_string(),
+            ..OpsShellControlsQuery::default()
+        };
+        assert_eq!(invalid.requested_control_action_reason(), "none");
     }
 }
