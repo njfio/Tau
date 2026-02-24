@@ -644,14 +644,36 @@ impl OperatorShellFrame {
         let auth_status_path = dashboard_root.join("auth-status.json");
         let training_status_path = training_root.join("status.json");
 
-        let runtime_state = read_json_file::<LiveDashboardRuntimeStateFile>(&state_path);
-        let control_state = read_json_file::<LiveDashboardControlStateFile>(&control_state_path);
-        let auth_status = read_json_file::<LiveDashboardAuthStatusFile>(&auth_status_path);
-        let training_status =
-            read_json_file::<LiveDashboardTrainingStatusFile>(&training_status_path);
-        let last_cycle = read_last_jsonl_record::<LiveDashboardCycleReportLine>(&events_log_path);
+        let mut artifact_diagnostics = Vec::new();
+        let runtime_state = read_json_file::<LiveDashboardRuntimeStateFile>(
+            &state_path,
+            &mut artifact_diagnostics,
+            true,
+        );
+        let control_state = read_json_file::<LiveDashboardControlStateFile>(
+            &control_state_path,
+            &mut artifact_diagnostics,
+            true,
+        );
+        let auth_status = read_json_file::<LiveDashboardAuthStatusFile>(
+            &auth_status_path,
+            &mut artifact_diagnostics,
+            true,
+        );
+        let training_status = read_json_file::<LiveDashboardTrainingStatusFile>(
+            &training_status_path,
+            &mut artifact_diagnostics,
+            false,
+        );
+        let last_cycle = read_last_jsonl_record::<LiveDashboardCycleReportLine>(
+            &events_log_path,
+            &mut artifact_diagnostics,
+            false,
+        );
         let last_action = read_last_jsonl_record::<LiveDashboardActionAuditRecord>(
             &actions_log_path,
+            &mut artifact_diagnostics,
+            false,
         )
         .or_else(|| {
             control_state
@@ -748,6 +770,15 @@ impl OperatorShellFrame {
         }
         if alerts.is_empty() {
             alerts.push("dashboard runtime health is nominal".to_string());
+        }
+        if !artifact_diagnostics.is_empty() {
+            alerts.push(format!(
+                "artifact diagnostics active ({})",
+                artifact_diagnostics.len()
+            ));
+            for diagnostic in artifact_diagnostics.iter().take(3) {
+                alerts.push(format!("artifact: {diagnostic}"));
+            }
         }
 
         let (primary_alert_code, primary_alert_severity, primary_alert_message) = if control_paused
@@ -846,6 +877,23 @@ impl OperatorShellFrame {
                     "last reason codes: {}",
                     cycle.reason_codes.join(",")
                 ));
+            }
+        }
+        if !artifact_diagnostics.is_empty() {
+            let diagnostic_counts = summarize_artifact_diagnostics(&artifact_diagnostics);
+            actions.push(format!(
+                "artifact diagnostics count: {}",
+                artifact_diagnostics.len()
+            ));
+            actions.push(format!(
+                "artifact diagnostics summary: parse_failed={} missing={} jsonl_malformed={} read_failed={}",
+                diagnostic_counts.parse_failed,
+                diagnostic_counts.missing,
+                diagnostic_counts.jsonl_malformed,
+                diagnostic_counts.read_failed
+            ));
+            for diagnostic in artifact_diagnostics.iter().take(4) {
+                actions.push(format!("diag: {diagnostic}"));
             }
         }
 
@@ -1172,23 +1220,144 @@ fn resolve_training_root(dashboard_state_dir: &Path) -> PathBuf {
     tau_root.join("training")
 }
 
-fn read_json_file<T: DeserializeOwned>(path: &Path) -> Option<T> {
-    let raw = fs::read_to_string(path).ok()?;
-    serde_json::from_str::<T>(&raw).ok()
+fn read_json_file<T: DeserializeOwned>(
+    path: &Path,
+    diagnostics: &mut Vec<String>,
+    report_missing: bool,
+) -> Option<T> {
+    let raw = match fs::read_to_string(path) {
+        Ok(raw) => raw,
+        Err(error) => {
+            if error.kind() == std::io::ErrorKind::NotFound {
+                if report_missing {
+                    diagnostics.push(format!("missing:{}", file_display_name(path)));
+                }
+            } else {
+                diagnostics.push(format!(
+                    "read_failed:{}:{}",
+                    file_display_name(path),
+                    read_error_kind_label(error.kind())
+                ));
+            }
+            return None;
+        }
+    };
+
+    match serde_json::from_str::<T>(&raw) {
+        Ok(parsed) => Some(parsed),
+        Err(_) => {
+            diagnostics.push(format!("parse_failed:{}", file_display_name(path)));
+            None
+        }
+    }
 }
 
-fn read_last_jsonl_record<T: DeserializeOwned>(path: &Path) -> Option<T> {
-    let raw = fs::read_to_string(path).ok()?;
+fn read_last_jsonl_record<T: DeserializeOwned>(
+    path: &Path,
+    diagnostics: &mut Vec<String>,
+    report_missing: bool,
+) -> Option<T> {
+    let raw = match fs::read_to_string(path) {
+        Ok(raw) => raw,
+        Err(error) => {
+            if error.kind() == std::io::ErrorKind::NotFound {
+                if report_missing {
+                    diagnostics.push(format!("missing:{}", file_display_name(path)));
+                }
+            } else {
+                diagnostics.push(format!(
+                    "read_failed:{}:{}",
+                    file_display_name(path),
+                    read_error_kind_label(error.kind())
+                ));
+            }
+            return None;
+        }
+    };
+
+    let mut saw_non_empty_line = false;
+    let mut saw_malformed_line = false;
     for line in raw.lines().rev() {
         let trimmed = line.trim();
         if trimmed.is_empty() {
             continue;
         }
-        if let Ok(record) = serde_json::from_str::<T>(trimmed) {
-            return Some(record);
+        saw_non_empty_line = true;
+        match serde_json::from_str::<T>(trimmed) {
+            Ok(record) => return Some(record),
+            Err(_) => saw_malformed_line = true,
         }
     }
+
+    if saw_non_empty_line && saw_malformed_line {
+        diagnostics.push(format!("jsonl_malformed:{}", file_display_name(path)));
+    }
     None
+}
+
+fn file_display_name(path: &Path) -> String {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .map(std::string::ToString::to_string)
+        .unwrap_or_else(|| path.display().to_string())
+}
+
+fn read_error_kind_label(kind: std::io::ErrorKind) -> &'static str {
+    match kind {
+        std::io::ErrorKind::PermissionDenied => "permission_denied",
+        std::io::ErrorKind::TimedOut => "timed_out",
+        std::io::ErrorKind::Interrupted => "interrupted",
+        std::io::ErrorKind::InvalidData => "invalid_data",
+        std::io::ErrorKind::InvalidInput => "invalid_input",
+        std::io::ErrorKind::AlreadyExists => "already_exists",
+        std::io::ErrorKind::WouldBlock => "would_block",
+        std::io::ErrorKind::UnexpectedEof => "unexpected_eof",
+        std::io::ErrorKind::WriteZero => "write_zero",
+        std::io::ErrorKind::Unsupported => "unsupported",
+        std::io::ErrorKind::OutOfMemory => "out_of_memory",
+        std::io::ErrorKind::BrokenPipe => "broken_pipe",
+        std::io::ErrorKind::NotConnected => "not_connected",
+        std::io::ErrorKind::AddrInUse => "addr_in_use",
+        std::io::ErrorKind::AddrNotAvailable => "addr_not_available",
+        std::io::ErrorKind::NetworkDown => "network_down",
+        std::io::ErrorKind::NetworkUnreachable => "network_unreachable",
+        std::io::ErrorKind::ConnectionAborted => "connection_aborted",
+        std::io::ErrorKind::ConnectionRefused => "connection_refused",
+        std::io::ErrorKind::ConnectionReset => "connection_reset",
+        std::io::ErrorKind::HostUnreachable => "host_unreachable",
+        std::io::ErrorKind::NotFound => "not_found",
+        _ => "other",
+    }
+}
+
+#[derive(Debug, Default)]
+struct ArtifactDiagnosticCounts {
+    parse_failed: usize,
+    missing: usize,
+    jsonl_malformed: usize,
+    read_failed: usize,
+}
+
+fn summarize_artifact_diagnostics(diagnostics: &[String]) -> ArtifactDiagnosticCounts {
+    let mut counts = ArtifactDiagnosticCounts::default();
+    for diagnostic in diagnostics {
+        if diagnostic.starts_with("parse_failed:") {
+            counts.parse_failed += 1;
+            continue;
+        }
+        if diagnostic.starts_with("missing:") {
+            counts.missing += 1;
+            continue;
+        }
+        if diagnostic.starts_with("jsonl_malformed:") {
+            counts.jsonl_malformed += 1;
+            continue;
+        }
+        if diagnostic.starts_with("read_failed:") {
+            counts.read_failed += 1;
+        }
+    }
+    counts
 }
 
 fn normalize_non_empty(raw: &str, fallback: &str) -> String {
@@ -1688,6 +1857,94 @@ mod tests {
     }
 
     #[test]
+    fn spec_c01_live_shell_frame_reports_malformed_json_artifact_diagnostics() {
+        let temp = tempdir().expect("tempdir");
+        let tau_root = temp.path().join(".tau");
+        let dashboard_root = tau_root.join("dashboard");
+        std::fs::create_dir_all(&dashboard_root).expect("create dashboard dir");
+
+        std::fs::write(dashboard_root.join("state.json"), "{").expect("write malformed state");
+        std::fs::write(
+            dashboard_root.join("control-state.json"),
+            r#"{"mode":"running"}"#,
+        )
+        .expect("write control state");
+        std::fs::write(dashboard_root.join("auth-status.json"), "{").expect("write malformed auth");
+
+        let frame = OperatorShellFrame::from_dashboard_state_dir(
+            "ops-malformed-json".to_string(),
+            dashboard_root.as_path(),
+        );
+
+        assert!(frame
+            .alerts
+            .iter()
+            .any(|line| line.contains("parse_failed:state.json")));
+        assert!(frame
+            .alerts
+            .iter()
+            .any(|line| line.contains("parse_failed:auth-status.json")));
+        assert!(frame
+            .actions
+            .iter()
+            .any(|line| line.contains("diag: parse_failed:state.json")));
+        assert!(frame.actions.iter().any(|line| {
+            line.contains("artifact diagnostics summary:")
+                && line.contains("parse_failed=2")
+                && line.contains("missing=0")
+        }));
+    }
+
+    #[test]
+    fn spec_c02_live_shell_frame_reports_malformed_jsonl_artifact_diagnostics() {
+        let temp = tempdir().expect("tempdir");
+        let tau_root = temp.path().join(".tau");
+        let dashboard_root = tau_root.join("dashboard");
+        std::fs::create_dir_all(&dashboard_root).expect("create dashboard dir");
+
+        std::fs::write(
+            dashboard_root.join("state.json"),
+            r#"{"processed_case_keys":[],"health":{"queue_depth":0,"failure_streak":0}}"#,
+        )
+        .expect("write state");
+        std::fs::write(
+            dashboard_root.join("control-state.json"),
+            r#"{"mode":"running"}"#,
+        )
+        .expect("write control state");
+        std::fs::write(
+            dashboard_root.join("auth-status.json"),
+            r#"{"mode":"token","required":false,"providers":[]}"#,
+        )
+        .expect("write auth status");
+        std::fs::write(
+            dashboard_root.join("runtime-events.jsonl"),
+            "{invalid-jsonl",
+        )
+        .expect("write malformed events");
+        std::fs::write(dashboard_root.join("actions-audit.jsonl"), "{invalid-jsonl")
+            .expect("write malformed actions");
+
+        let frame = OperatorShellFrame::from_dashboard_state_dir(
+            "ops-malformed-jsonl".to_string(),
+            dashboard_root.as_path(),
+        );
+
+        assert!(frame
+            .alerts
+            .iter()
+            .any(|line| line.contains("jsonl_malformed:runtime-events.jsonl")));
+        assert!(frame
+            .alerts
+            .iter()
+            .any(|line| line.contains("jsonl_malformed:actions-audit.jsonl")));
+        assert!(frame
+            .actions
+            .iter()
+            .any(|line| line.contains("diag: jsonl_malformed:runtime-events.jsonl")));
+    }
+
+    #[test]
     fn regression_live_shell_frame_handles_missing_artifacts_without_panicking() {
         let temp = tempdir().expect("tempdir");
         let dashboard_root = temp.path().join(".tau").join("dashboard");
@@ -1710,6 +1967,14 @@ mod tests {
             .auth_rows
             .iter()
             .any(|row| row.source.contains("missing")));
+        assert!(frame
+            .alerts
+            .iter()
+            .any(|line| line.contains("missing:state.json")));
+        assert!(frame
+            .actions
+            .iter()
+            .any(|line| line.contains("diag: missing:state.json")));
     }
 
     #[test]
