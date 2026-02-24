@@ -44,10 +44,15 @@ Options for `up`:
   --dashboard-state-dir <path>    Dashboard state dir (default: .tau/dashboard)
 
 Options for `tui`:
-  --state-dir <path>              Dashboard state dir (default: .tau/dashboard)
+  --agent                         Force interactive agent mode (default)
+  --live-shell                    Use read-only dashboard watch shell mode
+  --state-dir <path>              Dashboard state dir alias (default: .tau/dashboard)
+  --dashboard-state-dir <path>    Dashboard state dir (default: .tau/dashboard)
+  --gateway-state-dir <path>      Gateway state dir (default: .tau/gateway)
+  --model <id>                    Agent model id (default: openai/gpt-4o-mini)
   --profile <name>                TUI profile (default: local-dev)
-  --iterations <n>                Watch iterations (default: 3)
-  --interval-ms <n>               Watch interval ms (default: 1000)
+  --iterations <n>                Live-shell watch iterations (default: 3)
+  --interval-ms <n>               Live-shell watch interval ms (default: 1000)
   --no-color                      Disable TUI color output
 
 General:
@@ -301,16 +306,37 @@ cmd_down() {
 }
 
 cmd_tui() {
-  local state_dir="${DASHBOARD_STATE_DIR_DEFAULT}"
+  local dashboard_state_dir="${DASHBOARD_STATE_DIR_DEFAULT}"
+  local gateway_state_dir="${GATEWAY_STATE_DIR_DEFAULT}"
+  local model="${MODEL_DEFAULT}"
   local profile="${PROFILE_DEFAULT}"
   local iterations="3"
   local interval_ms="1000"
   local no_color="false"
+  local tui_mode="agent"
+  local saw_iterations="false"
+  local saw_interval="false"
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --state-dir)
-        state_dir="$2"
+      --agent)
+        tui_mode="agent"
+        shift
+        ;;
+      --live-shell)
+        tui_mode="live-shell"
+        shift
+        ;;
+      --state-dir|--dashboard-state-dir)
+        dashboard_state_dir="$2"
+        shift 2
+        ;;
+      --gateway-state-dir)
+        gateway_state_dir="$2"
+        shift 2
+        ;;
+      --model)
+        model="$2"
         shift 2
         ;;
       --profile)
@@ -319,10 +345,12 @@ cmd_tui() {
         ;;
       --iterations)
         iterations="$2"
+        saw_iterations="true"
         shift 2
         ;;
       --interval-ms)
         interval_ms="$2"
+        saw_interval="true"
         shift 2
         ;;
       --no-color)
@@ -339,21 +367,36 @@ cmd_tui() {
     esac
   done
 
-  local tui_cmd=(
-    cargo run -p tau-tui -- shell-live
-    --state-dir "${state_dir}"
-    --profile "${profile}"
-    --watch
-    --iterations "${iterations}"
-    --interval-ms "${interval_ms}"
-  )
+  if [[ "${tui_mode}" == "agent" && ( "${saw_iterations}" == "true" || "${saw_interval}" == "true" ) ]]; then
+    die "--iterations/--interval-ms require --live-shell"
+  fi
+
+  local tui_cmd=()
+  if [[ "${tui_mode}" == "live-shell" ]]; then
+    tui_cmd=(
+      cargo run -p tau-tui -- shell-live
+      --state-dir "${dashboard_state_dir}"
+      --profile "${profile}"
+      --watch
+      --iterations "${iterations}"
+      --interval-ms "${interval_ms}"
+    )
+  else
+    tui_cmd=(
+      cargo run -p tau-tui -- agent
+      --dashboard-state-dir "${dashboard_state_dir}"
+      --gateway-state-dir "${gateway_state_dir}"
+      --profile "${profile}"
+      --model "${model}"
+    )
+  fi
   if [[ "${no_color}" == "true" ]]; then
     tui_cmd+=(--no-color)
   fi
 
-  log "tau-unified: launching tui"
+  log "tau-unified: launching tui (${tui_mode})"
   if [[ -n "${RUNNER}" ]]; then
-    run_runner_mode tui "${state_dir}" "${profile}" "${iterations}" "${interval_ms}" "${no_color}"
+    run_runner_mode tui "${tui_mode}" "${dashboard_state_dir}" "${gateway_state_dir}" "${profile}" "${model}" "${iterations}" "${interval_ms}" "${no_color}"
     return 0
   fi
   (
