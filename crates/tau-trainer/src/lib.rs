@@ -8,9 +8,10 @@ pub mod checkpoint_store;
 pub mod rl_e2e;
 
 pub use rl_e2e::{
-    export_rl_e2e_harness_artifact, rl_e2e_harness_filename, run_deterministic_rl_e2e_harness,
-    RlE2eArtifact, RlE2eArtifactExportSummary, RlE2eCheck, RlE2eGaeSummary, RlE2eHarnessConfig,
-    RlE2ePpoSummary, RlE2eRolloutSummary,
+    evaluate_rl_e2e_rollback_gate, export_rl_e2e_harness_artifact, rl_e2e_harness_filename,
+    run_deterministic_rl_e2e_harness, RlE2eArtifact, RlE2eArtifactExportSummary, RlE2eCheck,
+    RlE2eGaeSummary, RlE2eHarnessConfig, RlE2ePpoSummary, RlE2ePromotionGateSummary,
+    RlE2eRollbackGateSummary, RlE2eRolloutSummary,
 };
 
 use anyhow::Result;

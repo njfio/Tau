@@ -17,7 +17,14 @@ use tau_training_runner::{RolloutExecutionOutcome, RolloutExecutor, TrainingTrac
 use tau_training_store::{InMemoryTrainingStore, RolloutQuery, TrainingStore};
 use tau_training_types::{ResourcesUpdate, Reward, Rollout};
 
-use crate::{Trainer, TrainerConfig, TrainingSummary};
+use crate::{
+    benchmark_significance::{
+        compare_policy_improvement, evaluate_checkpoint_promotion_gate,
+        evaluate_sample_size_sensitivity, evaluate_seed_reproducibility, CheckpointPromotionPolicy,
+        ReproducibilityBands, SignificanceObservation,
+    },
+    Trainer, TrainerConfig, TrainingSummary,
+};
 
 /// Runtime configuration for the deterministic RL harness.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -63,6 +70,24 @@ pub struct RlE2ePpoSummary {
     pub early_stop_triggered: bool,
 }
 
+/// Checkpoint-promotion gate summary emitted by the harness.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RlE2ePromotionGateSummary {
+    pub policy_improvement_significant: bool,
+    pub promotion_allowed: bool,
+    pub safety_regression: f64,
+    pub max_safety_regression: f64,
+    pub reason_codes: Vec<String>,
+}
+
+/// Rollback-required gate summary emitted by the harness.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RlE2eRollbackGateSummary {
+    pub rollback_required: bool,
+    pub failing_checks: Vec<String>,
+    pub reason_codes: Vec<String>,
+}
+
 /// Check entry attached to harness artifacts.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RlE2eCheck {
@@ -79,6 +104,8 @@ pub struct RlE2eArtifact {
     pub rollout_summary: RlE2eRolloutSummary,
     pub gae_summary: RlE2eGaeSummary,
     pub ppo_summary: RlE2ePpoSummary,
+    pub promotion_gate: RlE2ePromotionGateSummary,
+    pub rollback_gate: RlE2eRollbackGateSummary,
     pub checks: Vec<RlE2eCheck>,
     pub pass: bool,
 }
@@ -109,6 +136,18 @@ impl RlE2eArtifact {
                 "mean_total_loss": self.ppo_summary.mean_total_loss,
                 "observed_approx_kl": self.ppo_summary.observed_approx_kl,
                 "early_stop_triggered": self.ppo_summary.early_stop_triggered,
+            },
+            "promotion_gate": {
+                "policy_improvement_significant": self.promotion_gate.policy_improvement_significant,
+                "promotion_allowed": self.promotion_gate.promotion_allowed,
+                "safety_regression": self.promotion_gate.safety_regression,
+                "max_safety_regression": self.promotion_gate.max_safety_regression,
+                "reason_codes": self.promotion_gate.reason_codes,
+            },
+            "rollback_gate": {
+                "rollback_required": self.rollback_gate.rollback_required,
+                "failing_checks": self.rollback_gate.failing_checks,
+                "reason_codes": self.rollback_gate.reason_codes,
             },
             "checks": self.checks.iter().map(|check| {
                 json!({
@@ -202,8 +241,44 @@ pub async fn run_deterministic_rl_e2e_harness(
         observed_approx_kl: ppo.observed_approx_kl,
         early_stop_triggered: ppo.early_stop_triggered,
     };
+    let baseline_rewards = rewards
+        .iter()
+        .map(|reward| reward - 0.15)
+        .collect::<Vec<_>>();
+    let improvement_report = compare_policy_improvement(&baseline_rewards, &rewards, 0.05)
+        .context("compute policy-improvement significance report for RL e2e gate")?;
+    let reproducibility_bands = ReproducibilityBands::default();
+    let reproducibility_observations = deterministic_significance_observations();
+    let seed_reproducibility =
+        evaluate_seed_reproducibility(&reproducibility_observations, 256, &reproducibility_bands)
+            .context("evaluate seeded reproducibility for RL e2e promotion gate")?;
+    let sample_sensitivity =
+        evaluate_sample_size_sensitivity(&reproducibility_observations, 7, &reproducibility_bands)
+            .context("evaluate sample-size sensitivity for RL e2e promotion gate")?;
+    let promotion_decision = evaluate_checkpoint_promotion_gate(
+        0.11,
+        0.10,
+        seed_reproducibility.within_band,
+        sample_sensitivity.within_band,
+        &CheckpointPromotionPolicy::default(),
+    )
+    .context("evaluate checkpoint-promotion gate for RL e2e")?;
+    let mut promotion_reason_codes = promotion_decision.reason_codes;
+    if !improvement_report.is_significant_improvement {
+        let code = "checkpoint_promotion_blocked_policy_improvement_not_significant".to_string();
+        if !promotion_reason_codes.contains(&code) {
+            promotion_reason_codes.push(code);
+        }
+    }
+    let promotion_gate = RlE2ePromotionGateSummary {
+        policy_improvement_significant: improvement_report.is_significant_improvement,
+        promotion_allowed: promotion_reason_codes.is_empty(),
+        safety_regression: promotion_decision.safety_regression,
+        max_safety_regression: promotion_decision.max_safety_regression,
+        reason_codes: promotion_reason_codes,
+    };
 
-    let checks = vec![
+    let mut checks = vec![
         RlE2eCheck {
             id: "rollout_completion".to_string(),
             passed: rollout_summary.failed == 0 && rollout_summary.cancelled == 0,
@@ -229,7 +304,46 @@ pub async fn run_deterministic_rl_e2e_harness(
                 ppo_summary.mean_total_loss, ppo_summary.observed_approx_kl
             ),
         },
+        RlE2eCheck {
+            id: "policy_improvement_significance".to_string(),
+            passed: promotion_gate.policy_improvement_significant,
+            detail: format!(
+                "mean_delta={:.6} ci_low={:.6} ci_high={:.6}",
+                improvement_report.mean_delta,
+                improvement_report.delta_ci_low,
+                improvement_report.delta_ci_high
+            ),
+        },
+        RlE2eCheck {
+            id: "checkpoint_promotion_gate".to_string(),
+            passed: promotion_gate.promotion_allowed,
+            detail: if promotion_gate.reason_codes.is_empty() {
+                "promotion gate passed".to_string()
+            } else {
+                format!(
+                    "promotion blocked reason_codes={}",
+                    promotion_gate.reason_codes.join(",")
+                )
+            },
+        },
     ];
+    let rollback_gate = evaluate_rl_e2e_rollback_gate(
+        &checks,
+        promotion_gate.promotion_allowed,
+        promotion_gate.policy_improvement_significant,
+    );
+    checks.push(RlE2eCheck {
+        id: "rollback_gate".to_string(),
+        passed: !rollback_gate.rollback_required,
+        detail: if rollback_gate.reason_codes.is_empty() {
+            "rollback not required".to_string()
+        } else {
+            format!(
+                "rollback required reason_codes={}",
+                rollback_gate.reason_codes.join(",")
+            )
+        },
+    });
     let pass = checks.iter().all(|entry| entry.passed);
 
     Ok(RlE2eArtifact {
@@ -238,6 +352,8 @@ pub async fn run_deterministic_rl_e2e_harness(
         rollout_summary,
         gae_summary,
         ppo_summary,
+        promotion_gate,
+        rollback_gate,
         checks,
         pass,
     })
@@ -281,6 +397,70 @@ pub fn rl_e2e_harness_filename(run_id: &str) -> PathBuf {
     PathBuf::from(format!("rl-e2e-harness-v1-{normalized}.json"))
 }
 
+/// Evaluates whether rollback is required from deterministic RL e2e gate
+/// signals and check outcomes.
+pub fn evaluate_rl_e2e_rollback_gate(
+    checks: &[RlE2eCheck],
+    promotion_allowed: bool,
+    policy_improvement_significant: bool,
+) -> RlE2eRollbackGateSummary {
+    let mut failing_checks = Vec::new();
+    let mut reason_codes = Vec::new();
+
+    for check in checks {
+        if check.passed {
+            continue;
+        }
+        failing_checks.push(check.id.clone());
+        push_unique_reason_code(
+            &mut reason_codes,
+            format!(
+                "rollback_required_{}",
+                normalize_reason_fragment(check.id.as_str())
+            ),
+        );
+    }
+
+    if !promotion_allowed {
+        push_unique_reason_code(
+            &mut reason_codes,
+            "rollback_required_checkpoint_promotion_gate".to_string(),
+        );
+    }
+
+    if !policy_improvement_significant {
+        push_unique_reason_code(
+            &mut reason_codes,
+            "rollback_required_policy_improvement_not_significant".to_string(),
+        );
+    }
+
+    RlE2eRollbackGateSummary {
+        rollback_required: !reason_codes.is_empty(),
+        failing_checks,
+        reason_codes,
+    }
+}
+
+fn push_unique_reason_code(reason_codes: &mut Vec<String>, reason_code: String) {
+    if !reason_codes.contains(&reason_code) {
+        reason_codes.push(reason_code);
+    }
+}
+
+fn normalize_reason_fragment(value: &str) -> String {
+    value
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '_' {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
+
 fn deterministic_rollout_inputs() -> Vec<Value> {
     vec![
         json!({"prompt": "math-1", "reward": 1.0, "value_estimate": 0.4}),
@@ -289,6 +469,17 @@ fn deterministic_rollout_inputs() -> Vec<Value> {
         json!({"prompt": "tool-use-1", "reward": 0.95, "value_estimate": 0.45}),
         json!({"prompt": "planning-1", "reward": 0.85, "value_estimate": 0.40}),
         json!({"prompt": "memory-1", "reward": 0.92, "value_estimate": 0.38}),
+    ]
+}
+
+fn deterministic_significance_observations() -> Vec<SignificanceObservation> {
+    vec![
+        SignificanceObservation::new(1, 256, 0.022, 0.14),
+        SignificanceObservation::new(2, 256, 0.027, 0.15),
+        SignificanceObservation::new(3, 256, 0.030, 0.16),
+        SignificanceObservation::new(7, 128, 0.031, 0.14),
+        SignificanceObservation::new(7, 256, 0.026, 0.15),
+        SignificanceObservation::new(7, 512, 0.022, 0.16),
     ]
 }
 
