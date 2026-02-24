@@ -100,7 +100,7 @@ demo_log "starting gateway server: ${gateway_url}"
 (
   cd "${TAU_DEMO_REPO_ROOT}"
   "${TAU_DEMO_BINARY}" \
-    --model openai/gpt-4o-mini \
+    --model openai/gpt-5.2 \
     --gateway-openresponses-server \
     --gateway-openresponses-bind "${gateway_bind}" \
     --gateway-openresponses-auth-mode password-session \

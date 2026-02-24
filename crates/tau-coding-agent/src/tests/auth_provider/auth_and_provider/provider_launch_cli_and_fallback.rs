@@ -457,10 +457,10 @@ fn unit_is_retryable_provider_error_classifies_status_errors() {
 
 #[test]
 fn functional_resolve_fallback_models_parses_deduplicates_and_skips_primary() {
-    let primary = ModelRef::parse("openai/gpt-4o-mini").expect("primary model parse");
+    let primary = ModelRef::parse("openai/gpt-5.2").expect("primary model parse");
     let mut cli = test_cli();
     cli.fallback_model = vec![
-        "openai/gpt-4o-mini".to_string(),
+        "openai/gpt-5.2".to_string(),
         "google/gemini-2.5-pro".to_string(),
         "google/gemini-2.5-pro".to_string(),
         "anthropic/claude-sonnet-4-20250514".to_string(),

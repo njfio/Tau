@@ -123,7 +123,7 @@ pub(crate) fn handle_command(
         default_lock_path: skills_lock_path,
         default_trust_root_path: None,
         doctor_config: DoctorCommandConfig {
-            model: "openai/gpt-4o-mini".to_string(),
+            model: "openai/gpt-5.2".to_string(),
             provider_keys: vec![DoctorProviderKeyStatus {
                 provider_kind: Provider::OpenAi,
                 provider: "openai".to_string(),
@@ -148,7 +148,7 @@ pub(crate) fn handle_command(
         },
     };
     let profile_defaults = ProfileDefaults {
-        model: "openai/gpt-4o-mini".to_string(),
+        model: "openai/gpt-5.2".to_string(),
         fallback_models: Vec::new(),
         session: ProfileSessionDefaults {
             enabled: true,

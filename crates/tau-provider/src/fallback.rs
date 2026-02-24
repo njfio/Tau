@@ -576,7 +576,7 @@ mod tests {
             vec![
                 ClientRoute {
                     provider: Provider::OpenAi,
-                    model: "gpt-4o-mini".to_string(),
+                    model: "gpt-5.2".to_string(),
                     client: Arc::new(primary.clone()),
                 },
                 ClientRoute {
@@ -593,7 +593,7 @@ mod tests {
             .await
             .expect("primary route should succeed");
         assert_eq!(response.message.text_content(), "primary ok");
-        assert_eq!(primary.observed_models(), vec!["gpt-4o-mini".to_string()]);
+        assert_eq!(primary.observed_models(), vec!["gpt-5.2".to_string()]);
         assert!(secondary.observed_models().is_empty());
         assert!(events.lock().expect("events lock").is_empty());
     }
@@ -619,7 +619,7 @@ mod tests {
             vec![
                 ClientRoute {
                     provider: Provider::OpenAi,
-                    model: "gpt-4o-mini".to_string(),
+                    model: "gpt-5.2".to_string(),
                     client: Arc::new(primary.clone()),
                 },
                 ClientRoute {
@@ -637,7 +637,7 @@ mod tests {
             .expect("fallback route should succeed");
 
         assert_eq!(response.message.text_content(), "fallback ok");
-        assert_eq!(primary.observed_models(), vec!["gpt-4o-mini".to_string()]);
+        assert_eq!(primary.observed_models(), vec!["gpt-5.2".to_string()]);
         assert_eq!(
             secondary.observed_models(),
             vec!["claude-sonnet-4-20250514".to_string()]
@@ -646,7 +646,7 @@ mod tests {
         let events = events.lock().expect("events lock");
         assert_eq!(events.len(), 1);
         assert_eq!(events[0]["type"], "provider_fallback");
-        assert_eq!(events[0]["from_model"], "openai/gpt-4o-mini");
+        assert_eq!(events[0]["from_model"], "openai/gpt-5.2");
         assert_eq!(events[0]["to_model"], "anthropic/claude-sonnet-4-20250514");
         assert_eq!(events[0]["error_kind"], "http_status");
         assert_eq!(events[0]["status"], 429);
@@ -679,7 +679,7 @@ mod tests {
             vec![
                 ClientRoute {
                     provider: Provider::OpenAi,
-                    model: "gpt-4o-mini".to_string(),
+                    model: "gpt-5.2".to_string(),
                     client: Arc::new(primary.clone()),
                 },
                 ClientRoute {
@@ -706,7 +706,7 @@ mod tests {
             other => panic!("expected HttpStatus error, got {other:?}"),
         }
 
-        assert_eq!(primary.observed_models(), vec!["gpt-4o-mini".to_string()]);
+        assert_eq!(primary.observed_models(), vec!["gpt-5.2".to_string()]);
         assert_eq!(
             secondary.observed_models(),
             vec!["gemini-2.5-pro".to_string()]
@@ -715,7 +715,7 @@ mod tests {
         let events = events.lock().expect("events lock");
         assert_eq!(events.len(), 1);
         assert_eq!(events[0]["type"], "provider_fallback");
-        assert_eq!(events[0]["from_model"], "openai/gpt-4o-mini");
+        assert_eq!(events[0]["from_model"], "openai/gpt-5.2");
         assert_eq!(events[0]["to_model"], "google/gemini-2.5-pro");
         assert_eq!(events[0]["error_kind"], "http_status");
         assert_eq!(events[0]["status"], 503);
@@ -745,7 +745,7 @@ mod tests {
             vec![
                 ClientRoute {
                     provider: Provider::OpenAi,
-                    model: "gpt-4o-mini".to_string(),
+                    model: "gpt-5.2".to_string(),
                     client: Arc::new(primary.clone()),
                 },
                 ClientRoute {
@@ -770,7 +770,7 @@ mod tests {
 
         assert_eq!(deltas.lock().expect("delta lock").as_str(), "Hello");
         assert_eq!(response.message.text_content(), "Hello");
-        assert_eq!(primary.observed_models(), vec!["gpt-4o-mini".to_string()]);
+        assert_eq!(primary.observed_models(), vec!["gpt-5.2".to_string()]);
         assert_eq!(
             secondary.observed_models(),
             vec!["gemini-2.5-pro".to_string()]
@@ -816,7 +816,7 @@ mod tests {
             vec![
                 ClientRoute {
                     provider: Provider::OpenAi,
-                    model: "gpt-4o-mini".to_string(),
+                    model: "gpt-5.2".to_string(),
                     client: Arc::new(primary.clone()),
                 },
                 ClientRoute {
@@ -900,7 +900,7 @@ mod tests {
             vec![
                 ClientRoute {
                     provider: Provider::OpenAi,
-                    model: "gpt-4o-mini".to_string(),
+                    model: "gpt-5.2".to_string(),
                     client: Arc::new(primary.clone()),
                 },
                 ClientRoute {
@@ -953,7 +953,7 @@ mod tests {
             vec![
                 ClientRoute {
                     provider: Provider::OpenAi,
-                    model: "gpt-4o-mini".to_string(),
+                    model: "gpt-5.2".to_string(),
                     client: Arc::new(primary.clone()),
                 },
                 ClientRoute {
@@ -978,7 +978,7 @@ mod tests {
             other => panic!("expected HttpStatus error, got {other:?}"),
         }
 
-        assert_eq!(primary.observed_models(), vec!["gpt-4o-mini".to_string()]);
+        assert_eq!(primary.observed_models(), vec!["gpt-5.2".to_string()]);
         assert!(secondary.observed_models().is_empty());
     }
 
@@ -1012,7 +1012,7 @@ mod tests {
             vec![
                 ClientRoute {
                     provider: Provider::OpenAi,
-                    model: "gpt-4o-mini".to_string(),
+                    model: "gpt-5.2".to_string(),
                     client: Arc::new(primary.clone()),
                 },
                 ClientRoute {
@@ -1082,7 +1082,7 @@ mod tests {
             vec![
                 ClientRoute {
                     provider: Provider::OpenAi,
-                    model: "gpt-4o-mini".to_string(),
+                    model: "gpt-5.2".to_string(),
                     client: Arc::new(primary.clone()),
                 },
                 ClientRoute {

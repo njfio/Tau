@@ -345,7 +345,7 @@ fn test_chat_request() -> ChatRequest {
 pub(crate) fn test_cli() -> Cli {
     Cli {
         shell_completion: None,
-        model: "openai/gpt-4o-mini".to_string(),
+        model: "openai/gpt-5.2".to_string(),
         fallback_model: vec![],
         api_base: "https://api.openai.com/v1".to_string(),
         azure_openai_api_version: "2024-10-21".to_string(),
@@ -1022,7 +1022,7 @@ fn skills_command_config(
         default_lock_path: lock_path.to_path_buf(),
         default_trust_root_path: trust_root_path.map(Path::to_path_buf),
         doctor_config: DoctorCommandConfig {
-            model: "openai/gpt-4o-mini".to_string(),
+            model: "openai/gpt-5.2".to_string(),
             provider_keys: vec![DoctorProviderKeyStatus {
                 provider_kind: Provider::OpenAi,
                 provider: "openai".to_string(),

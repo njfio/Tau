@@ -109,7 +109,7 @@ fn test_config_with_client(
 ) -> SlackBridgeRuntimeConfig {
     SlackBridgeRuntimeConfig {
         client,
-        model: "openai/gpt-4o-mini".to_string(),
+        model: "openai/gpt-5.2".to_string(),
         system_prompt: "You are Tau.".to_string(),
         max_turns: 4,
         tool_policy: ToolPolicy::new(vec![state_dir.to_path_buf()]),
@@ -929,7 +929,7 @@ fn functional_render_slack_response_thread_splits_long_output() {
     };
     let run = super::PromptRunReport {
         run_id: "run1".to_string(),
-        model: "openai/gpt-4o-mini".to_string(),
+        model: "openai/gpt-5.2".to_string(),
         status: crate::PromptRunStatus::Completed,
         assistant_reply: "abcdefghijklmnopqrstuvwxyz".to_string(),
         usage: super::PromptUsageSummary {

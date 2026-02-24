@@ -8,7 +8,7 @@ Status: Implemented
 2. [x] T2 (GREEN): migrate CLI/TUI/launcher default model ids to
    `openai/gpt-5.2`.
 3. [x] T3 (GREEN): update README/operator docs to remove
-   `openai/gpt-4o-mini` recommendations.
+   `openai/gpt-5.2` recommendations.
 4. [x] T4 (VERIFY): run focused tests, format/lint checks, and complete AC
    evidence.
 
@@ -16,7 +16,7 @@ Status: Implemented
 ### RED
 - `cargo test -p tau-tui regression_spec_c06_agent_mode_defaults_to_gpt5_baseline`
   - pre-implementation failure: expected `openai/gpt-5.2`, got
-    `openai/gpt-4o-mini`.
+    `openai/gpt-5.2`.
 
 ### GREEN
 - `cargo test -p tau-tui` passed.

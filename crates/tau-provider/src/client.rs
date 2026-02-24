@@ -704,7 +704,7 @@ mod tests {
 
     fn request_fixture() -> ChatRequest {
         ChatRequest {
-            model: "gpt-4o-mini".to_string(),
+            model: "gpt-5.2".to_string(),
             messages: vec![Message::user("hello")],
             tools: Vec::new(),
             tool_choice: None,

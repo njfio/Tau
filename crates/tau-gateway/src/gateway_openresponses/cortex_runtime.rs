@@ -856,12 +856,12 @@ mod tests {
     fn unit_render_cortex_fallback_output_includes_reason_and_model() {
         let output = render_cortex_fallback_output(
             "hello",
-            "openai/gpt-4o-mini",
+            "openai/gpt-5.2",
             "cortex_chat_llm_error_fallback",
         );
         assert!(output.contains("Cortex fallback response engaged"));
         assert!(output.contains("cortex_chat_llm_error_fallback"));
-        assert!(output.contains("openai/gpt-4o-mini"));
+        assert!(output.contains("openai/gpt-5.2"));
         assert!(output.contains("input_chars=5"));
     }
 

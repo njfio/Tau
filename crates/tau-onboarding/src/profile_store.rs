@@ -98,7 +98,7 @@ mod tests {
 
     fn sample_profile_defaults() -> ProfileDefaults {
         ProfileDefaults {
-            model: "openai/gpt-4o-mini".to_string(),
+            model: "openai/gpt-5.2".to_string(),
             fallback_models: vec!["openai/gpt-4.1-mini".to_string()],
             session: ProfileSessionDefaults {
                 enabled: true,
@@ -168,7 +168,7 @@ mod tests {
             "schema_version": PROFILE_SCHEMA_VERSION,
             "profiles": {
                 "legacy": {
-                    "model": "openai/gpt-4o-mini",
+                    "model": "openai/gpt-5.2",
                     "fallback_models": [],
                     "session": {
                         "enabled": true,

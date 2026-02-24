@@ -3366,7 +3366,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     <h4>Fallback Models</h4>
                                     <ol>
                                         <li data-model-ref="gpt-4.1">gpt-4.1</li>
-                                        <li data-model-ref="gpt-4o-mini">gpt-4o-mini</li>
+                                        <li data-model-ref="gpt-5.2">gpt-5.2</li>
                                     </ol>
                                 </section>
                                 <label for="tau-ops-config-profile-system-prompt">System Prompt</label>

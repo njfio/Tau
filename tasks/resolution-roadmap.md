@@ -14,7 +14,7 @@ Implemented in M42.1.1a (`#2219`):
   `deprecated`, `cached_input_cost_per_million`.
 - [x] Refreshed built-in catalog entries to include current frontier/legacy
   coverage, including GPT-5.x, GPT-4.1, O-series, Claude 4.x, Gemini 3/2.5,
-  and DeepSeek aliases; removed duplicate `openai/gpt-4o-mini` and
+  and DeepSeek aliases; removed duplicate `openai/gpt-5.2` and
   sunset `gemini-2.0-flash`.
 - [x] Added `deepseek` provider alias routing to OpenAI-compatible provider path.
 - [x] Added DeepSeek/OpenRouter Tau-prefixed env key candidates to provider auth
@@ -71,9 +71,9 @@ Functional/distribution/ops claims (5-15) were revalidated with
 
 | # | Provider | Model | Context | Input $/M | Output $/M | Status |
 |---|----------|-------|---------|-----------|------------|--------|
-| 1 | OpenAI | gpt-4o-mini | 128K | $0.15 | $0.60 | **RETIRED from ChatGPT** (Feb 13, 2026), still in API |
+| 1 | OpenAI | gpt-5.2 | 128K | $0.15 | $0.60 | **RETIRED from ChatGPT** (Feb 13, 2026), still in API |
 | 2 | OpenAI | gpt-4o | 128K | $2.50 | $10.00 | **RETIRED from ChatGPT** (Feb 13, 2026), still in API |
-| 3 | OpenAI | openai/gpt-4o-mini | 128K | $0.15 | $0.60 | **DUPLICATE of #1** — remove |
+| 3 | OpenAI | openai/gpt-5.2 | 128K | $0.15 | $0.60 | **DUPLICATE of #1** — remove |
 | 4 | OpenAI | llama-3.3-70b | 128K | — | — | Superseded by Llama 4 family |
 | 5 | OpenAI | grok-4 | 128K | — | — | Missing pricing, wrong context (should be 256K) |
 | 6 | OpenAI | mistral-large-latest | 128K | — | — | Superseded by Mistral Large 3 |
@@ -115,7 +115,7 @@ Functional/distribution/ops claims (5-15) were revalidated with
 | Model ID | Context | Tools | Multimodal | Thinking | Input $/M | Output $/M | Notes |
 |----------|---------|-------|------------|----------|-----------|------------|-------|
 | `gpt-4o` | 128K | yes | yes | yes | $2.50 | $10.00 | Retired from ChatGPT, API only |
-| `gpt-4o-mini` | 128K | yes | yes | yes | $0.15 | $0.60 | Retired from ChatGPT, API only |
+| `gpt-5.2` | 128K | yes | yes | yes | $0.15 | $0.60 | Retired from ChatGPT, API only |
 
 #### Anthropic — Claude 4.x Generation
 
@@ -179,7 +179,7 @@ Functional/distribution/ops claims (5-15) were revalidated with
 
 ### Implementation Checklist
 
-- [ ] **Remove deprecated entries**: delete `gemini-2.0-flash` (shutting down March 31), remove duplicate `openai/gpt-4o-mini`
+- [ ] **Remove deprecated entries**: delete `gemini-2.0-flash` (shutting down March 31), remove duplicate `openai/gpt-5.2`
 - [ ] **Update existing entries**: `claude-sonnet-4` → `claude-sonnet-4-5`, `claude-3-5-haiku-latest` → `claude-haiku-4-5`, `mistral-large-latest` → `mistral-large-3`
 - [ ] **Add GPT-5.x family**: `gpt-5.2`, `gpt-5`, `gpt-5-codex` (gpt-5.2-pro and gpt-5.3-codex may not have API access yet)
 - [ ] **Add GPT-4.1 family**: `gpt-4.1`, `gpt-4.1-mini`, `gpt-4.1-nano`
@@ -191,7 +191,7 @@ Functional/distribution/ops claims (5-15) were revalidated with
 - [ ] **Add Mistral 3**: `mistral-large-3`, `mistral-medium-3`
 - [ ] **Add Llama 4**: `llama-4-scout`, `llama-4-maverick`
 - [ ] **Add DeepSeek**: `deepseek-chat`, `deepseek-reasoner`
-- [ ] **Move `gpt-4o`, `gpt-4o-mini` to legacy section** with deprecation notice
+- [ ] **Move `gpt-4o`, `gpt-5.2` to legacy section** with deprecation notice
 
 ### Catalog Schema Changes
 
@@ -583,7 +583,7 @@ The actual training loop uses APO (Automatic Prompt Optimization) — beam searc
    - Add `gemini-3-pro-preview`, `gemini-3-flash-preview`, `gemini-2.5-flash`, `gemini-2.5-flash-lite`
    - Fix `grok-4` pricing ($3.00/$15.00) and context (256K)
    - Add `mistral-large-3` ($0.50/$1.50)
-   - Remove `gemini-2.0-flash` (deprecated), remove duplicate `openai/gpt-4o-mini`
+   - Remove `gemini-2.0-flash` (deprecated), remove duplicate `openai/gpt-5.2`
 2. **Add DeepSeek alias** — 5-line change in `provider.rs` + env var in `cli_args.rs`
 3. **Fill missing cost data** for all models with `None` pricing
 4. **Complete Epic M39** — 1 open issue remaining

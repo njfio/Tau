@@ -424,7 +424,7 @@ mod tests {
     #[test]
     fn spec_2536_c01_profile_defaults_parse_routing_fields() {
         let parsed: super::ProfileDefaults = serde_json::from_value(json!({
-            "model": "openai/gpt-4o-mini",
+            "model": "openai/gpt-5.2",
             "fallback_models": [],
             "session": {
                 "enabled": true,
@@ -456,11 +456,11 @@ mod tests {
                 "channel_model": "openai/gpt-4.1-mini",
                 "branch_model": "openai/o3-mini",
                 "worker_model": "openai/o3-mini",
-                "compactor_model": "openai/gpt-4o-mini",
+                "compactor_model": "openai/gpt-5.2",
                 "cortex_model": "openai/gpt-4.1-mini",
                 "task_overrides": {
                     "coding": "openai/o3-mini",
-                    "summarization": "openai/gpt-4o-mini"
+                    "summarization": "openai/gpt-5.2"
                 }
             }
         }))
@@ -490,7 +490,7 @@ mod tests {
     #[test]
     fn regression_2536_profile_defaults_without_routing_defaults_to_empty_task_overrides() {
         let parsed: super::ProfileDefaults = serde_json::from_value(json!({
-            "model": "openai/gpt-4o-mini",
+            "model": "openai/gpt-5.2",
             "fallback_models": [],
             "session": {
                 "enabled": true,
@@ -531,7 +531,7 @@ mod tests {
     #[test]
     fn regression_2536_routing_without_task_overrides_defaults_to_empty_map() {
         let parsed: super::ProfileDefaults = serde_json::from_value(json!({
-            "model": "openai/gpt-4o-mini",
+            "model": "openai/gpt-5.2",
             "fallback_models": [],
             "session": {
                 "enabled": true,
@@ -574,7 +574,7 @@ mod tests {
     #[test]
     fn spec_2561_c01_profile_defaults_compaction_policy_defaults_when_missing() {
         let parsed: super::ProfileDefaults = serde_json::from_value(json!({
-            "model": "openai/gpt-4o-mini",
+            "model": "openai/gpt-5.2",
             "fallback_models": [],
             "session": {
                 "enabled": true,
@@ -629,7 +629,7 @@ mod tests {
     #[test]
     fn spec_2561_c02_profile_defaults_parses_explicit_compaction_policy_values() {
         let parsed: super::ProfileDefaults = serde_json::from_value(json!({
-            "model": "openai/gpt-4o-mini",
+            "model": "openai/gpt-5.2",
             "fallback_models": [],
             "session": {
                 "enabled": true,

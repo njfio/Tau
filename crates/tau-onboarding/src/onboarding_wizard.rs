@@ -100,7 +100,7 @@ impl OnboardingProvider {
 
     fn default_model(self) -> &'static str {
         match self {
-            Self::OpenAi => "openai/gpt-4o-mini",
+            Self::OpenAi => "openai/gpt-5.2",
             Self::Anthropic => "anthropic/claude-sonnet-4-20250514",
             Self::Google => "google/gemini-2.5-pro",
         }
@@ -683,7 +683,7 @@ mod tests {
         let plan = OnboardingWizardPlan {
             selected_provider: OnboardingProvider::OpenAi,
             selected_auth_mode: ProviderAuthMethod::ApiKey,
-            selected_model: "openai/gpt-4o-mini".to_string(),
+            selected_model: "openai/gpt-5.2".to_string(),
             selected_workspace: temp.path().display().to_string(),
             profile_repair_requested: false,
             identity_generation_requested: true,
@@ -716,7 +716,7 @@ mod tests {
         let plan = OnboardingWizardPlan {
             selected_provider: OnboardingProvider::OpenAi,
             selected_auth_mode: ProviderAuthMethod::ApiKey,
-            selected_model: "openai/gpt-4o-mini".to_string(),
+            selected_model: "openai/gpt-5.2".to_string(),
             selected_workspace: temp.path().display().to_string(),
             profile_repair_requested: false,
             identity_generation_requested: true,
@@ -732,7 +732,7 @@ mod tests {
     #[test]
     fn regression_apply_wizard_plan_to_profile_defaults_updates_selected_provider_and_workspace() {
         let mut cli = parse_cli_with_stack();
-        cli.model = "openai/gpt-4o-mini".to_string();
+        cli.model = "openai/gpt-5.2".to_string();
         let defaults = crate::startup_config::build_profile_defaults(&cli);
         let plan = OnboardingWizardPlan {
             selected_provider: OnboardingProvider::Google,
@@ -775,7 +775,7 @@ mod tests {
         let plan = OnboardingWizardPlan {
             selected_provider: OnboardingProvider::OpenAi,
             selected_auth_mode: ProviderAuthMethod::ApiKey,
-            selected_model: "openai/gpt-4o-mini".to_string(),
+            selected_model: "openai/gpt-5.2".to_string(),
             selected_workspace: "/tmp/custom-root".to_string(),
             profile_repair_requested: false,
             identity_generation_requested: false,

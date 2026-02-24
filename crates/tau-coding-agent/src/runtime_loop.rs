@@ -1478,7 +1478,7 @@ mod tests {
 
     fn sample_profile_defaults() -> ProfileDefaults {
         ProfileDefaults {
-            model: "openai/gpt-4o-mini".to_string(),
+            model: "openai/gpt-5.2".to_string(),
             fallback_models: Vec::new(),
             session: ProfileSessionDefaults {
                 enabled: true,
@@ -1540,7 +1540,7 @@ mod tests {
             let skills_dir = PathBuf::from(".tau/skills");
             let skills_lock_path = PathBuf::from(".tau/skills.lock.json");
             let doctor_config = DoctorCommandConfig {
-                model: "openai/gpt-4o-mini".to_string(),
+                model: "openai/gpt-5.2".to_string(),
                 provider_keys: Vec::new(),
                 release_channel_path: PathBuf::from(".tau/release-channel.toml"),
                 release_lookup_cache_path: PathBuf::from(".tau/release-channel-cache.json"),
@@ -1654,10 +1654,7 @@ mod tests {
             cortex_model: None,
             task_overrides: BTreeMap::from([
                 ("coding".to_string(), "openai/o3-mini".to_string()),
-                (
-                    "summarization".to_string(),
-                    "openai/gpt-4o-mini".to_string(),
-                ),
+                ("summarization".to_string(), "openai/gpt-5.2".to_string()),
             ]),
         };
         profile
@@ -2038,7 +2035,7 @@ mod tests {
                 recorded_models: recorded_models.clone(),
             }),
             AgentConfig {
-                model: "openai/gpt-4o-mini".to_string(),
+                model: "openai/gpt-5.2".to_string(),
                 ..AgentConfig::default()
             },
         );
@@ -2072,10 +2069,7 @@ mod tests {
 
         assert_eq!(
             recorded_models.lock().await.clone(),
-            vec![
-                "openai/o3-mini".to_string(),
-                "openai/gpt-4o-mini".to_string(),
-            ]
+            vec!["openai/o3-mini".to_string(), "openai/gpt-5.2".to_string(),]
         );
     }
 
@@ -2088,7 +2082,7 @@ mod tests {
                 recorded_models: recorded_models.clone(),
             }),
             AgentConfig {
-                model: "openai/gpt-4o-mini".to_string(),
+                model: "openai/gpt-5.2".to_string(),
                 ..AgentConfig::default()
             },
         );
@@ -2110,7 +2104,7 @@ mod tests {
 
         assert_eq!(
             recorded_models.lock().await.clone(),
-            vec!["openai/gpt-4o-mini".to_string()]
+            vec!["openai/gpt-5.2".to_string()]
         );
     }
 }

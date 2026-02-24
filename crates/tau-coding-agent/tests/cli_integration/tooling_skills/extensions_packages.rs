@@ -386,7 +386,7 @@ fn extension_runtime_hooks_wrap_prompt_with_run_start_and_run_end() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--api-base",
@@ -474,7 +474,7 @@ fn regression_extension_runtime_hook_timeout_does_not_fail_prompt() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--api-base",
@@ -547,7 +547,7 @@ fn extension_message_transform_hook_rewrites_prompt_before_model_request() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--api-base",
@@ -619,7 +619,7 @@ fn regression_extension_message_transform_invalid_response_falls_back_to_origina
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--api-base",
@@ -1426,7 +1426,7 @@ fn integration_package_activate_on_startup_loads_activated_skill_for_prompt() {
     let mut cmd = binary_command();
     cmd.current_dir(temp.path()).args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--api-base",
         &format!("{}/v1", server.base_url()),
         "--openai-api-key",

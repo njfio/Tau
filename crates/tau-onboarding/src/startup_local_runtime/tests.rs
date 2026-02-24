@@ -138,7 +138,7 @@ fn regression_derive_preflight_token_limits_falls_back_to_defaults_without_conte
 
 #[tokio::test]
 async fn functional_build_local_runtime_agent_enforces_preflight_token_limits() {
-    let model_ref = ModelRef::parse("openai/gpt-4o-mini").expect("model ref");
+    let model_ref = ModelRef::parse("openai/gpt-5.2").expect("model ref");
     let client = Arc::new(QueueClient {
         responses: AsyncMutex::new(VecDeque::from([ChatResponse {
             message: Message::assistant_text("ok"),
@@ -192,7 +192,7 @@ async fn functional_build_local_runtime_agent_enforces_preflight_token_limits() 
 
 #[test]
 fn unit_build_local_runtime_agent_preserves_system_prompt_message() {
-    let model_ref = ModelRef::parse("openai/gpt-4o-mini").expect("model ref");
+    let model_ref = ModelRef::parse("openai/gpt-5.2").expect("model ref");
     let client = Arc::new(QueueClient {
         responses: AsyncMutex::new(VecDeque::new()),
     });
@@ -238,7 +238,7 @@ fn unit_build_local_runtime_agent_preserves_system_prompt_message() {
 
 #[test]
 fn unit_build_local_runtime_agent_applies_prompt_sanitizer_settings() {
-    let model_ref = ModelRef::parse("openai/gpt-4o-mini").expect("model ref");
+    let model_ref = ModelRef::parse("openai/gpt-5.2").expect("model ref");
     let client = Arc::new(QueueClient {
         responses: AsyncMutex::new(VecDeque::new()),
     });
@@ -291,7 +291,7 @@ fn unit_build_local_runtime_agent_applies_prompt_sanitizer_settings() {
 
 #[tokio::test]
 async fn functional_build_local_runtime_agent_applies_cost_budget_and_pricing_settings() {
-    let model_ref = ModelRef::parse("openai/gpt-4o-mini").expect("model ref");
+    let model_ref = ModelRef::parse("openai/gpt-5.2").expect("model ref");
     let client = Arc::new(QueueClient {
         responses: AsyncMutex::new(VecDeque::from([ChatResponse {
             message: Message::assistant_text("ok"),
@@ -349,7 +349,7 @@ async fn functional_build_local_runtime_agent_applies_cost_budget_and_pricing_se
 
 #[tokio::test]
 async fn functional_build_local_runtime_agent_registers_builtin_tools_with_model_identity() {
-    let model_ref = ModelRef::parse("openai/gpt-4o-mini").expect("model ref");
+    let model_ref = ModelRef::parse("openai/gpt-5.2").expect("model ref");
     let captured_request = Arc::new(Mutex::new(None));
     let client = Arc::new(RecordingRequestClient {
         captured_request: captured_request.clone(),
@@ -401,7 +401,7 @@ async fn functional_build_local_runtime_agent_registers_builtin_tools_with_model
         .expect("captured request lock")
         .clone()
         .expect("captured request");
-    assert_eq!(request.model, "gpt-4o-mini");
+    assert_eq!(request.model, "gpt-5.2");
     assert_eq!(request.max_tokens, Some(777));
     assert!(
         request.tools.iter().any(|tool| tool.name == "read"),
@@ -411,7 +411,7 @@ async fn functional_build_local_runtime_agent_registers_builtin_tools_with_model
 
 #[tokio::test]
 async fn spec_2561_c02_build_local_runtime_agent_applies_custom_compaction_policy() {
-    let model_ref = ModelRef::parse("openai/gpt-4o-mini").expect("model ref");
+    let model_ref = ModelRef::parse("openai/gpt-5.2").expect("model ref");
     let captured_request = Arc::new(Mutex::new(None));
     let client = Arc::new(RecordingRequestClient {
         captured_request: captured_request.clone(),
@@ -559,7 +559,7 @@ fn spec_2561_c02_build_local_runtime_agent_config_maps_all_compaction_policy_fie
 
 #[tokio::test]
 async fn integration_build_local_runtime_agent_respects_max_turns_limit() {
-    let model_ref = ModelRef::parse("openai/gpt-4o-mini").expect("model ref");
+    let model_ref = ModelRef::parse("openai/gpt-5.2").expect("model ref");
     let client = Arc::new(QueueClient {
         responses: AsyncMutex::new(VecDeque::new()),
     });
@@ -608,7 +608,7 @@ async fn integration_build_local_runtime_agent_respects_max_turns_limit() {
 
 #[test]
 fn regression_build_local_runtime_agent_skips_empty_system_prompt_message() {
-    let model_ref = ModelRef::parse("openai/gpt-4o-mini").expect("model ref");
+    let model_ref = ModelRef::parse("openai/gpt-5.2").expect("model ref");
     let client = Arc::new(QueueClient {
         responses: AsyncMutex::new(VecDeque::new()),
     });
@@ -1076,7 +1076,7 @@ fn regression_resolve_local_runtime_entry_mode_from_cli_propagates_prompt_resolv
 #[test]
 fn unit_resolve_local_runtime_startup_from_cli_returns_composed_outputs() {
     let cli = parse_cli_with_stack();
-    let model_ref = ModelRef::parse("openai/gpt-4o-mini").expect("model ref");
+    let model_ref = ModelRef::parse("openai/gpt-5.2").expect("model ref");
     let LocalRuntimeStartupResolution {
         interactive_defaults,
         entry_mode,
@@ -1107,7 +1107,7 @@ fn unit_resolve_local_runtime_startup_from_cli_returns_composed_outputs() {
 fn functional_resolve_local_runtime_startup_from_cli_uses_plan_first_prompt_entry_mode() {
     let mut cli = parse_cli_with_stack();
     cli.orchestrator_mode = CliOrchestratorMode::PlanFirst;
-    let model_ref = ModelRef::parse("openai/gpt-4o-mini").expect("model ref");
+    let model_ref = ModelRef::parse("openai/gpt-5.2").expect("model ref");
     let resolution = resolve_local_runtime_startup_from_cli(
         &cli,
         &model_ref,
@@ -1174,7 +1174,7 @@ fn integration_resolve_local_runtime_startup_from_cli_builds_command_defaults_fr
 #[test]
 fn regression_resolve_local_runtime_startup_from_cli_propagates_prompt_resolver_errors() {
     let cli = parse_cli_with_stack();
-    let model_ref = ModelRef::parse("openai/gpt-4o-mini").expect("model ref");
+    let model_ref = ModelRef::parse("openai/gpt-5.2").expect("model ref");
     let error = resolve_local_runtime_startup_from_cli(
         &cli,
         &model_ref,
@@ -1523,7 +1523,7 @@ async fn regression_execute_local_runtime_entry_mode_with_dispatch_propagates_ca
 #[test]
 fn unit_build_local_runtime_doctor_config_uses_runtime_skills_paths() {
     let cli = parse_cli_with_stack();
-    let model_ref = ModelRef::parse("openai/gpt-4o-mini").expect("model ref");
+    let model_ref = ModelRef::parse("openai/gpt-5.2").expect("model ref");
     let doctor_config = build_local_runtime_doctor_config(
         &cli,
         &model_ref,
@@ -1542,7 +1542,7 @@ fn unit_build_local_runtime_doctor_config_uses_runtime_skills_paths() {
 #[test]
 fn functional_build_local_runtime_doctor_config_keeps_primary_model_identity() {
     let cli = parse_cli_with_stack();
-    let model_ref = ModelRef::parse("openai/gpt-4o-mini").expect("model ref");
+    let model_ref = ModelRef::parse("openai/gpt-5.2").expect("model ref");
     let doctor_config = build_local_runtime_doctor_config(
         &cli,
         &model_ref,
@@ -1551,16 +1551,16 @@ fn functional_build_local_runtime_doctor_config_keeps_primary_model_identity() {
         Path::new("runtime-skills.lock.json"),
     );
 
-    assert_eq!(doctor_config.model, "openai/gpt-4o-mini");
+    assert_eq!(doctor_config.model, "openai/gpt-5.2");
 }
 
 #[test]
 fn integration_build_local_runtime_doctor_config_includes_fallback_providers() {
     let cli = parse_cli_with_stack();
-    let model_ref = ModelRef::parse("openai/gpt-4o-mini").expect("model ref");
+    let model_ref = ModelRef::parse("openai/gpt-5.2").expect("model ref");
     let fallback_model_refs = vec![
         ModelRef::parse("anthropic/claude-sonnet-4").expect("fallback model"),
-        ModelRef::parse("openai/gpt-4o-mini").expect("duplicate provider fallback model"),
+        ModelRef::parse("openai/gpt-5.2").expect("duplicate provider fallback model"),
     ];
     let doctor_config = build_local_runtime_doctor_config(
         &cli,
@@ -1583,7 +1583,7 @@ fn integration_build_local_runtime_doctor_config_includes_fallback_providers() {
 fn regression_build_local_runtime_doctor_config_respects_no_session_flag() {
     let mut cli = parse_cli_with_stack();
     cli.no_session = true;
-    let model_ref = ModelRef::parse("openai/gpt-4o-mini").expect("model ref");
+    let model_ref = ModelRef::parse("openai/gpt-5.2").expect("model ref");
     let doctor_config = build_local_runtime_doctor_config(
         &cli,
         &model_ref,
@@ -1598,7 +1598,7 @@ fn regression_build_local_runtime_doctor_config_respects_no_session_flag() {
 #[test]
 fn unit_build_local_runtime_command_defaults_keeps_runtime_skills_paths() {
     let cli = parse_cli_with_stack();
-    let model_ref = ModelRef::parse("openai/gpt-4o-mini").expect("model ref");
+    let model_ref = ModelRef::parse("openai/gpt-5.2").expect("model ref");
     let defaults = build_local_runtime_command_defaults(
         &cli,
         &model_ref,
@@ -1647,7 +1647,7 @@ fn integration_build_local_runtime_command_defaults_builds_auth_config() {
     cli.provider_subscription_strict = true;
     cli.openai_codex_backend = false;
     cli.openai_codex_cli = "tau-codex".to_string();
-    let model_ref = ModelRef::parse("openai/gpt-4o-mini").expect("model ref");
+    let model_ref = ModelRef::parse("openai/gpt-5.2").expect("model ref");
 
     let defaults = build_local_runtime_command_defaults(
         &cli,
@@ -1666,7 +1666,7 @@ fn integration_build_local_runtime_command_defaults_builds_auth_config() {
 fn regression_build_local_runtime_command_defaults_respects_no_session_for_doctor() {
     let mut cli = parse_cli_with_stack();
     cli.no_session = true;
-    let model_ref = ModelRef::parse("openai/gpt-4o-mini").expect("model ref");
+    let model_ref = ModelRef::parse("openai/gpt-5.2").expect("model ref");
 
     let defaults = build_local_runtime_command_defaults(
         &cli,

@@ -793,7 +793,7 @@ mod tests {
             MultiAgentRoutePhase::Review,
             "reviewer",
             &MultiAgentRoleProfile {
-                model: Some("openai/gpt-4o-mini".to_string()),
+                model: Some("openai/gpt-5.2".to_string()),
                 prompt_suffix: Some("Check edge cases.".to_string()),
                 tool_policy_preset: Some("balanced".to_string()),
                 trust_weight: None,
@@ -802,7 +802,7 @@ mod tests {
         );
         assert!(rendered.contains("ORCHESTRATOR_ROLE_CONTEXT"));
         assert!(rendered.contains("role=reviewer"));
-        assert!(rendered.contains("model_hint=openai/gpt-4o-mini"));
+        assert!(rendered.contains("model_hint=openai/gpt-5.2"));
         assert!(rendered.contains("Check edge cases."));
     }
 }

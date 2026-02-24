@@ -550,7 +550,7 @@ fn test_state_with_client_and_auth(
     Arc::new(GatewayOpenResponsesServerState::new(
         GatewayOpenResponsesServerConfig {
             client,
-            model: "openai/gpt-4o-mini".to_string(),
+            model: "openai/gpt-5.2".to_string(),
             model_input_cost_per_million: Some(10.0),
             model_cached_input_cost_per_million: None,
             model_output_cost_per_million: Some(20.0),
@@ -883,7 +883,7 @@ fn write_training_runtime_fixture(root: &Path, failed: usize) -> PathBuf {
   "schema_version": 1,
   "updated_unix_ms": 900,
   "run_state": "completed",
-  "model_ref": "openai/gpt-4o-mini",
+  "model_ref": "openai/gpt-5.2",
   "store_path": ".tau/training/store.sqlite",
   "total_rollouts": 4,
   "succeeded": {succeeded},
@@ -1173,7 +1173,7 @@ fn unit_translate_openresponses_request_rejects_invalid_input_shape() {
 #[test]
 fn unit_translate_chat_completions_request_maps_messages_and_session_seed() {
     let request = OpenAiChatCompletionsRequest {
-        model: Some("openai/gpt-4o-mini".to_string()),
+        model: Some("openai/gpt-5.2".to_string()),
         messages: json!([
             {"role": "system", "content": "You are concise."},
             {"role": "user", "content": "Hello from chat completions."}
@@ -1186,10 +1186,7 @@ fn unit_translate_chat_completions_request_maps_messages_and_session_seed() {
     let translated =
         translate_chat_completions_request(request).expect("translate chat completions request");
     assert!(translated.stream);
-    assert_eq!(
-        translated.request.model.as_deref(),
-        Some("openai/gpt-4o-mini")
-    );
+    assert_eq!(translated.request.model.as_deref(), Some("openai/gpt-5.2"));
     assert_eq!(
         translated.request.metadata["session_id"].as_str(),
         Some("chat-user-42")
@@ -6827,7 +6824,7 @@ async fn integration_spec_2673_c01_gateway_config_endpoint_supports_get_and_hot_
         .expect("parse config get payload");
     assert_eq!(
         config_get_payload["active"]["model"].as_str(),
-        Some("openai/gpt-4o-mini")
+        Some("openai/gpt-5.2")
     );
     assert_eq!(
         config_get_payload["hot_reload_capabilities"]["runtime_heartbeat_interval_ms"]["mode"],
@@ -8903,7 +8900,7 @@ async fn integration_spec_2953_c01_c02_c04_cortex_chat_uses_llm_output_with_cont
     let requests = capture_client.captured_requests();
     assert_eq!(requests.len(), 1, "expected one llm request");
     let request = &requests[0];
-    assert_eq!(request.model, "openai/gpt-4o-mini");
+    assert_eq!(request.model, "openai/gpt-5.2");
     let user_prompt = request
         .messages
         .iter()
@@ -9608,7 +9605,7 @@ async fn functional_openai_chat_completions_endpoint_returns_non_stream_response
         .post(format!("http://{addr}{OPENAI_CHAT_COMPLETIONS_ENDPOINT}"))
         .bearer_auth("secret")
         .json(&json!({
-            "model": "openai/gpt-4o-mini",
+            "model": "openai/gpt-5.2",
             "messages": [{"role":"user","content":"hello compat"}]
         }))
         .send()
@@ -10804,7 +10801,7 @@ async fn integration_dashboard_endpoints_return_state_health_widgets_timeline_an
     assert_eq!(health["training"]["status_present"], Value::Bool(true));
     assert_eq!(
         health["training"]["model_ref"],
-        Value::String("openai/gpt-4o-mini".to_string())
+        Value::String("openai/gpt-5.2".to_string())
     );
 
     let widgets = client
@@ -11443,7 +11440,7 @@ async fn regression_gateway_password_session_token_expires_and_fails_closed() {
     let state = Arc::new(GatewayOpenResponsesServerState::new(
         GatewayOpenResponsesServerConfig {
             client: Arc::new(MockGatewayLlmClient::default()),
-            model: "openai/gpt-4o-mini".to_string(),
+            model: "openai/gpt-5.2".to_string(),
             model_input_cost_per_million: Some(10.0),
             model_cached_input_cost_per_million: None,
             model_output_cost_per_million: Some(20.0),
@@ -11811,7 +11808,7 @@ async fn integration_external_coding_agent_subprocess_mode_streams_worker_stdout
     let state = Arc::new(GatewayOpenResponsesServerState::new(
         GatewayOpenResponsesServerConfig {
             client: Arc::new(MockGatewayLlmClient::default()),
-            model: "openai/gpt-4o-mini".to_string(),
+            model: "openai/gpt-5.2".to_string(),
             model_input_cost_per_million: Some(10.0),
             model_cached_input_cost_per_million: None,
             model_output_cost_per_million: Some(20.0),
@@ -11943,7 +11940,7 @@ async fn regression_external_coding_agent_reap_endpoint_times_out_stale_sessions
     let state = Arc::new(GatewayOpenResponsesServerState::new(
         GatewayOpenResponsesServerConfig {
             client: Arc::new(MockGatewayLlmClient::default()),
-            model: "openai/gpt-4o-mini".to_string(),
+            model: "openai/gpt-5.2".to_string(),
             model_input_cost_per_million: Some(10.0),
             model_cached_input_cost_per_million: None,
             model_output_cost_per_million: Some(20.0),
@@ -12544,7 +12541,7 @@ async fn regression_openresponses_honors_configured_max_turns_limit() {
     let state = Arc::new(GatewayOpenResponsesServerState::new(
         GatewayOpenResponsesServerConfig {
             client: scripted.clone(),
-            model: "openai/gpt-4o-mini".to_string(),
+            model: "openai/gpt-5.2".to_string(),
             model_input_cost_per_million: Some(10.0),
             model_cached_input_cost_per_million: None,
             model_output_cost_per_million: Some(20.0),
@@ -13258,7 +13255,7 @@ async fn tier_pr_o3_openai_compatibility_matrix() {
         .post(format!("http://{addr}{OPENAI_CHAT_COMPLETIONS_ENDPOINT}"))
         .bearer_auth("secret")
         .json(&json!({
-            "model":"openai/gpt-4o-mini",
+            "model":"openai/gpt-5.2",
             "messages":[{"role":"user","content":"hello compat"}]
         }))
         .send()
@@ -13284,7 +13281,7 @@ async fn tier_pr_o3_openai_compatibility_matrix() {
         .post(format!("http://{addr}{OPENAI_CHAT_COMPLETIONS_ENDPOINT}"))
         .bearer_auth("secret")
         .json(&json!({
-            "model":"openai/gpt-4o-mini",
+            "model":"openai/gpt-5.2",
             "messages":[{"role":"user","content":"hello compat stream"}],
             "stream": true
         }))
@@ -13304,7 +13301,7 @@ async fn tier_pr_o3_openai_compatibility_matrix() {
         .post(format!("http://{addr}{OPENAI_COMPLETIONS_ENDPOINT}"))
         .bearer_auth("secret")
         .json(&json!({
-            "model":"openai/gpt-4o-mini",
+            "model":"openai/gpt-5.2",
             "prompt":"hello completions"
         }))
         .send()
@@ -13334,7 +13331,7 @@ async fn tier_pr_o3_openai_compatibility_matrix() {
         .post(format!("http://{addr}{OPENAI_CHAT_COMPLETIONS_ENDPOINT}"))
         .bearer_auth("secret")
         .json(&json!({
-            "model":"openai/gpt-4o-mini",
+            "model":"openai/gpt-5.2",
             "messages":[{"role":"user","content":"please call a tool"}],
             "tools":[
                 {
@@ -13369,7 +13366,7 @@ async fn tier_pr_o3_openai_compatibility_matrix() {
         .post(format!("http://{addr}{OPENAI_CHAT_COMPLETIONS_ENDPOINT}"))
         .bearer_auth("secret")
         .json(&json!({
-            "model":"openai/gpt-4o-mini",
+            "model":"openai/gpt-5.2",
             "messages":[{"role":"user","content":"return two choices"}],
             "n": 2
         }))
@@ -13389,7 +13386,7 @@ async fn tier_pr_o3_openai_compatibility_matrix() {
         .post(format!("http://{addr}{OPENAI_CHAT_COMPLETIONS_ENDPOINT}"))
         .bearer_auth("secret")
         .json(&json!({
-            "model":"openai/gpt-4o-mini",
+            "model":"openai/gpt-5.2",
             "messages":[{"role":"user","content":"single explicit choice"}],
             "n": 1
         }))
@@ -13447,7 +13444,7 @@ async fn tier_pr_o3_openai_compatibility_matrix() {
         ))
         .bearer_auth("secret")
         .json(&json!({
-            "model":"openai/gpt-4o-mini",
+            "model":"openai/gpt-5.2",
             "messages":[
                 {"role":"user","content":"continue after tool"},
                 {"role":"tool","tool_call_id":"call_1","content":"rows=42"}
@@ -13501,7 +13498,7 @@ async fn tier_pr_o3_openai_compatibility_matrix() {
         ))
         .bearer_auth("secret")
         .json(&json!({
-            "model":"openai/gpt-4o-mini",
+            "model":"openai/gpt-5.2",
             "messages":[{"role":"user","content":"long request"}],
             "max_tokens": 10
         }))
@@ -14352,7 +14349,7 @@ async fn tier_weekly_ch15_chaos_matrix() {
     let timeout_state = Arc::new(GatewayOpenResponsesServerState::new(
         GatewayOpenResponsesServerConfig {
             client: Arc::new(SlowGatewayLlmClient { delay_ms: 200 }),
-            model: "openai/gpt-4o-mini".to_string(),
+            model: "openai/gpt-5.2".to_string(),
             model_input_cost_per_million: Some(10.0),
             model_cached_input_cost_per_million: None,
             model_output_cost_per_million: Some(20.0),

@@ -306,7 +306,7 @@ async fn unit_cooperative_cancellation_token_signals_waiters() {
 #[test]
 fn unit_estimate_chat_request_tokens_accounts_for_tools_and_max_tokens() {
     let request = ChatRequest {
-        model: "openai/gpt-4o-mini".to_string(),
+        model: "openai/gpt-5.2".to_string(),
         messages: vec![
             Message::system("sys"),
             Message::user("hello world"),
@@ -344,7 +344,7 @@ fn unit_estimate_chat_request_tokens_accounts_for_tools_and_max_tokens() {
 #[test]
 fn functional_estimate_chat_request_tokens_accounts_for_media_blocks() {
     let baseline = ChatRequest {
-        model: "openai/gpt-4o-mini".to_string(),
+        model: "openai/gpt-5.2".to_string(),
         messages: vec![Message::user("hello")],
         tools: vec![],
         tool_choice: None,
@@ -354,7 +354,7 @@ fn functional_estimate_chat_request_tokens_accounts_for_media_blocks() {
         prompt_cache: Default::default(),
     };
     let with_media = ChatRequest {
-        model: "openai/gpt-4o-mini".to_string(),
+        model: "openai/gpt-5.2".to_string(),
         messages: vec![Message {
             role: MessageRole::User,
             content: vec![

@@ -60,7 +60,7 @@ fn load_openai_http_fixture(name: &str) -> OpenAiHttpFixture {
 
 fn test_request(prompt: &str) -> ChatRequest {
     ChatRequest {
-        model: "gpt-4o-mini".to_string(),
+        model: "gpt-5.2".to_string(),
         messages: vec![Message::user(prompt)],
         tools: Vec::new(),
         tool_choice: None,

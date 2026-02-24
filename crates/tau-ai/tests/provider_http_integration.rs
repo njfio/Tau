@@ -54,7 +54,7 @@ async fn openai_client_sends_expected_http_request() {
             .header("x-tau-retry-attempt", "0")
             .json_body_includes(
                 json!({
-                    "model": "gpt-4o-mini",
+                    "model": "gpt-5.2",
                     "messages": [{"role": "system"}, {"role": "user"}],
                     "tools": [{"type": "function"}],
                     "tool_choice": "auto",
@@ -92,7 +92,7 @@ async fn openai_client_sends_expected_http_request() {
     .expect("openai client should be created");
 
     let request = ChatRequest {
-        model: "gpt-4o-mini".to_string(),
+        model: "gpt-5.2".to_string(),
         messages: vec![Message::system("system"), Message::user("hello")],
         tools: vec![ToolDefinition {
             name: "read".to_string(),
@@ -164,7 +164,7 @@ async fn spec_c06_openrouter_route_applies_dedicated_headers_when_configured() {
 
     let response = client
         .complete(ChatRequest {
-            model: "openai/gpt-4o-mini".to_string(),
+            model: "openai/gpt-5.2".to_string(),
             messages: vec![Message::user("hello")],
             tools: vec![],
             tool_choice: None,
@@ -279,7 +279,7 @@ async fn integration_openai_client_falls_back_to_responses_when_chat_reports_end
             .header("x-tau-retry-attempt", "0")
             .json_body_includes(
                 json!({
-                    "model": "gpt-4o-mini"
+                    "model": "gpt-5.2"
                 })
                 .to_string(),
             );
@@ -313,7 +313,7 @@ async fn integration_openai_client_falls_back_to_responses_when_chat_reports_end
 
     let response = client
         .complete(ChatRequest {
-            model: "gpt-4o-mini".to_string(),
+            model: "gpt-5.2".to_string(),
             messages: vec![Message::user("hello")],
             tools: vec![],
             tool_choice: None,
@@ -416,7 +416,7 @@ async fn functional_openai_client_outbound_secret_fixture_matrix_preserves_usage
                 .header("x-tau-retry-attempt", "0")
                 .json_body_includes(
                     json!({
-                        "model": "gpt-4o-mini",
+                        "model": "gpt-5.2",
                         "messages": [{"role": "user", "content": payload_for_match}],
                     })
                     .to_string(),
@@ -451,7 +451,7 @@ async fn functional_openai_client_outbound_secret_fixture_matrix_preserves_usage
 
         let response = client
             .complete(ChatRequest {
-                model: "gpt-4o-mini".to_string(),
+                model: "gpt-5.2".to_string(),
                 messages: vec![Message::user(payload)],
                 tools: vec![],
                 tool_choice: None,
@@ -483,7 +483,7 @@ async fn integration_openai_client_supports_azure_api_key_header_and_api_version
             .header("x-tau-retry-attempt", "0")
             .json_body_includes(
                 json!({
-                    "model": "gpt-4o-mini",
+                    "model": "gpt-5.2",
                     "messages": [{"role": "user"}]
                 })
                 .to_string(),
@@ -516,7 +516,7 @@ async fn integration_openai_client_supports_azure_api_key_header_and_api_version
 
     let response = client
         .complete(ChatRequest {
-            model: "gpt-4o-mini".to_string(),
+            model: "gpt-5.2".to_string(),
             messages: vec![Message::user("hello")],
             tools: vec![],
             tool_choice: None,
@@ -695,7 +695,7 @@ async fn openai_client_surfaces_http_status_error() {
     .expect("openai client should be created");
 
     let request = ChatRequest {
-        model: "gpt-4o-mini".to_string(),
+        model: "gpt-5.2".to_string(),
         messages: vec![Message::user("hello")],
         tools: vec![],
         tool_choice: None,
@@ -756,7 +756,7 @@ async fn openai_client_retries_on_rate_limit_then_succeeds() {
 
     let response = client
         .complete(ChatRequest {
-            model: "gpt-4o-mini".to_string(),
+            model: "gpt-5.2".to_string(),
             messages: vec![Message::user("hello")],
             tools: vec![],
             tool_choice: None,
@@ -813,7 +813,7 @@ async fn integration_openai_client_respects_retry_after_header_floor() {
     let started = Instant::now();
     let response = client
         .complete(ChatRequest {
-            model: "gpt-4o-mini".to_string(),
+            model: "gpt-5.2".to_string(),
             messages: vec![Message::user("hello")],
             tools: vec![],
             tool_choice: None,
@@ -872,7 +872,7 @@ async fn openai_client_retry_budget_can_block_retries() {
 
     let error = client
         .complete(ChatRequest {
-            model: "gpt-4o-mini".to_string(),
+            model: "gpt-5.2".to_string(),
             messages: vec![Message::user("hello")],
             tools: vec![],
             tool_choice: None,
@@ -927,7 +927,7 @@ async fn regression_openai_client_returns_timeout_error_when_server_is_slow() {
 
     let error = client
         .complete(ChatRequest {
-            model: "gpt-4o-mini".to_string(),
+            model: "gpt-5.2".to_string(),
             messages: vec![Message::user("hello")],
             tools: vec![],
             tool_choice: None,
@@ -954,7 +954,7 @@ async fn integration_openai_client_streams_incremental_text_deltas() {
             .header("x-tau-retry-attempt", "0")
             .json_body_includes(
                 json!({
-                    "model": "gpt-4o-mini",
+                    "model": "gpt-5.2",
                     "stream": true
                 })
                 .to_string(),
@@ -990,7 +990,7 @@ async fn integration_openai_client_streams_incremental_text_deltas() {
     let response = client
         .complete_with_stream(
             ChatRequest {
-                model: "gpt-4o-mini".to_string(),
+                model: "gpt-5.2".to_string(),
                 messages: vec![Message::user("hello")],
                 tools: vec![],
                 tool_choice: None,

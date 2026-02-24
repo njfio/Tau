@@ -532,8 +532,8 @@ fn functional_render_audit_summary_includes_expected_sections() {
 fn integration_prompt_telemetry_logger_persists_completed_record() {
     let temp = tempdir().expect("tempdir");
     let log_path = temp.path().join("prompt-telemetry.jsonl");
-    let logger = PromptTelemetryLogger::open(log_path.clone(), "openai", "gpt-4o-mini")
-        .expect("logger open");
+    let logger =
+        PromptTelemetryLogger::open(log_path.clone(), "openai", "gpt-5.2").expect("logger open");
 
     logger
         .log_event(&AgentEvent::AgentStart)
@@ -562,7 +562,7 @@ fn integration_prompt_telemetry_logger_persists_completed_record() {
     let record: serde_json::Value = serde_json::from_str(lines[0]).expect("parse record");
     assert_eq!(record["record_type"], "prompt_telemetry_v1");
     assert_eq!(record["provider"], "openai");
-    assert_eq!(record["model"], "gpt-4o-mini");
+    assert_eq!(record["model"], "gpt-5.2");
     assert_eq!(record["status"], "completed");
     assert_eq!(record["success"], true);
     assert_eq!(record["finish_reason"], "stop");
@@ -574,8 +574,8 @@ fn integration_prompt_telemetry_logger_persists_completed_record() {
 fn regression_prompt_telemetry_logger_marks_interrupted_runs() {
     let temp = tempdir().expect("tempdir");
     let log_path = temp.path().join("prompt-telemetry.jsonl");
-    let logger = PromptTelemetryLogger::open(log_path.clone(), "openai", "gpt-4o-mini")
-        .expect("logger open");
+    let logger =
+        PromptTelemetryLogger::open(log_path.clone(), "openai", "gpt-5.2").expect("logger open");
 
     logger
         .log_event(&AgentEvent::AgentStart)

@@ -195,7 +195,7 @@ fn interactive_help_and_unknown_command_suggestions_work() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--no-session",
@@ -227,7 +227,7 @@ fn integration_prompt_plan_first_mode_emits_trace_and_executes_two_phases() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--api-base",
@@ -270,7 +270,7 @@ fn integration_prompt_plan_first_delegate_steps_emits_delegation_trace() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--api-base",
@@ -320,7 +320,7 @@ fn regression_prompt_plan_first_delegate_steps_fail_on_step_count_budget_overrun
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--api-base",
@@ -364,7 +364,7 @@ fn regression_prompt_plan_first_delegate_steps_fails_on_budget_overrun() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--api-base",
@@ -410,7 +410,7 @@ fn regression_prompt_plan_first_delegate_steps_fail_on_step_budget_overrun() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--api-base",
@@ -456,7 +456,7 @@ fn regression_prompt_plan_first_delegate_steps_fail_on_total_budget_overrun() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--api-base",
@@ -504,7 +504,7 @@ fn regression_prompt_plan_first_mode_fails_closed_on_overlong_plan() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--api-base",
@@ -542,7 +542,7 @@ fn regression_prompt_plan_first_mode_fails_when_executor_response_exceeds_budget
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--api-base",
@@ -591,7 +591,7 @@ fn integration_interactive_plan_first_mode_runs_planner_and_executor_per_turn() 
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--api-base",
@@ -633,7 +633,7 @@ fn regression_interactive_plan_first_mode_overlong_plan_fails_before_executor() 
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--api-base",
@@ -699,7 +699,7 @@ fn integration_interactive_session_search_command_finds_results_across_branches(
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--session",
@@ -739,7 +739,7 @@ fn regression_interactive_session_search_command_empty_query_prints_usage_and_co
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--session",
@@ -800,7 +800,7 @@ fn integration_interactive_session_stats_command_reports_branched_summary() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--session",
@@ -849,7 +849,7 @@ fn regression_interactive_session_stats_command_with_args_prints_usage_and_conti
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--session",
@@ -910,7 +910,7 @@ fn integration_interactive_session_diff_command_reports_shared_and_divergent_lin
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--session",
@@ -965,7 +965,7 @@ fn regression_interactive_session_diff_command_with_args_prints_usage_and_contin
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--session",
@@ -1008,7 +1008,7 @@ fn regression_interactive_session_diff_command_unknown_ids_are_reported() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--session",
@@ -1065,7 +1065,7 @@ fn integration_interactive_doctor_command_reports_runtime_diagnostics() {
     cmd.current_dir(temp.path())
         .args([
             "--model",
-            "openai/gpt-4o-mini",
+            "openai/gpt-5.2",
             "--openai-api-key",
             "test-openai-key",
             "--session",
@@ -1145,7 +1145,7 @@ fn regression_interactive_doctor_command_with_args_prints_usage_and_continues() 
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--no-session",
@@ -1197,7 +1197,7 @@ fn integration_interactive_session_graph_export_command_writes_mermaid_file() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--session",
@@ -1246,7 +1246,7 @@ fn regression_interactive_session_graph_export_command_invalid_destination_repor
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--session",
@@ -1315,7 +1315,7 @@ fn integration_interactive_branch_alias_command_set_use_and_list_flow() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--session",
@@ -1373,7 +1373,7 @@ fn regression_interactive_branch_alias_command_stale_alias_reports_error_and_lis
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--session",
@@ -1420,7 +1420,7 @@ fn regression_interactive_branch_alias_command_corrupt_file_reports_parse_error(
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--session",
@@ -1484,7 +1484,7 @@ fn integration_interactive_session_bookmark_command_set_use_list_delete_flow() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--session",
@@ -1545,7 +1545,7 @@ fn regression_interactive_session_bookmark_command_stale_entry_reports_error() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--session",
@@ -1594,7 +1594,7 @@ fn regression_interactive_session_bookmark_command_corrupt_file_reports_parse_er
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--session",
@@ -1652,7 +1652,7 @@ fn integration_interactive_macro_command_lifecycle_flow() {
     cmd.current_dir(temp.path())
         .args([
             "--model",
-            "openai/gpt-4o-mini",
+            "openai/gpt-5.2",
             "--openai-api-key",
             "test-openai-key",
             "--session",
@@ -1716,7 +1716,7 @@ fn regression_interactive_macro_command_invalid_name_and_missing_file_report_err
     cmd.current_dir(temp.path())
         .args([
             "--model",
-            "openai/gpt-4o-mini",
+            "openai/gpt-5.2",
             "--openai-api-key",
             "test-openai-key",
             "--session",
@@ -1765,7 +1765,7 @@ fn regression_interactive_macro_command_reports_show_delete_usage_and_missing_ma
     cmd.current_dir(temp.path())
         .args([
             "--model",
-            "openai/gpt-4o-mini",
+            "openai/gpt-5.2",
             "--openai-api-key",
             "test-openai-key",
             "--session",
@@ -1812,7 +1812,7 @@ fn regression_interactive_macro_command_corrupt_store_reports_parse_error() {
     cmd.current_dir(temp.path())
         .args([
             "--model",
-            "openai/gpt-4o-mini",
+            "openai/gpt-5.2",
             "--openai-api-key",
             "test-openai-key",
             "--session",
@@ -1838,7 +1838,7 @@ fn integration_interactive_profile_command_full_lifecycle_roundtrip() {
     cmd.current_dir(temp.path())
         .args([
             "--model",
-            "openai/gpt-4o-mini",
+            "openai/gpt-5.2",
             "--openai-api-key",
             "test-openai-key",
             "--no-session",
@@ -1857,7 +1857,7 @@ fn integration_interactive_profile_command_full_lifecycle_roundtrip() {
         .stdout(predicate::str::contains("profile: name=baseline"))
         .stdout(predicate::str::contains("profile show: path="))
         .stdout(predicate::str::contains("name=baseline status=found"))
-        .stdout(predicate::str::contains("value: model=openai/gpt-4o-mini"))
+        .stdout(predicate::str::contains("value: model=openai/gpt-5.2"))
         .stdout(predicate::str::contains("profile load: path="))
         .stdout(predicate::str::contains("status=in_sync"))
         .stdout(predicate::str::contains("diffs=0"))
@@ -1880,7 +1880,7 @@ fn regression_interactive_profile_command_invalid_name_reports_error_and_continu
     cmd.current_dir(temp.path())
         .args([
             "--model",
-            "openai/gpt-4o-mini",
+            "openai/gpt-5.2",
             "--openai-api-key",
             "test-openai-key",
             "--no-session",
@@ -1906,7 +1906,7 @@ fn regression_interactive_profile_command_reports_show_list_delete_usage_errors(
     cmd.current_dir(temp.path())
         .args([
             "--model",
-            "openai/gpt-4o-mini",
+            "openai/gpt-5.2",
             "--openai-api-key",
             "test-openai-key",
             "--no-session",
@@ -1935,7 +1935,7 @@ fn regression_interactive_profile_command_invalid_schema_reports_error_and_conti
         "schema_version": 99,
         "profiles": {
             "baseline": {
-                "model": "openai/gpt-4o-mini",
+                "model": "openai/gpt-5.2",
                 "fallback_models": [],
                 "session": {
                     "enabled": false,
@@ -1964,7 +1964,7 @@ fn regression_interactive_profile_command_invalid_schema_reports_error_and_conti
     cmd.current_dir(temp.path())
         .args([
             "--model",
-            "openai/gpt-4o-mini",
+            "openai/gpt-5.2",
             "--openai-api-key",
             "test-openai-key",
             "--no-session",
@@ -2036,7 +2036,7 @@ fn interactive_session_import_merge_remaps_collisions_by_default() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--session",
@@ -2125,7 +2125,7 @@ fn integration_interactive_session_import_replace_mode_overwrites_target() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--session",
@@ -2222,7 +2222,7 @@ fn regression_session_repair_reports_removed_ids() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--session",
@@ -2261,7 +2261,7 @@ fn stream_output_flags_are_accepted_in_prompt_mode() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--api-base",
         &format!("{}/v1", server.base_url()),
         "--openai-api-key",
@@ -2301,7 +2301,7 @@ fn bash_profile_flags_are_accepted_in_prompt_mode() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--api-base",
         &format!("{}/v1", server.base_url()),
         "--openai-api-key",
@@ -2341,7 +2341,7 @@ fn session_lock_flags_are_accepted_in_prompt_mode() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--api-base",
         &format!("{}/v1", server.base_url()),
         "--openai-api-key",
@@ -2381,7 +2381,7 @@ fn print_tool_policy_flag_outputs_effective_policy_json() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--api-base",
         &format!("{}/v1", server.base_url()),
         "--openai-api-key",
@@ -2422,7 +2422,7 @@ fn tool_policy_preset_and_bash_dry_run_flags_are_accepted_in_prompt_mode() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--api-base",
         &format!("{}/v1", server.base_url()),
         "--openai-api-key",
@@ -2468,7 +2468,7 @@ fn turn_timeout_flag_times_out_prompt_and_keeps_process_healthy() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--api-base",
         &format!("{}/v1", server.base_url()),
         "--openai-api-key",
@@ -2549,7 +2549,7 @@ fn install_signed_skill_from_registry_with_trust_root_works_end_to_end() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--api-base",
         &format!("{}/v1", server.base_url()),
         "--openai-api-key",

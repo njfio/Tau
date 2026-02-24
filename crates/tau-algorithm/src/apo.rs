@@ -45,8 +45,8 @@ impl Default for ApoConfig {
             rounds: 3,
             beam_width: 2,
             candidates_per_parent: 1,
-            gradient_model: "gpt-4o-mini".to_string(),
-            edit_model: "gpt-4o-mini".to_string(),
+            gradient_model: "gpt-5.2".to_string(),
+            edit_model: "gpt-5.2".to_string(),
             temperature: Some(0.0),
             max_tokens: Some(512),
         }
@@ -603,16 +603,10 @@ mod tests {
     #[tokio::test]
     async fn rejects_empty_llm_output() {
         let client = ScriptedClient::new(vec!["   "]);
-        let error = request_text_completion(
-            &client,
-            "gpt-4o-mini",
-            "system",
-            "user",
-            Some(0.0),
-            Some(16),
-        )
-        .await
-        .expect_err("empty output should fail");
+        let error =
+            request_text_completion(&client, "gpt-5.2", "system", "user", Some(0.0), Some(16))
+                .await
+                .expect_err("empty output should fail");
 
         assert!(error.to_string().contains("empty"));
     }

@@ -559,7 +559,7 @@ mod tests {
 
     fn sample_profile_defaults() -> ProfileDefaults {
         ProfileDefaults {
-            model: "openai/gpt-4o-mini".to_string(),
+            model: "openai/gpt-5.2".to_string(),
             fallback_models: vec![],
             session: ProfileSessionDefaults {
                 enabled: true,
@@ -687,7 +687,7 @@ mod tests {
                 "schema_version": PROFILE_SCHEMA_VERSION,
                 "profiles": {
                     "legacy": {
-                        "model": "openai/gpt-4o-mini",
+                        "model": "openai/gpt-5.2",
                         "fallback_models": [],
                         "session": {
                             "enabled": true,
@@ -731,8 +731,10 @@ mod tests {
 
         let diffs = render_profile_diffs(&current, &loaded);
         assert_eq!(diffs.len(), 3);
-        assert!(diffs.iter().any(|line| line
-            .contains("field=model current=openai/gpt-4o-mini loaded=google/gemini-2.5-pro")));
+        assert!(diffs
+            .iter()
+            .any(|line| line
+                .contains("field=model current=openai/gpt-5.2 loaded=google/gemini-2.5-pro")));
         assert!(diffs
             .iter()
             .any(|line| line.contains("field=session.import_mode current=merge loaded=replace")));
@@ -809,7 +811,7 @@ mod tests {
         let show_output = execute_profile_command("show baseline", &profile_path, &current);
         assert!(show_output.contains("profile show: path="));
         assert!(show_output.contains("name=baseline status=found"));
-        assert!(show_output.contains("value: model=openai/gpt-4o-mini"));
+        assert!(show_output.contains("value: model=openai/gpt-5.2"));
 
         let mut changed = current.clone();
         changed.model = "anthropic/claude-sonnet-4-20250514".to_string();

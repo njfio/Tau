@@ -307,7 +307,7 @@ mod tests {
 
     fn test_request() -> ChatRequest {
         ChatRequest {
-            model: "openai/gpt-4o-mini".to_string(),
+            model: "openai/gpt-5.2".to_string(),
             messages: vec![
                 Message::system("system message"),
                 Message::user("hello"),

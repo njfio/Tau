@@ -1878,7 +1878,7 @@ mod tests {
         let handled = run_prompt_optimization_mode_if_requested(
             &cli,
             Arc::new(MockClient),
-            &ModelRef::parse("openai/gpt-4o-mini").expect("parse model"),
+            &ModelRef::parse("openai/gpt-5.2").expect("parse model"),
             &ModelCatalog::built_in(),
             "You are helpful.",
             &ToolPolicy::new(vec![temp.path().to_path_buf()]),
@@ -1956,7 +1956,7 @@ mod tests {
         let handled = run_prompt_optimization_mode_if_requested(
             &cli,
             Arc::new(MockClient),
-            &ModelRef::parse("openai/gpt-4o-mini").expect("parse model"),
+            &ModelRef::parse("openai/gpt-5.2").expect("parse model"),
             &ModelCatalog::built_in(),
             "You are helpful.",
             &ToolPolicy::new(vec![temp.path().to_path_buf()]),
@@ -2020,7 +2020,7 @@ mod tests {
         let handled = run_prompt_optimization_mode_if_requested(
             &cli,
             Arc::new(MockClient),
-            &ModelRef::parse("openai/gpt-4o-mini").expect("parse model"),
+            &ModelRef::parse("openai/gpt-5.2").expect("parse model"),
             &ModelCatalog::built_in(),
             "You are helpful.",
             &ToolPolicy::new(vec![temp.path().to_path_buf()]),
@@ -2073,7 +2073,7 @@ mod tests {
         let handled = run_prompt_optimization_mode_if_requested(
             &cli,
             Arc::new(MockClient),
-            &ModelRef::parse("openai/gpt-4o-mini").expect("parse model"),
+            &ModelRef::parse("openai/gpt-5.2").expect("parse model"),
             &ModelCatalog::built_in(),
             "You are helpful.",
             &ToolPolicy::new(vec![temp.path().to_path_buf()]),
@@ -2133,7 +2133,7 @@ mod tests {
         let error = run_prompt_optimization_mode_if_requested(
             &cli,
             Arc::new(SlowClient),
-            &ModelRef::parse("openai/gpt-4o-mini").expect("parse model"),
+            &ModelRef::parse("openai/gpt-5.2").expect("parse model"),
             &ModelCatalog::built_in(),
             "You are helpful.",
             &ToolPolicy::new(vec![temp.path().to_path_buf()]),

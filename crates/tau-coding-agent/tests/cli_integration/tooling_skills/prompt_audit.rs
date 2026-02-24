@@ -26,7 +26,7 @@ fn prompt_file_flag_runs_one_shot_prompt() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--api-base",
         &format!("{}/v1", server.base_url()),
         "--openai-api-key",
@@ -71,7 +71,7 @@ fn prompt_template_file_flag_renders_and_runs_one_shot_prompt() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--api-base",
         &format!("{}/v1", server.base_url()),
         "--openai-api-key",
@@ -112,7 +112,7 @@ fn prompt_file_dash_reads_prompt_from_stdin() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--api-base",
         &format!("{}/v1", server.base_url()),
         "--openai-api-key",
@@ -135,7 +135,7 @@ fn regression_prompt_file_dash_rejects_empty_stdin() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--prompt-file",
@@ -159,7 +159,7 @@ fn regression_empty_prompt_file_fails_fast() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--prompt-file",
@@ -182,7 +182,7 @@ fn regression_prompt_template_file_missing_variable_fails_fast() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--prompt-template-file",
@@ -206,7 +206,7 @@ fn regression_prompt_template_var_requires_key_value_shape() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--prompt-template-file",
@@ -248,7 +248,7 @@ fn system_prompt_file_flag_overrides_inline_system_prompt() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--api-base",
         &format!("{}/v1", server.base_url()),
         "--openai-api-key",
@@ -276,7 +276,7 @@ fn regression_empty_system_prompt_file_fails_fast() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--prompt",
@@ -313,7 +313,7 @@ fn tool_audit_log_flag_creates_audit_log_file() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--api-base",
         &format!("{}/v1", server.base_url()),
         "--openai-api-key",
@@ -354,7 +354,7 @@ fn telemetry_log_flag_creates_prompt_telemetry_record() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--api-base",
         &format!("{}/v1", server.base_url()),
         "--openai-api-key",
@@ -377,7 +377,7 @@ fn telemetry_log_flag_creates_prompt_telemetry_record() {
     let record: serde_json::Value = serde_json::from_str(lines[0]).expect("parse telemetry record");
     assert_eq!(record["record_type"], "prompt_telemetry_v1");
     assert_eq!(record["provider"], "openai");
-    assert_eq!(record["model"], "gpt-4o-mini");
+    assert_eq!(record["model"], "gpt-5.2");
     assert_eq!(record["status"], "completed");
     assert_eq!(record["success"], true);
     assert_eq!(record["token_usage"]["total_tokens"], 6);
@@ -419,7 +419,7 @@ fn interactive_audit_summary_command_reports_aggregates() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--no-session",
@@ -446,7 +446,7 @@ fn regression_audit_summary_command_handles_missing_file_without_exiting() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--no-session",
