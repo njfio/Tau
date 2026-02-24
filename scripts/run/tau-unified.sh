@@ -1,0 +1,394 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+
+RUNTIME_DIR_DEFAULT="${REPO_ROOT}/.tau/unified"
+RUNTIME_DIR="${TAU_UNIFIED_RUNTIME_DIR:-${RUNTIME_DIR_DEFAULT}}"
+PID_FILE="${RUNTIME_DIR}/tau-unified.pid"
+LOG_FILE="${RUNTIME_DIR}/tau-unified.log"
+CMD_FILE="${RUNTIME_DIR}/tau-unified.last-cmd"
+
+MODEL_DEFAULT="${TAU_UNIFIED_MODEL:-openai/gpt-4o-mini}"
+BIND_DEFAULT="${TAU_UNIFIED_BIND:-127.0.0.1:8791}"
+AUTH_MODE_DEFAULT="${TAU_UNIFIED_AUTH_MODE:-localhost-dev}"
+AUTH_TOKEN_DEFAULT="${TAU_UNIFIED_AUTH_TOKEN:-local-dev-token}"
+AUTH_PASSWORD_DEFAULT="${TAU_UNIFIED_AUTH_PASSWORD:-local-dev-password}"
+PROFILE_DEFAULT="${TAU_UNIFIED_PROFILE:-local-dev}"
+GATEWAY_STATE_DIR_DEFAULT="${TAU_UNIFIED_GATEWAY_STATE_DIR:-.tau/gateway}"
+DASHBOARD_STATE_DIR_DEFAULT="${TAU_UNIFIED_DASHBOARD_STATE_DIR:-.tau/dashboard}"
+
+RUNNER="${TAU_UNIFIED_RUNNER:-}"
+RUNNER_LOG="${TAU_UNIFIED_RUNNER_LOG:-}"
+RUNNER_PID="${TAU_UNIFIED_RUNNER_PID:-}"
+
+usage() {
+  cat <<'EOF'
+Usage: scripts/run/tau-unified.sh <command> [options]
+
+Commands:
+  up       Start unified runtime (gateway/dashboard) in background.
+  status   Show runtime process status and key artifact paths.
+  down     Stop unified runtime and clear pid file.
+  tui      Launch live TUI shell view using dashboard artifacts.
+
+Options for `up`:
+  --model <model>                 Model id (default: openai/gpt-4o-mini)
+  --bind <host:port>              Gateway bind (default: 127.0.0.1:8791)
+  --auth-mode <mode>              Auth mode: localhost-dev|token|password-session
+  --auth-token <token>            Token for token mode
+  --auth-password <password>      Password for password-session mode
+  --profile <name>                Profile marker for output (default: local-dev)
+  --gateway-state-dir <path>      Gateway state dir (default: .tau/gateway)
+  --dashboard-state-dir <path>    Dashboard state dir (default: .tau/dashboard)
+
+Options for `tui`:
+  --state-dir <path>              Dashboard state dir (default: .tau/dashboard)
+  --profile <name>                TUI profile (default: local-dev)
+  --iterations <n>                Watch iterations (default: 3)
+  --interval-ms <n>               Watch interval ms (default: 1000)
+  --no-color                      Disable TUI color output
+
+General:
+  --help                          Show usage
+EOF
+}
+
+log() {
+  local message="$1"
+  echo "${message}"
+}
+
+die() {
+  local message="$1"
+  echo "${message}" >&2
+  exit 2
+}
+
+ensure_runtime_dir() {
+  mkdir -p "${RUNTIME_DIR}"
+}
+
+pid_is_alive() {
+  local pid="$1"
+  if [[ -z "${pid}" ]]; then
+    return 1
+  fi
+  kill -0 "${pid}" >/dev/null 2>&1
+}
+
+get_pid_from_file() {
+  if [[ ! -f "${PID_FILE}" ]]; then
+    return 1
+  fi
+  cat "${PID_FILE}"
+}
+
+cleanup_stale_pid() {
+  if [[ ! -f "${PID_FILE}" ]]; then
+    return 0
+  fi
+  local pid
+  pid="$(cat "${PID_FILE}")"
+  if [[ -z "${pid}" ]] || ! pid_is_alive "${pid}"; then
+    rm -f "${PID_FILE}"
+  fi
+}
+
+run_runner_mode() {
+  local mode="$1"
+  shift
+  if [[ -z "${RUNNER}" ]]; then
+    return 1
+  fi
+  if [[ -z "${RUNNER_LOG}" || -z "${RUNNER_PID}" ]]; then
+    die "runner mode requires TAU_UNIFIED_RUNNER_LOG and TAU_UNIFIED_RUNNER_PID"
+  fi
+  "${RUNNER}" "${mode}" "${RUNNER_LOG}" "${RUNNER_PID}" "$@"
+}
+
+build_up_command() {
+  local model="$1"
+  local bind="$2"
+  local auth_mode="$3"
+  local auth_token="$4"
+  local auth_password="$5"
+  local gateway_state_dir="$6"
+  local dashboard_state_dir="$7"
+
+  local cmd=(
+    cargo run -p tau-coding-agent --
+    --model "${model}"
+    --gateway-state-dir "${gateway_state_dir}"
+    --dashboard-state-dir "${dashboard_state_dir}"
+    --gateway-openresponses-server
+    --gateway-openresponses-bind "${bind}"
+    --gateway-openresponses-auth-mode "${auth_mode}"
+    --gateway-openresponses-max-input-chars 32000
+  )
+
+  if [[ "${auth_mode}" == "token" ]]; then
+    cmd+=(--gateway-openresponses-auth-token "${auth_token}")
+  elif [[ "${auth_mode}" == "password-session" ]]; then
+    cmd+=(--gateway-openresponses-auth-password "${auth_password}")
+  fi
+
+  printf '%q ' "${cmd[@]}"
+  echo
+}
+
+cmd_up() {
+  local model="${MODEL_DEFAULT}"
+  local bind="${BIND_DEFAULT}"
+  local auth_mode="${AUTH_MODE_DEFAULT}"
+  local auth_token="${AUTH_TOKEN_DEFAULT}"
+  local auth_password="${AUTH_PASSWORD_DEFAULT}"
+  local profile="${PROFILE_DEFAULT}"
+  local gateway_state_dir="${GATEWAY_STATE_DIR_DEFAULT}"
+  local dashboard_state_dir="${DASHBOARD_STATE_DIR_DEFAULT}"
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --model)
+        model="$2"
+        shift 2
+        ;;
+      --bind)
+        bind="$2"
+        shift 2
+        ;;
+      --auth-mode)
+        auth_mode="$2"
+        shift 2
+        ;;
+      --auth-token)
+        auth_token="$2"
+        shift 2
+        ;;
+      --auth-password)
+        auth_password="$2"
+        shift 2
+        ;;
+      --profile)
+        profile="$2"
+        shift 2
+        ;;
+      --gateway-state-dir)
+        gateway_state_dir="$2"
+        shift 2
+        ;;
+      --dashboard-state-dir)
+        dashboard_state_dir="$2"
+        shift 2
+        ;;
+      --help)
+        usage
+        exit 0
+        ;;
+      *)
+        die "unknown up option: $1"
+        ;;
+    esac
+  done
+
+  case "${auth_mode}" in
+    localhost-dev|token|password-session)
+      ;;
+    *)
+      die "invalid --auth-mode: ${auth_mode}"
+      ;;
+  esac
+
+  ensure_runtime_dir
+  cleanup_stale_pid
+
+  if [[ -f "${PID_FILE}" ]]; then
+    local existing_pid
+    existing_pid="$(cat "${PID_FILE}")"
+    if pid_is_alive "${existing_pid}"; then
+      log "tau-unified: already running (pid=${existing_pid})"
+      return 0
+    fi
+    rm -f "${PID_FILE}"
+  fi
+
+  local command
+  command="$(build_up_command "${model}" "${bind}" "${auth_mode}" "${auth_token}" "${auth_password}" "${gateway_state_dir}" "${dashboard_state_dir}")"
+  printf '%s\n' "${command}" > "${CMD_FILE}"
+  : > "${LOG_FILE}"
+
+  if [[ -n "${RUNNER}" ]]; then
+    run_runner_mode up "${command}" "${profile}" "${bind}" "${dashboard_state_dir}"
+    if [[ ! -f "${RUNNER_PID}" ]]; then
+      die "runner did not emit pid file: ${RUNNER_PID}"
+    fi
+    cp "${RUNNER_PID}" "${PID_FILE}"
+  else
+    (
+      cd "${REPO_ROOT}"
+      nohup bash -lc "${command}" >>"${LOG_FILE}" 2>&1 &
+      echo $! > "${PID_FILE}"
+    )
+  fi
+
+  local pid
+  pid="$(cat "${PID_FILE}")"
+  if ! pid_is_alive "${pid}"; then
+    rm -f "${PID_FILE}"
+    die "tau-unified: failed to start runtime process"
+  fi
+
+  log "tau-unified: started (pid=${pid}) profile=${profile}"
+  log "tau-unified: webchat=http://${bind}/webchat"
+  log "tau-unified: ops=http://${bind}/ops"
+  log "tau-unified: dashboard=http://${bind}/dashboard"
+  log "tau-unified: log=${LOG_FILE}"
+}
+
+cmd_status() {
+  cleanup_stale_pid
+  if [[ ! -f "${PID_FILE}" ]]; then
+    log "tau-unified: not running"
+    return 1
+  fi
+
+  local pid
+  pid="$(cat "${PID_FILE}")"
+  if ! pid_is_alive "${pid}"; then
+    rm -f "${PID_FILE}"
+    log "tau-unified: not running"
+    return 1
+  fi
+
+  if [[ -n "${RUNNER}" ]]; then
+    run_runner_mode status "${pid}"
+  fi
+
+  log "tau-unified: running pid=${pid}"
+  log "tau-unified: pid_file=${PID_FILE}"
+  log "tau-unified: log_file=${LOG_FILE}"
+  log "tau-unified: command_file=${CMD_FILE}"
+}
+
+cmd_down() {
+  cleanup_stale_pid
+  if [[ ! -f "${PID_FILE}" ]]; then
+    echo "tau-unified: not running" >&2
+    return 1
+  fi
+
+  local pid
+  pid="$(cat "${PID_FILE}")"
+
+  if [[ -n "${RUNNER}" ]]; then
+    run_runner_mode down "${pid}"
+  else
+    kill "${pid}" >/dev/null 2>&1 || true
+    for _ in {1..20}; do
+      if ! pid_is_alive "${pid}"; then
+        break
+      fi
+      sleep 0.1
+    done
+    if pid_is_alive "${pid}"; then
+      kill -9 "${pid}" >/dev/null 2>&1 || true
+    fi
+  fi
+
+  rm -f "${PID_FILE}"
+  log "tau-unified: stopped"
+}
+
+cmd_tui() {
+  local state_dir="${DASHBOARD_STATE_DIR_DEFAULT}"
+  local profile="${PROFILE_DEFAULT}"
+  local iterations="3"
+  local interval_ms="1000"
+  local no_color="false"
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --state-dir)
+        state_dir="$2"
+        shift 2
+        ;;
+      --profile)
+        profile="$2"
+        shift 2
+        ;;
+      --iterations)
+        iterations="$2"
+        shift 2
+        ;;
+      --interval-ms)
+        interval_ms="$2"
+        shift 2
+        ;;
+      --no-color)
+        no_color="true"
+        shift
+        ;;
+      --help)
+        usage
+        exit 0
+        ;;
+      *)
+        die "unknown tui option: $1"
+        ;;
+    esac
+  done
+
+  local tui_cmd=(
+    cargo run -p tau-tui -- shell-live
+    --state-dir "${state_dir}"
+    --profile "${profile}"
+    --watch
+    --iterations "${iterations}"
+    --interval-ms "${interval_ms}"
+  )
+  if [[ "${no_color}" == "true" ]]; then
+    tui_cmd+=(--no-color)
+  fi
+
+  log "tau-unified: launching tui"
+  if [[ -n "${RUNNER}" ]]; then
+    run_runner_mode tui "${state_dir}" "${profile}" "${iterations}" "${interval_ms}" "${no_color}"
+    return 0
+  fi
+  (
+    cd "${REPO_ROOT}"
+    "${tui_cmd[@]}"
+  )
+}
+
+if [[ $# -lt 1 ]]; then
+  usage >&2
+  exit 2
+fi
+
+command="$1"
+shift
+
+case "${command}" in
+  up)
+    cmd_up "$@"
+    ;;
+  status)
+    cmd_status "$@"
+    ;;
+  down)
+    cmd_down "$@"
+    ;;
+  tui)
+    cmd_tui "$@"
+    ;;
+  --help|-h|help)
+    usage
+    ;;
+  *)
+    echo "unknown command: ${command}" >&2
+    usage >&2
+    exit 2
+    ;;
+esac
