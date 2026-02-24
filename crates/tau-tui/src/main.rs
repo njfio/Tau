@@ -26,7 +26,7 @@ Options:
   --state-dir P Shell-live: dashboard state directory (default: .tau/dashboard)
   --dashboard-state-dir P Agent: dashboard state directory (default: .tau/dashboard)
   --gateway-state-dir P Agent: gateway state directory (default: .tau/gateway)
-  --model ID    Agent: model id for interactive runtime (default: openai/gpt-4o-mini)
+  --model ID    Agent: model id for interactive runtime (default: openai/gpt-5.2)
   --dry-run     Agent: print interactive launch command without executing it
   --watch       Shell-live: enable watch mode across multiple refresh cycles
   --iterations N Shell-live watch: number of render cycles (default: 3, min: 1)
@@ -114,7 +114,7 @@ impl Default for AgentArgs {
             profile: "local-dev".to_string(),
             dashboard_state_dir: ".tau/dashboard".to_string(),
             gateway_state_dir: ".tau/gateway".to_string(),
-            model: "openai/gpt-4o-mini".to_string(),
+            model: "openai/gpt-5.2".to_string(),
             dry_run: false,
             color: true,
         }
@@ -873,7 +873,7 @@ mod tests {
             "--profile".to_string(),
             "ops-interactive".to_string(),
             "--model".to_string(),
-            "openai/gpt-4o-mini".to_string(),
+            "openai/gpt-5.2".to_string(),
             "--dashboard-state-dir".to_string(),
             ".tau/custom-dashboard".to_string(),
             "--gateway-state-dir".to_string(),
@@ -887,7 +887,7 @@ mod tests {
             panic!("expected agent action");
         };
         assert_eq!(args.profile, "ops-interactive");
-        assert_eq!(args.model, "openai/gpt-4o-mini");
+        assert_eq!(args.model, "openai/gpt-5.2");
         assert_eq!(args.dashboard_state_dir, ".tau/custom-dashboard");
         assert_eq!(args.gateway_state_dir, ".tau/custom-gateway");
         assert!(args.dry_run);
@@ -901,7 +901,7 @@ mod tests {
             profile: "ops-interactive".to_string(),
             dashboard_state_dir: ".tau/custom-dashboard".to_string(),
             gateway_state_dir: ".tau/custom-gateway".to_string(),
-            model: "openai/gpt-4o-mini".to_string(),
+            model: "openai/gpt-5.2".to_string(),
             dry_run: true,
             color: false,
         };
@@ -910,7 +910,7 @@ mod tests {
         assert_eq!(command[1], "run");
         assert_eq!(command[3], "tau-coding-agent");
         assert!(command.contains(&"--model".to_string()));
-        assert!(command.contains(&"openai/gpt-4o-mini".to_string()));
+        assert!(command.contains(&"openai/gpt-5.2".to_string()));
         assert!(command.contains(&"--dashboard-state-dir".to_string()));
         assert!(command.contains(&".tau/custom-dashboard".to_string()));
         assert!(command.contains(&"--gateway-state-dir".to_string()));
@@ -934,5 +934,15 @@ mod tests {
         assert!(HELP.contains("--dashboard-state-dir"));
         assert!(HELP.contains("--gateway-state-dir"));
         assert!(HELP.contains("--dry-run"));
+    }
+
+    #[test]
+    fn regression_spec_c06_agent_mode_defaults_to_gpt5_baseline() {
+        let action = parse_args(vec!["tau-tui".to_string(), "agent".to_string()])
+            .expect("expected parse success");
+        let ParseAction::RunAgent(args) = action else {
+            panic!("expected agent action");
+        };
+        assert_eq!(args.model, "openai/gpt-5.2");
     }
 }

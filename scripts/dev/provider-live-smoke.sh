@@ -78,7 +78,7 @@ ANTHROPIC_KEY="${ANTHROPIC_API_KEY:-}"
 GOOGLE_KEY="${GEMINI_API_KEY:-${GOOGLE_API_KEY:-}}"
 
 run_case "openai" "$OPENAI_KEY" \
-  --model "${TAU_OPENAI_MODEL:-openai/gpt-4o-mini}" \
+  --model "${TAU_OPENAI_MODEL:-openai/gpt-5.2}" \
   --api-base "${TAU_OPENAI_API_BASE:-https://api.openai.com/v1}" \
   --openai-api-key "$OPENAI_KEY" \
   --openai-auth-mode api-key
