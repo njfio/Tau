@@ -1,6 +1,8 @@
 # Integration Gap Closure Plan
 
-This plan tracks the four capability gaps called out from README review:
+This plan tracks the four capability areas called out from prior README review.
+Baseline delivery for each area is now integrated; this document tracks
+expansion and hardening work beyond the delivered baseline:
 - true RL end-to-end delivery,
 - dashboard maturity expansion,
 - comprehensive auth workflow verification,
@@ -9,11 +11,13 @@ This plan tracks the four capability gaps called out from README review:
 ## 1) True RL Delivery
 
 Current state:
-- Prompt optimization is the canonical training path today.
-- True-RL primitives and benchmark/safety proof scripts exist.
+- Deterministic true-RL end-to-end harness is integrated.
+- Live rollout/reward/optimizer and APO significance gating are integrated.
+- Operator verification gates exist for RL maturity/readiness waves.
 
 Closure objective:
-- Promote true RL from staged primitives to an end-to-end, operator-run workflow with acceptance gates.
+- Extend from integrated baseline to deeper production policy-operations
+  coverage (long-horizon evaluation, promotion controls, and recovery drills).
 
 Execution anchors:
 - [`docs/planning/true-rl-roadmap-skeleton.md`](true-rl-roadmap-skeleton.md)
@@ -29,11 +33,12 @@ Initial verification command:
 ## 2) Dashboard Maturity
 
 Current state:
-- Dashboard ops routes and API-backed diagnostics exist.
-- Not all desired product UX surfaces are complete live-mutation experiences.
+- Dashboard status/widgets/alerts/stream/timeline conformance is integrated.
+- Operator diagnostics surfaces are wired into runtime status and alert feeds.
 
 Closure objective:
-- Expand dashboard from route/ops coverage toward full operator workflows.
+- Expand dashboard from integrated diagnostics into richer end-to-end operator
+  workflows and higher-fidelity live mutation UX.
 
 Execution anchors:
 - [`docs/guides/dashboard-ops.md`](../guides/dashboard-ops.md)
@@ -49,11 +54,12 @@ Initial verification command:
 ## 3) Auth Workflow Verification
 
 Current state:
-- Provider auth modes and gateway auth/session flows are implemented.
-- Cross-mode verification is not yet represented as a single consolidated acceptance matrix in README-level guidance.
+- Provider auth-mode matrix and gateway auth/session lifecycle conformance are integrated.
+- Deterministic smoke and conformance suites verify core auth workflows.
 
 Closure objective:
-- Verify and document all supported auth modes/flows using deterministic smoke steps and provider matrix references.
+- Expand live-environment permutation coverage and keep README/operator guidance
+  synchronized with provider/auth workflow evidence.
 
 Execution anchors:
 - [`docs/provider-auth/provider-auth-capability-matrix.md`](../provider-auth/provider-auth-capability-matrix.md)
@@ -69,11 +75,13 @@ Initial verification command:
 ## 4) TUI Improvements
 
 Current state:
-- `tau-tui` is a lightweight demo runner and smoke surface.
-- It is not a full operator dashboard replacement.
+- `tau-tui` operator-shell mode is integrated with structured panels
+  (status/auth/training/alerts/actions) and conformance tests.
+- TUI is a terminal operator surface that complements the web dashboard.
 
 Closure objective:
-- Improve usability and operator signal density in terminal UX while preserving deterministic smoke behavior.
+- Continue improving operator-shell usability, interaction depth, and signal
+  density while preserving deterministic validation behavior.
 
 Execution anchors:
 - [`crates/tau-tui`](../../crates/tau-tui)
@@ -82,6 +90,5 @@ Execution anchors:
 Initial verification command:
 
 ```bash
-cargo run -p tau-tui -- --frames 3 --sleep-ms 0 --width 72 --no-color
+cargo run -p tau-tui -- shell --width 88 --profile local-dev --no-color
 ```
-

@@ -1,16 +1,22 @@
 # True RL Roadmap Skeleton
 
-This planning artifact defines the future true-RL delivery phases tracked under
+This planning artifact defines long-horizon true-RL expansion and hardening
+phases tracked under
 [Epic #1657](https://github.com/njfio/Tau/issues/1657) and
 [Milestone #24](https://github.com/njfio/Tau/milestone/24).
 
 Current-state boundary:
-- implemented today: prompt optimization pipeline
-- planned/future: true policy-learning RL with gradient-based optimization
+- implemented baseline today:
+  - deterministic RL end-to-end harness artifacts
+  - live rollout/reward scoring and optimizer integration
+  - APO significance gating in runtime optimization
+- planned expansion:
+  - broader production-scale policy-learning operations and control-plane
+    hardening beyond the integrated baseline
 
 ## Stage 0: Architecture and Data Contracts
 
-Objective: lock trajectory, advantage, and checkpoint data contracts.
+Objective: harden trajectory, advantage, and checkpoint data contracts.
 
 Primary issues:
 - [#1658 Story](https://github.com/njfio/Tau/issues/1658)
@@ -24,7 +30,8 @@ Exit evidence:
 
 ## Stage 1: Experience Collection Runtime
 
-Objective: collect concurrent rollout experience with liveness controls.
+Objective: harden concurrent rollout collection with explicit liveness and
+backpressure controls.
 
 Primary issues:
 - [#1659 Story](https://github.com/njfio/Tau/issues/1659)
@@ -39,7 +46,8 @@ Exit evidence:
 
 ## Stage 2: PPO/GAE Core Optimization
 
-Objective: implement true policy/value optimization and checkpoint resume.
+Objective: expand and harden policy/value optimization and checkpoint resume
+paths.
 
 Primary issues:
 - [#1660 Story](https://github.com/njfio/Tau/issues/1660)
@@ -55,7 +63,7 @@ Exit evidence:
 
 ## Stage 3: Safety-Constrained Policy Learning
 
-Objective: integrate safety constraints into reward shaping and promotion gates.
+Objective: deepen safety constraints in reward shaping and promotion gates.
 
 Primary issues:
 - [#1661 Story](https://github.com/njfio/Tau/issues/1661)
@@ -70,8 +78,8 @@ Exit evidence:
 
 ## Stage 4: Benchmarking and Statistical Proof
 
-Objective: prove policy improvement with significance, reproducibility, and live
-benchmark protocol.
+Objective: maintain policy-improvement proof with significance,
+reproducibility, and live benchmark protocol at higher operational scale.
 
 Primary issues:
 - [#1662 Story](https://github.com/njfio/Tau/issues/1662)
