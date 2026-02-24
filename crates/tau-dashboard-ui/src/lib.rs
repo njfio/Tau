@@ -353,6 +353,9 @@ pub struct TauOpsDashboardChatSnapshot {
     pub new_session_form_method: String,
     pub send_form_action: String,
     pub send_form_method: String,
+    pub control_action_status: String,
+    pub control_action: String,
+    pub control_action_reason: String,
     pub session_options: Vec<TauOpsDashboardChatSessionOptionRow>,
     pub message_rows: Vec<TauOpsDashboardChatMessageRow>,
     pub session_detail_visible: bool,
@@ -437,6 +440,9 @@ impl Default for TauOpsDashboardChatSnapshot {
             new_session_form_method: "post".to_string(),
             send_form_action: "/ops/chat/send".to_string(),
             send_form_method: "post".to_string(),
+            control_action_status: "idle".to_string(),
+            control_action: "none".to_string(),
+            control_action_reason: "none".to_string(),
             session_options: vec![TauOpsDashboardChatSessionOptionRow {
                 session_key: "default".to_string(),
                 selected: true,
@@ -1835,6 +1841,15 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     let chat_new_session_form_method = context.chat.new_session_form_method.clone();
     let chat_send_form_action = context.chat.send_form_action.clone();
     let chat_send_form_method = context.chat.send_form_method.clone();
+    let control_action_status = context.chat.control_action_status.clone();
+    let control_action = context.chat.control_action.clone();
+    let control_action_reason = context.chat.control_action_reason.clone();
+    let control_action_status_message = match control_action_status.as_str() {
+        "applied" => format!("Applied {control_action} action."),
+        "missing" => "No control action was submitted.".to_string(),
+        "failed" => format!("Failed to apply {control_action} action ({control_action_reason})."),
+        _ => "No control action submitted yet.".to_string(),
+    };
     let health_state = context.command_center.health_state.clone();
     let health_reason = context.command_center.health_reason.clone();
     let rollout_gate = context.command_center.rollout_gate.clone();
@@ -3739,6 +3754,17 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                             Refresh
                                         </button>
                                     </form>
+                                </section>
+                                <section
+                                    id="tau-ops-control-action-status"
+                                    data-control-action-status=control_action_status
+                                    data-control-action=control_action
+                                    data-control-action-reason=control_action_reason
+                                >
+                                    <h3>Action Submit Status</h3>
+                                    <p id="tau-ops-control-action-status-message">
+                                        {control_action_status_message}
+                                    </p>
                                 </section>
                                 <section
                                     id="tau-ops-control-last-action"

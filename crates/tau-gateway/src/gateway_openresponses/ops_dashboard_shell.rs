@@ -501,12 +501,48 @@ fn build_ops_chat_redirect_path(
     )
 }
 
+fn normalize_ops_control_action_status_marker(status: &str) -> &'static str {
+    match status {
+        "applied" => "applied",
+        "missing" => "missing",
+        "failed" => "failed",
+        _ => "idle",
+    }
+}
+
+fn normalize_ops_control_action_marker(action: &str) -> &'static str {
+    match action {
+        "pause" => "pause",
+        "resume" => "resume",
+        "refresh" => "refresh",
+        _ => "none",
+    }
+}
+
+fn normalize_ops_control_action_reason_marker(reason: &str) -> &'static str {
+    match reason {
+        "control_action_applied" => "control_action_applied",
+        "control_action_form_missing_action" => "missing_action",
+        "missing_action" => "missing_action",
+        "invalid_dashboard_action" => "invalid_dashboard_action",
+        "unauthorized" => "unauthorized",
+        "internal_error" => "internal_error",
+        _ => "none",
+    }
+}
+
 fn build_ops_root_redirect_path(
     theme: TauOpsDashboardTheme,
     sidebar_state: TauOpsDashboardSidebarState,
+    control_action_status: &str,
+    control_action: &str,
+    control_action_reason: &str,
 ) -> String {
+    let status = normalize_ops_control_action_status_marker(control_action_status);
+    let action = normalize_ops_control_action_marker(control_action);
+    let reason = normalize_ops_control_action_reason_marker(control_action_reason);
     format!(
-        "{OPS_DASHBOARD_ENDPOINT}?theme={}&sidebar={}",
+        "{OPS_DASHBOARD_ENDPOINT}?theme={}&sidebar={}&control_action_status={status}&control_action={action}&control_action_reason={reason}",
         theme.as_str(),
         sidebar_state.as_str()
     )
@@ -1006,6 +1042,9 @@ fn collect_tau_ops_dashboard_chat_snapshot(
         new_session_form_method: "post".to_string(),
         send_form_action: OPS_DASHBOARD_CHAT_SEND_ENDPOINT.to_string(),
         send_form_method: "post".to_string(),
+        control_action_status: controls.requested_control_action_status().to_string(),
+        control_action: controls.requested_control_action().to_string(),
+        control_action_reason: controls.requested_control_action_reason().to_string(),
         session_options,
         message_rows,
         session_detail_visible: detail_session_key.is_some(),
@@ -1110,18 +1149,25 @@ pub(super) async fn handle_ops_dashboard_control_action(
     State(state): State<Arc<GatewayOpenResponsesServerState>>,
     Form(form): Form<OpsDashboardControlActionForm>,
 ) -> Response {
-    let redirect_path =
-        build_ops_root_redirect_path(form.resolved_theme(), form.resolved_sidebar_state());
+    let redirect_theme = form.resolved_theme();
+    let redirect_sidebar_state = form.resolved_sidebar_state();
     let Some(request) = form.resolved_action_request() else {
         state.record_ui_telemetry_event(
             "dashboard",
             "control-action",
             "control_action_form_missing_action",
         );
+        let redirect_path = build_ops_root_redirect_path(
+            redirect_theme,
+            redirect_sidebar_state,
+            "missing",
+            "none",
+            "missing_action",
+        );
         return Redirect::to(redirect_path.as_str()).into_response();
     };
 
-    let action = request.action.clone();
+    let action_marker = normalize_ops_control_action_marker(request.action.as_str());
     match apply_gateway_dashboard_action(&state.config.state_dir, "ops-shell", request) {
         Ok(_) => {
             state.record_ui_telemetry_event(
@@ -1129,15 +1175,30 @@ pub(super) async fn handle_ops_dashboard_control_action(
                 "control-action",
                 "control_action_applied",
             );
+            let redirect_path = build_ops_root_redirect_path(
+                redirect_theme,
+                redirect_sidebar_state,
+                "applied",
+                action_marker,
+                "control_action_applied",
+            );
             Redirect::to(redirect_path.as_str()).into_response()
         }
         Err(error) => {
+            let reason_marker = normalize_ops_control_action_reason_marker(error.code);
             state.record_ui_telemetry_event(
                 "dashboard",
                 "control-action",
-                format!("control_action_failed:{action}").as_str(),
+                format!("control_action_failed:{action_marker}").as_str(),
             );
-            error.into_response()
+            let redirect_path = build_ops_root_redirect_path(
+                redirect_theme,
+                redirect_sidebar_state,
+                "failed",
+                action_marker,
+                reason_marker,
+            );
+            Redirect::to(redirect_path.as_str()).into_response()
         }
     }
 }

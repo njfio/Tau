@@ -3241,6 +3241,48 @@ fn functional_spec_2826_c01_c02_control_actions_expose_confirmation_markers() {
 }
 
 #[test]
+fn functional_spec_3466_c04_control_action_status_panel_renders_marker_contracts() {
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        auth_mode: TauOpsDashboardAuthMode::Token,
+        active_route: TauOpsDashboardRoute::Ops,
+        theme: TauOpsDashboardTheme::Light,
+        sidebar_state: TauOpsDashboardSidebarState::Collapsed,
+        command_center: TauOpsDashboardCommandCenterSnapshot::default(),
+        chat: TauOpsDashboardChatSnapshot {
+            control_action_status: "failed".to_string(),
+            control_action: "none".to_string(),
+            control_action_reason: "invalid_dashboard_action".to_string(),
+            ..TauOpsDashboardChatSnapshot::default()
+        },
+    });
+
+    assert!(html.contains(
+        "id=\"tau-ops-control-action-status\" data-control-action-status=\"failed\" data-control-action=\"none\" data-control-action-reason=\"invalid_dashboard_action\""
+    ));
+    assert!(html.contains(
+        "id=\"tau-ops-control-action-status-message\">Failed to apply none action (invalid_dashboard_action)."
+    ));
+}
+
+#[test]
+fn regression_spec_3466_c05_control_action_status_panel_defaults_to_idle_contract_markers() {
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        auth_mode: TauOpsDashboardAuthMode::Token,
+        active_route: TauOpsDashboardRoute::Ops,
+        theme: TauOpsDashboardTheme::Dark,
+        sidebar_state: TauOpsDashboardSidebarState::Expanded,
+        command_center: TauOpsDashboardCommandCenterSnapshot::default(),
+        chat: TauOpsDashboardChatSnapshot::default(),
+    });
+
+    assert!(html.contains(
+        "id=\"tau-ops-control-action-status\" data-control-action-status=\"idle\" data-control-action=\"none\" data-control-action-reason=\"none\""
+    ));
+    assert!(html
+        .contains("id=\"tau-ops-control-action-status-message\">No control action submitted yet."));
+}
+
+#[test]
 fn functional_spec_2814_c01_c02_c03_timeline_chart_and_range_markers_render() {
     let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
         auth_mode: TauOpsDashboardAuthMode::Token,

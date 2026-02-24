@@ -5589,7 +5589,8 @@ async fn functional_spec_2826_c03_ops_shell_control_markers_include_confirmation
 }
 
 #[tokio::test]
-async fn integration_ops_shell_control_action_form_submits_dashboard_mutation_and_redirects() {
+async fn integration_spec_3466_c03_ops_control_action_form_submits_dashboard_mutation_and_redirects_with_applied_marker(
+) {
     let temp = tempdir().expect("tempdir");
     let dashboard_root = write_dashboard_runtime_fixture(temp.path());
     write_dashboard_control_state_fixture(temp.path());
@@ -5622,7 +5623,10 @@ async fn integration_ops_shell_control_action_form_submits_dashboard_mutation_an
         .and_then(|value| value.to_str().ok())
         .unwrap_or_default()
         .to_string();
-    assert_eq!(location, "/ops?theme=light&sidebar=collapsed");
+    assert_eq!(
+        location,
+        "/ops?theme=light&sidebar=collapsed&control_action_status=applied&control_action=resume&control_action_reason=control_action_applied"
+    );
 
     let control_state = std::fs::read_to_string(dashboard_root.join("control-state.json"))
         .expect("read dashboard control state");
@@ -5634,6 +5638,137 @@ async fn integration_ops_shell_control_action_form_submits_dashboard_mutation_an
         .expect("read dashboard actions log");
     assert!(actions_log.contains("\"action\":\"resume\""));
     assert!(actions_log.contains("\"actor\":\"ops-shell\""));
+
+    let redirect_response = client
+        .get(format!("http://{addr}{location}"))
+        .send()
+        .await
+        .expect("load control action redirect body");
+    assert_eq!(redirect_response.status(), StatusCode::OK);
+    let redirect_body = redirect_response
+        .text()
+        .await
+        .expect("read control action redirect body");
+    assert!(redirect_body.contains(
+        "id=\"tau-ops-control-action-status\" data-control-action-status=\"applied\" data-control-action=\"resume\" data-control-action-reason=\"control_action_applied\""
+    ));
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn integration_spec_3466_c01_ops_control_action_missing_action_redirects_with_missing_marker()
+{
+    let temp = tempdir().expect("tempdir");
+    write_dashboard_runtime_fixture(temp.path());
+    write_dashboard_control_state_fixture(temp.path());
+    write_training_runtime_fixture(temp.path(), 0);
+    let state = test_state(temp.path(), 4_096, "secret");
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+    let client = Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .expect("client");
+
+    let response = client
+        .post(format!(
+            "http://{addr}{OPS_DASHBOARD_CONTROL_ACTION_ENDPOINT}"
+        ))
+        .form(&[
+            ("action", ""),
+            ("reason", "ops-shell-control-panel"),
+            ("theme", "light"),
+            ("sidebar", "collapsed"),
+        ])
+        .send()
+        .await
+        .expect("submit control action form with missing action");
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    let location = response
+        .headers()
+        .get(reqwest::header::LOCATION)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default()
+        .to_string();
+    assert_eq!(
+        location,
+        "/ops?theme=light&sidebar=collapsed&control_action_status=missing&control_action=none&control_action_reason=missing_action"
+    );
+
+    let redirect_response = client
+        .get(format!("http://{addr}{location}"))
+        .send()
+        .await
+        .expect("load missing-action redirect body");
+    assert_eq!(redirect_response.status(), StatusCode::OK);
+    let redirect_body = redirect_response
+        .text()
+        .await
+        .expect("read missing-action redirect body");
+    assert!(redirect_body.contains(
+        "id=\"tau-ops-control-action-status\" data-control-action-status=\"missing\" data-control-action=\"none\" data-control-action-reason=\"missing_action\""
+    ));
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn regression_spec_3466_c02_ops_control_action_invalid_action_fails_closed_with_redirect_marker(
+) {
+    let temp = tempdir().expect("tempdir");
+    let dashboard_root = write_dashboard_runtime_fixture(temp.path());
+    write_dashboard_control_state_fixture(temp.path());
+    write_training_runtime_fixture(temp.path(), 0);
+    let state = test_state(temp.path(), 4_096, "secret");
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+    let client = Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .expect("client");
+
+    let response = client
+        .post(format!(
+            "http://{addr}{OPS_DASHBOARD_CONTROL_ACTION_ENDPOINT}"
+        ))
+        .form(&[
+            ("action", "explode"),
+            ("reason", "ops-shell-control-panel"),
+            ("theme", "light"),
+            ("sidebar", "collapsed"),
+        ])
+        .send()
+        .await
+        .expect("submit control action form with invalid action");
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    let location = response
+        .headers()
+        .get(reqwest::header::LOCATION)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default()
+        .to_string();
+    assert_eq!(
+        location,
+        "/ops?theme=light&sidebar=collapsed&control_action_status=failed&control_action=none&control_action_reason=invalid_dashboard_action"
+    );
+
+    let control_state = std::fs::read_to_string(dashboard_root.join("control-state.json"))
+        .expect("read dashboard control state");
+    assert!(control_state.contains("\"mode\": \"paused\""));
+    assert!(!control_state.contains("\"action\": \"explode\""));
+
+    let redirect_response = client
+        .get(format!("http://{addr}{location}"))
+        .send()
+        .await
+        .expect("load invalid-action redirect body");
+    assert_eq!(redirect_response.status(), StatusCode::OK);
+    let redirect_body = redirect_response
+        .text()
+        .await
+        .expect("read invalid-action redirect body");
+    assert!(redirect_body.contains(
+        "id=\"tau-ops-control-action-status\" data-control-action-status=\"failed\" data-control-action=\"none\" data-control-action-reason=\"invalid_dashboard_action\""
+    ));
 
     handle.abort();
 }
