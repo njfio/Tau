@@ -1,4 +1,4 @@
-use std::{env, thread, time::Duration};
+use std::{env, path::Path, thread, time::Duration};
 
 use tau_tui::{
     apply_overlay, render_operator_shell_frame, Component, DiffRenderer, EditorBuffer, EditorView,
@@ -11,14 +11,17 @@ tau-tui operator terminal
 Usage:
   cargo run -p tau-tui -- [demo] [--frames N] [--width N] [--sleep-ms N] [--no-color]
   cargo run -p tau-tui -- shell [--width N] [--profile NAME] [--no-color]
+  cargo run -p tau-tui -- shell-live [--state-dir PATH] [--width N] [--profile NAME] [--no-color]
 
 Options:
   demo          Animated rendering demo mode (default command)
   shell         Operator shell mode with status/auth/training panels
+  shell-live    State-backed operator shell mode from dashboard artifacts
   --frames N    Demo: number of frames to render (default: 3, min: 1)
   --width N     Demo/Shell: render width in characters (demo default: 72, shell default: 88)
   --sleep-ms N  Demo: delay between frames in milliseconds (default: 120)
   --profile N   Shell: operator profile label (default: local-dev)
+  --state-dir P Shell-live: dashboard state directory (default: .tau/dashboard)
   --no-color    Disable ANSI color output for CI/smoke runs
   --help, -h    Show this help message
 ";
@@ -59,10 +62,30 @@ impl Default for ShellArgs {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct LiveShellArgs {
+    width: usize,
+    profile: String,
+    state_dir: String,
+    color: bool,
+}
+
+impl Default for LiveShellArgs {
+    fn default() -> Self {
+        Self {
+            width: 88,
+            profile: "local-dev".to_string(),
+            state_dir: ".tau/dashboard".to_string(),
+            color: true,
+        }
+    }
+}
+
 #[derive(Debug)]
 enum ParseAction {
     RunDemo(DemoArgs),
     RunShell(ShellArgs),
+    RunShellLive(LiveShellArgs),
     Help,
 }
 
@@ -83,6 +106,10 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<ParseAction, Str
         Some("shell") => {
             values.remove(0);
             parse_shell_args(values)
+        }
+        Some("shell-live") => {
+            values.remove(0);
+            parse_shell_live_args(values)
         }
         _ => parse_demo_args(values),
     }
@@ -159,6 +186,46 @@ fn parse_shell_args(args: Vec<String>) -> Result<ParseAction, String> {
     }
 
     Ok(ParseAction::RunShell(parsed))
+}
+
+fn parse_shell_live_args(args: Vec<String>) -> Result<ParseAction, String> {
+    let mut parsed = LiveShellArgs::default();
+    let mut it = args.into_iter();
+    while let Some(arg) = it.next() {
+        match arg.as_str() {
+            "--help" | "-h" => return Ok(ParseAction::Help),
+            "--no-color" => parsed.color = false,
+            "--width" => {
+                let raw = it.next().ok_or("missing value for --width")?;
+                let value = raw
+                    .parse::<usize>()
+                    .map_err(|_| format!("invalid usize for --width: {raw}"))?;
+                if value < 40 {
+                    return Err("--width must be >= 40".to_string());
+                }
+                parsed.width = value;
+            }
+            "--profile" => {
+                let raw = it.next().ok_or("missing value for --profile")?;
+                let value = raw.trim();
+                if value.is_empty() {
+                    return Err("--profile must not be empty".to_string());
+                }
+                parsed.profile = value.to_string();
+            }
+            "--state-dir" => {
+                let raw = it.next().ok_or("missing value for --state-dir")?;
+                let value = raw.trim();
+                if value.is_empty() {
+                    return Err("--state-dir must not be empty".to_string());
+                }
+                parsed.state_dir = value.to_string();
+            }
+            _ => return Err(format!("unknown argument: {arg}")),
+        }
+    }
+
+    Ok(ParseAction::RunShellLive(parsed))
 }
 
 fn paint(theme: &Theme, role: ThemeRole, text: impl Into<String>, color: bool) -> String {
@@ -283,6 +350,28 @@ fn run_shell(args: ShellArgs) {
     }
 }
 
+fn run_shell_live(args: LiveShellArgs) {
+    let theme = Theme::default();
+    let frame = OperatorShellFrame::from_dashboard_state_dir(
+        args.profile.clone(),
+        Path::new(args.state_dir.as_str()),
+    );
+    let rendered = render_operator_shell_frame(&frame, args.width);
+    let header = paint(
+        &theme,
+        ThemeRole::Accent,
+        format!(
+            "Tau Operator Shell (live) - profile={} env={} state_dir={}",
+            frame.profile, frame.environment, args.state_dir
+        ),
+        args.color,
+    );
+    println!("{header}");
+    for line in rendered {
+        println!("{}", paint(&theme, ThemeRole::Primary, line, args.color));
+    }
+}
+
 fn main() {
     let action = match parse_args(env::args()) {
         Ok(action) => action,
@@ -305,6 +394,7 @@ fn main() {
             }
         }
         ParseAction::RunShell(args) => run_shell(args),
+        ParseAction::RunShellLive(args) => run_shell_live(args),
     }
 }
 
@@ -420,5 +510,40 @@ mod tests {
         ])
         .expect_err("expected parse failure");
         assert!(err.contains("missing value for --profile"));
+    }
+
+    #[test]
+    fn spec_c03_parse_args_accepts_shell_live_mode_and_state_dir() {
+        let action = parse_args(vec![
+            "tau-tui".to_string(),
+            "shell-live".to_string(),
+            "--width".to_string(),
+            "92".to_string(),
+            "--profile".to_string(),
+            "ops-live".to_string(),
+            "--state-dir".to_string(),
+            ".tau/custom-dashboard".to_string(),
+            "--no-color".to_string(),
+        ])
+        .expect("parse succeeds");
+
+        let ParseAction::RunShellLive(args) = action else {
+            panic!("expected shell-live action");
+        };
+        assert_eq!(args.width, 92);
+        assert_eq!(args.profile, "ops-live");
+        assert_eq!(args.state_dir, ".tau/custom-dashboard");
+        assert!(!args.color);
+    }
+
+    #[test]
+    fn regression_parse_args_rejects_shell_live_state_dir_without_value() {
+        let err = parse_args(vec![
+            "tau-tui".to_string(),
+            "shell-live".to_string(),
+            "--state-dir".to_string(),
+        ])
+        .expect_err("expected parse failure");
+        assert!(err.contains("missing value for --state-dir"));
     }
 }
