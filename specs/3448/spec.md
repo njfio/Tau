@@ -1,6 +1,6 @@
 # Spec: Issue #3448 - M298 wave-1 E2E harness and ops dashboard conformance slice
 
-Status: Reviewed
+Status: Implemented
 
 ## Problem Statement
 Tau has strong component-level tests but lacks a bounded, unified first-slice execution contract that proves gateway/runtime E2E behavior and ops dashboard live controls remain aligned under one deterministic verification flow.
@@ -49,3 +49,11 @@ then RED failure evidence, GREEN pass evidence, and regression outputs are captu
 - Wave-1 E2E harness tests pass in local/CI deterministic mode.
 - Dashboard live conformance tests pass with no route/control regressions.
 - Verification artifacts include complete AC->test mapping and tier matrix.
+
+## AC Verification
+| AC | Result | Evidence |
+| --- | --- | --- |
+| AC-1 | ✅ | `ls -1 specs/milestones/m298/index.md specs/3448/spec.md specs/3448/plan.md specs/3448/tasks.md` lists all required artifact paths. |
+| AC-2 | ✅ | `CARGO_TARGET_DIR=target-fast cargo test -p tau-gateway integration_spec_3448_ -- --nocapture` passed both wave-1 tests, including `integration_spec_3448_c02_tau_e2e_harness_runs_gateway_lifecycle_and_session_flow`. |
+| AC-3 | ✅ | `CARGO_TARGET_DIR=target-fast cargo test -p tau-gateway integration_spec_3448_ -- --nocapture` passed `integration_spec_3448_c03_tau_e2e_harness_keeps_ops_control_and_dashboard_live_contracts`; regression checks also passed for `integration_ops_shell_control_action_form_submits_dashboard_mutation_and_redirects` and `functional_spec_2810_c01_c02_c03_ops_shell_control_markers_reflect_dashboard_control_snapshot`. |
+| AC-4 | ✅ | RED evidence: `cargo test -p tau-gateway integration_spec_3448_c02_tau_e2e_harness_runs_gateway_lifecycle_and_session_flow -- --nocapture` failed with missing `TauE2eHarness`/`scripted_gateway_response`; GREEN evidence: `CARGO_TARGET_DIR=target-fast cargo test -p tau-gateway integration_spec_3448_ -- --nocapture` passed with 2/2 tests; regression+format+lint evidence recorded in `specs/3448/tasks.md` including `CARGO_TARGET_DIR=target-fast cargo clippy -p tau-gateway --tests --no-deps -- -D warnings`. |
