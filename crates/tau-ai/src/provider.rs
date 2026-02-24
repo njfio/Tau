@@ -100,16 +100,16 @@ mod tests {
 
     #[test]
     fn defaults_to_openai_when_provider_missing() {
-        let parsed = ModelRef::parse("gpt-4o-mini").expect("valid model ref");
+        let parsed = ModelRef::parse("gpt-5.2").expect("valid model ref");
         assert_eq!(parsed.provider, Provider::OpenAi);
-        assert_eq!(parsed.model, "gpt-4o-mini");
+        assert_eq!(parsed.model, "gpt-5.2");
     }
 
     #[test]
     fn spec_c01_parses_openrouter_as_first_class_provider() {
-        let parsed = ModelRef::parse("openrouter/openai/gpt-4o-mini").expect("valid model ref");
+        let parsed = ModelRef::parse("openrouter/openai/gpt-5.2").expect("valid model ref");
         assert_eq!(parsed.provider, Provider::OpenRouter);
-        assert_eq!(parsed.model, "openai/gpt-4o-mini");
+        assert_eq!(parsed.model, "openai/gpt-5.2");
     }
 
     #[test]

@@ -2068,7 +2068,7 @@ mod tests {
     fn regression_spec_2503_c10_llm_options_default_timeout_is_contract_stable() {
         let decoded: MemoryIngestionLlmOptions = serde_json::from_value(json!({
             "provider": "openai-compatible",
-            "model": "gpt-4o-mini",
+            "model": "gpt-5.2",
             "api_base": "https://example.invalid",
             "api_key": "test"
         }))

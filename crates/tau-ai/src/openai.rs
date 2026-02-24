@@ -1381,7 +1381,7 @@ mod tests {
     #[test]
     fn serializes_assistant_tool_calls_for_openai() {
         let request = ChatRequest {
-            model: "gpt-4o-mini".to_string(),
+            model: "gpt-5.2".to_string(),
             messages: vec![
                 Message::system("You are helpful"),
                 Message::user("read file"),
@@ -1424,7 +1424,7 @@ mod tests {
     #[test]
     fn functional_serializes_named_tool_choice() {
         let request = ChatRequest {
-            model: "gpt-4o-mini".to_string(),
+            model: "gpt-5.2".to_string(),
             messages: vec![Message::user("hello")],
             tools: vec![ToolDefinition {
                 name: "read".to_string(),
@@ -1448,7 +1448,7 @@ mod tests {
     #[test]
     fn spec_c01_openai_serializes_prompt_cache_key_when_enabled() {
         let request = ChatRequest {
-            model: "gpt-4o-mini".to_string(),
+            model: "gpt-5.2".to_string(),
             messages: vec![Message::user("hello")],
             tools: vec![],
             tool_choice: None,
@@ -1470,7 +1470,7 @@ mod tests {
     #[test]
     fn regression_omits_non_none_tool_choice_when_tools_are_absent() {
         let request = ChatRequest {
-            model: "gpt-4o-mini".to_string(),
+            model: "gpt-5.2".to_string(),
             messages: vec![Message::user("hello")],
             tools: vec![],
             tool_choice: Some(ToolChoice::Auto),
@@ -1554,7 +1554,7 @@ mod tests {
             is_error: false,
         };
         let request = ChatRequest {
-            model: "gpt-4o-mini".to_string(),
+            model: "gpt-5.2".to_string(),
             messages: vec![multimodal_message],
             tools: vec![],
             tool_choice: None,

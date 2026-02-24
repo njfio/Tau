@@ -7,7 +7,7 @@ files: created=0 existing=3 profile_store_action=unchanged
 release_channel: value=stable source=existing action=unchanged path=.tau/release-channel.json
 daemon: install_requested=false start_requested=false install_action=skipped start_action=skipped ready=true
 daemon_status: installed=false running=false profile=launchd diagnostics=0
-wizard: entrypoint=explicit_flag first_run=false provider=openai auth=api_key model=openai/gpt-4o-mini workspace=/Users/n/RustroverProjects/rust_pi_issue1767
+wizard: entrypoint=explicit_flag first_run=false provider=openai auth=api_key model=openai/gpt-5.2 workspace=/Users/n/RustroverProjects/rust_pi_issue1767
 wizard_persistence: baseline_action=updated baseline_path=.tau/onboarding-baseline.json profile_repair_requested=false identity_generation_requested=false identity_repair_requested=false
 identity_bootstrap: requested=false repair_requested=false created=0 repaired=0 skipped_existing=0 skipped_invalid_type=0
 identity: loaded=0 missing=3 skipped=0 tau_root=.tau
@@ -23,7 +23,7 @@ identity_file: key=agents file=AGENTS.md status=missing code=identity_file_missi
 identity_file: key=user file=USER.md status=missing code=identity_file_missing path=.tau/USER.md
 next: Create identity files under .tau (SOUL.md, AGENTS.md, USER.md) to customize startup composition.
 next: /auth status
-next: cargo run -p tau-coding-agent -- --model openai/gpt-4o-mini
+next: cargo run -p tau-coding-agent -- --model openai/gpt-5.2
 [demo:local] PASS onboard-non-interactive
 [demo:local] [2] extension-list
 [demo:local] command: /Users/n/RustroverProjects/rust_pi_issue1767/target/debug/tau-coding-agent --extension-list --extension-list-root ./examples/extensions

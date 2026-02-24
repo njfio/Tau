@@ -254,7 +254,7 @@ fn unit_validate_transport_mode_cli_accepts_default_cli() {
 #[test]
 fn unit_build_transport_doctor_config_uses_default_skills_lock_path() {
     let cli = parse_cli_with_stack();
-    let model_ref = ModelRef::parse("openai/gpt-4o-mini").expect("model ref");
+    let model_ref = ModelRef::parse("openai/gpt-5.2").expect("model ref");
 
     let config = build_transport_doctor_config(&cli, &model_ref);
     assert_eq!(config.skills_dir, cli.skills_dir);
@@ -267,11 +267,11 @@ fn unit_build_transport_doctor_config_uses_default_skills_lock_path() {
 #[test]
 fn unit_build_transport_runtime_defaults_preserves_model_and_prompt() {
     let cli = parse_cli_with_stack();
-    let model_ref = ModelRef::parse("openai/gpt-4o-mini").expect("model ref");
+    let model_ref = ModelRef::parse("openai/gpt-5.2").expect("model ref");
 
     let defaults = build_transport_runtime_defaults(&cli, &model_ref, "system prompt");
 
-    assert_eq!(defaults.model, "gpt-4o-mini");
+    assert_eq!(defaults.model, "gpt-5.2");
     assert_eq!(defaults.system_prompt, "system prompt");
 }
 
@@ -280,7 +280,7 @@ fn functional_build_transport_runtime_defaults_carries_timeout_defaults() {
     let mut cli = parse_cli_with_stack();
     cli.turn_timeout_ms = 42_000;
     cli.request_timeout_ms = 7_000;
-    let model_ref = ModelRef::parse("openai/gpt-4o-mini").expect("model ref");
+    let model_ref = ModelRef::parse("openai/gpt-5.2").expect("model ref");
 
     let defaults = build_transport_runtime_defaults(&cli, &model_ref, "system prompt");
 
@@ -293,7 +293,7 @@ fn integration_build_transport_runtime_defaults_preserves_session_lock_values() 
     let mut cli = parse_cli_with_stack();
     cli.session_lock_wait_ms = 12_345;
     cli.session_lock_stale_ms = 98_765;
-    let model_ref = ModelRef::parse("openai/gpt-4o-mini").expect("model ref");
+    let model_ref = ModelRef::parse("openai/gpt-5.2").expect("model ref");
 
     let defaults = build_transport_runtime_defaults(&cli, &model_ref, "system prompt");
 
@@ -305,14 +305,14 @@ fn integration_build_transport_runtime_defaults_preserves_session_lock_values() 
 fn regression_build_transport_runtime_defaults_preserves_max_turns() {
     let mut cli = parse_cli_with_stack();
     cli.max_turns = 77;
-    let model_ref = ModelRef::parse("openai/gpt-4o-mini").expect("model ref");
+    let model_ref = ModelRef::parse("openai/gpt-5.2").expect("model ref");
 
     let defaults = build_transport_runtime_defaults(&cli, &model_ref, "system prompt");
 
     assert_eq!(
         defaults,
         TransportRuntimeDefaults {
-            model: "gpt-4o-mini".to_string(),
+            model: "gpt-5.2".to_string(),
             system_prompt: "system prompt".to_string(),
             max_turns: 77,
             turn_timeout_ms: cli.turn_timeout_ms,
@@ -327,7 +327,7 @@ fn regression_build_transport_runtime_defaults_preserves_max_turns() {
 fn functional_build_multi_channel_runtime_dependencies_uses_auth_and_doctor_config_defaults() {
     let mut cli = parse_cli_with_stack();
     cli.openai_api_key = Some("test-openai-key".to_string());
-    let model_ref = ModelRef::parse("openai/gpt-4o-mini").expect("model ref");
+    let model_ref = ModelRef::parse("openai/gpt-5.2").expect("model ref");
 
     let ((auth_key, doctor_lock_path), _pairing_marker) = build_multi_channel_runtime_dependencies(
         &cli,
@@ -349,7 +349,7 @@ fn functional_build_multi_channel_runtime_dependencies_uses_auth_and_doctor_conf
 fn integration_build_multi_channel_runtime_dependencies_propagates_model_identity_to_doctor_config()
 {
     let cli = parse_cli_with_stack();
-    let model_ref = ModelRef::parse("openai/gpt-4o-mini").expect("model ref");
+    let model_ref = ModelRef::parse("openai/gpt-5.2").expect("model ref");
 
     let (doctor_model, _pairing_marker) = build_multi_channel_runtime_dependencies(
         &cli,
@@ -358,14 +358,14 @@ fn integration_build_multi_channel_runtime_dependencies_propagates_model_identit
         || "pairing",
     );
 
-    assert_eq!(doctor_model, "openai/gpt-4o-mini");
+    assert_eq!(doctor_model, "openai/gpt-5.2");
 }
 
 #[test]
 fn regression_build_multi_channel_runtime_dependencies_preserves_no_session_setting() {
     let mut cli = parse_cli_with_stack();
     cli.no_session = true;
-    let model_ref = ModelRef::parse("openai/gpt-4o-mini").expect("model ref");
+    let model_ref = ModelRef::parse("openai/gpt-5.2").expect("model ref");
 
     let (session_enabled, _pairing_marker) = build_multi_channel_runtime_dependencies(
         &cli,
@@ -1134,7 +1134,7 @@ fn integration_build_gateway_openresponses_server_config_preserves_runtime_field
     cli.runtime_self_repair_tool_builds_dir = PathBuf::from(".tau/gateway/tool-builds");
     cli.runtime_self_repair_orphan_max_age_seconds = 90;
 
-    let model_ref = ModelRef::parse("openai/gpt-4o-mini").expect("model ref");
+    let model_ref = ModelRef::parse("openai/gpt-5.2").expect("model ref");
     let client: Arc<dyn LlmClient> = Arc::new(NoopClient);
     let tool_policy = ToolPolicy::new(vec![]);
     let config = build_gateway_openresponses_server_config(
@@ -1146,7 +1146,7 @@ fn integration_build_gateway_openresponses_server_config_preserves_runtime_field
     )
     .expect("gateway config");
 
-    assert_eq!(config.model, "gpt-4o-mini");
+    assert_eq!(config.model, "gpt-5.2");
     assert!(config.model_input_cost_per_million.is_some());
     assert!(config.model_output_cost_per_million.is_some());
     assert_eq!(config.system_prompt, "system prompt");
@@ -1196,7 +1196,7 @@ fn regression_build_gateway_openresponses_server_config_routes_default_heartbeat
     cli.gateway_openresponses_auth_mode = CliGatewayOpenResponsesAuthMode::Token;
     cli.gateway_openresponses_auth_token = Some("token".to_string());
 
-    let model_ref = ModelRef::parse("openai/gpt-4o-mini").expect("model ref");
+    let model_ref = ModelRef::parse("openai/gpt-5.2").expect("model ref");
     let client: Arc<dyn LlmClient> = Arc::new(NoopClient);
     let tool_policy = ToolPolicy::new(vec![]);
     let config = build_gateway_openresponses_server_config(
@@ -1217,7 +1217,7 @@ fn regression_build_gateway_openresponses_server_config_routes_default_heartbeat
 #[tokio::test]
 async fn unit_run_gateway_openresponses_server_if_requested_returns_false_when_disabled() {
     let cli = parse_cli_with_stack();
-    let model_ref = ModelRef::parse("openai/gpt-4o-mini").expect("model ref");
+    let model_ref = ModelRef::parse("openai/gpt-5.2").expect("model ref");
     let client: Arc<dyn LlmClient> = Arc::new(NoopClient);
     let tool_policy = ToolPolicy::new(vec![]);
 
@@ -1274,7 +1274,7 @@ async fn unit_run_multi_channel_contract_runner_if_requested_returns_false_when_
 #[tokio::test]
 async fn unit_run_multi_channel_contract_runner_with_runtime_dependencies_composes_inputs() {
     let cli = parse_cli_with_stack();
-    let model_ref = ModelRef::parse("openai/gpt-4o-mini").expect("model ref");
+    let model_ref = ModelRef::parse("openai/gpt-5.2").expect("model ref");
     let handler_called = Arc::new(Mutex::new(false));
     let handler_called_sink = Arc::clone(&handler_called);
     let pairing_called = Arc::new(Mutex::new(false));
@@ -1306,7 +1306,7 @@ async fn functional_run_multi_channel_contract_runner_with_runtime_dependencies_
     let mut cli = parse_cli_with_stack();
     cli.openai_api_key = Some("test-openai-key".to_string());
     cli.no_session = true;
-    let model_ref = ModelRef::parse("openai/gpt-4o-mini").expect("model ref");
+    let model_ref = ModelRef::parse("openai/gpt-5.2").expect("model ref");
     let captured = Arc::new(Mutex::new(None::<(String, bool, PathBuf)>));
     let captured_sink = Arc::clone(&captured);
 
@@ -1356,7 +1356,7 @@ async fn unit_run_multi_channel_live_runner_if_requested_returns_false_when_disa
 async fn integration_run_multi_channel_live_runner_with_runtime_dependencies_preserves_model_identity(
 ) {
     let cli = parse_cli_with_stack();
-    let model_ref = ModelRef::parse("openai/gpt-4o-mini").expect("model ref");
+    let model_ref = ModelRef::parse("openai/gpt-5.2").expect("model ref");
     let captured_model = Arc::new(Mutex::new(None::<String>));
     let captured_model_sink = Arc::clone(&captured_model);
     let pairing_called = Arc::new(Mutex::new(false));
@@ -1380,7 +1380,7 @@ async fn integration_run_multi_channel_live_runner_with_runtime_dependencies_pre
     assert!(!handled);
     assert_eq!(
         captured_model.lock().expect("capture lock").clone(),
-        Some("openai/gpt-4o-mini".to_string())
+        Some("openai/gpt-5.2".to_string())
     );
     assert!(*pairing_called.lock().expect("pairing lock"));
 }
@@ -1391,7 +1391,7 @@ async fn regression_run_multi_channel_contract_runner_with_runtime_dependencies_
     let mut cli = parse_cli_with_stack();
     cli.multi_channel_contract_runner = true;
     cli.multi_channel_fixture = PathBuf::from("/definitely/missing-contract-fixture.json");
-    let model_ref = ModelRef::parse("openai/gpt-4o-mini").expect("model ref");
+    let model_ref = ModelRef::parse("openai/gpt-5.2").expect("model ref");
 
     let error = run_multi_channel_contract_runner_with_runtime_dependencies_if_requested(
         &cli,
@@ -2303,7 +2303,7 @@ async fn unit_run_events_runner_with_runtime_defaults_returns_false_when_disable
     let cli = parse_cli_with_stack();
     let called = Arc::new(Mutex::new(false));
     let called_sink = Arc::clone(&called);
-    let model_ref = ModelRef::parse("openai/gpt-4o-mini").expect("model ref");
+    let model_ref = ModelRef::parse("openai/gpt-5.2").expect("model ref");
 
     let ran = run_events_runner_with_runtime_defaults_if_requested(
         &cli,
@@ -2371,7 +2371,7 @@ async fn functional_run_slack_bridge_with_runtime_defaults_passes_defaults() {
     cli.slack_bridge = true;
     cli.max_turns = 42;
     cli.turn_timeout_ms = 20_000;
-    let model_ref = ModelRef::parse("openai/gpt-4o-mini").expect("model ref");
+    let model_ref = ModelRef::parse("openai/gpt-5.2").expect("model ref");
     let captured = Arc::new(Mutex::new(
         None::<(SlackBridgeCliConfig, TransportRuntimeDefaults)>,
     ));
@@ -2400,7 +2400,7 @@ async fn functional_run_slack_bridge_with_runtime_defaults_passes_defaults() {
         .clone()
         .expect("captured payload");
     assert_eq!(config.app_token, "app-token");
-    assert_eq!(defaults.model, "gpt-4o-mini");
+    assert_eq!(defaults.model, "gpt-5.2");
     assert_eq!(defaults.system_prompt, "bridge system prompt");
     assert_eq!(defaults.max_turns, 42);
     assert_eq!(defaults.turn_timeout_ms, 20_000);
@@ -2442,7 +2442,7 @@ async fn integration_run_events_runner_with_runtime_defaults_passes_normalized_c
     cli.events_poll_interval_ms = 0;
     cli.events_queue_limit = 0;
     cli.session_lock_wait_ms = 123;
-    let model_ref = ModelRef::parse("openai/gpt-4o-mini").expect("model ref");
+    let model_ref = ModelRef::parse("openai/gpt-5.2").expect("model ref");
     let captured = Arc::new(Mutex::new(
         None::<(EventsRunnerCliConfig, TransportRuntimeDefaults)>,
     ));
@@ -2498,7 +2498,7 @@ async fn regression_run_github_issues_bridge_if_requested_propagates_resolver_er
 async fn regression_run_github_issues_bridge_with_runtime_defaults_propagates_resolver_errors() {
     let mut cli = parse_cli_with_stack();
     cli.github_issues_bridge = true;
-    let model_ref = ModelRef::parse("openai/gpt-4o-mini").expect("model ref");
+    let model_ref = ModelRef::parse("openai/gpt-5.2").expect("model ref");
 
     let error = run_github_issues_bridge_with_runtime_defaults_if_requested(
         &cli,

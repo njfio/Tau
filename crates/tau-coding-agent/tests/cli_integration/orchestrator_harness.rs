@@ -244,7 +244,7 @@ fn functional_orchestrator_plan_delegate_consolidate_flow_uses_expected_routes()
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--api-base",
@@ -357,7 +357,7 @@ fn integration_orchestrator_route_fallback_recovers_from_planner_error() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--api-base",
@@ -474,7 +474,7 @@ fn regression_orchestrator_route_fallback_recovers_from_planner_timeout() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--api-base",

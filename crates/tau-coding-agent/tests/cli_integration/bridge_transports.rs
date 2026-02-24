@@ -7,7 +7,7 @@ fn regression_github_issues_bridge_requires_token() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--github-issues-bridge",
@@ -29,7 +29,7 @@ fn command_file_flag_executes_slash_commands_and_prints_summary() {
     let mut cmd = binary_command();
     cmd.current_dir(temp.path()).args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--no-session",
@@ -57,7 +57,7 @@ fn integration_command_file_continue_on_error_executes_remaining_commands() {
     let mut cmd = binary_command();
     cmd.current_dir(temp.path()).args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--no-session",
@@ -90,7 +90,7 @@ fn regression_command_file_fail_fast_stops_on_malformed_line_and_exits_failure()
     let mut cmd = binary_command();
     cmd.current_dir(temp.path()).args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--no-session",

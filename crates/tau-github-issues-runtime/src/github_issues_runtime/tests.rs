@@ -88,7 +88,7 @@ fn test_bridge_config_with_client(
 ) -> GithubIssuesBridgeRuntimeConfig {
     GithubIssuesBridgeRuntimeConfig {
         client,
-        model: "openai/gpt-4o-mini".to_string(),
+        model: "openai/gpt-5.2".to_string(),
         system_prompt: "You are Tau.".to_string(),
         max_turns: 4,
         tool_policy: ToolPolicy::new(vec![state_dir.to_path_buf()]),
@@ -139,7 +139,7 @@ fn test_bridge_config_with_client(
         demo_index_script_path: None,
         demo_index_binary_path: None,
         doctor_config: DoctorCommandConfig {
-            model: "openai/gpt-4o-mini".to_string(),
+            model: "openai/gpt-5.2".to_string(),
             provider_keys: Vec::new(),
             release_channel_path: state_dir.join("release-channel.json"),
             release_lookup_cache_path: state_dir.join("release-cache.json"),
@@ -220,7 +220,7 @@ fn test_issue_event() -> GithubBridgeEvent {
 fn test_prompt_run_report(reply: &str) -> PromptRunReport {
     PromptRunReport {
         run_id: "run-1".to_string(),
-        model: "openai/gpt-4o-mini".to_string(),
+        model: "openai/gpt-5.2".to_string(),
         status: PromptRunStatus::Completed,
         assistant_reply: reply.to_string(),
         usage: PromptUsageSummary {

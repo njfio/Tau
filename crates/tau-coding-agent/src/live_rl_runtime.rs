@@ -1419,7 +1419,7 @@ impl LiveRlRuntimeBridge {
     ) -> Self {
         let apo_runtime = config.apo_enabled.then_some(LiveApoRuntime {
             client,
-            model: "gpt-4o-mini".to_string(),
+            model: "gpt-5.2".to_string(),
             seed_system_prompt: seed_system_prompt.to_string(),
         });
         Self::new(store, config, apo_runtime)

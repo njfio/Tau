@@ -41,7 +41,7 @@ Out:
 ## Conformance Cases
 
 - C-01 (AC-1, unit/conformance): serialization/deserialization roundtrip for `ModelCatalogEntry` includes new fields with backward-compatible defaults.
-- C-02 (AC-2, conformance): built-in catalog contains required new models (e.g., `gpt-5.2`, `gpt-4.1`, `o3`, `claude-opus-4-6`, `gemini-3-pro-preview`, `deepseek-chat`) and excludes removed duplicate `openai/gpt-4o-mini` + deprecated `gemini-2.0-flash`.
+- C-02 (AC-2, conformance): built-in catalog contains required new models (e.g., `gpt-5.2`, `gpt-4.1`, `o3`, `claude-opus-4-6`, `gemini-3-pro-preview`, `deepseek-chat`) and excludes removed duplicate `openai/gpt-5.2` + deprecated `gemini-2.0-flash`.
 - C-03 (AC-3, unit): `ModelRef::parse("deepseek/deepseek-chat")` resolves to `Provider::OpenAi` with model `deepseek-chat`; auth key candidates include DeepSeek env vars.
 - C-04 (AC-4, functional): local template + script can source user-provided `.tau/provider-keys.env` and execute provider smoke commands without printing secret values.
 - C-05 (AC-5, regression): `cargo test -p tau-provider` and `cargo test -p tau-ai` pass for touched behavior.

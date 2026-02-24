@@ -59,7 +59,7 @@ Out of scope:
 - C-01 (AC-1, Unit): Codex request is sent to `/v1/responses`.
 - C-02 (AC-2, Unit): Responses payload with output text and usage maps into
   `ChatResponse`.
-- C-03 (AC-3, Regression): `gpt-4o-mini` continues using
+- C-03 (AC-3, Regression): `gpt-5.2` continues using
   `/v1/chat/completions`.
 - C-04 (AC-4, Integration): chat-completions failure with Codex error triggers
   one retry to `/v1/responses`.

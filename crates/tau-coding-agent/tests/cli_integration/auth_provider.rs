@@ -11,7 +11,7 @@ fn integration_models_list_command_filters_catalog_entries() {
         json!([
             {
                 "provider": "openai",
-                "model": "gpt-4o-mini",
+                "model": "gpt-5.2",
                 "context_window_tokens": 128000,
                 "supports_tools": true,
                 "supports_multimodal": true,
@@ -35,7 +35,7 @@ fn integration_models_list_command_filters_catalog_entries() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--model-catalog-cache",
@@ -43,12 +43,12 @@ fn integration_models_list_command_filters_catalog_entries() {
         "--model-catalog-offline",
         "--no-session",
     ])
-    .write_stdin("/models-list gpt --provider openai --tools true --limit 5\n/quit\n");
+    .write_stdin("/models-list gpt-5.2 --provider openai --tools true --limit 5\n/quit\n");
 
     cmd.assert()
         .success()
         .stdout(predicate::str::contains("models list: source=cache:"))
-        .stdout(predicate::str::contains("model: openai/gpt-4o-mini"))
+        .stdout(predicate::str::contains("model: openai/gpt-5.2"))
         .stdout(predicate::str::contains("legacy-no-tools").not());
 }
 
@@ -60,7 +60,7 @@ fn regression_model_show_command_reports_not_found_and_continues() {
         &catalog_path,
         json!([{
             "provider": "openai",
-            "model": "gpt-4o-mini",
+            "model": "gpt-5.2",
             "context_window_tokens": 128000,
             "supports_tools": true,
             "supports_multimodal": true,
@@ -73,7 +73,7 @@ fn regression_model_show_command_reports_not_found_and_continues() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--model-catalog-cache",
@@ -100,7 +100,7 @@ fn integration_startup_model_catalog_remote_refresh_is_reported() {
             "schema_version": 1,
             "entries": [{
                 "provider": "openai",
-                "model": "gpt-4o-mini",
+                "model": "gpt-5.2",
                 "context_window_tokens": 128000,
                 "supports_tools": true,
                 "supports_multimodal": true,
@@ -114,7 +114,7 @@ fn integration_startup_model_catalog_remote_refresh_is_reported() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--model-catalog-url",
@@ -191,7 +191,7 @@ fn openai_prompt_persists_session_and_supports_branch_from() {
     let mut first = binary_command();
     first.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--api-base",
         &format!("{}/v1", server.base_url()),
         "--openai-api-key",
@@ -216,7 +216,7 @@ fn openai_prompt_persists_session_and_supports_branch_from() {
     let mut second = binary_command();
     second.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--api-base",
         &format!("{}/v1", server.base_url()),
         "--openai-api-key",
@@ -306,7 +306,7 @@ fn integration_openrouter_provider_uses_openrouter_headers_with_env_key() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openrouter/openai/gpt-4o-mini",
+        "openrouter/openai/gpt-5.2",
         "--prompt",
         "hello",
         "--no-session",
@@ -442,7 +442,7 @@ fn integration_azure_alias_uses_openai_client_with_api_key_header_and_api_versio
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "azure/gpt-4o-mini",
+        "azure/gpt-5.2",
         "--api-base",
         &format!("{}/openai/deployments/test-deployment", server.base_url()),
         "--azure-openai-api-version",

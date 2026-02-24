@@ -9,7 +9,7 @@ Status: Implemented
    - `crates/tau-tui/src/main.rs`,
    - `scripts/run/tau-unified.sh`.
 3. Update launcher/TUI tests for new default model strings.
-4. Replace operator-facing `openai/gpt-4o-mini` guidance in README and docs
+4. Replace operator-facing `openai/gpt-5.2` guidance in README and docs
    with `openai/gpt-5.2`.
 5. Run focused test and lint/format checks for touched surfaces.
 
@@ -50,7 +50,7 @@ changes).
 
 ## Execution Summary
 1. Added RED assertion in `tau-tui` parser tests for new GPT-5 default.
-2. Migrated runtime defaults from `openai/gpt-4o-mini` to `openai/gpt-5.2` in:
+2. Migrated runtime defaults from `openai/gpt-5.2` to `openai/gpt-5.2` in:
    - `crates/tau-cli/src/cli_args.rs`,
    - `crates/tau-tui/src/main.rs`,
    - `scripts/run/tau-unified.sh`.
@@ -58,14 +58,14 @@ changes).
    - `crates/tau-tui/src/main.rs`,
    - `crates/tau-tui/tests/tui_demo_smoke.rs`,
    - `scripts/run/test-tau-unified.sh`.
-4. Updated README + operator guides to remove `openai/gpt-4o-mini` baseline
+4. Updated README + operator guides to remove `openai/gpt-5.2` baseline
    guidance in runnable snippets.
 
 ## Verification Notes
 - RED evidence:
   - `cargo test -p tau-tui regression_spec_c06_agent_mode_defaults_to_gpt5_baseline`
     failed pre-implementation with:
-    - left=`openai/gpt-4o-mini`, right=`openai/gpt-5.2`.
+    - left=`openai/gpt-5.2`, right=`openai/gpt-5.2`.
 - GREEN evidence:
   - `cargo test -p tau-tui` passed.
   - `bash scripts/run/test-tau-unified.sh` passed.

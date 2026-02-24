@@ -34,8 +34,8 @@ Out of scope:
 
 ## Conformance Cases
 
-- C-01 (AC-1, unit): `ModelRef::parse("openrouter/openai/gpt-4o-mini")` yields `Provider::OpenRouter` and model `openai/gpt-4o-mini`.
-- C-02 (AC-1, regression): `ModelRef::parse("gpt-4o-mini")` still defaults to `Provider::OpenAi`.
+- C-01 (AC-1, unit): `ModelRef::parse("openrouter/openai/gpt-5.2")` yields `Provider::OpenRouter` and model `openai/gpt-5.2`.
+- C-02 (AC-1, regression): `ModelRef::parse("gpt-5.2")` still defaults to `Provider::OpenAi`.
 - C-03 (AC-2, unit): `parse_auth_provider("openrouter")` yields `Provider::OpenRouter`.
 - C-04 (AC-2, functional): `execute_auth_matrix_command` with provider filter `openrouter` emits rows with `provider=openrouter`.
 - C-05 (AC-3, integration): OpenRouter provider client uses OpenRouter base when CLI base is default OpenAI base.

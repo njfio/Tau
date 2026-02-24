@@ -610,7 +610,7 @@ fn regression_load_profile_store_backfills_auth_defaults_for_legacy_profiles() {
             "schema_version": PROFILE_SCHEMA_VERSION,
             "profiles": {
                 "legacy": {
-                    "model": "openai/gpt-4o-mini",
+                    "model": "openai/gpt-5.2",
                     "fallback_models": [],
                     "session": {
                         "enabled": true,
@@ -654,10 +654,9 @@ fn functional_render_profile_diffs_reports_changed_fields() {
 
     let diffs = render_profile_diffs(&current, &loaded);
     assert_eq!(diffs.len(), 3);
-    assert!(diffs
-        .iter()
-        .any(|line| line
-            .contains("field=model current=openai/gpt-4o-mini loaded=google/gemini-2.5-pro")));
+    assert!(diffs.iter().any(
+        |line| line.contains("field=model current=openai/gpt-5.2 loaded=google/gemini-2.5-pro")
+    ));
     assert!(diffs
         .iter()
         .any(|line| line.contains("field=session.import_mode current=merge loaded=replace")));
@@ -732,7 +731,7 @@ fn integration_execute_profile_command_full_lifecycle_roundtrip() {
     let show_output = execute_profile_command("show baseline", &profile_path, &current);
     assert!(show_output.contains("profile show: path="));
     assert!(show_output.contains("name=baseline status=found"));
-    assert!(show_output.contains("value: model=openai/gpt-4o-mini"));
+    assert!(show_output.contains("value: model=openai/gpt-5.2"));
 
     let mut changed = current.clone();
     changed.model = "anthropic/claude-sonnet-4-20250514".to_string();

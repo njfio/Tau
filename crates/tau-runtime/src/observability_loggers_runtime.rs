@@ -931,7 +931,7 @@ mod tests {
     fn regression_prompt_telemetry_logger_marks_interrupted_runs() {
         let temp = tempdir().expect("tempdir");
         let log_path = temp.path().join("prompt-telemetry.jsonl");
-        let logger = PromptTelemetryLogger::open(log_path.clone(), "openai", "gpt-4o-mini")
+        let logger = PromptTelemetryLogger::open(log_path.clone(), "openai", "gpt-5.2")
             .expect("logger open");
 
         logger
@@ -974,7 +974,7 @@ mod tests {
     fn functional_prompt_telemetry_logger_records_cost_fields_and_budget_alerts() {
         let temp = tempdir().expect("tempdir");
         let log_path = temp.path().join("prompt-telemetry-cost.jsonl");
-        let logger = PromptTelemetryLogger::open(log_path.clone(), "openai", "gpt-4o-mini")
+        let logger = PromptTelemetryLogger::open(log_path.clone(), "openai", "gpt-5.2")
             .expect("logger open");
 
         logger
@@ -1028,7 +1028,7 @@ mod tests {
     fn functional_prompt_telemetry_logger_records_secret_leak_counters_by_pattern_class() {
         let temp = tempdir().expect("tempdir");
         let log_path = temp.path().join("prompt-telemetry-secret-leak.jsonl");
-        let logger = PromptTelemetryLogger::open(log_path.clone(), "openai", "gpt-4o-mini")
+        let logger = PromptTelemetryLogger::open(log_path.clone(), "openai", "gpt-5.2")
             .expect("logger open");
 
         logger
@@ -1081,7 +1081,7 @@ mod tests {
     fn regression_prompt_telemetry_logger_emits_versioned_schema_contract() {
         let temp = tempdir().expect("tempdir");
         let log_path = temp.path().join("prompt-telemetry-schema.jsonl");
-        let logger = PromptTelemetryLogger::open(log_path.clone(), "openai", "gpt-4o-mini")
+        let logger = PromptTelemetryLogger::open(log_path.clone(), "openai", "gpt-5.2")
             .expect("logger open");
 
         logger
@@ -1112,7 +1112,7 @@ mod tests {
         let logger = PromptTelemetryLogger::open_with_otel_export(
             log_path.clone(),
             "openai",
-            "gpt-4o-mini",
+            "gpt-5.2",
             Some(otel_path.clone()),
         )
         .expect("logger open");
@@ -1148,7 +1148,7 @@ mod tests {
         assert_eq!(trace["resource"]["service.name"], "tau-runtime");
         assert_eq!(trace["span"]["name"], "tau.prompt.run");
         assert_eq!(trace["span"]["attributes"]["provider"], "openai");
-        assert_eq!(trace["span"]["attributes"]["model"], "gpt-4o-mini");
+        assert_eq!(trace["span"]["attributes"]["model"], "gpt-5.2");
 
         let metric: serde_json::Value = serde_json::from_str(lines[1]).expect("metric record");
         assert_eq!(metric["record_type"], "otel_export_v1");
@@ -1166,7 +1166,7 @@ mod tests {
         let logger = PromptTelemetryLogger::open_with_otel_export(
             log_path.clone(),
             "openai",
-            "gpt-4o-mini",
+            "gpt-5.2",
             None,
         )
         .expect("logger open");
@@ -1185,9 +1185,8 @@ mod tests {
     fn functional_prompt_telemetry_logger_open_otel_only_writes_otel_records() {
         let temp = tempdir().expect("tempdir");
         let otel_path = temp.path().join("otel-only-export.jsonl");
-        let logger =
-            PromptTelemetryLogger::open_otel_only(otel_path.clone(), "openai", "gpt-4o-mini")
-                .expect("logger open");
+        let logger = PromptTelemetryLogger::open_otel_only(otel_path.clone(), "openai", "gpt-5.2")
+            .expect("logger open");
 
         logger
             .log_event(&AgentEvent::AgentStart)

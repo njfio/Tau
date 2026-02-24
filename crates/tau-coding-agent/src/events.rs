@@ -692,7 +692,7 @@ mod tests {
 
         let runner = TauEventRunner {
             client,
-            model: "openai/gpt-4o-mini".to_string(),
+            model: "openai/gpt-5.2".to_string(),
             system_prompt: "base".to_string(),
             max_turns: 4,
             tool_policy: ToolPolicy::new(vec![temp.path().to_path_buf()]),
@@ -761,7 +761,7 @@ mod tests {
 
         let runner = TauEventRunner {
             client,
-            model: "openai/gpt-4o-mini".to_string(),
+            model: "openai/gpt-5.2".to_string(),
             system_prompt: "base".to_string(),
             max_turns: 4,
             tool_policy: ToolPolicy::new(vec![temp.path().to_path_buf()]),
@@ -831,7 +831,7 @@ mod tests {
 
         let runner = TauEventRunner {
             client,
-            model: "openai/gpt-4o-mini".to_string(),
+            model: "openai/gpt-5.2".to_string(),
             system_prompt: "base".to_string(),
             max_turns: 4,
             tool_policy: ToolPolicy::new(vec![temp.path().to_path_buf()]),

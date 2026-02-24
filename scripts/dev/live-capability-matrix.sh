@@ -162,7 +162,7 @@ case_meta() {
   local case_id="$1"
   case "$case_id" in
     research_openai)
-      printf "%s\n" "openai/gpt-4o-mini|openai|research|false|1"
+      printf "%s\n" "openai/gpt-5.2|openai|research|false|1"
       ;;
     blog_anthropic)
       printf "%s\n" "anthropic/claude-opus-4-6|anthropic|blog|false|1"
@@ -189,7 +189,7 @@ case_meta() {
       printf "%s\n" "openai/gpt-5.2-codex|openai|long_output|false|1"
       ;;
     stream_openai_research)
-      printf "%s\n" "openai/gpt-4o-mini|openai|stream_text|true|0"
+      printf "%s\n" "openai/gpt-5.2|openai|stream_text|true|0"
       ;;
     stream_anthropic_blog)
       printf "%s\n" "anthropic/claude-opus-4-6|anthropic|stream_text|true|0"
@@ -201,10 +201,10 @@ case_meta() {
       printf "%s\n" "openrouter/x-ai/grok-4.1-fast|openrouter|stream_text|true|0"
       ;;
     session_continuity_openai)
-      printf "%s\n" "openai/gpt-4o-mini|openai|session_continuity|false|2"
+      printf "%s\n" "openai/gpt-5.2|openai|session_continuity|false|2"
       ;;
     parallel_tools_openai)
-      printf "%s\n" "openai/gpt-4o-mini|openai|parallel_tools|false|3"
+      printf "%s\n" "openai/gpt-5.2|openai|parallel_tools|false|3"
       ;;
     *)
       return 1

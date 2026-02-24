@@ -233,7 +233,7 @@ async fn functional_non_stream_tool_contract_is_normalized_across_providers() {
     });
 
     let openai_response = openai_client(format!("{}/v1", openai_server.base_url()))
-        .complete(tool_request("gpt-4o-mini"))
+        .complete(tool_request("gpt-5.2"))
         .await
         .expect("openai contract request should succeed");
     let anthropic_response = anthropic_client(format!("{}/v1", anthropic_server.base_url()))
@@ -344,7 +344,7 @@ async fn integration_stream_contract_is_normalized_across_providers() {
     };
 
     let openai_response = openai_client(format!("{}/v1", openai_server.base_url()))
-        .complete_with_stream(prompt_request("gpt-4o-mini"), Some(openai_sink))
+        .complete_with_stream(prompt_request("gpt-5.2"), Some(openai_sink))
         .await
         .expect("openai stream contract should succeed");
     let anthropic_response = anthropic_client(format!("{}/v1", anthropic_server.base_url()))
@@ -425,7 +425,7 @@ async fn regression_malformed_payloads_return_structured_parse_errors() {
     });
 
     let openai_error = openai_client(format!("{}/v1", openai_server.base_url()))
-        .complete(prompt_request("gpt-4o-mini"))
+        .complete(prompt_request("gpt-5.2"))
         .await
         .expect_err("openai malformed payload should fail");
     let anthropic_error = anthropic_client(format!("{}/v1", anthropic_server.base_url()))

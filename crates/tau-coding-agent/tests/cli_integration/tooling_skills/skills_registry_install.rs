@@ -34,7 +34,7 @@ fn install_skill_url_with_sha256_verification_works_end_to_end() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--api-base",
         &format!("{}/v1", server.base_url()),
         "--openai-api-key",
@@ -96,7 +96,7 @@ fn integration_install_skill_url_offline_replay_uses_cache_without_network() {
     let mut warm = binary_command();
     warm.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--api-base",
         &format!("{}/v1", server.base_url()),
         "--openai-api-key",
@@ -122,7 +122,7 @@ fn integration_install_skill_url_offline_replay_uses_cache_without_network() {
     let mut replay = binary_command();
     replay.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--api-base",
         &format!("{}/v1", server.base_url()),
         "--openai-api-key",
@@ -161,7 +161,7 @@ fn regression_skills_offline_mode_without_warm_remote_cache_fails() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--prompt",
@@ -226,7 +226,7 @@ fn install_skill_from_registry_works_end_to_end() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--api-base",
         &format!("{}/v1", server.base_url()),
         "--openai-api-key",
@@ -304,7 +304,7 @@ fn integration_install_skill_from_registry_offline_replay_uses_cache_without_net
     let mut warm = binary_command();
     warm.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--api-base",
         &format!("{}/v1", server.base_url()),
         "--openai-api-key",
@@ -332,7 +332,7 @@ fn integration_install_skill_from_registry_offline_replay_uses_cache_without_net
     let mut replay = binary_command();
     replay.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--api-base",
         &format!("{}/v1", server.base_url()),
         "--openai-api-key",
@@ -374,7 +374,7 @@ fn regression_skills_offline_mode_without_warm_registry_cache_fails() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--prompt",
@@ -417,7 +417,7 @@ fn require_signed_skills_rejects_unsigned_registry_entries() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--api-base",
         &format!("{}/v1", server.base_url()),
         "--openai-api-key",

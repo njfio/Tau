@@ -2437,7 +2437,7 @@ mod tests {
     fn llm_ingestion_options(server: &MockServer) -> MemoryIngestionLlmOptions {
         MemoryIngestionLlmOptions {
             provider: "openai-compatible".to_string(),
-            model: "gpt-4o-mini".to_string(),
+            model: "gpt-5.2".to_string(),
             api_base: server.url(""),
             api_key: "test-key".to_string(),
             timeout_ms: 5_000,

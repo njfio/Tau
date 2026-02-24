@@ -403,7 +403,7 @@ pub fn render_launchd_plist(label: &str, executable: &Path, state_dir: &Path) ->
   <array>
     <string>{executable}</string>
     <string>--model</string>
-    <string>openai/gpt-4o-mini</string>
+    <string>openai/gpt-5.2</string>
     <string>--gateway-openresponses-server</string>
     <string>--gateway-openresponses-auth-mode</string>
     <string>localhost-dev</string>
@@ -446,7 +446,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart={executable_arg} --model openai/gpt-4o-mini --gateway-openresponses-server --gateway-openresponses-auth-mode localhost-dev --gateway-openresponses-bind 127.0.0.1:8787 --gateway-state-dir {gateway_state_dir_arg}
+ExecStart={executable_arg} --model openai/gpt-5.2 --gateway-openresponses-server --gateway-openresponses-auth-mode localhost-dev --gateway-openresponses-bind 127.0.0.1:8787 --gateway-state-dir {gateway_state_dir_arg}
 Restart=on-failure
 RestartSec=2
 WorkingDirectory={state_dir}

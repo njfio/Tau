@@ -1082,7 +1082,7 @@ fn built_in_model_catalog_file() -> ModelCatalogFile {
             },
             ModelCatalogEntry {
                 provider: "openai".to_string(),
-                model: "gpt-4o-mini".to_string(),
+                model: "gpt-5-mini".to_string(),
                 context_window_tokens: Some(128_000),
                 supports_tools: true,
                 supports_multimodal: true,
@@ -1412,7 +1412,7 @@ mod tests {
             entries: vec![
                 ModelCatalogEntry {
                     provider: "openai".to_string(),
-                    model: "gpt-4o-mini".to_string(),
+                    model: "gpt-5.2".to_string(),
                     context_window_tokens: Some(128_000),
                     supports_tools: true,
                     supports_multimodal: true,
@@ -1427,7 +1427,7 @@ mod tests {
                 },
                 ModelCatalogEntry {
                     provider: "OPENAI".to_string(),
-                    model: "gpt-4o-mini".to_string(),
+                    model: "gpt-5.2".to_string(),
                     context_window_tokens: Some(128_000),
                     supports_tools: true,
                     supports_multimodal: true,
@@ -1451,10 +1451,10 @@ mod tests {
     fn unit_model_catalog_lookup_matches_case_insensitive_keys() {
         let catalog = ModelCatalog::built_in();
         let entry = catalog
-            .find("OPENAI", "GPT-4O-MINI")
+            .find("OPENAI", "GPT-5.2")
             .expect("lookup should be case-insensitive");
         assert_eq!(entry.provider, "openai");
-        assert_eq!(entry.model, "gpt-4o-mini");
+        assert_eq!(entry.model, "gpt-5.2");
     }
 
     #[test]
@@ -1474,8 +1474,8 @@ mod tests {
     #[test]
     fn functional_render_model_show_displays_capabilities() {
         let catalog = ModelCatalog::built_in();
-        let output = render_model_show(&catalog, "openai/gpt-4o-mini").expect("render show");
-        assert!(output.contains("model show: openai/gpt-4o-mini"));
+        let output = render_model_show(&catalog, "openai/gpt-5.2").expect("render show");
+        assert!(output.contains("model show: openai/gpt-5.2"));
         assert!(output.contains("supports_tools=true"));
         assert!(output.contains("supports_multimodal=true"));
         assert!(output.contains("supports_reasoning=true"));
@@ -1550,7 +1550,7 @@ mod tests {
     fn regression_built_in_model_catalog_removes_duplicate_and_sunset_entries() {
         let catalog = ModelCatalog::built_in();
         assert!(
-            catalog.find("openai", "openai/gpt-4o-mini").is_none(),
+            catalog.find("openai", "openai/gpt-5.2").is_none(),
             "duplicate alias entry should not exist in built-in catalog"
         );
         assert!(
@@ -1608,7 +1608,7 @@ mod tests {
                 "schema_version": 1,
                 "entries": [{
                     "provider": "openai",
-                    "model": "gpt-4o-mini",
+                    "model": "gpt-5.2",
                     "context_window_tokens": 128000,
                     "supports_tools": true,
                     "supports_multimodal": true,
@@ -1648,7 +1648,7 @@ mod tests {
             .expect("offline cache load should succeed");
         assert!(matches!(offline.source(), ModelCatalogSource::Cache { .. }));
         assert!(
-            offline.find("openai", "gpt-4o-mini").is_some(),
+            offline.find("openai", "gpt-5.2").is_some(),
             "cached model entry should be available offline"
         );
     }
@@ -1869,7 +1869,7 @@ mod tests {
             schema_version: MODEL_CATALOG_SCHEMA_VERSION,
             entries: vec![ModelCatalogEntry {
                 provider: "openai".to_string(),
-                model: "gpt-4o-mini".to_string(),
+                model: "gpt-5.2".to_string(),
                 context_window_tokens: Some(128_000),
                 supports_tools: true,
                 supports_multimodal: true,

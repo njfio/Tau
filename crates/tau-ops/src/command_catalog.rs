@@ -152,7 +152,7 @@ pub const COMMAND_SPECS: &[CommandSpec] = &[
         description: "Show detailed capability metadata for one model catalog entry",
         details:
             "Accepts provider/model format and reports context window, capability flags, and configured cost metadata.",
-        example: "/model-show openai/gpt-4o-mini",
+        example: "/model-show openai/gpt-5.2",
     },
     CommandSpec {
         name: "/skills-search",

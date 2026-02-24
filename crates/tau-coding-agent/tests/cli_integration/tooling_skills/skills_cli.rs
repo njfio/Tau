@@ -28,7 +28,7 @@ fn selected_skill_is_included_in_system_prompt() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--api-base",
         &format!("{}/v1", server.base_url()),
         "--openai-api-key",
@@ -76,7 +76,7 @@ fn install_skill_flag_installs_skill_before_prompt() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--api-base",
         &format!("{}/v1", server.base_url()),
         "--openai-api-key",
@@ -126,7 +126,7 @@ fn skills_lock_write_flag_generates_lockfile_for_local_install() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--api-base",
         &format!("{}/v1", server.base_url()),
         "--openai-api-key",
@@ -179,7 +179,7 @@ fn skills_sync_flag_succeeds_for_matching_lockfile() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--skills-dir",
@@ -216,7 +216,7 @@ fn regression_skills_sync_flag_fails_on_drift() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--skills-dir",
@@ -241,7 +241,7 @@ fn interactive_skills_list_command_prints_inventory() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--skills-dir",
@@ -268,7 +268,7 @@ fn regression_interactive_skills_list_command_with_args_prints_usage_and_continu
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--skills-dir",
@@ -293,7 +293,7 @@ fn interactive_skills_show_command_displays_skill_metadata_and_content() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--skills-dir",
@@ -320,7 +320,7 @@ fn regression_interactive_skills_show_command_reports_unknown_skill_and_continue
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--skills-dir",
@@ -347,7 +347,7 @@ fn interactive_skills_search_command_ranks_name_hits_before_content_hits() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--skills-dir",
@@ -378,7 +378,7 @@ fn regression_interactive_skills_search_command_invalid_limit_reports_error_and_
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--skills-dir",
@@ -421,7 +421,7 @@ fn interactive_skills_lock_diff_command_reports_in_sync_state() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--skills-dir",
@@ -461,7 +461,7 @@ fn integration_interactive_skills_lock_diff_command_supports_json_output() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--skills-dir",
@@ -489,7 +489,7 @@ fn regression_interactive_skills_lock_diff_command_invalid_args_reports_error_an
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--skills-dir",
@@ -530,7 +530,7 @@ fn interactive_skills_prune_command_dry_run_lists_candidates_without_deleting() 
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--skills-dir",
@@ -573,7 +573,7 @@ fn integration_interactive_skills_prune_command_apply_deletes_untracked_files() 
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--skills-dir",
@@ -610,7 +610,7 @@ fn regression_interactive_skills_prune_command_missing_lockfile_reports_error_an
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--skills-dir",
@@ -653,7 +653,7 @@ fn regression_interactive_skills_prune_command_rejects_unsafe_lockfile_entry() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--skills-dir",
@@ -706,7 +706,7 @@ fn integration_interactive_skills_trust_list_command_reports_mixed_statuses() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--skills-dir",
@@ -745,7 +745,7 @@ fn regression_interactive_skills_trust_list_command_malformed_json_reports_error
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--skills-dir",
@@ -790,7 +790,7 @@ fn integration_interactive_skills_trust_mutation_commands_roundtrip() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--skills-dir",
@@ -833,7 +833,7 @@ fn regression_interactive_skills_trust_add_without_configured_path_reports_error
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--skills-dir",
@@ -863,7 +863,7 @@ fn regression_interactive_skills_trust_revoke_unknown_id_reports_error() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--skills-dir",
@@ -924,7 +924,7 @@ fn integration_interactive_skills_verify_command_reports_combined_compliance() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--skills-dir",
@@ -954,7 +954,7 @@ fn regression_interactive_skills_verify_command_invalid_args_report_usage() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--skills-dir",
@@ -981,7 +981,7 @@ fn interactive_skills_lock_write_command_writes_default_lockfile() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--skills-dir",
@@ -1011,7 +1011,7 @@ fn integration_interactive_skills_lock_write_command_accepts_optional_lockfile_p
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--skills-dir",
@@ -1046,7 +1046,7 @@ fn regression_interactive_skills_lock_write_command_reports_error_and_continues_
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--skills-dir",
@@ -1089,7 +1089,7 @@ fn interactive_skills_sync_command_uses_default_lockfile_path() {
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--skills-dir",
@@ -1129,7 +1129,7 @@ fn integration_interactive_skills_sync_command_accepts_optional_lockfile_path() 
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--skills-dir",
@@ -1166,7 +1166,7 @@ fn regression_interactive_skills_sync_command_reports_drift_and_continues_loop()
     let mut cmd = binary_command();
     cmd.args([
         "--model",
-        "openai/gpt-4o-mini",
+        "openai/gpt-5.2",
         "--openai-api-key",
         "test-openai-key",
         "--skills-dir",

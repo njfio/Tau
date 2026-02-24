@@ -82,7 +82,7 @@ async fn integration_spec_2717_c01_c02_cortex_refresh_scans_cross_session_memory
     let cortex = Cortex::new(CortexConfig::new(root.clone()));
     let client =
         QueueClient::from_replies(vec![Ok("Bulletin: prioritize beta then alpha".to_string())]);
-    let report = cortex.refresh_once(&client, "openai/gpt-4o-mini").await;
+    let report = cortex.refresh_once(&client, "openai/gpt-5.2").await;
 
     assert_eq!(report.sessions_scanned, 2);
     assert!(report.records_scanned >= 2);
@@ -103,7 +103,7 @@ async fn regression_spec_2717_c03_cortex_refresh_uses_deterministic_fallback_whe
     let client = QueueClient::from_replies(vec![Err(TauAiError::InvalidResponse(
         "forced llm failure".to_string(),
     ))]);
-    let report = cortex.refresh_once(&client, "openai/gpt-4o-mini").await;
+    let report = cortex.refresh_once(&client, "openai/gpt-5.2").await;
 
     assert_eq!(report.reason_code, "cortex_bulletin_llm_error_fallback");
     let bulletin = cortex.bulletin_snapshot();

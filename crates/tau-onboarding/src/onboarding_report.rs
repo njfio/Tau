@@ -411,7 +411,7 @@ mod tests {
                 first_run_reason_codes: vec!["onboarding_first_run_detected".to_string()],
                 selected_provider: "openai".to_string(),
                 selected_auth_mode: "api_key".to_string(),
-                selected_model: "openai/gpt-4o-mini".to_string(),
+                selected_model: "openai/gpt-5.2".to_string(),
                 selected_workspace: ".".to_string(),
                 profile_repair_requested: false,
                 identity_generation_requested: true,
@@ -550,7 +550,7 @@ mod tests {
     fn integration_build_onboarding_next_steps_adds_daemon_recovery_actions() {
         let mut cli = parse_cli_with_stack();
         cli.daemon_state_dir = Path::new(".tau/daemon").to_path_buf();
-        cli.model = "openai/gpt-4o-mini".to_string();
+        cli.model = "openai/gpt-5.2".to_string();
         let checks = vec![];
         let mut status = sample_daemon_status();
         status.installed = false;
@@ -575,6 +575,6 @@ mod tests {
         assert!(joined.contains("--daemon-install"));
         assert!(joined.contains("--daemon-start"));
         assert!(joined.contains("--daemon-status --daemon-status-json"));
-        assert!(joined.contains("--model openai/gpt-4o-mini"));
+        assert!(joined.contains("--model openai/gpt-5.2"));
     }
 }

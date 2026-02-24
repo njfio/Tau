@@ -148,7 +148,7 @@ mod tests {
         let mut handle = start_cortex_bulletin_runtime(
             Arc::clone(&cortex),
             client.clone(),
-            "openai/gpt-4o-mini".to_string(),
+            "openai/gpt-5.2".to_string(),
             true,
             Duration::from_millis(20),
         );

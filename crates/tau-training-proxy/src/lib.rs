@@ -556,7 +556,7 @@ mod tests {
             .header(HEADER_ROLLOUT_ID, "rollout-1")
             .header(HEADER_ATTEMPT_ID, "attempt-2")
             .header(HEADER_SEQUENCE_ID, "7")
-            .body(Body::from(r#"{"model":"gpt-4o-mini","messages":[]}"#))
+            .body(Body::from(r#"{"model":"gpt-5.2","messages":[]}"#))
             .expect("request");
 
         let response = app.oneshot(request).await.expect("proxy response");
@@ -606,7 +606,7 @@ mod tests {
             .header("content-type", "application/json")
             .header(HEADER_ROLLOUT_ID, "rollout-reqid")
             .header(HEADER_ATTEMPT_ID, "attempt-reqid")
-            .body(Body::from(r#"{"model":"gpt-4o-mini","messages":[]}"#))
+            .body(Body::from(r#"{"model":"gpt-5.2","messages":[]}"#))
             .expect("request");
 
         let response = app.oneshot(request).await.expect("proxy response");
@@ -639,7 +639,7 @@ mod tests {
             .method("POST")
             .uri(OPENAI_CHAT_COMPLETIONS_ENDPOINT)
             .header("content-type", "application/json")
-            .body(Body::from(r#"{"model":"gpt-4o-mini","messages":[]}"#))
+            .body(Body::from(r#"{"model":"gpt-5.2","messages":[]}"#))
             .expect("request");
 
         let response = app.oneshot(request).await.expect("proxy response");
@@ -683,7 +683,7 @@ mod tests {
             .header("content-type", "application/json")
             .header(HEADER_ROLLOUT_ID, "rollout-err")
             .header(HEADER_ATTEMPT_ID, "attempt-err")
-            .body(Body::from(r#"{"model":"gpt-4o-mini","messages":[]}"#))
+            .body(Body::from(r#"{"model":"gpt-5.2","messages":[]}"#))
             .expect("request");
 
         let response = app.oneshot(request).await.expect("proxy response");
@@ -724,7 +724,7 @@ mod tests {
             .header("content-type", "application/json")
             .header(HEADER_ROLLOUT_ID, "rollout-fail")
             .header(HEADER_ATTEMPT_ID, "attempt-fail")
-            .body(Body::from(r#"{"model":"gpt-4o-mini","messages":[]}"#))
+            .body(Body::from(r#"{"model":"gpt-5.2","messages":[]}"#))
             .expect("request");
 
         let response = app.oneshot(request).await.expect("proxy response");
@@ -783,7 +783,7 @@ mod tests {
             .header("content-type", "application/json")
             .header(HEADER_ROLLOUT_ID, "rollout-recreate")
             .header(HEADER_ATTEMPT_ID, "attempt-recreate")
-            .body(Body::from(r#"{"model":"gpt-4o-mini","messages":[]}"#))
+            .body(Body::from(r#"{"model":"gpt-5.2","messages":[]}"#))
             .expect("request");
 
         let response = app.oneshot(request).await.expect("proxy response");
@@ -828,7 +828,7 @@ mod tests {
             .header("content-type", "application/json")
             .header(HEADER_ROLLOUT_ID, "rollout-append")
             .header(HEADER_ATTEMPT_ID, "attempt-append")
-            .body(Body::from(r#"{"model":"gpt-4o-mini","messages":[]}"#))
+            .body(Body::from(r#"{"model":"gpt-5.2","messages":[]}"#))
             .expect("request");
 
         let response = app.oneshot(request).await.expect("proxy response");
@@ -880,7 +880,7 @@ mod tests {
             .header("content-type", "application/json")
             .header(HEADER_ROLLOUT_ID, "rollout-boundary")
             .header(HEADER_ATTEMPT_ID, "attempt-boundary")
-            .body(Body::from(r#"{"model":"gpt-4o-mini","messages":[]}"#))
+            .body(Body::from(r#"{"model":"gpt-5.2","messages":[]}"#))
             .expect("request");
 
         let response = app.oneshot(request).await.expect("proxy response");

@@ -340,7 +340,7 @@ mod tests {
             event_key: "event-1",
             run_id: "run-1",
             status: "completed",
-            model: "openai/gpt-4o-mini",
+            model: "openai/gpt-5.2",
             assistant_reply: "  ",
             usage,
             artifact,
@@ -381,7 +381,7 @@ mod tests {
             event_key: "event-1",
             run_id: "run-1",
             status: "completed",
-            model: "openai/gpt-4o-mini",
+            model: "openai/gpt-5.2",
             assistant_reply: "ok",
             usage,
             artifact,
@@ -408,7 +408,7 @@ mod tests {
             event_key: "issue-comment-created:42",
             run_id: "run-99",
             status: "completed",
-            model: "openai/gpt-4o-mini",
+            model: "openai/gpt-5.2",
             assistant_reply: "result",
             usage,
             artifact,
@@ -417,7 +417,7 @@ mod tests {
         assert!(footer.contains(EVENT_KEY_MARKER_PREFIX));
         assert!(footer.contains(EVENT_KEY_MARKER_SUFFIX));
         assert!(footer.contains("issue-comment-created:42"));
-        assert!(footer.contains("model `openai/gpt-4o-mini`"));
+        assert!(footer.contains("model `openai/gpt-5.2`"));
     }
 
     #[test]

@@ -772,7 +772,7 @@ fn unit_build_doctor_command_config_collects_sorted_unique_provider_states() {
 
     let primary = ModelRef {
         provider: Provider::OpenAi,
-        model: "gpt-4o-mini".to_string(),
+        model: "gpt-5.2".to_string(),
     };
     let fallbacks = vec![
         ModelRef {
@@ -791,7 +791,7 @@ fn unit_build_doctor_command_config_collects_sorted_unique_provider_states() {
     let lock_path = PathBuf::from("/tmp/skills.lock.json");
 
     let config = build_doctor_command_config(&cli, &primary, &fallbacks, &lock_path);
-    assert_eq!(config.model, "openai/gpt-4o-mini");
+    assert_eq!(config.model, "openai/gpt-5.2");
     assert!(!config.session_enabled);
     assert_eq!(config.session_path, PathBuf::from("/tmp/session.jsonl"));
     assert_eq!(config.skills_dir, PathBuf::from("/tmp/skills"));
@@ -856,7 +856,7 @@ fn unit_render_doctor_report_summarizes_counts_and_rows() {
         DoctorCheckResult {
             key: "model".to_string(),
             status: DoctorStatus::Pass,
-            code: "openai/gpt-4o-mini".to_string(),
+            code: "openai/gpt-5.2".to_string(),
             path: None,
             action: None,
         },
@@ -877,9 +877,8 @@ fn unit_render_doctor_report_summarizes_counts_and_rows() {
     ]);
 
     assert!(report.contains("doctor summary: checks=3 pass=1 warn=1 fail=1"));
-    assert!(report.contains(
-        "doctor check: key=model status=pass code=openai/gpt-4o-mini path=none action=none"
-    ));
+    assert!(report
+        .contains("doctor check: key=model status=pass code=openai/gpt-5.2 path=none action=none"));
     assert!(report.contains(
             "doctor check: key=provider_key.openai status=fail code=missing path=none action=set OPENAI_API_KEY"
         ));
@@ -934,7 +933,7 @@ fn unit_render_doctor_report_json_contains_summary_and_rows() {
         DoctorCheckResult {
             key: "model".to_string(),
             status: DoctorStatus::Pass,
-            code: "openai/gpt-4o-mini".to_string(),
+            code: "openai/gpt-5.2".to_string(),
             path: None,
             action: None,
         },
@@ -976,7 +975,7 @@ fn functional_execute_doctor_command_supports_text_and_json_modes() {
     std::fs::write(&trust_root_path, "[]\n").expect("write trust");
 
     let config = DoctorCommandConfig {
-        model: "openai/gpt-4o-mini".to_string(),
+        model: "openai/gpt-5.2".to_string(),
         provider_keys: vec![
             DoctorProviderKeyStatus {
                 provider_kind: Provider::Anthropic,
@@ -1085,7 +1084,7 @@ fn functional_execute_doctor_cli_command_accepts_online_without_network_when_sto
     let release_channel_path = temp.path().join("release-channel.json");
     std::fs::write(&release_channel_path, "{invalid-json").expect("write malformed release file");
     let config = DoctorCommandConfig {
-        model: "openai/gpt-4o-mini".to_string(),
+        model: "openai/gpt-5.2".to_string(),
         provider_keys: vec![],
         release_channel_path,
         release_lookup_cache_path: temp.path().join("release-lookup-cache.json"),
@@ -1111,7 +1110,7 @@ fn functional_execute_doctor_cli_command_accepts_online_without_network_when_sto
 fn integration_run_doctor_checks_identifies_missing_runtime_prerequisites() {
     let temp = tempdir().expect("tempdir");
     let config = DoctorCommandConfig {
-        model: "openai/gpt-4o-mini".to_string(),
+        model: "openai/gpt-5.2".to_string(),
         provider_keys: vec![DoctorProviderKeyStatus {
             provider_kind: Provider::OpenAi,
             provider: "openai".to_string(),
@@ -1289,7 +1288,7 @@ fn integration_run_doctor_checks_reports_anthropic_backend_status_for_oauth_mode
 fn integration_execute_doctor_command_with_online_lookup_reports_update_available() {
     let temp = tempdir().expect("tempdir");
     let config = DoctorCommandConfig {
-        model: "openai/gpt-4o-mini".to_string(),
+        model: "openai/gpt-5.2".to_string(),
         provider_keys: vec![],
         release_channel_path: temp.path().join("release-channel.json"),
         release_lookup_cache_path: temp.path().join("release-lookup-cache.json"),
@@ -1399,7 +1398,7 @@ fn regression_run_doctor_checks_reports_type_and_readability_errors() {
     std::fs::create_dir_all(&trust_root_path).expect("mkdir trust dir");
 
     let config = DoctorCommandConfig {
-        model: "openai/gpt-4o-mini".to_string(),
+        model: "openai/gpt-5.2".to_string(),
         provider_keys: vec![DoctorProviderKeyStatus {
             provider_kind: Provider::OpenAi,
             provider: "openai".to_string(),
@@ -1463,7 +1462,7 @@ fn regression_run_doctor_checks_reports_invalid_release_channel_store() {
     std::fs::write(&release_channel_path, "{invalid-json").expect("write malformed release file");
 
     let config = DoctorCommandConfig {
-        model: "openai/gpt-4o-mini".to_string(),
+        model: "openai/gpt-5.2".to_string(),
         provider_keys: vec![DoctorProviderKeyStatus {
             provider_kind: Provider::OpenAi,
             provider: "openai".to_string(),
@@ -1508,7 +1507,7 @@ fn regression_run_doctor_checks_reports_invalid_release_channel_store() {
 fn regression_run_doctor_checks_with_online_lookup_surfaces_lookup_errors() {
     let temp = tempdir().expect("tempdir");
     let config = DoctorCommandConfig {
-        model: "openai/gpt-4o-mini".to_string(),
+        model: "openai/gpt-5.2".to_string(),
         provider_keys: vec![],
         release_channel_path: temp.path().join("release-channel.json"),
         release_lookup_cache_path: temp.path().join("release-lookup-cache.json"),

@@ -3,7 +3,7 @@
   "name": "prompt-turn-timeout",
   "args": [
     "--model",
-    "openai/gpt-4o-mini",
+    "openai/gpt-5.2",
     "--api-base",
     "{{API_BASE}}/v1",
     "--openai-api-key",

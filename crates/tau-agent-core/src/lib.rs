@@ -64,7 +64,7 @@ pub(crate) use tau_memory::runtime::embed_text_vector;
 /// use tau_agent_core::AgentConfig;
 ///
 /// let config = AgentConfig {
-///     model: "openai/gpt-4o-mini".to_string(),
+///     model: "openai/gpt-5.2".to_string(),
 ///     max_turns: 12,
 ///     ..AgentConfig::default()
 /// };
@@ -123,7 +123,7 @@ impl Default for AgentConfig {
     fn default() -> Self {
         Self {
             agent_id: "tau-agent".to_string(),
-            model: "gpt-4o-mini".to_string(),
+            model: "gpt-5.2".to_string(),
             system_prompt: "You are a helpful coding assistant.".to_string(),
             max_turns: 8,
             temperature: Some(0.0),
