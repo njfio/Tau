@@ -46,12 +46,14 @@ For endpoint-specific details, see `docs/guides/gateway-api-reference.md`.
 ## One-Command Unified Entrypoint (Recommended)
 
 Use the unified lifecycle launcher when you want one command surface for runtime
-bring-up, status checks, optional live TUI, and shutdown:
+bring-up, status checks, interactive TUI agent access, optional live-shell
+watch mode, and shutdown:
 
 ```bash
 ./scripts/run/tau-unified.sh up --auth-mode localhost-dev
 ./scripts/run/tau-unified.sh status
-./scripts/run/tau-unified.sh tui --iterations 3 --interval-ms 1000 --no-color
+./scripts/run/tau-unified.sh tui --no-color
+./scripts/run/tau-unified.sh tui --live-shell --iterations 3 --interval-ms 1000 --no-color
 ./scripts/run/tau-unified.sh down
 ```
 
@@ -64,6 +66,9 @@ and persists runtime artifacts under `.tau/unified/`:
 
 If you need explicit flag-level bring-up control, follow the manual step-by-step
 flow below.
+
+`./scripts/run/tau-unified.sh tui` now launches the interactive agent TUI path.
+Use `--live-shell` when you specifically want read-only dashboard watch output.
 
 ## Step 1: Start gateway in local smoke posture
 
