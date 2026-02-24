@@ -2972,6 +2972,7 @@ fn functional_spec_2806_c01_c02_c03_command_center_snapshot_markers_render() {
             last_action_request_id: "dashboard-action-90210".to_string(),
             last_action_name: "pause".to_string(),
             last_action_actor: "ops-user".to_string(),
+            last_action_reason: "maintenance".to_string(),
             last_action_timestamp_unix_ms: 90210,
             timeline_range: "1h".to_string(),
             timeline_point_count: 9,
@@ -3016,6 +3017,7 @@ fn functional_spec_2806_c01_c02_c03_command_center_snapshot_markers_render() {
     assert!(html.contains("data-last-action-request-id=\"dashboard-action-90210\""));
     assert!(html.contains("data-last-action-name=\"pause\""));
     assert!(html.contains("data-last-action-actor=\"ops-user\""));
+    assert!(html.contains("data-last-action-reason=\"maintenance\""));
     assert!(html.contains("data-last-action-timestamp=\"90210\""));
     assert!(html.contains("id=\"tau-ops-queue-timeline-chart\""));
     assert!(html.contains("data-component=\"TimelineChart\""));
@@ -3141,6 +3143,7 @@ fn functional_spec_2810_c01_c02_c03_command_center_control_markers_render() {
             last_action_request_id: "dashboard-action-90210".to_string(),
             last_action_name: "pause".to_string(),
             last_action_actor: "ops-user".to_string(),
+            last_action_reason: "maintenance".to_string(),
             last_action_timestamp_unix_ms: 90210,
             timeline_range: "1h".to_string(),
             timeline_point_count: 2,
@@ -3171,6 +3174,7 @@ fn functional_spec_2810_c01_c02_c03_command_center_control_markers_render() {
     assert!(html.contains("data-last-action-request-id=\"dashboard-action-90210\""));
     assert!(html.contains("data-last-action-name=\"pause\""));
     assert!(html.contains("data-last-action-actor=\"ops-user\""));
+    assert!(html.contains("data-last-action-reason=\"maintenance\""));
     assert!(html.contains("data-last-action-timestamp=\"90210\""));
 }
 
@@ -3193,6 +3197,7 @@ fn functional_spec_2826_c01_c02_control_actions_expose_confirmation_markers() {
             last_action_request_id: "none".to_string(),
             last_action_name: "none".to_string(),
             last_action_actor: "none".to_string(),
+            last_action_reason: "none".to_string(),
             last_action_timestamp_unix_ms: 0,
             timeline_range: "1h".to_string(),
             timeline_point_count: 1,
@@ -3326,6 +3331,44 @@ fn regression_spec_3478_c02_last_action_section_defaults_to_fallback_rows() {
 }
 
 #[test]
+fn functional_spec_3482_c01_last_action_section_exposes_reason_row_and_marker_contracts() {
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        auth_mode: TauOpsDashboardAuthMode::Token,
+        active_route: TauOpsDashboardRoute::Ops,
+        theme: TauOpsDashboardTheme::Dark,
+        sidebar_state: TauOpsDashboardSidebarState::Expanded,
+        command_center: TauOpsDashboardCommandCenterSnapshot {
+            last_action_request_id: "dashboard-action-90210".to_string(),
+            last_action_name: "pause".to_string(),
+            last_action_actor: "ops-user".to_string(),
+            last_action_reason: "maintenance".to_string(),
+            last_action_timestamp_unix_ms: 90210,
+            ..TauOpsDashboardCommandCenterSnapshot::default()
+        },
+        chat: TauOpsDashboardChatSnapshot::default(),
+    });
+
+    assert!(html.contains("id=\"tau-ops-control-last-action\""));
+    assert!(html.contains("data-last-action-reason=\"maintenance\""));
+    assert!(html.contains("id=\"tau-ops-last-action-reason\">reason: maintenance"));
+}
+
+#[test]
+fn regression_spec_3482_c02_last_action_reason_row_defaults_to_none() {
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        auth_mode: TauOpsDashboardAuthMode::Token,
+        active_route: TauOpsDashboardRoute::Ops,
+        theme: TauOpsDashboardTheme::Dark,
+        sidebar_state: TauOpsDashboardSidebarState::Expanded,
+        command_center: TauOpsDashboardCommandCenterSnapshot::default(),
+        chat: TauOpsDashboardChatSnapshot::default(),
+    });
+
+    assert!(html.contains("data-last-action-reason=\"none\""));
+    assert!(html.contains("id=\"tau-ops-last-action-reason\">reason: none"));
+}
+
+#[test]
 fn functional_spec_2814_c01_c02_c03_timeline_chart_and_range_markers_render() {
     let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
         auth_mode: TauOpsDashboardAuthMode::Token,
@@ -3344,6 +3387,7 @@ fn functional_spec_2814_c01_c02_c03_timeline_chart_and_range_markers_render() {
             last_action_request_id: "none".to_string(),
             last_action_name: "none".to_string(),
             last_action_actor: "none".to_string(),
+            last_action_reason: "none".to_string(),
             last_action_timestamp_unix_ms: 0,
             timeline_range: "6h".to_string(),
             timeline_point_count: 2,
@@ -3456,6 +3500,7 @@ fn functional_spec_2818_c01_c02_alert_feed_row_markers_render_for_snapshot_alert
             last_action_request_id: "none".to_string(),
             last_action_name: "none".to_string(),
             last_action_actor: "none".to_string(),
+            last_action_reason: "none".to_string(),
             last_action_timestamp_unix_ms: 0,
             timeline_range: "1h".to_string(),
             timeline_point_count: 1,
@@ -3516,6 +3561,7 @@ fn functional_spec_2818_c03_alert_feed_row_markers_render_nominal_fallback_alert
             last_action_request_id: "none".to_string(),
             last_action_name: "none".to_string(),
             last_action_actor: "none".to_string(),
+            last_action_reason: "none".to_string(),
             last_action_timestamp_unix_ms: 0,
             timeline_range: "1h".to_string(),
             timeline_point_count: 1,
@@ -3566,6 +3612,7 @@ fn functional_spec_2822_c03_connector_health_table_renders_fallback_row_markers(
             last_action_request_id: "none".to_string(),
             last_action_name: "none".to_string(),
             last_action_actor: "none".to_string(),
+            last_action_reason: "none".to_string(),
             last_action_timestamp_unix_ms: 0,
             timeline_range: "1h".to_string(),
             timeline_point_count: 1,
@@ -3616,6 +3663,7 @@ fn functional_spec_2822_c01_c02_connector_health_table_rows_render_for_snapshot_
             last_action_request_id: "none".to_string(),
             last_action_name: "none".to_string(),
             last_action_actor: "none".to_string(),
+            last_action_reason: "none".to_string(),
             last_action_timestamp_unix_ms: 0,
             timeline_range: "1h".to_string(),
             timeline_point_count: 1,
