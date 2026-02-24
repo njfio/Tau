@@ -117,6 +117,12 @@ cargo run -p tau-coding-agent -- --prompt "Summarize src/lib.rs"
 cargo run -p tau-tui -- shell --width 88 --profile local-dev --no-color
 ```
 
+6. Optional live TUI shell from runtime artifacts
+
+```bash
+cargo run -p tau-tui -- shell-live --state-dir .tau/dashboard --width 88 --profile local-dev --no-color
+```
+
 For a deeper walkthrough, use [`docs/guides/quickstart.md`](docs/guides/quickstart.md).
 
 ## Common Workflows
@@ -203,6 +209,13 @@ See `./examples/README.md` for package and asset walkthrough details.
 ## Docs by Role
 
 Primary docs index: [`docs/README.md`](docs/README.md)
+
+## Current Operator Surfaces
+
+Operator deployment guide: `docs/guides/operator-deployment-guide.md`
+Gateway API reference (70+ routes): `docs/guides/gateway-api-reference.md`
+Contributor guide: `CONTRIBUTING.md`
+Security policy: `SECURITY.md`
 
 Operator runbooks:
 - [`docs/guides/operator-deployment-guide.md`](docs/guides/operator-deployment-guide.md)

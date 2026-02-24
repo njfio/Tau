@@ -5231,6 +5231,10 @@ async fn functional_spec_2810_c01_c02_c03_ops_shell_control_markers_reflect_dash
     assert!(body.contains("id=\"tau-ops-control-action-pause\""));
     assert!(body.contains("id=\"tau-ops-control-action-resume\""));
     assert!(body.contains("id=\"tau-ops-control-action-refresh\""));
+    assert!(body.contains("id=\"tau-ops-control-actions\" data-action-count=\"3\" data-action-endpoint=\"/ops/control-action\""));
+    assert!(body.contains("id=\"tau-ops-control-action-form-pause\" action=\"/ops/control-action\" method=\"post\" data-action=\"pause\""));
+    assert!(body.contains("id=\"tau-ops-control-action-form-resume\" action=\"/ops/control-action\" method=\"post\" data-action=\"resume\""));
+    assert!(body.contains("id=\"tau-ops-control-action-form-refresh\" action=\"/ops/control-action\" method=\"post\" data-action=\"refresh\""));
     assert!(body.contains("id=\"tau-ops-control-action-pause\" data-action-enabled=\"false\""));
     assert!(body.contains("id=\"tau-ops-control-action-resume\" data-action-enabled=\"true\""));
     assert!(body.contains("id=\"tau-ops-control-action-refresh\" data-action-enabled=\"true\""));
@@ -5270,6 +5274,56 @@ async fn functional_spec_2826_c03_ops_shell_control_markers_include_confirmation
     assert!(body.contains(
         "id=\"tau-ops-control-action-refresh\" data-action-enabled=\"true\" data-action=\"refresh\" data-confirm-required=\"true\" data-confirm-title=\"Confirm refresh action\" data-confirm-body=\"Refresh command-center state from latest runtime artifacts.\" data-confirm-verb=\"refresh\""
     ));
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn integration_ops_shell_control_action_form_submits_dashboard_mutation_and_redirects() {
+    let temp = tempdir().expect("tempdir");
+    let dashboard_root = write_dashboard_runtime_fixture(temp.path());
+    write_dashboard_control_state_fixture(temp.path());
+    write_training_runtime_fixture(temp.path(), 0);
+    let state = test_state(temp.path(), 4_096, "secret");
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+
+    let client = Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .expect("client");
+
+    let response = client
+        .post(format!(
+            "http://{addr}{OPS_DASHBOARD_CONTROL_ACTION_ENDPOINT}"
+        ))
+        .form(&[
+            ("action", "resume"),
+            ("reason", "ops-shell-control-panel"),
+            ("theme", "light"),
+            ("sidebar", "collapsed"),
+        ])
+        .send()
+        .await
+        .expect("submit ops control action");
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    let location = response
+        .headers()
+        .get(reqwest::header::LOCATION)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default()
+        .to_string();
+    assert_eq!(location, "/ops?theme=light&sidebar=collapsed");
+
+    let control_state = std::fs::read_to_string(dashboard_root.join("control-state.json"))
+        .expect("read dashboard control state");
+    assert!(control_state.contains("\"mode\": \"running\""));
+    assert!(control_state.contains("\"action\": \"resume\""));
+    assert!(control_state.contains("\"actor\": \"ops-shell\""));
+
+    let actions_log = std::fs::read_to_string(dashboard_root.join("actions-audit.jsonl"))
+        .expect("read dashboard actions log");
+    assert!(actions_log.contains("\"action\":\"resume\""));
+    assert!(actions_log.contains("\"actor\":\"ops-shell\""));
 
     handle.abort();
 }

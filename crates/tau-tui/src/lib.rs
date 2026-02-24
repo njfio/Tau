@@ -3,9 +3,12 @@
 //! Contains reusable TUI components, view-model types, and rendering helpers
 //! used by interactive terminal surfaces.
 
-use std::{fmt, path::Path};
+use std::{
+    fmt, fs,
+    path::{Path, PathBuf},
+};
 
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use thiserror::Error;
 
 /// Trait contract for `Component` behavior.
@@ -629,6 +632,333 @@ impl OperatorShellFrame {
             ],
         }
     }
+
+    /// Builds a live operator-shell frame from persisted dashboard/training artifacts.
+    pub fn from_dashboard_state_dir(profile: String, dashboard_state_dir: &Path) -> Self {
+        let dashboard_root = dashboard_state_dir.to_path_buf();
+        let training_root = resolve_training_root(dashboard_state_dir);
+        let state_path = dashboard_root.join("state.json");
+        let events_log_path = dashboard_root.join("runtime-events.jsonl");
+        let actions_log_path = dashboard_root.join("actions-audit.jsonl");
+        let control_state_path = dashboard_root.join("control-state.json");
+        let auth_status_path = dashboard_root.join("auth-status.json");
+        let training_status_path = training_root.join("status.json");
+
+        let runtime_state = read_json_file::<LiveDashboardRuntimeStateFile>(&state_path);
+        let control_state = read_json_file::<LiveDashboardControlStateFile>(&control_state_path);
+        let auth_status = read_json_file::<LiveDashboardAuthStatusFile>(&auth_status_path);
+        let training_status =
+            read_json_file::<LiveDashboardTrainingStatusFile>(&training_status_path);
+        let last_cycle = read_last_jsonl_record::<LiveDashboardCycleReportLine>(&events_log_path);
+        let last_action = read_last_jsonl_record::<LiveDashboardActionAuditRecord>(
+            &actions_log_path,
+        )
+        .or_else(|| {
+            control_state
+                .as_ref()
+                .and_then(|state| state.last_action.clone())
+        });
+
+        let queue_depth = runtime_state
+            .as_ref()
+            .map_or(0, |state| state.health.queue_depth);
+        let failure_streak = runtime_state
+            .as_ref()
+            .map_or(0, |state| state.health.failure_streak);
+        let processed_case_count = runtime_state
+            .as_ref()
+            .map_or(0, |state| state.processed_case_keys.len());
+
+        let heartbeat = if failure_streak >= 3 {
+            "failing"
+        } else if failure_streak > 0 || queue_depth > 0 {
+            "degraded"
+        } else {
+            "healthy"
+        };
+
+        let mut health_reason = last_cycle
+            .as_ref()
+            .map(|cycle| cycle.health_reason.trim())
+            .filter(|reason| !reason.is_empty())
+            .map(str::to_string)
+            .unwrap_or_default();
+        if health_reason.is_empty() {
+            health_reason = if runtime_state.is_some() {
+                "dashboard runtime state loaded".to_string()
+            } else {
+                format!(
+                    "dashboard runtime state unavailable at {}",
+                    state_path.display()
+                )
+            };
+        }
+
+        let control_mode = normalize_dashboard_control_mode(
+            control_state
+                .as_ref()
+                .map_or("running", |state| state.mode.as_str()),
+        );
+        let control_paused = control_mode == "paused";
+
+        let rollout_total = training_status
+            .as_ref()
+            .map_or(0, |status| status.total_rollouts);
+        let rollout_succeeded = training_status
+            .as_ref()
+            .map_or(0, |status| status.succeeded);
+        let rollout_failed = training_status
+            .as_ref()
+            .map_or(0, |status| status.failed.saturating_add(status.cancelled));
+        let training_run_state = training_status
+            .as_ref()
+            .map_or("unknown".to_string(), |status| {
+                normalize_non_empty(status.run_state.as_str(), "unknown")
+            });
+
+        let mut alerts = Vec::new();
+        if control_paused {
+            alerts.push("operator pause action is active".to_string());
+        }
+        if queue_depth > 0 {
+            alerts.push(format!(
+                "runtime queue backlog observed (queue_depth={queue_depth})"
+            ));
+        }
+        if failure_streak > 0 {
+            alerts.push(format!(
+                "runtime failure streak observed (failure_streak={failure_streak})"
+            ));
+        }
+        if rollout_failed > 0 {
+            alerts.push(format!(
+                "training failures observed (failed_or_cancelled={rollout_failed})"
+            ));
+        }
+        if let Some(status) = &training_status {
+            alerts.extend(status.live_learning_alerts.iter().filter_map(|alert| {
+                let code = alert.code.trim();
+                let severity = normalize_non_empty(alert.severity.as_str(), "info");
+                let message = alert.message.trim();
+                if code.is_empty() || message.is_empty() {
+                    return None;
+                }
+                Some(format!("{severity}:{code}: {message}"))
+            }));
+        }
+        if alerts.is_empty() {
+            alerts.push("dashboard runtime health is nominal".to_string());
+        }
+
+        let (primary_alert_code, primary_alert_severity, primary_alert_message) = if control_paused
+        {
+            (
+                "operator_pause_active".to_string(),
+                "info".to_string(),
+                "operator pause action is active".to_string(),
+            )
+        } else if failure_streak > 0 {
+            (
+                "runtime_failure_streak".to_string(),
+                if failure_streak >= 3 {
+                    "critical".to_string()
+                } else {
+                    "warning".to_string()
+                },
+                format!("runtime failure streak observed ({failure_streak})"),
+            )
+        } else if queue_depth > 0 {
+            (
+                "runtime_queue_backlog".to_string(),
+                "warning".to_string(),
+                format!("runtime queue backlog observed (queue_depth={queue_depth})"),
+            )
+        } else if rollout_failed > 0 {
+            (
+                "training_failures".to_string(),
+                "warning".to_string(),
+                format!("training failures observed (failed_or_cancelled={rollout_failed})"),
+            )
+        } else {
+            (
+                "dashboard_healthy".to_string(),
+                "info".to_string(),
+                "dashboard runtime health is nominal".to_string(),
+            )
+        };
+
+        let auth_mode = auth_status
+            .as_ref()
+            .map_or("unknown".to_string(), |status| {
+                normalize_non_empty(status.mode.as_str(), "unknown")
+            });
+        let auth_required = auth_status.as_ref().is_some_and(|status| status.required);
+        let auth_rows = auth_status.as_ref().map_or_else(Vec::new, |status| {
+            status
+                .providers
+                .iter()
+                .map(|provider| OperatorShellAuthRow {
+                    provider: normalize_non_empty(provider.provider.as_str(), "unknown"),
+                    mode: normalize_non_empty(provider.mode.as_str(), "unknown"),
+                    state: normalize_non_empty(provider.state.as_str(), "unknown"),
+                    source: normalize_non_empty(provider.source.as_str(), "unknown"),
+                })
+                .collect::<Vec<_>>()
+        });
+        let auth_rows = if auth_rows.is_empty() {
+            vec![OperatorShellAuthRow {
+                provider: "n/a".to_string(),
+                mode: "unknown".to_string(),
+                state: "unknown".to_string(),
+                source: if auth_status_path.exists() {
+                    "auth-status.json has no providers".to_string()
+                } else {
+                    "auth-status.json missing".to_string()
+                },
+            }]
+        } else {
+            auth_rows
+        };
+
+        let mut actions = vec![
+            format!("control.mode: {control_mode}"),
+            if control_paused {
+                "next action: resume".to_string()
+            } else {
+                "next action: pause or refresh".to_string()
+            },
+            format!("training.run_state: {training_run_state}"),
+            format!("processed cases: {processed_case_count}"),
+        ];
+        if let Some(action) = last_action {
+            let action_name = normalize_non_empty(action.action.as_str(), "unknown");
+            let action_actor = normalize_non_empty(action.actor.as_str(), "unknown");
+            actions.push(format!(
+                "last action: {action_name} by {action_actor} @ {}",
+                action.timestamp_unix_ms
+            ));
+        } else {
+            actions.push("last action: none".to_string());
+        }
+        if let Some(cycle) = &last_cycle {
+            if !cycle.reason_codes.is_empty() {
+                actions.push(format!(
+                    "last reason codes: {}",
+                    cycle.reason_codes.join(",")
+                ));
+            }
+        }
+
+        Self {
+            environment: "live".to_string(),
+            profile,
+            heartbeat: heartbeat.to_string(),
+            health_reason,
+            auth_mode,
+            auth_required,
+            rollout_total,
+            rollout_succeeded,
+            rollout_failed,
+            queue_depth,
+            failure_streak,
+            primary_alert_code,
+            primary_alert_severity,
+            primary_alert_message,
+            auth_rows,
+            alerts,
+            actions,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+struct LiveDashboardRuntimeStateFile {
+    #[serde(default)]
+    processed_case_keys: Vec<String>,
+    #[serde(default)]
+    health: LiveDashboardHealth,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+struct LiveDashboardHealth {
+    #[serde(default)]
+    queue_depth: usize,
+    #[serde(default)]
+    failure_streak: usize,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+struct LiveDashboardControlStateFile {
+    #[serde(default)]
+    mode: String,
+    #[serde(default)]
+    last_action: Option<LiveDashboardActionAuditRecord>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+struct LiveDashboardTrainingStatusFile {
+    #[serde(default)]
+    run_state: String,
+    #[serde(default)]
+    total_rollouts: usize,
+    #[serde(default)]
+    succeeded: usize,
+    #[serde(default)]
+    failed: usize,
+    #[serde(default)]
+    cancelled: usize,
+    #[serde(default)]
+    live_learning_alerts: Vec<LiveDashboardTrainingAlert>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+struct LiveDashboardTrainingAlert {
+    #[serde(default)]
+    code: String,
+    #[serde(default)]
+    severity: String,
+    #[serde(default)]
+    message: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+struct LiveDashboardCycleReportLine {
+    #[serde(default)]
+    health_reason: String,
+    #[serde(default)]
+    reason_codes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+struct LiveDashboardActionAuditRecord {
+    #[serde(default)]
+    action: String,
+    #[serde(default)]
+    actor: String,
+    #[serde(default)]
+    timestamp_unix_ms: u64,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+struct LiveDashboardAuthStatusFile {
+    #[serde(default)]
+    mode: String,
+    #[serde(default)]
+    required: bool,
+    #[serde(default)]
+    providers: Vec<LiveDashboardAuthProviderRow>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+struct LiveDashboardAuthProviderRow {
+    #[serde(default)]
+    provider: String,
+    #[serde(default)]
+    mode: String,
+    #[serde(default)]
+    state: String,
+    #[serde(default)]
+    source: String,
 }
 
 /// Renders a deterministic multi-panel operator shell frame.
@@ -832,6 +1162,50 @@ fn is_valid_ansi_color_code(code: &str) -> bool {
 
     code.split(';')
         .all(|segment| !segment.is_empty() && segment.bytes().all(|byte| byte.is_ascii_digit()))
+}
+
+fn resolve_training_root(dashboard_state_dir: &Path) -> PathBuf {
+    let tau_root = dashboard_state_dir
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| dashboard_state_dir.to_path_buf());
+    tau_root.join("training")
+}
+
+fn read_json_file<T: DeserializeOwned>(path: &Path) -> Option<T> {
+    let raw = fs::read_to_string(path).ok()?;
+    serde_json::from_str::<T>(&raw).ok()
+}
+
+fn read_last_jsonl_record<T: DeserializeOwned>(path: &Path) -> Option<T> {
+    let raw = fs::read_to_string(path).ok()?;
+    for line in raw.lines().rev() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if let Ok(record) = serde_json::from_str::<T>(trimmed) {
+            return Some(record);
+        }
+    }
+    None
+}
+
+fn normalize_non_empty(raw: &str, fallback: &str) -> String {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        fallback.to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+fn normalize_dashboard_control_mode(raw: &str) -> String {
+    if raw.trim().eq_ignore_ascii_case("paused") {
+        "paused".to_string()
+    } else {
+        "running".to_string()
+    }
 }
 
 fn compute_pass_rate(total: usize, succeeded: usize) -> f64 {
@@ -1214,6 +1588,128 @@ mod tests {
         assert!(rendered.contains("openrouter"));
         assert!(rendered.contains("rollouts.total"));
         assert!(rendered.contains("75.00%"));
+    }
+
+    #[test]
+    fn functional_live_shell_frame_loads_dashboard_and_training_artifacts() {
+        let temp = tempdir().expect("tempdir");
+        let tau_root = temp.path().join(".tau");
+        let dashboard_root = tau_root.join("dashboard");
+        let training_root = tau_root.join("training");
+        std::fs::create_dir_all(&dashboard_root).expect("create dashboard dir");
+        std::fs::create_dir_all(&training_root).expect("create training dir");
+
+        std::fs::write(
+            dashboard_root.join("state.json"),
+            r#"{
+  "processed_case_keys": ["case-1", "case-2"],
+  "health": {
+    "queue_depth": 2,
+    "failure_streak": 1
+  }
+}
+"#,
+        )
+        .expect("write state");
+        std::fs::write(
+            dashboard_root.join("runtime-events.jsonl"),
+            r#"{"health_reason":"queue backlog observed","reason_codes":["queue_backpressure_applied","control_actions_applied"]}
+"#,
+        )
+        .expect("write events");
+        std::fs::write(
+            dashboard_root.join("control-state.json"),
+            r#"{
+  "mode": "paused",
+  "last_action": {
+    "action": "pause",
+    "actor": "ops-user",
+    "timestamp_unix_ms": 90210
+  }
+}
+"#,
+        )
+        .expect("write control state");
+        std::fs::write(
+            dashboard_root.join("auth-status.json"),
+            r#"{
+  "mode": "token",
+  "required": true,
+  "providers": [
+    {"provider":"openai","mode":"oauth_token","state":"ready","source":"credential_store"}
+  ]
+}
+"#,
+        )
+        .expect("write auth status");
+        std::fs::write(
+            training_root.join("status.json"),
+            r#"{
+  "run_state": "completed",
+  "total_rollouts": 12,
+  "succeeded": 11,
+  "failed": 1,
+  "cancelled": 0
+}
+"#,
+        )
+        .expect("write training status");
+
+        let frame = OperatorShellFrame::from_dashboard_state_dir(
+            "ops-live".to_string(),
+            dashboard_root.as_path(),
+        );
+        assert_eq!(frame.environment, "live");
+        assert_eq!(frame.profile, "ops-live");
+        assert_eq!(frame.heartbeat, "degraded");
+        assert_eq!(frame.health_reason, "queue backlog observed");
+        assert_eq!(frame.auth_mode, "token");
+        assert!(frame.auth_required);
+        assert_eq!(frame.rollout_total, 12);
+        assert_eq!(frame.rollout_succeeded, 11);
+        assert_eq!(frame.rollout_failed, 1);
+        assert_eq!(frame.queue_depth, 2);
+        assert_eq!(frame.failure_streak, 1);
+        assert_eq!(frame.primary_alert_code, "operator_pause_active");
+        assert_eq!(frame.primary_alert_severity, "info");
+        assert!(frame.primary_alert_message.contains("pause"));
+        assert!(frame
+            .auth_rows
+            .iter()
+            .any(|row| row.provider == "openai" && row.state == "ready"));
+        assert!(frame
+            .actions
+            .iter()
+            .any(|line| line.contains("last action: pause")));
+        assert!(frame
+            .actions
+            .iter()
+            .any(|line| line.contains("last reason codes")));
+    }
+
+    #[test]
+    fn regression_live_shell_frame_handles_missing_artifacts_without_panicking() {
+        let temp = tempdir().expect("tempdir");
+        let dashboard_root = temp.path().join(".tau").join("dashboard");
+        std::fs::create_dir_all(&dashboard_root).expect("create dashboard dir");
+
+        let frame = OperatorShellFrame::from_dashboard_state_dir(
+            "ops-empty".to_string(),
+            dashboard_root.as_path(),
+        );
+        assert_eq!(frame.environment, "live");
+        assert_eq!(frame.profile, "ops-empty");
+        assert_eq!(frame.heartbeat, "healthy");
+        assert_eq!(frame.auth_mode, "unknown");
+        assert!(!frame.auth_required);
+        assert_eq!(frame.rollout_total, 0);
+        assert_eq!(frame.queue_depth, 0);
+        assert_eq!(frame.failure_streak, 0);
+        assert!(frame.health_reason.contains("state.json"));
+        assert!(frame
+            .auth_rows
+            .iter()
+            .any(|row| row.source.contains("missing")));
     }
 
     #[test]

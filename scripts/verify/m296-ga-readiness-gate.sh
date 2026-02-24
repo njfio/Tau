@@ -8,6 +8,7 @@ STEPS_TMP="${REPORT_DIR}/steps.tmp"
 GENERATED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 MOCK_MODE="${TAU_M296_MOCK_MODE:-0}"
 MOCK_FAIL_PATTERN="${TAU_M296_MOCK_FAIL_PATTERN:-}"
+MOCK_SKIP_PATTERN="${TAU_M296_MOCK_SKIP_PATTERN:-}"
 overall="pass"
 
 usage() {
@@ -54,24 +55,34 @@ run_step() {
   local cmd="$*"
   local log_path="${REPORT_DIR}/${id}.log"
   local status="pass"
+  local rc=0
 
   echo "==> ${id}"
   if [[ "${MOCK_MODE}" == "1" ]]; then
     if [[ -n "${MOCK_FAIL_PATTERN}" ]] && [[ "${id}" == *"${MOCK_FAIL_PATTERN}"* ]]; then
       status="fail"
+    elif [[ -n "${MOCK_SKIP_PATTERN}" ]] && [[ "${id}" == *"${MOCK_SKIP_PATTERN}"* ]]; then
+      status="skip"
     fi
     printf 'mock-mode command: %s\nmock-mode status: %s\n' "${cmd}" "${status}" >"${log_path}"
   else
     if (cd "${ROOT_DIR}" && bash -c "${cmd}") >"${log_path}" 2>&1; then
       status="pass"
     else
-      status="fail"
+      rc=$?
+      if [[ "${rc}" -eq 20 ]]; then
+        status="skip"
+      else
+        status="fail"
+      fi
     fi
   fi
 
-  if [[ "${status}" != "pass" ]]; then
+  if [[ "${status}" == "fail" ]]; then
     overall="fail"
     echo "    FAIL (${log_path})"
+  elif [[ "${status}" == "skip" ]]; then
+    echo "    SKIP (${log_path})"
   else
     echo "    PASS (${log_path})"
   fi
@@ -80,8 +91,12 @@ run_step() {
 
 run_step "m295_operator_maturity_wave" \
   "bash scripts/verify/m295-operator-maturity-wave.sh"
+run_step "rl_hardening_live_benchmark_proof" \
+  "bash scripts/demo/test-m24-rl-live-benchmark-proof.sh"
 run_step "operator_readiness_contract_tests" \
   "bash scripts/dev/test-operator-readiness-live-check.sh"
+run_step "auth_live_validation_matrix" \
+  "bash scripts/verify/m296-live-auth-validation.sh"
 run_step "rollback_contract_checks" \
   "bash scripts/demo/test-rollback-drill-checklist.sh"
 run_step "rollback_trigger_matrix_markers" \
@@ -115,8 +130,11 @@ for line in steps_tmp.read_text(encoding="utf-8").splitlines():
 
 status_by_id = {step["id"]: step["status"] for step in steps}
 
-def criterion(criterion_id: str, description: str, evidence_steps):
-    status = "pass" if all(status_by_id.get(step_id) == "pass" for step_id in evidence_steps) else "fail"
+def criterion(criterion_id: str, description: str, evidence_steps, allow_skip=False):
+    accepted = {"pass"}
+    if allow_skip:
+        accepted.add("skip")
+    status = "pass" if all(status_by_id.get(step_id) in accepted for step_id in evidence_steps) else "fail"
     return {
         "id": criterion_id,
         "description": description,
@@ -127,8 +145,19 @@ def criterion(criterion_id: str, description: str, evidence_steps):
 signoff_criteria = [
     criterion(
         "runtime_and_auth_contracts",
-        "RL, auth, and readiness regression contracts are all green.",
+        "Core RL/auth/readiness regression contracts are green.",
         ["m295_operator_maturity_wave", "operator_readiness_contract_tests"],
+    ),
+    criterion(
+        "rl_hardening_contracts",
+        "RL hardening proof checks are green.",
+        ["rl_hardening_live_benchmark_proof"],
+    ),
+    criterion(
+        "auth_live_validation",
+        "Live auth validation matrix is green or explicitly skipped when live env inputs are unavailable.",
+        ["auth_live_validation_matrix"],
+        allow_skip=True,
     ),
     criterion(
         "rollback_contract",

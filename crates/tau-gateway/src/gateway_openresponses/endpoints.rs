@@ -10,6 +10,7 @@ pub(super) const OPS_DASHBOARD_AGENT_DETAIL_ENDPOINT: &str = "/ops/agents/{agent
 pub(super) const OPS_DASHBOARD_CHAT_ENDPOINT: &str = "/ops/chat";
 pub(super) const OPS_DASHBOARD_CHAT_NEW_ENDPOINT: &str = "/ops/chat/new";
 pub(super) const OPS_DASHBOARD_CHAT_SEND_ENDPOINT: &str = "/ops/chat/send";
+pub(super) const OPS_DASHBOARD_CONTROL_ACTION_ENDPOINT: &str = "/ops/control-action";
 pub(super) const OPS_DASHBOARD_SESSIONS_ENDPOINT: &str = "/ops/sessions";
 pub(super) const OPS_DASHBOARD_SESSION_DETAIL_ENDPOINT: &str = "/ops/sessions/{session_key}";
 pub(super) const OPS_DASHBOARD_MEMORY_ENDPOINT: &str = "/ops/memory";

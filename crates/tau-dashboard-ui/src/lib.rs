@@ -3605,43 +3605,140 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 data-control-paused=control_paused_value
                             >
                                 <h2>Control State</h2>
-                                <section id="tau-ops-control-actions" data-action-count="3">
-                                    <button
-                                        id="tau-ops-control-action-pause"
-                                        data-action-enabled=action_pause_enabled_value
+                                <section
+                                    id="tau-ops-control-actions"
+                                    data-action-count="3"
+                                    data-action-endpoint="/ops/control-action"
+                                >
+                                    <form
+                                        id="tau-ops-control-action-form-pause"
+                                        action="/ops/control-action"
+                                        method="post"
                                         data-action="pause"
-                                        data-confirm-required="true"
-                                        data-confirm-title="Confirm pause action"
-                                        data-confirm-body="Pause command-center processing until resumed."
-                                        data-confirm-verb="pause"
-                                        type="button"
                                     >
-                                        Pause
-                                    </button>
-                                    <button
-                                        id="tau-ops-control-action-resume"
-                                        data-action-enabled=action_resume_enabled_value
+                                        <input
+                                            id="tau-ops-control-action-pause-value"
+                                            type="hidden"
+                                            name="action"
+                                            value="pause"
+                                        />
+                                        <input
+                                            id="tau-ops-control-action-pause-reason"
+                                            type="hidden"
+                                            name="reason"
+                                            value="ops-shell-control-panel"
+                                        />
+                                        <input
+                                            id="tau-ops-control-action-pause-theme"
+                                            type="hidden"
+                                            name="theme"
+                                            value=theme_attr
+                                        />
+                                        <input
+                                            id="tau-ops-control-action-pause-sidebar"
+                                            type="hidden"
+                                            name="sidebar"
+                                            value=sidebar_state_attr
+                                        />
+                                        <button
+                                            id="tau-ops-control-action-pause"
+                                            data-action-enabled=action_pause_enabled_value
+                                            data-action="pause"
+                                            data-confirm-required="true"
+                                            data-confirm-title="Confirm pause action"
+                                            data-confirm-body="Pause command-center processing until resumed."
+                                            data-confirm-verb="pause"
+                                            type="submit"
+                                        >
+                                            Pause
+                                        </button>
+                                    </form>
+                                    <form
+                                        id="tau-ops-control-action-form-resume"
+                                        action="/ops/control-action"
+                                        method="post"
                                         data-action="resume"
-                                        data-confirm-required="true"
-                                        data-confirm-title="Confirm resume action"
-                                        data-confirm-body="Resume command-center processing."
-                                        data-confirm-verb="resume"
-                                        type="button"
                                     >
-                                        Resume
-                                    </button>
-                                    <button
-                                        id="tau-ops-control-action-refresh"
-                                        data-action-enabled=action_refresh_enabled_value
+                                        <input
+                                            id="tau-ops-control-action-resume-value"
+                                            type="hidden"
+                                            name="action"
+                                            value="resume"
+                                        />
+                                        <input
+                                            id="tau-ops-control-action-resume-reason"
+                                            type="hidden"
+                                            name="reason"
+                                            value="ops-shell-control-panel"
+                                        />
+                                        <input
+                                            id="tau-ops-control-action-resume-theme"
+                                            type="hidden"
+                                            name="theme"
+                                            value=theme_attr
+                                        />
+                                        <input
+                                            id="tau-ops-control-action-resume-sidebar"
+                                            type="hidden"
+                                            name="sidebar"
+                                            value=sidebar_state_attr
+                                        />
+                                        <button
+                                            id="tau-ops-control-action-resume"
+                                            data-action-enabled=action_resume_enabled_value
+                                            data-action="resume"
+                                            data-confirm-required="true"
+                                            data-confirm-title="Confirm resume action"
+                                            data-confirm-body="Resume command-center processing."
+                                            data-confirm-verb="resume"
+                                            type="submit"
+                                        >
+                                            Resume
+                                        </button>
+                                    </form>
+                                    <form
+                                        id="tau-ops-control-action-form-refresh"
+                                        action="/ops/control-action"
+                                        method="post"
                                         data-action="refresh"
-                                        data-confirm-required="true"
-                                        data-confirm-title="Confirm refresh action"
-                                        data-confirm-body="Refresh command-center state from latest runtime artifacts."
-                                        data-confirm-verb="refresh"
-                                        type="button"
                                     >
-                                        Refresh
-                                    </button>
+                                        <input
+                                            id="tau-ops-control-action-refresh-value"
+                                            type="hidden"
+                                            name="action"
+                                            value="refresh"
+                                        />
+                                        <input
+                                            id="tau-ops-control-action-refresh-reason"
+                                            type="hidden"
+                                            name="reason"
+                                            value="ops-shell-control-panel"
+                                        />
+                                        <input
+                                            id="tau-ops-control-action-refresh-theme"
+                                            type="hidden"
+                                            name="theme"
+                                            value=theme_attr
+                                        />
+                                        <input
+                                            id="tau-ops-control-action-refresh-sidebar"
+                                            type="hidden"
+                                            name="sidebar"
+                                            value=sidebar_state_attr
+                                        />
+                                        <button
+                                            id="tau-ops-control-action-refresh"
+                                            data-action-enabled=action_refresh_enabled_value
+                                            data-action="refresh"
+                                            data-confirm-required="true"
+                                            data-confirm-title="Confirm refresh action"
+                                            data-confirm-body="Refresh command-center state from latest runtime artifacts."
+                                            data-confirm-verb="refresh"
+                                            type="submit"
+                                        >
+                                            Refresh
+                                        </button>
+                                    </form>
                                 </section>
                                 <section
                                     id="tau-ops-control-last-action"

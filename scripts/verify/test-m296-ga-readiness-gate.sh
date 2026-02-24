@@ -63,11 +63,25 @@ fi
 
 assert_equals "m296_ga_readiness_gate" "$(jq -r '.suite_id' "${report_path}")" "suite id"
 assert_equals "pass" "$(jq -r '.overall' "${report_path}")" "overall pass"
-assert_equals "7" "$(jq -r '.steps | length' "${report_path}")" "step count"
-assert_equals "4" "$(jq -r '.signoff_criteria | length' "${report_path}")" "signoff count"
+assert_equals "9" "$(jq -r '.steps | length' "${report_path}")" "step count"
+assert_equals "6" "$(jq -r '.signoff_criteria | length' "${report_path}")" "signoff count"
 assert_equals "ready" "$(jq -r '.closeout_summary.status' "${report_path}")" "closeout pass status"
 assert_equals "proof-summary-missing" "$(jq -r '.rollback_trigger_matrix.trigger_ids[0]' "${report_path}")" "rollback trigger seed"
 assert_contains "$(cat "${pass_log}")" "ga readiness verification passed" "pass command output"
+
+set +e
+TAU_M296_MOCK_MODE="1" \
+TAU_M296_MOCK_SKIP_PATTERN="auth_live_validation_matrix" \
+TAU_M296_REPORT_DIR="${report_dir}" \
+"${VERIFY_SCRIPT}" --generated-at "2026-02-23T00:00:00Z" >"${tmp_dir}/skip.log" 2>&1
+skip_rc=$?
+set -e
+
+assert_equals "0" "${skip_rc}" "skip run exit code"
+assert_equals "skip" "$(jq -r '.steps[] | select(.id == "auth_live_validation_matrix") | .status' "${report_path}")" "auth live skip status"
+assert_equals "pass" "$(jq -r '.signoff_criteria[] | select(.id == "auth_live_validation") | .status' "${report_path}")" "auth live signoff with skip"
+assert_equals "ready" "$(jq -r '.closeout_summary.status' "${report_path}")" "closeout skip status"
+assert_contains "$(cat "${tmp_dir}/skip.log")" "ga readiness verification passed" "skip command output"
 
 set +e
 TAU_M296_MOCK_MODE="1" \

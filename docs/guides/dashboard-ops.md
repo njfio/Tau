@@ -71,6 +71,7 @@ When the gateway OpenResponses server is running, dashboard backend endpoints ar
 - `GET /dashboard/alerts`
 - `POST /dashboard/actions` (`{"action":"pause|resume|refresh","reason":"..."}`)
 - `GET /dashboard/stream` (SSE)
+- `POST /ops/control-action` (ops shell form bridge to `POST /dashboard/actions`)
 
 All dashboard endpoint payloads include `schema_version=1`.
 
