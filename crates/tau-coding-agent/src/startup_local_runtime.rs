@@ -138,7 +138,7 @@ pub(crate) async fn run_local_runtime(config: LocalRuntimeConfig<'_>) -> Result<
             request_max_retries: cli.agent_request_max_retries,
             request_retry_initial_backoff_ms: cli.agent_request_retry_initial_backoff_ms,
             request_retry_max_backoff_ms: cli.agent_request_retry_max_backoff_ms,
-            request_timeout_ms: agent_defaults.request_timeout_ms,
+            request_timeout_ms: Some(cli.request_timeout_ms.max(1)),
             tool_timeout_ms: agent_defaults.tool_timeout_ms,
             model_input_cost_per_million: model_catalog_entry
                 .and_then(|entry| entry.input_cost_per_million),

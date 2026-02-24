@@ -18,6 +18,8 @@ AUTH_PASSWORD_DEFAULT="${TAU_UNIFIED_AUTH_PASSWORD:-local-dev-password}"
 PROFILE_DEFAULT="${TAU_UNIFIED_PROFILE:-local-dev}"
 GATEWAY_STATE_DIR_DEFAULT="${TAU_UNIFIED_GATEWAY_STATE_DIR:-.tau/gateway}"
 DASHBOARD_STATE_DIR_DEFAULT="${TAU_UNIFIED_DASHBOARD_STATE_DIR:-.tau/dashboard}"
+TUI_REQUEST_TIMEOUT_MS_DEFAULT="${TAU_UNIFIED_TUI_REQUEST_TIMEOUT_MS:-45000}"
+TUI_AGENT_REQUEST_MAX_RETRIES_DEFAULT="${TAU_UNIFIED_TUI_AGENT_REQUEST_MAX_RETRIES:-0}"
 
 RUNNER="${TAU_UNIFIED_RUNNER:-}"
 RUNNER_LOG="${TAU_UNIFIED_RUNNER_LOG:-}"
@@ -52,6 +54,8 @@ Options for `tui`:
   --dashboard-state-dir <path>    Dashboard state dir (default: .tau/dashboard)
   --gateway-state-dir <path>      Gateway state dir (default: .tau/gateway)
   --model <id>                    Agent model id (default: openai/gpt-5.2)
+  --request-timeout-ms <n>        Agent request timeout ms (default: 45000)
+  --agent-request-max-retries <n> Agent max request retries (default: 0)
   --profile <name>                TUI profile (default: local-dev)
   --bind <host:port>              Runtime bind for bootstrap path (default: 127.0.0.1:8791)
   --auth-mode <mode>              Runtime auth mode for bootstrap path
@@ -376,6 +380,8 @@ cmd_tui() {
   local auth_token="${AUTH_TOKEN_DEFAULT}"
   local auth_password="${AUTH_PASSWORD_DEFAULT}"
   local profile="${PROFILE_DEFAULT}"
+  local request_timeout_ms="${TUI_REQUEST_TIMEOUT_MS_DEFAULT}"
+  local agent_request_max_retries="${TUI_AGENT_REQUEST_MAX_RETRIES_DEFAULT}"
   local iterations="3"
   local interval_ms="1000"
   local no_color="false"
@@ -419,6 +425,14 @@ cmd_tui() {
         ;;
       --model)
         model="$2"
+        shift 2
+        ;;
+      --request-timeout-ms)
+        request_timeout_ms="$2"
+        shift 2
+        ;;
+      --agent-request-max-retries)
+        agent_request_max_retries="$2"
         shift 2
         ;;
       --bind)
@@ -485,6 +499,13 @@ cmd_tui() {
       ;;
   esac
 
+  if ! [[ "${request_timeout_ms}" =~ ^[0-9]+$ ]] || (( request_timeout_ms < 1 )); then
+    die "invalid --request-timeout-ms: ${request_timeout_ms} (expected integer >= 1)"
+  fi
+  if ! [[ "${agent_request_max_retries}" =~ ^[0-9]+$ ]]; then
+    die "invalid --agent-request-max-retries: ${agent_request_max_retries} (expected integer >= 0)"
+  fi
+
   if [[ "${bootstrap_runtime}" == "true" ]]; then
     bootstrap_runtime_for_tui \
       "${model}" \
@@ -514,6 +535,8 @@ cmd_tui() {
       --gateway-state-dir "${gateway_state_dir}"
       --profile "${profile}"
       --model "${model}"
+      --request-timeout-ms "${request_timeout_ms}"
+      --agent-request-max-retries "${agent_request_max_retries}"
     )
   fi
   if [[ "${no_color}" == "true" ]]; then
@@ -522,7 +545,7 @@ cmd_tui() {
 
   log "tau-unified: launching tui (${tui_mode})"
   if [[ -n "${RUNNER}" ]]; then
-    run_runner_mode tui "${tui_mode}" "${dashboard_state_dir}" "${gateway_state_dir}" "${profile}" "${model}" "${iterations}" "${interval_ms}" "${no_color}"
+    run_runner_mode tui "${tui_mode}" "${dashboard_state_dir}" "${gateway_state_dir}" "${profile}" "${model}" "${iterations}" "${interval_ms}" "${no_color}" "--request-timeout-ms" "${request_timeout_ms}" "--agent-request-max-retries" "${agent_request_max_retries}"
     return 0
   fi
   (

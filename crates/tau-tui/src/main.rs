@@ -12,7 +12,7 @@ Usage:
   cargo run -p tau-tui -- [demo] [--frames N] [--width N] [--sleep-ms N] [--no-color]
   cargo run -p tau-tui -- shell [--width N] [--profile NAME] [--no-color]
   cargo run -p tau-tui -- shell-live [--state-dir PATH] [--width N] [--profile NAME] [--watch] [--iterations N] [--interval-ms N] [--no-color]
-  cargo run -p tau-tui -- agent [--dashboard-state-dir PATH] [--gateway-state-dir PATH] [--model ID] [--width N] [--profile NAME] [--dry-run] [--no-color]
+  cargo run -p tau-tui -- agent [--dashboard-state-dir PATH] [--gateway-state-dir PATH] [--model ID] [--request-timeout-ms N] [--agent-request-max-retries N] [--width N] [--profile NAME] [--dry-run] [--no-color]
 
 Options:
   demo          Animated rendering demo mode (default command)
@@ -27,6 +27,8 @@ Options:
   --dashboard-state-dir P Agent: dashboard state directory (default: .tau/dashboard)
   --gateway-state-dir P Agent: gateway state directory (default: .tau/gateway)
   --model ID    Agent: model id for interactive runtime (default: openai/gpt-5.2)
+  --request-timeout-ms N Agent: request timeout in milliseconds forwarded to tau-coding-agent
+  --agent-request-max-retries N Agent: max model request retries forwarded to tau-coding-agent
   --dry-run     Agent: print interactive launch command without executing it
   --watch       Shell-live: enable watch mode across multiple refresh cycles
   --iterations N Shell-live watch: number of render cycles (default: 3, min: 1)
@@ -103,6 +105,8 @@ struct AgentArgs {
     dashboard_state_dir: String,
     gateway_state_dir: String,
     model: String,
+    request_timeout_ms: Option<u64>,
+    agent_request_max_retries: Option<usize>,
     dry_run: bool,
     color: bool,
 }
@@ -115,6 +119,8 @@ impl Default for AgentArgs {
             dashboard_state_dir: ".tau/dashboard".to_string(),
             gateway_state_dir: ".tau/gateway".to_string(),
             model: "openai/gpt-5.2".to_string(),
+            request_timeout_ms: None,
+            agent_request_max_retries: None,
             dry_run: false,
             color: true,
         }
@@ -349,6 +355,25 @@ fn parse_agent_args(args: Vec<String>) -> Result<ParseAction, String> {
                 }
                 parsed.model = value.to_string();
             }
+            "--request-timeout-ms" => {
+                let raw = it.next().ok_or("missing value for --request-timeout-ms")?;
+                let value = raw
+                    .parse::<u64>()
+                    .map_err(|_| format!("invalid u64 for --request-timeout-ms: {raw}"))?;
+                if value == 0 {
+                    return Err("--request-timeout-ms must be >= 1".to_string());
+                }
+                parsed.request_timeout_ms = Some(value);
+            }
+            "--agent-request-max-retries" => {
+                let raw = it
+                    .next()
+                    .ok_or("missing value for --agent-request-max-retries")?;
+                let value = raw
+                    .parse::<usize>()
+                    .map_err(|_| format!("invalid usize for --agent-request-max-retries: {raw}"))?;
+                parsed.agent_request_max_retries = Some(value);
+            }
             _ => return Err(format!("unknown argument: {arg}")),
         }
     }
@@ -549,7 +574,7 @@ fn run_shell_live(args: LiveShellArgs) {
 }
 
 fn build_agent_runtime_command(args: &AgentArgs) -> Vec<String> {
-    vec![
+    let mut command = vec![
         "cargo".to_string(),
         "run".to_string(),
         "-p".to_string(),
@@ -561,7 +586,16 @@ fn build_agent_runtime_command(args: &AgentArgs) -> Vec<String> {
         args.gateway_state_dir.clone(),
         "--dashboard-state-dir".to_string(),
         args.dashboard_state_dir.clone(),
-    ]
+    ];
+    if let Some(timeout_ms) = args.request_timeout_ms {
+        command.push("--request-timeout-ms".to_string());
+        command.push(timeout_ms.to_string());
+    }
+    if let Some(max_retries) = args.agent_request_max_retries {
+        command.push("--agent-request-max-retries".to_string());
+        command.push(max_retries.to_string());
+    }
+    command
 }
 
 fn format_shell_command(tokens: &[String]) -> String {
@@ -902,6 +936,8 @@ mod tests {
             dashboard_state_dir: ".tau/custom-dashboard".to_string(),
             gateway_state_dir: ".tau/custom-gateway".to_string(),
             model: "openai/gpt-5.2".to_string(),
+            request_timeout_ms: None,
+            agent_request_max_retries: None,
             dry_run: true,
             color: false,
         };
@@ -933,6 +969,8 @@ mod tests {
         assert!(HELP.contains("agent"));
         assert!(HELP.contains("--dashboard-state-dir"));
         assert!(HELP.contains("--gateway-state-dir"));
+        assert!(HELP.contains("--request-timeout-ms"));
+        assert!(HELP.contains("--agent-request-max-retries"));
         assert!(HELP.contains("--dry-run"));
     }
 
@@ -944,5 +982,45 @@ mod tests {
             panic!("expected agent action");
         };
         assert_eq!(args.model, "openai/gpt-5.2");
+    }
+
+    #[test]
+    fn spec_c07_parse_args_accepts_agent_timeout_and_retry_overrides() {
+        let action = parse_args(vec![
+            "tau-tui".to_string(),
+            "agent".to_string(),
+            "--request-timeout-ms".to_string(),
+            "45000".to_string(),
+            "--agent-request-max-retries".to_string(),
+            "0".to_string(),
+            "--dry-run".to_string(),
+        ])
+        .expect("expected parse success for timeout/retry overrides");
+
+        let ParseAction::RunAgent(args) = action else {
+            panic!("expected agent action");
+        };
+        assert_eq!(args.request_timeout_ms, Some(45_000));
+        assert_eq!(args.agent_request_max_retries, Some(0));
+    }
+
+    #[test]
+    fn functional_spec_c08_agent_runtime_command_includes_timeout_retry_flags() {
+        let args = super::AgentArgs {
+            width: 88,
+            profile: "ops-interactive".to_string(),
+            dashboard_state_dir: ".tau/custom-dashboard".to_string(),
+            gateway_state_dir: ".tau/custom-gateway".to_string(),
+            model: "openai/gpt-5.2".to_string(),
+            request_timeout_ms: Some(45_000),
+            agent_request_max_retries: Some(0),
+            dry_run: true,
+            color: false,
+        };
+        let command = super::build_agent_runtime_command(&args);
+        assert!(command.contains(&"--request-timeout-ms".to_string()));
+        assert!(command.contains(&"45000".to_string()));
+        assert!(command.contains(&"--agent-request-max-retries".to_string()));
+        assert!(command.contains(&"0".to_string()));
     }
 }

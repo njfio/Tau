@@ -175,6 +175,8 @@ tui_output="$(
 assert_contains "${tui_output}" "tau-unified: launching tui (agent)" "tui agent marker"
 up_count_after_tui="$(grep -c '^runner_mode=up$' "${runner_log}" || true)"
 assert_equals "${up_count_before_tui}" "${up_count_after_tui}" "tui default does not bootstrap runtime in runner mode"
+assert_contains "$(cat "${runner_log}")" "--request-timeout-ms 45000" "tui default timeout flag"
+assert_contains "$(cat "${runner_log}")" "--agent-request-max-retries 0" "tui default retries flag"
 
 up_count_before_bootstrap="$(grep -c '^runner_mode=up$' "${runner_log}" || true)"
 tui_bootstrap_output="$(
@@ -203,6 +205,17 @@ tui_live_output="$(
   "${LAUNCHER_SCRIPT}" tui --live-shell --iterations 2 --interval-ms 15 --no-color 2>&1 || true
 )"
 assert_contains "${tui_live_output}" "tau-unified: launching tui (live-shell)" "tui live marker"
+
+tui_override_output="$(
+  TAU_UNIFIED_RUNNER="${runner}" \
+  TAU_UNIFIED_RUNNER_LOG="${runner_log}" \
+  TAU_UNIFIED_RUNNER_PID="${runner_pid}" \
+  TAU_UNIFIED_RUNTIME_DIR="${runtime_dir}" \
+  "${LAUNCHER_SCRIPT}" tui --request-timeout-ms 9000 --agent-request-max-retries 2 --no-color 2>&1 || true
+)"
+assert_contains "${tui_override_output}" "tau-unified: launching tui (agent)" "tui override marker"
+assert_contains "$(cat "${runner_log}")" "--request-timeout-ms 9000" "tui override timeout flag"
+assert_contains "$(cat "${runner_log}")" "--agent-request-max-retries 2" "tui override retries flag"
 
 assert_contains "$(cat "${runner_log}")" "runner_mode=up" "runner up logged"
 assert_contains "$(cat "${runner_log}")" "runner_mode=status" "runner status logged"
