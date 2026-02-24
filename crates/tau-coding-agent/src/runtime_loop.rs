@@ -110,6 +110,7 @@ impl RuntimeHookRunStatus {
 #[derive(Clone, Copy)]
 pub(crate) struct InteractiveRuntimeConfig<'a> {
     pub(crate) turn_timeout_ms: u64,
+    pub(crate) request_timeout_ms: u64,
     pub(crate) render_options: RenderOptions,
     pub(crate) extension_runtime_hooks: &'a RuntimeExtensionHooksConfig,
     pub(crate) orchestrator_mode: CliOrchestratorMode,
@@ -158,8 +159,10 @@ fn should_emit_interactive_turn_progress(
     stdin_is_terminal && stdout_is_terminal
 }
 
-fn format_interactive_turn_start_line(turn_timeout_ms: u64) -> String {
-    format!("interactive.turn=start timeout_ms={turn_timeout_ms}")
+fn format_interactive_turn_start_line(turn_timeout_ms: u64, request_timeout_ms: u64) -> String {
+    format!(
+        "interactive.turn=start turn_timeout_ms={turn_timeout_ms} request_timeout_ms={request_timeout_ms}"
+    )
 }
 
 fn format_interactive_turn_running_line(elapsed_ms: u64) -> String {
@@ -186,7 +189,7 @@ struct InteractiveTurnProgressTracker {
 }
 
 impl InteractiveTurnProgressTracker {
-    fn start(turn_timeout_ms: u64) -> Self {
+    fn start(turn_timeout_ms: u64, request_timeout_ms: u64) -> Self {
         let enabled = should_emit_interactive_turn_progress(
             std::io::stdin().is_terminal(),
             std::io::stdout().is_terminal(),
@@ -201,7 +204,10 @@ impl InteractiveTurnProgressTracker {
             };
         }
 
-        eprintln!("{}", format_interactive_turn_start_line(turn_timeout_ms));
+        eprintln!(
+            "{}",
+            format_interactive_turn_start_line(turn_timeout_ms, request_timeout_ms)
+        );
         let (tx, mut rx) = oneshot::channel::<()>();
         let started = started_at;
         let heartbeat_task = tokio::spawn(async move {
@@ -576,7 +582,10 @@ async fn dispatch_interactive_turn(
     }
 
     if config.orchestrator_mode == CliOrchestratorMode::PlanFirst {
-        let mut progress = InteractiveTurnProgressTracker::start(config.turn_timeout_ms);
+        let mut progress = InteractiveTurnProgressTracker::start(
+            config.turn_timeout_ms,
+            config.request_timeout_ms,
+        );
         let run_result = run_plan_first_prompt_with_runtime_hooks(
             agent,
             session_runtime,
@@ -613,7 +622,8 @@ async fn dispatch_interactive_turn(
         return Ok(InteractiveLoopControl::Continue);
     }
 
-    let mut progress = InteractiveTurnProgressTracker::start(config.turn_timeout_ms);
+    let mut progress =
+        InteractiveTurnProgressTracker::start(config.turn_timeout_ms, config.request_timeout_ms);
     let prompt_result = run_prompt_with_runtime_hooks(
         agent,
         session_runtime,
@@ -1713,6 +1723,7 @@ mod tests {
         ) -> super::InteractiveRuntimeConfig<'a> {
             super::InteractiveRuntimeConfig {
                 turn_timeout_ms: 0,
+                request_timeout_ms: 45_000,
                 render_options: test_render_options(),
                 extension_runtime_hooks,
                 orchestrator_mode: tau_cli::CliOrchestratorMode::Off,
@@ -1786,8 +1797,11 @@ mod tests {
 
     #[test]
     fn unit_interactive_turn_progress_line_contract_is_stable() {
-        let start = format_interactive_turn_start_line(45_000);
-        assert_eq!(start, "interactive.turn=start timeout_ms=45000");
+        let start = format_interactive_turn_start_line(0, 45_000);
+        assert_eq!(
+            start,
+            "interactive.turn=start turn_timeout_ms=0 request_timeout_ms=45000"
+        );
 
         let running = format_interactive_turn_running_line(2_500);
         assert_eq!(running, "interactive.turn=running elapsed_ms=2500");
