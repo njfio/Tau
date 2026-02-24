@@ -80,7 +80,7 @@ Override via flags or env:
 
 When running in an interactive TTY, prompt turns emit runtime progress markers
 to `stderr`:
-- `interactive.turn=start timeout_ms=...`
+- `interactive.turn=start turn_timeout_ms=... request_timeout_ms=...`
 - `interactive.turn=running elapsed_ms=...`
 - `interactive.turn=end status=... elapsed_ms=...`
 

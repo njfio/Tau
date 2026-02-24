@@ -346,6 +346,7 @@ pub(crate) async fn run_local_runtime(config: LocalRuntimeConfig<'_>) -> Result<
     };
     let interactive_config = InteractiveRuntimeConfig {
         turn_timeout_ms: interactive_defaults.turn_timeout_ms,
+        request_timeout_ms: cli.request_timeout_ms.max(1),
         render_options,
         extension_runtime_hooks: &extension_runtime_hooks,
         orchestrator_mode: interactive_defaults.orchestrator_mode,

@@ -187,7 +187,7 @@ Override defaults with flags above or env vars:
 
 Interactive TTY turns now emit progress markers to `stderr` while requests are
 in-flight:
-- `interactive.turn=start timeout_ms=...`
+- `interactive.turn=start turn_timeout_ms=... request_timeout_ms=...`
 - `interactive.turn=running elapsed_ms=...`
 - `interactive.turn=end status=... elapsed_ms=...`
 
