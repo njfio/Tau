@@ -1,6 +1,6 @@
 # Plan: Issue #3448 - M298 wave-1 E2E harness and ops dashboard conformance slice
 
-Status: Reviewed
+Status: Implemented
 
 ## Approach
 1. Baseline contract setup:
@@ -35,3 +35,16 @@ Status: Reviewed
 - Test harness contract: deterministic scripted LLM and isolated workspace.
 - Dashboard contract: stable ops-shell control/data markers and mutation endpoints.
 - Verification contract: AC->conformance->tests traceability in issue artifacts and PR body.
+
+## Execution Summary
+1. Added a scoped in-file `TauE2eHarness` in `crates/tau-gateway/src/gateway_openresponses/tests.rs` for deterministic gateway lifecycle/session-flow execution with token auth and isolated temp workspace.
+2. Added wave-1 conformance tests:
+   - `integration_spec_3448_c02_tau_e2e_harness_runs_gateway_lifecycle_and_session_flow`
+   - `integration_spec_3448_c03_tau_e2e_harness_keeps_ops_control_and_dashboard_live_contracts`
+3. Preserved ops-dashboard live control/read-model coverage by validating shell markers, control-action redirect behavior, and dashboard health payload contracts.
+4. Verified formatting and targeted regression tests; mapped ACs to concrete test evidence in `specs/3448/spec.md` and `specs/3448/tasks.md`.
+
+## Verification Notes
+- `cargo fmt --check` passed after formatting (`cargo fmt --all`).
+- Targeted test and regression commands passed under `CARGO_TARGET_DIR=target-fast` (see tasks evidence matrix).
+- `CARGO_TARGET_DIR=target-fast cargo clippy -p tau-gateway --tests --no-deps -- -D warnings` passed (isolated target cache avoids local `target/debug` stall behavior).
