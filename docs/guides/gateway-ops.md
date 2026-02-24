@@ -68,7 +68,7 @@ Start the OpenResponses endpoint in `token` auth mode:
 
 ```bash
 cargo run -p tau-coding-agent -- \
-  --model openai/gpt-4o-mini \
+  --model openai/gpt-5.2 \
   --gateway-state-dir .tau/gateway \
   --gateway-openresponses-server \
   --gateway-openresponses-bind 127.0.0.1:8787 \
@@ -84,7 +84,7 @@ cargo run -p tau-coding-agent -- \
   --integration-auth "/integration-auth set gateway-openresponses-auth-token local-dev-token"
 
 cargo run -p tau-coding-agent -- \
-  --model openai/gpt-4o-mini \
+  --model openai/gpt-5.2 \
   --gateway-state-dir .tau/gateway \
   --gateway-openresponses-server \
   --gateway-openresponses-bind 127.0.0.1:8787 \
@@ -133,7 +133,7 @@ Password-session startup example:
 
 ```bash
 cargo run -p tau-coding-agent -- \
-  --model openai/gpt-4o-mini \
+  --model openai/gpt-5.2 \
   --gateway-state-dir .tau/gateway \
   --gateway-openresponses-server \
   --gateway-openresponses-bind 127.0.0.1:8787 \
@@ -151,7 +151,7 @@ cargo run -p tau-coding-agent -- \
   --integration-auth "/integration-auth set gateway-openresponses-auth-password local-password"
 
 cargo run -p tau-coding-agent -- \
-  --model openai/gpt-4o-mini \
+  --model openai/gpt-5.2 \
   --gateway-state-dir .tau/gateway \
   --gateway-openresponses-server \
   --gateway-openresponses-bind 127.0.0.1:8787 \
@@ -184,7 +184,7 @@ curl -sS http://127.0.0.1:8787/v1/responses \
   -H "Authorization: Bearer local-dev-token" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "openai/gpt-4o-mini",
+    "model": "openai/gpt-5.2",
     "instructions": "Be concise",
     "input": [
       {"type":"message","role":"user","content":[{"type":"input_text","text":"Summarize this system."}]}
@@ -211,7 +211,7 @@ curl -sS http://127.0.0.1:8787/v1/chat/completions \
   -H "Authorization: Bearer local-dev-token" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "openai/gpt-4o-mini",
+    "model": "openai/gpt-5.2",
     "messages": [{"role":"user","content":"Say hi in one sentence."}]
   }'
 ```

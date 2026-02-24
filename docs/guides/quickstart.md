@@ -149,7 +149,7 @@ Fail-closed subscription mode (disable automatic API-key fallback for non-API-ke
 
 ```bash
 cargo run -p tau-coding-agent -- \
-  --model openai/gpt-4o-mini \
+  --model openai/gpt-5.2 \
   --openai-auth-mode oauth-token \
   --provider-subscription-strict=true
 ```
@@ -159,7 +159,7 @@ cargo run -p tau-coding-agent -- \
 Interactive prompt loop:
 
 ```bash
-cargo run -p tau-coding-agent -- --model openai/gpt-4o-mini
+cargo run -p tau-coding-agent -- --model openai/gpt-5.2
 ```
 
 One-shot prompt:
@@ -288,7 +288,7 @@ OpenAI/Codex:
 
 ```bash
 codex --login
-cargo run -p tau-coding-agent -- --model openai/gpt-4o-mini --openai-auth-mode oauth-token --provider-subscription-strict=true
+cargo run -p tau-coding-agent -- --model openai/gpt-5.2 --openai-auth-mode oauth-token --provider-subscription-strict=true
 ```
 
 Anthropic/Claude Code:

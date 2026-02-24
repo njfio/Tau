@@ -76,7 +76,7 @@ Use `localhost-dev` auth for local bring-up validation:
 
 ```bash
 cargo run -p tau-coding-agent -- \
-  --model openai/gpt-4o-mini \
+  --model openai/gpt-5.2 \
   --gateway-state-dir .tau/gateway \
   --gateway-openresponses-server \
   --gateway-openresponses-bind 127.0.0.1:${TAU_GATEWAY_PORT:-8791} \
@@ -88,7 +88,7 @@ Production-facing token mode baseline (recommended outside local-only environmen
 
 ```bash
 cargo run -p tau-coding-agent -- \
-  --model openai/gpt-4o-mini \
+  --model openai/gpt-5.2 \
   --gateway-state-dir .tau/gateway \
   --gateway-openresponses-server \
   --gateway-openresponses-bind 127.0.0.1:${TAU_GATEWAY_PORT:-8791} \

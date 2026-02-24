@@ -17,7 +17,7 @@ From repository root:
 
 ```bash
 cargo run -p tau-coding-agent -- \
-  --model openai/gpt-4o-mini \
+  --model openai/gpt-5.2 \
   --prompt-optimization-config .tau/prompt-optimization.json \
   --prompt-optimization-store-sqlite .tau/training/store.sqlite \
   --prompt-optimization-json

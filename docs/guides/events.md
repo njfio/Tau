@@ -64,7 +64,7 @@ cargo run -p tau-coding-agent -- \
 
 ```bash
 cargo run -p tau-coding-agent -- \
-  --model openai/gpt-4o-mini \
+  --model openai/gpt-5.2 \
   --events-runner \
   --events-dir .tau/events \
   --events-state-path .tau/events/state.json \

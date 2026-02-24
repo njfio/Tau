@@ -5,7 +5,7 @@ Run commands from repository root.
 ## Inspect channel and rollback metadata
 
 ```bash
-cargo run -p tau-coding-agent -- --model openai/gpt-4o-mini <<'EOF'
+cargo run -p tau-coding-agent -- --model openai/gpt-5.2 <<'EOF'
 /release-channel show
 /quit
 EOF
@@ -20,7 +20,7 @@ The output includes persisted rollback metadata fields:
 ## Switch channel policy
 
 ```bash
-cargo run -p tau-coding-agent -- --model openai/gpt-4o-mini <<'EOF'
+cargo run -p tau-coding-agent -- --model openai/gpt-5.2 <<'EOF'
 /release-channel set stable
 /release-channel set beta
 /release-channel set dev
@@ -33,7 +33,7 @@ Channel changes persist rollback hints automatically.
 ## Plan an update
 
 ```bash
-cargo run -p tau-coding-agent -- --model openai/gpt-4o-mini <<'EOF'
+cargo run -p tau-coding-agent -- --model openai/gpt-5.2 <<'EOF'
 /release-channel plan
 /release-channel plan --target v0.1.5 --dry-run
 /quit
@@ -49,7 +49,7 @@ Planning writes `.tau/release-update-state.json` with:
 ## Apply an update plan
 
 ```bash
-cargo run -p tau-coding-agent -- --model openai/gpt-4o-mini <<'EOF'
+cargo run -p tau-coding-agent -- --model openai/gpt-5.2 <<'EOF'
 /release-channel apply
 /release-channel apply --target v0.1.5 --dry-run
 /quit
@@ -67,7 +67,7 @@ Binary replacement remains an operator-managed step.
 ## Cache maintenance
 
 ```bash
-cargo run -p tau-coding-agent -- --model openai/gpt-4o-mini <<'EOF'
+cargo run -p tau-coding-agent -- --model openai/gpt-5.2 <<'EOF'
 /release-channel cache show
 /release-channel cache refresh
 /release-channel cache prune
