@@ -179,17 +179,25 @@ struct TauE2eHarness {
     handle: tokio::task::JoinHandle<()>,
     client: Client,
     token: String,
+    scripted_client: Arc<ScriptedGatewayLlmClient>,
 }
 
 impl TauE2eHarness {
     async fn new(scripted_responses: Vec<ChatResponse>) -> Self {
+        Self::new_with_bulletin(scripted_responses, None).await
+    }
+
+    async fn new_with_bulletin(
+        scripted_responses: Vec<ChatResponse>,
+        bulletin: Option<&str>,
+    ) -> Self {
         let workspace = tempdir().expect("tempdir");
         let token = "secret".to_string();
         let scripted_client = Arc::new(ScriptedGatewayLlmClient::new(scripted_responses));
         let state = test_state_with_client_and_auth(
             workspace.path(),
             10_000,
-            scripted_client,
+            scripted_client.clone(),
             Arc::new(NoopGatewayToolRegistrar),
             GatewayOpenResponsesAuthMode::Token,
             Some(token.as_str()),
@@ -197,6 +205,9 @@ impl TauE2eHarness {
             60,
             120,
         );
+        if let Some(snapshot) = bulletin {
+            state.cortex.set_bulletin_for_test(snapshot);
+        }
         let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
         Self {
             workspace,
@@ -207,6 +218,7 @@ impl TauE2eHarness {
                 .build()
                 .expect("build reqwest client"),
             token,
+            scripted_client,
         }
     }
 
@@ -292,6 +304,168 @@ impl TauE2eHarness {
         .send()
         .await
         .expect("dashboard health")
+    }
+
+    async fn put_memory_entry(
+        &self,
+        session_key: &str,
+        memory_id: &str,
+        body: Value,
+    ) -> reqwest::Response {
+        let endpoint =
+            expand_memory_entry_template(GATEWAY_MEMORY_ENTRY_ENDPOINT, session_key, memory_id);
+        self.auth(self.client.put(format!("http://{}{}", self.addr, endpoint)))
+            .json(&body)
+            .send()
+            .await
+            .expect("put memory entry")
+    }
+
+    async fn get_memory_entry(&self, session_key: &str, memory_id: &str) -> reqwest::Response {
+        let endpoint =
+            expand_memory_entry_template(GATEWAY_MEMORY_ENTRY_ENDPOINT, session_key, memory_id);
+        self.auth(self.client.get(format!("http://{}{}", self.addr, endpoint)))
+            .send()
+            .await
+            .expect("get memory entry")
+    }
+
+    async fn delete_memory_entry(&self, session_key: &str, memory_id: &str) -> reqwest::Response {
+        let endpoint =
+            expand_memory_entry_template(GATEWAY_MEMORY_ENTRY_ENDPOINT, session_key, memory_id);
+        self.auth(
+            self.client
+                .delete(format!("http://{}{}", self.addr, endpoint)),
+        )
+        .json(&json!({"policy_gate": MEMORY_WRITE_POLICY_GATE}))
+        .send()
+        .await
+        .expect("delete memory entry")
+    }
+
+    async fn search_memory(&self, session_key: &str, query: &str) -> reqwest::Response {
+        let endpoint = expand_session_template(GATEWAY_MEMORY_ENDPOINT, session_key);
+        let url = if query.is_empty() {
+            format!("http://{}{}", self.addr, endpoint)
+        } else {
+            format!("http://{}{}?{}", self.addr, endpoint, query)
+        };
+        self.auth(self.client.get(url))
+            .send()
+            .await
+            .expect("search memory")
+    }
+
+    async fn put_legacy_memory(&self, session_key: &str, content: &str) -> reqwest::Response {
+        let endpoint = expand_session_template(GATEWAY_MEMORY_ENDPOINT, session_key);
+        self.auth(self.client.put(format!("http://{}{}", self.addr, endpoint)))
+            .json(&json!({
+                "content": content,
+                "policy_gate": MEMORY_WRITE_POLICY_GATE
+            }))
+            .send()
+            .await
+            .expect("put legacy memory")
+    }
+
+    async fn get_memory_graph(&self, session_key: &str, query: Option<&str>) -> reqwest::Response {
+        let endpoint = expand_session_template(GATEWAY_MEMORY_GRAPH_ENDPOINT, session_key);
+        let url = match query {
+            Some(query) if !query.is_empty() => {
+                format!("http://{}{}?{}", self.addr, endpoint, query)
+            }
+            _ => format!("http://{}{}", self.addr, endpoint),
+        };
+        self.auth(self.client.get(url))
+            .send()
+            .await
+            .expect("get memory graph")
+    }
+
+    async fn post_cortex_chat(&self, input: &str) -> reqwest::Response {
+        self.auth(
+            self.client
+                .post(format!("http://{}{}", self.addr, CORTEX_CHAT_ENDPOINT)),
+        )
+        .json(&json!({ "input": input }))
+        .send()
+        .await
+        .expect("post cortex chat")
+    }
+
+    async fn get_cortex_status(&self) -> reqwest::Response {
+        self.auth(
+            self.client
+                .get(format!("http://{}{}", self.addr, CORTEX_STATUS_ENDPOINT)),
+        )
+        .send()
+        .await
+        .expect("get cortex status")
+    }
+
+    async fn captured_llm_requests(&self) -> Vec<ChatRequest> {
+        self.scripted_client.captured_requests().await
+    }
+
+    async fn get_dashboard_widgets(&self) -> reqwest::Response {
+        self.auth(self.client.get(format!(
+            "http://{}{}",
+            self.addr, DASHBOARD_WIDGETS_ENDPOINT
+        )))
+        .send()
+        .await
+        .expect("get dashboard widgets")
+    }
+
+    async fn get_dashboard_alerts(&self) -> reqwest::Response {
+        self.auth(
+            self.client
+                .get(format!("http://{}{}", self.addr, DASHBOARD_ALERTS_ENDPOINT)),
+        )
+        .send()
+        .await
+        .expect("get dashboard alerts")
+    }
+
+    async fn get_dashboard_queue_timeline(&self) -> reqwest::Response {
+        self.auth(self.client.get(format!(
+            "http://{}{}",
+            self.addr, DASHBOARD_QUEUE_TIMELINE_ENDPOINT
+        )))
+        .send()
+        .await
+        .expect("get dashboard queue timeline")
+    }
+
+    async fn get_dashboard_stream(&self, last_event_id: Option<&str>) -> reqwest::Response {
+        let request = self.auth(
+            self.client
+                .get(format!("http://{}{}", self.addr, DASHBOARD_STREAM_ENDPOINT)),
+        );
+        let request = if let Some(last_event_id) = last_event_id {
+            request.header("last-event-id", last_event_id)
+        } else {
+            request
+        };
+        request.send().await.expect("get dashboard stream")
+    }
+
+    async fn read_sse_buffer(&self, response: reqwest::Response, stop_marker: &str) -> String {
+        let mut stream = response.bytes_stream();
+        let mut buffer = String::new();
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+        while tokio::time::Instant::now() < deadline {
+            let maybe_chunk =
+                tokio::time::timeout(std::time::Duration::from_millis(300), stream.next()).await;
+            let Ok(Some(Ok(chunk))) = maybe_chunk else {
+                continue;
+            };
+            buffer.push_str(String::from_utf8_lossy(&chunk).as_ref());
+            if buffer.contains(stop_marker) {
+                break;
+            }
+        }
+        buffer
     }
 }
 
@@ -14162,4 +14336,504 @@ async fn integration_spec_3448_c03_tau_e2e_harness_keeps_ops_control_and_dashboa
         health_payload["control"].is_object(),
         "dashboard health payload should include control object"
     );
+}
+
+#[tokio::test]
+async fn integration_spec_3454_c02_m7_memory_graph_and_persistence_matrix() {
+    let harness = TauE2eHarness::new(vec![]).await;
+    let session_key = "spec-3454-m7";
+
+    let create_fact = harness
+        .put_memory_entry(
+            session_key,
+            "m7-fact-a",
+            json!({
+                "summary": "Tau uses ArcSwap for lock-free hot reload.",
+                "tags": ["rust", "arcswap"],
+                "facts": ["hot reload"],
+                "source_event_key": "evt-memory-3454-fact-a",
+                "workspace_id": "workspace-a",
+                "channel_id": "gateway",
+                "actor_id": "operator",
+                "memory_type": "fact",
+                "importance": 0.91,
+                "policy_gate": MEMORY_WRITE_POLICY_GATE
+            }),
+        )
+        .await;
+    assert_eq!(create_fact.status(), StatusCode::CREATED);
+
+    let create_goal = harness
+        .put_memory_entry(
+            session_key,
+            "m7-goal-a",
+            json!({
+                "summary": "Ship the dashboard migration safely. goal-type-marker-3454",
+                "tags": ["ops", "migration"],
+                "facts": ["phase-1 foundation"],
+                "source_event_key": "evt-memory-3454-goal-a",
+                "workspace_id": "workspace-a",
+                "channel_id": "gateway",
+                "actor_id": "operator",
+                "memory_type": "goal",
+                "importance": 0.82,
+                "policy_gate": MEMORY_WRITE_POLICY_GATE
+            }),
+        )
+        .await;
+    assert_eq!(create_goal.status(), StatusCode::CREATED);
+
+    let create_fact_same_scope = harness
+        .put_memory_entry(
+            session_key,
+            "m7-fact-a2",
+            json!({
+                "summary": "ArcSwap keeps updates deterministic in gateway state.",
+                "tags": ["rust", "arcswap"],
+                "facts": ["deterministic updates"],
+                "source_event_key": "evt-memory-3454-fact-a2",
+                "workspace_id": "workspace-a",
+                "channel_id": "gateway",
+                "actor_id": "operator",
+                "memory_type": "fact",
+                "importance": 0.73,
+                "policy_gate": MEMORY_WRITE_POLICY_GATE
+            }),
+        )
+        .await;
+    assert_eq!(create_fact_same_scope.status(), StatusCode::CREATED);
+
+    let create_other_scope = harness
+        .put_memory_entry(
+            session_key,
+            "m7-fact-b",
+            json!({
+                "summary": "ArcSwap note in separate workspace.",
+                "tags": ["rust", "arcswap"],
+                "facts": ["separate workspace note"],
+                "source_event_key": "evt-memory-3454-fact-b",
+                "workspace_id": "workspace-b",
+                "channel_id": "gateway",
+                "actor_id": "operator",
+                "memory_type": "fact",
+                "importance": 0.77,
+                "policy_gate": MEMORY_WRITE_POLICY_GATE
+            }),
+        )
+        .await;
+    assert_eq!(create_other_scope.status(), StatusCode::CREATED);
+
+    let create_other_channel = harness
+        .put_memory_entry(
+            session_key,
+            "m7-fact-channel",
+            json!({
+                "summary": "ArcSwap channel-scope-marker-3454 note in separate channel.",
+                "tags": ["rust", "arcswap"],
+                "facts": ["separate channel note"],
+                "source_event_key": "evt-memory-3454-fact-channel",
+                "workspace_id": "workspace-a",
+                "channel_id": "discord",
+                "actor_id": "operator",
+                "memory_type": "fact",
+                "importance": 0.71,
+                "policy_gate": MEMORY_WRITE_POLICY_GATE
+            }),
+        )
+        .await;
+    assert_eq!(create_other_channel.status(), StatusCode::CREATED);
+
+    let create_other_actor = harness
+        .put_memory_entry(
+            session_key,
+            "m7-fact-actor",
+            json!({
+                "summary": "ArcSwap actor-scope-marker-3454 note from different actor.",
+                "tags": ["rust", "arcswap"],
+                "facts": ["different actor note"],
+                "source_event_key": "evt-memory-3454-fact-actor",
+                "workspace_id": "workspace-a",
+                "channel_id": "gateway",
+                "actor_id": "assistant",
+                "memory_type": "fact",
+                "importance": 0.69,
+                "policy_gate": MEMORY_WRITE_POLICY_GATE
+            }),
+        )
+        .await;
+    assert_eq!(create_other_actor.status(), StatusCode::CREATED);
+
+    let scoped_search = harness
+        .search_memory(
+            session_key,
+            "query=ArcSwap&workspace_id=workspace-a&channel_id=gateway&actor_id=operator&memory_type=fact&limit=25",
+        )
+        .await;
+    assert_eq!(scoped_search.status(), StatusCode::OK);
+    let scoped_payload = scoped_search
+        .json::<Value>()
+        .await
+        .expect("parse scoped memory search payload");
+    assert_eq!(
+        scoped_payload["scope_filter"]["workspace_id"],
+        Value::String("workspace-a".to_string())
+    );
+    assert_eq!(
+        scoped_payload["scope_filter"]["channel_id"],
+        Value::String("gateway".to_string())
+    );
+    assert_eq!(
+        scoped_payload["scope_filter"]["actor_id"],
+        Value::String("operator".to_string())
+    );
+    assert_eq!(
+        scoped_payload["memory_type_filter"],
+        Value::String("fact".to_string())
+    );
+    let scoped_matches = scoped_payload["matches"]
+        .as_array()
+        .expect("scoped memory matches array");
+    assert!(
+        !scoped_matches.is_empty(),
+        "expected scoped matches, got payload: {scoped_payload}"
+    );
+    assert!(scoped_matches.iter().all(|item| {
+        item["scope"]["workspace_id"].as_str() == Some("workspace-a")
+            && item["scope"]["channel_id"].as_str() == Some("gateway")
+            && item["scope"]["actor_id"].as_str() == Some("operator")
+            && item["memory_type"].as_str() == Some("fact")
+    }));
+    assert!(scoped_matches.iter().all(|item| {
+        item["memory_id"]
+            .as_str()
+            .map(|value| value == "m7-fact-a" || value == "m7-fact-a2")
+            .unwrap_or(false)
+    }));
+
+    let limit_search = harness
+        .search_memory(
+            session_key,
+            "query=ArcSwap&workspace_id=workspace-a&channel_id=gateway&actor_id=operator&memory_type=fact&limit=1",
+        )
+        .await;
+    assert_eq!(limit_search.status(), StatusCode::OK);
+    let limit_payload = limit_search
+        .json::<Value>()
+        .await
+        .expect("parse limit search payload");
+    assert_eq!(limit_payload["limit"], Value::Number(1_u64.into()));
+    assert_eq!(limit_payload["returned"], Value::Number(1_u64.into()));
+    assert_eq!(
+        limit_payload["matches"]
+            .as_array()
+            .expect("limit matches array")
+            .len(),
+        1
+    );
+
+    let channel_mismatch_search = harness
+        .search_memory(
+            session_key,
+            "query=separate%20channel%20note&workspace_id=workspace-a&channel_id=gateway&actor_id=operator&memory_type=fact&limit=25",
+        )
+        .await;
+    assert_eq!(channel_mismatch_search.status(), StatusCode::OK);
+    let channel_mismatch_payload = channel_mismatch_search
+        .json::<Value>()
+        .await
+        .expect("parse channel mismatch payload");
+    assert_eq!(
+        channel_mismatch_payload["returned"],
+        Value::Number(0_u64.into())
+    );
+    assert!(
+        channel_mismatch_payload["matches"]
+            .as_array()
+            .map(|items| items.is_empty())
+            .unwrap_or(false),
+        "channel scope mismatch should be excluded by scope filter"
+    );
+
+    let actor_mismatch_search = harness
+        .search_memory(
+            session_key,
+            "query=different%20actor%20note&workspace_id=workspace-a&channel_id=gateway&actor_id=operator&memory_type=fact&limit=25",
+        )
+        .await;
+    assert_eq!(actor_mismatch_search.status(), StatusCode::OK);
+    let actor_mismatch_payload = actor_mismatch_search
+        .json::<Value>()
+        .await
+        .expect("parse actor mismatch payload");
+    assert_eq!(
+        actor_mismatch_payload["returned"],
+        Value::Number(0_u64.into())
+    );
+    assert!(
+        actor_mismatch_payload["matches"]
+            .as_array()
+            .map(|items| items.is_empty())
+            .unwrap_or(false),
+        "actor scope mismatch should be excluded by scope filter"
+    );
+
+    let type_mismatch_search = harness
+        .search_memory(
+            session_key,
+            "query=dashboard%20migration%20safely&workspace_id=workspace-a&channel_id=gateway&actor_id=operator&memory_type=fact&limit=25",
+        )
+        .await;
+    assert_eq!(type_mismatch_search.status(), StatusCode::OK);
+    let type_mismatch_payload = type_mismatch_search
+        .json::<Value>()
+        .await
+        .expect("parse memory type mismatch payload");
+    assert_eq!(
+        type_mismatch_payload["returned"],
+        Value::Number(0_u64.into())
+    );
+    assert!(
+        type_mismatch_payload["matches"]
+            .as_array()
+            .map(|items| items.is_empty())
+            .unwrap_or(false),
+        "memory_type mismatch should be excluded by memory_type_filter"
+    );
+
+    let read_fact = harness.get_memory_entry(session_key, "m7-fact-a").await;
+    assert_eq!(read_fact.status(), StatusCode::OK);
+    let read_fact_payload = read_fact
+        .json::<Value>()
+        .await
+        .expect("parse memory entry payload");
+    assert_eq!(
+        read_fact_payload["entry"]["memory_id"],
+        Value::String("m7-fact-a".to_string())
+    );
+
+    let update_fact = harness
+        .put_memory_entry(
+            session_key,
+            "m7-fact-a",
+            json!({
+                "summary": "ArcSwap enables lock-free hot reload updates.",
+                "workspace_id": "workspace-a",
+                "channel_id": "gateway",
+                "actor_id": "operator",
+                "memory_type": "fact",
+                "policy_gate": MEMORY_WRITE_POLICY_GATE
+            }),
+        )
+        .await;
+    assert_eq!(update_fact.status(), StatusCode::OK);
+
+    let delete_goal = harness.delete_memory_entry(session_key, "m7-goal-a").await;
+    assert_eq!(delete_goal.status(), StatusCode::OK);
+    let deleted_read = harness.get_memory_entry(session_key, "m7-goal-a").await;
+    assert_eq!(deleted_read.status(), StatusCode::NOT_FOUND);
+
+    let legacy_write = harness
+        .put_legacy_memory(
+            session_key,
+            "release checklist alpha\nrelease notes alpha\nincident runbook beta\n",
+        )
+        .await;
+    assert_eq!(legacy_write.status(), StatusCode::OK);
+
+    let graph = harness
+        .get_memory_graph(
+            session_key,
+            Some("max_nodes=6&min_edge_weight=1&relation_types=contains,keyword_overlap"),
+        )
+        .await;
+    assert_eq!(graph.status(), StatusCode::OK);
+    let graph_payload = graph
+        .json::<Value>()
+        .await
+        .expect("parse memory graph payload");
+    assert_eq!(
+        graph_payload["exists"],
+        Value::Bool(true),
+        "memory graph should exist after persistence writes"
+    );
+    assert!(graph_payload["node_count"].as_u64().unwrap_or_default() >= 1);
+    assert!(
+        graph_payload["edges"]
+            .as_array()
+            .map(|edges| !edges.is_empty())
+            .unwrap_or(false),
+        "memory graph response should include edges for relation query"
+    );
+}
+
+#[tokio::test]
+async fn integration_spec_3454_c03_x9_cortex_bulletin_and_cross_session_matrix() {
+    let harness = TauE2eHarness::new_with_bulletin(
+        vec![
+            scripted_gateway_response("x9 cortex llm reply"),
+            scripted_gateway_response("x9 gateway llm reply"),
+        ],
+        Some("## Cortex Memory Bulletin\n- users prefer concise responses"),
+    )
+    .await;
+
+    let cortex_chat = harness
+        .post_cortex_chat("summarize recent operator activity")
+        .await;
+    assert_eq!(cortex_chat.status(), StatusCode::OK);
+    let cortex_content_type = cortex_chat
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default()
+        .to_string();
+    assert!(cortex_content_type.contains("text/event-stream"));
+    let cortex_buffer = harness.read_sse_buffer(cortex_chat, "event: done").await;
+    assert!(cortex_buffer.contains("event: cortex.response.created"));
+    assert!(cortex_buffer.contains("event: cortex.response.output_text.delta"));
+    assert!(cortex_buffer.contains("event: cortex.response.output_text.done"));
+    assert!(cortex_buffer.contains("\"reason_code\":\"cortex_chat_llm_applied\""));
+
+    let cortex_status = harness.get_cortex_status().await;
+    assert_eq!(cortex_status.status(), StatusCode::OK);
+    let cortex_status_payload = cortex_status
+        .json::<Value>()
+        .await
+        .expect("parse cortex status payload");
+    assert!(
+        cortex_status_payload["total_events"]
+            .as_u64()
+            .unwrap_or_default()
+            >= 1
+    );
+    assert!(
+        cortex_status_payload["event_type_counts"]["cortex.chat.request"]
+            .as_u64()
+            .unwrap_or_default()
+            >= 1
+    );
+
+    let openresponses = harness
+        .post_openresponses("hello x9", "spec-3454-x9", false)
+        .await;
+    assert_eq!(openresponses.status(), StatusCode::OK);
+
+    let captured_requests = harness.captured_llm_requests().await;
+    assert!(
+        captured_requests.len() >= 2,
+        "expected captured llm requests for cortex chat and openresponses"
+    );
+    let cortex_prompt = captured_requests
+        .iter()
+        .find(|request| {
+            request.messages.iter().any(|message| {
+                message.role == MessageRole::User
+                    && message
+                        .text_content()
+                        .contains("summarize recent operator activity")
+            })
+        })
+        .expect("captured cortex llm request");
+    let cortex_user_message = cortex_prompt
+        .messages
+        .iter()
+        .find(|message| message.role == MessageRole::User)
+        .map(|message| message.text_content())
+        .unwrap_or_default();
+    assert!(cortex_user_message.contains("[observer_status]"));
+    assert!(cortex_user_message.contains("[cortex_bulletin]"));
+    assert!(cortex_user_message.contains("[memory_graph]"));
+
+    let session_prompt = captured_requests
+        .iter()
+        .find(|request| {
+            request.messages.iter().any(|message| {
+                message.role == MessageRole::User && message.text_content().contains("hello x9")
+            })
+        })
+        .expect("captured openresponses llm request");
+    let system_message = session_prompt
+        .messages
+        .iter()
+        .find(|message| message.role == MessageRole::System)
+        .map(|message| message.text_content())
+        .unwrap_or_default();
+    assert!(system_message.contains("users prefer concise responses"));
+
+    let fallback_harness = TauE2eHarness::new_with_bulletin(
+        vec![],
+        Some("## Cortex Memory Bulletin\n- fallback bulletin"),
+    )
+    .await;
+    let fallback_chat = fallback_harness
+        .post_cortex_chat("force fallback path")
+        .await;
+    assert_eq!(fallback_chat.status(), StatusCode::OK);
+    let fallback_buffer = fallback_harness
+        .read_sse_buffer(fallback_chat, "event: done")
+        .await;
+    assert!(fallback_buffer.contains("event: cortex.response.created"));
+    assert!(fallback_buffer.contains("event: cortex.response.output_text.delta"));
+    assert!(fallback_buffer.contains("event: cortex.response.output_text.done"));
+    assert!(fallback_buffer.contains("\"reason_code\":\"cortex_chat_llm_error_fallback\""));
+}
+
+#[tokio::test]
+async fn integration_spec_3454_c04_d12_dashboard_live_data_stream_matrix() {
+    let harness = TauE2eHarness::new(vec![]).await;
+    write_dashboard_runtime_fixture(harness.workspace_root());
+    write_dashboard_control_state_fixture(harness.workspace_root());
+    write_training_runtime_fixture(harness.workspace_root(), 0);
+
+    let gateway_status = harness.get_gateway_status().await;
+    assert_eq!(gateway_status.status(), StatusCode::OK);
+    let gateway_status_payload = gateway_status
+        .json::<Value>()
+        .await
+        .expect("parse gateway status payload");
+    assert!(gateway_status_payload["runtime_heartbeat"].is_object());
+
+    let widgets = harness.get_dashboard_widgets().await;
+    assert_eq!(widgets.status(), StatusCode::OK);
+    let widgets_payload = widgets
+        .json::<Value>()
+        .await
+        .expect("parse dashboard widgets payload");
+    assert_eq!(
+        widgets_payload["schema_version"],
+        Value::Number(1_u64.into())
+    );
+    assert!(widgets_payload["widgets"]
+        .as_array()
+        .map(|items| !items.is_empty())
+        .unwrap_or(false));
+
+    let alerts = harness.get_dashboard_alerts().await;
+    assert_eq!(alerts.status(), StatusCode::OK);
+    let alerts_payload = alerts
+        .json::<Value>()
+        .await
+        .expect("parse dashboard alerts payload");
+    assert_eq!(
+        alerts_payload["schema_version"],
+        Value::Number(1_u64.into())
+    );
+    assert!(alerts_payload["alerts"].is_array());
+
+    let queue_timeline = harness.get_dashboard_queue_timeline().await;
+    assert_eq!(queue_timeline.status(), StatusCode::OK);
+    let queue_payload = queue_timeline
+        .json::<Value>()
+        .await
+        .expect("parse dashboard queue timeline payload");
+    assert_eq!(queue_payload["schema_version"], Value::Number(1_u64.into()));
+    assert!(queue_payload["queue_timeline"].is_object());
+
+    let reconnect_stream = harness.get_dashboard_stream(Some("dashboard-41")).await;
+    assert_eq!(reconnect_stream.status(), StatusCode::OK);
+    let reconnect_buffer = harness
+        .read_sse_buffer(reconnect_stream, "event: dashboard.snapshot")
+        .await;
+    assert!(reconnect_buffer.contains("event: dashboard.reset"));
+    assert!(reconnect_buffer.contains("event: dashboard.snapshot"));
 }

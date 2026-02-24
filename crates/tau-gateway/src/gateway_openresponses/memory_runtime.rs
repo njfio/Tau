@@ -72,9 +72,15 @@ pub(super) async fn handle_gateway_memory_read(
             .matches
             .iter()
             .filter(|entry| {
-                memory_type_filter
-                    .map(|expected| entry.memory_type == expected)
-                    .unwrap_or(true)
+                if !options.scope.matches_scope(&entry.scope) {
+                    return false;
+                }
+                if let Some(expected) = memory_type_filter {
+                    if entry.memory_type != expected {
+                        return false;
+                    }
+                }
+                true
             })
             .map(memory_search_match_json)
             .collect::<Vec<_>>();
