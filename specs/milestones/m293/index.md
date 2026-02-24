@@ -1,22 +1,25 @@
-# M293 - Workspace gate stabilization post-e2e coverage
+# M293 - Operator integration closure wave
 
-Status: In Progress
+Status: InProgress
 
 ## Context
-Post-e2e integration waves introduced deterministic workspace gate regressions on clean `master` runs.
-M293 tracks scoped, test-first remediation for gate blockers so `fmt`, `clippy`, and `cargo test` remain green.
+M295/M296 readiness gates validate deterministic baseline delivery, but remaining integration work is still required to make the operator experience fully coherent across documentation contracts, live terminal operations, dashboard control mutations, RL hardening checks, and live-environment auth validation coverage.
 
 ## Scope
-- Fix deterministic workspace gate regressions with spec-bound acceptance criteria.
-- Require RED/GREEN evidence for every blocker.
-- Keep fixes minimal and behavior-preserving unless explicitly scoped.
+- Execute issue `#3444` as the implementation task for this milestone.
+- Close the README docs-contract blocker required by capability/archive conformance checks.
+- Add a state-backed live TUI shell mode (beyond deterministic fixture-only shell rendering).
+- Wire dashboard control actions into a live operator route flow.
+- Expand RL and live auth validation checks in readiness verification scripts/runbooks.
 
 ## Linked Issues
-- Task: `#3414` (workspace gate regressions)
+- Epic: #3442
+- Story: #3443
+- Task: #3444
 
 ## Success Signals
-- Clean workspace runs pass on `origin/master` after remediation:
-  - `cargo fmt --all -- --check`
-  - `cargo clippy -- -D warnings`
-  - `cargo test`
-- Regression suites for fixed blockers remain green.
+- `scripts/dev/test-docs-capability-archive.sh` passes.
+- New live TUI mode renders runtime state data from dashboard artifacts.
+- Dashboard ops shell exposes an action submit path that mutates control state via gateway action runtime.
+- M296 gate includes expanded RL/auth validation checks and remains green.
+- `specs/3444/spec.md`, `specs/3444/plan.md`, and `specs/3444/tasks.md` are present and advanced to Implemented on close.
