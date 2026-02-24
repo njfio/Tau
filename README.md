@@ -125,6 +125,12 @@ cargo run -p tau-tui -- shell --width 88 --profile local-dev --no-color
 cargo run -p tau-tui -- shell-live --state-dir .tau/dashboard --width 88 --profile local-dev --no-color
 ```
 
+7. Optional live TUI watch mode (multi-cycle refresh)
+
+```bash
+cargo run -p tau-tui -- shell-live --state-dir .tau/dashboard --width 88 --profile local-dev --watch --iterations 3 --interval-ms 1000 --no-color
+```
+
 For a deeper walkthrough, use [`docs/guides/quickstart.md`](docs/guides/quickstart.md).
 
 ## Common Workflows
@@ -181,6 +187,12 @@ Operator maturity wave verification (TUI + RL + auth):
 
 ```bash
 ./scripts/verify/m295-operator-maturity-wave.sh
+```
+
+TUI live watch loop from dashboard artifacts:
+
+```bash
+cargo run -p tau-tui -- shell-live --state-dir .tau/dashboard --profile local-dev --watch --iterations 3 --interval-ms 1000 --no-color
 ```
 
 M296 GA readiness gate (Connected operator GA loop):

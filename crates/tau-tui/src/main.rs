@@ -11,7 +11,7 @@ tau-tui operator terminal
 Usage:
   cargo run -p tau-tui -- [demo] [--frames N] [--width N] [--sleep-ms N] [--no-color]
   cargo run -p tau-tui -- shell [--width N] [--profile NAME] [--no-color]
-  cargo run -p tau-tui -- shell-live [--state-dir PATH] [--width N] [--profile NAME] [--no-color]
+  cargo run -p tau-tui -- shell-live [--state-dir PATH] [--width N] [--profile NAME] [--watch] [--iterations N] [--interval-ms N] [--no-color]
 
 Options:
   demo          Animated rendering demo mode (default command)
@@ -22,6 +22,9 @@ Options:
   --sleep-ms N  Demo: delay between frames in milliseconds (default: 120)
   --profile N   Shell: operator profile label (default: local-dev)
   --state-dir P Shell-live: dashboard state directory (default: .tau/dashboard)
+  --watch       Shell-live: enable watch mode across multiple refresh cycles
+  --iterations N Shell-live watch: number of render cycles (default: 3, min: 1)
+  --interval-ms N Shell-live watch: delay between cycles in milliseconds (default: 1000)
   --no-color    Disable ANSI color output for CI/smoke runs
   --help, -h    Show this help message
 ";
@@ -67,6 +70,9 @@ struct LiveShellArgs {
     width: usize,
     profile: String,
     state_dir: String,
+    watch: bool,
+    iterations: usize,
+    interval_ms: u64,
     color: bool,
 }
 
@@ -76,6 +82,9 @@ impl Default for LiveShellArgs {
             width: 88,
             profile: "local-dev".to_string(),
             state_dir: ".tau/dashboard".to_string(),
+            watch: false,
+            iterations: 3,
+            interval_ms: 1000,
             color: true,
         }
     }
@@ -190,11 +199,14 @@ fn parse_shell_args(args: Vec<String>) -> Result<ParseAction, String> {
 
 fn parse_shell_live_args(args: Vec<String>) -> Result<ParseAction, String> {
     let mut parsed = LiveShellArgs::default();
+    let mut saw_iterations = false;
+    let mut saw_interval = false;
     let mut it = args.into_iter();
     while let Some(arg) = it.next() {
         match arg.as_str() {
             "--help" | "-h" => return Ok(ParseAction::Help),
             "--no-color" => parsed.color = false,
+            "--watch" => parsed.watch = true,
             "--width" => {
                 let raw = it.next().ok_or("missing value for --width")?;
                 let value = raw
@@ -221,8 +233,31 @@ fn parse_shell_live_args(args: Vec<String>) -> Result<ParseAction, String> {
                 }
                 parsed.state_dir = value.to_string();
             }
+            "--iterations" => {
+                let raw = it.next().ok_or("missing value for --iterations")?;
+                let value = raw
+                    .parse::<usize>()
+                    .map_err(|_| format!("invalid usize for --iterations: {raw}"))?;
+                if value == 0 {
+                    return Err("--iterations must be >= 1".to_string());
+                }
+                parsed.iterations = value;
+                saw_iterations = true;
+            }
+            "--interval-ms" => {
+                let raw = it.next().ok_or("missing value for --interval-ms")?;
+                let value = raw
+                    .parse::<u64>()
+                    .map_err(|_| format!("invalid u64 for --interval-ms: {raw}"))?;
+                parsed.interval_ms = value;
+                saw_interval = true;
+            }
             _ => return Err(format!("unknown argument: {arg}")),
         }
+    }
+
+    if !parsed.watch && (saw_iterations || saw_interval) {
+        return Err("--iterations/--interval-ms require --watch".to_string());
     }
 
     Ok(ParseAction::RunShellLive(parsed))
@@ -350,25 +385,73 @@ fn run_shell(args: ShellArgs) {
     }
 }
 
+fn format_live_watch_marker(
+    cycle: usize,
+    total: usize,
+    interval_ms: u64,
+    diff_ops: usize,
+) -> String {
+    format!("watch.cycle={cycle}/{total} watch.interval_ms={interval_ms} watch.diff_ops={diff_ops}")
+}
+
 fn run_shell_live(args: LiveShellArgs) {
     let theme = Theme::default();
-    let frame = OperatorShellFrame::from_dashboard_state_dir(
-        args.profile.clone(),
-        Path::new(args.state_dir.as_str()),
-    );
-    let rendered = render_operator_shell_frame(&frame, args.width);
-    let header = paint(
-        &theme,
-        ThemeRole::Accent,
-        format!(
-            "Tau Operator Shell (live) - profile={} env={} state_dir={}",
-            frame.profile, frame.environment, args.state_dir
-        ),
-        args.color,
-    );
-    println!("{header}");
-    for line in rendered {
-        println!("{}", paint(&theme, ThemeRole::Primary, line, args.color));
+    let cycles = if args.watch { args.iterations } else { 1 };
+    let mut diff = DiffRenderer::new();
+    for cycle in 0..cycles {
+        let frame = OperatorShellFrame::from_dashboard_state_dir(
+            args.profile.clone(),
+            Path::new(args.state_dir.as_str()),
+        );
+        let rendered = render_operator_shell_frame(&frame, args.width);
+        let diff_ops = if args.watch {
+            diff.diff(rendered.clone()).len()
+        } else {
+            rendered.len()
+        };
+        let header = if args.watch {
+            paint(
+                &theme,
+                ThemeRole::Accent,
+                format!(
+                    "Tau Operator Shell (live-watch) - profile={} env={} state_dir={} cycle={}/{}",
+                    frame.profile,
+                    frame.environment,
+                    args.state_dir,
+                    cycle + 1,
+                    cycles
+                ),
+                args.color,
+            )
+        } else {
+            paint(
+                &theme,
+                ThemeRole::Accent,
+                format!(
+                    "Tau Operator Shell (live) - profile={} env={} state_dir={}",
+                    frame.profile, frame.environment, args.state_dir
+                ),
+                args.color,
+            )
+        };
+        println!("{header}");
+        if args.watch {
+            println!(
+                "{}",
+                paint(
+                    &theme,
+                    ThemeRole::Muted,
+                    format_live_watch_marker(cycle + 1, cycles, args.interval_ms, diff_ops),
+                    args.color
+                )
+            );
+        }
+        for line in rendered {
+            println!("{}", paint(&theme, ThemeRole::Primary, line, args.color));
+        }
+        if args.watch && cycle + 1 < cycles && args.interval_ms > 0 {
+            thread::sleep(Duration::from_millis(args.interval_ms));
+        }
     }
 }
 
@@ -400,7 +483,7 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{compose_frame, parse_args, ParseAction};
+    use super::{compose_frame, parse_args, ParseAction, HELP};
     use tau_tui::{render_operator_shell_frame, EditorBuffer, LumaImage, OperatorShellFrame};
 
     #[test]
@@ -533,6 +616,9 @@ mod tests {
         assert_eq!(args.width, 92);
         assert_eq!(args.profile, "ops-live");
         assert_eq!(args.state_dir, ".tau/custom-dashboard");
+        assert!(!args.watch);
+        assert_eq!(args.iterations, 3);
+        assert_eq!(args.interval_ms, 1000);
         assert!(!args.color);
     }
 
@@ -545,5 +631,55 @@ mod tests {
         ])
         .expect_err("expected parse failure");
         assert!(err.contains("missing value for --state-dir"));
+    }
+
+    #[test]
+    fn integration_spec_3474_c01_parse_args_accepts_shell_live_watch_mode_controls() {
+        let action = parse_args(vec![
+            "tau-tui".to_string(),
+            "shell-live".to_string(),
+            "--watch".to_string(),
+            "--iterations".to_string(),
+            "4".to_string(),
+            "--interval-ms".to_string(),
+            "25".to_string(),
+        ])
+        .expect("expected watch-mode parse success");
+
+        let ParseAction::RunShellLive(args) = action else {
+            panic!("expected shell-live action");
+        };
+        assert!(args.watch);
+        assert_eq!(args.iterations, 4);
+        assert_eq!(args.interval_ms, 25);
+    }
+
+    #[test]
+    fn regression_spec_3474_c02_parse_args_rejects_shell_live_zero_iterations() {
+        let err = parse_args(vec![
+            "tau-tui".to_string(),
+            "shell-live".to_string(),
+            "--watch".to_string(),
+            "--iterations".to_string(),
+            "0".to_string(),
+        ])
+        .expect_err("expected parse failure");
+        assert!(err.contains("--iterations must be >= 1"));
+    }
+
+    #[test]
+    fn functional_spec_3474_c03_live_watch_marker_contract_is_deterministic() {
+        let marker = super::format_live_watch_marker(2, 4, 25, 7);
+        assert_eq!(
+            marker,
+            "watch.cycle=2/4 watch.interval_ms=25 watch.diff_ops=7"
+        );
+    }
+
+    #[test]
+    fn functional_spec_3474_c04_help_text_exposes_shell_live_watch_flags() {
+        assert!(HELP.contains("--watch"));
+        assert!(HELP.contains("--iterations"));
+        assert!(HELP.contains("--interval-ms"));
     }
 }
