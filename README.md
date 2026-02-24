@@ -56,6 +56,7 @@ Some surfaces are intentionally diagnostics-first or staged:
   - not all desired product UX workflows are fully integrated live-mutation paths.
 - Auth verification:
   - provider auth-mode matrix and gateway auth/session lifecycle conformance are covered in deterministic suites (`scripts/verify/m295-operator-maturity-wave.sh`),
+  - auth-depth lifecycle and edge-path coverage is aggregated in `scripts/verify/m303-auth-workflow-depth.sh`,
   - live third-party credential/network validation remains environment-specific.
 - TUI:
   - includes operator-shell and `shell-live` modes with status/auth/training/alerts/actions panels,
@@ -81,7 +82,7 @@ Some surfaces are intentionally diagnostics-first or staged:
 |---|---|---|
 | True RL productionization depth | deterministic end-to-end harness, promotion/rollback gate verification, and GA readiness gate are delivered; larger-scale policy operations still expanding | [`docs/planning/integration-gap-closure-plan.md`](docs/planning/integration-gap-closure-plan.md), [`docs/planning/true-rl-roadmap-skeleton.md`](docs/planning/true-rl-roadmap-skeleton.md), [`docs/guides/training-ops.md`](docs/guides/training-ops.md), [`scripts/verify/m301-rl-promotion-rollback-gate.sh`](scripts/verify/m301-rl-promotion-rollback-gate.sh), [`scripts/verify/m296-ga-readiness-gate.sh`](scripts/verify/m296-ga-readiness-gate.sh) |
 | Dashboard maturity expansion | ops routes exist, richer workflow UX pending | [`docs/planning/integration-gap-closure-plan.md`](docs/planning/integration-gap-closure-plan.md), [`docs/guides/dashboard-ops.md`](docs/guides/dashboard-ops.md), [`docs/guides/operator-deployment-guide.md`](docs/guides/operator-deployment-guide.md) |
-| Extended auth live-env verification | deterministic matrix/lifecycle conformance is delivered; external credential/live-env permutations remain environment-specific | [`docs/planning/integration-gap-closure-plan.md`](docs/planning/integration-gap-closure-plan.md), [`docs/provider-auth/provider-auth-capability-matrix.md`](docs/provider-auth/provider-auth-capability-matrix.md), [`docs/guides/gateway-auth-session-smoke.md`](docs/guides/gateway-auth-session-smoke.md), [`scripts/verify/m296-live-auth-validation.sh`](scripts/verify/m296-live-auth-validation.sh) |
+| Extended auth live-env verification | deterministic matrix/lifecycle conformance and auth-depth edge-path gating are delivered; external credential/live-env permutations remain environment-specific | [`docs/planning/integration-gap-closure-plan.md`](docs/planning/integration-gap-closure-plan.md), [`docs/provider-auth/provider-auth-capability-matrix.md`](docs/provider-auth/provider-auth-capability-matrix.md), [`docs/guides/gateway-auth-session-smoke.md`](docs/guides/gateway-auth-session-smoke.md), [`scripts/verify/m303-auth-workflow-depth.sh`](scripts/verify/m303-auth-workflow-depth.sh), [`scripts/verify/m296-live-auth-validation.sh`](scripts/verify/m296-live-auth-validation.sh) |
 | TUI interaction depth | operator shell and resilient `shell-live` diagnostics are delivered; richer interactive workflows continue to evolve | [`docs/planning/integration-gap-closure-plan.md`](docs/planning/integration-gap-closure-plan.md), [`crates/tau-tui`](crates/tau-tui), [`docs/guides/demo-index.md`](docs/guides/demo-index.md) |
 
 ## 5-Minute Quickstart
