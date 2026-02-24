@@ -1,14 +1,15 @@
 # syntax=docker/dockerfile:1.7
 
-FROM rust:1.90-bookworm AS builder
+FROM rust:1.90-trixie AS builder
 WORKDIR /workspace
 
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
+COPY tests/integration ./tests/integration
 
 RUN cargo build --release -p tau-coding-agent
 
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 
 RUN apt-get update \
   && apt-get install --yes --no-install-recommends ca-certificates \

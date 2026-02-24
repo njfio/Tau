@@ -27,6 +27,11 @@ if ! grep -Eq '^FROM .*debian.*$' Dockerfile; then
   exit 1
 fi
 
+if ! grep -Eq '^COPY tests/integration ./tests/integration$' Dockerfile; then
+  echo "error: Dockerfile must copy tests/integration for workspace member resolution" >&2
+  exit 1
+fi
+
 if ! grep -q 'tau-coding-agent --help' scripts/dev/docker-image-smoke.sh; then
   echo "error: docker smoke script must verify tau-coding-agent --help" >&2
   exit 1
