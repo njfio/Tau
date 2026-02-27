@@ -270,7 +270,7 @@ jobs:
             --json-output-file ci-artifacts/oversized-file-guard.json
 
       - name: Upload oversized-file guard artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: oversized-file-guard
           path: ci-artifacts/oversized-file-guard.json
@@ -297,7 +297,7 @@ jobs:
 
       - name: Upload rust doc density artifact
         if: always() && steps.rust_scope.outputs.rust_changed == 'true'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: rust-doc-density
           path: ci-artifacts/rust-doc-density.json
@@ -305,7 +305,7 @@ jobs:
 
       - name: Upload rust doc density annotations artifact
         if: always() && steps.rust_scope.outputs.rust_changed == 'true'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: rust-doc-density-annotations
           path: ci-artifacts/rust-doc-density-annotations.json
@@ -334,7 +334,7 @@ jobs:
 
       - name: Upload rustdoc marker ratchet artifact
         if: always() && steps.rust_scope.outputs.rust_changed == 'true'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: rustdoc-marker-ratchet
           path: |
@@ -706,7 +706,7 @@ jobs:
 
       - name: Upload tool split performance smoke artifact
         if: always() && steps.rust_scope.outputs.rust_changed == 'true' && steps.tool_perf_scope.outputs.tool_perf_smoke_needed == 'true'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: tool-split-performance-smoke
           path: ci-artifacts/tool-split-performance-smoke.json
@@ -724,7 +724,7 @@ jobs:
 
       - name: Upload tool dispatch parity artifact
         if: always() && steps.rust_scope.outputs.rust_changed == 'true' && steps.tool_perf_scope.outputs.tool_perf_smoke_needed == 'true'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: tool-dispatch-parity
           path: |
@@ -747,7 +747,7 @@ jobs:
 
       - name: Upload codex light demo smoke logs
         if: always() && steps.rust_scope.outputs.rust_changed == 'true' && steps.quality_mode.outputs.mode == 'codex-light' && steps.demo_smoke_scope.outputs.demo_smoke_needed == 'true'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: demo-smoke-logs
           path: ci-artifacts/demo-smoke
@@ -874,7 +874,7 @@ jobs:
           echo "- Minimum threshold: ${COVERAGE_MIN}%" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload coverage artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-report
           path: |
