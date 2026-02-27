@@ -19,4 +19,4 @@ tau-contract = { path = "../tau-contract" }
 
 [dev-dependencies]
 httpmock = "0.8"
-tempfile = "3.25"
+tempfile = "3.26"
