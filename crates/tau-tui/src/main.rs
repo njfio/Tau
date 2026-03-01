@@ -2130,10 +2130,15 @@ fn push_failed_turn_assistant_line(state: &mut AgentAppState, error: &str) {
     if state.assistant_output_seen_in_turn {
         return;
     }
-    push_history_line(
-        &mut state.assistant_lines,
-        format!("assistant error: {error}"),
-    );
+    let trimmed = error.trim();
+    if trimmed.is_empty() {
+        return;
+    }
+    let line = format!("assistant error: {trimmed}");
+    if state.assistant_lines.back().map(String::as_str) == Some(line.as_str()) {
+        return;
+    }
+    push_history_line(&mut state.assistant_lines, line);
 }
 
 fn is_progress_line(line: &str) -> bool {
@@ -7624,6 +7629,26 @@ mod tests {
             state.assistant_lines.back().map(String::as_str),
             Some("assistant error: invalid response: codex cli failed with status 1 (model=gpt-5.2): Warning: no last agent message")
         );
+    }
+
+    #[test]
+    fn regression_failed_turn_event_dedupes_identical_assistant_failure_lines() {
+        let mut state = super::AgentAppState::default();
+        state.mark_turn_started();
+        state.assistant_output_seen_in_turn = false;
+        let event = r#"tau.event {"schema_version":1,"timestamp_unix_ms":5,"event_type":"turn.failed","fields":{"phase":"failed","error":"invalid response: codex cli failed with status 1"}}"#;
+
+        super::update_agent_app_state(&mut state, super::AgentOutputSource::Stderr, event);
+        super::update_agent_app_state(&mut state, super::AgentOutputSource::Stderr, event);
+
+        let count = state
+            .assistant_lines
+            .iter()
+            .filter(|line| {
+                line.as_str() == "assistant error: invalid response: codex cli failed with status 1"
+            })
+            .count();
+        assert_eq!(count, 1);
     }
 
     #[test]
