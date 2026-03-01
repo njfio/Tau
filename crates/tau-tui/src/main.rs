@@ -2871,7 +2871,7 @@ fn compose_agent_app_lines(
     ));
     session_lines.push(format!("runtime: {runtime_binary}"));
     session_lines.push(
-        "help: /help /status /dashboard /tools /routines /cortex /memory /sync /colors | shortcuts ? | cancel Ctrl+C | exit /quit"
+        "help: /help /status /dashboard /tools /routines /cortex /memory /memory-distill /sync /colors | shortcuts ? | cancel Ctrl+C | exit /quit"
             .to_string(),
     );
 
@@ -3763,7 +3763,7 @@ fn draw_agent_ratatui(
     ));
     session_lines.push(format!("runtime: {runtime_binary}"));
     session_lines.push(
-        "help: /help /status /dashboard /tools /routines /cortex /memory /sync /colors | shortcuts ? | cancel Ctrl+C | exit /quit"
+        "help: /help /status /dashboard /tools /routines /cortex /memory /memory-distill /sync /colors | shortcuts ? | cancel Ctrl+C | exit /quit"
             .to_string(),
     );
 
@@ -5799,7 +5799,7 @@ fn build_agent_launch_summary_lines(
             Some(path) => format!("session bridge: {path}"),
             None => "session bridge: disabled (explicit --session override)".to_string(),
         },
-        "commands: /help /status /dashboard /tools /routines /cortex /memory /sync /colors /model /mcp /permissions /quit".to_string(),
+        "commands: /help /status /dashboard /tools /routines /cortex /memory /memory-distill /sync /colors /model /mcp /permissions /quit".to_string(),
         "shortcuts: Ctrl+C cancel turn | Ctrl+D exit | Ctrl+R history | Ctrl+G colors | Tab complete".to_string(),
         format!("interactive.command={launch_command}"),
     ]
@@ -6925,7 +6925,7 @@ mod tests {
         let rendered = lines.join("\n");
         assert!(rendered.contains("agent CLI"));
         assert!(rendered.contains(
-            "commands: /help /status /dashboard /tools /routines /cortex /memory /sync /colors /model /mcp /permissions /quit"
+            "commands: /help /status /dashboard /tools /routines /cortex /memory /memory-distill /sync /colors /model /mcp /permissions /quit"
         ));
         assert!(rendered.contains("shortcuts: Ctrl+C cancel turn"));
         assert!(rendered.contains("Ctrl+G colors"));
