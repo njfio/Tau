@@ -1956,7 +1956,15 @@ fn tau_event_field_u64(
     fields: &serde_json::Map<String, serde_json::Value>,
     key: &str,
 ) -> Option<u64> {
-    fields.get(key).and_then(serde_json::Value::as_u64)
+    let value = fields.get(key)?;
+    if let Some(number) = value.as_u64() {
+        return Some(number);
+    }
+    value
+        .as_str()
+        .map(str::trim)
+        .filter(|raw| !raw.is_empty())
+        .and_then(|raw| raw.parse::<u64>().ok())
 }
 
 fn compact_tau_event_value(raw: &str, max_chars: usize) -> String {
@@ -2030,6 +2038,8 @@ fn apply_tau_runtime_event(
             state.mark_turn_started();
             state.turn_phase = TurnPhase::Queued;
             state.turn_status = "turn.start submitted to runtime".to_string();
+            state.active_tool_name = None;
+            state.progress_status = "queued".to_string();
             state.turn_request_budget_ms =
                 event_budget_ms(fields).or(state.default_request_budget_ms);
             if let Some(prompt_chars) = tau_event_field_u64(fields, "prompt_chars") {
@@ -7675,6 +7685,26 @@ mod tests {
             state.assistant_lines.back().map(String::as_str),
             Some("assistant error: invalid response: codex cli failed with status 1")
         );
+    }
+
+    #[test]
+    fn regression_turn_submitted_resets_failed_progress_even_with_string_prompt_chars() {
+        let mut state = super::AgentAppState::default();
+        state.turn_phase = super::TurnPhase::Failed;
+        state.turn_status = "turn.end status=failed".to_string();
+        state.progress_status = "failed: previous turn error".to_string();
+        state.turn_in_progress = false;
+
+        super::update_agent_app_state(
+            &mut state,
+            super::AgentOutputSource::Stderr,
+            r#"tau.event {"schema_version":1,"timestamp_unix_ms":10,"event_type":"turn.submitted","fields":{"prompt_chars":"34","phase":"queued"}}"#,
+        );
+
+        assert!(state.turn_in_progress);
+        assert_eq!(state.turn_phase, super::TurnPhase::Queued);
+        assert_eq!(state.turn_status, "turn.start submitted to runtime");
+        assert_eq!(state.progress_status, "queued prompt_chars=34");
     }
 
     #[test]
