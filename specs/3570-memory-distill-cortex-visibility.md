@@ -110,3 +110,4 @@ Status: Implemented
 - `cargo test -p tau-tui regression_failed_turn_event_adds_assistant_failure_line_when_no_answer_text_exists -- --nocapture`
 - `cargo test -p tau-tui regression_failed_turn_event_dedupes_identical_assistant_failure_lines -- --nocapture`
 - `cargo test -p tau-tui regression_plain_failed_turn_line_adds_assistant_failure_line -- --nocapture`
+- `cargo test -p tau-tui regression_turn_submitted_resets_failed_progress_even_with_string_prompt_chars -- --nocapture`
