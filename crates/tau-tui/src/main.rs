@@ -2534,6 +2534,13 @@ fn update_agent_app_state(state: &mut AgentAppState, source: AgentOutputSource, 
         || line.starts_with("request cancelled")
     {
         finish_turn_with_event_fallback(state, line.as_str());
+        state.turn_phase = TurnPhase::Failed;
+        state.progress_status = compact_ui_snippet(line.as_str(), 120);
+        if let Some(error) = line.strip_prefix("interactive turn failed:") {
+            push_failed_turn_assistant_line(state, error.trim());
+        } else {
+            push_failed_turn_assistant_line(state, line.as_str());
+        }
     }
 
     if source == AgentOutputSource::Stdout
@@ -7649,6 +7656,25 @@ mod tests {
             })
             .count();
         assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn regression_plain_failed_turn_line_adds_assistant_failure_line() {
+        let mut state = super::AgentAppState::default();
+        state.mark_turn_started();
+        state.assistant_output_seen_in_turn = false;
+
+        super::update_agent_app_state(
+            &mut state,
+            super::AgentOutputSource::Stderr,
+            "interactive turn failed: invalid response: codex cli failed with status 1",
+        );
+
+        assert_eq!(state.turn_phase, super::TurnPhase::Failed);
+        assert_eq!(
+            state.assistant_lines.back().map(String::as_str),
+            Some("assistant error: invalid response: codex cli failed with status 1")
+        );
     }
 
     #[test]
