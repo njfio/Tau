@@ -4626,6 +4626,46 @@ fn render_tools_metrics_table(
     ]
 }
 
+fn append_memory_recent_write_lines(lines: &mut Vec<String>, status_payload: &serde_json::Value) {
+    let recent_writes = status_payload
+        .pointer("/gateway/web_ui/memory_distill_runtime/recent_writes")
+        .and_then(serde_json::Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    if recent_writes.is_empty() {
+        lines.push("memory distill recent_writes=(none)".to_string());
+        return;
+    }
+
+    for write in recent_writes.iter().rev().take(3) {
+        lines.push(format_memory_recent_write_line(write));
+    }
+}
+
+fn format_memory_recent_write_line(write: &serde_json::Value) -> String {
+    let summary = write
+        .get("summary")
+        .and_then(serde_json::Value::as_str)
+        .map(|value| compact_ui_snippet(value, 80))
+        .unwrap_or_else(|| "(summary unavailable)".to_string());
+    let session = write
+        .get("session_key")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("unknown");
+    let entry = write
+        .get("entry_id")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or_default();
+    let memory_type = write
+        .get("memory_type")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("unknown");
+    format!(
+        "memory distill write {} session={} entry={} summary={}",
+        memory_type, session, entry, summary
+    )
+}
+
 fn parse_local_tui_command(input: &str) -> Option<LocalTuiCommand> {
     let normalized = input.trim().to_ascii_lowercase();
     match normalized.as_str() {
@@ -4969,38 +5009,7 @@ fn collect_gateway_sync_snapshot(
         memory_last_cycle_writes,
         memory_last_cycle_write_failures
     ));
-    let memory_recent_writes = status_payload
-        .pointer("/gateway/web_ui/memory_distill_runtime/recent_writes")
-        .and_then(serde_json::Value::as_array)
-        .cloned()
-        .unwrap_or_default();
-    if memory_recent_writes.is_empty() {
-        memory_lines.push("memory distill recent_writes=(none)".to_string());
-    } else {
-        for write in memory_recent_writes.iter().rev().take(3) {
-            let summary = write
-                .get("summary")
-                .and_then(serde_json::Value::as_str)
-                .map(|value| compact_ui_snippet(value, 80))
-                .unwrap_or_else(|| "(summary unavailable)".to_string());
-            let session = write
-                .get("session_key")
-                .and_then(serde_json::Value::as_str)
-                .unwrap_or("unknown");
-            let entry = write
-                .get("entry_id")
-                .and_then(serde_json::Value::as_u64)
-                .unwrap_or_default();
-            let memory_type = write
-                .get("memory_type")
-                .and_then(serde_json::Value::as_str)
-                .unwrap_or("unknown");
-            memory_lines.push(format!(
-                "memory distill write {} session={} entry={} summary={}",
-                memory_type, session, entry, summary
-            ));
-        }
-    }
+    append_memory_recent_write_lines(&mut memory_lines, &status_payload);
     if matches!(mode, GatewaySyncFetchMode::Light) {
         let full_refresh_seconds = gateway_sync_full_refresh_seconds();
         dashboard_lines.push(format!(

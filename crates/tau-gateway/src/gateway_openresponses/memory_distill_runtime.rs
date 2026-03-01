@@ -234,21 +234,12 @@ impl GatewayMemoryDistillRuntimeState {
             return;
         }
         self.last_reason_codes.push(trimmed.to_string());
-        if self.last_reason_codes.len() > MAX_REASON_CODES {
-            let drop_count = self
-                .last_reason_codes
-                .len()
-                .saturating_sub(MAX_REASON_CODES);
-            self.last_reason_codes.drain(0..drop_count);
-        }
+        truncate_front_to_limit(&mut self.last_reason_codes, MAX_REASON_CODES);
     }
 
     fn push_recent_write(&mut self, write: MemoryDistillRecentWrite) {
         self.recent_writes.push(write);
-        if self.recent_writes.len() > MAX_RECENT_WRITES {
-            let drop_count = self.recent_writes.len().saturating_sub(MAX_RECENT_WRITES);
-            self.recent_writes.drain(0..drop_count);
-        }
+        truncate_front_to_limit(&mut self.recent_writes, MAX_RECENT_WRITES);
     }
 }
 
@@ -532,10 +523,7 @@ fn process_session_entry(
                     created: write_result.created,
                     observed_unix_ms: current_unix_timestamp_ms(),
                 });
-                if report.recent_writes.len() > MAX_RECENT_WRITES {
-                    let drop_count = report.recent_writes.len().saturating_sub(MAX_RECENT_WRITES);
-                    report.recent_writes.drain(0..drop_count);
-                }
+                truncate_front_to_limit(&mut report.recent_writes, MAX_RECENT_WRITES);
                 record_cortex_memory_entry_write_event(
                     state.config.state_dir.as_path(),
                     session_key,
@@ -830,6 +818,14 @@ fn sanitize_distilled_value(raw_tail: &str) -> Option<String> {
 
 fn normalize_whitespace(raw: &str) -> String {
     raw.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn truncate_front_to_limit<T>(items: &mut Vec<T>, limit: usize) {
+    if items.len() <= limit {
+        return;
+    }
+    let drop_count = items.len().saturating_sub(limit);
+    items.drain(0..drop_count);
 }
 
 fn build_distilled_memory_id(
