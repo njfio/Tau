@@ -561,6 +561,7 @@ fn test_state_with_client_and_auth(
             session_lock_wait_ms: 500,
             session_lock_stale_ms: 10_000,
             state_dir: root.join(".tau/gateway"),
+            memory_state_dir: root.join(".tau/memory"),
             bind: "127.0.0.1:0".to_string(),
             auth_mode,
             auth_token: token.map(str::to_string),
@@ -959,6 +960,53 @@ invalid-tools-telemetry-line
     telemetry_root.join("ui-telemetry.jsonl")
 }
 
+fn write_tools_session_fixture(root: &Path) -> PathBuf {
+    let sessions_root = root
+        .join(".tau")
+        .join("gateway")
+        .join("openresponses")
+        .join("sessions");
+    std::fs::create_dir_all(&sessions_root).expect("create sessions root");
+
+    let mut first = tau_session::SessionStore::load(sessions_root.join("tools-a.jsonl"))
+        .expect("load first tools session");
+    let first_head = first
+        .append_messages(None, &[Message::system("tools fixture root")])
+        .expect("append first root");
+    let first_head = first
+        .append_messages(first_head, &[Message::user("run tools")])
+        .expect("append first user");
+    first
+        .append_messages(
+            first_head,
+            &[
+                Message::tool_result("call-1", "bash", "{\"ok\":true}", false),
+                Message::tool_result("call-2", "memory_search", "{\"matches\":1}", false),
+            ],
+        )
+        .expect("append first tool results");
+
+    let mut second = tau_session::SessionStore::load(sessions_root.join("tools-b.jsonl"))
+        .expect("load second tools session");
+    let second_head = second
+        .append_messages(None, &[Message::system("tools fixture root")])
+        .expect("append second root");
+    let second_head = second
+        .append_messages(second_head, &[Message::user("run tools again")])
+        .expect("append second user");
+    second
+        .append_messages(
+            second_head,
+            &[
+                Message::tool_result("call-3", "bash", "{\"ok\":true}", false),
+                Message::tool_result("call-4", "bash", "{\"error\":\"blocked\"}", true),
+            ],
+        )
+        .expect("append second tool results");
+
+    sessions_root
+}
+
 fn write_events_runtime_fixture(root: &Path) -> PathBuf {
     let events_root = root.join(".tau").join("events");
     std::fs::create_dir_all(&events_root).expect("create events root");
@@ -1306,6 +1354,7 @@ fn unit_render_gateway_webchat_page_includes_expected_endpoints() {
     assert!(html.contains("id=\"view-dashboard\""));
     assert!(html.contains("id=\"dashboardLive\""));
     assert!(html.contains("id=\"dashboardPollSeconds\""));
+    assert!(html.contains("id=\"dashboardPollSeconds\" type=\"text\" value=\"10\""));
     assert!(html.contains("id=\"dashboardRefresh\""));
     assert!(html.contains("id=\"dashboardPause\""));
     assert!(html.contains("id=\"dashboardResume\""));
@@ -1316,6 +1365,7 @@ fn unit_render_gateway_webchat_page_includes_expected_endpoints() {
     assert!(html.contains("id=\"dashboardTimelineTableBody\""));
     assert!(html.contains("id=\"dashboardStatus\""));
     assert!(html.contains("async function refreshDashboard()"));
+    assert!(html.contains("toSafeInteger(dashboardPollSecondsInput.value) || 10"));
     assert!(html.contains("async function postDashboardAction(action)"));
     assert!(html.contains("function updateDashboardLiveMode()"));
     assert!(html.contains("Health State"));
@@ -6137,6 +6187,53 @@ async fn functional_webchat_endpoint_returns_html_shell() {
 }
 
 #[tokio::test]
+async fn integration_webchat_and_status_endpoint_contracts_remain_aligned_for_tools_and_cortex() {
+    let temp = tempdir().expect("tempdir");
+    let state = test_state(temp.path(), 10_000, "secret");
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+    let client = Client::new();
+
+    let status_payload = client
+        .get(format!("http://{addr}{GATEWAY_STATUS_ENDPOINT}"))
+        .bearer_auth("secret")
+        .send()
+        .await
+        .expect("gateway status response")
+        .json::<Value>()
+        .await
+        .expect("parse status payload");
+    let webchat_html = client
+        .get(format!("http://{addr}{WEBCHAT_ENDPOINT}"))
+        .send()
+        .await
+        .expect("webchat response")
+        .text()
+        .await
+        .expect("read webchat html");
+
+    let endpoint_pointers = [
+        "/gateway/web_ui/jobs_endpoint",
+        "/gateway/web_ui/cortex_chat_endpoint",
+        "/gateway/web_ui/cortex_status_endpoint",
+        "/gateway/web_ui/ui_telemetry_endpoint",
+    ];
+    for pointer in endpoint_pointers {
+        let endpoint = status_payload
+            .pointer(pointer)
+            .and_then(Value::as_str)
+            .expect("status endpoint path");
+        assert!(
+            webchat_html.contains(endpoint),
+            "webchat should reference endpoint from status payload pointer={} endpoint={}",
+            pointer,
+            endpoint
+        );
+    }
+
+    handle.abort();
+}
+
+#[tokio::test]
 async fn functional_gateway_sessions_endpoints_support_list_detail_append_and_reset() {
     let temp = tempdir().expect("tempdir");
     let state = test_state(temp.path(), 10_000, "secret");
@@ -6501,6 +6598,82 @@ async fn integration_spec_2667_c01_memory_entry_endpoints_support_crud_search_an
         .as_str()
         .unwrap_or_default()
         .contains("legacy memory payload"));
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn regression_gateway_memory_snapshot_surfaces_semantic_entries_written_via_entry_endpoint() {
+    let temp = tempdir().expect("tempdir");
+    let state = test_state(temp.path(), 10_000, "secret");
+    let (addr, handle) = spawn_test_server(state.clone())
+        .await
+        .expect("spawn server");
+    let session_key = "semantic-memory-snapshot";
+    let memory_endpoint = expand_session_template(GATEWAY_MEMORY_ENDPOINT, session_key);
+    let entry_endpoint =
+        expand_memory_entry_template(GATEWAY_MEMORY_ENTRY_ENDPOINT, session_key, "birthday-note");
+    let graph_endpoint = expand_session_template(GATEWAY_MEMORY_GRAPH_ENDPOINT, session_key);
+
+    let client = Client::new();
+    let create_entry = client
+        .put(format!("http://{addr}{entry_endpoint}"))
+        .bearer_auth("secret")
+        .json(&json!({
+            "summary": "User birthday is 8/15/75.",
+            "memory_type": "fact",
+            "workspace_id": "default-workspace",
+            "channel_id": "default-channel",
+            "actor_id": "default-actor",
+            "policy_gate": MEMORY_WRITE_POLICY_GATE
+        }))
+        .send()
+        .await
+        .expect("create semantic memory entry");
+    assert_eq!(create_entry.status(), StatusCode::CREATED);
+
+    let snapshot = client
+        .get(format!("http://{addr}{memory_endpoint}"))
+        .bearer_auth("secret")
+        .send()
+        .await
+        .expect("load memory snapshot");
+    assert_eq!(snapshot.status(), StatusCode::OK);
+    let snapshot_payload = snapshot
+        .json::<Value>()
+        .await
+        .expect("parse memory snapshot payload");
+    assert!(
+        snapshot_payload["semantic_entry_count"]
+            .as_u64()
+            .unwrap_or_default()
+            >= 1
+    );
+    assert!(
+        snapshot_payload["content"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("User birthday is 8/15/75."),
+        "memory snapshot should render semantic entry summaries"
+    );
+
+    let graph = client
+        .get(format!(
+            "http://{addr}{graph_endpoint}?max_nodes=6&min_edge_weight=0.1"
+        ))
+        .bearer_auth("secret")
+        .send()
+        .await
+        .expect("load semantic memory graph");
+    assert_eq!(graph.status(), StatusCode::OK);
+    let graph_payload = graph
+        .json::<Value>()
+        .await
+        .expect("parse semantic memory graph");
+    assert!(
+        graph_payload["node_count"].as_u64().unwrap_or_default() >= 1,
+        "semantic memory graph should include nodes from shared memory store"
+    );
 
     handle.abort();
 }
@@ -8224,6 +8397,7 @@ async fn regression_spec_2688_c06_c07_training_endpoints_reject_invalid_or_unaut
 async fn integration_spec_2691_c01_c02_c06_tools_inventory_and_stats_endpoints_return_deterministic_payloads(
 ) {
     let temp = tempdir().expect("tempdir");
+    write_tools_session_fixture(temp.path());
     write_tools_telemetry_fixture(temp.path());
     let state = test_state_with_fixture_tools(temp.path(), 10_000, "secret");
     let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
@@ -8264,9 +8438,17 @@ async fn integration_spec_2691_c01_c02_c06_tools_inventory_and_stats_endpoints_r
         .await
         .expect("parse tools stats payload");
     assert_eq!(stats_payload["total_tools"], Value::Number(2_u64.into()));
-    assert_eq!(stats_payload["total_events"], Value::Number(3_u64.into()));
+    assert_eq!(stats_payload["total_events"], Value::Number(4_u64.into()));
     assert_eq!(
         stats_payload["invalid_records"],
+        Value::Number(0_u64.into())
+    );
+    assert_eq!(
+        stats_payload["ui_total_events"],
+        Value::Number(3_u64.into())
+    );
+    assert_eq!(
+        stats_payload["ui_invalid_records"],
         Value::Number(1_u64.into())
     );
     assert_eq!(
@@ -8279,7 +8461,7 @@ async fn integration_spec_2691_c01_c02_c06_tools_inventory_and_stats_endpoints_r
     );
     assert_eq!(
         stats_payload["stats"][0]["event_count"].as_u64(),
-        Some(2_u64)
+        Some(3_u64)
     );
     assert_eq!(
         stats_payload["stats"][1]["tool_name"].as_str(),
@@ -8381,6 +8563,14 @@ async fn regression_spec_2691_c03_c04_tools_stats_endpoint_returns_fallback_for_
         missing_payload["invalid_records"],
         Value::Number(0_u64.into())
     );
+    assert_eq!(
+        missing_payload["ui_total_events"],
+        Value::Number(0_u64.into())
+    );
+    assert_eq!(
+        missing_payload["ui_invalid_records"],
+        Value::Number(0_u64.into())
+    );
     assert!(missing_payload["diagnostics"]
         .as_array()
         .map(|items| !items.is_empty())
@@ -8400,11 +8590,19 @@ async fn regression_spec_2691_c03_c04_tools_stats_endpoint_returns_fallback_for_
         .expect("parse malformed tools stats payload");
     assert_eq!(
         malformed_payload["invalid_records"],
-        Value::Number(1_u64.into())
+        Value::Number(0_u64.into())
     );
     assert_eq!(
         malformed_payload["total_events"],
+        Value::Number(0_u64.into())
+    );
+    assert_eq!(
+        malformed_payload["ui_total_events"],
         Value::Number(3_u64.into())
+    );
+    assert_eq!(
+        malformed_payload["ui_invalid_records"],
+        Value::Number(1_u64.into())
     );
 
     handle.abort();
@@ -8771,6 +8969,7 @@ async fn integration_spec_2701_c01_c02_c05_cortex_chat_endpoint_streams_authenti
     }
 
     assert!(buffer.contains("event: cortex.response.created"));
+    assert!(buffer.contains("event: tau.event"));
     assert!(buffer.contains("event: cortex.response.output_text.delta"));
     assert!(buffer.contains("event: cortex.response.output_text.done"));
     assert!(buffer.contains("event: done"));
@@ -8959,6 +9158,7 @@ async fn regression_spec_2953_c03_c04_cortex_chat_provider_failure_uses_determin
     }
 
     assert!(buffer.contains("event: cortex.response.created"));
+    assert!(buffer.contains("event: tau.event"));
     assert!(buffer.contains("event: cortex.response.output_text.delta"));
     assert!(buffer.contains("event: cortex.response.output_text.done"));
     assert!(buffer.contains("event: done"));
@@ -9587,6 +9787,7 @@ async fn functional_openresponses_endpoint_streams_sse_for_stream_true() {
 
     let body = response.text().await.expect("read sse body");
     assert!(body.contains("event: response.created"));
+    assert!(body.contains("event: tau.event"));
     assert!(body.contains("event: response.output_text.delta"));
     assert!(body.contains("event: response.completed"));
     assert!(body.contains("event: done"));
@@ -10599,6 +10800,29 @@ async fn integration_gateway_status_endpoint_returns_service_snapshot() {
         payload["runtime_heartbeat"]["run_state"],
         Value::String("unknown".to_string())
     );
+    assert_eq!(
+        payload["gateway"]["web_ui"]["memory_distill_runtime"]["enabled"],
+        Value::Bool(false)
+    );
+    assert_eq!(
+        payload["gateway"]["web_ui"]["memory_distill_runtime"]["cycle_count"],
+        Value::Number(serde_json::Number::from(0))
+    );
+    assert_eq!(
+        payload["gateway"]["web_ui"]["memory_distill_runtime"]["last_cycle_writes_applied"],
+        Value::Number(serde_json::Number::from(0))
+    );
+    assert!(
+        payload["gateway"]["web_ui"]["memory_distill_runtime"]["recent_writes"]
+            .as_array()
+            .is_some()
+    );
+    assert_eq!(
+        payload["gateway"]["web_ui"]["memory_distill_runtime"]["checkpoint_path"]
+            .as_str()
+            .map(|value| value.ends_with("openresponses/memory-distill-checkpoints.json")),
+        Some(true)
+    );
 
     handle.abort();
 }
@@ -10978,6 +11202,8 @@ async fn integration_dashboard_stream_supports_reconnect_reset_and_snapshot_upda
     }
     assert!(buffer.contains("event: dashboard.reset"));
     assert!(buffer.contains("event: dashboard.snapshot"));
+    assert!(buffer.contains("event: tau.event"));
+    assert!(buffer.contains("\"event_type\":\"dashboard.reset\""));
 
     std::fs::write(
         dashboard_root.join("control-state.json"),
@@ -11451,6 +11677,7 @@ async fn regression_gateway_password_session_token_expires_and_fails_closed() {
             session_lock_wait_ms: 500,
             session_lock_stale_ms: 10_000,
             state_dir: temp.path().join(".tau/gateway"),
+            memory_state_dir: temp.path().join(".tau/memory"),
             bind: "127.0.0.1:0".to_string(),
             auth_mode: GatewayOpenResponsesAuthMode::PasswordSession,
             auth_token: None,
@@ -11819,6 +12046,7 @@ async fn integration_external_coding_agent_subprocess_mode_streams_worker_stdout
             session_lock_wait_ms: 500,
             session_lock_stale_ms: 10_000,
             state_dir: temp.path().join(".tau/gateway"),
+            memory_state_dir: temp.path().join(".tau/memory"),
             bind: "127.0.0.1:0".to_string(),
             auth_mode: GatewayOpenResponsesAuthMode::Token,
             auth_token: Some("secret".to_string()),
@@ -11951,6 +12179,7 @@ async fn regression_external_coding_agent_reap_endpoint_times_out_stale_sessions
             session_lock_wait_ms: 500,
             session_lock_stale_ms: 10_000,
             state_dir: temp.path().join(".tau/gateway"),
+            memory_state_dir: temp.path().join(".tau/memory"),
             bind: "127.0.0.1:0".to_string(),
             auth_mode: GatewayOpenResponsesAuthMode::Token,
             auth_token: Some("secret".to_string()),
@@ -12552,6 +12781,7 @@ async fn regression_openresponses_honors_configured_max_turns_limit() {
             session_lock_wait_ms: 500,
             session_lock_stale_ms: 10_000,
             state_dir: temp.path().join(".tau/gateway-max-turns"),
+            memory_state_dir: temp.path().join(".tau/memory-max-turns"),
             bind: "127.0.0.1:0".to_string(),
             auth_mode: GatewayOpenResponsesAuthMode::Token,
             auth_token: Some("secret".to_string()),
@@ -14360,6 +14590,7 @@ async fn tier_weekly_ch15_chaos_matrix() {
             session_lock_wait_ms: 500,
             session_lock_stale_ms: 10_000,
             state_dir: temp.path().join(".tau/gateway-timeout"),
+            memory_state_dir: temp.path().join(".tau/memory-timeout"),
             bind: "127.0.0.1:0".to_string(),
             auth_mode: GatewayOpenResponsesAuthMode::Token,
             auth_token: Some("secret".to_string()),
@@ -14880,6 +15111,8 @@ async fn integration_spec_3454_c03_x9_cortex_bulletin_and_cross_session_matrix()
     assert!(cortex_buffer.contains("event: cortex.response.created"));
     assert!(cortex_buffer.contains("event: cortex.response.output_text.delta"));
     assert!(cortex_buffer.contains("event: cortex.response.output_text.done"));
+    assert!(cortex_buffer.contains("event: tau.event"));
+    assert!(cortex_buffer.contains("\"event_type\":\"cortex.response.output_text.done\""));
     assert!(cortex_buffer.contains("\"reason_code\":\"cortex_chat_llm_applied\""));
 
     let cortex_status = harness.get_cortex_status().await;
@@ -14963,6 +15196,8 @@ async fn integration_spec_3454_c03_x9_cortex_bulletin_and_cross_session_matrix()
     assert!(fallback_buffer.contains("event: cortex.response.created"));
     assert!(fallback_buffer.contains("event: cortex.response.output_text.delta"));
     assert!(fallback_buffer.contains("event: cortex.response.output_text.done"));
+    assert!(fallback_buffer.contains("event: tau.event"));
+    assert!(fallback_buffer.contains("\"event_type\":\"cortex.response.output_text.done\""));
     assert!(fallback_buffer.contains("\"reason_code\":\"cortex_chat_llm_error_fallback\""));
 }
 
@@ -15024,4 +15259,6 @@ async fn integration_spec_3454_c04_d12_dashboard_live_data_stream_matrix() {
         .await;
     assert!(reconnect_buffer.contains("event: dashboard.reset"));
     assert!(reconnect_buffer.contains("event: dashboard.snapshot"));
+    assert!(reconnect_buffer.contains("event: tau.event"));
+    assert!(reconnect_buffer.contains("\"event_type\":\"dashboard.reset\""));
 }
