@@ -107,3 +107,6 @@ Status: Implemented
 - `cargo test -p tau-tui unit_parse_local_tui_command_maps_dashboard_tools_routines_cortex_memory_sync_and_colors -- --nocapture`
 - `cargo test -p tau-tui integration_gateway_sync_snapshot_full_mode_reflects_status_contract_for_tools_and_cortex -- --nocapture`
 - `cargo test -p tau-tui functional_spec_c15_agent_launch_summary_is_compact_and_command_oriented -- --nocapture`
+- `cargo test -p tau-tui regression_failed_turn_event_adds_assistant_failure_line_when_no_answer_text_exists -- --nocapture`
+- `cargo test -p tau-tui regression_failed_turn_event_dedupes_identical_assistant_failure_lines -- --nocapture`
+- `cargo test -p tau-tui regression_plain_failed_turn_line_adds_assistant_failure_line -- --nocapture`
