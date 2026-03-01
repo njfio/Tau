@@ -62,6 +62,9 @@ Make memory distill behavior observable and trustworthy end-to-end by:
 6. Integrated flow
 - [ ] Integration test proves: append user event -> run distill cycle -> memory persisted -> status reflects write -> TUI-visible snapshot includes updated counters/recent write.
 
+7. Failed-turn operator visibility
+- [ ] If runtime emits failed-turn status with error and no assistant answer text, TUI appends a concise explicit failure line to Assistant pane (not only Timeline/Turn).
+
 ## Files To Touch
 - `crates/tau-gateway/src/gateway_openresponses/memory_distill_runtime.rs`
 - `crates/tau-gateway/src/gateway_openresponses/status_runtime.rs`
@@ -81,6 +84,7 @@ Make memory distill behavior observable and trustworthy end-to-end by:
 - Distill cycle integration test asserting recent writes + last-cycle counters.
 - Gateway status/web-ui contract test asserting enriched `memory_distill_runtime` fields.
 - TUI parser/command test for `/memory-distill` and alias behavior.
+- TUI parser/render test for failed-turn event path with assistant-pane error fallback.
 
 ### GREEN
 - Implement minimal runtime/status/TUI changes to satisfy tests.
