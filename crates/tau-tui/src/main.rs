@@ -2079,7 +2079,9 @@ fn apply_tau_runtime_event(
             state.mark_turn_finished();
             state.turn_phase = TurnPhase::Failed;
             if let Some(error) = tau_event_field_str(fields, "error") {
-                state.progress_status = format!("failed: {}", compact_tau_event_value(&error, 96));
+                let compact = compact_tau_event_value(&error, 96);
+                state.progress_status = format!("failed: {compact}");
+                push_failed_turn_assistant_line(state, error.as_str());
             }
             push_history_line(&mut state.timeline_lines, rendered);
         }
@@ -2122,6 +2124,16 @@ fn apply_tau_runtime_event(
         }
         _ => {}
     }
+}
+
+fn push_failed_turn_assistant_line(state: &mut AgentAppState, error: &str) {
+    if state.assistant_output_seen_in_turn {
+        return;
+    }
+    push_history_line(
+        &mut state.assistant_lines,
+        format!("assistant error: {error}"),
+    );
 }
 
 fn is_progress_line(line: &str) -> bool {
