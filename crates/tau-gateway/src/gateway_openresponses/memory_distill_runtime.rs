@@ -21,6 +21,7 @@ use super::*;
 
 const MEMORY_DISTILL_CHECKPOINT_SCHEMA_VERSION: u32 = 1;
 const MAX_REASON_CODES: usize = 16;
+const MAX_RECENT_WRITES: usize = 16;
 
 #[derive(Debug)]
 pub(super) struct MemoryDistillRuntimeHandle {
@@ -133,6 +134,11 @@ impl GatewayOpenResponsesServerState {
             runtime.in_flight = false;
             runtime.cycle_count = runtime.cycle_count.saturating_add(1);
             runtime.last_cycle_completed_unix_ms = Some(report.completed_unix_ms);
+            runtime.last_cycle_sessions_scanned = report.sessions_scanned;
+            runtime.last_cycle_entries_scanned = report.entries_scanned;
+            runtime.last_cycle_candidates_extracted = report.candidates_extracted;
+            runtime.last_cycle_writes_applied = report.writes_applied;
+            runtime.last_cycle_write_failures = report.write_failures;
             runtime.sessions_scanned = runtime
                 .sessions_scanned
                 .saturating_add(report.sessions_scanned);
@@ -154,6 +160,9 @@ impl GatewayOpenResponsesServerState {
             for reason_code in &report.reason_codes {
                 runtime.push_reason_code(reason_code.as_str());
             }
+            for recent_write in &report.recent_writes {
+                runtime.push_recent_write(recent_write.clone());
+            }
         }
     }
 
@@ -170,11 +179,17 @@ impl GatewayOpenResponsesServerState {
                 candidates_extracted: runtime.candidates_extracted,
                 writes_applied: runtime.writes_applied,
                 write_failures: runtime.write_failures,
+                last_cycle_sessions_scanned: runtime.last_cycle_sessions_scanned,
+                last_cycle_entries_scanned: runtime.last_cycle_entries_scanned,
+                last_cycle_candidates_extracted: runtime.last_cycle_candidates_extracted,
+                last_cycle_writes_applied: runtime.last_cycle_writes_applied,
+                last_cycle_write_failures: runtime.last_cycle_write_failures,
                 session_load_failures: runtime.session_load_failures,
                 checkpoint_load_failures: runtime.checkpoint_load_failures,
                 checkpoint_save_failures: runtime.checkpoint_save_failures,
                 last_sessions_with_updates: runtime.last_sessions_with_updates,
                 last_reason_codes: runtime.last_reason_codes.clone(),
+                recent_writes: runtime.recent_writes.clone(),
                 checkpoint_path: gateway_memory_distill_checkpoint_path(
                     self.config.state_dir.as_path(),
                 )
@@ -199,11 +214,17 @@ pub(super) struct GatewayMemoryDistillRuntimeState {
     candidates_extracted: u64,
     writes_applied: u64,
     write_failures: u64,
+    last_cycle_sessions_scanned: u64,
+    last_cycle_entries_scanned: u64,
+    last_cycle_candidates_extracted: u64,
+    last_cycle_writes_applied: u64,
+    last_cycle_write_failures: u64,
     session_load_failures: u64,
     checkpoint_load_failures: u64,
     checkpoint_save_failures: u64,
     last_sessions_with_updates: u64,
     last_reason_codes: Vec<String>,
+    recent_writes: Vec<MemoryDistillRecentWrite>,
 }
 
 impl GatewayMemoryDistillRuntimeState {
@@ -221,6 +242,14 @@ impl GatewayMemoryDistillRuntimeState {
             self.last_reason_codes.drain(0..drop_count);
         }
     }
+
+    fn push_recent_write(&mut self, write: MemoryDistillRecentWrite) {
+        self.recent_writes.push(write);
+        if self.recent_writes.len() > MAX_RECENT_WRITES {
+            let drop_count = self.recent_writes.len().saturating_sub(MAX_RECENT_WRITES);
+            self.recent_writes.drain(0..drop_count);
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Default)]
@@ -235,11 +264,17 @@ pub(super) struct GatewayMemoryDistillStatusReport {
     candidates_extracted: u64,
     writes_applied: u64,
     write_failures: u64,
+    last_cycle_sessions_scanned: u64,
+    last_cycle_entries_scanned: u64,
+    last_cycle_candidates_extracted: u64,
+    last_cycle_writes_applied: u64,
+    last_cycle_write_failures: u64,
     session_load_failures: u64,
     checkpoint_load_failures: u64,
     checkpoint_save_failures: u64,
     last_sessions_with_updates: u64,
     last_reason_codes: Vec<String>,
+    recent_writes: Vec<MemoryDistillRecentWrite>,
     checkpoint_path: String,
 }
 
@@ -255,6 +290,7 @@ struct MemoryDistillCycleReport {
     checkpoint_save_failures: u64,
     sessions_with_updates: u64,
     reason_codes: Vec<String>,
+    recent_writes: Vec<MemoryDistillRecentWrite>,
 }
 
 impl MemoryDistillCycleReport {
@@ -268,6 +304,18 @@ impl MemoryDistillCycleReport {
         }
         self.reason_codes.push(trimmed.to_string());
     }
+}
+
+#[derive(Debug, Clone, Serialize, Default)]
+struct MemoryDistillRecentWrite {
+    session_key: String,
+    entry_id: u64,
+    memory_id: String,
+    summary: String,
+    memory_type: String,
+    source_event_key: String,
+    created: bool,
+    observed_unix_ms: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -474,6 +522,20 @@ fn process_session_entry(
         ) {
             Ok(write_result) => {
                 report.writes_applied = report.writes_applied.saturating_add(1);
+                report.recent_writes.push(MemoryDistillRecentWrite {
+                    session_key: session_key.to_string(),
+                    entry_id: entry.id,
+                    memory_id: memory_id.clone(),
+                    summary: candidate.summary.clone(),
+                    memory_type: candidate.memory_type.as_str().to_string(),
+                    source_event_key: source_event_key.clone(),
+                    created: write_result.created,
+                    observed_unix_ms: current_unix_timestamp_ms(),
+                });
+                if report.recent_writes.len() > MAX_RECENT_WRITES {
+                    let drop_count = report.recent_writes.len().saturating_sub(MAX_RECENT_WRITES);
+                    report.recent_writes.drain(0..drop_count);
+                }
                 record_cortex_memory_entry_write_event(
                     state.config.state_dir.as_path(),
                     session_key,
@@ -635,6 +697,21 @@ fn distill_candidates_from_user_text(text: &str) -> Vec<DistilledMemoryCandidate
         });
     }
 
+    if let Some(value) = extract_phrase_value(&normalized, &["call me"]) {
+        candidates.push(DistilledMemoryCandidate {
+            kind: "name",
+            summary: format!("User name is {value}"),
+            facts: vec![format!("name={value}")],
+            tags: vec![
+                "profile".to_string(),
+                "identity".to_string(),
+                "alias".to_string(),
+            ],
+            memory_type: MemoryType::Identity,
+            importance: 0.9,
+        });
+    }
+
     if let Some(value) = extract_phrase_value(&normalized, &["i prefer"]) {
         candidates.push(DistilledMemoryCandidate {
             kind: "preference",
@@ -667,6 +744,31 @@ fn distill_candidates_from_user_text(text: &str) -> Vec<DistilledMemoryCandidate
             tags: vec!["constraint".to_string()],
             memory_type: MemoryType::Fact,
             importance: 0.7,
+        });
+    }
+
+    if let Some(value) =
+        extract_phrase_value(&normalized, &["i am based in", "i'm based in", "i live in"])
+    {
+        candidates.push(DistilledMemoryCandidate {
+            kind: "location",
+            summary: format!("User is based in {value}"),
+            facts: vec![format!("location={value}")],
+            tags: vec!["profile".to_string(), "location".to_string()],
+            memory_type: MemoryType::Fact,
+            importance: 0.75,
+        });
+    }
+
+    if let Some(value) = extract_phrase_value(&normalized, &["i am allergic to", "i'm allergic to"])
+    {
+        candidates.push(DistilledMemoryCandidate {
+            kind: "constraint",
+            summary: format!("User is allergic to {value}"),
+            facts: vec![format!("allergy={value}")],
+            tags: vec!["constraint".to_string(), "allergy".to_string()],
+            memory_type: MemoryType::Fact,
+            importance: 0.8,
         });
     }
 
@@ -815,7 +917,7 @@ mod tests {
     #[test]
     fn unit_distill_candidates_extracts_alias_location_and_allergy_constraint() {
         let candidates = distill_candidates_from_user_text(
-            "Call me N. I am based in Austin, Texas. I am allergic to peanuts.",
+            "Call me Niko. I am based in Austin, Texas. I am allergic to peanuts.",
         );
 
         let summaries = candidates
@@ -824,7 +926,7 @@ mod tests {
             .collect::<Vec<_>>();
         assert!(summaries
             .iter()
-            .any(|summary| summary.contains("name is N")));
+            .any(|summary| summary.contains("name is Niko")));
         assert!(summaries
             .iter()
             .any(|summary| summary.contains("based in Austin, Texas")));
@@ -916,6 +1018,15 @@ mod tests {
         assert!(records
             .iter()
             .any(|record| record.entry.summary.contains("prefers concise answers")));
+
+        state.record_memory_distill_cycle_report(&first_report);
+        let status_report = state.collect_memory_distill_status_report();
+        assert!(status_report.last_cycle_writes_applied >= 2);
+        assert!(status_report.recent_writes.len() >= 2);
+        assert!(status_report
+            .recent_writes
+            .iter()
+            .any(|write| write.summary.contains("birthday is April 3")));
 
         let second_report =
             run_memory_distill_cycle(&state, checkpoint_path.as_path(), &mut checkpoints);

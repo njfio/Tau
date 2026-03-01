@@ -4635,7 +4635,7 @@ fn parse_local_tui_command(input: &str) -> Option<LocalTuiCommand> {
         "/tools" => Some(LocalTuiCommand::Tools),
         "/routines" => Some(LocalTuiCommand::Routines),
         "/cortex" => Some(LocalTuiCommand::Cortex),
-        "/memory" => Some(LocalTuiCommand::Memory),
+        "/memory" | "/memory-distill" => Some(LocalTuiCommand::Memory),
         "/sync" => Some(LocalTuiCommand::Sync),
         "/colors" | "/color" => Some(LocalTuiCommand::Colors),
         _ => None,
@@ -4928,6 +4928,31 @@ fn collect_gateway_sync_snapshot(
         "/gateway/web_ui/memory_distill_runtime/write_failures",
     )
     .unwrap_or_default();
+    let memory_last_cycle_sessions = json_pointer_u64(
+        &status_payload,
+        "/gateway/web_ui/memory_distill_runtime/last_cycle_sessions_scanned",
+    )
+    .unwrap_or_default();
+    let memory_last_cycle_entries = json_pointer_u64(
+        &status_payload,
+        "/gateway/web_ui/memory_distill_runtime/last_cycle_entries_scanned",
+    )
+    .unwrap_or_default();
+    let memory_last_cycle_candidates = json_pointer_u64(
+        &status_payload,
+        "/gateway/web_ui/memory_distill_runtime/last_cycle_candidates_extracted",
+    )
+    .unwrap_or_default();
+    let memory_last_cycle_writes = json_pointer_u64(
+        &status_payload,
+        "/gateway/web_ui/memory_distill_runtime/last_cycle_writes_applied",
+    )
+    .unwrap_or_default();
+    let memory_last_cycle_write_failures = json_pointer_u64(
+        &status_payload,
+        "/gateway/web_ui/memory_distill_runtime/last_cycle_write_failures",
+    )
+    .unwrap_or_default();
     memory_lines.push(format!(
         "memory distill enabled={} in_flight={} cycles={} writes={} write_failures={}",
         memory_distill_enabled,
@@ -4936,6 +4961,46 @@ fn collect_gateway_sync_snapshot(
         memory_distill_writes,
         memory_distill_failures
     ));
+    memory_lines.push(format!(
+        "memory distill last_cycle sessions={} entries={} candidates={} writes={} write_failures={}",
+        memory_last_cycle_sessions,
+        memory_last_cycle_entries,
+        memory_last_cycle_candidates,
+        memory_last_cycle_writes,
+        memory_last_cycle_write_failures
+    ));
+    let memory_recent_writes = status_payload
+        .pointer("/gateway/web_ui/memory_distill_runtime/recent_writes")
+        .and_then(serde_json::Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    if memory_recent_writes.is_empty() {
+        memory_lines.push("memory distill recent_writes=(none)".to_string());
+    } else {
+        for write in memory_recent_writes.iter().rev().take(3) {
+            let summary = write
+                .get("summary")
+                .and_then(serde_json::Value::as_str)
+                .map(|value| compact_ui_snippet(value, 80))
+                .unwrap_or_else(|| "(summary unavailable)".to_string());
+            let session = write
+                .get("session_key")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("unknown");
+            let entry = write
+                .get("entry_id")
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or_default();
+            let memory_type = write
+                .get("memory_type")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("unknown");
+            memory_lines.push(format!(
+                "memory distill write {} session={} entry={} summary={}",
+                memory_type, session, entry, summary
+            ));
+        }
+    }
     if matches!(mode, GatewaySyncFetchMode::Light) {
         let full_refresh_seconds = gateway_sync_full_refresh_seconds();
         dashboard_lines.push(format!(
@@ -5430,7 +5495,7 @@ fn emit_local_command_help(state: &mut AgentAppState) {
         "  /tools       show latest tools inventory/telemetry snapshot",
         "  /routines    show latest routines/jobs snapshot",
         "  /cortex      show latest cortex health/diagnostics snapshot",
-        "  /memory      show latest memory-distill runtime snapshot",
+        "  /memory      show latest memory-distill runtime snapshot (/memory-distill alias)",
         "  /sync        force gateway sync refresh now",
         "  /colors      toggle color mode (semantic/minimal)",
     ] {
@@ -7168,6 +7233,33 @@ mod tests {
                             "cycle_count": 4,
                             "writes_applied": 3,
                             "write_failures": 0,
+                            "last_cycle_sessions_scanned": 2,
+                            "last_cycle_entries_scanned": 4,
+                            "last_cycle_candidates_extracted": 3,
+                            "last_cycle_writes_applied": 2,
+                            "last_cycle_write_failures": 0,
+                            "recent_writes": [
+                                {
+                                    "session_key": "default",
+                                    "entry_id": 41,
+                                    "memory_id": "auto:default:entry:41:goal:abc123",
+                                    "summary": "User goal: ship release",
+                                    "memory_type": "goal",
+                                    "source_event_key": "session:default:entry:41",
+                                    "created": true,
+                                    "observed_unix_ms": 1700000001000u64
+                                },
+                                {
+                                    "session_key": "default",
+                                    "entry_id": 42,
+                                    "memory_id": "auto:default:entry:42:preference:def456",
+                                    "summary": "User prefers concise answers",
+                                    "memory_type": "preference",
+                                    "source_event_key": "session:default:entry:42",
+                                    "created": true,
+                                    "observed_unix_ms": 1700000002000u64
+                                }
+                            ],
                             "last_reason_codes": ["distilled_preferences"]
                         }
                     }
@@ -7266,6 +7358,13 @@ mod tests {
         assert!(snapshot.cortex_lines.iter().any(|line| {
             line.contains("cortex endpoints chat=/cortex/chat status=/cortex/status")
         }));
+        assert!(snapshot.memory_lines.iter().any(|line| line.contains(
+            "memory distill last_cycle sessions=2 entries=4 candidates=3 writes=2 write_failures=0"
+        )));
+        assert!(snapshot
+            .memory_lines
+            .iter()
+            .any(|line| line.contains("memory distill write preference session=default entry=42")));
     }
 
     #[test]
