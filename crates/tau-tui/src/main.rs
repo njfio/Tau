@@ -7596,6 +7596,25 @@ mod tests {
     }
 
     #[test]
+    fn regression_failed_turn_event_adds_assistant_failure_line_when_no_answer_text_exists() {
+        let mut state = super::AgentAppState::default();
+        state.mark_turn_started();
+        state.assistant_output_seen_in_turn = false;
+
+        super::update_agent_app_state(
+            &mut state,
+            super::AgentOutputSource::Stderr,
+            r#"tau.event {"schema_version":1,"timestamp_unix_ms":5,"event_type":"turn.failed","fields":{"phase":"failed","error":"invalid response: codex cli failed with status 1 (model=gpt-5.2): Warning: no last agent message"}}"#,
+        );
+
+        assert_eq!(state.turn_phase, super::TurnPhase::Failed);
+        assert_eq!(
+            state.assistant_lines.back().map(String::as_str),
+            Some("assistant error: invalid response: codex cli failed with status 1 (model=gpt-5.2): Warning: no last agent message")
+        );
+    }
+
+    #[test]
     fn regression_agent_app_parser_accepts_embedded_tau_event_wrappers() {
         let mut state = super::AgentAppState::default();
         super::update_agent_app_state(
