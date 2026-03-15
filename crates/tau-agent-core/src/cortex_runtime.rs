@@ -17,9 +17,11 @@ const DEFAULT_CORTEX_MAX_RECORDS_PER_SESSION: usize = 8;
 const DEFAULT_CORTEX_MAX_RECORDS_TOTAL: usize = 24;
 const DEFAULT_CORTEX_MAX_BULLETIN_CHARS: usize = 2_000;
 const CORTEX_BULLETIN_HEADER: &str = "## Cortex Memory Bulletin";
-const CORTEX_SUMMARY_SYSTEM_PROMPT: &str = "You are Tau Cortex. Summarize cross-session memory\
- in concise operator bullet points. Focus on trends, unresolved work, and immediate risks.\
- Return plain text only.";
+const CORTEX_SUMMARY_SYSTEM_PROMPT: &str = "You are Tau Cortex. Summarize cross-session memory \
+in concise operator bullet points. Prioritize: (1) unresolved work and blockers, \
+(2) recurring patterns or errors, (3) architectural decisions in progress, \
+(4) user preferences discovered. Favor actionable items over historical notes. \
+Return plain text only.";
 
 /// Public struct `CortexConfig` used across Tau components.
 #[derive(Debug, Clone, PartialEq, Eq)]

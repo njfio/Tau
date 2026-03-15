@@ -1444,7 +1444,7 @@ impl AgentTool for GrepTool {
     fn definition(&self) -> ToolDefinition {
         ToolDefinition {
             name: "grep".to_string(),
-            description: "Search file contents for a pattern. Returns matching lines with file paths and line numbers.".to_string(),
+            description: "Search file contents using substring or regex patterns. Use this to find function definitions, usage sites, imports, or any text pattern across a codebase. Searches recursively, skipping hidden directories. Returns matching lines with file paths and line numbers.".to_string(),
             parameters: json!({
                 "type": "object",
                 "properties": {
@@ -1625,7 +1625,7 @@ impl AgentTool for GlobTool {
     fn definition(&self) -> ToolDefinition {
         ToolDefinition {
             name: "glob".to_string(),
-            description: "Find files matching a glob pattern. Returns file paths with metadata.".to_string(),
+            description: "Find files matching a glob pattern. Use this to discover project structure, locate config files, or find all files of a type. Supports recursive patterns like 'src/**/*.rs'. Returns file paths with size metadata.".to_string(),
             parameters: json!({
                 "type": "object",
                 "properties": {
@@ -1721,7 +1721,7 @@ impl AgentTool for ListDirectoryTool {
     fn definition(&self) -> ToolDefinition {
         ToolDefinition {
             name: "ls".to_string(),
-            description: "List directory contents with file names, types, and sizes.".to_string(),
+            description: "List directory contents with file names, types, and sizes. Use this to understand directory layout before navigating or modifying files. Supports recursive listing with configurable depth.".to_string(),
             parameters: json!({
                 "type": "object",
                 "properties": {

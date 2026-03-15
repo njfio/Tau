@@ -37,7 +37,7 @@ fn unit_replace_system_prompt_updates_leading_system_message_without_history_chu
     let mut agent = Agent::new(Arc::new(EchoClient), AgentConfig::default());
     agent.append_message(Message::user("hello"));
 
-    let unchanged = agent.replace_system_prompt("You are a helpful coding assistant.");
+    let unchanged = agent.replace_system_prompt(crate::DEFAULT_SYSTEM_PROMPT);
     assert!(!unchanged, "identical prompt must not report update");
     assert_eq!(agent.messages().len(), 2);
 

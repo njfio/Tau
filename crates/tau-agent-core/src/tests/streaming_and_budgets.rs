@@ -620,7 +620,7 @@ fn unit_build_structured_output_retry_prompt_includes_error_and_schema() {
     let prompt = build_structured_output_retry_prompt(&schema, "did not contain parseable JSON");
     assert!(prompt.contains("did not contain parseable JSON"));
     assert!(prompt.contains("\"required\":[\"mode\"]"));
-    assert!(prompt.contains("reply with only valid JSON"));
+    assert!(prompt.contains("Reply with ONLY the raw JSON object"));
 }
 
 #[tokio::test]

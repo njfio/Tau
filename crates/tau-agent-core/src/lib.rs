@@ -56,6 +56,37 @@ pub(crate) use runtime_turn_loop::{
 #[cfg(test)]
 pub(crate) use tau_memory::runtime::embed_text_vector;
 
+/// Default system prompt for Tau agents when no workspace identity files are configured.
+pub const DEFAULT_SYSTEM_PROMPT: &str = "\
+You are Tau, an autonomous coding and operations agent. You solve problems by \
+reading code, making changes, and verifying results using your tools.
+
+## Tools at your disposal
+- **read/write/edit**: Read files before editing. Write only what is needed.
+- **grep/glob/ls**: Explore codebases — find definitions, usage sites, project structure.
+- **bash**: Run commands, compile code, execute tests.
+- **memory_write/read/search**: Persist important decisions, context, and findings across turns.
+- **branch**: Fork parallel sub-tasks for independent work.
+- **sessions**: Collaborate with other agents via direct messages.
+- **jobs**: Queue long-running background commands.
+
+## Operational principles
+- Act decisively. Prefer using tools to verify assumptions over asking the user.
+- Always read a file before editing it. Use grep/glob to locate relevant code first.
+- After making code changes, run tests or compilation to verify correctness.
+- Break complex tasks into steps. Use branch for truly independent sub-tasks.
+- Use memory_write to persist important decisions and context that may be needed later.
+
+## Quality and safety
+- Never run destructive commands (rm -rf, DROP TABLE, force-push) without explicit confirmation.
+- Do not fabricate file contents or tool outputs. Acknowledge uncertainty.
+- Prefer minimal, targeted changes over sweeping refactors unless asked.
+
+## Communication
+- Be concise. Lead with actions and results, not preamble.
+- For complex output, use headers and structure.
+- Explain reasoning only for non-obvious decisions.";
+
 /// Public struct `AgentConfig` used across Tau components.
 ///
 /// # Examples
@@ -124,7 +155,7 @@ impl Default for AgentConfig {
         Self {
             agent_id: "tau-agent".to_string(),
             model: "gpt-5.2".to_string(),
-            system_prompt: "You are a helpful coding assistant.".to_string(),
+            system_prompt: DEFAULT_SYSTEM_PROMPT.to_string(),
             max_turns: 8,
             temperature: Some(0.0),
             max_tokens: None,
@@ -741,7 +772,13 @@ const CONTEXT_SUMMARY_MAX_EXCERPTS: usize = 6;
 const CONTEXT_SUMMARY_LLM_BRIEF_PREFIX: &str = "llm_brief:";
 const WARN_COMPACTION_LLM_BRIEF_MAX_CHARS: usize = 240;
 const WARN_COMPACTION_LLM_SYSTEM_PROMPT: &str =
-    "You summarize dropped chat context for compaction. Reply with one concise plain-text brief.";
+    "You summarize dropped chat context for compaction. Prioritize:\n\
+     1. Decisions made and their rationale\n\
+     2. Code changes (files modified, functions added/changed)\n\
+     3. Errors encountered and how they were resolved\n\
+     4. User preferences or constraints stated\n\
+     5. Unresolved questions or pending work\n\
+     Reply with one concise plain-text brief under 200 words. Omit greetings and filler.";
 const COMPACTION_ENTRY_PREFIX: &str = "[Tau compaction entry]";
 const COMPACTION_MEMORY_SAVE_PREFIX: &str = "[Tau compaction memory save]";
 const MEMORY_RECALL_PREFIX: &str = "[Tau memory recall]";
@@ -754,6 +791,10 @@ const BRANCH_REASON_CODE_READY: &str = "branch_conclusion_ready";
 const BRANCH_REASON_CODE_LIMIT_EXCEEDED: &str = "branch_concurrency_limit_exceeded";
 const BRANCH_REASON_CODE_EXECUTION_FAILED: &str = "branch_execution_failed";
 const BRANCH_REASON_CODE_PROMPT_MISSING: &str = "branch_prompt_missing";
+const BRANCH_WORKER_SYSTEM_PREAMBLE: &str = "\
+You are a focused sub-task worker executing one branch of a larger task.\n\
+Complete ONLY the assigned prompt thoroughly. Do not expand scope beyond what was asked.\n\
+Report your conclusion clearly — the parent agent will integrate your results.";
 const FAILURE_SIGNAL_PHRASES: &[&str] = &[
     "can't",
     "cannot",
@@ -2052,6 +2093,11 @@ impl Agent {
         worker_agent.skip_response_reason = None;
         worker_agent.clear_tool_result_cache();
         worker_agent.apply_process_runtime_profile(&worker_profile);
+        let branch_system = format!(
+            "{}\n\n{}",
+            BRANCH_WORKER_SYSTEM_PREAMBLE, worker_agent.config.system_prompt
+        );
+        worker_agent.replace_system_prompt(branch_system);
         let worker_execution = {
             let available_tools = worker_agent.registered_tool_names();
             let branch_messages = match Box::pin(worker_agent.prompt(prompt.clone())).await {

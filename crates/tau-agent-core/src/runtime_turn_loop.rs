@@ -450,7 +450,9 @@ pub(crate) fn build_structured_output_retry_prompt(schema: &Value, error: &str) 
     let schema_text = serde_json::to_string(schema).unwrap_or_else(|_| schema.to_string());
     format!(
         "Your previous response could not be accepted as structured JSON ({error}). \
-Please reply with only valid JSON that matches this schema exactly:\n{schema_text}"
+Common issues: markdown code fences around JSON, explanatory text before/after, \
+single quotes instead of double quotes, trailing commas. \
+Reply with ONLY the raw JSON object (no markdown, no explanation) matching this schema:\n{schema_text}"
     )
 }
 

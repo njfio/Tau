@@ -750,7 +750,22 @@ pub fn parse_numbered_plan_steps(plan: &str) -> Vec<String> {
 
 fn build_plan_first_planner_prompt(user_prompt: &str, max_plan_steps: usize) -> String {
     format!(
-        "ORCHESTRATOR_PLANNER_PHASE\nYou are operating in plan-first orchestration mode.\nCreate a numbered implementation plan with at most {} steps.\nUse exactly one line per step in the format '1. <step>'.\nDo not execute anything.\n\nUser request:\n{}",
+        "ORCHESTRATOR_PLANNER_PHASE\n\
+         You are operating in plan-first orchestration mode.\n\
+         Create a numbered implementation plan with at most {} steps.\n\
+         Use exactly one line per step in the format '1. <step>'.\n\
+         \n\
+         Guidelines:\n\
+         - Order steps by dependency — prerequisites first.\n\
+         - Each step should be independently executable and verifiable.\n\
+         - Include a verification step (test, compile, or validate) as the final step for code changes.\n\
+         - If the request is ambiguous or under-specified, make step 1 a clarification or exploration step.\n\
+         - Do not include steps that merely restate the user request.\n\
+         \n\
+         Do not execute anything.\n\
+         \n\
+         User request:\n\
+         {}",
         max_plan_steps, user_prompt
     )
 }
@@ -779,7 +794,25 @@ fn build_plan_first_delegated_step_prompt(
     let numbered_steps = render_numbered_plan_steps(plan_steps);
     let skill_context_section = render_worker_skill_context_section(delegated_skill_context);
     format!(
-        "ORCHESTRATOR_DELEGATED_STEP_PHASE\nYou are executing one delegated plan step in plan-first mode.\nFocus only on the assigned step and produce useful progress for that step.\n\nApproved plan:\n{}\n\nAssigned step ({} of {}):\n{}. {}\n\nUser request:\n{}\n\nInherited execution policy (must be preserved):\n{}{}\n\nReturn concise output for this delegated step.",
+        "ORCHESTRATOR_DELEGATED_STEP_PHASE\n\
+         You are executing one delegated plan step in plan-first mode.\n\
+         Focus only on the assigned step and produce useful progress for that step.\n\
+         \n\
+         Approved plan:\n{}\n\
+         \n\
+         Assigned step ({} of {}):\n\
+         {}. {}\n\
+         \n\
+         User request:\n{}\n\
+         \n\
+         Inherited execution policy (must be preserved):\n\
+         {}{}\n\
+         \n\
+         Produce concrete, verifiable output. If the step requires code changes, include the actual changes. \
+         If it requires analysis, include specific findings with file paths and line numbers.\n\
+         If you cannot complete this step with available tools, explain exactly what is missing.\n\
+         \n\
+         Return concise output for this delegated step.",
         numbered_steps,
         step_index + 1,
         plan_steps.len(),
@@ -818,7 +851,22 @@ fn build_plan_first_consolidation_prompt(
         .collect::<Vec<_>>()
         .join("\n\n");
     format!(
-        "ORCHESTRATOR_CONSOLIDATION_PHASE\nSynthesize a final response from delegated step outputs.\n\nApproved plan:\n{}\n\nDelegated outputs:\n{}\n\nUser request:\n{}\n\nProvide the final response.",
+        "ORCHESTRATOR_CONSOLIDATION_PHASE\n\
+         Synthesize a final response from delegated step outputs.\n\
+         \n\
+         Rules:\n\
+         - If any step reported failure or incomplete results, note what failed and suggest recovery.\n\
+         - If step outputs conflict, prefer the most specific or most recent output and explain the resolution.\n\
+         - Produce a coherent response that directly addresses the user request, not a concatenation of step outputs.\n\
+         - Include any warnings or caveats from individual steps.\n\
+         \n\
+         Approved plan:\n{}\n\
+         \n\
+         Delegated outputs:\n{}\n\
+         \n\
+         User request:\n{}\n\
+         \n\
+         Provide the final response.",
         numbered_steps, delegated_section, user_prompt
     )
 }

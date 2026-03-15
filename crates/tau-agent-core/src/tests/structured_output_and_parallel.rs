@@ -1184,6 +1184,7 @@ async fn spec_2566_c01_warn_tier_schedules_background_compaction_without_immedia
     let mut agent = Agent::new(
         client,
         AgentConfig {
+            system_prompt: "test".to_string(),
             max_context_messages: Some(64),
             max_estimated_input_tokens: Some(240),
             context_compaction_warn_threshold_percent: 20,
@@ -1226,6 +1227,7 @@ async fn spec_2566_c02_warn_tier_applies_ready_background_compaction_on_subseque
     let mut agent = Agent::new(
         client,
         AgentConfig {
+            system_prompt: "test".to_string(),
             max_context_messages: Some(64),
             max_estimated_input_tokens: Some(240),
             context_compaction_warn_threshold_percent: 20,
@@ -1286,6 +1288,7 @@ async fn regression_spec_2566_c03_stale_warn_background_result_is_ignored_and_re
     let mut agent = Agent::new(
         client,
         AgentConfig {
+            system_prompt: "test".to_string(),
             max_context_messages: Some(64),
             max_estimated_input_tokens: Some(240),
             context_compaction_warn_threshold_percent: 20,
@@ -1351,6 +1354,7 @@ async fn regression_spec_2566_c04_aggressive_tier_remains_synchronous_with_summa
     let mut agent = Agent::new(
         client,
         AgentConfig {
+            system_prompt: "test".to_string(),
             max_context_messages: Some(64),
             max_estimated_input_tokens: Some(220),
             context_compaction_warn_threshold_percent: 20,
@@ -1394,6 +1398,7 @@ async fn regression_spec_2566_c05_emergency_tier_remains_hard_truncation_without
     let mut agent = Agent::new(
         client,
         AgentConfig {
+            system_prompt: "test".to_string(),
             max_context_messages: Some(64),
             max_estimated_input_tokens: Some(100),
             context_compaction_warn_threshold_percent: 20,
@@ -1442,6 +1447,7 @@ async fn spec_2579_c01_warn_tier_schedules_background_llm_compaction_without_imm
     let mut agent = Agent::new(
         client.clone(),
         AgentConfig {
+            system_prompt: "test".to_string(),
             max_context_messages: Some(64),
             max_estimated_input_tokens: Some(240),
             context_compaction_warn_threshold_percent: 20,
@@ -1502,6 +1508,7 @@ async fn spec_2579_c02_warn_tier_applies_ready_llm_summary_compaction_on_subsequ
     let mut agent = Agent::new(
         client,
         AgentConfig {
+            system_prompt: "test".to_string(),
             max_context_messages: Some(64),
             max_estimated_input_tokens: Some(240),
             context_compaction_warn_threshold_percent: 20,
@@ -1557,6 +1564,7 @@ async fn spec_2579_c03_warn_llm_summary_includes_structured_context_prefix() {
     let mut agent = Agent::new(
         client,
         AgentConfig {
+            system_prompt: "test".to_string(),
             max_context_messages: Some(64),
             max_estimated_input_tokens: Some(240),
             context_compaction_warn_threshold_percent: 20,
@@ -1609,6 +1617,7 @@ async fn regression_spec_2579_c04_warn_llm_summary_failure_falls_back_to_determi
     let mut agent = Agent::new(
         client.clone(),
         AgentConfig {
+            system_prompt: "test".to_string(),
             max_context_messages: Some(64),
             max_estimated_input_tokens: Some(240),
             context_compaction_warn_threshold_percent: 20,
@@ -1673,6 +1682,7 @@ async fn regression_spec_2579_c05_aggressive_emergency_paths_remain_unchanged() 
     let mut aggressive_agent = Agent::new(
         aggressive_client.clone(),
         AgentConfig {
+            system_prompt: "test".to_string(),
             max_context_messages: Some(64),
             max_estimated_input_tokens: Some(220),
             context_compaction_warn_threshold_percent: 20,
@@ -1712,6 +1722,7 @@ async fn regression_spec_2579_c05_aggressive_emergency_paths_remain_unchanged() 
     let mut emergency_agent = Agent::new(
         emergency_client.clone(),
         AgentConfig {
+            system_prompt: "test".to_string(),
             max_context_messages: Some(64),
             max_estimated_input_tokens: Some(100),
             context_compaction_warn_threshold_percent: 20,
@@ -1751,6 +1762,7 @@ async fn spec_2572_c01_warn_compaction_persists_compaction_entry() {
     let mut agent = Agent::new(
         client,
         AgentConfig {
+            system_prompt: "test".to_string(),
             max_context_messages: Some(64),
             max_estimated_input_tokens: Some(240),
             context_compaction_warn_threshold_percent: 20,
@@ -1816,6 +1828,7 @@ async fn spec_2572_c02_aggressive_compaction_persists_compaction_entry() {
     let mut agent = Agent::new(
         client,
         AgentConfig {
+            system_prompt: "test".to_string(),
             max_context_messages: Some(64),
             max_estimated_input_tokens: Some(220),
             context_compaction_warn_threshold_percent: 20,
@@ -1859,6 +1872,7 @@ async fn spec_2572_c03_compaction_summary_extracts_memory_candidates() {
     let mut agent = Agent::new(
         client,
         AgentConfig {
+            system_prompt: "test".to_string(),
             max_context_messages: Some(64),
             max_estimated_input_tokens: Some(240),
             context_compaction_warn_threshold_percent: 20,
@@ -1939,6 +1953,7 @@ async fn regression_spec_2572_c04_memory_save_failure_does_not_break_request_flo
     let mut agent = Agent::new(
         client,
         AgentConfig {
+            system_prompt: "test".to_string(),
             max_context_messages: Some(64),
             max_estimated_input_tokens: Some(100),
             context_compaction_warn_threshold_percent: 20,
@@ -1986,6 +2001,7 @@ async fn regression_spec_2572_c05_emergency_compaction_skips_summary_extraction(
     let mut agent = Agent::new(
         client,
         AgentConfig {
+            system_prompt: "test".to_string(),
             max_context_messages: Some(64),
             max_estimated_input_tokens: Some(100),
             context_compaction_warn_threshold_percent: 20,
@@ -2101,6 +2117,7 @@ async fn spec_c05_pressure_path_compacts_before_budget_check_and_avoids_budget_e
     let mut agent = Agent::new(
         client.clone(),
         AgentConfig {
+            system_prompt: "test".to_string(),
             max_context_messages: Some(64),
             max_estimated_input_tokens: Some(100),
             context_compaction_warn_threshold_percent: 20,
