@@ -581,13 +581,7 @@ pub(crate) fn timeout_duration_from_ms(timeout_ms: Option<u64>) -> Option<Durati
 }
 
 pub(crate) fn is_retryable_ai_error(error: &TauAiError) -> bool {
-    match error {
-        TauAiError::Http(http) => http.is_timeout() || http.is_connect(),
-        TauAiError::HttpStatus { status, .. } => {
-            *status == 408 || *status == 409 || *status == 425 || *status == 429 || *status >= 500
-        }
-        TauAiError::MissingApiKey | TauAiError::Serde(_) | TauAiError::InvalidResponse(_) => false,
-    }
+    error.is_retryable()
 }
 
 #[cfg(test)]

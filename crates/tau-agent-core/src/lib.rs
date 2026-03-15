@@ -622,6 +622,27 @@ pub enum AgentError {
     },
 }
 
+impl AgentError {
+    /// Returns the semantic provider error category, if this error originated
+    /// from a provider HTTP interaction.
+    pub fn provider_error_kind(&self) -> Option<tau_ai::ProviderErrorKind> {
+        match self {
+            AgentError::Ai(ai_error) => Some(ai_error.provider_error_kind()),
+            _ => None,
+        }
+    }
+
+    /// Returns `true` if this is a rate-limit (429) error from the provider.
+    pub fn is_rate_limited(&self) -> bool {
+        matches!(self, AgentError::Ai(e) if e.is_rate_limited())
+    }
+
+    /// Returns `true` if this is an authentication failure (401/403).
+    pub fn is_auth_failure(&self) -> bool {
+        matches!(self, AgentError::Ai(e) if e.is_auth_failure())
+    }
+}
+
 /// Enumerates supported `AgentDirectMessageError` values.
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum AgentDirectMessageError {

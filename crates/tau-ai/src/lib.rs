@@ -16,6 +16,6 @@ pub use openai::{OpenAiAuthScheme, OpenAiClient, OpenAiConfig};
 pub use provider::{ModelRef, ModelRefParseError, Provider};
 pub use types::{
     ChatRequest, ChatResponse, ChatUsage, ContentBlock, LlmClient, MediaSource, Message,
-    MessageRole, PromptCacheConfig, StreamDeltaHandler, TauAiError, ToolCall, ToolChoice,
-    ToolDefinition,
+    MessageRole, PromptCacheConfig, ProviderErrorKind, StreamDeltaHandler, TauAiError, ToolCall,
+    ToolChoice, ToolDefinition,
 };
