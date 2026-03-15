@@ -1772,6 +1772,121 @@ done
     }
 
     #[test]
+    fn unit_normalize_remote_tool_execution_result_maps_error_flag() {
+        let ok_result = json!({"isError": false, "structuredContent": {"status": "ok"}});
+        let outcome = normalize_remote_tool_execution_result(ok_result);
+        assert!(!outcome.is_error);
+        assert_eq!(outcome.content["status"], "ok");
+
+        let err_result = json!({"isError": true, "structuredContent": {"msg": "boom"}});
+        let outcome = normalize_remote_tool_execution_result(err_result);
+        assert!(outcome.is_error);
+        assert_eq!(outcome.content["reason_code"], "mcp_client_remote_error");
+        assert_eq!(outcome.content["remote_result"]["msg"], "boom");
+    }
+
+    #[test]
+    fn unit_normalize_remote_tool_execution_result_preserves_custom_reason_code() {
+        let err_result = json!({
+            "isError": true,
+            "structuredContent": {"reason_code": "custom_error", "detail": "something broke"}
+        });
+        let outcome = normalize_remote_tool_execution_result(err_result);
+        assert!(outcome.is_error);
+        assert_eq!(outcome.content["reason_code"], "custom_error");
+    }
+
+    fn write_stdio_error_script(path: &Path) {
+        std::fs::write(
+            path,
+            r#"#!/bin/sh
+set -eu
+while IFS= read -r line; do
+  if [ -z "$line" ]; then
+    continue
+  fi
+  method=$(printf '%s' "$line" | sed -n 's/.*"method":"\([^"]*\)".*/\1/p')
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p')
+  if [ "$method" = "initialize" ]; then
+    printf '{"jsonrpc":"2.0","id":"%s","result":{"protocolVersion":"2024-11-05","capabilities":{"tools":{"listChanged":false}}}}\n' "$id"
+    continue
+  fi
+  if [ "$method" = "tools/list" ]; then
+    printf '{"jsonrpc":"2.0","id":"%s","result":{"tools":[{"name":"fail","description":"fail tool","inputSchema":{"type":"object","properties":{}}}]}}\n' "$id"
+    continue
+  fi
+  if [ "$method" = "tools/call" ]; then
+    printf '{"jsonrpc":"2.0","id":"%s","error":{"code":-32603,"message":"internal server error"}}\n' "$id"
+    continue
+  fi
+done
+"#,
+        )
+        .expect("write error script");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = std::fs::metadata(path).expect("metadata").permissions();
+            perms.set_mode(0o755);
+            std::fs::set_permissions(path, perms).expect("chmod");
+        }
+    }
+
+    #[tokio::test]
+    async fn functional_mcp_client_stdio_jsonrpc_error_response_surfaces_as_tool_error() {
+        let temp = tempdir().expect("tempdir");
+        let script_path = temp.path().join("mock-mcp-error.sh");
+        write_stdio_error_script(&script_path);
+        let config_path = temp.path().join("mcp-client-err.json");
+        write_client_config(
+            &config_path,
+            json!({
+                "schema_version": 1,
+                "servers": [
+                    {
+                        "name": "err_stdio",
+                        "command": script_path.display().to_string()
+                    }
+                ]
+            }),
+        );
+
+        let mut cli = parse_cli_with_stack(
+            [
+                "tau-rs",
+                "--mcp-client",
+                "--mcp-external-server-config",
+                config_path.to_string_lossy().as_ref(),
+            ]
+            .as_slice(),
+        );
+        cli.credential_store = temp.path().join("credentials.json");
+
+        let context = McpClientRuntimeContext::from_cli(&cli);
+        let outcome = discover_mcp_client_tools(&cli, &context).expect("discover tools");
+        assert_eq!(outcome.tools.len(), 1);
+        assert_eq!(outcome.tools[0].local_tool_name, "mcp.err_stdio.fail");
+
+        let tool = McpClientProxyTool {
+            definition: ToolDefinition {
+                name: outcome.tools[0].local_tool_name.clone(),
+                description: outcome.tools[0].description.clone(),
+                parameters: outcome.tools[0].input_schema.clone(),
+            },
+            remote_tool_name: outcome.tools[0].remote_tool_name.clone(),
+            server: outcome.tools[0].server.clone(),
+            context,
+        };
+        let result = tool.execute(json!({})).await;
+        assert!(result.is_error);
+        let text = result.content.to_string();
+        assert!(
+            text.contains("json-rpc error") || text.contains("jsonrpc_error"),
+            "expected error details in result, got: {text}"
+        );
+    }
+
+    #[test]
     fn integration_mcp_client_register_tools_attaches_proxy_tools_to_agent() {
         let temp = tempdir().expect("tempdir");
         let script_path = temp.path().join("mock-mcp-client-register.sh");
