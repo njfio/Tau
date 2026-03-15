@@ -810,6 +810,7 @@ struct BranchWorkerFollowupReport {
     available_tools: Vec<String>,
     branch_message_count: usize,
     runtime_profile: ProcessRuntimeProfile,
+    tool_execution_summary: Vec<Value>,
 }
 
 /// Public struct `Agent` used across Tau components.
@@ -1914,6 +1915,62 @@ impl Agent {
         })
     }
 
+    /// Extracts a structured summary of tool executions from branch messages.
+    ///
+    /// Pairs each assistant ToolCall with its corresponding tool result message
+    /// to produce a list of `{ tool, call_id, is_error, output_preview }` entries,
+    /// giving the parent agent structured visibility into what the branch did.
+    fn branch_tool_execution_summary(messages: &[Message]) -> Vec<Value> {
+        let mut tool_results: HashMap<&str, &Message> = HashMap::new();
+        for msg in messages {
+            if msg.role == MessageRole::Tool {
+                if let Some(ref id) = msg.tool_call_id {
+                    tool_results.insert(id.as_str(), msg);
+                }
+            }
+        }
+
+        let mut summary = Vec::new();
+        for msg in messages {
+            if msg.role != MessageRole::Assistant {
+                continue;
+            }
+            for block in &msg.content {
+                if let tau_ai::ContentBlock::ToolCall {
+                    id,
+                    name,
+                    arguments,
+                } = block
+                {
+                    let mut entry = json!({
+                        "tool": name,
+                        "call_id": id,
+                    });
+                    // Include a compact view of the tool arguments (truncated)
+                    if let Some(args_str) = arguments.as_str() {
+                        let preview = truncate_chars(args_str, 200);
+                        entry["arguments_preview"] = Value::String(preview);
+                    } else if arguments.is_object() || arguments.is_array() {
+                        let serialized = arguments.to_string();
+                        let preview = truncate_chars(&serialized, 200);
+                        entry["arguments_preview"] = Value::String(preview);
+                    }
+
+                    if let Some(result_msg) = tool_results.get(id.as_str()) {
+                        entry["is_error"] = Value::Bool(result_msg.is_error);
+                        let output_text = result_msg.text_content();
+                        if !output_text.is_empty() {
+                            entry["output_preview"] =
+                                Value::String(truncate_chars(&output_text, 500));
+                        }
+                    }
+                    summary.push(entry);
+                }
+            }
+        }
+        summary
+    }
+
     fn apply_process_runtime_profile(&mut self, profile: &ProcessRuntimeProfile) {
         self.config.max_turns = profile.max_turns;
         self.config.max_context_messages = profile.max_context_messages;
@@ -2017,11 +2074,14 @@ impl Agent {
                     "branch follow-up produced no assistant conclusion".to_string(),
                 );
             };
+            let tool_execution_summary =
+                Self::branch_tool_execution_summary(&branch_messages);
             let report = BranchWorkerFollowupReport {
                 conclusion,
                 available_tools,
                 branch_message_count: branch_messages.len(),
                 runtime_profile: worker_profile.clone(),
+                tool_execution_summary,
             };
             let worker_handle = process_manager.spawn_supervised(
                 ProcessSpawnSpec::new(worker_process_id.clone(), ProcessType::Worker)
@@ -2150,6 +2210,7 @@ impl Agent {
                 "tools_mode": "memory_only",
                 "available_tools": worker_outcome_value.available_tools,
                 "branch_message_count": worker_outcome_value.branch_message_count,
+                "tool_execution_summary": worker_outcome_value.tool_execution_summary,
                 "worker_runtime_profile": {
                     "process_type": worker_outcome_value.runtime_profile.process_type.as_str(),
                     "max_turns": worker_outcome_value.runtime_profile.max_turns,

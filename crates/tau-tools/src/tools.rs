@@ -142,6 +142,9 @@ const BUILTIN_AGENT_TOOL_NAMES: &[&str] = &[
     "send_file",
     "react",
     "skip",
+    "grep",
+    "glob",
+    "ls",
     "http",
     "tool_builder",
     "bash",
@@ -1422,6 +1425,392 @@ impl AgentTool for SendFileTool {
             "reason_code": "send_file_requested",
             "suppress_response": true,
         }))
+    }
+}
+
+/// Searches file contents using substring or regex matching, returning structured results.
+pub struct GrepTool {
+    policy: Arc<ToolPolicy>,
+}
+
+impl GrepTool {
+    pub fn new(policy: Arc<ToolPolicy>) -> Self {
+        Self { policy }
+    }
+}
+
+#[async_trait]
+impl AgentTool for GrepTool {
+    fn definition(&self) -> ToolDefinition {
+        ToolDefinition {
+            name: "grep".to_string(),
+            description: "Search file contents for a pattern. Returns matching lines with file paths and line numbers.".to_string(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "pattern": { "type": "string", "description": "Search pattern (substring or regex)" },
+                    "path": { "type": "string", "description": "File or directory to search in" },
+                    "include": { "type": "string", "description": "Glob pattern to filter files (e.g. '*.rs', '*.py')" },
+                    "max_results": { "type": "integer", "description": "Maximum number of matches to return (default 50)" }
+                },
+                "required": ["pattern", "path"],
+                "additionalProperties": false
+            }),
+        }
+    }
+
+    async fn execute(&self, arguments: Value) -> ToolExecutionResult {
+        let pattern = match required_string(&arguments, "pattern") {
+            Ok(pattern) => pattern,
+            Err(error) => return ToolExecutionResult::error(json!({ "error": error })),
+        };
+        let path = match required_string(&arguments, "path") {
+            Ok(path) => path,
+            Err(error) => return ToolExecutionResult::error(json!({ "error": error })),
+        };
+        let include = arguments
+            .get("include")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string();
+        let max_results = arguments
+            .get("max_results")
+            .and_then(Value::as_u64)
+            .unwrap_or(50) as usize;
+
+        let resolved = match resolve_and_validate_path(&path, &self.policy, PathMode::Read) {
+            Ok(path) => path,
+            Err(error) => {
+                return ToolExecutionResult::error(json!({ "path": path, "error": error }))
+            }
+        };
+
+        let regex = match regex::Regex::new(&pattern) {
+            Ok(regex) => regex,
+            Err(error) => {
+                return ToolExecutionResult::error(json!({
+                    "pattern": pattern,
+                    "error": format!("invalid regex pattern: {error}"),
+                }))
+            }
+        };
+
+        let include_glob = if include.is_empty() {
+            None
+        } else {
+            match glob::Pattern::new(&include) {
+                Ok(glob) => Some(glob),
+                Err(error) => {
+                    return ToolExecutionResult::error(json!({
+                        "include": include,
+                        "error": format!("invalid glob pattern: {error}"),
+                    }))
+                }
+            }
+        };
+
+        let mut matches = Vec::new();
+        let mut files_searched = 0usize;
+
+        if resolved.is_file() {
+            files_searched = 1;
+            grep_file(&resolved, &regex, max_results, &mut matches);
+        } else if resolved.is_dir() {
+            grep_directory(&resolved, &regex, &include_glob, max_results, &mut matches, &mut files_searched);
+        } else {
+            return ToolExecutionResult::error(json!({
+                "path": resolved.display().to_string(),
+                "error": "path is not a file or directory",
+            }));
+        }
+
+        ToolExecutionResult::ok(json!({
+            "pattern": pattern,
+            "path": resolved.display().to_string(),
+            "matches": matches,
+            "total_matches": matches.len(),
+            "files_searched": files_searched,
+            "truncated": matches.len() >= max_results,
+        }))
+    }
+}
+
+fn grep_file(
+    path: &Path,
+    regex: &regex::Regex,
+    max_results: usize,
+    matches: &mut Vec<Value>,
+) {
+    let content = match std::fs::read_to_string(path) {
+        Ok(content) => content,
+        Err(_) => return,
+    };
+    for (line_number, line) in content.lines().enumerate() {
+        if matches.len() >= max_results {
+            break;
+        }
+        if regex.is_match(line) {
+            matches.push(json!({
+                "file": path.display().to_string(),
+                "line": line_number + 1,
+                "content": line,
+            }));
+        }
+    }
+}
+
+fn grep_directory(
+    dir: &Path,
+    regex: &regex::Regex,
+    include_glob: &Option<glob::Pattern>,
+    max_results: usize,
+    matches: &mut Vec<Value>,
+    files_searched: &mut usize,
+) {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(_) => return,
+    };
+    for entry in entries {
+        if matches.len() >= max_results {
+            break;
+        }
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(_) => continue,
+        };
+        let path = entry.path();
+        if path.is_dir() {
+            // Skip hidden directories
+            if path.file_name().map_or(false, |n| n.to_string_lossy().starts_with('.')) {
+                continue;
+            }
+            grep_directory(&path, regex, include_glob, max_results, matches, files_searched);
+        } else if path.is_file() {
+            if let Some(glob) = include_glob {
+                if !glob.matches_path_with(
+                    &path,
+                    glob::MatchOptions {
+                        case_sensitive: true,
+                        require_literal_separator: false,
+                        require_literal_leading_dot: true,
+                    },
+                ) {
+                    // Also try matching just the file name
+                    let file_name = path.file_name().unwrap_or_default().to_string_lossy();
+                    if !glob.matches(&file_name) {
+                        continue;
+                    }
+                }
+            }
+            *files_searched += 1;
+            grep_file(&path, regex, max_results, matches);
+        }
+    }
+}
+
+/// Finds files matching a glob pattern, returning structured results.
+pub struct GlobTool {
+    policy: Arc<ToolPolicy>,
+}
+
+impl GlobTool {
+    pub fn new(policy: Arc<ToolPolicy>) -> Self {
+        Self { policy }
+    }
+}
+
+#[async_trait]
+impl AgentTool for GlobTool {
+    fn definition(&self) -> ToolDefinition {
+        ToolDefinition {
+            name: "glob".to_string(),
+            description: "Find files matching a glob pattern. Returns file paths with metadata.".to_string(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "pattern": { "type": "string", "description": "Glob pattern (e.g. 'src/**/*.rs', '*.toml')" },
+                    "path": { "type": "string", "description": "Root directory to search from (default: working directory)" },
+                    "max_results": { "type": "integer", "description": "Maximum number of results (default 100)" }
+                },
+                "required": ["pattern"],
+                "additionalProperties": false
+            }),
+        }
+    }
+
+    async fn execute(&self, arguments: Value) -> ToolExecutionResult {
+        let pattern = match required_string(&arguments, "pattern") {
+            Ok(pattern) => pattern,
+            Err(error) => return ToolExecutionResult::error(json!({ "error": error })),
+        };
+        let max_results = arguments
+            .get("max_results")
+            .and_then(Value::as_u64)
+            .unwrap_or(100) as usize;
+
+        let base_path = if let Some(path) = arguments.get("path").and_then(Value::as_str) {
+            match resolve_and_validate_path(path, &self.policy, PathMode::Read) {
+                Ok(path) => path,
+                Err(error) => {
+                    return ToolExecutionResult::error(json!({ "path": path, "error": error }))
+                }
+            }
+        } else {
+            std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+        };
+
+        let full_pattern = if pattern.starts_with('/') || pattern.starts_with("./") {
+            pattern.clone()
+        } else {
+            format!("{}/{}", base_path.display(), pattern)
+        };
+
+        let glob_results = match glob::glob(&full_pattern) {
+            Ok(paths) => paths,
+            Err(error) => {
+                return ToolExecutionResult::error(json!({
+                    "pattern": pattern,
+                    "error": format!("invalid glob pattern: {error}"),
+                }))
+            }
+        };
+
+        let mut files = Vec::new();
+        for entry in glob_results {
+            if files.len() >= max_results {
+                break;
+            }
+            let path = match entry {
+                Ok(path) => path,
+                Err(_) => continue,
+            };
+            let metadata = std::fs::metadata(&path).ok();
+            let is_dir = metadata.as_ref().map_or(false, |m| m.is_dir());
+            let size = metadata.as_ref().map_or(0, |m| m.len());
+            files.push(json!({
+                "path": path.display().to_string(),
+                "is_dir": is_dir,
+                "size": size,
+            }));
+        }
+
+        ToolExecutionResult::ok(json!({
+            "pattern": pattern,
+            "base_path": base_path.display().to_string(),
+            "files": files,
+            "total": files.len(),
+            "truncated": files.len() >= max_results,
+        }))
+    }
+}
+
+/// Lists directory contents with metadata.
+pub struct ListDirectoryTool {
+    policy: Arc<ToolPolicy>,
+}
+
+impl ListDirectoryTool {
+    pub fn new(policy: Arc<ToolPolicy>) -> Self {
+        Self { policy }
+    }
+}
+
+#[async_trait]
+impl AgentTool for ListDirectoryTool {
+    fn definition(&self) -> ToolDefinition {
+        ToolDefinition {
+            name: "ls".to_string(),
+            description: "List directory contents with file names, types, and sizes.".to_string(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "path": { "type": "string", "description": "Directory path to list" },
+                    "recursive": { "type": "boolean", "description": "List recursively (default false)" },
+                    "max_depth": { "type": "integer", "description": "Maximum recursion depth (default 3)" }
+                },
+                "required": ["path"],
+                "additionalProperties": false
+            }),
+        }
+    }
+
+    async fn execute(&self, arguments: Value) -> ToolExecutionResult {
+        let path = match required_string(&arguments, "path") {
+            Ok(path) => path,
+            Err(error) => return ToolExecutionResult::error(json!({ "error": error })),
+        };
+        let recursive = arguments
+            .get("recursive")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let max_depth = arguments
+            .get("max_depth")
+            .and_then(Value::as_u64)
+            .unwrap_or(3) as usize;
+
+        let resolved = match resolve_and_validate_path(&path, &self.policy, PathMode::Read) {
+            Ok(path) => path,
+            Err(error) => {
+                return ToolExecutionResult::error(json!({ "path": path, "error": error }))
+            }
+        };
+
+        if !resolved.is_dir() {
+            return ToolExecutionResult::error(json!({
+                "path": resolved.display().to_string(),
+                "error": "path is not a directory",
+            }));
+        }
+
+        let mut entries = Vec::new();
+        list_directory_entries(&resolved, recursive, max_depth, 0, &mut entries);
+
+        ToolExecutionResult::ok(json!({
+            "path": resolved.display().to_string(),
+            "entries": entries,
+            "total": entries.len(),
+        }))
+    }
+}
+
+fn list_directory_entries(
+    dir: &Path,
+    recursive: bool,
+    max_depth: usize,
+    current_depth: usize,
+    entries: &mut Vec<Value>,
+) {
+    let dir_entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(_) => return,
+    };
+    let mut sorted_entries: Vec<_> = dir_entries.filter_map(|e| e.ok()).collect();
+    sorted_entries.sort_by_key(|e| e.file_name());
+
+    for entry in sorted_entries {
+        if entries.len() >= 1000 {
+            break;
+        }
+        let path = entry.path();
+        let file_name = entry.file_name().to_string_lossy().to_string();
+        let metadata = entry.metadata().ok();
+        let is_dir = metadata.as_ref().map_or(false, |m| m.is_dir());
+        let size = metadata.as_ref().map_or(0, |m| m.len());
+        let file_type = if is_dir { "dir" } else { "file" };
+
+        entries.push(json!({
+            "name": file_name,
+            "path": path.display().to_string(),
+            "type": file_type,
+            "size": size,
+        }));
+
+        if recursive && is_dir && current_depth < max_depth {
+            if !file_name.starts_with('.') {
+                list_directory_entries(&path, recursive, max_depth, current_depth + 1, entries);
+            }
+        }
     }
 }
 
