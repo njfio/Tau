@@ -5,6 +5,7 @@
 **/*.rs.bk
 .env
 .tau/
+.claude/
 ci-artifacts/
 .github/scripts/__pycache__/
 *.pyc
