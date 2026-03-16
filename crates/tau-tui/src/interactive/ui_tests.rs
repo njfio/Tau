@@ -91,12 +91,13 @@ fn red_spec_3582_error_attention_strip_exposes_retry_and_details_actions() {
 }
 
 #[test]
-fn red_spec_3582_narrow_layout_collapses_details_drawer_first() {
+fn red_spec_3582_narrow_layout_uses_detail_overlay() {
     let mut app = App::new(AppConfig::default());
     app.show_tool_panel = true;
     let rendered = render_app(&mut app, 72, 22);
 
-    assert!(!rendered.contains(" Details "));
+    assert!(rendered.contains("Quick details"));
+    assert!(rendered.contains("[tools]"));
 }
 
 #[test]
@@ -111,6 +112,37 @@ fn integration_spec_3582_memory_command_switches_detail_context_through_real_inp
 
     assert!(rendered.contains("[memory]"));
     assert!(rendered.contains("No stored memory yet."));
+}
+
+#[test]
+fn red_spec_3582_approval_attention_strip_exposes_approve_and_reject_actions() {
+    let mut app = App::new(AppConfig::default());
+    for ch in "/approval-needed".chars() {
+        app.handle_key(key(KeyCode::Char(ch)));
+    }
+    app.handle_key(key(KeyCode::Enter));
+
+    let rendered = render_app(&mut app, 120, 24);
+
+    assert!(rendered.contains("Approval required"));
+    assert!(rendered.contains("Approve"));
+    assert!(rendered.contains("Reject"));
+}
+
+#[test]
+fn red_spec_3582_transcript_renders_messages_as_cards() {
+    let mut app = App::new(AppConfig::default());
+    app.push_message(MessageRole::User, "Build me something useful.".to_string());
+    app.push_message(
+        MessageRole::Assistant,
+        "I can do that. First I need repository context.".to_string(),
+    );
+
+    let rendered = render_app(&mut app, 120, 28);
+
+    assert!(rendered.contains("╭─ You"));
+    assert!(rendered.contains("╭─ Tau"));
+    assert!(rendered.contains("│ I can do that."));
 }
 
 fn render_app(app: &mut App, width: u16, height: u16) -> String {
