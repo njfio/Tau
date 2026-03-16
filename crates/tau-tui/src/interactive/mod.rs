@@ -13,5 +13,9 @@ mod input;
 mod status;
 mod tools;
 mod ui;
+#[cfg(test)]
+mod gateway_runtime_tests;
+#[cfg(test)]
+mod gateway_tests;
 
 pub use app::{App, AppConfig, run_interactive};

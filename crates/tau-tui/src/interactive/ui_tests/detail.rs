@@ -65,6 +65,16 @@ fn integration_spec_3582_memory_command_switches_detail_context_through_real_inp
 }
 
 #[test]
+fn red_spec_3582_bare_memory_command_switches_detail_context() {
+    let mut app = App::new(AppConfig::default());
+    submit_command(&mut app, "memory");
+
+    let rendered = render_app(&mut app, 140, 32);
+
+    assert!(rendered.contains("[memory]"));
+}
+
+#[test]
 fn red_spec_3582_memory_detail_surfaces_degraded_state_marker() {
     let mut app = App::new(AppConfig::default());
     submit_command(&mut app, "/memory");
@@ -121,6 +131,18 @@ fn integration_spec_3582_sessions_detail_surfaces_real_session_metrics() {
     assert!(rendered.contains("Messages"));
     assert!(rendered.contains("Tokens"));
     assert!(rendered.contains("Approvals pending"));
+}
+
+#[test]
+fn red_spec_3582_bare_sessions_and_cortex_commands_switch_detail_context() {
+    let mut app = App::new(AppConfig::default());
+    submit_command(&mut app, "sessions");
+    let sessions = render_app(&mut app, 140, 32);
+    assert!(sessions.contains("[sessions]"));
+
+    submit_command(&mut app, "cortex");
+    let cortex = render_app(&mut app, 140, 32);
+    assert!(cortex.contains("[cortex]"));
 }
 
 #[test]
