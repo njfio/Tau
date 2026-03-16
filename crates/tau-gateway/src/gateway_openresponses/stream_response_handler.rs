@@ -13,48 +13,21 @@ pub(super) async fn stream_openresponses(
                 let response = result.response;
                 let _ = tx.send(SseFrame::Json {
                     event: "response.output_text.done",
-                    payload: json!({
-                        "type": "response.output_text.done",
-                        "response_id": response.id,
-                        "text": response.output_text,
-                        "operator_state": {
-                            "entity": "artifact",
-                            "status": "completed",
-                            "artifact_kind": "assistant_output_text",
-                            "response_id": response.id,
-                        }
-                    }),
+                    payload: response_output_text_done_payload(
+                        &response.id,
+                        response.output_text.clone(),
+                    ),
                 });
                 let _ = tx.send(SseFrame::Json {
                     event: "response.completed",
-                    payload: json!({
-                        "type": "response.completed",
-                        "response": response,
-                        "operator_state": {
-                            "entity": "turn",
-                            "status": "completed",
-                            "phase": "done",
-                        }
-                    }),
+                    payload: response_completed_payload(response),
                 });
                 let _ = tx.send(SseFrame::Done);
             }
             Err(error) => {
                 let _ = tx.send(SseFrame::Json {
                     event: "response.failed",
-                    payload: json!({
-                        "type": "response.failed",
-                        "error": {
-                            "code": error.code,
-                            "message": error.message,
-                        },
-                        "operator_state": {
-                            "entity": "turn",
-                            "status": "failed",
-                            "phase": "failed",
-                            "reason_code": error.code,
-                        }
-                    }),
+                    payload: response_failed_payload(&error),
                 });
                 let _ = tx.send(SseFrame::Done);
             }

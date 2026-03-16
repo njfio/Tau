@@ -65,6 +65,7 @@ mod openai_compat;
 mod openai_compat_runtime;
 mod openresponses_entry_handler;
 mod openresponses_execution_handler;
+mod operator_state_payloads;
 mod ops_dashboard_shell;
 mod ops_shell_controls;
 mod ops_shell_handlers;
@@ -148,6 +149,10 @@ use openai_compat_runtime::{
 };
 use openresponses_entry_handler::handle_openresponses;
 use openresponses_execution_handler::execute_openresponses_request;
+use operator_state_payloads::{
+    response_completed_payload, response_created_payload, response_failed_payload,
+    response_output_text_delta_payload, response_output_text_done_payload,
+};
 use ops_dashboard_shell::{
     handle_ops_dashboard_chat_new, handle_ops_dashboard_chat_send,
     handle_ops_dashboard_control_action, handle_ops_dashboard_memory_create,

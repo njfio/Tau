@@ -7,6 +7,7 @@
 use std::io::Write;
 
 use anyhow::Result;
+use serde_json::{json, Value};
 use tau_agent_core::{extract_skip_response_reason, AgentEvent};
 use tau_ai::{Message, MessageRole};
 use tau_session::SessionRuntime;
@@ -96,127 +97,215 @@ pub fn stream_text_chunks(text: &str) -> Vec<&str> {
 }
 
 /// Convert one agent event into deterministic JSON for logs and snapshots.
-pub fn event_to_json(event: &AgentEvent) -> serde_json::Value {
+pub fn event_to_json(event: &AgentEvent) -> Value {
+    lifecycle_event_json(event)
+        .or_else(|| turn_event_json(event))
+        .or_else(|| tool_event_json(event))
+        .or_else(|| safety_event_json(event))
+        .unwrap_or_else(unknown_event_json)
+}
+
+fn lifecycle_event_json(event: &AgentEvent) -> Option<Value> {
     match event {
-        AgentEvent::AgentStart => serde_json::json!({ "type": "agent_start" }),
+        AgentEvent::AgentStart => Some(json!({ "type": "agent_start" })),
         AgentEvent::AgentEnd { new_messages } => {
-            serde_json::json!({ "type": "agent_end", "new_messages": new_messages })
+            Some(json!({ "type": "agent_end", "new_messages": new_messages }))
         }
-        AgentEvent::TurnStart { turn } => serde_json::json!({
-            "type": "turn_start",
-            "turn": turn,
-            "operator_state": {
-                "entity": "turn",
-                "status": "in_progress",
-                "phase": "model",
-                "turn": turn,
-            }
-        }),
+        AgentEvent::MessageAdded { message } => Some(message_added_json(message)),
+        _ => None,
+    }
+}
+
+fn turn_event_json(event: &AgentEvent) -> Option<Value> {
+    match event {
+        AgentEvent::TurnStart { turn } => Some(turn_start_json(*turn)),
         AgentEvent::TurnEnd {
             turn,
             tool_results,
             request_duration_ms,
             usage,
             finish_reason,
-        } => serde_json::json!({
-            "type": "turn_end",
-            "turn": turn,
-            "tool_results": tool_results,
-            "request_duration_ms": request_duration_ms,
-            "usage": usage,
-            "finish_reason": finish_reason,
-            "operator_state": {
-                "entity": "turn",
-                "status": "completed",
-                "phase": "done",
-                "turn": turn,
-                "tool_results": tool_results,
-                "finish_reason": finish_reason,
-            }
-        }),
-        AgentEvent::MessageAdded { message } => serde_json::json!({
-            "type": "message_added",
-            "role": format!("{:?}", message.role).to_lowercase(),
-            "text": message.text_content(),
-            "tool_calls": message.tool_calls().len(),
-        }),
-        AgentEvent::ToolExecutionStart {
-            tool_call_id,
-            tool_name,
-            arguments,
-        } => serde_json::json!({
-            "type": "tool_execution_start",
-            "tool_call_id": tool_call_id,
-            "tool_name": tool_name,
-            "arguments": arguments,
-            "operator_state": {
-                "entity": "tool",
-                "status": "in_progress",
-                "tool_call_id": tool_call_id,
-                "tool_name": tool_name,
-            }
-        }),
-        AgentEvent::ToolExecutionEnd {
-            tool_call_id,
-            tool_name,
-            result,
-        } => serde_json::json!({
-            "type": "tool_execution_end",
-            "tool_call_id": tool_call_id,
-            "tool_name": tool_name,
-            "is_error": result.is_error,
-            "content": result.content,
-            "operator_state": {
-                "entity": "tool",
-                "status": if result.is_error { "failed" } else { "completed" },
-                "tool_call_id": tool_call_id,
-                "tool_name": tool_name,
-            }
-        }),
-        AgentEvent::ReplanTriggered { turn, reason } => serde_json::json!({
+        } => Some(turn_end_json(
+            *turn,
+            *tool_results,
+            *request_duration_ms,
+            usage,
+            finish_reason,
+        )),
+        AgentEvent::ReplanTriggered { turn, reason } => Some(json!({
             "type": "replan_triggered",
             "turn": turn,
             "reason": reason,
-        }),
+        })),
         AgentEvent::CostUpdated {
             turn,
             turn_cost_usd,
             cumulative_cost_usd,
             budget_usd,
-        } => serde_json::json!({
+        } => Some(json!({
             "type": "cost_updated",
             "turn": turn,
             "turn_cost_usd": turn_cost_usd,
             "cumulative_cost_usd": cumulative_cost_usd,
             "budget_usd": budget_usd,
-        }),
+        })),
         AgentEvent::CostBudgetAlert {
             turn,
             threshold_percent,
             cumulative_cost_usd,
             budget_usd,
-        } => serde_json::json!({
+        } => Some(json!({
             "type": "cost_budget_alert",
             "turn": turn,
             "threshold_percent": threshold_percent,
             "cumulative_cost_usd": cumulative_cost_usd,
             "budget_usd": budget_usd,
-        }),
+        })),
+        _ => None,
+    }
+}
+
+fn tool_event_json(event: &AgentEvent) -> Option<Value> {
+    match event {
+        AgentEvent::ToolExecutionStart {
+            tool_call_id,
+            tool_name,
+            arguments,
+        } => Some(tool_execution_start_json(
+            tool_call_id,
+            tool_name,
+            arguments,
+        )),
+        AgentEvent::ToolExecutionEnd {
+            tool_call_id,
+            tool_name,
+            result,
+        } => Some(tool_execution_end_json(tool_call_id, tool_name, result)),
+        _ => None,
+    }
+}
+
+fn safety_event_json(event: &AgentEvent) -> Option<Value> {
+    match event {
         AgentEvent::SafetyPolicyApplied {
             stage,
             mode,
             blocked,
             matched_rules,
             reason_codes,
-        } => serde_json::json!({
+        } => Some(json!({
             "type": "safety_policy_applied",
             "stage": stage.as_str(),
             "mode": mode,
             "blocked": blocked,
             "matched_rules": matched_rules,
             "reason_codes": reason_codes,
-        }),
-        _ => serde_json::json!({ "type": "unknown_event" }),
+        })),
+        _ => None,
+    }
+}
+
+fn unknown_event_json() -> Value {
+    json!({ "type": "unknown_event" })
+}
+
+fn message_added_json(message: &Message) -> Value {
+    json!({
+        "type": "message_added",
+        "role": format!("{:?}", message.role).to_lowercase(),
+        "text": message.text_content(),
+        "tool_calls": message.tool_calls().len(),
+    })
+}
+
+fn turn_start_json(turn: usize) -> Value {
+    json!({
+        "type": "turn_start",
+        "turn": turn,
+        "operator_state": turn_operator_state("in_progress", "model", turn),
+    })
+}
+
+fn turn_end_json(
+    turn: usize,
+    tool_results: usize,
+    request_duration_ms: u64,
+    usage: &tau_ai::ChatUsage,
+    finish_reason: &Option<String>,
+) -> Value {
+    json!({
+        "type": "turn_end",
+        "turn": turn,
+        "tool_results": tool_results,
+        "request_duration_ms": request_duration_ms,
+        "usage": usage,
+        "finish_reason": finish_reason,
+        "operator_state": turn_completed_operator_state(turn, tool_results, finish_reason),
+    })
+}
+
+fn tool_execution_start_json(tool_call_id: &str, tool_name: &str, arguments: &Value) -> Value {
+    json!({
+        "type": "tool_execution_start",
+        "tool_call_id": tool_call_id,
+        "tool_name": tool_name,
+        "arguments": arguments,
+        "operator_state": tool_operator_state("in_progress", tool_call_id, tool_name),
+    })
+}
+
+fn tool_execution_end_json(
+    tool_call_id: &str,
+    tool_name: &str,
+    result: &tau_agent_core::ToolExecutionResult,
+) -> Value {
+    json!({
+        "type": "tool_execution_end",
+        "tool_call_id": tool_call_id,
+        "tool_name": tool_name,
+        "is_error": result.is_error,
+        "content": result.content,
+        "operator_state": tool_operator_state(tool_completion_status(result.is_error), tool_call_id, tool_name),
+    })
+}
+
+fn turn_operator_state(status: &str, phase: &str, turn: usize) -> Value {
+    json!({
+        "entity": "turn",
+        "status": status,
+        "phase": phase,
+        "turn": turn,
+    })
+}
+
+fn turn_completed_operator_state(
+    turn: usize,
+    tool_results: usize,
+    finish_reason: &Option<String>,
+) -> Value {
+    let mut state = turn_operator_state("completed", "done", turn);
+    let value = state
+        .as_object_mut()
+        .expect("turn operator state should always serialize to an object");
+    value.insert("tool_results".to_string(), json!(tool_results));
+    value.insert("finish_reason".to_string(), json!(finish_reason));
+    state
+}
+
+fn tool_operator_state(status: &str, tool_call_id: &str, tool_name: &str) -> Value {
+    json!({
+        "entity": "tool",
+        "status": status,
+        "tool_call_id": tool_call_id,
+        "tool_name": tool_name,
+    })
+}
+
+fn tool_completion_status(is_error: bool) -> &'static str {
+    if is_error {
+        "failed"
+    } else {
+        "completed"
     }
 }
 

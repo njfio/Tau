@@ -18,22 +18,7 @@ pub(super) async fn execute_openresponses_request(
     if let Some(sender) = &stream_sender {
         let _ = sender.send(SseFrame::Json {
             event: "response.created",
-            payload: json!({
-                "type": "response.created",
-                "response": {
-                    "id": response_id,
-                    "object": "response",
-                    "status": "in_progress",
-                    "model": state.config.model,
-                    "created": created,
-                },
-                "operator_state": {
-                    "entity": "turn",
-                    "status": "in_progress",
-                    "phase": "model",
-                    "response_id": response_id,
-                }
-            }),
+            payload: response_created_payload(&response_id, &state.config.model, created),
         });
     }
 
@@ -108,17 +93,7 @@ pub(super) async fn execute_openresponses_request(
             }
             let _ = sender.send(SseFrame::Json {
                 event: "response.output_text.delta",
-                payload: json!({
-                    "type": "response.output_text.delta",
-                    "response_id": response_id,
-                    "delta": delta,
-                    "operator_state": {
-                        "entity": "artifact",
-                        "status": "streaming",
-                        "artifact_kind": "assistant_output_text",
-                        "response_id": response_id,
-                    }
-                }),
+                payload: response_output_text_delta_payload(&response_id, delta),
             });
         }) as StreamDeltaHandler
     });
