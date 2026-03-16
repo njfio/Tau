@@ -863,6 +863,46 @@ pub(super) fn render_gateway_webchat_page() -> String {
       return true;
     }}
 
+    function responseCompletedText(payload) {{
+      if (!payload || !payload.response) {{
+        return "";
+      }}
+      if (typeof payload.response.output_text !== "string") {{
+        return "";
+      }}
+      return payload.response.output_text;
+    }}
+
+    function processResponseSseFrame(frame, payload) {{
+      applyResponseOperatorState(payload, frame.eventName);
+      if (frame.eventName === "response.created") {{
+        return;
+      }}
+      if (frame.eventName === "response.output_text.delta") {{
+        appendOutput(payload.delta || "");
+        return;
+      }}
+      if (frame.eventName === "response.output_text.done") {{
+        if (typeof payload.text === "string" && payload.text.length > 0) {{
+          setOutput(payload.text);
+        }}
+        return;
+      }}
+      if (frame.eventName === "response.completed") {{
+        const completedText = responseCompletedText(payload);
+        if (completedText.length > 0 && outputPre.textContent.length === 0) {{
+          setOutput(completedText);
+        }}
+        return;
+      }}
+      if (frame.eventName === "response.failed") {{
+        const message = payload && payload.error ? payload.error.message : "unknown";
+        appendOutput("\n[gateway error] " + message + "\n");
+        return;
+      }}
+      appendOutput("\n[unhandled response event] " + String(frame.eventName || "unknown") + "\n");
+    }}
+
     function currentSessionKey() {{
       return (sessionInput.value.trim() || "{default_session_key}");
     }}
@@ -1537,33 +1577,7 @@ pub(super) fn render_gateway_webchat_page() -> String {
       }}
 
       if (mode === "responses") {{
-        applyResponseOperatorState(payload, frame.eventName);
-        if (frame.eventName === "response.created") {{
-          return;
-        }}
-        if (frame.eventName === "response.output_text.delta") {{
-          appendOutput(payload.delta || "");
-          return;
-        }}
-        if (frame.eventName === "response.output_text.done") {{
-          if (typeof payload.text === "string" && payload.text.length > 0) {{
-            setOutput(payload.text);
-          }}
-          return;
-        }}
-        if (frame.eventName === "response.completed") {{
-          if (payload.response && typeof payload.response.output_text === "string" &&
-              payload.response.output_text.length > 0 && outputPre.textContent.length === 0) {{
-            setOutput(payload.response.output_text);
-          }}
-          return;
-        }}
-        if (frame.eventName === "response.failed") {{
-          const message = payload && payload.error ? payload.error.message : "unknown";
-          appendOutput("\n[gateway error] " + message + "\n");
-          return;
-        }}
-        appendOutput("\n[unhandled response event] " + String(frame.eventName || "unknown") + "\n");
+        processResponseSseFrame(frame, payload);
         return;
       }}
 
