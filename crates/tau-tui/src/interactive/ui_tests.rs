@@ -1,3 +1,4 @@
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{backend::TestBackend, Terminal};
 
 use crate::interactive::app::{App, AppConfig};
@@ -98,6 +99,20 @@ fn red_spec_3582_narrow_layout_collapses_details_drawer_first() {
     assert!(!rendered.contains(" Details "));
 }
 
+#[test]
+fn integration_spec_3582_memory_command_switches_detail_context_through_real_input_path() {
+    let mut app = App::new(AppConfig::default());
+    for ch in "/memory".chars() {
+        app.handle_key(key(KeyCode::Char(ch)));
+    }
+    app.handle_key(key(KeyCode::Enter));
+
+    let rendered = render_app(&mut app, 140, 32);
+
+    assert!(rendered.contains("[memory]"));
+    assert!(rendered.contains("No stored memory yet."));
+}
+
 fn render_app(app: &mut App, width: u16, height: u16) -> String {
     let backend = TestBackend::new(width, height);
     let mut terminal = Terminal::new(backend).expect("terminal");
@@ -112,4 +127,8 @@ fn render_app(app: &mut App, width: u16, height: u16) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+fn key(code: KeyCode) -> KeyEvent {
+    KeyEvent::new(code, KeyModifiers::NONE)
 }
