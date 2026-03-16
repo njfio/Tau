@@ -298,15 +298,11 @@ impl App {
             "tools" | "details" => self.show_tool_panel = !self.show_tool_panel,
             "interrupt" => {
                 self.status.agent_state = super::status::AgentStateDisplay::Idle;
-                self.push_message(MessageRole::System, "Interrupt requested.".to_string());
+                self.push_system_note("Interrupt requested.");
             }
             "retry" => self.retry_last_prompt(),
             _ => {
-                self.chat.add_message(ChatMessage {
-                    role: MessageRole::System,
-                    content: format!("Unknown command: {cmd}"),
-                    timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
-                });
+                self.push_system_note(&format!("Unknown command: {cmd}"));
             }
         }
     }
@@ -332,40 +328,36 @@ impl App {
 
     fn retry_last_prompt(&mut self) {
         let Some(prompt) = self.last_submitted_input.clone() else {
-            self.push_message(
-                MessageRole::System,
-                "No previous prompt available to retry.".to_string(),
-            );
+            self.push_system_note("No previous prompt available to retry.");
             return;
         };
-        self.push_message(MessageRole::System, "Retrying last prompt.".to_string());
+        self.push_system_note("Retrying last prompt.");
         self.run_prompt(prompt);
     }
 
     fn run_prompt(&mut self, text: String) {
         self.status.agent_state = super::status::AgentStateDisplay::Thinking;
 
-        self.chat.add_message(ChatMessage {
-            role: MessageRole::User,
-            content: text.clone(),
-            timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
-        });
+        self.push_message(MessageRole::User, text.clone());
 
         // Simulate an assistant response (in real integration, this would call the agent)
-        self.chat.add_message(ChatMessage {
-            role: MessageRole::Assistant,
-            content: format!(
+        self.push_message(
+            MessageRole::Assistant,
+            format!(
                 "Received your message. (Model: {}, {} chars)",
                 self.config.model,
                 text.len()
             ),
-            timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
-        });
+        );
 
         self.status.total_messages += 2;
         self.status.total_tokens += text.len() as u64 / 4;
         self.chat.scroll_to_bottom();
         self.status.agent_state = super::status::AgentStateDisplay::Idle;
+    }
+
+    fn push_system_note(&mut self, content: &str) {
+        self.push_message(MessageRole::System, content.to_string());
     }
 
     /// Push a chat message externally (for agent integration).
