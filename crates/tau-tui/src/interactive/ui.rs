@@ -524,6 +524,36 @@ mod tests {
         assert!(rendered.contains("details"));
     }
 
+    #[test]
+    fn red_spec_3582_composer_uses_prompt_shell_instead_of_bordered_panel_title() {
+        let mut app = App::new(AppConfig::default());
+        let rendered = render_app(&mut app, 120, 24);
+
+        assert!(rendered.contains("Press / for commands"));
+        assert!(!rendered.contains("Composer"));
+    }
+
+    #[test]
+    fn red_spec_3582_transcript_shows_live_activity_summary_above_messages() {
+        let mut app = App::new(AppConfig::default());
+        app.status.agent_state = crate::interactive::status::AgentStateDisplay::Thinking;
+        let rendered = render_app(&mut app, 120, 24);
+
+        assert!(rendered.contains("Live activity"));
+        assert!(rendered.contains("Thinking through the next step"));
+    }
+
+    #[test]
+    fn red_spec_3582_details_drawer_exposes_context_sections_beyond_tools() {
+        let mut app = App::new(AppConfig::default());
+        app.show_tool_panel = true;
+        let rendered = render_app(&mut app, 140, 32);
+
+        assert!(rendered.contains("Memory"));
+        assert!(rendered.contains("Cortex"));
+        assert!(rendered.contains("Sessions"));
+    }
+
     fn render_app(app: &mut App, width: u16, height: u16) -> String {
         let backend = TestBackend::new(width, height);
         let mut terminal = Terminal::new(backend).expect("terminal");
