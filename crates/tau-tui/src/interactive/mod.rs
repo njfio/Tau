@@ -9,6 +9,7 @@
 
 mod app;
 mod chat;
+mod gateway;
 mod input;
 mod status;
 mod tools;
