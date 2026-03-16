@@ -126,3 +126,15 @@ fn conformance_tui_agent_mode_dry_run_emits_interactive_launch_contract() {
     assert!(stdout.contains("--dashboard-state-dir .tau/dashboard"));
     assert!(stdout.contains("--gateway-state-dir .tau/gateway"));
 }
+
+#[test]
+fn integration_tui_interactive_mode_fails_loud_without_tty() {
+    let binary = env!("CARGO_BIN_EXE_tau-tui");
+    let output = Command::new(binary)
+        .args(["interactive", "--profile", "ops-interactive"])
+        .output()
+        .expect("binary executes");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("interactive TUI error:"));
+}
