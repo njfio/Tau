@@ -93,6 +93,8 @@ yrs = "0.25"
 wasmparser = "0.225"
 wasmtime = "25.0.3"
 wat = "1.225.0"
+ratatui = "0.29"
+crossterm = "0.28"
 rustyline = "14"
 fastembed = { version = "5.9.0", default-features = false, features = ["hf-hub-rustls-tls", "ort-download-binaries-rustls-tls"] }
 serenity = { version = "0.12", default-features = false, features = ["client", "gateway", "model", "rustls_backend"] }

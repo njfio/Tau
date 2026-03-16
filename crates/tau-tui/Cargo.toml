@@ -8,6 +8,10 @@ license.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+ratatui.workspace = true
+crossterm.workspace = true
+tokio.workspace = true
+chrono.workspace = true
 
 [dev-dependencies]
 criterion = "0.8"

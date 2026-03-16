@@ -1,7 +1,10 @@
 //! Terminal UI primitives and rendering contracts for Tau interfaces.
 //!
 //! Contains reusable TUI components, view-model types, and rendering helpers
-//! used by interactive terminal surfaces.
+//! used by interactive terminal surfaces, plus a full-screen interactive TUI
+//! powered by ratatui and crossterm.
+
+pub mod interactive;
 
 use std::{
     fmt, fs,
