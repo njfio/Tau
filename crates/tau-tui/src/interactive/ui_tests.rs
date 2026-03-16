@@ -115,6 +115,18 @@ fn integration_spec_3582_memory_command_switches_detail_context_through_real_inp
 }
 
 #[test]
+fn integration_spec_3582_approve_command_resolves_pending_approval_through_real_input_path() {
+    let mut app = App::new(AppConfig::default());
+    submit_command(&mut app, "/approval-needed");
+    submit_command(&mut app, "/approve");
+
+    let rendered = render_app(&mut app, 120, 28);
+
+    assert!(!rendered.contains("Approval required"));
+    assert!(rendered.contains("Approval approved"));
+}
+
+#[test]
 fn red_spec_3582_approval_attention_strip_exposes_approve_and_reject_actions() {
     let mut app = App::new(AppConfig::default());
     for ch in "/approval-needed".chars() {
@@ -163,4 +175,11 @@ fn render_app(app: &mut App, width: u16, height: u16) -> String {
 
 fn key(code: KeyCode) -> KeyEvent {
     KeyEvent::new(code, KeyModifiers::NONE)
+}
+
+fn submit_command(app: &mut App, command: &str) {
+    for ch in command.chars() {
+        app.handle_key(key(KeyCode::Char(ch)));
+    }
+    app.handle_key(key(KeyCode::Enter));
 }
