@@ -1,4 +1,6 @@
 //! Prompt and tool-output safety scanning primitives.
+pub mod audit;
+
 use std::collections::BTreeSet;
 
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder};

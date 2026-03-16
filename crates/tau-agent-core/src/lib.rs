@@ -26,14 +26,28 @@ pub use tau_safety::{
 };
 use thiserror::Error;
 
+pub mod agent_channel;
+pub mod circuit_breaker;
+pub mod context_ranking;
 mod cortex_runtime;
+pub mod failure_detector;
+pub mod metrics;
 mod process_types;
+pub mod recovery;
 mod runtime_safety_memory;
 mod runtime_startup;
 mod runtime_tool_bridge;
 mod runtime_turn_loop;
 
+pub use agent_channel::{AgentMessage, AgentMessageBus, AgentMessageType};
+pub use circuit_breaker::{CircuitBreaker, CircuitState};
+pub use context_ranking::{
+    rank_messages_by_importance, score_message_importance, ImportanceReason, MessageImportance,
+};
 pub use cortex_runtime::{Cortex, CortexConfig, CortexRefreshReport};
+pub use failure_detector::{FailureDetector, FailureDetectorConfig, FailureSignal};
+pub use metrics::{AgentMetrics, AgentMetricsSnapshot, ToolHealthStats};
+pub use recovery::{select_recovery_strategy, RecoveryStrategy};
 pub use process_types::{
     ProcessLifecycleState, ProcessManager, ProcessManagerError, ProcessRuntimeProfile,
     ProcessSnapshot, ProcessSpawnSpec, ProcessType,
@@ -148,6 +162,37 @@ pub struct AgentConfig {
     pub async_event_queue_capacity: usize,
     pub async_event_handler_timeout_ms: Option<u64>,
     pub async_event_block_on_full: bool,
+
+    // Phase 2: Resilience — circuit breaker & fallback
+    pub circuit_breaker_failure_threshold: u32,
+    pub circuit_breaker_recovery_timeout_ms: u64,
+    pub fallback_models: Vec<String>,
+
+    // Phase 3: Tool intelligence — per-tool retry & health
+    pub tool_retry_max_attempts: usize,
+    pub tool_retry_backoff_ms: u64,
+    pub tool_retry_on_timeout: bool,
+    pub tool_health_window_size: usize,
+    pub react_replan_failure_ratio_threshold: f64,
+    pub react_partial_failure_replan: bool,
+
+    // Phase 4: Context — predictive compaction
+    pub context_compaction_predictive: bool,
+    pub context_summary_max_chars: usize,
+
+    // Phase 7: Learning — action history
+    pub action_history_enabled: bool,
+    pub action_history_max_records: usize,
+
+    // Phase 8: Self-repair — failure detection
+    pub failure_detection_enabled: bool,
+    pub failure_repeated_threshold: usize,
+    pub failure_no_progress_turns: usize,
+
+    // Phase 9: Safety — hard limits, PII, audit
+    pub cost_budget_hard_limit: bool,
+    pub pii_redaction_enabled: bool,
+    pub safety_audit_log_enabled: bool,
 }
 
 impl Default for AgentConfig {
@@ -161,7 +206,7 @@ impl Default for AgentConfig {
             max_tokens: None,
             max_parallel_tool_calls: 4,
             max_context_messages: Some(256),
-            request_max_retries: 2,
+            request_max_retries: 3,
             request_retry_initial_backoff_ms: 200,
             request_retry_max_backoff_ms: 2_000,
             stream_retry_with_buffering: true,
@@ -175,13 +220,13 @@ impl Default for AgentConfig {
             context_compaction_warn_retain_percent: 70,
             context_compaction_aggressive_retain_percent: 50,
             context_compaction_emergency_retain_percent: 50,
-            structured_output_max_retries: 1,
-            react_max_replans_on_tool_failure: 1,
-            max_concurrent_branches_per_session: 2,
-            memory_retrieval_limit: 3,
+            structured_output_max_retries: 3,
+            react_max_replans_on_tool_failure: 2,
+            max_concurrent_branches_per_session: 4,
+            memory_retrieval_limit: 5,
             memory_embedding_dimensions: 128,
             memory_min_similarity: 0.55,
-            memory_max_chars_per_item: 180,
+            memory_max_chars_per_item: 320,
             memory_embedding_model: None,
             memory_embedding_api_base: None,
             memory_embedding_api_key: None,
@@ -197,6 +242,37 @@ impl Default for AgentConfig {
             async_event_queue_capacity: 128,
             async_event_handler_timeout_ms: Some(5_000),
             async_event_block_on_full: false,
+
+            // Phase 2: Resilience
+            circuit_breaker_failure_threshold: 5,
+            circuit_breaker_recovery_timeout_ms: 30_000,
+            fallback_models: Vec::new(),
+
+            // Phase 3: Tool intelligence
+            tool_retry_max_attempts: 1,
+            tool_retry_backoff_ms: 500,
+            tool_retry_on_timeout: true,
+            tool_health_window_size: 20,
+            react_replan_failure_ratio_threshold: 0.5,
+            react_partial_failure_replan: true,
+
+            // Phase 4: Context
+            context_compaction_predictive: false,
+            context_summary_max_chars: 4000,
+
+            // Phase 7: Learning
+            action_history_enabled: false,
+            action_history_max_records: 500,
+
+            // Phase 8: Self-repair
+            failure_detection_enabled: true,
+            failure_repeated_threshold: 3,
+            failure_no_progress_turns: 3,
+
+            // Phase 9: Safety
+            cost_budget_hard_limit: false,
+            pii_redaction_enabled: false,
+            safety_audit_log_enabled: false,
         }
     }
 }
@@ -622,6 +698,37 @@ pub enum AgentEvent {
         matched_rules: Vec<String>,
         reason_codes: Vec<String>,
     },
+    // Phase 1: Observability events
+    ToolHealthReport {
+        tool_name: String,
+        success_rate: f64,
+        avg_latency_ms: u64,
+        consecutive_failures: u32,
+    },
+    CircuitBreakerTripped {
+        tool_name: String,
+        reason: String,
+    },
+    ContextCompactionTriggered {
+        tier: String,
+        messages_before: usize,
+        messages_after: usize,
+        estimated_tokens_freed: u32,
+    },
+    // Phase 8: Recovery events
+    FailureDetected {
+        signal: String,
+    },
+    RecoveryAttempted {
+        strategy: String,
+        attempt: usize,
+    },
+    EscalationRequired {
+        message: String,
+    },
+    GracefulTermination {
+        summary: String,
+    },
 }
 
 /// Enumerates supported `AgentError` values.
@@ -651,6 +758,10 @@ pub enum AgentError {
         stage: String,
         reason_codes: Vec<String>,
     },
+    #[error("circuit breaker open: consecutive failures exceeded threshold")]
+    CircuitBreakerOpen,
+    #[error("cost budget exceeded: budget_usd={budget_usd}, spent_usd={spent_usd}")]
+    BudgetExceeded { budget_usd: f64, spent_usd: f64 },
 }
 
 impl AgentError {
@@ -926,6 +1037,9 @@ pub struct Agent {
     warn_compaction_state: Arc<Mutex<WarnCompactionState>>,
     active_branch_runs: Arc<AtomicUsize>,
     process_run_counter: Arc<AtomicUsize>,
+    agent_metrics: Arc<metrics::AgentMetrics>,
+    circuit_breaker: Arc<circuit_breaker::CircuitBreaker>,
+    message_bus: Arc<agent_channel::AgentMessageBus>,
 }
 
 impl Agent {
@@ -936,6 +1050,8 @@ impl Agent {
             messages.push(Message::system(config.system_prompt.clone()));
         }
         let agent_id = config.agent_id.clone();
+        let cb_threshold = config.circuit_breaker_failure_threshold;
+        let cb_timeout = config.circuit_breaker_recovery_timeout_ms;
 
         Self {
             client,
@@ -961,6 +1077,12 @@ impl Agent {
             warn_compaction_state: Arc::new(Mutex::new(WarnCompactionState::default())),
             active_branch_runs: Arc::new(AtomicUsize::new(0)),
             process_run_counter: Arc::new(AtomicUsize::new(0)),
+            agent_metrics: Arc::new(metrics::AgentMetrics::default()),
+            circuit_breaker: Arc::new(circuit_breaker::CircuitBreaker::new(
+                cb_threshold,
+                cb_timeout,
+            )),
+            message_bus: Arc::new(agent_channel::AgentMessageBus::new(64)),
         }
     }
 
@@ -994,6 +1116,21 @@ impl Agent {
     /// Returns aggregate async event dispatch metrics for this agent instance.
     pub fn async_event_metrics(&self) -> AsyncEventDispatchMetrics {
         self.async_event_metrics.snapshot()
+    }
+
+    /// Returns a snapshot of all agent-level metrics collected during this session.
+    pub fn metrics_snapshot(&self) -> metrics::AgentMetricsSnapshot {
+        self.agent_metrics.snapshot()
+    }
+
+    /// Returns a reference to the circuit breaker for LLM provider calls.
+    pub fn circuit_breaker(&self) -> &circuit_breaker::CircuitBreaker {
+        &self.circuit_breaker
+    }
+
+    /// Returns a reference to the inter-agent message bus.
+    pub fn message_bus(&self) -> &agent_channel::AgentMessageBus {
+        &self.message_bus
     }
 
     /// Registers a tool exposed to the language model.

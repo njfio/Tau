@@ -2076,6 +2076,7 @@ async fn emits_expected_event_sequence_for_tool_turn() {
             }
             AgentEvent::AgentStart => "agent_start".to_string(),
             AgentEvent::AgentEnd { .. } => "agent_end".to_string(),
+            _ => "other".to_string(),
         };
 
         recorded

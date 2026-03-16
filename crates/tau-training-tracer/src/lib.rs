@@ -241,6 +241,7 @@ impl TrainingTracer {
                     ]),
                 );
             }
+            _ => {} // New observability/recovery events — no tracing span needed
         }
     }
 

@@ -4,5 +4,6 @@
 //! - file-backed memory runtime primitives and deterministic ranking helpers
 //! - fixture schemas and replay helpers used by contract validation suites
 
+pub mod action_history;
 pub mod memory_contract;
 pub mod runtime;

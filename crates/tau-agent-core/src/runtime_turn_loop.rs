@@ -95,8 +95,28 @@ fn estimate_text_tokens(text: &str) -> u32 {
     if text.is_empty() {
         return 0;
     }
-    let chars = u32::try_from(text.chars().count()).unwrap_or(u32::MAX);
-    chars.saturating_add(3) / 4
+    let len = text.len();
+    let ascii_count = text.bytes().filter(|b| b.is_ascii()).count();
+    let special_count = text
+        .bytes()
+        .filter(|b| !b.is_ascii_alphanumeric() && !b.is_ascii_whitespace())
+        .count();
+    let ascii_ratio = ascii_count as f64 / len.max(1) as f64;
+    let special_ratio = special_count as f64 / len.max(1) as f64;
+
+    let chars_per_token = if ascii_ratio > 0.9 {
+        if special_ratio > 0.2 {
+            3.5 // Code content
+        } else {
+            4.0 // Prose
+        }
+    } else if ascii_ratio > 0.5 {
+        3.0 // Mixed content
+    } else {
+        2.0 // Heavy Unicode
+    };
+
+    (len as f64 / chars_per_token).ceil() as u32
 }
 
 pub(crate) fn estimate_usage_cost_usd(
