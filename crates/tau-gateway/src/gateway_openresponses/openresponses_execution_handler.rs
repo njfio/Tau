@@ -26,6 +26,12 @@ pub(super) async fn execute_openresponses_request(
                     "status": "in_progress",
                     "model": state.config.model,
                     "created": created,
+                },
+                "operator_state": {
+                    "entity": "turn",
+                    "status": "in_progress",
+                    "phase": "model",
+                    "response_id": response_id,
                 }
             }),
         });
@@ -106,6 +112,12 @@ pub(super) async fn execute_openresponses_request(
                     "type": "response.output_text.delta",
                     "response_id": response_id,
                     "delta": delta,
+                    "operator_state": {
+                        "entity": "artifact",
+                        "status": "streaming",
+                        "artifact_kind": "assistant_output_text",
+                        "response_id": response_id,
+                    }
                 }),
             });
         }) as StreamDeltaHandler

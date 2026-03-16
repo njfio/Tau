@@ -102,7 +102,16 @@ pub fn event_to_json(event: &AgentEvent) -> serde_json::Value {
         AgentEvent::AgentEnd { new_messages } => {
             serde_json::json!({ "type": "agent_end", "new_messages": new_messages })
         }
-        AgentEvent::TurnStart { turn } => serde_json::json!({ "type": "turn_start", "turn": turn }),
+        AgentEvent::TurnStart { turn } => serde_json::json!({
+            "type": "turn_start",
+            "turn": turn,
+            "operator_state": {
+                "entity": "turn",
+                "status": "in_progress",
+                "phase": "model",
+                "turn": turn,
+            }
+        }),
         AgentEvent::TurnEnd {
             turn,
             tool_results,
@@ -116,6 +125,14 @@ pub fn event_to_json(event: &AgentEvent) -> serde_json::Value {
             "request_duration_ms": request_duration_ms,
             "usage": usage,
             "finish_reason": finish_reason,
+            "operator_state": {
+                "entity": "turn",
+                "status": "completed",
+                "phase": "done",
+                "turn": turn,
+                "tool_results": tool_results,
+                "finish_reason": finish_reason,
+            }
         }),
         AgentEvent::MessageAdded { message } => serde_json::json!({
             "type": "message_added",
@@ -132,6 +149,12 @@ pub fn event_to_json(event: &AgentEvent) -> serde_json::Value {
             "tool_call_id": tool_call_id,
             "tool_name": tool_name,
             "arguments": arguments,
+            "operator_state": {
+                "entity": "tool",
+                "status": "in_progress",
+                "tool_call_id": tool_call_id,
+                "tool_name": tool_name,
+            }
         }),
         AgentEvent::ToolExecutionEnd {
             tool_call_id,
@@ -143,6 +166,12 @@ pub fn event_to_json(event: &AgentEvent) -> serde_json::Value {
             "tool_name": tool_name,
             "is_error": result.is_error,
             "content": result.content,
+            "operator_state": {
+                "entity": "tool",
+                "status": if result.is_error { "failed" } else { "completed" },
+                "tool_call_id": tool_call_id,
+                "tool_name": tool_name,
+            }
         }),
         AgentEvent::ReplanTriggered { turn, reason } => serde_json::json!({
             "type": "replan_triggered",

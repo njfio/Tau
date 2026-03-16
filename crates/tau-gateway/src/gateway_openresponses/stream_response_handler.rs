@@ -17,6 +17,12 @@ pub(super) async fn stream_openresponses(
                         "type": "response.output_text.done",
                         "response_id": response.id,
                         "text": response.output_text,
+                        "operator_state": {
+                            "entity": "artifact",
+                            "status": "completed",
+                            "artifact_kind": "assistant_output_text",
+                            "response_id": response.id,
+                        }
                     }),
                 });
                 let _ = tx.send(SseFrame::Json {
@@ -24,6 +30,11 @@ pub(super) async fn stream_openresponses(
                     payload: json!({
                         "type": "response.completed",
                         "response": response,
+                        "operator_state": {
+                            "entity": "turn",
+                            "status": "completed",
+                            "phase": "done",
+                        }
                     }),
                 });
                 let _ = tx.send(SseFrame::Done);
@@ -36,6 +47,12 @@ pub(super) async fn stream_openresponses(
                         "error": {
                             "code": error.code,
                             "message": error.message,
+                        },
+                        "operator_state": {
+                            "entity": "turn",
+                            "status": "failed",
+                            "phase": "failed",
+                            "reason_code": error.code,
                         }
                     }),
                 });
