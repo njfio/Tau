@@ -1,8 +1,11 @@
+#[cfg(any(feature = "fastembed", test))]
 use std::cell::RefCell;
 use std::collections::HashMap;
+#[cfg(feature = "fastembed")]
 use std::path::PathBuf;
 
 use anyhow::{anyhow, Result};
+#[cfg(feature = "fastembed")]
 use fastembed::{EmbeddingModel, TextEmbedding, TextInitOptions};
 #[cfg(test)]
 use std::sync::{Mutex, OnceLock};
@@ -16,8 +19,10 @@ use super::{
 };
 
 const LOCAL_EMBEDDING_MODEL_HASH_ONLY: &str = "local-hash";
+#[cfg(feature = "fastembed")]
 const LOCAL_EMBEDDING_CACHE_DIR_ENV: &str = "TAU_MEMORY_LOCAL_EMBEDDING_CACHE_DIR";
 
+#[cfg(feature = "fastembed")]
 std::thread_local! {
     static LOCAL_FASTEMBED_MODEL_CACHE: RefCell<HashMap<String, TextEmbedding>> = RefCell::new(HashMap::new());
 }
@@ -34,6 +39,7 @@ trait LocalEmbeddingProvider {
 #[derive(Debug, Clone, Copy, Default)]
 struct FastEmbedLocalEmbeddingProvider;
 
+#[cfg(feature = "fastembed")]
 impl LocalEmbeddingProvider for FastEmbedLocalEmbeddingProvider {
     fn embed(
         &self,
@@ -87,6 +93,36 @@ impl LocalEmbeddingProvider for FastEmbedLocalEmbeddingProvider {
                 .map(|vector| resize_and_normalize_embedding(vector.as_slice(), dimensions))
                 .collect::<Vec<_>>())
         })
+    }
+}
+
+#[cfg(not(feature = "fastembed"))]
+impl LocalEmbeddingProvider for FastEmbedLocalEmbeddingProvider {
+    fn embed(
+        &self,
+        inputs: &[String],
+        #[cfg_attr(not(test), allow(unused_variables))]
+        dimensions: usize,
+        _model: &str,
+    ) -> Result<Vec<Vec<f32>>, String> {
+        if inputs.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        #[cfg(test)]
+        if let Some(mode) = LOCAL_EMBEDDING_TEST_MODE.with(|slot| *slot.borrow()) {
+            return match mode {
+                LocalEmbeddingTestMode::Success => Ok(inputs
+                    .iter()
+                    .map(|input| deterministic_local_test_embedding(input.as_str(), dimensions))
+                    .collect::<Vec<_>>()),
+                LocalEmbeddingTestMode::Failure => {
+                    Err("local embedding backend unavailable (test override)".to_string())
+                }
+            };
+        }
+
+        Err("local fastembed embedding backend unavailable: compile with the 'fastembed' feature to enable ONNX-based local embeddings".to_string())
     }
 }
 
@@ -415,6 +451,7 @@ fn embed_text_vectors_via_local_provider(
     provider.embed(inputs, dimensions, config.model.as_str())
 }
 
+#[cfg(feature = "fastembed")]
 fn build_local_text_init_options(model: EmbeddingModel) -> TextInitOptions {
     let mut options = TextInitOptions::new(model).with_show_download_progress(false);
     if let Some(cache_dir) = std::env::var_os(LOCAL_EMBEDDING_CACHE_DIR_ENV) {
@@ -423,6 +460,7 @@ fn build_local_text_init_options(model: EmbeddingModel) -> TextInitOptions {
     options
 }
 
+#[cfg(feature = "fastembed")]
 fn parse_local_embedding_model(model: &str) -> Result<EmbeddingModel, String> {
     model.parse::<EmbeddingModel>().or_else(|error| {
         let alias = if model.eq_ignore_ascii_case("BAAI/bge-small-en-v1.5") {
@@ -438,7 +476,7 @@ fn parse_local_embedding_model(model: &str) -> Result<EmbeddingModel, String> {
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "fastembed"))]
 fn clear_local_fastembed_model_cache() {
     LOCAL_FASTEMBED_MODEL_CACHE.with(|cache| {
         cache.borrow_mut().clear();
@@ -663,7 +701,7 @@ impl FileMemoryStore {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "fastembed"))]
 mod tests {
     use super::{
         clear_local_fastembed_model_cache, parse_local_embedding_model,

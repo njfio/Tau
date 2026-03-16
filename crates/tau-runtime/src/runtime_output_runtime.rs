@@ -187,6 +187,7 @@ pub fn event_to_json(event: &AgentEvent) -> serde_json::Value {
             "matched_rules": matched_rules,
             "reason_codes": reason_codes,
         }),
+        _ => serde_json::json!({ "type": "unknown_event" }),
     }
 }
 

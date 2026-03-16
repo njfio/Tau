@@ -95,8 +95,28 @@ fn estimate_text_tokens(text: &str) -> u32 {
     if text.is_empty() {
         return 0;
     }
-    let chars = u32::try_from(text.chars().count()).unwrap_or(u32::MAX);
-    chars.saturating_add(3) / 4
+    let len = text.len();
+    let ascii_count = text.bytes().filter(|b| b.is_ascii()).count();
+    let special_count = text
+        .bytes()
+        .filter(|b| !b.is_ascii_alphanumeric() && !b.is_ascii_whitespace())
+        .count();
+    let ascii_ratio = ascii_count as f64 / len.max(1) as f64;
+    let special_ratio = special_count as f64 / len.max(1) as f64;
+
+    let chars_per_token = if ascii_ratio > 0.9 {
+        if special_ratio > 0.2 {
+            3.5 // Code content
+        } else {
+            4.0 // Prose
+        }
+    } else if ascii_ratio > 0.5 {
+        3.0 // Mixed content
+    } else {
+        2.0 // Heavy Unicode
+    };
+
+    (len as f64 / chars_per_token).ceil() as u32
 }
 
 pub(crate) fn estimate_usage_cost_usd(
@@ -450,7 +470,9 @@ pub(crate) fn build_structured_output_retry_prompt(schema: &Value, error: &str) 
     let schema_text = serde_json::to_string(schema).unwrap_or_else(|_| schema.to_string());
     format!(
         "Your previous response could not be accepted as structured JSON ({error}). \
-Please reply with only valid JSON that matches this schema exactly:\n{schema_text}"
+Common issues: markdown code fences around JSON, explanatory text before/after, \
+single quotes instead of double quotes, trailing commas. \
+Reply with ONLY the raw JSON object (no markdown, no explanation) matching this schema:\n{schema_text}"
     )
 }
 
@@ -581,13 +603,7 @@ pub(crate) fn timeout_duration_from_ms(timeout_ms: Option<u64>) -> Option<Durati
 }
 
 pub(crate) fn is_retryable_ai_error(error: &TauAiError) -> bool {
-    match error {
-        TauAiError::Http(http) => http.is_timeout() || http.is_connect(),
-        TauAiError::HttpStatus { status, .. } => {
-            *status == 408 || *status == 409 || *status == 425 || *status == 429 || *status >= 500
-        }
-        TauAiError::MissingApiKey | TauAiError::Serde(_) | TauAiError::InvalidResponse(_) => false,
-    }
+    error.is_retryable()
 }
 
 #[cfg(test)]

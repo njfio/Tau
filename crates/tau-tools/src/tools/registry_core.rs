@@ -592,6 +592,9 @@ pub fn register_builtin_tools(agent: &mut Agent, policy: ToolPolicy) {
     agent.register_tool(SendFileTool::new(policy.clone()));
     agent.register_tool(ReactTool::new(policy.clone()));
     agent.register_tool(SkipTool::new(policy.clone()));
+    agent.register_tool(GrepTool::new(policy.clone()));
+    agent.register_tool(GlobTool::new(policy.clone()));
+    agent.register_tool(ListDirectoryTool::new(policy.clone()));
     agent.register_tool(HttpTool::new(policy.clone()));
     if policy.tool_builder_enabled {
         agent.register_tool(ToolBuilderTool::new(policy.clone()));

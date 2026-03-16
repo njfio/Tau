@@ -3,6 +3,7 @@ use std::{env, path::Path, process::Command, process::Stdio, thread, time::Durat
 use tau_tui::{
     apply_overlay, render_operator_shell_frame, Component, DiffRenderer, EditorBuffer, EditorView,
     LumaImage, OperatorShellFrame, Text, Theme, ThemeRole,
+    interactive::{AppConfig, run_interactive},
 };
 
 const HELP: &str = "\
@@ -10,12 +11,14 @@ tau-tui operator terminal
 
 Usage:
   cargo run -p tau-tui -- [demo] [--frames N] [--width N] [--sleep-ms N] [--no-color]
+  cargo run -p tau-tui -- interactive [--model ID] [--profile NAME]
   cargo run -p tau-tui -- shell [--width N] [--profile NAME] [--no-color]
   cargo run -p tau-tui -- shell-live [--state-dir PATH] [--width N] [--profile NAME] [--watch] [--iterations N] [--interval-ms N] [--no-color]
   cargo run -p tau-tui -- agent [--dashboard-state-dir PATH] [--gateway-state-dir PATH] [--model ID] [--request-timeout-ms N] [--agent-request-max-retries N] [--width N] [--profile NAME] [--dry-run] [--no-color]
 
 Options:
   demo          Animated rendering demo mode (default command)
+  interactive   Full-screen interactive TUI with chat, tools, status bar, and vim keybindings
   shell         Operator shell mode with status/auth/training panels
   shell-live    State-backed operator shell mode from dashboard artifacts
   agent         Operator shell mode that launches interactive tau-coding-agent runtime
@@ -127,9 +130,25 @@ impl Default for AgentArgs {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct InteractiveArgs {
+    model: String,
+    profile: String,
+}
+
+impl Default for InteractiveArgs {
+    fn default() -> Self {
+        Self {
+            model: "openai/gpt-5.2".to_string(),
+            profile: "local-dev".to_string(),
+        }
+    }
+}
+
 #[derive(Debug)]
 enum ParseAction {
     RunDemo(DemoArgs),
+    RunInteractive(InteractiveArgs),
     RunShell(ShellArgs),
     RunShellLive(LiveShellArgs),
     RunAgent(AgentArgs),
@@ -149,6 +168,10 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<ParseAction, Str
         Some("demo") => {
             values.remove(0);
             parse_demo_args(values)
+        }
+        Some("interactive") => {
+            values.remove(0);
+            parse_interactive_args(values)
         }
         Some("shell") => {
             values.remove(0);
@@ -205,6 +228,34 @@ fn parse_demo_args(args: Vec<String>) -> Result<ParseAction, String> {
     }
 
     Ok(ParseAction::RunDemo(parsed))
+}
+
+fn parse_interactive_args(args: Vec<String>) -> Result<ParseAction, String> {
+    let mut parsed = InteractiveArgs::default();
+    let mut it = args.into_iter();
+    while let Some(arg) = it.next() {
+        match arg.as_str() {
+            "--help" | "-h" => return Ok(ParseAction::Help),
+            "--model" => {
+                let raw = it.next().ok_or("missing value for --model")?;
+                let value = raw.trim();
+                if value.is_empty() {
+                    return Err("--model must not be empty".to_string());
+                }
+                parsed.model = value.to_string();
+            }
+            "--profile" => {
+                let raw = it.next().ok_or("missing value for --profile")?;
+                let value = raw.trim();
+                if value.is_empty() {
+                    return Err("--profile must not be empty".to_string());
+                }
+                parsed.profile = value.to_string();
+            }
+            _ => return Err(format!("unknown argument: {arg}")),
+        }
+    }
+    Ok(ParseAction::RunInteractive(parsed))
 }
 
 fn parse_shell_args(args: Vec<String>) -> Result<ParseAction, String> {
@@ -683,6 +734,17 @@ fn main() {
         ParseAction::RunDemo(args) => {
             if let Err(err) = run_demo(args) {
                 eprintln!("{err}");
+                std::process::exit(1);
+            }
+        }
+        ParseAction::RunInteractive(args) => {
+            let config = AppConfig {
+                model: args.model,
+                profile: args.profile,
+                tick_rate_ms: 100,
+            };
+            if let Err(err) = run_interactive(config) {
+                eprintln!("interactive TUI error: {err}");
                 std::process::exit(1);
             }
         }

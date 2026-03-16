@@ -9,13 +9,13 @@ fn unit_agent_config_defaults_include_request_and_tool_timeouts() {
     assert!(config.stream_retry_with_buffering);
     assert_eq!(config.max_estimated_input_tokens, Some(120_000));
     assert_eq!(config.max_estimated_total_tokens, None);
-    assert_eq!(config.structured_output_max_retries, 1);
-    assert_eq!(config.react_max_replans_on_tool_failure, 1);
-    assert_eq!(config.max_concurrent_branches_per_session, 2);
-    assert_eq!(config.memory_retrieval_limit, 3);
+    assert_eq!(config.structured_output_max_retries, 3);
+    assert_eq!(config.react_max_replans_on_tool_failure, 2);
+    assert_eq!(config.max_concurrent_branches_per_session, 4);
+    assert_eq!(config.memory_retrieval_limit, 5);
     assert_eq!(config.memory_embedding_dimensions, 128);
     assert_eq!(config.memory_min_similarity, 0.55);
-    assert_eq!(config.memory_max_chars_per_item, 180);
+    assert_eq!(config.memory_max_chars_per_item, 320);
     assert_eq!(config.memory_embedding_model, None);
     assert_eq!(config.memory_embedding_api_base, None);
     assert_eq!(config.memory_embedding_api_key, None);
@@ -620,7 +620,7 @@ fn unit_build_structured_output_retry_prompt_includes_error_and_schema() {
     let prompt = build_structured_output_retry_prompt(&schema, "did not contain parseable JSON");
     assert!(prompt.contains("did not contain parseable JSON"));
     assert!(prompt.contains("\"required\":[\"mode\"]"));
-    assert!(prompt.contains("reply with only valid JSON"));
+    assert!(prompt.contains("Reply with ONLY the raw JSON object"));
 }
 
 #[tokio::test]

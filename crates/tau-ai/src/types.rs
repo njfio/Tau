@@ -281,6 +281,83 @@ pub enum TauAiError {
     InvalidResponse(String),
 }
 
+/// Semantic categories for provider HTTP errors, derived from status codes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProviderErrorKind {
+    /// 401/403 — invalid or expired credentials.
+    AuthFailure,
+    /// 429 — rate limit or quota exceeded.
+    RateLimited,
+    /// 404 — model or endpoint not found.
+    NotFound,
+    /// 400/422 — malformed request or invalid parameters.
+    BadRequest,
+    /// 408/409/425 — transient request-level failures.
+    TransientRequestError,
+    /// 500+ — provider-side server error.
+    ServerError,
+    /// Network-level failure (timeout, connection reset).
+    NetworkError,
+    /// Any other error category.
+    Other,
+}
+
+impl TauAiError {
+    /// Classifies this error into a semantic `ProviderErrorKind`.
+    pub fn provider_error_kind(&self) -> ProviderErrorKind {
+        match self {
+            TauAiError::MissingApiKey => ProviderErrorKind::AuthFailure,
+            TauAiError::Http(http) => {
+                if http.is_timeout() || http.is_connect() {
+                    ProviderErrorKind::NetworkError
+                } else if http.is_status() {
+                    http.status()
+                        .map(|s| classify_http_status(s.as_u16()))
+                        .unwrap_or(ProviderErrorKind::Other)
+                } else {
+                    ProviderErrorKind::NetworkError
+                }
+            }
+            TauAiError::HttpStatus { status, .. } => classify_http_status(*status),
+            TauAiError::Serde(_) => ProviderErrorKind::Other,
+            TauAiError::InvalidResponse(_) => ProviderErrorKind::Other,
+        }
+    }
+
+    /// Returns `true` if this is a rate-limit (429) error.
+    pub fn is_rate_limited(&self) -> bool {
+        self.provider_error_kind() == ProviderErrorKind::RateLimited
+    }
+
+    /// Returns `true` if this is an authentication failure (401/403).
+    pub fn is_auth_failure(&self) -> bool {
+        self.provider_error_kind() == ProviderErrorKind::AuthFailure
+    }
+
+    /// Returns `true` if this error is likely transient and worth retrying.
+    pub fn is_retryable(&self) -> bool {
+        matches!(
+            self.provider_error_kind(),
+            ProviderErrorKind::RateLimited
+                | ProviderErrorKind::TransientRequestError
+                | ProviderErrorKind::ServerError
+                | ProviderErrorKind::NetworkError
+        )
+    }
+}
+
+fn classify_http_status(status: u16) -> ProviderErrorKind {
+    match status {
+        401 | 403 => ProviderErrorKind::AuthFailure,
+        404 => ProviderErrorKind::NotFound,
+        429 => ProviderErrorKind::RateLimited,
+        400 | 422 => ProviderErrorKind::BadRequest,
+        408 | 409 | 425 => ProviderErrorKind::TransientRequestError,
+        s if s >= 500 => ProviderErrorKind::ServerError,
+        _ => ProviderErrorKind::Other,
+    }
+}
+
 pub type StreamDeltaHandler = Arc<dyn Fn(String) + Send + Sync>;
 
 #[async_trait]

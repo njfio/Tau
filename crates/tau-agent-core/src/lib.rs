@@ -26,14 +26,28 @@ pub use tau_safety::{
 };
 use thiserror::Error;
 
+pub mod agent_channel;
+pub mod circuit_breaker;
+pub mod context_ranking;
 mod cortex_runtime;
+pub mod failure_detector;
+pub mod metrics;
 mod process_types;
+pub mod recovery;
 mod runtime_safety_memory;
 mod runtime_startup;
 mod runtime_tool_bridge;
 mod runtime_turn_loop;
 
+pub use agent_channel::{AgentMessage, AgentMessageBus, AgentMessageType};
+pub use circuit_breaker::{CircuitBreaker, CircuitState};
+pub use context_ranking::{
+    rank_messages_by_importance, score_message_importance, ImportanceReason, MessageImportance,
+};
 pub use cortex_runtime::{Cortex, CortexConfig, CortexRefreshReport};
+pub use failure_detector::{FailureDetector, FailureDetectorConfig, FailureSignal};
+pub use metrics::{AgentMetrics, AgentMetricsSnapshot, ToolHealthStats};
+pub use recovery::{select_recovery_strategy, RecoveryStrategy};
 pub use process_types::{
     ProcessLifecycleState, ProcessManager, ProcessManagerError, ProcessRuntimeProfile,
     ProcessSnapshot, ProcessSpawnSpec, ProcessType,
@@ -55,6 +69,37 @@ pub(crate) use runtime_turn_loop::{
 };
 #[cfg(test)]
 pub(crate) use tau_memory::runtime::embed_text_vector;
+
+/// Default system prompt for Tau agents when no workspace identity files are configured.
+pub const DEFAULT_SYSTEM_PROMPT: &str = "\
+You are Tau, an autonomous coding and operations agent. You solve problems by \
+reading code, making changes, and verifying results using your tools.
+
+## Tools at your disposal
+- **read/write/edit**: Read files before editing. Write only what is needed.
+- **grep/glob/ls**: Explore codebases — find definitions, usage sites, project structure.
+- **bash**: Run commands, compile code, execute tests.
+- **memory_write/read/search**: Persist important decisions, context, and findings across turns.
+- **branch**: Fork parallel sub-tasks for independent work.
+- **sessions**: Collaborate with other agents via direct messages.
+- **jobs**: Queue long-running background commands.
+
+## Operational principles
+- Act decisively. Prefer using tools to verify assumptions over asking the user.
+- Always read a file before editing it. Use grep/glob to locate relevant code first.
+- After making code changes, run tests or compilation to verify correctness.
+- Break complex tasks into steps. Use branch for truly independent sub-tasks.
+- Use memory_write to persist important decisions and context that may be needed later.
+
+## Quality and safety
+- Never run destructive commands (rm -rf, DROP TABLE, force-push) without explicit confirmation.
+- Do not fabricate file contents or tool outputs. Acknowledge uncertainty.
+- Prefer minimal, targeted changes over sweeping refactors unless asked.
+
+## Communication
+- Be concise. Lead with actions and results, not preamble.
+- For complex output, use headers and structure.
+- Explain reasoning only for non-obvious decisions.";
 
 /// Public struct `AgentConfig` used across Tau components.
 ///
@@ -117,6 +162,37 @@ pub struct AgentConfig {
     pub async_event_queue_capacity: usize,
     pub async_event_handler_timeout_ms: Option<u64>,
     pub async_event_block_on_full: bool,
+
+    // Phase 2: Resilience — circuit breaker & fallback
+    pub circuit_breaker_failure_threshold: u32,
+    pub circuit_breaker_recovery_timeout_ms: u64,
+    pub fallback_models: Vec<String>,
+
+    // Phase 3: Tool intelligence — per-tool retry & health
+    pub tool_retry_max_attempts: usize,
+    pub tool_retry_backoff_ms: u64,
+    pub tool_retry_on_timeout: bool,
+    pub tool_health_window_size: usize,
+    pub react_replan_failure_ratio_threshold: f64,
+    pub react_partial_failure_replan: bool,
+
+    // Phase 4: Context — predictive compaction
+    pub context_compaction_predictive: bool,
+    pub context_summary_max_chars: usize,
+
+    // Phase 7: Learning — action history
+    pub action_history_enabled: bool,
+    pub action_history_max_records: usize,
+
+    // Phase 8: Self-repair — failure detection
+    pub failure_detection_enabled: bool,
+    pub failure_repeated_threshold: usize,
+    pub failure_no_progress_turns: usize,
+
+    // Phase 9: Safety — hard limits, PII, audit
+    pub cost_budget_hard_limit: bool,
+    pub pii_redaction_enabled: bool,
+    pub safety_audit_log_enabled: bool,
 }
 
 impl Default for AgentConfig {
@@ -124,13 +200,13 @@ impl Default for AgentConfig {
         Self {
             agent_id: "tau-agent".to_string(),
             model: "gpt-5.2".to_string(),
-            system_prompt: "You are a helpful coding assistant.".to_string(),
+            system_prompt: DEFAULT_SYSTEM_PROMPT.to_string(),
             max_turns: 8,
             temperature: Some(0.0),
             max_tokens: None,
             max_parallel_tool_calls: 4,
             max_context_messages: Some(256),
-            request_max_retries: 2,
+            request_max_retries: 3,
             request_retry_initial_backoff_ms: 200,
             request_retry_max_backoff_ms: 2_000,
             stream_retry_with_buffering: true,
@@ -144,13 +220,13 @@ impl Default for AgentConfig {
             context_compaction_warn_retain_percent: 70,
             context_compaction_aggressive_retain_percent: 50,
             context_compaction_emergency_retain_percent: 50,
-            structured_output_max_retries: 1,
-            react_max_replans_on_tool_failure: 1,
-            max_concurrent_branches_per_session: 2,
-            memory_retrieval_limit: 3,
+            structured_output_max_retries: 3,
+            react_max_replans_on_tool_failure: 2,
+            max_concurrent_branches_per_session: 4,
+            memory_retrieval_limit: 5,
             memory_embedding_dimensions: 128,
             memory_min_similarity: 0.55,
-            memory_max_chars_per_item: 180,
+            memory_max_chars_per_item: 320,
             memory_embedding_model: None,
             memory_embedding_api_base: None,
             memory_embedding_api_key: None,
@@ -166,6 +242,37 @@ impl Default for AgentConfig {
             async_event_queue_capacity: 128,
             async_event_handler_timeout_ms: Some(5_000),
             async_event_block_on_full: false,
+
+            // Phase 2: Resilience
+            circuit_breaker_failure_threshold: 5,
+            circuit_breaker_recovery_timeout_ms: 30_000,
+            fallback_models: Vec::new(),
+
+            // Phase 3: Tool intelligence
+            tool_retry_max_attempts: 1,
+            tool_retry_backoff_ms: 500,
+            tool_retry_on_timeout: true,
+            tool_health_window_size: 20,
+            react_replan_failure_ratio_threshold: 0.5,
+            react_partial_failure_replan: true,
+
+            // Phase 4: Context
+            context_compaction_predictive: false,
+            context_summary_max_chars: 4000,
+
+            // Phase 7: Learning
+            action_history_enabled: false,
+            action_history_max_records: 500,
+
+            // Phase 8: Self-repair
+            failure_detection_enabled: true,
+            failure_repeated_threshold: 3,
+            failure_no_progress_turns: 3,
+
+            // Phase 9: Safety
+            cost_budget_hard_limit: false,
+            pii_redaction_enabled: false,
+            safety_audit_log_enabled: false,
         }
     }
 }
@@ -591,6 +698,37 @@ pub enum AgentEvent {
         matched_rules: Vec<String>,
         reason_codes: Vec<String>,
     },
+    // Phase 1: Observability events
+    ToolHealthReport {
+        tool_name: String,
+        success_rate: f64,
+        avg_latency_ms: u64,
+        consecutive_failures: u32,
+    },
+    CircuitBreakerTripped {
+        tool_name: String,
+        reason: String,
+    },
+    ContextCompactionTriggered {
+        tier: String,
+        messages_before: usize,
+        messages_after: usize,
+        estimated_tokens_freed: u32,
+    },
+    // Phase 8: Recovery events
+    FailureDetected {
+        signal: String,
+    },
+    RecoveryAttempted {
+        strategy: String,
+        attempt: usize,
+    },
+    EscalationRequired {
+        message: String,
+    },
+    GracefulTermination {
+        summary: String,
+    },
 }
 
 /// Enumerates supported `AgentError` values.
@@ -620,6 +758,31 @@ pub enum AgentError {
         stage: String,
         reason_codes: Vec<String>,
     },
+    #[error("circuit breaker open: consecutive failures exceeded threshold")]
+    CircuitBreakerOpen,
+    #[error("cost budget exceeded: budget_usd={budget_usd}, spent_usd={spent_usd}")]
+    BudgetExceeded { budget_usd: f64, spent_usd: f64 },
+}
+
+impl AgentError {
+    /// Returns the semantic provider error category, if this error originated
+    /// from a provider HTTP interaction.
+    pub fn provider_error_kind(&self) -> Option<tau_ai::ProviderErrorKind> {
+        match self {
+            AgentError::Ai(ai_error) => Some(ai_error.provider_error_kind()),
+            _ => None,
+        }
+    }
+
+    /// Returns `true` if this is a rate-limit (429) error from the provider.
+    pub fn is_rate_limited(&self) -> bool {
+        matches!(self, AgentError::Ai(e) if e.is_rate_limited())
+    }
+
+    /// Returns `true` if this is an authentication failure (401/403).
+    pub fn is_auth_failure(&self) -> bool {
+        matches!(self, AgentError::Ai(e) if e.is_auth_failure())
+    }
 }
 
 /// Enumerates supported `AgentDirectMessageError` values.
@@ -720,7 +883,13 @@ const CONTEXT_SUMMARY_MAX_EXCERPTS: usize = 6;
 const CONTEXT_SUMMARY_LLM_BRIEF_PREFIX: &str = "llm_brief:";
 const WARN_COMPACTION_LLM_BRIEF_MAX_CHARS: usize = 240;
 const WARN_COMPACTION_LLM_SYSTEM_PROMPT: &str =
-    "You summarize dropped chat context for compaction. Reply with one concise plain-text brief.";
+    "You summarize dropped chat context for compaction. Prioritize:\n\
+     1. Decisions made and their rationale\n\
+     2. Code changes (files modified, functions added/changed)\n\
+     3. Errors encountered and how they were resolved\n\
+     4. User preferences or constraints stated\n\
+     5. Unresolved questions or pending work\n\
+     Reply with one concise plain-text brief under 200 words. Omit greetings and filler.";
 const COMPACTION_ENTRY_PREFIX: &str = "[Tau compaction entry]";
 const COMPACTION_MEMORY_SAVE_PREFIX: &str = "[Tau compaction memory save]";
 const MEMORY_RECALL_PREFIX: &str = "[Tau memory recall]";
@@ -733,6 +902,10 @@ const BRANCH_REASON_CODE_READY: &str = "branch_conclusion_ready";
 const BRANCH_REASON_CODE_LIMIT_EXCEEDED: &str = "branch_concurrency_limit_exceeded";
 const BRANCH_REASON_CODE_EXECUTION_FAILED: &str = "branch_execution_failed";
 const BRANCH_REASON_CODE_PROMPT_MISSING: &str = "branch_prompt_missing";
+const BRANCH_WORKER_SYSTEM_PREAMBLE: &str = "\
+You are a focused sub-task worker executing one branch of a larger task.\n\
+Complete ONLY the assigned prompt thoroughly. Do not expand scope beyond what was asked.\n\
+Report your conclusion clearly — the parent agent will integrate your results.";
 const FAILURE_SIGNAL_PHRASES: &[&str] = &[
     "can't",
     "cannot",
@@ -810,6 +983,7 @@ struct BranchWorkerFollowupReport {
     available_tools: Vec<String>,
     branch_message_count: usize,
     runtime_profile: ProcessRuntimeProfile,
+    tool_execution_summary: Vec<Value>,
 }
 
 /// Public struct `Agent` used across Tau components.
@@ -863,6 +1037,9 @@ pub struct Agent {
     warn_compaction_state: Arc<Mutex<WarnCompactionState>>,
     active_branch_runs: Arc<AtomicUsize>,
     process_run_counter: Arc<AtomicUsize>,
+    agent_metrics: Arc<metrics::AgentMetrics>,
+    circuit_breaker: Arc<circuit_breaker::CircuitBreaker>,
+    message_bus: Arc<agent_channel::AgentMessageBus>,
 }
 
 impl Agent {
@@ -873,6 +1050,8 @@ impl Agent {
             messages.push(Message::system(config.system_prompt.clone()));
         }
         let agent_id = config.agent_id.clone();
+        let cb_threshold = config.circuit_breaker_failure_threshold;
+        let cb_timeout = config.circuit_breaker_recovery_timeout_ms;
 
         Self {
             client,
@@ -898,6 +1077,12 @@ impl Agent {
             warn_compaction_state: Arc::new(Mutex::new(WarnCompactionState::default())),
             active_branch_runs: Arc::new(AtomicUsize::new(0)),
             process_run_counter: Arc::new(AtomicUsize::new(0)),
+            agent_metrics: Arc::new(metrics::AgentMetrics::default()),
+            circuit_breaker: Arc::new(circuit_breaker::CircuitBreaker::new(
+                cb_threshold,
+                cb_timeout,
+            )),
+            message_bus: Arc::new(agent_channel::AgentMessageBus::new(64)),
         }
     }
 
@@ -931,6 +1116,21 @@ impl Agent {
     /// Returns aggregate async event dispatch metrics for this agent instance.
     pub fn async_event_metrics(&self) -> AsyncEventDispatchMetrics {
         self.async_event_metrics.snapshot()
+    }
+
+    /// Returns a snapshot of all agent-level metrics collected during this session.
+    pub fn metrics_snapshot(&self) -> metrics::AgentMetricsSnapshot {
+        self.agent_metrics.snapshot()
+    }
+
+    /// Returns a reference to the circuit breaker for LLM provider calls.
+    pub fn circuit_breaker(&self) -> &circuit_breaker::CircuitBreaker {
+        &self.circuit_breaker
+    }
+
+    /// Returns a reference to the inter-agent message bus.
+    pub fn message_bus(&self) -> &agent_channel::AgentMessageBus {
+        &self.message_bus
     }
 
     /// Registers a tool exposed to the language model.
@@ -1914,6 +2114,62 @@ impl Agent {
         })
     }
 
+    /// Extracts a structured summary of tool executions from branch messages.
+    ///
+    /// Pairs each assistant ToolCall with its corresponding tool result message
+    /// to produce a list of `{ tool, call_id, is_error, output_preview }` entries,
+    /// giving the parent agent structured visibility into what the branch did.
+    fn branch_tool_execution_summary(messages: &[Message]) -> Vec<Value> {
+        let mut tool_results: HashMap<&str, &Message> = HashMap::new();
+        for msg in messages {
+            if msg.role == MessageRole::Tool {
+                if let Some(ref id) = msg.tool_call_id {
+                    tool_results.insert(id.as_str(), msg);
+                }
+            }
+        }
+
+        let mut summary = Vec::new();
+        for msg in messages {
+            if msg.role != MessageRole::Assistant {
+                continue;
+            }
+            for block in &msg.content {
+                if let tau_ai::ContentBlock::ToolCall {
+                    id,
+                    name,
+                    arguments,
+                } = block
+                {
+                    let mut entry = json!({
+                        "tool": name,
+                        "call_id": id,
+                    });
+                    // Include a compact view of the tool arguments (truncated)
+                    if let Some(args_str) = arguments.as_str() {
+                        let preview = truncate_chars(args_str, 200);
+                        entry["arguments_preview"] = Value::String(preview);
+                    } else if arguments.is_object() || arguments.is_array() {
+                        let serialized = arguments.to_string();
+                        let preview = truncate_chars(&serialized, 200);
+                        entry["arguments_preview"] = Value::String(preview);
+                    }
+
+                    if let Some(result_msg) = tool_results.get(id.as_str()) {
+                        entry["is_error"] = Value::Bool(result_msg.is_error);
+                        let output_text = result_msg.text_content();
+                        if !output_text.is_empty() {
+                            entry["output_preview"] =
+                                Value::String(truncate_chars(&output_text, 500));
+                        }
+                    }
+                    summary.push(entry);
+                }
+            }
+        }
+        summary
+    }
+
     fn apply_process_runtime_profile(&mut self, profile: &ProcessRuntimeProfile) {
         self.config.max_turns = profile.max_turns;
         self.config.max_context_messages = profile.max_context_messages;
@@ -1974,6 +2230,11 @@ impl Agent {
         worker_agent.skip_response_reason = None;
         worker_agent.clear_tool_result_cache();
         worker_agent.apply_process_runtime_profile(&worker_profile);
+        let branch_system = format!(
+            "{}\n\n{}",
+            BRANCH_WORKER_SYSTEM_PREAMBLE, worker_agent.config.system_prompt
+        );
+        worker_agent.replace_system_prompt(branch_system);
         let worker_execution = {
             let available_tools = worker_agent.registered_tool_names();
             let branch_messages = match Box::pin(worker_agent.prompt(prompt.clone())).await {
@@ -2017,11 +2278,14 @@ impl Agent {
                     "branch follow-up produced no assistant conclusion".to_string(),
                 );
             };
+            let tool_execution_summary =
+                Self::branch_tool_execution_summary(&branch_messages);
             let report = BranchWorkerFollowupReport {
                 conclusion,
                 available_tools,
                 branch_message_count: branch_messages.len(),
                 runtime_profile: worker_profile.clone(),
+                tool_execution_summary,
             };
             let worker_handle = process_manager.spawn_supervised(
                 ProcessSpawnSpec::new(worker_process_id.clone(), ProcessType::Worker)
@@ -2150,6 +2414,7 @@ impl Agent {
                 "tools_mode": "memory_only",
                 "available_tools": worker_outcome_value.available_tools,
                 "branch_message_count": worker_outcome_value.branch_message_count,
+                "tool_execution_summary": worker_outcome_value.tool_execution_summary,
                 "worker_runtime_profile": {
                     "process_type": worker_outcome_value.runtime_profile.process_type.as_str(),
                     "max_turns": worker_outcome_value.runtime_profile.max_turns,
