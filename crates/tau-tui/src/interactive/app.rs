@@ -22,6 +22,7 @@ pub struct AppConfig {
     pub model: String,
     pub profile: String,
     pub session_key: String,
+    pub workspace_label: String,
     pub approval_mode: String,
     pub tick_rate_ms: u64,
 }
@@ -32,6 +33,7 @@ impl Default for AppConfig {
             model: "openai/gpt-5.2".to_string(),
             profile: "local-dev".to_string(),
             session_key: "default".to_string(),
+            workspace_label: ".".to_string(),
             approval_mode: "ask".to_string(),
             tick_rate_ms: 100,
         }

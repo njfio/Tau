@@ -738,10 +738,15 @@ fn main() {
             }
         }
         ParseAction::RunInteractive(args) => {
+            let workspace_label = env::current_dir()
+                .ok()
+                .and_then(|path| path.file_name().map(|name| name.to_string_lossy().into_owned()))
+                .unwrap_or_else(|| ".".to_string());
             let config = AppConfig {
                 model: args.model,
                 profile: args.profile,
                 session_key: "default".to_string(),
+                workspace_label,
                 approval_mode: "ask".to_string(),
                 tick_rate_ms: 100,
             };

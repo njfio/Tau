@@ -1,4 +1,4 @@
-//! UI rendering with ratatui — multi-panel layout.
+//! UI rendering with ratatui for the transcript-first interactive shell.
 
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
@@ -17,23 +17,19 @@ use super::tools::ToolStatus;
 pub fn render(frame: &mut Frame, app: &App) {
     let size = frame.area();
 
-    // Main vertical layout: status bar (1) | body | input (3-5) | help line (1)
     let main_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1),  // Status bar
-            Constraint::Min(8),    // Body (chat + tools)
-            Constraint::Length(input_height(app)), // Input
-            Constraint::Length(1), // Help/mode line
+            Constraint::Length(1),
+            Constraint::Min(8),
+            Constraint::Length(input_height(app)),
         ])
         .split(size);
 
     render_status_bar(frame, app, main_chunks[0]);
     render_body(frame, app, main_chunks[1]);
     render_input(frame, app, main_chunks[2]);
-    render_help_line(frame, app, main_chunks[3]);
 
-    // Overlays
     if app.show_help {
         render_help_overlay(frame, size);
     }
@@ -45,7 +41,7 @@ pub fn render(frame: &mut Frame, app: &App) {
 
 fn input_height(app: &App) -> u16 {
     let lines = app.input.lines().len() as u16;
-    lines.clamp(3, 8) + 2 // +2 for borders
+    lines.clamp(2, 6) + 3
 }
 
 fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
@@ -57,6 +53,11 @@ fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
     let session_span = Span::styled(
         format!(" session={} ", app.config.session_key),
         Style::default().fg(Color::Black).bg(Color::Blue),
+    );
+
+    let workspace_span = Span::styled(
+        format!(" cwd={} ", app.config.workspace_label),
+        Style::default().fg(Color::Black).bg(Color::LightBlue),
     );
 
     let profile_span = Span::styled(
@@ -100,7 +101,8 @@ fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
 
     let line = Line::from(vec![
         model_span, sep.clone(), session_span, sep.clone(),
-        profile_span, sep.clone(), approval_span, sep.clone(),
+        workspace_span, sep.clone(), profile_span, sep.clone(),
+        approval_span, sep.clone(),
         tokens_span, sep.clone(), cb_span, sep, state_span,
     ]);
 
@@ -113,45 +115,83 @@ fn render_body(frame: &mut Frame, app: &App, area: Rect) {
         let chunks = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
-                Constraint::Percentage(78),
-                Constraint::Percentage(22),
+                Constraint::Percentage(74),
+                Constraint::Percentage(26),
             ])
             .split(area);
 
-        render_chat_panel(frame, app, chunks[0]);
-        render_tool_panel(frame, app, chunks[1]);
+        render_transcript_shell(frame, app, chunks[0]);
+        render_detail_drawer(frame, app, chunks[1]);
     } else {
-        render_chat_panel(frame, app, area);
+        render_transcript_shell(frame, app, area);
     }
 }
 
+fn render_transcript_shell(frame: &mut Frame, app: &App, area: Rect) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(2), Constraint::Min(1)])
+        .split(area);
+
+    render_activity_strip(frame, app, chunks[0]);
+    render_chat_panel(frame, app, chunks[1]);
+}
+
+fn render_activity_strip(frame: &mut Frame, app: &App, area: Rect) {
+    let title = Span::styled(
+        " Live activity ",
+        Style::default()
+            .fg(Color::Black)
+            .bg(Color::LightYellow)
+            .add_modifier(Modifier::BOLD),
+    );
+    let summary = Span::styled(activity_summary(app), Style::default().fg(Color::White));
+    let commands = Span::styled(
+        " /details  /retry  /interrupt ",
+        Style::default().fg(Color::DarkGray),
+    );
+    let paragraph = Paragraph::new(Line::from(vec![title, Span::raw(" "), summary, commands]))
+        .wrap(Wrap { trim: true });
+    frame.render_widget(paragraph, area);
+}
+
+fn activity_summary(app: &App) -> String {
+    match app.status.agent_state {
+        AgentStateDisplay::Idle => "Ready for the next prompt.".to_string(),
+        AgentStateDisplay::Thinking => "Thinking through the next step.".to_string(),
+        AgentStateDisplay::Streaming => "Streaming assistant output into the transcript.".to_string(),
+        AgentStateDisplay::Error => "Last turn failed. Open details or retry.".to_string(),
+        AgentStateDisplay::ToolExec => latest_running_tool(app)
+            .map(|tool| format!("Running tool: {}.", tool.name))
+            .unwrap_or_else(|| "Running a tool call.".to_string()),
+    }
+}
+
+fn latest_running_tool(app: &App) -> Option<&super::tools::ToolEntry> {
+    app.tools
+        .entries()
+        .iter()
+        .rev()
+        .find(|entry| entry.status == ToolStatus::Running)
+}
+
 fn render_chat_panel(frame: &mut Frame, app: &App, area: Rect) {
-    let is_focused = app.focus == FocusPanel::Chat;
-    let border_style = if is_focused {
-        Style::default().fg(Color::Cyan)
+    let background = if app.focus == FocusPanel::Chat {
+        Color::Rgb(20, 24, 31)
     } else {
-        Style::default().fg(Color::DarkGray)
+        Color::Rgb(16, 18, 24)
     };
-
-    let block = Block::default()
-        .title(Span::styled(
-            " Transcript ",
-            Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
-        ))
-        .borders(Borders::ALL)
-        .border_style(border_style);
-
+    let block = Block::default().style(Style::default().bg(background));
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
     if app.chat.is_empty() {
-        let empty = Paragraph::new("No messages yet. Type below and press Enter.")
+        let empty = Paragraph::new("Start with a prompt below. The transcript will stay primary while details stay on demand.")
             .style(Style::default().fg(Color::DarkGray));
         frame.render_widget(empty, inner);
         return;
     }
 
-    // Build text lines from messages
     let mut lines: Vec<Line> = Vec::new();
     for msg in app.chat.messages() {
         let (role_style, role_label) = match msg.role {
@@ -174,8 +214,8 @@ fn render_chat_panel(frame: &mut Frame, app: &App, area: Rect) {
         };
 
         lines.push(Line::from(vec![
-            Span::styled(format!("[{}] ", msg.timestamp), Style::default().fg(Color::DarkGray)),
-            Span::styled(format!("{}: ", role_label), role_style),
+            Span::styled(format!("{} ", role_label), role_style),
+            Span::styled(msg.timestamp.as_str(), Style::default().fg(Color::DarkGray)),
         ]));
 
         for content_line in msg.content.lines() {
@@ -187,15 +227,11 @@ fn render_chat_panel(frame: &mut Frame, app: &App, area: Rect) {
     let total_lines = lines.len();
     let visible_height = inner.height as usize;
 
-    // Auto-scroll: compute scroll so latest messages are visible
     let scroll = if total_lines > visible_height {
-        // If user has scrolled to a specific message, use that
         let msg_idx = app.chat.scroll_offset();
         if msg_idx >= app.chat.len().saturating_sub(1) {
-            // At bottom — show last lines
             (total_lines - visible_height) as u16
         } else {
-            // Approximate: each message ~3 lines
             let approx = msg_idx * 3;
             approx.min(total_lines.saturating_sub(visible_height)) as u16
         }
@@ -209,7 +245,6 @@ fn render_chat_panel(frame: &mut Frame, app: &App, area: Rect) {
 
     frame.render_widget(paragraph, inner);
 
-    // Scrollbar
     if total_lines > visible_height {
         let mut scrollbar_state = ScrollbarState::new(total_lines)
             .position(scroll as usize);
@@ -224,42 +259,59 @@ fn render_chat_panel(frame: &mut Frame, app: &App, area: Rect) {
     }
 }
 
-fn render_tool_panel(frame: &mut Frame, app: &App, area: Rect) {
-    let is_focused = app.focus == FocusPanel::Tools;
-    let border_style = if is_focused {
+fn render_detail_drawer(frame: &mut Frame, app: &App, area: Rect) {
+    let title = " Details ";
+    let border_style = if app.focus == FocusPanel::Tools {
         Style::default().fg(Color::Cyan)
     } else {
         Style::default().fg(Color::DarkGray)
     };
-
-    let active = app.tools.active_count();
-    let total = app.tools.total_count();
-    let title = format!(" Details ({active} active / {total} total) ");
-
     let block = Block::default()
         .title(Span::styled(
             title,
             Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
         ))
-        .borders(Borders::ALL)
-        .border_style(border_style);
-
+        .borders(Borders::LEFT)
+        .border_style(border_style)
+        .style(Style::default().bg(Color::Rgb(12, 14, 18)));
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    if app.tools.entries().is_empty() {
-        let empty = Paragraph::new("No tool executions yet.")
-            .style(Style::default().fg(Color::DarkGray));
-        frame.render_widget(empty, inner);
-        return;
+    let items = detail_items(app, inner.width as usize);
+    let list = List::new(items);
+    frame.render_widget(list, inner);
+}
+
+fn detail_items(app: &App, max_width: usize) -> Vec<ListItem<'static>> {
+    let mut items = vec![
+        section_item("Tool activity"),
+        detail_line_item(format!(
+            "{} active / {} total",
+            app.tools.active_count(),
+            app.tools.total_count()
+        )),
+    ];
+
+    items.extend(recent_tool_items(app, max_width));
+    items.extend([
+        section_item("Memory"),
+        detail_line_item("No stored memory yet.".to_string()),
+        section_item("Cortex"),
+        detail_line_item("Observer idle until a turn completes.".to_string()),
+        section_item("Sessions"),
+        detail_line_item(format!("Current session: {}", app.config.session_key)),
+    ]);
+    items
+}
+
+fn recent_tool_items(app: &App, max_width: usize) -> Vec<ListItem<'static>> {
+    let entries = app.tools.entries();
+    if entries.is_empty() {
+        return vec![detail_line_item("No tool executions yet.".to_string())];
     }
 
-    // Show most recent entries that fit
-    let visible = inner.height as usize;
-    let entries = app.tools.entries();
-    let start = entries.len().saturating_sub(visible);
-
-    let items: Vec<ListItem> = entries[start..]
+    let start = entries.len().saturating_sub(3);
+    entries[start..]
         .iter()
         .map(|entry| {
             let status_style = match entry.status {
@@ -275,125 +327,92 @@ fn render_tool_panel(frame: &mut Frame, app: &App, area: Rect) {
                     status_style,
                 ),
                 Span::styled(
-                    &entry.name,
+                    entry.name.clone(),
                     Style::default().fg(Color::White),
                 ),
                 Span::raw(" "),
                 Span::styled(
-                    truncate(&entry.detail, (inner.width as usize).saturating_sub(entry.name.len() + 8)),
+                    truncate(&entry.detail, max_width.saturating_sub(entry.name.len() + 8)),
                     Style::default().fg(Color::DarkGray),
                 ),
             ]);
 
             ListItem::new(line)
         })
-        .collect();
+        .collect()
+}
 
-    let list = List::new(items);
-    frame.render_widget(list, inner);
+fn section_item(title: &str) -> ListItem<'static> {
+    ListItem::new(Line::from(Span::styled(
+        title.to_string(),
+        Style::default()
+            .fg(Color::LightCyan)
+            .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+    )))
+}
+
+fn detail_line_item(text: String) -> ListItem<'static> {
+    ListItem::new(Line::from(Span::styled(
+        format!("  {text}"),
+        Style::default().fg(Color::Gray),
+    )))
 }
 
 fn render_input(frame: &mut Frame, app: &App, area: Rect) {
-    let is_focused = app.focus == FocusPanel::Input;
-    let border_color = if is_focused {
-        match app.input_mode {
-            InputMode::Insert => Color::Green,
-            InputMode::Normal => Color::Cyan,
-        }
+    let border_color = if app.focus == FocusPanel::Input {
+        Color::Cyan
     } else {
         Color::DarkGray
     };
-
-    let mode_label = match app.input_mode {
-        InputMode::Insert => " INSERT ",
-        InputMode::Normal => " NORMAL ",
-    };
-
     let block = Block::default()
-        .title(Span::styled(
-            " Composer ",
-            Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
-        ))
-        .title_bottom(Span::styled(
-            mode_label,
-            Style::default()
-                .fg(Color::Black)
-                .bg(if app.input_mode == InputMode::Insert {
-                    Color::Green
-                } else {
-                    Color::Cyan
-                }),
-        ))
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(border_color));
-
+        .borders(Borders::TOP)
+        .border_style(Style::default().fg(border_color))
+        .style(Style::default().bg(Color::Rgb(10, 12, 16)));
     let inner = block.inner(area);
     frame.render_widget(block, area);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(inner.height.saturating_sub(1)), Constraint::Length(1)])
+        .split(inner);
 
     let input_text: Vec<Line> = app
         .input
         .lines()
         .iter()
-        .map(|l| Line::from(Span::raw(l.as_str())))
+        .enumerate()
+        .map(|(idx, line)| {
+            let prefix = if idx == 0 { "› " } else { "  " };
+            Line::from(vec![
+                Span::styled(prefix, Style::default().fg(Color::LightGreen)),
+                Span::raw(line.as_str()),
+            ])
+        })
         .collect();
+    let input = Paragraph::new(Text::from(input_text));
+    frame.render_widget(input, chunks[0]);
 
-    let paragraph = Paragraph::new(Text::from(input_text));
-    frame.render_widget(paragraph, inner);
+    let mode = match app.input_mode {
+        InputMode::Insert => "insert",
+        InputMode::Normal => "normal",
+    };
+    let actions = format!(
+        "Press / for commands  Enter send  Shift+Enter newline  Tab focus  {mode} mode"
+    );
+    let footer = Paragraph::new(Line::from(vec![
+        Span::styled(" Compose ", Style::default().fg(Color::Black).bg(Color::Green)),
+        Span::raw(" "),
+        Span::styled(actions, Style::default().fg(Color::DarkGray)),
+    ]));
+    frame.render_widget(footer, chunks[1]);
 
-    // Show cursor in insert mode
-    if is_focused && app.input_mode == InputMode::Insert {
-        let cursor_x = inner.x + app.input.cursor_col() as u16;
-        let cursor_y = inner.y + app.input.cursor_line() as u16;
-        if cursor_x < inner.x + inner.width && cursor_y < inner.y + inner.height {
+    if app.focus == FocusPanel::Input && app.input_mode == InputMode::Insert {
+        let cursor_x = chunks[0].x + 2 + app.input.cursor_col() as u16;
+        let cursor_y = chunks[0].y + app.input.cursor_line() as u16;
+        if cursor_x < chunks[0].x + chunks[0].width && cursor_y < chunks[0].y + chunks[0].height {
             frame.set_cursor_position((cursor_x, cursor_y));
         }
     }
-}
-
-fn render_help_line(frame: &mut Frame, app: &App, area: Rect) {
-    let hints = match app.input_mode {
-        InputMode::Normal => vec![
-            ("i", "compose"),
-            ("/details", "details"),
-            ("/retry", "retry"),
-            ("/interrupt", "interrupt"),
-            ("?", "help"),
-            ("Tab", "focus"),
-            ("j/k", "scroll"),
-            ("C-p", "cmd"),
-            ("C-t", "details"),
-        ],
-        InputMode::Insert => vec![
-            ("Esc", "normal"),
-            ("Enter", "send"),
-            ("S-Enter", "newline"),
-            ("/details", "details"),
-            ("/retry", "retry"),
-            ("/interrupt", "interrupt"),
-            ("Tab", "focus"),
-            ("C-p", "cmd"),
-        ],
-    };
-
-    let spans: Vec<Span> = hints
-        .iter()
-        .flat_map(|(key, desc)| {
-            vec![
-                Span::styled(
-                    format!(" {key} "),
-                    Style::default().fg(Color::Black).bg(Color::DarkGray),
-                ),
-                Span::styled(
-                    format!("{desc} "),
-                    Style::default().fg(Color::DarkGray),
-                ),
-            ]
-        })
-        .collect();
-
-    let line = Line::from(spans);
-    let paragraph = Paragraph::new(line);
-    frame.render_widget(paragraph, area);
 }
 
 fn render_help_overlay(frame: &mut Frame, area: Rect) {
