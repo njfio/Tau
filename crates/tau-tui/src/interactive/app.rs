@@ -14,6 +14,7 @@ pub mod runtime;
 mod submit;
 
 use super::chat::ChatPanel;
+use super::gateway::OperatorStateEvent;
 use super::input::InputEditor;
 use super::status::StatusBar;
 use super::tools::ToolPanel;
@@ -101,6 +102,7 @@ pub struct App {
     pub last_submitted_input: Option<String>,
     pub pending_assistant: String,
     pub gateway_runtime: Option<GatewayRuntime>,
+    pub last_operator_state: Option<OperatorStateEvent>,
 }
 
 impl App {
@@ -124,6 +126,7 @@ impl App {
             last_submitted_input: None,
             pending_assistant: String::new(),
             gateway_runtime,
+            last_operator_state: None,
         }
     }
 }

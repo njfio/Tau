@@ -27,6 +27,7 @@ impl App {
     }
 
     fn apply_operator_state(&mut self, state: OperatorStateEvent) {
+        self.last_operator_state = Some(state.clone());
         self.status.agent_state = agent_state_for(&state);
         self.push_tool_event(
             state.entity.clone(),

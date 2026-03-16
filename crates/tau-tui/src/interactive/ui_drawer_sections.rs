@@ -73,6 +73,15 @@ pub(super) fn cortex_items(app: &App) -> Vec<ListItem<'static>> {
             yes_no(app.approval_request.is_some()).to_string(),
         ),
     ];
+    if let Some(state) = &app.last_operator_state {
+        items.push(metric_item("Entity", state.entity.clone()));
+        if let Some(phase) = &state.phase {
+            items.push(metric_item("Phase", phase.clone()));
+        }
+        if let Some(reason) = &state.reason_code {
+            items.push(metric_item("Reason", reason.clone()));
+        }
+    }
     if let Some(tool) = latest_running_tool(app) {
         items.push(metric_item("Current tool", tool.name.clone()));
     }
