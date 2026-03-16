@@ -335,6 +335,8 @@ pub(super) fn render_gateway_webchat_page() -> String {
           <button id="send">Send</button>
           <button id="clearOutput" class="secondary">Clear output</button>
         </div>
+        <h2 style="margin: 0.8rem 0 0.4rem 0; font-size: 1rem;">Stream state</h2>
+        <pre id="responseState">No stream state yet.</pre>
         <h2 style="margin: 0.8rem 0 0.4rem 0; font-size: 1rem;">Response output</h2>
         <pre id="output">No response yet.</pre>
       </section>
@@ -708,6 +710,7 @@ pub(super) fn render_gateway_webchat_page() -> String {
     const apiModeInput = document.getElementById("apiMode");
     const streamInput = document.getElementById("stream");
     const promptInput = document.getElementById("prompt");
+    const responseStatePre = document.getElementById("responseState");
     const outputPre = document.getElementById("output");
     const statusPre = document.getElementById("status");
     const healthStateValue = document.getElementById("healthStateValue");
@@ -806,6 +809,10 @@ pub(super) fn render_gateway_webchat_page() -> String {
       outputPre.textContent = text;
     }}
 
+    function setResponseState(text) {{
+      responseStatePre.textContent = text;
+    }}
+
     function appendOutput(text) {{
       if (outputPre.textContent === "No response yet.") {{
         outputPre.textContent = "";
@@ -822,6 +829,38 @@ pub(super) fn render_gateway_webchat_page() -> String {
         cortexOutputPre.textContent = "";
       }}
       cortexOutputPre.textContent += text;
+    }}
+
+    function formatOperatorState(state, eventName) {{
+      const lines = [
+        "event=" + String(eventName || "unknown"),
+        "entity=" + String(state.entity || "unknown"),
+        "status=" + String(state.status || "unknown")
+      ];
+      if (state.phase) {{
+        lines.push("phase=" + String(state.phase));
+      }}
+      if (state.artifact_kind) {{
+        lines.push("artifact_kind=" + String(state.artifact_kind));
+      }}
+      if (state.response_id) {{
+        lines.push("response_id=" + String(state.response_id));
+      }}
+      if (typeof state.turn !== "undefined") {{
+        lines.push("turn=" + String(state.turn));
+      }}
+      if (state.reason_code) {{
+        lines.push("reason_code=" + String(state.reason_code));
+      }}
+      return lines.join("\n");
+    }}
+
+    function applyResponseOperatorState(payload, eventName) {{
+      if (!payload || !payload.operator_state) {{
+        return false;
+      }}
+      setResponseState(formatOperatorState(payload.operator_state, eventName));
+      return true;
     }}
 
     function currentSessionKey() {{
@@ -1498,14 +1537,33 @@ pub(super) fn render_gateway_webchat_page() -> String {
       }}
 
       if (mode === "responses") {{
+        applyResponseOperatorState(payload, frame.eventName);
+        if (frame.eventName === "response.created") {{
+          return;
+        }}
         if (frame.eventName === "response.output_text.delta") {{
           appendOutput(payload.delta || "");
+          return;
+        }}
+        if (frame.eventName === "response.output_text.done") {{
+          if (typeof payload.text === "string" && payload.text.length > 0) {{
+            setOutput(payload.text);
+          }}
+          return;
+        }}
+        if (frame.eventName === "response.completed") {{
+          if (payload.response && typeof payload.response.output_text === "string" &&
+              payload.response.output_text.length > 0 && outputPre.textContent.length === 0) {{
+            setOutput(payload.response.output_text);
+          }}
           return;
         }}
         if (frame.eventName === "response.failed") {{
           const message = payload && payload.error ? payload.error.message : "unknown";
           appendOutput("\n[gateway error] " + message + "\n");
+          return;
         }}
+        appendOutput("\n[unhandled response event] " + String(frame.eventName || "unknown") + "\n");
         return;
       }}
 
@@ -1599,6 +1657,7 @@ pub(super) fn render_gateway_webchat_page() -> String {
       const mode = apiModeInput.value;
       try {{
         setOutput("");
+        setResponseState("Waiting for response...");
         const payload = buildRequestPayload(mode, prompt, streamInput.checked);
         const response = await fetch(endpointForMode(mode), {{
           method: "POST",
@@ -1606,6 +1665,7 @@ pub(super) fn render_gateway_webchat_page() -> String {
           body: JSON.stringify(payload)
         }});
         if (!response.ok) {{
+          setResponseState("request_failed status=" + String(response.status));
           setOutput("request failed: status=" + response.status + "\n" + await response.text());
           await emitUiTelemetry("conversation", "send", "prompt_failed", {{ mode: mode, status: response.status }});
           return;
@@ -1615,12 +1675,14 @@ pub(super) fn render_gateway_webchat_page() -> String {
           await readSseBody(response, mode);
         }} else {{
           const body = await response.json();
+          setResponseState("response_mode=non_stream");
           setOutput(extractNonStreamOutput(mode, body));
         }}
 
         await emitUiTelemetry("conversation", "send", "prompt_completed", {{ mode: mode, stream: streamInput.checked }});
         await refreshStatus();
       }} catch (error) {{
+        setResponseState("request_exception");
         setOutput("request failed: " + String(error));
         await emitUiTelemetry("conversation", "send", "prompt_exception", {{ mode: mode }});
       }} finally {{
@@ -2164,7 +2226,10 @@ pub(super) fn render_gateway_webchat_page() -> String {
     }});
 
     sendButton.addEventListener("click", sendPrompt);
-    clearButton.addEventListener("click", () => setOutput("No response yet."));
+    clearButton.addEventListener("click", () => {{
+      setResponseState("No stream state yet.");
+      setOutput("No response yet.");
+    }});
     refreshButton.addEventListener("click", refreshStatus);
     dashboardRefreshButton.addEventListener("click", () => refreshDashboard(true));
     dashboardPauseButton.addEventListener("click", () => postDashboardAction("pause"));
