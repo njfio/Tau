@@ -1,6 +1,7 @@
 use crossterm::event::KeyCode;
 
 use crate::interactive::app::{App, AppConfig};
+use crate::interactive::gateway::{GatewayUiEvent, OperatorStateEvent};
 
 use super::helpers::{key, render_app, submit_command};
 
@@ -156,4 +157,23 @@ fn red_spec_3582_sessions_detail_surfaces_last_prompt_and_assistant_count() {
     assert!(rendered.contains("Last prompt"));
     assert!(rendered.contains("testing"));
     assert!(rendered.contains("Assistant msgs"));
+}
+
+#[test]
+fn red_spec_3582_cortex_detail_surfaces_operator_phase_and_reason_code() {
+    let mut app = App::new(AppConfig::default());
+    app.apply_gateway_event(GatewayUiEvent::OperatorState(OperatorStateEvent {
+        entity: "turn".to_string(),
+        status: "failed".to_string(),
+        phase: Some("failed".to_string()),
+        artifact_kind: None,
+        response_id: Some("resp_failure".to_string()),
+        reason_code: Some("provider_timeout".to_string()),
+    }));
+    submit_command(&mut app, "/cortex");
+
+    let rendered = render_app(&mut app, 140, 32);
+
+    assert!(rendered.contains("Phase: failed"));
+    assert!(rendered.contains("Reason: provider_timeout"));
 }

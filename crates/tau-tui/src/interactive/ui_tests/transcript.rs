@@ -1,5 +1,6 @@
 use crate::interactive::app::{App, AppConfig};
 use crate::interactive::chat::MessageRole;
+use crate::interactive::gateway::{GatewayUiEvent, OperatorStateEvent};
 
 use super::helpers::{render_app, submit_command};
 
@@ -117,4 +118,39 @@ fn red_spec_3582_transcript_renders_messages_as_cards() {
     assert!(rendered.contains("╭─ You"));
     assert!(rendered.contains("╭─ Tau"));
     assert!(rendered.contains("│ I can do that."));
+}
+
+#[test]
+fn red_spec_3582_status_bar_surfaces_operator_phase_context() {
+    let mut app = App::new(AppConfig::default());
+    app.apply_gateway_event(GatewayUiEvent::OperatorState(OperatorStateEvent {
+        entity: "turn".to_string(),
+        status: "in_progress".to_string(),
+        phase: Some("model".to_string()),
+        artifact_kind: None,
+        response_id: Some("resp_status".to_string()),
+        reason_code: None,
+    }));
+
+    let rendered = render_app(&mut app, 140, 10);
+
+    assert!(rendered.contains("phase=model"));
+}
+
+#[test]
+fn red_spec_3582_live_activity_surfaces_operator_entity_and_artifact_kind() {
+    let mut app = App::new(AppConfig::default());
+    app.apply_gateway_event(GatewayUiEvent::OperatorState(OperatorStateEvent {
+        entity: "artifact".to_string(),
+        status: "streaming".to_string(),
+        phase: Some("stream".to_string()),
+        artifact_kind: Some("assistant_output_text".to_string()),
+        response_id: Some("resp_stream".to_string()),
+        reason_code: None,
+    }));
+
+    let rendered = render_app(&mut app, 140, 24);
+
+    assert!(rendered.contains("artifact"));
+    assert!(rendered.contains("assistant_output_text"));
 }
