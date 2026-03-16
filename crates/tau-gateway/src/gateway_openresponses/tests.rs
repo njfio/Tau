@@ -1342,6 +1342,17 @@ fn unit_render_gateway_webchat_page_includes_expected_endpoints() {
 }
 
 #[test]
+fn red_spec_3581_webchat_page_consumes_operator_state_response_stream_contract() {
+    let html = render_gateway_webchat_page();
+    assert!(html.contains("id=\"responseState\""));
+    assert!(html.contains("function applyResponseOperatorState(payload, eventName)"));
+    assert!(html.contains("payload.operator_state"));
+    assert!(html.contains("response.output_text.done"));
+    assert!(html.contains("response.completed"));
+    assert!(html.contains("response.failed"));
+}
+
+#[test]
 fn unit_spec_2730_c01_c02_c03_webchat_page_includes_cortex_admin_panel_and_stream_markers() {
     let html = render_gateway_webchat_page();
     assert!(html.contains("data-view=\"cortex\""));
