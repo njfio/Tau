@@ -8,7 +8,10 @@
 //! - Keyboard-driven navigation and command palette
 
 mod app;
+mod app_gateway;
 mod chat;
+mod gateway;
+mod gateway_runtime;
 mod input;
 mod status;
 mod tools;
@@ -19,3 +22,4 @@ mod gateway_runtime_tests;
 mod gateway_tests;
 
 pub use app::{App, AppConfig, run_interactive};
+pub use gateway::GatewayInteractiveConfig;

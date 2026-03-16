@@ -1,9 +1,9 @@
-use std::{env, path::Path, process::Command, process::Stdio, thread, time::Duration};
+use std::{env, path::Path, thread, time::Duration};
 
 use tau_tui::{
     apply_overlay, render_operator_shell_frame, Component, DiffRenderer, EditorBuffer, EditorView,
     LumaImage, OperatorShellFrame, Text, Theme, ThemeRole,
-    interactive::{AppConfig, run_interactive},
+    interactive::{AppConfig, GatewayInteractiveConfig, run_interactive},
 };
 
 const HELP: &str = "\
@@ -653,67 +653,89 @@ fn format_shell_command(tokens: &[String]) -> String {
     tokens.join(" ")
 }
 
-fn run_agent(args: AgentArgs) -> Result<(), String> {
-    let theme = Theme::default();
-    let frame = OperatorShellFrame::from_dashboard_state_dir(
-        args.profile.clone(),
-        Path::new(args.dashboard_state_dir.as_str()),
-    );
-    let rendered = render_operator_shell_frame(&frame, args.width);
-    let command_tokens = build_agent_runtime_command(&args);
-    let launch_command = format_shell_command(&command_tokens);
+fn gateway_base_url(bind_override: Option<&str>) -> String {
+    let resolved = bind_override
+        .map(str::to_string)
+        .or_else(|| env::var("TAU_UNIFIED_BIND").ok())
+        .unwrap_or_else(|| "127.0.0.1:8791".to_string());
+    format!("http://{}", resolved.trim_end_matches('/'))
+}
 
-    let header = paint(
-        &theme,
-        ThemeRole::Accent,
-        format!(
-            "Tau Operator Shell (agent-interactive) - profile={} env={} dashboard_state_dir={}",
-            frame.profile, frame.environment, args.dashboard_state_dir
-        ),
-        args.color,
-    );
-    println!("{header}");
-    println!(
-        "{}",
-        paint(
-            &theme,
-            ThemeRole::Muted,
-            "interactive.launch=ready mode=agent-interactive".to_string(),
-            args.color
-        )
-    );
-    println!(
-        "{}",
-        paint(
-            &theme,
-            ThemeRole::Muted,
-            format!("interactive.command={launch_command}"),
-            args.color
-        )
-    );
-    for line in rendered {
-        println!("{}", paint(&theme, ThemeRole::Primary, line, args.color));
+fn gateway_auth_token() -> Option<String> {
+    env::var("TAU_UNIFIED_GATEWAY_AUTH_TOKEN")
+        .ok()
+        .or_else(|| env::var("TAU_UNIFIED_AUTH_TOKEN").ok())
+        .filter(|value| !value.trim().is_empty())
+}
+
+fn gateway_session_key() -> String {
+    env::var("TAU_UNIFIED_SESSION_KEY")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| "default".to_string())
+}
+
+fn workspace_label() -> String {
+    env::current_dir()
+        .ok()
+        .and_then(|path| path.file_name().map(|name| name.to_string_lossy().into_owned()))
+        .unwrap_or_else(|| ".".to_string())
+}
+
+fn build_interactive_gateway_config(session_key: String) -> GatewayInteractiveConfig {
+    GatewayInteractiveConfig {
+        base_url: gateway_base_url(None),
+        auth_token: gateway_auth_token(),
+        session_key,
+        request_timeout_ms: 45_000,
     }
+}
 
+fn build_agent_gateway_config(args: &AgentArgs) -> GatewayInteractiveConfig {
+    GatewayInteractiveConfig {
+        base_url: gateway_base_url(None),
+        auth_token: gateway_auth_token(),
+        session_key: gateway_session_key(),
+        request_timeout_ms: args.request_timeout_ms.unwrap_or(45_000),
+    }
+}
+
+fn run_agent(args: AgentArgs) -> Result<(), String> {
+    let command_tokens = build_agent_runtime_command(&args);
     if args.dry_run {
+        let theme = Theme::default();
+        println!(
+            "{}",
+            paint(
+                &theme,
+                ThemeRole::Accent,
+                "Tau Operator Shell (agent-interactive)".to_string(),
+                args.color,
+            )
+        );
+        println!(
+            "{}",
+            paint(
+                &theme,
+                ThemeRole::Muted,
+                "interactive.launch=ready mode=agent-interactive".to_string(),
+                args.color,
+            )
+        );
+        println!("{}", format_shell_command(&command_tokens));
         return Ok(());
     }
-
-    let (program, remaining_args) = command_tokens
-        .split_first()
-        .ok_or_else(|| "interactive runtime command is empty".to_string())?;
-    let status = Command::new(program)
-        .args(remaining_args)
-        .stdin(Stdio::inherit())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .status()
-        .map_err(|error| format!("failed to launch interactive runtime: {error}"))?;
-    if status.success() {
-        Ok(())
-    } else {
-        Err(format!("interactive runtime exited with status {status}"))
-    }
+    let gateway = build_agent_gateway_config(&args);
+    run_interactive(AppConfig {
+        model: args.model,
+        profile: args.profile,
+        session_key: gateway.session_key.clone(),
+        workspace_label: workspace_label(),
+        approval_mode: "ask".to_string(),
+        tick_rate_ms: 100,
+        gateway: Some(gateway),
+    })
+    .map_err(|error| format!("interactive TUI error: {error}"))
 }
 
 fn main() {
@@ -738,17 +760,15 @@ fn main() {
             }
         }
         ParseAction::RunInteractive(args) => {
-            let workspace_label = env::current_dir()
-                .ok()
-                .and_then(|path| path.file_name().map(|name| name.to_string_lossy().into_owned()))
-                .unwrap_or_else(|| ".".to_string());
+            let session_key = gateway_session_key();
             let config = AppConfig {
                 model: args.model,
                 profile: args.profile,
-                session_key: "default".to_string(),
-                workspace_label,
+                session_key: session_key.clone(),
+                workspace_label: workspace_label(),
                 approval_mode: "ask".to_string(),
                 tick_rate_ms: 100,
+                gateway: Some(build_interactive_gateway_config(session_key)),
             };
             if let Err(err) = run_interactive(config) {
                 eprintln!("interactive TUI error: {err}");
@@ -768,8 +788,32 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
+    use std::env;
+
     use super::{compose_frame, parse_args, ParseAction, HELP};
     use tau_tui::{render_operator_shell_frame, EditorBuffer, LumaImage, OperatorShellFrame};
+
+    struct EnvGuard {
+        key: &'static str,
+        previous: Option<String>,
+    }
+
+    impl EnvGuard {
+        fn set(key: &'static str, value: &str) -> Self {
+            let previous = env::var(key).ok();
+            unsafe { env::set_var(key, value) };
+            Self { key, previous }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            match &self.previous {
+                Some(value) => unsafe { env::set_var(self.key, value) },
+                None => unsafe { env::remove_var(self.key) },
+            }
+        }
+    }
 
     #[test]
     fn unit_parse_args_defaults_are_stable() {
@@ -1091,5 +1135,21 @@ mod tests {
         assert!(command.contains(&"45000".to_string()));
         assert!(command.contains(&"--agent-request-max-retries".to_string()));
         assert!(command.contains(&"0".to_string()));
+    }
+
+    #[test]
+    fn red_spec_3582_interactive_gateway_config_defaults_to_local_unified_bind() {
+        let _guard = EnvGuard::set("TAU_UNIFIED_BIND", "127.0.0.1:9901");
+        let config = super::build_interactive_gateway_config("interactive-session".to_string());
+        assert_eq!(config.base_url, "http://127.0.0.1:9901");
+        assert_eq!(config.session_key, "interactive-session");
+        assert_eq!(config.request_timeout_ms, 45_000);
+    }
+
+    #[test]
+    fn red_spec_3582_interactive_gateway_config_prefers_explicit_auth_token() {
+        let _token = EnvGuard::set("TAU_UNIFIED_GATEWAY_AUTH_TOKEN", "test-token");
+        let config = super::build_interactive_gateway_config("interactive-session".to_string());
+        assert_eq!(config.auth_token.as_deref(), Some("test-token"));
     }
 }

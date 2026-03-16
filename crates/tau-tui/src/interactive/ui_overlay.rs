@@ -109,7 +109,7 @@ pub(super) fn render_detail_overlay(frame: &mut Frame, app: &App, area: Rect) {
     );
     frame.render_widget(Clear, popup_area);
     let block = Block::default()
-        .title(" Quick details ")
+        .title(format!(" Quick details [{}] ", app.detail_section.label()))
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Cyan))
         .style(Style::default().bg(Color::Rgb(8, 10, 14)));

@@ -48,6 +48,7 @@ fn run_event_loop(
 ) -> io::Result<()> {
     let mut last_tick = Instant::now();
     loop {
+        app.pump_gateway_events();
         terminal.draw(|frame| ui::render(frame, app))?;
         let timeout = tick_rate.saturating_sub(last_tick.elapsed());
         if event::poll(timeout)? {

@@ -4,14 +4,19 @@ use super::super::tools::{ToolEntry, ToolStatus};
 use super::super::status::AgentStateDisplay;
 
 impl App {
-    pub(super) fn submit_input(&mut self) {
+    pub(crate) fn submit_input(&mut self) {
         let text = self.input.get_text();
-        if text.trim().is_empty() {
+        let trimmed = text.trim();
+        if trimmed.is_empty() {
             return;
         }
-        if text.starts_with('/') {
-            let cmd = text.trim_start_matches('/');
+        if let Some(cmd) = slash_command(trimmed) {
             self.execute_command(cmd);
+            self.input.clear();
+            return;
+        }
+        if is_inline_command(trimmed) {
+            self.execute_command(trimmed);
             self.input.clear();
             return;
         }
@@ -32,6 +37,12 @@ impl App {
     fn run_prompt(&mut self, text: String) {
         self.status.agent_state = AgentStateDisplay::Thinking;
         self.push_message(MessageRole::User, text.clone());
+        self.status.total_messages += 1;
+        self.status.total_tokens += text.len() as u64 / 4;
+        self.chat.scroll_to_bottom();
+        if self.submit_gateway_prompt(text.clone()) {
+            return;
+        }
         self.push_message(
             MessageRole::Assistant,
             format!(
@@ -40,10 +51,32 @@ impl App {
                 text.len()
             ),
         );
-        self.status.total_messages += 2;
-        self.status.total_tokens += text.len() as u64 / 4;
+        self.status.total_messages += 1;
         self.chat.scroll_to_bottom();
         self.status.agent_state = AgentStateDisplay::Idle;
+    }
+
+    fn submit_gateway_prompt(&mut self, text: String) -> bool {
+        if self.gateway_runtime.is_none() {
+            return false;
+        }
+        self.pending_assistant.clear();
+        self.push_message(MessageRole::Assistant, String::new());
+        self.status.total_messages += 1;
+        let runtime = self
+            .gateway_runtime
+            .as_ref()
+            .expect("gateway runtime checked above");
+        if runtime.submit(text).is_ok() {
+            return true;
+        }
+        self.push_message(
+            MessageRole::System,
+            "gateway error: request channel closed".to_string(),
+        );
+        self.status.total_messages += 1;
+        self.status.agent_state = AgentStateDisplay::Error;
+        true
     }
 
     pub(super) fn push_system_note(&mut self, content: &str) {
@@ -67,4 +100,28 @@ impl App {
             timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
         });
     }
+}
+
+fn is_inline_command(text: &str) -> bool {
+    matches!(
+        text,
+        "quit"
+            | "q"
+            | "clear"
+            | "help"
+            | "details"
+            | "tools"
+            | "memory"
+            | "cortex"
+            | "sessions"
+            | "approval-needed"
+            | "approve"
+            | "reject"
+            | "interrupt"
+            | "retry"
+    )
+}
+
+fn slash_command(text: &str) -> Option<&str> {
+    text.strip_prefix('/').map(str::trim)
 }

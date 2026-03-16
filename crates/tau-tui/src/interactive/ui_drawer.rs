@@ -17,7 +17,7 @@ pub(super) fn render_detail_drawer(frame: &mut Frame, app: &App, area: Rect) {
     };
     let block = Block::default()
         .title(Span::styled(
-            " Details ",
+            format!(" Details [{}] ", app.detail_section.label()),
             Style::default()
                 .fg(Color::White)
                 .add_modifier(Modifier::BOLD),

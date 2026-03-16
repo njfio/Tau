@@ -17,6 +17,7 @@ use super::chat::ChatPanel;
 use super::input::InputEditor;
 use super::status::StatusBar;
 use super::tools::ToolPanel;
+use super::{GatewayInteractiveConfig, gateway_runtime::GatewayRuntime};
 
 pub use runtime::run_interactive;
 
@@ -28,6 +29,7 @@ pub struct AppConfig {
     pub workspace_label: String,
     pub approval_mode: String,
     pub tick_rate_ms: u64,
+    pub gateway: Option<GatewayInteractiveConfig>,
 }
 
 impl Default for AppConfig {
@@ -39,6 +41,7 @@ impl Default for AppConfig {
             workspace_label: ".".to_string(),
             approval_mode: "ask".to_string(),
             tick_rate_ms: 100,
+            gateway: None,
         }
     }
 }
@@ -96,11 +99,14 @@ pub struct App {
     pub detail_section: DetailSection,
     pub approval_request: Option<ApprovalRequest>,
     pub last_submitted_input: Option<String>,
+    pub pending_assistant: String,
+    pub gateway_runtime: Option<GatewayRuntime>,
 }
 
 impl App {
     pub fn new(config: AppConfig) -> Self {
         let status = StatusBar::new(config.model.clone(), config.profile.clone());
+        let gateway_runtime = config.gateway.clone().map(GatewayRuntime::start);
         Self {
             config,
             chat: ChatPanel::new(),
@@ -116,6 +122,8 @@ impl App {
             detail_section: DetailSection::Tools,
             approval_request: None,
             last_submitted_input: None,
+            pending_assistant: String::new(),
+            gateway_runtime,
         }
     }
 }
