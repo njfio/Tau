@@ -74,6 +74,11 @@ impl DetailSection {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ApprovalRequest {
+    pub summary: String,
+}
+
 pub struct App {
     pub config: AppConfig,
     pub chat: ChatPanel,
@@ -87,6 +92,7 @@ pub struct App {
     pub command_input: String,
     pub show_tool_panel: bool,
     pub detail_section: DetailSection,
+    pub approval_request: Option<ApprovalRequest>,
     pub last_submitted_input: Option<String>,
 }
 
@@ -106,6 +112,7 @@ impl App {
             command_input: String::new(),
             show_tool_panel: false,
             detail_section: DetailSection::Tools,
+            approval_request: None,
             last_submitted_input: None,
         }
     }

@@ -25,11 +25,14 @@ pub(super) fn render_detail_drawer(frame: &mut Frame, app: &App, area: Rect) {
         .style(Style::default().bg(Color::Rgb(12, 14, 18)));
     let inner = block.inner(area);
     frame.render_widget(block, area);
+    render_detail_contents(frame, app, inner);
+}
 
+pub(super) fn render_detail_contents(frame: &mut Frame, app: &App, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Length(2), Constraint::Min(1)])
-        .split(inner);
+        .split(area);
     frame.render_widget(Paragraph::new(tab_line(app)), chunks[0]);
     frame.render_widget(List::new(detail_items(app, chunks[1].width as usize)), chunks[1]);
 }

@@ -25,6 +25,7 @@ use super::app::{App, FocusPanel};
 
 pub fn render(frame: &mut Frame, app: &App) {
     let size = frame.area();
+    let compact_details = app.show_tool_panel && size.width < 96;
     let main_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -40,6 +41,9 @@ pub fn render(frame: &mut Frame, app: &App) {
 
     if app.show_help {
         overlay::render_help_overlay(frame, size);
+    }
+    if compact_details {
+        overlay::render_detail_overlay(frame, app, size);
     }
     if app.focus == FocusPanel::CommandPalette {
         overlay::render_command_palette(frame, app, size);

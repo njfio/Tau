@@ -1,6 +1,6 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use super::{App, DetailSection, FocusPanel, InputMode};
+use super::{App, ApprovalRequest, DetailSection, FocusPanel, InputMode};
 use super::focus::{next_insert_focus, next_normal_focus};
 use super::super::status::AgentStateDisplay;
 
@@ -55,6 +55,8 @@ impl App {
             KeyCode::Char('o') => self.insert_new_line(),
             KeyCode::Char('q') => self.should_quit = true,
             KeyCode::Char('?') => self.show_help = true,
+            KeyCode::Char('y') if self.approval_request.is_some() => self.resolve_approval(true),
+            KeyCode::Char('n') if self.approval_request.is_some() => self.resolve_approval(false),
             KeyCode::Char('r') if self.status.agent_state == AgentStateDisplay::Error => {
                 self.retry_last_prompt()
             }
@@ -144,6 +146,13 @@ impl App {
             "memory" => self.show_detail_section(DetailSection::Memory),
             "cortex" => self.show_detail_section(DetailSection::Cortex),
             "sessions" => self.show_detail_section(DetailSection::Sessions),
+            "approval-needed" => {
+                self.approval_request = Some(ApprovalRequest {
+                    summary: "Tool access needs confirmation before continuing.".to_string(),
+                });
+            }
+            "approve" => self.resolve_approval(true),
+            "reject" => self.resolve_approval(false),
             "interrupt" => {
                 self.status.agent_state = AgentStateDisplay::Idle;
                 self.push_system_note("Interrupt requested.");
@@ -189,5 +198,13 @@ impl App {
         if self.focus == FocusPanel::Chat {
             self.chat.scroll_to_top();
         }
+    }
+
+    fn resolve_approval(&mut self, approved: bool) {
+        let Some(request) = self.approval_request.take() else {
+            return;
+        };
+        let outcome = if approved { "approved" } else { "rejected" };
+        self.push_system_note(&format!("Approval {outcome}: {}", request.summary));
     }
 }

@@ -41,26 +41,7 @@ fn render_chat_panel(frame: &mut Frame, app: &App, area: Rect) {
 fn transcript_lines(app: &App) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
     for msg in app.chat.messages() {
-        let role_style = match msg.role {
-            MessageRole::User => Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
-            MessageRole::Assistant => {
-                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
-            }
-            MessageRole::System => {
-                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
-            }
-            MessageRole::Tool => {
-                Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)
-            }
-        };
-        lines.push(Line::from(vec![
-            Span::styled(format!("{} ", msg.role.label()), role_style),
-            Span::styled(msg.timestamp.clone(), Style::default().fg(Color::DarkGray)),
-        ]));
-        for content_line in msg.content.lines() {
-            lines.push(Line::from(Span::raw(format!("  {content_line}"))));
-        }
-        lines.push(Line::from(""));
+        lines.extend(message_card_lines(msg.role, &msg.timestamp, &msg.content));
     }
     lines
 }
@@ -136,4 +117,33 @@ fn render_transcript_scrollbar(
         }),
         &mut scrollbar_state,
     );
+}
+
+fn message_card_lines(role: MessageRole, timestamp: &str, content: &str) -> Vec<Line<'static>> {
+    let role_style = match role {
+        MessageRole::User => Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+        MessageRole::Assistant => Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+        MessageRole::System => Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+        MessageRole::Tool => Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD),
+    };
+    let mut lines = vec![Line::from(vec![
+        Span::styled("╭─ ", Style::default().fg(Color::DarkGray)),
+        Span::styled(role.label().to_string(), role_style),
+        Span::styled(
+            format!(" · {timestamp}"),
+            Style::default().fg(Color::DarkGray),
+        ),
+    ])];
+    for content_line in content.lines() {
+        lines.push(Line::from(vec![
+            Span::styled("│ ", Style::default().fg(Color::DarkGray)),
+            Span::raw(content_line.to_string()),
+        ]));
+    }
+    lines.push(Line::from(Span::styled(
+        "╰─",
+        Style::default().fg(Color::DarkGray),
+    )));
+    lines.push(Line::from(""));
+    lines
 }

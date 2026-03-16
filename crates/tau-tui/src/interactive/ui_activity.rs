@@ -11,7 +11,7 @@ use super::super::status::AgentStateDisplay;
 use super::super::tools::{ToolEntry, ToolStatus};
 
 pub(super) fn attention_height(app: &App) -> u16 {
-    if app.status.agent_state == AgentStateDisplay::Error {
+    if app.approval_request.is_some() || app.status.agent_state == AgentStateDisplay::Error {
         2
     } else {
         0
@@ -36,8 +36,25 @@ pub(super) fn render_activity_strip(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 pub(super) fn render_attention_strip(frame: &mut Frame, app: &App, area: Rect) {
-    let line = match app.status.agent_state {
-        AgentStateDisplay::Error => Line::from(vec![
+    let line = if let Some(request) = &app.approval_request {
+        Line::from(vec![
+            Span::styled(
+                " Approval required ",
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(" "),
+            Span::styled(request.summary.clone(), Style::default().fg(Color::White)),
+            Span::raw(" "),
+            Span::styled("Approve", Style::default().fg(Color::Green)),
+            Span::raw("  "),
+            Span::styled("Reject", Style::default().fg(Color::Red)),
+        ])
+    } else {
+        match app.status.agent_state {
+            AgentStateDisplay::Error => Line::from(vec![
             Span::styled(
                 " Attention ",
                 Style::default()
@@ -52,7 +69,8 @@ pub(super) fn render_attention_strip(frame: &mut Frame, app: &App, area: Rect) {
             Span::raw("  "),
             Span::styled("Open details", Style::default().fg(Color::Cyan)),
         ]),
-        _ => Line::default(),
+            _ => Line::default(),
+        }
     };
     frame.render_widget(Paragraph::new(line).wrap(Wrap { trim: true }), area);
 }

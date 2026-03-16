@@ -7,6 +7,7 @@ use ratatui::{
 };
 
 use super::super::app::App;
+use super::drawer;
 
 pub(super) fn render_help_overlay(frame: &mut Frame, area: Rect) {
     let help_width = 60u16.min(area.width.saturating_sub(4));
@@ -90,4 +91,24 @@ pub(super) fn render_command_palette(frame: &mut Frame, app: &App, area: Rect) {
         .style(Style::default().bg(Color::Black));
     frame.render_widget(input, popup_area);
     frame.set_cursor_position((popup_area.x + 1 + app.command_input.len() as u16, popup_area.y + 1));
+}
+
+pub(super) fn render_detail_overlay(frame: &mut Frame, app: &App, area: Rect) {
+    let popup_width = area.width.saturating_sub(6).min(52);
+    let popup_height = area.height.saturating_sub(6).min(16);
+    let popup_area = Rect::new(
+        (area.width.saturating_sub(popup_width)) / 2,
+        (area.height.saturating_sub(popup_height)) / 2,
+        popup_width,
+        popup_height,
+    );
+    frame.render_widget(Clear, popup_area);
+    let block = Block::default()
+        .title(" Quick details ")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan))
+        .style(Style::default().bg(Color::Rgb(8, 10, 14)));
+    let inner = block.inner(popup_area);
+    frame.render_widget(block, popup_area);
+    drawer::render_detail_contents(frame, app, inner);
 }
