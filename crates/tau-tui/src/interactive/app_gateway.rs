@@ -92,9 +92,6 @@ fn state_detail(state: &OperatorStateEvent) -> String {
     if let Some(code) = &state.reason_code {
         parts.push(format!("reason_code={code}"));
     }
-    parts.push(format!(
-        "at={}",
-        Local::now().format("%H:%M:%S")
-    ));
+    parts.push(format!("at={}", Local::now().format("%H:%M:%S")));
     parts.join(" ")
 }

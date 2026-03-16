@@ -9,12 +9,18 @@
 
 mod app;
 mod app_gateway;
+mod app_input;
+mod app_submit;
 mod chat;
 mod gateway;
+#[cfg(test)]
+mod gateway_tests;
 mod input;
 mod status;
+mod terminal;
 mod tools;
 mod ui;
 
-pub use app::{run_interactive, App, AppConfig};
+pub use app::{App, AppConfig};
 pub use gateway::{parse_sse_frames, GatewayInteractiveConfig, GatewayUiEvent, OperatorStateEvent};
+pub use terminal::run_interactive;
