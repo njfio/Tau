@@ -1,6 +1,6 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use super::{App, FocusPanel, InputMode};
+use super::{App, DetailSection, FocusPanel, InputMode};
 use super::super::status::AgentStateDisplay;
 
 impl App {
@@ -61,6 +61,15 @@ impl App {
             KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.scroll_chat_up(10)
             }
+            KeyCode::Char('[') if self.focus == FocusPanel::Tools => {
+                self.cycle_detail_section_backward()
+            }
+            KeyCode::Char(']') if self.focus == FocusPanel::Tools => {
+                self.cycle_detail_section_forward()
+            }
+            KeyCode::Char('r') if self.status.agent_state == AgentStateDisplay::Error => {
+                self.retry_last_prompt()
+            }
             KeyCode::Tab => self.focus = next_normal_focus(self.focus, self.show_tool_panel),
             KeyCode::Char('1') => self.focus = FocusPanel::Chat,
             KeyCode::Char('2') => self.focus = FocusPanel::Input,
@@ -119,7 +128,11 @@ impl App {
             "quit" | "q" => self.should_quit = true,
             "clear" => self.chat.clear(),
             "help" => self.show_help = true,
-            "tools" | "details" => self.show_tool_panel = !self.show_tool_panel,
+            "details" => self.show_tool_panel = !self.show_tool_panel,
+            "tools" => self.show_detail_section(DetailSection::Tools),
+            "memory" => self.show_detail_section(DetailSection::Memory),
+            "cortex" => self.show_detail_section(DetailSection::Cortex),
+            "sessions" => self.show_detail_section(DetailSection::Sessions),
             "interrupt" => {
                 self.status.agent_state = AgentStateDisplay::Idle;
                 self.push_system_note("Interrupt requested.");

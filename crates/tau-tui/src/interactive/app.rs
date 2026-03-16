@@ -2,6 +2,8 @@
 
 #[path = "app_commands.rs"]
 mod commands;
+#[path = "app_detail.rs"]
+mod detail;
 #[path = "app_runtime.rs"]
 pub mod runtime;
 #[path = "app_submit.rs"]
@@ -51,6 +53,25 @@ pub enum InputMode {
     Insert,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DetailSection {
+    Tools,
+    Memory,
+    Cortex,
+    Sessions,
+}
+
+impl DetailSection {
+    pub fn label(self) -> &'static str {
+        match self {
+            DetailSection::Tools => "tools",
+            DetailSection::Memory => "memory",
+            DetailSection::Cortex => "cortex",
+            DetailSection::Sessions => "sessions",
+        }
+    }
+}
+
 pub struct App {
     pub config: AppConfig,
     pub chat: ChatPanel,
@@ -63,6 +84,7 @@ pub struct App {
     pub show_help: bool,
     pub command_input: String,
     pub show_tool_panel: bool,
+    pub detail_section: DetailSection,
     pub last_submitted_input: Option<String>,
 }
 
@@ -81,6 +103,7 @@ impl App {
             show_help: false,
             command_input: String::new(),
             show_tool_panel: false,
+            detail_section: DetailSection::Tools,
             last_submitted_input: None,
         }
     }

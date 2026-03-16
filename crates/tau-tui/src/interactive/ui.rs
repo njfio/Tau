@@ -45,7 +45,7 @@ pub fn render(frame: &mut Frame, app: &App) {
 }
 
 fn render_body(frame: &mut Frame, app: &App, area: Rect) {
-    if app.show_tool_panel {
+    if app.show_tool_panel && area.width >= 96 {
         let chunks = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(74), Constraint::Percentage(26)])

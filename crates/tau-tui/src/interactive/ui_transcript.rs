@@ -12,12 +12,20 @@ use super::super::status::AgentStateDisplay;
 use super::super::tools::{ToolEntry, ToolStatus};
 
 pub(super) fn render_transcript_shell(frame: &mut Frame, app: &App, area: Rect) {
+    let attention_height = if show_attention_strip(app) { 2 } else { 0 };
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(2), Constraint::Min(1)])
+        .constraints([
+            Constraint::Length(2),
+            Constraint::Length(attention_height),
+            Constraint::Min(1),
+        ])
         .split(area);
     render_activity_strip(frame, app, chunks[0]);
-    render_chat_panel(frame, app, chunks[1]);
+    if attention_height > 0 {
+        render_attention_strip(frame, app, chunks[1]);
+    }
+    render_chat_panel(frame, app, chunks[2]);
 }
 
 fn render_activity_strip(frame: &mut Frame, app: &App, area: Rect) {
@@ -49,6 +57,35 @@ fn activity_summary(app: &App) -> String {
             .map(|tool| format!("Running tool: {}.", tool.name))
             .unwrap_or_else(|| "Running a tool call.".to_string()),
     }
+}
+
+fn show_attention_strip(app: &App) -> bool {
+    app.status.agent_state == AgentStateDisplay::Error
+}
+
+fn render_attention_strip(frame: &mut Frame, app: &App, area: Rect) {
+    let line = match app.status.agent_state {
+        AgentStateDisplay::Error => Line::from(vec![
+            Span::styled(
+                " Attention ",
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(Color::LightRed)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(" "),
+            Span::styled(
+                "The last turn failed.",
+                Style::default().fg(Color::White),
+            ),
+            Span::raw(" "),
+            Span::styled("Retry turn", Style::default().fg(Color::Yellow)),
+            Span::raw("  "),
+            Span::styled("Open details", Style::default().fg(Color::Cyan)),
+        ]),
+        _ => Line::default(),
+    };
+    frame.render_widget(Paragraph::new(line).wrap(Wrap { trim: true }), area);
 }
 
 fn latest_running_tool(app: &App) -> Option<&ToolEntry> {
