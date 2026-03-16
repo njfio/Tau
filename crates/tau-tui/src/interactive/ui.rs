@@ -10,6 +10,8 @@ mod drawer;
 mod overlay;
 #[path = "ui_run_state.rs"]
 mod run_state;
+#[path = "ui_shared.rs"]
+mod shared;
 #[path = "ui_status.rs"]
 mod status_bar;
 #[cfg(test)]
@@ -19,8 +21,8 @@ mod tests;
 mod transcript;
 
 use ratatui::{
-    Frame,
     layout::{Constraint, Direction, Layout, Rect},
+    Frame,
 };
 
 use super::app::{App, FocusPanel};

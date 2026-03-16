@@ -1,15 +1,15 @@
 use ratatui::{
-    Frame,
     layout::{Constraint, Direction, Layout, Margin, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
     widgets::{Block, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Wrap},
+    Frame,
 };
 
-use super::run_state::{render_run_state_card, run_state_height};
-use super::activity::{attention_height, render_activity_strip, render_attention_strip};
 use super::super::app::{App, FocusPanel};
 use super::super::chat::MessageRole;
+use super::activity::{attention_height, render_activity_strip, render_attention_strip};
+use super::run_state::{render_run_state_card, run_state_height};
 
 pub(super) fn render_transcript_shell(frame: &mut Frame, app: &App, area: Rect) {
     let attention_height = attention_height(app);
@@ -100,18 +100,12 @@ fn render_transcript_content(
     frame.render_widget(paragraph, area);
 }
 
-fn render_transcript_scrollbar(
-    frame: &mut Frame,
-    area: Rect,
-    inner: Rect,
-    app: &App,
-    scroll: u16,
-) {
+fn render_transcript_scrollbar(frame: &mut Frame, area: Rect, inner: Rect, app: &App, scroll: u16) {
     if inner.height as usize >= app.chat.len() {
         return;
     }
-    let mut scrollbar_state = ScrollbarState::new(inner.height as usize + app.chat.len())
-        .position(scroll as usize);
+    let mut scrollbar_state =
+        ScrollbarState::new(inner.height as usize + app.chat.len()).position(scroll as usize);
     let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
         .begin_symbol(Some("^"))
         .end_symbol(Some("v"));
@@ -127,10 +121,18 @@ fn render_transcript_scrollbar(
 
 fn message_card_lines(role: MessageRole, timestamp: &str, content: &str) -> Vec<Line<'static>> {
     let role_style = match role {
-        MessageRole::User => Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
-        MessageRole::Assistant => Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
-        MessageRole::System => Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
-        MessageRole::Tool => Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD),
+        MessageRole::User => Style::default()
+            .fg(Color::Green)
+            .add_modifier(Modifier::BOLD),
+        MessageRole::Assistant => Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD),
+        MessageRole::System => Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD),
+        MessageRole::Tool => Style::default()
+            .fg(Color::Magenta)
+            .add_modifier(Modifier::BOLD),
     };
     let mut lines = vec![Line::from(vec![
         Span::styled("╭─ ", Style::default().fg(Color::DarkGray)),

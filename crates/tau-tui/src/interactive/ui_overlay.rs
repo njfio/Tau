@@ -1,9 +1,9 @@
 use ratatui::{
-    Frame,
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
     widgets::{Block, Borders, Clear, Paragraph},
+    Frame,
 };
 
 use super::super::app::App;
@@ -23,7 +23,9 @@ pub(super) fn render_help_overlay(frame: &mut Frame, area: Rect) {
     let help_text = vec![
         Line::from(Span::styled(
             "Tau Interactive TUI — Keyboard Reference",
-            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
         )),
         Line::from(""),
         Line::from(Span::styled(
@@ -90,7 +92,10 @@ pub(super) fn render_command_palette(frame: &mut Frame, app: &App, area: Rect) {
         )
         .style(Style::default().bg(Color::Black));
     frame.render_widget(input, popup_area);
-    frame.set_cursor_position((popup_area.x + 1 + app.command_input.len() as u16, popup_area.y + 1));
+    frame.set_cursor_position((
+        popup_area.x + 1 + app.command_input.len() as u16,
+        popup_area.y + 1,
+    ));
 }
 
 pub(super) fn render_detail_overlay(frame: &mut Frame, app: &App, area: Rect) {
