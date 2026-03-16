@@ -8,6 +8,7 @@
 //! - Keyboard-driven navigation and command palette
 
 mod app;
+mod app_gateway;
 mod chat;
 mod gateway;
 mod input;
@@ -15,4 +16,5 @@ mod status;
 mod tools;
 mod ui;
 
-pub use app::{App, AppConfig, run_interactive};
+pub use app::{run_interactive, App, AppConfig};
+pub use gateway::{parse_sse_frames, GatewayInteractiveConfig, GatewayUiEvent, OperatorStateEvent};

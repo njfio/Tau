@@ -742,6 +742,7 @@ fn main() {
                 model: args.model,
                 profile: args.profile,
                 tick_rate_ms: 100,
+                gateway: None,
             };
             if let Err(err) = run_interactive(config) {
                 eprintln!("interactive TUI error: {err}");

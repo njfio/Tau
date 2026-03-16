@@ -11,6 +11,7 @@ use crossterm::{
 use ratatui::{backend::CrosstermBackend, Terminal};
 
 use super::chat::{ChatMessage, ChatPanel, MessageRole};
+use super::gateway::GatewayInteractiveConfig;
 use super::input::InputEditor;
 use super::status::StatusBar;
 use super::tools::{ToolEntry, ToolPanel, ToolStatus};
@@ -22,6 +23,7 @@ pub struct AppConfig {
     pub model: String,
     pub profile: String,
     pub tick_rate_ms: u64,
+    pub gateway: Option<GatewayInteractiveConfig>,
 }
 
 impl Default for AppConfig {
@@ -30,6 +32,7 @@ impl Default for AppConfig {
             model: "openai/gpt-5.2".to_string(),
             profile: "local-dev".to_string(),
             tick_rate_ms: 100,
+            gateway: None,
         }
     }
 }
@@ -63,6 +66,7 @@ pub struct App {
     pub show_help: bool,
     pub command_input: String,
     pub show_tool_panel: bool,
+    pub pending_assistant: String,
 }
 
 impl App {
@@ -80,6 +84,7 @@ impl App {
             show_help: false,
             command_input: String::new(),
             show_tool_panel: true,
+            pending_assistant: String::new(),
         }
     }
 
@@ -320,7 +325,17 @@ impl App {
             timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
         });
 
-        // Simulate an assistant response (in real integration, this would call the agent)
+        self.status.total_messages += 1;
+        self.status.total_tokens += text.len() as u64 / 4;
+        self.chat.scroll_to_bottom();
+        self.input.clear();
+
+        if self.config.gateway.is_some() {
+            self.pending_assistant.clear();
+            self.status.agent_state = super::status::AgentStateDisplay::Thinking;
+            return;
+        }
+
         self.chat.add_message(ChatMessage {
             role: MessageRole::Assistant,
             content: format!(
@@ -331,10 +346,7 @@ impl App {
             timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
         });
 
-        self.status.total_messages += 2;
-        self.status.total_tokens += text.len() as u64 / 4;
-        self.chat.scroll_to_bottom();
-        self.input.clear();
+        self.status.total_messages += 1;
     }
 
     /// Push a chat message externally (for agent integration).
