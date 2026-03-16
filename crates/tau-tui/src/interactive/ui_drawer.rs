@@ -1,9 +1,9 @@
 use ratatui::{
-    Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, Paragraph},
+    Frame,
 };
 
 use super::super::app::{App, DetailSection, FocusPanel};
@@ -18,7 +18,9 @@ pub(super) fn render_detail_drawer(frame: &mut Frame, app: &App, area: Rect) {
     let block = Block::default()
         .title(Span::styled(
             " Details ",
-            Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
         ))
         .borders(Borders::LEFT)
         .border_style(border_style)
@@ -34,7 +36,10 @@ pub(super) fn render_detail_contents(frame: &mut Frame, app: &App, area: Rect) {
         .constraints([Constraint::Length(2), Constraint::Min(1)])
         .split(area);
     frame.render_widget(Paragraph::new(tab_line(app)), chunks[0]);
-    frame.render_widget(List::new(detail_items(app, chunks[1].width as usize)), chunks[1]);
+    frame.render_widget(
+        List::new(detail_items(app, chunks[1].width as usize)),
+        chunks[1],
+    );
 }
 
 fn tab_line(app: &App) -> Line<'static> {
@@ -56,10 +61,7 @@ fn tab_line(app: &App) -> Line<'static> {
                 Style::default().fg(Color::DarkGray)
             };
             vec![
-                Span::styled(
-                    format!("[{}]", section.label()),
-                    style,
-                ),
+                Span::styled(format!("[{}]", section.label()), style),
                 Span::raw(" "),
             ]
         })
@@ -70,12 +72,9 @@ fn tab_line(app: &App) -> Line<'static> {
 fn detail_items(app: &App, max_width: usize) -> Vec<ListItem<'static>> {
     match app.detail_section {
         DetailSection::Tools => tool_items(app, max_width),
-        DetailSection::Memory => simple_items("Memory", "No stored memory yet."),
+        DetailSection::Memory => memory_items(),
         DetailSection::Cortex => simple_items("Cortex", "Observer idle until a turn completes."),
-        DetailSection::Sessions => simple_items("Sessions", &format!(
-            "Current session: {}",
-            app.config.session_key
-        )),
+        DetailSection::Sessions => session_items(app),
     }
 }
 
@@ -87,9 +86,7 @@ fn tool_items(app: &App, max_width: usize) -> Vec<ListItem<'static>> {
             app.tools.active_count(),
             app.tools.total_count()
         )),
-        detail_line_item(
-            "Open Memory, Cortex, or Sessions from the tabs above.".to_string(),
-        ),
+        detail_line_item("Open Memory, Cortex, or Sessions from the tabs above.".to_string()),
     ];
     let entries = app.tools.entries();
     if entries.is_empty() {
@@ -109,7 +106,10 @@ fn tool_items(app: &App, max_width: usize) -> Vec<ListItem<'static>> {
             Span::styled(entry.name.clone(), Style::default().fg(Color::White)),
             Span::raw(" "),
             Span::styled(
-                truncate(&entry.detail, max_width.saturating_sub(entry.name.len() + 8)),
+                truncate(
+                    &entry.detail,
+                    max_width.saturating_sub(entry.name.len() + 8),
+                ),
                 Style::default().fg(Color::DarkGray),
             ),
         ]))
@@ -119,6 +119,28 @@ fn tool_items(app: &App, max_width: usize) -> Vec<ListItem<'static>> {
 
 fn simple_items(title: &str, message: &str) -> Vec<ListItem<'static>> {
     vec![section_item(title), detail_line_item(message.to_string())]
+}
+
+fn memory_items() -> Vec<ListItem<'static>> {
+    vec![
+        section_item("Memory"),
+        detail_line_item("Status: degraded".to_string()),
+        detail_line_item("shared state unavailable".to_string()),
+        detail_line_item("No stored memory yet.".to_string()),
+    ]
+}
+
+fn session_items(app: &App) -> Vec<ListItem<'static>> {
+    vec![
+        section_item("Sessions"),
+        detail_line_item(format!("Current session: {}", app.config.session_key)),
+        detail_line_item(format!("Messages: {}", app.chat.len())),
+        detail_line_item(format!("Tokens: {}", app.status.total_tokens)),
+        detail_line_item(format!(
+            "Approvals pending: {}",
+            usize::from(app.approval_request.is_some())
+        )),
+    ]
 }
 
 fn section_item(title: &str) -> ListItem<'static> {

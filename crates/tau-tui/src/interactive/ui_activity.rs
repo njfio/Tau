@@ -1,9 +1,9 @@
 use ratatui::{
-    Frame,
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Paragraph, Wrap},
+    Frame,
 };
 
 use super::super::app::App;
@@ -49,26 +49,30 @@ pub(super) fn render_attention_strip(frame: &mut Frame, app: &App, area: Rect) {
             Span::styled(request.summary.clone(), Style::default().fg(Color::White)),
             Span::raw(" "),
             Span::styled("Approve", Style::default().fg(Color::Green)),
+            Span::raw(" "),
+            Span::styled("[Y] approve", Style::default().fg(Color::Green)),
             Span::raw("  "),
             Span::styled("Reject", Style::default().fg(Color::Red)),
+            Span::raw(" "),
+            Span::styled("[N] reject", Style::default().fg(Color::Red)),
         ])
     } else {
         match app.status.agent_state {
             AgentStateDisplay::Error => Line::from(vec![
-            Span::styled(
-                " Attention ",
-                Style::default()
-                    .fg(Color::Black)
-                    .bg(Color::LightRed)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::raw(" "),
-            Span::styled("The last turn failed.", Style::default().fg(Color::White)),
-            Span::raw(" "),
-            Span::styled("Retry turn", Style::default().fg(Color::Yellow)),
-            Span::raw("  "),
-            Span::styled("Open details", Style::default().fg(Color::Cyan)),
-        ]),
+                Span::styled(
+                    " Attention ",
+                    Style::default()
+                        .fg(Color::Black)
+                        .bg(Color::LightRed)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::raw(" "),
+                Span::styled("The last turn failed.", Style::default().fg(Color::White)),
+                Span::raw(" "),
+                Span::styled("Retry turn", Style::default().fg(Color::Yellow)),
+                Span::raw("  "),
+                Span::styled("Open details", Style::default().fg(Color::Cyan)),
+            ]),
             _ => Line::default(),
         }
     };

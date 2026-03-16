@@ -1,9 +1,9 @@
 use ratatui::{
-    Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style},
     text::{Line, Span, Text},
     widgets::{Block, Borders, Paragraph},
+    Frame,
 };
 
 use super::super::app::{App, FocusPanel, InputMode};
@@ -53,18 +53,30 @@ fn render_input_lines(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 fn render_footer(frame: &mut Frame, app: &App, area: Rect) {
+    let footer = Paragraph::new(footer_line(app));
+    frame.render_widget(footer, area);
+}
+
+fn footer_line(app: &App) -> Line<'static> {
     let mode = match app.input_mode {
         InputMode::Insert => "insert",
         InputMode::Normal => "normal",
     };
-    let actions =
-        format!("Press / for commands  Enter send  Shift+Enter newline  Tab focus  {mode} mode");
-    let footer = Paragraph::new(Line::from(vec![
-        Span::styled(" Compose ", Style::default().fg(Color::Black).bg(Color::Green)),
+    Line::from(vec![
+        chip("/", "commands", Color::Blue),
         Span::raw(" "),
-        Span::styled(actions, Style::default().fg(Color::DarkGray)),
-    ]));
-    frame.render_widget(footer, area);
+        chip("Enter", "send", Color::Green),
+        Span::raw(" "),
+        chip("Shift+Enter", "newline", Color::DarkGray),
+        Span::raw(" "),
+        chip("Tab", "focus", Color::DarkGray),
+        Span::raw(" "),
+        Span::styled(format!("{mode} mode"), Style::default().fg(Color::DarkGray)),
+    ])
+}
+
+fn chip(key: &str, label: &str, color: Color) -> Span<'static> {
+    Span::styled(format!("[{key}] {label}"), Style::default().fg(color))
 }
 
 fn render_cursor(frame: &mut Frame, app: &App, area: Rect) {

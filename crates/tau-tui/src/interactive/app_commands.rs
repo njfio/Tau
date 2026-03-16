@@ -1,8 +1,8 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use super::{App, ApprovalRequest, DetailSection, FocusPanel, InputMode};
-use super::focus::{next_insert_focus, next_normal_focus};
 use super::super::status::AgentStateDisplay;
+use super::focus::{next_insert_focus, next_normal_focus};
+use super::{App, ApprovalRequest, DetailSection, FocusPanel, InputMode};
 
 impl App {
     pub fn handle_key(&mut self, key: KeyEvent) {
@@ -94,6 +94,12 @@ impl App {
     fn handle_insert_mode(&mut self, key: KeyEvent) {
         match (key.modifiers, key.code) {
             (_, KeyCode::Esc) => self.input_mode = InputMode::Normal,
+            (KeyModifiers::NONE, KeyCode::Char('y')) if self.approval_request.is_some() => {
+                self.resolve_approval(true)
+            }
+            (KeyModifiers::NONE, KeyCode::Char('n')) if self.approval_request.is_some() => {
+                self.resolve_approval(false)
+            }
             (KeyModifiers::NONE | KeyModifiers::SHIFT, KeyCode::Enter) => {
                 if key.modifiers.contains(KeyModifiers::SHIFT) {
                     self.input.new_line();
