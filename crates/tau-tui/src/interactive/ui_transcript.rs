@@ -6,17 +6,20 @@ use ratatui::{
     widgets::{Block, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Wrap},
 };
 
+use super::run_state::{render_run_state_card, run_state_height};
 use super::activity::{attention_height, render_activity_strip, render_attention_strip};
 use super::super::app::{App, FocusPanel};
 use super::super::chat::MessageRole;
 
 pub(super) fn render_transcript_shell(frame: &mut Frame, app: &App, area: Rect) {
     let attention_height = attention_height(app);
+    let run_card_height = run_state_height(app);
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(2),
             Constraint::Length(attention_height),
+            Constraint::Length(run_card_height),
             Constraint::Min(1),
         ])
         .split(area);
@@ -24,7 +27,10 @@ pub(super) fn render_transcript_shell(frame: &mut Frame, app: &App, area: Rect) 
     if attention_height > 0 {
         render_attention_strip(frame, app, chunks[1]);
     }
-    render_chat_panel(frame, app, chunks[2]);
+    if run_card_height > 0 {
+        render_run_state_card(frame, app, chunks[2]);
+    }
+    render_chat_panel(frame, app, chunks[3]);
 }
 
 fn render_chat_panel(frame: &mut Frame, app: &App, area: Rect) {

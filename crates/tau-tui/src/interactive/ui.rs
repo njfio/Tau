@@ -8,6 +8,8 @@ mod composer;
 mod drawer;
 #[path = "ui_overlay.rs"]
 mod overlay;
+#[path = "ui_run_state.rs"]
+mod run_state;
 #[path = "ui_status.rs"]
 mod status_bar;
 #[cfg(test)]
