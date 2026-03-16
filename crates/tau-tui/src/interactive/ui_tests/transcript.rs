@@ -1,6 +1,8 @@
 use crate::interactive::app::{App, AppConfig};
 use crate::interactive::chat::MessageRole;
-use crate::interactive::gateway::{GatewayUiEvent, OperatorStateEvent};
+use crate::interactive::gateway::{
+    GatewayInteractiveConfig, GatewayUiEvent, OperatorStateEvent,
+};
 
 use super::helpers::{render_app, submit_command};
 
@@ -153,4 +155,39 @@ fn red_spec_3582_live_activity_surfaces_operator_entity_and_artifact_kind() {
 
     assert!(rendered.contains("artifact"));
     assert!(rendered.contains("assistant_output_text"));
+}
+
+#[test]
+fn red_spec_3582_status_bar_surfaces_gateway_transport_posture() {
+    let mut app = App::new(AppConfig {
+        gateway: Some(GatewayInteractiveConfig {
+            base_url: "http://127.0.0.1:8791".to_string(),
+            auth_token: None,
+            session_key: "default".to_string(),
+            request_timeout_ms: 45_000,
+        }),
+        ..AppConfig::default()
+    });
+    app.apply_gateway_event(GatewayUiEvent::OperatorState(OperatorStateEvent {
+        entity: "turn".to_string(),
+        status: "in_progress".to_string(),
+        phase: Some("model".to_string()),
+        artifact_kind: None,
+        response_id: Some("resp_transport".to_string()),
+        reason_code: None,
+    }));
+
+    let rendered = render_app(&mut app, 140, 10);
+
+    assert!(rendered.contains("transport=gateway"));
+    assert!(rendered.contains("turn:model"));
+}
+
+#[test]
+fn red_spec_3582_status_bar_surfaces_local_transport_when_gateway_missing() {
+    let mut app = App::new(AppConfig::default());
+
+    let rendered = render_app(&mut app, 140, 10);
+
+    assert!(rendered.contains("transport=local"));
 }
