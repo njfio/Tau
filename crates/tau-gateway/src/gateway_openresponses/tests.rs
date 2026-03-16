@@ -6137,6 +6137,8 @@ async fn functional_webchat_endpoint_returns_html_shell() {
     assert!(body.contains("Sessions"));
     assert!(body.contains("Memory"));
     assert!(body.contains("Configuration"));
+    assert!(body.contains("id=\"responseState\""));
+    assert!(body.contains("function applyResponseOperatorState(payload, eventName)"));
     assert!(body.contains("Memory Graph"));
     assert!(body.contains("id=\"memoryGraphCanvas\""));
     assert!(body.contains("id=\"healthStateValue\""));
