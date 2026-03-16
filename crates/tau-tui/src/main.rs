@@ -741,6 +741,8 @@ fn main() {
             let config = AppConfig {
                 model: args.model,
                 profile: args.profile,
+                session_key: "default".to_string(),
+                approval_mode: "ask".to_string(),
                 tick_rate_ms: 100,
             };
             if let Err(err) = run_interactive(config) {

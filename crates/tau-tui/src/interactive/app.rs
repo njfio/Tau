@@ -21,6 +21,8 @@ use super::ui;
 pub struct AppConfig {
     pub model: String,
     pub profile: String,
+    pub session_key: String,
+    pub approval_mode: String,
     pub tick_rate_ms: u64,
 }
 
@@ -29,6 +31,8 @@ impl Default for AppConfig {
         Self {
             model: "openai/gpt-5.2".to_string(),
             profile: "local-dev".to_string(),
+            session_key: "default".to_string(),
+            approval_mode: "ask".to_string(),
             tick_rate_ms: 100,
         }
     }
@@ -63,6 +67,7 @@ pub struct App {
     pub show_help: bool,
     pub command_input: String,
     pub show_tool_panel: bool,
+    pub last_submitted_input: Option<String>,
 }
 
 impl App {
@@ -79,7 +84,8 @@ impl App {
             should_quit: false,
             show_help: false,
             command_input: String::new(),
-            show_tool_panel: true,
+            show_tool_panel: false,
+            last_submitted_input: None,
         }
     }
 
@@ -289,7 +295,12 @@ impl App {
             "quit" | "q" => self.should_quit = true,
             "clear" => self.chat.clear(),
             "help" => self.show_help = true,
-            "tools" => self.show_tool_panel = !self.show_tool_panel,
+            "tools" | "details" => self.show_tool_panel = !self.show_tool_panel,
+            "interrupt" => {
+                self.status.agent_state = super::status::AgentStateDisplay::Idle;
+                self.push_message(MessageRole::System, "Interrupt requested.".to_string());
+            }
+            "retry" => self.retry_last_prompt(),
             _ => {
                 self.chat.add_message(ChatMessage {
                     role: MessageRole::System,
@@ -314,6 +325,26 @@ impl App {
             return;
         }
 
+        self.last_submitted_input = Some(text.clone());
+        self.run_prompt(text);
+        self.input.clear();
+    }
+
+    fn retry_last_prompt(&mut self) {
+        let Some(prompt) = self.last_submitted_input.clone() else {
+            self.push_message(
+                MessageRole::System,
+                "No previous prompt available to retry.".to_string(),
+            );
+            return;
+        };
+        self.push_message(MessageRole::System, "Retrying last prompt.".to_string());
+        self.run_prompt(prompt);
+    }
+
+    fn run_prompt(&mut self, text: String) {
+        self.status.agent_state = super::status::AgentStateDisplay::Thinking;
+
         self.chat.add_message(ChatMessage {
             role: MessageRole::User,
             content: text.clone(),
@@ -334,7 +365,7 @@ impl App {
         self.status.total_messages += 2;
         self.status.total_tokens += text.len() as u64 / 4;
         self.chat.scroll_to_bottom();
-        self.input.clear();
+        self.status.agent_state = super::status::AgentStateDisplay::Idle;
     }
 
     /// Push a chat message externally (for agent integration).
