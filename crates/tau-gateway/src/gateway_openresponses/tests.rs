@@ -9597,6 +9597,44 @@ async fn functional_openresponses_endpoint_streams_sse_for_stream_true() {
 }
 
 #[tokio::test]
+async fn integration_spec_3581_openresponses_stream_failure_emits_operator_state() {
+    let temp = tempdir().expect("tempdir");
+    let state = test_state_with_client_and_auth(
+        temp.path(),
+        10_000,
+        Arc::new(ErrorGatewayLlmClient),
+        Arc::new(NoopGatewayToolRegistrar),
+        GatewayOpenResponsesAuthMode::Token,
+        Some("secret"),
+        None,
+        60,
+        120,
+    );
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+
+    let client = Client::new();
+    let response = client
+        .post(format!("http://{addr}/v1/responses"))
+        .bearer_auth("secret")
+        .json(&json!({"input":"hello", "stream": true}))
+        .send()
+        .await
+        .expect("send request");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.text().await.expect("read sse body");
+    assert!(body.contains("event: response.created"));
+    assert!(body.contains("event: response.failed"));
+    assert!(body.contains("\"operator_state\""));
+    assert!(body.contains("\"entity\":\"turn\""));
+    assert!(body.contains("\"status\":\"failed\""));
+    assert!(body.contains("\"reason_code\":\"gateway_runtime_error\""));
+    assert!(body.contains("event: done"));
+
+    handle.abort();
+}
+
+#[tokio::test]
 async fn functional_openai_chat_completions_endpoint_returns_non_stream_response() {
     let temp = tempdir().expect("tempdir");
     let state = test_state(temp.path(), 10_000, "secret");
