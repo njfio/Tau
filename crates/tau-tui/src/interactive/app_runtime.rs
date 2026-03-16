@@ -8,9 +8,9 @@ use crossterm::{
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
 
-use super::{App, AppConfig};
 use super::super::chat::{ChatMessage, MessageRole};
 use super::super::ui;
+use super::{App, AppConfig};
 
 pub fn run_interactive(config: AppConfig) -> io::Result<()> {
     enable_raw_mode()?;

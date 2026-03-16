@@ -1,7 +1,7 @@
-use super::App;
 use super::super::chat::{ChatMessage, MessageRole};
-use super::super::tools::{ToolEntry, ToolStatus};
 use super::super::status::AgentStateDisplay;
+use super::super::tools::{ToolEntry, ToolStatus};
+use super::App;
 
 impl App {
     pub(crate) fn submit_input(&mut self) {

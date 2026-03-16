@@ -1,9 +1,10 @@
 use std::{env, path::Path, thread, time::Duration};
 
 use tau_tui::{
-    apply_overlay, render_operator_shell_frame, Component, DiffRenderer, EditorBuffer, EditorView,
-    LumaImage, OperatorShellFrame, Text, Theme, ThemeRole,
-    interactive::{AppConfig, GatewayInteractiveConfig, run_interactive},
+    apply_overlay,
+    interactive::{run_interactive, AppConfig, GatewayInteractiveConfig},
+    render_operator_shell_frame, Component, DiffRenderer, EditorBuffer, EditorView, LumaImage,
+    OperatorShellFrame, Text, Theme, ThemeRole,
 };
 
 const HELP: &str = "\
@@ -678,7 +679,10 @@ fn gateway_session_key() -> String {
 fn workspace_label() -> String {
     env::current_dir()
         .ok()
-        .and_then(|path| path.file_name().map(|name| name.to_string_lossy().into_owned()))
+        .and_then(|path| {
+            path.file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+        })
         .unwrap_or_else(|| ".".to_string())
 }
 

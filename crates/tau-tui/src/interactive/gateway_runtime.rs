@@ -7,7 +7,7 @@ use reqwest::blocking::Client;
 use serde_json::json;
 use thiserror::Error;
 
-use super::gateway::{GatewayInteractiveConfig, GatewayUiEvent, drain_sse_frames};
+use super::gateway::{drain_sse_frames, GatewayInteractiveConfig, GatewayUiEvent};
 
 pub struct GatewayRuntime {
     prompt_tx: Sender<String>,

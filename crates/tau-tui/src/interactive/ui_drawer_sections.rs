@@ -123,7 +123,11 @@ fn latest_user_context(app: &App) -> Option<String> {
 fn last_prompt(app: &App) -> String {
     app.last_submitted_input
         .clone()
-        .or_else(|| app.chat.latest_content_by_role(MessageRole::User).map(str::to_string))
+        .or_else(|| {
+            app.chat
+                .latest_content_by_role(MessageRole::User)
+                .map(str::to_string)
+        })
         .unwrap_or_else(|| "none".to_string())
 }
 
@@ -142,7 +146,11 @@ fn state_label(state: AgentStateDisplay) -> &'static str {
 }
 
 fn yes_no(value: bool) -> &'static str {
-    if value { "yes" } else { "no" }
+    if value {
+        "yes"
+    } else {
+        "no"
+    }
 }
 
 fn truncate(input: &str, max: usize) -> String {

@@ -12,14 +12,16 @@ mod app_gateway;
 mod chat;
 mod gateway;
 mod gateway_runtime;
-mod input;
-mod status;
-mod tools;
-mod ui;
 #[cfg(test)]
 mod gateway_runtime_tests;
 #[cfg(test)]
 mod gateway_tests;
+mod input;
+mod status;
+mod tools;
+mod ui;
 
-pub use app::{App, AppConfig, run_interactive};
-pub use gateway::GatewayInteractiveConfig;
+pub use app::{run_interactive, App, AppConfig};
+pub use gateway::{
+    GatewayInteractiveConfig, GatewayUiEvent, OperatorStateEvent, parse_sse_frames,
+};

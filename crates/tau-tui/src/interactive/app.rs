@@ -17,7 +17,7 @@ use super::chat::ChatPanel;
 use super::input::InputEditor;
 use super::status::StatusBar;
 use super::tools::ToolPanel;
-use super::{GatewayInteractiveConfig, gateway_runtime::GatewayRuntime};
+use super::{gateway_runtime::GatewayRuntime, GatewayInteractiveConfig};
 
 pub use runtime::run_interactive;
 
