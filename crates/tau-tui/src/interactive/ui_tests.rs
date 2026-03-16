@@ -67,6 +67,37 @@ fn red_spec_3582_details_drawer_exposes_context_sections_beyond_tools() {
     assert!(rendered.contains("Sessions"));
 }
 
+#[test]
+fn red_spec_3582_details_drawer_uses_tabbed_context_navigation() {
+    let mut app = App::new(AppConfig::default());
+    app.show_tool_panel = true;
+    let rendered = render_app(&mut app, 140, 32);
+
+    assert!(rendered.contains("[tools]"));
+    assert!(rendered.contains("memory"));
+    assert!(rendered.contains("cortex"));
+    assert!(rendered.contains("sessions"));
+}
+
+#[test]
+fn red_spec_3582_error_attention_strip_exposes_retry_and_details_actions() {
+    let mut app = App::new(AppConfig::default());
+    app.status.agent_state = crate::interactive::status::AgentStateDisplay::Error;
+    let rendered = render_app(&mut app, 120, 24);
+
+    assert!(rendered.contains("Retry turn"));
+    assert!(rendered.contains("Open details"));
+}
+
+#[test]
+fn red_spec_3582_narrow_layout_collapses_details_drawer_first() {
+    let mut app = App::new(AppConfig::default());
+    app.show_tool_panel = true;
+    let rendered = render_app(&mut app, 72, 22);
+
+    assert!(!rendered.contains(" Details "));
+}
+
 fn render_app(app: &mut App, width: u16, height: u16) -> String {
     let backend = TestBackend::new(width, height);
     let mut terminal = Terminal::new(backend).expect("terminal");
