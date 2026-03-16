@@ -6,6 +6,8 @@ mod commands;
 mod detail;
 #[path = "app_focus.rs"]
 mod focus;
+#[path = "app_nav.rs"]
+mod nav;
 #[path = "app_runtime.rs"]
 pub mod runtime;
 #[path = "app_submit.rs"]

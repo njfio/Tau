@@ -161,45 +161,6 @@ impl App {
             _ => self.push_system_note(&format!("Unknown command: {cmd}")),
         }
     }
-
-    fn enter_insert_mode(&mut self, move_end: bool) {
-        self.input_mode = InputMode::Insert;
-        self.focus = FocusPanel::Input;
-        if move_end {
-            self.input.move_end();
-        }
-    }
-
-    fn insert_new_line(&mut self) {
-        self.input_mode = InputMode::Insert;
-        self.focus = FocusPanel::Input;
-        self.input.new_line();
-    }
-
-    fn scroll_chat_down(&mut self, lines: usize) {
-        if self.focus == FocusPanel::Chat {
-            self.chat.scroll_down(lines);
-        }
-    }
-
-    fn scroll_chat_up(&mut self, lines: usize) {
-        if self.focus == FocusPanel::Chat {
-            self.chat.scroll_up(lines);
-        }
-    }
-
-    fn scroll_chat_to_bottom(&mut self) {
-        if self.focus == FocusPanel::Chat {
-            self.chat.scroll_to_bottom();
-        }
-    }
-
-    fn scroll_chat_to_top(&mut self) {
-        if self.focus == FocusPanel::Chat {
-            self.chat.scroll_to_top();
-        }
-    }
-
     fn resolve_approval(&mut self, approved: bool) {
         let Some(request) = self.approval_request.take() else {
             return;
