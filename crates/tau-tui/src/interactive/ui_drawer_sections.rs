@@ -116,33 +116,19 @@ pub(super) fn metric_item(label: &str, value: String) -> ListItem<'static> {
 
 fn latest_user_context(app: &App) -> Option<String> {
     app.chat
-        .messages()
-        .iter()
-        .rev()
-        .find(|msg| matches!(msg.role, MessageRole::User))
-        .map(|msg| truncate(&msg.content, 72))
+        .latest_content_by_role(MessageRole::User)
+        .map(|content| truncate(content, 72))
 }
 
 fn last_prompt(app: &App) -> String {
     app.last_submitted_input
         .clone()
-        .or_else(|| {
-            app.chat
-                .messages()
-                .iter()
-                .rev()
-                .find(|msg| matches!(msg.role, MessageRole::User))
-                .map(|msg| msg.content.clone())
-        })
+        .or_else(|| app.chat.latest_content_by_role(MessageRole::User).map(str::to_string))
         .unwrap_or_else(|| "none".to_string())
 }
 
 fn assistant_message_count(app: &App) -> usize {
-    app.chat
-        .messages()
-        .iter()
-        .filter(|msg| matches!(msg.role, MessageRole::Assistant))
-        .count()
+    app.chat.count_by_role(MessageRole::Assistant)
 }
 
 fn state_label(state: AgentStateDisplay) -> &'static str {

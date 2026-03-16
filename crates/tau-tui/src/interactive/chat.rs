@@ -89,4 +89,16 @@ impl ChatPanel {
     pub fn is_empty(&self) -> bool {
         self.messages.is_empty()
     }
+
+    pub fn latest_content_by_role(&self, role: MessageRole) -> Option<&str> {
+        self.messages
+            .iter()
+            .rev()
+            .find(|msg| msg.role == role)
+            .map(|msg| msg.content.as_str())
+    }
+
+    pub fn count_by_role(&self, role: MessageRole) -> usize {
+        self.messages.iter().filter(|msg| msg.role == role).count()
+    }
 }
