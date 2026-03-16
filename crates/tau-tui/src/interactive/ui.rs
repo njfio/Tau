@@ -1,5 +1,7 @@
 //! UI rendering with ratatui for the transcript-first interactive shell.
 
+#[path = "ui_activity.rs"]
+mod activity;
 #[path = "ui_composer.rs"]
 mod composer;
 #[path = "ui_drawer.rs"]

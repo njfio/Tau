@@ -1,6 +1,7 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use super::{App, DetailSection, FocusPanel, InputMode};
+use super::focus::{next_insert_focus, next_normal_focus};
 use super::super::status::AgentStateDisplay;
 
 impl App {
@@ -45,12 +46,28 @@ impl App {
     }
 
     fn handle_normal_mode(&mut self, key: KeyEvent) {
+        if self.handle_scroll_or_detail_key(key) {
+            return;
+        }
         match key.code {
             KeyCode::Char('i') => self.enter_insert_mode(false),
             KeyCode::Char('a') => self.enter_insert_mode(true),
             KeyCode::Char('o') => self.insert_new_line(),
             KeyCode::Char('q') => self.should_quit = true,
             KeyCode::Char('?') => self.show_help = true,
+            KeyCode::Char('r') if self.status.agent_state == AgentStateDisplay::Error => {
+                self.retry_last_prompt()
+            }
+            KeyCode::Tab => self.focus = next_normal_focus(self.focus, self.show_tool_panel),
+            KeyCode::Char('1') => self.focus = FocusPanel::Chat,
+            KeyCode::Char('2') => self.focus = FocusPanel::Input,
+            KeyCode::Char('3') if self.show_tool_panel => self.focus = FocusPanel::Tools,
+            _ => {}
+        }
+    }
+
+    fn handle_scroll_or_detail_key(&mut self, key: KeyEvent) -> bool {
+        match key.code {
             KeyCode::Char('j') | KeyCode::Down => self.scroll_chat_down(1),
             KeyCode::Char('k') | KeyCode::Up => self.scroll_chat_up(1),
             KeyCode::Char('G') => self.scroll_chat_to_bottom(),
@@ -67,15 +84,9 @@ impl App {
             KeyCode::Char(']') if self.focus == FocusPanel::Tools => {
                 self.cycle_detail_section_forward()
             }
-            KeyCode::Char('r') if self.status.agent_state == AgentStateDisplay::Error => {
-                self.retry_last_prompt()
-            }
-            KeyCode::Tab => self.focus = next_normal_focus(self.focus, self.show_tool_panel),
-            KeyCode::Char('1') => self.focus = FocusPanel::Chat,
-            KeyCode::Char('2') => self.focus = FocusPanel::Input,
-            KeyCode::Char('3') if self.show_tool_panel => self.focus = FocusPanel::Tools,
-            _ => {}
+            _ => return false,
         }
+        true
     }
 
     fn handle_insert_mode(&mut self, key: KeyEvent) {
@@ -178,35 +189,5 @@ impl App {
         if self.focus == FocusPanel::Chat {
             self.chat.scroll_to_top();
         }
-    }
-}
-
-fn next_normal_focus(current: FocusPanel, show_tool_panel: bool) -> FocusPanel {
-    match current {
-        FocusPanel::Chat => FocusPanel::Input,
-        FocusPanel::Input => {
-            if show_tool_panel {
-                FocusPanel::Tools
-            } else {
-                FocusPanel::Chat
-            }
-        }
-        FocusPanel::Tools => FocusPanel::Chat,
-        FocusPanel::CommandPalette => FocusPanel::Input,
-    }
-}
-
-fn next_insert_focus(current: FocusPanel, show_tool_panel: bool) -> FocusPanel {
-    match current {
-        FocusPanel::Input => FocusPanel::Chat,
-        FocusPanel::Chat => {
-            if show_tool_panel {
-                FocusPanel::Tools
-            } else {
-                FocusPanel::Input
-            }
-        }
-        FocusPanel::Tools => FocusPanel::Input,
-        FocusPanel::CommandPalette => FocusPanel::Input,
     }
 }
