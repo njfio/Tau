@@ -6,6 +6,8 @@ mod activity;
 mod composer;
 #[path = "ui_drawer.rs"]
 mod drawer;
+#[path = "ui_drawer_sections.rs"]
+mod drawer_sections;
 #[path = "ui_overlay.rs"]
 mod overlay;
 #[path = "ui_run_state.rs"]
