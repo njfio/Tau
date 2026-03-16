@@ -22,13 +22,13 @@ pub(super) fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         format!(" cwd={} ", app.config.workspace_label),
         Style::default().fg(Color::Black).bg(Color::LightBlue),
     );
-    let profile_span = Span::styled(
-        format!(" profile={} ", app.status.profile),
-        Style::default().fg(Color::Black).bg(Color::DarkGray),
-    );
     let approval_span = Span::styled(
         format!(" approval={} ", app.config.approval_mode),
         Style::default().fg(Color::Black).bg(Color::Yellow),
+    );
+    let transport_span = Span::styled(
+        format!(" transport={} ", transport_label(app)),
+        Style::default().fg(Color::Black).bg(Color::LightMagenta),
     );
     let tokens_span = Span::styled(
         format!(" tok={} ", app.status.format_tokens()),
@@ -49,28 +49,50 @@ pub(super) fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
             .fg(Color::Black)
             .bg(agent_state_color(app.status.agent_state)),
     );
+    let context_span = operator_context_span(app);
     let sep = Span::raw(" ");
-    let line = Line::from(vec![
+    let mut spans = vec![
         model_span,
         sep.clone(),
         session_span,
         sep.clone(),
         workspace_span,
         sep.clone(),
-        profile_span,
-        sep.clone(),
         approval_span,
+        sep.clone(),
+        transport_span,
         sep.clone(),
         tokens_span,
         sep.clone(),
         cb_span,
-        sep,
+        sep.clone(),
         state_span,
-    ]);
+    ];
+    if let Some(context) = context_span {
+        spans.extend([sep, context]);
+    }
+    let line = Line::from(spans);
     frame.render_widget(
         Paragraph::new(line).style(Style::default().bg(Color::Black)),
         area,
     );
+}
+
+fn operator_context_span(app: &App) -> Option<Span<'static>> {
+    let state = app.last_operator_state.as_ref()?;
+    let phase = state.phase.as_deref().unwrap_or(state.status.as_str());
+    Some(Span::styled(
+        format!(" {}:{} ", state.entity, phase),
+        Style::default().fg(Color::Black).bg(Color::Gray),
+    ))
+}
+
+fn transport_label(app: &App) -> &'static str {
+    if app.config.gateway.is_some() {
+        "gateway"
+    } else {
+        "local"
+    }
 }
 
 fn circuit_breaker_color(state: CircuitBreakerDisplay) -> Color {
