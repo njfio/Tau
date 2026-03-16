@@ -13,6 +13,9 @@ mod app_input;
 mod app_submit;
 mod chat;
 mod gateway;
+mod gateway_runtime;
+#[cfg(test)]
+mod gateway_runtime_tests;
 #[cfg(test)]
 mod gateway_tests;
 mod input;
@@ -23,4 +26,5 @@ mod ui;
 
 pub use app::{App, AppConfig};
 pub use gateway::{parse_sse_frames, GatewayInteractiveConfig, GatewayUiEvent, OperatorStateEvent};
+pub use gateway_runtime::GatewayRuntime;
 pub use terminal::run_interactive;

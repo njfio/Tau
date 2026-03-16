@@ -56,6 +56,17 @@ impl ChatPanel {
         &self.messages
     }
 
+    pub fn replace_last_content(&mut self, role: MessageRole, content: String) -> bool {
+        let Some(message) = self.messages.last_mut() else {
+            return false;
+        };
+        if message.role != role {
+            return false;
+        }
+        message.content = content;
+        true
+    }
+
     pub fn scroll_offset(&self) -> usize {
         self.scroll_offset
     }

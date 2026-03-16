@@ -41,12 +41,25 @@ pub enum GatewayParseError {
 }
 
 pub fn parse_sse_frames(raw: &str) -> Result<Vec<GatewayUiEvent>, GatewayParseError> {
-    raw.split("\n\n")
-        .filter(|frame| !frame.trim().is_empty())
-        .try_fold(Vec::new(), |mut events, frame| {
-            events.extend(parse_frame(frame)?);
-            Ok(events)
-        })
+    let mut buffer = raw.to_string();
+    let mut events = drain_sse_frames(&mut buffer)?;
+    if !buffer.trim().is_empty() {
+        events.extend(parse_frame(buffer.trim())?);
+    }
+    Ok(events)
+}
+
+pub fn drain_sse_frames(buffer: &mut String) -> Result<Vec<GatewayUiEvent>, GatewayParseError> {
+    let mut events = Vec::new();
+    while let Some(index) = buffer.find("\n\n") {
+        let frame = buffer[..index].to_string();
+        buffer.drain(..index + 2);
+        if frame.trim().is_empty() {
+            continue;
+        }
+        events.extend(parse_frame(&frame)?);
+    }
+    Ok(events)
 }
 
 fn parse_frame(frame: &str) -> Result<Vec<GatewayUiEvent>, GatewayParseError> {

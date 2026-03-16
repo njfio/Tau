@@ -1,9 +1,10 @@
-use std::{env, path::Path, process::Command, process::Stdio, thread, time::Duration};
+use std::{env, path::Path, thread, time::Duration};
 
 use tau_tui::{
-    apply_overlay, render_operator_shell_frame, Component, DiffRenderer, EditorBuffer, EditorView,
-    LumaImage, OperatorShellFrame, Text, Theme, ThemeRole,
-    interactive::{AppConfig, run_interactive},
+    apply_overlay,
+    interactive::{run_interactive, AppConfig, GatewayInteractiveConfig},
+    render_operator_shell_frame, Component, DiffRenderer, EditorBuffer, EditorView, LumaImage,
+    OperatorShellFrame, Text, Theme, ThemeRole,
 };
 
 const HELP: &str = "\
@@ -653,6 +654,37 @@ fn format_shell_command(tokens: &[String]) -> String {
     tokens.join(" ")
 }
 
+fn gateway_base_url(bind: Option<&str>) -> String {
+    let resolved = bind
+        .map(str::to_string)
+        .or_else(|| env::var("TAU_UNIFIED_BIND").ok())
+        .unwrap_or_else(|| "127.0.0.1:8791".to_string());
+    format!("http://{}", resolved.trim_end_matches('/'))
+}
+
+fn gateway_auth_token() -> Option<String> {
+    env::var("TAU_UNIFIED_GATEWAY_AUTH_TOKEN")
+        .ok()
+        .or_else(|| env::var("TAU_UNIFIED_AUTH_TOKEN").ok())
+        .filter(|value| !value.trim().is_empty())
+}
+
+fn gateway_session_key() -> String {
+    env::var("TAU_UNIFIED_SESSION_KEY")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| "default".to_string())
+}
+
+fn build_agent_gateway_config(args: &AgentArgs) -> GatewayInteractiveConfig {
+    GatewayInteractiveConfig {
+        base_url: gateway_base_url(None),
+        auth_token: gateway_auth_token(),
+        session_key: gateway_session_key(),
+        request_timeout_ms: args.request_timeout_ms.unwrap_or(45_000),
+    }
+}
+
 fn run_agent(args: AgentArgs) -> Result<(), String> {
     let theme = Theme::default();
     let frame = OperatorShellFrame::from_dashboard_state_dir(
@@ -691,6 +723,19 @@ fn run_agent(args: AgentArgs) -> Result<(), String> {
             args.color
         )
     );
+    let gateway = build_agent_gateway_config(&args);
+    println!(
+        "{}",
+        paint(
+            &theme,
+            ThemeRole::Muted,
+            format!(
+                "interactive.transport=gateway-openresponses base_url={} session_key={}",
+                gateway.base_url, gateway.session_key
+            ),
+            args.color
+        )
+    );
     for line in rendered {
         println!("{}", paint(&theme, ThemeRole::Primary, line, args.color));
     }
@@ -699,21 +744,13 @@ fn run_agent(args: AgentArgs) -> Result<(), String> {
         return Ok(());
     }
 
-    let (program, remaining_args) = command_tokens
-        .split_first()
-        .ok_or_else(|| "interactive runtime command is empty".to_string())?;
-    let status = Command::new(program)
-        .args(remaining_args)
-        .stdin(Stdio::inherit())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .status()
-        .map_err(|error| format!("failed to launch interactive runtime: {error}"))?;
-    if status.success() {
-        Ok(())
-    } else {
-        Err(format!("interactive runtime exited with status {status}"))
-    }
+    run_interactive(AppConfig {
+        model: args.model,
+        profile: args.profile,
+        tick_rate_ms: 100,
+        gateway: Some(gateway),
+    })
+    .map_err(|error| format!("interactive TUI error: {error}"))
 }
 
 fn main() {
@@ -1085,5 +1122,30 @@ mod tests {
         assert!(command.contains(&"45000".to_string()));
         assert!(command.contains(&"--agent-request-max-retries".to_string()));
         assert!(command.contains(&"0".to_string()));
+    }
+
+    #[test]
+    fn unit_spec_3581_gateway_base_url_uses_bind_contract() {
+        assert_eq!(
+            super::gateway_base_url(Some("127.0.0.1:8899")),
+            "http://127.0.0.1:8899"
+        );
+    }
+
+    #[test]
+    fn unit_spec_3581_build_agent_gateway_config_uses_agent_timeout() {
+        let args = super::AgentArgs {
+            width: 88,
+            profile: "ops-interactive".to_string(),
+            dashboard_state_dir: ".tau/custom-dashboard".to_string(),
+            gateway_state_dir: ".tau/custom-gateway".to_string(),
+            model: "openai/gpt-5.2".to_string(),
+            request_timeout_ms: Some(12_345),
+            agent_request_max_retries: Some(0),
+            dry_run: false,
+            color: false,
+        };
+        let config = super::build_agent_gateway_config(&args);
+        assert_eq!(config.request_timeout_ms, 12_345);
     }
 }

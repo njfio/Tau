@@ -4,6 +4,7 @@ use chrono::Local;
 
 use super::chat::{ChatMessage, ChatPanel, MessageRole};
 use super::gateway::GatewayInteractiveConfig;
+use super::gateway_runtime::GatewayRuntime;
 use super::input::InputEditor;
 use super::status::StatusBar;
 use super::tools::{ToolEntry, ToolPanel, ToolStatus};
@@ -54,10 +55,12 @@ pub struct App {
     pub command_input: String,
     pub show_tool_panel: bool,
     pub pending_assistant: String,
+    pub gateway_runtime: Option<GatewayRuntime>,
 }
 
 impl App {
     pub fn new(config: AppConfig) -> Self {
+        let gateway_runtime = config.gateway.clone().map(GatewayRuntime::start);
         Self {
             status: StatusBar::new(config.model.clone(), config.profile.clone()),
             config,
@@ -71,6 +74,7 @@ impl App {
             command_input: String::new(),
             show_tool_panel: true,
             pending_assistant: String::new(),
+            gateway_runtime,
         }
     }
 

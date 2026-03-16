@@ -52,6 +52,7 @@ fn run_event_loop(
 ) -> io::Result<()> {
     let mut last_tick = Instant::now();
     loop {
+        app.pump_gateway_events();
         terminal.draw(|frame| ui::render(frame, app))?;
         if event::poll(tick_rate.saturating_sub(last_tick.elapsed()))? {
             if let Event::Key(key) = event::read()? {

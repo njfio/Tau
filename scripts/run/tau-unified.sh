@@ -550,6 +550,9 @@ cmd_tui() {
   fi
   (
     cd "${REPO_ROOT}"
+    export TAU_UNIFIED_BIND="${bind}"
+    export TAU_UNIFIED_GATEWAY_AUTH_TOKEN="${auth_token}"
+    export TAU_UNIFIED_SESSION_KEY="default"
     "${tui_cmd[@]}"
   )
 }

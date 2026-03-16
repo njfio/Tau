@@ -26,8 +26,8 @@ impl App {
 
         self.push_user_message(&text);
         self.input.clear();
-        if self.config.gateway.is_some() {
-            self.enter_gateway_wait_state();
+        if self.gateway_runtime.is_some() {
+            self.submit_gateway_prompt(text);
             return;
         }
         self.push_local_echo(text);
@@ -48,9 +48,20 @@ impl App {
         self.chat.scroll_to_bottom();
     }
 
-    fn enter_gateway_wait_state(&mut self) {
+    fn submit_gateway_prompt(&mut self, text: String) {
         self.pending_assistant.clear();
+        self.push_message(MessageRole::Assistant, String::new());
         self.status.agent_state = AgentStateDisplay::Thinking;
+        let Some(runtime) = &self.gateway_runtime else {
+            return;
+        };
+        if runtime.submit(text).is_err() {
+            self.push_message(
+                MessageRole::System,
+                "gateway error: request channel closed".to_string(),
+            );
+            self.status.agent_state = AgentStateDisplay::Error;
+        }
     }
 
     fn push_local_echo(&mut self, text: String) {
