@@ -37,42 +37,10 @@ pub(super) fn render_activity_strip(frame: &mut Frame, app: &App, area: Rect) {
 
 pub(super) fn render_attention_strip(frame: &mut Frame, app: &App, area: Rect) {
     let line = if let Some(request) = &app.approval_request {
-        Line::from(vec![
-            Span::styled(
-                " Approval required ",
-                Style::default()
-                    .fg(Color::Black)
-                    .bg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::raw(" "),
-            Span::styled(request.summary.clone(), Style::default().fg(Color::White)),
-            Span::raw(" "),
-            Span::styled("Approve", Style::default().fg(Color::Green)),
-            Span::raw(" "),
-            Span::styled("[Y] approve", Style::default().fg(Color::Green)),
-            Span::raw("  "),
-            Span::styled("Reject", Style::default().fg(Color::Red)),
-            Span::raw(" "),
-            Span::styled("[N] reject", Style::default().fg(Color::Red)),
-        ])
+        approval_attention_line(request.summary.as_str())
     } else {
         match app.status.agent_state {
-            AgentStateDisplay::Error => Line::from(vec![
-                Span::styled(
-                    " Attention ",
-                    Style::default()
-                        .fg(Color::Black)
-                        .bg(Color::LightRed)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::raw(" "),
-                Span::styled("The last turn failed.", Style::default().fg(Color::White)),
-                Span::raw(" "),
-                Span::styled("Retry turn", Style::default().fg(Color::Yellow)),
-                Span::raw("  "),
-                Span::styled("Open details", Style::default().fg(Color::Cyan)),
-            ]),
+            AgentStateDisplay::Error => error_attention_line(),
             _ => Line::default(),
         }
     };
@@ -99,4 +67,46 @@ fn latest_running_tool(app: &App) -> Option<&ToolEntry> {
         .iter()
         .rev()
         .find(|entry| entry.status == ToolStatus::Running)
+}
+
+fn approval_attention_line(summary: &str) -> Line<'static> {
+    Line::from(vec![
+        badge(" Approval required ", Color::Yellow),
+        Span::raw(" "),
+        Span::styled(summary.to_string(), Style::default().fg(Color::White)),
+        Span::raw(" "),
+        action("Approve", Color::Green),
+        Span::raw(" "),
+        action("[Y] approve", Color::Green),
+        Span::raw("  "),
+        action("Reject", Color::Red),
+        Span::raw(" "),
+        action("[N] reject", Color::Red),
+    ])
+}
+
+fn error_attention_line() -> Line<'static> {
+    Line::from(vec![
+        badge(" Attention ", Color::LightRed),
+        Span::raw(" "),
+        Span::styled("The last turn failed.", Style::default().fg(Color::White)),
+        Span::raw(" "),
+        action("Retry turn", Color::Yellow),
+        Span::raw("  "),
+        action("Open details", Color::Cyan),
+    ])
+}
+
+fn badge(text: &str, background: Color) -> Span<'static> {
+    Span::styled(
+        text.to_string(),
+        Style::default()
+            .fg(Color::Black)
+            .bg(background)
+            .add_modifier(Modifier::BOLD),
+    )
+}
+
+fn action(text: &str, color: Color) -> Span<'static> {
+    Span::styled(text.to_string(), Style::default().fg(color))
 }

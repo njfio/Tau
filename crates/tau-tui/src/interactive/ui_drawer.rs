@@ -133,13 +133,13 @@ fn memory_items() -> Vec<ListItem<'static>> {
 fn session_items(app: &App) -> Vec<ListItem<'static>> {
     vec![
         section_item("Sessions"),
-        detail_line_item(format!("Current session: {}", app.config.session_key)),
-        detail_line_item(format!("Messages: {}", app.chat.len())),
-        detail_line_item(format!("Tokens: {}", app.status.total_tokens)),
-        detail_line_item(format!(
-            "Approvals pending: {}",
-            usize::from(app.approval_request.is_some())
-        )),
+        metric_item("Current session", app.config.session_key.clone()),
+        metric_item("Messages", app.chat.len().to_string()),
+        metric_item("Tokens", app.status.total_tokens.to_string()),
+        metric_item(
+            "Approvals pending",
+            usize::from(app.approval_request.is_some()).to_string(),
+        ),
     ]
 }
 
@@ -157,6 +157,10 @@ fn detail_line_item(text: String) -> ListItem<'static> {
         format!("  {text}"),
         Style::default().fg(Color::Gray),
     )))
+}
+
+fn metric_item(label: &str, value: String) -> ListItem<'static> {
+    detail_line_item(format!("{label}: {value}"))
 }
 
 fn truncate(input: &str, max: usize) -> String {
