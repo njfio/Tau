@@ -1,6 +1,6 @@
 use ratatui::{
     layout::Rect,
-    style::{Color, Modifier, Style},
+    style::{Color, Style},
     text::{Line, Span},
     widgets::{Paragraph, Wrap},
     Frame,
@@ -8,7 +8,7 @@ use ratatui::{
 
 use super::super::app::App;
 use super::super::status::AgentStateDisplay;
-use super::super::tools::{ToolEntry, ToolStatus};
+use super::shared::{action, badge, latest_running_tool};
 
 pub(super) fn attention_height(app: &App) -> u16 {
     if app.approval_request.is_some() || app.status.agent_state == AgentStateDisplay::Error {
@@ -19,19 +19,7 @@ pub(super) fn attention_height(app: &App) -> u16 {
 }
 
 pub(super) fn render_activity_strip(frame: &mut Frame, app: &App, area: Rect) {
-    let title = Span::styled(
-        " Live activity ",
-        Style::default()
-            .fg(Color::Black)
-            .bg(Color::LightYellow)
-            .add_modifier(Modifier::BOLD),
-    );
-    let summary = Span::styled(activity_summary(app), Style::default().fg(Color::White));
-    let commands = Span::styled(
-        " /details  /retry  /interrupt ",
-        Style::default().fg(Color::DarkGray),
-    );
-    let line = Line::from(vec![title, Span::raw(" "), summary, commands]);
+    let line = Line::from(activity_spans(app));
     frame.render_widget(Paragraph::new(line).wrap(Wrap { trim: true }), area);
 }
 
@@ -61,12 +49,26 @@ fn activity_summary(app: &App) -> String {
     }
 }
 
-fn latest_running_tool(app: &App) -> Option<&ToolEntry> {
-    app.tools
-        .entries()
-        .iter()
-        .rev()
-        .find(|entry| entry.status == ToolStatus::Running)
+fn activity_spans(app: &App) -> Vec<Span<'static>> {
+    let mut spans = vec![
+        badge(" Live activity ", Color::LightYellow),
+        Span::raw(" "),
+        state_chip(app.status.agent_state),
+        Span::raw(" "),
+        Span::styled(activity_summary(app), Style::default().fg(Color::White)),
+    ];
+    if app.status.agent_state == AgentStateDisplay::ToolExec {
+        spans.extend(tool_activity_spans(app));
+    }
+    spans.extend([
+        Span::raw(" "),
+        action("/details", Color::DarkGray),
+        Span::raw("  "),
+        action("/retry", Color::DarkGray),
+        Span::raw("  "),
+        action("/interrupt", Color::DarkGray),
+    ]);
+    spans
 }
 
 fn approval_attention_line(summary: &str) -> Line<'static> {
@@ -92,21 +94,36 @@ fn error_attention_line() -> Line<'static> {
         Span::styled("The last turn failed.", Style::default().fg(Color::White)),
         Span::raw(" "),
         action("Retry turn", Color::Yellow),
+        Span::raw(" "),
+        action("[r] retry", Color::Yellow),
         Span::raw("  "),
         action("Open details", Color::Cyan),
+        Span::raw(" "),
+        action("[/details]", Color::Cyan),
     ])
 }
 
-fn badge(text: &str, background: Color) -> Span<'static> {
-    Span::styled(
-        text.to_string(),
-        Style::default()
-            .fg(Color::Black)
-            .bg(background)
-            .add_modifier(Modifier::BOLD),
-    )
+fn tool_activity_spans(app: &App) -> Vec<Span<'static>> {
+    let mut spans = Vec::new();
+    let count = app.tools.active_count();
+    if count > 0 {
+        spans.push(Span::raw(" "));
+        spans.push(action(&format!("{count} active"), Color::Cyan));
+    }
+    if let Some(tool) = latest_running_tool(app) {
+        spans.push(Span::raw(" "));
+        spans.push(action(&tool.name, Color::Yellow));
+    }
+    spans
 }
 
-fn action(text: &str, color: Color) -> Span<'static> {
-    Span::styled(text.to_string(), Style::default().fg(color))
+fn state_chip(state: AgentStateDisplay) -> Span<'static> {
+    let (label, color) = match state {
+        AgentStateDisplay::Idle => ("idle", Color::DarkGray),
+        AgentStateDisplay::Thinking => ("thinking", Color::Yellow),
+        AgentStateDisplay::ToolExec => ("tool", Color::Cyan),
+        AgentStateDisplay::Streaming => ("stream", Color::Green),
+        AgentStateDisplay::Error => ("error", Color::LightRed),
+    };
+    badge(&format!(" {label} "), color)
 }
