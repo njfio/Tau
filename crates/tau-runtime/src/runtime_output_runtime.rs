@@ -243,6 +243,24 @@ mod tests {
     }
 
     #[test]
+    fn red_spec_3581_event_to_json_emits_operator_state_for_turn_and_tool_events() {
+        let turn_value = event_to_json(&AgentEvent::TurnStart { turn: 7 });
+        assert_eq!(turn_value["operator_state"]["entity"], "turn");
+        assert_eq!(turn_value["operator_state"]["phase"], "model");
+        assert_eq!(turn_value["operator_state"]["status"], "in_progress");
+
+        let tool_value = event_to_json(&AgentEvent::ToolExecutionStart {
+            tool_call_id: "call-7".to_string(),
+            tool_name: "http".to_string(),
+            arguments: serde_json::json!({ "url": "https://example.com" }),
+        });
+        assert_eq!(tool_value["operator_state"]["entity"], "tool");
+        assert_eq!(tool_value["operator_state"]["status"], "in_progress");
+        assert_eq!(tool_value["operator_state"]["tool_name"], "http");
+        assert_eq!(tool_value["operator_state"]["tool_call_id"], "call-7");
+    }
+
+    #[test]
     fn unit_event_to_json_maps_replan_triggered_shape() {
         let event = AgentEvent::ReplanTriggered {
             turn: 2,

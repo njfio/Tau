@@ -9589,6 +9589,8 @@ async fn functional_openresponses_endpoint_streams_sse_for_stream_true() {
     assert!(body.contains("event: response.created"));
     assert!(body.contains("event: response.output_text.delta"));
     assert!(body.contains("event: response.completed"));
+    assert!(body.contains("\"operator_state\""));
+    assert!(body.contains("\"entity\":\"turn\""));
     assert!(body.contains("event: done"));
 
     handle.abort();
@@ -13120,6 +13122,9 @@ async fn tier_pr_a2_agent_session_flow_matrix() {
     assert_eq!(stream.status(), StatusCode::OK);
     let stream_body = stream.text().await.expect("read stream body");
     assert!(stream_body.contains("event: response.completed"));
+    assert!(stream_body.contains("\"operator_state\""));
+    assert!(stream_body.contains("\"entity\":\"turn\""));
+    assert!(stream_body.contains("\"entity\":\"artifact\""));
     assert!(stream_body.contains("event: done"));
 
     // A2-04/A2-05/A2-09
