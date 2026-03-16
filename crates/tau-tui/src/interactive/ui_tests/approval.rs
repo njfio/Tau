@@ -50,4 +50,6 @@ fn red_spec_3582_error_attention_strip_exposes_retry_and_details_actions() {
 
     assert!(rendered.contains("Retry turn"));
     assert!(rendered.contains("Open details"));
+    assert!(rendered.contains("[r] retry"));
+    assert!(rendered.contains("[/details]"));
 }
