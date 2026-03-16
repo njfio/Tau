@@ -39,12 +39,13 @@ fn red_spec_3582_composer_hints_expose_interrupt_retry_and_details_actions() {
 }
 
 #[test]
-fn red_spec_3582_composer_uses_prompt_shell_instead_of_bordered_panel_title() {
+fn red_spec_3582_composer_uses_action_chips_instead_of_instruction_sentence() {
     let mut app = App::new(AppConfig::default());
     let rendered = render_app(&mut app, 120, 24);
 
-    assert!(rendered.contains("Press / for commands"));
-    assert!(!rendered.contains("Composer"));
+    assert!(rendered.contains("[/] commands"));
+    assert!(rendered.contains("[Enter] send"));
+    assert!(!rendered.contains("Press / for commands"));
 }
 
 #[test]
@@ -127,6 +128,18 @@ fn integration_spec_3582_approve_command_resolves_pending_approval_through_real_
 }
 
 #[test]
+fn integration_spec_3582_approval_shortcuts_resolve_request_without_leaving_insert_mode() {
+    let mut app = App::new(AppConfig::default());
+    submit_command(&mut app, "/approval-needed");
+    app.handle_key(key(KeyCode::Char('y')));
+
+    let rendered = render_app(&mut app, 120, 28);
+
+    assert!(!rendered.contains("Approval required"));
+    assert!(rendered.contains("Approval approved"));
+}
+
+#[test]
 fn red_spec_3582_approval_attention_strip_exposes_approve_and_reject_actions() {
     let mut app = App::new(AppConfig::default());
     for ch in "/approval-needed".chars() {
@@ -139,6 +152,8 @@ fn red_spec_3582_approval_attention_strip_exposes_approve_and_reject_actions() {
     assert!(rendered.contains("Approval required"));
     assert!(rendered.contains("Approve"));
     assert!(rendered.contains("Reject"));
+    assert!(rendered.contains("[Y] approve"));
+    assert!(rendered.contains("[N] reject"));
 }
 
 #[test]
@@ -155,6 +170,30 @@ fn red_spec_3582_transcript_renders_messages_as_cards() {
     assert!(rendered.contains("╭─ You"));
     assert!(rendered.contains("╭─ Tau"));
     assert!(rendered.contains("│ I can do that."));
+}
+
+#[test]
+fn red_spec_3582_memory_detail_surfaces_degraded_state_marker() {
+    let mut app = App::new(AppConfig::default());
+    submit_command(&mut app, "/memory");
+
+    let rendered = render_app(&mut app, 140, 32);
+
+    assert!(rendered.contains("degraded"));
+    assert!(rendered.contains("shared state unavailable"));
+}
+
+#[test]
+fn integration_spec_3582_sessions_detail_surfaces_real_session_metrics() {
+    let mut app = App::new(AppConfig::default());
+    submit_command(&mut app, "testing");
+    submit_command(&mut app, "/sessions");
+
+    let rendered = render_app(&mut app, 140, 32);
+
+    assert!(rendered.contains("Messages"));
+    assert!(rendered.contains("Tokens"));
+    assert!(rendered.contains("Approvals pending"));
 }
 
 fn render_app(app: &mut App, width: u16, height: u16) -> String {
