@@ -8,9 +8,12 @@ use ratatui::{
 
 use super::super::app::{App, FocusPanel, InputMode};
 
+const MAX_INPUT_LINES: u16 = 4;
+const COMPOSER_BASE_HEIGHT: u16 = 2;
+
 pub(super) fn input_height(app: &App) -> u16 {
     let lines = app.input.lines().len() as u16;
-    lines.clamp(1, 4) + 2
+    lines.clamp(1, MAX_INPUT_LINES) + COMPOSER_BASE_HEIGHT
 }
 
 pub(super) fn render_input(frame: &mut Frame, app: &App, area: Rect) {
@@ -41,13 +44,7 @@ fn render_input_lines(frame: &mut Frame, app: &App, area: Rect) {
         .lines()
         .iter()
         .enumerate()
-        .map(|(idx, line)| {
-            let prefix = if idx == 0 { "› " } else { "  " };
-            Line::from(vec![
-                Span::styled(prefix, Style::default().fg(Color::LightGreen)),
-                Span::raw(line.as_str()),
-            ])
-        })
+        .map(|(idx, line)| input_line(idx, line.as_str()))
         .collect::<Vec<_>>();
     frame.render_widget(Paragraph::new(Text::from(lines)), area);
 }
@@ -59,7 +56,11 @@ fn render_footer(frame: &mut Frame, app: &App, area: Rect) {
 
 fn footer_line(app: &App) -> Line<'static> {
     let mode = mode_label(app.input_mode);
-    Line::from(vec![
+    Line::from(footer_spans(mode))
+}
+
+fn footer_spans(mode: &str) -> Vec<Span<'static>> {
+    vec![
         chip("/", "commands", Color::Blue),
         Span::raw(" "),
         chip("Enter", "send", Color::Green),
@@ -69,11 +70,26 @@ fn footer_line(app: &App) -> Line<'static> {
         chip("Tab", "pane", Color::DarkGray),
         Span::raw(" "),
         Span::styled(format!("mode={mode}"), Style::default().fg(Color::DarkGray)),
-    ])
+    ]
 }
 
 fn chip(key: &str, label: &str, color: Color) -> Span<'static> {
     Span::styled(format!("[{key}] {label}"), Style::default().fg(color))
+}
+
+fn input_line(index: usize, line: &str) -> Line<'static> {
+    Line::from(vec![
+        Span::styled(input_prefix(index), Style::default().fg(Color::LightGreen)),
+        Span::raw(line.to_string()),
+    ])
+}
+
+fn input_prefix(index: usize) -> &'static str {
+    if index == 0 {
+        "› "
+    } else {
+        "  "
+    }
 }
 
 fn mode_label(mode: InputMode) -> &'static str {
