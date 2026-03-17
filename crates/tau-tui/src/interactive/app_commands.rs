@@ -17,6 +17,10 @@ impl App {
             self.show_help = false;
             return;
         }
+        if self.show_thinking && key.code == KeyCode::Esc {
+            self.show_thinking = false;
+            return;
+        }
         match self.input_mode {
             InputMode::Normal => self.handle_normal_mode(key),
             InputMode::Insert => self.handle_insert_mode(key),
@@ -147,6 +151,7 @@ impl App {
             "quit" | "q" => self.should_quit = true,
             "clear" => self.chat.clear(),
             "help" => self.show_help = true,
+            "thinking" => self.show_thinking = !self.show_thinking,
             "details" => self.show_tool_panel = !self.show_tool_panel,
             "tools" => self.show_detail_section(DetailSection::Tools),
             "memory" => self.show_detail_section(DetailSection::Memory),

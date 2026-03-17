@@ -2,11 +2,12 @@ use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Block, Borders, Clear, Paragraph},
+    widgets::{Block, Borders, Clear, Paragraph, Wrap},
     Frame,
 };
 
 use super::super::app::App;
+use super::super::chat::MessageRole;
 use super::drawer;
 
 pub(super) fn render_help_overlay(frame: &mut Frame, area: Rect) {
@@ -63,6 +64,7 @@ pub(super) fn render_help_overlay(frame: &mut Frame, area: Rect) {
             "Slash Commands",
             Style::default().add_modifier(Modifier::BOLD),
         )),
+        Line::from("  /thinking  Show live turn context"),
         Line::from("  /details  Toggle detail drawer"),
         Line::from("  /retry    Replay the last prompt"),
         Line::from("  /interrupt  Stop the active turn"),
@@ -116,4 +118,66 @@ pub(super) fn render_detail_overlay(frame: &mut Frame, app: &App, area: Rect) {
     let inner = block.inner(popup_area);
     frame.render_widget(block, popup_area);
     drawer::render_detail_contents(frame, app, inner);
+}
+
+pub(super) fn render_thinking_overlay(frame: &mut Frame, app: &App, area: Rect) {
+    let popup_width = area.width.saturating_sub(8).min(72);
+    let popup_height = area.height.saturating_sub(6).min(18);
+    let popup_area = Rect::new(
+        (area.width.saturating_sub(popup_width)) / 2,
+        (area.height.saturating_sub(popup_height)) / 2,
+        popup_width,
+        popup_height,
+    );
+    frame.render_widget(Clear, popup_area);
+    let block = Block::default()
+        .title(" Thinking ")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Magenta))
+        .style(Style::default().bg(Color::Rgb(8, 10, 14)));
+    let inner = block.inner(popup_area);
+    frame.render_widget(block, popup_area);
+    frame.render_widget(thinking_paragraph(app), inner);
+}
+
+fn thinking_paragraph(app: &App) -> Paragraph<'static> {
+    Paragraph::new(thinking_text(app))
+        .wrap(Wrap { trim: false })
+        .style(Style::default().fg(Color::White))
+}
+
+fn thinking_text(app: &App) -> Text<'static> {
+    let Some(state) = &app.last_operator_state else {
+        return Text::from(vec![Line::from("No active turn context")]);
+    };
+    let mut lines = vec![
+        Line::from(format!("State: {}:{}", state.entity, overlay_phase(state))),
+        Line::from(format!("Status: {}", state.status)),
+    ];
+    push_field(&mut lines, "Artifact", state.artifact_kind.as_deref());
+    push_field(&mut lines, "Response", state.response_id.as_deref());
+    push_field(&mut lines, "Reason", state.reason_code.as_deref());
+    if let Some(tool) = app.tools.entries().last() {
+        lines.push(Line::from(format!("Current tool: {}", tool.name)));
+    }
+    if let Some(prompt) = &app.last_submitted_input {
+        lines.push(Line::from(format!("Prompt: {}", prompt.trim())));
+    }
+    if let Some(preview) = app.chat.latest_content_by_role(MessageRole::Assistant) {
+        lines.push(Line::from(""));
+        lines.push(Line::from("Assistant preview:"));
+        lines.push(Line::from(preview.trim().to_string()));
+    }
+    Text::from(lines)
+}
+
+fn overlay_phase(state: &super::super::gateway::OperatorStateEvent) -> &str {
+    state.phase.as_deref().unwrap_or(state.status.as_str())
+}
+
+fn push_field(lines: &mut Vec<Line<'static>>, label: &str, value: Option<&str>) {
+    let Some(value) = value else {
+        return;
+    };
+    lines.push(Line::from(format!("{label}: {value}")));
 }

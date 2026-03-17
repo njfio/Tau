@@ -109,6 +109,7 @@ fn is_inline_command(text: &str) -> bool {
             | "q"
             | "clear"
             | "help"
+            | "thinking"
             | "details"
             | "tools"
             | "memory"

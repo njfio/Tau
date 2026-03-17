@@ -51,6 +51,9 @@ pub fn render(frame: &mut Frame, app: &App) {
     if compact_details {
         overlay::render_detail_overlay(frame, app, size);
     }
+    if app.show_thinking {
+        overlay::render_thinking_overlay(frame, app, size);
+    }
     if app.focus == FocusPanel::CommandPalette {
         overlay::render_command_palette(frame, app, size);
     }
