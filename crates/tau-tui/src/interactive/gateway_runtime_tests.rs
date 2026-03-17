@@ -3,9 +3,12 @@ use std::net::TcpListener;
 use std::thread;
 use std::time::Duration;
 
+use ratatui::{backend::TestBackend, Terminal};
+
 use super::app::{App, AppConfig};
 use super::gateway::GatewayInteractiveConfig;
 use super::status::AgentStateDisplay;
+use super::ui::render;
 
 #[test]
 fn integration_spec_3582_gateway_runtime_streams_operator_state_into_app() {
@@ -63,6 +66,52 @@ data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_3\",\"output_
     assert_eq!(app.status.agent_state, AgentStateDisplay::Idle);
 }
 
+#[test]
+fn integration_spec_3582_gateway_runtime_renders_phase_specific_streaming_visuals() {
+    let server = spawn_sse_server(vec![
+        "event: response.created\n\
+data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_4\"},\"operator_state\":{\"entity\":\"turn\",\"status\":\"in_progress\",\"phase\":\"model\",\"response_id\":\"resp_4\"}}\n\n"
+            .to_string(),
+        "event: response.output_text.delta\n\
+data: {\"type\":\"response.output_text.delta\",\"response_id\":\"resp_4\",\"delta\":\"hello \",\"operator_state\":{\"entity\":\"artifact\",\"status\":\"streaming\",\"phase\":\"stream\",\"artifact_kind\":\"assistant_output_text\",\"response_id\":\"resp_4\"}}\n\n"
+            .to_string(),
+    ]);
+    let mut app = App::new(AppConfig {
+        model: "openai/gpt-5.2".to_string(),
+        profile: "ops-interactive".to_string(),
+        session_key: "default".to_string(),
+        workspace_label: "rust_pi-3582-phase".to_string(),
+        approval_mode: "ask".to_string(),
+        tick_rate_ms: 25,
+        gateway: Some(GatewayInteractiveConfig {
+            base_url: server.base_url,
+            auth_token: None,
+            session_key: "default".to_string(),
+            request_timeout_ms: 3_000,
+        }),
+    });
+
+    for ch in "testing".chars() {
+        app.input.insert_char(ch);
+    }
+    app.submit_input();
+
+    wait_for(|| {
+        app.pump_gateway_events();
+        app.status.agent_state == AgentStateDisplay::Streaming
+            && app
+                .chat
+                .messages()
+                .iter()
+                .any(|message| message.content.contains("hello "))
+    });
+
+    let rendered = render_app(&mut app, 120, 28);
+    assert!(rendered.contains("Streaming reply"));
+    assert!(rendered.contains("artifact:stream"));
+    assert!(rendered.contains("assistant_output_text"));
+}
+
 struct TestServer {
     base_url: String,
 }
@@ -102,4 +151,20 @@ fn wait_for(mut condition: impl FnMut() -> bool) {
         thread::sleep(Duration::from_millis(25));
     }
     panic!("condition not satisfied before timeout");
+}
+
+fn render_app(app: &mut App, width: u16, height: u16) -> String {
+    let backend = TestBackend::new(width, height);
+    let mut terminal = Terminal::new(backend).expect("terminal");
+    terminal.draw(|frame| render(frame, app)).expect("draw");
+    let buffer = terminal.backend().buffer();
+    (0..height)
+        .map(|y| {
+            (0..width)
+                .map(|x| buffer[(x, y)].symbol())
+                .collect::<Vec<_>>()
+                .join("")
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
