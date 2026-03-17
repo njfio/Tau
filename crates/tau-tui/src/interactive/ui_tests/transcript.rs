@@ -52,7 +52,7 @@ fn red_spec_3582_transcript_surfaces_active_turn_card_with_prompt_context() {
 
     let rendered = render_app(&mut app, 120, 28);
 
-    assert!(rendered.contains("Turn active"));
+    assert!(rendered.contains("Thinking"));
     assert!(rendered.contains("Research Aleo private apps platform"));
     assert!(rendered.contains("thinking"));
 }
@@ -229,7 +229,7 @@ fn red_spec_3582_status_bar_surfaces_operator_phase_context() {
 
     let rendered = render_app(&mut app, 140, 10);
 
-    assert!(rendered.contains("phase=model"));
+    assert!(rendered.contains("turn:model"));
 }
 
 #[test]

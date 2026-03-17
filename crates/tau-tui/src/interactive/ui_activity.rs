@@ -57,6 +57,7 @@ fn activity_spans(app: &App) -> Vec<Span<'static>> {
         Span::raw(" "),
         Span::styled(activity_summary(app), Style::default().fg(Color::White)),
     ];
+    spans.extend(operator_activity_spans(app));
     if app.status.agent_state == AgentStateDisplay::ToolExec {
         spans.extend(tool_activity_spans(app));
     }
@@ -101,6 +102,26 @@ fn error_attention_line() -> Line<'static> {
         Span::raw(" "),
         action("[/details]", Color::Cyan),
     ])
+}
+
+fn operator_activity_spans(app: &App) -> Vec<Span<'static>> {
+    let Some(state) = &app.last_operator_state else {
+        return Vec::new();
+    };
+    let phase = state.phase.as_deref().unwrap_or(state.status.as_str());
+    let mut spans = vec![
+        Span::raw(" "),
+        action(&format!("{}:{phase}", state.entity), Color::DarkGray),
+    ];
+    if let Some(kind) = &state.artifact_kind {
+        spans.push(Span::raw(" "));
+        spans.push(action(kind, Color::Green));
+    }
+    if let Some(code) = &state.reason_code {
+        spans.push(Span::raw(" "));
+        spans.push(action(code, Color::LightRed));
+    }
+    spans
 }
 
 fn tool_activity_spans(app: &App) -> Vec<Span<'static>> {
