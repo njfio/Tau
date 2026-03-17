@@ -47,7 +47,7 @@ fn render_chat_panel(frame: &mut Frame, app: &App, area: Rect) {
 fn transcript_lines(app: &App) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
     for msg in app.chat.messages() {
-        lines.extend(message_card_lines(msg.role, &msg.timestamp, &msg.content));
+        lines.extend(message_lines(msg.role, &msg.timestamp, &msg.content));
     }
     lines
 }
@@ -60,8 +60,14 @@ fn transcript_scroll(app: &App, total_lines: usize, visible_height: usize) -> u1
     if msg_idx >= app.chat.len().saturating_sub(1) {
         return (total_lines - visible_height) as u16;
     }
-    let approx = msg_idx * 3;
-    approx.min(total_lines.saturating_sub(visible_height)) as u16
+    let offset = app
+        .chat
+        .messages()
+        .iter()
+        .take(msg_idx)
+        .map(|msg| message_line_count(&msg.content))
+        .sum::<usize>();
+    offset.min(total_lines.saturating_sub(visible_height)) as u16
 }
 
 fn render_transcript_background(frame: &mut Frame, app: &App, area: Rect) -> Rect {
@@ -119,8 +125,33 @@ fn render_transcript_scrollbar(frame: &mut Frame, area: Rect, inner: Rect, app: 
     );
 }
 
-fn message_card_lines(role: MessageRole, timestamp: &str, content: &str) -> Vec<Line<'static>> {
-    let role_style = match role {
+fn message_lines(role: MessageRole, timestamp: &str, content: &str) -> Vec<Line<'static>> {
+    let mut lines = vec![message_header_line(role, timestamp)];
+    for content_line in content.lines() {
+        lines.push(message_body_line(content_line));
+    }
+    lines
+}
+
+fn message_header_line(role: MessageRole, timestamp: &str) -> Line<'static> {
+    Line::from(vec![
+        Span::styled(role.label().to_string(), role_style(role)),
+        Span::styled(
+            format!(" · {timestamp}"),
+            Style::default().fg(Color::DarkGray),
+        ),
+    ])
+}
+
+fn message_body_line(content_line: &str) -> Line<'static> {
+    Line::from(vec![
+        Span::styled("  ", Style::default().fg(Color::DarkGray)),
+        Span::raw(content_line.to_string()),
+    ])
+}
+
+fn role_style(role: MessageRole) -> Style {
+    match role {
         MessageRole::User => Style::default()
             .fg(Color::Green)
             .add_modifier(Modifier::BOLD),
@@ -133,25 +164,10 @@ fn message_card_lines(role: MessageRole, timestamp: &str, content: &str) -> Vec<
         MessageRole::Tool => Style::default()
             .fg(Color::Magenta)
             .add_modifier(Modifier::BOLD),
-    };
-    let mut lines = vec![Line::from(vec![
-        Span::styled("╭─ ", Style::default().fg(Color::DarkGray)),
-        Span::styled(role.label().to_string(), role_style),
-        Span::styled(
-            format!(" · {timestamp}"),
-            Style::default().fg(Color::DarkGray),
-        ),
-    ])];
-    for content_line in content.lines() {
-        lines.push(Line::from(vec![
-            Span::styled("│ ", Style::default().fg(Color::DarkGray)),
-            Span::raw(content_line.to_string()),
-        ]));
     }
-    lines.push(Line::from(Span::styled(
-        "╰─",
-        Style::default().fg(Color::DarkGray),
-    )));
-    lines.push(Line::from(""));
-    lines
+}
+
+fn message_line_count(content: &str) -> usize {
+    let body_lines = content.lines().count();
+    1 + body_lines
 }
