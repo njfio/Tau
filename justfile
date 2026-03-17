@@ -1,6 +1,6 @@
 set shell := ["bash", "-lc"]
 
-TAU_ENV = "unset OPENAI_API_KEY TAU_API_KEY && export TAU_OPENAI_AUTH_MODE=oauth-token && export TAU_PROVIDER_SUBSCRIPTION_STRICT=true"
+TAU_ENV := "unset OPENAI_API_KEY TAU_API_KEY && export TAU_OPENAI_AUTH_MODE=oauth-token && export TAU_PROVIDER_SUBSCRIPTION_STRICT=true"
 
 stack-up:
 	@echo "starting dashboard/gateway/TUI runtime"
