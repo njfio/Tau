@@ -67,6 +67,20 @@ fn integration_spec_3582_bare_thinking_command_opens_overlay_through_real_input_
 }
 
 #[test]
+fn integration_spec_3582_prompt_submission_preserves_compact_composer_footer() {
+    let mut app = App::new(AppConfig::default());
+    submit_command(&mut app, "what is blue?");
+
+    let rendered = render_app(&mut app, 120, 24);
+
+    assert!(rendered.contains("what is blue?"));
+    assert!(rendered.contains("Received your message."));
+    assert!(rendered.contains("[S-Enter] nl"));
+    assert!(rendered.contains("[Tab] pane"));
+    assert!(rendered.contains("mode=ins"));
+}
+
+#[test]
 fn red_spec_3582_thinking_overlay_surfaces_operator_state_and_preview() {
     let mut app = App::new(AppConfig::default());
     app.apply_gateway_event(GatewayUiEvent::OperatorState(OperatorStateEvent {
