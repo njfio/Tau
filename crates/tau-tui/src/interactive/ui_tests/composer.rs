@@ -2,6 +2,7 @@ use crate::interactive::app::{App, AppConfig};
 use crate::interactive::chat::MessageRole;
 use crate::interactive::gateway::{GatewayUiEvent, OperatorStateEvent};
 
+use super::super::composer::input_height;
 use super::helpers::{render_app, submit_command};
 
 #[test]
@@ -22,6 +23,25 @@ fn red_spec_3582_composer_uses_action_chips_instead_of_instruction_sentence() {
     assert!(rendered.contains("[/] commands"));
     assert!(rendered.contains("[Enter] send"));
     assert!(!rendered.contains("Press / for commands"));
+}
+
+#[test]
+fn red_spec_3582_single_line_composer_uses_compact_height() {
+    let app = App::new(AppConfig::default());
+
+    assert_eq!(input_height(&app), 3);
+}
+
+#[test]
+fn red_spec_3582_composer_footer_uses_compact_dense_labels() {
+    let mut app = App::new(AppConfig::default());
+    let rendered = render_app(&mut app, 120, 18);
+
+    assert!(rendered.contains("[S-Enter] nl"));
+    assert!(rendered.contains("[Tab] pane"));
+    assert!(rendered.contains("mode=ins"));
+    assert!(!rendered.contains("Shift+Enter"));
+    assert!(!rendered.contains("insert mode"));
 }
 
 #[test]
