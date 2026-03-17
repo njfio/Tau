@@ -19,25 +19,6 @@ pub(super) fn render_help_overlay(frame: &mut Frame, area: Rect) {
     frame.render_widget(paragraph, popup_area);
 }
 
-pub(super) fn render_command_palette(frame: &mut Frame, app: &App, area: Rect) {
-    let palette_width = 50u16.min(area.width.saturating_sub(4));
-    let popup_area = Rect::new((area.width - palette_width) / 2, 2, palette_width, 3);
-    frame.render_widget(Clear, popup_area);
-    let input = Paragraph::new(Line::from(Span::raw(&app.command_input)))
-        .block(
-            Block::default()
-                .title(" Command Palette (type command + Enter) ")
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::Yellow)),
-        )
-        .style(Style::default().bg(Color::Black));
-    frame.render_widget(input, popup_area);
-    frame.set_cursor_position((
-        popup_area.x + 1 + app.command_input.len() as u16,
-        popup_area.y + 1,
-    ));
-}
-
 pub(super) fn render_detail_overlay(frame: &mut Frame, app: &App, area: Rect) {
     let popup_area = centered_rect(area, 52, 16, 6);
     frame.render_widget(Clear, popup_area);

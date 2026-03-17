@@ -1,5 +1,5 @@
 use super::super::chat::{ChatMessage, MessageRole};
-use super::super::command_catalog::is_known_command;
+use super::super::command_catalog::parse_command;
 use super::super::status::AgentStateDisplay;
 use super::super::tools::{ToolEntry, ToolStatus};
 use super::App;
@@ -16,7 +16,7 @@ impl App {
             self.input.clear();
             return;
         }
-        if is_known_command(trimmed) {
+        if parse_command(trimmed).is_some() {
             self.execute_command(trimmed);
             self.input.clear();
             return;

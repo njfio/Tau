@@ -1,5 +1,6 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
+use super::super::command_catalog::{parse_command, CommandId};
 use super::super::status::AgentStateDisplay;
 use super::focus::{next_insert_focus, next_normal_focus};
 use super::{App, ApprovalRequest, DetailSection, FocusPanel, InputMode};
@@ -147,29 +148,29 @@ impl App {
     }
 
     pub(super) fn execute_command(&mut self, cmd: &str) {
-        match cmd.trim() {
-            "quit" | "q" => self.should_quit = true,
-            "clear" => self.chat.clear(),
-            "help" => self.show_help = true,
-            "thinking" => self.show_thinking = !self.show_thinking,
-            "details" => self.show_tool_panel = !self.show_tool_panel,
-            "tools" => self.show_detail_section(DetailSection::Tools),
-            "memory" => self.show_detail_section(DetailSection::Memory),
-            "cortex" => self.show_detail_section(DetailSection::Cortex),
-            "sessions" => self.show_detail_section(DetailSection::Sessions),
-            "approval-needed" => {
+        match parse_command(cmd.trim()) {
+            Some(CommandId::Quit) => self.should_quit = true,
+            Some(CommandId::Clear) => self.chat.clear(),
+            Some(CommandId::Help) => self.show_help = true,
+            Some(CommandId::Thinking) => self.show_thinking = !self.show_thinking,
+            Some(CommandId::Details) => self.show_tool_panel = !self.show_tool_panel,
+            Some(CommandId::Tools) => self.show_detail_section(DetailSection::Tools),
+            Some(CommandId::Memory) => self.show_detail_section(DetailSection::Memory),
+            Some(CommandId::Cortex) => self.show_detail_section(DetailSection::Cortex),
+            Some(CommandId::Sessions) => self.show_detail_section(DetailSection::Sessions),
+            Some(CommandId::ApprovalNeeded) => {
                 self.approval_request = Some(ApprovalRequest {
                     summary: "Tool access needs confirmation before continuing.".to_string(),
                 });
             }
-            "approve" => self.resolve_approval(true),
-            "reject" => self.resolve_approval(false),
-            "interrupt" => {
+            Some(CommandId::Approve) => self.resolve_approval(true),
+            Some(CommandId::Reject) => self.resolve_approval(false),
+            Some(CommandId::Interrupt) => {
                 self.status.agent_state = AgentStateDisplay::Idle;
                 self.push_system_note("Interrupt requested.");
             }
-            "retry" => self.retry_last_prompt(),
-            _ => self.push_system_note(&format!("Unknown command: {cmd}")),
+            Some(CommandId::Retry) => self.retry_last_prompt(),
+            None => self.push_system_note(&format!("Unknown command: {cmd}")),
         }
     }
     fn resolve_approval(&mut self, approved: bool) {
