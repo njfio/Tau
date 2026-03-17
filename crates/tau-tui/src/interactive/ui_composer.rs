@@ -10,7 +10,7 @@ use super::super::app::{App, FocusPanel, InputMode};
 
 pub(super) fn input_height(app: &App) -> u16 {
     let lines = app.input.lines().len() as u16;
-    lines.clamp(2, 6) + 3
+    lines.clamp(1, 4) + 2
 }
 
 pub(super) fn render_input(frame: &mut Frame, app: &App, area: Rect) {
@@ -58,25 +58,29 @@ fn render_footer(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 fn footer_line(app: &App) -> Line<'static> {
-    let mode = match app.input_mode {
-        InputMode::Insert => "insert",
-        InputMode::Normal => "normal",
-    };
+    let mode = mode_label(app.input_mode);
     Line::from(vec![
         chip("/", "commands", Color::Blue),
         Span::raw(" "),
         chip("Enter", "send", Color::Green),
         Span::raw(" "),
-        chip("Shift+Enter", "newline", Color::DarkGray),
+        chip("S-Enter", "nl", Color::DarkGray),
         Span::raw(" "),
-        chip("Tab", "focus", Color::DarkGray),
+        chip("Tab", "pane", Color::DarkGray),
         Span::raw(" "),
-        Span::styled(format!("{mode} mode"), Style::default().fg(Color::DarkGray)),
+        Span::styled(format!("mode={mode}"), Style::default().fg(Color::DarkGray)),
     ])
 }
 
 fn chip(key: &str, label: &str, color: Color) -> Span<'static> {
     Span::styled(format!("[{key}] {label}"), Style::default().fg(color))
+}
+
+fn mode_label(mode: InputMode) -> &'static str {
+    match mode {
+        InputMode::Insert => "ins",
+        InputMode::Normal => "nor",
+    }
 }
 
 fn render_cursor(frame: &mut Frame, app: &App, area: Rect) {
