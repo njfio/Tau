@@ -20,7 +20,7 @@ pub(super) fn render_help_overlay(frame: &mut Frame, area: Rect) {
 }
 
 pub(super) fn render_detail_overlay(frame: &mut Frame, app: &App, area: Rect) {
-    let popup_area = centered_rect(area, 52, 16, 6);
+    let popup_area = centered_rect(area, 56, 18, 4);
     frame.render_widget(Clear, popup_area);
     let block = overlay_block(
         format!(" Quick details [{}] ", app.detail_section.label()),
@@ -28,7 +28,15 @@ pub(super) fn render_detail_overlay(frame: &mut Frame, app: &App, area: Rect) {
     );
     let inner = block.inner(popup_area);
     frame.render_widget(block, popup_area);
-    drawer::render_detail_contents(frame, app, inner);
+    let chunks = ratatui::layout::Layout::default()
+        .direction(ratatui::layout::Direction::Vertical)
+        .constraints([
+            ratatui::layout::Constraint::Min(1),
+            ratatui::layout::Constraint::Length(1),
+        ])
+        .split(inner);
+    drawer::render_detail_contents(frame, app, chunks[0]);
+    frame.render_widget(Paragraph::new(detail_overlay_hint()), chunks[1]);
 }
 
 pub(super) fn render_thinking_overlay(frame: &mut Frame, app: &App, area: Rect) {
@@ -99,6 +107,14 @@ fn overlay_block(title: impl Into<ratatui::text::Line<'static>>, color: Color) -
         .borders(Borders::ALL)
         .border_style(Style::default().fg(color))
         .style(Style::default().bg(Color::Rgb(8, 10, 14)))
+}
+
+fn detail_overlay_hint() -> Line<'static> {
+    Line::from(vec![
+        Span::styled("Esc close", Style::default().fg(Color::DarkGray)),
+        Span::raw("  "),
+        Span::styled("[ ] section", Style::default().fg(Color::Cyan)),
+    ])
 }
 
 fn help_text() -> Text<'static> {

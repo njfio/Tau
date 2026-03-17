@@ -22,6 +22,9 @@ impl App {
             self.show_thinking = false;
             return;
         }
+        if self.handle_detail_surface_key(key) {
+            return;
+        }
         match self.input_mode {
             InputMode::Normal => self.handle_normal_mode(key),
             InputMode::Insert => self.handle_insert_mode(key),
@@ -73,6 +76,24 @@ impl App {
         }
     }
 
+    fn handle_detail_surface_key(&mut self, key: KeyEvent) -> bool {
+        if !self.show_tool_panel {
+            return false;
+        }
+        match key.code {
+            KeyCode::Esc => {
+                self.show_tool_panel = false;
+                if self.focus == FocusPanel::Tools {
+                    self.focus = FocusPanel::Input;
+                }
+            }
+            KeyCode::Char('[') => self.cycle_detail_section_backward(),
+            KeyCode::Char(']') => self.cycle_detail_section_forward(),
+            _ => return false,
+        }
+        true
+    }
+
     fn handle_scroll_or_detail_key(&mut self, key: KeyEvent) -> bool {
         match key.code {
             KeyCode::Char('j') | KeyCode::Down => self.scroll_chat_down(1),
@@ -84,12 +105,6 @@ impl App {
             }
             KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.scroll_chat_up(10)
-            }
-            KeyCode::Char('[') if self.focus == FocusPanel::Tools => {
-                self.cycle_detail_section_backward()
-            }
-            KeyCode::Char(']') if self.focus == FocusPanel::Tools => {
-                self.cycle_detail_section_forward()
             }
             _ => return false,
         }
