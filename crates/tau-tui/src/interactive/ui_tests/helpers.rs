@@ -25,9 +25,19 @@ pub(super) fn key(code: KeyCode) -> KeyEvent {
     KeyEvent::new(code, KeyModifiers::NONE)
 }
 
+pub(super) fn ctrl(code: char) -> KeyEvent {
+    KeyEvent::new(KeyCode::Char(code), KeyModifiers::CONTROL)
+}
+
 pub(super) fn submit_command(app: &mut App, command: &str) {
     for ch in command.chars() {
         app.handle_key(key(KeyCode::Char(ch)));
     }
     app.handle_key(key(KeyCode::Enter));
+}
+
+pub(super) fn type_text(app: &mut App, text: &str) {
+    for ch in text.chars() {
+        app.handle_key(key(KeyCode::Char(ch)));
+    }
 }

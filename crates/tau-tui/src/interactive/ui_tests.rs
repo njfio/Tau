@@ -6,5 +6,7 @@ mod composer;
 mod detail;
 #[path = "ui_tests/helpers.rs"]
 mod helpers;
+#[path = "ui_tests/palette.rs"]
+mod palette;
 #[path = "ui_tests/transcript.rs"]
 mod transcript;
