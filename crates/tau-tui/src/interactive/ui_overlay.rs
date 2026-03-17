@@ -11,72 +11,10 @@ use super::super::chat::MessageRole;
 use super::drawer;
 
 pub(super) fn render_help_overlay(frame: &mut Frame, area: Rect) {
-    let help_width = 60u16.min(area.width.saturating_sub(4));
-    let help_height = 22u16.min(area.height.saturating_sub(4));
-    let popup_area = Rect::new(
-        (area.width - help_width) / 2,
-        (area.height - help_height) / 2,
-        help_width,
-        help_height,
-    );
+    let popup_area = centered_rect(area, 60, 22, 4);
     frame.render_widget(Clear, popup_area);
-
-    let help_text = vec![
-        Line::from(Span::styled(
-            "Tau Interactive TUI — Keyboard Reference",
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        )),
-        Line::from(""),
-        Line::from(Span::styled(
-            "Normal Mode",
-            Style::default().add_modifier(Modifier::BOLD),
-        )),
-        Line::from("  i/a       Enter insert mode"),
-        Line::from("  o         Insert mode + new line"),
-        Line::from("  q         Quit"),
-        Line::from("  ?         Toggle this help"),
-        Line::from("  j/k       Scroll chat up/down"),
-        Line::from("  g/G       Scroll to top/bottom"),
-        Line::from("  Ctrl+d/u  Page down/up"),
-        Line::from("  Tab       Cycle focus between panels"),
-        Line::from("  1/2/3     Focus Chat/Input/Tools"),
-        Line::from(""),
-        Line::from(Span::styled(
-            "Insert Mode",
-            Style::default().add_modifier(Modifier::BOLD),
-        )),
-        Line::from("  Enter     Send message"),
-        Line::from("  Shift+Enter / Alt+Enter  New line"),
-        Line::from("  Esc       Back to normal mode"),
-        Line::from(""),
-        Line::from(Span::styled(
-            "Global",
-            Style::default().add_modifier(Modifier::BOLD),
-        )),
-        Line::from("  Ctrl+c    Quit"),
-        Line::from("  Ctrl+l    Clear chat"),
-        Line::from("  Ctrl+t    Toggle details drawer"),
-        Line::from("  Ctrl+p    Command palette"),
-        Line::from(""),
-        Line::from(Span::styled(
-            "Slash Commands",
-            Style::default().add_modifier(Modifier::BOLD),
-        )),
-        Line::from("  /thinking  Show live turn context"),
-        Line::from("  /details  Toggle detail drawer"),
-        Line::from("  /retry    Replay the last prompt"),
-        Line::from("  /interrupt  Stop the active turn"),
-    ];
-
-    let paragraph = Paragraph::new(Text::from(help_text))
-        .block(
-            Block::default()
-                .title(" Help ")
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::Cyan)),
-        )
+    let paragraph = Paragraph::new(help_text())
+        .block(overlay_block(" Help ", Color::Cyan))
         .style(Style::default().bg(Color::Black));
     frame.render_widget(paragraph, popup_area);
 }
@@ -101,40 +39,21 @@ pub(super) fn render_command_palette(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 pub(super) fn render_detail_overlay(frame: &mut Frame, app: &App, area: Rect) {
-    let popup_width = area.width.saturating_sub(6).min(52);
-    let popup_height = area.height.saturating_sub(6).min(16);
-    let popup_area = Rect::new(
-        (area.width.saturating_sub(popup_width)) / 2,
-        (area.height.saturating_sub(popup_height)) / 2,
-        popup_width,
-        popup_height,
-    );
+    let popup_area = centered_rect(area, 52, 16, 6);
     frame.render_widget(Clear, popup_area);
-    let block = Block::default()
-        .title(format!(" Quick details [{}] ", app.detail_section.label()))
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Cyan))
-        .style(Style::default().bg(Color::Rgb(8, 10, 14)));
+    let block = overlay_block(
+        format!(" Quick details [{}] ", app.detail_section.label()),
+        Color::Cyan,
+    );
     let inner = block.inner(popup_area);
     frame.render_widget(block, popup_area);
     drawer::render_detail_contents(frame, app, inner);
 }
 
 pub(super) fn render_thinking_overlay(frame: &mut Frame, app: &App, area: Rect) {
-    let popup_width = area.width.saturating_sub(8).min(72);
-    let popup_height = area.height.saturating_sub(6).min(18);
-    let popup_area = Rect::new(
-        (area.width.saturating_sub(popup_width)) / 2,
-        (area.height.saturating_sub(popup_height)) / 2,
-        popup_width,
-        popup_height,
-    );
+    let popup_area = centered_rect(area, 72, 18, 8);
     frame.render_widget(Clear, popup_area);
-    let block = Block::default()
-        .title(" Thinking ")
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Magenta))
-        .style(Style::default().bg(Color::Rgb(8, 10, 14)));
+    let block = overlay_block(" Thinking ", Color::Magenta);
     let inner = block.inner(popup_area);
     frame.render_widget(block, popup_area);
     frame.render_widget(thinking_paragraph(app), inner);
@@ -180,4 +99,64 @@ fn push_field(lines: &mut Vec<Line<'static>>, label: &str, value: Option<&str>) 
         return;
     };
     lines.push(Line::from(format!("{label}: {value}")));
+}
+
+fn centered_rect(area: Rect, max_width: u16, max_height: u16, margin: u16) -> Rect {
+    let popup_width = area.width.saturating_sub(margin).min(max_width);
+    let popup_height = area.height.saturating_sub(margin).min(max_height);
+    Rect::new(
+        (area.width.saturating_sub(popup_width)) / 2,
+        (area.height.saturating_sub(popup_height)) / 2,
+        popup_width,
+        popup_height,
+    )
+}
+
+fn overlay_block(title: impl Into<ratatui::text::Line<'static>>, color: Color) -> Block<'static> {
+    Block::default()
+        .title(title)
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(color))
+        .style(Style::default().bg(Color::Rgb(8, 10, 14)))
+}
+
+fn help_text() -> Text<'static> {
+    Text::from(vec![
+        overlay_heading("Tau Interactive TUI — Keyboard Reference", Color::Cyan),
+        Line::from(""),
+        overlay_heading("Normal Mode", Color::White),
+        Line::from("  i/a       Enter insert mode"),
+        Line::from("  o         Insert mode + new line"),
+        Line::from("  q         Quit"),
+        Line::from("  ?         Toggle this help"),
+        Line::from("  j/k       Scroll chat up/down"),
+        Line::from("  g/G       Scroll to top/bottom"),
+        Line::from("  Ctrl+d/u  Page down/up"),
+        Line::from("  Tab       Cycle focus between panels"),
+        Line::from("  1/2/3     Focus Chat/Input/Tools"),
+        Line::from(""),
+        overlay_heading("Insert Mode", Color::White),
+        Line::from("  Enter     Send message"),
+        Line::from("  Shift+Enter / Alt+Enter  New line"),
+        Line::from("  Esc       Back to normal mode"),
+        Line::from(""),
+        overlay_heading("Global", Color::White),
+        Line::from("  Ctrl+c    Quit"),
+        Line::from("  Ctrl+l    Clear chat"),
+        Line::from("  Ctrl+t    Toggle details drawer"),
+        Line::from("  Ctrl+p    Command palette"),
+        Line::from(""),
+        overlay_heading("Slash Commands", Color::White),
+        Line::from("  /thinking  Show live turn context"),
+        Line::from("  /details  Toggle detail drawer"),
+        Line::from("  /retry    Replay the last prompt"),
+        Line::from("  /interrupt  Stop the active turn"),
+    ])
+}
+
+fn overlay_heading(text: &'static str, color: Color) -> Line<'static> {
+    Line::from(Span::styled(
+        text,
+        Style::default().fg(color).add_modifier(Modifier::BOLD),
+    ))
 }
