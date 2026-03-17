@@ -4,6 +4,8 @@ mod approval;
 mod composer;
 #[path = "ui_tests/detail.rs"]
 mod detail;
+#[path = "ui_tests/detail_overlay.rs"]
+mod detail_overlay;
 #[path = "ui_tests/helpers.rs"]
 mod helpers;
 #[path = "ui_tests/palette.rs"]
