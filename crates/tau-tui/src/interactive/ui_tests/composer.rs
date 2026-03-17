@@ -36,6 +36,17 @@ fn integration_spec_3582_thinking_command_opens_overlay_through_real_input_path(
 }
 
 #[test]
+fn integration_spec_3582_bare_thinking_command_opens_overlay_through_real_input_path() {
+    let mut app = App::new(AppConfig::default());
+    submit_command(&mut app, "thinking");
+
+    let rendered = render_app(&mut app, 120, 28);
+
+    assert!(rendered.contains("Thinking"));
+    assert!(rendered.contains("No active turn context"));
+}
+
+#[test]
 fn red_spec_3582_thinking_overlay_surfaces_operator_state_and_preview() {
     let mut app = App::new(AppConfig::default());
     app.apply_gateway_event(GatewayUiEvent::OperatorState(OperatorStateEvent {
