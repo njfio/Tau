@@ -39,9 +39,10 @@ fn render_chat_panel(frame: &mut Frame, app: &App, area: Rect) {
         return;
     }
     let lines = transcript_lines(app);
-    let scroll = transcript_scroll(app, lines.len(), inner.height as usize);
+    let total_lines = lines.len();
+    let scroll = transcript_scroll(app, total_lines, inner.height as usize);
     render_transcript_content(frame, inner, lines, scroll);
-    render_transcript_scrollbar(frame, area, inner, app, scroll);
+    render_transcript_scrollbar(frame, area, inner, total_lines, scroll);
 }
 
 fn transcript_lines(app: &App) -> Vec<Line<'static>> {
@@ -106,12 +107,18 @@ fn render_transcript_content(
     frame.render_widget(paragraph, area);
 }
 
-fn render_transcript_scrollbar(frame: &mut Frame, area: Rect, inner: Rect, app: &App, scroll: u16) {
-    if inner.height as usize >= app.chat.len() {
+fn render_transcript_scrollbar(
+    frame: &mut Frame,
+    area: Rect,
+    inner: Rect,
+    total_lines: usize,
+    scroll: u16,
+) {
+    if inner.height as usize >= total_lines {
         return;
     }
-    let mut scrollbar_state =
-        ScrollbarState::new(inner.height as usize + app.chat.len()).position(scroll as usize);
+    let viewport = total_lines.saturating_sub(inner.height as usize) + inner.height as usize;
+    let mut scrollbar_state = ScrollbarState::new(viewport).position(scroll as usize);
     let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
         .begin_symbol(Some("^"))
         .end_symbol(Some("v"));
