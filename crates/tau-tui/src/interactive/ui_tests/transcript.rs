@@ -1,8 +1,6 @@
 use crate::interactive::app::{App, AppConfig};
 use crate::interactive::chat::MessageRole;
-use crate::interactive::gateway::{
-    GatewayInteractiveConfig, GatewayUiEvent, OperatorStateEvent,
-};
+use crate::interactive::gateway::{GatewayInteractiveConfig, GatewayUiEvent, OperatorStateEvent};
 
 use super::helpers::{render_app, submit_command};
 
@@ -104,6 +102,18 @@ fn integration_spec_3582_prompt_submission_surfaces_last_turn_summary_card() {
     assert!(rendered.contains("Last turn"));
     assert!(rendered.contains("plan the tui redesign"));
     assert!(rendered.contains("assistant reply ready"));
+}
+
+#[test]
+fn integration_spec_3582_prompt_submission_uses_compact_transcript_headers() {
+    let mut app = App::new(AppConfig::default());
+    submit_command(&mut app, "what is blue?");
+
+    let rendered = render_app(&mut app, 120, 30);
+
+    assert!(rendered.contains("You ·"));
+    assert!(rendered.contains("Tau ·"));
+    assert!(!rendered.contains("╭─"));
 }
 
 #[test]
