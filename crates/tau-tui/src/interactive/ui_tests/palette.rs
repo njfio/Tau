@@ -41,3 +41,17 @@ fn red_spec_3582_command_palette_escape_returns_focus_to_input() {
     assert!(!rendered.contains("Command Palette"));
     assert!(rendered.contains("[/] commands"));
 }
+
+#[test]
+fn integration_spec_3582_command_palette_executes_memory_command_through_ctrl_p_path() {
+    let mut app = App::new(AppConfig::default());
+    app.handle_key(ctrl('p'));
+    type_text(&mut app, "memory");
+    app.handle_key(key(KeyCode::Enter));
+
+    let rendered = render_app(&mut app, 120, 28);
+
+    assert!(!rendered.contains("Command Palette"));
+    assert!(rendered.contains("Details [memory]"));
+    assert!(rendered.contains("No stored memory yet."));
+}
