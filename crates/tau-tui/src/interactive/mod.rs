@@ -10,6 +10,7 @@
 mod app;
 mod app_gateway;
 mod chat;
+mod command_catalog;
 mod gateway;
 mod gateway_runtime;
 #[cfg(test)]

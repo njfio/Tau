@@ -10,6 +10,8 @@ mod drawer;
 mod drawer_sections;
 #[path = "ui_overlay.rs"]
 mod overlay;
+#[path = "ui_palette.rs"]
+mod palette;
 #[path = "ui_run_state.rs"]
 mod run_state;
 #[path = "ui_shared.rs"]
@@ -55,7 +57,7 @@ pub fn render(frame: &mut Frame, app: &App) {
         overlay::render_thinking_overlay(frame, app, size);
     }
     if app.focus == FocusPanel::CommandPalette {
-        overlay::render_command_palette(frame, app, size);
+        palette::render_command_palette(frame, app, size);
     }
 }
 

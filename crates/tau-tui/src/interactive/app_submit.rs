@@ -1,4 +1,5 @@
 use super::super::chat::{ChatMessage, MessageRole};
+use super::super::command_catalog::is_known_command;
 use super::super::status::AgentStateDisplay;
 use super::super::tools::{ToolEntry, ToolStatus};
 use super::App;
@@ -15,7 +16,7 @@ impl App {
             self.input.clear();
             return;
         }
-        if is_inline_command(trimmed) {
+        if is_known_command(trimmed) {
             self.execute_command(trimmed);
             self.input.clear();
             return;
@@ -100,27 +101,6 @@ impl App {
             timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
         });
     }
-}
-
-fn is_inline_command(text: &str) -> bool {
-    matches!(
-        text,
-        "quit"
-            | "q"
-            | "clear"
-            | "help"
-            | "thinking"
-            | "details"
-            | "tools"
-            | "memory"
-            | "cortex"
-            | "sessions"
-            | "approval-needed"
-            | "approve"
-            | "reject"
-            | "interrupt"
-            | "retry"
-    )
 }
 
 fn slash_command(text: &str) -> Option<&str> {
