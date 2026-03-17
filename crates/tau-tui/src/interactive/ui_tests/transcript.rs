@@ -107,7 +107,7 @@ fn integration_spec_3582_prompt_submission_surfaces_last_turn_summary_card() {
 }
 
 #[test]
-fn red_spec_3582_transcript_renders_messages_as_cards() {
+fn red_spec_3582_transcript_uses_compact_headers_without_box_chrome() {
     let mut app = App::new(AppConfig::default());
     app.push_message(MessageRole::User, "Build me something useful.".to_string());
     app.push_message(
@@ -117,9 +117,25 @@ fn red_spec_3582_transcript_renders_messages_as_cards() {
 
     let rendered = render_app(&mut app, 120, 28);
 
-    assert!(rendered.contains("╭─ You"));
-    assert!(rendered.contains("╭─ Tau"));
-    assert!(rendered.contains("│ I can do that."));
+    assert!(rendered.contains("You ·"));
+    assert!(rendered.contains("Tau ·"));
+    assert!(rendered.contains("  I can do that."));
+    assert!(!rendered.contains("╭─"));
+    assert!(!rendered.contains("╰─"));
+}
+
+#[test]
+fn red_spec_3582_compact_transcript_keeps_multiline_assistant_output_aligned() {
+    let mut app = App::new(AppConfig::default());
+    app.push_message(
+        MessageRole::Assistant,
+        "First line.\nSecond line.".to_string(),
+    );
+
+    let rendered = render_app(&mut app, 120, 20);
+
+    assert!(rendered.contains("  First line."));
+    assert!(rendered.contains("  Second line."));
 }
 
 #[test]
