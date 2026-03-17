@@ -76,6 +76,73 @@ fn red_spec_3582_streaming_turn_card_surfaces_assistant_preview() {
 }
 
 #[test]
+fn red_spec_3582_thinking_run_state_card_uses_phase_specific_title() {
+    let mut app = App::new(AppConfig::default());
+    app.status.agent_state = crate::interactive::status::AgentStateDisplay::Thinking;
+    app.last_submitted_input = Some("Research Aleo private apps platform".to_string());
+    app.apply_gateway_event(GatewayUiEvent::OperatorState(OperatorStateEvent {
+        entity: "turn".to_string(),
+        status: "in_progress".to_string(),
+        phase: Some("model".to_string()),
+        artifact_kind: None,
+        response_id: Some("resp_think".to_string()),
+        reason_code: None,
+    }));
+
+    let rendered = render_app(&mut app, 120, 28);
+
+    assert!(rendered.contains("Thinking"));
+    assert!(rendered.contains("turn:model"));
+}
+
+#[test]
+fn red_spec_3582_streaming_run_state_card_surfaces_artifact_context() {
+    let mut app = App::new(AppConfig::default());
+    app.status.agent_state = crate::interactive::status::AgentStateDisplay::Streaming;
+    app.last_submitted_input = Some("summarize the company".to_string());
+    app.apply_gateway_event(GatewayUiEvent::OperatorState(OperatorStateEvent {
+        entity: "artifact".to_string(),
+        status: "streaming".to_string(),
+        phase: Some("stream".to_string()),
+        artifact_kind: Some("assistant_output_text".to_string()),
+        response_id: Some("resp_stream".to_string()),
+        reason_code: None,
+    }));
+    app.push_message(
+        MessageRole::Assistant,
+        "Aleo builds infrastructure for private applications and zero-knowledge workflows."
+            .to_string(),
+    );
+
+    let rendered = render_app(&mut app, 120, 30);
+
+    assert!(rendered.contains("Streaming reply"));
+    assert!(rendered.contains("artifact:stream"));
+    assert!(rendered.contains("assistant_output_text"));
+}
+
+#[test]
+fn red_spec_3582_failed_run_state_card_surfaces_reason_code() {
+    let mut app = App::new(AppConfig::default());
+    app.status.agent_state = crate::interactive::status::AgentStateDisplay::Error;
+    app.last_submitted_input = Some("research the company".to_string());
+    app.apply_gateway_event(GatewayUiEvent::OperatorState(OperatorStateEvent {
+        entity: "turn".to_string(),
+        status: "failed".to_string(),
+        phase: Some("post_tool".to_string()),
+        artifact_kind: None,
+        response_id: Some("resp_failed".to_string()),
+        reason_code: Some("rate_limited".to_string()),
+    }));
+
+    let rendered = render_app(&mut app, 120, 28);
+
+    assert!(rendered.contains("Turn failed"));
+    assert!(rendered.contains("rate_limited"));
+    assert!(rendered.contains("turn:post_tool"));
+}
+
+#[test]
 fn red_spec_3582_transcript_surfaces_running_tool_card_without_opening_drawer() {
     let mut app = App::new(AppConfig::default());
     app.status.agent_state = crate::interactive::status::AgentStateDisplay::ToolExec;
