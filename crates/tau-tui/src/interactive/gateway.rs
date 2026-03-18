@@ -1,6 +1,9 @@
 use serde_json::Value;
 use thiserror::Error;
 
+const LOCAL_CODEX_MODEL_HINT: &str = "gpt-5.2-codex";
+const CHATGPT_ACCOUNT_MODEL_ERROR: &str = "not supported when using Codex with a ChatGPT account";
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GatewayInteractiveConfig {
     pub base_url: String,
@@ -96,7 +99,9 @@ fn parse_frame(frame: &str) -> Result<Vec<GatewayUiEvent>, GatewayParseError> {
         )),
         "response.failed" => {
             if let Some(message) = payload.pointer("/error/message").and_then(Value::as_str) {
-                events.push(GatewayUiEvent::Failure(normalize_failure_message(message)));
+                events.push(GatewayUiEvent::Failure(normalize_codex_auth_failure(
+                    message,
+                )));
             }
         }
         _ => {}
@@ -152,11 +157,9 @@ fn push_text_event(events: &mut Vec<GatewayUiEvent>, payload: &Value, key: &str,
     events.push(GatewayUiEvent::AssistantDone(text.to_string()));
 }
 
-fn normalize_failure_message(message: &str) -> String {
-    if message.contains("openai/gpt-5.2")
-        && message.contains("not supported when using Codex with a ChatGPT account")
-    {
-        return format!("{message} Use `gpt-5.2-codex` instead.");
+fn normalize_codex_auth_failure(message: &str) -> String {
+    if message.contains("openai/gpt-5.2") && message.contains(CHATGPT_ACCOUNT_MODEL_ERROR) {
+        return format!("{message} Use `{LOCAL_CODEX_MODEL_HINT}` instead.");
     }
     message.to_string()
 }
