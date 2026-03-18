@@ -112,6 +112,100 @@ data: {\"type\":\"response.output_text.delta\",\"response_id\":\"resp_4\",\"delt
     assert!(rendered.contains("assistant_output_text"));
 }
 
+
+#[test]
+fn integration_spec_3582_gateway_runtime_ignores_keep_alive_comment_frames() {
+    let server = spawn_sse_server(vec![
+        r#"event: response.created
+data: {"type":"response.created","response":{"id":"resp_keepalive"},"operator_state":{"entity":"turn","status":"in_progress","phase":"model","response_id":"resp_keepalive"}}
+
+"#
+            .to_string(),
+        ": keep-alive
+
+".to_string(),
+        r#"event: response.output_text.done
+data: {"type":"response.output_text.done","response_id":"resp_keepalive","text":"hello world","operator_state":{"entity":"artifact","status":"completed","artifact_kind":"assistant_output_text","response_id":"resp_keepalive"}}
+
+"#
+            .to_string(),
+        r#"event: response.completed
+data: {"type":"response.completed","response":{"id":"resp_keepalive","output_text":"hello world"},"operator_state":{"entity":"turn","status":"completed","phase":"done"}}
+
+"#
+            .to_string(),
+    ]);
+    let mut app = App::new(AppConfig {
+        model: "openai/gpt-5.2".to_string(),
+        profile: "ops-interactive".to_string(),
+        session_key: "default".to_string(),
+        workspace_label: "rust_pi-3582-phase".to_string(),
+        approval_mode: "ask".to_string(),
+        tick_rate_ms: 25,
+        gateway: Some(GatewayInteractiveConfig {
+            base_url: server.base_url,
+            auth_token: None,
+            session_key: "default".to_string(),
+            request_timeout_ms: 3_000,
+        }),
+    });
+
+    for ch in "testing".chars() {
+        app.input.insert_char(ch);
+    }
+    app.submit_input();
+
+    wait_for(|| {
+        app.pump_gateway_events();
+        app.chat
+            .messages()
+            .iter()
+            .any(|message| message.content == "hello world")
+            && app.status.agent_state == AgentStateDisplay::Idle
+    });
+
+    assert!(app.chat.messages().iter().any(|message| message.content == "hello world"));
+}
+
+#[test]
+fn red_spec_3585_gateway_runtime_surfaces_supported_model_hint_for_oauth_incompatibility() {
+    let server = spawn_sse_server(vec![
+        "event: response.created\n\
+data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_3585\"},\"operator_state\":{\"entity\":\"turn\",\"status\":\"in_progress\",\"phase\":\"model\",\"response_id\":\"resp_3585\"}}\n\n"
+            .to_string(),
+        "event: response.failed\n\
+data: {\"type\":\"response.failed\",\"error\":{\"code\":\"model_unsupported\",\"message\":\"The 'openai/gpt-5.2' model is not supported when using Codex with a ChatGPT account.\"},\"operator_state\":{\"entity\":\"turn\",\"status\":\"failed\",\"phase\":\"failed\",\"reason_code\":\"model_unsupported\"}}\n\n"
+            .to_string(),
+    ]);
+    let mut app = App::new(AppConfig {
+        model: "openai/gpt-5.2".to_string(),
+        profile: "ops-interactive".to_string(),
+        session_key: "default".to_string(),
+        workspace_label: "rust_pi-3582-phase".to_string(),
+        approval_mode: "ask".to_string(),
+        tick_rate_ms: 25,
+        gateway: Some(GatewayInteractiveConfig {
+            base_url: server.base_url,
+            auth_token: None,
+            session_key: "default".to_string(),
+            request_timeout_ms: 3_000,
+        }),
+    });
+
+    for ch in "test".chars() {
+        app.input.insert_char(ch);
+    }
+    app.submit_input();
+
+    wait_for(|| {
+        app.pump_gateway_events();
+        app.status.agent_state == AgentStateDisplay::Error
+    });
+
+    let rendered = render_app(&mut app, 120, 28);
+    assert!(rendered.contains("gpt-5.2-codex"));
+}
+
 struct TestServer {
     base_url: String,
 }
