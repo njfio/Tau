@@ -1539,6 +1539,7 @@ mod tests {
     fn conformance_built_in_model_catalog_refresh_contains_required_models() {
         let catalog = ModelCatalog::built_in();
         assert!(catalog.find("openai", "gpt-5.2").is_some());
+        assert!(catalog.find("openai", "gpt-5.3-codex").is_some());
         assert!(catalog.find("openai", "gpt-4.1").is_some());
         assert!(catalog.find("openai", "o3").is_some());
         assert!(catalog.find("anthropic", "claude-opus-4-6").is_some());
