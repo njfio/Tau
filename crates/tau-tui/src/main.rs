@@ -7,7 +7,9 @@ use tau_tui::{
     OperatorShellFrame, Text, Theme, ThemeRole,
 };
 
-const HELP: &str = "\
+fn help_text() -> String {
+    format!(
+        "\
 tau-tui operator terminal
 
 Usage:
@@ -30,7 +32,7 @@ Options:
   --state-dir P Shell-live: dashboard state directory (default: .tau/dashboard)
   --dashboard-state-dir P Agent: dashboard state directory (default: .tau/dashboard)
   --gateway-state-dir P Agent: gateway state directory (default: .tau/gateway)
-  --model ID    Agent: model id for interactive runtime (default: gpt-5.3-codex)
+  --model ID    Agent: model id for interactive runtime (default: {LOCAL_TUI_DEFAULT_MODEL})
   --request-timeout-ms N Agent: request timeout in milliseconds forwarded to tau-coding-agent
   --agent-request-max-retries N Agent: max model request retries forwarded to tau-coding-agent
   --dry-run     Agent: print interactive launch command without executing it
@@ -39,7 +41,9 @@ Options:
   --interval-ms N Shell-live watch: delay between cycles in milliseconds (default: 1000)
   --no-color    Disable ANSI color output for CI/smoke runs
   --help, -h    Show this help message
-";
+"
+    )
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct DemoArgs {
@@ -748,14 +752,14 @@ fn main() {
         Err(err) => {
             eprintln!("{err}");
             eprintln!();
-            eprintln!("{HELP}");
+            eprintln!("{}", help_text());
             std::process::exit(2);
         }
     };
 
     match action {
         ParseAction::Help => {
-            println!("{HELP}");
+            println!("{}", help_text());
         }
         ParseAction::RunDemo(args) => {
             if let Err(err) = run_demo(args) {
@@ -794,7 +798,7 @@ fn main() {
 mod tests {
     use std::env;
 
-    use super::{compose_frame, parse_args, ParseAction, HELP};
+    use super::{compose_frame, help_text, parse_args, ParseAction};
     use tau_tui::{render_operator_shell_frame, EditorBuffer, LumaImage, OperatorShellFrame};
 
     struct EnvGuard {
@@ -1011,9 +1015,10 @@ mod tests {
 
     #[test]
     fn functional_spec_3474_c04_help_text_exposes_shell_live_watch_flags() {
-        assert!(HELP.contains("--watch"));
-        assert!(HELP.contains("--iterations"));
-        assert!(HELP.contains("--interval-ms"));
+        let help = help_text();
+        assert!(help.contains("--watch"));
+        assert!(help.contains("--iterations"));
+        assert!(help.contains("--interval-ms"));
     }
 
     #[test]
@@ -1083,12 +1088,13 @@ mod tests {
 
     #[test]
     fn functional_spec_c05_help_text_exposes_agent_flags() {
-        assert!(HELP.contains("agent"));
-        assert!(HELP.contains("--dashboard-state-dir"));
-        assert!(HELP.contains("--gateway-state-dir"));
-        assert!(HELP.contains("--request-timeout-ms"));
-        assert!(HELP.contains("--agent-request-max-retries"));
-        assert!(HELP.contains("--dry-run"));
+        let help = help_text();
+        assert!(help.contains("agent"));
+        assert!(help.contains("--dashboard-state-dir"));
+        assert!(help.contains("--gateway-state-dir"));
+        assert!(help.contains("--request-timeout-ms"));
+        assert!(help.contains("--agent-request-max-retries"));
+        assert!(help.contains("--dry-run"));
     }
 
     #[test]
