@@ -58,7 +58,7 @@ use tau_onboarding::startup_local_runtime::{
 use tau_onboarding::startup_transport_modes::build_runtime_heartbeat_scheduler_config as build_onboarding_runtime_heartbeat_scheduler_config;
 
 const OPENAI_OAUTH_UNSUPPORTED_LOCAL_MODEL: &str = "gpt-5.2";
-const OPENAI_OAUTH_SUPPORTED_LOCAL_MODEL: &str = "gpt-5.2-codex";
+const OPENAI_OAUTH_SUPPORTED_LOCAL_MODEL: &str = "gpt-5.3-codex";
 
 pub(crate) struct LocalRuntimeConfig<'a> {
     pub(crate) cli: &'a Cli,

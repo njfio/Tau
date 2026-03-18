@@ -22,7 +22,7 @@ use super::{gateway_runtime::GatewayRuntime, GatewayInteractiveConfig};
 
 pub use runtime::run_interactive;
 
-pub const LOCAL_TUI_DEFAULT_MODEL: &str = "gpt-5.2-codex";
+pub const LOCAL_TUI_DEFAULT_MODEL: &str = "gpt-5.3-codex";
 
 #[derive(Debug, Clone)]
 pub struct AppConfig {

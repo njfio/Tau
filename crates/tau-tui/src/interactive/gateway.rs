@@ -1,7 +1,7 @@
 use serde_json::Value;
 use thiserror::Error;
 
-const LOCAL_CODEX_MODEL_HINT: &str = "gpt-5.2-codex";
+const LOCAL_CODEX_MODEL_HINT: &str = "gpt-5.3-codex";
 const CHATGPT_ACCOUNT_MODEL_ERROR: &str = "not supported when using Codex with a ChatGPT account";
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -30,7 +30,7 @@ Options:
   --state-dir P Shell-live: dashboard state directory (default: .tau/dashboard)
   --dashboard-state-dir P Agent: dashboard state directory (default: .tau/dashboard)
   --gateway-state-dir P Agent: gateway state directory (default: .tau/gateway)
-  --model ID    Agent: model id for interactive runtime (default: gpt-5.2-codex)
+  --model ID    Agent: model id for interactive runtime (default: gpt-5.3-codex)
   --request-timeout-ms N Agent: request timeout in milliseconds forwarded to tau-coding-agent
   --agent-request-max-retries N Agent: max model request retries forwarded to tau-coding-agent
   --dry-run     Agent: print interactive launch command without executing it

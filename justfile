@@ -10,7 +10,7 @@ RUNTIME_PID := ".tau/unified/tau-unified.pid"
 RUNTIME_CMD_FILE := ".tau/unified/tau-unified.last-cmd"
 RUNTIME_SESSION := "tau-runtime"
 TUI_SESSION := "tau-tui"
-RUNTIME_CMD := "target/debug/tau-coding-agent --model gpt-5.2-codex --gateway-state-dir .tau/gateway --dashboard-state-dir .tau/dashboard --gateway-openresponses-server --gateway-openresponses-bind 127.0.0.1:8791 --gateway-openresponses-auth-mode localhost-dev --gateway-openresponses-max-input-chars 32000 --request-timeout-ms 180000 --agent-request-max-retries 0 --provider-max-retries 0"
+RUNTIME_CMD := "target/debug/tau-coding-agent --model gpt-5.3-codex --gateway-state-dir .tau/gateway --dashboard-state-dir .tau/dashboard --gateway-openresponses-server --gateway-openresponses-bind 127.0.0.1:8791 --gateway-openresponses-auth-mode localhost-dev --gateway-openresponses-max-input-chars 32000 --request-timeout-ms 180000 --agent-request-max-retries 0 --provider-max-retries 0"
 
 [private]
 clear-stale-gateway-listener:
