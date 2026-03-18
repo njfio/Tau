@@ -1468,7 +1468,7 @@ async fn red_spec_3585_run_local_runtime_rejects_openai_gpt_5_2_for_openai_oauth
     let error = run_result.expect_err("unsupported oauth-token model should fail closed");
     let message = error.to_string();
     assert!(
-        message.contains("gpt-5.2-codex"),
+        message.contains("gpt-5.3-codex"),
         "expected supported replacement model in error; got: {message}"
     );
 }

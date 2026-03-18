@@ -206,7 +206,7 @@ data: {\"type\":\"response.failed\",\"error\":{\"code\":\"model_unsupported\",\"
     });
 
     let rendered = render_app(&mut app, 120, 28);
-    assert!(rendered.contains("gpt-5.2-codex"));
+    assert!(rendered.contains("gpt-5.3-codex"));
 }
 
 struct TestServer {

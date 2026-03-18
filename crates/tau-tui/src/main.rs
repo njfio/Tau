@@ -1098,27 +1098,27 @@ mod tests {
         let ParseAction::RunAgent(args) = action else {
             panic!("expected agent action");
         };
-        assert_eq!(args.model, "gpt-5.2-codex");
+        assert_eq!(args.model, "gpt-5.3-codex");
     }
 
     #[test]
-    fn red_spec_3585_agent_mode_defaults_to_gpt_5_2_codex_for_local_tui() {
+    fn red_spec_3585_agent_mode_defaults_to_gpt_5_3_codex_for_local_tui() {
         let action = parse_args(vec!["tau-tui".to_string(), "agent".to_string()])
             .expect("expected parse success");
         let ParseAction::RunAgent(args) = action else {
             panic!("expected agent action");
         };
-        assert_eq!(args.model, "gpt-5.2-codex");
+        assert_eq!(args.model, "gpt-5.3-codex");
     }
 
     #[test]
-    fn red_spec_3585_interactive_mode_defaults_to_gpt_5_2_codex_for_local_tui() {
+    fn red_spec_3585_interactive_mode_defaults_to_gpt_5_3_codex_for_local_tui() {
         let action = parse_args(vec!["tau-tui".to_string(), "interactive".to_string()])
             .expect("expected parse success");
         let ParseAction::RunInteractive(args) = action else {
             panic!("expected interactive action");
         };
-        assert_eq!(args.model, "gpt-5.2-codex");
+        assert_eq!(args.model, "gpt-5.3-codex");
     }
 
     #[test]
