@@ -2,7 +2,7 @@ use std::{env, path::Path, thread, time::Duration};
 
 use tau_tui::{
     apply_overlay,
-    interactive::{run_interactive, AppConfig, GatewayInteractiveConfig},
+    interactive::{run_interactive, AppConfig, GatewayInteractiveConfig, LOCAL_TUI_DEFAULT_MODEL},
     render_operator_shell_frame, Component, DiffRenderer, EditorBuffer, EditorView, LumaImage,
     OperatorShellFrame, Text, Theme, ThemeRole,
 };
@@ -30,7 +30,7 @@ Options:
   --state-dir P Shell-live: dashboard state directory (default: .tau/dashboard)
   --dashboard-state-dir P Agent: dashboard state directory (default: .tau/dashboard)
   --gateway-state-dir P Agent: gateway state directory (default: .tau/gateway)
-  --model ID    Agent: model id for interactive runtime (default: openai/gpt-5.2)
+  --model ID    Agent: model id for interactive runtime (default: gpt-5.2-codex)
   --request-timeout-ms N Agent: request timeout in milliseconds forwarded to tau-coding-agent
   --agent-request-max-retries N Agent: max model request retries forwarded to tau-coding-agent
   --dry-run     Agent: print interactive launch command without executing it
@@ -122,7 +122,7 @@ impl Default for AgentArgs {
             profile: "local-dev".to_string(),
             dashboard_state_dir: ".tau/dashboard".to_string(),
             gateway_state_dir: ".tau/gateway".to_string(),
-            model: "openai/gpt-5.2".to_string(),
+            model: LOCAL_TUI_DEFAULT_MODEL.to_string(),
             request_timeout_ms: None,
             agent_request_max_retries: None,
             dry_run: false,
@@ -140,7 +140,7 @@ struct InteractiveArgs {
 impl Default for InteractiveArgs {
     fn default() -> Self {
         Self {
-            model: "openai/gpt-5.2".to_string(),
+            model: LOCAL_TUI_DEFAULT_MODEL.to_string(),
             profile: "local-dev".to_string(),
         }
     }
@@ -1092,13 +1092,13 @@ mod tests {
     }
 
     #[test]
-    fn regression_spec_c06_agent_mode_defaults_to_gpt5_baseline() {
+    fn regression_spec_c06_agent_mode_defaults_to_codex_baseline() {
         let action = parse_args(vec!["tau-tui".to_string(), "agent".to_string()])
             .expect("expected parse success");
         let ParseAction::RunAgent(args) = action else {
             panic!("expected agent action");
         };
-        assert_eq!(args.model, "openai/gpt-5.2");
+        assert_eq!(args.model, "gpt-5.2-codex");
     }
 
     #[test]

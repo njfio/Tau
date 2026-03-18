@@ -63,6 +63,10 @@ pub fn parse_sse_frames(raw: &str) -> Result<Vec<GatewayUiEvent>, GatewayParseEr
 }
 
 fn parse_frame(frame: &str) -> Result<Vec<GatewayUiEvent>, GatewayParseError> {
+    if is_comment_frame(frame) {
+        return Ok(Vec::new());
+    }
+
     let (event_name, data) = frame_parts(frame);
     if data.trim().is_empty() {
         return Err(GatewayParseError::MissingData { event_name });
@@ -92,12 +96,19 @@ fn parse_frame(frame: &str) -> Result<Vec<GatewayUiEvent>, GatewayParseError> {
         )),
         "response.failed" => {
             if let Some(message) = payload.pointer("/error/message").and_then(Value::as_str) {
-                events.push(GatewayUiEvent::Failure(message.to_string()));
+                events.push(GatewayUiEvent::Failure(normalize_failure_message(message)));
             }
         }
         _ => {}
     }
     Ok(events)
+}
+
+fn is_comment_frame(frame: &str) -> bool {
+    frame
+        .lines()
+        .map(str::trim)
+        .all(|line| line.is_empty() || line.starts_with(':'))
 }
 
 fn frame_parts(frame: &str) -> (String, String) {
@@ -139,4 +150,13 @@ fn push_text_event(events: &mut Vec<GatewayUiEvent>, payload: &Value, key: &str,
         return;
     }
     events.push(GatewayUiEvent::AssistantDone(text.to_string()));
+}
+
+fn normalize_failure_message(message: &str) -> String {
+    if message.contains("openai/gpt-5.2")
+        && message.contains("not supported when using Codex with a ChatGPT account")
+    {
+        return format!("{message} Use `gpt-5.2-codex` instead.");
+    }
+    message.to_string()
 }

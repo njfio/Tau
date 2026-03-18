@@ -112,7 +112,6 @@ data: {\"type\":\"response.output_text.delta\",\"response_id\":\"resp_4\",\"delt
     assert!(rendered.contains("assistant_output_text"));
 }
 
-
 #[test]
 fn integration_spec_3582_gateway_runtime_ignores_keep_alive_comment_frames() {
     let server = spawn_sse_server(vec![
@@ -164,7 +163,11 @@ data: {"type":"response.completed","response":{"id":"resp_keepalive","output_tex
             && app.status.agent_state == AgentStateDisplay::Idle
     });
 
-    assert!(app.chat.messages().iter().any(|message| message.content == "hello world"));
+    assert!(app
+        .chat
+        .messages()
+        .iter()
+        .any(|message| message.content == "hello world"));
 }
 
 #[test]

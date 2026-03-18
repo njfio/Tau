@@ -22,7 +22,5 @@ mod status;
 mod tools;
 mod ui;
 
-pub use app::{run_interactive, App, AppConfig};
-pub use gateway::{
-    GatewayInteractiveConfig, GatewayUiEvent, OperatorStateEvent, parse_sse_frames,
-};
+pub use app::{run_interactive, App, AppConfig, LOCAL_TUI_DEFAULT_MODEL};
+pub use gateway::{parse_sse_frames, GatewayInteractiveConfig, GatewayUiEvent, OperatorStateEvent};

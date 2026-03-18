@@ -22,6 +22,8 @@ use super::{gateway_runtime::GatewayRuntime, GatewayInteractiveConfig};
 
 pub use runtime::run_interactive;
 
+pub const LOCAL_TUI_DEFAULT_MODEL: &str = "gpt-5.2-codex";
+
 #[derive(Debug, Clone)]
 pub struct AppConfig {
     pub model: String,
@@ -36,7 +38,7 @@ pub struct AppConfig {
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            model: "openai/gpt-5.2".to_string(),
+            model: LOCAL_TUI_DEFAULT_MODEL.to_string(),
             profile: "local-dev".to_string(),
             session_key: "default".to_string(),
             workspace_label: ".".to_string(),

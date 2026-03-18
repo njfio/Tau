@@ -1418,7 +1418,10 @@ async fn regression_spec_3555_c01_run_local_runtime_uses_cli_request_timeout_for
 #[tokio::test(flavor = "current_thread")]
 async fn red_spec_3585_run_local_runtime_rejects_openai_gpt_5_2_for_openai_oauth() {
     let temp = tempdir().expect("tempdir");
-    let original_cwd = std::env::current_dir().expect("resolve current dir");
+    let original_cwd = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .expect("resolve repo root");
     std::env::set_current_dir(temp.path()).expect("set current dir");
 
     let mut cli = test_cli();

@@ -5,13 +5,13 @@
 
 use std::{path::Path, sync::Arc};
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use serde_json::Value;
 #[cfg(test)]
 use tau_agent_core::Agent;
 use tau_agent_core::{AgentConfig, AgentEvent, SafetyMode};
-use tau_ai::{LlmClient, ModelRef};
-use tau_cli::{Cli, CliPromptSanitizerMode};
+use tau_ai::{LlmClient, ModelRef, Provider};
+use tau_cli::{Cli, CliPromptSanitizerMode, CliProviderAuthMode};
 use tau_runtime::start_runtime_heartbeat_scheduler;
 use tau_session::initialize_session;
 use tau_skills::{
@@ -57,6 +57,9 @@ use tau_onboarding::startup_local_runtime::{
 };
 use tau_onboarding::startup_transport_modes::build_runtime_heartbeat_scheduler_config as build_onboarding_runtime_heartbeat_scheduler_config;
 
+const OPENAI_OAUTH_UNSUPPORTED_LOCAL_MODEL: &str = "gpt-5.2";
+const OPENAI_OAUTH_SUPPORTED_LOCAL_MODEL: &str = "gpt-5.2-codex";
+
 pub(crate) struct LocalRuntimeConfig<'a> {
     pub(crate) cli: &'a Cli,
     pub(crate) client: Arc<dyn LlmClient>,
@@ -69,6 +72,25 @@ pub(crate) struct LocalRuntimeConfig<'a> {
     pub(crate) render_options: RenderOptions,
     pub(crate) skills_dir: &'a Path,
     pub(crate) skills_lock_path: &'a Path,
+}
+
+fn openai_oauth_model_requires_codex_variant(cli: &Cli, model_ref: &ModelRef) -> bool {
+    matches!(
+        cli.openai_auth_mode,
+        CliProviderAuthMode::OauthToken | CliProviderAuthMode::SessionToken
+    ) && model_ref.provider == Provider::OpenAi
+        && model_ref.model == OPENAI_OAUTH_UNSUPPORTED_LOCAL_MODEL
+}
+
+fn validate_local_runtime_model_compatibility(cli: &Cli, model_ref: &ModelRef) -> Result<()> {
+    if !openai_oauth_model_requires_codex_variant(cli, model_ref) {
+        return Ok(());
+    }
+    Err(anyhow!(
+        "model '{}' is incompatible with OpenAI oauth-token/session-token local runtime; use '{}'",
+        cli.model,
+        OPENAI_OAUTH_SUPPORTED_LOCAL_MODEL
+    ))
 }
 
 fn resolve_safety_mode(mode: CliPromptSanitizerMode) -> SafetyMode {
@@ -93,6 +115,8 @@ pub(crate) async fn run_local_runtime(config: LocalRuntimeConfig<'_>) -> Result<
         skills_dir,
         skills_lock_path,
     } = config;
+
+    validate_local_runtime_model_compatibility(cli, model_ref)?;
 
     let agent_defaults = AgentConfig::default();
     let profile_defaults_for_agent = build_onboarding_profile_defaults(cli);
