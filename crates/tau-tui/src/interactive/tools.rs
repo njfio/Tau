@@ -81,6 +81,15 @@ impl ToolPanel {
         self.scroll_offset
     }
 
+    pub fn scroll_up(&mut self, n: usize) {
+        self.scroll_offset = self.scroll_offset.saturating_sub(n);
+    }
+
+    pub fn scroll_down(&mut self, n: usize) {
+        let max = self.entries.len().saturating_sub(1);
+        self.scroll_offset = (self.scroll_offset + n).min(max);
+    }
+
     pub fn active_count(&self) -> usize {
         self.entries
             .iter()

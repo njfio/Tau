@@ -1,31 +1,19 @@
 //! UI rendering with ratatui — multi-panel layout.
 
-use ratatui::{
-    layout::{Constraint, Direction, Layout},
-    Frame,
-};
+use ratatui::Frame;
 
 use super::app::{App, FocusPanel};
-use super::{ui_body, ui_input, ui_overlays, ui_status};
+use super::{ui_body, ui_input, ui_layout, ui_overlays, ui_status};
 
 /// Render the full application UI.
 pub fn render(frame: &mut Frame, app: &App) {
     let size = frame.area();
+    let layout = ui_layout::frame_layout(frame, app);
 
-    let main_chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1),
-            Constraint::Min(8),
-            Constraint::Length(ui_input::input_height(app)),
-            Constraint::Length(1),
-        ])
-        .split(size);
-
-    ui_status::render_status_bar(frame, app, main_chunks[0]);
-    ui_body::render_body(frame, app, main_chunks[1]);
-    ui_input::render_input(frame, app, main_chunks[2]);
-    ui_status::render_help_line(frame, app, main_chunks[3]);
+    ui_status::render_status_bar(frame, app, layout.status_bar);
+    ui_body::render_body(frame, app, layout.chat, layout.tools);
+    ui_input::render_input(frame, app, layout.input);
+    ui_status::render_help_line(frame, app, layout.help);
 
     if app.show_help {
         ui_overlays::render_help_overlay(frame, size);
