@@ -13318,11 +13318,11 @@ async fn tier_pr_a2_agent_session_flow_matrix() {
     let over_budget = client
         .post(format!("http://{tiny_addr}{OPENRESPONSES_ENDPOINT}"))
         .bearer_auth("secret")
-        .json(&json!({"input":"context pressure sample"}))
+        .json(&json!({"input":"context pressure sample over forty chars"}))
         .send()
         .await
         .expect("over budget request");
-    assert_eq!(over_budget.status(), StatusCode::BAD_GATEWAY);
+    assert_eq!(over_budget.status(), StatusCode::PAYLOAD_TOO_LARGE);
     tiny_handle.abort();
 
     handle.abort();
