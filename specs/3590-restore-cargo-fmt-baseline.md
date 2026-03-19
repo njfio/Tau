@@ -40,6 +40,11 @@ Restore the repository formatting baseline for the tau-tui interactive files cur
 - `crates/tau-tui/src/interactive/ui.rs`
 - `crates/tau-tui/src/main.rs`
 
+
+## Integration points
+- The `Quality (fmt + clippy + tests)` CI job runs `cargo fmt --check --all` across the full repository.
+- This issue is integrated when that exact formatter gate passes without diffs.
+
 ## Error semantics
 - Fail loud if `cargo fmt --check --all` still reports diffs.
 - Do not hand-format selectively in a way that diverges from rustfmt.
