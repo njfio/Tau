@@ -82,3 +82,89 @@ fn integration_spec_3592_real_render_path_keeps_tool_panel_and_main_shell_tool_s
         "expected main shell recent tool summary, rendered:\n{rendered}"
     );
 }
+
+#[test]
+fn red_spec_3594_transcript_surfaces_running_tool_entry() {
+    let mut app = App::new(AppConfig::default());
+    app.show_tool_panel = false;
+    app.status.agent_state = AgentStateDisplay::ToolExec;
+    app.chat.add_message(super::chat::ChatMessage {
+        role: super::chat::MessageRole::User,
+        content: "run pwd".to_string(),
+        timestamp: "12:00:00".to_string(),
+    });
+    app.push_tool_event("bash".to_string(), ToolStatus::Running, "pwd".to_string());
+
+    let rendered = render_text(&app, 100, 24);
+
+    assert!(
+        rendered.contains("Tool:"),
+        "expected tool role entry in transcript, rendered:\n{rendered}"
+    );
+    assert!(
+        rendered.contains("bash running"),
+        "expected running tool detail in transcript, rendered:\n{rendered}"
+    );
+}
+
+#[test]
+fn red_spec_3594_transcript_surfaces_terminal_tool_entry() {
+    let mut app = App::new(AppConfig::default());
+    app.show_tool_panel = false;
+    app.chat.add_message(super::chat::ChatMessage {
+        role: super::chat::MessageRole::User,
+        content: "write file".to_string(),
+        timestamp: "12:00:00".to_string(),
+    });
+    app.push_tool_event(
+        "write".to_string(),
+        ToolStatus::Failed,
+        "permission denied".to_string(),
+    );
+
+    let rendered = render_text(&app, 100, 24);
+
+    assert!(
+        rendered.contains("Tool:"),
+        "expected tool role entry in transcript, rendered:\n{rendered}"
+    );
+    assert!(
+        rendered.contains("write failed"),
+        "expected failed tool status in transcript, rendered:\n{rendered}"
+    );
+    assert!(
+        rendered.contains("permission denied"),
+        "expected failed tool detail in transcript, rendered:\n{rendered}"
+    );
+}
+
+#[test]
+fn integration_spec_3594_real_render_path_keeps_side_panel_and_transcript_tool_entry() {
+    let mut app = App::new(AppConfig::default());
+    app.show_tool_panel = true;
+    app.chat.add_message(super::chat::ChatMessage {
+        role: super::chat::MessageRole::User,
+        content: "run pwd".to_string(),
+        timestamp: "12:00:00".to_string(),
+    });
+    app.push_tool_event(
+        "bash".to_string(),
+        ToolStatus::Success,
+        "/Users/n/RustroverProjects/rust_pi-3594".to_string(),
+    );
+
+    let rendered = render_text(&app, 120, 28);
+
+    assert!(
+        rendered.contains("Tools (0 active / 1 total)"),
+        "expected side tools panel to remain visible, rendered:\n{rendered}"
+    );
+    assert!(
+        rendered.contains("Tool:"),
+        "expected transcript tool entry in main chat panel, rendered:\n{rendered}"
+    );
+    assert!(
+        rendered.contains("bash ok"),
+        "expected terminal tool transcript status, rendered:\n{rendered}"
+    );
+}

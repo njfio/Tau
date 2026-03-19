@@ -8,7 +8,7 @@ use ratatui::{
 
 use super::app::{App, FocusPanel};
 use super::chat::MessageRole;
-use super::tools::ToolStatus;
+use super::ui_chat_tool_lines::{build_tool_summary_lines, build_transcript_tool_lines};
 
 pub(crate) fn render_chat_panel(frame: &mut Frame, app: &App, area: Rect) {
     let border_style = if app.focus == FocusPanel::Chat {
@@ -44,14 +44,14 @@ pub(crate) fn render_chat_panel(frame: &mut Frame, app: &App, area: Rect) {
         frame.render_widget(summary, content_chunks[0]);
     }
 
-    if app.chat.is_empty() {
+    let lines = render_chat_lines(app);
+    if lines.is_empty() {
         let empty = Paragraph::new("No messages yet. Type below and press Enter.")
             .style(Style::default().fg(Color::DarkGray));
         frame.render_widget(empty, content_chunks[1]);
         return;
     }
 
-    let lines = render_chat_lines(app);
     let total_lines = lines.len();
     let visible_height = content_chunks[1].height as usize;
     let scroll = compute_chat_scroll(app, total_lines, visible_height);
@@ -71,6 +71,12 @@ pub(crate) fn render_chat_panel(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 fn render_chat_lines(app: &App) -> Vec<Line<'static>> {
+    let mut lines = render_message_lines(app);
+    lines.extend(build_transcript_tool_lines(app));
+    lines
+}
+
+fn render_message_lines(app: &App) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
     for msg in app.chat.messages() {
         let (role_style, role_label) = match msg.role {
@@ -128,59 +134,4 @@ fn compute_chat_scroll(app: &App, total_lines: usize, visible_height: usize) -> 
 
     let approx = msg_idx * 3;
     approx.min(total_lines.saturating_sub(visible_height)) as u16
-}
-
-fn build_tool_summary_lines(app: &App) -> Vec<Line<'static>> {
-    if let Some(entry) = app.tools.latest_running() {
-        return vec![
-            Line::from(vec![
-                Span::styled(
-                    format!("Running tool: {}", entry.name),
-                    Style::default()
-                        .fg(Color::Yellow)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::raw("  "),
-                Span::styled(
-                    entry.status.accent_name().to_uppercase(),
-                    Style::default().fg(Color::Yellow),
-                ),
-            ]),
-            Line::from(Span::styled(
-                format!("  {}", entry.detail),
-                Style::default().fg(Color::DarkGray),
-            )),
-            Line::from(""),
-        ];
-    }
-
-    let Some(entry) = app.tools.latest_entry() else {
-        return Vec::new();
-    };
-
-    let (headline, color) = match entry.status {
-        ToolStatus::Success => (format!("Last tool: {}", entry.name), Color::Green),
-        ToolStatus::Failed => (format!("Last tool failed: {}", entry.name), Color::Red),
-        ToolStatus::Timeout => (
-            format!("Last tool timed out: {}", entry.name),
-            Color::Magenta,
-        ),
-        ToolStatus::Running => unreachable!("running tool handled earlier"),
-    };
-
-    vec![
-        Line::from(vec![
-            Span::styled(
-                headline,
-                Style::default().fg(color).add_modifier(Modifier::BOLD),
-            ),
-            Span::raw("  "),
-            Span::styled(entry.status.label(), Style::default().fg(color)),
-        ]),
-        Line::from(Span::styled(
-            format!("  {}", entry.detail),
-            Style::default().fg(Color::DarkGray),
-        )),
-        Line::from(""),
-    ]
 }

@@ -15,6 +15,7 @@ mod tools;
 mod ui;
 mod ui_body;
 mod ui_chat;
+mod ui_chat_tool_lines;
 mod ui_input;
 mod ui_overlays;
 mod ui_status;
