@@ -1,4 +1,4 @@
-use crossterm::event::{MouseButton, MouseEvent, MouseEventKind, KeyModifiers};
+use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::Rect;
 
 use super::{

@@ -27,14 +27,22 @@ Make the interactive TUI respond to mouse wheel scrolling and left-click focus/h
 
 # Files to touch
 - `crates/tau-tui/src/interactive/app.rs`
+- `crates/tau-tui/src/interactive/app_commands.rs`
 - `crates/tau-tui/src/interactive/mod.rs`
 - `crates/tau-tui/src/interactive/ui.rs`
 - `crates/tau-tui/src/interactive/ui_body.rs`
+- `crates/tau-tui/src/interactive/ui_layout.rs`
 - `crates/tau-tui/src/interactive/ui_tools.rs`
 - `crates/tau-tui/src/interactive/chat.rs`
 - `crates/tau-tui/src/interactive/tools.rs`
 - New focused modules for mouse/layout handling and tests if needed
 - `specs/3596-tui-mouse-interactions.md`
+
+# Integration points
+- `crates/tau-tui/src/interactive/app_runtime.rs` now reads `Event::Mouse` from the live crossterm loop.
+- `crates/tau-tui/src/interactive/app_mouse.rs` maps mouse coordinates to panels and applies scroll/focus changes.
+- `crates/tau-tui/src/interactive/ui_layout.rs` is the single source of truth for panel rectangles used by both rendering and hit-testing.
+- `crates/tau-tui/src/interactive/ui_overlays.rs` exposes the mouse controls in the interactive help overlay.
 
 # Error semantics
 - Mouse handlers must ignore unmapped coordinates without panicking.
