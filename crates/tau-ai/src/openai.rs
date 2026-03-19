@@ -921,12 +921,12 @@ fn parse_responses_api_response(raw: &str) -> Result<ChatResponse, TauAiError> {
         .unwrap_or_default();
 
     let message = Message {
-            role: MessageRole::Assistant,
-            content,
-            tool_call_id: None,
-            tool_name: None,
-            is_error: false,
-        };
+        role: MessageRole::Assistant,
+        content,
+        tool_call_id: None,
+        tool_name: None,
+        is_error: false,
+    };
     let message = promote_assistant_textual_tool_calls(message)?;
 
     Ok(ChatResponse {

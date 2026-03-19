@@ -488,7 +488,9 @@ printf '%s' '{"tool_calls":[{"id":"call_1","name":"bash","arguments":' > "$out"
             .complete(test_request())
             .await
             .expect_err("malformed textual tool-call payload must fail");
-        assert!(error.to_string().contains("textual tool-call promotion failed"));
+        assert!(error
+            .to_string()
+            .contains("textual tool-call promotion failed"));
     }
 
     #[cfg(unix)]

@@ -13,8 +13,8 @@ use std::{
 use async_trait::async_trait;
 use serde_json::{json, Value};
 use tau_ai::{
-    promote_assistant_textual_tool_calls, ChatRequest, ChatUsage, LlmClient, Message,
-    MessageRole, StreamDeltaHandler, TauAiError, ToolCall, ToolChoice, ToolDefinition,
+    promote_assistant_textual_tool_calls, ChatRequest, ChatUsage, LlmClient, Message, MessageRole,
+    StreamDeltaHandler, TauAiError, ToolCall, ToolChoice, ToolDefinition,
 };
 pub use tau_memory::runtime::{
     FileMemoryStore, MemoryLifecycleMaintenancePolicy, MemoryLifecycleMaintenanceResult,
