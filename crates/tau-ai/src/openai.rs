@@ -6,6 +6,7 @@ use serde_json::{json, Value};
 use tokio::time::sleep;
 
 use crate::{
+    promote_assistant_textual_tool_calls,
     retry::{
         is_retryable_http_error, new_request_id, parse_retry_after_ms, provider_retry_delay_ms,
         retry_budget_allows_delay, should_retry_status,
@@ -830,6 +831,7 @@ fn parse_chat_response(raw: &str) -> Result<ChatResponse, TauAiError> {
         tool_name: None,
         is_error: false,
     };
+    let message = promote_assistant_textual_tool_calls(message)?;
 
     let usage = parsed
         .usage
@@ -918,14 +920,17 @@ fn parse_responses_api_response(raw: &str) -> Result<ChatResponse, TauAiError> {
         })
         .unwrap_or_default();
 
+    let message = Message {
+        role: MessageRole::Assistant,
+        content,
+        tool_call_id: None,
+        tool_name: None,
+        is_error: false,
+    };
+    let message = promote_assistant_textual_tool_calls(message)?;
+
     Ok(ChatResponse {
-        message: Message {
-            role: MessageRole::Assistant,
-            content,
-            tool_call_id: None,
-            tool_name: None,
-            is_error: false,
-        },
+        message,
         finish_reason: parsed.status,
         usage,
     })
@@ -1515,6 +1520,32 @@ mod tests {
     }
 
     #[test]
+    fn regression_parses_tool_calls_from_textual_chat_content_payload() {
+        let raw = r#"{
+            "choices": [{
+                "message": {
+                    "content": "{\"tool_calls\":[{\"id\":\"call_mem_1\",\"name\":\"memory_search\",\"arguments\":{\"query\":\"memories\",\"limit\":5}}]}",
+                    "tool_calls": null
+                },
+                "finish_reason": "stop"
+            }],
+            "usage": {
+                "prompt_tokens": 12,
+                "completion_tokens": 6,
+                "total_tokens": 18
+            }
+        }"#;
+
+        let response = parse_chat_response(raw).expect("response must parse");
+        assert_eq!(response.message.tool_calls().len(), 1);
+        assert_eq!(response.message.tool_calls()[0].name, "memory_search");
+        assert_eq!(
+            response.message.tool_calls()[0].arguments,
+            json!({"query":"memories","limit":5})
+        );
+    }
+
+    #[test]
     fn spec_c04_openai_parses_cached_prompt_tokens_from_usage() {
         let raw = r#"{
             "choices": [{
@@ -1726,6 +1757,35 @@ mod tests {
         );
         assert_eq!(response.finish_reason.as_deref(), Some("completed"));
         assert_eq!(response.usage.total_tokens, 13);
+    }
+
+    #[test]
+    fn regression_parses_tool_calls_from_textual_responses_output_payload() {
+        let raw = r#"{
+            "status": "completed",
+            "output": [
+                {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "output_text",
+                            "text": "{\"tool_calls\":[{\"id\":\"call_mem_2\",\"name\":\"memory_tree\",\"arguments\":{}}]}"
+                        }
+                    ]
+                }
+            ],
+            "usage": {
+                "input_tokens": 9,
+                "output_tokens": 4,
+                "total_tokens": 13
+            }
+        }"#;
+
+        let response = parse_responses_api_response(raw).expect("responses payload should parse");
+        assert_eq!(response.message.tool_calls().len(), 1);
+        assert_eq!(response.message.tool_calls()[0].name, "memory_tree");
+        assert_eq!(response.message.tool_calls()[0].arguments, json!({}));
     }
 
     #[test]

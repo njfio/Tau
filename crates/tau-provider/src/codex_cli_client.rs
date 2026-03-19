@@ -14,8 +14,8 @@ use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 
 use tau_ai::{
-    ChatRequest, ChatResponse, ChatUsage, ContentBlock, LlmClient, MediaSource, Message,
-    MessageRole, StreamDeltaHandler, TauAiError,
+    promote_assistant_textual_tool_calls, ChatRequest, ChatResponse, ChatUsage, ContentBlock,
+    LlmClient, MediaSource, Message, MessageRole, StreamDeltaHandler, TauAiError,
 };
 
 const DEFAULT_EXEC_ARGS: &[&str] = &[
@@ -155,7 +155,7 @@ impl LlmClient for CodexCliClient {
         }
 
         Ok(ChatResponse {
-            message: Message::assistant_text(message_text),
+            message: promote_assistant_textual_tool_calls(Message::assistant_text(message_text))?,
             finish_reason: Some("stop".to_string()),
             usage: ChatUsage::default(),
         })
@@ -425,6 +425,72 @@ printf "stdout fallback reply"
 
         let response = client.complete(test_request()).await.expect("complete");
         assert_eq!(response.message.text_content(), "stdout fallback reply");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn regression_codex_cli_client_promotes_textual_tool_calls_from_output_file() {
+        let dir = tempdir().expect("tempdir");
+        let script = write_script(
+            dir.path(),
+            r#"
+out=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --output-last-message) out="$2"; shift 2;;
+    *) shift;;
+  esac
+done
+while IFS= read -r _line; do :; done
+printf '%s' '{"assistant_text":"{\"tool_calls\":[{\"id\":\"inspect_repo\",\"name\":\"bash\",\"arguments\":{\"command\":\"pwd\"}}]}"}' > "$out"
+"#,
+        );
+        let client = CodexCliClient::new(CodexCliConfig {
+            executable: script.display().to_string(),
+            extra_args: vec![],
+            timeout_ms: TEST_TIMEOUT_MS,
+        })
+        .expect("client");
+
+        let response = client.complete(test_request()).await.expect("complete");
+        let calls = response.message.tool_calls();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].name, "bash");
+        assert_eq!(calls[0].arguments, serde_json::json!({"command":"pwd"}));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn regression_codex_cli_client_rejects_malformed_textual_tool_payload() {
+        let dir = tempdir().expect("tempdir");
+        let script = write_script(
+            dir.path(),
+            r#"
+out=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --output-last-message) out="$2"; shift 2;;
+    *) shift;;
+  esac
+done
+while IFS= read -r _line; do :; done
+printf '%s' '{"tool_calls":[{"id":"call_1","name":"bash","arguments":' > "$out"
+"#,
+        );
+        let client = CodexCliClient::new(CodexCliConfig {
+            executable: script.display().to_string(),
+            extra_args: vec![],
+            timeout_ms: TEST_TIMEOUT_MS,
+        })
+        .expect("client");
+
+        let error = client
+            .complete(test_request())
+            .await
+            .expect_err("malformed textual tool-call payload must fail");
+        assert!(error
+            .to_string()
+            .contains("textual tool-call promotion failed"));
     }
 
     #[cfg(unix)]
