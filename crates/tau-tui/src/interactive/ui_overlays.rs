@@ -38,6 +38,8 @@ pub(crate) fn render_help_overlay(frame: &mut Frame, area: Rect) {
         Line::from("  Ctrl+d/u  Page down/up"),
         Line::from("  Tab       Cycle focus between panels"),
         Line::from("  1/2/3     Focus Chat/Input/Tools"),
+        Line::from("  Mouse wheel Scroll hovered chat/tools panel"),
+        Line::from("  Left click Focus/highlight panel under cursor"),
         Line::from(""),
         Line::from(Span::styled(
             "Insert Mode",
