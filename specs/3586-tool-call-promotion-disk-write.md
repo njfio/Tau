@@ -30,6 +30,8 @@ Ensure Tau never leaves assistant-emitted JSON tool-call payloads as plain assis
 - [ ] Existing structured tool-call tests remain green.
 
 ## Files To Touch
+- `crates/tau-agent-core/src/lib.rs`
+- `crates/tau-ai/src/textual_tool_calls.rs`
 - `crates/tau-ai/src/openai.rs`
 - `crates/tau-provider/src/codex_cli_client.rs`
 - `crates/tau-coding-agent/src/tests/auth_provider/runtime_and_startup.rs`
