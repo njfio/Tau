@@ -19,10 +19,7 @@ pub enum FailureSignal {
         error: String,
     },
     /// Agent is looping (similar messages repeated).
-    ConversationLoop {
-        similarity: f64,
-        loop_length: usize,
-    },
+    ConversationLoop { similarity: f64, loop_length: usize },
     /// Context exhaustion imminent.
     ContextExhaustion { utilization: f64 },
     /// No progress (N turns without meaningful tool output).

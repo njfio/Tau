@@ -10105,9 +10105,20 @@ async fn integration_openresponses_http_roundtrip_persists_session_state() {
 }
 
 #[tokio::test]
-async fn integration_spec_c01_openresponses_preflight_blocks_over_budget_request() {
+async fn integration_spec_3598_openresponses_small_prompt_under_char_cap_succeeds() {
     let temp = tempdir().expect("tempdir");
-    let state = test_state(temp.path(), 40, "secret");
+    let capture = CaptureGatewayLlmClient::new("ok");
+    let state = test_state_with_client_and_auth(
+        temp.path(),
+        40,
+        Arc::new(capture.clone()),
+        Arc::new(NoopGatewayToolRegistrar),
+        GatewayOpenResponsesAuthMode::Token,
+        Some("secret"),
+        None,
+        60,
+        120,
+    );
     let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
 
     let client = Client::new();
@@ -10118,20 +10129,99 @@ async fn integration_spec_c01_openresponses_preflight_blocks_over_budget_request
         .send()
         .await
         .expect("send request");
-    assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
-    let payload = response.json::<Value>().await.expect("parse error payload");
-    assert_eq!(payload["error"]["code"], "gateway_runtime_error");
-    assert!(payload["error"]["message"]
-        .as_str()
-        .unwrap_or_default()
-        .to_ascii_lowercase()
-        .contains("token budget exceeded"));
+    assert_eq!(response.status(), StatusCode::OK);
+    let payload = response
+        .json::<Value>()
+        .await
+        .expect("parse success payload");
+    assert_eq!(payload["status"], "completed");
+    assert_eq!(payload["output_text"], "ok");
+    assert_eq!(capture.captured_requests().len(), 1);
 
     handle.abort();
 }
 
 #[tokio::test]
-async fn integration_spec_c02_openresponses_preflight_skips_provider_dispatch() {
+async fn integration_spec_3598_openresponses_session_history_does_not_trip_bogus_total_token_cap() {
+    let temp = tempdir().expect("tempdir");
+    let capture = CaptureGatewayLlmClient::new("ok");
+    let state = test_state_with_client_and_auth(
+        temp.path(),
+        32_000,
+        Arc::new(capture.clone()),
+        Arc::new(NoopGatewayToolRegistrar),
+        GatewayOpenResponsesAuthMode::Token,
+        Some("secret"),
+        None,
+        60,
+        120,
+    );
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+
+    let client = Client::new();
+    let session_id = "spec-3598-history";
+    let first = client
+        .post(format!("http://{addr}/v1/responses"))
+        .bearer_auth("secret")
+        .json(&json!({
+            "input": "a".repeat(15_000),
+            "metadata": {"session_id": session_id}
+        }))
+        .send()
+        .await
+        .expect("send first request");
+    assert_eq!(first.status(), StatusCode::OK);
+
+    let second = client
+        .post(format!("http://{addr}/v1/responses"))
+        .bearer_auth("secret")
+        .json(&json!({
+            "input": "b".repeat(15_000),
+            "metadata": {"session_id": session_id}
+        }))
+        .send()
+        .await
+        .expect("send second request");
+    assert_eq!(second.status(), StatusCode::OK);
+    assert_eq!(capture.captured_requests().len(), 2);
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn integration_spec_3598_openresponses_near_transport_cap_does_not_trip_bogus_total_token_cap(
+) {
+    let temp = tempdir().expect("tempdir");
+    let capture = CaptureGatewayLlmClient::new("ok");
+    let state = test_state_with_client_and_auth(
+        temp.path(),
+        32_000,
+        Arc::new(capture.clone()),
+        Arc::new(NoopGatewayToolRegistrar),
+        GatewayOpenResponsesAuthMode::Token,
+        Some("secret"),
+        None,
+        60,
+        120,
+    );
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+
+    let client = Client::new();
+    let response = client
+        .post(format!("http://{addr}/v1/responses"))
+        .bearer_auth("secret")
+        .json(&json!({"input":"x".repeat(31_990)}))
+        .send()
+        .await
+        .expect("send request");
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(capture.captured_requests().len(), 1);
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn integration_spec_3598_openresponses_payload_too_large_blocks_provider_dispatch() {
     let temp = tempdir().expect("tempdir");
     let state = test_state_with_client_and_auth(
         temp.path(),
@@ -10150,17 +10240,13 @@ async fn integration_spec_c02_openresponses_preflight_skips_provider_dispatch() 
     let response = client
         .post(format!("http://{addr}/v1/responses"))
         .bearer_auth("secret")
-        .json(&json!({"input":"ok"}))
+        .json(&json!({"input":"01234567890123456789012345678901234567890"}))
         .send()
         .await
         .expect("send request");
-    assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+    assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
     let payload = response.json::<Value>().await.expect("parse error payload");
-    assert!(payload["error"]["message"]
-        .as_str()
-        .unwrap_or_default()
-        .to_ascii_lowercase()
-        .contains("token budget exceeded"));
+    assert_eq!(payload["error"]["code"], "input_too_large");
 
     handle.abort();
 }
@@ -13233,11 +13319,11 @@ async fn tier_pr_a2_agent_session_flow_matrix() {
     let over_budget = client
         .post(format!("http://{tiny_addr}{OPENRESPONSES_ENDPOINT}"))
         .bearer_auth("secret")
-        .json(&json!({"input":"context pressure sample"}))
+        .json(&json!({"input":"context pressure sample over forty chars"}))
         .send()
         .await
         .expect("over budget request");
-    assert_eq!(over_budget.status(), StatusCode::BAD_GATEWAY);
+    assert_eq!(over_budget.status(), StatusCode::PAYLOAD_TOO_LARGE);
     tiny_handle.abort();
 
     handle.abort();

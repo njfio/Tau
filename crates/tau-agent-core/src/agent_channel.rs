@@ -131,11 +131,8 @@ mod tests {
     async fn bus_send_receive() {
         let bus = AgentMessageBus::new(16);
         let mut rx = bus.subscribe();
-        let msg = AgentMessage::broadcast(
-            "test",
-            AgentMessageType::StepCompleted,
-            json!({"step": 1}),
-        );
+        let msg =
+            AgentMessage::broadcast("test", AgentMessageType::StepCompleted, json!({"step": 1}));
         bus.send(msg).unwrap();
         let received = rx.recv().await.unwrap();
         assert_eq!(received.from_agent_id, "test");

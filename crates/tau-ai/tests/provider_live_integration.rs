@@ -186,10 +186,7 @@ async fn live_openai_streaming() {
         .expect("openai streaming completion should succeed");
 
     let collected: String = deltas.lock().expect("delta lock").join("");
-    assert!(
-        !collected.is_empty(),
-        "expected non-empty streaming deltas"
-    );
+    assert!(!collected.is_empty(), "expected non-empty streaming deltas");
 
     let text = response.message.text_content().to_lowercase();
     assert!(
@@ -300,10 +297,7 @@ async fn live_anthropic_streaming() {
         .expect("anthropic streaming completion should succeed");
 
     let collected: String = deltas.lock().expect("delta lock").join("");
-    assert!(
-        !collected.is_empty(),
-        "expected non-empty streaming deltas"
-    );
+    assert!(!collected.is_empty(), "expected non-empty streaming deltas");
 
     let text = response.message.text_content().to_lowercase();
     assert!(
@@ -411,10 +405,7 @@ async fn live_google_streaming() {
         .expect("google streaming completion should succeed");
 
     let collected: String = deltas.lock().expect("delta lock").join("");
-    assert!(
-        !collected.is_empty(),
-        "expected non-empty streaming deltas"
-    );
+    assert!(!collected.is_empty(), "expected non-empty streaming deltas");
 
     let text = response.message.text_content().to_lowercase();
     assert!(

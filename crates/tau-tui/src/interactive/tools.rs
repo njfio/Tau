@@ -18,6 +18,15 @@ impl ToolStatus {
             ToolStatus::Timeout => "T/O",
         }
     }
+
+    pub fn accent_name(&self) -> &'static str {
+        match self {
+            ToolStatus::Running => "running",
+            ToolStatus::Success => "ok",
+            ToolStatus::Failed => "failed",
+            ToolStatus::Timeout => "timed out",
+        }
+    }
 }
 
 /// A single tool execution entry.
@@ -57,8 +66,28 @@ impl ToolPanel {
         &self.entries
     }
 
+    pub fn latest_entry(&self) -> Option<&ToolEntry> {
+        self.entries.last()
+    }
+
+    pub fn latest_running(&self) -> Option<&ToolEntry> {
+        self.entries
+            .iter()
+            .rev()
+            .find(|entry| entry.status == ToolStatus::Running)
+    }
+
     pub fn scroll_offset(&self) -> usize {
         self.scroll_offset
+    }
+
+    pub fn scroll_up(&mut self, n: usize) {
+        self.scroll_offset = self.scroll_offset.saturating_sub(n);
+    }
+
+    pub fn scroll_down(&mut self, n: usize) {
+        let max = self.entries.len().saturating_sub(1);
+        self.scroll_offset = (self.scroll_offset + n).min(max);
     }
 
     pub fn active_count(&self) -> usize {

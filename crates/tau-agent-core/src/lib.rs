@@ -13,8 +13,8 @@ use std::{
 use async_trait::async_trait;
 use serde_json::{json, Value};
 use tau_ai::{
-    ChatRequest, ChatUsage, LlmClient, Message, MessageRole, StreamDeltaHandler, TauAiError,
-    ToolCall, ToolChoice, ToolDefinition,
+    promote_assistant_textual_tool_calls, ChatRequest, ChatUsage, LlmClient, Message, MessageRole,
+    StreamDeltaHandler, TauAiError, ToolCall, ToolChoice, ToolDefinition,
 };
 pub use tau_memory::runtime::{
     FileMemoryStore, MemoryLifecycleMaintenancePolicy, MemoryLifecycleMaintenanceResult,
@@ -47,11 +47,11 @@ pub use context_ranking::{
 pub use cortex_runtime::{Cortex, CortexConfig, CortexRefreshReport};
 pub use failure_detector::{FailureDetector, FailureDetectorConfig, FailureSignal};
 pub use metrics::{AgentMetrics, AgentMetricsSnapshot, ToolHealthStats};
-pub use recovery::{select_recovery_strategy, RecoveryStrategy};
 pub use process_types::{
     ProcessLifecycleState, ProcessManager, ProcessManagerError, ProcessRuntimeProfile,
     ProcessSnapshot, ProcessSpawnSpec, ProcessType,
 };
+pub use recovery::{select_recovery_strategy, RecoveryStrategy};
 pub(crate) use runtime_safety_memory::{assistant_text_suggests_failure, retrieve_memory_matches};
 pub(crate) use runtime_startup::{
     cache_insert_with_limit, lock_or_recover, normalize_direct_message_content,
@@ -2278,8 +2278,7 @@ impl Agent {
                     "branch follow-up produced no assistant conclusion".to_string(),
                 );
             };
-            let tool_execution_summary =
-                Self::branch_tool_execution_summary(&branch_messages);
+            let tool_execution_summary = Self::branch_tool_execution_summary(&branch_messages);
             let report = BranchWorkerFollowupReport {
                 conclusion,
                 available_tools,
@@ -2591,7 +2590,7 @@ impl Agent {
             let request_duration_ms = request_started.elapsed().as_millis() as u64;
             let finish_reason = response.finish_reason.clone();
             let usage = response.usage.clone();
-            let assistant = response.message;
+            let assistant = promote_assistant_textual_tool_calls(response.message)?;
             self.messages.push(assistant.clone());
             self.emit(AgentEvent::MessageAdded {
                 message: assistant.clone(),

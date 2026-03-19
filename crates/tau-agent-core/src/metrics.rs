@@ -160,9 +160,7 @@ impl AgentMetrics {
             tool_timeouts_total: self.tool_timeouts_total.load(Ordering::Relaxed),
             tool_latency_sum_ms: self.tool_latency_sum_ms.load(Ordering::Relaxed),
             compactions_total: self.compactions_total.load(Ordering::Relaxed),
-            compaction_messages_dropped: self
-                .compaction_messages_dropped
-                .load(Ordering::Relaxed),
+            compaction_messages_dropped: self.compaction_messages_dropped.load(Ordering::Relaxed),
             replans_total: self.replans_total.load(Ordering::Relaxed),
             replan_successes: self.replan_successes.load(Ordering::Relaxed),
             tool_health,
