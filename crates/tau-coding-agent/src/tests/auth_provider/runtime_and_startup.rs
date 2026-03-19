@@ -1129,6 +1129,172 @@ async fn integration_extension_registered_tool_executes_in_prompt_loop() {
     }));
 }
 
+#[tokio::test]
+async fn integration_run_prompt_with_cancellation_promotes_textual_write_tool_calls_and_persists_file(
+) {
+    let temp = tempdir().expect("tempdir");
+    let target = temp.path().join("written-from-textual-tool-call.txt");
+    let session_path = temp.path().join("textual-write-session.jsonl");
+    let mut store = SessionStore::load(&session_path).expect("load session");
+    let active_head = store
+        .append_messages(None, &[Message::system("sys")])
+        .expect("append system")
+        .expect("system head");
+    let mut runtime = Some(SessionRuntime {
+        store,
+        active_head: Some(active_head),
+    });
+
+    let payload = serde_json::json!({
+        "tool_calls": [{
+            "id": "call-write-1",
+            "name": "write",
+            "arguments": {
+                "path": target.display().to_string(),
+                "content": "hello from textual tool call"
+            }
+        }]
+    })
+    .to_string();
+    let responses = VecDeque::from(vec![
+        ChatResponse {
+            message: Message::assistant_text(payload),
+            finish_reason: Some("stop".to_string()),
+            usage: ChatUsage::default(),
+        },
+        ChatResponse {
+            message: Message::assistant_text("write complete"),
+            finish_reason: Some("stop".to_string()),
+            usage: ChatUsage::default(),
+        },
+    ]);
+    let mut agent = Agent::new(
+        Arc::new(QueueClient {
+            responses: AsyncMutex::new(responses),
+        }),
+        AgentConfig::default(),
+    );
+    let policy = crate::tools::ToolPolicy::new(vec![temp.path().to_path_buf()]);
+    crate::tools::register_builtin_tools(&mut agent, policy);
+
+    let status = run_prompt_with_cancellation(
+        &mut agent,
+        &mut runtime,
+        "write a file named written-from-textual-tool-call.txt",
+        0,
+        pending::<()>(),
+        test_render_options(),
+    )
+    .await
+    .expect("prompt should succeed");
+    assert_eq!(status, PromptRunStatus::Completed);
+    assert_eq!(
+        std::fs::read_to_string(&target).expect("written file"),
+        "hello from textual tool call"
+    );
+    let persisted = std::fs::read_to_string(&session_path).expect("read session file");
+    assert!(persisted.contains("\"role\":\"tool\""));
+    assert!(persisted.contains("\"tool_name\":\"write\""));
+}
+
+#[tokio::test]
+async fn integration_run_prompt_with_cancellation_promotes_textual_bash_tool_calls_and_persists_session_history(
+) {
+    let temp = tempdir().expect("tempdir");
+    let session_path = temp.path().join("textual-bash-session.jsonl");
+    let mut store = SessionStore::load(&session_path).expect("load session");
+    let active_head = store
+        .append_messages(None, &[Message::system("sys")])
+        .expect("append system")
+        .expect("system head");
+    let mut runtime = Some(SessionRuntime {
+        store,
+        active_head: Some(active_head),
+    });
+
+    let payload = serde_json::json!({
+        "tool_calls": [{
+            "id": "call-bash-1",
+            "name": "bash",
+            "arguments": {
+                "command": "pwd",
+                "cwd": temp.path().display().to_string()
+            }
+        }]
+    })
+    .to_string();
+    let responses = VecDeque::from(vec![
+        ChatResponse {
+            message: Message::assistant_text(payload),
+            finish_reason: Some("stop".to_string()),
+            usage: ChatUsage::default(),
+        },
+        ChatResponse {
+            message: Message::assistant_text("bash complete"),
+            finish_reason: Some("stop".to_string()),
+            usage: ChatUsage::default(),
+        },
+    ]);
+    let mut agent = Agent::new(
+        Arc::new(QueueClient {
+            responses: AsyncMutex::new(responses),
+        }),
+        AgentConfig::default(),
+    );
+    let policy = crate::tools::ToolPolicy::new(vec![temp.path().to_path_buf()]);
+    crate::tools::register_builtin_tools(&mut agent, policy);
+
+    let status = run_prompt_with_cancellation(
+        &mut agent,
+        &mut runtime,
+        "use bash to run pwd and tell me the result",
+        0,
+        pending::<()>(),
+        test_render_options(),
+    )
+    .await
+    .expect("prompt should succeed");
+    assert_eq!(status, PromptRunStatus::Completed);
+    let persisted = std::fs::read_to_string(&session_path).expect("read session file");
+    assert!(persisted.contains("\"tool_name\":\"bash\""));
+    assert!(persisted.contains(&temp.path().display().to_string()));
+}
+
+#[tokio::test]
+async fn regression_run_prompt_with_cancellation_rejects_malformed_textual_tool_call_payload() {
+    let temp = tempdir().expect("tempdir");
+    let responses = VecDeque::from(vec![ChatResponse {
+        message: Message::assistant_text(
+            "{\"tool_calls\":[{\"id\":\"call-1\",\"name\":\"write\",\"arguments\":".to_string(),
+        ),
+        finish_reason: Some("stop".to_string()),
+        usage: ChatUsage::default(),
+    }]);
+    let mut agent = Agent::new(
+        Arc::new(QueueClient {
+            responses: AsyncMutex::new(responses),
+        }),
+        AgentConfig::default(),
+    );
+    let policy = crate::tools::ToolPolicy::new(vec![temp.path().to_path_buf()]);
+    crate::tools::register_builtin_tools(&mut agent, policy);
+    let mut runtime = None;
+
+    let error = run_prompt_with_cancellation(
+        &mut agent,
+        &mut runtime,
+        "write a file",
+        0,
+        pending::<()>(),
+        test_render_options(),
+    )
+    .await
+    .expect_err("malformed textual tool-call payload must fail");
+    assert!(error
+        .to_string()
+        .contains("textual tool-call promotion failed"));
+}
+
 #[test]
 fn integration_handle_command_dispatches_extension_registered_command() {
     let temp = tempdir().expect("tempdir");
