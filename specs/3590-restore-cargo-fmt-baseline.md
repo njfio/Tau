@@ -9,7 +9,7 @@ Restore the repository formatting baseline for the tau-tui interactive files cur
 
 ## Boundaries/Non-goals
 - Do not change runtime behavior, control flow, or UI semantics.
-- Do not edit files beyond the rustfmt-affected tau-tui files and this spec unless the formatter proves additional files are required.
+- Do not edit files beyond the rustfmt-affected files and this spec unless the formatter proves additional files are required.
 - Do not mix in functional TUI work.
 
 ## Failure modes
@@ -24,6 +24,19 @@ Restore the repository formatting baseline for the tau-tui interactive files cur
 
 ## Files to touch
 - `specs/3590-restore-cargo-fmt-baseline.md`
+- `crates/tau-agent-core/src/agent_channel.rs`
+- `crates/tau-agent-core/src/circuit_breaker.rs`
+- `crates/tau-agent-core/src/context_ranking.rs`
+- `crates/tau-agent-core/src/failure_detector.rs`
+- `crates/tau-agent-core/src/lib.rs`
+- `crates/tau-agent-core/src/metrics.rs`
+- `crates/tau-ai/tests/provider_live_integration.rs`
+- `crates/tau-memory/src/runtime/ranking.rs`
+- `crates/tau-orchestrator/src/plan.rs`
+- `crates/tau-orchestrator/src/plan_executor.rs`
+- `crates/tau-tools/src/tools.rs`
+- `crates/tau-tui/src/interactive/app.rs`
+- `crates/tau-tui/src/interactive/mod.rs`
 - `crates/tau-tui/src/interactive/ui.rs`
 - `crates/tau-tui/src/main.rs`
 
