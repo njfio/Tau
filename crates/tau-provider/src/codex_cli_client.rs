@@ -14,8 +14,8 @@ use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 
 use tau_ai::{
-    ChatRequest, ChatResponse, ChatUsage, ContentBlock, LlmClient, MediaSource, Message,
-    MessageRole, StreamDeltaHandler, TauAiError,
+    promote_assistant_textual_tool_calls, ChatRequest, ChatResponse, ChatUsage, ContentBlock,
+    LlmClient, MediaSource, Message, MessageRole, StreamDeltaHandler, TauAiError,
 };
 
 const DEFAULT_EXEC_ARGS: &[&str] = &[
@@ -155,7 +155,7 @@ impl LlmClient for CodexCliClient {
         }
 
         Ok(ChatResponse {
-            message: Message::assistant_text(message_text),
+            message: promote_assistant_textual_tool_calls(Message::assistant_text(message_text))?,
             finish_reason: Some("stop".to_string()),
             usage: ChatUsage::default(),
         })

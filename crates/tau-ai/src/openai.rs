@@ -6,6 +6,7 @@ use serde_json::{json, Value};
 use tokio::time::sleep;
 
 use crate::{
+    promote_assistant_textual_tool_calls,
     retry::{
         is_retryable_http_error, new_request_id, parse_retry_after_ms, provider_retry_delay_ms,
         retry_budget_allows_delay, should_retry_status,
@@ -830,6 +831,7 @@ fn parse_chat_response(raw: &str) -> Result<ChatResponse, TauAiError> {
         tool_name: None,
         is_error: false,
     };
+    let message = promote_assistant_textual_tool_calls(message)?;
 
     let usage = parsed
         .usage
@@ -918,14 +920,17 @@ fn parse_responses_api_response(raw: &str) -> Result<ChatResponse, TauAiError> {
         })
         .unwrap_or_default();
 
-    Ok(ChatResponse {
-        message: Message {
+    let message = Message {
             role: MessageRole::Assistant,
             content,
             tool_call_id: None,
             tool_name: None,
             is_error: false,
-        },
+        };
+    let message = promote_assistant_textual_tool_calls(message)?;
+
+    Ok(ChatResponse {
+        message,
         finish_reason: parsed.status,
         usage,
     })

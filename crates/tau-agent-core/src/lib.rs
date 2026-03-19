@@ -13,8 +13,8 @@ use std::{
 use async_trait::async_trait;
 use serde_json::{json, Value};
 use tau_ai::{
-    ChatRequest, ChatUsage, LlmClient, Message, MessageRole, StreamDeltaHandler, TauAiError,
-    ToolCall, ToolChoice, ToolDefinition,
+    promote_assistant_textual_tool_calls, ChatRequest, ChatUsage, LlmClient, Message,
+    MessageRole, StreamDeltaHandler, TauAiError, ToolCall, ToolChoice, ToolDefinition,
 };
 pub use tau_memory::runtime::{
     FileMemoryStore, MemoryLifecycleMaintenancePolicy, MemoryLifecycleMaintenanceResult,
@@ -2590,7 +2590,7 @@ impl Agent {
             let request_duration_ms = request_started.elapsed().as_millis() as u64;
             let finish_reason = response.finish_reason.clone();
             let usage = response.usage.clone();
-            let assistant = response.message;
+            let assistant = promote_assistant_textual_tool_calls(response.message)?;
             self.messages.push(assistant.clone());
             self.emit(AgentEvent::MessageAdded {
                 message: assistant.clone(),
