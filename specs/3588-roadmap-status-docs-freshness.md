@@ -29,6 +29,11 @@ Refresh the generated roadmap status blocks so repository CI freshness checks pa
 - `tasks/todo.md`
 - `tasks/tau-vs-ironclaw-gap-list.md`
 
+
+## Integration points
+- `Docs Quality (links + architecture freshness)` runs `scripts/dev/roadmap-status-sync.sh --check --quiet`.
+- `Quality (fmt + clippy + tests)` also runs the same roadmap freshness gate before heavier Rust validation.
+
 ## Error semantics
 - Fail loud if the sync script cannot complete or if generated output touches unexpected files.
 - Do not hand-edit around script failures.
