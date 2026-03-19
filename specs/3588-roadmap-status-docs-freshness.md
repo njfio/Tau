@@ -8,6 +8,7 @@ Refresh the generated roadmap status blocks so repository CI freshness checks pa
 - Output: updated generated status blocks in `tasks/todo.md` and `tasks/tau-vs-ironclaw-gap-list.md`
 
 ## Boundaries/Non-goals
+- Treat `scripts/dev/roadmap-status-sync.sh` as the only writer for the generated status blocks.
 - Do not change roadmap priorities, prose, or issue semantics outside the generated status blocks.
 - Do not change rustdoc marker policy, CI workflow definitions, or any unrelated docs.
 - Do not manually edit generated lines beyond what the sync script writes.
@@ -33,7 +34,7 @@ Refresh the generated roadmap status blocks so repository CI freshness checks pa
 - Do not hand-edit around script failures.
 
 ## Test plan
-- Red: run `scripts/dev/roadmap-status-sync.sh --check --quiet` on the clean branch and confirm non-zero exit.
+- Red: use the existing freshness gate `scripts/dev/roadmap-status-sync.sh --check --quiet` on the clean branch and confirm non-zero exit.
 - Green: run `scripts/dev/roadmap-status-sync.sh` to refresh the generated blocks.
 - Verification: rerun `scripts/dev/roadmap-status-sync.sh --check --quiet` and confirm zero exit.
 - Verification: inspect `git diff --stat` to confirm only the intended docs changed.
