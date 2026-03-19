@@ -1,5 +1,6 @@
 set shell := ["bash", "-lc"]
 
+REPO_ROOT := justfile_directory()
 TAU_ENV := "unset OPENAI_API_KEY TAU_API_KEY && export TAU_OPENAI_AUTH_MODE=oauth-token && export TAU_PROVIDER_SUBSCRIPTION_STRICT=true"
 GATEWAY_PORT := "8791"
 RUNTIME_DIR := ".tau/unified"
@@ -8,6 +9,8 @@ DASHBOARD_STATE_DIR := ".tau/dashboard"
 RUNTIME_LOG := ".tau/unified/tau-unified.log"
 RUNTIME_PID := ".tau/unified/tau-unified.pid"
 RUNTIME_CMD_FILE := ".tau/unified/tau-unified.last-cmd"
+OPENRESPONSES_SESSION_DIR := ".tau/gateway/openresponses/sessions"
+DEFAULT_OPENRESPONSES_SESSION := ".tau/gateway/openresponses/sessions/default.jsonl"
 RUNTIME_SESSION := "tau-runtime"
 TUI_SESSION := "tau-tui"
 RUNTIME_CMD := "target/debug/tau-coding-agent --model gpt-5.3-codex --gateway-state-dir .tau/gateway --dashboard-state-dir .tau/dashboard --gateway-openresponses-server --gateway-openresponses-bind 127.0.0.1:8791 --gateway-openresponses-auth-mode localhost-dev --gateway-openresponses-max-input-chars 32000 --request-timeout-ms 180000 --agent-request-max-retries 0 --provider-max-retries 0"
@@ -55,9 +58,19 @@ verify-runtime:
 	  exit 1; \
 	fi
 
+session-reset:
+	@echo "resetting local default session"
+	@mkdir -p {{OPENRESPONSES_SESSION_DIR}}
+	@rm -f {{DEFAULT_OPENRESPONSES_SESSION}}
+
 stack-up:
 	@echo "starting dashboard/gateway runtime with fresh auth"
 	{{TAU_ENV}}; codex login
+	just stack-up-fast
+
+stack-up-fresh:
+	@echo "starting dashboard/gateway runtime with fresh local session"
+	just session-reset
 	just stack-up-fast
 
 stack-up-fast:
@@ -67,8 +80,8 @@ stack-up-fast:
 	{{TAU_ENV}}; mkdir -p {{RUNTIME_DIR}} {{GATEWAY_STATE_DIR}} {{DASHBOARD_STATE_DIR}}
 	{{TAU_ENV}}; printf '%s\n' '{{RUNTIME_CMD}}' > {{RUNTIME_CMD_FILE}}
 	{{TAU_ENV}}; : > {{RUNTIME_LOG}}
-	@tmux new-session -d -s {{RUNTIME_SESSION}} "cd /Users/n/RustroverProjects/rust_pi-3582-phase && {{TAU_ENV}} && exec {{RUNTIME_CMD}}"
-	@tmux pipe-pane -o -t {{RUNTIME_SESSION}} "cat >> /Users/n/RustroverProjects/rust_pi-3582-phase/{{RUNTIME_LOG}}"
+	@tmux new-session -d -s {{RUNTIME_SESSION}} "cd {{REPO_ROOT}} && {{TAU_ENV}} && exec {{RUNTIME_CMD}}"
+	@tmux pipe-pane -o -t {{RUNTIME_SESSION}} "cat >> {{REPO_ROOT}}/{{RUNTIME_LOG}}"
 	@tmux list-panes -t {{RUNTIME_SESSION}} -F '#{pane_pid}' > {{RUNTIME_PID}}
 	@sleep 3
 	@just verify-runtime
@@ -76,7 +89,7 @@ stack-up-fast:
 	@echo "tau-unified: webchat=http://127.0.0.1:8791/webchat"
 	@echo "tau-unified: ops=http://127.0.0.1:8791/ops"
 	@echo "tau-unified: dashboard=http://127.0.0.1:8791/dashboard"
-	@echo "tau-unified: log=/Users/n/RustroverProjects/rust_pi-3582-phase/{{RUNTIME_LOG}}"
+	@echo "tau-unified: log={{REPO_ROOT}}/{{RUNTIME_LOG}}"
 
 stack-down:
 	@echo "stopping the unified stack"
@@ -96,10 +109,15 @@ tui:
 	@echo "running tau-tui interactive"
 	{{TAU_ENV}}; cargo run -q -p tau-tui -- interactive --profile ops-interactive
 
+tui-fresh:
+	@echo "running tau-tui interactive with fresh local session"
+	just session-reset
+	just tui
+
 tui-tmux:
 	@echo "launching tau-tui in tmux session {{TUI_SESSION}}"
 	@tmux kill-session -t {{TUI_SESSION}} >/dev/null 2>&1 || true
-	@tmux new-session -d -s {{TUI_SESSION}} "cd /Users/n/RustroverProjects/rust_pi-3582-phase && {{TAU_ENV}} && cargo run -q -p tau-tui -- interactive --profile ops-interactive"
+	@tmux new-session -d -s {{TUI_SESSION}} "cd {{REPO_ROOT}} && {{TAU_ENV}} && cargo run -q -p tau-tui -- interactive --profile ops-interactive"
 	@echo "attach with: tmux attach -t {{TUI_SESSION}}"
 
 restart-stack: stack-down stack-up
