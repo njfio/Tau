@@ -31,7 +31,6 @@ pub(super) async fn execute_openresponses_request(
         });
     }
 
-    let preflight_input_tokens = derive_gateway_preflight_token_limit(state.config.max_input_chars);
     let resolved_system_prompt = state.resolved_system_prompt();
     let mut agent = Agent::new(
         state.config.client.clone(),
@@ -43,9 +42,11 @@ pub(super) async fn execute_openresponses_request(
             system_prompt: resolved_system_prompt.clone(),
             max_turns: state.config.max_turns,
             max_tokens: request.max_tokens,
-            // Fail closed on preflight limits: reject over-budget requests instead of compacting them.
+            // `translate_openresponses_request` already enforces `max_input_chars` for the
+            // inbound payload. Reusing that transport guardrail as an agent token budget
+            // incorrectly counts system prompt and persisted session history.
             max_estimated_input_tokens: None,
-            max_estimated_total_tokens: preflight_input_tokens,
+            max_estimated_total_tokens: None,
             ..AgentConfig::default()
         },
     );
