@@ -1,3 +1,5 @@
+//! Tool-related chat lines shared by the transcript and summary strip.
+
 use ratatui::{
     style::{Color, Modifier, Style},
     text::{Line, Span},

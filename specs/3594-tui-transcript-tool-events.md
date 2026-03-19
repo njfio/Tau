@@ -26,8 +26,14 @@ Render live tool execution and final tool outcomes directly in the interactive T
 
 # Files to touch
 - `crates/tau-tui/src/interactive/ui_chat.rs`
+- `crates/tau-tui/src/interactive/ui_chat_tool_lines.rs`
 - `crates/tau-tui/src/interactive/ui_tool_visibility_tests.rs`
 - `specs/3594-tui-transcript-tool-events.md`
+
+# Integration points
+- `crates/tau-tui/src/interactive/ui.rs` calls `render_chat_panel`.
+- `crates/tau-tui/src/interactive/ui_chat.rs` appends transcript tool lines from the live `ToolPanel`.
+- `crates/tau-tui/src/interactive/ui_tool_visibility_tests.rs` exercises the real ratatui render path with both transcript and side-panel visibility assertions.
 
 # Error semantics
 - Rendering code must not silently panic on empty tool details.
