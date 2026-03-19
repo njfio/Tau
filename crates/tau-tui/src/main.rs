@@ -1,9 +1,10 @@
 use std::{env, path::Path, process::Command, process::Stdio, thread, time::Duration};
 
 use tau_tui::{
-    apply_overlay, render_operator_shell_frame, Component, DiffRenderer, EditorBuffer, EditorView,
-    LumaImage, OperatorShellFrame, Text, Theme, ThemeRole,
-    interactive::{AppConfig, run_interactive},
+    apply_overlay,
+    interactive::{run_interactive, AppConfig},
+    render_operator_shell_frame, Component, DiffRenderer, EditorBuffer, EditorView, LumaImage,
+    OperatorShellFrame, Text, Theme, ThemeRole,
 };
 
 const HELP: &str = "\

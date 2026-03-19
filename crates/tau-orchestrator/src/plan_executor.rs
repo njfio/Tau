@@ -32,9 +32,7 @@ pub enum PlanExecutionError {
 impl std::fmt::Display for PlanExecutionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            PlanExecutionError::Deadlock {
-                remaining_step_ids,
-            } => write!(
+            PlanExecutionError::Deadlock { remaining_step_ids } => write!(
                 f,
                 "plan deadlocked with remaining steps: {:?}",
                 remaining_step_ids

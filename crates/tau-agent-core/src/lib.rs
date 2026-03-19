@@ -47,11 +47,11 @@ pub use context_ranking::{
 pub use cortex_runtime::{Cortex, CortexConfig, CortexRefreshReport};
 pub use failure_detector::{FailureDetector, FailureDetectorConfig, FailureSignal};
 pub use metrics::{AgentMetrics, AgentMetricsSnapshot, ToolHealthStats};
-pub use recovery::{select_recovery_strategy, RecoveryStrategy};
 pub use process_types::{
     ProcessLifecycleState, ProcessManager, ProcessManagerError, ProcessRuntimeProfile,
     ProcessSnapshot, ProcessSpawnSpec, ProcessType,
 };
+pub use recovery::{select_recovery_strategy, RecoveryStrategy};
 pub(crate) use runtime_safety_memory::{assistant_text_suggests_failure, retrieve_memory_matches};
 pub(crate) use runtime_startup::{
     cache_insert_with_limit, lock_or_recover, normalize_direct_message_content,
@@ -2278,8 +2278,7 @@ impl Agent {
                     "branch follow-up produced no assistant conclusion".to_string(),
                 );
             };
-            let tool_execution_summary =
-                Self::branch_tool_execution_summary(&branch_messages);
+            let tool_execution_summary = Self::branch_tool_execution_summary(&branch_messages);
             let report = BranchWorkerFollowupReport {
                 conclusion,
                 available_tools,

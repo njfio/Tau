@@ -96,7 +96,11 @@ pub fn rank_messages_by_importance(messages: &[Message]) -> Vec<(usize, MessageI
         .enumerate()
         .map(|(i, msg)| (i, score_message_importance(msg, i, total)))
         .collect();
-    scored.sort_by(|a, b| a.1.score.partial_cmp(&b.1.score).unwrap_or(std::cmp::Ordering::Equal));
+    scored.sort_by(|a, b| {
+        a.1.score
+            .partial_cmp(&b.1.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     scored
 }
 

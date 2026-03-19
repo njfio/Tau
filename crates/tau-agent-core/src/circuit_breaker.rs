@@ -96,8 +96,7 @@ impl CircuitBreaker {
             .store(current_time_ms(), Ordering::SeqCst);
 
         if failures >= self.failure_threshold {
-            self.state
-                .store(CircuitState::Open as u8, Ordering::SeqCst);
+            self.state.store(CircuitState::Open as u8, Ordering::SeqCst);
         }
     }
 

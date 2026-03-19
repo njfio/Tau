@@ -101,8 +101,7 @@ impl LocalEmbeddingProvider for FastEmbedLocalEmbeddingProvider {
     fn embed(
         &self,
         inputs: &[String],
-        #[cfg_attr(not(test), allow(unused_variables))]
-        dimensions: usize,
+        #[cfg_attr(not(test), allow(unused_variables))] dimensions: usize,
         _model: &str,
     ) -> Result<Vec<Vec<f32>>, String> {
         if inputs.is_empty() {

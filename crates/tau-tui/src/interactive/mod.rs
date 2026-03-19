@@ -14,4 +14,4 @@ mod status;
 mod tools;
 mod ui;
 
-pub use app::{App, AppConfig, run_interactive};
+pub use app::{run_interactive, App, AppConfig};

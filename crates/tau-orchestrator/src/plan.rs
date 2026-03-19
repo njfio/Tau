@@ -60,10 +60,7 @@ pub enum PlanValidationError {
     /// The dependency graph contains a cycle.
     CycleDetected { involved_steps: Vec<String> },
     /// A step requires a tool that is not available.
-    UnavailableTool {
-        step_id: String,
-        tool_name: String,
-    },
+    UnavailableTool { step_id: String, tool_name: String },
     /// Duplicate step IDs found.
     DuplicateStepId { step_id: String },
 }
@@ -82,10 +79,7 @@ impl std::fmt::Display for PlanValidationError {
             PlanValidationError::CycleDetected { involved_steps } => {
                 write!(f, "dependency cycle among steps: {:?}", involved_steps)
             }
-            PlanValidationError::UnavailableTool {
-                step_id,
-                tool_name,
-            } => write!(
+            PlanValidationError::UnavailableTool { step_id, tool_name } => write!(
                 f,
                 "step '{}' requires unavailable tool '{}'",
                 step_id, tool_name
@@ -172,10 +166,7 @@ impl StructuredPlan {
     }
 
     /// Validates the plan DAG for cycles, missing dependencies, and tool availability.
-    pub fn validate(
-        &self,
-        available_tools: &[String],
-    ) -> Result<(), Vec<PlanValidationError>> {
+    pub fn validate(&self, available_tools: &[String]) -> Result<(), Vec<PlanValidationError>> {
         let mut errors = Vec::new();
         let tool_set: HashSet<&str> = available_tools.iter().map(|s| s.as_str()).collect();
         let step_ids: HashSet<&str> = self.steps.iter().map(|s| s.id.as_str()).collect();
@@ -416,7 +407,11 @@ mod tests {
         let plan = StructuredPlan {
             id: "test".to_string(),
             goal: "test".to_string(),
-            steps: vec![make_step("a", &[]), make_step("b", &[]), make_step("c", &[])],
+            steps: vec![
+                make_step("a", &[]),
+                make_step("b", &[]),
+                make_step("c", &[]),
+            ],
             created_at_ms: 0,
         };
         let groups = plan.parallelizable_groups();
