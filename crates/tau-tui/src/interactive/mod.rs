@@ -8,6 +8,7 @@
 //! - Keyboard-driven navigation and command palette
 
 mod app;
+mod app_mouse;
 mod chat;
 mod input;
 mod status;
@@ -19,6 +20,8 @@ mod ui_chat_tool_lines;
 mod ui_input;
 mod ui_overlays;
 mod ui_status;
+#[cfg(test)]
+mod app_mouse_tests;
 #[cfg(test)]
 mod ui_tool_visibility_tests;
 mod ui_tools;
