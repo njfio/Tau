@@ -156,10 +156,26 @@ fn render_chat_panel(frame: &mut Frame, app: &App, area: Rect) {
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
+    let tool_summary_lines = build_tool_summary_lines(app);
+    let summary_height = tool_summary_lines.len() as u16;
+    let content_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(summary_height),
+            Constraint::Min(0),
+        ])
+        .split(inner);
+
+    if !tool_summary_lines.is_empty() {
+        let summary = Paragraph::new(Text::from(tool_summary_lines))
+            .wrap(Wrap { trim: false });
+        frame.render_widget(summary, content_chunks[0]);
+    }
+
     if app.chat.is_empty() {
         let empty = Paragraph::new("No messages yet. Type below and press Enter.")
             .style(Style::default().fg(Color::DarkGray));
-        frame.render_widget(empty, inner);
+        frame.render_widget(empty, content_chunks[1]);
         return;
     }
 
@@ -208,7 +224,7 @@ fn render_chat_panel(frame: &mut Frame, app: &App, area: Rect) {
     }
 
     let total_lines = lines.len();
-    let visible_height = inner.height as usize;
+    let visible_height = content_chunks[1].height as usize;
 
     // Auto-scroll: compute scroll so latest messages are visible
     let scroll = if total_lines > visible_height {
@@ -230,7 +246,7 @@ fn render_chat_panel(frame: &mut Frame, app: &App, area: Rect) {
         .wrap(Wrap { trim: false })
         .scroll((scroll, 0));
 
-    frame.render_widget(paragraph, inner);
+    frame.render_widget(paragraph, content_chunks[1]);
 
     // Scrollbar
     if total_lines > visible_height {
@@ -240,13 +256,65 @@ fn render_chat_panel(frame: &mut Frame, app: &App, area: Rect) {
             .end_symbol(Some("v"));
         frame.render_stateful_widget(
             scrollbar,
-            area.inner(ratatui::layout::Margin {
-                vertical: 1,
-                horizontal: 0,
-            }),
+            content_chunks[1],
             &mut scrollbar_state,
         );
     }
+}
+
+fn build_tool_summary_lines(app: &App) -> Vec<Line<'static>> {
+    if let Some(entry) = app.tools.latest_running() {
+        return vec![
+            Line::from(vec![
+                Span::styled(
+                    format!("Running tool: {}", entry.name),
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::raw("  "),
+                Span::styled(
+                    entry.status.accent_name().to_uppercase(),
+                    Style::default().fg(Color::Yellow),
+                ),
+            ]),
+            Line::from(Span::styled(
+                format!("  {}", entry.detail),
+                Style::default().fg(Color::DarkGray),
+            )),
+            Line::from(""),
+        ];
+    }
+
+    let Some(entry) = app.tools.latest_entry() else {
+        return Vec::new();
+    };
+
+    let (headline, color) = match entry.status {
+        ToolStatus::Success => (format!("Last tool: {}", entry.name), Color::Green),
+        ToolStatus::Failed => (format!("Last tool failed: {}", entry.name), Color::Red),
+        ToolStatus::Timeout => (format!("Last tool timed out: {}", entry.name), Color::Magenta),
+        ToolStatus::Running => unreachable!("running tool handled earlier"),
+    };
+
+    vec![
+        Line::from(vec![
+            Span::styled(
+                headline,
+                Style::default().fg(color).add_modifier(Modifier::BOLD),
+            ),
+            Span::raw("  "),
+            Span::styled(
+                entry.status.label(),
+                Style::default().fg(color),
+            ),
+        ]),
+        Line::from(Span::styled(
+            format!("  {}", entry.detail),
+            Style::default().fg(Color::DarkGray),
+        )),
+        Line::from(""),
+    ]
 }
 
 fn render_tool_panel(frame: &mut Frame, app: &App, area: Rect) {
