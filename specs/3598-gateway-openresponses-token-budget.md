@@ -42,7 +42,7 @@ Out of scope:
 
 - [ ] `/v1/responses` no longer sets `AgentConfig.max_estimated_total_tokens` to the derived input-preflight token cap.
 - [ ] A request with estimated total tokens above the old 8k ceiling but below the intended preflight policy succeeds in the OpenResponses handler test path.
-- [ ] A truly oversized request still returns `gateway_runtime_error` containing `token budget exceeded` before provider dispatch.
+- [ ] A truly oversized transport payload still fails before provider dispatch with `input_too_large`.
 - [ ] Regression coverage proves the handler does not reuse the same derived preflight value for both input and total token ceilings.
 
 ## Files to touch
@@ -54,13 +54,13 @@ Out of scope:
 ## Error semantics
 
 - Keep hard-fail behavior.
-- Oversized requests must continue to return `OpenResponsesApiError::gateway_runtime_error` with a visible `token budget exceeded` message.
+- Oversized transport payloads must continue to return `OpenResponsesApiError::payload_too_large`.
 - Do not silently compact, truncate, or retry around the budget error in this issue.
 
 ## Test plan
 
 1. Add a failing regression test proving a request that previously tripped the bogus total-token cap now succeeds when only the old total ceiling was violated.
-2. Keep/add a failing test proving a genuinely oversized request still fails before provider dispatch.
+2. Keep/add a failing test proving a genuinely oversized transport payload still fails before provider dispatch.
 3. Implement the minimal handler change.
 4. Run targeted `tau-gateway` tests for the OpenResponses preflight path.
 5. Run the relevant integration tests exercising the real `/v1/responses` HTTP route.

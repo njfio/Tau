@@ -10105,7 +10105,7 @@ async fn integration_openresponses_http_roundtrip_persists_session_state() {
 }
 
 #[tokio::test]
-async fn red_spec_3598_openresponses_small_prompt_under_char_cap_succeeds() {
+async fn integration_spec_3598_openresponses_small_prompt_under_char_cap_succeeds() {
     let temp = tempdir().expect("tempdir");
     let capture = CaptureGatewayLlmClient::new("ok");
     let state = test_state_with_client_and_auth(
@@ -10142,7 +10142,7 @@ async fn red_spec_3598_openresponses_small_prompt_under_char_cap_succeeds() {
 }
 
 #[tokio::test]
-async fn red_spec_3598_openresponses_session_history_does_not_trip_bogus_total_token_cap() {
+async fn integration_spec_3598_openresponses_session_history_does_not_trip_bogus_total_token_cap() {
     let temp = tempdir().expect("tempdir");
     let capture = CaptureGatewayLlmClient::new("ok");
     let state = test_state_with_client_and_auth(
@@ -10189,7 +10189,8 @@ async fn red_spec_3598_openresponses_session_history_does_not_trip_bogus_total_t
 }
 
 #[tokio::test]
-async fn red_spec_3598_openresponses_near_transport_cap_does_not_trip_bogus_total_token_cap() {
+async fn integration_spec_3598_openresponses_near_transport_cap_does_not_trip_bogus_total_token_cap(
+) {
     let temp = tempdir().expect("tempdir");
     let capture = CaptureGatewayLlmClient::new("ok");
     let state = test_state_with_client_and_auth(
