@@ -29,6 +29,7 @@ use super::super::{
     TrustedRootRecord, VecDeque, AUTH_ENV_TEST_LOCK,
 };
 use super::{make_script_executable, write_route_table_fixture};
+use tau_provider::{CodexCliClient, CodexCliConfig};
 
 #[test]
 fn unit_rpc_capabilities_payload_includes_protocol_and_capabilities() {
@@ -1293,6 +1294,63 @@ async fn regression_run_prompt_with_cancellation_rejects_malformed_textual_tool_
     assert!(error
         .to_string()
         .contains("textual tool-call promotion failed"));
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn integration_run_prompt_with_cancellation_executes_textual_codex_write_tool_call_through_provider_client(
+) {
+    let temp = tempdir().expect("tempdir");
+    let target = temp.path().join("written-through-codex-client.txt");
+    let counter = temp.path().join("codex-call-count.txt");
+    let script = temp.path().join("mock-codex.sh");
+    std::fs::write(
+        &script,
+        format!(
+            "#!/bin/sh\nset -eu\ncount=0\nif [ -f \"{counter}\" ]; then\n  count=$(cat \"{counter}\")\nfi\ncount=$((count + 1))\nprintf '%s' \"$count\" > \"{counter}\"\nout=\"\"\nwhile [ \"$#\" -gt 0 ]; do\n  case \"$1\" in\n    --output-last-message) out=\"$2\"; shift 2 ;;\n    *) shift ;;\n  esac\ndone\nwhile IFS= read -r _line; do :; done\nif [ \"$count\" -eq 1 ]; then\n  printf '%s' '{{\"assistant_text\":\"{{\\\"tool_calls\\\":[{{\\\"id\\\":\\\"call-write-1\\\",\\\"name\\\":\\\"write\\\",\\\"arguments\\\":{{\\\"path\\\":\\\"{target}\\\",\\\"content\\\":\\\"hello from codex client\\\"}}}}]}}\"}}' > \"$out\"\nelse\n  printf 'provider write complete' > \"$out\"\nfi\n",
+            counter = counter.display(),
+            target = target.display(),
+        ),
+    )
+    .expect("write codex script");
+    make_script_executable(&script);
+
+    let client = Arc::new(
+        CodexCliClient::new(CodexCliConfig {
+            executable: script.display().to_string(),
+            extra_args: vec![],
+            timeout_ms: 5_000,
+        })
+        .expect("codex client"),
+    );
+    let mut agent = Agent::new(client, AgentConfig::default());
+    let policy = crate::tools::ToolPolicy::new(vec![temp.path().to_path_buf()]);
+    crate::tools::register_builtin_tools(&mut agent, policy);
+    let mut runtime = None;
+
+    let status = run_prompt_with_cancellation(
+        &mut agent,
+        &mut runtime,
+        "write a file through the runtime",
+        0,
+        pending::<()>(),
+        test_render_options(),
+    )
+    .await
+    .expect("prompt should succeed");
+    assert_eq!(status, PromptRunStatus::Completed);
+    assert_eq!(
+        std::fs::read_to_string(&target).expect("written file"),
+        "hello from codex client"
+    );
+    assert_eq!(
+        agent
+            .messages()
+            .last()
+            .expect("final assistant")
+            .text_content(),
+        "provider write complete"
+    );
 }
 
 #[test]
