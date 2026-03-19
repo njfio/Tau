@@ -34,6 +34,12 @@ Make live and recent tool execution clearly visible from the main TUI shell so u
 - `crates/tau-tui/src/interactive/mod.rs`
 - `crates/tau-tui/src/interactive/*test*`
 
+
+## Integration points
+- `interactive::ui::render` now surfaces live and recent tool activity in the main chat shell.
+- `interactive::ui_tools::render_tool_panel` continues to expose detailed tool history in the side panel.
+- `App::push_tool_event` remains the real entrypoint for tool activity flowing into the interactive renderer.
+
 ## Error semantics
 - Fail loud through tests if tool visibility is absent from the main shell.
 - Do not add silent fallback rendering paths that hide missing tool state.

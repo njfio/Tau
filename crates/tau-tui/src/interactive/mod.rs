@@ -2,7 +2,7 @@
 //!
 //! Provides a full-screen ratatui-based interface with:
 //! - Scrollable chat panel with message history
-//! - Tool execution panel showing active/recent tool calls
+//! - Main-shell tool activity summary plus side-panel recent tool calls
 //! - Status bar with model, tokens, cost, and circuit breaker state
 //! - Multi-line input editor with vim-like keybindings
 //! - Keyboard-driven navigation and command palette
