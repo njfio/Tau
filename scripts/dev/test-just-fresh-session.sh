@@ -19,6 +19,13 @@ assert_contains() {
   fi
 }
 
+run_just() {
+  (
+    cd "${REPO_ROOT}"
+    just --justfile "${JUSTFILE_PATH}" "$@"
+  )
+}
+
 backup_dir="$(mktemp -d)"
 restore_state() {
   if [[ -f "${backup_dir}/default.jsonl" ]]; then
@@ -35,29 +42,29 @@ if [[ -f "${SESSION_FILE}" ]]; then
   cp "${SESSION_FILE}" "${backup_dir}/default.jsonl"
 fi
 
-list_output="$(cd "${REPO_ROOT}" && just --justfile "${JUSTFILE_PATH}" --list)"
+list_output="$(run_just --list)"
 assert_contains "${list_output}" "session-reset" "recipe list session-reset"
 assert_contains "${list_output}" "stack-up-fresh" "recipe list stack-up-fresh"
 assert_contains "${list_output}" "tui-fresh" "recipe list tui-fresh"
 
-stack_show="$(cd "${REPO_ROOT}" && just --justfile "${JUSTFILE_PATH}" --show stack-up-fresh)"
+stack_show="$(run_just --show stack-up-fresh)"
 assert_contains "${stack_show}" "just session-reset" "stack-up-fresh resets session first"
 assert_contains "${stack_show}" "just stack-up-fast" "stack-up-fresh delegates to stack-up-fast"
 
-tui_show="$(cd "${REPO_ROOT}" && just --justfile "${JUSTFILE_PATH}" --show tui-fresh)"
+tui_show="$(run_just --show tui-fresh)"
 assert_contains "${tui_show}" "just session-reset" "tui-fresh resets session first"
 assert_contains "${tui_show}" "just tui" "tui-fresh delegates to tui"
 
 mkdir -p "${SESSION_DIR}"
 printf '%s\n' '{"record_type":"entry","id":1}' > "${SESSION_FILE}"
 
-(cd "${REPO_ROOT}" && just --justfile "${JUSTFILE_PATH}" session-reset)
+run_just session-reset
 
 if [[ -e "${SESSION_FILE}" ]]; then
   echo "assertion failed (session-reset removes session file): ${SESSION_FILE} still exists" >&2
   exit 1
 fi
 
-(cd "${REPO_ROOT}" && just --justfile "${JUSTFILE_PATH}" session-reset)
+run_just session-reset
 
 echo "just fresh-session tests passed"
