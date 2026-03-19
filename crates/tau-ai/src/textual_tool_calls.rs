@@ -2,6 +2,9 @@ use serde_json::Value;
 
 use crate::{ContentBlock, Message, MessageRole, TauAiError, ToolCall};
 
+const TEXTUAL_TOOL_CALL_PROMOTION_ERROR: &str =
+    "textual tool-call promotion failed: assistant payload looked like tool-call JSON but could not be parsed";
+
 pub fn promote_assistant_textual_tool_calls(message: Message) -> Result<Message, TauAiError> {
     if message.role != MessageRole::Assistant || !message.tool_calls().is_empty() {
         return Ok(message);
@@ -13,7 +16,10 @@ pub fn promote_assistant_textual_tool_calls(message: Message) -> Result<Message,
     };
 
     Ok(Message::assistant_blocks(
-        tool_calls.into_iter().map(ContentBlock::tool_call).collect(),
+        tool_calls
+            .into_iter()
+            .map(ContentBlock::tool_call)
+            .collect(),
     ))
 }
 
@@ -23,12 +29,9 @@ fn extract_textual_tool_calls(payload: &str) -> Result<Option<Vec<ToolCall>>, Ta
         return Ok(None);
     }
 
-    parse_tool_calls_payload(trimmed).ok_or_else(|| {
-        TauAiError::InvalidResponse(
-            "textual tool-call promotion failed: assistant payload looked like tool-call JSON but could not be parsed".to_string(),
-        )
-    })
-    .map(Some)
+    parse_tool_calls_payload(trimmed)
+        .ok_or_else(|| TauAiError::InvalidResponse(TEXTUAL_TOOL_CALL_PROMOTION_ERROR.to_string()))
+        .map(Some)
 }
 
 fn looks_like_tool_call_payload(payload: &str) -> bool {
@@ -62,6 +65,10 @@ fn parse_tool_calls_value(value: &Value) -> Option<Vec<ToolCall>> {
         }
     }
 
+    parse_nested_assistant_text(object)
+}
+
+fn parse_nested_assistant_text(object: &serde_json::Map<String, Value>) -> Option<Vec<ToolCall>> {
     let nested = object.get("assistant_text")?.as_str()?;
     parse_tool_calls_payload(nested)
 }
