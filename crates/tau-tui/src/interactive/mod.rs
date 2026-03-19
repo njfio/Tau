@@ -12,14 +12,14 @@ mod chat;
 mod input;
 mod status;
 mod tools;
+mod ui;
 mod ui_body;
 mod ui_chat;
 mod ui_input;
 mod ui_overlays;
 mod ui_status;
-mod ui_tools;
-mod ui;
 #[cfg(test)]
 mod ui_tool_visibility_tests;
+mod ui_tools;
 
 pub use app::{run_interactive, App, AppConfig};

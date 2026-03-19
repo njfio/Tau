@@ -1,6 +1,9 @@
 //! UI rendering with ratatui — multi-panel layout.
 
-use ratatui::{layout::{Constraint, Direction, Layout}, Frame};
+use ratatui::{
+    layout::{Constraint, Direction, Layout},
+    Frame,
+};
 
 use super::app::{App, FocusPanel};
 use super::{ui_body, ui_input, ui_overlays, ui_status};

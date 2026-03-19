@@ -33,7 +33,10 @@ pub(crate) fn render_chat_panel(frame: &mut Frame, app: &App, area: Rect) {
     let tool_summary_lines = build_tool_summary_lines(app);
     let content_chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(tool_summary_lines.len() as u16), Constraint::Min(0)])
+        .constraints([
+            Constraint::Length(tool_summary_lines.len() as u16),
+            Constraint::Min(0),
+        ])
         .split(inner);
 
     if !tool_summary_lines.is_empty() {
@@ -158,7 +161,10 @@ fn build_tool_summary_lines(app: &App) -> Vec<Line<'static>> {
     let (headline, color) = match entry.status {
         ToolStatus::Success => (format!("Last tool: {}", entry.name), Color::Green),
         ToolStatus::Failed => (format!("Last tool failed: {}", entry.name), Color::Red),
-        ToolStatus::Timeout => (format!("Last tool timed out: {}", entry.name), Color::Magenta),
+        ToolStatus::Timeout => (
+            format!("Last tool timed out: {}", entry.name),
+            Color::Magenta,
+        ),
         ToolStatus::Running => unreachable!("running tool handled earlier"),
     };
 
