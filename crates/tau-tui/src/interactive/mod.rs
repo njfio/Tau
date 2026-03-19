@@ -13,5 +13,7 @@ mod input;
 mod status;
 mod tools;
 mod ui;
+#[cfg(test)]
+mod ui_tool_visibility_tests;
 
 pub use app::{run_interactive, App, AppConfig};
