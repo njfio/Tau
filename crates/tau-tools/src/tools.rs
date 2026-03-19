@@ -1516,7 +1516,14 @@ impl AgentTool for GrepTool {
             files_searched = 1;
             grep_file(&resolved, &regex, max_results, &mut matches);
         } else if resolved.is_dir() {
-            grep_directory(&resolved, &regex, &include_glob, max_results, &mut matches, &mut files_searched);
+            grep_directory(
+                &resolved,
+                &regex,
+                &include_glob,
+                max_results,
+                &mut matches,
+                &mut files_searched,
+            );
         } else {
             return ToolExecutionResult::error(json!({
                 "path": resolved.display().to_string(),
@@ -1535,12 +1542,7 @@ impl AgentTool for GrepTool {
     }
 }
 
-fn grep_file(
-    path: &Path,
-    regex: &regex::Regex,
-    max_results: usize,
-    matches: &mut Vec<Value>,
-) {
+fn grep_file(path: &Path, regex: &regex::Regex, max_results: usize, matches: &mut Vec<Value>) {
     let content = match std::fs::read_to_string(path) {
         Ok(content) => content,
         Err(_) => return,
@@ -1582,10 +1584,20 @@ fn grep_directory(
         let path = entry.path();
         if path.is_dir() {
             // Skip hidden directories
-            if path.file_name().map_or(false, |n| n.to_string_lossy().starts_with('.')) {
+            if path
+                .file_name()
+                .map_or(false, |n| n.to_string_lossy().starts_with('.'))
+            {
                 continue;
             }
-            grep_directory(&path, regex, include_glob, max_results, matches, files_searched);
+            grep_directory(
+                &path,
+                regex,
+                include_glob,
+                max_results,
+                matches,
+                files_searched,
+            );
         } else if path.is_file() {
             if let Some(glob) = include_glob {
                 if !glob.matches_path_with(

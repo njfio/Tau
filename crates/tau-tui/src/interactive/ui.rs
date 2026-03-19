@@ -4,7 +4,10 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Wrap},
+    widgets::{
+        Block, Borders, Clear, List, ListItem, Paragraph, Scrollbar, ScrollbarOrientation,
+        ScrollbarState, Wrap,
+    },
     Frame,
 };
 
@@ -21,10 +24,10 @@ pub fn render(frame: &mut Frame, app: &App) {
     let main_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1),  // Status bar
-            Constraint::Min(8),    // Body (chat + tools)
+            Constraint::Length(1),                 // Status bar
+            Constraint::Min(8),                    // Body (chat + tools)
             Constraint::Length(input_height(app)), // Input
-            Constraint::Length(1), // Help/mode line
+            Constraint::Length(1),                 // Help/mode line
         ])
         .split(size);
 
@@ -99,9 +102,19 @@ fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
     let sep = Span::raw(" ");
 
     let line = Line::from(vec![
-        model_span, sep.clone(), profile_span, sep.clone(),
-        tokens_span, sep.clone(), cost_span, sep.clone(),
-        msgs_span, sep.clone(), cb_span, sep, state_span,
+        model_span,
+        sep.clone(),
+        profile_span,
+        sep.clone(),
+        tokens_span,
+        sep.clone(),
+        cost_span,
+        sep.clone(),
+        msgs_span,
+        sep.clone(),
+        cb_span,
+        sep,
+        state_span,
     ]);
 
     let bar = Paragraph::new(line).style(Style::default().bg(Color::Black));
@@ -112,10 +125,7 @@ fn render_body(frame: &mut Frame, app: &App, area: Rect) {
     if app.show_tool_panel {
         let chunks = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Percentage(70),
-                Constraint::Percentage(30),
-            ])
+            .constraints([Constraint::Percentage(70), Constraint::Percentage(30)])
             .split(area);
 
         render_chat_panel(frame, app, chunks[0]);
@@ -136,7 +146,9 @@ fn render_chat_panel(frame: &mut Frame, app: &App, area: Rect) {
     let block = Block::default()
         .title(Span::styled(
             " Chat ",
-            Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
         ))
         .borders(Borders::ALL)
         .border_style(border_style);
@@ -156,25 +168,36 @@ fn render_chat_panel(frame: &mut Frame, app: &App, area: Rect) {
     for msg in app.chat.messages() {
         let (role_style, role_label) = match msg.role {
             MessageRole::User => (
-                Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
                 msg.role.label(),
             ),
             MessageRole::Assistant => (
-                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
                 msg.role.label(),
             ),
             MessageRole::System => (
-                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
                 msg.role.label(),
             ),
             MessageRole::Tool => (
-                Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Magenta)
+                    .add_modifier(Modifier::BOLD),
                 msg.role.label(),
             ),
         };
 
         lines.push(Line::from(vec![
-            Span::styled(format!("[{}] ", msg.timestamp), Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                format!("[{}] ", msg.timestamp),
+                Style::default().fg(Color::DarkGray),
+            ),
             Span::styled(format!("{}: ", role_label), role_style),
         ]));
 
@@ -211,14 +234,16 @@ fn render_chat_panel(frame: &mut Frame, app: &App, area: Rect) {
 
     // Scrollbar
     if total_lines > visible_height {
-        let mut scrollbar_state = ScrollbarState::new(total_lines)
-            .position(scroll as usize);
+        let mut scrollbar_state = ScrollbarState::new(total_lines).position(scroll as usize);
         let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
             .begin_symbol(Some("^"))
             .end_symbol(Some("v"));
         frame.render_stateful_widget(
             scrollbar,
-            area.inner(ratatui::layout::Margin { vertical: 1, horizontal: 0 }),
+            area.inner(ratatui::layout::Margin {
+                vertical: 1,
+                horizontal: 0,
+            }),
             &mut scrollbar_state,
         );
     }
@@ -239,7 +264,9 @@ fn render_tool_panel(frame: &mut Frame, app: &App, area: Rect) {
     let block = Block::default()
         .title(Span::styled(
             title,
-            Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
         ))
         .borders(Borders::ALL)
         .border_style(border_style);
@@ -248,8 +275,8 @@ fn render_tool_panel(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(block, area);
 
     if app.tools.entries().is_empty() {
-        let empty = Paragraph::new("No tool executions yet.")
-            .style(Style::default().fg(Color::DarkGray));
+        let empty =
+            Paragraph::new("No tool executions yet.").style(Style::default().fg(Color::DarkGray));
         frame.render_widget(empty, inner);
         return;
     }
@@ -270,17 +297,14 @@ fn render_tool_panel(frame: &mut Frame, app: &App, area: Rect) {
             };
 
             let line = Line::from(vec![
-                Span::styled(
-                    format!("[{}] ", entry.status.label()),
-                    status_style,
-                ),
-                Span::styled(
-                    &entry.name,
-                    Style::default().fg(Color::White),
-                ),
+                Span::styled(format!("[{}] ", entry.status.label()), status_style),
+                Span::styled(&entry.name, Style::default().fg(Color::White)),
                 Span::raw(" "),
                 Span::styled(
-                    truncate(&entry.detail, (inner.width as usize).saturating_sub(entry.name.len() + 8)),
+                    truncate(
+                        &entry.detail,
+                        (inner.width as usize).saturating_sub(entry.name.len() + 8),
+                    ),
                     Style::default().fg(Color::DarkGray),
                 ),
             ]);
@@ -312,7 +336,9 @@ fn render_input(frame: &mut Frame, app: &App, area: Rect) {
     let block = Block::default()
         .title(Span::styled(
             " Input ",
-            Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
         ))
         .title_bottom(Span::styled(
             mode_label,
@@ -380,10 +406,7 @@ fn render_help_line(frame: &mut Frame, app: &App, area: Rect) {
                     format!(" {key} "),
                     Style::default().fg(Color::Black).bg(Color::DarkGray),
                 ),
-                Span::styled(
-                    format!("{desc} "),
-                    Style::default().fg(Color::DarkGray),
-                ),
+                Span::styled(format!("{desc} "), Style::default().fg(Color::DarkGray)),
             ]
         })
         .collect();
@@ -403,9 +426,17 @@ fn render_help_overlay(frame: &mut Frame, area: Rect) {
     frame.render_widget(Clear, popup_area);
 
     let help_text = vec![
-        Line::from(Span::styled("Tau Interactive TUI — Keyboard Reference", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
+        Line::from(Span::styled(
+            "Tau Interactive TUI — Keyboard Reference",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )),
         Line::from(""),
-        Line::from(Span::styled("Normal Mode", Style::default().add_modifier(Modifier::BOLD))),
+        Line::from(Span::styled(
+            "Normal Mode",
+            Style::default().add_modifier(Modifier::BOLD),
+        )),
         Line::from("  i/a       Enter insert mode"),
         Line::from("  o         Insert mode + new line"),
         Line::from("  q         Quit"),
@@ -416,12 +447,18 @@ fn render_help_overlay(frame: &mut Frame, area: Rect) {
         Line::from("  Tab       Cycle focus between panels"),
         Line::from("  1/2/3     Focus Chat/Input/Tools"),
         Line::from(""),
-        Line::from(Span::styled("Insert Mode", Style::default().add_modifier(Modifier::BOLD))),
+        Line::from(Span::styled(
+            "Insert Mode",
+            Style::default().add_modifier(Modifier::BOLD),
+        )),
         Line::from("  Enter     Send message"),
         Line::from("  Shift+Enter / Alt+Enter  New line"),
         Line::from("  Esc       Back to normal mode"),
         Line::from(""),
-        Line::from(Span::styled("Global", Style::default().add_modifier(Modifier::BOLD))),
+        Line::from(Span::styled(
+            "Global",
+            Style::default().add_modifier(Modifier::BOLD),
+        )),
         Line::from("  Ctrl+c    Quit"),
         Line::from("  Ctrl+l    Clear chat"),
         Line::from("  Ctrl+t    Toggle tool panel"),
