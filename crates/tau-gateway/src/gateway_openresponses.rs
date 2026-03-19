@@ -170,7 +170,6 @@ use request_preflight::{
     system_time_to_unix_ms, validate_gateway_request_body_size,
 };
 use request_translation::{sanitize_session_key, translate_openresponses_request};
-use root_utilities::derive_gateway_preflight_token_limit;
 #[cfg(test)]
 use root_utilities::validate_gateway_openresponses_bind;
 use safety_runtime::{
