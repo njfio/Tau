@@ -30,6 +30,8 @@ mod ui_input;
 mod ui_layout;
 #[cfg(test)]
 mod ui_mutating_tool_progress_tests;
+#[cfg(test)]
+mod ui_mutating_transcript_target_tests;
 mod ui_overlays;
 mod ui_status;
 #[cfg(test)]
