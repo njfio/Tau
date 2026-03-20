@@ -324,7 +324,10 @@ fn build_openai_codex_client(cli: &Cli, provider: Provider) -> Result<Arc<dyn Ll
     let client = CodexCliClient::new(CodexCliConfig {
         executable: cli.openai_codex_cli.clone(),
         extra_args: cli.openai_codex_args.clone(),
-        timeout_ms: cli.openai_codex_timeout_ms.max(1),
+        timeout_ms: effective_cli_backend_timeout_ms(
+            cli.openai_codex_timeout_ms,
+            cli.request_timeout_ms,
+        ),
     })?;
     tracing::debug!(
         provider = provider.as_str(),
@@ -333,6 +336,10 @@ fn build_openai_codex_client(cli: &Cli, provider: Provider) -> Result<Arc<dyn Ll
         "provider auth resolved"
     );
     Ok(Arc::new(client))
+}
+
+fn effective_cli_backend_timeout_ms(backend_timeout_ms: u64, request_timeout_ms: u64) -> u64 {
+    backend_timeout_ms.max(request_timeout_ms).max(1)
 }
 
 fn anthropic_claude_backend_enabled(cli: &Cli, auth_mode: ProviderAuthMethod) -> bool {
@@ -350,7 +357,10 @@ fn build_anthropic_claude_client(
     let client = ClaudeCliClient::new(ClaudeCliConfig {
         executable: cli.anthropic_claude_cli.clone(),
         extra_args: cli.anthropic_claude_args.clone(),
-        timeout_ms: cli.anthropic_claude_timeout_ms.max(1),
+        timeout_ms: effective_cli_backend_timeout_ms(
+            cli.anthropic_claude_timeout_ms,
+            cli.request_timeout_ms,
+        ),
     })?;
     tracing::debug!(
         provider = Provider::Anthropic.as_str(),
@@ -376,7 +386,10 @@ fn build_google_gemini_client(
     let client = GeminiCliClient::new(GeminiCliConfig {
         executable: cli.google_gemini_cli.clone(),
         extra_args: cli.google_gemini_args.clone(),
-        timeout_ms: cli.google_gemini_timeout_ms.max(1),
+        timeout_ms: effective_cli_backend_timeout_ms(
+            cli.google_gemini_timeout_ms,
+            cli.request_timeout_ms,
+        ),
     })?;
     tracing::debug!(
         provider = Provider::Google.as_str(),

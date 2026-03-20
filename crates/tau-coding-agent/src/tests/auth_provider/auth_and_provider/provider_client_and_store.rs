@@ -406,7 +406,7 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 cat >/dev/null
-sleep 0.05
+sleep 0.3
 printf "codex request-timeout response" > "$out"
 "#,
     );
@@ -415,8 +415,8 @@ printf "codex request-timeout response" > "$out"
     cli.openai_auth_mode = CliProviderAuthMode::ApiKey;
     cli.openai_codex_backend = true;
     cli.openai_codex_cli = script.display().to_string();
-    cli.openai_codex_timeout_ms = 20;
-    cli.request_timeout_ms = 200;
+    cli.openai_codex_timeout_ms = 100;
+    cli.request_timeout_ms = 2_000;
     cli.api_key = None;
     cli.openai_api_key = None;
 
