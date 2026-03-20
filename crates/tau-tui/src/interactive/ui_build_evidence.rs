@@ -1,4 +1,4 @@
-use super::super::{app::App, tools::ToolStatus};
+use super::super::{app::App, status::AgentStateDisplay, tools::ToolStatus};
 
 const ACTION_TERMS: &[&str] = &[
     "create",
@@ -60,11 +60,21 @@ impl BuildEvidenceState {
 }
 
 pub(super) fn build_evidence_state(app: &App) -> Option<BuildEvidenceState> {
+    if !supports_live_build_evidence(app.status.agent_state) {
+        return None;
+    }
     let prompt = app.last_submitted_input.as_deref()?;
     if !prompt_requests_build_or_create(prompt) {
         return None;
     }
     Some(tool_evidence_state(app))
+}
+
+fn supports_live_build_evidence(state: AgentStateDisplay) -> bool {
+    matches!(
+        state,
+        AgentStateDisplay::Thinking | AgentStateDisplay::ToolExec | AgentStateDisplay::Streaming
+    )
 }
 
 fn prompt_requests_build_or_create(prompt: &str) -> bool {

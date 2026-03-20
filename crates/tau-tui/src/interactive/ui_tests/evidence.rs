@@ -101,3 +101,25 @@ fn integration_spec_3604_non_build_prompt_omits_mutating_evidence_status() {
         "did not expect read-only build messaging for non-build prompt, rendered:\n{rendered}"
     );
 }
+
+#[test]
+fn integration_spec_3604_idle_build_turn_omits_mutating_evidence_status() {
+    let mut app = build_app("create a phaser game prototype");
+    app.status.agent_state = AgentStateDisplay::Idle;
+    app.push_tool_event(
+        "write".to_string(),
+        ToolStatus::Success,
+        "game.js".to_string(),
+    );
+
+    let rendered = render_app(&mut app, 100, 24);
+
+    assert!(
+        !rendered.contains("mutating evidence confirmed"),
+        "did not expect sticky live evidence after turn completion, rendered:\n{rendered}"
+    );
+    assert!(
+        !rendered.contains("write/edit confirmed"),
+        "did not expect sticky run-state evidence after turn completion, rendered:\n{rendered}"
+    );
+}
