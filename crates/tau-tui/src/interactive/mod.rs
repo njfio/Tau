@@ -31,6 +31,8 @@ mod ui_overlays;
 mod ui_status;
 #[cfg(test)]
 mod ui_tool_visibility_tests;
+#[cfg(test)]
+mod ui_mutating_tool_progress_tests;
 mod ui_tools;
 
 pub use app::{App, AppConfig};
