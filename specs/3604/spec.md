@@ -1,6 +1,6 @@
 # Spec: Issue #3604 - Surface mutating tool evidence status in the interactive TUI
 
-Status: Planned
+Status: Implemented
 
 ## Objective
 Show explicit mutating-tool-evidence status in the main interactive TUI chat surface during active build/create turns so operators can tell whether Tau is still read-only, has not used tools yet, or has already produced successful mutating evidence.
@@ -74,3 +74,17 @@ then there is at least one render-path test for AC-1 through AC-4.
 - Red render tests for AC-1 through AC-4 using `ratatui::backend::TestBackend`.
 - Unit tests for prompt classification and tool-evidence classification.
 - `cargo test -p tau-tui` after integration.
+
+## AC Verification
+| AC | Result | Evidence |
+| --- | --- | --- |
+| AC-1 | ✅ | `integration_spec_3604_active_build_turn_without_tool_evidence_shows_missing_mutation_status` renders `no mutating evidence yet` in the chat summary surface. |
+| AC-2 | ✅ | `integration_spec_3604_active_build_turn_with_successful_read_shows_read_only_status` renders `read-only so far` after successful `read`. |
+| AC-3 | ✅ | `integration_spec_3604_active_build_turn_with_successful_write_shows_mutating_status` renders `mutating evidence confirmed` after successful `write`. |
+| AC-4 | ✅ | `integration_spec_3604_idle_turn_omits_mutating_evidence_status` and `integration_spec_3604_non_build_turn_omits_mutating_evidence_status` prove the banner is absent outside active build turns. |
+| AC-5 | ✅ | `integration_spec_3604_new_build_turn_resets_prior_mutating_evidence` exercises the real ratatui render path and proves per-turn evidence resets correctly. |
+
+## Validation
+- `cargo test -p tau-tui 3604 -- --nocapture`
+- `cargo test -p tau-tui`
+- PTY smoke: `cargo run -p tau-tui -- interactive --profile ops-interactive`

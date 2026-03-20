@@ -7,6 +7,12 @@ pub struct InputEditor {
     cursor_col: usize,
 }
 
+impl Default for InputEditor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl InputEditor {
     pub fn new() -> Self {
         Self {
