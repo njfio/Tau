@@ -112,6 +112,26 @@ fn unit_assistant_text_suggests_failure_matches_common_markers() {
     assert!(!assistant_text_suggests_failure("Completed successfully."));
 }
 
+#[test]
+fn unit_assistant_text_suggests_unverified_implementation_progress_detects_build_claims() {
+    assert!(assistant_text_suggests_unverified_implementation_progress(
+        "create a snake and tetris mashup game using phaserjs",
+        "Going well. Core systems are in place and I'm finishing score/lives and restart flow."
+    ));
+}
+
+#[test]
+fn unit_assistant_text_suggests_unverified_implementation_progress_ignores_planning_only_text() {
+    assert!(!assistant_text_suggests_unverified_implementation_progress(
+        "create a snake and tetris mashup game using phaserjs",
+        "I'll inspect the workspace first, then scaffold the Phaser scene and gameplay loop."
+    ));
+    assert!(!assistant_text_suggests_unverified_implementation_progress(
+        "brainstorm a snake and tetris mashup game idea",
+        "I would combine grid pressure from Tetris with lane timing from Frogger."
+    ));
+}
+
 #[tokio::test]
 async fn unit_vector_retrieval_prefers_semantically_related_entries() {
     let history = vec![
@@ -1099,6 +1119,105 @@ async fn regression_no_replan_when_assistant_reports_success_after_tool_failure(
     );
     assert_eq!(replan_count.load(Ordering::Relaxed), 0);
     assert_eq!(client.requests.lock().await.len(), 2);
+}
+
+#[tokio::test]
+async fn regression_unverified_implementation_progress_replans_before_accepting_completion() {
+    let first_assistant = Message::assistant_text(
+        "Going well. Core systems are in place and I'm finishing score/lives and restart flow.",
+    );
+    let second_assistant = Message::assistant_blocks(vec![ContentBlock::ToolCall {
+        id: "call_1".to_string(),
+        name: "read".to_string(),
+        arguments: serde_json::json!({ "path": "README.md" }),
+    }]);
+    let third_assistant = Message::assistant_text("Built with tool evidence.");
+    let client = Arc::new(CapturingMockClient {
+        responses: AsyncMutex::new(VecDeque::from([
+            ChatResponse {
+                message: first_assistant,
+                finish_reason: Some("stop".to_string()),
+                usage: ChatUsage::default(),
+            },
+            ChatResponse {
+                message: second_assistant,
+                finish_reason: Some("tool_calls".to_string()),
+                usage: ChatUsage::default(),
+            },
+            ChatResponse {
+                message: third_assistant,
+                finish_reason: Some("stop".to_string()),
+                usage: ChatUsage::default(),
+            },
+        ])),
+        requests: AsyncMutex::new(Vec::new()),
+    });
+    let mut agent = Agent::new(
+        client.clone(),
+        AgentConfig {
+            react_max_replans_on_tool_failure: 1,
+            ..AgentConfig::default()
+        },
+    );
+    agent.register_tool(ReadTool);
+
+    let messages = agent
+        .prompt("create a snake and tetris mashup game using phaserjs")
+        .await
+        .expect("guard should force a replan before accepting completion");
+    assert_eq!(
+        messages.last().expect("assistant response").text_content(),
+        "Built with tool evidence."
+    );
+
+    let requests = client.requests.lock().await;
+    assert_eq!(requests.len(), 3, "expected replan and follow-up tool turn");
+    let replan_prompt = last_user_prompt(&requests[1]);
+    assert!(
+        replan_prompt.contains("Do not claim implementation progress"),
+        "expected implementation-evidence replan prompt, got: {replan_prompt}"
+    );
+}
+
+#[tokio::test]
+async fn regression_unverified_implementation_progress_fails_fast_after_replan_budget() {
+    let assistant = Message::assistant_text(
+        "Going well. Core systems are in place and I'm finishing score/lives and restart flow.",
+    );
+    let client = Arc::new(CapturingMockClient {
+        responses: AsyncMutex::new(VecDeque::from([
+            ChatResponse {
+                message: assistant.clone(),
+                finish_reason: Some("stop".to_string()),
+                usage: ChatUsage::default(),
+            },
+            ChatResponse {
+                message: assistant,
+                finish_reason: Some("stop".to_string()),
+                usage: ChatUsage::default(),
+            },
+        ])),
+        requests: AsyncMutex::new(Vec::new()),
+    });
+    let mut agent = Agent::new(
+        client,
+        AgentConfig {
+            react_max_replans_on_tool_failure: 1,
+            ..AgentConfig::default()
+        },
+    );
+    agent.register_tool(ReadTool);
+
+    let error = agent
+        .prompt("create a snake and tetris mashup game using phaserjs")
+        .await
+        .expect_err("guard should fail after replan budget is exhausted");
+    assert!(
+        error
+            .to_string()
+            .contains("unverified implementation progress"),
+        "expected explicit implementation-progress error, got: {error}"
+    );
 }
 
 #[tokio::test]
