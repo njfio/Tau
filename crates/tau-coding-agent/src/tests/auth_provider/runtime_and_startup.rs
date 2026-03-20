@@ -1406,6 +1406,65 @@ async fn integration_run_prompt_with_cancellation_rejects_unverified_codex_imple
     );
 }
 
+#[cfg(unix)]
+#[tokio::test]
+async fn integration_run_prompt_with_cancellation_rejects_read_only_codex_build_completion_claim() {
+    let temp = tempdir().expect("tempdir");
+    let counter = temp.path().join("codex-call-count.txt");
+    let readable = temp.path().join("context.txt");
+    std::fs::write(&readable, "workspace context").expect("write readable fixture");
+    let script = temp.path().join("mock-codex.sh");
+    std::fs::write(
+        &script,
+        format!(
+            "#!/bin/sh\nset -eu\ncount=0\nif [ -f \"{counter}\" ]; then\n  count=$(cat \"{counter}\")\nfi\ncount=$((count + 1))\nprintf '%s' \"$count\" > \"{counter}\"\nout=\"\"\nwhile [ \"$#\" -gt 0 ]; do\n  case \"$1\" in\n    --output-last-message) out=\"$2\"; shift 2 ;;\n    *) shift ;;\n  esac\ndone\nwhile IFS= read -r _line; do :; done\nif [ \"$count\" -eq 1 ]; then\n  printf '%s' '{{\"assistant_text\":\"{{\\\"tool_calls\\\":[{{\\\"id\\\":\\\"call-read-1\\\",\\\"name\\\":\\\"read\\\",\\\"arguments\\\":{{\\\"path\\\":\\\"{readable}\\\"}}}}]}}\"}}' > \"$out\"\nelse\n  printf 'Built a playable Phaser prototype with restart flow and scoring.' > \"$out\"\nfi\n",
+            counter = counter.display(),
+            readable = readable.display(),
+        ),
+    )
+    .expect("write codex script");
+    make_script_executable(&script);
+
+    let client = Arc::new(
+        CodexCliClient::new(CodexCliConfig {
+            executable: script.display().to_string(),
+            extra_args: vec![],
+            timeout_ms: 5_000,
+        })
+        .expect("codex client"),
+    );
+    let mut agent = Agent::new(client, AgentConfig::default());
+    let policy = crate::tools::ToolPolicy::new(vec![temp.path().to_path_buf()]);
+    crate::tools::register_builtin_tools(&mut agent, policy);
+    let mut runtime = None;
+
+    let error = run_prompt_with_cancellation(
+        &mut agent,
+        &mut runtime,
+        "create a snake and tetris mashup game using phaserjs",
+        0,
+        pending::<()>(),
+        test_render_options(),
+    )
+    .await
+    .expect_err("read-only evidence must not justify build completion");
+    assert!(
+        error
+            .to_string()
+            .contains("unverified implementation completion"),
+        "expected explicit mutating-evidence error, got: {error}"
+    );
+    let call_count = std::fs::read_to_string(&counter)
+        .expect("call counter")
+        .trim()
+        .parse::<usize>()
+        .expect("parse call count");
+    assert!(
+        call_count >= 3,
+        "expected at least read turn, replan completion turn, and final hard-fail completion turn; got {call_count}"
+    );
+}
+
 #[test]
 fn integration_handle_command_dispatches_extension_registered_command() {
     let temp = tempdir().expect("tempdir");
