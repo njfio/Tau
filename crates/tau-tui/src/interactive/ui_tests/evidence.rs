@@ -123,3 +123,25 @@ fn integration_spec_3604_idle_build_turn_omits_mutating_evidence_status() {
         "did not expect sticky run-state evidence after turn completion, rendered:\n{rendered}"
     );
 }
+
+#[test]
+fn integration_spec_3604_side_panel_keeps_read_only_status_visible_in_main_shell() {
+    let mut app = build_app("build a phaser game prototype");
+    app.show_tool_panel = true;
+    app.push_tool_event(
+        "read".to_string(),
+        ToolStatus::Success,
+        "src/main.rs".to_string(),
+    );
+
+    let rendered = render_app(&mut app, 120, 28);
+
+    assert!(
+        rendered.contains("Details [tools]"),
+        "expected side detail drawer in wide layout, rendered:\n{rendered}"
+    );
+    assert!(
+        rendered.contains("read-only so far"),
+        "expected read-only evidence status to remain visible in main shell, rendered:\n{rendered}"
+    );
+}
