@@ -45,7 +45,9 @@ fn set_input(app: &mut App, text: &str) {
 
 fn env_lock() -> std::sync::MutexGuard<'static, ()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(())).lock().expect("lock")
+    LOCK.get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|err| err.into_inner())
 }
 
 fn last_system_message(app: &App) -> Option<&str> {
@@ -68,7 +70,10 @@ fn red_spec_3609_mutating_transcript_entry_surfaces_target_breadcrumb() {
 
     let rendered = render_text(&mut app);
 
-    assert!(rendered.contains("Mutating target:"), "rendered:\n{rendered}");
+    assert!(
+        rendered.contains("Mutating target:"),
+        "rendered:\n{rendered}"
+    );
     assert!(rendered.contains("src/snake.js"), "rendered:\n{rendered}");
 }
 
@@ -83,7 +88,10 @@ fn red_spec_3609_non_mutating_transcript_entry_stays_generic() {
 
     let rendered = render_text(&mut app);
 
-    assert!(!rendered.contains("Mutating target:"), "rendered:\n{rendered}");
+    assert!(
+        !rendered.contains("Mutating target:"),
+        "rendered:\n{rendered}"
+    );
     assert!(rendered.contains("read ok"), "rendered:\n{rendered}");
 }
 
@@ -112,7 +120,10 @@ fn red_spec_3609_copy_target_command_exports_latest_mutating_target() {
     std::env::remove_var("TAU_TUI_CLIPBOARD_COMMAND");
     let _ = std::fs::remove_file(&export_path);
 
-    assert!(system.contains("Copied latest mutating target"), "system={system}");
+    assert!(
+        system.contains("Copied latest mutating target"),
+        "system={system}"
+    );
     assert_eq!(exported, "src/snake.js");
 }
 
