@@ -672,7 +672,8 @@ pub fn build_provider_client(cli: &Cli, provider: Provider) -> Result<Arc<dyn Ll
 #[cfg(test)]
 mod tests {
     use super::{
-        is_azure_openai_endpoint, maybe_wrap_provider_rate_limited_client,
+        effective_cli_backend_timeout_ms, is_azure_openai_endpoint,
+        maybe_wrap_provider_rate_limited_client,
         resolve_openrouter_api_base, resolved_secret_for_provider, ProviderOutboundRateLimitConfig,
         ProviderRateLimitedClient, ProviderTokenBucketLimiter,
     };
@@ -828,6 +829,16 @@ mod tests {
             limiter.wait_budget_exceeded(1, Duration::from_millis(50)),
             "elapsed plus wait beyond budget must fail closed"
         );
+    }
+
+    #[test]
+    fn red_spec_3601_cli_backend_timeout_uses_request_budget_when_larger() {
+        assert_eq!(effective_cli_backend_timeout_ms(120_000, 180_000), 180_000);
+    }
+
+    #[test]
+    fn red_spec_3601_cli_backend_timeout_preserves_larger_backend_budget() {
+        assert_eq!(effective_cli_backend_timeout_ms(240_000, 180_000), 240_000);
     }
 
     #[test]

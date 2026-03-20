@@ -390,6 +390,69 @@ printf "codex api-key fallback response" > "$out"
 
 #[cfg(unix)]
 #[test]
+fn red_spec_3601_openai_codex_backend_uses_request_timeout_budget_when_larger() {
+    let _env_lock = AUTH_ENV_TEST_LOCK
+        .lock()
+        .expect("acquire auth env test lock");
+    let temp = tempdir().expect("tempdir");
+    let script = write_mock_codex_script(
+        temp.path(),
+        r#"
+out=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --output-last-message) out="$2"; shift 2;;
+    *) shift;;
+  esac
+done
+cat >/dev/null
+sleep 0.05
+printf "codex request-timeout response" > "$out"
+"#,
+    );
+
+    let mut cli = test_cli();
+    cli.openai_auth_mode = CliProviderAuthMode::ApiKey;
+    cli.openai_codex_backend = true;
+    cli.openai_codex_cli = script.display().to_string();
+    cli.openai_codex_timeout_ms = 20;
+    cli.request_timeout_ms = 200;
+    cli.api_key = None;
+    cli.openai_api_key = None;
+
+    let snapshot = snapshot_env_vars(&[
+        "OPENAI_API_KEY",
+        "OPENROUTER_API_KEY",
+        "GROQ_API_KEY",
+        "XAI_API_KEY",
+        "MISTRAL_API_KEY",
+        "AZURE_OPENAI_API_KEY",
+        "TAU_API_KEY",
+    ]);
+    std::env::remove_var("OPENAI_API_KEY");
+    std::env::remove_var("OPENROUTER_API_KEY");
+    std::env::remove_var("GROQ_API_KEY");
+    std::env::remove_var("XAI_API_KEY");
+    std::env::remove_var("MISTRAL_API_KEY");
+    std::env::remove_var("AZURE_OPENAI_API_KEY");
+    std::env::remove_var("TAU_API_KEY");
+
+    let client =
+        build_provider_client(&cli, Provider::OpenAi).expect("build codex fallback client");
+    let runtime = tokio::runtime::Runtime::new().expect("runtime");
+    let response = runtime
+        .block_on(client.complete(test_chat_request()))
+        .expect("codex fallback completion under request timeout budget");
+    assert_eq!(
+        response.message.text_content(),
+        "codex request-timeout response"
+    );
+
+    restore_env_vars(snapshot);
+}
+
+#[cfg(unix)]
+#[test]
 fn functional_build_provider_client_anthropic_api_key_mode_falls_back_to_claude_backend_when_key_missing(
 ) {
     let _env_lock = AUTH_ENV_TEST_LOCK
