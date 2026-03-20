@@ -54,7 +54,11 @@ pub use process_types::{
 };
 pub use recovery::{select_recovery_strategy, RecoveryStrategy};
 pub(crate) use runtime_safety_memory::{assistant_text_suggests_failure, retrieve_memory_matches};
-pub(crate) use runtime_safety_progress::assistant_text_suggests_unverified_implementation_progress;
+pub(crate) use runtime_safety_progress::{
+    assistant_text_suggests_unverified_implementation_completion,
+    assistant_text_suggests_unverified_implementation_progress,
+    messages_include_successful_mutating_tool_result,
+};
 pub(crate) use runtime_startup::{
     cache_insert_with_limit, lock_or_recover, normalize_direct_message_content,
     sleep_with_cancellation, spawn_async_event_handler_worker,
@@ -768,6 +772,10 @@ pub enum AgentError {
         "assistant reported unverified implementation progress without fresh tool evidence: {assistant_excerpt}"
     )]
     UnverifiedImplementationProgressNoToolCall { assistant_excerpt: String },
+    #[error(
+        "assistant reported unverified implementation completion without fresh mutating tool evidence: {assistant_excerpt}"
+    )]
+    UnverifiedImplementationCompletionNoMutatingToolCall { assistant_excerpt: String },
 }
 
 impl AgentError {
@@ -902,6 +910,7 @@ const MEMORY_RECALL_PREFIX: &str = "[Tau memory recall]";
 const DIRECT_MESSAGE_PREFIX: &str = "[Tau direct message]";
 const REPLAN_ON_TOOL_FAILURE_PROMPT: &str = "One or more tool calls failed. Replan and continue with an alternative approach using available tools. If no viable tool exists, explain what is missing and ask the user for clarification.";
 const REPLAN_ON_UNVERIFIED_IMPLEMENTATION_PROGRESS_PROMPT: &str = "Do not claim implementation progress or completion without fresh tool evidence in this turn. Request and execute the required tool call(s) first, then report progress based on those results.";
+const REPLAN_ON_UNVERIFIED_IMPLEMENTATION_COMPLETION_PROMPT: &str = "Do not claim build or implementation completion without fresh mutating tool evidence in this turn. Perform the required write/edit tool call(s) first, then report completion from those results.";
 const TOOL_OUTPUT_BLOCKED_ERROR: &str = "tool output blocked by safety policy";
 const BRANCH_CONCLUSION_MAX_CHARS: usize = 4_000;
 const BRANCH_REASON_CODE_CREATED: &str = "session_branch_created";
@@ -2637,6 +2646,10 @@ impl Agent {
                     let has_successful_tool_result = self.messages[start_index..]
                         .iter()
                         .any(|message| message.role == MessageRole::Tool && !message.is_error);
+                    let has_successful_mutating_tool_result =
+                        messages_include_successful_mutating_tool_result(
+                            &self.messages[start_index..],
+                        );
                     let originating_user_prompt = self.messages[start_index..]
                         .iter()
                         .find(|message| message.role == MessageRole::User)
@@ -2683,6 +2696,52 @@ impl Agent {
                                 240,
                             ),
                         });
+                    }
+                    if has_successful_tool_result
+                        && !has_successful_mutating_tool_result
+                        && assistant_text_suggests_unverified_implementation_completion(
+                            &originating_user_prompt,
+                            &assistant_text,
+                        )
+                    {
+                        if replans_used < self.config.react_max_replans_on_tool_failure {
+                            self.emit(AgentEvent::ReplanTriggered {
+                                turn,
+                                reason: "assistant claimed implementation completion without fresh mutating tool evidence".to_string(),
+                            });
+                            let replan_message = Message::user(
+                                REPLAN_ON_UNVERIFIED_IMPLEMENTATION_COMPLETION_PROMPT,
+                            );
+                            self.messages.push(replan_message.clone());
+                            self.emit(AgentEvent::MessageAdded {
+                                message: replan_message,
+                            });
+                            replans_used = replans_used.saturating_add(1);
+                            pending_replan_on_tool_failure = false;
+                            self.emit(AgentEvent::TurnEnd {
+                                turn,
+                                tool_results: 0,
+                                request_duration_ms,
+                                usage,
+                                finish_reason,
+                            });
+                            continue;
+                        }
+                        self.emit(AgentEvent::TurnEnd {
+                            turn,
+                            tool_results: 0,
+                            request_duration_ms,
+                            usage,
+                            finish_reason,
+                        });
+                        return Err(
+                            AgentError::UnverifiedImplementationCompletionNoMutatingToolCall {
+                                assistant_excerpt: truncate_chars(
+                                    &collapse_whitespace(&assistant_text),
+                                    240,
+                                ),
+                            },
+                        );
                     }
                 }
                 self.emit(AgentEvent::TurnEnd {
@@ -3719,6 +3778,34 @@ mod tests {
                 .and_then(serde_json::Value::as_str)
                 .unwrap_or("<missing>");
             ToolExecutionResult::ok(serde_json::json!({ "content": format!("read:{path}") }))
+        }
+    }
+
+    struct WriteTool;
+
+    #[async_trait]
+    impl AgentTool for WriteTool {
+        fn definition(&self) -> tau_ai::ToolDefinition {
+            tau_ai::ToolDefinition {
+                name: "write".to_string(),
+                description: "Write a file".to_string(),
+                parameters: serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "path": { "type": "string" },
+                        "content": { "type": "string" }
+                    },
+                    "required": ["path", "content"]
+                }),
+            }
+        }
+
+        async fn execute(&self, arguments: serde_json::Value) -> ToolExecutionResult {
+            let path = arguments
+                .get("path")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("<missing>");
+            ToolExecutionResult::ok(serde_json::json!({ "content": format!("write:{path}") }))
         }
     }
 

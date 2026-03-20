@@ -1156,8 +1156,11 @@ async fn regression_unverified_implementation_progress_replans_before_accepting_
     );
     let second_assistant = Message::assistant_blocks(vec![ContentBlock::ToolCall {
         id: "call_1".to_string(),
-        name: "read".to_string(),
-        arguments: serde_json::json!({ "path": "README.md" }),
+        name: "write".to_string(),
+        arguments: serde_json::json!({
+            "path": ".tau/tmp/game.txt",
+            "content": "playable"
+        }),
     }]);
     let third_assistant = Message::assistant_text("Built with tool evidence.");
     let client = Arc::new(CapturingMockClient {
@@ -1187,7 +1190,7 @@ async fn regression_unverified_implementation_progress_replans_before_accepting_
             ..AgentConfig::default()
         },
     );
-    agent.register_tool(ReadTool);
+    agent.register_tool(WriteTool);
 
     let messages = agent
         .prompt("create a snake and tetris mashup game using phaserjs")
