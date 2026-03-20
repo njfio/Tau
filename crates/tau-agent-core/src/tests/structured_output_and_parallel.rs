@@ -1,5 +1,9 @@
 use super::*;
 use crate::assistant_text_suggests_unverified_implementation_progress;
+use crate::{
+    assistant_text_suggests_unverified_implementation_completion,
+    messages_include_successful_mutating_tool_result,
+};
 
 #[tokio::test]
 async fn functional_prompt_returns_cancelled_when_token_is_pre_cancelled() {
@@ -131,6 +135,29 @@ fn unit_assistant_text_suggests_unverified_implementation_progress_ignores_plann
         "brainstorm a snake and tetris mashup game idea",
         "I would combine grid pressure from Tetris with lane timing from Frogger."
     ));
+}
+
+#[test]
+fn unit_assistant_text_suggests_unverified_implementation_completion_detects_build_claims() {
+    assert!(assistant_text_suggests_unverified_implementation_completion(
+        "create a snake and tetris mashup game using phaserjs",
+        "Built a playable Phaser prototype with restart flow and scoring."
+    ));
+    assert!(!assistant_text_suggests_unverified_implementation_completion(
+        "create a snake and tetris mashup game using phaserjs",
+        "I am inspecting the workspace and deciding what to scaffold first."
+    ));
+}
+
+#[test]
+fn unit_messages_include_successful_mutating_tool_result_distinguishes_read_from_write() {
+    let read_only = vec![Message::tool_result("call_read_1", "read", "ok", false)];
+    let mutating = vec![
+        Message::tool_result("call_read_1", "read", "ok", false),
+        Message::tool_result("call_write_1", "write", "ok", false),
+    ];
+    assert!(!messages_include_successful_mutating_tool_result(&read_only));
+    assert!(messages_include_successful_mutating_tool_result(&mutating));
 }
 
 #[tokio::test]
@@ -1218,6 +1245,132 @@ async fn regression_unverified_implementation_progress_fails_fast_after_replan_b
             .to_string()
             .contains("unverified implementation progress"),
         "expected explicit implementation-progress error, got: {error}"
+    );
+}
+
+#[tokio::test]
+async fn regression_build_completion_replans_when_only_read_tool_evidence_exists() {
+    let first_assistant = Message::assistant_blocks(vec![ContentBlock::ToolCall {
+        id: "call_1".to_string(),
+        name: "read".to_string(),
+        arguments: serde_json::json!({ "path": "README.md" }),
+    }]);
+    let second_assistant = Message::assistant_text(
+        "Built a playable Phaser prototype with restart flow and scoring.",
+    );
+    let third_assistant = Message::assistant_blocks(vec![ContentBlock::ToolCall {
+        id: "call_2".to_string(),
+        name: "write".to_string(),
+        arguments: serde_json::json!({
+            "path": ".tau/tmp/game.txt",
+            "content": "playable"
+        }),
+    }]);
+    let fourth_assistant = Message::assistant_text("Built with mutating evidence.");
+    let client = Arc::new(CapturingMockClient {
+        responses: AsyncMutex::new(VecDeque::from([
+            ChatResponse {
+                message: first_assistant,
+                finish_reason: Some("tool_calls".to_string()),
+                usage: ChatUsage::default(),
+            },
+            ChatResponse {
+                message: second_assistant,
+                finish_reason: Some("stop".to_string()),
+                usage: ChatUsage::default(),
+            },
+            ChatResponse {
+                message: third_assistant,
+                finish_reason: Some("tool_calls".to_string()),
+                usage: ChatUsage::default(),
+            },
+            ChatResponse {
+                message: fourth_assistant,
+                finish_reason: Some("stop".to_string()),
+                usage: ChatUsage::default(),
+            },
+        ])),
+        requests: AsyncMutex::new(Vec::new()),
+    });
+    let mut agent = Agent::new(
+        client.clone(),
+        AgentConfig {
+            react_max_replans_on_tool_failure: 1,
+            ..AgentConfig::default()
+        },
+    );
+    agent.register_tool(ReadTool);
+    agent.register_tool(WriteTool);
+
+    let messages = agent
+        .prompt("create a snake and tetris mashup game using phaserjs")
+        .await
+        .expect("read-only evidence should trigger a replan before completion");
+    assert_eq!(
+        messages.last().expect("assistant response").text_content(),
+        "Built with mutating evidence."
+    );
+
+    let requests = client.requests.lock().await;
+    assert_eq!(requests.len(), 4, "expected read, replan, write, completion");
+    let replan_prompt = last_user_prompt(&requests[2]);
+    assert!(
+        replan_prompt.contains("Do not claim build or implementation completion"),
+        "expected mutating-evidence replan prompt, got: {replan_prompt}"
+    );
+}
+
+#[tokio::test]
+async fn regression_build_completion_fails_fast_after_read_only_replan_budget() {
+    let first_assistant = Message::assistant_blocks(vec![ContentBlock::ToolCall {
+        id: "call_1".to_string(),
+        name: "read".to_string(),
+        arguments: serde_json::json!({ "path": "README.md" }),
+    }]);
+    let second_assistant = Message::assistant_text(
+        "Built a playable Phaser prototype with restart flow and scoring.",
+    );
+    let third_assistant = Message::assistant_text(
+        "Built a playable Phaser prototype with restart flow and scoring.",
+    );
+    let client = Arc::new(CapturingMockClient {
+        responses: AsyncMutex::new(VecDeque::from([
+            ChatResponse {
+                message: first_assistant,
+                finish_reason: Some("tool_calls".to_string()),
+                usage: ChatUsage::default(),
+            },
+            ChatResponse {
+                message: second_assistant,
+                finish_reason: Some("stop".to_string()),
+                usage: ChatUsage::default(),
+            },
+            ChatResponse {
+                message: third_assistant,
+                finish_reason: Some("stop".to_string()),
+                usage: ChatUsage::default(),
+            },
+        ])),
+        requests: AsyncMutex::new(Vec::new()),
+    });
+    let mut agent = Agent::new(
+        client,
+        AgentConfig {
+            react_max_replans_on_tool_failure: 1,
+            ..AgentConfig::default()
+        },
+    );
+    agent.register_tool(ReadTool);
+
+    let error = agent
+        .prompt("create a snake and tetris mashup game using phaserjs")
+        .await
+        .expect_err("read-only build completion should fail after replan budget");
+    assert!(
+        error
+            .to_string()
+            .contains("unverified implementation completion"),
+        "expected explicit completion-evidence error, got: {error}"
     );
 }
 
