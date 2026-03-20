@@ -85,6 +85,22 @@ die() {
   exit 2
 }
 
+require_positive_integer() {
+  local value="$1"
+  local flag_name="$2"
+  if ! [[ "${value}" =~ ^[0-9]+$ ]] || (( value < 1 )); then
+    die "invalid ${flag_name}: ${value} (expected integer >= 1)"
+  fi
+}
+
+require_non_negative_integer() {
+  local value="$1"
+  local flag_name="$2"
+  if ! [[ "${value}" =~ ^[0-9]+$ ]]; then
+    die "invalid ${flag_name}: ${value} (expected integer >= 0)"
+  fi
+}
+
 ensure_runtime_dir() {
   mkdir -p "${RUNTIME_DIR}"
 }
@@ -239,15 +255,9 @@ cmd_up() {
       die "invalid --auth-mode: ${auth_mode}"
       ;;
   esac
-  if ! [[ "${request_timeout_ms}" =~ ^[0-9]+$ ]] || (( request_timeout_ms < 1 )); then
-    die "invalid --request-timeout-ms: ${request_timeout_ms} (expected integer >= 1)"
-  fi
-  if ! [[ "${agent_request_max_retries}" =~ ^[0-9]+$ ]]; then
-    die "invalid --agent-request-max-retries: ${agent_request_max_retries} (expected integer >= 0)"
-  fi
-  if ! [[ "${provider_max_retries}" =~ ^[0-9]+$ ]]; then
-    die "invalid --provider-max-retries: ${provider_max_retries} (expected integer >= 0)"
-  fi
+  require_positive_integer "${request_timeout_ms}" "--request-timeout-ms"
+  require_non_negative_integer "${agent_request_max_retries}" "--agent-request-max-retries"
+  require_non_negative_integer "${provider_max_retries}" "--provider-max-retries"
 
   ensure_runtime_dir
   cleanup_stale_pid
@@ -537,12 +547,8 @@ cmd_tui() {
       ;;
   esac
 
-  if ! [[ "${request_timeout_ms}" =~ ^[0-9]+$ ]] || (( request_timeout_ms < 1 )); then
-    die "invalid --request-timeout-ms: ${request_timeout_ms} (expected integer >= 1)"
-  fi
-  if ! [[ "${agent_request_max_retries}" =~ ^[0-9]+$ ]]; then
-    die "invalid --agent-request-max-retries: ${agent_request_max_retries} (expected integer >= 0)"
-  fi
+  require_positive_integer "${request_timeout_ms}" "--request-timeout-ms"
+  require_non_negative_integer "${agent_request_max_retries}" "--agent-request-max-retries"
 
   if [[ "${bootstrap_runtime}" == "true" ]]; then
     bootstrap_runtime_for_tui \
