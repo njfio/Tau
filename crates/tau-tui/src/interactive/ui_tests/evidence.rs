@@ -80,3 +80,24 @@ fn red_spec_3604_real_render_path_confirms_mutating_evidence_with_side_panel_ena
         "expected confirmed mutating-evidence summary in run-state card, rendered:\n{rendered}"
     );
 }
+
+#[test]
+fn integration_spec_3604_non_build_prompt_omits_mutating_evidence_status() {
+    let mut app = build_app("what does the renderer do here?");
+    app.push_tool_event(
+        "read".to_string(),
+        ToolStatus::Success,
+        "src/main.rs".to_string(),
+    );
+
+    let rendered = render_app(&mut app, 100, 24);
+
+    assert!(
+        !rendered.contains("mutating evidence"),
+        "did not expect mutating-evidence messaging for non-build prompt, rendered:\n{rendered}"
+    );
+    assert!(
+        !rendered.contains("read-only so far"),
+        "did not expect read-only build messaging for non-build prompt, rendered:\n{rendered}"
+    );
+}

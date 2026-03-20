@@ -8,6 +8,7 @@ use ratatui::{
 
 use super::super::app::App;
 use super::super::status::AgentStateDisplay;
+use super::build_evidence::build_evidence_state;
 use super::shared::{action, badge, latest_running_tool};
 
 pub(super) fn attention_height(app: &App) -> u16 {
@@ -61,6 +62,7 @@ fn activity_spans(app: &App) -> Vec<Span<'static>> {
     if app.status.agent_state == AgentStateDisplay::ToolExec {
         spans.extend(tool_activity_spans(app));
     }
+    spans.extend(build_evidence_spans(app));
     spans.extend([
         Span::raw(" "),
         action("/details", Color::DarkGray),
@@ -136,6 +138,24 @@ fn tool_activity_spans(app: &App) -> Vec<Span<'static>> {
         spans.push(action(&tool.name, Color::Yellow));
     }
     spans
+}
+
+fn build_evidence_spans(app: &App) -> Vec<Span<'static>> {
+    let Some(state) = build_evidence_state(app) else {
+        return Vec::new();
+    };
+    vec![
+        Span::raw(" "),
+        action(state.activity_text(), evidence_color(state)),
+    ]
+}
+
+fn evidence_color(state: super::build_evidence::BuildEvidenceState) -> Color {
+    match state {
+        super::build_evidence::BuildEvidenceState::NoMutatingEvidenceYet => Color::LightRed,
+        super::build_evidence::BuildEvidenceState::ReadOnlySoFar => Color::Yellow,
+        super::build_evidence::BuildEvidenceState::MutatingEvidenceConfirmed => Color::Green,
+    }
 }
 
 fn state_chip(state: AgentStateDisplay) -> Span<'static> {

@@ -4,6 +4,7 @@ use crate::interactive::app::App;
 use crate::interactive::chat::MessageRole;
 use crate::interactive::status::AgentStateDisplay;
 
+use super::super::build_evidence::build_evidence_state;
 use super::super::shared::latest_running_tool;
 
 pub(super) struct RunStateCard<'a> {
@@ -68,6 +69,9 @@ fn completed_turn_card(app: &App) -> Option<RunStateCard<'static>> {
 }
 
 fn active_turn_summary(app: &App) -> String {
+    if let Some(evidence) = build_evidence_summary(app) {
+        return evidence;
+    }
     match app.status.agent_state {
         AgentStateDisplay::Thinking => "planning the next action".to_string(),
         AgentStateDisplay::ToolExec => "executing tool work".to_string(),
@@ -75,6 +79,13 @@ fn active_turn_summary(app: &App) -> String {
         AgentStateDisplay::Error => failure_summary(app),
         AgentStateDisplay::Idle => "ready".to_string(),
     }
+}
+
+fn build_evidence_summary(app: &App) -> Option<String> {
+    if app.status.agent_state == AgentStateDisplay::Error {
+        return None;
+    }
+    build_evidence_state(app).map(|state| state.run_state_text().to_string())
 }
 
 fn failure_summary(app: &App) -> String {

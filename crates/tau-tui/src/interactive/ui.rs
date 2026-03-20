@@ -2,6 +2,8 @@
 
 #[path = "ui_activity.rs"]
 mod activity;
+#[path = "ui_build_evidence.rs"]
+mod build_evidence;
 #[path = "ui_composer.rs"]
 mod composer;
 #[path = "ui_drawer.rs"]
