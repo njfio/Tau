@@ -1,4 +1,5 @@
 use super::*;
+use crate::assistant_text_suggests_unverified_implementation_progress;
 
 #[tokio::test]
 async fn functional_prompt_returns_cancelled_when_token_is_pre_cancelled() {
