@@ -101,7 +101,7 @@ up_output="$(
   TAU_UNIFIED_RUNNER_LOG="${runner_log}" \
   TAU_UNIFIED_RUNNER_PID="${runner_pid}" \
   TAU_UNIFIED_RUNTIME_DIR="${runtime_dir}" \
-  "${LAUNCHER_SCRIPT}" up --profile test-profile --model openai/gpt-5.2 --bind 127.0.0.1:8899 --auth-mode localhost-dev 2>&1
+  "${LAUNCHER_SCRIPT}" up --profile test-profile --bind 127.0.0.1:8899 --auth-mode localhost-dev 2>&1
 )"
 up_rc=$?
 set -e
@@ -125,6 +125,10 @@ if [[ ! -f "${cmd_file}" ]]; then
   echo "expected command file to exist after up: ${cmd_file}" >&2
   exit 1
 fi
+assert_contains "$(cat "${cmd_file}")" "--model gpt-5.3-codex" "up default model flag"
+assert_contains "$(cat "${cmd_file}")" "--request-timeout-ms 180000" "up default timeout flag"
+assert_contains "$(cat "${cmd_file}")" "--agent-request-max-retries 0" "up default agent retries flag"
+assert_contains "$(cat "${cmd_file}")" "--provider-max-retries 0" "up default provider retries flag"
 
 status_output="$(
   TAU_UNIFIED_RUNNER="${runner}" \
@@ -175,7 +179,7 @@ tui_output="$(
 assert_contains "${tui_output}" "tau-unified: launching tui (agent)" "tui agent marker"
 up_count_after_tui="$(grep -c '^runner_mode=up$' "${runner_log}" || true)"
 assert_equals "${up_count_before_tui}" "${up_count_after_tui}" "tui default does not bootstrap runtime in runner mode"
-assert_contains "$(cat "${runner_log}")" "--request-timeout-ms 45000" "tui default timeout flag"
+assert_contains "$(cat "${runner_log}")" "--request-timeout-ms 180000" "tui default timeout flag"
 assert_contains "$(cat "${runner_log}")" "--agent-request-max-retries 0" "tui default retries flag"
 
 up_count_before_bootstrap="$(grep -c '^runner_mode=up$' "${runner_log}" || true)"
