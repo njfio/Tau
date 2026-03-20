@@ -6,6 +6,8 @@ mod composer;
 mod detail;
 #[path = "ui_tests/detail_overlay.rs"]
 mod detail_overlay;
+#[path = "ui_tests/evidence.rs"]
+mod evidence;
 #[path = "ui_tests/helpers.rs"]
 mod helpers;
 #[path = "ui_tests/palette.rs"]
