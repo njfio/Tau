@@ -570,32 +570,39 @@ cmd_tui() {
   fi
 
   local tui_cmd=()
-  if [[ "${tui_mode}" == "live-shell" ]]; then
-    tui_cmd=(
-      cargo run -p tau-tui -- shell-live
-      --state-dir "${dashboard_state_dir}"
-      --profile "${profile}"
-      --watch
-      --iterations "${iterations}"
-      --interval-ms "${interval_ms}"
-    )
-  elif [[ "${tui_mode}" == "interactive" ]]; then
-    tui_cmd=(
-      cargo run -p tau-tui -- interactive
-      --profile "${profile}"
-      --model "${model}"
-    )
-  else
-    tui_cmd=(
-      cargo run -p tau-tui -- agent
-      --dashboard-state-dir "${dashboard_state_dir}"
-      --gateway-state-dir "${gateway_state_dir}"
-      --profile "${profile}"
-      --model "${model}"
-      --request-timeout-ms "${request_timeout_ms}"
-      --agent-request-max-retries "${agent_request_max_retries}"
-    )
-  fi
+  case "${tui_mode}" in
+    live-shell)
+      tui_cmd=(
+        cargo run -p tau-tui -- shell-live
+        --state-dir "${dashboard_state_dir}"
+        --profile "${profile}"
+        --watch
+        --iterations "${iterations}"
+        --interval-ms "${interval_ms}"
+      )
+      ;;
+    interactive)
+      tui_cmd=(
+        cargo run -p tau-tui -- interactive
+        --profile "${profile}"
+        --model "${model}"
+      )
+      ;;
+    agent)
+      tui_cmd=(
+        cargo run -p tau-tui -- agent
+        --dashboard-state-dir "${dashboard_state_dir}"
+        --gateway-state-dir "${gateway_state_dir}"
+        --profile "${profile}"
+        --model "${model}"
+        --request-timeout-ms "${request_timeout_ms}"
+        --agent-request-max-retries "${agent_request_max_retries}"
+      )
+      ;;
+    *)
+      die "invalid tui mode: ${tui_mode}"
+      ;;
+  esac
   if [[ "${no_color}" == "true" ]]; then
     tui_cmd+=(--no-color)
   fi
