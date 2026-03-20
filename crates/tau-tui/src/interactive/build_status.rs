@@ -33,10 +33,16 @@ fn is_build_prompt(prompt: Option<&str>) -> bool {
     let Some(prompt) = prompt else {
         return false;
     };
-    let lower = prompt.to_ascii_lowercase();
-    ["build", "create", "implement", "make"]
-        .iter()
-        .any(|verb| lower.contains(verb))
+    prompt
+        .split(|c: char| !c.is_alphanumeric())
+        .any(is_build_verb)
+}
+
+fn is_build_verb(word: &str) -> bool {
+    matches!(
+        word.to_ascii_lowercase().as_str(),
+        "build" | "create" | "implement" | "make"
+    )
 }
 
 fn classify_tool_evidence(tools: &[ToolEntry]) -> BuildEvidenceStatus {
@@ -108,5 +114,15 @@ mod tests {
             &[entry("write", ToolStatus::Success)],
         );
         assert_eq!(status, Some(BuildEvidenceStatus::Mutating));
+    }
+
+    #[test]
+    fn unit_build_status_ignores_non_build_words() {
+        let status = current_build_status(
+            AgentStateDisplay::Thinking,
+            Some("what is blue"),
+            &[entry("read", ToolStatus::Success)],
+        );
+        assert_eq!(status, None);
     }
 }

@@ -84,7 +84,7 @@ impl App {
     /// Push a chat message externally (for agent integration).
     pub fn push_message(&mut self, role: MessageRole, content: String) {
         if role == MessageRole::User {
-            self.current_turn_tool_start = self.tools.total_count();
+            self.start_turn();
         }
         self.chat.add_message(ChatMessage {
             role,
@@ -116,5 +116,9 @@ impl App {
             detail,
             timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
         });
+    }
+
+    fn start_turn(&mut self) {
+        self.current_turn_tool_start = self.tools.total_count();
     }
 }
