@@ -54,4 +54,8 @@ assert_contains "${stack_up_dry_run}" "./scripts/run/tau-unified.sh up" "stack-u
 tui_dry_run="$(NO_COLOR=1 just --justfile "${JUSTFILE_PATH}" --dry-run tui 2>&1)"
 assert_contains "${tui_dry_run}" "./scripts/run/tau-unified.sh tui" "tui dry run"
 
+tui_fresh_dry_run="$(NO_COLOR=1 just --justfile "${JUSTFILE_PATH}" --dry-run tui-fresh 2>&1)"
+assert_contains "${tui_fresh_dry_run}" "rm -f .tau/gateway/openresponses/sessions/default.jsonl" "tui-fresh reset dry run"
+assert_contains "${tui_fresh_dry_run}" "./scripts/run/tau-unified.sh tui" "tui-fresh tui dry run"
+
 echo "root justfile launcher contract passed"

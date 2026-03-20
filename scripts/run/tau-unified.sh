@@ -50,7 +50,8 @@ Options for `up`:
   --provider-max-retries <n>      Runtime provider retries (default: 0)
 
 Options for `tui`:
-  --agent                         Force interactive agent mode (default)
+  --interactive                   Force graphical interactive TUI mode (default)
+  --agent                         Force legacy agent shell mode
   --live-shell                    Use read-only dashboard watch shell mode
   --bootstrap-runtime             Start runtime automatically before TUI (default: true)
   --no-bootstrap-runtime          Do not start runtime automatically before TUI
@@ -433,7 +434,7 @@ cmd_tui() {
   local iterations="3"
   local interval_ms="1000"
   local no_color="false"
-  local tui_mode="agent"
+  local tui_mode="interactive"
   local saw_iterations="false"
   local saw_interval="false"
   local bootstrap_runtime="${TAU_UNIFIED_TUI_BOOTSTRAP_RUNTIME:-}"
@@ -447,6 +448,10 @@ cmd_tui() {
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
+      --interactive)
+        tui_mode="interactive"
+        shift
+        ;;
       --agent)
         tui_mode="agent"
         shift
@@ -565,26 +570,39 @@ cmd_tui() {
   fi
 
   local tui_cmd=()
-  if [[ "${tui_mode}" == "live-shell" ]]; then
-    tui_cmd=(
-      cargo run -p tau-tui -- shell-live
-      --state-dir "${dashboard_state_dir}"
-      --profile "${profile}"
-      --watch
-      --iterations "${iterations}"
-      --interval-ms "${interval_ms}"
-    )
-  else
-    tui_cmd=(
-      cargo run -p tau-tui -- agent
-      --dashboard-state-dir "${dashboard_state_dir}"
-      --gateway-state-dir "${gateway_state_dir}"
-      --profile "${profile}"
-      --model "${model}"
-      --request-timeout-ms "${request_timeout_ms}"
-      --agent-request-max-retries "${agent_request_max_retries}"
-    )
-  fi
+  case "${tui_mode}" in
+    live-shell)
+      tui_cmd=(
+        cargo run -p tau-tui -- shell-live
+        --state-dir "${dashboard_state_dir}"
+        --profile "${profile}"
+        --watch
+        --iterations "${iterations}"
+        --interval-ms "${interval_ms}"
+      )
+      ;;
+    interactive)
+      tui_cmd=(
+        cargo run -p tau-tui -- interactive
+        --profile "${profile}"
+        --model "${model}"
+      )
+      ;;
+    agent)
+      tui_cmd=(
+        cargo run -p tau-tui -- agent
+        --dashboard-state-dir "${dashboard_state_dir}"
+        --gateway-state-dir "${gateway_state_dir}"
+        --profile "${profile}"
+        --model "${model}"
+        --request-timeout-ms "${request_timeout_ms}"
+        --agent-request-max-retries "${agent_request_max_retries}"
+      )
+      ;;
+    *)
+      die "invalid tui mode: ${tui_mode}"
+      ;;
+  esac
   if [[ "${no_color}" == "true" ]]; then
     tui_cmd+=(--no-color)
   fi
