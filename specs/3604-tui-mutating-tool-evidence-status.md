@@ -23,15 +23,16 @@ Surface mutating-tool evidence state in the interactive TUI so build/create turn
 
 - A build/create prompt with no successful tool entries shows no evidence warning. This is incorrect and must fail tests.
 - A build/create prompt with only successful non-mutating tool entries shows no read-only warning. This is incorrect and must fail tests.
-- A build/create prompt with a successful mutating tool entry still shows a no-mutation warning. This is incorrect and must fail tests.
+- A build/create prompt with a successful mutating tool entry does not show positive write/edit confirmation. This is incorrect and must fail tests.
 - A non-build prompt shows the mutating-evidence warning. This is incorrect and must fail tests.
 
 ## Acceptance criteria
 
 - [ ] For a build/create prompt with no successful tool results, `Live activity` renders `no mutating evidence yet`.
 - [ ] For a build/create prompt with successful non-mutating tool results only, `Live activity` renders `read-only so far`.
-- [ ] For a build/create prompt with a successful mutating tool result, the mutating-evidence warning is absent from `Live activity`.
+- [ ] For a build/create prompt with a successful mutating tool result, `Live activity` renders `mutating evidence confirmed`.
 - [ ] For a build/create prompt with successful non-mutating tool results only, the run-state card summary renders `still read-only`.
+- [ ] For a build/create prompt with a successful mutating tool result, the run-state card summary renders `write/edit confirmed`.
 - [ ] For a non-build prompt, neither `Live activity` nor the run-state card render mutating-evidence warning text.
 - [ ] At least one integration-style TUI render test exercises the real render path with side panels still enabled.
 
@@ -45,7 +46,7 @@ Surface mutating-tool evidence state in the interactive TUI so build/create turn
 ## Error semantics
 
 - This issue does not add new runtime errors.
-- When evidence state is unavailable or not applicable, the TUI omits the mutating-evidence warning rather than inventing one.
+- When evidence state is unavailable or not applicable, the TUI omits build/create evidence messaging rather than inventing it.
 - The TUI must derive evidence strictly from known successful tool entries and the current submitted prompt.
 
 ## Test plan
