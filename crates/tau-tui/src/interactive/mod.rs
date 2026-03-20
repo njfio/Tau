@@ -24,15 +24,16 @@ mod ui_body;
 #[cfg(test)]
 mod ui_build_status_tests;
 mod ui_chat;
+mod ui_chat_mutating_progress;
 mod ui_chat_tool_lines;
 mod ui_input;
 mod ui_layout;
+#[cfg(test)]
+mod ui_mutating_tool_progress_tests;
 mod ui_overlays;
 mod ui_status;
 #[cfg(test)]
 mod ui_tool_visibility_tests;
-#[cfg(test)]
-mod ui_mutating_tool_progress_tests;
 mod ui_tools;
 
 pub use app::{App, AppConfig};

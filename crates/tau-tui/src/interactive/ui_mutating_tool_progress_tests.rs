@@ -53,10 +53,7 @@ fn red_spec_3607_build_turn_with_running_write_shows_live_mutating_progress() {
 
 #[test]
 fn red_spec_3607_build_turn_with_successful_write_shows_latest_mutating_target_path() {
-    let mut app = build_app(
-        "build a snake game",
-        AgentStateDisplay::ToolExec,
-    );
+    let mut app = build_app("build a snake game", AgentStateDisplay::ToolExec);
     app.push_tool_event(
         "write".to_string(),
         ToolStatus::Success,
@@ -71,10 +68,7 @@ fn red_spec_3607_build_turn_with_successful_write_shows_latest_mutating_target_p
 
 #[test]
 fn red_spec_3607_build_turn_with_only_read_activity_omits_mutating_progress_wording() {
-    let mut app = build_app(
-        "create a snake game",
-        AgentStateDisplay::ToolExec,
-    );
+    let mut app = build_app("create a snake game", AgentStateDisplay::ToolExec);
     app.push_tool_event(
         "read".to_string(),
         ToolStatus::Success,
@@ -99,7 +93,10 @@ fn integration_spec_3607_build_turn_transition_from_read_to_edit_updates_live_pr
         "README.md".to_string(),
     );
     let read_only = render_text(&mut app);
-    assert!(read_only.contains("read-only so far"), "rendered:\n{read_only}");
+    assert!(
+        read_only.contains("read-only so far"),
+        "rendered:\n{read_only}"
+    );
 
     app.push_tool_event(
         "edit".to_string(),
