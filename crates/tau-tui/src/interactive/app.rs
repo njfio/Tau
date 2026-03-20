@@ -54,6 +54,7 @@ pub struct App {
     pub show_help: bool,
     pub command_input: String,
     pub show_tool_panel: bool,
+    current_turn_tool_start: usize,
 }
 
 impl App {
@@ -71,6 +72,7 @@ impl App {
             show_help: false,
             command_input: String::new(),
             show_tool_panel: true,
+            current_turn_tool_start: 0,
         }
     }
 
@@ -81,12 +83,29 @@ impl App {
 
     /// Push a chat message externally (for agent integration).
     pub fn push_message(&mut self, role: MessageRole, content: String) {
+        if role == MessageRole::User {
+            self.start_turn();
+        }
         self.chat.add_message(ChatMessage {
             role,
             content,
             timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
         });
         self.chat.scroll_to_bottom();
+    }
+
+    pub fn current_turn_tools(&self) -> &[ToolEntry] {
+        let start = self.current_turn_tool_start.min(self.tools.entries().len());
+        &self.tools.entries()[start..]
+    }
+
+    pub fn latest_user_prompt(&self) -> Option<&str> {
+        self.chat
+            .messages()
+            .iter()
+            .rev()
+            .find(|message| message.role == MessageRole::User)
+            .map(|message| message.content.as_str())
     }
 
     /// Push a tool execution event externally.
@@ -97,5 +116,9 @@ impl App {
             detail,
             timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
         });
+    }
+
+    fn start_turn(&mut self) {
+        self.current_turn_tool_start = self.tools.total_count();
     }
 }

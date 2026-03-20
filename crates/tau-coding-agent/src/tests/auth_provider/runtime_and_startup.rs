@@ -1564,7 +1564,7 @@ async fn regression_spec_2542_c03_run_local_runtime_prompt_executes_model_call()
         skills_lock_path: &skills_lock_path,
     })
     .await;
-    std::env::set_current_dir(original_cwd).expect("restore current dir");
+    restore_current_dir(&original_cwd);
     run_result.expect("run_local_runtime should execute prompt path");
 
     let recorded_models = recorded_models.lock().await.clone();
@@ -1623,7 +1623,7 @@ async fn regression_spec_3555_c01_run_local_runtime_uses_cli_request_timeout_for
         }),
     )
     .await;
-    std::env::set_current_dir(original_cwd).expect("restore current dir");
+    restore_current_dir(&original_cwd);
 
     let run_result =
         run_result.expect("run_local_runtime should complete quickly under low request timeout");
@@ -1637,6 +1637,19 @@ async fn regression_spec_3555_c01_run_local_runtime_uses_cli_request_timeout_for
         message.contains("attempt 1"),
         "expected first-attempt timeout; got: {message}"
     );
+}
+
+fn restore_current_dir(original_cwd: &std::path::Path) {
+    if original_cwd.exists() {
+        std::env::set_current_dir(original_cwd).expect("restore current dir");
+        return;
+    }
+
+    let workspace_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(std::path::Path::parent)
+        .expect("resolve workspace root");
+    std::env::set_current_dir(workspace_root).expect("restore workspace root");
 }
 
 #[tokio::test]

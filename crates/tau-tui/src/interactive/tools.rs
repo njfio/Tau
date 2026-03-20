@@ -45,6 +45,12 @@ pub struct ToolPanel {
     scroll_offset: usize,
 }
 
+impl Default for ToolPanel {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ToolPanel {
     pub fn new() -> Self {
         Self {

@@ -35,11 +35,7 @@ pub(crate) fn submit_input(app: &mut App) {
         return;
     }
 
-    app.chat.add_message(ChatMessage {
-        role: MessageRole::User,
-        content: text.clone(),
-        timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
-    });
+    app.push_message(MessageRole::User, text.clone());
     app.chat.add_message(ChatMessage {
         role: MessageRole::Assistant,
         content: format!(

@@ -35,6 +35,12 @@ pub struct ChatPanel {
     max_messages: usize,
 }
 
+impl Default for ChatPanel {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ChatPanel {
     pub fn new() -> Self {
         Self {

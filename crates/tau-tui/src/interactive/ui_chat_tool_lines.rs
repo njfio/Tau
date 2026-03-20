@@ -7,19 +7,23 @@ use ratatui::{
 
 use super::{
     app::App,
+    build_status::current_build_status,
     tools::{ToolEntry, ToolStatus},
 };
 
 pub(crate) fn build_tool_summary_lines(app: &App) -> Vec<Line<'static>> {
+    let mut lines = build_build_status_lines(app);
     if let Some(entry) = app.tools.latest_running() {
-        return running_summary_lines(entry);
+        lines.extend(running_summary_lines(entry));
+        return lines;
     }
 
     let Some(entry) = app.tools.latest_entry() else {
-        return Vec::new();
+        return lines;
     };
 
-    terminal_summary_lines(entry)
+    lines.extend(terminal_summary_lines(entry));
+    lines
 }
 
 pub(crate) fn build_transcript_tool_lines(app: &App) -> Vec<Line<'static>> {
@@ -61,6 +65,29 @@ fn running_summary_lines(entry: &ToolEntry) -> Vec<Line<'static>> {
     push_tool_detail_line(&mut lines, &entry.detail);
     lines.push(Line::from(""));
     lines
+}
+
+fn build_build_status_lines(app: &App) -> Vec<Line<'static>> {
+    let Some(status) = current_build_status(
+        app.status.agent_state,
+        app.latest_user_prompt(),
+        app.current_turn_tools(),
+    ) else {
+        return Vec::new();
+    };
+
+    vec![
+        Line::from(vec![
+            Span::styled("Build status: ", Style::default().fg(Color::Yellow)),
+            Span::styled(
+                status.label(),
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ]),
+        Line::from(""),
+    ]
 }
 
 fn terminal_summary_lines(entry: &ToolEntry) -> Vec<Line<'static>> {
