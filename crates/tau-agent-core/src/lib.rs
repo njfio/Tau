@@ -57,7 +57,7 @@ pub(crate) use runtime_safety_memory::{assistant_text_suggests_failure, retrieve
 pub(crate) use runtime_safety_progress::{
     assistant_text_suggests_unverified_implementation_completion,
     assistant_text_suggests_unverified_implementation_progress,
-    messages_include_successful_mutating_tool_result,
+    messages_include_successful_mutating_tool_result, messages_include_successful_tool_result,
 };
 pub(crate) use runtime_startup::{
     cache_insert_with_limit, lock_or_recover, normalize_direct_message_content,
@@ -2643,9 +2643,8 @@ impl Agent {
                     continue;
                 }
                 if !self.tools.is_empty() {
-                    let has_successful_tool_result = self.messages[start_index..]
-                        .iter()
-                        .any(|message| message.role == MessageRole::Tool && !message.is_error);
+                    let has_successful_tool_result =
+                        messages_include_successful_tool_result(&self.messages[start_index..]);
                     let has_successful_mutating_tool_result =
                         messages_include_successful_mutating_tool_result(
                             &self.messages[start_index..],

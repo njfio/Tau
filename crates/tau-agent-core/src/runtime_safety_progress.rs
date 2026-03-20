@@ -99,13 +99,15 @@ pub(crate) fn assistant_text_suggests_unverified_implementation_completion(
 
 pub(crate) fn messages_include_successful_mutating_tool_result(messages: &[Message]) -> bool {
     messages.iter().any(|message| {
-        message.role == MessageRole::Tool
-            && !message.is_error
-            && message
-                .tool_name
-                .as_deref()
-                .is_some_and(|tool_name| MUTATING_TOOL_NAMES.contains(&tool_name))
+        successful_tool_name(message)
+            .is_some_and(|tool_name| MUTATING_TOOL_NAMES.contains(&tool_name))
     })
+}
+
+pub(crate) fn messages_include_successful_tool_result(messages: &[Message]) -> bool {
+    messages
+        .iter()
+        .any(|message| successful_tool_name(message).is_some())
 }
 
 fn user_prompt_requests_workspace_implementation(normalized_prompt: &str) -> bool {
@@ -128,4 +130,11 @@ fn assistant_claims_implementation_completion(normalized_assistant: &str) -> boo
     IMPLEMENTATION_COMPLETION_MARKERS
         .iter()
         .any(|term| normalized_assistant.contains(term))
+}
+
+fn successful_tool_name(message: &Message) -> Option<&str> {
+    if message.role != MessageRole::Tool || message.is_error {
+        return None;
+    }
+    message.tool_name.as_deref()
 }
