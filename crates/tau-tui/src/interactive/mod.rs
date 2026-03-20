@@ -27,6 +27,8 @@ mod ui_layout;
 mod ui_overlays;
 mod ui_status;
 #[cfg(test)]
+mod ui_build_status_tests;
+#[cfg(test)]
 mod ui_tool_visibility_tests;
 mod ui_tools;
 
