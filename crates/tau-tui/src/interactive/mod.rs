@@ -9,6 +9,7 @@
 
 mod app;
 mod app_commands;
+mod app_copy_target;
 mod app_keys;
 mod app_mouse;
 #[cfg(test)]

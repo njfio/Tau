@@ -38,6 +38,16 @@ pub struct ToolEntry {
     pub timestamp: String,
 }
 
+impl ToolEntry {
+    pub fn is_mutating(&self) -> bool {
+        matches!(self.name.as_str(), "write" | "edit")
+    }
+
+    pub fn is_successful_mutation(&self) -> bool {
+        self.is_mutating() && self.status == ToolStatus::Success && !self.detail.is_empty()
+    }
+}
+
 /// Panel showing tool execution history.
 pub struct ToolPanel {
     entries: Vec<ToolEntry>,
@@ -81,6 +91,14 @@ impl ToolPanel {
             .iter()
             .rev()
             .find(|entry| entry.status == ToolStatus::Running)
+    }
+
+    pub fn latest_successful_mutating_target(&self) -> Option<&str> {
+        self.entries
+            .iter()
+            .rev()
+            .find(|entry| entry.is_successful_mutation())
+            .map(|entry| entry.detail.as_str())
     }
 
     pub fn scroll_offset(&self) -> usize {
