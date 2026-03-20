@@ -9,10 +9,12 @@ use super::{
     app::App,
     build_status::current_build_status,
     tools::{ToolEntry, ToolStatus},
+    ui_chat_mutating_progress::build_mutating_progress_lines,
 };
 
 pub(crate) fn build_tool_summary_lines(app: &App) -> Vec<Line<'static>> {
     let mut lines = build_build_status_lines(app);
+    lines.extend(build_mutating_progress_lines(app));
     if let Some(entry) = app.tools.latest_running() {
         lines.extend(running_summary_lines(entry));
         return lines;
