@@ -1353,6 +1353,59 @@ async fn integration_run_prompt_with_cancellation_executes_textual_codex_write_t
     );
 }
 
+#[cfg(unix)]
+#[tokio::test]
+async fn integration_run_prompt_with_cancellation_rejects_unverified_codex_implementation_progress_without_tool_results(
+) {
+    let temp = tempdir().expect("tempdir");
+    let counter = temp.path().join("codex-call-count.txt");
+    let script = temp.path().join("mock-codex.sh");
+    std::fs::write(
+        &script,
+        format!(
+            "#!/bin/sh\nset -eu\ncount=0\nif [ -f \"{counter}\" ]; then\n  count=$(cat \"{counter}\")\nfi\ncount=$((count + 1))\nprintf '%s' \"$count\" > \"{counter}\"\nout=\"\"\nwhile [ \"$#\" -gt 0 ]; do\n  case \"$1\" in\n    --output-last-message) out=\"$2\"; shift 2 ;;\n    *) shift ;;\n  esac\ndone\nwhile IFS= read -r _line; do :; done\nprintf 'Going well. Core systems are in place and I am finishing score/lives and restart flow.' > \"$out\"\n",
+            counter = counter.display(),
+        ),
+    )
+    .expect("write codex script");
+    make_script_executable(&script);
+
+    let client = Arc::new(
+        CodexCliClient::new(CodexCliConfig {
+            executable: script.display().to_string(),
+            extra_args: vec![],
+            timeout_ms: 5_000,
+        })
+        .expect("codex client"),
+    );
+    let mut agent = Agent::new(client, AgentConfig::default());
+    let policy = crate::tools::ToolPolicy::new(vec![temp.path().to_path_buf()]);
+    crate::tools::register_builtin_tools(&mut agent, policy);
+    let mut runtime = None;
+
+    let error = run_prompt_with_cancellation(
+        &mut agent,
+        &mut runtime,
+        "create a snake and tetris mashup game using phaserjs",
+        0,
+        pending::<()>(),
+        test_render_options(),
+    )
+    .await
+    .expect_err("unverified implementation progress must fail closed");
+    assert!(
+        error
+            .to_string()
+            .contains("unverified implementation progress"),
+        "expected explicit implementation-progress error, got: {error}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&counter).expect("call counter"),
+        "3",
+        "expected two replans and a final hard failure"
+    );
+}
+
 #[test]
 fn integration_handle_command_dispatches_extension_registered_command() {
     let temp = tempdir().expect("tempdir");
