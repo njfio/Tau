@@ -44,7 +44,11 @@ impl ToolEntry {
     }
 
     pub fn is_successful_mutation(&self) -> bool {
-        self.is_mutating() && self.status == ToolStatus::Success && !self.detail.is_empty()
+        self.is_mutating() && self.status == ToolStatus::Success
+    }
+
+    pub fn has_mutating_target(&self) -> bool {
+        self.is_successful_mutation() && !self.detail.is_empty()
     }
 }
 
@@ -97,7 +101,7 @@ impl ToolPanel {
         self.entries
             .iter()
             .rev()
-            .find(|entry| entry.is_successful_mutation())
+            .find(|entry| entry.has_mutating_target())
             .map(|entry| entry.detail.as_str())
     }
 
