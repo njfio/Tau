@@ -51,7 +51,11 @@ fn integration_spec_3604_active_build_turn_with_successful_read_shows_read_only_
         "build a playable frogger clone",
         AgentStateDisplay::ToolExec,
     );
-    app.push_tool_event("read".to_string(), ToolStatus::Success, "src/main.rs".to_string());
+    app.push_tool_event(
+        "read".to_string(),
+        ToolStatus::Success,
+        "src/main.rs".to_string(),
+    );
 
     let text = render_text(&mut app);
 
@@ -64,7 +68,11 @@ fn integration_spec_3604_active_build_turn_with_successful_write_shows_mutating_
         "create a playable breakout game",
         AgentStateDisplay::ToolExec,
     );
-    app.push_tool_event("write".to_string(), ToolStatus::Success, "game.js".to_string());
+    app.push_tool_event(
+        "write".to_string(),
+        ToolStatus::Success,
+        "game.js".to_string(),
+    );
 
     let text = render_text(&mut app);
 
@@ -73,10 +81,7 @@ fn integration_spec_3604_active_build_turn_with_successful_write_shows_mutating_
 
 #[test]
 fn integration_spec_3604_idle_turn_omits_mutating_evidence_status() {
-    let mut app = build_app(
-        "create a playable breakout game",
-        AgentStateDisplay::Idle,
-    );
+    let mut app = build_app("create a playable breakout game", AgentStateDisplay::Idle);
 
     let text = render_text(&mut app);
 
@@ -87,10 +92,41 @@ fn integration_spec_3604_idle_turn_omits_mutating_evidence_status() {
 #[test]
 fn integration_spec_3604_non_build_turn_omits_mutating_evidence_status() {
     let mut app = build_app("what is blue?", AgentStateDisplay::Thinking);
-    app.push_tool_event("read".to_string(), ToolStatus::Success, "README.md".to_string());
+    app.push_tool_event(
+        "read".to_string(),
+        ToolStatus::Success,
+        "README.md".to_string(),
+    );
 
     let text = render_text(&mut app);
 
     assert!(!text.contains("mutating evidence"));
     assert!(!text.contains("read-only so far"));
+}
+
+#[test]
+fn integration_spec_3604_new_build_turn_resets_prior_mutating_evidence() {
+    let mut app = build_app(
+        "create a playable breakout game",
+        AgentStateDisplay::ToolExec,
+    );
+    app.push_tool_event(
+        "write".to_string(),
+        ToolStatus::Success,
+        "game.js".to_string(),
+    );
+
+    let first_turn = render_text(&mut app);
+    assert!(first_turn.contains("mutating evidence confirmed"));
+
+    app.push_message(
+        MessageRole::User,
+        "build a snake game with enemies".to_string(),
+    );
+    app.status.agent_state = AgentStateDisplay::Thinking;
+
+    let second_turn = render_text(&mut app);
+
+    assert!(second_turn.contains("no mutating evidence yet"));
+    assert!(!second_turn.contains("mutating evidence confirmed"));
 }
