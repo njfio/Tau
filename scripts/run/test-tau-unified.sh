@@ -175,7 +175,7 @@ tui_output="$(
 assert_contains "${tui_output}" "tau-unified: launching tui (agent)" "tui agent marker"
 up_count_after_tui="$(grep -c '^runner_mode=up$' "${runner_log}" || true)"
 assert_equals "${up_count_before_tui}" "${up_count_after_tui}" "tui default does not bootstrap runtime in runner mode"
-assert_contains "$(cat "${runner_log}")" "--request-timeout-ms 45000" "tui default timeout flag"
+assert_contains "$(cat "${runner_log}")" "--request-timeout-ms 180000" "tui default timeout flag"
 assert_contains "$(cat "${runner_log}")" "--agent-request-max-retries 0" "tui default retries flag"
 
 up_count_before_bootstrap="$(grep -c '^runner_mode=up$' "${runner_log}" || true)"

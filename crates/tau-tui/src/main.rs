@@ -1038,13 +1038,13 @@ mod tests {
     }
 
     #[test]
-    fn regression_spec_c06_agent_mode_defaults_to_gpt5_baseline() {
+    fn regression_spec_c06_agent_mode_defaults_to_gpt53_codex() {
         let action = parse_args(vec!["tau-tui".to_string(), "agent".to_string()])
             .expect("expected parse success");
         let ParseAction::RunAgent(args) = action else {
             panic!("expected agent action");
         };
-        assert_eq!(args.model, "openai/gpt-5.2");
+        assert_eq!(args.model, "gpt-5.3-codex");
     }
 
     #[test]
