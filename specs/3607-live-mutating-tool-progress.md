@@ -53,3 +53,13 @@ Make the interactive TUI show unmistakable live evidence when Tau is making muta
   - read-only build turn omits mutating wording
   - new turn reset behavior remains correct
 - Run targeted `tau-tui` tests first, then full `cargo test -p tau-tui`.
+
+## Status
+- Implemented on branch `3607-live-mutating-tool-progress`.
+- No deviations from the original scope.
+
+## Validation Evidence
+- `cargo test -p tau-tui 3607 -- --nocapture`
+- `cargo test -p tau-tui`
+- `cargo clippy -p tau-tui --all-targets --all-features -- -D warnings`
+- live smoke: `target/debug/tau-tui interactive --profile ops-interactive`
