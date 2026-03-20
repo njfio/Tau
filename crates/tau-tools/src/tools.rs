@@ -1586,7 +1586,7 @@ fn grep_directory(
             // Skip hidden directories
             if path
                 .file_name()
-                .map_or(false, |n| n.to_string_lossy().starts_with('.'))
+                .is_some_and(|n| n.to_string_lossy().starts_with('.'))
             {
                 continue;
             }
@@ -1698,7 +1698,7 @@ impl AgentTool for GlobTool {
                 Err(_) => continue,
             };
             let metadata = std::fs::metadata(&path).ok();
-            let is_dir = metadata.as_ref().map_or(false, |m| m.is_dir());
+            let is_dir = metadata.as_ref().is_some_and(|m| m.is_dir());
             let size = metadata.as_ref().map_or(0, |m| m.len());
             files.push(json!({
                 "path": path.display().to_string(),
@@ -1807,7 +1807,7 @@ fn list_directory_entries(
         let path = entry.path();
         let file_name = entry.file_name().to_string_lossy().to_string();
         let metadata = entry.metadata().ok();
-        let is_dir = metadata.as_ref().map_or(false, |m| m.is_dir());
+        let is_dir = metadata.as_ref().is_some_and(|m| m.is_dir());
         let size = metadata.as_ref().map_or(0, |m| m.len());
         let file_type = if is_dir { "dir" } else { "file" };
 
@@ -1818,10 +1818,8 @@ fn list_directory_entries(
             "size": size,
         }));
 
-        if recursive && is_dir && current_depth < max_depth {
-            if !file_name.starts_with('.') {
-                list_directory_entries(&path, recursive, max_depth, current_depth + 1, entries);
-            }
+        if recursive && is_dir && current_depth < max_depth && !file_name.starts_with('.') {
+            list_directory_entries(&path, recursive, max_depth, current_depth + 1, entries);
         }
     }
 }
