@@ -45,7 +45,7 @@ pub(crate) fn build_transcript_tool_lines(app: &App) -> Vec<Line<'static>> {
             Style::default().fg(color),
         )),
     ];
-    push_tool_detail_line(&mut lines, &entry.detail);
+    push_transcript_detail_lines(&mut lines, entry);
     lines.push(Line::from(""));
     lines
 }
@@ -141,6 +141,24 @@ fn tool_header_line(entry: &ToolEntry) -> Line<'static> {
                 .add_modifier(Modifier::BOLD),
         ),
     ])
+}
+
+fn push_transcript_detail_lines(lines: &mut Vec<Line<'static>>, entry: &ToolEntry) {
+    if entry.is_mutating() && !entry.detail.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "  Mutating target:",
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        )));
+        lines.push(Line::from(Span::styled(
+            format!("    {}", entry.detail),
+            Style::default().fg(Color::DarkGray),
+        )));
+        return;
+    }
+
+    push_tool_detail_line(lines, &entry.detail);
 }
 
 fn push_tool_detail_line(lines: &mut Vec<Line<'static>>, detail: &str) {

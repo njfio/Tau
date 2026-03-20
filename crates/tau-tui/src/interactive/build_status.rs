@@ -56,9 +56,7 @@ fn classify_tool_evidence(tools: &[ToolEntry]) -> BuildEvidenceStatus {
 }
 
 fn has_successful_mutation(tools: &[ToolEntry]) -> bool {
-    tools.iter().any(|entry| {
-        entry.status == ToolStatus::Success && matches!(entry.name.as_str(), "write" | "edit")
-    })
+    tools.iter().any(ToolEntry::is_successful_mutation)
 }
 
 fn has_successful_tool(tools: &[ToolEntry]) -> bool {

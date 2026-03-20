@@ -48,6 +48,7 @@ pub(crate) fn render_help_overlay(frame: &mut Frame, area: Rect) {
         Line::from("  Enter     Send message"),
         Line::from("  Shift+Enter / Alt+Enter  New line"),
         Line::from("  Esc       Back to normal mode"),
+        Line::from("  /copy-target  Copy latest write/edit target path"),
         Line::from(""),
         Line::from(Span::styled(
             "Global",

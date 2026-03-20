@@ -28,18 +28,14 @@ fn latest_running_mutating_entry(entries: &[ToolEntry]) -> Option<&ToolEntry> {
     entries
         .iter()
         .rev()
-        .find(|entry| entry.status == ToolStatus::Running && is_mutating_tool(entry))
+        .find(|entry| entry.status == ToolStatus::Running && entry.is_mutating())
 }
 
 fn latest_successful_mutating_entry(entries: &[ToolEntry]) -> Option<&ToolEntry> {
     entries
         .iter()
         .rev()
-        .find(|entry| entry.status == ToolStatus::Success && is_mutating_tool(entry))
-}
-
-fn is_mutating_tool(entry: &ToolEntry) -> bool {
-    matches!(entry.name.as_str(), "write" | "edit")
+        .find(|entry| entry.is_successful_mutation())
 }
 
 fn running_mutating_lines(entry: &ToolEntry) -> Vec<Line<'static>> {

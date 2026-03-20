@@ -1,6 +1,7 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
 use super::app::{App, FocusPanel};
+use super::app_copy_target::copy_latest_mutating_target;
 use super::chat::{ChatMessage, MessageRole};
 
 pub(crate) fn handle_command_palette_key(app: &mut App, key: KeyEvent) {
@@ -58,6 +59,7 @@ fn execute_command(app: &mut App, cmd: &str) {
         "clear" => app.chat.clear(),
         "help" => app.show_help = true,
         "tools" => app.show_tool_panel = !app.show_tool_panel,
+        "copy-target" => copy_latest_mutating_target(app),
         _ => app.chat.add_message(ChatMessage {
             role: MessageRole::System,
             content: format!("Unknown command: {cmd}"),
