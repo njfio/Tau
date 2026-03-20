@@ -10,7 +10,7 @@ PID_FILE="${RUNTIME_DIR}/tau-unified.pid"
 LOG_FILE="${RUNTIME_DIR}/tau-unified.log"
 CMD_FILE="${RUNTIME_DIR}/tau-unified.last-cmd"
 
-MODEL_DEFAULT="${TAU_UNIFIED_MODEL:-openai/gpt-5.2}"
+MODEL_DEFAULT="${TAU_UNIFIED_MODEL:-gpt-5.3-codex}"
 BIND_DEFAULT="${TAU_UNIFIED_BIND:-127.0.0.1:8791}"
 AUTH_MODE_DEFAULT="${TAU_UNIFIED_AUTH_MODE:-localhost-dev}"
 AUTH_TOKEN_DEFAULT="${TAU_UNIFIED_AUTH_TOKEN:-local-dev-token}"
@@ -18,8 +18,9 @@ AUTH_PASSWORD_DEFAULT="${TAU_UNIFIED_AUTH_PASSWORD:-local-dev-password}"
 PROFILE_DEFAULT="${TAU_UNIFIED_PROFILE:-local-dev}"
 GATEWAY_STATE_DIR_DEFAULT="${TAU_UNIFIED_GATEWAY_STATE_DIR:-.tau/gateway}"
 DASHBOARD_STATE_DIR_DEFAULT="${TAU_UNIFIED_DASHBOARD_STATE_DIR:-.tau/dashboard}"
-TUI_REQUEST_TIMEOUT_MS_DEFAULT="${TAU_UNIFIED_TUI_REQUEST_TIMEOUT_MS:-45000}"
-TUI_AGENT_REQUEST_MAX_RETRIES_DEFAULT="${TAU_UNIFIED_TUI_AGENT_REQUEST_MAX_RETRIES:-0}"
+REQUEST_TIMEOUT_MS_DEFAULT="${TAU_UNIFIED_REQUEST_TIMEOUT_MS:-180000}"
+AGENT_REQUEST_MAX_RETRIES_DEFAULT="${TAU_UNIFIED_AGENT_REQUEST_MAX_RETRIES:-0}"
+PROVIDER_MAX_RETRIES_DEFAULT="${TAU_UNIFIED_PROVIDER_MAX_RETRIES:-0}"
 
 RUNNER="${TAU_UNIFIED_RUNNER:-}"
 RUNNER_LOG="${TAU_UNIFIED_RUNNER_LOG:-}"
@@ -36,7 +37,7 @@ Commands:
   tui      Launch live TUI shell view using dashboard artifacts.
 
 Options for `up`:
-  --model <model>                 Model id (default: openai/gpt-5.2)
+  --model <model>                 Model id (default: gpt-5.3-codex)
   --bind <host:port>              Gateway bind (default: 127.0.0.1:8791)
   --auth-mode <mode>              Auth mode: localhost-dev|token|password-session
   --auth-token <token>            Token for token mode
@@ -44,6 +45,9 @@ Options for `up`:
   --profile <name>                Profile marker for output (default: local-dev)
   --gateway-state-dir <path>      Gateway state dir (default: .tau/gateway)
   --dashboard-state-dir <path>    Dashboard state dir (default: .tau/dashboard)
+  --request-timeout-ms <n>        Runtime request timeout ms (default: 180000)
+  --agent-request-max-retries <n> Runtime agent request retries (default: 0)
+  --provider-max-retries <n>      Runtime provider retries (default: 0)
 
 Options for `tui`:
   --agent                         Force interactive agent mode (default)
@@ -53,8 +57,8 @@ Options for `tui`:
   --state-dir <path>              Dashboard state dir alias (default: .tau/dashboard)
   --dashboard-state-dir <path>    Dashboard state dir (default: .tau/dashboard)
   --gateway-state-dir <path>      Gateway state dir (default: .tau/gateway)
-  --model <id>                    Agent model id (default: openai/gpt-5.2)
-  --request-timeout-ms <n>        Agent request timeout ms (default: 45000)
+  --model <id>                    Agent model id (default: gpt-5.3-codex)
+  --request-timeout-ms <n>        Agent request timeout ms (default: 180000)
   --agent-request-max-retries <n> Agent max request retries (default: 0)
   --profile <name>                TUI profile (default: local-dev)
   --bind <host:port>              Runtime bind for bootstrap path (default: 127.0.0.1:8791)
@@ -131,6 +135,9 @@ build_up_command() {
   local auth_password="$5"
   local gateway_state_dir="$6"
   local dashboard_state_dir="$7"
+  local request_timeout_ms="$8"
+  local agent_request_max_retries="$9"
+  local provider_max_retries="${10}"
 
   local cmd=(
     cargo run -p tau-coding-agent --
@@ -141,6 +148,9 @@ build_up_command() {
     --gateway-openresponses-bind "${bind}"
     --gateway-openresponses-auth-mode "${auth_mode}"
     --gateway-openresponses-max-input-chars 32000
+    --request-timeout-ms "${request_timeout_ms}"
+    --agent-request-max-retries "${agent_request_max_retries}"
+    --provider-max-retries "${provider_max_retries}"
   )
 
   if [[ "${auth_mode}" == "token" ]]; then
@@ -162,6 +172,9 @@ cmd_up() {
   local profile="${PROFILE_DEFAULT}"
   local gateway_state_dir="${GATEWAY_STATE_DIR_DEFAULT}"
   local dashboard_state_dir="${DASHBOARD_STATE_DIR_DEFAULT}"
+  local request_timeout_ms="${REQUEST_TIMEOUT_MS_DEFAULT}"
+  local agent_request_max_retries="${AGENT_REQUEST_MAX_RETRIES_DEFAULT}"
+  local provider_max_retries="${PROVIDER_MAX_RETRIES_DEFAULT}"
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -197,6 +210,18 @@ cmd_up() {
         dashboard_state_dir="$2"
         shift 2
         ;;
+      --request-timeout-ms)
+        request_timeout_ms="$2"
+        shift 2
+        ;;
+      --agent-request-max-retries)
+        agent_request_max_retries="$2"
+        shift 2
+        ;;
+      --provider-max-retries)
+        provider_max_retries="$2"
+        shift 2
+        ;;
       --help)
         usage
         exit 0
@@ -214,6 +239,15 @@ cmd_up() {
       die "invalid --auth-mode: ${auth_mode}"
       ;;
   esac
+  if ! [[ "${request_timeout_ms}" =~ ^[0-9]+$ ]] || (( request_timeout_ms < 1 )); then
+    die "invalid --request-timeout-ms: ${request_timeout_ms} (expected integer >= 1)"
+  fi
+  if ! [[ "${agent_request_max_retries}" =~ ^[0-9]+$ ]]; then
+    die "invalid --agent-request-max-retries: ${agent_request_max_retries} (expected integer >= 0)"
+  fi
+  if ! [[ "${provider_max_retries}" =~ ^[0-9]+$ ]]; then
+    die "invalid --provider-max-retries: ${provider_max_retries} (expected integer >= 0)"
+  fi
 
   ensure_runtime_dir
   cleanup_stale_pid
@@ -229,7 +263,7 @@ cmd_up() {
   fi
 
   local command
-  command="$(build_up_command "${model}" "${bind}" "${auth_mode}" "${auth_token}" "${auth_password}" "${gateway_state_dir}" "${dashboard_state_dir}")"
+  command="$(build_up_command "${model}" "${bind}" "${auth_mode}" "${auth_token}" "${auth_password}" "${gateway_state_dir}" "${dashboard_state_dir}" "${request_timeout_ms}" "${agent_request_max_retries}" "${provider_max_retries}")"
   printf '%s\n' "${command}" > "${CMD_FILE}"
   : > "${LOG_FILE}"
 
@@ -341,6 +375,8 @@ bootstrap_runtime_for_tui() {
   local profile="$6"
   local gateway_state_dir="$7"
   local dashboard_state_dir="$8"
+  local request_timeout_ms="$9"
+  local agent_request_max_retries="${10}"
 
   cleanup_stale_pid
   if [[ -f "${PID_FILE}" ]]; then
@@ -362,7 +398,9 @@ bootstrap_runtime_for_tui() {
     --auth-password "${auth_password}" \
     --profile "${profile}" \
     --gateway-state-dir "${gateway_state_dir}" \
-    --dashboard-state-dir "${dashboard_state_dir}"
+    --dashboard-state-dir "${dashboard_state_dir}" \
+    --request-timeout-ms "${request_timeout_ms}" \
+    --agent-request-max-retries "${agent_request_max_retries}"
 
   if wait_for_dashboard_artifacts "${dashboard_state_dir}" 6000; then
     log "tau-unified: dashboard artifacts ready (${dashboard_state_dir})"
@@ -380,8 +418,8 @@ cmd_tui() {
   local auth_token="${AUTH_TOKEN_DEFAULT}"
   local auth_password="${AUTH_PASSWORD_DEFAULT}"
   local profile="${PROFILE_DEFAULT}"
-  local request_timeout_ms="${TUI_REQUEST_TIMEOUT_MS_DEFAULT}"
-  local agent_request_max_retries="${TUI_AGENT_REQUEST_MAX_RETRIES_DEFAULT}"
+  local request_timeout_ms="${REQUEST_TIMEOUT_MS_DEFAULT}"
+  local agent_request_max_retries="${AGENT_REQUEST_MAX_RETRIES_DEFAULT}"
   local iterations="3"
   local interval_ms="1000"
   local no_color="false"
@@ -515,7 +553,9 @@ cmd_tui() {
       "${auth_password}" \
       "${profile}" \
       "${gateway_state_dir}" \
-      "${dashboard_state_dir}"
+      "${dashboard_state_dir}" \
+      "${request_timeout_ms}" \
+      "${agent_request_max_retries}"
   fi
 
   local tui_cmd=()
