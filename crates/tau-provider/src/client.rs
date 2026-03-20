@@ -338,6 +338,7 @@ fn build_openai_codex_client(cli: &Cli, provider: Provider) -> Result<Arc<dyn Ll
     Ok(Arc::new(client))
 }
 
+/// CLI backends must not expire earlier than the runtime request budget.
 fn effective_cli_backend_timeout_ms(backend_timeout_ms: u64, request_timeout_ms: u64) -> u64 {
     backend_timeout_ms.max(request_timeout_ms).max(1)
 }
