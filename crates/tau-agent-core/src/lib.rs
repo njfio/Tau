@@ -35,6 +35,7 @@ pub mod metrics;
 mod process_types;
 pub mod recovery;
 mod runtime_safety_memory;
+mod runtime_safety_progress;
 mod runtime_startup;
 mod runtime_tool_bridge;
 mod runtime_turn_loop;
@@ -52,10 +53,8 @@ pub use process_types::{
     ProcessSnapshot, ProcessSpawnSpec, ProcessType,
 };
 pub use recovery::{select_recovery_strategy, RecoveryStrategy};
-pub(crate) use runtime_safety_memory::{
-    assistant_text_suggests_failure,
-    assistant_text_suggests_unverified_implementation_progress, retrieve_memory_matches,
-};
+pub(crate) use runtime_safety_memory::{assistant_text_suggests_failure, retrieve_memory_matches};
+pub(crate) use runtime_safety_progress::assistant_text_suggests_unverified_implementation_progress;
 pub(crate) use runtime_startup::{
     cache_insert_with_limit, lock_or_recover, normalize_direct_message_content,
     sleep_with_cancellation, spawn_async_event_handler_worker,
@@ -2645,17 +2644,17 @@ impl Agent {
                         .unwrap_or_default();
                     if !has_successful_tool_result
                         && assistant_text_suggests_unverified_implementation_progress(
-                        &originating_user_prompt,
-                        &assistant_text,
-                    ) {
+                            &originating_user_prompt,
+                            &assistant_text,
+                        )
+                    {
                         if replans_used < self.config.react_max_replans_on_tool_failure {
                             self.emit(AgentEvent::ReplanTriggered {
                                 turn,
                                 reason: "assistant claimed implementation progress without fresh tool evidence".to_string(),
                             });
-                            let replan_message = Message::user(
-                                REPLAN_ON_UNVERIFIED_IMPLEMENTATION_PROGRESS_PROMPT,
-                            );
+                            let replan_message =
+                                Message::user(REPLAN_ON_UNVERIFIED_IMPLEMENTATION_PROGRESS_PROMPT);
                             self.messages.push(replan_message.clone());
                             self.emit(AgentEvent::MessageAdded {
                                 message: replan_message,
