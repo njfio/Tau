@@ -1,10 +1,13 @@
 //! Core application state for the interactive TUI.
 
+use std::sync::mpsc::{Receiver, TryRecvError};
+
 use crossterm::event::KeyEvent;
 
 use super::chat::{ChatMessage, ChatPanel, MessageRole};
+use super::gateway_client::{spawn_gateway_turn, GatewayRuntimeConfig, GatewayTurnResponse};
 use super::input::InputEditor;
-use super::status::StatusBar;
+use super::status::{AgentStateDisplay, StatusBar};
 use super::tools::{ToolEntry, ToolPanel, ToolStatus};
 
 /// Configuration for the interactive TUI application.
@@ -13,14 +16,16 @@ pub struct AppConfig {
     pub model: String,
     pub profile: String,
     pub tick_rate_ms: u64,
+    pub gateway: GatewayRuntimeConfig,
 }
 
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            model: "openai/gpt-5.2".to_string(),
+            model: "gpt-5.3-codex".to_string(),
             profile: "local-dev".to_string(),
             tick_rate_ms: 100,
+            gateway: GatewayRuntimeConfig::default(),
         }
     }
 }
@@ -55,6 +60,7 @@ pub struct App {
     pub command_input: String,
     pub show_tool_panel: bool,
     current_turn_tool_start: usize,
+    pending_turn: Option<Receiver<GatewayTurnResponse>>,
 }
 
 impl App {
@@ -73,12 +79,72 @@ impl App {
             command_input: String::new(),
             show_tool_panel: true,
             current_turn_tool_start: 0,
+            pending_turn: None,
         }
     }
 
     /// Process a key event and update app state.
     pub fn handle_key(&mut self, key: KeyEvent) {
         super::app_keys::handle_key(self, key);
+    }
+
+    pub fn tick(&mut self) {
+        let Some(receiver) = self.pending_turn.take() else {
+            return;
+        };
+
+        match receiver.try_recv() {
+            Ok(Ok(result)) => {
+                self.status.agent_state = AgentStateDisplay::Idle;
+                self.status.total_messages += 1;
+                self.status.total_tokens =
+                    self.status.total_tokens.saturating_add(result.total_tokens);
+                self.chat.add_message(ChatMessage {
+                    role: MessageRole::Assistant,
+                    content: result.output_text,
+                    timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
+                });
+                self.chat.scroll_to_bottom();
+            }
+            Ok(Err(error)) => {
+                self.status.agent_state = AgentStateDisplay::Error;
+                self.chat.add_message(ChatMessage {
+                    role: MessageRole::System,
+                    content: format!("gateway error: {error}"),
+                    timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
+                });
+                self.chat.scroll_to_bottom();
+            }
+            Err(TryRecvError::Empty) => {
+                self.pending_turn = Some(receiver);
+            }
+            Err(TryRecvError::Disconnected) => {
+                self.status.agent_state = AgentStateDisplay::Error;
+                self.chat.add_message(ChatMessage {
+                    role: MessageRole::System,
+                    content: "gateway error: runtime worker disconnected".to_string(),
+                    timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
+                });
+                self.chat.scroll_to_bottom();
+            }
+        }
+    }
+
+    pub fn submit_prompt(&mut self, prompt: String) {
+        if self.pending_turn.is_some() {
+            self.chat.add_message(ChatMessage {
+                role: MessageRole::System,
+                content: "A turn is already in progress.".to_string(),
+                timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
+            });
+            self.chat.scroll_to_bottom();
+            return;
+        }
+
+        self.status.agent_state = AgentStateDisplay::Thinking;
+        self.status.total_messages += 1;
+        self.push_message(MessageRole::User, prompt.clone());
+        self.pending_turn = Some(spawn_gateway_turn(self.config.gateway.clone(), prompt));
     }
 
     /// Push a chat message externally (for agent integration).
