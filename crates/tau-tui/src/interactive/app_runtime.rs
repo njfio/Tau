@@ -27,8 +27,8 @@ pub fn run_interactive(config: AppConfig) -> io::Result<()> {
     app.chat.add_message(ChatMessage {
         role: MessageRole::System,
         content: format!(
-            "Welcome to Tau Interactive Terminal. Model: {}. Press ? for help, Ctrl+C to quit.",
-            config.model
+            "Welcome to Tau Interactive Terminal. Model: {}. Transport: gateway. Press ? for help, Ctrl+C to quit.",
+            config.model,
         ),
         timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
     });
@@ -69,6 +69,7 @@ fn run_event_loop(
         }
 
         if last_tick.elapsed() >= tick_rate {
+            app.tick();
             last_tick = Instant::now();
         }
 

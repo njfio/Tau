@@ -4,11 +4,26 @@
 pub struct StatusBar {
     pub model: String,
     pub profile: String,
+    pub transport: TransportDisplay,
     pub total_tokens: u64,
     pub total_cost_cents: f64,
     pub total_messages: u64,
     pub circuit_breaker_state: CircuitBreakerDisplay,
     pub agent_state: AgentStateDisplay,
+}
+
+/// Transport display state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TransportDisplay {
+    Gateway,
+}
+
+impl TransportDisplay {
+    pub fn label(&self) -> &'static str {
+        match self {
+            TransportDisplay::Gateway => "transport=gateway",
+        }
+    }
 }
 
 /// Circuit breaker display state.
@@ -56,6 +71,7 @@ impl StatusBar {
         Self {
             model,
             profile,
+            transport: TransportDisplay::Gateway,
             total_tokens: 0,
             total_cost_cents: 0.0,
             total_messages: 0,
