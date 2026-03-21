@@ -1086,4 +1086,48 @@ mod tests {
         assert!(command.contains(&"--agent-request-max-retries".to_string()));
         assert!(command.contains(&"0".to_string()));
     }
+
+    #[test]
+    fn red_spec_3616_parse_args_accepts_interactive_gateway_flags() {
+        let action = parse_args(vec![
+            "tau-tui".to_string(),
+            "interactive".to_string(),
+            "--model".to_string(),
+            "gpt-5.3-codex".to_string(),
+            "--profile".to_string(),
+            "ops-interactive".to_string(),
+            "--bind".to_string(),
+            "127.0.0.1:8899".to_string(),
+            "--auth-mode".to_string(),
+            "token".to_string(),
+            "--auth-token".to_string(),
+            "tok_test".to_string(),
+            "--request-timeout-ms".to_string(),
+            "45000".to_string(),
+            "--session-key".to_string(),
+            "session-alpha".to_string(),
+        ])
+        .expect("expected interactive parse success");
+
+        let ParseAction::RunInteractive(args) = action else {
+            panic!("expected interactive action");
+        };
+        assert_eq!(args.bind, "127.0.0.1:8899");
+        assert_eq!(args.auth_mode, "token");
+        assert_eq!(args.auth_token.as_deref(), Some("tok_test"));
+        assert_eq!(args.request_timeout_ms, 45_000);
+        assert_eq!(args.session_key, "session-alpha");
+    }
+
+    #[test]
+    fn red_spec_3616_parse_args_rejects_interactive_token_mode_without_token() {
+        let err = parse_args(vec![
+            "tau-tui".to_string(),
+            "interactive".to_string(),
+            "--auth-mode".to_string(),
+            "token".to_string(),
+        ])
+        .expect_err("expected interactive parse failure");
+        assert!(err.contains("--auth-token is required"));
+    }
 }

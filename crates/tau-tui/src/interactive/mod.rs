@@ -10,6 +10,8 @@
 mod app;
 mod app_commands;
 mod app_copy_target;
+#[cfg(test)]
+mod app_gateway_tests;
 mod app_keys;
 mod app_mouse;
 #[cfg(test)]
