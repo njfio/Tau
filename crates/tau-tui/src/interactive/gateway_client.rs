@@ -43,25 +43,8 @@ pub fn spawn_gateway_turn(
 }
 
 fn submit_gateway_turn(config: &GatewayRuntimeConfig, prompt: &str) -> GatewayTurnResponse {
-    let client = Client::builder()
-        .timeout(Duration::from_millis(config.request_timeout_ms))
-        .build()
-        .map_err(|error| format!("failed to build gateway client: {error}"))?;
-
-    let url = format!("{}/v1/responses", config.base_url.trim_end_matches('/'));
-    let payload = json!({
-        "input": prompt,
-        "metadata": {
-            "session_id": config.session_key,
-        }
-    });
-
-    let mut request = client.post(url).json(&payload);
-    if let Some(token) = &config.auth_token {
-        request = request.bearer_auth(token);
-    }
-
-    let response = request
+    let client = build_client(config)?;
+    let response = build_request(&client, config, prompt)?
         .send()
         .map_err(|error| format!("gateway request failed: {error}"))?;
     let status = response.status();
@@ -74,25 +57,7 @@ fn submit_gateway_turn(config: &GatewayRuntimeConfig, prompt: &str) -> GatewayTu
             .unwrap_or_else(|| format!("gateway request failed with status {status}")));
     }
 
-    let value: Value = serde_json::from_str(&body)
-        .map_err(|error| format!("failed to parse gateway response: {error}"))?;
-    let output_text = value
-        .get("output_text")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|text| !text.is_empty())
-        .ok_or_else(|| "gateway response missing output_text".to_string())?
-        .to_string();
-    let total_tokens = value
-        .get("usage")
-        .and_then(|usage| usage.get("total_tokens"))
-        .and_then(Value::as_u64)
-        .unwrap_or(0);
-
-    Ok(GatewayTurnResult {
-        output_text,
-        total_tokens,
-    })
+    parse_success_response(&body)
 }
 
 fn parse_gateway_error(body: &str) -> Option<String> {
@@ -102,4 +67,60 @@ fn parse_gateway_error(body: &str) -> Option<String> {
         .and_then(|error| error.get("message"))
         .and_then(Value::as_str)
         .map(|message| message.to_string())
+}
+
+fn build_client(config: &GatewayRuntimeConfig) -> Result<Client, String> {
+    Client::builder()
+        .timeout(Duration::from_millis(config.request_timeout_ms))
+        .build()
+        .map_err(|error| format!("failed to build gateway client: {error}"))
+}
+
+fn build_request(
+    client: &Client,
+    config: &GatewayRuntimeConfig,
+    prompt: &str,
+) -> Result<reqwest::blocking::RequestBuilder, String> {
+    let url = format!("{}/v1/responses", config.base_url.trim_end_matches('/'));
+    let payload = json!({
+        "input": prompt,
+        "metadata": {
+            "session_id": config.session_key,
+        }
+    });
+
+    let mut request = client.post(url).json(&payload);
+    if let Some(token) = &config.auth_token {
+        request = request.bearer_auth(token);
+    }
+    Ok(request)
+}
+
+fn parse_success_response(body: &str) -> GatewayTurnResponse {
+    let value: Value = serde_json::from_str(body)
+        .map_err(|error| format!("failed to parse gateway response: {error}"))?;
+    let output_text = parse_output_text(&value)?;
+    let total_tokens = parse_total_tokens(&value);
+    Ok(GatewayTurnResult {
+        output_text,
+        total_tokens,
+    })
+}
+
+fn parse_output_text(value: &Value) -> Result<String, String> {
+    value
+        .get("output_text")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+        .map(|text| text.to_string())
+        .ok_or_else(|| "gateway response missing output_text".to_string())
+}
+
+fn parse_total_tokens(value: &Value) -> u64 {
+    value
+        .get("usage")
+        .and_then(|usage| usage.get("total_tokens"))
+        .and_then(Value::as_u64)
+        .unwrap_or(0)
 }
