@@ -36,20 +36,7 @@ pub(crate) fn submit_input(app: &mut App) {
         return;
     }
 
-    app.push_message(MessageRole::User, text.clone());
-    app.chat.add_message(ChatMessage {
-        role: MessageRole::Assistant,
-        content: format!(
-            "Received your message. (Model: {}, {} chars)",
-            app.config.model,
-            text.len()
-        ),
-        timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
-    });
-
-    app.status.total_messages += 2;
-    app.status.total_tokens += text.len() as u64 / 4;
-    app.chat.scroll_to_bottom();
+    app.submit_prompt(text);
     app.input.clear();
 }
 

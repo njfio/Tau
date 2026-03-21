@@ -10,6 +10,8 @@
 mod app;
 mod app_commands;
 mod app_copy_target;
+#[cfg(test)]
+mod app_gateway_tests;
 mod app_keys;
 mod app_mouse;
 #[cfg(test)]
@@ -17,6 +19,7 @@ mod app_mouse_tests;
 mod app_runtime;
 mod build_status;
 mod chat;
+mod gateway_client;
 mod input;
 mod status;
 mod tools;
@@ -41,3 +44,4 @@ mod ui_tools;
 
 pub use app::{App, AppConfig};
 pub use app_runtime::run_interactive;
+pub use gateway_client::GatewayRuntimeConfig;

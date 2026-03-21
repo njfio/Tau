@@ -2,7 +2,7 @@ use std::{env, path::Path, process::Command, process::Stdio, thread, time::Durat
 
 use tau_tui::{
     apply_overlay,
-    interactive::{run_interactive, AppConfig},
+    interactive::{run_interactive, AppConfig, GatewayRuntimeConfig},
     render_operator_shell_frame, Component, DiffRenderer, EditorBuffer, EditorView, LumaImage,
     OperatorShellFrame, Text, Theme, ThemeRole,
 };
@@ -12,7 +12,7 @@ tau-tui operator terminal
 
 Usage:
   cargo run -p tau-tui -- [demo] [--frames N] [--width N] [--sleep-ms N] [--no-color]
-  cargo run -p tau-tui -- interactive [--model ID] [--profile NAME]
+  cargo run -p tau-tui -- interactive [--model ID] [--profile NAME] [--bind HOST:PORT] [--auth-mode MODE] [--auth-token TOKEN] [--request-timeout-ms N] [--session-key KEY]
   cargo run -p tau-tui -- shell [--width N] [--profile NAME] [--no-color]
   cargo run -p tau-tui -- shell-live [--state-dir PATH] [--width N] [--profile NAME] [--watch] [--iterations N] [--interval-ms N] [--no-color]
   cargo run -p tau-tui -- agent [--dashboard-state-dir PATH] [--gateway-state-dir PATH] [--model ID] [--request-timeout-ms N] [--agent-request-max-retries N] [--width N] [--profile NAME] [--dry-run] [--no-color]
@@ -31,7 +31,11 @@ Options:
   --dashboard-state-dir P Agent: dashboard state directory (default: .tau/dashboard)
   --gateway-state-dir P Agent: gateway state directory (default: .tau/gateway)
   --model ID    Agent: model id for interactive runtime (default: gpt-5.3-codex)
-  --request-timeout-ms N Agent: request timeout in milliseconds forwarded to tau-coding-agent
+  --bind P      Interactive: gateway bind host:port (default: 127.0.0.1:8791)
+  --auth-mode M Interactive: gateway auth mode localhost-dev|token (default: localhost-dev)
+  --auth-token T Interactive: bearer token when --auth-mode=token
+  --session-key K Interactive: gateway session key (default: default)
+  --request-timeout-ms N Interactive/Agent: request timeout in milliseconds for gateway/runtime calls
   --agent-request-max-retries N Agent: max model request retries forwarded to tau-coding-agent
   --dry-run     Agent: print interactive launch command without executing it
   --watch       Shell-live: enable watch mode across multiple refresh cycles
@@ -135,6 +139,11 @@ impl Default for AgentArgs {
 struct InteractiveArgs {
     model: String,
     profile: String,
+    bind: String,
+    auth_mode: String,
+    auth_token: Option<String>,
+    request_timeout_ms: u64,
+    session_key: String,
 }
 
 impl Default for InteractiveArgs {
@@ -142,6 +151,11 @@ impl Default for InteractiveArgs {
         Self {
             model: "gpt-5.3-codex".to_string(),
             profile: "local-dev".to_string(),
+            bind: "127.0.0.1:8791".to_string(),
+            auth_mode: "localhost-dev".to_string(),
+            auth_token: None,
+            request_timeout_ms: 180_000,
+            session_key: "default".to_string(),
         }
     }
 }
@@ -253,7 +267,63 @@ fn parse_interactive_args(args: Vec<String>) -> Result<ParseAction, String> {
                 }
                 parsed.profile = value.to_string();
             }
+            "--bind" => {
+                let raw = it.next().ok_or("missing value for --bind")?;
+                let value = raw.trim();
+                if value.is_empty() {
+                    return Err("--bind must not be empty".to_string());
+                }
+                parsed.bind = value.to_string();
+            }
+            "--auth-mode" => {
+                let raw = it.next().ok_or("missing value for --auth-mode")?;
+                let value = raw.trim();
+                if value.is_empty() {
+                    return Err("--auth-mode must not be empty".to_string());
+                }
+                parsed.auth_mode = value.to_string();
+            }
+            "--auth-token" => {
+                let raw = it.next().ok_or("missing value for --auth-token")?;
+                let value = raw.trim();
+                if value.is_empty() {
+                    return Err("--auth-token must not be empty".to_string());
+                }
+                parsed.auth_token = Some(value.to_string());
+            }
+            "--request-timeout-ms" => {
+                let raw = it.next().ok_or("missing value for --request-timeout-ms")?;
+                let value = raw
+                    .parse::<u64>()
+                    .map_err(|_| format!("invalid u64 for --request-timeout-ms: {raw}"))?;
+                if value == 0 {
+                    return Err("--request-timeout-ms must be >= 1".to_string());
+                }
+                parsed.request_timeout_ms = value;
+            }
+            "--session-key" => {
+                let raw = it.next().ok_or("missing value for --session-key")?;
+                let value = raw.trim();
+                if value.is_empty() {
+                    return Err("--session-key must not be empty".to_string());
+                }
+                parsed.session_key = value.to_string();
+            }
             _ => return Err(format!("unknown argument: {arg}")),
+        }
+    }
+    match parsed.auth_mode.as_str() {
+        "localhost-dev" => {}
+        "token" => {
+            if parsed.auth_token.is_none() {
+                return Err("--auth-token is required when --auth-mode=token".to_string());
+            }
+        }
+        _ => {
+            return Err(format!(
+                "invalid --auth-mode: {} (expected localhost-dev|token)",
+                parsed.auth_mode
+            ));
         }
     }
     Ok(ParseAction::RunInteractive(parsed))
@@ -743,6 +813,12 @@ fn main() {
                 model: args.model,
                 profile: args.profile,
                 tick_rate_ms: 100,
+                gateway: GatewayRuntimeConfig {
+                    base_url: format!("http://{}", args.bind),
+                    auth_token: args.auth_token,
+                    session_key: args.session_key,
+                    request_timeout_ms: args.request_timeout_ms,
+                },
             };
             if let Err(err) = run_interactive(config) {
                 eprintln!("interactive TUI error: {err}");
@@ -1085,5 +1161,49 @@ mod tests {
         assert!(command.contains(&"45000".to_string()));
         assert!(command.contains(&"--agent-request-max-retries".to_string()));
         assert!(command.contains(&"0".to_string()));
+    }
+
+    #[test]
+    fn red_spec_3616_parse_args_accepts_interactive_gateway_flags() {
+        let action = parse_args(vec![
+            "tau-tui".to_string(),
+            "interactive".to_string(),
+            "--model".to_string(),
+            "gpt-5.3-codex".to_string(),
+            "--profile".to_string(),
+            "ops-interactive".to_string(),
+            "--bind".to_string(),
+            "127.0.0.1:8899".to_string(),
+            "--auth-mode".to_string(),
+            "token".to_string(),
+            "--auth-token".to_string(),
+            "tok_test".to_string(),
+            "--request-timeout-ms".to_string(),
+            "45000".to_string(),
+            "--session-key".to_string(),
+            "session-alpha".to_string(),
+        ])
+        .expect("expected interactive parse success");
+
+        let ParseAction::RunInteractive(args) = action else {
+            panic!("expected interactive action");
+        };
+        assert_eq!(args.bind, "127.0.0.1:8899");
+        assert_eq!(args.auth_mode, "token");
+        assert_eq!(args.auth_token.as_deref(), Some("tok_test"));
+        assert_eq!(args.request_timeout_ms, 45_000);
+        assert_eq!(args.session_key, "session-alpha");
+    }
+
+    #[test]
+    fn red_spec_3616_parse_args_rejects_interactive_token_mode_without_token() {
+        let err = parse_args(vec![
+            "tau-tui".to_string(),
+            "interactive".to_string(),
+            "--auth-mode".to_string(),
+            "token".to_string(),
+        ])
+        .expect_err("expected interactive parse failure");
+        assert!(err.contains("--auth-token is required"));
     }
 }

@@ -582,11 +582,20 @@ cmd_tui() {
       )
       ;;
     interactive)
+      if [[ "${auth_mode}" == "password-session" ]]; then
+        die "interactive tui does not support --auth-mode=password-session"
+      fi
       tui_cmd=(
         cargo run -p tau-tui -- interactive
         --profile "${profile}"
         --model "${model}"
+        --bind "${bind}"
+        --auth-mode "${auth_mode}"
+        --request-timeout-ms "${request_timeout_ms}"
       )
+      if [[ "${auth_mode}" == "token" ]]; then
+        tui_cmd+=(--auth-token "${auth_token}")
+      fi
       ;;
     agent)
       tui_cmd=(

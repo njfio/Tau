@@ -1,10 +1,15 @@
 //! Core application state for the interactive TUI.
 
+use std::sync::mpsc::{Receiver, TryRecvError};
+
 use crossterm::event::KeyEvent;
 
 use super::chat::{ChatMessage, ChatPanel, MessageRole};
+use super::gateway_client::{
+    spawn_gateway_turn, GatewayRuntimeConfig, GatewayTurnResponse, GatewayTurnResult,
+};
 use super::input::InputEditor;
-use super::status::StatusBar;
+use super::status::{AgentStateDisplay, StatusBar};
 use super::tools::{ToolEntry, ToolPanel, ToolStatus};
 
 /// Configuration for the interactive TUI application.
@@ -13,14 +18,16 @@ pub struct AppConfig {
     pub model: String,
     pub profile: String,
     pub tick_rate_ms: u64,
+    pub gateway: GatewayRuntimeConfig,
 }
 
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            model: "openai/gpt-5.2".to_string(),
+            model: "gpt-5.3-codex".to_string(),
             profile: "local-dev".to_string(),
             tick_rate_ms: 100,
+            gateway: GatewayRuntimeConfig::default(),
         }
     }
 }
@@ -55,6 +62,7 @@ pub struct App {
     pub command_input: String,
     pub show_tool_panel: bool,
     current_turn_tool_start: usize,
+    pending_turn: Option<Receiver<GatewayTurnResponse>>,
 }
 
 impl App {
@@ -73,6 +81,7 @@ impl App {
             command_input: String::new(),
             show_tool_panel: true,
             current_turn_tool_start: 0,
+            pending_turn: None,
         }
     }
 
@@ -81,17 +90,41 @@ impl App {
         super::app_keys::handle_key(self, key);
     }
 
+    pub fn tick(&mut self) {
+        let Some(receiver) = self.pending_turn.take() else {
+            return;
+        };
+
+        match receiver.try_recv() {
+            Ok(result) => self.finish_turn(result),
+            Err(TryRecvError::Empty) => self.pending_turn = Some(receiver),
+            Err(TryRecvError::Disconnected) => {
+                self.fail_turn("gateway error: runtime worker disconnected".to_string());
+            }
+        }
+    }
+
+    pub fn submit_prompt(&mut self, prompt: String) {
+        if self.pending_turn.is_some() {
+            self.push_timestamped_message(
+                MessageRole::System,
+                "A turn is already in progress.".to_string(),
+            );
+            return;
+        }
+
+        self.status.agent_state = AgentStateDisplay::Thinking;
+        self.status.total_messages += 1;
+        self.push_message(MessageRole::User, prompt.clone());
+        self.pending_turn = Some(spawn_gateway_turn(self.config.gateway.clone(), prompt));
+    }
+
     /// Push a chat message externally (for agent integration).
     pub fn push_message(&mut self, role: MessageRole, content: String) {
         if role == MessageRole::User {
             self.start_turn();
         }
-        self.chat.add_message(ChatMessage {
-            role,
-            content,
-            timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
-        });
-        self.chat.scroll_to_bottom();
+        self.push_timestamped_message(role, content);
     }
 
     pub fn current_turn_tools(&self) -> &[ToolEntry] {
@@ -120,5 +153,33 @@ impl App {
 
     fn start_turn(&mut self) {
         self.current_turn_tool_start = self.tools.total_count();
+    }
+
+    fn finish_turn(&mut self, result: GatewayTurnResponse) {
+        match result {
+            Ok(result) => self.complete_turn(result),
+            Err(error) => self.fail_turn(format!("gateway error: {error}")),
+        }
+    }
+
+    fn complete_turn(&mut self, result: GatewayTurnResult) {
+        self.status.agent_state = AgentStateDisplay::Idle;
+        self.status.total_messages += 1;
+        self.status.total_tokens = self.status.total_tokens.saturating_add(result.total_tokens);
+        self.push_timestamped_message(MessageRole::Assistant, result.output_text);
+    }
+
+    fn fail_turn(&mut self, message: String) {
+        self.status.agent_state = AgentStateDisplay::Error;
+        self.push_timestamped_message(MessageRole::System, message);
+    }
+
+    fn push_timestamped_message(&mut self, role: MessageRole, content: String) {
+        self.chat.add_message(ChatMessage {
+            role,
+            content,
+            timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
+        });
+        self.chat.scroll_to_bottom();
     }
 }

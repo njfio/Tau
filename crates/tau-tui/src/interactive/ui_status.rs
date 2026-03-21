@@ -18,6 +18,10 @@ pub(crate) fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         format!(" {} ", app.status.profile),
         Style::default().fg(Color::Black).bg(Color::Blue),
     );
+    let transport_span = Span::styled(
+        format!(" {} ", app.status.transport.label()),
+        Style::default().fg(Color::Black).bg(Color::Magenta),
+    );
     let tokens_span = Span::styled(
         format!(" Tokens: {} ", app.status.format_tokens()),
         Style::default().fg(Color::White).bg(Color::DarkGray),
@@ -58,6 +62,8 @@ pub(crate) fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         model_span,
         sep.clone(),
         profile_span,
+        sep.clone(),
+        transport_span,
         sep.clone(),
         tokens_span,
         sep.clone(),
