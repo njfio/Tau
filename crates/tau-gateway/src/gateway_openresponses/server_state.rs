@@ -2,6 +2,14 @@
 
 use super::*;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// Public struct `GatewayOpenResponsesSkillPrompt` used across Tau components.
+pub struct GatewayOpenResponsesSkillPrompt {
+    pub name: String,
+    pub description: String,
+    pub content: String,
+}
+
 #[derive(Clone)]
 /// Public struct `GatewayOpenResponsesServerConfig` used across Tau components.
 pub struct GatewayOpenResponsesServerConfig {
@@ -11,6 +19,8 @@ pub struct GatewayOpenResponsesServerConfig {
     pub model_cached_input_cost_per_million: Option<f64>,
     pub model_output_cost_per_million: Option<f64>,
     pub system_prompt: String,
+    pub available_skills: Vec<GatewayOpenResponsesSkillPrompt>,
+    pub explicit_skill_names: Vec<String>,
     pub max_turns: usize,
     pub tool_registrar: Arc<dyn GatewayToolRegistrar>,
     pub turn_timeout_ms: u64,

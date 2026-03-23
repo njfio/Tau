@@ -22,6 +22,12 @@ pub(crate) fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         format!(" {} ", app.status.transport.label()),
         Style::default().fg(Color::Black).bg(Color::Magenta),
     );
+    let skills_span = app.status.format_active_skills().map(|skills| {
+        Span::styled(
+            format!(" Skills: {} ", skills),
+            Style::default().fg(Color::Black).bg(Color::Yellow),
+        )
+    });
     let tokens_span = Span::styled(
         format!(" Tokens: {} ", app.status.format_tokens()),
         Style::default().fg(Color::White).bg(Color::DarkGray),
@@ -58,12 +64,18 @@ pub(crate) fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
     );
 
     let sep = Span::raw(" ");
-    let line = Line::from(vec![
+    let mut spans = vec![
         model_span,
         sep.clone(),
         profile_span,
         sep.clone(),
         transport_span,
+    ];
+    if let Some(skills_span) = skills_span {
+        spans.push(sep.clone());
+        spans.push(skills_span);
+    }
+    spans.extend([
         sep.clone(),
         tokens_span,
         sep.clone(),
@@ -75,6 +87,7 @@ pub(crate) fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         sep,
         state_span,
     ]);
+    let line = Line::from(spans);
 
     frame.render_widget(
         Paragraph::new(line).style(Style::default().bg(Color::Black)),

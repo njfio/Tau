@@ -1,8 +1,10 @@
 //! Core application state for the interactive TUI.
 
+use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, TryRecvError};
 
 use crossterm::event::KeyEvent;
+use tau_skills::{load_catalogs, select_skills_for_prompt};
 
 use super::chat::{ChatMessage, ChatPanel, MessageRole};
 use super::gateway_client::{
@@ -18,6 +20,8 @@ pub struct AppConfig {
     pub model: String,
     pub profile: String,
     pub tick_rate_ms: u64,
+    pub skills_dir: PathBuf,
+    pub bundled_skills_dir: Option<PathBuf>,
     pub gateway: GatewayRuntimeConfig,
 }
 
@@ -27,6 +31,8 @@ impl Default for AppConfig {
             model: "gpt-5.3-codex".to_string(),
             profile: "local-dev".to_string(),
             tick_rate_ms: 100,
+            skills_dir: PathBuf::from(".tau/skills"),
+            bundled_skills_dir: Some(PathBuf::from("skills")),
             gateway: GatewayRuntimeConfig::default(),
         }
     }
@@ -113,10 +119,35 @@ impl App {
             return;
         }
 
+        if let Err(error) = self.update_active_skills_for_prompt(&prompt) {
+            self.status.active_skills.clear();
+            self.push_timestamped_message(
+                MessageRole::System,
+                format!("skill selection warning: {error}"),
+            );
+        }
         self.status.agent_state = AgentStateDisplay::Thinking;
         self.status.total_messages += 1;
         self.push_message(MessageRole::User, prompt.clone());
         self.pending_turn = Some(spawn_gateway_turn(self.config.gateway.clone(), prompt));
+    }
+
+    pub fn update_active_skills_for_prompt(&mut self, prompt: &str) -> Result<(), String> {
+        let mut dirs = vec![self.config.skills_dir.clone()];
+        if let Some(dir) = &self.config.bundled_skills_dir {
+            if dir != &self.config.skills_dir {
+                dirs.push(dir.clone());
+            }
+        }
+        let catalog = load_catalogs(&dirs).map_err(|error| format!("skill catalog: {error}"))?;
+        let report = select_skills_for_prompt(&catalog, &[], prompt)
+            .map_err(|error| format!("skill selection: {error}"))?;
+        self.status.active_skills = report
+            .selected
+            .iter()
+            .map(|skill| skill.name.clone())
+            .collect::<Vec<_>>();
+        Ok(())
     }
 
     /// Push a chat message externally (for agent integration).

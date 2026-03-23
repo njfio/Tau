@@ -1,5 +1,6 @@
 use std::io::{Read, Write};
 use std::net::TcpListener;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -141,4 +142,75 @@ fn red_spec_3616_submit_input_surfaces_gateway_errors_loudly() {
     let system = last_message(&app, MessageRole::System).unwrap_or_default();
     assert!(system.contains("gateway runtime failed: test failure"));
     assert_eq!(app.status.agent_state, AgentStateDisplay::Error);
+}
+
+#[test]
+fn red_spec_3618_matching_prompt_surfaces_active_skill_name_in_rendered_tui() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let runtime_skills_dir = temp.path().join(".tau/skills");
+    let bundled_skills_dir = temp.path().join("skills");
+    std::fs::create_dir_all(&runtime_skills_dir).expect("create runtime skills dir");
+    std::fs::create_dir_all(&bundled_skills_dir).expect("create bundled skills dir");
+    std::fs::write(
+        bundled_skills_dir.join("web-game-phaser.md"),
+        "---\nname: web-game-phaser\ndescription: Build Phaser web games.\n---\nUse Phaser 3 and validate a playable game loop.\n",
+    )
+    .expect("write bundled skill");
+
+    let mut app = App::new(AppConfig {
+        skills_dir: runtime_skills_dir,
+        bundled_skills_dir: Some(bundled_skills_dir),
+        ..AppConfig::default()
+    });
+    app.update_active_skills_for_prompt("create a snake and tetris mashup game using phaserjs")
+        .expect("update active skills");
+
+    let backend = ratatui::backend::TestBackend::new(120, 24);
+    let mut terminal = ratatui::Terminal::new(backend).expect("terminal");
+    terminal
+        .draw(|frame| super::ui::render(frame, &app))
+        .expect("draw");
+    let buffer = terminal.backend().buffer().clone();
+    let mut rendered = String::new();
+    for y in 0..24 {
+        for x in 0..120 {
+            rendered.push_str(buffer.cell((x, y)).expect("cell").symbol());
+        }
+        rendered.push('\n');
+    }
+
+    assert!(
+        rendered.contains("Skills: web-game-phaser"),
+        "expected active skill visibility in tui render, rendered:\n{rendered}"
+    );
+}
+
+#[test]
+fn red_spec_3618_non_matching_prompt_omits_active_skill_label() {
+    let mut app = App::new(AppConfig {
+        skills_dir: PathBuf::from(".tau/skills"),
+        bundled_skills_dir: Some(PathBuf::from("skills")),
+        ..AppConfig::default()
+    });
+    app.update_active_skills_for_prompt("explain the release process")
+        .expect("update active skills");
+
+    let backend = ratatui::backend::TestBackend::new(120, 24);
+    let mut terminal = ratatui::Terminal::new(backend).expect("terminal");
+    terminal
+        .draw(|frame| super::ui::render(frame, &app))
+        .expect("draw");
+    let buffer = terminal.backend().buffer().clone();
+    let mut rendered = String::new();
+    for y in 0..24 {
+        for x in 0..120 {
+            rendered.push_str(buffer.cell((x, y)).expect("cell").symbol());
+        }
+        rendered.push('\n');
+    }
+
+    assert!(
+        !rendered.contains("Skills:"),
+        "expected no active skill label for non-match, rendered:\n{rendered}"
+    );
 }

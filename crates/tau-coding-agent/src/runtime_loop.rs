@@ -31,8 +31,13 @@ use tau_ai::StreamDeltaHandler;
 use tau_cli::{Cli, CliOrchestratorMode};
 use tau_core::current_unix_timestamp_ms;
 use tau_extensions::{apply_extension_message_transforms, dispatch_extension_runtime_hook};
+use tau_onboarding::startup_prompt_composition::{
+    compose_startup_system_prompt_with_report_for_selected_skills,
+    resolve_prompt_composition_skill_dirs,
+};
 use tau_onboarding::startup_resolution::ensure_non_empty_text;
 use tau_session::{SessionRuntime, SessionUsageSummary};
+use tau_skills::{load_catalogs, select_skills_for_prompt};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::sync::{mpsc, oneshot};
 
@@ -109,6 +114,8 @@ impl RuntimeHookRunStatus {
 
 #[derive(Clone, Copy)]
 pub(crate) struct InteractiveRuntimeConfig<'a> {
+    pub(crate) cli: &'a Cli,
+    pub(crate) skills_dir: &'a Path,
     pub(crate) turn_timeout_ms: u64,
     pub(crate) request_timeout_ms: u64,
     pub(crate) render_options: RenderOptions,
@@ -581,6 +588,8 @@ async fn dispatch_interactive_turn(
         return Ok(InteractiveLoopControl::Continue);
     }
 
+    apply_interactive_turn_skill_selection(agent, config.cli, config.skills_dir, input)?;
+
     if config.orchestrator_mode == CliOrchestratorMode::PlanFirst {
         let mut progress = InteractiveTurnProgressTracker::start(
             config.turn_timeout_ms,
@@ -863,6 +872,56 @@ pub(crate) fn select_routed_dispatch_model(
         }
     }
     process_type_routed_model(profile, process_type)
+}
+
+fn format_interactive_skills_line(selected: &[String]) -> String {
+    if selected.is_empty() {
+        "interactive.skills=none".to_string()
+    } else {
+        format!("interactive.skills=active names={}", selected.join(","))
+    }
+}
+
+fn emit_interactive_skill_selection(selected: &[String]) {
+    if should_emit_interactive_turn_progress(
+        std::io::stdin().is_terminal(),
+        std::io::stdout().is_terminal(),
+    ) {
+        eprintln!("{}", format_interactive_skills_line(selected));
+    }
+}
+
+pub(crate) fn apply_interactive_turn_skill_selection(
+    agent: &mut Agent,
+    cli: &Cli,
+    skills_dir: &Path,
+    prompt: &str,
+) -> Result<Vec<String>> {
+    let skill_catalog_dirs = resolve_prompt_composition_skill_dirs(cli, skills_dir);
+    let catalog = load_catalogs(&skill_catalog_dirs).with_context(|| {
+        let roots = skill_catalog_dirs
+            .iter()
+            .map(|path| path.display().to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!("failed to load skills from [{roots}]")
+    })?;
+    let selection = select_skills_for_prompt(&catalog, &cli.skills, prompt)?;
+
+    let selected_names = selection
+        .selected
+        .iter()
+        .map(|skill| skill.name.clone())
+        .collect::<Vec<_>>();
+
+    let composition = compose_startup_system_prompt_with_report_for_selected_skills(
+        cli,
+        skills_dir,
+        &selected_names,
+    )?;
+    let _ = agent.replace_system_prompt(composition.system_prompt);
+    emit_interactive_skill_selection(&selected_names);
+    Ok(selected_names)
 }
 
 async fn run_prompt_with_runtime_hooks<F>(
@@ -1653,6 +1712,7 @@ mod tests {
     }
 
     struct InteractiveRunnerHarness {
+        cli: tau_cli::Cli,
         tool_policy_json: serde_json::Value,
         profile_defaults: ProfileDefaults,
         skills_command_config: SkillsSyncCommandConfig,
@@ -1663,6 +1723,7 @@ mod tests {
 
     impl InteractiveRunnerHarness {
         fn new() -> Self {
+            let cli = test_cli();
             let skills_dir = PathBuf::from(".tau/skills");
             let skills_lock_path = PathBuf::from(".tau/skills.lock.json");
             let doctor_config = DoctorCommandConfig {
@@ -1681,6 +1742,7 @@ mod tests {
             };
 
             Self {
+                cli,
                 tool_policy_json: serde_json::json!({
                     "schema_version": 1,
                     "preset": "balanced"
@@ -1722,6 +1784,8 @@ mod tests {
             extension_runtime_hooks: &'a RuntimeExtensionHooksConfig,
         ) -> super::InteractiveRuntimeConfig<'a> {
             super::InteractiveRuntimeConfig {
+                cli: &self.cli,
+                skills_dir: self.skills_command_config.skills_dir.as_path(),
                 turn_timeout_ms: 0,
                 request_timeout_ms: 45_000,
                 render_options: test_render_options(),

@@ -11,7 +11,7 @@ use minijinja::{context, Environment, UndefinedBehavior};
 use serde::{Deserialize, Serialize};
 use tau_cli::Cli;
 use tau_skills::{
-    augment_system_prompt_with_mode, load_catalog, resolve_selected_skills, Skill, SkillPromptMode,
+    augment_system_prompt_with_mode, load_catalogs, resolve_selected_skills, Skill, SkillPromptMode,
 };
 
 use crate::onboarding_paths::resolve_tau_root;
@@ -115,10 +115,25 @@ pub fn compose_startup_system_prompt_with_report(
     cli: &Cli,
     skills_dir: &Path,
 ) -> Result<StartupPromptComposition> {
+    compose_startup_system_prompt_with_report_for_selected_skills(cli, skills_dir, &cli.skills)
+}
+
+pub fn compose_startup_system_prompt_with_report_for_selected_skills(
+    cli: &Cli,
+    skills_dir: &Path,
+    selected_skill_names: &[String],
+) -> Result<StartupPromptComposition> {
     let base_system_prompt = resolve_system_prompt(cli)?;
-    let catalog = load_catalog(skills_dir)
-        .with_context(|| format!("failed to load skills from {}", skills_dir.display()))?;
-    let selected_skills = resolve_selected_skills(&catalog, &cli.skills)?;
+    let skill_catalog_dirs = resolve_prompt_composition_skill_dirs(cli, skills_dir);
+    let catalog = load_catalogs(&skill_catalog_dirs).with_context(|| {
+        let roots = skill_catalog_dirs
+            .iter()
+            .map(|path| path.display().to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!("failed to load skills from [{roots}]")
+    })?;
+    let selected_skills = resolve_selected_skills(&catalog, selected_skill_names)?;
     let (identity_report, sections) = resolve_startup_identity_report_with_sections(cli);
     let default_system_prompt =
         compose_default_system_prompt(&base_system_prompt, &selected_skills, &sections);
@@ -135,6 +150,25 @@ pub fn compose_startup_system_prompt_with_report(
         identity_report,
         template_report,
     })
+}
+
+pub fn resolve_prompt_composition_skill_dirs(cli: &Cli, skills_dir: &Path) -> Vec<PathBuf> {
+    let mut roots = vec![skills_dir.to_path_buf()];
+    let tau_root = resolve_tau_root(cli);
+    let bundled_tau_dir = tau_root.join("skills");
+    if !roots.iter().any(|path| path == &bundled_tau_dir) {
+        roots.push(bundled_tau_dir);
+    }
+    if let Some(workspace_root) = tau_root
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+    {
+        let bundled_workspace_dir = workspace_root.join("skills");
+        if !roots.iter().any(|path| path == &bundled_workspace_dir) {
+            roots.push(bundled_workspace_dir);
+        }
+    }
+    roots
 }
 
 pub fn resolve_startup_identity_report(cli: &Cli) -> StartupIdentityCompositionReport {

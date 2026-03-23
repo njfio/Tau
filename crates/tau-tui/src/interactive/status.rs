@@ -5,6 +5,7 @@ pub struct StatusBar {
     pub model: String,
     pub profile: String,
     pub transport: TransportDisplay,
+    pub active_skills: Vec<String>,
     pub total_tokens: u64,
     pub total_cost_cents: f64,
     pub total_messages: u64,
@@ -72,6 +73,7 @@ impl StatusBar {
             model,
             profile,
             transport: TransportDisplay::Gateway,
+            active_skills: Vec::new(),
             total_tokens: 0,
             total_cost_cents: 0.0,
             total_messages: 0,
@@ -96,5 +98,19 @@ impl StatusBar {
         } else {
             format!("{:.1}M", self.total_tokens as f64 / 1_000_000.0)
         }
+    }
+
+    pub fn format_active_skills(&self) -> Option<String> {
+        if self.active_skills.is_empty() {
+            return None;
+        }
+
+        let joined = self.active_skills.join(",");
+        if joined.chars().count() <= 32 {
+            return Some(joined);
+        }
+
+        let truncated = joined.chars().take(31).collect::<String>();
+        Some(format!("{truncated}..."))
     }
 }

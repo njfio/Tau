@@ -13,6 +13,7 @@ crossterm.workspace = true
 tokio.workspace = true
 chrono.workspace = true
 reqwest.workspace = true
+tau-skills = { path = "../tau-skills" }
 
 [dev-dependencies]
 criterion = "0.8"

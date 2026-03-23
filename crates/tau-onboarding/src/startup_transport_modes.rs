@@ -4,7 +4,7 @@
 //! browser automation and gateway-style execution), and reports mode-specific
 //! failure/timeout diagnostics so startup dispatch can return actionable errors.
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::future::Future;
 use std::io::Write;
@@ -13,6 +13,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use crate::startup_prompt_composition::resolve_prompt_composition_skill_dirs;
 use tau_agent_core::MemoryLifecycleMaintenancePolicy;
 use tau_ai::{LlmClient, ModelRef};
 use tau_browser_automation::browser_automation_contract::load_browser_automation_contract_fixture;
@@ -35,8 +36,8 @@ use tau_core::{current_unix_timestamp_ms, write_text_atomic};
 use tau_deployment::deployment_runtime::{run_deployment_contract_runner, DeploymentRuntimeConfig};
 use tau_diagnostics::{build_doctor_command_config, DoctorCommandConfig};
 use tau_gateway::{
-    GatewayOpenResponsesAuthMode, GatewayOpenResponsesServerConfig, GatewayRuntimeConfig,
-    GatewayToolRegistrarFn,
+    GatewayOpenResponsesAuthMode, GatewayOpenResponsesServerConfig,
+    GatewayOpenResponsesSkillPrompt, GatewayRuntimeConfig, GatewayToolRegistrarFn,
 };
 use tau_multi_channel::{
     MultiChannelCommandHandlers, MultiChannelLiveConnectorsConfig, MultiChannelLiveRuntimeConfig,
@@ -50,7 +51,7 @@ use tau_provider::{
     resolve_secret_from_cli_or_store_id, AuthCommandConfig, ModelCatalog,
 };
 use tau_runtime::{ExternalCodingAgentBridgeConfig, RuntimeHeartbeatSchedulerConfig};
-use tau_skills::default_skills_lock_path;
+use tau_skills::{default_skills_lock_path, load_catalogs};
 use tau_tools::tools::{register_builtin_tools, ToolPolicy};
 use tau_voice::voice_runtime::{
     run_voice_contract_runner, run_voice_live_runner, VoiceLiveRuntimeConfig, VoiceRuntimeConfig,
@@ -453,6 +454,23 @@ pub fn build_gateway_openresponses_server_config(
     let (auth_token, auth_password) = resolve_gateway_openresponses_auth(cli)?;
     let model_catalog = ModelCatalog::built_in();
     let model_catalog_entry = model_catalog.find_model_ref(model_ref);
+    let skill_catalog_dirs = resolve_prompt_composition_skill_dirs(cli, &cli.skills_dir);
+    let available_skills = load_catalogs(&skill_catalog_dirs)
+        .with_context(|| {
+            let roots = skill_catalog_dirs
+                .iter()
+                .map(|path| path.display().to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("failed to load gateway skills from [{roots}]")
+        })?
+        .into_iter()
+        .map(|skill| GatewayOpenResponsesSkillPrompt {
+            name: skill.name,
+            description: skill.description,
+            content: skill.content,
+        })
+        .collect::<Vec<_>>();
     let policy = tool_policy.clone();
     let mut runtime_heartbeat = build_runtime_heartbeat_scheduler_config(cli);
     if runtime_heartbeat.state_path == PathBuf::from(".tau/runtime-heartbeat/state.json") {
@@ -468,6 +486,8 @@ pub fn build_gateway_openresponses_server_config(
         model_output_cost_per_million: model_catalog_entry
             .and_then(|entry| entry.output_cost_per_million),
         system_prompt: system_prompt.to_string(),
+        available_skills,
+        explicit_skill_names: cli.skills.clone(),
         max_turns: cli.max_turns,
         tool_registrar: Arc::new(GatewayToolRegistrarFn::new(move |agent| {
             register_builtin_tools(agent, policy.clone());

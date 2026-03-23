@@ -1,4 +1,11 @@
-use std::{env, path::Path, process::Command, process::Stdio, thread, time::Duration};
+use std::{
+    env,
+    path::{Path, PathBuf},
+    process::Command,
+    process::Stdio,
+    thread,
+    time::Duration,
+};
 
 use tau_tui::{
     apply_overlay,
@@ -813,6 +820,8 @@ fn main() {
                 model: args.model,
                 profile: args.profile,
                 tick_rate_ms: 100,
+                skills_dir: PathBuf::from(".tau/skills"),
+                bundled_skills_dir: Some(PathBuf::from("skills")),
                 gateway: GatewayRuntimeConfig {
                     base_url: format!("http://{}", args.bind),
                     auth_token: args.auth_token,
