@@ -1,6 +1,7 @@
 //! OpenResponses execution handler.
 
 use super::*;
+use std::collections::HashSet;
 
 pub(super) async fn execute_openresponses_request(
     state: Arc<GatewayOpenResponsesServerState>,
@@ -92,6 +93,18 @@ pub(super) async fn execute_openresponses_request(
             ))
         })?,
     );
+
+    let auto_selected = select_gateway_auto_skills(
+        &state.config.available_skills,
+        &state.config.explicit_skill_names,
+        &translated.prompt,
+    );
+    let effective_system_prompt = if auto_selected.is_empty() {
+        resolved_system_prompt.clone()
+    } else {
+        augment_gateway_system_prompt(&resolved_system_prompt, &auto_selected)
+    };
+    let _ = agent.replace_system_prompt(effective_system_prompt);
 
     let start_index = agent.messages().len();
     let stream_handler = stream_sender.as_ref().map(|sender| {
@@ -193,4 +206,143 @@ pub(super) async fn execute_openresponses_request(
     };
 
     Ok(OpenResponsesExecutionResult { response })
+}
+
+const AUTO_GATEWAY_SKILL_ACTION_TOKENS: &[&str] = &[
+    "build",
+    "create",
+    "develop",
+    "edit",
+    "fix",
+    "implement",
+    "make",
+    "prototype",
+    "scaffold",
+    "ship",
+    "write",
+];
+
+const AUTO_GATEWAY_SKILL_STOPWORDS: &[&str] = &[
+    "a",
+    "an",
+    "and",
+    "are",
+    "can",
+    "completely",
+    "entire",
+    "explain",
+    "for",
+    "how",
+    "i",
+    "in",
+    "into",
+    "it",
+    "its",
+    "of",
+    "please",
+    "process",
+    "the",
+    "to",
+    "use",
+    "using",
+    "want",
+    "with",
+    "would",
+    "you",
+];
+
+fn select_gateway_auto_skills(
+    catalog: &[GatewayOpenResponsesSkillPrompt],
+    explicit_names: &[String],
+    prompt: &str,
+) -> Vec<GatewayOpenResponsesSkillPrompt> {
+    let explicit_keys = explicit_names
+        .iter()
+        .map(|name| name.to_ascii_lowercase())
+        .collect::<HashSet<_>>();
+    let prompt_tokens = tokenize_gateway_skill_prompt(prompt);
+    let actionable = prompt_tokens
+        .iter()
+        .any(|token| AUTO_GATEWAY_SKILL_ACTION_TOKENS.contains(&token.as_str()));
+    if !actionable {
+        return Vec::new();
+    }
+
+    catalog
+        .iter()
+        .filter(|skill| !explicit_keys.contains(&skill.name.to_ascii_lowercase()))
+        .filter(|skill| score_gateway_skill_relevance(skill, &prompt_tokens) >= 2)
+        .cloned()
+        .collect::<Vec<_>>()
+}
+
+fn tokenize_gateway_skill_prompt(prompt: &str) -> Vec<String> {
+    let mut tokens = Vec::new();
+    let mut seen = HashSet::new();
+
+    for raw in prompt
+        .split(|ch: char| !ch.is_ascii_alphanumeric() && ch != '-')
+        .filter(|token| !token.trim().is_empty())
+    {
+        let normalized = normalize_gateway_skill_token(raw);
+        if normalized.is_empty()
+            || AUTO_GATEWAY_SKILL_STOPWORDS.contains(&normalized.as_str())
+            || normalized.len() < 3
+        {
+            continue;
+        }
+        if seen.insert(normalized.clone()) {
+            tokens.push(normalized);
+        }
+    }
+
+    tokens
+}
+
+fn normalize_gateway_skill_token(token: &str) -> String {
+    let lowered = token.trim().to_ascii_lowercase();
+    match lowered.as_str() {
+        "phaserjs" => "phaser".to_string(),
+        "games" | "gameplay" => "game".to_string(),
+        "playable" => "play".to_string(),
+        _ => lowered,
+    }
+}
+
+fn score_gateway_skill_relevance(
+    skill: &GatewayOpenResponsesSkillPrompt,
+    prompt_tokens: &[String],
+) -> usize {
+    let haystack = format!(
+        "{} {} {}",
+        skill.name.to_ascii_lowercase(),
+        skill.description.to_ascii_lowercase(),
+        skill.content.to_ascii_lowercase()
+    );
+
+    prompt_tokens.iter().fold(0, |score, token| {
+        if !haystack.contains(token) {
+            return score;
+        }
+        score
+            + match token.as_str() {
+                "phaser" => 3,
+                "game" => 1,
+                _ => 1,
+            }
+    })
+}
+
+fn augment_gateway_system_prompt(base: &str, skills: &[GatewayOpenResponsesSkillPrompt]) -> String {
+    let mut prompt = base.trim_end().to_string();
+    for skill in skills {
+        if !prompt.is_empty() {
+            prompt.push_str("\n\n");
+        }
+        prompt.push_str("# Skill: ");
+        prompt.push_str(&skill.name);
+        prompt.push('\n');
+        prompt.push_str(skill.content.trim());
+    }
+    prompt
 }

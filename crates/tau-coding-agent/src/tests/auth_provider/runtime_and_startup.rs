@@ -1574,6 +1574,43 @@ async fn regression_spec_2542_c03_run_local_runtime_prompt_executes_model_call()
     );
 }
 
+#[test]
+fn red_spec_3618_apply_interactive_turn_skill_selection_uses_bundled_repo_skill_for_phaser_prompt()
+{
+    let temp = tempdir().expect("tempdir");
+    let mut cli = test_cli();
+    set_workspace_tau_paths(&mut cli, temp.path());
+    cli.system_prompt = "base prompt".to_string();
+
+    std::fs::create_dir_all(&cli.skills_dir).expect("create runtime skills dir");
+    std::fs::create_dir_all(temp.path().join("skills")).expect("create bundled skills dir");
+    std::fs::write(
+        temp.path().join("skills/web-game-phaser.md"),
+        "---\nname: web-game-phaser\ndescription: Build Phaser web games.\n---\nUse Phaser 3 and validate a playable game loop.\n",
+    )
+    .expect("write bundled skill");
+
+    let mut agent = Agent::new(Arc::new(NoopClient), AgentConfig::default());
+    agent.replace_system_prompt(cli.system_prompt.clone());
+
+    let selected = crate::runtime_loop::apply_interactive_turn_skill_selection(
+        &mut agent,
+        &cli,
+        &cli.skills_dir,
+        "create a snake and tetris mashup game using phaserjs",
+    )
+    .expect("apply interactive skill selection");
+
+    assert_eq!(selected, vec!["web-game-phaser".to_string()]);
+    let system_prompt = agent
+        .messages()
+        .first()
+        .expect("system prompt message")
+        .text_content()
+        .to_string();
+    assert!(system_prompt.contains("# Skill: web-game-phaser"));
+}
+
 #[tokio::test(flavor = "current_thread")]
 async fn regression_spec_3555_c01_run_local_runtime_uses_cli_request_timeout_for_agent() {
     // Regression: #3555

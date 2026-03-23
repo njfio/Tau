@@ -555,6 +555,8 @@ fn test_state_with_client_and_auth(
             model_cached_input_cost_per_million: None,
             model_output_cost_per_million: Some(20.0),
             system_prompt: "You are Tau.".to_string(),
+            available_skills: Vec::new(),
+            explicit_skill_names: Vec::new(),
             max_turns: 4,
             tool_registrar,
             turn_timeout_ms: 0,
@@ -9562,6 +9564,69 @@ async fn functional_openresponses_endpoint_returns_non_stream_response() {
 }
 
 #[tokio::test]
+async fn red_spec_3618_openresponses_request_uses_bundled_web_game_skill_guidance() {
+    let temp = tempdir().expect("tempdir");
+    let capture = Arc::new(CaptureGatewayLlmClient::new("runtime ok"));
+    let state = Arc::new(GatewayOpenResponsesServerState::new(
+        GatewayOpenResponsesServerConfig {
+            client: capture.clone(),
+            model: "openai/gpt-5.2".to_string(),
+            model_input_cost_per_million: Some(10.0),
+            model_cached_input_cost_per_million: None,
+            model_output_cost_per_million: Some(20.0),
+            system_prompt: "You are Tau.".to_string(),
+            available_skills: vec![GatewayOpenResponsesSkillPrompt {
+                name: "web-game-phaser".to_string(),
+                description: "Build Phaser web games.".to_string(),
+                content: "Use Phaser 3 and validate a playable game loop.".to_string(),
+            }],
+            explicit_skill_names: Vec::new(),
+            max_turns: 4,
+            tool_registrar: Arc::new(NoopGatewayToolRegistrar),
+            turn_timeout_ms: 0,
+            session_lock_wait_ms: 500,
+            session_lock_stale_ms: 10_000,
+            state_dir: temp.path().join(".tau/gateway"),
+            bind: "127.0.0.1:0".to_string(),
+            auth_mode: GatewayOpenResponsesAuthMode::Token,
+            auth_token: Some("secret".to_string()),
+            auth_password: None,
+            session_ttl_seconds: 3_600,
+            rate_limit_window_seconds: 60,
+            rate_limit_max_requests: 120,
+            max_input_chars: 10_000,
+            runtime_heartbeat: RuntimeHeartbeatSchedulerConfig {
+                enabled: false,
+                state_path: temp.path().join(".tau/runtime-heartbeat/state.json"),
+                ..RuntimeHeartbeatSchedulerConfig::default()
+            },
+            external_coding_agent_bridge: ExternalCodingAgentBridgeConfig::default(),
+        },
+    ));
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+
+    let client = Client::new();
+    let response = client
+        .post(format!("http://{addr}/v1/responses"))
+        .bearer_auth("secret")
+        .json(&json!({"input":"create a snake and tetris mashup game using phaserjs"}))
+        .send()
+        .await
+        .expect("send request");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let requests = capture.captured_requests();
+    let system_prompt = requests
+        .first()
+        .and_then(|request| request.messages.first())
+        .map(|message| message.text_content().to_string())
+        .unwrap_or_default();
+    assert!(system_prompt.contains("# Skill: web-game-phaser"));
+
+    handle.abort();
+}
+
+#[tokio::test]
 async fn functional_openresponses_endpoint_streams_sse_for_stream_true() {
     let temp = tempdir().expect("tempdir");
     let state = test_state(temp.path(), 10_000, "secret");
@@ -11531,6 +11596,8 @@ async fn regression_gateway_password_session_token_expires_and_fails_closed() {
             model_cached_input_cost_per_million: None,
             model_output_cost_per_million: Some(20.0),
             system_prompt: "You are Tau.".to_string(),
+            available_skills: Vec::new(),
+            explicit_skill_names: Vec::new(),
             max_turns: 4,
             tool_registrar: Arc::new(NoopGatewayToolRegistrar),
             turn_timeout_ms: 0,
@@ -11899,6 +11966,8 @@ async fn integration_external_coding_agent_subprocess_mode_streams_worker_stdout
             model_cached_input_cost_per_million: None,
             model_output_cost_per_million: Some(20.0),
             system_prompt: "You are Tau.".to_string(),
+            available_skills: Vec::new(),
+            explicit_skill_names: Vec::new(),
             max_turns: 4,
             tool_registrar: Arc::new(NoopGatewayToolRegistrar),
             turn_timeout_ms: 0,
@@ -12031,6 +12100,8 @@ async fn regression_external_coding_agent_reap_endpoint_times_out_stale_sessions
             model_cached_input_cost_per_million: None,
             model_output_cost_per_million: Some(20.0),
             system_prompt: "You are Tau.".to_string(),
+            available_skills: Vec::new(),
+            explicit_skill_names: Vec::new(),
             max_turns: 4,
             tool_registrar: Arc::new(NoopGatewayToolRegistrar),
             turn_timeout_ms: 0,
@@ -12632,6 +12703,8 @@ async fn regression_openresponses_honors_configured_max_turns_limit() {
             model_cached_input_cost_per_million: None,
             model_output_cost_per_million: Some(20.0),
             system_prompt: "You are Tau.".to_string(),
+            available_skills: Vec::new(),
+            explicit_skill_names: Vec::new(),
             max_turns: 1,
             tool_registrar: Arc::new(FixtureGatewayToolRegistrar),
             turn_timeout_ms: 0,
@@ -14440,6 +14513,8 @@ async fn tier_weekly_ch15_chaos_matrix() {
             model_cached_input_cost_per_million: None,
             model_output_cost_per_million: Some(20.0),
             system_prompt: "You are Tau.".to_string(),
+            available_skills: Vec::new(),
+            explicit_skill_names: Vec::new(),
             max_turns: 4,
             tool_registrar: Arc::new(NoopGatewayToolRegistrar),
             turn_timeout_ms: 20,

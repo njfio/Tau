@@ -15,7 +15,7 @@ use tau_cli::{Cli, CliPromptSanitizerMode};
 use tau_runtime::start_runtime_heartbeat_scheduler;
 use tau_session::initialize_session;
 use tau_skills::{
-    augment_system_prompt_with_mode, load_catalog, resolve_selected_skills, SkillPromptMode,
+    augment_system_prompt_with_mode, load_catalogs, resolve_selected_skills, SkillPromptMode,
 };
 
 use crate::commands::execute_command_file;
@@ -55,6 +55,7 @@ use tau_onboarding::startup_local_runtime::{
     RuntimeExtensionPipelineConfig as OnboardingRuntimeExtensionPipelineConfig,
     SessionBootstrapOutcome,
 };
+use tau_onboarding::startup_prompt_composition::resolve_prompt_composition_skill_dirs;
 use tau_onboarding::startup_transport_modes::build_runtime_heartbeat_scheduler_config as build_onboarding_runtime_heartbeat_scheduler_config;
 
 pub(crate) struct LocalRuntimeConfig<'a> {
@@ -333,8 +334,15 @@ pub(crate) async fn run_local_runtime(config: LocalRuntimeConfig<'_>) -> Result<
         extension_commands: &extension_runtime_registrations.registered_commands,
     };
     let orchestrator_worker_skill_prompt = {
-        let catalog = load_catalog(skills_dir)
-            .with_context(|| format!("failed to load skills from {}", skills_dir.display()))?;
+        let skill_catalog_dirs = resolve_prompt_composition_skill_dirs(cli, skills_dir);
+        let catalog = load_catalogs(&skill_catalog_dirs).with_context(|| {
+            let roots = skill_catalog_dirs
+                .iter()
+                .map(|path| path.display().to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("failed to load skills from [{roots}]")
+        })?;
         let selected = resolve_selected_skills(&catalog, &cli.skills)?;
         let prompt = augment_system_prompt_with_mode("", &selected, SkillPromptMode::Full);
         let trimmed = prompt.trim();
@@ -345,6 +353,8 @@ pub(crate) async fn run_local_runtime(config: LocalRuntimeConfig<'_>) -> Result<
         }
     };
     let interactive_config = InteractiveRuntimeConfig {
+        cli,
+        skills_dir,
         turn_timeout_ms: interactive_defaults.turn_timeout_ms,
         request_timeout_ms: cli.request_timeout_ms.max(1),
         render_options,

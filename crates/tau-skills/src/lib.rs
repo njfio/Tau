@@ -3,6 +3,7 @@
 //! Handles skill manifest parsing, install/update/remove, lockfile sync, trust
 //! records, and signature verification workflows.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
@@ -26,6 +27,15 @@ pub struct Skill {
     pub content: String,
     pub path: PathBuf,
     pub base_dir: PathBuf,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+/// Public struct `SkillSelectionReport` used across Tau components.
+pub struct SkillSelectionReport {
+    pub explicit_names: Vec<String>,
+    pub auto_selected_names: Vec<String>,
+    pub selected: Vec<Skill>,
+    pub auto_selected: Vec<Skill>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -182,6 +192,22 @@ pub fn load_catalog(dir: &Path) -> Result<Vec<Skill>> {
     load_registry::load_catalog(dir)
 }
 
+pub fn load_catalogs(dirs: &[PathBuf]) -> Result<Vec<Skill>> {
+    let mut merged = Vec::new();
+    let mut seen = HashSet::new();
+
+    for dir in dirs {
+        for skill in load_catalog(dir)? {
+            let key = skill.name.to_ascii_lowercase();
+            if seen.insert(key) {
+                merged.push(skill);
+            }
+        }
+    }
+
+    Ok(merged)
+}
+
 pub fn install_skills(sources: &[PathBuf], destination_dir: &Path) -> Result<SkillInstallReport> {
     load_registry::install_skills(sources, destination_dir)
 }
@@ -271,6 +297,150 @@ pub fn resolve_selected_skills(catalog: &[Skill], selected: &[String]) -> Result
     load_registry::resolve_selected_skills(catalog, selected)
 }
 
+pub fn select_skills_for_prompt(
+    catalog: &[Skill],
+    explicit: &[String],
+    prompt: &str,
+) -> Result<SkillSelectionReport> {
+    let explicit_selected = resolve_selected_skills(catalog, explicit)?;
+    let explicit_names = explicit_selected
+        .iter()
+        .map(|skill| skill.name.clone())
+        .collect::<Vec<_>>();
+    let explicit_keys = explicit_selected
+        .iter()
+        .map(|skill| skill.name.to_ascii_lowercase())
+        .collect::<HashSet<_>>();
+
+    let prompt_tokens = tokenize_skill_prompt(prompt);
+    let actionable = prompt_tokens
+        .iter()
+        .any(|token| AUTO_SKILL_ACTION_TOKENS.contains(&token.as_str()));
+
+    let auto_selected = if actionable {
+        catalog
+            .iter()
+            .filter(|skill| !explicit_keys.contains(&skill.name.to_ascii_lowercase()))
+            .filter(|skill| score_skill_relevance(skill, &prompt_tokens) >= 2)
+            .cloned()
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
+
+    let auto_selected_names = auto_selected
+        .iter()
+        .map(|skill| skill.name.clone())
+        .collect::<Vec<_>>();
+
+    let mut selected = explicit_selected;
+    selected.extend(auto_selected.iter().cloned());
+
+    Ok(SkillSelectionReport {
+        explicit_names,
+        auto_selected_names,
+        selected,
+        auto_selected,
+    })
+}
+
+const AUTO_SKILL_ACTION_TOKENS: &[&str] = &[
+    "build",
+    "create",
+    "develop",
+    "edit",
+    "fix",
+    "implement",
+    "make",
+    "prototype",
+    "scaffold",
+    "ship",
+    "write",
+];
+
+const AUTO_SKILL_STOPWORDS: &[&str] = &[
+    "a",
+    "an",
+    "and",
+    "are",
+    "can",
+    "completely",
+    "entire",
+    "explain",
+    "for",
+    "how",
+    "i",
+    "in",
+    "into",
+    "it",
+    "its",
+    "of",
+    "please",
+    "process",
+    "the",
+    "to",
+    "use",
+    "using",
+    "want",
+    "with",
+    "would",
+    "you",
+];
+
+fn tokenize_skill_prompt(prompt: &str) -> Vec<String> {
+    let mut tokens = Vec::new();
+    let mut seen = HashSet::new();
+
+    for raw in prompt
+        .split(|ch: char| !ch.is_ascii_alphanumeric() && ch != '-')
+        .filter(|token| !token.trim().is_empty())
+    {
+        let normalized = normalize_skill_token(raw);
+        if normalized.is_empty()
+            || AUTO_SKILL_STOPWORDS.contains(&normalized.as_str())
+            || normalized.len() < 3
+        {
+            continue;
+        }
+        if seen.insert(normalized.clone()) {
+            tokens.push(normalized);
+        }
+    }
+
+    tokens
+}
+
+fn normalize_skill_token(token: &str) -> String {
+    let lowered = token.trim().to_ascii_lowercase();
+    match lowered.as_str() {
+        "phaserjs" => "phaser".to_string(),
+        "games" | "gameplay" => "game".to_string(),
+        "playable" => "play".to_string(),
+        _ => lowered,
+    }
+}
+
+fn score_skill_relevance(skill: &Skill, prompt_tokens: &[String]) -> usize {
+    let haystack = format!(
+        "{} {} {}",
+        skill.name.to_ascii_lowercase(),
+        skill.description.to_ascii_lowercase(),
+        skill.content.to_ascii_lowercase()
+    );
+
+    prompt_tokens.iter().fold(0, |score, token| {
+        if !haystack.contains(token) {
+            return score;
+        }
+        score
+            + match token.as_str() {
+                "phaser" => 3,
+                "game" => 1,
+                _ => 1,
+            }
+    })
+}
+
 pub fn augment_system_prompt(base: &str, skills: &[Skill]) -> String {
     load_registry::augment_system_prompt(base, skills)
 }
@@ -312,11 +482,12 @@ mod tests {
         augment_system_prompt, augment_system_prompt_with_mode, build_local_skill_lock_hints,
         build_registry_skill_lock_hints, build_remote_skill_lock_hints, default_skills_cache_dir,
         default_skills_lock_path, fetch_registry_manifest_with_cache,
-        install_remote_skills_with_cache, install_skills, load_catalog, load_skills_lockfile,
-        remote_skill_file_name_for_source, resolve_registry_skill_sources,
-        resolve_remote_skill_sources, resolve_selected_skills, sync_skills_with_lockfile,
-        write_skills_lockfile, RegistryKeyEntry, RemoteSkillSource, Skill, SkillInstallReport,
-        SkillLockSource, SkillPromptMode, SkillRegistryManifest, SkillsDownloadOptions, TrustedKey,
+        install_remote_skills_with_cache, install_skills, load_catalog, load_catalogs,
+        load_skills_lockfile, remote_skill_file_name_for_source, resolve_registry_skill_sources,
+        resolve_remote_skill_sources, resolve_selected_skills, select_skills_for_prompt,
+        sync_skills_with_lockfile, write_skills_lockfile, RegistryKeyEntry, RemoteSkillSource,
+        Skill, SkillInstallReport, SkillLockSource, SkillPromptMode, SkillRegistryManifest,
+        SkillsDownloadOptions, TrustedKey,
     };
 
     async fn install_remote_skills(
@@ -482,6 +653,82 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["beta", "alpha"]
         );
+    }
+
+    #[test]
+    fn red_spec_3618_load_catalogs_merges_runtime_and_bundled_skill_dirs() {
+        let temp = tempdir().expect("tempdir");
+        let runtime_dir = temp.path().join(".tau/skills");
+        let bundled_dir = temp.path().join("skills");
+        std::fs::create_dir_all(&runtime_dir).expect("create runtime dir");
+        std::fs::create_dir_all(&bundled_dir).expect("create bundled dir");
+        std::fs::write(runtime_dir.join("checks.md"), "run checks").expect("write runtime skill");
+        std::fs::write(
+            bundled_dir.join("web-game-phaser.md"),
+            "---\nname: web-game-phaser\ndescription: Build Phaser web games.\n---\nuse phaser",
+        )
+        .expect("write bundled skill");
+
+        let catalog = load_catalogs(&[runtime_dir, bundled_dir]).expect("merged catalog");
+        let names = catalog
+            .iter()
+            .map(|skill| skill.name.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(names, vec!["checks", "web-game-phaser"]);
+    }
+
+    #[test]
+    fn red_spec_3618_select_skills_for_prompt_preserves_explicit_and_adds_matching_web_game_skill()
+    {
+        let catalog = vec![
+            Skill {
+                name: "checks".to_string(),
+                description: "Run verification checks".to_string(),
+                content: "fmt clippy test".to_string(),
+                path: "checks.md".into(),
+                base_dir: ".".into(),
+            },
+            Skill {
+                name: "web-game-phaser".to_string(),
+                description: "Build Phaser web games and gameplay loops".to_string(),
+                content: "Use Phaser 3 and validate playable game mechanics".to_string(),
+                path: "web-game-phaser.md".into(),
+                base_dir: ".".into(),
+            },
+        ];
+
+        let report = select_skills_for_prompt(
+            &catalog,
+            &["checks".to_string()],
+            "create a snake and tetris mashup game using phaserjs",
+        )
+        .expect("select skills");
+
+        let names = report
+            .selected
+            .iter()
+            .map(|skill| skill.name.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(names, vec!["checks", "web-game-phaser"]);
+        assert_eq!(report.explicit_names, vec!["checks"]);
+        assert_eq!(report.auto_selected_names, vec!["web-game-phaser"]);
+    }
+
+    #[test]
+    fn red_spec_3618_select_skills_for_prompt_returns_empty_auto_selection_for_non_match() {
+        let catalog = vec![Skill {
+            name: "web-game-phaser".to_string(),
+            description: "Build Phaser web games and gameplay loops".to_string(),
+            content: "Use Phaser 3 and validate playable game mechanics".to_string(),
+            path: "web-game-phaser.md".into(),
+            base_dir: ".".into(),
+        }];
+
+        let report =
+            select_skills_for_prompt(&catalog, &[], "explain the release process").expect("select");
+
+        assert!(report.selected.is_empty());
+        assert!(report.auto_selected_names.is_empty());
     }
 
     #[test]
