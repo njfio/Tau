@@ -4,7 +4,8 @@
 //! to enable learning from past behavior.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::io::{BufRead, BufWriter, Write};
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
@@ -302,5 +303,110 @@ mod tests {
             });
         }
         assert_eq!(store.len(), 5);
+    }
+
+    #[test]
+    fn jsonl_round_trip() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("history.jsonl");
+
+        // Create store with records, save to disk
+        let mut store = ActionHistoryStore::new(ActionHistoryConfig::default());
+        store.record(make_record("bash", true));
+        store.record(make_record("read", false));
+        store.save(&path).unwrap();
+
+        // Load from disk and verify records match
+        let loaded = ActionHistoryStore::load(&path, 30, ActionHistoryConfig::default()).unwrap();
+        assert_eq!(loaded.len(), 2);
+
+        let all = loaded.query(&ActionFilter::default());
+        assert_eq!(all[0].tool_name.as_deref(), Some("bash"));
+        assert!(all[0].success);
+        assert_eq!(all[1].tool_name.as_deref(), Some("read"));
+        assert!(!all[1].success);
+    }
+
+    #[test]
+    fn retention_pruning_on_load() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("history.jsonl");
+
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64;
+
+        let old_ms = now_ms - (2 * 86_400 * 1_000); // 2 days ago
+
+        let mut store = ActionHistoryStore::new(ActionHistoryConfig::default());
+        // Record an old action
+        store.record(ActionRecord {
+            session_id: "old".to_string(),
+            turn: 1,
+            action_type: ActionType::ToolExecution,
+            tool_name: Some("bash".to_string()),
+            input_summary: "old".to_string(),
+            output_summary: "ok".to_string(),
+            success: true,
+            latency_ms: 50,
+            timestamp_ms: old_ms,
+        });
+        // Record a recent action
+        store.record(ActionRecord {
+            session_id: "new".to_string(),
+            turn: 1,
+            action_type: ActionType::ToolExecution,
+            tool_name: Some("read".to_string()),
+            input_summary: "new".to_string(),
+            output_summary: "ok".to_string(),
+            success: true,
+            latency_ms: 50,
+            timestamp_ms: now_ms,
+        });
+        store.save(&path).unwrap();
+
+        // Load with retention_days=1 => old record should be pruned
+        let loaded = ActionHistoryStore::load(&path, 1, ActionHistoryConfig::default()).unwrap();
+        assert_eq!(loaded.len(), 1);
+        let all = loaded.query(&ActionFilter::default());
+        assert_eq!(all[0].session_id, "new");
+    }
+
+    #[test]
+    fn load_missing_file_returns_empty_store() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("nonexistent.jsonl");
+
+        let loaded = ActionHistoryStore::load(&path, 30, ActionHistoryConfig::default()).unwrap();
+        assert!(loaded.is_empty());
+    }
+
+    #[test]
+    fn save_creates_parent_dirs() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("deep").join("nested").join("history.jsonl");
+
+        let mut store = ActionHistoryStore::new(ActionHistoryConfig::default());
+        store.record(make_record("bash", true));
+        store.save(&path).unwrap();
+
+        assert!(path.exists());
+    }
+
+    #[test]
+    fn save_uses_atomic_rename() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("history.jsonl");
+        let tmp_path = dir.path().join("history.jsonl.tmp");
+
+        let mut store = ActionHistoryStore::new(ActionHistoryConfig::default());
+        store.record(make_record("bash", true));
+        store.save(&path).unwrap();
+
+        // After save completes, .tmp should NOT exist (was renamed)
+        assert!(!tmp_path.exists());
+        // But the final file should exist
+        assert!(path.exists());
     }
 }
