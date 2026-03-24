@@ -234,3 +234,18 @@ Done iff: all ACs ✅; conformance ✅; tiers satisfied; regression green; mutat
 | Planning/roadmap | `docs/planning/` |
 
 ADRs required for: new deps, arch changes, protocol decisions, error-strategy changes. Format: Context / Decision / Consequences.
+
+---
+
+## 11) Skills — Primary Extension Mechanism
+
+**Skills** (`tau-skills`) are now the primary extension mechanism for Tau. The unified skills surface provides tool, command, and hook support through a single manifest format.
+
+**Deprecated crates (0.2.0):**
+
+| Crate | Replacement |
+|---|---|
+| `tau-extensions` | `tau-skills` with `tools` / `hooks` fields in skill manifests |
+| `tau-custom-command` | `tau-skills` with `commands` fields in skill manifests |
+
+Both deprecated crates carry `#[deprecated]` attributes on all public types. They remain functional for backward compatibility but will emit compiler warnings as a migration signal. New features and integrations should target the skills surface exclusively. See `skill_runtime.rs` for the replacement API.
