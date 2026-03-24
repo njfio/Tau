@@ -1685,6 +1685,12 @@ fn unit_render_skills_show_includes_metadata_and_content() {
         content: "line one\nline two".to_string(),
         path: PathBuf::from("checklist.md"),
         base_dir: PathBuf::from(".tau/skills"),
+        tools: None,
+        commands: None,
+        hooks: None,
+        runtime: None,
+        entrypoint: None,
+        permissions: None,
     };
     let rendered = render_skills_show(Path::new(".tau/skills"), &skill);
     assert!(rendered.contains("skills show: path=.tau/skills"));
@@ -1800,6 +1806,12 @@ fn unit_derive_skills_prune_candidates_filters_tracked_and_sorts() {
             content: "zeta".to_string(),
             path: PathBuf::from(".tau/skills/zeta.md"),
             base_dir: PathBuf::from(".tau/skills"),
+            tools: None,
+            commands: None,
+            hooks: None,
+            runtime: None,
+            entrypoint: None,
+            permissions: None,
         },
         crate::skills::Skill {
             name: "alpha".to_string(),
@@ -1807,6 +1819,12 @@ fn unit_derive_skills_prune_candidates_filters_tracked_and_sorts() {
             content: "alpha".to_string(),
             path: PathBuf::from(".tau/skills/alpha.md"),
             base_dir: PathBuf::from(".tau/skills"),
+            tools: None,
+            commands: None,
+            hooks: None,
+            runtime: None,
+            entrypoint: None,
+            permissions: None,
         },
         crate::skills::Skill {
             name: "beta".to_string(),
@@ -1814,6 +1832,12 @@ fn unit_derive_skills_prune_candidates_filters_tracked_and_sorts() {
             content: "beta".to_string(),
             path: PathBuf::from(".tau/skills/beta.md"),
             base_dir: PathBuf::from(".tau/skills"),
+            tools: None,
+            commands: None,
+            hooks: None,
+            runtime: None,
+            entrypoint: None,
+            permissions: None,
         },
     ];
     let tracked = HashSet::from([String::from("alpha.md")]);

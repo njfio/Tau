@@ -112,6 +112,12 @@ fn load_skill_file(path: &Path, prefer_directory_name: bool) -> Result<Skill> {
         content: resolve_base_dir_placeholder(&content_body, &base_dir),
         path: path.to_path_buf(),
         base_dir,
+        tools: None,
+        commands: None,
+        hooks: None,
+        runtime: None,
+        entrypoint: None,
+        permissions: None,
     })
 }
 

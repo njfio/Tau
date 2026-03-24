@@ -8,16 +8,101 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 mod commands;
 mod load_registry;
 mod package_manifest;
+pub mod skill_runtime;
 mod trust_policy;
 pub mod trust_roots;
 
 pub use commands::*;
 pub use package_manifest::*;
 pub use trust_roots::*;
+
+/// A tool definition declared by a skill manifest.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SkillToolDefinition {
+    pub name: String,
+    pub description: String,
+    pub parameters: Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub handler: Option<String>,
+}
+
+/// A command definition declared by a skill manifest.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SkillCommandDefinition {
+    pub name: String,
+    pub description: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub template: Option<String>,
+    pub arguments: Value,
+}
+
+/// Lifecycle hooks a skill can subscribe to.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SkillHook {
+    RunStart,
+    RunEnd,
+    PreToolCall,
+    PostToolCall,
+    MessageTransform,
+    PolicyOverride,
+}
+
+impl SkillHook {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            SkillHook::RunStart => "run-start",
+            SkillHook::RunEnd => "run-end",
+            SkillHook::PreToolCall => "pre-tool-call",
+            SkillHook::PostToolCall => "post-tool-call",
+            SkillHook::MessageTransform => "message-transform",
+            SkillHook::PolicyOverride => "policy-override",
+        }
+    }
+}
+
+/// Runtime backend for executing skill tools, commands, and hooks.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SkillRuntime {
+    Process,
+    Wasm,
+}
+
+impl SkillRuntime {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            SkillRuntime::Process => "process",
+            SkillRuntime::Wasm => "wasm",
+        }
+    }
+}
+
+/// Permissions a skill may request from the host.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SkillPermission {
+    ReadFiles,
+    WriteFiles,
+    RunCommands,
+    Network,
+}
+
+impl SkillPermission {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            SkillPermission::ReadFiles => "read-files",
+            SkillPermission::WriteFiles => "write-files",
+            SkillPermission::RunCommands => "run-commands",
+            SkillPermission::Network => "network",
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// Public struct `Skill` used across Tau components.
@@ -27,6 +112,12 @@ pub struct Skill {
     pub content: String,
     pub path: PathBuf,
     pub base_dir: PathBuf,
+    pub tools: Option<Vec<SkillToolDefinition>>,
+    pub commands: Option<Vec<SkillCommandDefinition>>,
+    pub hooks: Option<Vec<SkillHook>>,
+    pub runtime: Option<SkillRuntime>,
+    pub entrypoint: Option<String>,
+    pub permissions: Option<Vec<SkillPermission>>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -587,6 +678,12 @@ mod tests {
             content: "run everything".to_string(),
             path: PathBuf::from("checks/SKILL.md"),
             base_dir: PathBuf::from("checks"),
+            tools: None,
+            commands: None,
+            hooks: None,
+            runtime: None,
+            entrypoint: None,
+            permissions: None,
         }];
 
         let summary = augment_system_prompt_with_mode("base", &skills, SkillPromptMode::Summary);
@@ -605,6 +702,12 @@ mod tests {
                 content: "one".to_string(),
                 path: "first.md".into(),
                 base_dir: ".".into(),
+                tools: None,
+                commands: None,
+                hooks: None,
+                runtime: None,
+                entrypoint: None,
+                permissions: None,
             },
             Skill {
                 name: "second".to_string(),
@@ -612,6 +715,12 @@ mod tests {
                 content: "two".to_string(),
                 path: "second.md".into(),
                 base_dir: ".".into(),
+                tools: None,
+                commands: None,
+                hooks: None,
+                runtime: None,
+                entrypoint: None,
+                permissions: None,
             },
         ];
 
@@ -629,6 +738,12 @@ mod tests {
             content: "x".to_string(),
             path: "known.md".into(),
             base_dir: ".".into(),
+            tools: None,
+            commands: None,
+            hooks: None,
+            runtime: None,
+            entrypoint: None,
+            permissions: None,
         }];
 
         let error = resolve_selected_skills(&catalog, &["missing".to_string()])
@@ -687,6 +802,12 @@ mod tests {
                 content: "fmt clippy test".to_string(),
                 path: "checks.md".into(),
                 base_dir: ".".into(),
+                tools: None,
+                commands: None,
+                hooks: None,
+                runtime: None,
+                entrypoint: None,
+                permissions: None,
             },
             Skill {
                 name: "web-game-phaser".to_string(),
@@ -694,6 +815,12 @@ mod tests {
                 content: "Use Phaser 3 and validate playable game mechanics".to_string(),
                 path: "web-game-phaser.md".into(),
                 base_dir: ".".into(),
+                tools: None,
+                commands: None,
+                hooks: None,
+                runtime: None,
+                entrypoint: None,
+                permissions: None,
             },
         ];
 
@@ -722,6 +849,12 @@ mod tests {
             content: "Use Phaser 3 and validate playable game mechanics".to_string(),
             path: "web-game-phaser.md".into(),
             base_dir: ".".into(),
+            tools: None,
+            commands: None,
+            hooks: None,
+            runtime: None,
+            entrypoint: None,
+            permissions: None,
         }];
 
         let report =
