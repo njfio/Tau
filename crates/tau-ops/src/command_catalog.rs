@@ -410,6 +410,22 @@ pub const COMMAND_SPECS: &[CommandSpec] = &[
         example: "/session-compact",
     },
     CommandSpec {
+        name: "/training-status",
+        usage: "/training-status [--json]",
+        description: "Show live RL training bridge status and rollout statistics",
+        details:
+            "Reports bridge enablement, gate state, completed rollouts, failure streak, last optimizer report, and APO auto-trigger threshold progress. Add --json for machine-readable output.",
+        example: "/training-status --json",
+    },
+    CommandSpec {
+        name: "/training-trigger",
+        usage: "/training-trigger [--dry-run]",
+        description: "Manually trigger an APO optimization pass over collected rollouts",
+        details:
+            "Forces an optimizer update regardless of the update interval. Use --dry-run to preview sample collection without executing the optimization pass.",
+        example: "/training-trigger --dry-run",
+    },
+    CommandSpec {
         name: "/quit",
         usage: "/quit",
         description: "Exit interactive mode",
@@ -473,6 +489,8 @@ pub const COMMAND_NAMES: &[&str] = &[
     "/resume",
     "/session-repair",
     "/session-compact",
+    "/training-status",
+    "/training-trigger",
     "/quit",
     "/exit",
 ];
@@ -534,6 +552,26 @@ mod tests {
         assert!(rendered.contains("/session"));
         assert!(rendered.contains("/undo"));
         assert!(rendered.contains("/qa-loop"));
+    }
+
+    #[test]
+    fn unit_training_command_specs_are_registered() {
+        assert!(COMMAND_NAMES.contains(&"/training-status"));
+        assert!(COMMAND_NAMES.contains(&"/training-trigger"));
+        let training_status_spec = COMMAND_SPECS
+            .iter()
+            .find(|spec| spec.name == "/training-status");
+        assert!(
+            training_status_spec.is_some(),
+            "/training-status spec must exist in COMMAND_SPECS"
+        );
+        let training_trigger_spec = COMMAND_SPECS
+            .iter()
+            .find(|spec| spec.name == "/training-trigger");
+        assert!(
+            training_trigger_spec.is_some(),
+            "/training-trigger spec must exist in COMMAND_SPECS"
+        );
     }
 
     #[test]

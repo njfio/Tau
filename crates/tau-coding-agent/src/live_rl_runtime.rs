@@ -32,6 +32,7 @@ const LIVE_RL_APO_ENABLED_ENV: &str = "TAU_LIVE_RL_APO_ENABLED";
 const LIVE_RL_APO_MIN_SAMPLES_ENV: &str = "TAU_LIVE_RL_APO_MIN_SAMPLES";
 const LIVE_RL_APO_MAX_SAMPLES_ENV: &str = "TAU_LIVE_RL_APO_MAX_SAMPLES";
 const LIVE_RL_APO_SIGNIFICANCE_ALPHA_ENV: &str = "TAU_LIVE_RL_APO_SIGNIFICANCE_ALPHA";
+const LIVE_RL_APO_AUTO_TRIGGER_THRESHOLD_ENV: &str = "TAU_LIVE_RL_APO_AUTO_TRIGGER_THRESHOLD";
 const LIVE_ROLLOUT_PREFIX: &str = "live-rl-rollout";
 const LIVE_LEARNING_OUTCOME_LIMIT: usize = 128;
 const LIVE_CALIBRATION_BIN_COUNT: usize = 5;
@@ -89,6 +90,7 @@ pub(crate) struct LiveRlRuntimeConfig {
     pub apo_min_samples: usize,
     pub apo_max_samples: usize,
     pub apo_significance_alpha: f64,
+    pub apo_auto_trigger_threshold: usize,
 }
 
 impl LiveRlRuntimeConfig {
@@ -100,7 +102,7 @@ impl LiveRlRuntimeConfig {
             Some(raw) => parse_bool_env(raw).ok_or_else(|| {
                 anyhow!("{LIVE_RL_ENABLED_ENV} must be one of 1,true,yes,on,0,false,no,off")
             })?,
-            None => false,
+            None => true,
         };
 
         let store_path = env
@@ -154,6 +156,13 @@ impl LiveRlRuntimeConfig {
             LIVE_RL_APO_SIGNIFICANCE_ALPHA_ENV,
         )?;
 
+        let apo_auto_trigger_threshold = parse_positive_usize_env(
+            env.get(LIVE_RL_APO_AUTO_TRIGGER_THRESHOLD_ENV)
+                .map(String::as_str),
+            20,
+            LIVE_RL_APO_AUTO_TRIGGER_THRESHOLD_ENV,
+        )?;
+
         Ok(Self {
             enabled,
             store_path,
@@ -164,6 +173,7 @@ impl LiveRlRuntimeConfig {
             apo_min_samples,
             apo_max_samples,
             apo_significance_alpha,
+            apo_auto_trigger_threshold,
         })
     }
 }
@@ -641,7 +651,7 @@ impl LiveRlRuntimeBridge {
 
     async fn finalize_run(&self, run: LiveRlActiveRun, status: RolloutStatus) {
         if status == RolloutStatus::Succeeded {
-            let mut span = build_final_decision_span(&run);
+            let mut span = build_final_decision_span(&run, status);
             if let Err(error) = self.enrich_final_decision_span(&mut span).await {
                 span.attributes.insert(
                     "meta_cognition_enrichment_error".to_string(),
@@ -699,6 +709,18 @@ impl LiveRlRuntimeBridge {
                     self.register_failure(format!("live RL optimizer update failed: {error}"))
                         .await;
                 }
+            }
+
+            let completed = {
+                let state = self.inner.state.lock().await;
+                state.completed_rollouts
+            };
+            if completed == self.inner.config.apo_auto_trigger_threshold {
+                tracing::info!(
+                    completed_rollouts = completed,
+                    threshold = self.inner.config.apo_auto_trigger_threshold,
+                    "APO auto-trigger threshold reached — full APO optimization pass should be scheduled"
+                );
             }
         }
     }
@@ -2004,8 +2026,8 @@ fn select_curriculum_samples(
     )
 }
 
-fn build_final_decision_span(run: &LiveRlActiveRun) -> TrainingSpan {
-    let reward = compute_live_reward_breakdown(run);
+fn build_final_decision_span(run: &LiveRlActiveRun, status: RolloutStatus) -> TrainingSpan {
+    let reward = compute_live_reward_breakdown(run, status);
     let prompt = run.prompt.clone().unwrap_or_default();
     let task_category = infer_task_category(prompt.as_str());
     let predicted_success_probability = reward.confidence.clamp(0.0, 1.0);
@@ -2068,6 +2090,21 @@ fn build_final_decision_span(run: &LiveRlActiveRun) -> TrainingSpan {
         .insert("tool_errors".to_string(), json!(run.tool_errors));
     span.attributes
         .insert("safety_blocked".to_string(), json!(run.safety_blocked));
+    span.attributes.insert(
+        "session_completed".to_string(),
+        json!(status == RolloutStatus::Succeeded),
+    );
+    span.attributes.insert(
+        "input_chars".to_string(),
+        json!(run.prompt.as_ref().map_or(0, |p| p.chars().count())),
+    );
+    span.attributes.insert(
+        "output_chars".to_string(),
+        json!(run
+            .assistant_reply
+            .as_ref()
+            .map_or(0, |r| r.chars().count())),
+    );
     span.attributes.insert("done".to_string(), json!(true));
     span.end_time = Some(Utc::now());
     span
@@ -2075,17 +2112,21 @@ fn build_final_decision_span(run: &LiveRlActiveRun) -> TrainingSpan {
 
 #[cfg(test)]
 fn compute_live_reward(run: &LiveRlActiveRun) -> f64 {
-    compute_live_reward_breakdown(run).composite
+    compute_live_reward_breakdown(run, RolloutStatus::Succeeded).composite
 }
 
-fn compute_live_reward_breakdown(run: &LiveRlActiveRun) -> RewardInferenceOutput {
+fn compute_live_reward_breakdown(
+    run: &LiveRlActiveRun,
+    status: RolloutStatus,
+) -> RewardInferenceOutput {
     let has_assistant_reply = run
         .assistant_reply
         .as_ref()
         .is_some_and(|reply| !reply.trim().is_empty());
+    let session_completed = status == RolloutStatus::Succeeded;
     let input = RewardInferenceInput::new(
         has_assistant_reply,
-        has_assistant_reply,
+        session_completed,
         run.tool_errors,
         run.safety_blocked,
         run.turns,
@@ -2379,14 +2420,14 @@ mod tests {
     }
 
     #[test]
-    fn spec_c04_unit_live_rl_env_defaults_to_disabled() {
+    fn spec_c04_unit_live_rl_env_defaults_to_enabled() {
         let env = BTreeMap::new();
         let config = LiveRlRuntimeConfig::from_env_map(
             &env,
             std::path::Path::new(".tau/training/store.sqlite"),
         )
         .expect("config from env");
-        assert!(!config.enabled);
+        assert!(config.enabled);
         assert_eq!(config.update_interval_rollouts, 8);
         assert_eq!(config.max_rollouts_per_update, 64);
         assert_eq!(config.max_failure_streak, 3);
@@ -2394,6 +2435,7 @@ mod tests {
         assert_eq!(config.apo_min_samples, 4);
         assert_eq!(config.apo_max_samples, 32);
         assert!((config.apo_significance_alpha - 0.05).abs() < 1e-12);
+        assert_eq!(config.apo_auto_trigger_threshold, 20);
     }
 
     #[tokio::test]
@@ -2411,6 +2453,7 @@ mod tests {
                 apo_min_samples: 4,
                 apo_max_samples: 32,
                 apo_significance_alpha: 0.05,
+                apo_auto_trigger_threshold: 20,
             },
         );
 
@@ -2463,6 +2506,7 @@ mod tests {
                 apo_min_samples: 4,
                 apo_max_samples: 32,
                 apo_significance_alpha: 0.05,
+                apo_auto_trigger_threshold: 20,
             },
         );
 
@@ -2505,6 +2549,7 @@ mod tests {
                 apo_min_samples: 4,
                 apo_max_samples: 32,
                 apo_significance_alpha: 0.05,
+                apo_auto_trigger_threshold: 20,
             },
         );
 
@@ -2539,7 +2584,9 @@ mod tests {
             turns: 4,
             ..run.clone()
         };
-        assert_eq!(compute_live_reward(&no_reply), 0.0);
+        // session_completed=true (Succeeded), has_assistant_reply=false:
+        // completion=0.0 + session_completion=0.0 + efficiency=0.25 + token_efficiency=0.0
+        assert_eq!(compute_live_reward(&no_reply), 0.25);
 
         let blocked = LiveRlActiveRun {
             safety_blocked: true,
@@ -2563,6 +2610,7 @@ mod tests {
                 apo_min_samples: 4,
                 apo_max_samples: 32,
                 apo_significance_alpha: 0.05,
+                apo_auto_trigger_threshold: 20,
             },
         );
 
@@ -2625,6 +2673,7 @@ mod tests {
                 apo_min_samples: 4,
                 apo_max_samples: 32,
                 apo_significance_alpha: 0.05,
+                apo_auto_trigger_threshold: 20,
             },
             Arc::new(ScriptedClient::new(vec![
                 "{\"score\":0.12}",
@@ -2692,6 +2741,7 @@ mod tests {
                 apo_min_samples: 4,
                 apo_max_samples: 32,
                 apo_significance_alpha: 0.05,
+                apo_auto_trigger_threshold: 20,
             },
             Arc::new(ScriptedClient::new(vec![
                 "{\"score\":0.53}",
@@ -2766,6 +2816,7 @@ mod tests {
                 apo_min_samples: 2,
                 apo_max_samples: 4,
                 apo_significance_alpha: 0.05,
+                apo_auto_trigger_threshold: 20,
             },
             Arc::new(ScriptedClient::new(vec![
                 "{\"score\":0.40}",
@@ -2802,6 +2853,7 @@ mod tests {
                     apo_min_samples: 4,
                     apo_max_samples: 32,
                     apo_significance_alpha: 0.05,
+                    apo_auto_trigger_threshold: 20,
                 },
                 Arc::new(ScriptedClient::new(vec![
                     "{\"score\":0.50}",
@@ -2840,6 +2892,7 @@ mod tests {
                     apo_min_samples: 4,
                     apo_max_samples: 32,
                     apo_significance_alpha: 0.05,
+                    apo_auto_trigger_threshold: 20,
                 },
                 Arc::new(ScriptedClient::new(vec![
                     "{\"score\":0.45}",
@@ -2876,6 +2929,7 @@ mod tests {
                     apo_min_samples: 1,
                     apo_max_samples: 32,
                     apo_significance_alpha: 0.05,
+                    apo_auto_trigger_threshold: 20,
                 },
                 Arc::new(ScriptedClient::new(vec![
                     "{\"score\":0.50}",
@@ -2913,6 +2967,7 @@ mod tests {
                     apo_min_samples: 1,
                     apo_max_samples: 32,
                     apo_significance_alpha: 0.05,
+                    apo_auto_trigger_threshold: 20,
                 },
                 Arc::new(ScriptedClient::new(vec![
                     "{\"score\":0.45}",
@@ -2951,6 +3006,7 @@ mod tests {
                 apo_min_samples: 4,
                 apo_max_samples: 32,
                 apo_significance_alpha: 0.05,
+                apo_auto_trigger_threshold: 20,
             },
             Arc::new(ScriptedClient::new(vec![
                 "{\"score\":0.50}",
@@ -2999,6 +3055,7 @@ mod tests {
                 apo_min_samples: 4,
                 apo_max_samples: 32,
                 apo_significance_alpha: 0.05,
+                apo_auto_trigger_threshold: 20,
             },
         );
 
@@ -3028,6 +3085,7 @@ mod tests {
                 apo_min_samples: 4,
                 apo_max_samples: 32,
                 apo_significance_alpha: 0.05,
+                apo_auto_trigger_threshold: 20,
             },
             Arc::new(FailingClient::new("forced APO request failure")),
             "You are Tau.",
@@ -3059,6 +3117,7 @@ mod tests {
                 apo_min_samples: 4,
                 apo_max_samples: 32,
                 apo_significance_alpha: 0.02,
+                apo_auto_trigger_threshold: 20,
             },
             Arc::new(ScriptedClient::new(vec![
                 "{\"score\":0.10}",
@@ -3097,6 +3156,7 @@ mod tests {
                 apo_min_samples: 4,
                 apo_max_samples: 32,
                 apo_significance_alpha: 0.05,
+                apo_auto_trigger_threshold: 20,
             },
         );
 
@@ -3216,6 +3276,7 @@ mod tests {
                 apo_min_samples: 2,
                 apo_max_samples: 4,
                 apo_significance_alpha: 0.05,
+                apo_auto_trigger_threshold: 20,
             },
             Arc::new(ScriptedClient::new(vec![
                 "{\"score\":0.10}",
@@ -3299,6 +3360,7 @@ mod tests {
                 apo_min_samples: 4,
                 apo_max_samples: 32,
                 apo_significance_alpha: 0.05,
+                apo_auto_trigger_threshold: 20,
             },
         );
 
@@ -3363,6 +3425,7 @@ mod tests {
                 apo_min_samples: 4,
                 apo_max_samples: 32,
                 apo_significance_alpha: 0.05,
+                apo_auto_trigger_threshold: 20,
             },
         );
 
@@ -3429,6 +3492,7 @@ mod tests {
                     apo_min_samples: 4,
                     apo_max_samples: 32,
                     apo_significance_alpha: 0.05,
+                    apo_auto_trigger_threshold: 20,
                 },
             );
 
@@ -3459,7 +3523,7 @@ mod tests {
                 tool_errors: 0,
                 safety_blocked: false,
             };
-            let mut span = build_final_decision_span(&run);
+            let mut span = build_final_decision_span(&run, RolloutStatus::Succeeded);
             bridge
                 .enrich_final_decision_span(&mut span)
                 .await
@@ -3511,6 +3575,7 @@ mod tests {
                     apo_min_samples: 4,
                     apo_max_samples: 32,
                     apo_significance_alpha: 0.05,
+                    apo_auto_trigger_threshold: 20,
                 },
             );
 
@@ -3541,7 +3606,7 @@ mod tests {
                 tool_errors: 0,
                 safety_blocked: false,
             };
-            let mut span = build_final_decision_span(&run);
+            let mut span = build_final_decision_span(&run, RolloutStatus::Succeeded);
             bridge
                 .enrich_final_decision_span(&mut span)
                 .await
@@ -3610,6 +3675,7 @@ mod tests {
                 apo_min_samples: 4,
                 apo_max_samples: 32,
                 apo_significance_alpha: 0.05,
+                apo_auto_trigger_threshold: 20,
             },
         );
 
@@ -3726,6 +3792,7 @@ mod tests {
                 apo_min_samples: 2,
                 apo_max_samples: 2,
                 apo_significance_alpha: 0.05,
+                apo_auto_trigger_threshold: 20,
             },
             Arc::new(ScriptedClient::new(vec![
                 "{\"score\":0.20}",
@@ -3777,6 +3844,7 @@ mod tests {
                 apo_min_samples: 4,
                 apo_max_samples: 32,
                 apo_significance_alpha: 0.05,
+                apo_auto_trigger_threshold: 20,
             },
         );
 
@@ -3835,5 +3903,113 @@ mod tests {
                 .and_then(serde_json::Value::as_str)
                 .is_some_and(|code| code == "live_learning_regressing_category")
         }));
+    }
+
+    #[test]
+    fn unit_reward_inference_input_construction_from_span_data() {
+        use tau_algorithm::{RewardInference, RewardInferenceInput, TraceBasedRewardInference};
+
+        let input = RewardInferenceInput::new(
+            true,  // has_assistant_reply
+            true,  // session_completed
+            1,     // tool_errors
+            false, // safety_blocked
+            3,     // turns
+            100,   // input_chars
+            200,   // output_chars
+        );
+        let output = TraceBasedRewardInference.infer(&input);
+        assert!(output.composite.is_finite());
+        assert!(output.composite >= -1.0 && output.composite <= 1.0);
+        assert!(output.reliability < 0.0, "tool errors should reduce reliability");
+        assert_eq!(output.completion, 0.5, "assistant reply present");
+
+        // Verify construction with session not completed
+        let input_not_completed = RewardInferenceInput::new(
+            true, false, 0, false, 2, 50, 60,
+        );
+        let output_not_completed = TraceBasedRewardInference.infer(&input_not_completed);
+        assert!(output_not_completed.session_completion < 0.0);
+
+        // Verify build_final_decision_span populates all expected fields
+        let run = LiveRlActiveRun {
+            rollout_id: "test-rollout-001".to_string(),
+            attempt_id: "test-rollout-001:attempt-live".to_string(),
+            prompt: Some("implement feature X".to_string()),
+            assistant_reply: Some("Done implementing feature X.".to_string()),
+            turns: 2,
+            tool_errors: 0,
+            safety_blocked: false,
+        };
+        let span = build_final_decision_span(&run, RolloutStatus::Succeeded);
+        assert_eq!(span.attributes["session_completed"], json!(true));
+        assert!(span.attributes["input_chars"].as_u64().unwrap() > 0);
+        assert!(span.attributes["output_chars"].as_u64().unwrap() > 0);
+        assert_eq!(span.attributes["reward"], json!(1.0));
+    }
+
+    #[tokio::test]
+    async fn unit_apo_trigger_threshold_fires_at_n_not_before() {
+        let store: Arc<dyn TrainingStore + Send + Sync> = Arc::new(InMemoryTrainingStore::new());
+        let threshold = 3_usize;
+        let bridge = LiveRlRuntimeBridge::for_tests(
+            store.clone(),
+            LiveRlRuntimeConfig {
+                enabled: true,
+                store_path: ".tau/training/store.sqlite".into(),
+                update_interval_rollouts: 100, // high so optimizer doesn't run
+                max_rollouts_per_update: 32,
+                max_failure_streak: 10,
+                apo_enabled: false,
+                apo_min_samples: 4,
+                apo_max_samples: 32,
+                apo_significance_alpha: 0.05,
+                apo_auto_trigger_threshold: threshold,
+            },
+        );
+
+        // Complete rollouts up to threshold
+        for i in 0..threshold {
+            bridge.handle_event(AgentEvent::AgentStart).await;
+            bridge
+                .handle_event(AgentEvent::MessageAdded {
+                    message: Message::user(format!("request {i}")),
+                })
+                .await;
+            bridge
+                .handle_event(AgentEvent::MessageAdded {
+                    message: Message::assistant_text(format!("response {i}")),
+                })
+                .await;
+            bridge
+                .handle_event(AgentEvent::AgentEnd { new_messages: 2 })
+                .await;
+
+            let snapshot = bridge.snapshot().await;
+            assert_eq!(snapshot.completed_rollouts, i + 1);
+        }
+
+        // After threshold rollouts, verify completed count matches threshold
+        let snapshot = bridge.snapshot().await;
+        assert_eq!(snapshot.completed_rollouts, threshold);
+
+        // One more rollout — past threshold (trigger should have fired once at ==threshold)
+        bridge.handle_event(AgentEvent::AgentStart).await;
+        bridge
+            .handle_event(AgentEvent::MessageAdded {
+                message: Message::user("extra request"),
+            })
+            .await;
+        bridge
+            .handle_event(AgentEvent::MessageAdded {
+                message: Message::assistant_text("extra response"),
+            })
+            .await;
+        bridge
+            .handle_event(AgentEvent::AgentEnd { new_messages: 2 })
+            .await;
+
+        let snapshot = bridge.snapshot().await;
+        assert_eq!(snapshot.completed_rollouts, threshold + 1);
     }
 }
