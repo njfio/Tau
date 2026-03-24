@@ -183,6 +183,7 @@ pub struct AgentConfig {
     // Phase 7: Learning — action history
     pub action_history_enabled: bool,
     pub action_history_max_records: usize,
+    pub action_history_retention_days: u32,
 
     // Phase 8: Self-repair — failure detection
     pub failure_detection_enabled: bool,
@@ -261,8 +262,9 @@ impl Default for AgentConfig {
             context_summary_max_chars: 4000,
 
             // Phase 7: Learning
-            action_history_enabled: false,
-            action_history_max_records: 500,
+            action_history_enabled: true,
+            action_history_max_records: 1000,
+            action_history_retention_days: 30,
 
             // Phase 8: Self-repair
             failure_detection_enabled: true,
