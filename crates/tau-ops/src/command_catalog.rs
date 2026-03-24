@@ -247,6 +247,30 @@ pub const COMMAND_SPECS: &[CommandSpec] = &[
         example: "/skills-verify .tau/skills/skills.lock.json .tau/skills/trust-roots.json --json",
     },
     CommandSpec {
+        name: "/ops-verify",
+        usage: "/ops-verify [--json]",
+        description: "Run full ops verification gate checks",
+        details:
+            "Executes all configured verification gates and reports pass/fail status with optional JSON output.",
+        example: "/ops-verify --json",
+    },
+    CommandSpec {
+        name: "/ops-validate",
+        usage: "/ops-validate [--json]",
+        description: "Validate ops configuration and environment prerequisites",
+        details:
+            "Checks configuration files, environment variables, and dependency availability without executing gates.",
+        example: "/ops-validate --json",
+    },
+    CommandSpec {
+        name: "/ops-dev",
+        usage: "/ops-dev [--watch] [--filter <gate>]",
+        description: "Run verification gates in development mode with optional watch",
+        details:
+            "Supports iterative development with file-watch re-execution and gate filtering for focused feedback loops.",
+        example: "/ops-dev --watch --filter lint",
+    },
+    CommandSpec {
         name: "/branches",
         usage: "/branches",
         description: "List branch tips in the current session graph",
@@ -428,6 +452,9 @@ pub const COMMAND_NAMES: &[&str] = &[
     "/skills-lock-write",
     "/skills-sync",
     "/skills-verify",
+    "/ops-verify",
+    "/ops-validate",
+    "/ops-dev",
     "/branches",
     "/macro",
     "/auth",

@@ -11,6 +11,7 @@ mod macro_commands;
 mod project_index;
 mod qa_loop_commands;
 mod transport_health;
+pub mod verification_gates;
 
 pub use canvas_commands::*;
 pub use channel_store_admin::*;
