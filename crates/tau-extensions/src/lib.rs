@@ -2,6 +2,13 @@
 //!
 //! Provides extension discovery/validation and runtime-hook dispatch used to
 //! customize runtime behavior and command surfaces for process and wasm modules.
+//!
+//! # Deprecation Notice
+//!
+//! **This crate is deprecated as of 0.2.0.** The unified skills surface
+//! (`tau-skills`) with tool, command, and hook support is now the primary
+//! extension mechanism. Migrate to skill manifests with `tools` / `hooks`
+//! fields. See `skill_runtime.rs` for the replacement API.
 
 use std::{
     collections::HashSet,
@@ -105,6 +112,7 @@ pub fn execute_extension_validate_command(cli: &Cli) -> Result<()> {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[deprecated(since = "0.2.0", note = "Use tau-skills with tools/hooks fields instead. See skill_runtime.rs")]
 /// Public struct `ExtensionManifestSummary` used across Tau components.
 pub struct ExtensionManifestSummary {
     pub manifest_path: PathBuf,
@@ -118,6 +126,7 @@ pub struct ExtensionManifestSummary {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[deprecated(since = "0.2.0", note = "Use tau-skills with tools/hooks fields instead. See skill_runtime.rs")]
 /// Public struct `ExtensionListEntry` used across Tau components.
 pub struct ExtensionListEntry {
     pub manifest_path: PathBuf,
@@ -127,6 +136,7 @@ pub struct ExtensionListEntry {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[deprecated(since = "0.2.0", note = "Use tau-skills with tools/hooks fields instead. See skill_runtime.rs")]
 /// Public struct `ExtensionListInvalidEntry` used across Tau components.
 pub struct ExtensionListInvalidEntry {
     pub manifest_path: PathBuf,
@@ -134,6 +144,7 @@ pub struct ExtensionListInvalidEntry {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[deprecated(since = "0.2.0", note = "Use tau-skills with tools/hooks fields instead. See skill_runtime.rs")]
 /// Public struct `ExtensionListReport` used across Tau components.
 pub struct ExtensionListReport {
     pub list_root: PathBuf,
@@ -142,6 +153,7 @@ pub struct ExtensionListReport {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[deprecated(since = "0.2.0", note = "Use tau-skills with tools/hooks fields instead. See skill_runtime.rs")]
 /// Public struct `ExtensionExecSummary` used across Tau components.
 pub struct ExtensionExecSummary {
     pub manifest_path: PathBuf,
@@ -158,6 +170,7 @@ pub struct ExtensionExecSummary {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[deprecated(since = "0.2.0", note = "Use tau-skills with tools/hooks fields instead. See skill_runtime.rs")]
 /// Public struct `ExtensionRuntimeHookDispatchSummary` used across Tau components.
 pub struct ExtensionRuntimeHookDispatchSummary {
     pub root: PathBuf,
@@ -175,6 +188,7 @@ pub struct ExtensionRuntimeHookDispatchSummary {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[deprecated(since = "0.2.0", note = "Use tau-skills with tools/hooks fields instead. See skill_runtime.rs")]
 /// Public struct `ExtensionMessageTransformResult` used across Tau components.
 pub struct ExtensionMessageTransformResult {
     pub root: PathBuf,
@@ -191,6 +205,7 @@ pub struct ExtensionMessageTransformResult {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[deprecated(since = "0.2.0", note = "Use tau-skills with tools/hooks fields instead. See skill_runtime.rs")]
 /// Public struct `ExtensionPolicyOverrideResult` used across Tau components.
 pub struct ExtensionPolicyOverrideResult {
     pub root: PathBuf,
@@ -207,6 +222,7 @@ pub struct ExtensionPolicyOverrideResult {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[deprecated(since = "0.2.0", note = "Use tau-skills with tools/hooks fields instead. See skill_runtime.rs")]
 /// Enumerates supported `ExtensionRegisteredCommandAction` values.
 pub enum ExtensionRegisteredCommandAction {
     Continue,
@@ -214,6 +230,7 @@ pub enum ExtensionRegisteredCommandAction {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[deprecated(since = "0.2.0", note = "Use tau-skills with tools/hooks fields instead. See skill_runtime.rs")]
 /// Public struct `ExtensionRegisteredCommandResult` used across Tau components.
 pub struct ExtensionRegisteredCommandResult {
     pub output: Option<String>,
@@ -221,6 +238,7 @@ pub struct ExtensionRegisteredCommandResult {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[deprecated(since = "0.2.0", note = "Use tau-skills with tools/hooks fields instead. See skill_runtime.rs")]
 /// Public struct `ExtensionRegisteredToolResult` used across Tau components.
 pub struct ExtensionRegisteredToolResult {
     pub content: Value,
@@ -228,6 +246,7 @@ pub struct ExtensionRegisteredToolResult {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[deprecated(since = "0.2.0", note = "Use tau-skills with tools/hooks fields instead. See skill_runtime.rs")]
 /// Public struct `ExtensionRegisteredTool` used across Tau components.
 pub struct ExtensionRegisteredTool {
     pub name: String,
@@ -244,6 +263,7 @@ pub struct ExtensionRegisteredTool {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[deprecated(since = "0.2.0", note = "Use tau-skills with tools/hooks fields instead. See skill_runtime.rs")]
 /// Public struct `ExtensionRegisteredCommand` used across Tau components.
 pub struct ExtensionRegisteredCommand {
     pub name: String,
@@ -260,6 +280,7 @@ pub struct ExtensionRegisteredCommand {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[deprecated(since = "0.2.0", note = "Use tau-skills with tools/hooks fields instead. See skill_runtime.rs")]
 /// Public struct `ExtensionRuntimeRegistrationSummary` used across Tau components.
 pub struct ExtensionRuntimeRegistrationSummary {
     pub root: PathBuf,
@@ -286,6 +307,7 @@ struct PolicyOverrideResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[deprecated(since = "0.2.0", note = "Use tau-skills with tools/hooks fields instead. See skill_runtime.rs")]
 /// Public struct `ExtensionManifest` used across Tau components.
 pub struct ExtensionManifest {
     schema_version: u32,

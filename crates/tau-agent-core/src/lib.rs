@@ -44,7 +44,9 @@ pub use circuit_breaker::{CircuitBreaker, CircuitState};
 pub use context_ranking::{
     rank_messages_by_importance, score_message_importance, ImportanceReason, MessageImportance,
 };
-pub use cortex_runtime::{Cortex, CortexConfig, CortexRefreshReport};
+pub use cortex_runtime::{
+    format_learning_bulletin, Cortex, CortexConfig, CortexRefreshReport, LearningInsight,
+};
 pub use failure_detector::{FailureDetector, FailureDetectorConfig, FailureSignal};
 pub use metrics::{AgentMetrics, AgentMetricsSnapshot, ToolHealthStats};
 pub use process_types::{
@@ -1704,6 +1706,7 @@ impl Agent {
             SafetyStage::InboundMessage => self.safety_policy.apply_to_inbound_messages,
             SafetyStage::ToolOutput => self.safety_policy.apply_to_tool_outputs,
             SafetyStage::OutboundHttpPayload => false,
+            SafetyStage::SelfModification => false,
         }
     }
 
@@ -1715,6 +1718,7 @@ impl Agent {
             SafetyStage::InboundMessage => false,
             SafetyStage::ToolOutput => self.safety_policy.apply_to_tool_outputs,
             SafetyStage::OutboundHttpPayload => self.safety_policy.apply_to_outbound_http_payloads,
+            SafetyStage::SelfModification => false,
         }
     }
 

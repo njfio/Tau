@@ -12,6 +12,57 @@ use arc_swap::ArcSwap;
 use tau_ai::{ChatRequest, LlmClient, Message, PromptCacheConfig};
 use tau_memory::runtime::{FileMemoryStore, RuntimeMemoryRecord};
 
+/// Pre-computed learning insights passed into the Cortex bulletin.
+///
+/// Uses the same decoupled approach as `recovery.rs` — callers query action
+/// history once and pass the distilled data in, avoiding a direct dependency
+/// on `tau-memory::ActionHistoryStore` from this module.
+#[derive(Debug, Clone, Default)]
+pub struct LearningInsight {
+    /// Top failing tools: `(tool_name, common_error, occurrence_count)`.
+    pub failing_tools: Vec<(String, String, usize)>,
+    /// Tool success rates: `(tool_name, rate)` where rate is in `[0.0, 1.0]`.
+    pub tool_success_rates: Vec<(String, f64)>,
+}
+
+/// Format a human-readable bulletin section from learning insights.
+///
+/// Returns an empty string when there are no actionable insights to report.
+pub fn format_learning_bulletin(insights: &LearningInsight) -> String {
+    let has_failing = !insights.failing_tools.is_empty();
+    let declining: Vec<_> = insights
+        .tool_success_rates
+        .iter()
+        .filter(|(_, rate)| *rate < DECLINING_SUCCESS_RATE_THRESHOLD)
+        .collect();
+    let has_declining = !declining.is_empty();
+
+    if !has_failing && !has_declining {
+        return String::new();
+    }
+
+    let mut lines = vec![LEARNING_INSIGHTS_HEADER.to_string()];
+
+    if has_failing {
+        lines.push("### Top Failing Tools".to_string());
+        for (name, error, count) in insights.failing_tools.iter().take(3) {
+            lines.push(format!("- **{name}**: {error} ({count} occurrences)"));
+        }
+    }
+
+    if has_declining {
+        lines.push("### Declining Success Rates".to_string());
+        for (name, rate) in &declining {
+            lines.push(format!("- **{name}**: {:.0}% success rate", rate * 100.0));
+        }
+    }
+
+    lines.join("\n")
+}
+
+const LEARNING_INSIGHTS_HEADER: &str = "## Learning Insights";
+const DECLINING_SUCCESS_RATE_THRESHOLD: f64 = 0.5;
+
 const DEFAULT_CORTEX_MAX_SESSIONS: usize = 64;
 const DEFAULT_CORTEX_MAX_RECORDS_PER_SESSION: usize = 8;
 const DEFAULT_CORTEX_MAX_RECORDS_TOTAL: usize = 24;
@@ -112,6 +163,20 @@ impl Cortex {
     }
 
     pub async fn refresh_once(&self, client: &dyn LlmClient, model: &str) -> CortexRefreshReport {
+        self.refresh_once_with_insights(client, model, None).await
+    }
+
+    /// Refresh the bulletin, optionally appending learning insights.
+    ///
+    /// When `insights` is `Some`, the formatted learning section is appended
+    /// to the bulletin text so that subsequent sessions benefit from
+    /// cross-session failure-pattern awareness.
+    pub async fn refresh_once_with_insights(
+        &self,
+        client: &dyn LlmClient,
+        model: &str,
+        insights: Option<&LearningInsight>,
+    ) -> CortexRefreshReport {
         let mut report = CortexRefreshReport::default();
         let (records, sessions_scanned, diagnostics) = self.collect_cross_session_records();
         report.sessions_scanned = sessions_scanned;
@@ -119,8 +184,17 @@ impl Cortex {
         report.diagnostics = diagnostics;
 
         if records.is_empty() {
-            report.reason_code = "cortex_bulletin_no_records".to_string();
-            self.bulletin.store(Arc::new(String::new()));
+            // Even with no cross-session records, we may still have learning insights.
+            let learning_section = insights.map(format_learning_bulletin).unwrap_or_default();
+            if learning_section.is_empty() {
+                report.reason_code = "cortex_bulletin_no_records".to_string();
+                self.bulletin.store(Arc::new(String::new()));
+                return report;
+            }
+            let bulletin = truncate_chars(&learning_section, self.config.max_bulletin_chars);
+            report.bulletin_chars = bulletin.chars().count();
+            report.reason_code = "cortex_bulletin_learning_only".to_string();
+            self.bulletin.store(Arc::new(bulletin));
             return report;
         }
 
@@ -160,6 +234,12 @@ impl Cortex {
                 render_fallback_bulletin(records.as_slice())
             }
         };
+
+        // Append learning insights when available.
+        let learning_section = insights.map(format_learning_bulletin).unwrap_or_default();
+        if !learning_section.is_empty() {
+            bulletin = format!("{}\n\n{}", bulletin.trim_end(), learning_section);
+        }
 
         bulletin = truncate_chars(bulletin.as_str(), self.config.max_bulletin_chars);
         report.bulletin_chars = bulletin.chars().count();
@@ -338,7 +418,10 @@ fn truncate_chars(raw: &str, max_chars: usize) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{collapse_whitespace, truncate_chars};
+    use super::{
+        collapse_whitespace, format_learning_bulletin, truncate_chars, LearningInsight,
+        DECLINING_SUCCESS_RATE_THRESHOLD, LEARNING_INSIGHTS_HEADER,
+    };
 
     #[test]
     fn unit_collapse_whitespace_normalizes_spacing() {
@@ -353,5 +436,93 @@ mod tests {
         assert_eq!(truncate_chars("abcdef", 4), "abcd");
         assert_eq!(truncate_chars("abc", 10), "abc");
         assert_eq!(truncate_chars("abc", 0), "");
+    }
+
+    #[test]
+    fn unit_format_learning_bulletin_empty_when_no_insights() {
+        let insights = LearningInsight::default();
+        assert_eq!(format_learning_bulletin(&insights), "");
+    }
+
+    #[test]
+    fn unit_format_learning_bulletin_shows_failing_tools() {
+        let insights = LearningInsight {
+            failing_tools: vec![
+                ("bash".to_string(), "timeout exceeded".to_string(), 12),
+                ("write_file".to_string(), "permission denied".to_string(), 7),
+                ("http_get".to_string(), "connection refused".to_string(), 3),
+            ],
+            tool_success_rates: Vec::new(),
+        };
+        let output = format_learning_bulletin(&insights);
+        assert!(output.starts_with(LEARNING_INSIGHTS_HEADER));
+        assert!(output.contains("### Top Failing Tools"));
+        assert!(output.contains("**bash**: timeout exceeded (12 occurrences)"));
+        assert!(output.contains("**write_file**: permission denied (7 occurrences)"));
+        assert!(output.contains("**http_get**: connection refused (3 occurrences)"));
+        // Should NOT contain declining section when no rates are below threshold
+        assert!(!output.contains("### Declining Success Rates"));
+    }
+
+    #[test]
+    fn unit_format_learning_bulletin_shows_declining_rates() {
+        let insights = LearningInsight {
+            failing_tools: Vec::new(),
+            tool_success_rates: vec![
+                ("bash".to_string(), 0.25),
+                ("read_file".to_string(), 0.90),
+                ("write_file".to_string(), 0.10),
+            ],
+        };
+        let output = format_learning_bulletin(&insights);
+        assert!(output.starts_with(LEARNING_INSIGHTS_HEADER));
+        assert!(output.contains("### Declining Success Rates"));
+        assert!(output.contains("**bash**: 25% success rate"));
+        assert!(output.contains("**write_file**: 10% success rate"));
+        // read_file at 0.90 is above threshold — should not appear
+        assert!(!output.contains("read_file"));
+    }
+
+    #[test]
+    fn unit_format_learning_bulletin_shows_both_sections() {
+        let insights = LearningInsight {
+            failing_tools: vec![("bash".to_string(), "timeout".to_string(), 5)],
+            tool_success_rates: vec![("bash".to_string(), 0.20)],
+        };
+        let output = format_learning_bulletin(&insights);
+        assert!(output.contains("### Top Failing Tools"));
+        assert!(output.contains("### Declining Success Rates"));
+    }
+
+    #[test]
+    fn unit_format_learning_bulletin_limits_failing_tools_to_three() {
+        let insights = LearningInsight {
+            failing_tools: vec![
+                ("tool_a".to_string(), "err_a".to_string(), 10),
+                ("tool_b".to_string(), "err_b".to_string(), 8),
+                ("tool_c".to_string(), "err_c".to_string(), 6),
+                ("tool_d".to_string(), "err_d".to_string(), 4),
+            ],
+            tool_success_rates: Vec::new(),
+        };
+        let output = format_learning_bulletin(&insights);
+        assert!(output.contains("tool_a"));
+        assert!(output.contains("tool_b"));
+        assert!(output.contains("tool_c"));
+        assert!(!output.contains("tool_d"));
+    }
+
+    #[test]
+    fn unit_format_learning_bulletin_threshold_boundary() {
+        // Exactly at threshold — should NOT be included (filter is strictly less than)
+        let insights = LearningInsight {
+            failing_tools: Vec::new(),
+            tool_success_rates: vec![(
+                "exact_threshold".to_string(),
+                DECLINING_SUCCESS_RATE_THRESHOLD,
+            )],
+        };
+        let output = format_learning_bulletin(&insights);
+        assert_eq!(output, "");
     }
 }
