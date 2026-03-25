@@ -4,7 +4,8 @@
 //! to enable learning from past behavior.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::io::{BufRead, BufWriter, Write};
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
@@ -108,6 +109,76 @@ impl ActionHistoryStore {
             config,
             records: Vec::new(),
         }
+    }
+
+    /// Load an action history store from a JSONL file.
+    ///
+    /// Reads each line as a JSON-serialized `ActionRecord`, filtering out
+    /// records older than `retention_days`. If the file does not exist,
+    /// returns an empty store.
+    pub fn load(path: &Path, retention_days: u32, config: ActionHistoryConfig) -> std::io::Result<Self> {
+        if !path.exists() {
+            return Ok(Self {
+                config,
+                records: Vec::new(),
+            });
+        }
+
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+        let cutoff_ms = now_ms.saturating_sub(retention_days as u64 * 86_400 * 1_000);
+
+        let file = std::fs::File::open(path)?;
+        let reader = std::io::BufReader::new(file);
+        let mut records = Vec::new();
+
+        for line in reader.lines() {
+            let line = line?;
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            match serde_json::from_str::<ActionRecord>(trimmed) {
+                Ok(record) => {
+                    if record.timestamp_ms >= cutoff_ms {
+                        records.push(record);
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("Skipping malformed action history line: {}", e);
+                }
+            }
+        }
+
+        Ok(Self { config, records })
+    }
+
+    /// Save all records to a JSONL file using atomic rename.
+    ///
+    /// Writes to a `.tmp` file first, then renames to the final path.
+    /// Creates parent directories if they don't exist.
+    pub fn save(&self, path: &Path) -> std::io::Result<()> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+
+        let tmp_path = path.with_extension("jsonl.tmp");
+        {
+            let file = std::fs::File::create(&tmp_path)?;
+            let mut writer = BufWriter::new(file);
+            for record in &self.records {
+                let line = serde_json::to_string(record).map_err(|e| {
+                    std::io::Error::new(std::io::ErrorKind::InvalidData, e)
+                })?;
+                writeln!(writer, "{}", line)?;
+            }
+            writer.flush()?;
+        }
+
+        std::fs::rename(&tmp_path, path)?;
+        Ok(())
     }
 
     /// Append an action record.
@@ -222,6 +293,13 @@ impl ActionHistoryStore {
 mod tests {
     use super::*;
 
+    fn now_ms() -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64
+    }
+
     fn make_record(tool: &str, success: bool) -> ActionRecord {
         ActionRecord {
             session_id: "s1".to_string(),
@@ -236,7 +314,7 @@ mod tests {
             },
             success,
             latency_ms: 100,
-            timestamp_ms: 1000,
+            timestamp_ms: now_ms(),
         }
     }
 
@@ -302,5 +380,110 @@ mod tests {
             });
         }
         assert_eq!(store.len(), 5);
+    }
+
+    #[test]
+    fn jsonl_round_trip() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("history.jsonl");
+
+        // Create store with records, save to disk
+        let mut store = ActionHistoryStore::new(ActionHistoryConfig::default());
+        store.record(make_record("bash", true));
+        store.record(make_record("read", false));
+        store.save(&path).unwrap();
+
+        // Load from disk and verify records match
+        let loaded = ActionHistoryStore::load(&path, 30, ActionHistoryConfig::default()).unwrap();
+        assert_eq!(loaded.len(), 2);
+
+        let all = loaded.query(&ActionFilter::default());
+        assert_eq!(all[0].tool_name.as_deref(), Some("bash"));
+        assert!(all[0].success);
+        assert_eq!(all[1].tool_name.as_deref(), Some("read"));
+        assert!(!all[1].success);
+    }
+
+    #[test]
+    fn retention_pruning_on_load() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("history.jsonl");
+
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64;
+
+        let old_ms = now_ms - (2 * 86_400 * 1_000); // 2 days ago
+
+        let mut store = ActionHistoryStore::new(ActionHistoryConfig::default());
+        // Record an old action
+        store.record(ActionRecord {
+            session_id: "old".to_string(),
+            turn: 1,
+            action_type: ActionType::ToolExecution,
+            tool_name: Some("bash".to_string()),
+            input_summary: "old".to_string(),
+            output_summary: "ok".to_string(),
+            success: true,
+            latency_ms: 50,
+            timestamp_ms: old_ms,
+        });
+        // Record a recent action
+        store.record(ActionRecord {
+            session_id: "new".to_string(),
+            turn: 1,
+            action_type: ActionType::ToolExecution,
+            tool_name: Some("read".to_string()),
+            input_summary: "new".to_string(),
+            output_summary: "ok".to_string(),
+            success: true,
+            latency_ms: 50,
+            timestamp_ms: now_ms,
+        });
+        store.save(&path).unwrap();
+
+        // Load with retention_days=1 => old record should be pruned
+        let loaded = ActionHistoryStore::load(&path, 1, ActionHistoryConfig::default()).unwrap();
+        assert_eq!(loaded.len(), 1);
+        let all = loaded.query(&ActionFilter::default());
+        assert_eq!(all[0].session_id, "new");
+    }
+
+    #[test]
+    fn load_missing_file_returns_empty_store() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("nonexistent.jsonl");
+
+        let loaded = ActionHistoryStore::load(&path, 30, ActionHistoryConfig::default()).unwrap();
+        assert!(loaded.is_empty());
+    }
+
+    #[test]
+    fn save_creates_parent_dirs() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("deep").join("nested").join("history.jsonl");
+
+        let mut store = ActionHistoryStore::new(ActionHistoryConfig::default());
+        store.record(make_record("bash", true));
+        store.save(&path).unwrap();
+
+        assert!(path.exists());
+    }
+
+    #[test]
+    fn save_uses_atomic_rename() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("history.jsonl");
+        let tmp_path = dir.path().join("history.jsonl.tmp");
+
+        let mut store = ActionHistoryStore::new(ActionHistoryConfig::default());
+        store.record(make_record("bash", true));
+        store.save(&path).unwrap();
+
+        // After save completes, .tmp should NOT exist (was renamed)
+        assert!(!tmp_path.exists());
+        // But the final file should exist
+        assert!(path.exists());
     }
 }
