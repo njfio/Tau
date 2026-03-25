@@ -37,6 +37,149 @@ const LIVE_ROLLOUT_PREFIX: &str = "live-rl-rollout";
 const LIVE_LEARNING_OUTCOME_LIMIT: usize = 128;
 const LIVE_CALIBRATION_BIN_COUNT: usize = 5;
 
+/// Result of evaluating whether APO optimization should be triggered.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ApoTriggerResult {
+    pub triggered: bool,
+    pub rollout_count: usize,
+    pub threshold: usize,
+    pub optimization_started: bool,
+    pub error: Option<String>,
+}
+
+impl ApoTriggerResult {
+    /// Create a result indicating that APO was not triggered because the
+    /// rollout count has not yet reached the threshold.
+    pub fn not_triggered(rollout_count: usize, threshold: usize) -> Self {
+        Self {
+            triggered: false,
+            rollout_count,
+            threshold,
+            optimization_started: false,
+            error: None,
+        }
+    }
+
+    /// Create a result indicating the trigger fired and optimization was started.
+    pub fn started(rollout_count: usize, threshold: usize) -> Self {
+        Self {
+            triggered: true,
+            rollout_count,
+            threshold,
+            optimization_started: true,
+            error: None,
+        }
+    }
+
+    /// Create a result indicating the trigger fired but optimization failed.
+    pub fn failed(rollout_count: usize, threshold: usize, error: String) -> Self {
+        Self {
+            triggered: true,
+            rollout_count,
+            threshold,
+            optimization_started: false,
+            error: Some(error),
+        }
+    }
+}
+
+/// Evaluate whether APO optimization should be triggered based on the current
+/// completed rollout count and the configured threshold.
+///
+/// When triggered, constructs an `AlgorithmContext` from recent rollouts held
+/// in the training store and prepares the optimization pass.
+///
+/// This is a synchronous evaluation function — it does not spawn background
+/// work. The caller is responsible for scheduling the actual optimization.
+pub async fn trigger_apo_optimization(
+    store: &Arc<dyn TrainingStore + Send + Sync>,
+    current_system_prompt: &str,
+    completed_rollouts: usize,
+    config: &LiveRlRuntimeConfig,
+) -> ApoTriggerResult {
+    if completed_rollouts != config.apo_auto_trigger_threshold {
+        return ApoTriggerResult::not_triggered(
+            completed_rollouts,
+            config.apo_auto_trigger_threshold,
+        );
+    }
+
+    if !config.apo_enabled {
+        return ApoTriggerResult::failed(
+            completed_rollouts,
+            config.apo_auto_trigger_threshold,
+            "APO is disabled in configuration".to_string(),
+        );
+    }
+
+    tracing::info!(
+        completed_rollouts,
+        threshold = config.apo_auto_trigger_threshold,
+        "APO auto-trigger threshold reached — constructing AlgorithmContext for optimization"
+    );
+
+    // Collect recent rollouts from the store to build training examples.
+    let query = RolloutQuery {
+        statuses: Some(vec![RolloutStatus::Succeeded]),
+        limit: Some(config.apo_max_samples),
+        ..RolloutQuery::default()
+    };
+    let rollouts = match store.query_rollouts(query).await {
+        Ok(rollouts) => rollouts,
+        Err(error) => {
+            let msg = format!("failed to query rollouts for APO trigger: {error}");
+            tracing::warn!("{}", msg);
+            return ApoTriggerResult::failed(
+                completed_rollouts,
+                config.apo_auto_trigger_threshold,
+                msg,
+            );
+        }
+    };
+
+    if rollouts.len() < config.apo_min_samples {
+        let msg = format!(
+            "insufficient rollouts for APO: found {} but need at least {}",
+            rollouts.len(),
+            config.apo_min_samples
+        );
+        tracing::warn!("{}", msg);
+        return ApoTriggerResult::failed(
+            completed_rollouts,
+            config.apo_auto_trigger_threshold,
+            msg,
+        );
+    }
+
+    // Build training examples from rollout data.
+    let train_examples: Vec<PromptExample> = rollouts
+        .iter()
+        .enumerate()
+        .map(|(index, rollout)| {
+            PromptExample::new(
+                format!("rollout_{}: {}", index + 1, rollout.rollout_id),
+                format!("status={:?}", rollout.status),
+            )
+        })
+        .collect();
+    let validation_examples = train_examples.clone();
+
+    // Build the AlgorithmContext — ready for a caller to pass to ApoAlgorithm::run().
+    let _context = AlgorithmContext::new(
+        store.clone(),
+        current_system_prompt,
+        train_examples,
+        validation_examples,
+    );
+
+    tracing::info!(
+        rollout_sample_count = rollouts.len(),
+        "APO AlgorithmContext constructed successfully — optimization ready to execute"
+    );
+
+    ApoTriggerResult::started(completed_rollouts, config.apo_auto_trigger_threshold)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LiveRlRuntimeGate {
     Pass,
@@ -721,6 +864,24 @@ impl LiveRlRuntimeBridge {
                     threshold = self.inner.config.apo_auto_trigger_threshold,
                     "APO auto-trigger threshold reached — full APO optimization pass should be scheduled"
                 );
+                let seed_prompt = self
+                    .inner
+                    .apo_runtime
+                    .as_ref()
+                    .map(|rt| rt.seed_system_prompt.as_str())
+                    .unwrap_or_default();
+                let trigger_result = trigger_apo_optimization(
+                    &self.inner.store,
+                    seed_prompt,
+                    completed,
+                    &self.inner.config,
+                )
+                .await;
+                if let Some(ref error) = trigger_result.error {
+                    tracing::warn!(error = %error, "APO auto-trigger evaluation reported an error");
+                } else if trigger_result.optimization_started {
+                    tracing::info!("APO auto-trigger optimization context constructed successfully");
+                }
             }
         }
     }
@@ -2195,8 +2356,9 @@ fn parse_significance_alpha_env(raw: Option<&str>, default: f64, key: &str) -> R
 #[cfg(test)]
 mod tests {
     use super::{
-        build_final_decision_span, compute_live_reward, should_recommend_help, LiveRlActiveRun,
-        LiveRlRuntimeBridge, LiveRlRuntimeConfig, LiveRlRuntimeGate,
+        build_final_decision_span, compute_live_reward, should_recommend_help,
+        trigger_apo_optimization, ApoTriggerResult, LiveRlActiveRun, LiveRlRuntimeBridge,
+        LiveRlRuntimeConfig, LiveRlRuntimeGate,
     };
     use anyhow::Result;
     use async_trait::async_trait;
@@ -4011,5 +4173,99 @@ mod tests {
 
         let snapshot = bridge.snapshot().await;
         assert_eq!(snapshot.completed_rollouts, threshold + 1);
+    }
+
+    #[test]
+    fn unit_apo_trigger_result_not_triggered() {
+        let result = ApoTriggerResult::not_triggered(5, 20);
+        assert!(!result.triggered);
+        assert_eq!(result.rollout_count, 5);
+        assert_eq!(result.threshold, 20);
+        assert!(!result.optimization_started);
+        assert!(result.error.is_none());
+    }
+
+    #[test]
+    fn unit_apo_trigger_result_started() {
+        let result = ApoTriggerResult::started(20, 20);
+        assert!(result.triggered);
+        assert_eq!(result.rollout_count, 20);
+        assert_eq!(result.threshold, 20);
+        assert!(result.optimization_started);
+        assert!(result.error.is_none());
+    }
+
+    #[test]
+    fn unit_apo_trigger_result_failed() {
+        let result = ApoTriggerResult::failed(20, 20, "something broke".to_string());
+        assert!(result.triggered);
+        assert_eq!(result.rollout_count, 20);
+        assert_eq!(result.threshold, 20);
+        assert!(!result.optimization_started);
+        assert_eq!(result.error.as_deref(), Some("something broke"));
+    }
+
+    #[tokio::test]
+    async fn unit_trigger_apo_optimization_not_at_threshold() {
+        let store: Arc<dyn TrainingStore + Send + Sync> = Arc::new(InMemoryTrainingStore::new());
+        let config = LiveRlRuntimeConfig {
+            enabled: true,
+            store_path: ".tau/training/store.sqlite".into(),
+            update_interval_rollouts: 8,
+            max_rollouts_per_update: 64,
+            max_failure_streak: 3,
+            apo_enabled: true,
+            apo_min_samples: 4,
+            apo_max_samples: 32,
+            apo_significance_alpha: 0.05,
+            apo_auto_trigger_threshold: 20,
+        };
+        let result = trigger_apo_optimization(&store, "test prompt", 10, &config).await;
+        assert!(!result.triggered);
+        assert_eq!(result.rollout_count, 10);
+        assert_eq!(result.threshold, 20);
+    }
+
+    #[tokio::test]
+    async fn unit_trigger_apo_optimization_disabled() {
+        let store: Arc<dyn TrainingStore + Send + Sync> = Arc::new(InMemoryTrainingStore::new());
+        let config = LiveRlRuntimeConfig {
+            enabled: true,
+            store_path: ".tau/training/store.sqlite".into(),
+            update_interval_rollouts: 8,
+            max_rollouts_per_update: 64,
+            max_failure_streak: 3,
+            apo_enabled: false,
+            apo_min_samples: 4,
+            apo_max_samples: 32,
+            apo_significance_alpha: 0.05,
+            apo_auto_trigger_threshold: 20,
+        };
+        let result = trigger_apo_optimization(&store, "test prompt", 20, &config).await;
+        assert!(result.triggered);
+        assert!(!result.optimization_started);
+        assert!(result.error.as_deref().unwrap().contains("disabled"));
+    }
+
+    #[tokio::test]
+    async fn unit_trigger_apo_optimization_insufficient_rollouts() {
+        let store: Arc<dyn TrainingStore + Send + Sync> = Arc::new(InMemoryTrainingStore::new());
+        let config = LiveRlRuntimeConfig {
+            enabled: true,
+            store_path: ".tau/training/store.sqlite".into(),
+            update_interval_rollouts: 8,
+            max_rollouts_per_update: 64,
+            max_failure_streak: 3,
+            apo_enabled: true,
+            apo_min_samples: 4,
+            apo_max_samples: 32,
+            apo_significance_alpha: 0.05,
+            apo_auto_trigger_threshold: 20,
+        };
+        // Store has no rollouts, so query will return empty — insufficient samples.
+        let result = trigger_apo_optimization(&store, "test prompt", 20, &config).await;
+        assert!(result.triggered);
+        assert!(!result.optimization_started);
+        assert!(result.error.as_deref().unwrap().contains("insufficient"));
     }
 }

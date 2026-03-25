@@ -253,6 +253,59 @@ fn execute_process_runtime(entrypoint: &str, request_json: &str) -> Result<Value
     Ok(response)
 }
 
+/// Lifecycle event labels recognised by `dispatch_skill_lifecycle_hooks`.
+///
+/// These mirror the `AgentEvent` variants from `tau-agent-core` but are
+/// expressed as string constants so that `tau-skills` does not depend on the
+/// agent-core crate (which would create a circular dependency).
+pub const LIFECYCLE_EVENT_AGENT_START: &str = "AgentStart";
+pub const LIFECYCLE_EVENT_AGENT_END: &str = "AgentEnd";
+
+/// Dispatch lifecycle hooks to all loaded skills that declare a matching hook.
+///
+/// `event_label` should be one of the `LIFECYCLE_EVENT_*` constants.
+/// On `"AgentStart"`, dispatches the `RunStart` hook.
+/// On `"AgentEnd"`, dispatches the `RunEnd` hook.
+/// Other event labels are silently ignored.
+///
+/// Errors from individual skill hook dispatches are logged to stderr but do not
+/// propagate — skill hooks are best-effort and must not block the agent
+/// lifecycle.
+pub fn dispatch_skill_lifecycle_hooks(event_label: &str, skills: &[Skill]) {
+    let target_hook = match event_label {
+        LIFECYCLE_EVENT_AGENT_START => SkillHook::RunStart,
+        LIFECYCLE_EVENT_AGENT_END => SkillHook::RunEnd,
+        _ => return,
+    };
+
+    let context = HookContext {
+        payload: serde_json::json!({
+            "event": event_label,
+        }),
+    };
+
+    for skill in skills {
+        let Some(hooks) = skill.hooks.as_ref() else {
+            continue;
+        };
+        if !hooks.contains(&target_hook) {
+            continue;
+        }
+        if skill.runtime.is_none() || skill.entrypoint.is_none() {
+            continue;
+        }
+        if let Err(error) = dispatch_skill_hook(skill, target_hook.clone(), &context) {
+            // Log but do not propagate — hooks are best-effort.
+            eprintln!(
+                "skill lifecycle hook dispatch failed: skill={} hook={} error={}",
+                skill.name,
+                target_hook.as_str(),
+                error
+            );
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
@@ -588,5 +641,57 @@ mod tests {
         assert_eq!(SkillPermission::WriteFiles.as_str(), "write-files");
         assert_eq!(SkillPermission::RunCommands.as_str(), "run-commands");
         assert_eq!(SkillPermission::Network.as_str(), "network");
+    }
+
+    // ---- Test 10: dispatch_skill_lifecycle_hooks ----
+
+    #[test]
+    fn test_dispatch_lifecycle_hooks_no_skills() {
+        use super::{
+            dispatch_skill_lifecycle_hooks, LIFECYCLE_EVENT_AGENT_END, LIFECYCLE_EVENT_AGENT_START,
+        };
+        // Should be a no-op — no skills to dispatch to.
+        dispatch_skill_lifecycle_hooks(LIFECYCLE_EVENT_AGENT_START, &[]);
+        dispatch_skill_lifecycle_hooks(LIFECYCLE_EVENT_AGENT_END, &[]);
+    }
+
+    #[test]
+    fn test_dispatch_lifecycle_hooks_ignores_non_lifecycle_events() {
+        use super::dispatch_skill_lifecycle_hooks;
+        // Non-lifecycle events should be silently ignored.
+        dispatch_skill_lifecycle_hooks("TurnStart", &[]);
+        dispatch_skill_lifecycle_hooks("SomeRandomEvent", &[]);
+    }
+
+    #[test]
+    fn test_dispatch_lifecycle_hooks_skips_skill_without_runtime() {
+        use super::{dispatch_skill_lifecycle_hooks, LIFECYCLE_EVENT_AGENT_START};
+
+        let skill = minimal_skill("no-runtime");
+        // hooks is None, runtime is None — should be skipped.
+        dispatch_skill_lifecycle_hooks(LIFECYCLE_EVENT_AGENT_START, &[skill]);
+    }
+
+    #[test]
+    fn test_dispatch_lifecycle_hooks_skips_skill_with_hook_but_no_runtime() {
+        use super::{dispatch_skill_lifecycle_hooks, LIFECYCLE_EVENT_AGENT_START};
+
+        let mut skill = minimal_skill("has-hook-no-runtime");
+        skill.hooks = Some(vec![SkillHook::RunStart]);
+        // runtime and entrypoint are None — should be skipped.
+        dispatch_skill_lifecycle_hooks(LIFECYCLE_EVENT_AGENT_START, &[skill]);
+    }
+
+    #[test]
+    fn test_dispatch_lifecycle_hooks_skips_skill_without_matching_hook() {
+        use super::{dispatch_skill_lifecycle_hooks, LIFECYCLE_EVENT_AGENT_START};
+
+        let mut skill = minimal_skill("run-end-only");
+        skill.runtime = Some(SkillRuntime::Process);
+        skill.entrypoint = Some("/bin/true".to_string());
+        skill.hooks = Some(vec![SkillHook::RunEnd]);
+
+        // AgentStart event should not match RunEnd-only skill.
+        dispatch_skill_lifecycle_hooks(LIFECYCLE_EVENT_AGENT_START, &[skill]);
     }
 }
