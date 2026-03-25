@@ -426,6 +426,86 @@ pub const COMMAND_SPECS: &[CommandSpec] = &[
         example: "/training-trigger --dry-run",
     },
     CommandSpec {
+        name: "/self-modify-status",
+        usage: "/self-modify-status [--json]",
+        description: "Show recent self-modification proposals and their outcomes",
+        details:
+            "Lists recent self-modification proposals with approval status, blocked rules, and timestamps. Add --json for machine-readable output.",
+        example: "/self-modify-status --json",
+    },
+    CommandSpec {
+        name: "/self-modify-review",
+        usage: "/self-modify-review [proposal-id]",
+        description: "Review pending self-modification proposals",
+        details:
+            "Shows diff, rationale, trigger source, and safety evaluation for pending proposals. Omit id to list all pending.",
+        example: "/self-modify-review 42",
+    },
+    CommandSpec {
+        name: "/self-modify-rollback",
+        usage: "/self-modify-rollback <proposal-id>",
+        description: "Revert a previously applied self-modification",
+        details:
+            "Applies the reverse diff of a completed self-modification proposal and records the rollback in the audit log.",
+        example: "/self-modify-rollback 42",
+    },
+    CommandSpec {
+        name: "/self-modify-policy",
+        usage: "/self-modify-policy [--show|--add-rule <json>|--disable-rule <id>|--enable-rule <id>]",
+        description: "Show or configure the self-modification safety policy",
+        details:
+            "Displays active self-modification rules and allows adding, enabling, or disabling rules at runtime. Changes persist in project-local .tau metadata.",
+        example: "/self-modify-policy --show",
+    },
+    CommandSpec {
+        name: "/learn-status",
+        usage: "/learn-status [--json]",
+        description: "Show action history stats, failure patterns, and tool success rates",
+        details:
+            "Read-only command that summarizes total recorded actions, top failure patterns with occurrence counts, and per-tool success rates from the action history store. Add --json for machine-readable output.",
+        example: "/learn-status --json",
+    },
+    CommandSpec {
+        name: "/learn-clear",
+        usage: "/learn-clear [--confirm]",
+        description: "Clear all learned action history data",
+        details:
+            "Removes all persisted action history records including failure patterns and tool effectiveness data. Requires --confirm flag to execute; without it, prints a dry-run summary of what would be cleared.",
+        example: "/learn-clear --confirm",
+    },
+    CommandSpec {
+        name: "/learn-export",
+        usage: "/learn-export <path>",
+        description: "Export learned action history data to a JSON file",
+        details:
+            "Writes the full action history store contents — including failure patterns, tool effectiveness, and session feedback — to the specified path as formatted JSON.",
+        example: "/learn-export /tmp/tau-learned-data.json",
+    },
+    CommandSpec {
+        name: "/init",
+        usage: "/init [--auto] [--from-env]",
+        description: "Initialize agent configuration by generating a .tau.toml file",
+        details:
+            "Interactive mode asks key questions. Use --auto for sensible defaults with no prompts, or --from-env to generate from current environment variables.",
+        example: "/init --auto",
+    },
+    CommandSpec {
+        name: "/config-validate",
+        usage: "/config-validate [path]",
+        description: "Validate a .tau.toml configuration file against the schema",
+        details:
+            "Parses the config file and reports any errors. Uses .tau.toml in the current directory when path is omitted.",
+        example: "/config-validate .tau.toml",
+    },
+    CommandSpec {
+        name: "/config-show",
+        usage: "/config-show [--json]",
+        description: "Show the resolved agent configuration",
+        details:
+            "Displays the effective configuration merged from .tau.toml, environment variables, and CLI flags. Add --json for machine-readable output.",
+        example: "/config-show --json",
+    },
+    CommandSpec {
         name: "/quit",
         usage: "/quit",
         description: "Exit interactive mode",
@@ -491,6 +571,16 @@ pub const COMMAND_NAMES: &[&str] = &[
     "/session-compact",
     "/training-status",
     "/training-trigger",
+    "/self-modify-status",
+    "/self-modify-review",
+    "/self-modify-rollback",
+    "/self-modify-policy",
+    "/learn-status",
+    "/learn-clear",
+    "/learn-export",
+    "/init",
+    "/config-validate",
+    "/config-show",
     "/quit",
     "/exit",
 ];
@@ -579,5 +669,92 @@ mod tests {
         let rendered = unknown_command_message("/sesion");
         assert!(rendered.contains("unknown command"));
         assert!(rendered.contains("/session"));
+    }
+
+    #[test]
+    fn unit_learn_command_specs_are_registered() {
+        assert!(
+            COMMAND_NAMES.contains(&"/learn-status"),
+            "/learn-status must be in COMMAND_NAMES"
+        );
+        assert!(
+            COMMAND_NAMES.contains(&"/learn-clear"),
+            "/learn-clear must be in COMMAND_NAMES"
+        );
+        assert!(
+            COMMAND_NAMES.contains(&"/learn-export"),
+            "/learn-export must be in COMMAND_NAMES"
+        );
+
+        let learn_status_spec = COMMAND_SPECS
+            .iter()
+            .find(|spec| spec.name == "/learn-status");
+        assert!(
+            learn_status_spec.is_some(),
+            "/learn-status spec must exist in COMMAND_SPECS"
+        );
+
+        let learn_clear_spec = COMMAND_SPECS
+            .iter()
+            .find(|spec| spec.name == "/learn-clear");
+        assert!(
+            learn_clear_spec.is_some(),
+            "/learn-clear spec must exist in COMMAND_SPECS"
+        );
+
+        let learn_export_spec = COMMAND_SPECS
+            .iter()
+            .find(|spec| spec.name == "/learn-export");
+        assert!(
+            learn_export_spec.is_some(),
+            "/learn-export spec must exist in COMMAND_SPECS"
+        );
+    }
+
+    #[test]
+    fn unit_config_command_specs_are_registered() {
+        assert!(COMMAND_NAMES.contains(&"/init"));
+        assert!(COMMAND_NAMES.contains(&"/config-validate"));
+        assert!(COMMAND_NAMES.contains(&"/config-show"));
+        let init_spec = COMMAND_SPECS.iter().find(|spec| spec.name == "/init");
+        assert!(
+            init_spec.is_some(),
+            "/init spec must exist in COMMAND_SPECS"
+        );
+        let validate_spec = COMMAND_SPECS
+            .iter()
+            .find(|spec| spec.name == "/config-validate");
+        assert!(
+            validate_spec.is_some(),
+            "/config-validate spec must exist in COMMAND_SPECS"
+        );
+        let show_spec = COMMAND_SPECS
+            .iter()
+            .find(|spec| spec.name == "/config-show");
+        assert!(
+            show_spec.is_some(),
+            "/config-show spec must exist in COMMAND_SPECS"
+        );
+    }
+
+    #[test]
+    fn unit_self_modify_commands_registered_in_catalog() {
+        let expected = [
+            "/self-modify-status",
+            "/self-modify-review",
+            "/self-modify-rollback",
+            "/self-modify-policy",
+        ];
+        for name in &expected {
+            assert!(
+                COMMAND_NAMES.contains(name),
+                "{name} must be in COMMAND_NAMES"
+            );
+            let spec = COMMAND_SPECS.iter().find(|s| s.name == *name);
+            assert!(
+                spec.is_some(),
+                "{name} must have a CommandSpec in COMMAND_SPECS"
+            );
+        }
     }
 }
