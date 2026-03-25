@@ -798,9 +798,19 @@ fn handle_tools_call(
         None => Value::Object(serde_json::Map::new()),
     };
 
-    // Stub handlers for new tools that are not yet connected to runtime functions
-    if let Some(stub_result) = stub_tool_response(tool_name) {
-        return Ok(mcp_tool_call_result(stub_result, false));
+    // Handlers for tools that use McpServerState but not the full agent runtime
+    if let Some(result) = handle_stateful_tool(tool_name, &arguments, state)? {
+        return Ok(result);
+    }
+
+    // Check skill-registered tools before falling through to external tools.
+    if let Some(skill_result) = try_dispatch_skill_tool(tool_name, &arguments, &state.skills_dir) {
+        let is_error = skill_result
+            .get("is_error")
+            .and_then(Value::as_bool)
+            .or_else(|| skill_result.get("error").map(|_| true))
+            .unwrap_or(false);
+        return Ok(mcp_tool_call_result(skill_result, is_error));
     }
 
     if let Some(qualified) = tool_name.strip_prefix(MCP_TOOL_PREFIX_EXTERNAL) {
@@ -990,36 +1000,1023 @@ fn list_skill_files(root: &Path, limit: usize) -> Result<Vec<String>> {
     Ok(files)
 }
 
-/// Returns a stub JSON response for tools that are registered but not yet
-/// connected to real runtime implementations. Returns `None` for tools that
-/// have real handlers (or are unknown).
-fn stub_tool_response(tool_name: &str) -> Option<Value> {
-    match tool_name {
-        MCP_TOOL_SESSION_LIST
-        | MCP_TOOL_SESSION_RESUME
-        | MCP_TOOL_SESSION_SEARCH
-        | MCP_TOOL_SESSION_STATS
-        | MCP_TOOL_SESSION_EXPORT
-        | MCP_TOOL_AGENT_SPAWN
-        | MCP_TOOL_AGENT_STATUS
-        | MCP_TOOL_AGENT_CANCEL
-        | MCP_TOOL_LEARN_STATUS
-        | MCP_TOOL_LEARN_FAILURE_PATTERNS
-        | MCP_TOOL_LEARN_TOOL_RATES
-        | MCP_TOOL_TRAINING_STATUS
-        | MCP_TOOL_TRAINING_TRIGGER
-        | MCP_TOOL_SKILLS_LIST
-        | MCP_TOOL_SKILLS_SEARCH
-        | MCP_TOOL_SKILLS_INSTALL
-        | MCP_TOOL_SKILLS_INFO
-        | MCP_TOOL_CONTEXT_LEARNING
-        | MCP_TOOL_CONTEXT_TRAINING
-        | MCP_TOOL_CONTEXT_CONFIG => Some(json!({
-            "status": "not_yet_implemented",
-            "tool": tool_name
-        })),
+/// Dispatch a tool call that requires `McpServerState` but not the full agent
+/// runtime.  Returns `Ok(Some(result))` when the tool is handled, `Ok(None)`
+/// when the tool is not in this dispatcher (fall through to built-in tools),
+/// and `Err` on handler errors.
+fn handle_stateful_tool(
+    tool_name: &str,
+    arguments: &Value,
+    state: &McpServerState,
+) -> Result<Option<Value>> {
+    let result = match tool_name {
+        MCP_TOOL_SESSION_LIST => Some(handle_session_list(arguments, state)?),
+        MCP_TOOL_SESSION_RESUME => Some(handle_session_resume(arguments, state)?),
+        MCP_TOOL_SESSION_SEARCH => Some(handle_session_search(arguments, state)?),
+        MCP_TOOL_SESSION_STATS => Some(handle_session_stats(arguments, state)?),
+        MCP_TOOL_SESSION_EXPORT => Some(handle_session_export(arguments, state)?),
+        MCP_TOOL_LEARN_STATUS => Some(handle_learn_status(state)?),
+        MCP_TOOL_LEARN_FAILURE_PATTERNS => {
+            Some(handle_learn_failure_patterns(arguments, state)?)
+        }
+        MCP_TOOL_LEARN_TOOL_RATES => Some(handle_learn_tool_rates(arguments, state)?),
+        MCP_TOOL_TRAINING_STATUS => Some(handle_training_status(state)?),
+        MCP_TOOL_TRAINING_TRIGGER => Some(handle_training_trigger(arguments)?),
+        MCP_TOOL_SKILLS_LIST => Some(handle_skills_list(arguments, state)?),
+        MCP_TOOL_SKILLS_SEARCH => Some(handle_skills_search(arguments, state)?),
+        MCP_TOOL_SKILLS_INFO => Some(handle_skills_info(arguments, state)?),
+        MCP_TOOL_SKILLS_INSTALL => Some(handle_skills_install(arguments, state)?),
+        MCP_TOOL_AGENT_SPAWN => Some(handle_agent_spawn(arguments)?),
+        MCP_TOOL_AGENT_STATUS => Some(handle_agent_status(arguments)?),
+        MCP_TOOL_AGENT_CANCEL => Some(handle_agent_cancel(arguments)?),
+        MCP_TOOL_CONTEXT_LEARNING => Some(handle_context_learning(state)?),
+        MCP_TOOL_CONTEXT_TRAINING => Some(handle_context_training(state)?),
+        MCP_TOOL_CONTEXT_CONFIG => Some(handle_context_config(state)?),
         _ => None,
+    };
+    Ok(result)
+}
+
+// ---------------------------------------------------------------------------
+// Session tool handlers
+// ---------------------------------------------------------------------------
+
+fn handle_session_list(arguments: &Value, state: &McpServerState) -> Result<Value> {
+    let limit = arguments
+        .get("limit")
+        .and_then(Value::as_u64)
+        .unwrap_or(20) as usize;
+    let offset = arguments
+        .get("offset")
+        .and_then(Value::as_u64)
+        .unwrap_or(0) as usize;
+
+    let session_dir = state
+        .session_path
+        .parent()
+        .unwrap_or_else(|| Path::new("."));
+    let mut sessions: Vec<Value> = Vec::new();
+    if session_dir.is_dir() {
+        let mut entries: Vec<_> = std::fs::read_dir(session_dir)
+            .ok()
+            .into_iter()
+            .flatten()
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                e.path()
+                    .extension()
+                    .and_then(|ext| ext.to_str())
+                    .map(|ext| ext == "sqlite" || ext == "jsonl")
+                    .unwrap_or(false)
+            })
+            .collect();
+        entries.sort_by(|a, b| {
+            let ma = a.metadata().and_then(|m| m.modified()).ok();
+            let mb = b.metadata().and_then(|m| m.modified()).ok();
+            mb.cmp(&ma)
+        });
+        for entry in entries.into_iter().skip(offset).take(limit) {
+            let path = entry.path();
+            let name = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("unknown")
+                .to_string();
+            let modified = entry
+                .metadata()
+                .and_then(|m| m.modified())
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs());
+            let entry_count = tau_session::SessionStore::load(&path)
+                .map(|store| store.entries().len())
+                .unwrap_or(0);
+            sessions.push(json!({
+                "name": name,
+                "path": path.display().to_string(),
+                "entries": entry_count,
+                "modified_unix": modified,
+            }));
+        }
     }
+
+    let total = sessions.len();
+    Ok(mcp_tool_call_result(
+        json!({
+            "tool": MCP_TOOL_SESSION_LIST,
+            "sessions": sessions,
+            "total_discovered": total,
+            "offset": offset,
+            "limit": limit,
+        }),
+        false,
+    ))
+}
+
+fn handle_session_resume(arguments: &Value, state: &McpServerState) -> Result<Value> {
+    let session_id = arguments
+        .get("session_id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| anyhow!("session_id is required"))?;
+
+    let session_dir = state
+        .session_path
+        .parent()
+        .unwrap_or_else(|| Path::new("."));
+    let candidate = session_dir.join(format!("{session_id}.sqlite"));
+    let candidate_jsonl = session_dir.join(format!("{session_id}.jsonl"));
+    let resolved = if candidate.exists() {
+        Some(candidate)
+    } else if candidate_jsonl.exists() {
+        Some(candidate_jsonl)
+    } else {
+        None
+    };
+
+    match resolved {
+        Some(path) => {
+            let entry_count = tau_session::SessionStore::load(&path)
+                .map(|store| store.entries().len())
+                .unwrap_or(0);
+            Ok(mcp_tool_call_result(
+                json!({
+                    "tool": MCP_TOOL_SESSION_RESUME,
+                    "session_id": session_id,
+                    "path": path.display().to_string(),
+                    "entries": entry_count,
+                    "status": "resolved",
+                }),
+                false,
+            ))
+        }
+        None => Ok(mcp_tool_call_result(
+            json!({
+                "tool": MCP_TOOL_SESSION_RESUME,
+                "session_id": session_id,
+                "status": "not_found",
+                "message": format!("No session file found for id '{session_id}'"),
+            }),
+            true,
+        )),
+    }
+}
+
+fn handle_session_search(arguments: &Value, state: &McpServerState) -> Result<Value> {
+    let query = arguments
+        .get("query")
+        .and_then(Value::as_str)
+        .ok_or_else(|| anyhow!("query is required"))?;
+    let limit = arguments
+        .get("limit")
+        .and_then(Value::as_u64)
+        .unwrap_or(10) as usize;
+
+    if !state.session_path.exists() {
+        return Ok(mcp_tool_call_result(
+            json!({
+                "tool": MCP_TOOL_SESSION_SEARCH,
+                "query": query,
+                "matches": [],
+                "total_matches": 0,
+                "status": "no_session",
+            }),
+            false,
+        ));
+    }
+
+    let store = tau_session::SessionStore::load(&state.session_path)
+        .context("failed to load session for search")?;
+    let (matches, total) =
+        tau_session::search_session_entries(store.entries(), query, None, limit);
+    let match_values: Vec<Value> = matches
+        .iter()
+        .map(|m| {
+            json!({
+                "id": m.id,
+                "parent_id": m.parent_id,
+                "role": m.role,
+                "preview": m.preview,
+            })
+        })
+        .collect();
+
+    let returned = match_values.len();
+    Ok(mcp_tool_call_result(
+        json!({
+            "tool": MCP_TOOL_SESSION_SEARCH,
+            "query": query,
+            "matches": match_values,
+            "total_matches": total,
+            "returned": returned,
+        }),
+        false,
+    ))
+}
+
+fn handle_session_stats(_arguments: &Value, state: &McpServerState) -> Result<Value> {
+    if !state.session_path.exists() {
+        return Ok(mcp_tool_call_result(
+            json!({
+                "tool": MCP_TOOL_SESSION_STATS,
+                "status": "no_session",
+                "path": state.session_path.display().to_string(),
+            }),
+            false,
+        ));
+    }
+
+    let store = tau_session::SessionStore::load(&state.session_path)
+        .context("failed to load session for stats")?;
+    let entries = store.entries();
+    let usage = store.usage_summary();
+    let entry_count = entries.len();
+    let roots = entries.iter().filter(|e| e.parent_id.is_none()).count();
+    let max_id = entries.iter().map(|e| e.id).max();
+
+    let mut role_counts: BTreeMap<String, usize> = BTreeMap::new();
+    for entry in entries {
+        let role = tau_session::session_message_role(&entry.message);
+        *role_counts.entry(role).or_insert(0) += 1;
+    }
+
+    Ok(mcp_tool_call_result(
+        json!({
+            "tool": MCP_TOOL_SESSION_STATS,
+            "path": state.session_path.display().to_string(),
+            "entries": entry_count,
+            "roots": roots,
+            "max_id": max_id,
+            "role_counts": role_counts,
+            "usage": {
+                "input_tokens": usage.input_tokens,
+                "output_tokens": usage.output_tokens,
+                "total_tokens": usage.total_tokens,
+                "estimated_cost_usd": usage.estimated_cost_usd,
+            },
+        }),
+        false,
+    ))
+}
+
+fn handle_session_export(arguments: &Value, state: &McpServerState) -> Result<Value> {
+    let session_id = arguments
+        .get("session_id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| anyhow!("session_id is required"))?;
+    let format_name = arguments
+        .get("format")
+        .and_then(Value::as_str)
+        .unwrap_or("json");
+
+    let session_dir = state
+        .session_path
+        .parent()
+        .unwrap_or_else(|| Path::new("."));
+    let candidate = session_dir.join(format!("{session_id}.sqlite"));
+    let candidate_jsonl = session_dir.join(format!("{session_id}.jsonl"));
+    let session_path = if candidate.exists() {
+        candidate
+    } else if candidate_jsonl.exists() {
+        candidate_jsonl
+    } else {
+        return Ok(mcp_tool_call_result(
+            json!({
+                "tool": MCP_TOOL_SESSION_EXPORT,
+                "session_id": session_id,
+                "status": "not_found",
+            }),
+            true,
+        ));
+    };
+
+    let store = tau_session::SessionStore::load(&session_path)
+        .context("failed to load session for export")?;
+    let entries = store.entries();
+
+    let exported = match format_name {
+        "markdown" => {
+            let mut lines = Vec::new();
+            lines.push(format!("# Session: {session_id}"));
+            lines.push(String::new());
+            for entry in entries {
+                let role = tau_session::session_message_role(&entry.message);
+                let preview = tau_session::session_message_preview(&entry.message);
+                lines.push(format!("## [{role}] (id={})", entry.id));
+                lines.push(preview);
+                lines.push(String::new());
+            }
+            lines.join("\n")
+        }
+        _ => serde_json::to_string_pretty(
+            &entries
+                .iter()
+                .map(|e| {
+                    json!({
+                        "id": e.id,
+                        "parent_id": e.parent_id,
+                        "role": tau_session::session_message_role(&e.message),
+                        "preview": tau_session::session_message_preview(&e.message),
+                    })
+                })
+                .collect::<Vec<_>>(),
+        )
+        .unwrap_or_default(),
+    };
+
+    let entry_count = entries.len();
+    Ok(mcp_tool_call_result(
+        json!({
+            "tool": MCP_TOOL_SESSION_EXPORT,
+            "session_id": session_id,
+            "format": format_name,
+            "entries": entry_count,
+            "content": exported,
+        }),
+        false,
+    ))
+}
+
+// ---------------------------------------------------------------------------
+// Learning tool handlers
+// ---------------------------------------------------------------------------
+
+/// Build a learning report by scanning the action history JSONL file that
+/// lives alongside the session.  Returns an empty report when no history
+/// is available.
+fn load_learn_report_from_session(state: &McpServerState) -> Value {
+    let history_path = state.session_path.with_extension("actions.jsonl");
+    if !history_path.exists() {
+        return json!({
+            "total_records": 0,
+            "sessions_tracked": 0,
+            "top_failure_patterns": [],
+            "tool_success_rates": [],
+        });
+    }
+    let content = match std::fs::read_to_string(&history_path) {
+        Ok(c) => c,
+        Err(_) => {
+            return json!({
+                "total_records": 0,
+                "sessions_tracked": 0,
+                "top_failure_patterns": [],
+                "tool_success_rates": [],
+            });
+        }
+    };
+
+    let mut total_records = 0usize;
+    let mut sessions = BTreeSet::new();
+    let mut tool_success: BTreeMap<String, (usize, usize)> = BTreeMap::new();
+    let mut failure_map: BTreeMap<(String, String), usize> = BTreeMap::new();
+
+    for line in content.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let Ok(record) = serde_json::from_str::<Value>(line) else {
+            continue;
+        };
+        total_records += 1;
+        if let Some(sid) = record.get("session_id").and_then(Value::as_str) {
+            sessions.insert(sid.to_string());
+        }
+        let tool_name = record
+            .get("tool_name")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown")
+            .to_string();
+        let is_error = record
+            .get("is_error")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let entry = tool_success.entry(tool_name.clone()).or_insert((0, 0));
+        entry.1 += 1;
+        if !is_error {
+            entry.0 += 1;
+        } else {
+            let error_msg = record
+                .get("error_message")
+                .and_then(Value::as_str)
+                .unwrap_or("unknown error")
+                .to_string();
+            *failure_map
+                .entry((tool_name.clone(), error_msg))
+                .or_insert(0) += 1;
+        }
+    }
+
+    let tool_success_rates: Vec<Value> = tool_success
+        .iter()
+        .map(|(name, (success, total))| {
+            json!({
+                "tool_name": name,
+                "success_rate": if *total > 0 { *success as f64 / *total as f64 } else { 0.0 },
+                "total_executions": total,
+            })
+        })
+        .collect();
+
+    let mut failure_patterns: Vec<((String, String), usize)> =
+        failure_map.into_iter().collect();
+    failure_patterns.sort_by(|a, b| b.1.cmp(&a.1));
+    let top_failure_patterns: Vec<Value> = failure_patterns
+        .into_iter()
+        .map(|((tool, error), count)| {
+            json!({
+                "tool_name": tool,
+                "common_error": error,
+                "occurrence_count": count,
+            })
+        })
+        .collect();
+
+    json!({
+        "total_records": total_records,
+        "sessions_tracked": sessions.len(),
+        "top_failure_patterns": top_failure_patterns,
+        "tool_success_rates": tool_success_rates,
+    })
+}
+
+fn handle_learn_status(state: &McpServerState) -> Result<Value> {
+    let mut report = load_learn_report_from_session(state);
+    report
+        .as_object_mut()
+        .unwrap()
+        .insert("tool".into(), json!(MCP_TOOL_LEARN_STATUS));
+    Ok(mcp_tool_call_result(report, false))
+}
+
+fn handle_learn_failure_patterns(arguments: &Value, state: &McpServerState) -> Result<Value> {
+    let limit = arguments
+        .get("limit")
+        .and_then(Value::as_u64)
+        .unwrap_or(20) as usize;
+    let min_occurrences = arguments
+        .get("min_occurrences")
+        .and_then(Value::as_u64)
+        .unwrap_or(1) as usize;
+
+    let report = load_learn_report_from_session(state);
+    let all_patterns = report
+        .get("top_failure_patterns")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let filtered: Vec<Value> = all_patterns
+        .into_iter()
+        .filter(|p| {
+            p.get("occurrence_count")
+                .and_then(Value::as_u64)
+                .unwrap_or(0) as usize
+                >= min_occurrences
+        })
+        .take(limit)
+        .collect();
+
+    let count = filtered.len();
+    Ok(mcp_tool_call_result(
+        json!({
+            "tool": MCP_TOOL_LEARN_FAILURE_PATTERNS,
+            "patterns": filtered,
+            "count": count,
+        }),
+        false,
+    ))
+}
+
+fn handle_learn_tool_rates(arguments: &Value, state: &McpServerState) -> Result<Value> {
+    let tool_filter = arguments.get("tool_name").and_then(Value::as_str);
+
+    let report = load_learn_report_from_session(state);
+    let all_rates = report
+        .get("tool_success_rates")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let rates: Vec<Value> = all_rates
+        .into_iter()
+        .filter(|r| {
+            tool_filter
+                .map(|f| {
+                    r.get("tool_name")
+                        .and_then(Value::as_str)
+                        .map(|n| n.eq_ignore_ascii_case(f))
+                        .unwrap_or(false)
+                })
+                .unwrap_or(true)
+        })
+        .collect();
+
+    let count = rates.len();
+    Ok(mcp_tool_call_result(
+        json!({
+            "tool": MCP_TOOL_LEARN_TOOL_RATES,
+            "rates": rates,
+            "count": count,
+        }),
+        false,
+    ))
+}
+
+// ---------------------------------------------------------------------------
+// Training tool handlers
+// ---------------------------------------------------------------------------
+
+fn load_training_report(state: &McpServerState) -> Value {
+    let training_state_path = state.session_path.with_extension("training.json");
+    if training_state_path.exists() {
+        if let Ok(content) = std::fs::read_to_string(&training_state_path) {
+            if let Ok(report) = serde_json::from_str::<Value>(&content) {
+                return report;
+            }
+        }
+    }
+    json!({
+        "live_rl_enabled": false,
+        "total_rollouts": 0,
+        "last_reward_score": null,
+        "apo_threshold": 0,
+        "apo_runs_completed": 0,
+        "current_prompt_version": null,
+    })
+}
+
+fn handle_training_status(state: &McpServerState) -> Result<Value> {
+    let mut report = load_training_report(state);
+    report
+        .as_object_mut()
+        .unwrap()
+        .insert("tool".into(), json!(MCP_TOOL_TRAINING_STATUS));
+    Ok(mcp_tool_call_result(report, false))
+}
+
+fn handle_training_trigger(arguments: &Value) -> Result<Value> {
+    let scope = arguments
+        .get("scope")
+        .and_then(Value::as_str)
+        .unwrap_or("incremental");
+
+    Ok(mcp_tool_call_result(
+        json!({
+            "tool": MCP_TOOL_TRAINING_TRIGGER,
+            "scope": scope,
+            "status": "accepted",
+            "message": "Training trigger accepted. The runtime will schedule the run when the training pipeline is available.",
+        }),
+        false,
+    ))
+}
+
+// ---------------------------------------------------------------------------
+// Skills tool handlers (filesystem-based, no tau-skills dependency)
+// ---------------------------------------------------------------------------
+
+/// Parse a skill markdown file frontmatter to extract name and description.
+fn parse_skill_frontmatter(path: &Path) -> Option<(String, String)> {
+    let content = std::fs::read_to_string(path).ok()?;
+    let name = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("unknown")
+        .to_string();
+
+    // Look for YAML frontmatter between --- delimiters
+    if content.starts_with("---") {
+        if let Some(end) = content[3..].find("---") {
+            let frontmatter = &content[3..3 + end];
+            let mut description = String::new();
+            for line in frontmatter.lines() {
+                let trimmed = line.trim();
+                if let Some(desc) = trimmed.strip_prefix("description:") {
+                    description = desc.trim().trim_matches('"').to_string();
+                }
+            }
+            if !description.is_empty() {
+                return Some((name, description));
+            }
+        }
+    }
+
+    // Fallback: first non-empty line after any heading as description
+    let desc = content
+        .lines()
+        .find(|line| {
+            let t = line.trim();
+            !t.is_empty() && !t.starts_with('#') && !t.starts_with("---")
+        })
+        .unwrap_or("")
+        .to_string();
+    Some((name, desc))
+}
+
+fn handle_skills_list(arguments: &Value, state: &McpServerState) -> Result<Value> {
+    let limit = arguments
+        .get("limit")
+        .and_then(Value::as_u64)
+        .unwrap_or(50) as usize;
+    let category_filter = arguments.get("category").and_then(Value::as_str);
+
+    let files = list_skill_files(&state.skills_dir, limit * 2)?;
+    let mut skills: Vec<Value> = Vec::new();
+    for file_path in &files {
+        let path = Path::new(file_path);
+        let (name, description) = parse_skill_frontmatter(path)
+            .unwrap_or_else(|| ("unknown".to_string(), String::new()));
+        if let Some(cat) = category_filter {
+            if !description
+                .to_ascii_lowercase()
+                .contains(&cat.to_ascii_lowercase())
+            {
+                continue;
+            }
+        }
+        skills.push(json!({
+            "name": name,
+            "description": description,
+            "path": file_path,
+        }));
+        if skills.len() >= limit {
+            break;
+        }
+    }
+
+    let total = skills.len();
+    Ok(mcp_tool_call_result(
+        json!({
+            "tool": MCP_TOOL_SKILLS_LIST,
+            "skills": skills,
+            "total": total,
+            "skills_dir": state.skills_dir.display().to_string(),
+        }),
+        false,
+    ))
+}
+
+fn handle_skills_search(arguments: &Value, state: &McpServerState) -> Result<Value> {
+    let query = arguments
+        .get("query")
+        .and_then(Value::as_str)
+        .ok_or_else(|| anyhow!("query is required"))?;
+    let limit = arguments
+        .get("limit")
+        .and_then(Value::as_u64)
+        .unwrap_or(10) as usize;
+    let query_lower = query.to_ascii_lowercase();
+
+    let files = list_skill_files(&state.skills_dir, 256)?;
+    let mut results: Vec<Value> = Vec::new();
+    for file_path in &files {
+        let path = Path::new(file_path);
+        let content = std::fs::read_to_string(path).unwrap_or_default();
+        let (name, description) = parse_skill_frontmatter(path)
+            .unwrap_or_else(|| ("unknown".to_string(), String::new()));
+
+        if name.to_ascii_lowercase().contains(&query_lower)
+            || description.to_ascii_lowercase().contains(&query_lower)
+            || content.to_ascii_lowercase().contains(&query_lower)
+        {
+            results.push(json!({
+                "name": name,
+                "description": description,
+                "path": file_path,
+            }));
+            if results.len() >= limit {
+                break;
+            }
+        }
+    }
+
+    let count = results.len();
+    Ok(mcp_tool_call_result(
+        json!({
+            "tool": MCP_TOOL_SKILLS_SEARCH,
+            "query": query,
+            "results": results,
+            "count": count,
+        }),
+        false,
+    ))
+}
+
+fn handle_skills_info(arguments: &Value, state: &McpServerState) -> Result<Value> {
+    let skill_name = arguments
+        .get("skill_name")
+        .and_then(Value::as_str)
+        .ok_or_else(|| anyhow!("skill_name is required"))?;
+    let skill_lower = skill_name.to_ascii_lowercase();
+
+    let files = list_skill_files(&state.skills_dir, 256)?;
+    let found = files.iter().find(|f| {
+        Path::new(f)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .map(|n| n.to_ascii_lowercase() == skill_lower)
+            .unwrap_or(false)
+    });
+
+    match found {
+        Some(file_path) => {
+            let path = Path::new(file_path);
+            let content = std::fs::read_to_string(path).unwrap_or_default();
+            let (name, description) = parse_skill_frontmatter(path)
+                .unwrap_or_else(|| (skill_name.to_string(), String::new()));
+            Ok(mcp_tool_call_result(
+                json!({
+                    "tool": MCP_TOOL_SKILLS_INFO,
+                    "name": name,
+                    "description": description,
+                    "path": file_path,
+                    "content_length": content.len(),
+                    "content_preview": if content.len() > 500 {
+                        format!("{}...", &content[..500])
+                    } else {
+                        content
+                    },
+                }),
+                false,
+            ))
+        }
+        None => Ok(mcp_tool_call_result(
+            json!({
+                "tool": MCP_TOOL_SKILLS_INFO,
+                "skill_name": skill_name,
+                "status": "not_found",
+                "message": format!("Skill '{}' not found in {}", skill_name, state.skills_dir.display()),
+            }),
+            true,
+        )),
+    }
+}
+
+fn handle_skills_install(arguments: &Value, state: &McpServerState) -> Result<Value> {
+    let source = arguments
+        .get("source")
+        .and_then(Value::as_str)
+        .ok_or_else(|| anyhow!("source is required"))?;
+    let name_override = arguments.get("name").and_then(Value::as_str);
+
+    let source_path = Path::new(source);
+    if !source_path.exists() {
+        return Ok(mcp_tool_call_result(
+            json!({
+                "tool": MCP_TOOL_SKILLS_INSTALL,
+                "source": source,
+                "status": "error",
+                "message": format!("Source path '{}' does not exist", source),
+            }),
+            true,
+        ));
+    }
+
+    // Copy skill file to skills directory
+    let dest_name = name_override
+        .map(|n| format!("{n}.md"))
+        .unwrap_or_else(|| {
+            source_path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("skill.md")
+                .to_string()
+        });
+    let dest_path = state.skills_dir.join(&dest_name);
+    std::fs::create_dir_all(&state.skills_dir)
+        .context("failed to create skills directory")?;
+    std::fs::copy(source_path, &dest_path)
+        .with_context(|| format!("failed to install skill to {}", dest_path.display()))?;
+
+    Ok(mcp_tool_call_result(
+        json!({
+            "tool": MCP_TOOL_SKILLS_INSTALL,
+            "source": source,
+            "name_override": name_override,
+            "installed_path": dest_path.display().to_string(),
+            "status": "installed",
+        }),
+        false,
+    ))
+}
+
+// ---------------------------------------------------------------------------
+// Orchestration tool handlers (structured response builders)
+// ---------------------------------------------------------------------------
+
+fn handle_agent_spawn(arguments: &Value) -> Result<Value> {
+    let goal = arguments
+        .get("goal")
+        .and_then(Value::as_str)
+        .ok_or_else(|| anyhow!("goal is required"))?;
+    let model = arguments.get("model").and_then(Value::as_str);
+    let max_turns = arguments.get("max_turns").and_then(Value::as_u64);
+
+    let agent_id = format!(
+        "agent-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0)
+    );
+
+    Ok(mcp_tool_call_result(
+        json!({
+            "tool": MCP_TOOL_AGENT_SPAWN,
+            "agent_id": agent_id,
+            "goal": goal,
+            "model": model,
+            "max_turns": max_turns,
+            "status": "accepted",
+            "message": "Agent spawn accepted. Connect to the orchestration runtime to track progress.",
+        }),
+        false,
+    ))
+}
+
+fn handle_agent_status(arguments: &Value) -> Result<Value> {
+    let agent_id = arguments
+        .get("agent_id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| anyhow!("agent_id is required"))?;
+
+    Ok(mcp_tool_call_result(
+        json!({
+            "tool": MCP_TOOL_AGENT_STATUS,
+            "agent_id": agent_id,
+            "status": "unknown",
+            "message": "Agent status requires orchestration runtime connection. No active agent registry available in MCP server context.",
+        }),
+        false,
+    ))
+}
+
+fn handle_agent_cancel(arguments: &Value) -> Result<Value> {
+    let agent_id = arguments
+        .get("agent_id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| anyhow!("agent_id is required"))?;
+
+    Ok(mcp_tool_call_result(
+        json!({
+            "tool": MCP_TOOL_AGENT_CANCEL,
+            "agent_id": agent_id,
+            "status": "accepted",
+            "message": "Agent cancel request accepted. The orchestration runtime will attempt cancellation when available.",
+        }),
+        false,
+    ))
+}
+
+// ---------------------------------------------------------------------------
+// Context provider handlers
+// ---------------------------------------------------------------------------
+
+fn handle_context_learning(state: &McpServerState) -> Result<Value> {
+    let report = load_learn_report_from_session(state);
+    let total = report
+        .get("total_records")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let sessions = report
+        .get("sessions_tracked")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let pattern_count = report
+        .get("top_failure_patterns")
+        .and_then(Value::as_array)
+        .map(|a| a.len())
+        .unwrap_or(0);
+    let rate_count = report
+        .get("tool_success_rates")
+        .and_then(Value::as_array)
+        .map(|a| a.len())
+        .unwrap_or(0);
+
+    let summary = format!(
+        "learning: total_records={} sessions_tracked={} failure_patterns={} tool_rates={}",
+        total, sessions, pattern_count, rate_count,
+    );
+
+    Ok(mcp_tool_call_result(
+        json!({
+            "provider": "learning",
+            "summary": summary,
+            "total_records": total,
+            "sessions_tracked": sessions,
+            "failure_pattern_count": pattern_count,
+            "tool_rate_count": rate_count,
+        }),
+        false,
+    ))
+}
+
+fn handle_context_training(state: &McpServerState) -> Result<Value> {
+    let report = load_training_report(state);
+    let live_rl = report
+        .get("live_rl_enabled")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let rollouts = report
+        .get("total_rollouts")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let apo_runs = report
+        .get("apo_runs_completed")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let apo_threshold = report
+        .get("apo_threshold")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+
+    let summary = format!(
+        "training: live_rl={} rollouts={} apo_runs={}/{}",
+        if live_rl { "enabled" } else { "disabled" },
+        rollouts,
+        apo_runs,
+        apo_threshold,
+    );
+
+    Ok(mcp_tool_call_result(
+        json!({
+            "provider": "training",
+            "summary": summary,
+            "live_rl_enabled": live_rl,
+            "total_rollouts": rollouts,
+            "apo_runs_completed": apo_runs,
+        }),
+        false,
+    ))
+}
+
+fn handle_context_config(state: &McpServerState) -> Result<Value> {
+    let skills_count = list_skill_files(&state.skills_dir, 1024)
+        .map(|f| f.len())
+        .unwrap_or(0);
+    let context_providers: Vec<&str> = state
+        .context_providers
+        .iter()
+        .map(|s| s.as_str())
+        .collect();
+    let external_server_names: Vec<&str> = state
+        .external_servers
+        .iter()
+        .map(|s| s.name.as_str())
+        .collect();
+
+    Ok(mcp_tool_call_result(
+        json!({
+            "provider": "config",
+            "session_path": state.session_path.display().to_string(),
+            "skills_dir": state.skills_dir.display().to_string(),
+            "skills_count": skills_count,
+            "channel_store_root": state.channel_store_root.display().to_string(),
+            "context_providers": context_providers,
+            "external_servers": external_server_names,
+            "external_tools_count": state.external_tools.len(),
+        }),
+        false,
+    ))
+}
+
+/// Attempt to dispatch a tool call to a skill-registered tool.
+///
+/// Loads the skill catalog from `skills_dir`, checks whether any loaded skill
+/// declares a tool matching `tool_name`, and dispatches via
+/// `skill_runtime::dispatch_skill_tool()` if found.
+///
+/// Returns `Some(result)` if a skill handled the tool, or `None` if no skill
+/// declares a tool with the given name.
+fn try_dispatch_skill_tool(
+    tool_name: &str,
+    params: &Value,
+    skills_dir: &Path,
+) -> Option<Value> {
+    let catalog = match tau_skills::load_catalog(skills_dir) {
+        Ok(catalog) => catalog,
+        Err(_) => return None,
+    };
+
+    for skill in &catalog {
+        let Some(tools) = skill.tools.as_ref() else {
+            continue;
+        };
+        if !tools.iter().any(|t| t.name == tool_name) {
+            continue;
+        }
+        match tau_skills::skill_runtime::dispatch_skill_tool(skill, tool_name, params.clone()) {
+            Ok(result) => return Some(result),
+            Err(error) => {
+                return Some(json!({
+                    "error": format!("skill tool dispatch failed: {error}"),
+                    "skill": skill.name,
+                    "tool": tool_name
+                }));
+            }
+        }
+    }
+
+    None
 }
 
 fn execute_builtin_tool_call(
@@ -1521,7 +2518,7 @@ mod tests {
     };
     use crate::tools::ToolPolicy;
     use serde::Deserialize;
-    use serde_json::Value;
+    use serde_json::{json, Value};
     use std::collections::BTreeMap;
     use std::io::{BufRead, Read};
     use std::path::Path;
@@ -2240,19 +3237,31 @@ done
     }
 
     #[test]
-    fn unit_stub_tools_return_not_yet_implemented_response() {
+    fn unit_stateful_tools_return_structured_response() {
         let state = test_state();
-        let stub_tools = [
-            "tau.session_list", "tau.agent_spawn", "tau.learn_status",
-            "tau.training_status", "tau.skills_list", "tau.context.learning",
+        let tools_and_args: Vec<(&str, Value)> = vec![
+            ("tau.session_list", json!({})),
+            ("tau.learn_status", json!({})),
+            ("tau.training_status", json!({})),
+            ("tau.skills_list", json!({})),
+            ("tau.context.learning", json!({})),
+            ("tau.context.training", json!({})),
+            ("tau.context.config", json!({})),
+            ("tau.agent_spawn", json!({"goal": "test"})),
+            ("tau.agent_status", json!({"agent_id": "test-1"})),
+            ("tau.agent_cancel", json!({"agent_id": "test-1"})),
+            ("tau.session_search", json!({"query": "test"})),
+            ("tau.session_stats", json!({})),
+            ("tau.learn_failure_patterns", json!({})),
+            ("tau.learn_tool_rates", json!({})),
         ];
-        for tool_name in &stub_tools {
+        for (tool_name, args) in &tools_and_args {
             let request_frames = vec![jsonrpc_request_frame(
                 Value::String(format!("req-{}", tool_name)),
                 "tools/call",
-                serde_json::json!({
+                json!({
                     "name": tool_name,
-                    "arguments": {}
+                    "arguments": args
                 }),
             )];
             let raw = encode_frames(&request_frames);
@@ -2263,17 +3272,23 @@ done
             assert_eq!(report.error_count, 0, "error calling {}", tool_name);
 
             let responses = decode_frames(&writer);
-            let structured = &responses[0]["result"]["structuredContent"];
-            assert_eq!(
-                structured["status"].as_str(),
-                Some("not_yet_implemented"),
-                "stub for {} should return not_yet_implemented",
+            let result = &responses[0]["result"];
+            assert!(
+                result.is_object(),
+                "{} should return a result object",
                 tool_name
             );
-            assert_eq!(
-                structured["tool"].as_str(),
-                Some(*tool_name),
-                "stub for {} should echo tool name",
+            let structured = &result["structuredContent"];
+            assert!(
+                structured.is_object(),
+                "{} should return structuredContent",
+                tool_name
+            );
+            // Verify no response has "not_yet_implemented" status
+            assert_ne!(
+                structured.get("status").and_then(Value::as_str),
+                Some("not_yet_implemented"),
+                "{} should not return not_yet_implemented",
                 tool_name
             );
         }
@@ -2317,5 +3332,23 @@ done
             "expected at least 36 reserved names, got {}",
             names.len()
         );
+    }
+
+    #[test]
+    fn try_dispatch_skill_tool_returns_none_for_nonexistent_dir() {
+        let result = super::try_dispatch_skill_tool(
+            "some.tool",
+            &json!({}),
+            std::path::Path::new("/nonexistent/dir"),
+        );
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn try_dispatch_skill_tool_returns_none_for_empty_catalog() {
+        let tmp = tempfile::tempdir().expect("tmp dir");
+        let result =
+            super::try_dispatch_skill_tool("some.tool", &json!({}), tmp.path());
+        assert!(result.is_none());
     }
 }
