@@ -34,6 +34,7 @@ mod runtime_output;
 mod runtime_profile_policy_bridge;
 mod runtime_prompt_template_bridge;
 mod runtime_types;
+mod self_modification_runtime;
 mod startup_dispatch;
 mod startup_local_runtime;
 mod startup_model_catalog;
