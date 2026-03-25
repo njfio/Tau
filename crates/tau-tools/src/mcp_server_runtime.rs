@@ -47,9 +47,35 @@ const MCP_TOOL_JOBS_STATUS: &str = "tau.jobs_status";
 const MCP_TOOL_JOBS_CANCEL: &str = "tau.jobs_cancel";
 const MCP_TOOL_HTTP: &str = "tau.http";
 const MCP_TOOL_BASH: &str = "tau.bash";
+// Session tools
+const MCP_TOOL_SESSION_LIST: &str = "tau.session_list";
+const MCP_TOOL_SESSION_RESUME: &str = "tau.session_resume";
+const MCP_TOOL_SESSION_SEARCH: &str = "tau.session_search";
+const MCP_TOOL_SESSION_STATS: &str = "tau.session_stats";
+const MCP_TOOL_SESSION_EXPORT: &str = "tau.session_export";
+// Orchestration tools
+const MCP_TOOL_AGENT_SPAWN: &str = "tau.agent_spawn";
+const MCP_TOOL_AGENT_STATUS: &str = "tau.agent_status";
+const MCP_TOOL_AGENT_CANCEL: &str = "tau.agent_cancel";
+// Learning tools
+const MCP_TOOL_LEARN_STATUS: &str = "tau.learn_status";
+const MCP_TOOL_LEARN_FAILURE_PATTERNS: &str = "tau.learn_failure_patterns";
+const MCP_TOOL_LEARN_TOOL_RATES: &str = "tau.learn_tool_rates";
+// Training tools
+const MCP_TOOL_TRAINING_STATUS: &str = "tau.training_status";
+const MCP_TOOL_TRAINING_TRIGGER: &str = "tau.training_trigger";
+// Skills tools
+const MCP_TOOL_SKILLS_LIST: &str = "tau.skills_list";
+const MCP_TOOL_SKILLS_SEARCH: &str = "tau.skills_search";
+const MCP_TOOL_SKILLS_INSTALL: &str = "tau.skills_install";
+const MCP_TOOL_SKILLS_INFO: &str = "tau.skills_info";
 const MCP_TOOL_CONTEXT_SESSION: &str = "tau.context.session";
 const MCP_TOOL_CONTEXT_SKILLS: &str = "tau.context.skills";
 const MCP_TOOL_CONTEXT_CHANNEL_STORE: &str = "tau.context.channel-store";
+// Additional context providers
+const MCP_TOOL_CONTEXT_LEARNING: &str = "tau.context.learning";
+const MCP_TOOL_CONTEXT_TRAINING: &str = "tau.context.training";
+const MCP_TOOL_CONTEXT_CONFIG: &str = "tau.context.config";
 const MCP_CONTEXT_PROVIDER_SESSION: &str = "session";
 const MCP_CONTEXT_PROVIDER_SKILLS: &str = "skills";
 const MCP_CONTEXT_PROVIDER_CHANNEL_STORE: &str = "channel-store";
@@ -72,9 +98,29 @@ const RESERVED_MCP_TOOL_NAMES: &[&str] = &[
     MCP_TOOL_JOBS_CANCEL,
     MCP_TOOL_HTTP,
     MCP_TOOL_BASH,
+    MCP_TOOL_SESSION_LIST,
+    MCP_TOOL_SESSION_RESUME,
+    MCP_TOOL_SESSION_SEARCH,
+    MCP_TOOL_SESSION_STATS,
+    MCP_TOOL_SESSION_EXPORT,
+    MCP_TOOL_AGENT_SPAWN,
+    MCP_TOOL_AGENT_STATUS,
+    MCP_TOOL_AGENT_CANCEL,
+    MCP_TOOL_LEARN_STATUS,
+    MCP_TOOL_LEARN_FAILURE_PATTERNS,
+    MCP_TOOL_LEARN_TOOL_RATES,
+    MCP_TOOL_TRAINING_STATUS,
+    MCP_TOOL_TRAINING_TRIGGER,
+    MCP_TOOL_SKILLS_LIST,
+    MCP_TOOL_SKILLS_SEARCH,
+    MCP_TOOL_SKILLS_INSTALL,
+    MCP_TOOL_SKILLS_INFO,
     MCP_TOOL_CONTEXT_SESSION,
     MCP_TOOL_CONTEXT_SKILLS,
     MCP_TOOL_CONTEXT_CHANNEL_STORE,
+    MCP_TOOL_CONTEXT_LEARNING,
+    MCP_TOOL_CONTEXT_TRAINING,
+    MCP_TOOL_CONTEXT_CONFIG,
 ];
 
 fn default_mcp_context_providers() -> Vec<String> {
@@ -752,6 +798,11 @@ fn handle_tools_call(
         None => Value::Object(serde_json::Map::new()),
     };
 
+    // Stub handlers for new tools that are not yet connected to runtime functions
+    if let Some(stub_result) = stub_tool_response(tool_name) {
+        return Ok(mcp_tool_call_result(stub_result, false));
+    }
+
     if let Some(qualified) = tool_name.strip_prefix(MCP_TOOL_PREFIX_EXTERNAL) {
         let mut parts = qualified.splitn(2, '.');
         let server_name = parts
@@ -939,6 +990,38 @@ fn list_skill_files(root: &Path, limit: usize) -> Result<Vec<String>> {
     Ok(files)
 }
 
+/// Returns a stub JSON response for tools that are registered but not yet
+/// connected to real runtime implementations. Returns `None` for tools that
+/// have real handlers (or are unknown).
+fn stub_tool_response(tool_name: &str) -> Option<Value> {
+    match tool_name {
+        MCP_TOOL_SESSION_LIST
+        | MCP_TOOL_SESSION_RESUME
+        | MCP_TOOL_SESSION_SEARCH
+        | MCP_TOOL_SESSION_STATS
+        | MCP_TOOL_SESSION_EXPORT
+        | MCP_TOOL_AGENT_SPAWN
+        | MCP_TOOL_AGENT_STATUS
+        | MCP_TOOL_AGENT_CANCEL
+        | MCP_TOOL_LEARN_STATUS
+        | MCP_TOOL_LEARN_FAILURE_PATTERNS
+        | MCP_TOOL_LEARN_TOOL_RATES
+        | MCP_TOOL_TRAINING_STATUS
+        | MCP_TOOL_TRAINING_TRIGGER
+        | MCP_TOOL_SKILLS_LIST
+        | MCP_TOOL_SKILLS_SEARCH
+        | MCP_TOOL_SKILLS_INSTALL
+        | MCP_TOOL_SKILLS_INFO
+        | MCP_TOOL_CONTEXT_LEARNING
+        | MCP_TOOL_CONTEXT_TRAINING
+        | MCP_TOOL_CONTEXT_CONFIG => Some(json!({
+            "status": "not_yet_implemented",
+            "tool": tool_name
+        })),
+        _ => None,
+    }
+}
+
 fn execute_builtin_tool_call(
     tool_name: &str,
     arguments: Value,
@@ -1029,6 +1112,247 @@ fn builtin_mcp_tools(state: &McpServerState) -> Vec<McpToolDescriptor> {
         agent_tool_descriptor(MCP_TOOL_HTTP, &HttpTool::new(policy.clone())),
         agent_tool_descriptor(MCP_TOOL_BASH, &BashTool::new(policy)),
     ];
+
+    // Session tools
+    tools.push(McpToolDescriptor {
+        name: MCP_TOOL_SESSION_LIST.to_string(),
+        description: "List available sessions with optional filtering".to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "limit": { "type": "integer", "description": "Maximum number of sessions to return", "default": 20 },
+                "offset": { "type": "integer", "description": "Offset for pagination", "default": 0 },
+                "sort_by": { "type": "string", "enum": ["created", "updated", "name"], "description": "Field to sort by", "default": "updated" }
+            },
+            "additionalProperties": false
+        }),
+    });
+    tools.push(McpToolDescriptor {
+        name: MCP_TOOL_SESSION_RESUME.to_string(),
+        description: "Resume a previous session by identifier".to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "session_id": { "type": "string", "description": "Identifier of the session to resume" }
+            },
+            "required": ["session_id"],
+            "additionalProperties": false
+        }),
+    });
+    tools.push(McpToolDescriptor {
+        name: MCP_TOOL_SESSION_SEARCH.to_string(),
+        description: "Search session history by query string".to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "query": { "type": "string", "description": "Search query to match against session content" },
+                "limit": { "type": "integer", "description": "Maximum number of results", "default": 10 }
+            },
+            "required": ["query"],
+            "additionalProperties": false
+        }),
+    });
+    tools.push(McpToolDescriptor {
+        name: MCP_TOOL_SESSION_STATS.to_string(),
+        description: "Return statistics about session usage".to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "session_id": { "type": "string", "description": "Optional session identifier; omit for aggregate stats" }
+            },
+            "additionalProperties": false
+        }),
+    });
+    tools.push(McpToolDescriptor {
+        name: MCP_TOOL_SESSION_EXPORT.to_string(),
+        description: "Export a session to a portable format".to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "session_id": { "type": "string", "description": "Identifier of the session to export" },
+                "format": { "type": "string", "enum": ["json", "markdown"], "description": "Export format", "default": "json" }
+            },
+            "required": ["session_id"],
+            "additionalProperties": false
+        }),
+    });
+
+    // Orchestration tools
+    tools.push(McpToolDescriptor {
+        name: MCP_TOOL_AGENT_SPAWN.to_string(),
+        description: "Spawn a new agent task with a goal and optional configuration".to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "goal": { "type": "string", "description": "The objective for the spawned agent" },
+                "model": { "type": "string", "description": "Optional model override for the agent" },
+                "max_turns": { "type": "integer", "description": "Maximum number of turns before auto-cancel" }
+            },
+            "required": ["goal"],
+            "additionalProperties": false
+        }),
+    });
+    tools.push(McpToolDescriptor {
+        name: MCP_TOOL_AGENT_STATUS.to_string(),
+        description: "Check the status of a spawned agent by identifier".to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "agent_id": { "type": "string", "description": "Identifier of the agent to query" }
+            },
+            "required": ["agent_id"],
+            "additionalProperties": false
+        }),
+    });
+    tools.push(McpToolDescriptor {
+        name: MCP_TOOL_AGENT_CANCEL.to_string(),
+        description: "Cancel a running agent by identifier".to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "agent_id": { "type": "string", "description": "Identifier of the agent to cancel" }
+            },
+            "required": ["agent_id"],
+            "additionalProperties": false
+        }),
+    });
+
+    // Learning tools
+    tools.push(McpToolDescriptor {
+        name: MCP_TOOL_LEARN_STATUS.to_string(),
+        description: "Return current learning subsystem status and statistics".to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {},
+            "additionalProperties": false
+        }),
+    });
+    tools.push(McpToolDescriptor {
+        name: MCP_TOOL_LEARN_FAILURE_PATTERNS.to_string(),
+        description: "List learned failure patterns and their frequencies".to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "limit": { "type": "integer", "description": "Maximum number of patterns to return", "default": 20 },
+                "min_occurrences": { "type": "integer", "description": "Minimum occurrence count to include", "default": 1 }
+            },
+            "additionalProperties": false
+        }),
+    });
+    tools.push(McpToolDescriptor {
+        name: MCP_TOOL_LEARN_TOOL_RATES.to_string(),
+        description: "Return success/failure rates per tool".to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "tool_name": { "type": "string", "description": "Optional filter by tool name" }
+            },
+            "additionalProperties": false
+        }),
+    });
+
+    // Training tools
+    tools.push(McpToolDescriptor {
+        name: MCP_TOOL_TRAINING_STATUS.to_string(),
+        description: "Return training pipeline status and recent runs".to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {},
+            "additionalProperties": false
+        }),
+    });
+    tools.push(McpToolDescriptor {
+        name: MCP_TOOL_TRAINING_TRIGGER.to_string(),
+        description: "Trigger a training pipeline run".to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "scope": { "type": "string", "enum": ["full", "incremental"], "description": "Training scope", "default": "incremental" }
+            },
+            "additionalProperties": false
+        }),
+    });
+
+    // Skills tools
+    tools.push(McpToolDescriptor {
+        name: MCP_TOOL_SKILLS_LIST.to_string(),
+        description: "List installed skills with metadata".to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "limit": { "type": "integer", "description": "Maximum number of skills to return", "default": 50 },
+                "category": { "type": "string", "description": "Optional category filter" }
+            },
+            "additionalProperties": false
+        }),
+    });
+    tools.push(McpToolDescriptor {
+        name: MCP_TOOL_SKILLS_SEARCH.to_string(),
+        description: "Search skills by keyword or capability".to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "query": { "type": "string", "description": "Search query for skill discovery" },
+                "limit": { "type": "integer", "description": "Maximum number of results", "default": 10 }
+            },
+            "required": ["query"],
+            "additionalProperties": false
+        }),
+    });
+    tools.push(McpToolDescriptor {
+        name: MCP_TOOL_SKILLS_INSTALL.to_string(),
+        description: "Install a skill from a registry or local path".to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "source": { "type": "string", "description": "Skill source URI or local path" },
+                "name": { "type": "string", "description": "Optional name override for the installed skill" }
+            },
+            "required": ["source"],
+            "additionalProperties": false
+        }),
+    });
+    tools.push(McpToolDescriptor {
+        name: MCP_TOOL_SKILLS_INFO.to_string(),
+        description: "Return detailed information about a specific skill".to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "skill_name": { "type": "string", "description": "Name of the skill to inspect" }
+            },
+            "required": ["skill_name"],
+            "additionalProperties": false
+        }),
+    });
+
+    // Additional context providers
+    tools.push(McpToolDescriptor {
+        name: MCP_TOOL_CONTEXT_LEARNING.to_string(),
+        description: "Return learning subsystem context summary".to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {},
+            "additionalProperties": false
+        }),
+    });
+    tools.push(McpToolDescriptor {
+        name: MCP_TOOL_CONTEXT_TRAINING.to_string(),
+        description: "Return training pipeline context summary".to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {},
+            "additionalProperties": false
+        }),
+    });
+    tools.push(McpToolDescriptor {
+        name: MCP_TOOL_CONTEXT_CONFIG.to_string(),
+        description: "Return current Tau configuration context".to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {},
+            "additionalProperties": false
+        }),
+    });
 
     if state
         .context_providers
@@ -1751,5 +2075,247 @@ done
         assert!(error
             .to_string()
             .contains("duplicate tool registration 'external.mock.echo'"));
+    }
+
+    #[test]
+    fn unit_new_tool_constants_are_defined() {
+        // Session tools
+        assert_eq!(super::MCP_TOOL_SESSION_LIST, "tau.session_list");
+        assert_eq!(super::MCP_TOOL_SESSION_RESUME, "tau.session_resume");
+        assert_eq!(super::MCP_TOOL_SESSION_SEARCH, "tau.session_search");
+        assert_eq!(super::MCP_TOOL_SESSION_STATS, "tau.session_stats");
+        assert_eq!(super::MCP_TOOL_SESSION_EXPORT, "tau.session_export");
+        // Orchestration tools
+        assert_eq!(super::MCP_TOOL_AGENT_SPAWN, "tau.agent_spawn");
+        assert_eq!(super::MCP_TOOL_AGENT_STATUS, "tau.agent_status");
+        assert_eq!(super::MCP_TOOL_AGENT_CANCEL, "tau.agent_cancel");
+        // Learning tools
+        assert_eq!(super::MCP_TOOL_LEARN_STATUS, "tau.learn_status");
+        assert_eq!(super::MCP_TOOL_LEARN_FAILURE_PATTERNS, "tau.learn_failure_patterns");
+        assert_eq!(super::MCP_TOOL_LEARN_TOOL_RATES, "tau.learn_tool_rates");
+        // Training tools
+        assert_eq!(super::MCP_TOOL_TRAINING_STATUS, "tau.training_status");
+        assert_eq!(super::MCP_TOOL_TRAINING_TRIGGER, "tau.training_trigger");
+        // Skills tools
+        assert_eq!(super::MCP_TOOL_SKILLS_LIST, "tau.skills_list");
+        assert_eq!(super::MCP_TOOL_SKILLS_SEARCH, "tau.skills_search");
+        assert_eq!(super::MCP_TOOL_SKILLS_INSTALL, "tau.skills_install");
+        assert_eq!(super::MCP_TOOL_SKILLS_INFO, "tau.skills_info");
+        // Context providers
+        assert_eq!(super::MCP_TOOL_CONTEXT_LEARNING, "tau.context.learning");
+        assert_eq!(super::MCP_TOOL_CONTEXT_TRAINING, "tau.context.training");
+        assert_eq!(super::MCP_TOOL_CONTEXT_CONFIG, "tau.context.config");
+    }
+
+    #[test]
+    fn unit_tool_list_includes_all_new_tools_and_meets_minimum_count() {
+        let state = test_state();
+        let request_frames = vec![
+            jsonrpc_request_frame(
+                Value::String("req-init".to_string()),
+                "initialize",
+                serde_json::json!({}),
+            ),
+            jsonrpc_request_frame(
+                Value::String("req-tools".to_string()),
+                "tools/list",
+                serde_json::json!({}),
+            ),
+        ];
+        let raw = encode_frames(&request_frames);
+        let mut reader = std::io::BufReader::new(std::io::Cursor::new(raw));
+        let mut writer = Vec::new();
+        let report = serve_mcp_jsonrpc_reader(&mut reader, &mut writer, &state)
+            .expect("serve should succeed");
+        assert_eq!(report.error_count, 0);
+
+        let responses = decode_frames(&writer);
+        let tools = responses[1]["result"]["tools"]
+            .as_array()
+            .expect("tools array");
+
+        // Verify minimum count of 30+ tools
+        assert!(
+            tools.len() >= 30,
+            "expected at least 30 tools, got {}",
+            tools.len()
+        );
+
+        let tool_names: Vec<&str> = tools
+            .iter()
+            .filter_map(|t| t["name"].as_str())
+            .collect();
+
+        // Session tools
+        assert!(tool_names.contains(&"tau.session_list"), "missing session_list");
+        assert!(tool_names.contains(&"tau.session_resume"), "missing session_resume");
+        assert!(tool_names.contains(&"tau.session_search"), "missing session_search");
+        assert!(tool_names.contains(&"tau.session_stats"), "missing session_stats");
+        assert!(tool_names.contains(&"tau.session_export"), "missing session_export");
+        // Orchestration tools
+        assert!(tool_names.contains(&"tau.agent_spawn"), "missing agent_spawn");
+        assert!(tool_names.contains(&"tau.agent_status"), "missing agent_status");
+        assert!(tool_names.contains(&"tau.agent_cancel"), "missing agent_cancel");
+        // Learning tools
+        assert!(tool_names.contains(&"tau.learn_status"), "missing learn_status");
+        assert!(tool_names.contains(&"tau.learn_failure_patterns"), "missing learn_failure_patterns");
+        assert!(tool_names.contains(&"tau.learn_tool_rates"), "missing learn_tool_rates");
+        // Training tools
+        assert!(tool_names.contains(&"tau.training_status"), "missing training_status");
+        assert!(tool_names.contains(&"tau.training_trigger"), "missing training_trigger");
+        // Skills tools
+        assert!(tool_names.contains(&"tau.skills_list"), "missing skills_list");
+        assert!(tool_names.contains(&"tau.skills_search"), "missing skills_search");
+        assert!(tool_names.contains(&"tau.skills_install"), "missing skills_install");
+        assert!(tool_names.contains(&"tau.skills_info"), "missing skills_info");
+        // Context providers
+        assert!(tool_names.contains(&"tau.context.learning"), "missing context.learning");
+        assert!(tool_names.contains(&"tau.context.training"), "missing context.training");
+        assert!(tool_names.contains(&"tau.context.config"), "missing context.config");
+    }
+
+    #[test]
+    fn unit_each_new_tool_has_valid_schema() {
+        let state = test_state();
+        let request_frames = vec![
+            jsonrpc_request_frame(
+                Value::String("req-init".to_string()),
+                "initialize",
+                serde_json::json!({}),
+            ),
+            jsonrpc_request_frame(
+                Value::String("req-tools".to_string()),
+                "tools/list",
+                serde_json::json!({}),
+            ),
+        ];
+        let raw = encode_frames(&request_frames);
+        let mut reader = std::io::BufReader::new(std::io::Cursor::new(raw));
+        let mut writer = Vec::new();
+        serve_mcp_jsonrpc_reader(&mut reader, &mut writer, &state)
+            .expect("serve should succeed");
+
+        let responses = decode_frames(&writer);
+        let tools = responses[1]["result"]["tools"]
+            .as_array()
+            .expect("tools array");
+
+        let new_tool_names = [
+            "tau.session_list", "tau.session_resume", "tau.session_search",
+            "tau.session_stats", "tau.session_export",
+            "tau.agent_spawn", "tau.agent_status", "tau.agent_cancel",
+            "tau.learn_status", "tau.learn_failure_patterns", "tau.learn_tool_rates",
+            "tau.training_status", "tau.training_trigger",
+            "tau.skills_list", "tau.skills_search", "tau.skills_install", "tau.skills_info",
+            "tau.context.learning", "tau.context.training", "tau.context.config",
+        ];
+
+        for expected_name in &new_tool_names {
+            let tool = tools
+                .iter()
+                .find(|t| t["name"].as_str() == Some(expected_name))
+                .unwrap_or_else(|| panic!("tool '{}' not found in tools list", expected_name));
+
+            // Verify it has a name, description, and inputSchema
+            assert!(tool["name"].is_string(), "{} missing name", expected_name);
+            assert!(
+                tool["description"].is_string() && !tool["description"].as_str().unwrap().is_empty(),
+                "{} missing or empty description",
+                expected_name
+            );
+            let schema = &tool["inputSchema"];
+            assert!(schema.is_object(), "{} missing inputSchema", expected_name);
+            assert_eq!(
+                schema["type"].as_str(),
+                Some("object"),
+                "{} inputSchema type must be 'object'",
+                expected_name
+            );
+            assert!(
+                schema["properties"].is_object(),
+                "{} inputSchema missing properties",
+                expected_name
+            );
+        }
+    }
+
+    #[test]
+    fn unit_stub_tools_return_not_yet_implemented_response() {
+        let state = test_state();
+        let stub_tools = [
+            "tau.session_list", "tau.agent_spawn", "tau.learn_status",
+            "tau.training_status", "tau.skills_list", "tau.context.learning",
+        ];
+        for tool_name in &stub_tools {
+            let request_frames = vec![jsonrpc_request_frame(
+                Value::String(format!("req-{}", tool_name)),
+                "tools/call",
+                serde_json::json!({
+                    "name": tool_name,
+                    "arguments": {}
+                }),
+            )];
+            let raw = encode_frames(&request_frames);
+            let mut reader = std::io::BufReader::new(std::io::Cursor::new(raw));
+            let mut writer = Vec::new();
+            let report = serve_mcp_jsonrpc_reader(&mut reader, &mut writer, &state)
+                .expect("serve should succeed");
+            assert_eq!(report.error_count, 0, "error calling {}", tool_name);
+
+            let responses = decode_frames(&writer);
+            let structured = &responses[0]["result"]["structuredContent"];
+            assert_eq!(
+                structured["status"].as_str(),
+                Some("not_yet_implemented"),
+                "stub for {} should return not_yet_implemented",
+                tool_name
+            );
+            assert_eq!(
+                structured["tool"].as_str(),
+                Some(*tool_name),
+                "stub for {} should echo tool name",
+                tool_name
+            );
+        }
+    }
+
+    #[test]
+    fn unit_reserved_names_include_new_tools() {
+        let names = super::reserved_builtin_mcp_tool_names();
+        let new_names = [
+            super::MCP_TOOL_SESSION_LIST,
+            super::MCP_TOOL_SESSION_RESUME,
+            super::MCP_TOOL_SESSION_SEARCH,
+            super::MCP_TOOL_SESSION_STATS,
+            super::MCP_TOOL_SESSION_EXPORT,
+            super::MCP_TOOL_AGENT_SPAWN,
+            super::MCP_TOOL_AGENT_STATUS,
+            super::MCP_TOOL_AGENT_CANCEL,
+            super::MCP_TOOL_LEARN_STATUS,
+            super::MCP_TOOL_LEARN_FAILURE_PATTERNS,
+            super::MCP_TOOL_LEARN_TOOL_RATES,
+            super::MCP_TOOL_TRAINING_STATUS,
+            super::MCP_TOOL_TRAINING_TRIGGER,
+            super::MCP_TOOL_SKILLS_LIST,
+            super::MCP_TOOL_SKILLS_SEARCH,
+            super::MCP_TOOL_SKILLS_INSTALL,
+            super::MCP_TOOL_SKILLS_INFO,
+            super::MCP_TOOL_CONTEXT_LEARNING,
+            super::MCP_TOOL_CONTEXT_TRAINING,
+            super::MCP_TOOL_CONTEXT_CONFIG,
+        ];
+        for name in &new_names {
+            assert!(
+                names.contains(*name),
+                "reserved names should include '{}'",
+                name
+            );
+        }
+        // Total reserved should be at least 36 (16 original + 20 new)
+        assert!(
+            names.len() >= 36,
+            "expected at least 36 reserved names, got {}",
+            names.len()
+        );
     }
 }
