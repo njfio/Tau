@@ -3407,6 +3407,9 @@ impl Agent {
                         .duration_since(std::time::UNIX_EPOCH)
                         .unwrap_or_default()
                         .as_millis() as u64,
+                    channel: None,
+                    caused_by: None,
+                    led_to: None,
                 });
             }
         }

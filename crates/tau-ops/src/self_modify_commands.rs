@@ -92,6 +92,39 @@ pub fn format_self_modify_review(items: &[SelfModifyReviewItem]) -> String {
     out
 }
 
+/// B10: A generated regression test template for self-modification proposals.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GeneratedRegressionTest {
+    pub test_name: String,
+    pub test_module: String,
+    pub failure_pattern: String,
+    pub fix_applied: String,
+    pub test_code_template: String,
+}
+
+/// B10: Generate a regression test template for a self-modification proposal.
+///
+/// Produces a `GeneratedRegressionTest` containing a Rust test function stub
+/// that documents the failure pattern and fix, intended to be inserted into
+/// the test suite to prevent regressions.
+pub fn generate_regression_test_template(
+    proposal_id: &str,
+    failure_pattern: &str,
+    fix_description: &str,
+) -> GeneratedRegressionTest {
+    let test_name = format!("regression_{}", proposal_id.replace('-', "_"));
+    GeneratedRegressionTest {
+        test_name: test_name.clone(),
+        test_module: "self_modification_regressions".to_string(),
+        failure_pattern: failure_pattern.to_string(),
+        fix_applied: fix_description.to_string(),
+        test_code_template: format!(
+            "#[test]\nfn {}() {{\n    // Regression test for self-modification {}\n    // Failure pattern: {}\n    // Fix: {}\n    todo!(\"Implement regression test\")\n}}\n",
+            test_name, proposal_id, failure_pattern, fix_description
+        ),
+    }
+}
+
 /// Format a rollback result for human-readable display.
 pub fn format_self_modify_rollback(result: &SelfModifyRollbackResult) -> String {
     let mut out = String::new();
@@ -212,5 +245,36 @@ mod tests {
         let rendered = format_self_modify_rollback(&result);
         assert!(rendered.contains("failed"));
         assert!(rendered.contains("proposal not found"));
+    }
+
+    // B10: Self-improving test infrastructure
+
+    #[test]
+    fn generate_regression_test_template_produces_valid_template() {
+        let tmpl = generate_regression_test_template(
+            "self-mod-123",
+            "bash tool fails on empty input",
+            "added input validation guard",
+        );
+        assert_eq!(tmpl.test_name, "regression_self_mod_123");
+        assert_eq!(tmpl.test_module, "self_modification_regressions");
+        assert_eq!(tmpl.failure_pattern, "bash tool fails on empty input");
+        assert_eq!(tmpl.fix_applied, "added input validation guard");
+        assert!(tmpl.test_code_template.contains("#[test]"));
+        assert!(tmpl.test_code_template.contains("fn regression_self_mod_123()"));
+        assert!(tmpl.test_code_template.contains("self-mod-123"));
+        assert!(tmpl.test_code_template.contains("bash tool fails on empty input"));
+        assert!(tmpl.test_code_template.contains("added input validation guard"));
+        assert!(tmpl.test_code_template.contains("todo!"));
+    }
+
+    #[test]
+    fn generate_regression_test_template_serializes() {
+        let tmpl = generate_regression_test_template("p-42", "crash", "fix");
+        let json = serde_json::to_string(&tmpl).expect("serialize");
+        let deser: GeneratedRegressionTest =
+            serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(deser.test_name, tmpl.test_name);
+        assert_eq!(deser.test_code_template, tmpl.test_code_template);
     }
 }

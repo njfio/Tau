@@ -143,6 +143,9 @@ mod tests {
             success,
             latency_ms: 100,
             timestamp_ms: now_ms(),
+            channel: None,
+            caused_by: None,
+            led_to: None,
         }
     }
 

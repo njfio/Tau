@@ -32,6 +32,15 @@ pub struct ActionRecord {
     pub success: bool,
     pub latency_ms: u64,
     pub timestamp_ms: u64,
+    /// B6: Channel this action was recorded from ("cli", "slack", "discord", "github-issues", etc.)
+    #[serde(default)]
+    pub channel: Option<String>,
+    /// B7: ID of the action that caused this one (episodic causal memory)
+    #[serde(default)]
+    pub caused_by: Option<String>,
+    /// B7: ID of the action this one caused (episodic causal memory)
+    #[serde(default)]
+    pub led_to: Option<String>,
 }
 
 /// Filter criteria for querying action history.
@@ -287,6 +296,42 @@ impl ActionHistoryStore {
     pub fn is_empty(&self) -> bool {
         self.records.is_empty()
     }
+
+    /// B6: Get failure patterns aggregated across all channels.
+    ///
+    /// Currently delegates to `failure_patterns` which already aggregates
+    /// across all records regardless of channel. This method provides API
+    /// clarity for cross-channel analysis use cases.
+    pub fn cross_channel_failure_patterns(&self, lookback: usize) -> Vec<FailurePattern> {
+        self.failure_patterns(lookback)
+    }
+
+    /// B7: Follow caused_by/led_to links to build a causal chain starting
+    /// from the given action ID (formatted as "{session_id}-{turn}").
+    pub fn causal_chain(&self, action_id: &str, max_depth: usize) -> Vec<&ActionRecord> {
+        let mut chain = vec![];
+        let mut current = self
+            .records
+            .iter()
+            .find(|r| format!("{}-{}", r.session_id, r.turn) == action_id);
+        let mut depth = 0;
+        while let Some(record) = current {
+            chain.push(record);
+            if depth >= max_depth {
+                break;
+            }
+            if let Some(ref next_id) = record.led_to {
+                current = self
+                    .records
+                    .iter()
+                    .find(|r| format!("{}-{}", r.session_id, r.turn) == *next_id);
+            } else {
+                break;
+            }
+            depth += 1;
+        }
+        chain
+    }
 }
 
 #[cfg(test)]
@@ -315,6 +360,9 @@ mod tests {
             success,
             latency_ms: 100,
             timestamp_ms: now_ms(),
+            channel: None,
+            caused_by: None,
+            led_to: None,
         }
     }
 
@@ -377,6 +425,9 @@ mod tests {
                 success: true,
                 latency_ms: 0,
                 timestamp_ms: i as u64,
+                channel: None,
+                caused_by: None,
+                led_to: None,
             });
         }
         assert_eq!(store.len(), 5);
@@ -428,6 +479,9 @@ mod tests {
             success: true,
             latency_ms: 50,
             timestamp_ms: old_ms,
+            channel: None,
+            caused_by: None,
+            led_to: None,
         });
         // Record a recent action
         store.record(ActionRecord {
@@ -440,6 +494,9 @@ mod tests {
             success: true,
             latency_ms: 50,
             timestamp_ms: now_ms,
+            channel: None,
+            caused_by: None,
+            led_to: None,
         });
         store.save(&path).unwrap();
 
@@ -485,5 +542,163 @@ mod tests {
         assert!(!tmp_path.exists());
         // But the final file should exist
         assert!(path.exists());
+    }
+
+    // B6: Cross-channel learning tests
+
+    #[test]
+    fn action_record_with_channel_serializes_correctly() {
+        let mut record = make_record("bash", true);
+        record.channel = Some("slack".to_string());
+        let json = serde_json::to_string(&record).unwrap();
+        assert!(json.contains("\"channel\":\"slack\""));
+        let deser: ActionRecord = serde_json::from_str(&json).unwrap();
+        assert_eq!(deser.channel, Some("slack".to_string()));
+    }
+
+    #[test]
+    fn action_record_without_channel_deserializes_backward_compat() {
+        // Simulate a legacy JSON record without channel/caused_by/led_to fields
+        let json = r#"{"session_id":"s1","turn":1,"action_type":"tool_execution","tool_name":"bash","input_summary":"in","output_summary":"out","success":true,"latency_ms":50,"timestamp_ms":12345}"#;
+        let record: ActionRecord = serde_json::from_str(json).unwrap();
+        assert_eq!(record.channel, None);
+        assert_eq!(record.caused_by, None);
+        assert_eq!(record.led_to, None);
+    }
+
+    #[test]
+    fn cross_channel_failure_patterns_works() {
+        let mut store = ActionHistoryStore::new(ActionHistoryConfig::default());
+        let mut r1 = make_record("bash", false);
+        r1.channel = Some("cli".to_string());
+        let mut r2 = make_record("bash", false);
+        r2.channel = Some("slack".to_string());
+        store.record(r1);
+        store.record(r2);
+        let patterns = store.cross_channel_failure_patterns(100);
+        assert!(!patterns.is_empty());
+        assert_eq!(patterns[0].tool_name, "bash");
+        assert_eq!(patterns[0].occurrence_count, 2);
+    }
+
+    // B7: Episodic causal memory tests
+
+    #[test]
+    fn causal_chain_follows_links() {
+        let mut store = ActionHistoryStore::new(ActionHistoryConfig::default());
+        store.record(ActionRecord {
+            session_id: "s1".to_string(),
+            turn: 1,
+            action_type: ActionType::ToolExecution,
+            tool_name: Some("bash".to_string()),
+            input_summary: "first".to_string(),
+            output_summary: "ok".to_string(),
+            success: true,
+            latency_ms: 50,
+            timestamp_ms: now_ms(),
+            channel: None,
+            caused_by: None,
+            led_to: Some("s1-2".to_string()),
+        });
+        store.record(ActionRecord {
+            session_id: "s1".to_string(),
+            turn: 2,
+            action_type: ActionType::ToolExecution,
+            tool_name: Some("read".to_string()),
+            input_summary: "second".to_string(),
+            output_summary: "ok".to_string(),
+            success: true,
+            latency_ms: 50,
+            timestamp_ms: now_ms(),
+            channel: None,
+            caused_by: Some("s1-1".to_string()),
+            led_to: Some("s1-3".to_string()),
+        });
+        store.record(ActionRecord {
+            session_id: "s1".to_string(),
+            turn: 3,
+            action_type: ActionType::ToolExecution,
+            tool_name: Some("write".to_string()),
+            input_summary: "third".to_string(),
+            output_summary: "ok".to_string(),
+            success: true,
+            latency_ms: 50,
+            timestamp_ms: now_ms(),
+            channel: None,
+            caused_by: Some("s1-2".to_string()),
+            led_to: None,
+        });
+
+        let chain = store.causal_chain("s1-1", 10);
+        assert_eq!(chain.len(), 3);
+        assert_eq!(chain[0].input_summary, "first");
+        assert_eq!(chain[1].input_summary, "second");
+        assert_eq!(chain[2].input_summary, "third");
+    }
+
+    #[test]
+    fn causal_chain_stops_at_max_depth() {
+        let mut store = ActionHistoryStore::new(ActionHistoryConfig::default());
+        store.record(ActionRecord {
+            session_id: "s1".to_string(),
+            turn: 1,
+            action_type: ActionType::ToolExecution,
+            tool_name: Some("bash".to_string()),
+            input_summary: "first".to_string(),
+            output_summary: "ok".to_string(),
+            success: true,
+            latency_ms: 50,
+            timestamp_ms: now_ms(),
+            channel: None,
+            caused_by: None,
+            led_to: Some("s1-2".to_string()),
+        });
+        store.record(ActionRecord {
+            session_id: "s1".to_string(),
+            turn: 2,
+            action_type: ActionType::ToolExecution,
+            tool_name: Some("read".to_string()),
+            input_summary: "second".to_string(),
+            output_summary: "ok".to_string(),
+            success: true,
+            latency_ms: 50,
+            timestamp_ms: now_ms(),
+            channel: None,
+            caused_by: Some("s1-1".to_string()),
+            led_to: None,
+        });
+
+        // max_depth=0 means we only get the starting record
+        let chain = store.causal_chain("s1-1", 0);
+        assert_eq!(chain.len(), 1);
+    }
+
+    #[test]
+    fn causal_chain_handles_missing_links() {
+        let mut store = ActionHistoryStore::new(ActionHistoryConfig::default());
+        store.record(ActionRecord {
+            session_id: "s1".to_string(),
+            turn: 1,
+            action_type: ActionType::ToolExecution,
+            tool_name: Some("bash".to_string()),
+            input_summary: "first".to_string(),
+            output_summary: "ok".to_string(),
+            success: true,
+            latency_ms: 50,
+            timestamp_ms: now_ms(),
+            channel: None,
+            caused_by: None,
+            led_to: Some("s1-99".to_string()), // points to nonexistent
+        });
+
+        let chain = store.causal_chain("s1-1", 10);
+        assert_eq!(chain.len(), 1); // only the starting record
+    }
+
+    #[test]
+    fn causal_chain_returns_empty_for_unknown_id() {
+        let store = ActionHistoryStore::new(ActionHistoryConfig::default());
+        let chain = store.causal_chain("nonexistent-99", 10);
+        assert!(chain.is_empty());
     }
 }
