@@ -25,20 +25,35 @@ pub fn promote_assistant_textual_tool_calls(message: Message) -> Result<Message,
 
 fn extract_textual_tool_calls(payload: &str) -> Result<Option<Vec<ToolCall>>, TauAiError> {
     let trimmed = payload.trim();
-    if !looks_like_tool_call_payload(trimmed) {
+
+    // Strip <tool_call>...</tool_call> wrapper if present
+    let unwrapped = strip_tool_call_tags(trimmed);
+
+    if !looks_like_tool_call_payload(unwrapped) {
         return Ok(None);
     }
 
-    parse_tool_calls_payload(trimmed)
+    parse_tool_calls_payload(unwrapped)
         .ok_or_else(|| TauAiError::InvalidResponse(TEXTUAL_TOOL_CALL_PROMOTION_ERROR.to_string()))
         .map(Some)
+}
+
+fn strip_tool_call_tags(payload: &str) -> &str {
+    let s = payload.trim();
+    if let Some(inner) = s.strip_prefix("<tool_call>") {
+        if let Some(inner) = inner.strip_suffix("</tool_call>") {
+            return inner.trim();
+        }
+    }
+    s
 }
 
 fn looks_like_tool_call_payload(payload: &str) -> bool {
     payload.starts_with('{')
         && (payload.contains("\"tool_calls\"")
             || payload.contains("\"tool_call\"")
-            || payload.contains("\"assistant_text\""))
+            || payload.contains("\"assistant_text\"")
+            || (payload.contains("\"name\"") && payload.contains("\"arguments\"")))
 }
 
 fn parse_tool_calls_payload(payload: &str) -> Option<Vec<ToolCall>> {
@@ -75,17 +90,25 @@ fn parse_nested_assistant_text(object: &serde_json::Map<String, Value>) -> Optio
 
 fn parse_tool_call_entry(value: &Value) -> Option<ToolCall> {
     let object = value.as_object()?;
-    if let (Some(id), Some(name)) = (
-        object.get("id").and_then(Value::as_str),
-        object.get("name").and_then(Value::as_str),
-    ) {
-        return Some(ToolCall {
-            id: id.to_string(),
-            name: name.to_string(),
-            arguments: normalize_arguments(object.get("arguments").cloned()),
-        });
+    let name = object.get("name").and_then(Value::as_str);
+
+    // Direct format: {"name": "bash", "arguments": {"command": "ls"}}
+    // With or without "id" field
+    if let Some(name) = name {
+        if object.contains_key("arguments") {
+            return Some(ToolCall {
+                id: object
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .map(ToOwned::to_owned)
+                    .unwrap_or_else(|| format!("call_{name}")),
+                name: name.to_string(),
+                arguments: normalize_arguments(object.get("arguments").cloned()),
+            });
+        }
     }
 
+    // OpenAI function calling format: {"id": "...", "function": {"name": "...", "arguments": "..."}}
     let function = object.get("function")?.as_object()?;
     let name = function.get("name")?.as_str()?;
     Some(ToolCall {
@@ -125,6 +148,42 @@ mod tests {
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].name, "bash");
         assert_eq!(calls[0].arguments, json!({"command":"pwd"}));
+    }
+
+    #[test]
+    fn promotes_direct_name_arguments_format() {
+        let message =
+            Message::assistant_text("{\"name\":\"ls\",\"arguments\":{\"path\":\".\"}}");
+        let promoted = promote_assistant_textual_tool_calls(message).expect("promotion");
+        let calls = promoted.tool_calls();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].name, "ls");
+        assert_eq!(calls[0].arguments, json!({"path":"."}));
+        assert_eq!(calls[0].id, "call_ls");
+    }
+
+    #[test]
+    fn promotes_tool_call_tag_wrapped_format() {
+        let message = Message::assistant_text(
+            "<tool_call>\n{\"name\":\"write\",\"arguments\":{\"path\":\"hello.txt\",\"content\":\"hello world\"}}\n</tool_call>",
+        );
+        let promoted = promote_assistant_textual_tool_calls(message).expect("promotion");
+        let calls = promoted.tool_calls();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].name, "write");
+        assert_eq!(calls[0].arguments, json!({"path":"hello.txt","content":"hello world"}));
+    }
+
+    #[test]
+    fn promotes_direct_name_arguments_with_id() {
+        let message = Message::assistant_text(
+            "{\"id\":\"call_123\",\"name\":\"write\",\"arguments\":{\"path\":\"hello.txt\",\"content\":\"hello\"}}",
+        );
+        let promoted = promote_assistant_textual_tool_calls(message).expect("promotion");
+        let calls = promoted.tool_calls();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].name, "write");
+        assert_eq!(calls[0].id, "call_123");
     }
 
     #[test]
