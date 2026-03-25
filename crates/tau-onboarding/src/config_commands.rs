@@ -117,6 +117,90 @@ pub fn handle_init_at_path(path: &Path) -> Result<String, std::io::Error> {
     ))
 }
 
+// ---------------------------------------------------------------------------
+// B3: Config self-optimization suggestions
+// ---------------------------------------------------------------------------
+
+use serde::{Deserialize, Serialize};
+
+/// A suggestion to adjust a configuration value, produced by analysing runtime
+/// metrics (e.g. store fill level, retention window vs. session frequency).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConfigOptimizationSuggestion {
+    /// Dotted path to the config field (e.g. `"memory.action_history_max_records"`).
+    pub field: String,
+    /// The current value as a display string.
+    pub current_value: String,
+    /// The suggested new value.
+    pub suggested_value: String,
+    /// Human-readable explanation for the suggestion.
+    pub rationale: String,
+    /// Confidence in the suggestion, from 0.0 (speculative) to 1.0 (certain).
+    pub confidence: f64,
+}
+
+/// Analyse runtime metrics and return zero or more optimisation suggestions
+/// for the Tau configuration.
+///
+/// Current heuristics:
+/// - If the action-history store is > 80% full, suggest doubling `max_records`.
+/// - If the average records-per-session is high enough that the store would
+///   fill within `retention_days`, suggest increasing retention or max_records.
+pub fn suggest_config_optimizations(
+    total_records: usize,
+    max_records: usize,
+    retention_days: u32,
+    avg_records_per_session: f64,
+) -> Vec<ConfigOptimizationSuggestion> {
+    let mut suggestions = vec![];
+
+    // Guard against division by zero.
+    if max_records == 0 {
+        return suggestions;
+    }
+
+    let fill_ratio = total_records as f64 / max_records as f64;
+
+    // Heuristic 1: store is more than 80% full.
+    if fill_ratio > 0.8 {
+        suggestions.push(ConfigOptimizationSuggestion {
+            field: "memory.action_history_max_records".to_string(),
+            current_value: max_records.to_string(),
+            suggested_value: (max_records * 2).to_string(),
+            rationale: format!(
+                "Store is {:.0}% full ({}/{})",
+                fill_ratio * 100.0,
+                total_records,
+                max_records,
+            ),
+            confidence: 0.85,
+        });
+    }
+
+    // Heuristic 2: at current ingestion rate the store would fill before
+    // the retention window expires (assuming ~1 session/day).
+    if avg_records_per_session > 0.0 && retention_days > 0 {
+        let projected_records = avg_records_per_session * retention_days as f64;
+        if projected_records > max_records as f64 {
+            suggestions.push(ConfigOptimizationSuggestion {
+                field: "memory.action_history_retention_days".to_string(),
+                current_value: retention_days.to_string(),
+                suggested_value: format!(
+                    "{}",
+                    (max_records as f64 / avg_records_per_session).floor() as u32
+                ),
+                rationale: format!(
+                    "At {:.1} records/session, {} days of retention would produce ~{:.0} records, exceeding max_records ({})",
+                    avg_records_per_session, retention_days, projected_records, max_records,
+                ),
+                confidence: 0.7,
+            });
+        }
+    }
+
+    suggestions
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -231,5 +315,76 @@ model = "custom-model"
         let result = handle_init_at_path(&path).expect("should succeed");
         assert!(result.contains("default configuration"));
         assert!(result.contains(&path.display().to_string()));
+    }
+
+    // -------------------------------------------------------------------
+    // B3: suggest_config_optimizations
+    // -------------------------------------------------------------------
+
+    #[test]
+    fn suggests_increase_when_store_over_80_percent() {
+        let suggestions = suggest_config_optimizations(850, 1000, 30, 10.0);
+        assert!(
+            suggestions
+                .iter()
+                .any(|s| s.field == "memory.action_history_max_records"),
+            "expected max_records suggestion"
+        );
+        let s = suggestions
+            .iter()
+            .find(|s| s.field == "memory.action_history_max_records")
+            .unwrap();
+        assert_eq!(s.suggested_value, "2000");
+        assert!(s.confidence > 0.8);
+    }
+
+    #[test]
+    fn no_suggestion_when_store_under_80_percent() {
+        let suggestions = suggest_config_optimizations(500, 1000, 30, 5.0);
+        assert!(
+            !suggestions
+                .iter()
+                .any(|s| s.field == "memory.action_history_max_records"),
+            "should not suggest max_records increase when store is only 50% full"
+        );
+    }
+
+    #[test]
+    fn suggests_retention_reduction_when_projection_exceeds_max() {
+        // 50 records/session * 30 days = 1500, but max is 1000
+        let suggestions = suggest_config_optimizations(100, 1000, 30, 50.0);
+        assert!(
+            suggestions
+                .iter()
+                .any(|s| s.field == "memory.action_history_retention_days"),
+            "expected retention suggestion"
+        );
+    }
+
+    #[test]
+    fn no_retention_suggestion_when_within_budget() {
+        // 10 records/session * 30 days = 300, within max of 1000
+        let suggestions = suggest_config_optimizations(100, 1000, 30, 10.0);
+        assert!(
+            !suggestions
+                .iter()
+                .any(|s| s.field == "memory.action_history_retention_days"),
+        );
+    }
+
+    #[test]
+    fn no_suggestions_when_max_records_is_zero() {
+        let suggestions = suggest_config_optimizations(0, 0, 30, 10.0);
+        assert!(suggestions.is_empty());
+    }
+
+    #[test]
+    fn suggestion_round_trips_through_json() {
+        let suggestions = suggest_config_optimizations(900, 1000, 30, 50.0);
+        assert!(!suggestions.is_empty());
+        let json = serde_json::to_string(&suggestions).expect("serialize");
+        let deserialized: Vec<ConfigOptimizationSuggestion> =
+            serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(deserialized.len(), suggestions.len());
     }
 }

@@ -108,12 +108,167 @@ pub fn create_self_mod_worktree(
     Ok(worktree_path)
 }
 
+// ---------------------------------------------------------------------------
+// B2: Skill effectiveness check — triggers self-modification when a skill
+// underperforms across a sufficient number of tracked sessions.
+// ---------------------------------------------------------------------------
+
+/// Result of evaluating whether a skill's effectiveness warrants
+/// self-modification (e.g. rewriting skill prompts or parameters).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SkillEffectivenessCheck {
+    pub skill_name: String,
+    pub success_rate: f64,
+    pub sessions_tracked: usize,
+    pub threshold: f64,
+    pub should_trigger: bool,
+}
+
+/// Evaluate whether a skill's success rate is below the acceptable threshold
+/// after a minimum number of tracked sessions.
+///
+/// Returns a [`SkillEffectivenessCheck`] with `should_trigger = true` when
+/// `sessions_tracked >= min_sessions` **and** `success_rate < threshold`.
+pub fn check_skill_effectiveness(
+    skill_name: &str,
+    success_rate: f64,
+    sessions_tracked: usize,
+    min_sessions: usize,
+    threshold: f64,
+) -> SkillEffectivenessCheck {
+    SkillEffectivenessCheck {
+        skill_name: skill_name.to_string(),
+        success_rate,
+        sessions_tracked,
+        threshold,
+        should_trigger: sessions_tracked >= min_sessions && success_rate < threshold,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// B4: Source code self-modification pipeline with worktree isolation.
+// ---------------------------------------------------------------------------
+
+/// Stage of a source-code self-modification pipeline.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SourceModificationStage {
+    Proposed,
+    WorktreeCreated,
+    PatchApplied,
+    TestsRunning,
+    TestsPassed,
+    TestsFailed,
+    SafetyReview,
+    SafetyCleared,
+    SafetyBlocked,
+    PrCreated,
+    HumanApproval,
+    Merged,
+    RolledBack,
+}
+
+/// A pipeline tracking the lifecycle of a source-code self-modification from
+/// proposal through worktree creation, testing, safety review, and merge.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SourceModificationPipeline {
+    /// The target file path (relative to repo root).
+    pub target_path: String,
+    /// The unified diff describing the proposed change.
+    pub diff: String,
+    /// Human-readable rationale for the modification.
+    pub rationale: String,
+    /// Path to the git worktree used for isolated testing.
+    pub worktree_path: Option<PathBuf>,
+    /// Whether the test suite passed in the worktree.
+    pub test_passed: Option<bool>,
+    /// Whether the safety review cleared the change.
+    pub safety_cleared: Option<bool>,
+    /// URL of the pull request created for human review.
+    pub pr_url: Option<String>,
+    /// Current stage of the pipeline.
+    pub stage: SourceModificationStage,
+}
+
+impl SourceModificationPipeline {
+    /// Create a new pipeline in the `Proposed` stage.
+    pub fn new(target_path: String, diff: String, rationale: String) -> Self {
+        Self {
+            target_path,
+            diff,
+            rationale,
+            worktree_path: None,
+            test_passed: None,
+            safety_cleared: None,
+            pr_url: None,
+            stage: SourceModificationStage::Proposed,
+        }
+    }
+
+    /// Advance the pipeline to the given stage.
+    pub fn advance_to(&mut self, stage: SourceModificationStage) {
+        self.stage = stage;
+    }
+
+    /// Returns `true` when the pipeline has reached a terminal state from
+    /// which no further transitions are expected.
+    pub fn is_terminal(&self) -> bool {
+        matches!(
+            self.stage,
+            SourceModificationStage::Merged
+                | SourceModificationStage::RolledBack
+                | SourceModificationStage::SafetyBlocked
+                | SourceModificationStage::TestsFailed
+        )
+    }
+}
+
 /// Remove a self-modification worktree that is no longer needed.
 pub fn cleanup_self_mod_worktree(worktree_path: &Path) -> Result<(), std::io::Error> {
     if worktree_path.exists() {
         std::fs::remove_dir_all(worktree_path)?;
     }
     Ok(())
+}
+
+/// B8: Reward signal for a self-modification proposal.
+///
+/// Tracks before/after effectiveness to determine whether a self-modification
+/// improved or regressed system behavior.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SelfModificationReward {
+    pub proposal_id: String,
+    pub sessions_before: usize,
+    pub sessions_after: usize,
+    pub effectiveness_before: f64,
+    pub effectiveness_after: f64,
+    /// Positive = improvement, negative = regression.
+    pub reward: f64,
+    /// True if enough sessions have elapsed and the reward is significantly negative.
+    pub should_rollback: bool,
+}
+
+/// B8: Compute a reward signal for a self-modification proposal.
+///
+/// Compares effectiveness before and after the modification was applied.
+/// Recommends rollback when enough sessions (`min_sessions`) have been
+/// observed and the effectiveness dropped by more than 0.1.
+pub fn compute_self_modification_reward(
+    proposal_id: &str,
+    effectiveness_before: f64,
+    effectiveness_after: f64,
+    min_sessions: usize,
+    sessions_after: usize,
+) -> SelfModificationReward {
+    let reward = effectiveness_after - effectiveness_before;
+    SelfModificationReward {
+        proposal_id: proposal_id.to_string(),
+        sessions_before: min_sessions,
+        sessions_after,
+        effectiveness_before,
+        effectiveness_after,
+        reward,
+        should_rollback: sessions_after >= min_sessions && reward < -0.1,
+    }
 }
 
 /// Generate a unique proposal identifier based on the current timestamp.
@@ -348,5 +503,202 @@ mod tests {
         assert!(!nonexistent.exists());
         let result = cleanup_self_mod_worktree(&nonexistent);
         assert!(result.is_ok());
+    }
+
+    // -------------------------------------------------------------------
+    // B2: check_skill_effectiveness
+    // -------------------------------------------------------------------
+
+    #[test]
+    fn skill_effectiveness_triggers_when_below_threshold_and_enough_sessions() {
+        let check = check_skill_effectiveness("code-review", 0.4, 10, 5, 0.7);
+        assert!(check.should_trigger);
+        assert_eq!(check.skill_name, "code-review");
+        assert!((check.success_rate - 0.4).abs() < f64::EPSILON);
+        assert_eq!(check.sessions_tracked, 10);
+        assert!((check.threshold - 0.7).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn skill_effectiveness_does_not_trigger_when_above_threshold() {
+        let check = check_skill_effectiveness("code-review", 0.85, 10, 5, 0.7);
+        assert!(!check.should_trigger);
+    }
+
+    #[test]
+    fn skill_effectiveness_does_not_trigger_when_insufficient_sessions() {
+        let check = check_skill_effectiveness("code-review", 0.3, 3, 5, 0.7);
+        assert!(!check.should_trigger);
+    }
+
+    #[test]
+    fn skill_effectiveness_triggers_at_exact_boundary() {
+        // Exactly at min_sessions, and rate < threshold
+        let check = check_skill_effectiveness("deploy", 0.69, 5, 5, 0.7);
+        assert!(check.should_trigger);
+    }
+
+    #[test]
+    fn skill_effectiveness_does_not_trigger_at_exact_threshold_rate() {
+        // rate == threshold is NOT below threshold
+        let check = check_skill_effectiveness("deploy", 0.7, 10, 5, 0.7);
+        assert!(!check.should_trigger);
+    }
+
+    // -------------------------------------------------------------------
+    // B4: SourceModificationPipeline
+    // -------------------------------------------------------------------
+
+    #[test]
+    fn pipeline_starts_in_proposed_stage() {
+        let pipeline = SourceModificationPipeline::new(
+            "crates/tau-ops/src/lib.rs".to_string(),
+            "--- a\n+++ b\n".to_string(),
+            "improve performance".to_string(),
+        );
+        assert_eq!(pipeline.stage, SourceModificationStage::Proposed);
+        assert!(!pipeline.is_terminal());
+    }
+
+    #[test]
+    fn pipeline_advance_to_changes_stage() {
+        let mut pipeline = SourceModificationPipeline::new(
+            "src/main.rs".to_string(),
+            "diff".to_string(),
+            "fix bug".to_string(),
+        );
+        pipeline.advance_to(SourceModificationStage::WorktreeCreated);
+        assert_eq!(pipeline.stage, SourceModificationStage::WorktreeCreated);
+        assert!(!pipeline.is_terminal());
+    }
+
+    #[test]
+    fn pipeline_merged_is_terminal() {
+        let mut pipeline = SourceModificationPipeline::new(
+            "src/main.rs".to_string(),
+            "diff".to_string(),
+            "reason".to_string(),
+        );
+        pipeline.advance_to(SourceModificationStage::Merged);
+        assert!(pipeline.is_terminal());
+    }
+
+    #[test]
+    fn pipeline_rolled_back_is_terminal() {
+        let mut pipeline = SourceModificationPipeline::new(
+            "src/main.rs".to_string(),
+            "diff".to_string(),
+            "reason".to_string(),
+        );
+        pipeline.advance_to(SourceModificationStage::RolledBack);
+        assert!(pipeline.is_terminal());
+    }
+
+    #[test]
+    fn pipeline_safety_blocked_is_terminal() {
+        let mut pipeline = SourceModificationPipeline::new(
+            "src/main.rs".to_string(),
+            "diff".to_string(),
+            "reason".to_string(),
+        );
+        pipeline.advance_to(SourceModificationStage::SafetyBlocked);
+        assert!(pipeline.is_terminal());
+    }
+
+    #[test]
+    fn pipeline_tests_failed_is_terminal() {
+        let mut pipeline = SourceModificationPipeline::new(
+            "src/main.rs".to_string(),
+            "diff".to_string(),
+            "reason".to_string(),
+        );
+        pipeline.advance_to(SourceModificationStage::TestsFailed);
+        assert!(pipeline.is_terminal());
+    }
+
+    #[test]
+    fn pipeline_non_terminal_stages() {
+        let non_terminal = vec![
+            SourceModificationStage::Proposed,
+            SourceModificationStage::WorktreeCreated,
+            SourceModificationStage::PatchApplied,
+            SourceModificationStage::TestsRunning,
+            SourceModificationStage::TestsPassed,
+            SourceModificationStage::SafetyReview,
+            SourceModificationStage::SafetyCleared,
+            SourceModificationStage::PrCreated,
+            SourceModificationStage::HumanApproval,
+        ];
+        for stage in non_terminal {
+            let mut pipeline = SourceModificationPipeline::new(
+                "f.rs".to_string(),
+                "d".to_string(),
+                "r".to_string(),
+            );
+            pipeline.advance_to(stage.clone());
+            assert!(
+                !pipeline.is_terminal(),
+                "stage {:?} should not be terminal",
+                stage
+            );
+        }
+    }
+
+    #[test]
+    fn pipeline_round_trips_through_json() {
+        let pipeline = SourceModificationPipeline::new(
+            "crates/tau-ops/src/lib.rs".to_string(),
+            "--- a\n+++ b\n".to_string(),
+            "testing serde".to_string(),
+        );
+        let json = serde_json::to_string(&pipeline).expect("serialize");
+        let deserialized: SourceModificationPipeline =
+            serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(deserialized.target_path, pipeline.target_path);
+        assert_eq!(deserialized.stage, SourceModificationStage::Proposed);
+    }
+
+    // -------------------------------------------------------------------
+    // B8: compute_self_modification_reward
+    // -------------------------------------------------------------------
+
+    #[test]
+    fn reward_positive_when_effectiveness_improves() {
+        let reward = compute_self_modification_reward("p-001", 0.6, 0.8, 5, 10);
+        assert!((reward.reward - 0.2).abs() < f64::EPSILON);
+        assert!(!reward.should_rollback);
+        assert_eq!(reward.proposal_id, "p-001");
+    }
+
+    #[test]
+    fn reward_negative_when_effectiveness_regresses() {
+        let reward = compute_self_modification_reward("p-002", 0.8, 0.5, 5, 10);
+        assert!((reward.reward - (-0.3)).abs() < f64::EPSILON);
+        assert!(reward.should_rollback);
+    }
+
+    #[test]
+    fn reward_no_rollback_when_insufficient_sessions() {
+        // Even with negative reward, don't rollback if not enough sessions observed
+        let reward = compute_self_modification_reward("p-003", 0.8, 0.5, 10, 5);
+        assert!(reward.reward < -0.1);
+        assert!(!reward.should_rollback); // sessions_after < min_sessions
+    }
+
+    #[test]
+    fn reward_no_rollback_when_regression_is_small() {
+        // Small regression (< 0.1) should not trigger rollback
+        let reward = compute_self_modification_reward("p-004", 0.8, 0.75, 5, 10);
+        assert!((reward.reward - (-0.05)).abs() < f64::EPSILON);
+        assert!(!reward.should_rollback);
+    }
+
+    #[test]
+    fn reward_serializes_correctly() {
+        let reward = compute_self_modification_reward("p-005", 0.7, 0.9, 5, 10);
+        let json = serde_json::to_string(&reward).expect("serialize");
+        let deser: SelfModificationReward = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(deser.proposal_id, "p-005");
+        assert!((deser.reward - 0.2).abs() < f64::EPSILON);
     }
 }

@@ -3,6 +3,7 @@
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use chrono::Utc;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
@@ -178,6 +179,101 @@ pub async fn trigger_apo_optimization(
     );
 
     ApoTriggerResult::started(completed_rollouts, config.apo_auto_trigger_threshold)
+}
+
+// ---------------------------------------------------------------------------
+// B5: A/B testing for APO prompts
+// ---------------------------------------------------------------------------
+
+/// Status of a prompt A/B experiment.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ExperimentStatus {
+    /// Not enough sessions to evaluate yet.
+    Running,
+    /// The candidate prompt outperforms the control.
+    CandidateWins,
+    /// The control prompt outperforms the candidate.
+    ControlWins,
+    /// No statistically meaningful difference detected.
+    Inconclusive,
+}
+
+/// An A/B experiment comparing a control prompt against a candidate prompt
+/// produced by APO. Traffic is split according to `traffic_percent`, and
+/// evaluation occurs once both arms reach `min_sessions`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PromptExperiment {
+    pub experiment_id: String,
+    pub control_prompt: String,
+    pub candidate_prompt: String,
+    pub control_sessions: usize,
+    pub candidate_sessions: usize,
+    pub control_avg_reward: f64,
+    pub candidate_avg_reward: f64,
+    /// Fraction of sessions routed to the candidate (e.g. 0.1 = 10%).
+    pub traffic_percent: f64,
+    /// Minimum sessions per arm before evaluation.
+    pub min_sessions: usize,
+    pub status: ExperimentStatus,
+}
+
+impl PromptExperiment {
+    /// Create a new experiment in `Running` status with default 10% traffic
+    /// and a minimum of 20 sessions per arm.
+    pub fn new(control: String, candidate: String) -> Self {
+        Self {
+            experiment_id: format!(
+                "exp-{}",
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis()
+            ),
+            control_prompt: control,
+            candidate_prompt: candidate,
+            control_sessions: 0,
+            candidate_sessions: 0,
+            control_avg_reward: 0.0,
+            candidate_avg_reward: 0.0,
+            traffic_percent: 0.1,
+            min_sessions: 20,
+            status: ExperimentStatus::Running,
+        }
+    }
+
+    /// Decide whether the current session should use the candidate prompt.
+    ///
+    /// Uses a simple time-based hash to route roughly `traffic_percent` of
+    /// sessions to the candidate arm.
+    pub fn should_use_candidate(&self) -> bool {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let t = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis();
+        (t % 100) < (self.traffic_percent * 100.0) as u128
+    }
+
+    /// Evaluate the experiment given current session counts and average
+    /// rewards. Returns the resulting status without mutating `self`.
+    ///
+    /// A candidate "wins" when its average reward exceeds the control by
+    /// more than 0.05; the control "wins" in the reverse case. Otherwise
+    /// the result is `Inconclusive`.
+    pub fn evaluate(&self) -> ExperimentStatus {
+        if self.control_sessions < self.min_sessions
+            || self.candidate_sessions < self.min_sessions
+        {
+            return ExperimentStatus::Running;
+        }
+        if self.candidate_avg_reward > self.control_avg_reward + 0.05 {
+            ExperimentStatus::CandidateWins
+        } else if self.control_avg_reward > self.candidate_avg_reward + 0.05 {
+            ExperimentStatus::ControlWins
+        } else {
+            ExperimentStatus::Inconclusive
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -4267,5 +4363,98 @@ mod tests {
         assert!(result.triggered);
         assert!(!result.optimization_started);
         assert!(result.error.as_deref().unwrap().contains("insufficient"));
+    }
+
+    // -------------------------------------------------------------------
+    // B5: PromptExperiment evaluation tests
+    // -------------------------------------------------------------------
+
+    #[test]
+    fn experiment_new_starts_running() {
+        let exp = PromptExperiment::new("control".into(), "candidate".into());
+        assert_eq!(exp.status, ExperimentStatus::Running);
+        assert!(exp.experiment_id.starts_with("exp-"));
+        assert_eq!(exp.control_sessions, 0);
+        assert_eq!(exp.candidate_sessions, 0);
+        assert!((exp.traffic_percent - 0.1).abs() < f64::EPSILON);
+        assert_eq!(exp.min_sessions, 20);
+    }
+
+    #[test]
+    fn experiment_evaluate_running_when_insufficient_sessions() {
+        let exp = PromptExperiment {
+            experiment_id: "exp-test".into(),
+            control_prompt: "c".into(),
+            candidate_prompt: "d".into(),
+            control_sessions: 25,
+            candidate_sessions: 5, // below min_sessions
+            control_avg_reward: 0.5,
+            candidate_avg_reward: 0.9,
+            traffic_percent: 0.1,
+            min_sessions: 20,
+            status: ExperimentStatus::Running,
+        };
+        assert_eq!(exp.evaluate(), ExperimentStatus::Running);
+    }
+
+    #[test]
+    fn experiment_evaluate_candidate_wins() {
+        let exp = PromptExperiment {
+            experiment_id: "exp-test".into(),
+            control_prompt: "c".into(),
+            candidate_prompt: "d".into(),
+            control_sessions: 25,
+            candidate_sessions: 25,
+            control_avg_reward: 0.5,
+            candidate_avg_reward: 0.6, // > 0.5 + 0.05
+            traffic_percent: 0.1,
+            min_sessions: 20,
+            status: ExperimentStatus::Running,
+        };
+        assert_eq!(exp.evaluate(), ExperimentStatus::CandidateWins);
+    }
+
+    #[test]
+    fn experiment_evaluate_control_wins() {
+        let exp = PromptExperiment {
+            experiment_id: "exp-test".into(),
+            control_prompt: "c".into(),
+            candidate_prompt: "d".into(),
+            control_sessions: 25,
+            candidate_sessions: 25,
+            control_avg_reward: 0.7,
+            candidate_avg_reward: 0.6, // control > candidate + 0.05
+            traffic_percent: 0.1,
+            min_sessions: 20,
+            status: ExperimentStatus::Running,
+        };
+        assert_eq!(exp.evaluate(), ExperimentStatus::ControlWins);
+    }
+
+    #[test]
+    fn experiment_evaluate_inconclusive() {
+        let exp = PromptExperiment {
+            experiment_id: "exp-test".into(),
+            control_prompt: "c".into(),
+            candidate_prompt: "d".into(),
+            control_sessions: 25,
+            candidate_sessions: 25,
+            control_avg_reward: 0.5,
+            candidate_avg_reward: 0.52, // within 0.05 of each other
+            traffic_percent: 0.1,
+            min_sessions: 20,
+            status: ExperimentStatus::Running,
+        };
+        assert_eq!(exp.evaluate(), ExperimentStatus::Inconclusive);
+    }
+
+    #[test]
+    fn experiment_round_trips_through_json() {
+        let exp = PromptExperiment::new("control text".into(), "candidate text".into());
+        let json = serde_json::to_string(&exp).expect("serialize");
+        let deserialized: PromptExperiment = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(deserialized.experiment_id, exp.experiment_id);
+        assert_eq!(deserialized.control_prompt, "control text");
+        assert_eq!(deserialized.candidate_prompt, "candidate text");
     }
 }

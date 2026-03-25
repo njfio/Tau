@@ -12,7 +12,9 @@ mod macro_commands;
 mod project_index;
 mod qa_loop_commands;
 pub mod script_gate;
+pub mod mcp_sdk;
 pub mod self_modify_commands;
+pub mod smoke_test_protocol;
 pub mod training_commands;
 mod transport_health;
 pub mod verification_gates;
@@ -27,6 +29,7 @@ pub use project_index::*;
 pub use qa_loop_commands::*;
 pub use script_gate::*;
 pub use self_modify_commands::*;
+pub use smoke_test_protocol::*;
 pub use training_commands::*;
 pub use transport_health::*;
 
