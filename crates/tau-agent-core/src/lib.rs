@@ -38,6 +38,7 @@ mod runtime_safety_memory;
 mod runtime_startup;
 mod runtime_tool_bridge;
 mod runtime_turn_loop;
+pub mod session_history;
 
 pub use agent_channel::{AgentMessage, AgentMessageBus, AgentMessageType};
 pub use circuit_breaker::{CircuitBreaker, CircuitState};
@@ -53,7 +54,14 @@ pub use process_types::{
     ProcessLifecycleState, ProcessManager, ProcessManagerError, ProcessRuntimeProfile,
     ProcessSnapshot, ProcessSpawnSpec, ProcessType,
 };
-pub use recovery::{select_recovery_strategy, RecoveryStrategy};
+pub use recovery::{
+    select_recovery_strategy, select_recovery_strategy_with_history, HistoricalToolInsight,
+    RecoveryStrategy,
+};
+pub use session_history::{
+    build_learning_insight, build_tool_insight, init_action_history, record_action,
+    save_action_history,
+};
 pub(crate) use runtime_safety_memory::{assistant_text_suggests_failure, retrieve_memory_matches};
 pub(crate) use runtime_startup::{
     cache_insert_with_limit, lock_or_recover, normalize_direct_message_content,
@@ -186,6 +194,7 @@ pub struct AgentConfig {
     pub action_history_enabled: bool,
     pub action_history_max_records: usize,
     pub action_history_retention_days: u32,
+    pub action_history_store_path: Option<std::path::PathBuf>,
 
     // Phase 8: Self-repair — failure detection
     pub failure_detection_enabled: bool,
@@ -267,6 +276,7 @@ impl Default for AgentConfig {
             action_history_enabled: true,
             action_history_max_records: 1000,
             action_history_retention_days: 30,
+            action_history_store_path: None,
 
             // Phase 8: Self-repair
             failure_detection_enabled: true,
@@ -1044,6 +1054,7 @@ pub struct Agent {
     agent_metrics: Arc<metrics::AgentMetrics>,
     circuit_breaker: Arc<circuit_breaker::CircuitBreaker>,
     message_bus: Arc<agent_channel::AgentMessageBus>,
+    action_history: Option<Arc<Mutex<tau_memory::action_history::ActionHistoryStore>>>,
 }
 
 impl Agent {
@@ -1056,6 +1067,8 @@ impl Agent {
         let agent_id = config.agent_id.clone();
         let cb_threshold = config.circuit_breaker_failure_threshold;
         let cb_timeout = config.circuit_breaker_recovery_timeout_ms;
+        let action_history = session_history::init_action_history(&config)
+            .map(|store| Arc::new(Mutex::new(store)));
 
         Self {
             client,
@@ -1087,6 +1100,7 @@ impl Agent {
                 cb_timeout,
             )),
             message_bus: Arc::new(agent_channel::AgentMessageBus::new(64)),
+            action_history,
         }
     }
 
@@ -1647,6 +1661,8 @@ impl Agent {
         if result.is_ok() {
             self.compact_message_history();
         }
+        // Persist action history at session end regardless of outcome.
+        self.save_action_history_to_disk();
         result
     }
 
@@ -1685,6 +1701,35 @@ impl Agent {
                 }
             }
         }
+    }
+
+    /// Persist the action history store to disk. Called at session end.
+    fn save_action_history_to_disk(&self) {
+        if let Some(ref history) = self.action_history {
+            if let Ok(store) = history.lock() {
+                session_history::save_action_history(&store, &self.config);
+            }
+        }
+    }
+
+    /// Returns a [`LearningInsight`] built from the current action history, if available.
+    pub fn learning_insight(&self) -> Option<LearningInsight> {
+        self.action_history.as_ref().and_then(|history| {
+            history
+                .lock()
+                .ok()
+                .map(|store| session_history::build_learning_insight(&store))
+        })
+    }
+
+    /// Returns a [`HistoricalToolInsight`] for the named tool, if action history is available.
+    pub fn tool_insight(&self, tool_name: &str) -> Option<recovery::HistoricalToolInsight> {
+        self.action_history.as_ref().and_then(|history| {
+            history
+                .lock()
+                .ok()
+                .and_then(|store| session_history::build_tool_insight(&store, tool_name))
+        })
     }
 
     fn cancellation_token(&self) -> Option<CooperativeCancellationToken> {
@@ -3332,6 +3377,40 @@ impl Agent {
 
     fn record_tool_result(&mut self, call: ToolCall, result: ToolExecutionResult) -> bool {
         let result = self.sanitize_tool_result(result);
+
+        // Record tool execution in action history for cross-session learning.
+        if let Some(ref history) = self.action_history {
+            if let Ok(mut store) = history.lock() {
+                let output_text = result.as_text();
+                let output_summary = if output_text.len() > 200 {
+                    format!("{}…", &output_text[..200])
+                } else {
+                    output_text.clone()
+                };
+                let input_text = serde_json::to_string(&call.arguments)
+                    .unwrap_or_else(|_| call.arguments.to_string());
+                let input_summary = if input_text.len() > 200 {
+                    format!("{}…", &input_text[..200])
+                } else {
+                    input_text
+                };
+                store.record(tau_memory::action_history::ActionRecord {
+                    session_id: self.agent_id.clone(),
+                    turn: 0, // Turn is not easily available here; use 0 as placeholder.
+                    action_type: tau_memory::action_history::ActionType::ToolExecution,
+                    tool_name: Some(call.name.clone()),
+                    input_summary,
+                    output_summary,
+                    success: !result.is_error,
+                    latency_ms: 0, // Latency not tracked at this level.
+                    timestamp_ms: std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis() as u64,
+                });
+            }
+        }
+
         self.emit(AgentEvent::ToolExecutionEnd {
             tool_call_id: call.id.clone(),
             tool_name: call.name.clone(),
