@@ -15,6 +15,8 @@ use tau_cli::Cli;
 use tau_skills::default_skills_lock_path;
 use tau_tools::tools::ToolPolicy;
 
+use crate::config_file::load_tau_config;
+use crate::startup_config::ProfileDefaults;
 use crate::startup_policy::{resolve_startup_policy, StartupPolicyBundle};
 use crate::startup_prompt_composition::{
     compose_startup_system_prompt_with_report, StartupIdentityCompositionReport,
@@ -460,6 +462,30 @@ pub fn resolve_runtime_skills_lock_path(
     } else {
         default_skills_lock_path(effective_skills_dir)
     }
+}
+
+/// Attempt to load `.tau.toml` from the current directory and convert it to
+/// `ProfileDefaults`. Returns `None` if the file does not exist. Returns an
+/// error if the file exists but cannot be parsed.
+pub fn try_load_tau_config_as_profile_defaults() -> Result<Option<ProfileDefaults>> {
+    let path = PathBuf::from(".tau.toml");
+    if !path.exists() {
+        return Ok(None);
+    }
+    let config = load_tau_config(&path)
+        .map_err(|e| anyhow::anyhow!("failed to load .tau.toml: {e}"))?;
+    Ok(Some(config.to_profile_defaults()))
+}
+
+/// Load `.tau.toml` from a specific path and convert it to `ProfileDefaults`.
+/// Returns `None` if the file does not exist. Returns an error on parse failure.
+pub fn try_load_tau_config_from_path(path: &Path) -> Result<Option<ProfileDefaults>> {
+    if !path.exists() {
+        return Ok(None);
+    }
+    let config =
+        load_tau_config(path).map_err(|e| anyhow::anyhow!("failed to load {}: {e}", path.display()))?;
+    Ok(Some(config.to_profile_defaults()))
 }
 
 #[cfg(test)]
@@ -1575,5 +1601,49 @@ mod tests {
         assert!(error.to_string().contains("local runtime failed"));
         assert_eq!(transport_calls.load(Ordering::Relaxed), 1);
         assert_eq!(local_calls.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn unit_try_load_tau_config_from_path_returns_none_when_missing() {
+        let result =
+            super::try_load_tau_config_from_path(Path::new("/tmp/nonexistent-tau-test.toml"));
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_none());
+    }
+
+    #[test]
+    fn unit_try_load_tau_config_from_path_returns_profile_defaults_when_present() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join(".tau.toml");
+        std::fs::write(
+            &path,
+            r#"
+[agent]
+model = "test-model"
+fallback_models = ["fallback-a"]
+
+[policy]
+bash_timeout_ms = 45000
+"#,
+        )
+        .expect("write");
+
+        let result = super::try_load_tau_config_from_path(&path);
+        assert!(result.is_ok());
+        let defaults = result.unwrap().expect("should be Some");
+        assert_eq!(defaults.model, "test-model");
+        assert_eq!(defaults.fallback_models, vec!["fallback-a".to_string()]);
+        assert_eq!(defaults.policy.bash_timeout_ms, 45_000);
+    }
+
+    #[test]
+    fn unit_try_load_tau_config_from_path_returns_error_on_invalid_toml() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join(".tau.toml");
+        std::fs::write(&path, "[agent\nname = broken").expect("write");
+
+        let result = super::try_load_tau_config_from_path(&path);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("failed to load"));
     }
 }

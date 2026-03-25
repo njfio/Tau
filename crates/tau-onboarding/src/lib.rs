@@ -3,6 +3,7 @@
 //! Implements onboarding flows, startup configuration resolution, model/runtime
 //! dispatch, and transport-mode bootstrap helpers.
 
+pub mod config_commands;
 pub mod config_file;
 pub mod onboarding_command;
 pub mod onboarding_daemon;

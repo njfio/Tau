@@ -343,6 +343,76 @@ pub struct TauConfig {
 }
 
 // ---------------------------------------------------------------------------
+// Conversion to ProfileDefaults
+// ---------------------------------------------------------------------------
+
+impl TauConfig {
+    /// Convert this `TauConfig` into `ProfileDefaults`, mapping each config
+    /// section to the corresponding profile fields and using sensible defaults
+    /// for any fields that `.tau.toml` does not cover.
+    pub fn to_profile_defaults(&self) -> crate::startup_config::ProfileDefaults {
+        use crate::startup_config::*;
+
+        let auth_method_from_str = |s: &str| -> tau_provider::ProviderAuthMethod {
+            match s {
+                "oauth" | "oauth_token" => tau_provider::ProviderAuthMethod::OauthToken,
+                "adc" => tau_provider::ProviderAuthMethod::Adc,
+                "session_token" => tau_provider::ProviderAuthMethod::SessionToken,
+                _ => tau_provider::ProviderAuthMethod::ApiKey,
+            }
+        };
+
+        ProfileDefaults {
+            model: self.agent.model.clone(),
+            fallback_models: self.agent.fallback_models.clone(),
+            session: ProfileSessionDefaults {
+                enabled: self.session.enabled,
+                path: if self.session.enabled {
+                    Some(self.session.path.clone())
+                } else {
+                    None
+                },
+                import_mode: self.session.import_mode.clone(),
+            },
+            policy: ProfilePolicyDefaults {
+                tool_policy_preset: self.policy.tool_policy_preset.clone(),
+                bash_profile: self.policy.bash_profile.clone(),
+                bash_dry_run: false,
+                os_sandbox_mode: self.policy.os_sandbox_mode.clone(),
+                enforce_regular_files: false,
+                bash_timeout_ms: self.policy.bash_timeout_ms,
+                max_command_length: 4_096,
+                max_tool_output_bytes: 16_000,
+                max_file_read_bytes: 1_000_000,
+                max_file_write_bytes: 1_000_000,
+                allow_command_newlines: false,
+                runtime_heartbeat_enabled: true,
+                runtime_heartbeat_interval_ms: 5_000,
+                runtime_heartbeat_state_path: ".tau/runtime-heartbeat/state.json".to_string(),
+                runtime_self_repair_enabled: true,
+                runtime_self_repair_timeout_ms: 300_000,
+                runtime_self_repair_max_retries: 2,
+                runtime_self_repair_tool_builds_dir: ".tau/tool-builds".to_string(),
+                runtime_self_repair_orphan_max_age_seconds: 3_600,
+                context_compaction_warn_threshold_percent: 80,
+                context_compaction_aggressive_threshold_percent: 85,
+                context_compaction_emergency_threshold_percent: 95,
+                context_compaction_warn_retain_percent: 70,
+                context_compaction_aggressive_retain_percent: 50,
+                context_compaction_emergency_retain_percent: 50,
+            },
+            mcp: ProfileMcpDefaults::default(),
+            auth: ProfileAuthDefaults {
+                openai: auth_method_from_str(&self.auth.openai_auth_mode),
+                anthropic: auth_method_from_str(&self.auth.anthropic_auth_mode),
+                google: tau_provider::ProviderAuthMethod::ApiKey,
+            },
+            routing: ProfileRoutingDefaults::default(),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
@@ -674,6 +744,81 @@ model = "test-model"
         assert_eq!(config.agent.model, "test-model");
         // Rest should be defaults
         assert!(config.session.enabled);
+    }
+
+    /// Test: to_profile_defaults maps default TauConfig correctly.
+    #[test]
+    fn test_to_profile_defaults_from_default_config() {
+        let config = TauConfig::default();
+        let defaults = config.to_profile_defaults();
+
+        assert_eq!(defaults.model, "claude-sonnet-4-6");
+        assert_eq!(
+            defaults.fallback_models,
+            vec!["claude-haiku-4-5-20251001".to_string()]
+        );
+        assert!(defaults.session.enabled);
+        assert_eq!(defaults.session.path, Some(".tau/sessions".to_string()));
+        assert_eq!(defaults.session.import_mode, "auto");
+        assert_eq!(defaults.policy.tool_policy_preset, "standard");
+        assert_eq!(defaults.policy.bash_profile, "default");
+        assert_eq!(defaults.policy.os_sandbox_mode, "relaxed");
+        assert_eq!(defaults.policy.bash_timeout_ms, 30_000);
+        assert_eq!(
+            defaults.auth.openai,
+            tau_provider::ProviderAuthMethod::ApiKey
+        );
+        assert_eq!(
+            defaults.auth.anthropic,
+            tau_provider::ProviderAuthMethod::ApiKey
+        );
+    }
+
+    /// Test: to_profile_defaults maps custom TauConfig values.
+    #[test]
+    fn test_to_profile_defaults_from_custom_config() {
+        let config = parse_tau_config(
+            r#"
+[agent]
+model = "openai/gpt-5.2"
+fallback_models = ["openai/gpt-4.1-mini"]
+
+[session]
+enabled = false
+path = "/tmp/sessions"
+import_mode = "merge"
+
+[policy]
+tool_policy_preset = "balanced"
+bash_profile = "strict"
+os_sandbox_mode = "strict"
+bash_timeout_ms = 60000
+
+[auth]
+openai_auth_mode = "oauth"
+anthropic_auth_mode = "session_token"
+"#,
+        )
+        .expect("parse");
+        let defaults = config.to_profile_defaults();
+
+        assert_eq!(defaults.model, "openai/gpt-5.2");
+        assert_eq!(defaults.fallback_models, vec!["openai/gpt-4.1-mini"]);
+        assert!(!defaults.session.enabled);
+        assert_eq!(defaults.session.path, None);
+        assert_eq!(defaults.session.import_mode, "merge");
+        assert_eq!(defaults.policy.tool_policy_preset, "balanced");
+        assert_eq!(defaults.policy.bash_profile, "strict");
+        assert_eq!(defaults.policy.os_sandbox_mode, "strict");
+        assert_eq!(defaults.policy.bash_timeout_ms, 60_000);
+        assert_eq!(
+            defaults.auth.openai,
+            tau_provider::ProviderAuthMethod::OauthToken
+        );
+        assert_eq!(
+            defaults.auth.anthropic,
+            tau_provider::ProviderAuthMethod::SessionToken
+        );
     }
 
     /// Test: ConfigError Display formatting.
