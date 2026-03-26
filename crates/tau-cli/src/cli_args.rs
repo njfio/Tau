@@ -537,7 +537,7 @@ pub struct Cli {
     )]
     pub skills_sync: bool,
 
-    #[arg(long, env = "TAU_MAX_TURNS", default_value_t = 8)]
+    #[arg(long, env = "TAU_MAX_TURNS", default_value_t = 64)]
     pub max_turns: usize,
 
     #[arg(

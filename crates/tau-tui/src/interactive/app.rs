@@ -139,11 +139,8 @@ impl App {
                     });
                 }
                 Ok(GatewayStreamEvent::MessageAdded { role, text }) => {
-                    let msg_role = match role.as_str() {
-                        "assistant" => MessageRole::Assistant,
-                        _ => MessageRole::System,
-                    };
-                    if msg_role == MessageRole::Assistant {
+                    // Only show assistant messages in chat — hide internal user/system nudges
+                    if role == "assistant" && !text.trim().is_empty() {
                         self.streaming_text.push_str(&text);
                         self.streaming_text.push('\n');
                         if let Some(idx) = self.streaming_message_index {
@@ -157,7 +154,7 @@ impl App {
                             self.streaming_message_index = Some(idx);
                         }
                     } else {
-                        self.push_timestamped_message(msg_role, text);
+                        // Don't show user/system nudge messages — they're internal to the loop
                     }
                     self.chat.scroll_to_bottom();
                 }

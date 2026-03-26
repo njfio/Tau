@@ -204,7 +204,7 @@ pub(super) async fn execute_openresponses_request(
     // on the first iteration, re-prompt it to actually execute. This prevents
     // the agent from just describing a plan and stopping.
     // See: https://github.com/anthropics/claude-code/tree/main/plugins/ralph-wiggum
-    let max_ralph_iterations = 3usize;
+    let max_ralph_iterations = 20usize;
     let pre_prompt_cost = agent.cost_snapshot();
     let mut current_prompt = translated.prompt.clone();
     let mut prompt_result = None;
@@ -258,9 +258,8 @@ pub(super) async fn execute_openresponses_request(
                     break;
                 }
                 // Agent only produced text without tool calls — Ralph loop: continue
-                current_prompt = "You described what you would do but didn't execute any tools. \
-                    Continue working on the task. Use your tools (bash, write, edit, read, grep, glob) \
-                    to make progress. Do not explain what you will do — just do it.".to_string();
+                // The nudge is injected as the next prompt, not shown to the user
+                current_prompt = "Continue. Execute the next step using tools.".to_string();
             }
             Err(_) => {
                 prompt_result = Some(iteration_result);
