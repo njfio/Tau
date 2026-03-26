@@ -41,6 +41,8 @@ pub enum GatewayStreamEvent {
     ToolStart { tool_name: String, arguments_preview: String },
     /// Tool execution ended.
     ToolEnd { tool_name: String, success: bool, output_preview: String },
+    /// A full message was added to the conversation (assistant reasoning, tool results, etc.)
+    MessageAdded { role: String, text: String },
     /// The turn completed successfully.
     Done(GatewayTurnResult),
     /// The turn failed.
@@ -181,6 +183,13 @@ fn submit_streaming_turn(
                     success,
                     output_preview: output,
                 });
+            }
+            "response.message.added" => {
+                let role = event.get("role").and_then(Value::as_str).unwrap_or("").to_string();
+                let text = event.get("text").and_then(Value::as_str).unwrap_or("").to_string();
+                if !text.is_empty() {
+                    let _ = sender.send(GatewayStreamEvent::MessageAdded { role, text });
+                }
             }
             "response.completed" => {
                 // Final response object

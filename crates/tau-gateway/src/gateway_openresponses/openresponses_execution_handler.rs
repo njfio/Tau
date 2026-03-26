@@ -144,6 +144,27 @@ pub(super) async fn execute_openresponses_request(
                         });
                     }
                 }
+                AgentEvent::MessageAdded { message } => {
+                    if let Some(sender) = &event_stream_sender {
+                        let role = match message.role {
+                            tau_ai::MessageRole::Assistant => "assistant",
+                            tau_ai::MessageRole::User => "user",
+                            tau_ai::MessageRole::System => "system",
+                            tau_ai::MessageRole::Tool => "tool",
+                        };
+                        let text = message.text_content();
+                        if !text.is_empty() {
+                            let _ = sender.send(SseFrame::Json {
+                                event: "response.message.added",
+                                payload: json!({
+                                    "type": "response.message.added",
+                                    "role": role,
+                                    "text": text,
+                                }),
+                            });
+                        }
+                    }
+                }
                 _ => {}
             }
         }

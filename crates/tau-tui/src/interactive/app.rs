@@ -138,6 +138,29 @@ impl App {
                         timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
                     });
                 }
+                Ok(GatewayStreamEvent::MessageAdded { role, text }) => {
+                    let msg_role = match role.as_str() {
+                        "assistant" => MessageRole::Assistant,
+                        _ => MessageRole::System,
+                    };
+                    if msg_role == MessageRole::Assistant {
+                        self.streaming_text.push_str(&text);
+                        self.streaming_text.push('\n');
+                        if let Some(idx) = self.streaming_message_index {
+                            self.chat.update_message_content(idx, self.streaming_text.clone());
+                        } else {
+                            let idx = self.chat.add_message(ChatMessage {
+                                role: MessageRole::Assistant,
+                                content: self.streaming_text.clone(),
+                                timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
+                            });
+                            self.streaming_message_index = Some(idx);
+                        }
+                    } else {
+                        self.push_timestamped_message(msg_role, text);
+                    }
+                    self.chat.scroll_to_bottom();
+                }
                 Ok(GatewayStreamEvent::ToolEnd { tool_name, success, output_preview }) => {
                     self.status.agent_state = AgentStateDisplay::Streaming;
                     self.tools.add_entry(ToolEntry {
