@@ -199,44 +199,79 @@ pub(super) async fn execute_openresponses_request(
     let _ = agent.replace_system_prompt(effective_system_prompt);
 
     let start_index = agent.messages().len();
-    let stream_handler = stream_sender.as_ref().map(|sender| {
-        let sender = sender.clone();
-        let response_id = response_id.clone();
-        Arc::new(move |delta: String| {
-            if delta.is_empty() {
-                return;
-            }
-            let _ = sender.send(SseFrame::Json {
-                event: "response.output_text.delta",
-                payload: json!({
-                    "type": "response.output_text.delta",
-                    "response_id": response_id,
-                    "delta": delta,
-                }),
-            });
-        }) as StreamDeltaHandler
-    });
 
+    // Ralph Wiggum Loop: if the agent responds with only text (no tool calls)
+    // on the first iteration, re-prompt it to actually execute. This prevents
+    // the agent from just describing a plan and stopping.
+    // See: https://github.com/anthropics/claude-code/tree/main/plugins/ralph-wiggum
+    let max_ralph_iterations = 3usize;
     let pre_prompt_cost = agent.cost_snapshot();
-    let prompt_result = if state.config.turn_timeout_ms == 0 {
-        agent
-            .prompt_with_stream(&translated.prompt, stream_handler)
+    let mut current_prompt = translated.prompt.clone();
+    let mut prompt_result = None;
+
+    for ralph_iteration in 0..max_ralph_iterations {
+        let stream_handler_clone = stream_sender.as_ref().map(|sender| {
+            let sender = sender.clone();
+            let response_id = response_id.clone();
+            Arc::new(move |delta: String| {
+                if delta.is_empty() {
+                    return;
+                }
+                let _ = sender.send(SseFrame::Json {
+                    event: "response.output_text.delta",
+                    payload: json!({
+                        "type": "response.output_text.delta",
+                        "response_id": response_id,
+                        "delta": delta,
+                    }),
+                });
+            }) as StreamDeltaHandler
+        });
+
+        let iteration_result = if state.config.turn_timeout_ms == 0 {
+            agent
+                .prompt_with_stream(&current_prompt, stream_handler_clone)
+                .await
+        } else {
+            match tokio::time::timeout(
+                Duration::from_millis(state.config.turn_timeout_ms),
+                agent.prompt_with_stream(&current_prompt, stream_handler_clone),
+            )
             .await
-    } else {
-        match tokio::time::timeout(
-            Duration::from_millis(state.config.turn_timeout_ms),
-            agent.prompt_with_stream(&translated.prompt, stream_handler),
-        )
-        .await
-        {
-            Ok(result) => result,
+            {
+                Ok(result) => result,
+                Err(_) => {
+                    return Err(OpenResponsesApiError::timeout(
+                        "response generation timed out before completion",
+                    ));
+                }
+            }
+        };
+
+        match &iteration_result {
+            Ok(messages) => {
+                // Check if the agent actually used tools in this iteration
+                let used_tools = messages.iter().any(|m| !m.tool_calls().is_empty());
+                if used_tools || ralph_iteration + 1 >= max_ralph_iterations {
+                    // Agent took action or we hit the iteration limit — done
+                    prompt_result = Some(iteration_result);
+                    break;
+                }
+                // Agent only produced text without tool calls — Ralph loop: continue
+                current_prompt = "You described what you would do but didn't execute any tools. \
+                    Continue working on the task. Use your tools (bash, write, edit, read, grep, glob) \
+                    to make progress. Do not explain what you will do — just do it.".to_string();
+            }
             Err(_) => {
-                return Err(OpenResponsesApiError::timeout(
-                    "response generation timed out before completion",
-                ));
+                prompt_result = Some(iteration_result);
+                break;
             }
         }
-    };
+    }
+
+    let prompt_result = prompt_result.unwrap_or_else(|| {
+        Err(tau_agent_core::AgentError::MaxTurnsExceeded(max_ralph_iterations))
+    });
     let post_prompt_cost = agent.cost_snapshot();
     persist_session_usage_delta(&mut session_runtime, &pre_prompt_cost, &post_prompt_cost)
         .map_err(|error| {
