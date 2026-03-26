@@ -145,23 +145,21 @@ pub(super) async fn execute_openresponses_request(
                     }
                 }
                 AgentEvent::MessageAdded { message } => {
-                    if let Some(sender) = &event_stream_sender {
-                        let role = match message.role {
-                            tau_ai::MessageRole::Assistant => "assistant",
-                            tau_ai::MessageRole::User => "user",
-                            tau_ai::MessageRole::System => "system",
-                            tau_ai::MessageRole::Tool => "tool",
-                        };
-                        let text = message.text_content();
-                        if !text.is_empty() {
-                            let _ = sender.send(SseFrame::Json {
-                                event: "response.message.added",
-                                payload: json!({
-                                    "type": "response.message.added",
-                                    "role": role,
-                                    "text": text,
-                                }),
-                            });
+                    // Only stream assistant messages to the TUI — hide internal
+                    // user/system messages (Ralph loop nudges, replans, etc.)
+                    if message.role == tau_ai::MessageRole::Assistant {
+                        if let Some(sender) = &event_stream_sender {
+                            let text = message.text_content();
+                            if !text.is_empty() {
+                                let _ = sender.send(SseFrame::Json {
+                                    event: "response.message.added",
+                                    payload: json!({
+                                        "type": "response.message.added",
+                                        "role": "assistant",
+                                        "text": text,
+                                    }),
+                                });
+                            }
                         }
                     }
                 }
@@ -250,15 +248,15 @@ pub(super) async fn execute_openresponses_request(
 
         match &iteration_result {
             Ok(messages) => {
-                // Check if the agent actually used tools in this iteration
                 let used_tools = messages.iter().any(|m| !m.tool_calls().is_empty());
-                if used_tools || ralph_iteration + 1 >= max_ralph_iterations {
-                    // Agent took action or we hit the iteration limit — done
+                let has_text = messages.iter().any(|m| !m.text_content().trim().is_empty());
+                // Done if: tools were called (direct API path), OR the response has
+                // substantive text (codex CLI path — tools executed inside the CLI
+                // subprocess and the response is a summary of what was done).
+                if used_tools || has_text || ralph_iteration + 1 >= max_ralph_iterations {
                     prompt_result = Some(iteration_result);
                     break;
                 }
-                // Agent only produced text without tool calls — Ralph loop: continue
-                // The nudge is injected as the next prompt, not shown to the user
                 current_prompt = "Continue. Execute the next step using tools.".to_string();
             }
             Err(_) => {
