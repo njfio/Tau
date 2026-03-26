@@ -118,35 +118,78 @@ impl LlmClient for CodexCliClient {
             })?;
         }
 
-        let output = tokio::time::timeout(
-            Duration::from_millis(self.config.timeout_ms),
-            child.wait_with_output(),
-        )
-        .await
-        .map_err(|_| {
-            TauAiError::InvalidResponse(format!(
-                "codex cli timed out after {}ms",
-                self.config.timeout_ms
-            ))
-        })?
-        .map_err(|error| {
+        // Activity-aware timeout: reset the deadline whenever stdout or stderr
+        // produces data.  Only fire if the process is completely silent for
+        // `timeout_ms` — never kill a request that is actively streaming.
+        let idle_limit = Duration::from_millis(self.config.timeout_ms);
+
+        let mut child_stdout = child.stdout.take();
+        let mut child_stderr = child.stderr.take();
+
+        let mut stdout_buf: Vec<u8> = Vec::new();
+        let mut stderr_buf: Vec<u8> = Vec::new();
+        let mut out_tmp = [0u8; 4096];
+        let mut err_tmp = [0u8; 4096];
+
+        loop {
+            tokio::select! {
+                biased;
+
+                result = async {
+                    match child_stdout.as_mut() {
+                        Some(out) => tokio::io::AsyncReadExt::read(out, &mut out_tmp).await,
+                        None => std::future::pending().await,
+                    }
+                } => {
+                    match result {
+                        Ok(0) | Err(_) => { child_stdout = None; }
+                        Ok(n) => { stdout_buf.extend_from_slice(&out_tmp[..n]); }
+                    }
+                }
+
+                result = async {
+                    match child_stderr.as_mut() {
+                        Some(err) => tokio::io::AsyncReadExt::read(err, &mut err_tmp).await,
+                        None => std::future::pending().await,
+                    }
+                } => {
+                    match result {
+                        Ok(0) | Err(_) => { child_stderr = None; }
+                        Ok(n) => { stderr_buf.extend_from_slice(&err_tmp[..n]); }
+                    }
+                }
+
+                _ = tokio::time::sleep(idle_limit) => {
+                    let _ = child.kill().await;
+                    return Err(TauAiError::InvalidResponse(format!(
+                        "codex cli timed out after {}ms of inactivity",
+                        self.config.timeout_ms
+                    )));
+                }
+            }
+
+            if child_stdout.is_none() && child_stderr.is_none() {
+                break;
+            }
+        }
+
+        let status = child.wait().await.map_err(|error| {
             TauAiError::InvalidResponse(format!("codex cli process failed: {error}"))
         })?;
 
-        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-        if !output.status.success() {
-            let status = output
-                .status
+        let stdout = String::from_utf8_lossy(&stdout_buf).to_string();
+        let stderr = String::from_utf8_lossy(&stderr_buf).to_string();
+
+        if !status.success() {
+            let exit_code = status
                 .code()
                 .map(|value| value.to_string())
                 .unwrap_or_else(|| "signal".to_string());
             let summary = summarize_process_failure(&stderr, &stdout);
             return Err(TauAiError::InvalidResponse(format!(
-                "codex cli failed with status {status}: {summary}"
+                "codex cli failed with status {exit_code}: {summary}"
             )));
         }
-
         let message_text = read_assistant_text(&output_file, &stdout).await;
         if message_text.trim().is_empty() {
             return Err(TauAiError::InvalidResponse(
