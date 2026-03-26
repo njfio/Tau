@@ -308,10 +308,12 @@ fn render_codex_exec_prompt(request: &ChatRequest) -> String {
     }
 
     if !request.tools.is_empty() {
-        lines.push("Tau tools available in caller runtime (context only):".to_string());
-        for tool in &request.tools {
-            lines.push(format!("- {}: {}", tool.name, tool.description));
-        }
+        lines.push(String::new());
+        lines.push("IMPORTANT: You have the following tools. The Codex CLI shell tool IS one of these tools.".to_string());
+        lines.push("When you use the shell tool, Tau's runtime will intercept and execute it.".to_string());
+        lines.push("Use the shell tool to: create files, run builds, install packages, run tests, read files.".to_string());
+        lines.push("Do NOT just describe what you would do. Actually use the shell tool to do it.".to_string());
+        lines.push("Work autonomously until the task is fully complete.".to_string());
     }
 
     lines.join("\n")
