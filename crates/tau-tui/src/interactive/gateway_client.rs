@@ -33,6 +33,14 @@ pub struct GatewayTurnResult {
 pub enum GatewayStreamEvent {
     /// A text delta — append to the assistant message in real time.
     Delta(String),
+    /// Token usage update (after each agent turn).
+    UsageUpdate { input_tokens: u64, output_tokens: u64, total_tokens: u64 },
+    /// Cost update.
+    CostUpdate { cumulative_cost_cents: f64 },
+    /// Tool execution started.
+    ToolStart { tool_name: String, arguments_preview: String },
+    /// Tool execution ended.
+    ToolEnd { tool_name: String, success: bool, output_preview: String },
     /// The turn completed successfully.
     Done(GatewayTurnResult),
     /// The turn failed.
@@ -139,6 +147,40 @@ fn submit_streaming_turn(
                     full_text.push_str(delta);
                     let _ = sender.send(GatewayStreamEvent::Delta(delta.to_string()));
                 }
+            }
+            "response.usage.delta" => {
+                if let Some(usage) = event.get("usage") {
+                    let _ = sender.send(GatewayStreamEvent::UsageUpdate {
+                        input_tokens: usage.get("input_tokens").and_then(Value::as_u64).unwrap_or(0),
+                        output_tokens: usage.get("output_tokens").and_then(Value::as_u64).unwrap_or(0),
+                        total_tokens: usage.get("total_tokens").and_then(Value::as_u64).unwrap_or(0),
+                    });
+                }
+            }
+            "response.cost.delta" => {
+                if let Some(cost) = event.get("cumulative_cost_usd").and_then(Value::as_f64) {
+                    let _ = sender.send(GatewayStreamEvent::CostUpdate {
+                        cumulative_cost_cents: cost * 100.0,
+                    });
+                }
+            }
+            "response.tool.start" => {
+                let name = event.get("tool_name").and_then(Value::as_str).unwrap_or("").to_string();
+                let args = event.get("arguments_preview").and_then(Value::as_str).unwrap_or("").to_string();
+                let _ = sender.send(GatewayStreamEvent::ToolStart {
+                    tool_name: name,
+                    arguments_preview: args,
+                });
+            }
+            "response.tool.end" => {
+                let name = event.get("tool_name").and_then(Value::as_str).unwrap_or("").to_string();
+                let success = event.get("success").and_then(Value::as_bool).unwrap_or(false);
+                let output = event.get("output_preview").and_then(Value::as_str).unwrap_or("").to_string();
+                let _ = sender.send(GatewayStreamEvent::ToolEnd {
+                    tool_name: name,
+                    success,
+                    output_preview: output,
+                });
             }
             "response.completed" => {
                 // Final response object

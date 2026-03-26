@@ -111,11 +111,9 @@ impl App {
                 Ok(GatewayStreamEvent::Delta(delta)) => {
                     self.status.agent_state = AgentStateDisplay::Streaming;
                     self.streaming_text.push_str(&delta);
-                    // Update the streaming message in-place
                     if let Some(idx) = self.streaming_message_index {
                         self.chat.update_message_content(idx, self.streaming_text.clone());
                     } else {
-                        // First delta — create the assistant message
                         let idx = self.chat.add_message(ChatMessage {
                             role: MessageRole::Assistant,
                             content: self.streaming_text.clone(),
@@ -124,6 +122,30 @@ impl App {
                         self.streaming_message_index = Some(idx);
                     }
                     self.chat.scroll_to_bottom();
+                }
+                Ok(GatewayStreamEvent::UsageUpdate { total_tokens, .. }) => {
+                    self.status.total_tokens = self.status.total_tokens.saturating_add(total_tokens);
+                }
+                Ok(GatewayStreamEvent::CostUpdate { cumulative_cost_cents }) => {
+                    self.status.total_cost_cents = cumulative_cost_cents;
+                }
+                Ok(GatewayStreamEvent::ToolStart { tool_name, arguments_preview }) => {
+                    self.status.agent_state = AgentStateDisplay::ToolExec;
+                    self.tools.add_entry(ToolEntry {
+                        name: tool_name,
+                        status: ToolStatus::Running,
+                        detail: arguments_preview,
+                        timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
+                    });
+                }
+                Ok(GatewayStreamEvent::ToolEnd { tool_name, success, output_preview }) => {
+                    self.status.agent_state = AgentStateDisplay::Streaming;
+                    self.tools.add_entry(ToolEntry {
+                        name: tool_name,
+                        status: if success { ToolStatus::Success } else { ToolStatus::Failed },
+                        detail: output_preview,
+                        timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
+                    });
                 }
                 Ok(GatewayStreamEvent::Done(result)) => {
                     self.complete_streaming_turn(result);
@@ -257,7 +279,7 @@ impl App {
         self.push_timestamped_message(MessageRole::System, message);
     }
 
-    fn push_timestamped_message(&mut self, role: MessageRole, content: String) {
+    pub(crate) fn push_timestamped_message(&mut self, role: MessageRole, content: String) {
         self.chat.add_message(ChatMessage {
             role,
             content,

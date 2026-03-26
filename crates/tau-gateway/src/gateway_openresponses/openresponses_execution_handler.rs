@@ -55,25 +55,96 @@ pub(super) async fn execute_openresponses_request(
 
     let usage = Arc::new(Mutex::new(OpenResponsesUsageSummary::default()));
     let finish_reason = Arc::new(Mutex::new(None::<String>));
+    let event_stream_sender = stream_sender.clone();
     agent.subscribe({
         let usage = usage.clone();
         let finish_reason = finish_reason.clone();
         move |event| {
-            if let AgentEvent::TurnEnd {
-                usage: turn_usage,
-                finish_reason: turn_finish_reason,
-                ..
-            } = event
-            {
-                if let Ok(mut guard) = usage.lock() {
-                    guard.input_tokens = guard.input_tokens.saturating_add(turn_usage.input_tokens);
-                    guard.output_tokens =
-                        guard.output_tokens.saturating_add(turn_usage.output_tokens);
-                    guard.total_tokens = guard.total_tokens.saturating_add(turn_usage.total_tokens);
+            match event {
+                AgentEvent::TurnEnd {
+                    usage: turn_usage,
+                    finish_reason: turn_finish_reason,
+                    ..
+                } => {
+                    if let Ok(mut guard) = usage.lock() {
+                        guard.input_tokens =
+                            guard.input_tokens.saturating_add(turn_usage.input_tokens);
+                        guard.output_tokens =
+                            guard.output_tokens.saturating_add(turn_usage.output_tokens);
+                        guard.total_tokens =
+                            guard.total_tokens.saturating_add(turn_usage.total_tokens);
+                    }
+                    if let Ok(mut guard) = finish_reason.lock() {
+                        *guard = turn_finish_reason.clone();
+                    }
+                    // Stream usage update to TUI
+                    if let Some(sender) = &event_stream_sender {
+                        let _ = sender.send(SseFrame::Json {
+                            event: "response.usage.delta",
+                            payload: json!({
+                                "type": "response.usage.delta",
+                                "usage": {
+                                    "input_tokens": turn_usage.input_tokens,
+                                    "output_tokens": turn_usage.output_tokens,
+                                    "total_tokens": turn_usage.total_tokens,
+                                }
+                            }),
+                        });
+                    }
                 }
-                if let Ok(mut guard) = finish_reason.lock() {
-                    *guard = turn_finish_reason.clone();
+                AgentEvent::CostUpdated {
+                    cumulative_cost_usd,
+                    ..
+                } => {
+                    if let Some(sender) = &event_stream_sender {
+                        let _ = sender.send(SseFrame::Json {
+                            event: "response.cost.delta",
+                            payload: json!({
+                                "type": "response.cost.delta",
+                                "cumulative_cost_usd": cumulative_cost_usd,
+                            }),
+                        });
+                    }
                 }
+                AgentEvent::ToolExecutionStart {
+                    tool_name,
+                    arguments,
+                    ..
+                } => {
+                    if let Some(sender) = &event_stream_sender {
+                        let _ = sender.send(SseFrame::Json {
+                            event: "response.tool.start",
+                            payload: json!({
+                                "type": "response.tool.start",
+                                "tool_name": tool_name,
+                                "arguments_preview": arguments.to_string().chars().take(200).collect::<String>(),
+                            }),
+                        });
+                    }
+                }
+                AgentEvent::ToolExecutionEnd {
+                    tool_name,
+                    result,
+                    ..
+                } => {
+                    if let Some(sender) = &event_stream_sender {
+                        let output_preview = result.content.as_str()
+                            .unwrap_or("")
+                            .chars()
+                            .take(200)
+                            .collect::<String>();
+                        let _ = sender.send(SseFrame::Json {
+                            event: "response.tool.end",
+                            payload: json!({
+                                "type": "response.tool.end",
+                                "tool_name": tool_name,
+                                "success": !result.is_error,
+                                "output_preview": output_preview,
+                            }),
+                        });
+                    }
+                }
+                _ => {}
             }
         }
     });

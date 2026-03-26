@@ -74,6 +74,8 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
         {
             app.chat.scroll_up(10);
         }
+        KeyCode::Char('y') if app.focus == FocusPanel::Chat => copy_last_assistant_message(app),
+        KeyCode::Char('Y') if app.focus == FocusPanel::Chat => copy_all_messages(app),
         KeyCode::Tab => app.focus = next_focus_from_normal(app),
         KeyCode::Char('1') => app.focus = FocusPanel::Chat,
         KeyCode::Char('2') => app.focus = FocusPanel::Input,
@@ -141,5 +143,67 @@ fn next_focus_from_insert(app: &App) -> FocusPanel {
         }
         FocusPanel::Tools => FocusPanel::Input,
         FocusPanel::CommandPalette => FocusPanel::Input,
+    }
+}
+
+fn copy_last_assistant_message(app: &mut App) {
+    let last = app
+        .chat
+        .messages()
+        .iter()
+        .rev()
+        .find(|m| m.role == super::chat::MessageRole::Assistant);
+    if let Some(msg) = last {
+        copy_to_clipboard(&msg.content);
+        app.push_timestamped_message(
+            super::chat::MessageRole::System,
+            "Copied last response to clipboard.".to_string(),
+        );
+    }
+}
+
+fn copy_all_messages(app: &mut App) {
+    let text = app
+        .chat
+        .messages()
+        .iter()
+        .map(|m| format!("[{}] {}: {}", m.timestamp, m.role.label(), m.content))
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    copy_to_clipboard(&text);
+    app.push_timestamped_message(
+        super::chat::MessageRole::System,
+        "Copied all messages to clipboard.".to_string(),
+    );
+}
+
+fn copy_to_clipboard(text: &str) {
+    // Use platform clipboard via subprocess — avoids heavy native dependencies
+    #[cfg(target_os = "macos")]
+    {
+        use std::io::Write;
+        if let Ok(mut child) = std::process::Command::new("pbcopy")
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+        {
+            if let Some(mut stdin) = child.stdin.take() {
+                let _ = stdin.write_all(text.as_bytes());
+            }
+            let _ = child.wait();
+        }
+    }
+    #[cfg(target_os = "linux")]
+    {
+        use std::io::Write;
+        if let Ok(mut child) = std::process::Command::new("xclip")
+            .args(["-selection", "clipboard"])
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+        {
+            if let Some(mut stdin) = child.stdin.take() {
+                let _ = stdin.write_all(text.as_bytes());
+            }
+            let _ = child.wait();
+        }
     }
 }
