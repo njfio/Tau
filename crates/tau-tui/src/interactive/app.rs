@@ -8,7 +8,7 @@ use tau_skills::{load_catalogs, select_skills_for_prompt};
 
 use super::chat::{ChatMessage, ChatPanel, MessageRole};
 use super::gateway_client::{
-    spawn_gateway_turn, GatewayRuntimeConfig, GatewayTurnResponse, GatewayTurnResult,
+    spawn_gateway_turn_streaming, GatewayRuntimeConfig, GatewayStreamEvent, GatewayTurnResult,
 };
 use super::input::InputEditor;
 use super::status::{AgentStateDisplay, StatusBar};
@@ -68,7 +68,9 @@ pub struct App {
     pub command_input: String,
     pub show_tool_panel: bool,
     current_turn_tool_start: usize,
-    pending_turn: Option<Receiver<GatewayTurnResponse>>,
+    pending_stream: Option<Receiver<GatewayStreamEvent>>,
+    streaming_text: String,
+    streaming_message_index: Option<usize>,
 }
 
 impl App {
@@ -87,7 +89,9 @@ impl App {
             command_input: String::new(),
             show_tool_panel: true,
             current_turn_tool_start: 0,
-            pending_turn: None,
+            pending_stream: None,
+            streaming_text: String::new(),
+            streaming_message_index: None,
         }
     }
 
@@ -97,21 +101,55 @@ impl App {
     }
 
     pub fn tick(&mut self) {
-        let Some(receiver) = self.pending_turn.take() else {
+        let Some(receiver) = self.pending_stream.take() else {
             return;
         };
 
-        match receiver.try_recv() {
-            Ok(result) => self.finish_turn(result),
-            Err(TryRecvError::Empty) => self.pending_turn = Some(receiver),
-            Err(TryRecvError::Disconnected) => {
-                self.fail_turn("gateway error: runtime worker disconnected".to_string());
+        // Drain all available events this tick for responsive streaming
+        loop {
+            match receiver.try_recv() {
+                Ok(GatewayStreamEvent::Delta(delta)) => {
+                    self.status.agent_state = AgentStateDisplay::Streaming;
+                    self.streaming_text.push_str(&delta);
+                    // Update the streaming message in-place
+                    if let Some(idx) = self.streaming_message_index {
+                        self.chat.update_message_content(idx, self.streaming_text.clone());
+                    } else {
+                        // First delta — create the assistant message
+                        let idx = self.chat.add_message(ChatMessage {
+                            role: MessageRole::Assistant,
+                            content: self.streaming_text.clone(),
+                            timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
+                        });
+                        self.streaming_message_index = Some(idx);
+                    }
+                    self.chat.scroll_to_bottom();
+                }
+                Ok(GatewayStreamEvent::Done(result)) => {
+                    self.complete_streaming_turn(result);
+                    return; // Stream is done, don't put receiver back
+                }
+                Ok(GatewayStreamEvent::Error(error)) => {
+                    self.finish_streaming();
+                    self.fail_turn(format!("gateway error: {error}"));
+                    return;
+                }
+                Err(TryRecvError::Empty) => {
+                    // No more events right now — put receiver back and wait for next tick
+                    self.pending_stream = Some(receiver);
+                    return;
+                }
+                Err(TryRecvError::Disconnected) => {
+                    self.finish_streaming();
+                    self.fail_turn("gateway error: runtime worker disconnected".to_string());
+                    return;
+                }
             }
         }
     }
 
     pub fn submit_prompt(&mut self, prompt: String) {
-        if self.pending_turn.is_some() {
+        if self.pending_stream.is_some() {
             self.push_timestamped_message(
                 MessageRole::System,
                 "A turn is already in progress.".to_string(),
@@ -129,7 +167,11 @@ impl App {
         self.status.agent_state = AgentStateDisplay::Thinking;
         self.status.total_messages += 1;
         self.push_message(MessageRole::User, prompt.clone());
-        self.pending_turn = Some(spawn_gateway_turn(self.config.gateway.clone(), prompt));
+        self.start_turn();
+        self.pending_stream = Some(spawn_gateway_turn_streaming(
+            self.config.gateway.clone(),
+            prompt,
+        ));
     }
 
     pub fn update_active_skills_for_prompt(&mut self, prompt: &str) -> Result<(), String> {
@@ -184,20 +226,30 @@ impl App {
 
     fn start_turn(&mut self) {
         self.current_turn_tool_start = self.tools.total_count();
+        self.streaming_text.clear();
+        self.streaming_message_index = None;
     }
 
-    fn finish_turn(&mut self, result: GatewayTurnResponse) {
-        match result {
-            Ok(result) => self.complete_turn(result),
-            Err(error) => self.fail_turn(format!("gateway error: {error}")),
-        }
+    fn finish_streaming(&mut self) {
+        self.streaming_text.clear();
+        self.streaming_message_index = None;
     }
 
-    fn complete_turn(&mut self, result: GatewayTurnResult) {
+    fn complete_streaming_turn(&mut self, result: GatewayTurnResult) {
         self.status.agent_state = AgentStateDisplay::Idle;
         self.status.total_messages += 1;
         self.status.total_tokens = self.status.total_tokens.saturating_add(result.total_tokens);
-        self.push_timestamped_message(MessageRole::Assistant, result.output_text);
+
+        // If we already have a streaming message, update it with final text
+        if let Some(idx) = self.streaming_message_index {
+            if !result.output_text.is_empty() {
+                self.chat.update_message_content(idx, result.output_text);
+            }
+        } else if !result.output_text.is_empty() {
+            // No streaming happened — show the full response
+            self.push_timestamped_message(MessageRole::Assistant, result.output_text);
+        }
+        self.finish_streaming();
     }
 
     fn fail_turn(&mut self, message: String) {

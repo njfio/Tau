@@ -1,4 +1,4 @@
-use std::{sync::mpsc, thread, time::Duration};
+use std::{io::BufRead, sync::mpsc, thread, time::Duration};
 
 use reqwest::blocking::Client;
 use serde_json::{json, Value};
@@ -28,21 +28,161 @@ pub struct GatewayTurnResult {
     pub total_tokens: u64,
 }
 
+/// Events streamed from the gateway during a turn.
+#[derive(Debug, Clone)]
+pub enum GatewayStreamEvent {
+    /// A text delta — append to the assistant message in real time.
+    Delta(String),
+    /// The turn completed successfully.
+    Done(GatewayTurnResult),
+    /// The turn failed.
+    Error(String),
+}
+
 pub type GatewayTurnResponse = Result<GatewayTurnResult, String>;
 
+/// Spawn a gateway turn with SSE streaming.
+/// Returns a channel that emits streaming deltas followed by a final Done or Error.
+pub fn spawn_gateway_turn_streaming(
+    config: GatewayRuntimeConfig,
+    prompt: String,
+) -> mpsc::Receiver<GatewayStreamEvent> {
+    let (sender, receiver) = mpsc::channel();
+    thread::spawn(move || {
+        submit_streaming_turn(&config, &prompt, &sender);
+    });
+    receiver
+}
+
+/// Legacy non-streaming spawn (kept for backward compatibility).
 pub fn spawn_gateway_turn(
     config: GatewayRuntimeConfig,
     prompt: String,
 ) -> mpsc::Receiver<GatewayTurnResponse> {
     let (sender, receiver) = mpsc::channel();
     thread::spawn(move || {
-        let result = submit_gateway_turn(&config, &prompt);
+        let result = submit_blocking_turn(&config, &prompt);
         let _ = sender.send(result);
     });
     receiver
 }
 
-fn submit_gateway_turn(config: &GatewayRuntimeConfig, prompt: &str) -> GatewayTurnResponse {
+fn submit_streaming_turn(
+    config: &GatewayRuntimeConfig,
+    prompt: &str,
+    sender: &mpsc::Sender<GatewayStreamEvent>,
+) {
+    let client = match build_client(config) {
+        Ok(c) => c,
+        Err(e) => {
+            let _ = sender.send(GatewayStreamEvent::Error(e));
+            return;
+        }
+    };
+
+    let response = match build_streaming_request(&client, config, prompt)
+        .and_then(|r| r.send().map_err(|e| format!("gateway request failed: {e}")))
+    {
+        Ok(r) => r,
+        Err(e) => {
+            let _ = sender.send(GatewayStreamEvent::Error(e));
+            return;
+        }
+    };
+
+    let status = response.status();
+    if !status.is_success() {
+        let body = response.text().unwrap_or_default();
+        let msg = parse_gateway_error(&body)
+            .unwrap_or_else(|| format!("gateway request failed with status {status}"));
+        let _ = sender.send(GatewayStreamEvent::Error(msg));
+        return;
+    }
+
+    // Parse SSE stream line by line
+    let reader = std::io::BufReader::new(response);
+    let mut full_text = String::new();
+    let mut total_tokens: u64 = 0;
+    let mut got_done = false;
+
+    for line_result in reader.lines() {
+        let line = match line_result {
+            Ok(l) => l,
+            Err(_) => break,
+        };
+
+        // SSE format: "data: {...}" or "event: ..." lines
+        let data = if let Some(stripped) = line.strip_prefix("data: ") {
+            stripped
+        } else {
+            continue;
+        };
+
+        // [DONE] marker
+        if data == "[DONE]" {
+            got_done = true;
+            break;
+        }
+
+        let Ok(event) = serde_json::from_str::<Value>(data) else {
+            continue;
+        };
+
+        let event_type = event
+            .get("type")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+
+        match event_type {
+            "response.output_text.delta" => {
+                if let Some(delta) = event.get("delta").and_then(Value::as_str) {
+                    full_text.push_str(delta);
+                    let _ = sender.send(GatewayStreamEvent::Delta(delta.to_string()));
+                }
+            }
+            "response.completed" => {
+                // Final response object
+                if let Some(response_obj) = event.get("response") {
+                    if let Some(text) = response_obj.get("output_text").and_then(Value::as_str) {
+                        full_text = text.to_string();
+                    }
+                    total_tokens = response_obj
+                        .get("usage")
+                        .and_then(|u| u.get("total_tokens"))
+                        .and_then(Value::as_u64)
+                        .unwrap_or(0);
+                }
+                got_done = true;
+                break;
+            }
+            "error" => {
+                let msg = event
+                    .get("error")
+                    .and_then(|e| e.get("message"))
+                    .and_then(Value::as_str)
+                    .unwrap_or("unknown streaming error");
+                let _ = sender.send(GatewayStreamEvent::Error(msg.to_string()));
+                return;
+            }
+            _ => {
+                // Other event types (response.created, response.in_progress, etc.) — ignore
+            }
+        }
+    }
+
+    if got_done || !full_text.is_empty() {
+        let _ = sender.send(GatewayStreamEvent::Done(GatewayTurnResult {
+            output_text: full_text.trim().to_string(),
+            total_tokens,
+        }));
+    } else {
+        let _ = sender.send(GatewayStreamEvent::Error(
+            "gateway stream ended without response".to_string(),
+        ));
+    }
+}
+
+fn submit_blocking_turn(config: &GatewayRuntimeConfig, prompt: &str) -> GatewayTurnResponse {
     let client = build_client(config)?;
     let response = build_request(&client, config, prompt)?
         .send()
@@ -84,6 +224,27 @@ fn build_request(
     let url = format!("{}/v1/responses", config.base_url.trim_end_matches('/'));
     let payload = json!({
         "input": prompt,
+        "metadata": {
+            "session_id": config.session_key,
+        }
+    });
+
+    let mut request = client.post(url).json(&payload);
+    if let Some(token) = &config.auth_token {
+        request = request.bearer_auth(token);
+    }
+    Ok(request)
+}
+
+fn build_streaming_request(
+    client: &Client,
+    config: &GatewayRuntimeConfig,
+    prompt: &str,
+) -> Result<reqwest::blocking::RequestBuilder, String> {
+    let url = format!("{}/v1/responses", config.base_url.trim_end_matches('/'));
+    let payload = json!({
+        "input": prompt,
+        "stream": true,
         "metadata": {
             "session_id": config.session_key,
         }

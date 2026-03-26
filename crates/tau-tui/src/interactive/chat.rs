@@ -50,11 +50,18 @@ impl ChatPanel {
         }
     }
 
-    pub fn add_message(&mut self, msg: ChatMessage) {
+    pub fn add_message(&mut self, msg: ChatMessage) -> usize {
         self.messages.push(msg);
         if self.messages.len() > self.max_messages {
             self.messages.remove(0);
             self.scroll_offset = self.scroll_offset.saturating_sub(1);
+        }
+        self.messages.len() - 1
+    }
+
+    pub fn update_message_content(&mut self, index: usize, content: String) {
+        if let Some(msg) = self.messages.get_mut(index) {
+            msg.content = content;
         }
     }
 

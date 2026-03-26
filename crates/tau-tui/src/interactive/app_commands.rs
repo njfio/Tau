@@ -47,10 +47,12 @@ fn execute_command(app: &mut App, cmd: &str) {
         "help" => app.show_help = true,
         "tools" => app.show_tool_panel = !app.show_tool_panel,
         "copy-target" => copy_latest_mutating_target(app),
-        _ => app.chat.add_message(ChatMessage {
-            role: MessageRole::System,
-            content: format!("Unknown command: {cmd}"),
-            timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
-        }),
+        _ => {
+            app.chat.add_message(ChatMessage {
+                role: MessageRole::System,
+                content: format!("Unknown command: {cmd}"),
+                timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
+            });
+        }
     }
 }
