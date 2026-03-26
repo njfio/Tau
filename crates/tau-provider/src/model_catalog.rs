@@ -932,6 +932,21 @@ fn built_in_model_catalog_file() -> ModelCatalogFile {
         entries: vec![
             ModelCatalogEntry {
                 provider: "openai".to_string(),
+                model: "gpt-5.4".to_string(),
+                context_window_tokens: Some(1_048_576),
+                supports_tools: true,
+                supports_multimodal: true,
+                supports_reasoning: true,
+                supports_extended_thinking: true,
+                max_output_tokens: Some(128_000),
+                knowledge_cutoff: Some("2026-01".to_string()),
+                deprecated: false,
+                cached_input_cost_per_million: Some(0.175000),
+                input_cost_per_million: Some(1.750000),
+                output_cost_per_million: Some(14.000000),
+            },
+            ModelCatalogEntry {
+                provider: "openai".to_string(),
                 model: "gpt-5.2".to_string(),
                 context_window_tokens: Some(400_000),
                 supports_tools: true,
