@@ -94,6 +94,14 @@ async fn spawn_with_text_file_busy_retry(
 #[async_trait]
 impl LlmClient for CodexCliClient {
     async fn complete(&self, request: ChatRequest) -> Result<ChatResponse, TauAiError> {
+        self.complete_with_stream(request, None).await
+    }
+
+    async fn complete_with_stream(
+        &self,
+        request: ChatRequest,
+        on_delta: Option<StreamDeltaHandler>,
+    ) -> Result<ChatResponse, TauAiError> {
         let output_file = build_output_file_path();
         let mut command = Command::new(&self.config.executable);
         command.kill_on_drop(true);
@@ -118,15 +126,47 @@ impl LlmClient for CodexCliClient {
             })?;
         }
 
-        // Wait for the codex CLI to complete. No artificial timeout — the codex
-        // CLI has its own internal timeout and will exit when done. Killing it
-        // prematurely loses work that's already in progress.
-        let output = child.wait_with_output().await.map_err(|error| {
+        // Read stdout/stderr incrementally so we can stream progress to the TUI
+        // via the on_delta callback. The codex CLI writes progress to stdout as
+        // it works — each line becomes a streaming update.
+        let mut child_stdout = child.stdout.take();
+        let mut child_stderr = child.stderr.take();
+        let mut stdout_buf: Vec<u8> = Vec::new();
+        let mut stderr_buf: Vec<u8> = Vec::new();
+
+        // Stream stdout lines to on_delta as they arrive
+        if let Some(stdout) = child_stdout.take() {
+            let on_delta_clone = on_delta.clone();
+            let mut reader = tokio::io::BufReader::new(stdout);
+            let mut line_buf = String::new();
+            loop {
+                line_buf.clear();
+                match tokio::io::AsyncBufReadExt::read_line(&mut reader, &mut line_buf).await {
+                    Ok(0) => break, // EOF
+                    Ok(_) => {
+                        let line = line_buf.trim_end();
+                        if !line.is_empty() {
+                            stdout_buf.extend_from_slice(line.as_bytes());
+                            stdout_buf.push(b'\n');
+                            // Stream each line to the TUI
+                            if let Some(ref handler) = on_delta_clone {
+                                handler(format!("{line}\n"));
+                            }
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+        }
+
+        // Read remaining stderr
+        if let Some(mut stderr) = child_stderr.take() {
+            let _ = tokio::io::AsyncReadExt::read_to_end(&mut stderr, &mut stderr_buf).await;
+        }
+
+        let status = child.wait().await.map_err(|error| {
             TauAiError::InvalidResponse(format!("codex cli process failed: {error}"))
         })?;
-        let status = output.status;
-        let stdout_buf = output.stdout;
-        let stderr_buf = output.stderr;
 
         let stdout = String::from_utf8_lossy(&stdout_buf).to_string();
         let stderr = String::from_utf8_lossy(&stderr_buf).to_string();
@@ -155,20 +195,6 @@ impl LlmClient for CodexCliClient {
         })
     }
 
-    async fn complete_with_stream(
-        &self,
-        request: ChatRequest,
-        on_delta: Option<StreamDeltaHandler>,
-    ) -> Result<ChatResponse, TauAiError> {
-        let response = self.complete(request).await?;
-        if let Some(handler) = on_delta {
-            let text = response.message.text_content();
-            if !text.trim().is_empty() {
-                handler(text);
-            }
-        }
-        Ok(response)
-    }
 }
 
 fn build_output_file_path() -> PathBuf {
