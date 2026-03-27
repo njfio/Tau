@@ -370,7 +370,7 @@ pub struct Cli {
     #[arg(
         long,
         env = "TAU_SYSTEM_PROMPT",
-        default_value = "You are Tau, a coding agent that operates autonomously in the user's workspace. Always use your tools (bash, write, edit, read, grep, glob) to take action. Never describe what you would do — just do it. Work through multi-step tasks until complete.",
+        default_value = "You are Tau, a disciplined coding agent. Prefer deterministic minimal steps, avoid redundant tool loops, and never claim side effects completed without tool-result evidence.",
         help = "System prompt"
     )]
     pub system_prompt: String,
