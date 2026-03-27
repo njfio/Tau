@@ -126,42 +126,73 @@ impl LlmClient for CodexCliClient {
             })?;
         }
 
-        // Read stdout/stderr incrementally so we can stream progress to the TUI
-        // via the on_delta callback. The codex CLI writes progress to stdout as
-        // it works — each line becomes a streaming update.
-        let mut child_stdout = child.stdout.take();
-        let mut child_stderr = child.stderr.take();
-        let mut stdout_buf: Vec<u8> = Vec::new();
-        let mut stderr_buf: Vec<u8> = Vec::new();
+        // Read stdout and stderr concurrently, streaming lines to the TUI
+        // via on_delta as they arrive. The codex CLI writes progress to both
+        // streams — tool executions to stderr, final output to stdout.
+        let mut stdout_reader = child.stdout.take().map(tokio::io::BufReader::new);
+        let mut stderr_reader = child.stderr.take().map(tokio::io::BufReader::new);
+        let mut stdout_buf = Vec::new();
+        let mut stderr_buf = Vec::new();
+        let mut out_line = String::new();
+        let mut err_line = String::new();
 
-        // Stream stdout lines to on_delta as they arrive
-        if let Some(stdout) = child_stdout.take() {
-            let on_delta_clone = on_delta.clone();
-            let mut reader = tokio::io::BufReader::new(stdout);
-            let mut line_buf = String::new();
-            loop {
-                line_buf.clear();
-                match tokio::io::AsyncBufReadExt::read_line(&mut reader, &mut line_buf).await {
-                    Ok(0) => break, // EOF
-                    Ok(_) => {
-                        let line = line_buf.trim_end();
-                        if !line.is_empty() {
-                            stdout_buf.extend_from_slice(line.as_bytes());
-                            stdout_buf.push(b'\n');
-                            // Stream each line to the TUI
-                            if let Some(ref handler) = on_delta_clone {
-                                handler(format!("{line}\n"));
+        loop {
+            tokio::select! {
+                biased;
+
+                result = async {
+                    match stdout_reader.as_mut() {
+                        Some(r) => {
+                            out_line.clear();
+                            tokio::io::AsyncBufReadExt::read_line(r, &mut out_line).await
+                        }
+                        None => std::future::pending().await,
+                    }
+                } => {
+                    match result {
+                        Ok(0) | Err(_) => { stdout_reader = None; }
+                        Ok(_) => {
+                            let line = out_line.trim_end();
+                            if !line.is_empty() {
+                                stdout_buf.extend_from_slice(line.as_bytes());
+                                stdout_buf.push(b'\n');
+                                if let Some(ref handler) = on_delta {
+                                    handler(format!("{line}\n"));
+                                }
                             }
                         }
                     }
-                    Err(_) => break,
+                }
+
+                result = async {
+                    match stderr_reader.as_mut() {
+                        Some(r) => {
+                            err_line.clear();
+                            tokio::io::AsyncBufReadExt::read_line(r, &mut err_line).await
+                        }
+                        None => std::future::pending().await,
+                    }
+                } => {
+                    match result {
+                        Ok(0) | Err(_) => { stderr_reader = None; }
+                        Ok(_) => {
+                            let line = err_line.trim_end();
+                            if !line.is_empty() {
+                                stderr_buf.extend_from_slice(line.as_bytes());
+                                stderr_buf.push(b'\n');
+                                // Stream stderr progress too — codex writes tool output here
+                                if let Some(ref handler) = on_delta {
+                                    handler(format!("{line}\n"));
+                                }
+                            }
+                        }
+                    }
                 }
             }
-        }
 
-        // Read remaining stderr
-        if let Some(mut stderr) = child_stderr.take() {
-            let _ = tokio::io::AsyncReadExt::read_to_end(&mut stderr, &mut stderr_buf).await;
+            if stdout_reader.is_none() && stderr_reader.is_none() {
+                break;
+            }
         }
 
         let status = child.wait().await.map_err(|error| {
