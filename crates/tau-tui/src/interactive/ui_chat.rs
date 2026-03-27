@@ -79,59 +79,84 @@ fn render_chat_lines(app: &App) -> Vec<Line<'static>> {
 fn render_message_lines(app: &App) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
     for msg in app.chat.messages() {
-        let (role_style, role_label) = match msg.role {
+        let (role_style, role_label, content_style) = match msg.role {
             MessageRole::User => (
                 Style::default()
                     .fg(Color::Green)
                     .add_modifier(Modifier::BOLD),
                 msg.role.label(),
+                Style::default().fg(Color::White),
             ),
             MessageRole::Assistant => (
                 Style::default()
                     .fg(Color::Cyan)
                     .add_modifier(Modifier::BOLD),
                 msg.role.label(),
+                Style::default().fg(Color::Reset),
             ),
             MessageRole::System => (
                 Style::default()
                     .fg(Color::Yellow)
                     .add_modifier(Modifier::BOLD),
                 msg.role.label(),
+                Style::default().fg(Color::DarkGray),
             ),
             MessageRole::Tool => (
                 Style::default()
                     .fg(Color::Magenta)
                     .add_modifier(Modifier::BOLD),
                 msg.role.label(),
+                Style::default().fg(Color::DarkGray),
             ),
         };
 
+        // Header: [HH:MM:SS] Role:
         lines.push(Line::from(vec![
             Span::styled(
                 format!("[{}] ", msg.timestamp),
                 Style::default().fg(Color::DarkGray),
             ),
-            Span::styled(format!("{}: ", role_label), role_style),
+            Span::styled(format!("{}:", role_label), role_style),
         ]));
 
+        // Content with role-appropriate color
         for content_line in msg.content.lines() {
-            lines.push(Line::from(Span::raw(format!("  {content_line}"))));
+            lines.push(Line::from(Span::styled(
+                format!("  {content_line}"),
+                content_style,
+            )));
         }
+
+        // Blank line separator
         lines.push(Line::from(""));
     }
     lines
 }
 
+/// Compute scroll position using actual line counts per message,
+/// not a fixed multiplier. This fixes scroll for long messages.
 fn compute_chat_scroll(app: &App, total_lines: usize, visible_height: usize) -> u16 {
     if total_lines <= visible_height {
         return 0;
     }
 
     let msg_idx = app.chat.scroll_offset();
-    if msg_idx >= app.chat.len().saturating_sub(1) {
-        return (total_lines - visible_height) as u16;
+    let msg_count = app.chat.len();
+
+    // Pinned to bottom
+    if msg_idx >= msg_count.saturating_sub(1) {
+        return (total_lines.saturating_sub(visible_height)) as u16;
     }
 
-    let approx = msg_idx * 3;
-    approx.min(total_lines.saturating_sub(visible_height)) as u16
+    // Count rendered lines up to the target message
+    let mut line_offset = 0usize;
+    for (i, msg) in app.chat.messages().iter().enumerate() {
+        if i >= msg_idx {
+            break;
+        }
+        // header (1) + content lines + separator (1)
+        line_offset += 1 + msg.content.lines().count().max(1) + 1;
+    }
+
+    line_offset.min(total_lines.saturating_sub(visible_height)) as u16
 }
