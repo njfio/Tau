@@ -118,64 +118,15 @@ impl LlmClient for CodexCliClient {
             })?;
         }
 
-        // Activity-aware timeout: reset the deadline whenever stdout or stderr
-        // produces data.  Only fire if the process is completely silent for
-        // `timeout_ms` — never kill a request that is actively streaming.
-        let idle_limit = Duration::from_millis(self.config.timeout_ms);
-
-        let mut child_stdout = child.stdout.take();
-        let mut child_stderr = child.stderr.take();
-
-        let mut stdout_buf: Vec<u8> = Vec::new();
-        let mut stderr_buf: Vec<u8> = Vec::new();
-        let mut out_tmp = [0u8; 4096];
-        let mut err_tmp = [0u8; 4096];
-
-        loop {
-            tokio::select! {
-                biased;
-
-                result = async {
-                    match child_stdout.as_mut() {
-                        Some(out) => tokio::io::AsyncReadExt::read(out, &mut out_tmp).await,
-                        None => std::future::pending().await,
-                    }
-                } => {
-                    match result {
-                        Ok(0) | Err(_) => { child_stdout = None; }
-                        Ok(n) => { stdout_buf.extend_from_slice(&out_tmp[..n]); }
-                    }
-                }
-
-                result = async {
-                    match child_stderr.as_mut() {
-                        Some(err) => tokio::io::AsyncReadExt::read(err, &mut err_tmp).await,
-                        None => std::future::pending().await,
-                    }
-                } => {
-                    match result {
-                        Ok(0) | Err(_) => { child_stderr = None; }
-                        Ok(n) => { stderr_buf.extend_from_slice(&err_tmp[..n]); }
-                    }
-                }
-
-                _ = tokio::time::sleep(idle_limit) => {
-                    let _ = child.kill().await;
-                    return Err(TauAiError::InvalidResponse(format!(
-                        "codex cli timed out after {}ms of inactivity",
-                        self.config.timeout_ms
-                    )));
-                }
-            }
-
-            if child_stdout.is_none() && child_stderr.is_none() {
-                break;
-            }
-        }
-
-        let status = child.wait().await.map_err(|error| {
+        // Wait for the codex CLI to complete. No artificial timeout — the codex
+        // CLI has its own internal timeout and will exit when done. Killing it
+        // prematurely loses work that's already in progress.
+        let output = child.wait_with_output().await.map_err(|error| {
             TauAiError::InvalidResponse(format!("codex cli process failed: {error}"))
         })?;
+        let status = output.status;
+        let stdout_buf = output.stdout;
+        let stderr_buf = output.stderr;
 
         let stdout = String::from_utf8_lossy(&stdout_buf).to_string();
         let stderr = String::from_utf8_lossy(&stderr_buf).to_string();
@@ -269,54 +220,48 @@ fn truncate_for_log(text: &str) -> String {
 }
 
 fn render_codex_exec_prompt(request: &ChatRequest) -> String {
-    let mut lines = vec![
-        "You are the OpenAI-compatible Tau backend.".to_string(),
-        "Respond with the assistant's next message for the conversation below.".to_string(),
-        "Return plain assistant text only.".to_string(),
-        "Conversation:".to_string(),
-    ];
+    // Extract the last user message as the prompt for codex exec.
+    // The codex CLI has its own system prompt, tool definitions, and agent loop.
+    // We should NOT wrap the prompt in meta-instructions — just pass the user's
+    // request directly so codex can use its full capabilities (shell, apply_patch).
+    let mut user_text = String::new();
+    let mut system_text = String::new();
 
     for message in &request.messages {
-        lines.push(format!("[{}]", role_label(message.role)));
-        if let Some(tool_name) = &message.tool_name {
-            lines.push(format!("tool_name={tool_name}"));
-        }
-        if let Some(tool_call_id) = &message.tool_call_id {
-            lines.push(format!("tool_call_id={tool_call_id}"));
-        }
-        if message.is_error {
-            lines.push("tool_error=true".to_string());
-        }
-        for block in &message.content {
-            match block {
-                ContentBlock::Text { text } => lines.push(text.clone()),
-                ContentBlock::ToolCall {
-                    id,
-                    name,
-                    arguments,
-                } => lines.push(format!(
-                    "{{\"tool_call\":{{\"id\":\"{id}\",\"name\":\"{name}\",\"arguments\":{arguments}}}}}"
-                )),
-                ContentBlock::Image { source } => {
-                    lines.push(format!("[tau-image:{}]", media_source_descriptor(source)))
-                }
-                ContentBlock::Audio { source } => {
-                    lines.push(format!("[tau-audio:{}]", media_source_descriptor(source)))
+        match message.role {
+            MessageRole::System => {
+                let text = message.text_content();
+                if !text.is_empty() {
+                    system_text = text;
                 }
             }
+            MessageRole::User => {
+                let text = message.text_content();
+                if !text.is_empty() {
+                    user_text = text;
+                }
+            }
+            _ => {}
         }
     }
 
-    if !request.tools.is_empty() {
-        lines.push(String::new());
-        lines.push("IMPORTANT: You have the following tools. The Codex CLI shell tool IS one of these tools.".to_string());
-        lines.push("When you use the shell tool, Tau's runtime will intercept and execute it.".to_string());
-        lines.push("Use the shell tool to: create files, run builds, install packages, run tests, read files.".to_string());
-        lines.push("Do NOT just describe what you would do. Actually use the shell tool to do it.".to_string());
-        lines.push("Work autonomously until the task is fully complete.".to_string());
+    // If there's a system prompt, prepend it as context
+    if !system_text.is_empty() && !user_text.is_empty() {
+        format!("{system_text}\n\n{user_text}")
+    } else if !user_text.is_empty() {
+        user_text
+    } else {
+        // Fallback: join all message text
+        request
+            .messages
+            .iter()
+            .filter_map(|m| {
+                let text = m.text_content();
+                if text.is_empty() { None } else { Some(text) }
+            })
+            .collect::<Vec<_>>()
+            .join("\n\n")
     }
-
-    lines.join("\n")
 }
 
 fn role_label(role: MessageRole) -> &'static str {
