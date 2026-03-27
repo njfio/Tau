@@ -415,22 +415,22 @@ fn render_codex_exec_prompt(request: &ChatRequest) -> String {
         }
     }
 
-    // If there's a system prompt, prepend it as context
-    if !system_text.is_empty() && !user_text.is_empty() {
-        format!("{system_text}\n\n{user_text}")
-    } else if !user_text.is_empty() {
+    // Only send the user's message. The codex CLI has its own system prompt,
+    // skills, and agent loop. Prepending our system prompt creates conflicts
+    // and confuses the model into planning instead of acting.
+    if !user_text.is_empty() {
         user_text
     } else {
-        // Fallback: join all message text
+        // Fallback: use the last non-empty message
         request
             .messages
             .iter()
-            .filter_map(|m| {
+            .rev()
+            .find_map(|m| {
                 let text = m.text_content();
                 if text.is_empty() { None } else { Some(text) }
             })
-            .collect::<Vec<_>>()
-            .join("\n\n")
+            .unwrap_or_default()
     }
 }
 

@@ -198,77 +198,47 @@ pub(super) async fn execute_openresponses_request(
 
     let start_index = agent.messages().len();
 
-    // Ralph Wiggum Loop: if the agent responds with only text (no tool calls)
-    // on the first iteration, re-prompt it to actually execute. This prevents
-    // the agent from just describing a plan and stopping.
-    // See: https://github.com/anthropics/claude-code/tree/main/plugins/ralph-wiggum
-    let max_ralph_iterations = 20usize;
     let pre_prompt_cost = agent.cost_snapshot();
-    let mut current_prompt = translated.prompt.clone();
-    let mut prompt_result = None;
+    let stream_handler = stream_sender.as_ref().map(|sender| {
+        let sender = sender.clone();
+        let response_id = response_id.clone();
+        Arc::new(move |delta: String| {
+            if delta.is_empty() {
+                return;
+            }
+            let _ = sender.send(SseFrame::Json {
+                event: "response.output_text.delta",
+                payload: json!({
+                    "type": "response.output_text.delta",
+                    "response_id": response_id,
+                    "delta": delta,
+                }),
+            });
+        }) as StreamDeltaHandler
+    });
 
-    for ralph_iteration in 0..max_ralph_iterations {
-        let stream_handler_clone = stream_sender.as_ref().map(|sender| {
-            let sender = sender.clone();
-            let response_id = response_id.clone();
-            Arc::new(move |delta: String| {
-                if delta.is_empty() {
-                    return;
-                }
-                let _ = sender.send(SseFrame::Json {
-                    event: "response.output_text.delta",
-                    payload: json!({
-                        "type": "response.output_text.delta",
-                        "response_id": response_id,
-                        "delta": delta,
-                    }),
-                });
-            }) as StreamDeltaHandler
-        });
-
-        let iteration_result = if state.config.turn_timeout_ms == 0 {
-            agent
-                .prompt_with_stream(&current_prompt, stream_handler_clone)
-                .await
-        } else {
-            match tokio::time::timeout(
-                Duration::from_millis(state.config.turn_timeout_ms),
-                agent.prompt_with_stream(&current_prompt, stream_handler_clone),
-            )
+    // Single prompt invocation. The codex CLI backend runs its own internal
+    // agent loop with --full-auto, handling multiple tool calls and verification.
+    // No Ralph loop needed — codex already loops until the task is complete.
+    let prompt_result = if state.config.turn_timeout_ms == 0 {
+        agent
+            .prompt_with_stream(&translated.prompt, stream_handler)
             .await
-            {
-                Ok(result) => result,
-                Err(_) => {
-                    return Err(OpenResponsesApiError::timeout(
-                        "response generation timed out before completion",
-                    ));
-                }
-            }
-        };
-
-        match &iteration_result {
-            Ok(messages) => {
-                let used_tools = messages.iter().any(|m| !m.tool_calls().is_empty());
-                let has_text = messages.iter().any(|m| !m.text_content().trim().is_empty());
-                // Done if: tools were called (direct API path), OR the response has
-                // substantive text (codex CLI path — tools executed inside the CLI
-                // subprocess and the response is a summary of what was done).
-                if used_tools || has_text || ralph_iteration + 1 >= max_ralph_iterations {
-                    prompt_result = Some(iteration_result);
-                    break;
-                }
-                current_prompt = "Continue. Execute the next step using tools.".to_string();
-            }
+    } else {
+        match tokio::time::timeout(
+            Duration::from_millis(state.config.turn_timeout_ms),
+            agent.prompt_with_stream(&translated.prompt, stream_handler),
+        )
+        .await
+        {
+            Ok(result) => result,
             Err(_) => {
-                prompt_result = Some(iteration_result);
-                break;
+                return Err(OpenResponsesApiError::timeout(
+                    "response generation timed out before completion",
+                ));
             }
         }
-    }
-
-    let prompt_result = prompt_result.unwrap_or_else(|| {
-        Err(tau_agent_core::AgentError::MaxTurnsExceeded(max_ralph_iterations))
-    });
+    };
     let post_prompt_cost = agent.cost_snapshot();
     persist_session_usage_delta(&mut session_runtime, &pre_prompt_cost, &post_prompt_cost)
         .map_err(|error| {
