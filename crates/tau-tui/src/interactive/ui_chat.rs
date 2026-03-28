@@ -79,62 +79,187 @@ fn render_chat_lines(app: &App) -> Vec<Line<'static>> {
 fn render_message_lines(app: &App) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
     for msg in app.chat.messages() {
-        let (role_style, role_label, content_style) = match msg.role {
-            MessageRole::User => (
-                Style::default()
-                    .fg(Color::Green)
-                    .add_modifier(Modifier::BOLD),
-                msg.role.label(),
-                Style::default().fg(Color::White),
-            ),
-            MessageRole::Assistant => (
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
-                msg.role.label(),
-                Style::default().fg(Color::Reset),
-            ),
-            MessageRole::System => (
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD),
-                msg.role.label(),
-                Style::default().fg(Color::DarkGray),
-            ),
-            MessageRole::Tool => (
-                Style::default()
-                    .fg(Color::Magenta)
-                    .add_modifier(Modifier::BOLD),
-                msg.role.label(),
-                Style::default().fg(Color::DarkGray),
-            ),
+        let (role_color, role_label) = match msg.role {
+            MessageRole::User => (Color::Green, msg.role.label()),
+            MessageRole::Assistant => (Color::Cyan, msg.role.label()),
+            MessageRole::System => (Color::Yellow, msg.role.label()),
+            MessageRole::Tool => (Color::Magenta, msg.role.label()),
         };
 
-        // Header: [HH:MM:SS] Role:
+        // Header with role icon and timestamp
+        let icon = match msg.role {
+            MessageRole::User => ">",
+            MessageRole::Assistant => "*",
+            MessageRole::System => "!",
+            MessageRole::Tool => "#",
+        };
+
         lines.push(Line::from(vec![
             Span::styled(
-                format!("[{}] ", msg.timestamp),
+                format!(" {icon} "),
+                Style::default().fg(role_color).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!("{}", role_label),
+                Style::default().fg(role_color).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!("  {}", msg.timestamp),
                 Style::default().fg(Color::DarkGray),
             ),
-            Span::styled(format!("{}:", role_label), role_style),
         ]));
 
-        // Content with role-appropriate color
-        for content_line in msg.content.lines() {
-            lines.push(Line::from(Span::styled(
-                format!("  {content_line}"),
-                content_style,
-            )));
-        }
+        // Render content with syntax awareness
+        let content_lines = render_content_lines(&msg.content, msg.role);
+        lines.extend(content_lines);
 
-        // Blank line separator
+        // Visual separator
         lines.push(Line::from(""));
     }
     lines
 }
 
-/// Compute scroll position using actual line counts per message,
-/// not a fixed multiplier. This fixes scroll for long messages.
+/// Render message content with diff highlighting, code block detection,
+/// and file path formatting.
+fn render_content_lines(content: &str, role: MessageRole) -> Vec<Line<'static>> {
+    let mut lines = Vec::new();
+    let mut in_code_block = false;
+    let mut in_diff = false;
+
+    let base_style = match role {
+        MessageRole::User => Style::default().fg(Color::White),
+        MessageRole::Assistant => Style::default(),
+        MessageRole::System => Style::default().fg(Color::DarkGray),
+        MessageRole::Tool => Style::default().fg(Color::DarkGray),
+    };
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+
+        // Code block toggle
+        if trimmed.starts_with("```") {
+            in_code_block = !in_code_block;
+            lines.push(Line::from(Span::styled(
+                format!("    {line}"),
+                Style::default().fg(Color::DarkGray),
+            )));
+            continue;
+        }
+
+        // Diff detection
+        if trimmed.starts_with("diff --git")
+            || trimmed.starts_with("file update")
+            || (trimmed.starts_with("A ") && trimmed.contains('/'))
+        {
+            in_diff = true;
+        }
+        if in_diff && trimmed.is_empty() {
+            in_diff = false;
+        }
+
+        if in_code_block {
+            // Code block content — monospace style
+            lines.push(Line::from(Span::styled(
+                format!("    {line}"),
+                Style::default().fg(Color::Rgb(180, 180, 210)),
+            )));
+        } else if in_diff || is_diff_line(trimmed) {
+            // Diff lines with color coding
+            lines.push(render_diff_line(line));
+        } else if is_file_path_line(trimmed) {
+            // File paths — highlighted
+            lines.push(Line::from(vec![
+                Span::styled("    ", Style::default()),
+                Span::styled(
+                    line.trim().to_string(),
+                    Style::default()
+                        .fg(Color::Blue)
+                        .add_modifier(Modifier::UNDERLINED),
+                ),
+            ]));
+        } else if trimmed.starts_with("exec") || trimmed.starts_with("codex") {
+            // Tool execution markers
+            lines.push(Line::from(Span::styled(
+                format!("  {line}"),
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::DIM),
+            )));
+        } else if trimmed.starts_with("apply_patch") || trimmed.starts_with("Success.") {
+            // Patch application results
+            lines.push(Line::from(Span::styled(
+                format!("  {line}"),
+                Style::default().fg(Color::Green),
+            )));
+        } else if trimmed.starts_with("tokens used") || trimmed.parse::<u64>().is_ok() {
+            // Token count — dim
+            lines.push(Line::from(Span::styled(
+                format!("  {line}"),
+                Style::default().fg(Color::DarkGray),
+            )));
+        } else {
+            // Regular content
+            lines.push(Line::from(Span::styled(
+                format!("  {line}"),
+                base_style,
+            )));
+        }
+    }
+    lines
+}
+
+fn is_diff_line(line: &str) -> bool {
+    line.starts_with('+') && !line.starts_with("+++")
+        || line.starts_with('-') && !line.starts_with("---")
+        || line.starts_with("@@")
+        || line.starts_with("diff --git")
+        || line.starts_with("new file mode")
+        || line.starts_with("index ")
+        || line.starts_with("--- ")
+        || line.starts_with("+++ ")
+}
+
+fn render_diff_line(line: &str) -> Line<'static> {
+    let trimmed = line.trim();
+    if trimmed.starts_with('+') && !trimmed.starts_with("+++") {
+        Line::from(Span::styled(
+            format!("  {line}"),
+            Style::default().fg(Color::Green),
+        ))
+    } else if trimmed.starts_with('-') && !trimmed.starts_with("---") {
+        Line::from(Span::styled(
+            format!("  {line}"),
+            Style::default().fg(Color::Red),
+        ))
+    } else if trimmed.starts_with("@@") {
+        Line::from(Span::styled(
+            format!("  {line}"),
+            Style::default().fg(Color::Cyan).add_modifier(Modifier::DIM),
+        ))
+    } else if trimmed.starts_with("diff --git") {
+        Line::from(Span::styled(
+            format!("  {line}"),
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        ))
+    } else {
+        Line::from(Span::styled(
+            format!("  {line}"),
+            Style::default().fg(Color::DarkGray),
+        ))
+    }
+}
+
+fn is_file_path_line(line: &str) -> bool {
+    // Detect lines that are primarily file paths
+    let l = line.trim();
+    (l.starts_with('/') || l.starts_with("./"))
+        && !l.contains(' ')
+        && (l.contains('.') || l.ends_with('/'))
+}
+
+/// Compute scroll position using actual line counts per message.
 fn compute_chat_scroll(app: &App, total_lines: usize, visible_height: usize) -> u16 {
     if total_lines <= visible_height {
         return 0;
