@@ -280,110 +280,36 @@ fn truncate_for_log(text: &str) -> String {
     text.chars().take(MAX_CHARS).collect::<String>() + "..."
 }
 
-/// Filter codex CLI output lines to only show meaningful progress to the TUI.
-/// Hides startup banners, error logs, system prompt echo, and raw diff noise.
+/// Minimal filter for codex CLI output. Only hide startup noise,
+/// let everything else through so the user sees real progress.
 fn should_stream_line(line: &str) -> bool {
-    // Skip empty/whitespace
-    if line.trim().is_empty() {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
         return false;
     }
-    // Skip codex startup banner and metadata
-    if line.starts_with("OpenAI Codex v")
-        || line.starts_with("--------")
-        || line.starts_with("workdir:")
-        || line.starts_with("model:")
-        || line.starts_with("provider:")
-        || line.starts_with("approval:")
-        || line.starts_with("sandbox:")
-        || line.starts_with("reasoning effort:")
-        || line.starts_with("reasoning summaries:")
-        || line.starts_with("session id:")
+    // Codex startup banner
+    if trimmed.starts_with("OpenAI Codex v") || trimmed == "--------" {
+        return false;
+    }
+    // Startup metadata lines
+    if (trimmed.starts_with("workdir:")
+        || trimmed.starts_with("model:")
+        || trimmed.starts_with("provider:")
+        || trimmed.starts_with("approval:")
+        || trimmed.starts_with("sandbox:")
+        || trimmed.starts_with("reasoning effort:")
+        || trimmed.starts_with("reasoning summaries:")
+        || trimmed.starts_with("session id:"))
+        && trimmed.len() < 200
     {
         return false;
     }
-    // Skip error logs from codex core
-    if line.contains("ERROR codex_core") || line.contains("WARN codex_core") {
+    // Error/warn logs from codex internals
+    if trimmed.contains("ERROR codex_core") || trimmed.contains("WARN codex_core") {
         return false;
     }
-    // Skip MCP startup noise
-    if line.starts_with("mcp:") || line.starts_with("mcp startup:") {
-        return false;
-    }
-    // Skip the system prompt being echoed back
-    if line.starts_with("user") && line.len() < 10 {
-        return false;
-    }
-    if line.starts_with("You are Tau")
-        || line.starts_with("## Tau Startup")
-        || line.starts_with("Resolved from")
-        || line.starts_with("### SOUL.md")
-        || line.starts_with("# SOUL")
-        || line.starts_with("## How You Work")
-        || line.starts_with("## Your Tools")
-        || line.starts_with("## Execution Rules")
-        || line.starts_with("## Task Completion")
-        || line.starts_with("### AGENTS.md")
-        || line.starts_with("# AGENTS")
-        || line.starts_with("### USER.md")
-        || line.starts_with("# USER")
-        || line.starts_with("### Available Tools")
-        || line.starts_with("### Execution Rules")
-        || line.starts_with("### Anti-Patterns")
-        || line.starts_with("Operational contracts")
-        || line.starts_with("Operator-specific")
-        || line.starts_with("## Tool Execution")
-        || line.starts_with("When asked to create")
-        || line.starts_with("Core operating values")
-    {
-        return false;
-    }
-    // Skip individual tool description lines from system prompt
-    if line.starts_with("- `bash`")
-        || line.starts_with("- `write`")
-        || line.starts_with("- `edit`")
-        || line.starts_with("- `read`")
-        || line.starts_with("- `grep`")
-        || line.starts_with("- `glob`")
-        || line.starts_with("- `list_directory`")
-    {
-        return false;
-    }
-    // Skip numbered rules from system prompt
-    if line.starts_with("1. ALWAYS")
-        || line.starts_with("2. When asked")
-        || line.starts_with("3. When asked")
-        || line.starts_with("4. After making")
-        || line.starts_with("5. If a tool")
-        || line.starts_with("6. Work autonomously")
-        || line.starts_with("7. Parallelize")
-    {
-        return false;
-    }
-    // Skip "You are NOT done" block
-    if line.starts_with("You are NOT done")
-        || line.starts_with("- All requested")
-        || line.starts_with("- You have verified")
-        || line.starts_with("If you find yourself")
-    {
-        return false;
-    }
-    // Skip raw diff headers (keep the summary lines)
-    if line.starts_with("diff --git")
-        || line.starts_with("index ")
-        || line.starts_with("--- a/")
-        || line.starts_with("--- /dev/null")
-        || line.starts_with("+++ b/")
-        || line.starts_with("@@ ")
-        || line.starts_with("new file mode")
-    {
-        return false;
-    }
-    // Skip "Do NOT" instruction lines
-    if line.starts_with("- Do NOT") || line.starts_with("Do not output") {
-        return false;
-    }
-    // Skip "Unless the user" instruction
-    if line.starts_with("Unless the user") {
+    // MCP startup
+    if trimmed.starts_with("mcp:") || trimmed.starts_with("mcp startup:") {
         return false;
     }
     true
