@@ -92,7 +92,7 @@ fn extract_openresponses_input_segments(
         Value::String(text) => {
             let text = text.trim();
             if !text.is_empty() {
-                segments.push(format!("User:\n{text}"));
+                segments.push(text.to_string());
                 *extracted = extracted.saturating_add(1);
             }
             Ok(())
@@ -124,7 +124,7 @@ fn extract_openresponses_item(
         Value::String(text) => {
             let text = text.trim();
             if !text.is_empty() {
-                segments.push(format!("User:\n{text}"));
+                segments.push(text.to_string());
                 *extracted = extracted.saturating_add(1);
             }
             Ok(())

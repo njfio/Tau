@@ -117,6 +117,29 @@ impl LlmClient for CodexCliClient {
         command.stderr(Stdio::piped());
 
         let prompt = render_codex_exec_prompt(&request);
+
+        // Log the full request to .tau/codex-debug.log for debugging
+        let log_path = std::path::PathBuf::from(".tau/codex-debug.log");
+        if let Ok(mut log) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_path)
+        {
+            use std::io::Write as _;
+            let _ = writeln!(log, "\n=== CODEX REQUEST {} ===", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs());
+            let _ = writeln!(log, "MODEL: {}", request.model);
+            let _ = writeln!(log, "MESSAGES: {}", request.messages.len());
+            for (i, msg) in request.messages.iter().enumerate() {
+                let role = match msg.role { MessageRole::System => "system", MessageRole::User => "user", MessageRole::Assistant => "assistant", MessageRole::Tool => "tool" };
+                let text = msg.text_content();
+                let _ = writeln!(log, "  [{i}] {role}: {}...", &text[..text.len().min(200)]);
+            }
+            let _ = writeln!(log, "PROMPT TO STDIN ({} bytes):\n{}", prompt.len(), &prompt[..prompt.len().min(500)]);
+            let _ = writeln!(log, "OUTPUT FILE: {}", output_file.display());
+            let _ = writeln!(log, "COMMAND: {} exec --full-auto --skip-git-repo-check --color never --model {} --output-last-message {} -",
+                self.config.executable, request.model, output_file.display());
+        }
+
         let mut child =
             spawn_with_text_file_busy_retry(&mut command, &self.config.executable).await?;
 
@@ -205,6 +228,21 @@ impl LlmClient for CodexCliClient {
 
         let stdout = String::from_utf8_lossy(&stdout_buf).to_string();
         let stderr = String::from_utf8_lossy(&stderr_buf).to_string();
+
+        // Log the response
+        if let Ok(mut log) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_path)
+        {
+            use std::io::Write as _;
+            let _ = writeln!(log, "\n=== CODEX RESPONSE {} ===", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs());
+            let _ = writeln!(log, "EXIT: {:?}", status.code());
+            let _ = writeln!(log, "STDOUT ({} bytes): {}...", stdout.len(), &stdout[..stdout.len().min(500)]);
+            let _ = writeln!(log, "STDERR ({} bytes): {}...", stderr.len(), &stderr[..stderr.len().min(500)]);
+            let output_content = std::fs::read_to_string(&output_file).unwrap_or_default();
+            let _ = writeln!(log, "OUTPUT FILE ({} bytes): {}...", output_content.len(), &output_content[..output_content.len().min(500)]);
+        }
 
         if !status.success() {
             let exit_code = status
