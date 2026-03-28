@@ -41,10 +41,11 @@ pub(super) async fn execute_openresponses_request(
             model_cached_input_cost_per_million: state.config.model_cached_input_cost_per_million,
             model_output_cost_per_million: state.config.model_output_cost_per_million,
             system_prompt: resolved_system_prompt.clone(),
-            // Set max_turns to 1 for codex CLI backend — the codex CLI runs
-            // its own internal agent loop with --full-auto. Multiple turns here
-            // would spawn multiple codex subprocesses wastefully.
+            // Codex CLI backend: one turn, no agent-level timeout or retries.
+            // The codex CLI runs its own agent loop with --full-auto.
             max_turns: 1,
+            request_timeout_ms: None, // No timeout — codex manages its own
+            request_max_retries: 0,   // No retries — one codex invocation per request
             max_tokens: request.max_tokens,
             // `translate_openresponses_request` already enforces `max_input_chars` for the
             // inbound payload. Reusing that transport guardrail as an agent token budget
