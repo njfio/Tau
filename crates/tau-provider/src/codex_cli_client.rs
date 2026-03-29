@@ -354,48 +354,54 @@ fn should_stream_line(line: &str) -> bool {
 }
 
 fn render_codex_exec_prompt(request: &ChatRequest) -> String {
-    // Extract the last user message as the prompt for codex exec.
-    // The codex CLI has its own system prompt, tool definitions, and agent loop.
-    // We should NOT wrap the prompt in meta-instructions — just pass the user's
-    // request directly so codex can use its full capabilities (shell, apply_patch).
-    let mut user_text = String::new();
-    let mut system_text = String::new();
+    // Include recent conversation history so codex has context for follow-up
+    // messages (e.g., user types "1" to select from a numbered list).
+    // Skip the system message — codex has its own system prompt.
+    let mut conversation_parts: Vec<String> = Vec::new();
 
     for message in &request.messages {
+        let text = message.text_content();
+        if text.is_empty() {
+            continue;
+        }
         match message.role {
             MessageRole::System => {
-                let text = message.text_content();
-                if !text.is_empty() {
-                    system_text = text;
-                }
+                // Skip — codex has its own system prompt
             }
             MessageRole::User => {
-                let text = message.text_content();
-                if !text.is_empty() {
-                    user_text = text;
-                }
+                conversation_parts.push(format!("[user]\n{text}"));
             }
-            _ => {}
+            MessageRole::Assistant => {
+                // Include assistant responses for context continuity
+                // Truncate long responses to keep the prompt manageable
+                let truncated = if text.len() > 2000 {
+                    format!("{}...", &text[..2000])
+                } else {
+                    text
+                };
+                conversation_parts.push(format!("[assistant]\n{truncated}"));
+            }
+            MessageRole::Tool => {
+                // Skip tool messages
+            }
         }
     }
 
-    // Only send the user's message. The codex CLI has its own system prompt,
-    // skills, and agent loop. Prepending our system prompt creates conflicts
-    // and confuses the model into planning instead of acting.
-    if !user_text.is_empty() {
-        user_text
-    } else {
-        // Fallback: use the last non-empty message
-        request
-            .messages
-            .iter()
-            .rev()
-            .find_map(|m| {
-                let text = m.text_content();
-                if text.is_empty() { None } else { Some(text) }
-            })
-            .unwrap_or_default()
+    if conversation_parts.is_empty() {
+        return String::new();
     }
+
+    // If only one message (first turn), send it directly without labels
+    if conversation_parts.len() == 1 {
+        let single = &conversation_parts[0];
+        return single
+            .strip_prefix("[user]\n")
+            .unwrap_or(single)
+            .to_string();
+    }
+
+    // Multiple messages — send as conversation for context
+    conversation_parts.join("\n\n")
 }
 
 fn role_label(role: MessageRole) -> &'static str {
