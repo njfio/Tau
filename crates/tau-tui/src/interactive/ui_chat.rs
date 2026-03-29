@@ -158,20 +158,18 @@ fn render_content_lines(content: &str, role: MessageRole) -> Vec<Line<'static>> 
         }
 
         if in_code_block {
-            // Code block content — monospace style
-            lines.push(Line::from(Span::styled(
-                format!("    {line}"),
-                Style::default().fg(Color::Rgb(180, 180, 210)),
-            )));
+            // Code block with basic keyword highlighting
+            lines.push(render_code_line(line));
         } else if in_diff || is_diff_line(trimmed) {
             // Diff lines with color coding
             lines.push(render_diff_line(line));
         } else if is_file_path_line(trimmed) {
-            // File paths — highlighted
+            // File paths — highlighted and underlined
+            let path = line.trim().to_string();
             lines.push(Line::from(vec![
                 Span::styled("    ", Style::default()),
                 Span::styled(
-                    line.trim().to_string(),
+                    path,
                     Style::default()
                         .fg(Color::Blue)
                         .add_modifier(Modifier::UNDERLINED),
@@ -309,6 +307,77 @@ fn render_inline_markdown(line: &str, base_style: Style) -> Line<'static> {
     if current_start < line.len() {
         spans.push(Span::styled(line[current_start..].to_string(), base_style));
     }
+
+    Line::from(spans)
+}
+
+/// Render a code block line with basic keyword highlighting.
+fn render_code_line(line: &str) -> Line<'static> {
+    let trimmed = line.trim();
+    let code_bg = Style::default().fg(Color::Rgb(180, 180, 210));
+
+    // Keywords in various languages
+    let keywords = [
+        "const", "let", "var", "function", "return", "if", "else", "for", "while",
+        "class", "new", "import", "export", "from", "async", "await", "fn", "pub",
+        "struct", "enum", "impl", "use", "mod", "self", "true", "false", "null",
+        "undefined", "this", "extends", "super", "static", "match", "type",
+    ];
+
+    // Check if the line contains any keyword worth highlighting
+    let has_keyword = keywords.iter().any(|kw| {
+        trimmed.contains(kw)
+            && trimmed
+                .find(kw)
+                .map(|i| {
+                    let before = if i == 0 {
+                        true
+                    } else {
+                        !trimmed.as_bytes()[i - 1].is_ascii_alphanumeric()
+                    };
+                    let after_idx = i + kw.len();
+                    let after = if after_idx >= trimmed.len() {
+                        true
+                    } else {
+                        !trimmed.as_bytes()[after_idx].is_ascii_alphanumeric()
+                    };
+                    before && after
+                })
+                .unwrap_or(false)
+    });
+
+    if !has_keyword {
+        // No keywords — render with base code style
+        // Color strings in green, numbers in cyan
+        if trimmed.starts_with("//") || trimmed.starts_with('#') {
+            return Line::from(Span::styled(
+                format!("    {line}"),
+                Style::default().fg(Color::DarkGray),
+            ));
+        }
+        return Line::from(Span::styled(format!("    {line}"), code_bg));
+    }
+
+    // Build spans with keyword highlighting
+    let mut spans = vec![Span::styled("    ", Style::default())];
+    let mut remaining = line.to_string();
+    let keyword_style = Style::default().fg(Color::Rgb(198, 120, 221)); // purple for keywords
+    let default_style = code_bg;
+
+    // Simple word-by-word highlighting
+    for word in line.split_inclusive(|c: char| !c.is_ascii_alphanumeric() && c != '_') {
+        if keywords.contains(&word.trim_end_matches(|c: char| !c.is_ascii_alphanumeric() && c != '_')) {
+            let kw_part = word.trim_end_matches(|c: char| !c.is_ascii_alphanumeric() && c != '_');
+            let rest = &word[kw_part.len()..];
+            spans.push(Span::styled(kw_part.to_string(), keyword_style));
+            if !rest.is_empty() {
+                spans.push(Span::styled(rest.to_string(), default_style));
+            }
+        } else {
+            spans.push(Span::styled(word.to_string(), default_style));
+        }
+    }
+    let _ = remaining; // suppress warning
 
     Line::from(spans)
 }
