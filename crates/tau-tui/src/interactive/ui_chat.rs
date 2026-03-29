@@ -197,15 +197,120 @@ fn render_content_lines(content: &str, role: MessageRole) -> Vec<Line<'static>> 
                 format!("  {line}"),
                 Style::default().fg(Color::DarkGray),
             )));
-        } else {
-            // Regular content
+        } else if trimmed.starts_with("# ") || trimmed.starts_with("## ") || trimmed.starts_with("### ") {
+            // Markdown headers
+            let header_text = trimmed.trim_start_matches('#').trim();
             lines.push(Line::from(Span::styled(
-                format!("  {line}"),
-                base_style,
+                format!("  {header_text}"),
+                base_style.add_modifier(Modifier::BOLD).add_modifier(Modifier::UNDERLINED),
             )));
+        } else if trimmed.starts_with("- ") || trimmed.starts_with("* ") {
+            // List items
+            let bullet_text = &trimmed[2..];
+            lines.push(Line::from(vec![
+                Span::styled("  ", base_style),
+                Span::styled("  ", Style::default().fg(Color::Cyan)),
+                Span::styled(bullet_text.to_string(), base_style),
+            ]));
+        } else if trimmed.starts_with(|c: char| c.is_ascii_digit()) && trimmed.contains(". ") {
+            // Numbered list
+            if let Some(dot_pos) = trimmed.find(". ") {
+                let num = &trimmed[..dot_pos + 1];
+                let text = &trimmed[dot_pos + 2..];
+                lines.push(Line::from(vec![
+                    Span::styled(format!("  {num} "), Style::default().fg(Color::Cyan)),
+                    Span::styled(text.to_string(), base_style),
+                ]));
+            } else {
+                lines.push(Line::from(Span::styled(format!("  {line}"), base_style)));
+            }
+        } else {
+            // Regular content with inline code detection
+            lines.push(render_inline_markdown(line, base_style));
         }
     }
     lines
+}
+
+/// Render a line with inline markdown: `code`, **bold**, *italic*
+fn render_inline_markdown(line: &str, base_style: Style) -> Line<'static> {
+    let mut spans = Vec::new();
+    spans.push(Span::styled("  ", base_style));
+
+    let mut chars = line.char_indices().peekable();
+    let mut current_start = 0;
+
+    while let Some(&(i, ch)) = chars.peek() {
+        if ch == '`' {
+            // Flush text before backtick
+            if i > current_start {
+                spans.push(Span::styled(line[current_start..i].to_string(), base_style));
+            }
+            chars.next();
+            // Find closing backtick
+            let code_start = i + 1;
+            let mut code_end = None;
+            while let Some(&(j, c)) = chars.peek() {
+                chars.next();
+                if c == '`' {
+                    code_end = Some(j);
+                    break;
+                }
+            }
+            if let Some(end) = code_end {
+                spans.push(Span::styled(
+                    line[code_start..end].to_string(),
+                    Style::default()
+                        .fg(Color::Rgb(220, 180, 100))
+                        .add_modifier(Modifier::BOLD),
+                ));
+                current_start = end + 1;
+            } else {
+                // No closing backtick — render as-is
+                spans.push(Span::styled(line[i..].to_string(), base_style));
+                current_start = line.len();
+                break;
+            }
+        } else if ch == '*' && line[i..].starts_with("**") {
+            // Bold
+            if i > current_start {
+                spans.push(Span::styled(line[current_start..i].to_string(), base_style));
+            }
+            chars.next(); // skip first *
+            chars.next(); // skip second *
+            let bold_start = i + 2;
+            let mut bold_end = None;
+            while let Some(&(j, _)) = chars.peek() {
+                if line[j..].starts_with("**") {
+                    bold_end = Some(j);
+                    chars.next();
+                    chars.next();
+                    break;
+                }
+                chars.next();
+            }
+            if let Some(end) = bold_end {
+                spans.push(Span::styled(
+                    line[bold_start..end].to_string(),
+                    base_style.add_modifier(Modifier::BOLD),
+                ));
+                current_start = end + 2;
+            } else {
+                spans.push(Span::styled(line[i..].to_string(), base_style));
+                current_start = line.len();
+                break;
+            }
+        } else {
+            chars.next();
+        }
+    }
+
+    // Flush remaining text
+    if current_start < line.len() {
+        spans.push(Span::styled(line[current_start..].to_string(), base_style));
+    }
+
+    Line::from(spans)
 }
 
 fn is_diff_line(line: &str) -> bool {
