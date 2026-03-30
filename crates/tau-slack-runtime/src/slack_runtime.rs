@@ -1559,11 +1559,7 @@ async fn dispatch_send_file_directive(
 fn send_file_source_filename_from_url(source_url: &reqwest::Url) -> String {
     source_url
         .path_segments()
-        .and_then(|segments| {
-            segments
-                .filter(|segment| !segment.trim().is_empty())
-                .next_back()
-        })
+        .and_then(|mut segments| segments.rfind(|segment| !segment.trim().is_empty()))
         .unwrap_or("attachment.bin")
         .to_string()
 }

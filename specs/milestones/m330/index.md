@@ -35,6 +35,8 @@ remain narrow and auditable.
 - Task: #3642
 - Task: #3643
 - Task: #3644
+- Task: #3645
+- Task: #3646
 
 ## Scope
 - Decompose `crates/tau-coding-agent/src/live_rl_runtime.rs` below the 4000-line
@@ -70,6 +72,11 @@ remain narrow and auditable.
   becomes visible in GitHub Actions after the earlier warning-debt fixes land.
 - Resolve the next package-scoped clippy blocker in `tau-gateway` that only
   becomes visible in GitHub Actions after the `tau-memory` fix lands.
+- Resolve the next package-scoped clippy blocker in `tau-onboarding` that only
+  becomes visible in GitHub Actions after the `tau-gateway` fix lands.
+- Resolve the next package-scoped clippy blocker in `tau-slack-runtime` that
+  becomes visible in the same GitHub Actions lane once `tau-onboarding`
+  advances.
 
 ## Exit Criteria
 - `wc -l crates/tau-coding-agent/src/live_rl_runtime.rs` reports `<= 4000`.
@@ -97,6 +104,10 @@ remain narrow and auditable.
   GitHub Actions surfaces in the package-scoped validation lane on `#3631`.
 - `specs/3644/spec.md` clears the next `tau-gateway` Clippy blocker that
   GitHub Actions surfaces in the same package-scoped validation lane.
+- `specs/3645/spec.md` clears the `tau-onboarding` `cmp_owned` blocker that
+  GitHub Actions surfaces next in the package-scoped validation lane.
+- `specs/3646/spec.md` clears the `tau-slack-runtime` `filter_next` blocker
+  surfaced in the same package-scoped validation lane.
 - M330 no longer has hidden blockers unrelated to the `live_rl_runtime.rs`
   split itself.
 
