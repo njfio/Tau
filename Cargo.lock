@@ -5909,6 +5909,7 @@ dependencies = [
  "tau-provider",
  "tau-runtime",
  "tau-session",
+ "tau-skills",
  "tempfile",
  "tokio",
 ]

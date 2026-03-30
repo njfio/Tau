@@ -15,9 +15,9 @@ pub fn generate_mcp_tool_docs() -> String {
     docs.push_str("### Memory\n- `tau.memory_write` - Write to memory\n- `tau.memory_read` - Read from memory\n- `tau.memory_search` - Search memory\n- `tau.memory_tree` - Browse memory tree\n\n");
     docs.push_str("### Sessions\n- `tau.session_list` - List sessions\n- `tau.session_resume` - Resume a session\n- `tau.session_search` - Search sessions\n- `tau.session_stats` - Session statistics\n- `tau.session_export` - Export session\n\n");
     docs.push_str("### Learning\n- `tau.learn_status` - Learning insights\n- `tau.learn_failure_patterns` - Failure patterns\n- `tau.learn_tool_rates` - Tool success rates\n\n");
-    docs.push_str("### Training\n- `tau.training_status` - Training pipeline status\n- `tau.training_trigger` - Trigger APO optimization\n\n");
+    docs.push_str("### Training\n- `tau.training_status` - Training pipeline status\n- `tau.training_trigger` - Request APO optimization from a connected runtime (runtime-dependent; standalone MCP mode returns not_implemented)\n\n");
     docs.push_str("### Skills\n- `tau.skills_list` - List skills\n- `tau.skills_search` - Search skills\n- `tau.skills_install` - Install a skill\n- `tau.skills_info` - Skill details\n\n");
-    docs.push_str("### Orchestration\n- `tau.agent_spawn` - Spawn sub-agent\n- `tau.agent_status` - Agent status\n- `tau.agent_cancel` - Cancel agent\n\n");
+    docs.push_str("### Orchestration\n- `tau.agent_spawn` - Request sub-agent spawn from a connected runtime (runtime-dependent; standalone MCP mode returns not_implemented)\n- `tau.agent_status` - Query sub-agent status from a connected runtime (runtime-dependent; standalone MCP mode returns not_implemented)\n- `tau.agent_cancel` - Request sub-agent cancellation from a connected runtime (runtime-dependent; standalone MCP mode returns not_implemented)\n\n");
     docs
 }
 
@@ -61,5 +61,12 @@ mod tests {
         assert!(docs.contains("tau.training_status"));
         assert!(docs.contains("tau.skills_list"));
         assert!(docs.contains("tau.agent_spawn"));
+    }
+
+    #[test]
+    fn regression_generate_mcp_tool_docs_marks_runtime_dependent_lifecycle_tools() {
+        let docs = generate_mcp_tool_docs();
+        assert!(docs.contains("runtime-dependent"));
+        assert!(docs.contains("standalone MCP mode returns not_implemented"));
     }
 }

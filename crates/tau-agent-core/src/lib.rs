@@ -7,7 +7,7 @@ use std::{
         atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
         Arc, Mutex,
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use async_trait::async_trait;
@@ -58,10 +58,6 @@ pub use recovery::{
     select_recovery_strategy, select_recovery_strategy_with_history, HistoricalToolInsight,
     RecoveryStrategy,
 };
-pub use session_history::{
-    build_learning_insight, build_tool_insight, init_action_history, record_action,
-    save_action_history,
-};
 pub(crate) use runtime_safety_memory::{assistant_text_suggests_failure, retrieve_memory_matches};
 pub(crate) use runtime_startup::{
     cache_insert_with_limit, lock_or_recover, normalize_direct_message_content,
@@ -76,6 +72,10 @@ pub(crate) use runtime_turn_loop::{
     estimate_usage_cost_usd, is_retryable_ai_error, normalize_cost_alert_thresholds,
     parse_structured_output, role_label, stream_retry_buffer_on_delta, timeout_duration_from_ms,
     truncate_chars, ContextCompactionConfig, ContextCompactionTier, StreamingRetryBufferState,
+};
+pub use session_history::{
+    build_learning_insight, build_tool_insight, init_action_history, record_action,
+    save_action_history,
 };
 #[cfg(test)]
 pub(crate) use tau_memory::runtime::embed_text_vector;
@@ -950,6 +950,12 @@ struct ToolExecutionStats {
 }
 
 #[derive(Debug, Clone)]
+struct TimedToolExecutionResult {
+    result: ToolExecutionResult,
+    latency_ms: u64,
+}
+
+#[derive(Debug, Clone)]
 struct MemoryRecallMatch {
     score: f32,
     role: MessageRole,
@@ -1067,8 +1073,8 @@ impl Agent {
         let agent_id = config.agent_id.clone();
         let cb_threshold = config.circuit_breaker_failure_threshold;
         let cb_timeout = config.circuit_breaker_recovery_timeout_ms;
-        let action_history = session_history::init_action_history(&config)
-            .map(|store| Arc::new(Mutex::new(store)));
+        let action_history =
+            session_history::init_action_history(&config).map(|store| Arc::new(Mutex::new(store)));
 
         Self {
             client,
@@ -1628,6 +1634,8 @@ impl Agent {
         if result.is_ok() {
             self.compact_message_history();
         }
+        // Persist action history at session end regardless of outcome.
+        self.save_action_history_to_disk();
         result
     }
 
@@ -2691,7 +2699,7 @@ impl Agent {
                 return Ok(new_messages);
             }
 
-            let tool_stats = self.execute_tool_calls(tool_calls).await?;
+            let tool_stats = self.execute_tool_calls(turn, tool_calls).await?;
             pending_replan_on_tool_failure =
                 tool_stats.total > 0 && tool_stats.errors == tool_stats.total;
 
@@ -3260,6 +3268,7 @@ impl Agent {
 
     async fn execute_tool_calls(
         &mut self,
+        turn: usize,
         tool_calls: Vec<ToolCall>,
     ) -> Result<ToolExecutionStats, AgentError> {
         if self.is_cancelled() {
@@ -3275,7 +3284,7 @@ impl Agent {
                 if self.is_cancelled() {
                     return Err(AgentError::Cancelled);
                 }
-                if self.execute_tool_call(call).await {
+                if self.execute_tool_call(turn, call).await {
                     stats.errors = stats.errors.saturating_add(1);
                 }
                 stats.total = stats.total.saturating_add(1);
@@ -3284,8 +3293,8 @@ impl Agent {
         }
 
         enum PendingToolResult {
-            Ready(ToolExecutionResult),
-            Pending(tokio::task::JoinHandle<ToolExecutionResult>),
+            Ready(TimedToolExecutionResult),
+            Pending(tokio::task::JoinHandle<TimedToolExecutionResult>),
         }
 
         for chunk in tool_calls.chunks(max_parallel) {
@@ -3304,7 +3313,13 @@ impl Agent {
                     arguments: call.arguments.clone(),
                 });
                 if let Some(cached) = self.lookup_tool_result_cache(&call) {
-                    pending.push((call, PendingToolResult::Ready(cached)));
+                    pending.push((
+                        call,
+                        PendingToolResult::Ready(TimedToolExecutionResult {
+                            result: cached,
+                            latency_ms: 1,
+                        }),
+                    ));
                     continue;
                 }
                 let handle = self.spawn_tool_call_task(call.clone());
@@ -3312,20 +3327,28 @@ impl Agent {
             }
 
             for (call, execution) in pending {
-                let result = match execution {
+                let timed_result = match execution {
                     PendingToolResult::Ready(result) => result,
                     PendingToolResult::Pending(handle) => match handle.await {
                         Ok(result) => result,
-                        Err(error) => ToolExecutionResult::error(json!({
+                        Err(error) => TimedToolExecutionResult {
+                            result: ToolExecutionResult::error(json!({
                             "error": format!("tool '{}' execution task failed: {error}", call.name)
-                        })),
+                            })),
+                            latency_ms: 1,
+                        },
                     },
                 };
+                let latency_ms = timed_result.latency_ms;
                 let result = self
-                    .maybe_execute_branch_followup(&call, result, &mut branch_slot_holders)
+                    .maybe_execute_branch_followup(
+                        &call,
+                        timed_result.result,
+                        &mut branch_slot_holders,
+                    )
                     .await;
                 self.store_tool_result_cache(&call, &result);
-                let is_error = self.record_tool_result(call, result);
+                let is_error = self.record_tool_result(turn, call, result, latency_ms);
                 if is_error {
                     stats.errors = stats.errors.saturating_add(1);
                 }
@@ -3335,7 +3358,10 @@ impl Agent {
         Ok(stats)
     }
 
-    fn spawn_tool_call_task(&self, call: ToolCall) -> tokio::task::JoinHandle<ToolExecutionResult> {
+    fn spawn_tool_call_task(
+        &self,
+        call: ToolCall,
+    ) -> tokio::task::JoinHandle<TimedToolExecutionResult> {
         let registered = self
             .tools
             .get(&call.name)
@@ -3343,11 +3369,17 @@ impl Agent {
         let tool_timeout = timeout_duration_from_ms(self.config.tool_timeout_ms);
         let cancellation_token = self.cancellation_token();
         tokio::spawn(async move {
-            execute_tool_call_inner(call, registered, tool_timeout, cancellation_token).await
+            let started_at = Instant::now();
+            let result =
+                execute_tool_call_inner(call, registered, tool_timeout, cancellation_token).await;
+            TimedToolExecutionResult {
+                result,
+                latency_ms: started_at.elapsed().as_millis().max(1) as u64,
+            }
         })
     }
 
-    async fn execute_tool_call(&mut self, call: ToolCall) -> bool {
+    async fn execute_tool_call(&mut self, turn: usize, call: ToolCall) -> bool {
         if self.is_cancelled() {
             return true;
         }
@@ -3357,11 +3389,12 @@ impl Agent {
             arguments: call.arguments.clone(),
         });
 
+        let started_at = Instant::now();
         let result = if let Some(cached) = self.lookup_tool_result_cache(&call) {
             cached
         } else {
             match self.spawn_tool_call_task(call.clone()).await {
-                Ok(result) => result,
+                Ok(timed_result) => timed_result.result,
                 Err(error) => ToolExecutionResult::error(json!({
                     "error": format!("tool '{}' execution task failed: {error}", call.name)
                 })),
@@ -3372,10 +3405,21 @@ impl Agent {
             .maybe_execute_branch_followup(&call, result, &mut branch_slot_holders)
             .await;
         self.store_tool_result_cache(&call, &result);
-        self.record_tool_result(call, result)
+        self.record_tool_result(
+            turn,
+            call,
+            result,
+            started_at.elapsed().as_millis().max(1) as u64,
+        )
     }
 
-    fn record_tool_result(&mut self, call: ToolCall, result: ToolExecutionResult) -> bool {
+    fn record_tool_result(
+        &mut self,
+        turn: usize,
+        call: ToolCall,
+        result: ToolExecutionResult,
+        latency_ms: u64,
+    ) -> bool {
         let result = self.sanitize_tool_result(result);
 
         // Record tool execution in action history for cross-session learning.
@@ -3394,23 +3438,26 @@ impl Agent {
                 } else {
                     input_text
                 };
-                store.record(tau_memory::action_history::ActionRecord {
-                    session_id: self.agent_id.clone(),
-                    turn: 0, // Turn is not easily available here; use 0 as placeholder.
-                    action_type: tau_memory::action_history::ActionType::ToolExecution,
-                    tool_name: Some(call.name.clone()),
-                    input_summary,
-                    output_summary,
-                    success: !result.is_error,
-                    latency_ms: 0, // Latency not tracked at this level.
-                    timestamp_ms: std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_millis() as u64,
-                    channel: None,
-                    caused_by: None,
-                    led_to: None,
-                });
+                record_action(
+                    &mut store,
+                    tau_memory::action_history::ActionRecord {
+                        session_id: self.agent_id.clone(),
+                        turn,
+                        action_type: tau_memory::action_history::ActionType::ToolExecution,
+                        tool_name: Some(call.name.clone()),
+                        input_summary,
+                        output_summary,
+                        success: !result.is_error,
+                        latency_ms,
+                        timestamp_ms: std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_millis() as u64,
+                        channel: None,
+                        caused_by: None,
+                        led_to: None,
+                    },
+                );
             }
         }
 
@@ -3885,6 +3932,9 @@ mod tests {
 
     #[path = "structured_output_and_parallel.rs"]
     mod structured_output_and_parallel;
+
+    #[path = "action_history.rs"]
+    mod action_history;
 
     #[path = "safety_pipeline.rs"]
     mod safety_pipeline;
