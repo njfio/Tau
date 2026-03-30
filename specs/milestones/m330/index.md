@@ -38,6 +38,7 @@ remain narrow and auditable.
 - Task: #3645
 - Task: #3646
 - Task: #3647
+- Task: #3648
 
 ## Scope
 - Decompose `crates/tau-coding-agent/src/live_rl_runtime.rs` below the 4000-line
@@ -81,6 +82,10 @@ remain narrow and auditable.
 - Resolve the newly visible `tau-coding-agent` CLI integration race where
   unrelated live RL SQLite startup side effects contend on the default training
   store path in package-scoped CI.
+- Resolve the next package-scoped CI blocker in `tau-browser-automation` where
+  a temporary failing executor fixture intermittently trips a Linux
+  `Text file busy` launch race before the intended retryable failure path is
+  exercised.
 
 ## Exit Criteria
 - `wc -l crates/tau-coding-agent/src/live_rl_runtime.rs` reports `<= 4000`.
@@ -115,6 +120,8 @@ remain narrow and auditable.
 - `specs/3647/spec.md` clears the `tau-coding-agent --test cli_integration`
   live RL SQLite lock race surfaced next in the same package-scoped validation
   lane.
+- `specs/3648/spec.md` clears the `tau-browser-automation` live fixture launch
+  race surfaced next in the same package-scoped validation lane.
 - M330 no longer has hidden blockers unrelated to the `live_rl_runtime.rs`
   split itself.
 
