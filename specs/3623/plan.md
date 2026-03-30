@@ -45,15 +45,15 @@ without mixing unrelated runtime surfaces in one PR.
    aspirational language without matching runtime behavior.
 
 ## Affected Modules
-- [crates/tau-agent-core/src/lib.rs](/Users/n/RustroverProjects/rust_pi/crates/tau-agent-core/src/lib.rs)
-- [crates/tau-memory/src/action_history.rs](/Users/n/RustroverProjects/rust_pi/crates/tau-memory/src/action_history.rs)
-- [tests/integration/tests/agent_tool_memory_roundtrip.rs](/Users/n/RustroverProjects/rust_pi/tests/integration/tests/agent_tool_memory_roundtrip.rs)
-- [crates/tau-tools/src/mcp_server_runtime.rs](/Users/n/RustroverProjects/rust_pi/crates/tau-tools/src/mcp_server_runtime.rs)
-- [crates/tau-skills/src/lib.rs](/Users/n/RustroverProjects/rust_pi/crates/tau-skills/src/lib.rs)
-- [crates/tau-skills/src/skill_runtime.rs](/Users/n/RustroverProjects/rust_pi/crates/tau-skills/src/skill_runtime.rs)
-- [crates/tau-orchestrator/src/plan_executor.rs](/Users/n/RustroverProjects/rust_pi/crates/tau-orchestrator/src/plan_executor.rs)
-- [crates/tau-orchestrator/src/orchestrator.rs](/Users/n/RustroverProjects/rust_pi/crates/tau-orchestrator/src/orchestrator.rs)
-- [docs/guides/multi-agent-ops.md](/Users/n/RustroverProjects/rust_pi/docs/guides/multi-agent-ops.md)
+- `crates/tau-agent-core/src/lib.rs`
+- `crates/tau-memory/src/action_history.rs`
+- `tests/integration/tests/agent_tool_memory_roundtrip.rs`
+- `crates/tau-tools/src/mcp_server_runtime.rs`
+- `crates/tau-skills/src/lib.rs`
+- `crates/tau-skills/src/skill_runtime.rs`
+- `crates/tau-orchestrator/src/plan_executor.rs`
+- `crates/tau-orchestrator/src/orchestrator.rs`
+- `docs/guides/multi-agent-ops.md`
 
 ## Test Plan
 - `cargo test -p tau-agent-core`

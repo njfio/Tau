@@ -3,7 +3,7 @@ title: "feat: Radical Simplification & Self-Improvement — 7-Feature Implementa
 type: feat
 status: active
 date: 2026-03-24
-origin: docs/ideation/2026-03-24-radical-simplification-self-improvement-ideation.md
+origin: ../ideation/2026-03-24-radical-simplification-self-improvement-ideation.md
 ---
 
 # feat: Radical Simplification & Self-Improvement
@@ -26,7 +26,7 @@ Tau has extraordinary architectural breadth (46 crates, coding agent, orchestrat
 6. **Limited composability** — MCP server exposes 13 tools but not session management, orchestration, or learning surfaces.
 7. **No self-modification** — The coding agent can write code for user projects but never targets Tau's own files.
 
-(see origin: docs/ideation/2026-03-24-radical-simplification-self-improvement-ideation.md)
+(see origin: ../ideation/2026-03-24-radical-simplification-self-improvement-ideation.md)
 
 ## Proposed Solution
 
@@ -747,7 +747,7 @@ Ops Commands
 ## Sources & References
 
 ### Origin
-- **Origin document:** [docs/ideation/2026-03-24-radical-simplification-self-improvement-ideation.md](docs/ideation/2026-03-24-radical-simplification-self-improvement-ideation.md) — 7 surviving ideas from 40 raw candidates across 5 ideation frames
+- **Origin document:** [../ideation/2026-03-24-radical-simplification-self-improvement-ideation.md](../ideation/2026-03-24-radical-simplification-self-improvement-ideation.md) — 7 surviving ideas from 40 raw candidates across 5 ideation frames
 
 ### Internal References
 - Action history: `crates/tau-memory/src/action_history.rs`

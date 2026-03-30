@@ -3,7 +3,7 @@ title: "feat: Wiring, Integration & Self-Improvement Endgame"
 type: feat
 status: active
 date: 2026-03-24
-origin: docs/plans/2026-03-24-001-feat-radical-simplification-self-improvement-plan.md
+origin: ./2026-03-24-001-feat-radical-simplification-self-improvement-plan.md
 ---
 
 # feat: Wiring, Integration & Self-Improvement Endgame
@@ -12,7 +12,7 @@ origin: docs/plans/2026-03-24-001-feat-radical-simplification-self-improvement-p
 
 PR #3622 delivered the scaffolding for all 7 radical simplification features. This follow-up plan closes every gap between "types and stubs exist" and "the system actually works end-to-end." It is organized into near-term (wire what exists), medium-term (build missing connective tissue), and bold (close the self-improvement loop).
 
-(see origin: docs/plans/2026-03-24-001-feat-radical-simplification-self-improvement-plan.md)
+(see origin: ./2026-03-24-001-feat-radical-simplification-self-improvement-plan.md)
 
 ## Problem Statement / Motivation
 
@@ -398,7 +398,7 @@ graph TD
 ## Sources & References
 
 ### Origin
-- **Origin document:** [docs/plans/2026-03-24-001-feat-radical-simplification-self-improvement-plan.md](docs/plans/2026-03-24-001-feat-radical-simplification-self-improvement-plan.md) — 7-feature implementation plan; this follow-up closes all gaps between scaffolding and production.
+- **Origin document:** [./2026-03-24-001-feat-radical-simplification-self-improvement-plan.md](./2026-03-24-001-feat-radical-simplification-self-improvement-plan.md) — 7-feature implementation plan; this follow-up closes all gaps between scaffolding and production.
 
 ### Internal References
 - PR #3622: Radical Simplification & Self-Improvement scaffolding
