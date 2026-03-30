@@ -10,5 +10,7 @@
       correctly from `docs/plans/`. Covers C-02 / AC-2.
 - [x] T5 Green: rerun `python3 .github/scripts/docs_link_check.py --repo-root .`
       and confirm `issues=0`. Covers C-03 / AC-3.
-- [x] T6 Update issue/PR state, commit, push, and open a dedicated PR. Covers
+- [x] T6 Refresh the generated roadmap status blocks required by the docs
+      workflow. Covers C-04 / AC-4.
+- [x] T7 Update issue/PR state, commit, push, and open a dedicated PR. Covers
       delivery/closure.
