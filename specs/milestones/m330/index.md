@@ -34,6 +34,7 @@ remain narrow and auditable.
 - Task: #3641
 - Task: #3642
 - Task: #3643
+- Task: #3644
 
 ## Scope
 - Decompose `crates/tau-coding-agent/src/live_rl_runtime.rs` below the 4000-line
@@ -67,6 +68,8 @@ remain narrow and auditable.
   oversized-file story.
 - Resolve the next package-scoped clippy blocker in `tau-memory` that only
   becomes visible in GitHub Actions after the earlier warning-debt fixes land.
+- Resolve the next package-scoped clippy blocker in `tau-gateway` that only
+  becomes visible in GitHub Actions after the `tau-memory` fix lands.
 
 ## Exit Criteria
 - `wc -l crates/tau-coding-agent/src/live_rl_runtime.rs` reports `<= 4000`.
@@ -92,6 +95,8 @@ remain narrow and auditable.
   package-scoped test failures in the runtime/startup path.
 - `specs/3643/spec.md` clears the `tau-memory` `derivable_impls` blocker that
   GitHub Actions surfaces in the package-scoped validation lane on `#3631`.
+- `specs/3644/spec.md` clears the next `tau-gateway` Clippy blocker that
+  GitHub Actions surfaces in the same package-scoped validation lane.
 - M330 no longer has hidden blockers unrelated to the `live_rl_runtime.rs`
   split itself.
 
