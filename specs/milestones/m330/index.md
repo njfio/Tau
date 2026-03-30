@@ -26,6 +26,7 @@ remain narrow and auditable.
 - Story: #3630
 - Task: #3632
 - Task: #3633
+- Task: #3636
 
 ## Scope
 - Decompose `crates/tau-coding-agent/src/live_rl_runtime.rs` below the 4000-line
@@ -38,6 +39,8 @@ remain narrow and auditable.
   generated roadmap-status blocks.
 - Restore deterministic validation scoping when CI checks out a shallow PR
   branch and only fetches the PR base commit.
+- Keep PR-scoped formatting checks aligned to the changed Rust surface so
+  unrelated workspace fmt drift on `master` does not block narrow branches.
 
 ## Exit Criteria
 - `wc -l crates/tau-coding-agent/src/live_rl_runtime.rs` reports `<= 4000`.
@@ -47,6 +50,8 @@ remain narrow and auditable.
 - `specs/3633/spec.md` is `Implemented` with docs-quality evidence.
 - `specs/3632/spec.md` is `Implemented` with shallow-history regression
   coverage and focused validation evidence.
+- `specs/3636/spec.md` restores PR-scoped formatting validation without
+  regressing explicit full-workspace validation modes.
 - M330 no longer has hidden blockers unrelated to the `live_rl_runtime.rs`
   split itself.
 
