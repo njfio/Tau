@@ -65,6 +65,7 @@ use crate::auth_commands::execute_auth_command;
 use crate::canvas::{
     execute_canvas_command, CanvasCommandConfig, CanvasEventOrigin, CanvasSessionLinkContext,
 };
+#[allow(deprecated)]
 use crate::extension_manifest::{
     dispatch_extension_registered_command, ExtensionRegisteredCommandAction,
 };
@@ -223,6 +224,7 @@ pub(crate) fn handle_command(
     )
 }
 
+#[allow(deprecated)]
 pub(crate) fn handle_command_with_session_import_mode(
     command: &str,
     agent: &mut Agent,

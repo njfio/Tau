@@ -30,10 +30,7 @@ pub(super) async fn handle_gateway_config_get(
         Err(error) => return error.into_response(),
     };
     let heartbeat_interval_ms =
-        match u64::try_from(state.config.runtime_heartbeat.interval.as_millis()) {
-            Ok(value) => value,
-            Err(_) => u64::MAX,
-        };
+        u64::try_from(state.config.runtime_heartbeat.interval.as_millis()).unwrap_or(u64::MAX);
     let heartbeat_policy_path =
         gateway_runtime_heartbeat_policy_path(&state.config.runtime_heartbeat.state_path);
     let heartbeat_policy_exists = heartbeat_policy_path.is_file();

@@ -40,7 +40,10 @@ fn default_custom_command_policy_denied_env() -> Vec<String> {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[deprecated(since = "0.2.0", note = "Use tau-skills with commands fields instead. See skill_runtime.rs")]
+#[deprecated(
+    since = "0.2.0",
+    note = "Use tau-skills with commands fields instead. See skill_runtime.rs"
+)]
 /// Public struct `CustomCommandExecutionPolicy` used across Tau components.
 pub struct CustomCommandExecutionPolicy {
     #[serde(default = "custom_command_policy_schema_version")]
@@ -74,7 +77,10 @@ impl Default for CustomCommandExecutionPolicy {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[deprecated(since = "0.2.0", note = "Use tau-skills with commands fields instead. See skill_runtime.rs")]
+#[deprecated(
+    since = "0.2.0",
+    note = "Use tau-skills with commands fields instead. See skill_runtime.rs"
+)]
 /// Public struct `CustomCommandSpec` used across Tau components.
 pub struct CustomCommandSpec {
     #[serde(default = "custom_command_policy_schema_version")]

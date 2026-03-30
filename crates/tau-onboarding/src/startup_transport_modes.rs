@@ -473,7 +473,7 @@ pub fn build_gateway_openresponses_server_config(
         .collect::<Vec<_>>();
     let policy = tool_policy.clone();
     let mut runtime_heartbeat = build_runtime_heartbeat_scheduler_config(cli);
-    if runtime_heartbeat.state_path == PathBuf::from(".tau/runtime-heartbeat/state.json") {
+    if runtime_heartbeat.state_path == Path::new(".tau/runtime-heartbeat/state.json") {
         runtime_heartbeat.state_path = cli.gateway_state_dir.join("runtime-heartbeat/state.json");
     }
     Ok(GatewayOpenResponsesServerConfig {

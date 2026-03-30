@@ -30,6 +30,7 @@ use tau_agent_core::{Agent, AgentCostSnapshot, AgentError, CooperativeCancellati
 use tau_ai::StreamDeltaHandler;
 use tau_cli::{Cli, CliOrchestratorMode};
 use tau_core::current_unix_timestamp_ms;
+#[allow(deprecated)]
 use tau_extensions::{apply_extension_message_transforms, dispatch_extension_runtime_hook};
 use tau_onboarding::startup_prompt_composition::{
     compose_startup_system_prompt_with_report_for_selected_skills,
@@ -1164,6 +1165,7 @@ pub(crate) async fn run_plan_first_prompt_with_runtime_hooks(
     }
 }
 
+#[allow(deprecated)]
 fn apply_runtime_message_transform(config: &RuntimeExtensionHooksConfig, prompt: &str) -> String {
     if !config.enabled {
         return prompt.to_string();
@@ -1265,6 +1267,7 @@ fn render_orchestrator_policy_inheritance_context(
     ))
 }
 
+#[allow(deprecated)]
 fn dispatch_runtime_hook(
     config: &RuntimeExtensionHooksConfig,
     hook: &str,

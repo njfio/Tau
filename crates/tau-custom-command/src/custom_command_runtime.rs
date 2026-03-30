@@ -34,7 +34,10 @@ fn custom_command_runtime_state_schema_version() -> u32 {
 }
 
 #[derive(Debug, Clone)]
-#[deprecated(since = "0.2.0", note = "Use tau-skills with commands fields instead. See skill_runtime.rs")]
+#[deprecated(
+    since = "0.2.0",
+    note = "Use tau-skills with commands fields instead. See skill_runtime.rs"
+)]
 /// Public struct `CustomCommandRuntimeConfig` used across Tau components.
 pub struct CustomCommandRuntimeConfig {
     pub fixture_path: PathBuf,
@@ -48,7 +51,10 @@ pub struct CustomCommandRuntimeConfig {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-#[deprecated(since = "0.2.0", note = "Use tau-skills with commands fields instead. See skill_runtime.rs")]
+#[deprecated(
+    since = "0.2.0",
+    note = "Use tau-skills with commands fields instead. See skill_runtime.rs"
+)]
 /// Public struct `CustomCommandRuntimeSummary` used across Tau components.
 pub struct CustomCommandRuntimeSummary {
     pub discovered_cases: usize,

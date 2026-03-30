@@ -1021,6 +1021,7 @@ async fn regression_tool_hook_subscriber_timeout_does_not_fail_prompt() {
 }
 
 #[tokio::test]
+#[allow(deprecated)]
 async fn integration_extension_registered_tool_executes_in_prompt_loop() {
     let temp = tempdir().expect("tempdir");
     let extension_root = temp.path().join("extensions");
@@ -1354,6 +1355,7 @@ async fn integration_run_prompt_with_cancellation_executes_textual_codex_write_t
 }
 
 #[test]
+#[allow(deprecated)]
 fn integration_handle_command_dispatches_extension_registered_command() {
     let temp = tempdir().expect("tempdir");
     let extension_root = temp.path().join("extensions");
@@ -1433,6 +1435,7 @@ fn integration_handle_command_dispatches_extension_registered_command() {
 }
 
 #[test]
+#[allow(deprecated)]
 fn regression_handle_command_extension_failure_is_fail_isolated() {
     let temp = tempdir().expect("tempdir");
     let extension_root = temp.path().join("extensions");
@@ -1516,8 +1519,7 @@ fn unit_parse_numbered_plan_steps_accepts_deterministic_step_format() {
 async fn regression_spec_2542_c03_run_local_runtime_prompt_executes_model_call() {
     // Regression: #2542
     let temp = tempdir().expect("tempdir");
-    let original_cwd = std::env::current_dir().expect("resolve current dir");
-    std::env::set_current_dir(temp.path()).expect("set current dir");
+    let _cwd_guard = CurrentDirGuard::enter(temp.path());
 
     let mut cli = test_cli();
     set_workspace_tau_paths(&mut cli, temp.path());
@@ -1550,7 +1552,7 @@ async fn regression_spec_2542_c03_run_local_runtime_prompt_executes_model_call()
     let tool_policy_json = tool_policy_to_json(&tool_policy);
     let render_options = test_render_options();
 
-    let run_result = crate::run_local_runtime(crate::LocalRuntimeConfig {
+    crate::run_local_runtime(crate::LocalRuntimeConfig {
         cli: &cli,
         client,
         model_ref: &model_ref,
@@ -1563,9 +1565,8 @@ async fn regression_spec_2542_c03_run_local_runtime_prompt_executes_model_call()
         skills_dir: &cli.skills_dir,
         skills_lock_path: &skills_lock_path,
     })
-    .await;
-    restore_current_dir(&original_cwd);
-    run_result.expect("run_local_runtime should execute prompt path");
+    .await
+    .expect("run_local_runtime should execute prompt path");
 
     let recorded_models = recorded_models.lock().await.clone();
     assert_eq!(
@@ -1615,8 +1616,7 @@ fn red_spec_3618_apply_interactive_turn_skill_selection_uses_bundled_repo_skill_
 async fn regression_spec_3555_c01_run_local_runtime_uses_cli_request_timeout_for_agent() {
     // Regression: #3555
     let temp = tempdir().expect("tempdir");
-    let original_cwd = std::env::current_dir().expect("resolve current dir");
-    std::env::set_current_dir(temp.path()).expect("set current dir");
+    let _cwd_guard = CurrentDirGuard::enter(temp.path());
 
     let mut cli = test_cli();
     set_workspace_tau_paths(&mut cli, temp.path());
@@ -1660,7 +1660,6 @@ async fn regression_spec_3555_c01_run_local_runtime_uses_cli_request_timeout_for
         }),
     )
     .await;
-    restore_current_dir(&original_cwd);
 
     let run_result =
         run_result.expect("run_local_runtime should complete quickly under low request timeout");
@@ -1687,6 +1686,24 @@ fn restore_current_dir(original_cwd: &std::path::Path) {
         .and_then(std::path::Path::parent)
         .expect("resolve workspace root");
     std::env::set_current_dir(workspace_root).expect("restore workspace root");
+}
+
+struct CurrentDirGuard {
+    original_cwd: std::path::PathBuf,
+}
+
+impl CurrentDirGuard {
+    fn enter(path: &std::path::Path) -> Self {
+        let original_cwd = std::env::current_dir().expect("resolve current dir");
+        std::env::set_current_dir(path).expect("set current dir");
+        Self { original_cwd }
+    }
+}
+
+impl Drop for CurrentDirGuard {
+    fn drop(&mut self) {
+        restore_current_dir(&self.original_cwd);
+    }
 }
 
 #[tokio::test]

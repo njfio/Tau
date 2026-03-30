@@ -14,6 +14,7 @@ use tau_access::{
 };
 use tau_agent_core::{AgentTool, ToolExecutionResult};
 use tau_ai::ToolDefinition;
+#[allow(deprecated)]
 use tau_extensions::evaluate_extension_policy_override;
 use tokio::{process::Command, time::timeout};
 
@@ -276,6 +277,7 @@ impl AgentTool for BashTool {
         }
     }
 
+    #[allow(deprecated)]
     async fn execute(&self, arguments: Value) -> ToolExecutionResult {
         let command = match required_string(&arguments, "command") {
             Ok(command) => command,

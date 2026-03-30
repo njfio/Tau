@@ -3,6 +3,7 @@
 //! Centralizes coding-agent runtime configuration/state types referenced across
 //! startup dispatch, command handling, and test harnesses.
 
+#[allow(deprecated)]
 use crate::extension_manifest::ExtensionRegisteredCommand;
 pub(crate) use tau_onboarding::startup_config::ProfileDefaults;
 #[cfg(test)]
@@ -20,6 +21,7 @@ pub(crate) use tau_startup::runtime_types::{
     DoctorCommandConfig, DoctorMultiChannelReadinessConfig, DoctorProviderKeyStatus,
 };
 
+#[allow(deprecated)]
 #[derive(Clone, Copy)]
 pub(crate) struct CommandExecutionContext<'a> {
     pub(crate) tool_policy_json: &'a serde_json::Value,

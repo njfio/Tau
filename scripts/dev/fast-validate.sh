@@ -17,7 +17,7 @@ usage() {
 Usage: fast-validate.sh [--full] [--check-only] [--direct-packages-only] [--skip-fmt] [--base <git-ref>] [--print-packages-from-stdin]
 
 Fast validation defaults to impacted-package scope:
-  - cargo fmt --all -- --check
+  - rustfmt --check <changed Rust files> (or cargo fmt --all -- --check for full-workspace scope)
   - cargo clippy -p <impacted crates> --all-targets --all-features -- -D warnings
   - cargo test -p <impacted crates>
 
@@ -26,7 +26,7 @@ Options:
   --check-only                  Run `cargo check` instead of clippy + tests.
   --direct-packages-only        Keep package scope to directly changed crates
                                 (skip reverse-dependency expansion).
-  --skip-fmt                    Skip `cargo fmt --all -- --check`.
+  --skip-fmt                    Skip fmt validation entirely.
   --base <git-ref>              Compare changes against this base ref.
   --print-packages-from-stdin   Internal/test mode: read newline-delimited paths from stdin
                                 and print derived impacted package scope.
@@ -99,6 +99,7 @@ resolve_default_base_ref() {
 collect_changed_files() {
   local base_ref="$1"
   local base_available="true"
+  local base_diff_output=""
 
   if ! git rev-parse --verify "${base_ref}^{commit}" >/dev/null 2>&1; then
     base_available="false"
@@ -107,7 +108,15 @@ collect_changed_files() {
 
   {
     if [[ "${base_available}" == "true" ]]; then
-      git diff --name-only "${base_ref}...HEAD" || true
+      if git merge-base "${base_ref}" HEAD >/dev/null 2>&1; then
+        base_diff_output="$(git diff --name-only "${base_ref}...HEAD" 2>/dev/null || true)"
+      else
+        echo "warning: base ref '${base_ref}' has no local merge base with HEAD; using two-dot diff fallback" >&2
+        base_diff_output="$(git diff --name-only "${base_ref}..HEAD" 2>/dev/null || true)"
+      fi
+      if [[ -n "${base_diff_output}" ]]; then
+        printf '%s\n' "${base_diff_output}"
+      fi
     else
       echo "Cargo.toml"
     fi
@@ -146,6 +155,14 @@ derive_scope_from_files() {
   if [[ ${#package_map[@]} -gt 0 ]]; then
     printf '%s\n' "${!package_map[@]}" | sort
   fi
+}
+
+collect_changed_rust_files() {
+  for file in "$@"; do
+    if [[ "${file}" == *.rs && -f "${file}" ]]; then
+      printf '%s\n' "${file}"
+    fi
+  done | awk 'NF' | sort -u
 }
 
 expand_impacted_packages() {
@@ -253,6 +270,7 @@ fi
 
 BASE="$(resolve_default_base_ref)"
 mapfile -t CHANGED_FILES < <(collect_changed_files "${BASE}")
+mapfile -t CHANGED_RUST_FILES < <(collect_changed_rust_files "${CHANGED_FILES[@]}")
 mapfile -t SCOPE < <(derive_scope_from_files "${CHANGED_FILES[@]}")
 FULL_WORKSPACE_FROM_SCOPE="${SCOPE[0]:-0}"
 PACKAGES=("${SCOPE[@]:1}")
@@ -260,12 +278,16 @@ if [[ "${DIRECT_PACKAGES_ONLY}" != "true" && "${FULL_MODE}" != "true" && "${FULL
   mapfile -t PACKAGES < <(expand_impacted_packages "${PACKAGES[@]}")
 fi
 
-echo "fast-validate base=${BASE} changed_files=${#CHANGED_FILES[@]} impacted_packages=${#PACKAGES[@]} check_only=${CHECK_ONLY} direct_packages_only=${DIRECT_PACKAGES_ONLY} skip_fmt=${SKIP_FMT}"
+echo "fast-validate base=${BASE} changed_files=${#CHANGED_FILES[@]} changed_rust_files=${#CHANGED_RUST_FILES[@]} impacted_packages=${#PACKAGES[@]} check_only=${CHECK_ONLY} direct_packages_only=${DIRECT_PACKAGES_ONLY} skip_fmt=${SKIP_FMT}"
 
 if [[ "${SKIP_FMT}" == "true" ]]; then
   echo "skipping fmt check (--skip-fmt)"
-else
+elif [[ "${FULL_MODE}" == "true" || "${FULL_WORKSPACE_FROM_SCOPE}" == "1" ]]; then
   run_step "fmt-check" cargo fmt --all -- --check
+elif [[ ${#CHANGED_RUST_FILES[@]} -eq 0 ]]; then
+  echo "skipping scoped fmt check (no changed Rust files)"
+else
+  run_step "fmt-check" rustfmt --edition 2021 --check "${CHANGED_RUST_FILES[@]}"
 fi
 
 if [[ "${CHECK_ONLY}" == "true" ]]; then

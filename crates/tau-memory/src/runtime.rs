@@ -151,9 +151,12 @@ fn default_ingestion_llm_timeout_ms() -> u64 {
 }
 
 /// Enumerates supported canonical `MemoryRelationType` values.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(
+    Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq, Hash, PartialOrd, Ord,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum MemoryRelationType {
+    #[default]
     RelatedTo,
     Updates,
     Contradicts,
@@ -187,12 +190,6 @@ impl MemoryRelationType {
     }
 }
 
-impl Default for MemoryRelationType {
-    fn default() -> Self {
-        Self::RelatedTo
-    }
-}
-
 /// Public struct `MemoryRelation` used across Tau components.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct MemoryRelation {
@@ -213,7 +210,7 @@ pub struct MemoryRelationInput {
 }
 
 /// Enumerates supported `MemoryType` values.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub enum MemoryType {
     Identity,
@@ -223,6 +220,7 @@ pub enum MemoryType {
     Preference,
     Fact,
     Event,
+    #[default]
     Observation,
 }
 
@@ -265,12 +263,6 @@ impl MemoryType {
             Self::Event => 0.55,
             Self::Observation => 0.3,
         }
-    }
-}
-
-impl Default for MemoryType {
-    fn default() -> Self {
-        Self::Observation
     }
 }
 

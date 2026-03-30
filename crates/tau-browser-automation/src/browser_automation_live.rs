@@ -518,6 +518,46 @@ print(json.dumps({
         }
     }
 
+    fn write_failing_playwright_cli(path: &PathBuf) {
+        std::fs::write(
+            path,
+            r#"#!/usr/bin/env python3
+import json
+import pathlib
+import sys
+
+session_file = pathlib.Path(__file__).with_suffix(".session")
+command = sys.argv[1] if len(sys.argv) > 1 else ""
+
+if command == "start-session":
+    session_file.write_text("active", encoding="utf-8")
+    print(json.dumps({"status": "ok"}))
+    raise SystemExit(0)
+
+if command == "shutdown-session":
+    if session_file.exists():
+        session_file.unlink()
+    print(json.dumps({"status": "ok"}))
+    raise SystemExit(0)
+
+if command == "execute-action":
+    print("boom", file=sys.stderr)
+    raise SystemExit(9)
+
+print("unsupported command", file=sys.stderr)
+raise SystemExit(2)
+"#,
+        )
+        .expect("write failing playwright cli");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = std::fs::metadata(path).expect("stat").permissions();
+            perms.set_mode(0o755);
+            std::fs::set_permissions(path, perms).expect("chmod");
+        }
+    }
+
     #[test]
     fn unit_session_manager_reuses_started_session_across_multiple_cases() {
         let counters = Arc::new(Mutex::new(ExecutorCounters::default()));
@@ -627,19 +667,8 @@ print(json.dumps({
     #[test]
     fn integration_live_fixture_maps_executor_failures_to_retryable_backend_unavailable() {
         let temp = tempdir().expect("tempdir");
-        let script_path = temp.path().join("failing-playwright-cli.sh");
-        std::fs::write(
-            &script_path,
-            "#!/usr/bin/env bash\nset -euo pipefail\nif [[ \"$1\" == \"execute-action\" ]]; then echo 'boom' >&2; exit 9; fi\nexit 0\n",
-        )
-        .expect("write failing script");
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let mut perms = std::fs::metadata(&script_path).expect("stat").permissions();
-            perms.set_mode(0o755);
-            std::fs::set_permissions(&script_path, perms).expect("chmod");
-        }
+        let script_path = temp.path().join("failing-playwright-cli.py");
+        write_failing_playwright_cli(&script_path);
 
         let fixture = parse_browser_automation_contract_fixture(
             r##"{

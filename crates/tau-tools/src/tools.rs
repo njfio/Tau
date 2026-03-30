@@ -19,6 +19,7 @@ use serde::Serialize;
 use serde_json::{json, Value};
 use tau_agent_core::{Agent, AgentTool, DefaultLeakDetector, LeakDetector, ToolExecutionResult};
 use tau_ai::{Message, ToolDefinition};
+#[allow(deprecated)]
 use tau_extensions::{execute_extension_registered_tool, ExtensionRegisteredTool};
 use tau_runtime::{
     build_generated_wasm_tool, BackgroundJobCreateRequest, BackgroundJobRuntime,
