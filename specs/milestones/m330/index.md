@@ -12,9 +12,11 @@ decomposed or explicitly exempted.
 
 While executing story `#3630`, two independent blockers surfaced on `master`:
 
-1. Broken relative links in March 24 planning documents.
-2. CI validation scope expansion when shallow PR history prevents merge-base
-   calculation.
+1. Broken relative links and stale generated roadmap-status docs in the March
+   24 planning/docs workflow path (`#3633`).
+2. `fast-validate` losing scoped validation under shallow PR history because
+   CI checks out the PR branch with insufficient ancestry for `base...HEAD`
+   diffing (`#3632`).
 
 Those blockers are tracked as separate tasks so the oversized-file work can
 remain narrow and auditable.
@@ -32,18 +34,19 @@ remain narrow and auditable.
   selectors.
 - Keep the oversized-file guard green without adding a temporary exemption for
   `live_rl_runtime.rs`.
-- Repair the two broken relative links in March 24 planning docs.
-- Restore `Docs Quality` for PRs that touch `docs/**` or `tasks/**`.
-- Investigate and correct shallow-history `fast-validate` fallback behavior.
+- Restore deterministic docs workflow behavior for March 24 planning docs and
+  generated roadmap-status blocks.
+- Restore deterministic validation scoping when CI checks out a shallow PR
+  branch and only fetches the PR base commit.
 
 ## Exit Criteria
 - `wc -l crates/tau-coding-agent/src/live_rl_runtime.rs` reports `<= 4000`.
 - `python3 .github/scripts/oversized_file_guard.py ...` reports `issues=0`
   without a new exemption for `live_rl_runtime.rs`.
 - Targeted `tau-coding-agent` live RL runtime selectors pass after the split.
-- `specs/3633/spec.md` is `Implemented` with docs-link evidence.
-- `specs/3632/spec.md` is accepted and its CI-scope fix is delivered in a
-  dedicated change.
+- `specs/3633/spec.md` is `Implemented` with docs-quality evidence.
+- `specs/3632/spec.md` is `Implemented` with shallow-history regression
+  coverage and focused validation evidence.
 - M330 no longer has hidden blockers unrelated to the `live_rl_runtime.rs`
   split itself.
 
