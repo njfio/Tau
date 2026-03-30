@@ -56,6 +56,47 @@ assert_contains "${output}" "package=tau-cli" "multi-crate input should include 
 assert_contains "${output}" "package=tau-tools" "multi-crate input should include tau-tools"
 assert_contains "${output}" "package=tau-coding-agent" "tau-tools impact scope should include coding-agent"
 
+tmp_root="$(mktemp -d)"
+trap 'rm -rf "${tmp_root}"' EXIT
+
+source_repo="${tmp_root}/source"
+remote_repo="${tmp_root}/remote.git"
+shallow_repo="${tmp_root}/shallow"
+
+mkdir -p "${source_repo}/scripts/dev" "${source_repo}/docs"
+cp "${FAST_VALIDATE}" "${source_repo}/scripts/dev/fast-validate.sh"
+chmod +x "${source_repo}/scripts/dev/fast-validate.sh"
+
+(
+  cd "${source_repo}"
+  git init -q
+  git config user.name test
+  git config user.email test@example.com
+  echo "base" > docs/README.md
+  git add .
+  git commit -q -m "base"
+  base_sha="$(git rev-parse HEAD)"
+  echo "middle" >> docs/README.md
+  git commit -qam "middle"
+  echo "head" >> docs/README.md
+  git commit -qam "head"
+  printf '%s\n' "${base_sha}" > "${tmp_root}/base_sha"
+)
+
+git clone --bare -q "${source_repo}" "${remote_repo}"
+git clone --depth 1 -q "file://${remote_repo}" "${shallow_repo}"
+
+base_sha="$(cat "${tmp_root}/base_sha")"
+(
+  cd "${shallow_repo}"
+  git fetch --depth=1 origin "${base_sha}" >/dev/null 2>&1
+  output="$(./scripts/dev/fast-validate.sh --check-only --skip-fmt --base "${base_sha}" 2>&1)"
+  assert_contains "${output}" "warning: base ref '${base_sha}' has no local merge base with HEAD; using two-dot diff fallback" "shallow-history case should emit bounded fallback warning"
+  assert_not_contains "${output}" "fatal:" "shallow-history case should not leak raw git fatal output"
+  assert_contains "${output}" "changed_files=1" "shallow-history case should preserve changed file scope"
+  assert_contains "${output}" "no crate changes detected; fmt check completed" "shallow-history docs-only case should stay scoped"
+)
+
 help_output="$("${FAST_VALIDATE}" --help)"
 assert_contains "${help_output}" "--skip-fmt" "help output should document skip-fmt option"
 

@@ -99,6 +99,7 @@ resolve_default_base_ref() {
 collect_changed_files() {
   local base_ref="$1"
   local base_available="true"
+  local base_diff_output=""
 
   if ! git rev-parse --verify "${base_ref}^{commit}" >/dev/null 2>&1; then
     base_available="false"
@@ -107,7 +108,15 @@ collect_changed_files() {
 
   {
     if [[ "${base_available}" == "true" ]]; then
-      git diff --name-only "${base_ref}...HEAD" || true
+      if git merge-base "${base_ref}" HEAD >/dev/null 2>&1; then
+        base_diff_output="$(git diff --name-only "${base_ref}...HEAD" 2>/dev/null || true)"
+      else
+        echo "warning: base ref '${base_ref}' has no local merge base with HEAD; using two-dot diff fallback" >&2
+        base_diff_output="$(git diff --name-only "${base_ref}..HEAD" 2>/dev/null || true)"
+      fi
+      if [[ -n "${base_diff_output}" ]]; then
+        printf '%s\n' "${base_diff_output}"
+      fi
     else
       echo "Cargo.toml"
     fi
