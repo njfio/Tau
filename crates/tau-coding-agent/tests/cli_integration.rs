@@ -82,7 +82,9 @@ fn parse_session_entries(path: &std::path::Path) -> Vec<SessionEntry> {
 }
 
 fn binary_command() -> Command {
-    Command::new(assert_cmd::cargo::cargo_bin!("tau-coding-agent"))
+    let mut command = Command::new(assert_cmd::cargo::cargo_bin!("tau-coding-agent"));
+    command.env("TAU_LIVE_RL_ENABLED", "0");
+    command
 }
 
 fn write_model_catalog(path: &std::path::Path, entries: serde_json::Value) {
