@@ -1,13 +1,14 @@
-//! Plan execution engine with parallel step scheduling.
+//! Plan reporting and deadlock analysis helpers.
 //!
-//! Executes structured plans by running ready steps, handling failures, and
-//! optionally revising the plan on step failure.
+//! Builds execution summaries from the current plan state and detects when a
+//! structured plan cannot make further progress. This module does not execute
+//! plan steps or schedule work in parallel.
 
 use serde::{Deserialize, Serialize};
 
 use crate::plan::{PlanStepStatus, StructuredPlan};
 
-/// Report generated after plan execution completes.
+/// Summary generated from the current plan state.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlanExecutionReport {
     pub plan_id: String,
@@ -20,12 +21,12 @@ pub struct PlanExecutionReport {
     pub is_deadlocked: bool,
 }
 
-/// Errors that can occur during plan execution.
+/// Errors detected while analyzing a plan state.
 #[derive(Debug, Clone)]
 pub enum PlanExecutionError {
     /// No ready steps remain but plan is not complete.
     Deadlock { remaining_step_ids: Vec<String> },
-    /// Plan validation failed before execution.
+    /// Plan validation failed before analysis.
     ValidationFailed { errors: Vec<String> },
 }
 
@@ -46,7 +47,7 @@ impl std::fmt::Display for PlanExecutionError {
 
 impl std::error::Error for PlanExecutionError {}
 
-/// Build an execution report from the current plan state.
+/// Build a report from the current plan state.
 pub fn build_execution_report(plan: &StructuredPlan) -> PlanExecutionReport {
     let completed = plan
         .steps
@@ -177,5 +178,15 @@ mod tests {
         };
         let deadlock = check_deadlock(&plan);
         assert!(deadlock.is_some());
+    }
+
+    #[test]
+    fn regression_source_docs_describe_reporting_and_deadlock_helpers_only() {
+        let source = include_str!("plan_executor.rs");
+        let documented_surface = source.split("#[cfg(test)]").next().unwrap_or(source);
+        assert!(documented_surface.contains("reporting and deadlock analysis helpers"));
+        assert!(documented_surface.contains("current plan state"));
+        assert!(!documented_surface.contains("parallel step scheduling"));
+        assert!(!documented_surface.contains("running ready steps"));
     }
 }

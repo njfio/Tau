@@ -1016,9 +1016,7 @@ fn handle_stateful_tool(
         MCP_TOOL_SESSION_STATS => Some(handle_session_stats(arguments, state)?),
         MCP_TOOL_SESSION_EXPORT => Some(handle_session_export(arguments, state)?),
         MCP_TOOL_LEARN_STATUS => Some(handle_learn_status(state)?),
-        MCP_TOOL_LEARN_FAILURE_PATTERNS => {
-            Some(handle_learn_failure_patterns(arguments, state)?)
-        }
+        MCP_TOOL_LEARN_FAILURE_PATTERNS => Some(handle_learn_failure_patterns(arguments, state)?),
         MCP_TOOL_LEARN_TOOL_RATES => Some(handle_learn_tool_rates(arguments, state)?),
         MCP_TOOL_TRAINING_STATUS => Some(handle_training_status(state)?),
         MCP_TOOL_TRAINING_TRIGGER => Some(handle_training_trigger(arguments)?),
@@ -1042,14 +1040,8 @@ fn handle_stateful_tool(
 // ---------------------------------------------------------------------------
 
 fn handle_session_list(arguments: &Value, state: &McpServerState) -> Result<Value> {
-    let limit = arguments
-        .get("limit")
-        .and_then(Value::as_u64)
-        .unwrap_or(20) as usize;
-    let offset = arguments
-        .get("offset")
-        .and_then(Value::as_u64)
-        .unwrap_or(0) as usize;
+    let limit = arguments.get("limit").and_then(Value::as_u64).unwrap_or(20) as usize;
+    let offset = arguments.get("offset").and_then(Value::as_u64).unwrap_or(0) as usize;
 
     let session_dir = state
         .session_path
@@ -1166,10 +1158,7 @@ fn handle_session_search(arguments: &Value, state: &McpServerState) -> Result<Va
         .get("query")
         .and_then(Value::as_str)
         .ok_or_else(|| anyhow!("query is required"))?;
-    let limit = arguments
-        .get("limit")
-        .and_then(Value::as_u64)
-        .unwrap_or(10) as usize;
+    let limit = arguments.get("limit").and_then(Value::as_u64).unwrap_or(10) as usize;
 
     if !state.session_path.exists() {
         return Ok(mcp_tool_call_result(
@@ -1186,8 +1175,7 @@ fn handle_session_search(arguments: &Value, state: &McpServerState) -> Result<Va
 
     let store = tau_session::SessionStore::load(&state.session_path)
         .context("failed to load session for search")?;
-    let (matches, total) =
-        tau_session::search_session_entries(store.entries(), query, None, limit);
+    let (matches, total) = tau_session::search_session_entries(store.entries(), query, None, limit);
     let match_values: Vec<Value> = matches
         .iter()
         .map(|m| {
@@ -1418,8 +1406,7 @@ fn load_learn_report_from_session(state: &McpServerState) -> Value {
         })
         .collect();
 
-    let mut failure_patterns: Vec<((String, String), usize)> =
-        failure_map.into_iter().collect();
+    let mut failure_patterns: Vec<((String, String), usize)> = failure_map.into_iter().collect();
     failure_patterns.sort_by(|a, b| b.1.cmp(&a.1));
     let top_failure_patterns: Vec<Value> = failure_patterns
         .into_iter()
@@ -1450,10 +1437,7 @@ fn handle_learn_status(state: &McpServerState) -> Result<Value> {
 }
 
 fn handle_learn_failure_patterns(arguments: &Value, state: &McpServerState) -> Result<Value> {
-    let limit = arguments
-        .get("limit")
-        .and_then(Value::as_u64)
-        .unwrap_or(20) as usize;
+    let limit = arguments.get("limit").and_then(Value::as_u64).unwrap_or(20) as usize;
     let min_occurrences = arguments
         .get("min_occurrences")
         .and_then(Value::as_u64)
@@ -1553,95 +1537,65 @@ fn handle_training_status(state: &McpServerState) -> Result<Value> {
     Ok(mcp_tool_call_result(report, false))
 }
 
+fn runtime_unavailable_tool_result(
+    tool_name: &str,
+    subsystem: &str,
+    extra_fields: serde_json::Map<String, Value>,
+) -> Value {
+    let mut content = serde_json::Map::new();
+    content.insert("tool".into(), json!(tool_name));
+    content.extend(extra_fields);
+    content.insert("status".into(), json!("not_implemented"));
+    content.insert("reason_code".into(), json!("runtime_unavailable"));
+    content.insert(
+        "message".into(),
+        json!(format!(
+            "{tool_name} requires a connected {subsystem} runtime. Standalone MCP server mode does not provide one."
+        )),
+    );
+    mcp_tool_call_result(Value::Object(content), true)
+}
+
 fn handle_training_trigger(arguments: &Value) -> Result<Value> {
     let scope = arguments
         .get("scope")
         .and_then(Value::as_str)
         .unwrap_or("incremental");
 
-    Ok(mcp_tool_call_result(
-        json!({
-            "tool": MCP_TOOL_TRAINING_TRIGGER,
-            "scope": scope,
-            "status": "accepted",
-            "message": "Training trigger accepted. The runtime will schedule the run when the training pipeline is available.",
-        }),
-        false,
+    let mut extra = serde_json::Map::new();
+    extra.insert("scope".into(), json!(scope));
+    Ok(runtime_unavailable_tool_result(
+        MCP_TOOL_TRAINING_TRIGGER,
+        "training",
+        extra,
     ))
 }
 
 // ---------------------------------------------------------------------------
-// Skills tool handlers (filesystem-based, no tau-skills dependency)
+// Skills tool handlers (delegated to tau-skills)
 // ---------------------------------------------------------------------------
 
-/// Parse a skill markdown file frontmatter to extract name and description.
-fn parse_skill_frontmatter(path: &Path) -> Option<(String, String)> {
-    let content = std::fs::read_to_string(path).ok()?;
-    let name = path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("unknown")
-        .to_string();
-
-    // Look for YAML frontmatter between --- delimiters
-    if content.starts_with("---") {
-        if let Some(end) = content[3..].find("---") {
-            let frontmatter = &content[3..3 + end];
-            let mut description = String::new();
-            for line in frontmatter.lines() {
-                let trimmed = line.trim();
-                if let Some(desc) = trimmed.strip_prefix("description:") {
-                    description = desc.trim().trim_matches('"').to_string();
-                }
-            }
-            if !description.is_empty() {
-                return Some((name, description));
-            }
-        }
-    }
-
-    // Fallback: first non-empty line after any heading as description
-    let desc = content
-        .lines()
-        .find(|line| {
-            let t = line.trim();
-            !t.is_empty() && !t.starts_with('#') && !t.starts_with("---")
-        })
-        .unwrap_or("")
-        .to_string();
-    Some((name, desc))
-}
-
 fn handle_skills_list(arguments: &Value, state: &McpServerState) -> Result<Value> {
-    let limit = arguments
-        .get("limit")
-        .and_then(Value::as_u64)
-        .unwrap_or(50) as usize;
+    let limit = arguments.get("limit").and_then(Value::as_u64).unwrap_or(50) as usize;
     let category_filter = arguments.get("category").and_then(Value::as_str);
-
-    let files = list_skill_files(&state.skills_dir, limit * 2)?;
-    let mut skills: Vec<Value> = Vec::new();
-    for file_path in &files {
-        let path = Path::new(file_path);
-        let (name, description) = parse_skill_frontmatter(path)
-            .unwrap_or_else(|| ("unknown".to_string(), String::new()));
-        if let Some(cat) = category_filter {
-            if !description
-                .to_ascii_lowercase()
-                .contains(&cat.to_ascii_lowercase())
-            {
-                continue;
-            }
-        }
-        skills.push(json!({
-            "name": name,
-            "description": description,
-            "path": file_path,
-        }));
-        if skills.len() >= limit {
-            break;
-        }
-    }
+    let category_query = category_filter.map(|value| value.to_ascii_lowercase());
+    let skills = tau_skills::load_catalog(&state.skills_dir)?
+        .into_iter()
+        .filter(|skill| {
+            category_query
+                .as_ref()
+                .map(|needle| skill.description.to_ascii_lowercase().contains(needle))
+                .unwrap_or(true)
+        })
+        .take(limit)
+        .map(|skill| {
+            json!({
+                "name": skill.name,
+                "description": skill.description,
+                "path": skill.path.display().to_string(),
+            })
+        })
+        .collect::<Vec<_>>();
 
     let total = skills.len();
     Ok(mcp_tool_call_result(
@@ -1660,34 +1614,27 @@ fn handle_skills_search(arguments: &Value, state: &McpServerState) -> Result<Val
         .get("query")
         .and_then(Value::as_str)
         .ok_or_else(|| anyhow!("query is required"))?;
-    let limit = arguments
-        .get("limit")
-        .and_then(Value::as_u64)
-        .unwrap_or(10) as usize;
+    let limit = arguments.get("limit").and_then(Value::as_u64).unwrap_or(10) as usize;
     let query_lower = query.to_ascii_lowercase();
-
-    let files = list_skill_files(&state.skills_dir, 256)?;
-    let mut results: Vec<Value> = Vec::new();
-    for file_path in &files {
-        let path = Path::new(file_path);
-        let content = std::fs::read_to_string(path).unwrap_or_default();
-        let (name, description) = parse_skill_frontmatter(path)
-            .unwrap_or_else(|| ("unknown".to_string(), String::new()));
-
-        if name.to_ascii_lowercase().contains(&query_lower)
-            || description.to_ascii_lowercase().contains(&query_lower)
-            || content.to_ascii_lowercase().contains(&query_lower)
-        {
-            results.push(json!({
-                "name": name,
-                "description": description,
-                "path": file_path,
-            }));
-            if results.len() >= limit {
-                break;
-            }
-        }
-    }
+    let results = tau_skills::load_catalog(&state.skills_dir)?
+        .into_iter()
+        .filter(|skill| {
+            skill.name.to_ascii_lowercase().contains(&query_lower)
+                || skill
+                    .description
+                    .to_ascii_lowercase()
+                    .contains(&query_lower)
+                || skill.content.to_ascii_lowercase().contains(&query_lower)
+        })
+        .take(limit)
+        .map(|skill| {
+            json!({
+                "name": skill.name,
+                "description": skill.description,
+                "path": skill.path.display().to_string(),
+            })
+        })
+        .collect::<Vec<_>>();
 
     let count = results.len();
     Ok(mcp_tool_call_result(
@@ -1708,33 +1655,25 @@ fn handle_skills_info(arguments: &Value, state: &McpServerState) -> Result<Value
         .ok_or_else(|| anyhow!("skill_name is required"))?;
     let skill_lower = skill_name.to_ascii_lowercase();
 
-    let files = list_skill_files(&state.skills_dir, 256)?;
-    let found = files.iter().find(|f| {
-        Path::new(f)
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .map(|n| n.to_ascii_lowercase() == skill_lower)
-            .unwrap_or(false)
-    });
+    let found = tau_skills::load_catalog(&state.skills_dir)?
+        .into_iter()
+        .find(|skill| skill.name.to_ascii_lowercase() == skill_lower);
 
     match found {
-        Some(file_path) => {
-            let path = Path::new(file_path);
-            let content = std::fs::read_to_string(path).unwrap_or_default();
-            let (name, description) = parse_skill_frontmatter(path)
-                .unwrap_or_else(|| (skill_name.to_string(), String::new()));
+        Some(skill) => {
+            let preview = if skill.content.len() > 500 {
+                format!("{}...", &skill.content[..500])
+            } else {
+                skill.content.clone()
+            };
             Ok(mcp_tool_call_result(
                 json!({
                     "tool": MCP_TOOL_SKILLS_INFO,
-                    "name": name,
-                    "description": description,
-                    "path": file_path,
-                    "content_length": content.len(),
-                    "content_preview": if content.len() > 500 {
-                        format!("{}...", &content[..500])
-                    } else {
-                        content
-                    },
+                    "name": skill.name,
+                    "description": skill.description,
+                    "path": skill.path.display().to_string(),
+                    "content_length": skill.content.len(),
+                    "content_preview": preview,
                 }),
                 false,
             ))
@@ -1771,21 +1710,90 @@ fn handle_skills_install(arguments: &Value, state: &McpServerState) -> Result<Va
         ));
     }
 
-    // Copy skill file to skills directory
-    let dest_name = name_override
-        .map(|n| format!("{n}.md"))
-        .unwrap_or_else(|| {
-            source_path
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("skill.md")
-                .to_string()
-        });
+    let dest_name = name_override.map(|n| format!("{n}.md")).unwrap_or_else(|| {
+        source_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("skill.md")
+            .to_string()
+    });
     let dest_path = state.skills_dir.join(&dest_name);
-    std::fs::create_dir_all(&state.skills_dir)
-        .context("failed to create skills directory")?;
-    std::fs::copy(source_path, &dest_path)
-        .with_context(|| format!("failed to install skill to {}", dest_path.display()))?;
+
+    let mut staged_root: Option<PathBuf> = None;
+    let install_sources = if name_override.is_some() {
+        let root = std::env::temp_dir().join(format!(
+            "tau-mcp-skill-install-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|duration| duration.as_nanos())
+                .unwrap_or(0)
+        ));
+        std::fs::create_dir_all(&root)
+            .with_context(|| format!("failed to create {}", root.display()))?;
+        let staged_path = root.join(&dest_name);
+        let content = std::fs::read_to_string(source_path)
+            .with_context(|| format!("failed to read skill source {}", source_path.display()))?;
+        std::fs::write(&staged_path, content)
+            .with_context(|| format!("failed to stage skill source {}", staged_path.display()))?;
+        staged_root = Some(root);
+        vec![staged_path]
+    } else {
+        vec![source_path.to_path_buf()]
+    };
+
+    let install_result = tau_skills::install_skills(&install_sources, &state.skills_dir);
+    if let Some(root) = staged_root {
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    let report = match install_result {
+        Ok(report) => report,
+        Err(error) => {
+            return Ok(mcp_tool_call_result(
+                json!({
+                    "tool": MCP_TOOL_SKILLS_INSTALL,
+                    "source": source,
+                    "name_override": name_override,
+                    "status": "error",
+                    "message": error.to_string(),
+                }),
+                true,
+            ));
+        }
+    };
+
+    let lock_hint = tau_skills::SkillLockHint {
+        file: dest_name.clone(),
+        source: tau_skills::SkillLockSource::Local {
+            path: source_path.display().to_string(),
+        },
+    };
+    let lock_path = tau_skills::default_skills_lock_path(&state.skills_dir);
+    let lockfile =
+        match tau_skills::write_skills_lockfile(&state.skills_dir, &lock_path, &[lock_hint]) {
+            Ok(lockfile) => lockfile,
+            Err(error) => {
+                return Ok(mcp_tool_call_result(
+                    json!({
+                        "tool": MCP_TOOL_SKILLS_INSTALL,
+                        "source": source,
+                        "name_override": name_override,
+                        "installed_path": dest_path.display().to_string(),
+                        "status": "error",
+                        "message": format!("skill installed but lockfile update failed: {error}"),
+                    }),
+                    true,
+                ));
+            }
+        };
+
+    let status = if report.installed > 0 {
+        "installed"
+    } else if report.updated > 0 {
+        "updated"
+    } else {
+        "skipped"
+    };
 
     Ok(mcp_tool_call_result(
         json!({
@@ -1793,7 +1801,12 @@ fn handle_skills_install(arguments: &Value, state: &McpServerState) -> Result<Va
             "source": source,
             "name_override": name_override,
             "installed_path": dest_path.display().to_string(),
-            "status": "installed",
+            "installed": report.installed,
+            "updated": report.updated,
+            "skipped": report.skipped,
+            "lockfile_path": lock_path.display().to_string(),
+            "lockfile_entries": lockfile.entries.len(),
+            "status": status,
         }),
         false,
     ))
@@ -1810,26 +1823,14 @@ fn handle_agent_spawn(arguments: &Value) -> Result<Value> {
         .ok_or_else(|| anyhow!("goal is required"))?;
     let model = arguments.get("model").and_then(Value::as_str);
     let max_turns = arguments.get("max_turns").and_then(Value::as_u64);
-
-    let agent_id = format!(
-        "agent-{}",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis())
-            .unwrap_or(0)
-    );
-
-    Ok(mcp_tool_call_result(
-        json!({
-            "tool": MCP_TOOL_AGENT_SPAWN,
-            "agent_id": agent_id,
-            "goal": goal,
-            "model": model,
-            "max_turns": max_turns,
-            "status": "accepted",
-            "message": "Agent spawn accepted. Connect to the orchestration runtime to track progress.",
-        }),
-        false,
+    let mut extra = serde_json::Map::new();
+    extra.insert("goal".into(), json!(goal));
+    extra.insert("model".into(), json!(model));
+    extra.insert("max_turns".into(), json!(max_turns));
+    Ok(runtime_unavailable_tool_result(
+        MCP_TOOL_AGENT_SPAWN,
+        "orchestration",
+        extra,
     ))
 }
 
@@ -1839,14 +1840,12 @@ fn handle_agent_status(arguments: &Value) -> Result<Value> {
         .and_then(Value::as_str)
         .ok_or_else(|| anyhow!("agent_id is required"))?;
 
-    Ok(mcp_tool_call_result(
-        json!({
-            "tool": MCP_TOOL_AGENT_STATUS,
-            "agent_id": agent_id,
-            "status": "unknown",
-            "message": "Agent status requires orchestration runtime connection. No active agent registry available in MCP server context.",
-        }),
-        false,
+    let mut extra = serde_json::Map::new();
+    extra.insert("agent_id".into(), json!(agent_id));
+    Ok(runtime_unavailable_tool_result(
+        MCP_TOOL_AGENT_STATUS,
+        "orchestration",
+        extra,
     ))
 }
 
@@ -1856,14 +1855,12 @@ fn handle_agent_cancel(arguments: &Value) -> Result<Value> {
         .and_then(Value::as_str)
         .ok_or_else(|| anyhow!("agent_id is required"))?;
 
-    Ok(mcp_tool_call_result(
-        json!({
-            "tool": MCP_TOOL_AGENT_CANCEL,
-            "agent_id": agent_id,
-            "status": "accepted",
-            "message": "Agent cancel request accepted. The orchestration runtime will attempt cancellation when available.",
-        }),
-        false,
+    let mut extra = serde_json::Map::new();
+    extra.insert("agent_id".into(), json!(agent_id));
+    Ok(runtime_unavailable_tool_result(
+        MCP_TOOL_AGENT_CANCEL,
+        "orchestration",
+        extra,
     ))
 }
 
@@ -1953,11 +1950,7 @@ fn handle_context_config(state: &McpServerState) -> Result<Value> {
     let skills_count = list_skill_files(&state.skills_dir, 1024)
         .map(|f| f.len())
         .unwrap_or(0);
-    let context_providers: Vec<&str> = state
-        .context_providers
-        .iter()
-        .map(|s| s.as_str())
-        .collect();
+    let context_providers: Vec<&str> = state.context_providers.iter().map(|s| s.as_str()).collect();
     let external_server_names: Vec<&str> = state
         .external_servers
         .iter()
@@ -1987,11 +1980,7 @@ fn handle_context_config(state: &McpServerState) -> Result<Value> {
 ///
 /// Returns `Some(result)` if a skill handled the tool, or `None` if no skill
 /// declares a tool with the given name.
-fn try_dispatch_skill_tool(
-    tool_name: &str,
-    params: &Value,
-    skills_dir: &Path,
-) -> Option<Value> {
+fn try_dispatch_skill_tool(tool_name: &str, params: &Value, skills_dir: &Path) -> Option<Value> {
     let catalog = match tau_skills::load_catalog(skills_dir) {
         Ok(catalog) => catalog,
         Err(_) => return None,
@@ -2177,7 +2166,7 @@ fn builtin_mcp_tools(state: &McpServerState) -> Vec<McpToolDescriptor> {
     // Orchestration tools
     tools.push(McpToolDescriptor {
         name: MCP_TOOL_AGENT_SPAWN.to_string(),
-        description: "Spawn a new agent task with a goal and optional configuration".to_string(),
+        description: "Request a new agent task from a connected orchestration runtime; standalone MCP mode returns not_implemented".to_string(),
         input_schema: json!({
             "type": "object",
             "properties": {
@@ -2191,7 +2180,7 @@ fn builtin_mcp_tools(state: &McpServerState) -> Vec<McpToolDescriptor> {
     });
     tools.push(McpToolDescriptor {
         name: MCP_TOOL_AGENT_STATUS.to_string(),
-        description: "Check the status of a spawned agent by identifier".to_string(),
+        description: "Query an agent through a connected orchestration runtime; standalone MCP mode returns not_implemented".to_string(),
         input_schema: json!({
             "type": "object",
             "properties": {
@@ -2203,7 +2192,7 @@ fn builtin_mcp_tools(state: &McpServerState) -> Vec<McpToolDescriptor> {
     });
     tools.push(McpToolDescriptor {
         name: MCP_TOOL_AGENT_CANCEL.to_string(),
-        description: "Cancel a running agent by identifier".to_string(),
+        description: "Cancel an agent through a connected orchestration runtime; standalone MCP mode returns not_implemented".to_string(),
         input_schema: json!({
             "type": "object",
             "properties": {
@@ -2260,7 +2249,7 @@ fn builtin_mcp_tools(state: &McpServerState) -> Vec<McpToolDescriptor> {
     });
     tools.push(McpToolDescriptor {
         name: MCP_TOOL_TRAINING_TRIGGER.to_string(),
-        description: "Trigger a training pipeline run".to_string(),
+        description: "Request a training pipeline run from a connected training runtime; standalone MCP mode returns not_implemented".to_string(),
         input_schema: json!({
             "type": "object",
             "properties": {
@@ -2576,6 +2565,31 @@ mod tests {
             .expect("seed session");
         McpServerState {
             tool_policy: ToolPolicy::new(vec![temp.path().to_path_buf()]),
+            session_path,
+            skills_dir: tau_root.join("skills"),
+            channel_store_root: tau_root.join("channel-store"),
+            context_providers: resolve_mcp_context_providers(&[])
+                .expect("providers")
+                .into_iter()
+                .collect(),
+            external_servers: Vec::new(),
+            external_tools: Vec::new(),
+        }
+    }
+
+    fn test_state_from_root(root: &Path) -> McpServerState {
+        let tau_root = root.join(".tau");
+        std::fs::create_dir_all(tau_root.join("skills")).expect("create skills");
+        std::fs::create_dir_all(tau_root.join("sessions")).expect("create sessions");
+        std::fs::create_dir_all(tau_root.join("channel-store/channels"))
+            .expect("create channel store");
+        let session_path = tau_root.join("sessions/default.sqlite");
+        let mut store = tau_session::SessionStore::load(&session_path).expect("load session");
+        store
+            .append_messages(None, &[tau_ai::Message::system("mcp-session-seed")])
+            .expect("seed session");
+        McpServerState {
+            tool_policy: ToolPolicy::new(vec![root.to_path_buf()]),
             session_path,
             skills_dir: tau_root.join("skills"),
             channel_store_root: tau_root.join("channel-store"),
@@ -3088,7 +3102,10 @@ done
         assert_eq!(super::MCP_TOOL_AGENT_CANCEL, "tau.agent_cancel");
         // Learning tools
         assert_eq!(super::MCP_TOOL_LEARN_STATUS, "tau.learn_status");
-        assert_eq!(super::MCP_TOOL_LEARN_FAILURE_PATTERNS, "tau.learn_failure_patterns");
+        assert_eq!(
+            super::MCP_TOOL_LEARN_FAILURE_PATTERNS,
+            "tau.learn_failure_patterns"
+        );
         assert_eq!(super::MCP_TOOL_LEARN_TOOL_RATES, "tau.learn_tool_rates");
         // Training tools
         assert_eq!(super::MCP_TOOL_TRAINING_STATUS, "tau.training_status");
@@ -3138,37 +3155,94 @@ done
             tools.len()
         );
 
-        let tool_names: Vec<&str> = tools
-            .iter()
-            .filter_map(|t| t["name"].as_str())
-            .collect();
+        let tool_names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
 
         // Session tools
-        assert!(tool_names.contains(&"tau.session_list"), "missing session_list");
-        assert!(tool_names.contains(&"tau.session_resume"), "missing session_resume");
-        assert!(tool_names.contains(&"tau.session_search"), "missing session_search");
-        assert!(tool_names.contains(&"tau.session_stats"), "missing session_stats");
-        assert!(tool_names.contains(&"tau.session_export"), "missing session_export");
+        assert!(
+            tool_names.contains(&"tau.session_list"),
+            "missing session_list"
+        );
+        assert!(
+            tool_names.contains(&"tau.session_resume"),
+            "missing session_resume"
+        );
+        assert!(
+            tool_names.contains(&"tau.session_search"),
+            "missing session_search"
+        );
+        assert!(
+            tool_names.contains(&"tau.session_stats"),
+            "missing session_stats"
+        );
+        assert!(
+            tool_names.contains(&"tau.session_export"),
+            "missing session_export"
+        );
         // Orchestration tools
-        assert!(tool_names.contains(&"tau.agent_spawn"), "missing agent_spawn");
-        assert!(tool_names.contains(&"tau.agent_status"), "missing agent_status");
-        assert!(tool_names.contains(&"tau.agent_cancel"), "missing agent_cancel");
+        assert!(
+            tool_names.contains(&"tau.agent_spawn"),
+            "missing agent_spawn"
+        );
+        assert!(
+            tool_names.contains(&"tau.agent_status"),
+            "missing agent_status"
+        );
+        assert!(
+            tool_names.contains(&"tau.agent_cancel"),
+            "missing agent_cancel"
+        );
         // Learning tools
-        assert!(tool_names.contains(&"tau.learn_status"), "missing learn_status");
-        assert!(tool_names.contains(&"tau.learn_failure_patterns"), "missing learn_failure_patterns");
-        assert!(tool_names.contains(&"tau.learn_tool_rates"), "missing learn_tool_rates");
+        assert!(
+            tool_names.contains(&"tau.learn_status"),
+            "missing learn_status"
+        );
+        assert!(
+            tool_names.contains(&"tau.learn_failure_patterns"),
+            "missing learn_failure_patterns"
+        );
+        assert!(
+            tool_names.contains(&"tau.learn_tool_rates"),
+            "missing learn_tool_rates"
+        );
         // Training tools
-        assert!(tool_names.contains(&"tau.training_status"), "missing training_status");
-        assert!(tool_names.contains(&"tau.training_trigger"), "missing training_trigger");
+        assert!(
+            tool_names.contains(&"tau.training_status"),
+            "missing training_status"
+        );
+        assert!(
+            tool_names.contains(&"tau.training_trigger"),
+            "missing training_trigger"
+        );
         // Skills tools
-        assert!(tool_names.contains(&"tau.skills_list"), "missing skills_list");
-        assert!(tool_names.contains(&"tau.skills_search"), "missing skills_search");
-        assert!(tool_names.contains(&"tau.skills_install"), "missing skills_install");
-        assert!(tool_names.contains(&"tau.skills_info"), "missing skills_info");
+        assert!(
+            tool_names.contains(&"tau.skills_list"),
+            "missing skills_list"
+        );
+        assert!(
+            tool_names.contains(&"tau.skills_search"),
+            "missing skills_search"
+        );
+        assert!(
+            tool_names.contains(&"tau.skills_install"),
+            "missing skills_install"
+        );
+        assert!(
+            tool_names.contains(&"tau.skills_info"),
+            "missing skills_info"
+        );
         // Context providers
-        assert!(tool_names.contains(&"tau.context.learning"), "missing context.learning");
-        assert!(tool_names.contains(&"tau.context.training"), "missing context.training");
-        assert!(tool_names.contains(&"tau.context.config"), "missing context.config");
+        assert!(
+            tool_names.contains(&"tau.context.learning"),
+            "missing context.learning"
+        );
+        assert!(
+            tool_names.contains(&"tau.context.training"),
+            "missing context.training"
+        );
+        assert!(
+            tool_names.contains(&"tau.context.config"),
+            "missing context.config"
+        );
     }
 
     #[test]
@@ -3189,8 +3263,7 @@ done
         let raw = encode_frames(&request_frames);
         let mut reader = std::io::BufReader::new(std::io::Cursor::new(raw));
         let mut writer = Vec::new();
-        serve_mcp_jsonrpc_reader(&mut reader, &mut writer, &state)
-            .expect("serve should succeed");
+        serve_mcp_jsonrpc_reader(&mut reader, &mut writer, &state).expect("serve should succeed");
 
         let responses = decode_frames(&writer);
         let tools = responses[1]["result"]["tools"]
@@ -3198,13 +3271,26 @@ done
             .expect("tools array");
 
         let new_tool_names = [
-            "tau.session_list", "tau.session_resume", "tau.session_search",
-            "tau.session_stats", "tau.session_export",
-            "tau.agent_spawn", "tau.agent_status", "tau.agent_cancel",
-            "tau.learn_status", "tau.learn_failure_patterns", "tau.learn_tool_rates",
-            "tau.training_status", "tau.training_trigger",
-            "tau.skills_list", "tau.skills_search", "tau.skills_install", "tau.skills_info",
-            "tau.context.learning", "tau.context.training", "tau.context.config",
+            "tau.session_list",
+            "tau.session_resume",
+            "tau.session_search",
+            "tau.session_stats",
+            "tau.session_export",
+            "tau.agent_spawn",
+            "tau.agent_status",
+            "tau.agent_cancel",
+            "tau.learn_status",
+            "tau.learn_failure_patterns",
+            "tau.learn_tool_rates",
+            "tau.training_status",
+            "tau.training_trigger",
+            "tau.skills_list",
+            "tau.skills_search",
+            "tau.skills_install",
+            "tau.skills_info",
+            "tau.context.learning",
+            "tau.context.training",
+            "tau.context.config",
         ];
 
         for expected_name in &new_tool_names {
@@ -3216,7 +3302,8 @@ done
             // Verify it has a name, description, and inputSchema
             assert!(tool["name"].is_string(), "{} missing name", expected_name);
             assert!(
-                tool["description"].is_string() && !tool["description"].as_str().unwrap().is_empty(),
+                tool["description"].is_string()
+                    && !tool["description"].as_str().unwrap().is_empty(),
                 "{} missing or empty description",
                 expected_name
             );
@@ -3295,6 +3382,173 @@ done
     }
 
     #[test]
+    fn regression_training_trigger_reports_runtime_unavailable_error() {
+        let state = test_state();
+        let request_frames = vec![jsonrpc_request_frame(
+            Value::String("req-training-trigger".to_string()),
+            "tools/call",
+            json!({
+                "name": "tau.training_trigger",
+                "arguments": { "scope": "incremental" }
+            }),
+        )];
+        let raw = encode_frames(&request_frames);
+        let mut reader = std::io::BufReader::new(std::io::Cursor::new(raw));
+        let mut writer = Vec::new();
+        let report = serve_mcp_jsonrpc_reader(&mut reader, &mut writer, &state)
+            .expect("serve should succeed");
+        assert_eq!(report.error_count, 0);
+
+        let responses = decode_frames(&writer);
+        let result = &responses[0]["result"];
+        assert_eq!(result["isError"], true);
+        assert_eq!(
+            result["structuredContent"]["status"].as_str(),
+            Some("not_implemented")
+        );
+        assert_eq!(
+            result["structuredContent"]["reason_code"].as_str(),
+            Some("runtime_unavailable")
+        );
+    }
+
+    #[test]
+    fn regression_agent_lifecycle_tools_report_runtime_unavailable_errors() {
+        let state = test_state();
+        let cases = [
+            ("tau.agent_spawn", json!({ "goal": "test" })),
+            ("tau.agent_status", json!({ "agent_id": "agent-1" })),
+            ("tau.agent_cancel", json!({ "agent_id": "agent-1" })),
+        ];
+
+        for (tool_name, arguments) in cases {
+            let request_frames = vec![jsonrpc_request_frame(
+                Value::String(format!("req-{tool_name}")),
+                "tools/call",
+                json!({
+                    "name": tool_name,
+                    "arguments": arguments
+                }),
+            )];
+            let raw = encode_frames(&request_frames);
+            let mut reader = std::io::BufReader::new(std::io::Cursor::new(raw));
+            let mut writer = Vec::new();
+            let report = serve_mcp_jsonrpc_reader(&mut reader, &mut writer, &state)
+                .expect("serve should succeed");
+            assert_eq!(report.error_count, 0, "error calling {}", tool_name);
+
+            let responses = decode_frames(&writer);
+            let result = &responses[0]["result"];
+            assert_eq!(result["isError"], true, "{} should be an error", tool_name);
+            assert_eq!(
+                result["structuredContent"]["status"].as_str(),
+                Some("not_implemented"),
+                "{} should return an explicit unsupported status",
+                tool_name
+            );
+            assert_eq!(
+                result["structuredContent"]["reason_code"].as_str(),
+                Some("runtime_unavailable"),
+                "{} should expose runtime_unavailable reason",
+                tool_name
+            );
+        }
+    }
+
+    #[test]
+    fn regression_skills_list_and_info_follow_tau_skills_catalog_resolution() {
+        let temp = tempdir().expect("tempdir");
+        let state = test_state_from_root(temp.path());
+        let nested_skill_dir = state.skills_dir.join("ops-helper");
+        std::fs::create_dir_all(&nested_skill_dir).expect("mkdir nested skill");
+        std::fs::write(
+            nested_skill_dir.join("SKILL.md"),
+            "---\ndescription: Handles operational runbooks\n---\nUse this skill for ops work.\n",
+        )
+        .expect("write nested skill");
+
+        let list_frames = vec![jsonrpc_request_frame(
+            Value::String("req-skills-list".to_string()),
+            "tools/call",
+            json!({
+                "name": "tau.skills_list",
+                "arguments": {}
+            }),
+        )];
+        let raw = encode_frames(&list_frames);
+        let mut reader = std::io::BufReader::new(std::io::Cursor::new(raw));
+        let mut writer = Vec::new();
+        serve_mcp_jsonrpc_reader(&mut reader, &mut writer, &state).expect("skills list succeeds");
+        let responses = decode_frames(&writer);
+        let skills = responses[0]["result"]["structuredContent"]["skills"]
+            .as_array()
+            .expect("skills array");
+        assert!(
+            skills.iter().any(|entry| entry["name"] == "ops-helper"),
+            "directory-backed SKILL.md entries should resolve to the directory name"
+        );
+
+        let info_frames = vec![jsonrpc_request_frame(
+            Value::String("req-skills-info".to_string()),
+            "tools/call",
+            json!({
+                "name": "tau.skills_info",
+                "arguments": { "skill_name": "ops-helper" }
+            }),
+        )];
+        let raw = encode_frames(&info_frames);
+        let mut reader = std::io::BufReader::new(std::io::Cursor::new(raw));
+        let mut writer = Vec::new();
+        serve_mcp_jsonrpc_reader(&mut reader, &mut writer, &state).expect("skills info succeeds");
+        let responses = decode_frames(&writer);
+        assert_eq!(responses[0]["result"]["isError"], false);
+        assert_eq!(
+            responses[0]["result"]["structuredContent"]["name"].as_str(),
+            Some("ops-helper")
+        );
+    }
+
+    #[test]
+    fn regression_skills_install_writes_skills_lockfile_metadata() {
+        let temp = tempdir().expect("tempdir");
+        let state = test_state_from_root(temp.path());
+        let source = temp.path().join("release-notes.md");
+        std::fs::write(
+            &source,
+            "---\ndescription: Release note helper\n---\nTurn notes into release summaries.\n",
+        )
+        .expect("write source skill");
+
+        let request_frames = vec![jsonrpc_request_frame(
+            Value::String("req-skills-install".to_string()),
+            "tools/call",
+            json!({
+                "name": "tau.skills_install",
+                "arguments": { "source": source.display().to_string() }
+            }),
+        )];
+        let raw = encode_frames(&request_frames);
+        let mut reader = std::io::BufReader::new(std::io::Cursor::new(raw));
+        let mut writer = Vec::new();
+        serve_mcp_jsonrpc_reader(&mut reader, &mut writer, &state)
+            .expect("skills install succeeds");
+        let responses = decode_frames(&writer);
+        let structured = &responses[0]["result"]["structuredContent"];
+        let lockfile_path = structured["lockfile_path"]
+            .as_str()
+            .expect("lockfile path should be returned");
+        let lockfile = tau_skills::load_skills_lockfile(Path::new(lockfile_path))
+            .expect("lockfile should be readable");
+        assert!(
+            lockfile
+                .entries
+                .iter()
+                .any(|entry| entry.file == "release-notes.md"),
+            "installed skill should be recorded in the lockfile"
+        );
+    }
+
+    #[test]
     fn unit_reserved_names_include_new_tools() {
         let names = super::reserved_builtin_mcp_tool_names();
         let new_names = [
@@ -3347,8 +3601,7 @@ done
     #[test]
     fn try_dispatch_skill_tool_returns_none_for_empty_catalog() {
         let tmp = tempfile::tempdir().expect("tmp dir");
-        let result =
-            super::try_dispatch_skill_tool("some.tool", &json!({}), tmp.path());
+        let result = super::try_dispatch_skill_tool("some.tool", &json!({}), tmp.path());
         assert!(result.is_none());
     }
 }
