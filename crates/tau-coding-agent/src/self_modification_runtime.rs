@@ -4,6 +4,7 @@
 //! autonomous source-code self-modification proposals. Safety evaluation
 //! results are represented locally so this module can be used without
 //! pulling in the full `tau-safety` crate at the type level.
+#![allow(dead_code)]
 
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -333,8 +334,8 @@ mod tests {
     #[test]
     fn cleanup_self_mod_worktree_removes_directory() {
         let tmp = tempfile::tempdir().expect("failed to create tempdir");
-        let worktree_path = create_self_mod_worktree(tmp.path(), "test-cleanup-1")
-            .expect("create should succeed");
+        let worktree_path =
+            create_self_mod_worktree(tmp.path(), "test-cleanup-1").expect("create should succeed");
         assert!(worktree_path.exists());
 
         let result = cleanup_self_mod_worktree(&worktree_path);

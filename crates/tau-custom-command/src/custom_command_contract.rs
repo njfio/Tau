@@ -29,7 +29,10 @@ fn custom_command_contract_schema_version() -> u32 {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[serde(rename_all = "snake_case")]
-#[deprecated(since = "0.2.0", note = "Use tau-skills with commands fields instead. See skill_runtime.rs")]
+#[deprecated(
+    since = "0.2.0",
+    note = "Use tau-skills with commands fields instead. See skill_runtime.rs"
+)]
 /// Enumerates supported `CustomCommandOutcomeKind` values.
 pub enum CustomCommandOutcomeKind {
     Success,
@@ -38,7 +41,10 @@ pub enum CustomCommandOutcomeKind {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[deprecated(since = "0.2.0", note = "Use tau-skills with commands fields instead. See skill_runtime.rs")]
+#[deprecated(
+    since = "0.2.0",
+    note = "Use tau-skills with commands fields instead. See skill_runtime.rs"
+)]
 /// Public struct `CustomCommandCaseExpectation` used across Tau components.
 pub struct CustomCommandCaseExpectation {
     pub outcome: CustomCommandOutcomeKind,
@@ -50,7 +56,10 @@ pub struct CustomCommandCaseExpectation {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[deprecated(since = "0.2.0", note = "Use tau-skills with commands fields instead. See skill_runtime.rs")]
+#[deprecated(
+    since = "0.2.0",
+    note = "Use tau-skills with commands fields instead. See skill_runtime.rs"
+)]
 /// Public struct `CustomCommandContractCase` used across Tau components.
 pub struct CustomCommandContractCase {
     #[serde(default = "custom_command_contract_schema_version")]
@@ -73,7 +82,10 @@ pub struct CustomCommandContractCase {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[deprecated(since = "0.2.0", note = "Use tau-skills with commands fields instead. See skill_runtime.rs")]
+#[deprecated(
+    since = "0.2.0",
+    note = "Use tau-skills with commands fields instead. See skill_runtime.rs"
+)]
 /// Public struct `CustomCommandContractFixture` used across Tau components.
 pub struct CustomCommandContractFixture {
     pub schema_version: u32,
@@ -84,7 +96,10 @@ pub struct CustomCommandContractFixture {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[deprecated(since = "0.2.0", note = "Use tau-skills with commands fields instead. See skill_runtime.rs")]
+#[deprecated(
+    since = "0.2.0",
+    note = "Use tau-skills with commands fields instead. See skill_runtime.rs"
+)]
 /// Public struct `CustomCommandContractCapabilities` used across Tau components.
 pub struct CustomCommandContractCapabilities {
     pub schema_version: u32,
@@ -94,7 +109,10 @@ pub struct CustomCommandContractCapabilities {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[deprecated(since = "0.2.0", note = "Use tau-skills with commands fields instead. See skill_runtime.rs")]
+#[deprecated(
+    since = "0.2.0",
+    note = "Use tau-skills with commands fields instead. See skill_runtime.rs"
+)]
 /// Enumerates supported `CustomCommandReplayStep` values.
 pub enum CustomCommandReplayStep {
     Success,
@@ -103,7 +121,10 @@ pub enum CustomCommandReplayStep {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[deprecated(since = "0.2.0", note = "Use tau-skills with commands fields instead. See skill_runtime.rs")]
+#[deprecated(
+    since = "0.2.0",
+    note = "Use tau-skills with commands fields instead. See skill_runtime.rs"
+)]
 /// Public struct `CustomCommandReplayResult` used across Tau components.
 pub struct CustomCommandReplayResult {
     pub step: CustomCommandReplayStep,
@@ -114,7 +135,10 @@ pub struct CustomCommandReplayResult {
 
 #[cfg(test)]
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-#[deprecated(since = "0.2.0", note = "Use tau-skills with commands fields instead. See skill_runtime.rs")]
+#[deprecated(
+    since = "0.2.0",
+    note = "Use tau-skills with commands fields instead. See skill_runtime.rs"
+)]
 /// Public struct `CustomCommandReplaySummary` used across Tau components.
 pub struct CustomCommandReplaySummary {
     pub discovered_cases: usize,
@@ -124,7 +148,10 @@ pub struct CustomCommandReplaySummary {
 }
 
 #[cfg(test)]
-#[deprecated(since = "0.2.0", note = "Use tau-skills with commands fields instead. See skill_runtime.rs")]
+#[deprecated(
+    since = "0.2.0",
+    note = "Use tau-skills with commands fields instead. See skill_runtime.rs"
+)]
 /// Trait contract for `CustomCommandContractDriver` behavior.
 pub trait CustomCommandContractDriver {
     fn apply_case(&mut self, case: &CustomCommandContractCase)

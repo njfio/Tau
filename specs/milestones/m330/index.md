@@ -27,6 +27,12 @@ remain narrow and auditable.
 - Task: #3632
 - Task: #3633
 - Task: #3636
+- Task: #3637
+- Task: #3638
+- Task: #3639
+- Task: #3640
+- Task: #3641
+- Task: #3642
 
 ## Scope
 - Decompose `crates/tau-coding-agent/src/live_rl_runtime.rs` below the 4000-line
@@ -41,6 +47,23 @@ remain narrow and auditable.
   branch and only fetches the PR base commit.
 - Keep PR-scoped formatting checks aligned to the changed Rust surface so
   unrelated workspace fmt drift on `master` does not block narrow branches.
+- Resolve the remaining package-scoped clippy warning debt that blocks the
+  master-targeting `#3631` branch after CI-scope defects are removed.
+- Contain deprecation-warning failures inside the intentionally deprecated
+  `tau-custom-command` compatibility crate so package-scoped clippy can
+  continue past that staged migration boundary.
+- Contain deprecation-warning failures inside the intentionally deprecated
+  `tau-extensions` compatibility crate so package-scoped clippy can continue
+  past that staged migration boundary.
+- Contain deprecation-warning failures at the intentional `tau-tools` bridge
+  points that still consume the deprecated `tau-extensions` surface during the
+  staged migration to `tau-skills`.
+- Resolve follow-on real clippy lint debt that becomes visible after the
+  compatibility-surface blockers are removed from the package-scoped
+  validation path.
+- Stabilize the newly visible `tau-coding-agent` package-scoped runtime tests
+  so the branch can move beyond validation debt and back to the actual
+  oversized-file story.
 
 ## Exit Criteria
 - `wc -l crates/tau-coding-agent/src/live_rl_runtime.rs` reports `<= 4000`.
@@ -52,6 +75,18 @@ remain narrow and auditable.
   coverage and focused validation evidence.
 - `specs/3636/spec.md` restores PR-scoped formatting validation without
   regressing explicit full-workspace validation modes.
+- `specs/3637/spec.md` clears the remaining warning debt in the impacted
+  package-scoped Rust validation path.
+- `specs/3638/spec.md` keeps `tau-custom-command` lint-clean under
+  package-scoped `-D warnings` without changing its runtime behavior.
+- `specs/3639/spec.md` keeps `tau-extensions` lint-clean under package-scoped
+  `-D warnings` without changing its runtime behavior.
+- `specs/3640/spec.md` keeps `tau-tools` lint-clean at the remaining
+  extension-compatibility bridge points without muting unrelated lint coverage.
+- `specs/3641/spec.md` clears the next real code-quality lint blocker in the
+  impacted package-scoped validation path.
+- `specs/3642/spec.md` clears the newly exposed `tau-coding-agent`
+  package-scoped test failures in the runtime/startup path.
 - M330 no longer has hidden blockers unrelated to the `live_rl_runtime.rs`
   split itself.
 

@@ -8,18 +8,13 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 
 /// Enumerates supported safety response modes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum SafetyMode {
+    #[default]
     Warn,
     Redact,
     Block,
-}
-
-impl Default for SafetyMode {
-    fn default() -> Self {
-        Self::Warn
-    }
 }
 
 /// Enumerates supported safety check stages.
@@ -729,8 +724,8 @@ mod tests {
     use super::{
         default_safety_rule_set, default_self_modification_rules, evaluate_self_modification,
         scan_safety_rules, validate_safety_rule_set, DefaultLeakDetector, DefaultSanitizer,
-        LeakDetector, SafetyRule, SafetyRuleMatcher, SafetyRuleSet, SafetyScanResult,
-        SafetyStage, Sanitizer, SelfModificationProposal, ADVERSARIAL_PROMPT_INJECTION_MULTILINE,
+        LeakDetector, SafetyRule, SafetyRuleMatcher, SafetyRuleSet, SafetyScanResult, SafetyStage,
+        Sanitizer, SelfModificationProposal, ADVERSARIAL_PROMPT_INJECTION_MULTILINE,
         ADVERSARIAL_SECRET_LEAK_OPENAI_PROJECT_KEY, ADVERSARIAL_TOOL_OUTPUT_PROMPT_EXFIL,
     };
 

@@ -288,7 +288,7 @@ impl Default for AuthConfig {
 }
 
 /// Self-improvement / reflexive patching configuration.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct SelfImprovementConfig {
     #[serde(default)]
     pub enabled: bool,
@@ -298,17 +298,6 @@ pub struct SelfImprovementConfig {
     pub auto_apply_config: bool,
     #[serde(default)]
     pub auto_apply_source: bool,
-}
-
-impl Default for SelfImprovementConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            auto_apply_skills: false,
-            auto_apply_config: false,
-            auto_apply_source: false,
-        }
-    }
 }
 
 // ---------------------------------------------------------------------------

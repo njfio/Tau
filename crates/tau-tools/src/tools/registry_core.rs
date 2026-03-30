@@ -607,22 +607,26 @@ pub fn builtin_agent_tool_names() -> &'static [&'static str] {
     BUILTIN_AGENT_TOOL_NAMES
 }
 
+#[allow(deprecated)]
 pub fn register_extension_tools(agent: &mut Agent, tools: &[ExtensionRegisteredTool]) {
     for tool in tools {
         agent.register_tool(ExtensionProcessTool::new(tool.clone()));
     }
 }
 
+#[allow(deprecated)]
 struct ExtensionProcessTool {
     registration: ExtensionRegisteredTool,
 }
 
+#[allow(deprecated)]
 impl ExtensionProcessTool {
     fn new(registration: ExtensionRegisteredTool) -> Self {
         Self { registration }
     }
 }
 
+#[allow(deprecated)]
 #[async_trait]
 impl AgentTool for ExtensionProcessTool {
     fn definition(&self) -> ToolDefinition {

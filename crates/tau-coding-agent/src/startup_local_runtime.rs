@@ -19,6 +19,7 @@ use tau_skills::{
 };
 
 use crate::commands::execute_command_file;
+#[allow(deprecated)]
 use crate::extension_manifest::{
     discover_extension_runtime_registrations, dispatch_extension_runtime_hook,
     ExtensionRuntimeRegistrationSummary,
@@ -80,6 +81,7 @@ fn resolve_safety_mode(mode: CliPromptSanitizerMode) -> SafetyMode {
     }
 }
 
+#[allow(deprecated)]
 pub(crate) async fn run_local_runtime(config: LocalRuntimeConfig<'_>) -> Result<()> {
     let LocalRuntimeConfig {
         cli,
@@ -206,7 +208,9 @@ pub(crate) async fn run_local_runtime(config: LocalRuntimeConfig<'_>) -> Result<
         client,
         model_ref,
         system_prompt,
-    )? {
+    )
+    .await?
+    {
         eprintln!(
             "live rl runtime bridge enabled: store={} gate={:?} completed_rollouts={} failure_streak={}",
             snapshot.store_path.display(),
@@ -471,6 +475,7 @@ pub(crate) async fn run_local_runtime(config: LocalRuntimeConfig<'_>) -> Result<
 }
 
 #[cfg(test)]
+#[allow(deprecated)]
 pub(crate) fn register_runtime_extension_tool_hook_subscriber(
     agent: &mut Agent,
     extension_runtime_hooks: &RuntimeExtensionHooksConfig,

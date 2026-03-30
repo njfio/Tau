@@ -408,7 +408,7 @@ impl TrainingStore for NoResourceWriteStore {
 }
 
 impl LiveRlRuntimeBridge {
-    pub(crate) fn register_if_enabled(
+    pub(crate) async fn register_if_enabled(
         agent: &mut Agent,
         default_store_path: &Path,
         client: Arc<dyn LlmClient>,
@@ -438,7 +438,7 @@ impl LiveRlRuntimeBridge {
         });
         let bridge = Self::new(sqlite_store, config, apo_runtime);
         bridge.register(agent);
-        Ok(Some(bridge.snapshot_blocking()))
+        Ok(Some(bridge.snapshot().await))
     }
 
     fn new(
@@ -516,20 +516,6 @@ impl LiveRlRuntimeBridge {
         }
     }
 
-    fn snapshot_blocking(&self) -> LiveRlRuntimeSnapshot {
-        let state = self.inner.state.blocking_lock();
-        LiveRlRuntimeSnapshot {
-            enabled: self.inner.config.enabled,
-            store_path: self.inner.config.store_path.clone(),
-            gate: state.gate,
-            completed_rollouts: state.completed_rollouts,
-            consecutive_failures: state.consecutive_failures,
-            last_error: state.last_error.clone(),
-            last_optimizer_report: state.last_optimizer_report.clone(),
-        }
-    }
-
-    #[cfg(test)]
     pub(crate) async fn snapshot(&self) -> LiveRlRuntimeSnapshot {
         let state = self.inner.state.lock().await;
         LiveRlRuntimeSnapshot {

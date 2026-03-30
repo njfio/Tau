@@ -32,6 +32,7 @@ use super::{
 use tau_access::ApprovalAction;
 use tau_agent_core::{Agent, AgentConfig};
 use tau_ai::Message;
+#[allow(deprecated)]
 use tau_extensions::{discover_extension_runtime_registrations, execute_extension_registered_tool};
 use tau_session::{
     navigate_session_head, session_message_preview, session_message_role, SessionRuntime,
@@ -578,6 +579,7 @@ async fn functional_tool_builder_tool_builds_wasm_artifacts() {
 }
 
 #[tokio::test]
+#[allow(deprecated)]
 async fn integration_tool_builder_generated_tool_executes_through_extension_runtime() {
     let temp = tempdir().expect("tempdir");
     let policy = test_policy_with_tool_builder(temp.path());
