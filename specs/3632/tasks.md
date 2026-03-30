@@ -11,5 +11,5 @@
       raw git fatal noise. Covers C-03 / AC-3.
 - [x] T5 Green: rerun `./scripts/dev/test-fast-validate.sh` and confirm the
       regression case passes. Covers C-01 through C-04.
-- [ ] T6 Update issue/PR state, commit, push, and open a dedicated PR. Covers
+- [x] T6 Update issue/PR state, commit, push, and open a dedicated PR. Covers
       delivery/closure.
