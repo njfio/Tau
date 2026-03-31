@@ -6,6 +6,7 @@ pub struct StatusBar {
     pub profile: String,
     pub transport: TransportDisplay,
     pub active_skills: Vec<String>,
+    pub active_mission_id: Option<String>,
     pub total_tokens: u64,
     pub total_cost_cents: f64,
     pub total_messages: u64,
@@ -74,6 +75,7 @@ impl StatusBar {
             profile,
             transport: TransportDisplay::Gateway,
             active_skills: Vec::new(),
+            active_mission_id: None,
             total_tokens: 0,
             total_cost_cents: 0.0,
             total_messages: 0,
@@ -111,6 +113,20 @@ impl StatusBar {
         }
 
         let truncated = joined.chars().take(31).collect::<String>();
+        Some(format!("{truncated}..."))
+    }
+
+    pub fn format_active_mission(&self) -> Option<String> {
+        let mission_id = self
+            .active_mission_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|mission_id| !mission_id.is_empty())?;
+        if mission_id.chars().count() <= 28 {
+            return Some(mission_id.to_string());
+        }
+
+        let truncated = mission_id.chars().take(27).collect::<String>();
         Some(format!("{truncated}..."))
     }
 }

@@ -826,6 +826,7 @@ fn main() {
                     base_url: format!("http://{}", args.bind),
                     auth_token: args.auth_token,
                     session_key: args.session_key,
+                    mission_id: None,
                     request_timeout_ms: args.request_timeout_ms,
                 },
             };

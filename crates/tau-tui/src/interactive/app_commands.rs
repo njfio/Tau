@@ -41,15 +41,44 @@ pub(crate) fn submit_input(app: &mut App) {
 }
 
 fn execute_command(app: &mut App, cmd: &str) {
-    match cmd.trim() {
+    let trimmed = cmd.trim();
+    let mut parts = trimmed.split_whitespace();
+    let Some(command) = parts.next() else {
+        return;
+    };
+
+    match command {
         "quit" | "q" => app.should_quit = true,
         "clear" => app.chat.clear(),
         "help" => app.show_help = true,
         "tools" => app.show_tool_panel = !app.show_tool_panel,
         "copy-target" => copy_latest_mutating_target(app),
+        "missions" => app.list_missions(),
+        "mission" => {
+            if let Some(mission_id) = parts.next() {
+                app.show_mission(mission_id);
+            } else {
+                app.chat.add_message(ChatMessage {
+                    role: MessageRole::System,
+                    content: "Usage: /mission <mission-id>".to_string(),
+                    timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
+                });
+            }
+        }
+        "resume" => {
+            if let Some(mission_id) = parts.next() {
+                app.resume_mission(mission_id);
+            } else {
+                app.chat.add_message(ChatMessage {
+                    role: MessageRole::System,
+                    content: "Usage: /resume <mission-id>".to_string(),
+                    timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
+                });
+            }
+        }
         _ => app.chat.add_message(ChatMessage {
             role: MessageRole::System,
-            content: format!("Unknown command: {cmd}"),
+            content: format!("Unknown command: {trimmed}"),
             timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
         }),
     }

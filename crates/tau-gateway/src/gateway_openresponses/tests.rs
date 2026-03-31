@@ -1,4 +1,5 @@
 //! Gateway OpenResponses tests grouped by runtime behavior.
+use super::mission_supervisor_runtime::GatewayMissionIterationRecord;
 use super::*;
 use async_trait::async_trait;
 use futures_util::{SinkExt, StreamExt};
@@ -8,6 +9,9 @@ use std::collections::VecDeque;
 use tau_agent_core::{AgentTool, ToolExecutionResult};
 use tau_ai::{
     ChatRequest, ChatResponse, ChatUsage, ContentBlock, Message, TauAiError, ToolDefinition,
+};
+use tau_memory::action_history::{
+    ActionFilter, ActionHistoryConfig, ActionHistoryStore, ActionRecord, ActionType,
 };
 use tempfile::{tempdir, TempDir};
 use tokio::sync::Mutex as AsyncMutex;
@@ -1062,6 +1066,10 @@ fn expand_session_template(template: &str, session_key: &str) -> String {
     template.replace("{session_key}", session_key)
 }
 
+fn expand_mission_template(template: &str, mission_id: &str) -> String {
+    template.replace("{mission_id}", mission_id)
+}
+
 fn expand_memory_entry_template(template: &str, session_key: &str, entry_id: &str) -> String {
     template
         .replace("{session_key}", session_key)
@@ -1149,7 +1157,51 @@ fn unit_translate_openresponses_request_supports_item_input_and_function_call_ou
         .prompt
         .contains("Function output (call_id=call_123):"));
     assert_eq!(translated.session_key, "issue-42");
+    assert_eq!(translated.mission_id, "issue-42");
     assert_eq!(translated.ignored_fields, vec!["temperature".to_string()]);
+}
+
+#[test]
+fn unit_translate_openresponses_request_prefers_explicit_mission_id() {
+    let request = OpenResponsesRequest {
+        model: None,
+        input: json!("build the app"),
+        stream: false,
+        max_tokens: None,
+        instructions: None,
+        metadata: json!({
+            "session_id": "session-alpha",
+            "mission_id": "mission-alpha"
+        }),
+        conversation: None,
+        previous_response_id: None,
+        extra: BTreeMap::new(),
+    };
+
+    let translated = translate_openresponses_request(&request, 10_000).expect("translate request");
+    assert_eq!(translated.session_key, "session-alpha");
+    assert_eq!(translated.mission_id, "mission-alpha");
+}
+
+#[test]
+fn unit_translate_openresponses_request_defaults_mission_id_to_session_key() {
+    let request = OpenResponsesRequest {
+        model: None,
+        input: json!("build the app"),
+        stream: false,
+        max_tokens: None,
+        instructions: None,
+        metadata: json!({
+            "session_id": "session-beta"
+        }),
+        conversation: None,
+        previous_response_id: None,
+        extra: BTreeMap::new(),
+    };
+
+    let translated = translate_openresponses_request(&request, 10_000).expect("translate request");
+    assert_eq!(translated.session_key, "session-beta");
+    assert_eq!(translated.mission_id, "session-beta");
 }
 
 #[test]
@@ -1170,6 +1222,134 @@ fn unit_translate_openresponses_request_rejects_invalid_input_shape() {
         translate_openresponses_request(&request, 1024).expect_err("invalid input should fail");
     assert_eq!(error.status, StatusCode::BAD_REQUEST);
     assert_eq!(error.code, "invalid_input");
+}
+
+#[test]
+fn unit_gateway_learning_distills_failure_patterns_and_success_rates() {
+    let temp = tempdir().expect("tempdir");
+    let action_history_path = gateway_action_history_path(&temp.path().join(".tau/gateway"));
+    let mut store = ActionHistoryStore::new(ActionHistoryConfig {
+        store_path: action_history_path,
+        max_records_per_session: 500,
+        max_total_records: 10_000,
+    });
+    for _ in 0..3 {
+        store.record(ActionRecord {
+            session_id: "learn-session".to_string(),
+            turn: 1,
+            action_type: ActionType::ToolExecution,
+            tool_name: Some("bash".to_string()),
+            input_summary: "mission=alpha session=learn-session".to_string(),
+            output_summary: "policy_blocked".to_string(),
+            success: false,
+            latency_ms: 12,
+            timestamp_ms: current_unix_timestamp_ms(),
+        });
+    }
+    store.record(ActionRecord {
+        session_id: "learn-session".to_string(),
+        turn: 1,
+        action_type: ActionType::ToolExecution,
+        tool_name: Some("read".to_string()),
+        input_summary: "mission=alpha session=learn-session".to_string(),
+        output_summary: "ok".to_string(),
+        success: true,
+        latency_ms: 4,
+        timestamp_ms: current_unix_timestamp_ms(),
+    });
+
+    let insight = build_gateway_learning_insight(&store, 100);
+    assert!(insight
+        .failing_tools
+        .iter()
+        .any(|(tool, error, count)| tool == "bash" && error == "policy_blocked" && *count == 3));
+    assert!(insight
+        .tool_success_rates
+        .iter()
+        .any(|(tool, rate)| tool == "bash" && (*rate - 0.0).abs() < f64::EPSILON));
+}
+
+#[test]
+fn unit_gateway_verifier_bundle_aggregates_tool_mutation_and_validation_backpressure() {
+    let mutation_only = build_gateway_verifier_bundle(
+        true,
+        true,
+        true,
+        &[GatewayVerifierToolTrace {
+            tool_name: "write".to_string(),
+            arguments: json!({"path":"game.js","content":"hello"}),
+            success: true,
+        }],
+        false,
+    );
+    assert_eq!(
+        mutation_only.overall.reason_code,
+        "validation_evidence_missing_continue"
+    );
+    assert_eq!(mutation_only.records.len(), 3);
+    assert!(mutation_only.records.iter().any(|record| {
+        record.reason_code == "tool_execution_observed"
+            && record.status == GatewayMissionVerifierStatus::Passed
+    }));
+    assert!(mutation_only.records.iter().any(|record| {
+        record.reason_code == "mutation_evidence_observed"
+            && record.status == GatewayMissionVerifierStatus::Passed
+    }));
+    assert!(mutation_only.records.iter().any(|record| {
+        record.reason_code == "validation_evidence_missing_continue"
+            && record.status == GatewayMissionVerifierStatus::Continue
+    }));
+
+    let validated = build_gateway_verifier_bundle(
+        true,
+        true,
+        true,
+        &[
+            GatewayVerifierToolTrace {
+                tool_name: "write".to_string(),
+                arguments: json!({"path":"game.js","content":"hello"}),
+                success: true,
+            },
+            GatewayVerifierToolTrace {
+                tool_name: "bash".to_string(),
+                arguments: json!({"command":"npm test"}),
+                success: true,
+            },
+        ],
+        false,
+    );
+    assert_eq!(
+        validated.overall.status,
+        GatewayMissionVerifierStatus::Passed
+    );
+    assert_eq!(
+        validated.overall.reason_code,
+        "validation_evidence_observed"
+    );
+}
+
+#[test]
+fn unit_extract_gateway_completion_signal_reads_complete_task_trace() {
+    let signal = extract_gateway_completion_signal(&[
+        GatewayVerifierToolTrace {
+            tool_name: "write".to_string(),
+            arguments: json!({"path":"game.js","content":"hello"}),
+            success: true,
+        },
+        GatewayVerifierToolTrace {
+            tool_name: GATEWAY_COMPLETE_TASK_TOOL_NAME.to_string(),
+            arguments: json!({
+                "status": "partial",
+                "summary": "scaffolded the first playable slice",
+                "next_step": "run local validation"
+            }),
+            success: true,
+        },
+    ])
+    .expect("completion signal");
+    assert_eq!(signal.status, GatewayMissionCompletionStatus::Partial);
+    assert_eq!(signal.summary, "scaffolded the first playable slice");
+    assert_eq!(signal.next_step.as_deref(), Some("run local validation"));
 }
 
 #[test]
@@ -12203,6 +12383,7 @@ struct FixturePipelineTool {
     state_dir: PathBuf,
     memories: Arc<Mutex<Vec<String>>>,
     jobs: Arc<Mutex<BTreeMap<String, String>>>,
+    successful_bash_commands: Arc<BTreeSet<String>>,
 }
 
 impl FixturePipelineTool {
@@ -12621,10 +12802,27 @@ impl AgentTool for FixturePipelineTool {
                 "status": 200,
                 "body": "fixture-http-ok"
             })),
-            "bash" => ToolExecutionResult::error(json!({
-                "code": "policy_blocked",
-                "message": "bash is disabled by fixture policy"
-            })),
+            "bash" => {
+                let command = arguments
+                    .get("command")
+                    .or_else(|| arguments.get("cmd"))
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .trim()
+                    .to_string();
+                if self.successful_bash_commands.contains(command.as_str()) {
+                    ToolExecutionResult::ok(json!({
+                        "command": command,
+                        "code": "ok",
+                        "stdout": "fixture bash succeeded"
+                    }))
+                } else {
+                    ToolExecutionResult::error(json!({
+                        "code": "policy_blocked",
+                        "message": "bash is disabled by fixture policy"
+                    }))
+                }
+            }
             _ => ToolExecutionResult::error(json!({"code":"unknown_tool"})),
         }
     }
@@ -12636,6 +12834,7 @@ struct FixturePipelineToolRegistrar {
     state_dir: PathBuf,
     memories: Arc<Mutex<Vec<String>>>,
     jobs: Arc<Mutex<BTreeMap<String, String>>>,
+    successful_bash_commands: Arc<BTreeSet<String>>,
 }
 
 impl FixturePipelineToolRegistrar {
@@ -12645,7 +12844,22 @@ impl FixturePipelineToolRegistrar {
             state_dir,
             memories: Arc::new(Mutex::new(Vec::new())),
             jobs: Arc::new(Mutex::new(BTreeMap::new())),
+            successful_bash_commands: Arc::new(BTreeSet::new()),
         }
+    }
+
+    fn with_successful_bash_commands<I, S>(mut self, commands: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.successful_bash_commands = Arc::new(
+            commands
+                .into_iter()
+                .map(Into::into)
+                .collect::<BTreeSet<_>>(),
+        );
+        self
     }
 }
 
@@ -12671,6 +12885,7 @@ impl GatewayToolRegistrar for FixturePipelineToolRegistrar {
                 state_dir: self.state_dir.clone(),
                 memories: Arc::clone(&self.memories),
                 jobs: Arc::clone(&self.jobs),
+                successful_bash_commands: Arc::clone(&self.successful_bash_commands),
             });
         }
     }
@@ -12755,6 +12970,1228 @@ async fn regression_openresponses_honors_configured_max_turns_limit() {
             .unwrap_or_default()
             .contains("agent exceeded max turns"),
         "expected max-turns error payload: {payload}"
+    );
+
+    let captured_requests = scripted.captured_requests().await;
+    assert_eq!(captured_requests.len(), 1);
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn regression_openresponses_retries_zero_tool_action_completion_until_tool_execution() {
+    let temp = tempdir().expect("tempdir");
+    let scripted = Arc::new(ScriptedGatewayLlmClient::new(vec![
+        scripted_gateway_response("I'll create the files and validate them locally."),
+        ChatResponse {
+            message: Message::assistant_blocks(vec![ContentBlock::ToolCall {
+                id: "call-write-after-retry".to_string(),
+                name: "write".to_string(),
+                arguments: json!({"path":"retry.txt","content":"tool loop recovered"}),
+            }]),
+            finish_reason: Some("tool_calls".to_string()),
+            usage: ChatUsage::default(),
+        },
+        scripted_gateway_response("created the workspace after retry"),
+    ]));
+    let tool_root = temp.path().join("workspace");
+    std::fs::create_dir_all(&tool_root).expect("create tool workspace");
+    let state = test_state_with_client_and_auth(
+        temp.path(),
+        10_000,
+        scripted.clone(),
+        Arc::new(FixturePipelineToolRegistrar::new(
+            tool_root.clone(),
+            temp.path().join(".tau/gateway"),
+        )),
+        GatewayOpenResponsesAuthMode::Token,
+        Some("secret"),
+        None,
+        60,
+        120,
+    );
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+
+    let client = Client::new();
+    let response = client
+        .post(format!("http://{addr}{OPENRESPONSES_ENDPOINT}"))
+        .bearer_auth("secret")
+        .json(&json!({
+            "input": "create a Phaser game in this workspace",
+            "metadata": {"session_id":"zero-tool-action"}
+        }))
+        .send()
+        .await
+        .expect("send retried action request");
+    let status = response.status();
+    let payload = response
+        .json::<Value>()
+        .await
+        .expect("parse retried action response");
+    assert_eq!(status, StatusCode::OK, "unexpected payload: {payload}");
+    assert_eq!(
+        payload["output_text"],
+        Value::String("created the workspace after retry".to_string())
+    );
+    assert!(
+        !payload["output_text"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("I'll create the files"),
+        "failed-attempt assistant text must not leak into final output: {payload}"
+    );
+
+    let captured_requests = scripted.captured_requests().await;
+    assert_eq!(captured_requests.len(), 3);
+    assert!(
+        !captured_requests[0].tools.is_empty(),
+        "expected registered tools to be exposed to the model"
+    );
+    assert!(
+        captured_requests[1]
+            .messages
+            .iter()
+            .filter(|message| message.role == MessageRole::User)
+            .any(|message| message
+                .text_content()
+                .contains("no tool execution evidence observed yet")),
+        "expected corrective retry feedback to be appended before the retried attempt"
+    );
+    let retried_file =
+        std::fs::read_to_string(tool_root.join("retry.txt")).expect("read retried file");
+    assert_eq!(retried_file, "tool loop recovered");
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn regression_openresponses_persists_completed_mission_state_for_retry_recovery() {
+    let temp = tempdir().expect("tempdir");
+    let scripted = Arc::new(ScriptedGatewayLlmClient::new(vec![
+        scripted_gateway_response("I'll create the files and validate them locally."),
+        ChatResponse {
+            message: Message::assistant_blocks(vec![ContentBlock::ToolCall {
+                id: "call-write-after-retry".to_string(),
+                name: "write".to_string(),
+                arguments: json!({"path":"retry.txt","content":"tool loop recovered"}),
+            }]),
+            finish_reason: Some("tool_calls".to_string()),
+            usage: ChatUsage::default(),
+        },
+        scripted_gateway_response("created the workspace after retry"),
+    ]));
+    let tool_root = temp.path().join("workspace");
+    std::fs::create_dir_all(&tool_root).expect("create tool workspace");
+    let state = test_state_with_client_and_auth(
+        temp.path(),
+        10_000,
+        scripted,
+        Arc::new(FixturePipelineToolRegistrar::new(
+            tool_root.clone(),
+            temp.path().join(".tau/gateway"),
+        )),
+        GatewayOpenResponsesAuthMode::Token,
+        Some("secret"),
+        None,
+        60,
+        120,
+    );
+    let (addr, handle) = spawn_test_server(state.clone())
+        .await
+        .expect("spawn server");
+
+    let client = Client::new();
+    let response = client
+        .post(format!("http://{addr}{OPENRESPONSES_ENDPOINT}"))
+        .bearer_auth("secret")
+        .json(&json!({
+            "input": "create a Phaser game in this workspace",
+            "metadata": {
+                "session_id": "mission-retry-session",
+                "mission_id": "mission-retry"
+            }
+        }))
+        .send()
+        .await
+        .expect("send retried action request");
+    let status = response.status();
+    let payload = response
+        .json::<Value>()
+        .await
+        .expect("parse retried action response");
+    assert_eq!(status, StatusCode::OK, "unexpected payload: {payload}");
+
+    let mission_path = gateway_mission_state_path(&state.config.state_dir, "mission-retry");
+    let mission_state = load_gateway_mission_state(&mission_path).expect("load mission state");
+    assert_eq!(mission_state.mission_id, "mission-retry");
+    assert_eq!(mission_state.session_key, "mission-retry-session");
+    assert_eq!(
+        mission_state.response_id,
+        payload["id"].as_str().unwrap_or_default()
+    );
+    assert_eq!(mission_state.status, GatewayMissionStatus::Completed);
+    assert_eq!(mission_state.iteration_count, 2);
+    assert_eq!(mission_state.iterations.len(), 2);
+    assert_eq!(
+        mission_state.iterations[0].verifier.overall.reason_code,
+        "tool_evidence_missing_continue"
+    );
+    assert_eq!(mission_state.iterations[0].tool_execution_count, 0);
+    assert_eq!(
+        mission_state.iterations[1].verifier.overall.reason_code,
+        "mutation_evidence_observed"
+    );
+    assert_eq!(mission_state.iterations[1].tool_execution_count, 1);
+    assert_eq!(
+        mission_state.latest_verifier.reason_code,
+        "mutation_evidence_observed"
+    );
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn regression_openresponses_retries_until_mutating_evidence_is_observed() {
+    let temp = tempdir().expect("tempdir");
+    let scripted = Arc::new(ScriptedGatewayLlmClient::new(vec![
+        ChatResponse {
+            message: Message::assistant_blocks(vec![ContentBlock::ToolCall {
+                id: "call-read-before-write".to_string(),
+                name: "read".to_string(),
+                arguments: json!({"path":"seed.txt"}),
+            }]),
+            finish_reason: Some("tool_calls".to_string()),
+            usage: ChatUsage::default(),
+        },
+        scripted_gateway_response("inspected the existing workspace"),
+        ChatResponse {
+            message: Message::assistant_blocks(vec![ContentBlock::ToolCall {
+                id: "call-write-after-mutation-retry".to_string(),
+                name: "write".to_string(),
+                arguments: json!({"path":"retry.txt","content":"mutation after retry"}),
+            }]),
+            finish_reason: Some("tool_calls".to_string()),
+            usage: ChatUsage::default(),
+        },
+        scripted_gateway_response("created the workspace after mutation retry"),
+    ]));
+    let tool_root = temp.path().join("workspace");
+    std::fs::create_dir_all(&tool_root).expect("create tool workspace");
+    std::fs::write(tool_root.join("seed.txt"), "seed").expect("write seed file");
+    let state = test_state_with_client_and_auth(
+        temp.path(),
+        10_000,
+        scripted.clone(),
+        Arc::new(FixturePipelineToolRegistrar::new(
+            tool_root.clone(),
+            temp.path().join(".tau/gateway"),
+        )),
+        GatewayOpenResponsesAuthMode::Token,
+        Some("secret"),
+        None,
+        60,
+        120,
+    );
+    let (addr, handle) = spawn_test_server(state.clone())
+        .await
+        .expect("spawn server");
+
+    let client = Client::new();
+    let response = client
+        .post(format!("http://{addr}{OPENRESPONSES_ENDPOINT}"))
+        .bearer_auth("secret")
+        .json(&json!({
+            "input": "create a Phaser game in this workspace",
+            "metadata": {
+                "session_id": "mutation-session",
+                "mission_id": "mutation-mission"
+            }
+        }))
+        .send()
+        .await
+        .expect("send mutation verifier request");
+    let status = response.status();
+    let payload = response
+        .json::<Value>()
+        .await
+        .expect("parse mutation verifier response");
+    assert_eq!(status, StatusCode::OK, "unexpected payload: {payload}");
+    assert_eq!(
+        payload["output_text"],
+        Value::String("created the workspace after mutation retry".to_string())
+    );
+
+    let captured_requests = scripted.captured_requests().await;
+    assert_eq!(captured_requests.len(), 4);
+    assert!(
+        captured_requests[2]
+            .messages
+            .iter()
+            .filter(|message| message.role == MessageRole::User)
+            .any(|message| message
+                .text_content()
+                .contains("workspace-changing work was requested")),
+        "expected mutation verifier feedback before retry"
+    );
+
+    let mission_path = gateway_mission_state_path(&state.config.state_dir, "mutation-mission");
+    let mission_state = load_gateway_mission_state(&mission_path).expect("load mission state");
+    assert_eq!(mission_state.status, GatewayMissionStatus::Completed);
+    assert_eq!(
+        mission_state.iterations[0].verifier.overall.reason_code,
+        "mutation_evidence_missing_continue"
+    );
+    assert!(mission_state.iterations[0]
+        .verifier
+        .records
+        .iter()
+        .any(|record| record.reason_code == "tool_execution_observed"));
+    assert_eq!(
+        mission_state.iterations[1].verifier.overall.reason_code,
+        "mutation_evidence_observed"
+    );
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn regression_openresponses_persists_tool_failures_to_gateway_action_history() {
+    let temp = tempdir().expect("tempdir");
+    let scripted = Arc::new(ScriptedGatewayLlmClient::new(vec![
+        ChatResponse {
+            message: Message::assistant_blocks(vec![ContentBlock::ToolCall {
+                id: "call-bash-history".to_string(),
+                name: "bash".to_string(),
+                arguments: json!({"command":"cargo test"}),
+            }]),
+            finish_reason: Some("tool_calls".to_string()),
+            usage: ChatUsage::default(),
+        },
+        scripted_gateway_response("bash failed under fixture policy"),
+        scripted_gateway_response("bash failed under fixture policy again"),
+    ]));
+    let tool_root = temp.path().join("workspace");
+    std::fs::create_dir_all(&tool_root).expect("create tool workspace");
+    let state = test_state_with_client_and_auth(
+        temp.path(),
+        10_000,
+        scripted,
+        Arc::new(FixturePipelineToolRegistrar::new(
+            tool_root,
+            temp.path().join(".tau/gateway"),
+        )),
+        GatewayOpenResponsesAuthMode::Token,
+        Some("secret"),
+        None,
+        60,
+        120,
+    );
+    let (addr, handle) = spawn_test_server(state.clone())
+        .await
+        .expect("spawn server");
+
+    let client = Client::new();
+    let response = client
+        .post(format!("http://{addr}{OPENRESPONSES_ENDPOINT}"))
+        .bearer_auth("secret")
+        .json(&json!({
+            "input": "use bash to inspect the project",
+            "metadata": {
+                "session_id": "history-session",
+                "mission_id": "history-mission"
+            }
+        }))
+        .send()
+        .await
+        .expect("send action-history request");
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let action_history_path = gateway_action_history_path(&state.config.state_dir);
+    assert!(action_history_path.is_file());
+    let store = load_gateway_action_history_store(&state.config.state_dir).expect("load history");
+    let records = store.query(&ActionFilter {
+        session_id: Some("history-session".to_string()),
+        action_type: Some(ActionType::ToolExecution),
+        tool_name: Some("bash".to_string()),
+        success: Some(false),
+        max_results: Some(10),
+    });
+    assert_eq!(records.len(), 1);
+    assert!(
+        records[0].input_summary.contains("mission=history-mission"),
+        "expected mission linkage in input summary: {:?}",
+        records[0].input_summary
+    );
+    assert!(
+        records[0].output_summary.contains("policy_blocked"),
+        "expected tool failure summary to be persisted: {:?}",
+        records[0].output_summary
+    );
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn regression_openresponses_retries_until_validation_evidence_is_observed() {
+    let temp = tempdir().expect("tempdir");
+    let scripted = Arc::new(ScriptedGatewayLlmClient::new(vec![
+        ChatResponse {
+            message: Message::assistant_blocks(vec![ContentBlock::ToolCall {
+                id: "call-write-before-validation".to_string(),
+                name: "write".to_string(),
+                arguments: json!({"path":"game.js","content":"console.log('tau');"}),
+            }]),
+            finish_reason: Some("tool_calls".to_string()),
+            usage: ChatUsage::default(),
+        },
+        scripted_gateway_response("created the project files"),
+        ChatResponse {
+            message: Message::assistant_blocks(vec![ContentBlock::ToolCall {
+                id: "call-bash-validation".to_string(),
+                name: "bash".to_string(),
+                arguments: json!({"command":"npm test"}),
+            }]),
+            finish_reason: Some("tool_calls".to_string()),
+            usage: ChatUsage::default(),
+        },
+        scripted_gateway_response("validated the project successfully"),
+    ]));
+    let tool_root = temp.path().join("workspace");
+    std::fs::create_dir_all(&tool_root).expect("create tool workspace");
+    let registrar = FixturePipelineToolRegistrar::new(tool_root, temp.path().join(".tau/gateway"))
+        .with_successful_bash_commands(["npm test"]);
+    let state = test_state_with_client_and_auth(
+        temp.path(),
+        10_000,
+        scripted.clone(),
+        Arc::new(registrar),
+        GatewayOpenResponsesAuthMode::Token,
+        Some("secret"),
+        None,
+        60,
+        120,
+    );
+    let (addr, handle) = spawn_test_server(state.clone())
+        .await
+        .expect("spawn server");
+
+    let client = Client::new();
+    let response = client
+        .post(format!("http://{addr}{OPENRESPONSES_ENDPOINT}"))
+        .bearer_auth("secret")
+        .json(&json!({
+            "input": "create a Phaser game in this workspace and validate that it is playable",
+            "metadata": {
+                "session_id": "validation-session",
+                "mission_id": "validation-mission"
+            }
+        }))
+        .send()
+        .await
+        .expect("send validation verifier request");
+    let status = response.status();
+    let payload = response
+        .json::<Value>()
+        .await
+        .expect("parse validation verifier response");
+    assert_eq!(status, StatusCode::OK, "unexpected payload: {payload}");
+    assert_eq!(
+        payload["output_text"],
+        Value::String("validated the project successfully".to_string())
+    );
+
+    let captured_requests = scripted.captured_requests().await;
+    assert_eq!(captured_requests.len(), 4);
+    assert!(
+        captured_requests[2]
+            .messages
+            .iter()
+            .filter(|message| message.role == MessageRole::User)
+            .any(|message| message.text_content().contains("validation was requested")),
+        "expected validation verifier feedback before retry"
+    );
+
+    let mission_path = gateway_mission_state_path(&state.config.state_dir, "validation-mission");
+    let mission_state = load_gateway_mission_state(&mission_path).expect("load mission state");
+    assert_eq!(mission_state.status, GatewayMissionStatus::Completed);
+    assert_eq!(
+        mission_state.iterations[0].verifier.overall.reason_code,
+        "validation_evidence_missing_continue"
+    );
+    assert_eq!(
+        mission_state.iterations[1].verifier.overall.reason_code,
+        "validation_evidence_observed"
+    );
+    assert!(mission_state.iterations[1]
+        .verifier
+        .records
+        .iter()
+        .any(|record| record.reason_code == "mutation_evidence_observed"));
+    assert_eq!(
+        mission_state.latest_verifier.reason_code,
+        "validation_evidence_observed"
+    );
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn regression_openresponses_partial_completion_persists_checkpointed_mission_state() {
+    let temp = tempdir().expect("tempdir");
+    let scripted = Arc::new(ScriptedGatewayLlmClient::new(vec![
+        ChatResponse {
+            message: Message::assistant_blocks(vec![
+                ContentBlock::ToolCall {
+                    id: "call-write-checkpoint".to_string(),
+                    name: "write".to_string(),
+                    arguments: json!({"path":"checkpoint.txt","content":"partial progress"}),
+                },
+                ContentBlock::ToolCall {
+                    id: "call-complete-partial".to_string(),
+                    name: GATEWAY_COMPLETE_TASK_TOOL_NAME.to_string(),
+                    arguments: json!({
+                        "status": "partial",
+                        "summary": "scaffolded the first gameplay slice",
+                        "next_step": "run playability validation"
+                    }),
+                },
+            ]),
+            finish_reason: Some("tool_calls".to_string()),
+            usage: ChatUsage::default(),
+        },
+        scripted_gateway_response("checkpointed partial progress"),
+    ]));
+    let tool_root = temp.path().join("workspace");
+    std::fs::create_dir_all(&tool_root).expect("create tool workspace");
+    let state = test_state_with_client_and_auth(
+        temp.path(),
+        10_000,
+        scripted,
+        Arc::new(FixturePipelineToolRegistrar::new(
+            tool_root,
+            temp.path().join(".tau/gateway"),
+        )),
+        GatewayOpenResponsesAuthMode::Token,
+        Some("secret"),
+        None,
+        60,
+        120,
+    );
+    let (addr, handle) = spawn_test_server(state.clone())
+        .await
+        .expect("spawn server");
+
+    let client = Client::new();
+    let response = client
+        .post(format!("http://{addr}{OPENRESPONSES_ENDPOINT}"))
+        .bearer_auth("secret")
+        .json(&json!({
+            "input": "create a Phaser game in this workspace",
+            "metadata": {
+                "session_id": "checkpoint-session",
+                "mission_id": "checkpoint-mission"
+            }
+        }))
+        .send()
+        .await
+        .expect("send checkpoint request");
+    let status = response.status();
+    let payload = response
+        .json::<Value>()
+        .await
+        .expect("parse checkpoint payload");
+    assert_eq!(status, StatusCode::OK, "unexpected payload: {payload}");
+    assert_eq!(
+        payload["output_text"],
+        Value::String("scaffolded the first gameplay slice".to_string())
+    );
+
+    let mission_path = gateway_mission_state_path(&state.config.state_dir, "checkpoint-mission");
+    let mission_state = load_gateway_mission_state(&mission_path).expect("load mission state");
+    assert_eq!(mission_state.status, GatewayMissionStatus::Checkpointed);
+    let completion = mission_state
+        .latest_completion
+        .expect("checkpoint completion signal");
+    assert_eq!(completion.status, GatewayMissionCompletionStatus::Partial);
+    assert_eq!(completion.summary, "scaffolded the first gameplay slice");
+    assert_eq!(
+        completion.next_step.as_deref(),
+        Some("run playability validation")
+    );
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn regression_openresponses_blocked_completion_persists_blocked_mission_state_without_runtime_failure(
+) {
+    let temp = tempdir().expect("tempdir");
+    let scripted = Arc::new(ScriptedGatewayLlmClient::new(vec![
+        ChatResponse {
+            message: Message::assistant_blocks(vec![ContentBlock::ToolCall {
+                id: "call-complete-blocked".to_string(),
+                name: GATEWAY_COMPLETE_TASK_TOOL_NAME.to_string(),
+                arguments: json!({
+                    "status": "blocked",
+                    "summary": "blocked waiting for deployment credentials"
+                }),
+            }]),
+            finish_reason: Some("tool_calls".to_string()),
+            usage: ChatUsage::default(),
+        },
+        scripted_gateway_response("blocked waiting for deployment credentials"),
+    ]));
+    let tool_root = temp.path().join("workspace");
+    std::fs::create_dir_all(&tool_root).expect("create tool workspace");
+    let state = test_state_with_client_and_auth(
+        temp.path(),
+        10_000,
+        scripted,
+        Arc::new(FixturePipelineToolRegistrar::new(
+            tool_root,
+            temp.path().join(".tau/gateway"),
+        )),
+        GatewayOpenResponsesAuthMode::Token,
+        Some("secret"),
+        None,
+        60,
+        120,
+    );
+    let (addr, handle) = spawn_test_server(state.clone())
+        .await
+        .expect("spawn server");
+
+    let client = Client::new();
+    let response = client
+        .post(format!("http://{addr}{OPENRESPONSES_ENDPOINT}"))
+        .bearer_auth("secret")
+        .json(&json!({
+            "input": "fix this deployment",
+            "metadata": {
+                "session_id": "blocked-session",
+                "mission_id": "blocked-mission"
+            }
+        }))
+        .send()
+        .await
+        .expect("send blocked completion request");
+    let status = response.status();
+    let payload = response
+        .json::<Value>()
+        .await
+        .expect("parse blocked completion payload");
+    assert_eq!(status, StatusCode::OK, "unexpected payload: {payload}");
+    assert_eq!(
+        payload["output_text"],
+        Value::String("blocked waiting for deployment credentials".to_string())
+    );
+
+    let mission_path = gateway_mission_state_path(&state.config.state_dir, "blocked-mission");
+    let mission_state = load_gateway_mission_state(&mission_path).expect("load mission state");
+    assert_eq!(mission_state.status, GatewayMissionStatus::Blocked);
+    let completion = mission_state
+        .latest_completion
+        .expect("blocked completion signal");
+    assert_eq!(completion.status, GatewayMissionCompletionStatus::Blocked);
+    assert_eq!(
+        completion.summary,
+        "blocked waiting for deployment credentials"
+    );
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn regression_openresponses_success_completion_is_persisted_when_verifiers_pass() {
+    let temp = tempdir().expect("tempdir");
+    let scripted = Arc::new(ScriptedGatewayLlmClient::new(vec![
+        ChatResponse {
+            message: Message::assistant_blocks(vec![
+                ContentBlock::ToolCall {
+                    id: "call-write-complete".to_string(),
+                    name: "write".to_string(),
+                    arguments: json!({"path":"done.txt","content":"done"}),
+                },
+                ContentBlock::ToolCall {
+                    id: "call-complete-success".to_string(),
+                    name: GATEWAY_COMPLETE_TASK_TOOL_NAME.to_string(),
+                    arguments: json!({
+                        "status": "success",
+                        "summary": "created the initial game scaffold"
+                    }),
+                },
+            ]),
+            finish_reason: Some("tool_calls".to_string()),
+            usage: ChatUsage::default(),
+        },
+        scripted_gateway_response("created the initial game scaffold"),
+    ]));
+    let tool_root = temp.path().join("workspace");
+    std::fs::create_dir_all(&tool_root).expect("create tool workspace");
+    let state = test_state_with_client_and_auth(
+        temp.path(),
+        10_000,
+        scripted,
+        Arc::new(FixturePipelineToolRegistrar::new(
+            tool_root,
+            temp.path().join(".tau/gateway"),
+        )),
+        GatewayOpenResponsesAuthMode::Token,
+        Some("secret"),
+        None,
+        60,
+        120,
+    );
+    let (addr, handle) = spawn_test_server(state.clone())
+        .await
+        .expect("spawn server");
+
+    let client = Client::new();
+    let response = client
+        .post(format!("http://{addr}{OPENRESPONSES_ENDPOINT}"))
+        .bearer_auth("secret")
+        .json(&json!({
+            "input": "create a Phaser game in this workspace",
+            "metadata": {
+                "session_id": "complete-session",
+                "mission_id": "complete-mission"
+            }
+        }))
+        .send()
+        .await
+        .expect("send explicit success request");
+    let status = response.status();
+    let payload = response
+        .json::<Value>()
+        .await
+        .expect("parse explicit success payload");
+    assert_eq!(status, StatusCode::OK, "unexpected payload: {payload}");
+    assert_eq!(
+        payload["output_text"],
+        Value::String("created the initial game scaffold".to_string())
+    );
+
+    let mission_path = gateway_mission_state_path(&state.config.state_dir, "complete-mission");
+    let mission_state = load_gateway_mission_state(&mission_path).expect("load mission state");
+    assert_eq!(mission_state.status, GatewayMissionStatus::Completed);
+    let completion = mission_state
+        .latest_completion
+        .expect("successful completion signal");
+    assert_eq!(completion.status, GatewayMissionCompletionStatus::Success);
+    assert_eq!(completion.summary, "created the initial game scaffold");
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn regression_gateway_missions_list_exposes_persisted_checkpointed_and_blocked_missions() {
+    let temp = tempdir().expect("tempdir");
+    let state = test_state(temp.path(), 10_000, "secret");
+    let checkpoint_path = gateway_mission_state_path(&state.config.state_dir, "checkpoint-alpha");
+    save_gateway_mission_state(
+        &checkpoint_path,
+        &GatewayMissionState {
+            schema_version: 1,
+            mission_id: "checkpoint-alpha".to_string(),
+            session_key: "session-alpha".to_string(),
+            response_id: "resp_checkpoint_alpha".to_string(),
+            goal_summary: "build the game scaffold".to_string(),
+            latest_output_summary: "scaffolded the first gameplay slice".to_string(),
+            status: GatewayMissionStatus::Checkpointed,
+            created_unix_ms: 100,
+            updated_unix_ms: 220,
+            iteration_count: 1,
+            latest_verifier: GatewayMissionVerifierRecord {
+                kind: "workspace_mutation_evidence".to_string(),
+                status: GatewayMissionVerifierStatus::Passed,
+                reason_code: "mutation_evidence_observed".to_string(),
+                message: "observed workspace mutation".to_string(),
+                details: BTreeMap::new(),
+            },
+            latest_completion: Some(GatewayMissionCompletionSignalRecord {
+                status: GatewayMissionCompletionStatus::Partial,
+                summary: "scaffolded the first gameplay slice".to_string(),
+                next_step: Some("run validation".to_string()),
+            }),
+            iterations: vec![GatewayMissionIterationRecord {
+                attempt: 1,
+                prompt_summary: "create the initial project".to_string(),
+                assistant_summary: "scaffolded the first gameplay slice".to_string(),
+                tool_execution_count: 1,
+                verifier: GatewayMissionVerifierBundle::from_records(vec![
+                    GatewayMissionVerifierRecord {
+                        kind: "workspace_mutation_evidence".to_string(),
+                        status: GatewayMissionVerifierStatus::Passed,
+                        reason_code: "mutation_evidence_observed".to_string(),
+                        message: "observed workspace mutation".to_string(),
+                        details: BTreeMap::new(),
+                    },
+                ]),
+                completion: Some(GatewayMissionCompletionSignalRecord {
+                    status: GatewayMissionCompletionStatus::Partial,
+                    summary: "scaffolded the first gameplay slice".to_string(),
+                    next_step: Some("run validation".to_string()),
+                }),
+                started_unix_ms: 150,
+                finished_unix_ms: 220,
+            }],
+        },
+    )
+    .expect("save checkpoint mission");
+    let blocked_path = gateway_mission_state_path(&state.config.state_dir, "blocked-beta");
+    save_gateway_mission_state(
+        &blocked_path,
+        &GatewayMissionState {
+            schema_version: 1,
+            mission_id: "blocked-beta".to_string(),
+            session_key: "session-beta".to_string(),
+            response_id: "resp_blocked_beta".to_string(),
+            goal_summary: "deploy the service".to_string(),
+            latest_output_summary: "blocked waiting for credentials".to_string(),
+            status: GatewayMissionStatus::Blocked,
+            created_unix_ms: 110,
+            updated_unix_ms: 160,
+            iteration_count: 1,
+            latest_verifier: GatewayMissionVerifierRecord {
+                kind: "action_tool_evidence".to_string(),
+                status: GatewayMissionVerifierStatus::Failed,
+                reason_code: "tool_evidence_missing_exhausted".to_string(),
+                message: "action retries exhausted".to_string(),
+                details: BTreeMap::new(),
+            },
+            latest_completion: Some(GatewayMissionCompletionSignalRecord {
+                status: GatewayMissionCompletionStatus::Blocked,
+                summary: "blocked waiting for credentials".to_string(),
+                next_step: None,
+            }),
+            iterations: vec![GatewayMissionIterationRecord {
+                attempt: 1,
+                prompt_summary: "deploy the service".to_string(),
+                assistant_summary: "blocked waiting for credentials".to_string(),
+                tool_execution_count: 0,
+                verifier: GatewayMissionVerifierBundle::from_records(vec![
+                    GatewayMissionVerifierRecord {
+                        kind: "action_tool_evidence".to_string(),
+                        status: GatewayMissionVerifierStatus::Failed,
+                        reason_code: "tool_evidence_missing_exhausted".to_string(),
+                        message: "action retries exhausted".to_string(),
+                        details: BTreeMap::new(),
+                    },
+                ]),
+                completion: Some(GatewayMissionCompletionSignalRecord {
+                    status: GatewayMissionCompletionStatus::Blocked,
+                    summary: "blocked waiting for credentials".to_string(),
+                    next_step: None,
+                }),
+                started_unix_ms: 120,
+                finished_unix_ms: 160,
+            }],
+        },
+    )
+    .expect("save blocked mission");
+
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+    let client = Client::new();
+    let response = client
+        .get(format!("http://{addr}{GATEWAY_MISSIONS_ENDPOINT}?limit=5"))
+        .bearer_auth("secret")
+        .send()
+        .await
+        .expect("missions list");
+    let status = response.status();
+    let payload = response
+        .json::<Value>()
+        .await
+        .expect("parse missions list payload");
+    assert_eq!(status, StatusCode::OK, "unexpected payload: {payload}");
+    let missions = payload["missions"].as_array().expect("missions array");
+    assert_eq!(missions.len(), 2);
+    assert_eq!(missions[0]["mission_id"], "checkpoint-alpha");
+    assert_eq!(missions[0]["status"], "checkpointed");
+    assert_eq!(
+        missions[0]["latest_completion"]["summary"],
+        "scaffolded the first gameplay slice"
+    );
+    assert_eq!(missions[1]["mission_id"], "blocked-beta");
+    assert_eq!(missions[1]["status"], "blocked");
+    assert_eq!(
+        missions[1]["latest_completion"]["status"],
+        Value::String("blocked".to_string())
+    );
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn regression_gateway_mission_detail_exposes_verifier_and_completion_state() {
+    let temp = tempdir().expect("tempdir");
+    let state = test_state(temp.path(), 10_000, "secret");
+    let mission_path = gateway_mission_state_path(&state.config.state_dir, "checkpoint-alpha");
+    save_gateway_mission_state(
+        &mission_path,
+        &GatewayMissionState {
+            schema_version: 1,
+            mission_id: "checkpoint-alpha".to_string(),
+            session_key: "session-alpha".to_string(),
+            response_id: "resp_checkpoint_alpha".to_string(),
+            goal_summary: "build the game scaffold".to_string(),
+            latest_output_summary: "scaffolded the first gameplay slice".to_string(),
+            status: GatewayMissionStatus::Checkpointed,
+            created_unix_ms: 100,
+            updated_unix_ms: 220,
+            iteration_count: 1,
+            latest_verifier: GatewayMissionVerifierRecord {
+                kind: "workspace_mutation_evidence".to_string(),
+                status: GatewayMissionVerifierStatus::Passed,
+                reason_code: "mutation_evidence_observed".to_string(),
+                message: "observed workspace mutation".to_string(),
+                details: BTreeMap::from([("observed_count".to_string(), json!(1))]),
+            },
+            latest_completion: Some(GatewayMissionCompletionSignalRecord {
+                status: GatewayMissionCompletionStatus::Partial,
+                summary: "scaffolded the first gameplay slice".to_string(),
+                next_step: Some("run validation".to_string()),
+            }),
+            iterations: vec![GatewayMissionIterationRecord {
+                attempt: 1,
+                prompt_summary: "create the initial project".to_string(),
+                assistant_summary: "scaffolded the first gameplay slice".to_string(),
+                tool_execution_count: 1,
+                verifier: GatewayMissionVerifierBundle::from_records(vec![
+                    GatewayMissionVerifierRecord {
+                        kind: "workspace_mutation_evidence".to_string(),
+                        status: GatewayMissionVerifierStatus::Passed,
+                        reason_code: "mutation_evidence_observed".to_string(),
+                        message: "observed workspace mutation".to_string(),
+                        details: BTreeMap::from([("observed_count".to_string(), json!(1))]),
+                    },
+                ]),
+                completion: Some(GatewayMissionCompletionSignalRecord {
+                    status: GatewayMissionCompletionStatus::Partial,
+                    summary: "scaffolded the first gameplay slice".to_string(),
+                    next_step: Some("run validation".to_string()),
+                }),
+                started_unix_ms: 150,
+                finished_unix_ms: 220,
+            }],
+        },
+    )
+    .expect("save checkpoint mission");
+
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+    let client = Client::new();
+    let endpoint = expand_mission_template(GATEWAY_MISSION_DETAIL_ENDPOINT, "checkpoint-alpha");
+    let response = client
+        .get(format!("http://{addr}{endpoint}"))
+        .bearer_auth("secret")
+        .send()
+        .await
+        .expect("mission detail");
+    let status = response.status();
+    let payload = response
+        .json::<Value>()
+        .await
+        .expect("parse mission detail payload");
+    assert_eq!(status, StatusCode::OK, "unexpected payload: {payload}");
+    assert_eq!(payload["mission"]["mission_id"], "checkpoint-alpha");
+    assert_eq!(payload["mission"]["session_key"], "session-alpha");
+    assert_eq!(payload["mission"]["status"], "checkpointed");
+    assert_eq!(
+        payload["mission"]["latest_verifier"]["reason_code"],
+        "mutation_evidence_observed"
+    );
+    assert_eq!(
+        payload["mission"]["latest_completion"]["next_step"],
+        "run validation"
+    );
+    assert_eq!(payload["mission"]["iterations"][0]["attempt"], 1);
+    assert_eq!(
+        payload["mission"]["iterations"][0]["tool_execution_count"],
+        1
+    );
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn regression_openresponses_zero_tool_action_retry_exhaustion_fails_closed() {
+    let temp = tempdir().expect("tempdir");
+    let scripted = Arc::new(ScriptedGatewayLlmClient::new(vec![
+        scripted_gateway_response("I'll create the files and validate them locally."),
+        scripted_gateway_response("I'll try again without using tools."),
+        scripted_gateway_response("Still planning, no tools yet."),
+    ]));
+    let tool_root = temp.path().join("workspace");
+    std::fs::create_dir_all(&tool_root).expect("create tool workspace");
+    let state = test_state_with_client_and_auth(
+        temp.path(),
+        10_000,
+        scripted.clone(),
+        Arc::new(FixturePipelineToolRegistrar::new(
+            tool_root.clone(),
+            temp.path().join(".tau/gateway"),
+        )),
+        GatewayOpenResponsesAuthMode::Token,
+        Some("secret"),
+        None,
+        60,
+        120,
+    );
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+
+    let client = Client::new();
+    let response = client
+        .post(format!("http://{addr}{OPENRESPONSES_ENDPOINT}"))
+        .bearer_auth("secret")
+        .json(&json!({
+            "input": "create a Phaser game in this workspace",
+            "metadata": {"session_id":"zero-tool-exhaustion"}
+        }))
+        .send()
+        .await
+        .expect("send zero-tool exhaustion request");
+    let status = response.status();
+    let payload = response
+        .json::<Value>()
+        .await
+        .expect("parse zero-tool exhaustion response");
+    assert_eq!(
+        status,
+        StatusCode::BAD_GATEWAY,
+        "unexpected payload: {payload}"
+    );
+    assert!(
+        payload["error"]["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("exhausted action retries"),
+        "expected retry exhaustion message: {payload}"
+    );
+
+    let captured_requests = scripted.captured_requests().await;
+    assert_eq!(captured_requests.len(), 3);
+    let workspace_entries = std::fs::read_dir(&tool_root)
+        .expect("read workspace dir")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("collect workspace entries");
+    assert!(
+        workspace_entries.is_empty(),
+        "expected no files to be created when retries exhaust without tools"
+    );
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn regression_openresponses_injects_learning_insights_into_followup_system_prompt() {
+    let temp = tempdir().expect("tempdir");
+    let scripted = Arc::new(ScriptedGatewayLlmClient::new(vec![
+        ChatResponse {
+            message: Message::assistant_blocks(vec![ContentBlock::ToolCall {
+                id: "call-bash-learn".to_string(),
+                name: "bash".to_string(),
+                arguments: json!({"command":"cargo test"}),
+            }]),
+            finish_reason: Some("tool_calls".to_string()),
+            usage: ChatUsage::default(),
+        },
+        scripted_gateway_response("bash failed under fixture policy"),
+        scripted_gateway_response("follow-up request complete"),
+        scripted_gateway_response("follow-up request complete again"),
+    ]));
+    let tool_root = temp.path().join("workspace");
+    std::fs::create_dir_all(&tool_root).expect("create tool workspace");
+    let state = test_state_with_client_and_auth(
+        temp.path(),
+        10_000,
+        scripted.clone(),
+        Arc::new(FixturePipelineToolRegistrar::new(
+            tool_root,
+            temp.path().join(".tau/gateway"),
+        )),
+        GatewayOpenResponsesAuthMode::Token,
+        Some("secret"),
+        None,
+        60,
+        120,
+    );
+    state
+        .cortex
+        .set_bulletin_for_test("## Cortex Memory Bulletin\n- prioritize release stabilization");
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+
+    let client = Client::new();
+    let first = client
+        .post(format!("http://{addr}{OPENRESPONSES_ENDPOINT}"))
+        .bearer_auth("secret")
+        .json(&json!({
+            "input": "use bash to inspect the project",
+            "metadata": {
+                "session_id": "learn-seed",
+                "mission_id": "learn-seed-mission"
+            }
+        }))
+        .send()
+        .await
+        .expect("send first learning request");
+    assert_eq!(first.status(), StatusCode::OK);
+
+    let second = client
+        .post(format!("http://{addr}{OPENRESPONSES_ENDPOINT}"))
+        .bearer_auth("secret")
+        .json(&json!({
+            "input": "what should you do next",
+            "metadata": {
+                "session_id": "learn-followup",
+                "mission_id": "learn-followup-mission"
+            }
+        }))
+        .send()
+        .await
+        .expect("send follow-up learning request");
+    assert_eq!(second.status(), StatusCode::OK);
+
+    let captured_requests = scripted.captured_requests().await;
+    assert!(
+        captured_requests.len() >= 3,
+        "expected first request inner loop plus second request capture"
+    );
+    let followup_request = captured_requests
+        .last()
+        .expect("captured follow-up request");
+    let system_message = followup_request
+        .messages
+        .iter()
+        .find(|message| message.role == MessageRole::System)
+        .expect("system message");
+    let system_text = system_message.text_content();
+    assert!(system_text.contains("## Cortex Memory Bulletin"));
+    assert!(system_text.contains("## Learning Insights"));
+    assert!(system_text.contains("bash"));
+    assert!(system_text.contains("policy_blocked"));
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn regression_openresponses_persists_blocked_mission_state_for_retry_exhaustion() {
+    let temp = tempdir().expect("tempdir");
+    let scripted = Arc::new(ScriptedGatewayLlmClient::new(vec![
+        scripted_gateway_response("I'll create the files and validate them locally."),
+        scripted_gateway_response("I'll try again without using tools."),
+        scripted_gateway_response("Still planning, no tools yet."),
+    ]));
+    let tool_root = temp.path().join("workspace");
+    std::fs::create_dir_all(&tool_root).expect("create tool workspace");
+    let state = test_state_with_client_and_auth(
+        temp.path(),
+        10_000,
+        scripted,
+        Arc::new(FixturePipelineToolRegistrar::new(
+            tool_root,
+            temp.path().join(".tau/gateway"),
+        )),
+        GatewayOpenResponsesAuthMode::Token,
+        Some("secret"),
+        None,
+        60,
+        120,
+    );
+    let (addr, handle) = spawn_test_server(state.clone())
+        .await
+        .expect("spawn server");
+
+    let client = Client::new();
+    let response = client
+        .post(format!("http://{addr}{OPENRESPONSES_ENDPOINT}"))
+        .bearer_auth("secret")
+        .json(&json!({
+            "input": "create a Phaser game in this workspace",
+            "metadata": {
+                "session_id": "mission-blocked-session",
+                "mission_id": "mission-blocked"
+            }
+        }))
+        .send()
+        .await
+        .expect("send zero-tool exhaustion request");
+    let status = response.status();
+    let payload = response
+        .json::<Value>()
+        .await
+        .expect("parse zero-tool exhaustion response");
+    assert_eq!(
+        status,
+        StatusCode::BAD_GATEWAY,
+        "unexpected payload: {payload}"
+    );
+
+    let mission_path = gateway_mission_state_path(&state.config.state_dir, "mission-blocked");
+    let mission_state = load_gateway_mission_state(&mission_path).expect("load mission state");
+    assert_eq!(mission_state.mission_id, "mission-blocked");
+    assert_eq!(mission_state.session_key, "mission-blocked-session");
+    assert_eq!(mission_state.status, GatewayMissionStatus::Blocked);
+    assert_eq!(mission_state.iteration_count, 3);
+    assert_eq!(mission_state.iterations.len(), 3);
+    assert_eq!(
+        mission_state.iterations[0].verifier.overall.reason_code,
+        "tool_evidence_missing_continue"
+    );
+    assert_eq!(
+        mission_state.iterations[1].verifier.overall.reason_code,
+        "tool_evidence_missing_continue"
+    );
+    assert_eq!(
+        mission_state.iterations[2].verifier.overall.reason_code,
+        "tool_evidence_missing_exhausted"
+    );
+    assert_eq!(
+        mission_state.latest_verifier.reason_code,
+        "tool_evidence_missing_exhausted"
+    );
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn functional_openresponses_allows_zero_tool_conversational_completion() {
+    let temp = tempdir().expect("tempdir");
+    let scripted = Arc::new(ScriptedGatewayLlmClient::new(vec![
+        scripted_gateway_response("Phaser is a JavaScript game framework for 2D browser games."),
+    ]));
+    let state = test_state_with_client_and_auth(
+        temp.path(),
+        10_000,
+        scripted.clone(),
+        Arc::new(FixtureGatewayToolRegistrar),
+        GatewayOpenResponsesAuthMode::Token,
+        Some("secret"),
+        None,
+        60,
+        120,
+    );
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+
+    let client = Client::new();
+    let response = client
+        .post(format!("http://{addr}{OPENRESPONSES_ENDPOINT}"))
+        .bearer_auth("secret")
+        .json(&json!({
+            "input": "explain what Phaser is",
+            "metadata": {"session_id":"zero-tool-chat"}
+        }))
+        .send()
+        .await
+        .expect("send conversational request");
+    let status = response.status();
+    let payload = response
+        .json::<Value>()
+        .await
+        .expect("parse conversational response");
+    assert_eq!(status, StatusCode::OK, "unexpected payload: {payload}");
+    assert_eq!(
+        payload["output_text"],
+        Value::String("Phaser is a JavaScript game framework for 2D browser games.".to_string())
     );
 
     let captured_requests = scripted.captured_requests().await;

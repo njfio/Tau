@@ -8,7 +8,8 @@ use tau_skills::{load_catalogs, select_skills_for_prompt};
 
 use super::chat::{ChatMessage, ChatPanel, MessageRole};
 use super::gateway_client::{
-    spawn_gateway_turn, GatewayRuntimeConfig, GatewayTurnResponse, GatewayTurnResult,
+    fetch_gateway_mission_detail, fetch_gateway_missions, spawn_gateway_turn,
+    GatewayMissionSnapshot, GatewayRuntimeConfig, GatewayTurnResponse, GatewayTurnResult,
 };
 use super::input::InputEditor;
 use super::status::{AgentStateDisplay, StatusBar};
@@ -73,7 +74,8 @@ pub struct App {
 
 impl App {
     pub fn new(config: AppConfig) -> Self {
-        let status = StatusBar::new(config.model.clone(), config.profile.clone());
+        let mut status = StatusBar::new(config.model.clone(), config.profile.clone());
+        status.active_mission_id = config.gateway.mission_id.clone();
         Self {
             config,
             chat: ChatPanel::new(),
@@ -88,6 +90,67 @@ impl App {
             show_tool_panel: true,
             current_turn_tool_start: 0,
             pending_turn: None,
+        }
+    }
+
+    pub fn list_missions(&mut self) {
+        match fetch_gateway_missions(&self.config.gateway, 20) {
+            Ok(missions) => self.push_timestamped_message(
+                MessageRole::System,
+                render_mission_list(missions.as_slice()),
+            ),
+            Err(error) => self.push_timestamped_message(
+                MessageRole::System,
+                format!("mission control error: {error}"),
+            ),
+        }
+    }
+
+    pub fn show_mission(&mut self, mission_id: &str) {
+        match fetch_gateway_mission_detail(&self.config.gateway, mission_id) {
+            Ok(mission) => {
+                self.push_timestamped_message(MessageRole::System, render_mission_detail(&mission))
+            }
+            Err(error) => self.push_timestamped_message(
+                MessageRole::System,
+                format!("mission control error: {error}"),
+            ),
+        }
+    }
+
+    pub fn resume_mission(&mut self, mission_id: &str) {
+        match fetch_gateway_mission_detail(&self.config.gateway, mission_id) {
+            Ok(mission) => {
+                if !matches!(mission.status.as_str(), "checkpointed" | "blocked") {
+                    self.push_timestamped_message(
+                        MessageRole::System,
+                        format!(
+                            "mission control error: mission {} is {} and cannot be resumed from this surface",
+                            mission.mission_id, mission.status
+                        ),
+                    );
+                    return;
+                }
+                self.bind_active_mission(&mission);
+                let mut content = format!(
+                    "Resumed mission {} on session {}.\nstatus: {}\ngoal: {}",
+                    mission.mission_id, mission.session_key, mission.status, mission.goal_summary
+                );
+                if let Some(completion) = mission.latest_completion.as_ref() {
+                    content.push_str(&format!(
+                        "\nlatest completion: {} - {}",
+                        completion.status, completion.summary
+                    ));
+                    if let Some(next_step) = completion.next_step.as_deref() {
+                        content.push_str(&format!("\nnext step: {next_step}"));
+                    }
+                }
+                self.push_timestamped_message(MessageRole::System, content);
+            }
+            Err(error) => self.push_timestamped_message(
+                MessageRole::System,
+                format!("mission control error: {error}"),
+            ),
         }
     }
 
@@ -213,4 +276,57 @@ impl App {
         });
         self.chat.scroll_to_bottom();
     }
+
+    fn bind_active_mission(&mut self, mission: &GatewayMissionSnapshot) {
+        self.config.gateway.mission_id = Some(mission.mission_id.clone());
+        self.config.gateway.session_key = mission.session_key.clone();
+        self.status.active_mission_id = Some(mission.mission_id.clone());
+    }
+}
+
+fn render_mission_list(missions: &[GatewayMissionSnapshot]) -> String {
+    if missions.is_empty() {
+        return "No persisted missions found.".to_string();
+    }
+
+    let mut lines = vec!["Recent missions:".to_string()];
+    for mission in missions {
+        lines.push(format!(
+            "- {} [{}] session={} attempts={} verifier={} goal={}",
+            mission.mission_id,
+            mission.status,
+            mission.session_key,
+            mission.iteration_count,
+            mission.latest_verifier.reason_code,
+            mission.goal_summary
+        ));
+    }
+    lines.join("\n")
+}
+
+fn render_mission_detail(mission: &GatewayMissionSnapshot) -> String {
+    let mut lines = vec![
+        format!("Mission {}", mission.mission_id),
+        format!("status: {}", mission.status),
+        format!("session: {}", mission.session_key),
+        format!("goal: {}", mission.goal_summary),
+        format!(
+            "latest verifier: {} ({})",
+            mission.latest_verifier.reason_code, mission.latest_verifier.status
+        ),
+        format!("iterations: {}", mission.iteration_count),
+    ];
+    if !mission.latest_output_summary.trim().is_empty() {
+        lines.push(format!("latest output: {}", mission.latest_output_summary));
+    }
+    if let Some(completion) = mission.latest_completion.as_ref() {
+        lines.push(format!(
+            "latest completion: {} - {}",
+            completion.status, completion.summary
+        ));
+        if let Some(next_step) = completion.next_step.as_deref() {
+            lines.push(format!("next step: {next_step}"));
+        }
+    }
+    lines.join("\n")
 }

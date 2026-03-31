@@ -95,6 +95,83 @@ fn spawn_gateway_server(status_line: &str, body: &str) -> (String, Arc<Mutex<Str
     (addr.to_string(), request_capture)
 }
 
+fn spawn_scripted_gateway_server(
+    responses: Vec<(&str, &str)>,
+) -> (String, Arc<Mutex<Vec<String>>>) {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind scripted gateway");
+    let addr = listener.local_addr().expect("local addr");
+    let request_capture = Arc::new(Mutex::new(Vec::new()));
+    let request_capture_thread = Arc::clone(&request_capture);
+    let scripted_responses = responses
+        .into_iter()
+        .map(|(status, body)| (status.to_string(), body.to_string()))
+        .collect::<Vec<_>>();
+
+    thread::spawn(move || {
+        for (status_line, body) in scripted_responses {
+            let (mut stream, _) = listener.accept().expect("accept scripted gateway request");
+            stream
+                .set_read_timeout(Some(Duration::from_secs(1)))
+                .expect("set timeout");
+            let mut buffer = Vec::new();
+            let mut chunk = [0_u8; 1024];
+            let mut header_len = None::<usize>;
+            let mut expected_total_len = None::<usize>;
+            loop {
+                match stream.read(&mut chunk) {
+                    Ok(0) => break,
+                    Ok(count) => {
+                        buffer.extend_from_slice(&chunk[..count]);
+                        if header_len.is_none() {
+                            header_len = buffer
+                                .windows(4)
+                                .position(|window| window == b"\r\n\r\n")
+                                .map(|index| index + 4);
+                            if let Some(header_len) = header_len {
+                                let headers = String::from_utf8_lossy(&buffer[..header_len]);
+                                let content_length = headers
+                                    .lines()
+                                    .find_map(|line| {
+                                        let (name, value) = line.split_once(':')?;
+                                        if name.eq_ignore_ascii_case("content-length") {
+                                            value.trim().parse::<usize>().ok()
+                                        } else {
+                                            None
+                                        }
+                                    })
+                                    .unwrap_or(0);
+                                expected_total_len = Some(header_len + content_length);
+                            }
+                        }
+                        if let Some(expected_total_len) = expected_total_len {
+                            if buffer.len() >= expected_total_len {
+                                break;
+                            }
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+
+            request_capture_thread
+                .lock()
+                .expect("capture scripted request")
+                .push(String::from_utf8_lossy(&buffer).to_string());
+
+            let response = format!(
+                "HTTP/1.1 {status_line}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            stream
+                .write_all(response.as_bytes())
+                .expect("write scripted gateway response");
+        }
+    });
+
+    (addr.to_string(), request_capture)
+}
+
 #[test]
 fn red_spec_3616_submit_input_uses_gateway_response_instead_of_local_echo() {
     let (bind, request_capture) = spawn_gateway_server(
@@ -212,5 +289,105 @@ fn red_spec_3618_non_matching_prompt_omits_active_skill_label() {
     assert!(
         !rendered.contains("Skills:"),
         "expected no active skill label for non-match, rendered:\n{rendered}"
+    );
+}
+
+#[test]
+fn red_spec_3659_command_missions_lists_persisted_mission_summaries() {
+    let (bind, _) = spawn_scripted_gateway_server(vec![(
+        "200 OK",
+        r#"{"missions":[{"mission_id":"checkpoint-alpha","session_key":"session-alpha","status":"checkpointed","goal_summary":"build the game scaffold","latest_output_summary":"scaffolded the first gameplay slice","iteration_count":1,"updated_unix_ms":220,"latest_verifier":{"status":"passed","reason_code":"mutation_evidence_observed","message":"observed workspace mutation"},"latest_completion":{"status":"partial","summary":"scaffolded the first gameplay slice","next_step":"run validation"}}],"limit":20}"#,
+    )]);
+    let mut app = build_app(bind);
+    set_input(&mut app, "/missions");
+
+    app_commands::submit_input(&mut app);
+
+    let system = last_message(&app, MessageRole::System).unwrap_or_default();
+    assert!(system.contains("Recent missions:"));
+    assert!(system.contains("checkpoint-alpha [checkpointed]"));
+    assert!(system.contains("session=session-alpha"));
+}
+
+#[test]
+fn red_spec_3659_resume_command_binds_active_mission_and_surfaces_status() {
+    let (bind, _) = spawn_scripted_gateway_server(vec![(
+        "200 OK",
+        r#"{"mission":{"mission_id":"checkpoint-alpha","session_key":"session-alpha","status":"checkpointed","goal_summary":"build the game scaffold","latest_output_summary":"scaffolded the first gameplay slice","iteration_count":1,"updated_unix_ms":220,"latest_verifier":{"status":"passed","reason_code":"mutation_evidence_observed","message":"observed workspace mutation"},"latest_completion":{"status":"partial","summary":"scaffolded the first gameplay slice","next_step":"run validation"}}}"#,
+    )]);
+    let mut app = build_app(bind);
+    set_input(&mut app, "/resume checkpoint-alpha");
+
+    app_commands::submit_input(&mut app);
+
+    assert_eq!(
+        app.config.gateway.mission_id.as_deref(),
+        Some("checkpoint-alpha")
+    );
+    assert_eq!(app.config.gateway.session_key, "session-alpha");
+    assert_eq!(
+        app.status.active_mission_id.as_deref(),
+        Some("checkpoint-alpha")
+    );
+    let system = last_message(&app, MessageRole::System).unwrap_or_default();
+    assert!(system.contains("Resumed mission checkpoint-alpha"));
+    assert!(system.contains("next step: run validation"));
+
+    let backend = ratatui::backend::TestBackend::new(120, 24);
+    let mut terminal = ratatui::Terminal::new(backend).expect("terminal");
+    terminal
+        .draw(|frame| super::ui::render(frame, &app))
+        .expect("draw");
+    let buffer = terminal.backend().buffer().clone();
+    let mut rendered = String::new();
+    for y in 0..24 {
+        for x in 0..120 {
+            rendered.push_str(buffer.cell((x, y)).expect("cell").symbol());
+        }
+        rendered.push('\n');
+    }
+
+    assert!(
+        rendered.contains("Mission: checkpoint-alpha"),
+        "expected active mission visibility in tui render, rendered:\n{rendered}"
+    );
+}
+
+#[test]
+fn red_spec_3659_resumed_turn_includes_mission_id_and_session_id_metadata() {
+    let (bind, request_capture) = spawn_scripted_gateway_server(vec![
+        (
+            "200 OK",
+            r#"{"mission":{"mission_id":"checkpoint-alpha","session_key":"session-alpha","status":"checkpointed","goal_summary":"build the game scaffold","latest_output_summary":"scaffolded the first gameplay slice","iteration_count":1,"updated_unix_ms":220,"latest_verifier":{"status":"passed","reason_code":"mutation_evidence_observed","message":"observed workspace mutation"},"latest_completion":{"status":"partial","summary":"scaffolded the first gameplay slice","next_step":"run validation"}}}"#,
+        ),
+        (
+            "200 OK",
+            r#"{"output_text":"runtime ok","usage":{"total_tokens":42}}"#,
+        ),
+    ]);
+    let mut app = build_app(bind);
+    set_input(&mut app, "/resume checkpoint-alpha");
+    app_commands::submit_input(&mut app);
+
+    set_input(&mut app, "continue from the checkpoint");
+    app_commands::submit_input(&mut app);
+    wait_for_turn(&mut app);
+
+    let requests = request_capture.lock().expect("request capture").clone();
+    assert_eq!(requests.len(), 2, "requests={requests:?}");
+    assert!(
+        requests[0].contains("GET /gateway/missions/checkpoint-alpha"),
+        "request={}",
+        requests[0]
+    );
+    assert!(
+        requests[1].contains("\"mission_id\":\"checkpoint-alpha\""),
+        "request={}",
+        requests[1]
+    );
+    assert!(
+        requests[1].contains("\"session_id\":\"session-alpha\""),
+        "request={}",
+        requests[1]
     );
 }

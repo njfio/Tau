@@ -91,6 +91,11 @@ pub(super) fn build_gateway_openresponses_router(
             GATEWAY_SESSION_DETAIL_ENDPOINT,
             get(handle_gateway_session_detail),
         )
+        .route(GATEWAY_MISSIONS_ENDPOINT, get(handle_gateway_missions_list))
+        .route(
+            GATEWAY_MISSION_DETAIL_ENDPOINT,
+            get(handle_gateway_mission_detail),
+        )
         .route(
             GATEWAY_SESSION_APPEND_ENDPOINT,
             post(handle_gateway_session_append),

@@ -22,12 +22,11 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tau_agent_core::{
-    default_safety_rule_set, scan_safety_rules, validate_safety_rule_set, Agent, AgentConfig,
-    AgentEvent, Cortex, CortexConfig, SafetyMode, SafetyPolicy, SafetyRuleSet,
+    default_safety_rule_set, format_learning_bulletin, scan_safety_rules, validate_safety_rule_set,
+    Agent, AgentConfig, AgentEvent, Cortex, CortexConfig, LearningInsight, SafetyMode,
+    SafetyPolicy, SafetyRuleSet,
 };
-#[cfg(test)]
-use tau_ai::MessageRole;
-use tau_ai::{LlmClient, StreamDeltaHandler};
+use tau_ai::{LlmClient, MessageRole, StreamDeltaHandler};
 use tau_core::{current_unix_timestamp, current_unix_timestamp_ms, write_text_atomic};
 use tau_dashboard_ui::TauOpsDashboardRoute;
 use tau_runtime::{
@@ -59,7 +58,11 @@ mod entry_handlers;
 mod events_status;
 mod external_agent_runtime;
 mod jobs_runtime;
+mod learning_runtime;
 mod memory_runtime;
+mod mission_api_runtime;
+mod mission_completion_runtime;
+mod mission_supervisor_runtime;
 mod multi_channel_status;
 mod openai_compat;
 mod openai_compat_runtime;
@@ -84,6 +87,7 @@ mod tool_registrar;
 mod tools_runtime;
 mod training_runtime;
 mod types;
+mod verifier_runtime;
 mod webchat_page;
 mod websocket;
 mod ws_stream_handlers;
@@ -134,12 +138,31 @@ use external_agent_runtime::{
     handle_external_coding_agent_session_progress, handle_external_coding_agent_session_stream,
 };
 use jobs_runtime::{handle_gateway_job_cancel, handle_gateway_jobs_list};
+use learning_runtime::{
+    append_gateway_action_history_records, render_gateway_learning_bulletin,
+    GatewayActionHistoryToolRecord, GATEWAY_ACTION_HISTORY_LOOKBACK,
+};
+#[cfg(test)]
+use learning_runtime::{
+    build_gateway_learning_insight, gateway_action_history_path, load_gateway_action_history_store,
+};
 use memory_runtime::{
     gateway_memory_store, gateway_memory_stores_root, handle_api_memories_graph,
     handle_gateway_memory_entry_delete, handle_gateway_memory_entry_read,
     handle_gateway_memory_entry_write, handle_gateway_memory_graph, handle_gateway_memory_read,
     handle_gateway_memory_write,
 };
+use mission_api_runtime::{handle_gateway_mission_detail, handle_gateway_missions_list};
+use mission_completion_runtime::{
+    extract_gateway_completion_signal, register_gateway_completion_tool,
+    render_gateway_completion_guidance, GatewayMissionCompletionSignalRecord,
+    GatewayMissionCompletionStatus, GATEWAY_COMPLETE_TASK_TOOL_NAME,
+};
+use mission_supervisor_runtime::{
+    gateway_mission_state_path, save_gateway_mission_state, GatewayMissionState,
+};
+#[cfg(test)]
+use mission_supervisor_runtime::{load_gateway_mission_state, GatewayMissionStatus};
 use multi_channel_status::collect_gateway_multi_channel_status_report;
 #[cfg(test)]
 use openai_compat::{translate_chat_completions_request, OpenAiChatCompletionsRequest};
@@ -203,6 +226,11 @@ use types::{
     OpenResponsesExecutionResult, OpenResponsesOutputItem, OpenResponsesOutputTextItem,
     OpenResponsesPrompt, OpenResponsesRequest, OpenResponsesResponse, OpenResponsesUsage,
     OpenResponsesUsageSummary, SseFrame,
+};
+use verifier_runtime::{
+    build_gateway_retry_feedback, build_gateway_runtime_failure_verifier_bundle,
+    build_gateway_verifier_bundle, GatewayMissionVerifierBundle, GatewayMissionVerifierRecord,
+    GatewayMissionVerifierStatus, GatewayVerifierToolTrace,
 };
 #[cfg(test)]
 use webchat_page::render_gateway_webchat_page;
