@@ -26,11 +26,7 @@ pub struct HookContext {
 ///
 /// Returns an error if the skill has no runtime configured, the tool name is
 /// not found in the skill's tool definitions, or execution fails.
-pub fn dispatch_skill_tool(
-    skill: &Skill,
-    tool_name: &str,
-    params: Value,
-) -> Result<Value> {
+pub fn dispatch_skill_tool(skill: &Skill, tool_name: &str, params: Value) -> Result<Value> {
     let runtime = skill
         .runtime
         .as_ref()
@@ -64,8 +60,8 @@ pub fn dispatch_skill_tool(
         },
         "skill_name": skill.name,
     });
-    let request_json =
-        serde_json::to_string(&request).map_err(|e| anyhow!("failed to serialize tool request: {e}"))?;
+    let request_json = serde_json::to_string(&request)
+        .map_err(|e| anyhow!("failed to serialize tool request: {e}"))?;
 
     execute_skill_runtime(runtime, entrypoint, &request_json)
 }
@@ -76,11 +72,7 @@ pub fn dispatch_skill_tool(
 ///
 /// Returns an error if the skill has no runtime configured, the hook is not
 /// declared by the skill, or execution fails.
-pub fn dispatch_skill_hook(
-    skill: &Skill,
-    hook: SkillHook,
-    context: &HookContext,
-) -> Result<()> {
+pub fn dispatch_skill_hook(skill: &Skill, hook: SkillHook, context: &HookContext) -> Result<()> {
     let runtime = skill
         .runtime
         .as_ref()
@@ -112,8 +104,8 @@ pub fn dispatch_skill_hook(
         "payload": context.payload,
         "skill_name": skill.name,
     });
-    let request_json =
-        serde_json::to_string(&request).map_err(|e| anyhow!("failed to serialize hook request: {e}"))?;
+    let request_json = serde_json::to_string(&request)
+        .map_err(|e| anyhow!("failed to serialize hook request: {e}"))?;
 
     let _response = execute_skill_runtime(runtime, entrypoint, &request_json)?;
     Ok(())
@@ -365,8 +357,7 @@ mod tests {
 
         for hook in &hooks {
             let serialized = serde_json::to_string(hook).expect("serialize");
-            let deserialized: SkillHook =
-                serde_json::from_str(&serialized).expect("deserialize");
+            let deserialized: SkillHook = serde_json::from_str(&serialized).expect("deserialize");
             assert_eq!(*hook, deserialized);
         }
     }
@@ -384,10 +375,8 @@ mod tests {
             process
         );
         assert_eq!(
-            serde_json::from_str::<SkillRuntime>(
-                &serde_json::to_string(&wasm).expect("serialize")
-            )
-            .expect("deserialize"),
+            serde_json::from_str::<SkillRuntime>(&serde_json::to_string(&wasm).expect("serialize"))
+                .expect("deserialize"),
             wasm
         );
     }
@@ -478,7 +467,9 @@ mod tests {
         let error = dispatch_skill_tool(&skill, "unknown-tool", json!({}))
             .expect_err("should fail with unknown tool");
         assert!(
-            error.to_string().contains("does not declare tool 'unknown-tool'"),
+            error
+                .to_string()
+                .contains("does not declare tool 'unknown-tool'"),
             "unexpected error: {error}"
         );
     }
@@ -488,9 +479,7 @@ mod tests {
     #[test]
     fn test_dispatch_skill_hook_errors_without_runtime() {
         let skill = minimal_skill("no-runtime");
-        let context = HookContext {
-            payload: json!({}),
-        };
+        let context = HookContext { payload: json!({}) };
         let error = dispatch_skill_hook(&skill, SkillHook::RunStart, &context)
             .expect_err("should fail without runtime");
         assert!(
@@ -505,13 +494,13 @@ mod tests {
         skill.runtime = Some(SkillRuntime::Process);
         skill.entrypoint = Some("/bin/true".to_string());
         skill.hooks = Some(vec![SkillHook::RunStart]);
-        let context = HookContext {
-            payload: json!({}),
-        };
+        let context = HookContext { payload: json!({}) };
         let error = dispatch_skill_hook(&skill, SkillHook::RunEnd, &context)
             .expect_err("should fail with undeclared hook");
         assert!(
-            error.to_string().contains("does not declare hook 'run-end'"),
+            error
+                .to_string()
+                .contains("does not declare hook 'run-end'"),
             "unexpected error: {error}"
         );
     }
@@ -521,8 +510,8 @@ mod tests {
     #[test]
     fn test_dispatch_skill_command_errors_without_runtime() {
         let skill = minimal_skill("no-runtime");
-        let error = dispatch_skill_command(&skill, "deploy", &[])
-            .expect_err("should fail without runtime");
+        let error =
+            dispatch_skill_command(&skill, "deploy", &[]).expect_err("should fail without runtime");
         assert!(
             error.to_string().contains("has no runtime configured"),
             "unexpected error: {error}"
@@ -543,7 +532,9 @@ mod tests {
         let error = dispatch_skill_command(&skill, "rollback", &[])
             .expect_err("should fail with unknown command");
         assert!(
-            error.to_string().contains("does not declare command 'rollback'"),
+            error
+                .to_string()
+                .contains("does not declare command 'rollback'"),
             "unexpected error: {error}"
         );
     }
@@ -555,7 +546,9 @@ mod tests {
         let error = execute_skill_runtime(&SkillRuntime::Wasm, "module.wasm", "{}")
             .expect_err("WASM should not be supported yet");
         assert!(
-            error.to_string().contains("WASM skill runtime is not yet supported"),
+            error
+                .to_string()
+                .contains("WASM skill runtime is not yet supported"),
             "unexpected error: {error}"
         );
     }

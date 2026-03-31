@@ -108,9 +108,7 @@ fn run_step(id: &str, command: &str, root_dir: &Path) -> StepResult {
 
 /// Run a cargo test as a verification step.
 fn cargo_test_step(id: &str, package: &str, test_filter: &str, root_dir: &Path) -> StepResult {
-    let cmd = format!(
-        "cargo test -p {package} {test_filter} -- --nocapture 2>&1"
-    );
+    let cmd = format!("cargo test -p {package} {test_filter} -- --nocapture 2>&1");
     run_step(id, &cmd, root_dir)
 }
 
@@ -467,10 +465,7 @@ pub fn render_gate_report(results: &[GateResult]) -> String {
             out.push_str(&format!("  [{step_marker}] {}\n", step.id));
         }
         if !gate.failures.is_empty() {
-            out.push_str(&format!(
-                "  Failures: {}\n",
-                gate.failures.join(", ")
-            ));
+            out.push_str(&format!("  Failures: {}\n", gate.failures.join(", ")));
         }
         out.push('\n');
     }
@@ -541,10 +536,7 @@ mod tests {
         assert_eq!(deserialized.steps.len(), 2);
         assert_eq!(deserialized.steps[0].status, StepStatus::Pass);
         assert_eq!(deserialized.steps[1].status, StepStatus::Fail);
-        assert_eq!(
-            deserialized.steps[1].log.as_deref(),
-            Some("command failed")
-        );
+        assert_eq!(deserialized.steps[1].log.as_deref(), Some("command failed"));
     }
 
     #[test]
@@ -631,8 +623,7 @@ mod tests {
         }];
 
         let json = render_gate_report_json(&results).expect("json render");
-        let report: VerificationReport =
-            serde_json::from_str(&json).expect("parse json report");
+        let report: VerificationReport = serde_json::from_str(&json).expect("parse json report");
 
         assert_eq!(report.schema_version, 1);
         assert_eq!(report.overall, "fail");

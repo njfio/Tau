@@ -2091,7 +2091,10 @@ done
         assert_eq!(super::MCP_TOOL_AGENT_CANCEL, "tau.agent_cancel");
         // Learning tools
         assert_eq!(super::MCP_TOOL_LEARN_STATUS, "tau.learn_status");
-        assert_eq!(super::MCP_TOOL_LEARN_FAILURE_PATTERNS, "tau.learn_failure_patterns");
+        assert_eq!(
+            super::MCP_TOOL_LEARN_FAILURE_PATTERNS,
+            "tau.learn_failure_patterns"
+        );
         assert_eq!(super::MCP_TOOL_LEARN_TOOL_RATES, "tau.learn_tool_rates");
         // Training tools
         assert_eq!(super::MCP_TOOL_TRAINING_STATUS, "tau.training_status");
@@ -2141,37 +2144,94 @@ done
             tools.len()
         );
 
-        let tool_names: Vec<&str> = tools
-            .iter()
-            .filter_map(|t| t["name"].as_str())
-            .collect();
+        let tool_names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
 
         // Session tools
-        assert!(tool_names.contains(&"tau.session_list"), "missing session_list");
-        assert!(tool_names.contains(&"tau.session_resume"), "missing session_resume");
-        assert!(tool_names.contains(&"tau.session_search"), "missing session_search");
-        assert!(tool_names.contains(&"tau.session_stats"), "missing session_stats");
-        assert!(tool_names.contains(&"tau.session_export"), "missing session_export");
+        assert!(
+            tool_names.contains(&"tau.session_list"),
+            "missing session_list"
+        );
+        assert!(
+            tool_names.contains(&"tau.session_resume"),
+            "missing session_resume"
+        );
+        assert!(
+            tool_names.contains(&"tau.session_search"),
+            "missing session_search"
+        );
+        assert!(
+            tool_names.contains(&"tau.session_stats"),
+            "missing session_stats"
+        );
+        assert!(
+            tool_names.contains(&"tau.session_export"),
+            "missing session_export"
+        );
         // Orchestration tools
-        assert!(tool_names.contains(&"tau.agent_spawn"), "missing agent_spawn");
-        assert!(tool_names.contains(&"tau.agent_status"), "missing agent_status");
-        assert!(tool_names.contains(&"tau.agent_cancel"), "missing agent_cancel");
+        assert!(
+            tool_names.contains(&"tau.agent_spawn"),
+            "missing agent_spawn"
+        );
+        assert!(
+            tool_names.contains(&"tau.agent_status"),
+            "missing agent_status"
+        );
+        assert!(
+            tool_names.contains(&"tau.agent_cancel"),
+            "missing agent_cancel"
+        );
         // Learning tools
-        assert!(tool_names.contains(&"tau.learn_status"), "missing learn_status");
-        assert!(tool_names.contains(&"tau.learn_failure_patterns"), "missing learn_failure_patterns");
-        assert!(tool_names.contains(&"tau.learn_tool_rates"), "missing learn_tool_rates");
+        assert!(
+            tool_names.contains(&"tau.learn_status"),
+            "missing learn_status"
+        );
+        assert!(
+            tool_names.contains(&"tau.learn_failure_patterns"),
+            "missing learn_failure_patterns"
+        );
+        assert!(
+            tool_names.contains(&"tau.learn_tool_rates"),
+            "missing learn_tool_rates"
+        );
         // Training tools
-        assert!(tool_names.contains(&"tau.training_status"), "missing training_status");
-        assert!(tool_names.contains(&"tau.training_trigger"), "missing training_trigger");
+        assert!(
+            tool_names.contains(&"tau.training_status"),
+            "missing training_status"
+        );
+        assert!(
+            tool_names.contains(&"tau.training_trigger"),
+            "missing training_trigger"
+        );
         // Skills tools
-        assert!(tool_names.contains(&"tau.skills_list"), "missing skills_list");
-        assert!(tool_names.contains(&"tau.skills_search"), "missing skills_search");
-        assert!(tool_names.contains(&"tau.skills_install"), "missing skills_install");
-        assert!(tool_names.contains(&"tau.skills_info"), "missing skills_info");
+        assert!(
+            tool_names.contains(&"tau.skills_list"),
+            "missing skills_list"
+        );
+        assert!(
+            tool_names.contains(&"tau.skills_search"),
+            "missing skills_search"
+        );
+        assert!(
+            tool_names.contains(&"tau.skills_install"),
+            "missing skills_install"
+        );
+        assert!(
+            tool_names.contains(&"tau.skills_info"),
+            "missing skills_info"
+        );
         // Context providers
-        assert!(tool_names.contains(&"tau.context.learning"), "missing context.learning");
-        assert!(tool_names.contains(&"tau.context.training"), "missing context.training");
-        assert!(tool_names.contains(&"tau.context.config"), "missing context.config");
+        assert!(
+            tool_names.contains(&"tau.context.learning"),
+            "missing context.learning"
+        );
+        assert!(
+            tool_names.contains(&"tau.context.training"),
+            "missing context.training"
+        );
+        assert!(
+            tool_names.contains(&"tau.context.config"),
+            "missing context.config"
+        );
     }
 
     #[test]
@@ -2192,8 +2252,7 @@ done
         let raw = encode_frames(&request_frames);
         let mut reader = std::io::BufReader::new(std::io::Cursor::new(raw));
         let mut writer = Vec::new();
-        serve_mcp_jsonrpc_reader(&mut reader, &mut writer, &state)
-            .expect("serve should succeed");
+        serve_mcp_jsonrpc_reader(&mut reader, &mut writer, &state).expect("serve should succeed");
 
         let responses = decode_frames(&writer);
         let tools = responses[1]["result"]["tools"]
@@ -2201,13 +2260,26 @@ done
             .expect("tools array");
 
         let new_tool_names = [
-            "tau.session_list", "tau.session_resume", "tau.session_search",
-            "tau.session_stats", "tau.session_export",
-            "tau.agent_spawn", "tau.agent_status", "tau.agent_cancel",
-            "tau.learn_status", "tau.learn_failure_patterns", "tau.learn_tool_rates",
-            "tau.training_status", "tau.training_trigger",
-            "tau.skills_list", "tau.skills_search", "tau.skills_install", "tau.skills_info",
-            "tau.context.learning", "tau.context.training", "tau.context.config",
+            "tau.session_list",
+            "tau.session_resume",
+            "tau.session_search",
+            "tau.session_stats",
+            "tau.session_export",
+            "tau.agent_spawn",
+            "tau.agent_status",
+            "tau.agent_cancel",
+            "tau.learn_status",
+            "tau.learn_failure_patterns",
+            "tau.learn_tool_rates",
+            "tau.training_status",
+            "tau.training_trigger",
+            "tau.skills_list",
+            "tau.skills_search",
+            "tau.skills_install",
+            "tau.skills_info",
+            "tau.context.learning",
+            "tau.context.training",
+            "tau.context.config",
         ];
 
         for expected_name in &new_tool_names {
@@ -2219,7 +2291,8 @@ done
             // Verify it has a name, description, and inputSchema
             assert!(tool["name"].is_string(), "{} missing name", expected_name);
             assert!(
-                tool["description"].is_string() && !tool["description"].as_str().unwrap().is_empty(),
+                tool["description"].is_string()
+                    && !tool["description"].as_str().unwrap().is_empty(),
                 "{} missing or empty description",
                 expected_name
             );
@@ -2243,8 +2316,12 @@ done
     fn unit_stub_tools_return_not_yet_implemented_response() {
         let state = test_state();
         let stub_tools = [
-            "tau.session_list", "tau.agent_spawn", "tau.learn_status",
-            "tau.training_status", "tau.skills_list", "tau.context.learning",
+            "tau.session_list",
+            "tau.agent_spawn",
+            "tau.learn_status",
+            "tau.training_status",
+            "tau.skills_list",
+            "tau.context.learning",
         ];
         for tool_name in &stub_tools {
             let request_frames = vec![jsonrpc_request_frame(

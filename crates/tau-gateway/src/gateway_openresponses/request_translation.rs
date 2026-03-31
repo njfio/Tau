@@ -70,10 +70,15 @@ pub(super) fn translate_openresponses_request(
         .or_else(|| non_empty_trimmed(request.conversation.as_deref()))
         .or_else(|| non_empty_trimmed(request.previous_response_id.as_deref()))
         .unwrap_or(DEFAULT_SESSION_KEY);
+    let session_key = sanitize_session_key(session_seed);
+    let mission_id = metadata_string(&request.metadata, "mission_id")
+        .map(sanitize_session_key)
+        .unwrap_or_else(|| session_key.clone());
 
     Ok(OpenResponsesPrompt {
         prompt,
-        session_key: sanitize_session_key(session_seed),
+        session_key,
+        mission_id,
         ignored_fields,
     })
 }

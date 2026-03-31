@@ -28,6 +28,12 @@ pub(crate) fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
             Style::default().fg(Color::Black).bg(Color::Yellow),
         )
     });
+    let mission_span = app.status.format_active_mission().map(|mission| {
+        Span::styled(
+            format!(" Mission: {} ", mission),
+            Style::default().fg(Color::Black).bg(Color::LightGreen),
+        )
+    });
     let tokens_span = Span::styled(
         format!(" Tokens: {} ", app.status.format_tokens()),
         Style::default().fg(Color::White).bg(Color::DarkGray),
@@ -74,6 +80,10 @@ pub(crate) fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
     if let Some(skills_span) = skills_span {
         spans.push(sep.clone());
         spans.push(skills_span);
+    }
+    if let Some(mission_span) = mission_span {
+        spans.push(sep.clone());
+        spans.push(mission_span);
     }
     spans.extend([
         sep.clone(),

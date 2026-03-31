@@ -116,7 +116,11 @@ impl ActionHistoryStore {
     /// Reads each line as a JSON-serialized `ActionRecord`, filtering out
     /// records older than `retention_days`. If the file does not exist,
     /// returns an empty store.
-    pub fn load(path: &Path, retention_days: u32, config: ActionHistoryConfig) -> std::io::Result<Self> {
+    pub fn load(
+        path: &Path,
+        retention_days: u32,
+        config: ActionHistoryConfig,
+    ) -> std::io::Result<Self> {
         if !path.exists() {
             return Ok(Self {
                 config,
@@ -169,9 +173,8 @@ impl ActionHistoryStore {
             let file = std::fs::File::create(&tmp_path)?;
             let mut writer = BufWriter::new(file);
             for record in &self.records {
-                let line = serde_json::to_string(record).map_err(|e| {
-                    std::io::Error::new(std::io::ErrorKind::InvalidData, e)
-                })?;
+                let line = serde_json::to_string(record)
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
                 writeln!(writer, "{}", line)?;
             }
             writer.flush()?;

@@ -345,6 +345,7 @@ pub(super) struct GatewayMemoryGraphResponse {
 pub(super) struct OpenResponsesPrompt {
     pub(super) prompt: String,
     pub(super) session_key: String,
+    pub(super) mission_id: String,
     pub(super) ignored_fields: Vec<String>,
 }
 
