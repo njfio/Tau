@@ -1273,8 +1273,7 @@ mod tests {
 
     #[test]
     fn security_enforce_safety_policy_floor_rejects_disabled() {
-        let mut policy = SafetyPolicy::default();
-        policy.enabled = false;
+        let policy = SafetyPolicy { enabled: false, ..SafetyPolicy::default() };
         let result = enforce_safety_policy_floor(&policy);
         assert!(result.is_err(), "floor must reject enabled=false");
         assert!(result.unwrap_err().contains("enabled"));
@@ -1282,8 +1281,7 @@ mod tests {
 
     #[test]
     fn security_enforce_safety_policy_floor_rejects_inbound_disabled() {
-        let mut policy = SafetyPolicy::default();
-        policy.apply_to_inbound_messages = false;
+        let policy = SafetyPolicy { apply_to_inbound_messages: false, ..SafetyPolicy::default() };
         let result = enforce_safety_policy_floor(&policy);
         assert!(
             result.is_err(),
@@ -1293,8 +1291,7 @@ mod tests {
 
     #[test]
     fn security_enforce_safety_policy_floor_rejects_tool_outputs_disabled() {
-        let mut policy = SafetyPolicy::default();
-        policy.apply_to_tool_outputs = false;
+        let policy = SafetyPolicy { apply_to_tool_outputs: false, ..SafetyPolicy::default() };
         let result = enforce_safety_policy_floor(&policy);
         assert!(
             result.is_err(),
