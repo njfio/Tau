@@ -21,6 +21,10 @@ tokio.workspace = true
 tracing.workspace = true
 wait-timeout.workspace = true
 
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [dev-dependencies]
 httpmock = "0.8"
+libc = "0.2"
 tempfile = "3"
