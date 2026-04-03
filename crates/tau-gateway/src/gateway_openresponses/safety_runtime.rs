@@ -67,6 +67,10 @@ pub(super) async fn handle_gateway_safety_policy_put(
         )
         .into_response();
     }
+    if let Err(reason) = enforce_safety_policy_floor(&policy) {
+        return OpenResponsesApiError::bad_request("safety_floor_violation", reason)
+            .into_response();
+    }
 
     let path = gateway_safety_policy_path(&state.config.state_dir);
     let payload = match serde_json::to_string_pretty(&policy) {
@@ -165,6 +169,11 @@ pub(super) async fn handle_gateway_safety_rules_put(
 
     if let Err(error) = validate_safety_rule_set(&request.rules) {
         return OpenResponsesApiError::bad_request("invalid_safety_rules", error).into_response();
+    }
+    let defaults = default_safety_rule_set();
+    if let Err(reason) = enforce_safety_rules_floor(&request.rules, &defaults) {
+        return OpenResponsesApiError::bad_request("safety_floor_violation", reason)
+            .into_response();
     }
 
     let path = gateway_safety_rules_path(&state.config.state_dir);
