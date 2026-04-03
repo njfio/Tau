@@ -13,6 +13,7 @@ const GATEWAY_TOOL_SUMMARY_MAX_CHARS: usize = 240;
 
 #[derive(Debug, Clone)]
 struct GatewayPendingToolExecution {
+    tool_name: String,
     arguments: Value,
     started_unix_ms: u64,
 }
@@ -46,7 +47,7 @@ pub(super) async fn execute_openresponses_request(
             payload: json!({
                 "type": "response.created",
                 "response": {
-                    "id": response_id,
+                    "id": response_id.clone(),
                     "object": "response",
                     "status": "in_progress",
                     "model": state.config.model,
@@ -85,12 +86,16 @@ pub(super) async fn execute_openresponses_request(
         HashMap::<String, GatewayPendingToolExecution>::new(),
     ));
     let tool_execution_traces = Arc::new(Mutex::new(Vec::<GatewayObservedToolExecution>::new()));
+    let event_response_id = response_id.clone();
+    let event_stream_sender = stream_sender.clone();
     agent.subscribe({
         let usage = usage.clone();
         let finish_reason = finish_reason.clone();
         let tool_execution_count = tool_execution_count.clone();
         let tool_execution_starts = tool_execution_starts.clone();
         let tool_execution_traces = tool_execution_traces.clone();
+        let event_response_id = event_response_id.clone();
+        let event_stream_sender = event_stream_sender.clone();
         move |event| match event {
             AgentEvent::TurnEnd {
                 usage: turn_usage,
@@ -109,6 +114,7 @@ pub(super) async fn execute_openresponses_request(
             }
             AgentEvent::ToolExecutionStart {
                 tool_call_id,
+                tool_name,
                 arguments,
                 ..
             } => {
@@ -117,10 +123,25 @@ pub(super) async fn execute_openresponses_request(
                     guard.insert(
                         tool_call_id.clone(),
                         GatewayPendingToolExecution {
+                            tool_name: tool_name.clone(),
                             arguments: arguments.clone(),
                             started_unix_ms: current_unix_timestamp_ms(),
                         },
                     );
+                }
+                if tool_name != GATEWAY_COMPLETE_TASK_TOOL_NAME {
+                    if let Some(sender) = &event_stream_sender {
+                        let _ = sender.send(SseFrame::Json {
+                            event: "response.tool_execution.started",
+                            payload: json!({
+                                "type": "response.tool_execution.started",
+                                "response_id": event_response_id.as_str(),
+                                "tool_call_id": tool_call_id,
+                                "tool_name": tool_name,
+                                "arguments": arguments,
+                            }),
+                        });
+                    }
                 }
             }
             AgentEvent::ToolExecutionEnd {
@@ -150,6 +171,23 @@ pub(super) async fn execute_openresponses_request(
                         latency_ms,
                         timestamp_ms: now_unix_ms,
                     });
+                }
+                if tool_name != GATEWAY_COMPLETE_TASK_TOOL_NAME {
+                    if let Some(sender) = &event_stream_sender {
+                        let _ = sender.send(SseFrame::Json {
+                            event: "response.tool_execution.completed",
+                            payload: json!({
+                                "type": "response.tool_execution.completed",
+                                "response_id": event_response_id.as_str(),
+                                "tool_call_id": tool_call_id,
+                                "tool_name": tool_name,
+                                "success": !result.is_error,
+                                "timed_out": false,
+                                "latency_ms": latency_ms,
+                                "timestamp_ms": now_unix_ms,
+                            }),
+                        });
+                    }
                 }
             }
             _ => {}
@@ -236,6 +274,14 @@ pub(super) async fn execute_openresponses_request(
             {
                 Ok(result) => result,
                 Err(_) => {
+                    finalize_pending_gateway_tool_executions(
+                        &tool_execution_starts,
+                        &tool_execution_traces,
+                        stream_sender.as_ref(),
+                        response_id.as_str(),
+                        true,
+                        "tool execution timed out before completion",
+                    )?;
                     persist_gateway_attempt_tool_history(
                         &mut action_history_store,
                         translated.session_key.as_str(),
@@ -245,20 +291,47 @@ pub(super) async fn execute_openresponses_request(
                         tool_trace_start_index,
                     )?;
                     let finished_unix_ms = current_unix_timestamp_ms();
-                    let verifier = build_gateway_runtime_failure_verifier_bundle(
-                        "gateway_timeout",
-                        "response generation timed out before completion",
-                    );
+                    let tool_execution_delta = tool_execution_count
+                        .load(Ordering::Relaxed)
+                        .saturating_sub(tool_execution_count_before);
+                    let retry_exhausted = retry_attempt >= ACTION_TOOL_EVIDENCE_MAX_RETRIES;
+                    let verifier_traces = snapshot_gateway_verifier_traces(&tool_execution_traces)?;
+                    let verifier = if tool_execution_delta == 0 {
+                        build_gateway_runtime_failure_verifier_bundle(
+                            "gateway_timeout",
+                            "response generation timed out before completion",
+                        )
+                    } else {
+                        build_gateway_verifier_bundle(
+                            requires_tool_evidence,
+                            requires_mutation_evidence,
+                            requires_validation_evidence,
+                            verifier_traces.as_slice(),
+                            retry_exhausted,
+                        )
+                    };
                     mission_state.record_iteration(GatewayMissionIterationInput {
                         attempt: attempt_number,
                         prompt: next_prompt.as_str(),
                         assistant_summary: "",
-                        tool_execution_count: 0,
+                        tool_execution_count: tool_execution_delta,
                         verifier: verifier.clone(),
                         completion: None,
                         started_unix_ms: attempt_started_unix_ms,
                         finished_unix_ms,
                     });
+                    if verifier.overall.status == GatewayMissionVerifierStatus::Continue
+                        && !retry_exhausted
+                    {
+                        save_gateway_mission_state(&mission_path, &mission_state)?;
+                        strip_failed_action_attempt_assistant_messages(
+                            &mut agent,
+                            attempt_start_index,
+                        );
+                        retry_attempt = retry_attempt.saturating_add(1);
+                        next_prompt = build_gateway_action_retry_prompt(retry_attempt, &verifier);
+                        continue;
+                    }
                     mission_state.mark_blocked(verifier.overall, None, "", finished_unix_ms);
                     save_gateway_mission_state(&mission_path, &mission_state)?;
                     break Err(OpenResponsesApiError::timeout(
@@ -268,6 +341,14 @@ pub(super) async fn execute_openresponses_request(
             }
         };
         if let Err(error) = attempt_result {
+            finalize_pending_gateway_tool_executions(
+                &tool_execution_starts,
+                &tool_execution_traces,
+                stream_sender.as_ref(),
+                response_id.as_str(),
+                false,
+                "tool execution aborted before completion",
+            )?;
             persist_gateway_attempt_tool_history(
                 &mut action_history_store,
                 translated.session_key.as_str(),
@@ -591,7 +672,7 @@ fn build_gateway_stream_handler(
                     event: "response.output_text.delta",
                     payload: json!({
                         "type": "response.output_text.delta",
-                        "response_id": response_id,
+                        "response_id": response_id.as_str(),
                         "delta": delta,
                     }),
                 });
@@ -732,6 +813,60 @@ fn snapshot_gateway_verifier_traces(
         })
         .collect::<Vec<_>>();
     Ok(traces)
+}
+
+fn finalize_pending_gateway_tool_executions(
+    pending_tools: &Arc<Mutex<HashMap<String, GatewayPendingToolExecution>>>,
+    traces: &Arc<Mutex<Vec<GatewayObservedToolExecution>>>,
+    stream_sender: Option<&mpsc::UnboundedSender<SseFrame>>,
+    response_id: &str,
+    timed_out: bool,
+    failure_message: &str,
+) -> Result<(), OpenResponsesApiError> {
+    let pending = pending_tools
+        .lock()
+        .map_err(|_| OpenResponsesApiError::internal("gateway tool start lock is poisoned"))?
+        .drain()
+        .collect::<Vec<_>>();
+    if pending.is_empty() {
+        return Ok(());
+    }
+
+    let now_unix_ms = current_unix_timestamp_ms();
+    let output_summary = summarize_gateway_tool_text(failure_message);
+    let mut trace_guard = traces
+        .lock()
+        .map_err(|_| OpenResponsesApiError::internal("gateway tool trace lock is poisoned"))?;
+    for (tool_call_id, pending) in pending {
+        let latency_ms = now_unix_ms.saturating_sub(pending.started_unix_ms);
+        trace_guard.push(GatewayObservedToolExecution {
+            tool_name: pending.tool_name.clone(),
+            arguments: pending.arguments.clone(),
+            output_summary: output_summary.clone(),
+            success: false,
+            latency_ms,
+            timestamp_ms: now_unix_ms,
+        });
+        if pending.tool_name != GATEWAY_COMPLETE_TASK_TOOL_NAME {
+            if let Some(sender) = stream_sender {
+                let _ = sender.send(SseFrame::Json {
+                    event: "response.tool_execution.completed",
+                    payload: json!({
+                        "type": "response.tool_execution.completed",
+                        "response_id": response_id,
+                        "tool_call_id": tool_call_id,
+                        "tool_name": pending.tool_name,
+                        "arguments": pending.arguments,
+                        "success": false,
+                        "timed_out": timed_out,
+                        "latency_ms": latency_ms,
+                        "timestamp_ms": now_unix_ms,
+                    }),
+                });
+            }
+        }
+    }
+    Ok(())
 }
 
 fn persist_gateway_attempt_tool_history(
