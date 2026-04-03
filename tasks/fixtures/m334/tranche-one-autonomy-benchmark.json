@@ -1,0 +1,119 @@
+{
+  "schema_version": 1,
+  "benchmark_id": "m334-tranche-one-autonomy",
+  "version": "2026-04-03",
+  "origin": ".omx/specs/deep-interview-tau-application-improvement-audit.md",
+  "priority_order": [
+    "agent_autonomy",
+    "product_usefulness",
+    "self_improvement_later"
+  ],
+  "suite_policy": {
+    "allowed_operator_interventions": [
+      "provider_auth",
+      "major_direction_choice"
+    ],
+    "disallowed_operator_interventions": [
+      "routine_next_step_guidance",
+      "manual_subtask_decomposition",
+      "manual_content_authoring",
+      "manual_code_authoring"
+    ],
+    "deferred_non_goals": [
+      "multi_channel_breadth",
+      "self_learning_productionization",
+      "dashboard_polish_unless_blocking",
+      "broad_dx_cleanup_unless_blocking"
+    ]
+  },
+  "success_bar": {
+    "benchmark_task_count": 4,
+    "required_terminal_state": "completed",
+    "max_major_direction_checkpoints_per_task": 1,
+    "reliability_expectation": "complete the full suite with only allowed checkpoints and no routine human steering"
+  },
+  "tasks": [
+    {
+      "id": "repo_spec_to_pr_feature_delivery",
+      "category": "repo_build",
+      "goal": "Take a bounded repository feature request from governed issue/spec/task intake through implementation, verification, and PR-ready output.",
+      "required_deliverables": [
+        "issue_or_existing_issue_binding",
+        "spec_plan_tasks_bundle",
+        "code_and_tests",
+        "verification_evidence",
+        "pr_ready_summary"
+      ],
+      "allowed_checkpoints": [
+        "provider_auth",
+        "major_direction_choice"
+      ],
+      "pass_requirements": [
+        "mission_reaches_completed_state",
+        "governance_artifacts_exist_and_match_repo_contract",
+        "verification_commands_run_and_pass",
+        "no_routine_human_steering_used"
+      ]
+    },
+    {
+      "id": "phaser_tetris_pacman_mashup",
+      "category": "greenfield_build",
+      "goal": "Create a mashup game of Tetris and Pac-Man using PhaserJS with a coherent ruleset and playable build.",
+      "required_deliverables": [
+        "playable_game_build",
+        "implementation_notes",
+        "asset_and_launch_instructions"
+      ],
+      "allowed_checkpoints": [
+        "provider_auth",
+        "major_direction_choice"
+      ],
+      "pass_requirements": [
+        "mission_reaches_completed_state",
+        "game_is_playable",
+        "core_mashup_mechanics_are_present",
+        "no_routine_human_steering_used"
+      ]
+    },
+    {
+      "id": "landing_page_style_exploration",
+      "category": "research_design",
+      "goal": "Research and implement five materially different styles for a complex product landing page and explain the chosen direction.",
+      "required_deliverables": [
+        "five_distinct_page_variants",
+        "rationale_for_final_direction",
+        "professional_human_sounding_copy"
+      ],
+      "allowed_checkpoints": [
+        "provider_auth",
+        "major_direction_choice"
+      ],
+      "pass_requirements": [
+        "mission_reaches_completed_state",
+        "five_distinct_styles_exist",
+        "direction_choice_is_explicit_when_branches_diverge",
+        "no_routine_human_steering_used"
+      ]
+    },
+    {
+      "id": "spreadsheet_to_dashboard_and_exec_brief",
+      "category": "data_to_deliverable",
+      "goal": "Turn spreadsheet data into a professional dashboard and executive presentation that stay aligned and human-sounding.",
+      "required_deliverables": [
+        "dashboard_artifact",
+        "executive_presentation",
+        "alignment_notes_between_dashboard_and_deck"
+      ],
+      "allowed_checkpoints": [
+        "provider_auth",
+        "major_direction_choice"
+      ],
+      "pass_requirements": [
+        "mission_reaches_completed_state",
+        "dashboard_and_presentation_are_professional",
+        "dashboard_and_presentation_are_aligned",
+        "no_routine_human_steering_used"
+      ]
+    }
+  ]
+}
