@@ -38,6 +38,12 @@ assert_not_contains() {
   fi
 }
 
+count_runner_mode() {
+  local mode="$1"
+  local log_path="$2"
+  grep -c "^runner_mode=${mode}\$" "${log_path}" 2>/dev/null || true
+}
+
 if [[ ! -x "${LAUNCHER_SCRIPT}" ]]; then
   echo "error: launcher script missing or not executable: ${LAUNCHER_SCRIPT}" >&2
   exit 1
@@ -112,6 +118,7 @@ assert_contains "${up_output}" "http://127.0.0.1:8899/webchat" "up webchat endpo
 pid_file="${runtime_dir}/tau-unified.pid"
 log_file="${runtime_dir}/tau-unified.log"
 cmd_file="${runtime_dir}/tau-unified.last-cmd"
+fingerprint_file="${runtime_dir}/tau-unified.runtime-fingerprint"
 
 if [[ ! -f "${pid_file}" ]]; then
   echo "expected pid file to exist after up: ${pid_file}" >&2
@@ -125,10 +132,58 @@ if [[ ! -f "${cmd_file}" ]]; then
   echo "expected command file to exist after up: ${cmd_file}" >&2
   exit 1
 fi
+if [[ ! -f "${fingerprint_file}" ]]; then
+  echo "expected fingerprint file to exist after up: ${fingerprint_file}" >&2
+  exit 1
+fi
 assert_contains "$(cat "${cmd_file}")" "--model gpt-5.3-codex" "up default model flag"
 assert_contains "$(cat "${cmd_file}")" "--request-timeout-ms 180000" "up default timeout flag"
 assert_contains "$(cat "${cmd_file}")" "--agent-request-max-retries 0" "up default agent retries flag"
 assert_contains "$(cat "${cmd_file}")" "--provider-max-retries 0" "up default provider retries flag"
+if [[ -z "$(cat "${fingerprint_file}")" ]]; then
+  echo "expected fingerprint file to contain a non-empty fingerprint" >&2
+  exit 1
+fi
+
+same_up_count_before="$(count_runner_mode up "${runner_log}")"
+same_down_count_before="$(count_runner_mode down "${runner_log}")"
+same_up_output="$(
+  TAU_UNIFIED_RUNNER="${runner}" \
+  TAU_UNIFIED_RUNNER_LOG="${runner_log}" \
+  TAU_UNIFIED_RUNNER_PID="${runner_pid}" \
+  TAU_UNIFIED_RUNTIME_DIR="${runtime_dir}" \
+  "${LAUNCHER_SCRIPT}" up --profile test-profile --bind 127.0.0.1:8899 --auth-mode localhost-dev 2>&1
+)"
+assert_contains "${same_up_output}" "tau-unified: already running" "same fingerprint reuse marker"
+same_up_count_after="$(count_runner_mode up "${runner_log}")"
+same_down_count_after="$(count_runner_mode down "${runner_log}")"
+assert_equals "${same_up_count_before}" "${same_up_count_after}" "same fingerprint up reuse"
+assert_equals "${same_down_count_before}" "${same_down_count_after}" "same fingerprint down reuse"
+
+printf 'stale-fingerprint\n' > "${fingerprint_file}"
+stale_up_count_before="$(count_runner_mode up "${runner_log}")"
+stale_down_count_before="$(count_runner_mode down "${runner_log}")"
+stale_up_output="$(
+  TAU_UNIFIED_RUNNER="${runner}" \
+  TAU_UNIFIED_RUNNER_LOG="${runner_log}" \
+  TAU_UNIFIED_RUNNER_PID="${runner_pid}" \
+  TAU_UNIFIED_RUNTIME_DIR="${runtime_dir}" \
+  "${LAUNCHER_SCRIPT}" up --profile test-profile --bind 127.0.0.1:8899 --auth-mode localhost-dev 2>&1
+)"
+assert_contains "${stale_up_output}" "tau-unified: recycling stale runtime" "stale up recycle marker"
+assert_contains "${stale_up_output}" "tau-unified: started" "stale up restart marker"
+stale_up_count_after="$(count_runner_mode up "${runner_log}")"
+stale_down_count_after="$(count_runner_mode down "${runner_log}")"
+if [[ "${stale_up_count_after}" -le "${stale_up_count_before}" ]]; then
+  echo "assertion failed (stale up restarts runtime): expected runner up count to increase" >&2
+  cat "${runner_log}" >&2
+  exit 1
+fi
+if [[ "${stale_down_count_after}" -le "${stale_down_count_before}" ]]; then
+  echo "assertion failed (stale up recycles runtime): expected runner down count to increase" >&2
+  cat "${runner_log}" >&2
+  exit 1
+fi
 
 status_output="$(
   TAU_UNIFIED_RUNNER="${runner}" \
@@ -153,6 +208,10 @@ if [[ -f "${pid_file}" ]]; then
   echo "expected pid file to be removed after down: ${pid_file}" >&2
   exit 1
 fi
+if [[ -f "${fingerprint_file}" ]]; then
+  echo "expected fingerprint file to be removed after down: ${fingerprint_file}" >&2
+  exit 1
+fi
 
 set +e
 down_again_output="$(
@@ -167,7 +226,7 @@ set -e
 assert_equals "1" "${down_again_rc}" "down when stopped exit"
 assert_contains "${down_again_output}" "tau-unified: not running" "down when stopped output"
 
-up_count_before_tui="$(grep -c '^runner_mode=up$' "${runner_log}" || true)"
+up_count_before_tui="$(count_runner_mode up "${runner_log}")"
 
 tui_output="$(
   TAU_UNIFIED_RUNNER="${runner}" \
@@ -177,12 +236,12 @@ tui_output="$(
   "${LAUNCHER_SCRIPT}" tui --no-color 2>&1 || true
 )"
 assert_contains "${tui_output}" "tau-unified: launching tui (interactive)" "tui interactive marker"
-up_count_after_tui="$(grep -c '^runner_mode=up$' "${runner_log}" || true)"
+up_count_after_tui="$(count_runner_mode up "${runner_log}")"
 assert_equals "${up_count_before_tui}" "${up_count_after_tui}" "tui default does not bootstrap runtime in runner mode"
 assert_contains "$(cat "${runner_log}")" "--request-timeout-ms 180000" "tui default timeout flag"
 assert_contains "$(cat "${runner_log}")" "--agent-request-max-retries 0" "tui default retries flag"
 
-up_count_before_bootstrap="$(grep -c '^runner_mode=up$' "${runner_log}" || true)"
+up_count_before_bootstrap="$(count_runner_mode up "${runner_log}")"
 tui_bootstrap_output="$(
   TAU_UNIFIED_RUNNER="${runner}" \
   TAU_UNIFIED_RUNNER_LOG="${runner_log}" \
@@ -192,11 +251,50 @@ tui_bootstrap_output="$(
 )"
 assert_contains "${tui_bootstrap_output}" "tau-unified: bootstrapping runtime for tui" "tui bootstrap marker"
 assert_contains "${tui_bootstrap_output}" "tau-unified: started" "tui bootstrap started"
-up_count_after_bootstrap="$(grep -c '^runner_mode=up$' "${runner_log}" || true)"
+up_count_after_bootstrap="$(count_runner_mode up "${runner_log}")"
 if [[ "${up_count_after_bootstrap}" -le "${up_count_before_bootstrap}" ]]; then
   echo "assertion failed (runner up logged for bootstrap path): expected up count to increase" >&2
   echo "before=${up_count_before_bootstrap} after=${up_count_after_bootstrap}" >&2
   echo "runner log:" >&2
+  cat "${runner_log}" >&2
+  exit 1
+fi
+
+tui_same_up_count_before="$(count_runner_mode up "${runner_log}")"
+tui_same_down_count_before="$(count_runner_mode down "${runner_log}")"
+tui_same_bootstrap_output="$(
+  TAU_UNIFIED_RUNNER="${runner}" \
+  TAU_UNIFIED_RUNNER_LOG="${runner_log}" \
+  TAU_UNIFIED_RUNNER_PID="${runner_pid}" \
+  TAU_UNIFIED_RUNTIME_DIR="${runtime_dir}" \
+  "${LAUNCHER_SCRIPT}" tui --bootstrap-runtime --no-color 2>&1 || true
+)"
+assert_not_contains "${tui_same_bootstrap_output}" "tau-unified: recycling stale runtime" "tui bootstrap same fingerprint reuse"
+tui_same_up_count_after="$(count_runner_mode up "${runner_log}")"
+tui_same_down_count_after="$(count_runner_mode down "${runner_log}")"
+assert_equals "${tui_same_up_count_before}" "${tui_same_up_count_after}" "tui bootstrap same fingerprint up reuse"
+assert_equals "${tui_same_down_count_before}" "${tui_same_down_count_after}" "tui bootstrap same fingerprint down reuse"
+
+printf 'stale-fingerprint\n' > "${fingerprint_file}"
+tui_stale_up_count_before="$(count_runner_mode up "${runner_log}")"
+tui_stale_down_count_before="$(count_runner_mode down "${runner_log}")"
+tui_stale_bootstrap_output="$(
+  TAU_UNIFIED_RUNNER="${runner}" \
+  TAU_UNIFIED_RUNNER_LOG="${runner_log}" \
+  TAU_UNIFIED_RUNNER_PID="${runner_pid}" \
+  TAU_UNIFIED_RUNTIME_DIR="${runtime_dir}" \
+  "${LAUNCHER_SCRIPT}" tui --bootstrap-runtime --no-color 2>&1 || true
+)"
+assert_contains "${tui_stale_bootstrap_output}" "tau-unified: recycling stale runtime" "tui bootstrap stale recycle marker"
+tui_stale_up_count_after="$(count_runner_mode up "${runner_log}")"
+tui_stale_down_count_after="$(count_runner_mode down "${runner_log}")"
+if [[ "${tui_stale_up_count_after}" -le "${tui_stale_up_count_before}" ]]; then
+  echo "assertion failed (tui bootstrap stale runtime restarts): expected runner up count to increase" >&2
+  cat "${runner_log}" >&2
+  exit 1
+fi
+if [[ "${tui_stale_down_count_after}" -le "${tui_stale_down_count_before}" ]]; then
+  echo "assertion failed (tui bootstrap stale runtime recycles): expected runner down count to increase" >&2
   cat "${runner_log}" >&2
   exit 1
 fi
