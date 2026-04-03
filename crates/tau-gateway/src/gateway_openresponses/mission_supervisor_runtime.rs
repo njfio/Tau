@@ -90,6 +90,7 @@ impl GatewayMissionState {
         Ok(state)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn record_iteration(
         &mut self,
         attempt: usize,
