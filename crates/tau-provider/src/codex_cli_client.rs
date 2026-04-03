@@ -277,7 +277,10 @@ fn render_codex_exec_prompt(request: &ChatRequest) -> String {
     let mut lines = vec![
         "You are the OpenAI-compatible Tau backend.".to_string(),
         "Respond with the assistant's next message for the conversation below.".to_string(),
-        "Return plain assistant text only.".to_string(),
+        "Return plain assistant text only when no tool is required.".to_string(),
+        "If you need a Tau tool, do not describe the action in prose.".to_string(),
+        "Instead, return assistant text containing JSON exactly shaped like {\"tool_calls\":[{\"id\":\"call_1\",\"name\":\"<exact-tool-name>\",\"arguments\":{}}]}.".to_string(),
+        "Use an exact tool name from the available list and provide JSON arguments.".to_string(),
         "Conversation:".to_string(),
     ];
 
@@ -473,6 +476,16 @@ printf "stdout fallback reply"
 
         let response = client.complete(test_request()).await.expect("complete");
         assert_eq!(response.message.text_content(), "stdout fallback reply");
+    }
+
+    #[test]
+    fn functional_render_codex_prompt_includes_textual_tool_call_contract() {
+        let prompt = render_codex_exec_prompt(&test_request());
+        assert!(prompt.contains("Return plain assistant text only when no tool is required."));
+        assert!(prompt.contains("If you need a Tau tool, do not describe the action in prose."));
+        assert!(prompt.contains("\"tool_calls\""));
+        assert!(prompt.contains("<exact-tool-name>"));
+        assert!(prompt.contains("Use an exact tool name from the available list"));
     }
 
     #[cfg(unix)]
