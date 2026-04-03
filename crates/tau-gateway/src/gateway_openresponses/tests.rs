@@ -12431,6 +12431,7 @@ struct FixturePipelineTool {
     name: &'static str,
     root: PathBuf,
     state_dir: PathBuf,
+    read_delay_ms: u64,
     memories: Arc<Mutex<Vec<String>>>,
     jobs: Arc<Mutex<BTreeMap<String, String>>>,
     successful_bash_commands: Arc<BTreeSet<String>>,
@@ -12489,6 +12490,9 @@ impl AgentTool for FixturePipelineTool {
                 let Some(path) = arguments.get("path").and_then(Value::as_str) else {
                     return ToolExecutionResult::error(json!({"code":"invalid_args"}));
                 };
+                if self.read_delay_ms > 0 {
+                    tokio::time::sleep(Duration::from_millis(self.read_delay_ms)).await;
+                }
                 let resolved = self.root.join(path);
                 match std::fs::read_to_string(&resolved) {
                     Ok(content) => ToolExecutionResult::ok(json!({
@@ -12882,6 +12886,7 @@ impl AgentTool for FixturePipelineTool {
 struct FixturePipelineToolRegistrar {
     root: PathBuf,
     state_dir: PathBuf,
+    read_delay_ms: u64,
     memories: Arc<Mutex<Vec<String>>>,
     jobs: Arc<Mutex<BTreeMap<String, String>>>,
     successful_bash_commands: Arc<BTreeSet<String>>,
@@ -12892,10 +12897,16 @@ impl FixturePipelineToolRegistrar {
         Self {
             root,
             state_dir,
+            read_delay_ms: 0,
             memories: Arc::new(Mutex::new(Vec::new())),
             jobs: Arc::new(Mutex::new(BTreeMap::new())),
             successful_bash_commands: Arc::new(BTreeSet::new()),
         }
+    }
+
+    fn with_read_delay_ms(mut self, read_delay_ms: u64) -> Self {
+        self.read_delay_ms = read_delay_ms;
+        self
     }
 
     fn with_successful_bash_commands<I, S>(mut self, commands: I) -> Self
@@ -12933,6 +12944,7 @@ impl GatewayToolRegistrar for FixturePipelineToolRegistrar {
                 name: tool_name,
                 root: self.root.clone(),
                 state_dir: self.state_dir.clone(),
+                read_delay_ms: self.read_delay_ms,
                 memories: Arc::clone(&self.memories),
                 jobs: Arc::clone(&self.jobs),
                 successful_bash_commands: Arc::clone(&self.successful_bash_commands),
@@ -13300,6 +13312,211 @@ async fn regression_openresponses_retries_until_mutating_evidence_is_observed() 
         mission_state.iterations[1].verifier.overall.reason_code,
         "mutation_evidence_observed"
     );
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn regression_openresponses_timeout_after_read_only_tooling_retries_into_mutation() {
+    let temp = tempdir().expect("tempdir");
+    let scripted = Arc::new(ScriptedGatewayLlmClient::new(vec![
+        ChatResponse {
+            message: Message::assistant_blocks(vec![ContentBlock::ToolCall {
+                id: "call-timeout-read-before-write".to_string(),
+                name: "read".to_string(),
+                arguments: json!({"path":"seed.txt"}),
+            }]),
+            finish_reason: Some("tool_calls".to_string()),
+            usage: ChatUsage::default(),
+        },
+        ChatResponse {
+            message: Message::assistant_blocks(vec![ContentBlock::ToolCall {
+                id: "call-write-after-timeout-retry".to_string(),
+                name: "write".to_string(),
+                arguments: json!({"path":"retry.txt","content":"mutation after timeout retry"}),
+            }]),
+            finish_reason: Some("tool_calls".to_string()),
+            usage: ChatUsage::default(),
+        },
+        scripted_gateway_response("created after timeout retry"),
+    ]));
+    let tool_root = temp.path().join("workspace");
+    std::fs::create_dir_all(&tool_root).expect("create tool workspace");
+    std::fs::write(tool_root.join("seed.txt"), "seed").expect("write seed file");
+    let state = Arc::new(GatewayOpenResponsesServerState::new(
+        GatewayOpenResponsesServerConfig {
+            client: scripted.clone(),
+            model: "openai/gpt-5.2".to_string(),
+            model_input_cost_per_million: Some(10.0),
+            model_cached_input_cost_per_million: None,
+            model_output_cost_per_million: Some(20.0),
+            system_prompt: "You are Tau.".to_string(),
+            available_skills: Vec::new(),
+            explicit_skill_names: Vec::new(),
+            max_turns: 4,
+            tool_registrar: Arc::new(
+                FixturePipelineToolRegistrar::new(
+                    tool_root.clone(),
+                    temp.path().join(".tau/gateway"),
+                )
+                .with_read_delay_ms(250),
+            ),
+            turn_timeout_ms: 100,
+            session_lock_wait_ms: 500,
+            session_lock_stale_ms: 10_000,
+            state_dir: temp.path().join(".tau/gateway"),
+            bind: "127.0.0.1:0".to_string(),
+            auth_mode: GatewayOpenResponsesAuthMode::Token,
+            auth_token: Some("secret".to_string()),
+            auth_password: None,
+            session_ttl_seconds: 3_600,
+            rate_limit_window_seconds: 60,
+            rate_limit_max_requests: 120,
+            max_input_chars: 10_000,
+            runtime_heartbeat: RuntimeHeartbeatSchedulerConfig {
+                enabled: false,
+                interval: std::time::Duration::from_secs(5),
+                state_path: temp
+                    .path()
+                    .join(".tau/runtime-heartbeat-timeout-retry/state.json"),
+                ..RuntimeHeartbeatSchedulerConfig::default()
+            },
+            external_coding_agent_bridge: tau_runtime::ExternalCodingAgentBridgeConfig::default(),
+        },
+    ));
+    let (addr, handle) = spawn_test_server(state.clone())
+        .await
+        .expect("spawn server");
+
+    let client = Client::builder()
+        .timeout(Duration::from_millis(1_500))
+        .build()
+        .expect("client with timeout");
+    let response = client
+        .post(format!("http://{addr}{OPENRESPONSES_ENDPOINT}"))
+        .bearer_auth("secret")
+        .json(&json!({
+            "input": "create a Phaser game in this workspace",
+            "metadata": {
+                "session_id": "timeout-retry-session",
+                "mission_id": "timeout-retry-mission"
+            }
+        }))
+        .send()
+        .await
+        .expect("send timeout-retry request");
+    let status = response.status();
+    let payload = response
+        .json::<Value>()
+        .await
+        .expect("parse timeout-retry payload");
+    assert_eq!(status, StatusCode::OK, "unexpected payload: {payload}");
+    assert_eq!(
+        payload["output_text"],
+        Value::String("created after timeout retry".to_string())
+    );
+
+    let retried_file =
+        std::fs::read_to_string(tool_root.join("retry.txt")).expect("read retried file");
+    assert_eq!(retried_file, "mutation after timeout retry");
+
+    let mission_path = gateway_mission_state_path(&state.config.state_dir, "timeout-retry-mission");
+    let mission_state = load_gateway_mission_state(&mission_path).expect("load mission state");
+    assert_eq!(mission_state.status, GatewayMissionStatus::Completed);
+    assert_eq!(mission_state.iteration_count, 2);
+    assert_eq!(
+        mission_state.iterations[0].verifier.overall.status,
+        GatewayMissionVerifierStatus::Continue
+    );
+    assert_eq!(
+        mission_state.iterations[1].verifier.overall.reason_code,
+        "mutation_evidence_observed"
+    );
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn regression_openresponses_stream_timeout_finalizes_pending_tool_execution() {
+    let temp = tempdir().expect("tempdir");
+    let scripted = Arc::new(ScriptedGatewayLlmClient::new(vec![ChatResponse {
+        message: Message::assistant_blocks(vec![ContentBlock::ToolCall {
+            id: "call-timeout-pending-read".to_string(),
+            name: "read".to_string(),
+            arguments: json!({"path":"seed.txt"}),
+        }]),
+        finish_reason: Some("tool_calls".to_string()),
+        usage: ChatUsage::default(),
+    }]));
+    let tool_root = temp.path().join("workspace");
+    std::fs::create_dir_all(&tool_root).expect("create tool workspace");
+    std::fs::write(tool_root.join("seed.txt"), "seed").expect("write seed file");
+    let state = Arc::new(GatewayOpenResponsesServerState::new(
+        GatewayOpenResponsesServerConfig {
+            client: scripted,
+            model: "openai/gpt-5.2".to_string(),
+            model_input_cost_per_million: Some(10.0),
+            model_cached_input_cost_per_million: None,
+            model_output_cost_per_million: Some(20.0),
+            system_prompt: "You are Tau.".to_string(),
+            available_skills: Vec::new(),
+            explicit_skill_names: Vec::new(),
+            max_turns: 2,
+            tool_registrar: Arc::new(
+                FixturePipelineToolRegistrar::new(tool_root, temp.path().join(".tau/gateway"))
+                    .with_read_delay_ms(250),
+            ),
+            turn_timeout_ms: 100,
+            session_lock_wait_ms: 500,
+            session_lock_stale_ms: 10_000,
+            state_dir: temp.path().join(".tau/gateway"),
+            bind: "127.0.0.1:0".to_string(),
+            auth_mode: GatewayOpenResponsesAuthMode::Token,
+            auth_token: Some("secret".to_string()),
+            auth_password: None,
+            session_ttl_seconds: 3_600,
+            rate_limit_window_seconds: 60,
+            rate_limit_max_requests: 120,
+            max_input_chars: 10_000,
+            runtime_heartbeat: RuntimeHeartbeatSchedulerConfig {
+                enabled: false,
+                interval: std::time::Duration::from_secs(5),
+                state_path: temp
+                    .path()
+                    .join(".tau/runtime-heartbeat-pending-tool-timeout/state.json"),
+                ..RuntimeHeartbeatSchedulerConfig::default()
+            },
+            external_coding_agent_bridge: tau_runtime::ExternalCodingAgentBridgeConfig::default(),
+        },
+    ));
+    let (addr, handle) = spawn_test_server(state.clone())
+        .await
+        .expect("spawn server");
+
+    let client = Client::new();
+    let response = client
+        .post(format!("http://{addr}{OPENRESPONSES_ENDPOINT}"))
+        .bearer_auth("secret")
+        .json(&json!({
+            "input": "create a Phaser game in this workspace",
+            "stream": true,
+            "metadata": {
+                "session_id": "pending-timeout-session",
+                "mission_id": "pending-timeout-mission"
+            }
+        }))
+        .send()
+        .await
+        .expect("send pending timeout stream request");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response
+        .text()
+        .await
+        .expect("read pending timeout stream body");
+    assert!(body.contains("event: response.tool_execution.started"));
+    assert!(body.contains("event: response.tool_execution.completed"));
+    assert!(body.contains("\"timed_out\":true"), "body={body}");
+    assert!(body.contains("event: response.failed"), "body={body}");
 
     handle.abort();
 }
