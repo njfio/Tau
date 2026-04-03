@@ -16,6 +16,23 @@ use tau_ai::{
     MessageRole, StreamDeltaHandler, TauAiError,
 };
 
+const SAFE_CLI_ENV_VARS: &[&str] = &[
+    "PATH",
+    "HOME",
+    "USER",
+    "SHELL",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+    "TERM",
+    "TMPDIR",
+    "TMP",
+    "TEMP",
+    "TZ",
+    "XDG_CONFIG_HOME",
+    "XDG_DATA_HOME",
+];
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// Public struct `GeminiCliConfig` used across Tau components.
 pub struct GeminiCliConfig {
@@ -93,6 +110,12 @@ impl LlmClient for GeminiCliClient {
         command.stdin(Stdio::null());
         command.stdout(Stdio::piped());
         command.stderr(Stdio::piped());
+        command.env_clear();
+        for key in SAFE_CLI_ENV_VARS {
+            if let Ok(value) = std::env::var(key) {
+                command.env(key, value);
+            }
+        }
         let child = spawn_with_text_file_busy_retry(&mut command, &self.config.executable).await?;
 
         let output = tokio::time::timeout(

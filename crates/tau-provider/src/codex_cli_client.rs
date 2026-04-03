@@ -26,6 +26,27 @@ const DEFAULT_EXEC_ARGS: &[&str] = &[
     "never",
 ];
 
+/// Environment variables safe to pass through to CLI subprocess clients.
+/// Modeled on the allowlist in `bash_tool.rs`. Auth-related variables are
+/// intentionally excluded — each CLI tool authenticates via its own mechanism
+/// (OAuth token file, config file) rather than inherited env vars.
+const SAFE_CLI_ENV_VARS: &[&str] = &[
+    "PATH",
+    "HOME",
+    "USER",
+    "SHELL",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+    "TERM",
+    "TMPDIR",
+    "TMP",
+    "TEMP",
+    "TZ",
+    "XDG_CONFIG_HOME",
+    "XDG_DATA_HOME",
+];
+
 static OUTPUT_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -107,6 +128,12 @@ impl LlmClient for CodexCliClient {
         command.stdin(Stdio::piped());
         command.stdout(Stdio::piped());
         command.stderr(Stdio::piped());
+        command.env_clear();
+        for key in SAFE_CLI_ENV_VARS {
+            if let Ok(value) = std::env::var(key) {
+                command.env(key, value);
+            }
+        }
 
         let prompt = render_codex_exec_prompt(&request);
         let mut child =
