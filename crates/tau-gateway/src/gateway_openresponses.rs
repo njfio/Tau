@@ -159,7 +159,8 @@ use mission_completion_runtime::{
     GatewayMissionCompletionStatus, GATEWAY_COMPLETE_TASK_TOOL_NAME,
 };
 use mission_supervisor_runtime::{
-    gateway_mission_state_path, save_gateway_mission_state, GatewayMissionState,
+    gateway_mission_state_path, save_gateway_mission_state, GatewayMissionIterationInput,
+    GatewayMissionState,
 };
 #[cfg(test)]
 use mission_supervisor_runtime::{load_gateway_mission_state, GatewayMissionStatus};

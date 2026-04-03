@@ -6,7 +6,7 @@ use futures_util::{SinkExt, StreamExt};
 use reqwest::Client;
 use serde_json::Value;
 use std::collections::VecDeque;
-use tau_agent_core::{AgentTool, ToolExecutionResult};
+use tau_agent_core::{default_safety_rule_set, AgentTool, SafetyRuleMatcher, ToolExecutionResult};
 use tau_ai::{
     ChatRequest, ChatResponse, ChatUsage, ContentBlock, Message, TauAiError, ToolDefinition,
 };
@@ -19,6 +19,55 @@ use tokio_tungstenite::{
     connect_async,
     tungstenite::{self, client::IntoClientRequest, http::HeaderValue, Message as ClientWsMessage},
 };
+
+/// Build a rules JSON payload that includes all default rules plus optional custom additions.
+/// This satisfies the immutable safety floor which requires all default rules to be present.
+fn safety_rules_json_with_defaults(
+    extra_prompt_injection: &[serde_json::Value],
+    extra_secret_leak: &[serde_json::Value],
+) -> serde_json::Value {
+    let defaults = default_safety_rule_set();
+    let mut prompt_rules: Vec<serde_json::Value> = defaults
+        .prompt_injection_rules
+        .iter()
+        .map(|r| {
+            serde_json::json!({
+                "rule_id": r.rule_id,
+                "reason_code": r.reason_code,
+                "pattern": r.pattern,
+                "matcher": match r.matcher {
+                    SafetyRuleMatcher::Literal => "literal",
+                    SafetyRuleMatcher::Regex => "regex",
+                },
+                "enabled": r.enabled
+            })
+        })
+        .collect();
+    prompt_rules.extend_from_slice(extra_prompt_injection);
+    let mut secret_rules: Vec<serde_json::Value> = defaults
+        .secret_leak_rules
+        .iter()
+        .map(|r| {
+            serde_json::json!({
+                "rule_id": r.rule_id,
+                "reason_code": r.reason_code,
+                "pattern": r.pattern,
+                "matcher": match r.matcher {
+                    SafetyRuleMatcher::Literal => "literal",
+                    SafetyRuleMatcher::Regex => "regex",
+                },
+                "enabled": r.enabled
+            })
+        })
+        .collect();
+    secret_rules.extend_from_slice(extra_secret_leak);
+    serde_json::json!({
+        "rules": {
+            "prompt_injection_rules": prompt_rules,
+            "secret_leak_rules": secret_rules
+        }
+    })
+}
 
 #[derive(Clone, Default)]
 struct MockGatewayLlmClient {
@@ -7404,28 +7453,22 @@ async fn integration_spec_2679_c01_safety_rules_and_test_endpoints_support_persi
     let put_rules = client
         .put(format!("http://{addr}{GATEWAY_SAFETY_RULES_ENDPOINT}"))
         .bearer_auth("secret")
-        .json(&json!({
-            "rules": {
-                "prompt_injection_rules": [
-                    {
-                        "rule_id": "custom.prompt.ignore",
-                        "reason_code": "prompt_injection.custom",
-                        "pattern": "ignore all constraints",
-                        "matcher": "literal",
-                        "enabled": true
-                    }
-                ],
-                "secret_leak_rules": [
-                    {
-                        "rule_id": "custom.secret.token",
-                        "reason_code": "secret_leak.custom",
-                        "pattern": "TOK_[A-Z0-9]{8}",
-                        "matcher": "regex",
-                        "enabled": true
-                    }
-                ]
-            }
-        }))
+        .json(&safety_rules_json_with_defaults(
+            &[json!({
+                "rule_id": "custom.prompt.ignore",
+                "reason_code": "prompt_injection.custom",
+                "pattern": "ignore all constraints",
+                "matcher": "literal",
+                "enabled": true
+            })],
+            &[json!({
+                "rule_id": "custom.secret.token",
+                "reason_code": "secret_leak.custom",
+                "pattern": "TOK_[A-Z0-9]{8}",
+                "matcher": "regex",
+                "enabled": true
+            })],
+        ))
         .send()
         .await
         .expect("put safety rules");
@@ -7435,10 +7478,10 @@ async fn integration_spec_2679_c01_safety_rules_and_test_endpoints_support_persi
         .await
         .expect("parse put safety rules payload");
     assert_eq!(put_rules_payload["updated"], Value::Bool(true));
-    assert_eq!(
-        put_rules_payload["rules"]["prompt_injection_rules"][0]["rule_id"].as_str(),
-        Some("custom.prompt.ignore")
-    );
+    let custom_rule = put_rules_payload["rules"]["prompt_injection_rules"]
+        .as_array()
+        .and_then(|rules| rules.iter().find(|r| r["rule_id"] == "custom.prompt.ignore"));
+    assert!(custom_rule.is_some(), "custom prompt rule must be present in response");
 
     let rules_path = state
         .config
@@ -7459,10 +7502,10 @@ async fn integration_spec_2679_c01_safety_rules_and_test_endpoints_support_persi
         .await
         .expect("parse persisted rules payload");
     assert_eq!(get_persisted_payload["source"].as_str(), Some("persisted"));
-    assert_eq!(
-        get_persisted_payload["rules"]["secret_leak_rules"][0]["rule_id"].as_str(),
-        Some("custom.secret.token")
-    );
+    let custom_secret_rule = get_persisted_payload["rules"]["secret_leak_rules"]
+        .as_array()
+        .and_then(|rules| rules.iter().find(|r| r["rule_id"] == "custom.secret.token"));
+    assert!(custom_secret_rule.is_some(), "custom secret rule must be present in persisted rules");
 
     let safety_test_response = client
         .post(format!("http://{addr}{GATEWAY_SAFETY_TEST_ENDPOINT}"))
@@ -7548,20 +7591,16 @@ async fn integration_spec_2679_c05_safety_test_endpoint_sets_blocked_when_policy
     let put_rules = client
         .put(format!("http://{addr}{GATEWAY_SAFETY_RULES_ENDPOINT}"))
         .bearer_auth("secret")
-        .json(&json!({
-            "rules": {
-                "prompt_injection_rules": [
-                    {
-                        "rule_id": "custom.prompt.blocked",
-                        "reason_code": "prompt_injection.blocked_case",
-                        "pattern": "block me now",
-                        "matcher": "literal",
-                        "enabled": true
-                    }
-                ],
-                "secret_leak_rules": []
-            }
-        }))
+        .json(&safety_rules_json_with_defaults(
+            &[json!({
+                "rule_id": "custom.prompt.blocked",
+                "reason_code": "prompt_injection.blocked_case",
+                "pattern": "block me now",
+                "matcher": "literal",
+                "enabled": true
+            })],
+            &[],
+        ))
         .send()
         .await
         .expect("put blocked safety rules");
@@ -15150,28 +15189,22 @@ async fn tier_pr_s11_safety_endpoint_matrix() {
     let rules_update = client
         .put(format!("http://{addr}{GATEWAY_SAFETY_RULES_ENDPOINT}"))
         .bearer_auth("secret")
-        .json(&json!({
-            "rules": {
-                "prompt_injection_rules": [
-                    {
-                        "rule_id": "literal.ignore",
-                        "reason_code": "prompt_injection.blocked_case",
-                        "pattern": "ignore previous instructions",
-                        "matcher": "literal",
-                        "enabled": true
-                    }
-                ],
-                "secret_leak_rules": [
-                    {
-                        "rule_id": "regex.secret",
-                        "reason_code": "secret_leak.detected",
-                        "pattern": "sk-proj-[A-Za-z0-9]+",
-                        "matcher": "regex",
-                        "enabled": true
-                    }
-                ]
-            }
-        }))
+        .json(&safety_rules_json_with_defaults(
+            &[json!({
+                "rule_id": "literal.ignore",
+                "reason_code": "prompt_injection.blocked_case",
+                "pattern": "ignore previous instructions",
+                "matcher": "literal",
+                "enabled": true
+            })],
+            &[json!({
+                "rule_id": "regex.secret",
+                "reason_code": "secret_leak.detected",
+                "pattern": "sk-proj-[A-Za-z0-9]+",
+                "matcher": "regex",
+                "enabled": true
+            })],
+        ))
         .send()
         .await
         .expect("rules update");

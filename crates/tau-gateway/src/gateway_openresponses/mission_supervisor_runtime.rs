@@ -28,6 +28,17 @@ pub(super) struct GatewayMissionIterationRecord {
     pub(super) finished_unix_ms: u64,
 }
 
+pub(super) struct GatewayMissionIterationInput<'a> {
+    pub(super) attempt: usize,
+    pub(super) prompt: &'a str,
+    pub(super) assistant_summary: &'a str,
+    pub(super) tool_execution_count: usize,
+    pub(super) verifier: GatewayMissionVerifierBundle,
+    pub(super) completion: Option<GatewayMissionCompletionSignalRecord>,
+    pub(super) started_unix_ms: u64,
+    pub(super) finished_unix_ms: u64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub(super) struct GatewayMissionState {
     pub(super) schema_version: u32,
@@ -90,27 +101,16 @@ impl GatewayMissionState {
         Ok(state)
     }
 
-    #[allow(clippy::too_many_arguments)]
-    pub(super) fn record_iteration(
-        &mut self,
-        attempt: usize,
-        prompt: &str,
-        assistant_summary: &str,
-        tool_execution_count: usize,
-        verifier: GatewayMissionVerifierBundle,
-        completion: Option<GatewayMissionCompletionSignalRecord>,
-        started_unix_ms: u64,
-        finished_unix_ms: u64,
-    ) {
+    pub(super) fn record_iteration(&mut self, input: GatewayMissionIterationInput<'_>) {
         self.iterations.push(GatewayMissionIterationRecord {
-            attempt,
-            prompt_summary: summarize_gateway_mission_text(prompt),
-            assistant_summary: summarize_gateway_mission_text(assistant_summary),
-            tool_execution_count,
-            verifier: verifier.clone(),
-            completion: completion.clone(),
-            started_unix_ms,
-            finished_unix_ms,
+            attempt: input.attempt,
+            prompt_summary: summarize_gateway_mission_text(input.prompt),
+            assistant_summary: summarize_gateway_mission_text(input.assistant_summary),
+            tool_execution_count: input.tool_execution_count,
+            verifier: input.verifier.clone(),
+            completion: input.completion.clone(),
+            started_unix_ms: input.started_unix_ms,
+            finished_unix_ms: input.finished_unix_ms,
         });
         if self.iterations.len() > GATEWAY_MISSION_MAX_ITERATIONS {
             let drop_count = self
@@ -120,9 +120,9 @@ impl GatewayMissionState {
             self.iterations.drain(0..drop_count);
         }
         self.iteration_count = self.iterations.len();
-        self.latest_verifier = verifier.overall;
-        self.latest_completion = completion;
-        self.updated_unix_ms = finished_unix_ms;
+        self.latest_verifier = input.verifier.overall;
+        self.latest_completion = input.completion;
+        self.updated_unix_ms = input.finished_unix_ms;
     }
 
     pub(super) fn mark_completed(
