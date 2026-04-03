@@ -7,8 +7,6 @@
 use std::process::Stdio;
 use std::time::Duration;
 
-use crate::cli_executable::apply_sanitized_cli_env;
-
 use async_trait::async_trait;
 use serde_json::Value;
 use tokio::process::Command;
@@ -17,17 +15,6 @@ use tau_ai::{
     ChatRequest, ChatResponse, ChatUsage, ContentBlock, LlmClient, MediaSource, Message,
     MessageRole, StreamDeltaHandler, TauAiError,
 };
-
-const SAFE_GEMINI_ADC_ENV_VARS: &[&str] = &[
-    "GOOGLE_CLOUD_PROJECT",
-    "GOOGLE_CLOUD_LOCATION",
-    "GOOGLE_CLOUD_QUOTA_PROJECT",
-    "GCLOUD_PROJECT",
-    "CLOUDSDK_CORE_PROJECT",
-    "CLOUDSDK_COMPUTE_REGION",
-    "GOOGLE_API_USE_MTLS_ENDPOINT",
-    "GOOGLE_API_USE_CLIENT_CERTIFICATE",
-];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// Public struct `GeminiCliConfig` used across Tau components.
@@ -106,50 +93,31 @@ impl LlmClient for GeminiCliClient {
         command.stdin(Stdio::null());
         command.stdout(Stdio::piped());
         command.stderr(Stdio::piped());
-        apply_sanitized_cli_env(&mut command, SAFE_GEMINI_ADC_ENV_VARS);
+
+        apply_process_group_isolation(&mut command);
+
         let child = spawn_with_text_file_busy_retry(&mut command, &self.config.executable).await?;
+        let child_pid = child.id();
 
         let output = tokio::time::timeout(
             Duration::from_millis(self.config.timeout_ms),
             child.wait_with_output(),
         )
-        .await
-        .map_err(|_| {
-            TauAiError::InvalidResponse(format!(
-                "gemini cli timed out after {}ms",
-                self.config.timeout_ms
-            ))
-        })?
-        .map_err(|error| {
-            TauAiError::InvalidResponse(format!("gemini cli process failed: {error}"))
-        })?;
+        .await;
 
-        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-        if !output.status.success() {
-            let status = output
-                .status
-                .code()
-                .map(|value| value.to_string())
-                .unwrap_or_else(|| "signal".to_string());
-            let summary = summarize_process_failure(&stderr, &stdout);
-            return Err(TauAiError::InvalidResponse(format!(
-                "gemini cli failed with status {status}: {summary}"
-            )));
+        match output {
+            Ok(Ok(output)) => parse_gemini_output(output),
+            Ok(Err(error)) => Err(TauAiError::InvalidResponse(format!(
+                "gemini cli process failed: {error}"
+            ))),
+            Err(_timeout) => {
+                kill_process_group(child_pid).await;
+                Err(TauAiError::InvalidResponse(format!(
+                    "gemini cli timed out after {}ms",
+                    self.config.timeout_ms
+                )))
+            }
         }
-
-        let message_text = extract_assistant_text(&stdout)?;
-        if message_text.trim().is_empty() {
-            return Err(TauAiError::InvalidResponse(
-                "gemini cli returned empty assistant output".to_string(),
-            ));
-        }
-
-        Ok(ChatResponse {
-            message: Message::assistant_text(message_text),
-            finish_reason: Some("stop".to_string()),
-            usage: ChatUsage::default(),
-        })
     }
 
     async fn complete_with_stream(
@@ -165,6 +133,61 @@ impl LlmClient for GeminiCliClient {
             }
         }
         Ok(response)
+    }
+}
+
+fn parse_gemini_output(output: std::process::Output) -> Result<ChatResponse, TauAiError> {
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    if !output.status.success() {
+        let status = output
+            .status
+            .code()
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "signal".to_string());
+        let summary = summarize_process_failure(&stderr, &stdout);
+        return Err(TauAiError::InvalidResponse(format!(
+            "gemini cli failed with status {status}: {summary}"
+        )));
+    }
+
+    let message_text = extract_assistant_text(&stdout)?;
+    if message_text.trim().is_empty() {
+        return Err(TauAiError::InvalidResponse(
+            "gemini cli returned empty assistant output".to_string(),
+        ));
+    }
+
+    Ok(ChatResponse {
+        message: Message::assistant_text(message_text),
+        finish_reason: Some("stop".to_string()),
+        usage: ChatUsage::default(),
+    })
+}
+
+fn apply_process_group_isolation(command: &mut Command) {
+    #[cfg(unix)]
+    {
+        unsafe {
+            command.pre_exec(|| {
+                libc::setpgid(0, 0);
+                Ok(())
+            });
+        }
+    }
+}
+
+async fn kill_process_group(child_pid: Option<u32>) {
+    #[cfg(unix)]
+    if let Some(pid) = child_pid {
+        let pgid = pid as i32;
+        unsafe {
+            libc::killpg(pgid, libc::SIGTERM);
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        unsafe {
+            libc::killpg(pgid, libc::SIGKILL);
+        }
     }
 }
 
