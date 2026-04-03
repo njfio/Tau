@@ -403,34 +403,6 @@ pub fn encrypt_credential_store_secret(
     }
 }
 
-#[cfg(test)]
-fn encrypt_credential_store_secret_v2(secret: &str, key: Option<&str>) -> Result<String> {
-    let key_material = derive_credential_store_key_material_v2(key)?;
-    let cipher = Aes256Gcm::new_from_slice(&key_material)
-        .map_err(|_| anyhow!("credential key material has invalid length"))?;
-    let mut nonce = [0u8; CREDENTIAL_STORE_AES_GCM_NONCE_BYTES];
-    use aes_gcm::aead::rand_core::RngCore as _;
-    OsRng.fill_bytes(&mut nonce);
-
-    let ciphertext = cipher
-        .encrypt(
-            (&nonce).into(),
-            Payload {
-                msg: secret.as_bytes(),
-                aad: CREDENTIAL_STORE_AES_GCM_AAD,
-            },
-        )
-        .map_err(|_| anyhow!("credential payload encryption failed"))?;
-
-    let mut payload = Vec::with_capacity(CREDENTIAL_STORE_AES_GCM_NONCE_BYTES + ciphertext.len());
-    payload.extend_from_slice(&nonce);
-    payload.extend_from_slice(&ciphertext);
-    Ok(format!(
-        "{CREDENTIAL_STORE_ENCRYPTED_V2_PREFIX}{}",
-        BASE64_STANDARD.encode(payload)
-    ))
-}
-
 fn encrypt_credential_store_secret_v3(secret: &str, key: Option<&str>) -> Result<String> {
     let mut salt = [0u8; CREDENTIAL_STORE_ARGON2_SALT_BYTES];
     use aes_gcm::aead::rand_core::RngCore as _;

@@ -4,9 +4,7 @@
 //! are executable before spawning subprocesses, preventing ambiguous runtime
 //! failures from missing or non-executable command paths.
 
-use std::{collections::BTreeSet, path::Path};
-
-use tokio::process::Command;
+use std::path::Path;
 
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
@@ -25,46 +23,6 @@ fn is_executable_file(path: &Path) -> bool {
     #[cfg(not(unix))]
     {
         true
-    }
-}
-
-const SAFE_CLI_ENV_VARS: &[&str] = &[
-    "PATH",
-    "HOME",
-    "USER",
-    "SHELL",
-    "LANG",
-    "LC_ALL",
-    "LC_CTYPE",
-    "TERM",
-    "TMPDIR",
-    "TMP",
-    "TEMP",
-    "TZ",
-    "XDG_CONFIG_HOME",
-    "XDG_DATA_HOME",
-    "SystemRoot",
-    "USERPROFILE",
-    "APPDATA",
-    "LOCALAPPDATA",
-    "COMSPEC",
-];
-
-/// Applies a sanitized environment to CLI subprocess commands.
-///
-/// The command environment is cleared, then rebuilt from a conservative
-/// allowlist plus any provider-specific non-secret config variables.
-pub fn apply_sanitized_cli_env(command: &mut Command, extra_vars: &[&str]) {
-    command.env_clear();
-    let allowed = SAFE_CLI_ENV_VARS
-        .iter()
-        .copied()
-        .chain(extra_vars.iter().copied())
-        .collect::<BTreeSet<_>>();
-    for key in allowed {
-        if let Some(value) = std::env::var_os(key) {
-            command.env(key, value);
-        }
     }
 }
 
