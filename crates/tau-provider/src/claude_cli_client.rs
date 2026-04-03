@@ -12,8 +12,8 @@ use serde_json::Value;
 use tokio::process::Command;
 
 use tau_ai::{
-    ChatRequest, ChatResponse, ChatUsage, ContentBlock, LlmClient, MediaSource, Message,
-    MessageRole, StreamDeltaHandler, TauAiError,
+    promote_assistant_textual_tool_calls, ChatRequest, ChatResponse, ChatUsage, ContentBlock,
+    LlmClient, MediaSource, Message, MessageRole, StreamDeltaHandler, TauAiError,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -161,7 +161,7 @@ fn parse_claude_output(output: std::process::Output) -> Result<ChatResponse, Tau
     }
 
     Ok(ChatResponse {
-        message: Message::assistant_text(message_text),
+        message: promote_assistant_textual_tool_calls(Message::assistant_text(message_text))?,
         finish_reason: Some("stop".to_string()),
         usage: ChatUsage::default(),
     })
@@ -287,7 +287,10 @@ fn render_claude_prompt(request: &ChatRequest) -> String {
     let mut lines = vec![
         "You are the Anthropic Claude Code-compatible Tau backend.".to_string(),
         "Respond with the assistant's next message for the conversation below.".to_string(),
-        "Return plain assistant text only.".to_string(),
+        "Return plain assistant text only when no tool is required.".to_string(),
+        "If you need a Tau tool, do not describe the action in prose.".to_string(),
+        "Instead, return assistant text containing JSON exactly shaped like {\"tool_calls\":[{\"id\":\"call_1\",\"name\":\"<exact-tool-name>\",\"arguments\":{}}]}.".to_string(),
+        "Use an exact tool name from the available list and provide JSON arguments.".to_string(),
         "Conversation:".to_string(),
     ];
 
@@ -558,6 +561,23 @@ printf '{"type":"result","subtype":"success","is_error":false,"result":"late"}'
         assert!(prompt.contains("[assistant]"));
         assert!(prompt.contains("Tau tools available in caller runtime"));
         assert!(prompt.contains("- read: Read a file"));
+        assert!(prompt.contains("If you need a Tau tool, do not describe the action in prose."));
+        assert!(prompt.contains("\"tool_calls\""));
+        assert!(prompt.contains("<exact-tool-name>"));
+    }
+
+    #[test]
+    fn regression_claude_cli_client_promotes_textual_tool_calls_from_result_payload() {
+        let response = ChatResponse {
+            message: promote_assistant_textual_tool_calls(Message::assistant_text("{\"tool_calls\":[{\"id\":\"call_1\",\"name\":\"read\",\"arguments\":{\"path\":\"README.md\"}}]}"))
+                .expect("promotion"),
+            finish_reason: Some("stop".to_string()),
+            usage: ChatUsage::default(),
+        };
+        let calls = response.message.tool_calls();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].name, "read");
+        assert_eq!(calls[0].arguments, serde_json::json!({"path":"README.md"}));
     }
 
     #[test]
