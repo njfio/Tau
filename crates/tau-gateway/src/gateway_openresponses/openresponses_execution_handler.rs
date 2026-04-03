@@ -3,6 +3,11 @@
 use super::*;
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use tau_memory::action_history::ActionHistoryStore;
+
+use super::learning_runtime::{
+    load_gateway_action_history_store, save_gateway_action_history_store,
+};
 
 const GATEWAY_TOOL_SUMMARY_MAX_CHARS: usize = 240;
 
@@ -200,10 +205,12 @@ pub(super) async fn execute_openresponses_request(
     let mut terminal_success_verifier = None::<GatewayMissionVerifierBundle>;
     let mut terminal_completion_signal = None::<GatewayMissionCompletionSignalRecord>;
     let mut terminal_output_override = None::<String>;
+    let mut action_history_store = load_gateway_action_history_store(&state.config.state_dir)?;
     let prompt_result: Result<(), OpenResponsesApiError> = loop {
         refresh_gateway_learning_system_prompt(
             &mut agent,
             &state,
+            &action_history_store,
             &auto_selected,
             requires_tool_evidence,
         )?;
@@ -230,7 +237,7 @@ pub(super) async fn execute_openresponses_request(
                 Ok(result) => result,
                 Err(_) => {
                     persist_gateway_attempt_tool_history(
-                        &state.config.state_dir,
+                        &mut action_history_store,
                         translated.session_key.as_str(),
                         translated.mission_id.as_str(),
                         attempt_number,
@@ -262,7 +269,7 @@ pub(super) async fn execute_openresponses_request(
         };
         if let Err(error) = attempt_result {
             persist_gateway_attempt_tool_history(
-                &state.config.state_dir,
+                &mut action_history_store,
                 translated.session_key.as_str(),
                 translated.mission_id.as_str(),
                 attempt_number,
@@ -301,7 +308,7 @@ pub(super) async fn execute_openresponses_request(
             .load(Ordering::Relaxed)
             .saturating_sub(tool_execution_count_before);
         persist_gateway_attempt_tool_history(
-            &state.config.state_dir,
+            &mut action_history_store,
             translated.session_key.as_str(),
             translated.mission_id.as_str(),
             attempt_number,
@@ -413,6 +420,7 @@ pub(super) async fn execute_openresponses_request(
         retry_attempt = retry_attempt.saturating_add(1);
         next_prompt = build_gateway_action_retry_prompt(retry_attempt, &verifier);
     };
+    save_gateway_action_history_store(&state.config.state_dir, &action_history_store)?;
     let post_prompt_cost = agent.cost_snapshot();
     persist_session_usage_delta(&mut session_runtime, &pre_prompt_cost, &post_prompt_cost)
         .map_err(|error| {
@@ -663,12 +671,13 @@ fn build_gateway_action_retry_prompt(
 fn refresh_gateway_learning_system_prompt(
     agent: &mut Agent,
     state: &GatewayOpenResponsesServerState,
+    action_history_store: &ActionHistoryStore,
     auto_selected: &[GatewayOpenResponsesSkillPrompt],
     completion_tool_active: bool,
 ) -> Result<(), OpenResponsesApiError> {
     let mut effective_system_prompt = state.resolved_system_prompt();
     let learning_bulletin =
-        render_gateway_learning_bulletin(&state.config.state_dir, GATEWAY_ACTION_HISTORY_LOOKBACK)?;
+        render_gateway_learning_bulletin(action_history_store, GATEWAY_ACTION_HISTORY_LOOKBACK);
     if !learning_bulletin.trim().is_empty() {
         if effective_system_prompt.trim().is_empty() {
             effective_system_prompt = learning_bulletin;
@@ -726,7 +735,7 @@ fn snapshot_gateway_verifier_traces(
 }
 
 fn persist_gateway_attempt_tool_history(
-    state_dir: &Path,
+    action_history_store: &mut ActionHistoryStore,
     session_key: &str,
     mission_id: &str,
     attempt_number: usize,
@@ -752,7 +761,8 @@ fn persist_gateway_attempt_tool_history(
             timestamp_ms: trace.timestamp_ms,
         })
         .collect::<Vec<_>>();
-    append_gateway_action_history_records(state_dir, &records)
+    append_gateway_action_history_records(action_history_store, &records);
+    Ok(())
 }
 
 fn summarize_gateway_tool_value(value: &Value) -> String {
