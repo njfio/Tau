@@ -1,0 +1,179 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tau.njf.io/schemas/m334-tranche-one-autonomy-benchmark.schema.json",
+  "title": "M334 Tranche-One Autonomy Benchmark Contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "benchmark_id",
+    "version",
+    "origin",
+    "priority_order",
+    "suite_policy",
+    "success_bar",
+    "tasks"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "benchmark_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    },
+    "origin": {
+      "type": "string",
+      "minLength": 1
+    },
+    "priority_order": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {
+        "type": "string",
+        "enum": [
+          "agent_autonomy",
+          "product_usefulness",
+          "self_improvement_later"
+        ]
+      }
+    },
+    "suite_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "allowed_operator_interventions",
+        "disallowed_operator_interventions",
+        "deferred_non_goals"
+      ],
+      "properties": {
+        "allowed_operator_interventions": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "type": "string",
+            "enum": [
+              "provider_auth",
+              "major_direction_choice"
+            ]
+          }
+        },
+        "disallowed_operator_interventions": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "deferred_non_goals": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "success_bar": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "benchmark_task_count",
+        "required_terminal_state",
+        "max_major_direction_checkpoints_per_task",
+        "reliability_expectation"
+      ],
+      "properties": {
+        "benchmark_task_count": {
+          "type": "integer",
+          "minimum": 3,
+          "maximum": 5
+        },
+        "required_terminal_state": {
+          "type": "string",
+          "const": "completed"
+        },
+        "max_major_direction_checkpoints_per_task": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "reliability_expectation": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "tasks": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "category",
+          "goal",
+          "required_deliverables",
+          "allowed_checkpoints",
+          "pass_requirements"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "repo_build",
+              "greenfield_build",
+              "research_design",
+              "data_to_deliverable"
+            ]
+          },
+          "goal": {
+            "type": "string",
+            "minLength": 1
+          },
+          "required_deliverables": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "allowed_checkpoints": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "enum": [
+                "provider_auth",
+                "major_direction_choice"
+              ]
+            }
+          },
+          "pass_requirements": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    }
+  }
+}
