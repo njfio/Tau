@@ -20,9 +20,10 @@ pub use tau_memory::runtime::{
     FileMemoryStore, MemoryLifecycleMaintenancePolicy, MemoryLifecycleMaintenanceResult,
 };
 pub use tau_safety::{
-    default_safety_rule_set, scan_safety_rules, validate_safety_rule_set, DefaultLeakDetector,
-    DefaultSanitizer, LeakDetector, SafetyMode, SafetyPolicy, SafetyRule, SafetyRuleMatcher,
-    SafetyRuleSet, SafetyStage, Sanitizer,
+    default_safety_rule_set, enforce_safety_policy_floor, enforce_safety_rules_floor,
+    scan_safety_rules, validate_safety_rule_set, DefaultLeakDetector, DefaultSanitizer,
+    LeakDetector, SafetyMode, SafetyPolicy, SafetyRule, SafetyRuleMatcher, SafetyRuleSet,
+    SafetyStage, Sanitizer,
 };
 use thiserror::Error;
 

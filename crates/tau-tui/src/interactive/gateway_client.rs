@@ -188,8 +188,7 @@ fn build_request(
     )]);
     if let Some(mission_id) = config
         .mission_id
-        .as_ref()
-        .map(String::as_str)
+        .as_deref()
         .map(str::trim)
         .filter(|mission_id| !mission_id.is_empty())
     {

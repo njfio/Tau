@@ -242,16 +242,16 @@ pub(super) async fn execute_openresponses_request(
                         "gateway_timeout",
                         "response generation timed out before completion",
                     );
-                    mission_state.record_iteration(
-                        attempt_number,
-                        next_prompt.as_str(),
-                        "",
-                        0,
-                        verifier.clone(),
-                        None,
-                        attempt_started_unix_ms,
+                    mission_state.record_iteration(GatewayMissionIterationInput {
+                        attempt: attempt_number,
+                        prompt: next_prompt.as_str(),
+                        assistant_summary: "",
+                        tool_execution_count: 0,
+                        verifier: verifier.clone(),
+                        completion: None,
+                        started_unix_ms: attempt_started_unix_ms,
                         finished_unix_ms,
-                    );
+                    });
                     mission_state.mark_blocked(verifier.overall, None, "", finished_unix_ms);
                     save_gateway_mission_state(&mission_path, &mission_state)?;
                     break Err(OpenResponsesApiError::timeout(
@@ -277,16 +277,16 @@ pub(super) async fn execute_openresponses_request(
             );
             let assistant_summary =
                 collect_assistant_reply(&agent.messages()[attempt_start_index..]);
-            mission_state.record_iteration(
-                attempt_number,
-                next_prompt.as_str(),
-                assistant_summary.as_str(),
-                0,
-                verifier.clone(),
-                None,
-                attempt_started_unix_ms,
+            mission_state.record_iteration(GatewayMissionIterationInput {
+                attempt: attempt_number,
+                prompt: next_prompt.as_str(),
+                assistant_summary: assistant_summary.as_str(),
+                tool_execution_count: 0,
+                verifier: verifier.clone(),
+                completion: None,
+                started_unix_ms: attempt_started_unix_ms,
                 finished_unix_ms,
-            );
+            });
             mission_state.mark_blocked(
                 verifier.overall,
                 None,
@@ -320,16 +320,16 @@ pub(super) async fn execute_openresponses_request(
             verifier_traces.as_slice(),
             retry_exhausted,
         );
-        mission_state.record_iteration(
-            attempt_number,
-            next_prompt.as_str(),
-            assistant_summary.as_str(),
-            tool_execution_delta,
-            verifier.clone(),
-            completion_signal.clone(),
-            attempt_started_unix_ms,
+        mission_state.record_iteration(GatewayMissionIterationInput {
+            attempt: attempt_number,
+            prompt: next_prompt.as_str(),
+            assistant_summary: assistant_summary.as_str(),
+            tool_execution_count: tool_execution_delta,
+            verifier: verifier.clone(),
+            completion: completion_signal.clone(),
+            started_unix_ms: attempt_started_unix_ms,
             finished_unix_ms,
-        );
+        });
         if let Some(completion) = completion_signal.clone() {
             match completion.status {
                 GatewayMissionCompletionStatus::Partial => {
