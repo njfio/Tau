@@ -13,6 +13,8 @@ use async_trait::async_trait;
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 
+use crate::cli_executable::apply_sanitized_cli_env;
+
 use tau_ai::{
     promote_assistant_textual_tool_calls, ChatRequest, ChatResponse, ChatUsage, ContentBlock,
     LlmClient, MediaSource, Message, MessageRole, StreamDeltaHandler, TauAiError,
@@ -107,6 +109,7 @@ impl LlmClient for CodexCliClient {
         command.stdin(Stdio::piped());
         command.stdout(Stdio::piped());
         command.stderr(Stdio::piped());
+        apply_sanitized_cli_env(&mut command, &[]);
 
         let prompt = render_codex_exec_prompt(&request);
         let mut child =
@@ -295,6 +298,32 @@ fn media_source_descriptor(source: &MediaSource) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::ffi::OsString;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    struct EnvVarGuard {
+        key: &'static str,
+        original: Option<OsString>,
+    }
+
+    impl EnvVarGuard {
+        fn set(key: &'static str, value: &str) -> Self {
+            let original = std::env::var_os(key);
+            std::env::set_var(key, value);
+            Self { key, original }
+        }
+    }
+
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            if let Some(value) = self.original.take() {
+                std::env::set_var(self.key, value);
+            } else {
+                std::env::remove_var(self.key);
+            }
+        }
+    }
     use std::sync::{Arc, Mutex};
 
     use tau_ai::ToolDefinition;
@@ -612,5 +641,51 @@ echo "too late"
         let prompt = render_codex_exec_prompt(&request);
         assert!(prompt.contains("[tau-image:"));
         assert!(prompt.contains("[tau-audio:"));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn security_codex_cli_client_sanitizes_subprocess_environment() {
+        let dir = tempdir().expect("tempdir");
+        let script = write_script(
+            dir.path(),
+            r#"
+out=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --output-last-message) out="$2"; shift 2;;
+    *) shift;;
+  esac
+done
+while IFS= read -r _line; do :; done
+env | sort > "$out"
+"#,
+        );
+
+        let _env_lock = ENV_LOCK.lock().expect("env lock");
+        let _secret_guard = EnvVarGuard::set("TAU_TEST_SECRET_LEAK", "super_secret_value");
+        let known_path = "/usr/bin:/bin:/tmp/tau-test-path";
+        let _path_guard = EnvVarGuard::set("PATH", known_path);
+
+        let client = CodexCliClient::new(CodexCliConfig {
+            executable: script.display().to_string(),
+            extra_args: vec![],
+            timeout_ms: TEST_TIMEOUT_MS,
+        })
+        .expect("client");
+
+        let response = client.complete(test_request()).await.expect("complete");
+        let env_output = response.message.text_content();
+
+        // The sentinel var must NOT appear in the subprocess environment
+        assert!(
+            !env_output.contains("TAU_TEST_SECRET_LEAK"),
+            "subprocess inherited TAU_TEST_SECRET_LEAK — env_clear not applied"
+        );
+        // PATH should still be present with the value we explicitly installed.
+        assert!(
+            env_output.contains(&format!("PATH={known_path}")),
+            "subprocess missing allowlisted PATH — allowlist broken"
+        );
     }
 }

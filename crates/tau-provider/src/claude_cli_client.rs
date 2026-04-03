@@ -7,6 +7,8 @@
 use std::process::Stdio;
 use std::time::Duration;
 
+use crate::cli_executable::apply_sanitized_cli_env;
+
 use async_trait::async_trait;
 use serde_json::Value;
 use tokio::process::Command;
@@ -95,6 +97,7 @@ impl LlmClient for ClaudeCliClient {
         command.stdin(Stdio::null());
         command.stdout(Stdio::piped());
         command.stderr(Stdio::piped());
+        apply_sanitized_cli_env(&mut command, &[]);
         let child = spawn_with_text_file_busy_retry(&mut command, &self.config.executable).await?;
 
         let output = tokio::time::timeout(

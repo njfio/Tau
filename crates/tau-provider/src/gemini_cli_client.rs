@@ -7,6 +7,8 @@
 use std::process::Stdio;
 use std::time::Duration;
 
+use crate::cli_executable::apply_sanitized_cli_env;
+
 use async_trait::async_trait;
 use serde_json::Value;
 use tokio::process::Command;
@@ -15,6 +17,17 @@ use tau_ai::{
     ChatRequest, ChatResponse, ChatUsage, ContentBlock, LlmClient, MediaSource, Message,
     MessageRole, StreamDeltaHandler, TauAiError,
 };
+
+const SAFE_GEMINI_ADC_ENV_VARS: &[&str] = &[
+    "GOOGLE_CLOUD_PROJECT",
+    "GOOGLE_CLOUD_LOCATION",
+    "GOOGLE_CLOUD_QUOTA_PROJECT",
+    "GCLOUD_PROJECT",
+    "CLOUDSDK_CORE_PROJECT",
+    "CLOUDSDK_COMPUTE_REGION",
+    "GOOGLE_API_USE_MTLS_ENDPOINT",
+    "GOOGLE_API_USE_CLIENT_CERTIFICATE",
+];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// Public struct `GeminiCliConfig` used across Tau components.
@@ -93,6 +106,7 @@ impl LlmClient for GeminiCliClient {
         command.stdin(Stdio::null());
         command.stdout(Stdio::piped());
         command.stderr(Stdio::piped());
+        apply_sanitized_cli_env(&mut command, SAFE_GEMINI_ADC_ENV_VARS);
         let child = spawn_with_text_file_busy_retry(&mut command, &self.config.executable).await?;
 
         let output = tokio::time::timeout(
