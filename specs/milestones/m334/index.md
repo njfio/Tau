@@ -27,6 +27,42 @@ Tau should not behave like a one-shot assistant that stops when the model emits
 - Story: [#3659](https://github.com/njfio/Tau/issues/3659) Expose gateway
   mission inspection and TUI resume controls for checkpointed Ralph-loop
   missions
+- Task: [#3661](https://github.com/njfio/Tau/issues/3661) Recycle stale
+  tau-unified runtime after repo/runtime fingerprint changes
+- Task: [#3662](https://github.com/njfio/Tau/issues/3662) Bound no-tool gateway
+  retry attempts so the TUI does not time out first
+- Task: [#3663](https://github.com/njfio/Tau/issues/3663) Persist gateway
+  OpenResponses attempt payload traces for Ralph-loop debugging
+- Task: [#3664](https://github.com/njfio/Tau/issues/3664) Align tau-unified
+  request timeout with CLI provider backend timeouts
+- Task: [#3665](https://github.com/njfio/Tau/issues/3665) Keep TUI client
+  timeout above gateway runtime and provider budgets
+- Task: [#3666](https://github.com/njfio/Tau/issues/3666) Teach CLI provider
+  adapters to emit textual tool-call payloads
+- Task: [#3667](https://github.com/njfio/Tau/issues/3667) Align tau-unified
+  launcher with gateway turn timeout budget
+- Task: [#3668](https://github.com/njfio/Tau/issues/3668) Isolate CLI provider
+  backends from repo context bleed
+- Task: [#3669](https://github.com/njfio/Tau/issues/3669) Stream gateway
+  response and tool events into the TUI
+- Task: [#3670](https://github.com/njfio/Tau/issues/3670) Recover read-only
+  gateway timeouts and clear in-flight tools
+- Task: [#3671](https://github.com/njfio/Tau/issues/3671) Add raw gateway
+  payload tracing and reconcile TUI tool lifecycle state
+- Task: [#3672](https://github.com/njfio/Tau/issues/3672) Break read-only
+  timeout spirals in gateway action retries
+- Story: [#3673](https://github.com/njfio/Tau/issues/3673) Force tool-required
+  retry turns in Ralph-loop recovery
+- Task: [#3674](https://github.com/njfio/Tau/issues/3674) Cut off read-only
+  exploration spirals and widen mutation recovery budget
+- Task: [#3675](https://github.com/njfio/Tau/issues/3675) Force concrete
+  mutating tool choice on Ralph-loop recovery retries
+- Task: [#3676](https://github.com/njfio/Tau/issues/3676) Add direct OpenAI
+  Responses transport with experimental oauth/session mode
+- Task: [#3725](https://github.com/njfio/Tau/issues/3725) Define tranche-one
+  autonomy benchmark contract and task set
+- Task: [#3726](https://github.com/njfio/Tau/issues/3726) Add schema and
+  validator for the tranche-one autonomy benchmark contract
 
 ## Scope
 - Define an explicit outer supervisor/mission loop above current prompt turns
