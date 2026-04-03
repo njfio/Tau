@@ -7,6 +7,8 @@
 use std::process::Stdio;
 use std::time::Duration;
 
+use crate::cli_executable::apply_sanitized_cli_env;
+
 use async_trait::async_trait;
 use serde_json::Value;
 use tokio::process::Command;
@@ -15,23 +17,6 @@ use tau_ai::{
     ChatRequest, ChatResponse, ChatUsage, ContentBlock, LlmClient, MediaSource, Message,
     MessageRole, StreamDeltaHandler, TauAiError,
 };
-
-const SAFE_CLI_ENV_VARS: &[&str] = &[
-    "PATH",
-    "HOME",
-    "USER",
-    "SHELL",
-    "LANG",
-    "LC_ALL",
-    "LC_CTYPE",
-    "TERM",
-    "TMPDIR",
-    "TMP",
-    "TEMP",
-    "TZ",
-    "XDG_CONFIG_HOME",
-    "XDG_DATA_HOME",
-];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// Public struct `ClaudeCliConfig` used across Tau components.
@@ -112,12 +97,7 @@ impl LlmClient for ClaudeCliClient {
         command.stdin(Stdio::null());
         command.stdout(Stdio::piped());
         command.stderr(Stdio::piped());
-        command.env_clear();
-        for key in SAFE_CLI_ENV_VARS {
-            if let Ok(value) = std::env::var(key) {
-                command.env(key, value);
-            }
-        }
+        apply_sanitized_cli_env(&mut command, &[]);
         let child = spawn_with_text_file_busy_retry(&mut command, &self.config.executable).await?;
 
         let output = tokio::time::timeout(

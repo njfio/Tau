@@ -13,6 +13,8 @@ use async_trait::async_trait;
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 
+use crate::cli_executable::apply_sanitized_cli_env;
+
 use tau_ai::{
     promote_assistant_textual_tool_calls, ChatRequest, ChatResponse, ChatUsage, ContentBlock,
     LlmClient, MediaSource, Message, MessageRole, StreamDeltaHandler, TauAiError,
@@ -24,27 +26,6 @@ const DEFAULT_EXEC_ARGS: &[&str] = &[
     "--skip-git-repo-check",
     "--color",
     "never",
-];
-
-/// Environment variables safe to pass through to CLI subprocess clients.
-/// Modeled on the allowlist in `bash_tool.rs`. Auth-related variables are
-/// intentionally excluded — each CLI tool authenticates via its own mechanism
-/// (OAuth token file, config file) rather than inherited env vars.
-const SAFE_CLI_ENV_VARS: &[&str] = &[
-    "PATH",
-    "HOME",
-    "USER",
-    "SHELL",
-    "LANG",
-    "LC_ALL",
-    "LC_CTYPE",
-    "TERM",
-    "TMPDIR",
-    "TMP",
-    "TEMP",
-    "TZ",
-    "XDG_CONFIG_HOME",
-    "XDG_DATA_HOME",
 ];
 
 static OUTPUT_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -128,12 +109,7 @@ impl LlmClient for CodexCliClient {
         command.stdin(Stdio::piped());
         command.stdout(Stdio::piped());
         command.stderr(Stdio::piped());
-        command.env_clear();
-        for key in SAFE_CLI_ENV_VARS {
-            if let Ok(value) = std::env::var(key) {
-                command.env(key, value);
-            }
-        }
+        apply_sanitized_cli_env(&mut command, &[]);
 
         let prompt = render_codex_exec_prompt(&request);
         let mut child =
@@ -322,6 +298,32 @@ fn media_source_descriptor(source: &MediaSource) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::ffi::OsString;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    struct EnvVarGuard {
+        key: &'static str,
+        original: Option<OsString>,
+    }
+
+    impl EnvVarGuard {
+        fn set(key: &'static str, value: &str) -> Self {
+            let original = std::env::var_os(key);
+            std::env::set_var(key, value);
+            Self { key, original }
+        }
+    }
+
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            if let Some(value) = self.original.take() {
+                std::env::set_var(self.key, value);
+            } else {
+                std::env::remove_var(self.key);
+            }
+        }
+    }
     use std::sync::{Arc, Mutex};
 
     use tau_ai::ToolDefinition;
@@ -660,8 +662,10 @@ env | sort > "$out"
 "#,
         );
 
-        // Set a sentinel env var that should NOT be inherited
-        std::env::set_var("TAU_TEST_SECRET_LEAK", "super_secret_value");
+        let _env_lock = ENV_LOCK.lock().expect("env lock");
+        let _secret_guard = EnvVarGuard::set("TAU_TEST_SECRET_LEAK", "super_secret_value");
+        let known_path = "/usr/bin:/bin:/tmp/tau-test-path";
+        let _path_guard = EnvVarGuard::set("PATH", known_path);
 
         let client = CodexCliClient::new(CodexCliConfig {
             executable: script.display().to_string(),
@@ -678,12 +682,10 @@ env | sort > "$out"
             !env_output.contains("TAU_TEST_SECRET_LEAK"),
             "subprocess inherited TAU_TEST_SECRET_LEAK — env_clear not applied"
         );
-        // PATH should still be present (allowlisted)
+        // PATH should still be present with the value we explicitly installed.
         assert!(
-            env_output.contains("PATH="),
-            "subprocess missing PATH — allowlist broken"
+            env_output.contains(&format!("PATH={known_path}")),
+            "subprocess missing allowlisted PATH — allowlist broken"
         );
-
-        std::env::remove_var("TAU_TEST_SECRET_LEAK");
     }
 }
