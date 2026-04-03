@@ -7480,8 +7480,15 @@ async fn integration_spec_2679_c01_safety_rules_and_test_endpoints_support_persi
     assert_eq!(put_rules_payload["updated"], Value::Bool(true));
     let custom_rule = put_rules_payload["rules"]["prompt_injection_rules"]
         .as_array()
-        .and_then(|rules| rules.iter().find(|r| r["rule_id"] == "custom.prompt.ignore"));
-    assert!(custom_rule.is_some(), "custom prompt rule must be present in response");
+        .and_then(|rules| {
+            rules
+                .iter()
+                .find(|r| r["rule_id"] == "custom.prompt.ignore")
+        });
+    assert!(
+        custom_rule.is_some(),
+        "custom prompt rule must be present in response"
+    );
 
     let rules_path = state
         .config
@@ -7505,7 +7512,10 @@ async fn integration_spec_2679_c01_safety_rules_and_test_endpoints_support_persi
     let custom_secret_rule = get_persisted_payload["rules"]["secret_leak_rules"]
         .as_array()
         .and_then(|rules| rules.iter().find(|r| r["rule_id"] == "custom.secret.token"));
-    assert!(custom_secret_rule.is_some(), "custom secret rule must be present in persisted rules");
+    assert!(
+        custom_secret_rule.is_some(),
+        "custom secret rule must be present in persisted rules"
+    );
 
     let safety_test_response = client
         .post(format!("http://{addr}{GATEWAY_SAFETY_TEST_ENDPOINT}"))
