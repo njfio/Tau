@@ -9,6 +9,7 @@ RUNTIME_DIR="${TAU_UNIFIED_RUNTIME_DIR:-${RUNTIME_DIR_DEFAULT}}"
 PID_FILE="${RUNTIME_DIR}/tau-unified.pid"
 LOG_FILE="${RUNTIME_DIR}/tau-unified.log"
 CMD_FILE="${RUNTIME_DIR}/tau-unified.last-cmd"
+FINGERPRINT_FILE="${RUNTIME_DIR}/tau-unified.runtime-fingerprint"
 
 MODEL_DEFAULT="${TAU_UNIFIED_MODEL:-gpt-5.3-codex}"
 BIND_DEFAULT="${TAU_UNIFIED_BIND:-127.0.0.1:8791}"
@@ -129,7 +130,50 @@ cleanup_stale_pid() {
   pid="$(cat "${PID_FILE}")"
   if [[ -z "${pid}" ]] || ! pid_is_alive "${pid}"; then
     rm -f "${PID_FILE}"
+    rm -f "${FINGERPRINT_FILE}"
   fi
+}
+
+compute_runtime_fingerprint_checksum() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 | awk '{print $1}'
+  elif command -v openssl >/dev/null 2>&1; then
+    openssl dgst -sha256 -r | awk '{print $1}'
+  else
+    die "tau-unified: requires sha256sum, shasum, or openssl to compute runtime fingerprint"
+  fi
+}
+
+build_runtime_fingerprint() {
+  local command="$1"
+  local git_head="nogit"
+  local tracked_changes="clean"
+
+  if git -C "${REPO_ROOT}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    git_head="$(git -C "${REPO_ROOT}" rev-parse HEAD 2>/dev/null || echo "unknown")"
+    tracked_changes="$(
+      git -C "${REPO_ROOT}" status --porcelain --untracked-files=no 2>/dev/null || true
+    )"
+  fi
+
+  printf 'head=%s\ncommand=%s\ntracked_changes=%s\n' \
+    "${git_head}" \
+    "${command}" \
+    "${tracked_changes}" \
+    | compute_runtime_fingerprint_checksum
+}
+
+runtime_fingerprint_matches() {
+  local expected="$1"
+  if [[ ! -f "${FINGERPRINT_FILE}" ]]; then
+    return 1
+  fi
+
+  local recorded
+  recorded="$(tr -d '\n' < "${FINGERPRINT_FILE}")"
+  [[ -n "${recorded}" && "${recorded}" == "${expected}" ]]
 }
 
 run_runner_mode() {
@@ -263,18 +307,27 @@ cmd_up() {
   ensure_runtime_dir
   cleanup_stale_pid
 
+  local command
+  command="$(build_up_command "${model}" "${bind}" "${auth_mode}" "${auth_token}" "${auth_password}" "${gateway_state_dir}" "${dashboard_state_dir}" "${request_timeout_ms}" "${agent_request_max_retries}" "${provider_max_retries}")"
+  local runtime_fingerprint
+  runtime_fingerprint="$(build_runtime_fingerprint "${command}")"
+
   if [[ -f "${PID_FILE}" ]]; then
     local existing_pid
     existing_pid="$(cat "${PID_FILE}")"
     if pid_is_alive "${existing_pid}"; then
-      log "tau-unified: already running (pid=${existing_pid})"
-      return 0
+      if runtime_fingerprint_matches "${runtime_fingerprint}"; then
+        log "tau-unified: already running (pid=${existing_pid})"
+        return 0
+      fi
+      log "tau-unified: recycling stale runtime (pid=${existing_pid}) because repo/runtime fingerprint changed"
+      cmd_down || true
+    else
+      rm -f "${PID_FILE}"
+      rm -f "${FINGERPRINT_FILE}"
     fi
-    rm -f "${PID_FILE}"
   fi
 
-  local command
-  command="$(build_up_command "${model}" "${bind}" "${auth_mode}" "${auth_token}" "${auth_password}" "${gateway_state_dir}" "${dashboard_state_dir}" "${request_timeout_ms}" "${agent_request_max_retries}" "${provider_max_retries}")"
   printf '%s\n' "${command}" > "${CMD_FILE}"
   : > "${LOG_FILE}"
 
@@ -298,6 +351,8 @@ cmd_up() {
     rm -f "${PID_FILE}"
     die "tau-unified: failed to start runtime process"
   fi
+
+  printf '%s\n' "${runtime_fingerprint}" > "${FINGERPRINT_FILE}"
 
   log "tau-unified: started (pid=${pid}) profile=${profile}"
   log "tau-unified: webchat=http://${bind}/webchat"
@@ -329,6 +384,7 @@ cmd_status() {
   log "tau-unified: pid_file=${PID_FILE}"
   log "tau-unified: log_file=${LOG_FILE}"
   log "tau-unified: command_file=${CMD_FILE}"
+  log "tau-unified: fingerprint_file=${FINGERPRINT_FILE}"
 }
 
 cmd_down() {
@@ -357,6 +413,7 @@ cmd_down() {
   fi
 
   rm -f "${PID_FILE}"
+  rm -f "${FINGERPRINT_FILE}"
   log "tau-unified: stopped"
 }
 
@@ -388,17 +445,6 @@ bootstrap_runtime_for_tui() {
   local dashboard_state_dir="$8"
   local request_timeout_ms="$9"
   local agent_request_max_retries="${10}"
-
-  cleanup_stale_pid
-  if [[ -f "${PID_FILE}" ]]; then
-    local existing_pid
-    existing_pid="$(cat "${PID_FILE}")"
-    if pid_is_alive "${existing_pid}"; then
-      log "tau-unified: runtime already running (pid=${existing_pid})"
-      return 0
-    fi
-    rm -f "${PID_FILE}"
-  fi
 
   log "tau-unified: bootstrapping runtime for tui"
   cmd_up \
