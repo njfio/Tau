@@ -58,13 +58,12 @@ pub(super) fn save_gateway_action_history_store(
 }
 
 pub(super) fn append_gateway_action_history_records(
-    state_dir: &Path,
+    store: &mut ActionHistoryStore,
     records: &[GatewayActionHistoryToolRecord],
-) -> Result<(), OpenResponsesApiError> {
+) {
     if records.is_empty() {
-        return Ok(());
+        return;
     }
-    let mut store = load_gateway_action_history_store(state_dir)?;
     for record in records {
         store.record(ActionRecord {
             session_id: record.session_key.clone(),
@@ -80,7 +79,6 @@ pub(super) fn append_gateway_action_history_records(
             timestamp_ms: record.timestamp_ms,
         });
     }
-    save_gateway_action_history_store(state_dir, &store)
 }
 
 pub(super) fn build_gateway_learning_insight(
@@ -109,22 +107,103 @@ pub(super) fn build_gateway_learning_insight(
 }
 
 pub(super) fn render_gateway_learning_bulletin(
+    store: &ActionHistoryStore,
+    lookback: usize,
+) -> String {
+    format_learning_bulletin(&build_gateway_learning_insight(store, lookback))
+}
+
+#[cfg(test)]
+fn render_gateway_learning_bulletin_from_disk(
     state_dir: &Path,
     lookback: usize,
 ) -> Result<String, OpenResponsesApiError> {
     let store = load_gateway_action_history_store(state_dir)?;
-    Ok(format_learning_bulletin(&build_gateway_learning_insight(
-        &store, lookback,
-    )))
+    Ok(render_gateway_learning_bulletin(&store, lookback))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::tempdir;
 
     #[test]
     fn unit_gateway_action_history_path_uses_openresponses_root() {
         let path = gateway_action_history_path(Path::new("/tmp/tau-gateway"));
         assert!(path.ends_with("openresponses/action-history.jsonl"));
+    }
+
+    #[test]
+    fn unit_append_gateway_action_history_records_updates_store_without_disk_io() {
+        let temp = tempdir().expect("tempdir");
+        let path = gateway_action_history_path(temp.path());
+        let mut store = ActionHistoryStore::new(ActionHistoryConfig {
+            store_path: path.clone(),
+            ..ActionHistoryConfig::default()
+        });
+        append_gateway_action_history_records(
+            &mut store,
+            &[GatewayActionHistoryToolRecord {
+                session_key: "session-a".to_string(),
+                mission_id: "mission-a".to_string(),
+                turn: 2,
+                tool_name: "bash".to_string(),
+                input_summary: "pwd".to_string(),
+                output_summary: "ok".to_string(),
+                success: true,
+                latency_ms: 12,
+                timestamp_ms: 44,
+            }],
+        );
+        assert_eq!(store.len(), 1);
+        assert!(
+            !path.exists(),
+            "in-memory append helper must not perform disk I/O by itself"
+        );
+    }
+
+    #[test]
+    fn unit_render_gateway_learning_bulletin_from_store_matches_disk_render() {
+        let temp = tempdir().expect("tempdir");
+        let now = current_unix_timestamp_ms();
+        let mut store = ActionHistoryStore::new(ActionHistoryConfig {
+            store_path: gateway_action_history_path(temp.path()),
+            ..ActionHistoryConfig::default()
+        });
+        append_gateway_action_history_records(
+            &mut store,
+            &[
+                GatewayActionHistoryToolRecord {
+                    session_key: "session-a".to_string(),
+                    mission_id: "mission-a".to_string(),
+                    turn: 1,
+                    tool_name: "bash".to_string(),
+                    input_summary: "cargo test".to_string(),
+                    output_summary: "timeout".to_string(),
+                    success: false,
+                    latency_ms: 90,
+                    timestamp_ms: now.saturating_sub(2),
+                },
+                GatewayActionHistoryToolRecord {
+                    session_key: "session-a".to_string(),
+                    mission_id: "mission-a".to_string(),
+                    turn: 2,
+                    tool_name: "read".to_string(),
+                    input_summary: "src/lib.rs".to_string(),
+                    output_summary: "ok".to_string(),
+                    success: true,
+                    latency_ms: 5,
+                    timestamp_ms: now.saturating_sub(1),
+                },
+            ],
+        );
+        let in_memory = render_gateway_learning_bulletin(&store, GATEWAY_ACTION_HISTORY_LOOKBACK);
+        save_gateway_action_history_store(temp.path(), &store).expect("save action history");
+        let disk_backed = render_gateway_learning_bulletin_from_disk(
+            temp.path(),
+            GATEWAY_ACTION_HISTORY_LOOKBACK,
+        )
+        .expect("render disk-backed bulletin");
+        assert_eq!(in_memory, disk_backed);
     }
 }
