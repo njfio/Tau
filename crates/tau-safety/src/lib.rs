@@ -552,6 +552,12 @@ pub fn enforce_safety_policy_floor(policy: &SafetyPolicy) -> Result<(), String> 
     if !policy.apply_to_tool_outputs {
         return Err("safety floor violation: 'apply_to_tool_outputs' must be true — tool output scanning cannot be disabled via API".to_string());
     }
+    if !policy.secret_leak_detection_enabled {
+        return Err("safety floor violation: 'secret_leak_detection_enabled' must be true — secret leak detection cannot be disabled via API".to_string());
+    }
+    if !policy.apply_to_outbound_http_payloads {
+        return Err("safety floor violation: 'apply_to_outbound_http_payloads' must be true — outbound payload scanning cannot be disabled via API".to_string());
+    }
     Ok(())
 }
 
@@ -584,6 +590,16 @@ pub fn enforce_safety_rules_floor(
                     default_rule.rule_id
                 ));
             }
+            Some(rule)
+                if rule.pattern != default_rule.pattern
+                    || rule.matcher != default_rule.matcher
+                    || rule.reason_code != default_rule.reason_code =>
+            {
+                return Err(format!(
+                    "safety floor violation: default prompt_injection rule '{}' must preserve matcher, pattern, and reason_code",
+                    default_rule.rule_id
+                ));
+            }
             _ => {}
         }
     }
@@ -602,6 +618,16 @@ pub fn enforce_safety_rules_floor(
             Some(rule) if !rule.enabled => {
                 return Err(format!(
                     "safety floor violation: default secret_leak rule '{}' must be enabled",
+                    default_rule.rule_id
+                ));
+            }
+            Some(rule)
+                if rule.pattern != default_rule.pattern
+                    || rule.matcher != default_rule.matcher
+                    || rule.reason_code != default_rule.reason_code =>
+            {
+                return Err(format!(
+                    "safety floor violation: default secret_leak rule '{}' must preserve matcher, pattern, and reason_code",
                     default_rule.rule_id
                 ));
             }
@@ -1309,6 +1335,32 @@ mod tests {
     }
 
     #[test]
+    fn security_enforce_safety_policy_floor_rejects_secret_leak_detection_disabled() {
+        let policy = SafetyPolicy {
+            secret_leak_detection_enabled: false,
+            ..SafetyPolicy::default()
+        };
+        let result = enforce_safety_policy_floor(&policy);
+        assert!(
+            result.is_err(),
+            "floor must reject secret_leak_detection_enabled=false"
+        );
+    }
+
+    #[test]
+    fn security_enforce_safety_policy_floor_rejects_outbound_payload_scanning_disabled() {
+        let policy = SafetyPolicy {
+            apply_to_outbound_http_payloads: false,
+            ..SafetyPolicy::default()
+        };
+        let result = enforce_safety_policy_floor(&policy);
+        assert!(
+            result.is_err(),
+            "floor must reject apply_to_outbound_http_payloads=false"
+        );
+    }
+
+    #[test]
     fn security_enforce_safety_policy_floor_accepts_valid_policy() {
         let policy = SafetyPolicy::default();
         let result = enforce_safety_policy_floor(&policy);
@@ -1356,5 +1408,29 @@ mod tests {
         rules.prompt_injection_rules[0].enabled = false;
         let result = enforce_safety_rules_floor(&rules, &defaults);
         assert!(result.is_err(), "floor must reject disabled default rule");
+    }
+
+    #[test]
+    fn security_enforce_safety_rules_floor_rejects_modified_default_prompt_rule_pattern() {
+        let defaults = default_safety_rule_set();
+        let mut rules = defaults.clone();
+        rules.prompt_injection_rules[0].pattern = "benign replacement".to_string();
+        let result = enforce_safety_rules_floor(&rules, &defaults);
+        assert!(
+            result.is_err(),
+            "floor must reject modified default prompt rule content"
+        );
+    }
+
+    #[test]
+    fn security_enforce_safety_rules_floor_rejects_modified_default_secret_rule_reason_code() {
+        let defaults = default_safety_rule_set();
+        let mut rules = defaults.clone();
+        rules.secret_leak_rules[0].reason_code = "secret_leak.bypassed".to_string();
+        let result = enforce_safety_rules_floor(&rules, &defaults);
+        assert!(
+            result.is_err(),
+            "floor must reject modified default secret rule content"
+        );
     }
 }
