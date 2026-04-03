@@ -613,4 +613,50 @@ echo "too late"
         assert!(prompt.contains("[tau-image:"));
         assert!(prompt.contains("[tau-audio:"));
     }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn security_codex_cli_client_sanitizes_subprocess_environment() {
+        let dir = tempdir().expect("tempdir");
+        let script = write_script(
+            dir.path(),
+            r#"
+out=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --output-last-message) out="$2"; shift 2;;
+    *) shift;;
+  esac
+done
+while IFS= read -r _line; do :; done
+env | sort > "$out"
+"#,
+        );
+
+        // Set a sentinel env var that should NOT be inherited
+        std::env::set_var("TAU_TEST_SECRET_LEAK", "super_secret_value");
+
+        let client = CodexCliClient::new(CodexCliConfig {
+            executable: script.display().to_string(),
+            extra_args: vec![],
+            timeout_ms: TEST_TIMEOUT_MS,
+        })
+        .expect("client");
+
+        let response = client.complete(test_request()).await.expect("complete");
+        let env_output = response.message.text_content();
+
+        // The sentinel var must NOT appear in the subprocess environment
+        assert!(
+            !env_output.contains("TAU_TEST_SECRET_LEAK"),
+            "subprocess inherited TAU_TEST_SECRET_LEAK — env_clear not applied"
+        );
+        // PATH should still be present (allowlisted)
+        assert!(
+            env_output.contains("PATH="),
+            "subprocess missing PATH — allowlist broken"
+        );
+
+        std::env::remove_var("TAU_TEST_SECRET_LEAK");
+    }
 }
