@@ -1189,4 +1189,71 @@ mod tests {
             eval.blocked_by
         );
     }
+
+    #[test]
+    fn security_enforce_safety_policy_floor_rejects_disabled() {
+        let mut policy = SafetyPolicy::default();
+        policy.enabled = false;
+        let result = enforce_safety_policy_floor(&policy);
+        assert!(result.is_err(), "floor must reject enabled=false");
+        assert!(result.unwrap_err().contains("enabled"));
+    }
+
+    #[test]
+    fn security_enforce_safety_policy_floor_rejects_inbound_disabled() {
+        let mut policy = SafetyPolicy::default();
+        policy.apply_to_inbound_messages = false;
+        let result = enforce_safety_policy_floor(&policy);
+        assert!(result.is_err(), "floor must reject apply_to_inbound_messages=false");
+    }
+
+    #[test]
+    fn security_enforce_safety_policy_floor_rejects_tool_outputs_disabled() {
+        let mut policy = SafetyPolicy::default();
+        policy.apply_to_tool_outputs = false;
+        let result = enforce_safety_policy_floor(&policy);
+        assert!(result.is_err(), "floor must reject apply_to_tool_outputs=false");
+    }
+
+    #[test]
+    fn security_enforce_safety_policy_floor_accepts_valid_policy() {
+        let policy = SafetyPolicy::default();
+        let result = enforce_safety_policy_floor(&policy);
+        assert!(result.is_ok(), "default policy must pass floor: {:?}", result.err());
+    }
+
+    #[test]
+    fn security_enforce_safety_rules_floor_rejects_missing_default_rules() {
+        let defaults = default_safety_rule_set();
+        let empty = SafetyRuleSet {
+            prompt_injection_rules: vec![],
+            secret_leak_rules: vec![],
+        };
+        let result = enforce_safety_rules_floor(&empty, &defaults);
+        assert!(result.is_err(), "floor must reject empty rules");
+    }
+
+    #[test]
+    fn security_enforce_safety_rules_floor_accepts_superset_of_defaults() {
+        let defaults = default_safety_rule_set();
+        let mut rules = defaults.clone();
+        rules.prompt_injection_rules.push(SafetyRule {
+            rule_id: "custom_rule".to_string(),
+            reason_code: "custom".to_string(),
+            pattern: "custom_pattern".to_string(),
+            matcher: SafetyRuleMatcher::Literal,
+            enabled: true,
+        });
+        let result = enforce_safety_rules_floor(&rules, &defaults);
+        assert!(result.is_ok(), "superset of defaults must pass: {:?}", result.err());
+    }
+
+    #[test]
+    fn security_enforce_safety_rules_floor_rejects_disabled_default_rule() {
+        let defaults = default_safety_rule_set();
+        let mut rules = defaults.clone();
+        rules.prompt_injection_rules[0].enabled = false;
+        let result = enforce_safety_rules_floor(&rules, &defaults);
+        assert!(result.is_err(), "floor must reject disabled default rule");
+    }
 }
