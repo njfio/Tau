@@ -138,6 +138,7 @@ if [[ ! -f "${fingerprint_file}" ]]; then
 fi
 assert_contains "$(cat "${cmd_file}")" "--model gpt-5.3-codex" "up default model flag"
 assert_contains "$(cat "${cmd_file}")" "--request-timeout-ms 180000" "up default timeout flag"
+assert_contains "$(cat "${cmd_file}")" "--turn-timeout-ms 180000" "up default turn timeout flag"
 assert_contains "$(cat "${cmd_file}")" "--agent-request-max-retries 0" "up default agent retries flag"
 assert_contains "$(cat "${cmd_file}")" "--provider-max-retries 0" "up default provider retries flag"
 if [[ -z "$(cat "${fingerprint_file}")" ]]; then
@@ -239,6 +240,7 @@ assert_contains "${tui_output}" "tau-unified: launching tui (interactive)" "tui 
 up_count_after_tui="$(count_runner_mode up "${runner_log}")"
 assert_equals "${up_count_before_tui}" "${up_count_after_tui}" "tui default does not bootstrap runtime in runner mode"
 assert_contains "$(cat "${runner_log}")" "--request-timeout-ms 180000" "tui default timeout flag"
+assert_contains "$(cat "${runner_log}")" "--turn-timeout-ms 180000" "tui default turn timeout flag"
 assert_contains "$(cat "${runner_log}")" "--agent-request-max-retries 0" "tui default retries flag"
 
 up_count_before_bootstrap="$(count_runner_mode up "${runner_log}")"
@@ -316,7 +318,20 @@ tui_override_output="$(
   "${LAUNCHER_SCRIPT}" tui --request-timeout-ms 9000 --agent-request-max-retries 2 --no-color 2>&1 || true
 )"
 assert_contains "${tui_override_output}" "tau-unified: launching tui (interactive)" "tui override marker"
+
+up_override_count_before="$(count_runner_mode up "${runner_log}")"
+tui_override_bootstrap_output="$(
+  TAU_UNIFIED_RUNNER="${runner}"   TAU_UNIFIED_RUNNER_LOG="${runner_log}"   TAU_UNIFIED_RUNNER_PID="${runner_pid}"   TAU_UNIFIED_RUNTIME_DIR="${runtime_dir}"   "${LAUNCHER_SCRIPT}" tui --bootstrap-runtime --request-timeout-ms 9000 --agent-request-max-retries 2 --no-color 2>&1 || true
+)"
+assert_contains "${tui_override_bootstrap_output}" "tau-unified: bootstrapping runtime for tui" "tui override bootstrap marker"
+up_override_count_after="$(count_runner_mode up "${runner_log}")"
+if [[ "${up_override_count_after}" -le "${up_override_count_before}" ]]; then
+  echo "assertion failed (tui override bootstrap restarts runtime): expected runner up count to increase" >&2
+  cat "${runner_log}" >&2
+  exit 1
+fi
 assert_contains "$(cat "${runner_log}")" "--request-timeout-ms 9000" "tui override timeout flag"
+assert_contains "$(cat "${runner_log}")" "--turn-timeout-ms 9000" "tui override turn timeout flag"
 assert_contains "$(cat "${runner_log}")" "--agent-request-max-retries 2" "tui override retries flag"
 
 assert_contains "$(cat "${runner_log}")" "runner_mode=up" "runner up logged"

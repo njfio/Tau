@@ -210,6 +210,7 @@ build_up_command() {
     --gateway-openresponses-auth-mode "${auth_mode}"
     --gateway-openresponses-max-input-chars 32000
     --request-timeout-ms "${request_timeout_ms}"
+    --turn-timeout-ms "${request_timeout_ms}"
     --agent-request-max-retries "${agent_request_max_retries}"
     --provider-max-retries "${provider_max_retries}"
   )
