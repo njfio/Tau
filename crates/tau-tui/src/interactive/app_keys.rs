@@ -2,6 +2,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use super::app::{App, FocusPanel, InputMode};
 use super::app_commands::{handle_command_palette_key, submit_input};
+use super::app_copy_target::copy_last_assistant;
 
 pub(crate) fn handle_key(app: &mut App, key: KeyEvent) {
     if handle_global_shortcut(app, key) {
@@ -30,6 +31,7 @@ fn handle_global_shortcut(app: &mut App, key: KeyEvent) -> bool {
         (KeyModifiers::CONTROL, KeyCode::Char('l')) => app.chat.clear(),
         (KeyModifiers::CONTROL, KeyCode::Char('t')) => app.show_tool_panel = !app.show_tool_panel,
         (KeyModifiers::CONTROL, KeyCode::Char('p')) => toggle_command_palette(app),
+        (KeyModifiers::CONTROL, KeyCode::Char('m')) => app.toggle_mouse_capture(),
         _ => return false,
     }
     true
@@ -58,6 +60,7 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
         }
         KeyCode::Char('q') => app.should_quit = true,
         KeyCode::Char('?') => app.show_help = true,
+        KeyCode::Char('y') if app.focus == FocusPanel::Chat => copy_last_assistant(app),
         KeyCode::Char('j') | KeyCode::Down if app.focus == FocusPanel::Chat => {
             app.chat.scroll_down(1)
         }
