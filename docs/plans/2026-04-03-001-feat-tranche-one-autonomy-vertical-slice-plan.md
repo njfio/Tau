@@ -20,7 +20,7 @@ Tau has substantial infrastructure already in place:
 
 - integrated CLI, gateway, TUI, and operator workflows in [README.md](../../README.md)
 - Ralph-loop mission persistence, verifier bundles, explicit completion semantics, and TUI resume controls in the gateway/TUI runtime
-- deterministic RL, training, and operator verification harnesses in [training-ops.md](../guides/training-ops.md) and [true-rl-roadmap-skeleton.md](true-rl-roadmap-skeleton.md)
+- deterministic RL, training, and operator verification harnesses in [training-ops.md](../guides/training-ops.md) and true-rl-roadmap-skeleton (planned)
 - existing product-direction plans for governed mission mode, TUI mission control, and spec-to-PR autopilot in:
   - [2026-03-23-001-feat-governed-mission-mode-plan.md](2026-03-23-001-feat-governed-mission-mode-plan.md)
   - [2026-03-23-002-feat-tui-mission-control-plan.md](2026-03-23-002-feat-tui-mission-control-plan.md)
