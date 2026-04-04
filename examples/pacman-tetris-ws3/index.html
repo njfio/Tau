@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <title>Pacman Tetris WS</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Bungee&family=Chakra+Petch:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #07101b;
+        --panel: rgba(7, 13, 23, 0.9);
+        --panel-border: rgba(104, 226, 255, 0.22);
+        --text: #f6f3dc;
+        --muted: #8ea6bf;
+        --rail: #63e3ff;
+        --accent: #ffb347;
+        --danger: #ff6b74;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        color: var(--text);
+        font-family: "Chakra Petch", "Trebuchet MS", sans-serif;
+        background:
+          radial-gradient(circle at top left, rgba(99, 227, 255, 0.22), transparent 34%),
+          radial-gradient(circle at bottom right, rgba(255, 179, 71, 0.18), transparent 28%),
+          linear-gradient(180deg, #0b1526 0%, #07101b 54%, #05070f 100%);
+      }
+
+      body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        background:
+          linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+          linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+        background-size: 24px 24px;
+        mask-image: radial-gradient(circle at center, black, transparent 88%);
+      }
+
+      main {
+        width: min(100%, 1180px);
+        margin: 0 auto;
+        padding: 28px 20px 36px;
+      }
+
+      .shell {
+        display: grid;
+        gap: 18px;
+      }
+
+      .hero {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        gap: 18px;
+        align-items: end;
+      }
+
+      .eyebrow {
+        margin: 0 0 8px;
+        color: var(--rail);
+        letter-spacing: 0.18em;
+        font-size: 0.78rem;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        margin: 0;
+        font-family: "Bungee", "Chakra Petch", sans-serif;
+        font-size: clamp(2.2rem, 5vw, 4.2rem);
+        line-height: 0.9;
+        letter-spacing: 0.04em;
+      }
+
+      .summary {
+        margin: 12px 0 0;
+        max-width: 58ch;
+        color: var(--muted);
+        font-size: 1rem;
+      }
+
+      .hero-note {
+        margin: 0;
+        max-width: 24ch;
+        padding: 14px 16px;
+        border: 1px solid var(--panel-border);
+        border-radius: 18px;
+        background: linear-gradient(180deg, rgba(13, 22, 38, 0.9), rgba(7, 12, 22, 0.86));
+        color: var(--text);
+        font-size: 0.95rem;
+      }
+
+      .frame {
+        position: relative;
+        overflow: hidden;
+        padding: 18px;
+        border-radius: 28px;
+        border: 1px solid var(--panel-border);
+        background:
+          linear-gradient(180deg, rgba(9, 15, 28, 0.96), rgba(6, 10, 19, 0.96)),
+          var(--panel);
+        box-shadow:
+          0 28px 80px rgba(0, 0, 0, 0.45),
+          inset 0 1px 0 rgba(255, 255, 255, 0.05);
+      }
+
+      .frame::before {
+        content: "";
+        position: absolute;
+        inset: 0 auto 0 0;
+        width: 160px;
+        background: linear-gradient(90deg, rgba(99, 227, 255, 0.08), transparent);
+        pointer-events: none;
+      }
+
+      #game {
+        display: flex;
+        justify-content: center;
+        min-height: 680px;
+      }
+
+      .footnote {
+        margin: 0;
+        color: var(--muted);
+      }
+
+      code {
+        font-family: "SF Mono", "Menlo", monospace;
+      }
+
+      @media (max-width: 720px) {
+        main {
+          padding-inline: 14px;
+        }
+
+        .frame {
+          padding: 12px;
+          border-radius: 22px;
+        }
+
+        #game {
+          min-height: 620px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="shell">
+        <header class="hero">
+          <div>
+            <p class="eyebrow">Examples / Phaser 3 / Warp Shift</p>
+            <h1>Pacman Tetris WS</h1>
+            <p class="summary">
+              A wider, meaner sibling to the first mashup: steer Pac-Man through
+              a live pellet field while tetrominoes keep dropping into the same
+              board. Arrow keys move Pac-Man. <code>A</code>, <code>D</code>,
+              <code>W</code>, <code>S</code>, and <code>Space</code> drive the
+              active piece.
+            </p>
+          </div>
+          <p class="hero-note">
+            Row clears stun the ghosts. Power pellets flip the hunt. If a block
+            lands on Pac-Man, the cabinet wins.
+          </p>
+        </header>
+        <section class="frame">
+          <div id="game" aria-label="Pacman Tetris WS game canvas"></div>
+        </section>
+        <p class="footnote">
+          Serve locally with
+          <code>python3 -m http.server 4174 --directory examples/pacman-tetris-ws</code>.
+        </p>
+      </div>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.90.0/dist/phaser.min.js"></script>
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>

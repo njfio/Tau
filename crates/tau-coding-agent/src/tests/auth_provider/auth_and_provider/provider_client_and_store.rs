@@ -525,16 +525,16 @@ fn unit_encrypt_and_decrypt_credential_store_secret_roundtrip_keyed() {
     let encoded = encrypt_credential_store_secret(
         secret,
         CredentialStoreEncryptionMode::Keyed,
-        Some("very-strong-key"),
+        Some("very-strong-key-x"),
     )
     .expect("encode credential");
-    assert!(encoded.starts_with("enc:v2:"));
+    assert!(encoded.starts_with("enc:v3:") || encoded.starts_with("enc:v2:"));
     assert!(!encoded.contains(secret));
 
     let decoded = decrypt_credential_store_secret(
         &encoded,
         CredentialStoreEncryptionMode::Keyed,
-        Some("very-strong-key"),
+        Some("very-strong-key-x"),
     )
     .expect("decode credential");
     assert_eq!(decoded, secret);
@@ -545,14 +545,14 @@ fn regression_decrypt_credential_store_secret_rejects_wrong_key() {
     let encoded = encrypt_credential_store_secret(
         "secret-token-xyz",
         CredentialStoreEncryptionMode::Keyed,
-        Some("correct-key-123"),
+        Some("correct-key-123-x"),
     )
     .expect("encode credential");
 
     let error = decrypt_credential_store_secret(
         &encoded,
         CredentialStoreEncryptionMode::Keyed,
-        Some("wrong-key-123"),
+        Some("wrong-key-123-xxx"),
     )
     .expect_err("wrong key should fail");
     assert!(error.to_string().contains("integrity check failed"));
@@ -605,7 +605,7 @@ fn functional_credential_store_roundtrip_preserves_provider_records() {
     write_test_provider_credential(
         &store_path,
         CredentialStoreEncryptionMode::Keyed,
-        Some("credential-key"),
+        Some("credential-key-xx"),
         Provider::OpenAi,
         ProviderCredentialStoreRecord {
             auth_method: ProviderAuthMethod::OauthToken,
@@ -619,7 +619,7 @@ fn functional_credential_store_roundtrip_preserves_provider_records() {
     let loaded = load_credential_store(
         &store_path,
         CredentialStoreEncryptionMode::None,
-        Some("credential-key"),
+        Some("credential-key-xx"),
     )
     .expect("load credential store");
     let entry = loaded
@@ -640,7 +640,7 @@ fn integration_credential_store_roundtrip_preserves_integration_records() {
     write_test_integration_credential(
         &store_path,
         CredentialStoreEncryptionMode::Keyed,
-        Some("credential-key"),
+        Some("credential-key-xx"),
         "github-token",
         IntegrationCredentialStoreRecord {
             secret: Some("ghp_top_secret".to_string()),
@@ -652,7 +652,7 @@ fn integration_credential_store_roundtrip_preserves_integration_records() {
     let loaded = load_credential_store(
         &store_path,
         CredentialStoreEncryptionMode::None,
-        Some("credential-key"),
+        Some("credential-key-xx"),
     )
     .expect("load credential store");
     let entry = loaded

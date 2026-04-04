@@ -279,6 +279,8 @@ Checked-in example assets and starter package references:
 - `./examples/extensions/issue-assistant/payload.json`
 - `./examples/events`
 - `./examples/events-state.json`
+- `./examples/pacman-tetris`
+- `./examples/pacman-tetris-ws`
 
 See `./examples/README.md` for package and asset walkthrough details.
 

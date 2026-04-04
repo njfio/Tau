@@ -20,7 +20,7 @@ impl Default for GatewayRuntimeConfig {
             auth_token: None,
             session_key: "default".to_string(),
             mission_id: None,
-            request_timeout_ms: 180_000,
+            request_timeout_ms: 600_000,
         }
     }
 }

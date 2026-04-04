@@ -219,9 +219,12 @@ pub(super) async fn execute_openresponses_request(
     let start_index = agent.messages().len();
     let pre_prompt_cost = agent.cost_snapshot();
     let prompt_tokens = tokenize_gateway_skill_prompt(&translated.prompt);
-    let requires_tool_evidence = gateway_prompt_tokens_request_action(&prompt_tokens);
-    let requires_mutation_evidence = gateway_prompt_tokens_request_mutation(&prompt_tokens);
-    let requires_validation_evidence = gateway_prompt_tokens_request_validation(&prompt_tokens);
+    let delegated = state.config.delegated_tool_execution;
+    let requires_tool_evidence = !delegated && gateway_prompt_tokens_request_action(&prompt_tokens);
+    let requires_mutation_evidence =
+        !delegated && gateway_prompt_tokens_request_mutation(&prompt_tokens);
+    let requires_validation_evidence =
+        !delegated && gateway_prompt_tokens_request_validation(&prompt_tokens);
     let mission_path =
         gateway_mission_state_path(&state.config.state_dir, translated.mission_id.as_str());
     let mut mission_state = GatewayMissionState::load_or_create(
