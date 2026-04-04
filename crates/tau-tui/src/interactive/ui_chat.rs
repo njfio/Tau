@@ -10,7 +10,7 @@ use super::app::{App, FocusPanel};
 use super::chat::MessageRole;
 use super::ui_chat_tool_lines::{build_tool_summary_lines, build_transcript_tool_lines};
 
-pub(crate) fn render_chat_panel(frame: &mut Frame, app: &App, area: Rect) {
+pub(crate) fn render_chat_panel(frame: &mut Frame, app: &mut App, area: Rect) {
     let border_style = if app.focus == FocusPanel::Chat {
         Style::default().fg(Color::Cyan)
     } else {
@@ -54,6 +54,9 @@ pub(crate) fn render_chat_panel(frame: &mut Frame, app: &App, area: Rect) {
 
     let total_lines = lines.len();
     let visible_height = content_chunks[1].height as usize;
+    let max_scroll = total_lines.saturating_sub(visible_height);
+    app.chat.set_max_scroll(max_scroll);
+
     let scroll = compute_chat_scroll(app, total_lines, visible_height);
     let paragraph = Paragraph::new(Text::from(lines))
         .wrap(Wrap { trim: false })
@@ -126,12 +129,9 @@ fn compute_chat_scroll(app: &App, total_lines: usize, visible_height: usize) -> 
     if total_lines <= visible_height {
         return 0;
     }
-
-    let msg_idx = app.chat.scroll_offset();
-    if msg_idx >= app.chat.len().saturating_sub(1) {
-        return (total_lines - visible_height) as u16;
+    let max = total_lines.saturating_sub(visible_height);
+    if app.chat.follow_mode() {
+        return max as u16;
     }
-
-    let approx = msg_idx * 3;
-    approx.min(total_lines.saturating_sub(visible_height)) as u16
+    app.chat.scroll_offset().min(max) as u16
 }

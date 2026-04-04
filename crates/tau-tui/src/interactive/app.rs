@@ -68,6 +68,7 @@ pub struct App {
     pub show_help: bool,
     pub command_input: String,
     pub show_tool_panel: bool,
+    mouse_captured: bool,
     current_turn_tool_start: usize,
     pending_turn: Option<Receiver<GatewayTurnResponse>>,
 }
@@ -88,6 +89,7 @@ impl App {
             show_help: false,
             command_input: String::new(),
             show_tool_panel: true,
+            mouse_captured: true,
             current_turn_tool_start: 0,
             pending_turn: None,
         }
@@ -275,6 +277,26 @@ impl App {
             timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
         });
         self.chat.scroll_to_bottom();
+    }
+
+    pub fn toggle_mouse_capture(&mut self) {
+        use crossterm::event::{DisableMouseCapture, EnableMouseCapture};
+        use crossterm::execute;
+        if self.mouse_captured {
+            let _ = execute!(std::io::stdout(), DisableMouseCapture);
+            self.mouse_captured = false;
+            self.push_timestamped_message(
+                MessageRole::System,
+                "Mouse capture disabled. Use /toggle-mouse or Ctrl+M to re-enable.".to_string(),
+            );
+        } else {
+            let _ = execute!(std::io::stdout(), EnableMouseCapture);
+            self.mouse_captured = true;
+            self.push_timestamped_message(
+                MessageRole::System,
+                "Mouse capture enabled.".to_string(),
+            );
+        }
     }
 
     fn bind_active_mission(&mut self, mission: &GatewayMissionSnapshot) {

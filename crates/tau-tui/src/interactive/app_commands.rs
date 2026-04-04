@@ -1,7 +1,7 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
 use super::app::{App, FocusPanel};
-use super::app_copy_target::copy_latest_mutating_target;
+use super::app_copy_target::{copy_last_assistant, copy_latest_mutating_target, copy_transcript};
 use super::chat::{ChatMessage, MessageRole};
 
 pub(crate) fn handle_command_palette_key(app: &mut App, key: KeyEvent) {
@@ -53,6 +53,9 @@ fn execute_command(app: &mut App, cmd: &str) {
         "help" => app.show_help = true,
         "tools" => app.show_tool_panel = !app.show_tool_panel,
         "copy-target" => copy_latest_mutating_target(app),
+        "copy-last" => copy_last_assistant(app),
+        "copy" => copy_transcript(app),
+        "toggle-mouse" => app.toggle_mouse_capture(),
         "missions" => app.list_missions(),
         "mission" => {
             if let Some(mission_id) = parts.next() {
