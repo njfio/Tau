@@ -1,6 +1,6 @@
 set shell := ["bash", "-lc"]
 
-TAU_ENV := "unset OPENAI_API_KEY TAU_API_KEY && export TAU_OPENAI_AUTH_MODE=oauth-token && export TAU_PROVIDER_SUBSCRIPTION_STRICT=true"
+TAU_ENV := "unset OPENAI_API_KEY TAU_API_KEY && export TAU_OPENAI_AUTH_MODE=oauth-token && export TAU_PROVIDER_SUBSCRIPTION_STRICT=true && export TAU_OPENAI_CODEX_APPSERVER=true && export TAU_OPENAI_CODEX_TIMEOUT_MS=300000"
 SESSION_DIR := ".tau/gateway/openresponses/sessions"
 SESSION_FILE := ".tau/gateway/openresponses/sessions/default.jsonl"
 
@@ -16,7 +16,7 @@ stack-up:
 
 stack-up-fast:
 	@echo "starting unified runtime (reuse credentials)"
-	{{TAU_ENV}}; ./scripts/run/tau-unified.sh up --auth-mode localhost-dev --model gpt-5.3-codex
+	{{TAU_ENV}}; ./scripts/run/tau-unified.sh up --auth-mode localhost-dev --model gpt-5.4
 
 stack-down:
 	@echo "stopping unified runtime"
@@ -31,7 +31,7 @@ rebuild:
 
 tui:
 	@echo "launching tau tui from root path"
-	{{TAU_ENV}}; ./scripts/run/tau-unified.sh tui --model gpt-5.3-codex --request-timeout-ms 180000 --agent-request-max-retries 0
+	{{TAU_ENV}}; ./scripts/run/tau-unified.sh tui --model gpt-5.4 --request-timeout-ms 600000 --agent-request-max-retries 0
 
 stack-up-fresh: session-reset stack-up-fast
 	@echo "fresh stack is up"
