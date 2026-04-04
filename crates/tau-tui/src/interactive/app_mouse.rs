@@ -9,8 +9,12 @@ use super::ui_layout::active_panel_at;
 pub(crate) fn handle_mouse(app: &mut App, mouse: MouseEvent, terminal_area: Rect) {
     match mouse.kind {
         MouseEventKind::Down(MouseButton::Left) => focus_panel_at_cursor(app, mouse, terminal_area),
-        MouseEventKind::ScrollDown => scroll_panel_at_cursor(app, mouse, terminal_area, SCROLL_LINES_PER_TICK),
-        MouseEventKind::ScrollUp => scroll_panel_at_cursor(app, mouse, terminal_area, -SCROLL_LINES_PER_TICK),
+        MouseEventKind::ScrollDown => {
+            scroll_panel_at_cursor(app, mouse, terminal_area, SCROLL_LINES_PER_TICK)
+        }
+        MouseEventKind::ScrollUp => {
+            scroll_panel_at_cursor(app, mouse, terminal_area, -SCROLL_LINES_PER_TICK)
+        }
         _ => {}
     }
 }
