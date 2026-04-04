@@ -9,6 +9,7 @@ mod claude_cli_client;
 mod cli_executable;
 mod client;
 mod codex_appserver_client;
+mod codex_appserver_lifecycle;
 mod codex_cli_client;
 mod credential_store;
 mod credentials;

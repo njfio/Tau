@@ -25,6 +25,7 @@ use crate::auth::{
 };
 use crate::claude_cli_client::{ClaudeCliClient, ClaudeCliConfig};
 use crate::codex_appserver_client::{CodexAppServerClient, CodexAppServerConfig};
+use crate::codex_appserver_lifecycle::CodexAppServerProcess;
 use crate::codex_cli_client::{CodexCliClient, CodexCliConfig};
 use crate::credential_store::{load_credential_store, resolve_credential_store_encryption_mode};
 use crate::credentials::{
@@ -337,17 +338,25 @@ fn build_openai_codex_client(cli: &Cli, provider: Provider) -> Result<Arc<dyn Ll
 }
 
 fn build_openai_appserver_client(cli: &Cli, provider: Provider) -> Result<Arc<dyn LlmClient>> {
-    let url = cli
-        .openai_codex_appserver_url
-        .clone()
-        .unwrap_or_else(|| "ws://127.0.0.1:9876".to_string());
+    let url = if let Some(ref url) = cli.openai_codex_appserver_url {
+        url.clone()
+    } else {
+        // Auto-spawn the app-server process
+        let process = CodexAppServerProcess::spawn(&cli.openai_codex_cli)
+            .map_err(|e| anyhow::anyhow!("codex app-server launch failed: {e}"))?;
+        let url = process.url();
+        // Leak the process handle so it lives for the program's lifetime.
+        // The OS will clean up the child when the parent exits.
+        std::mem::forget(process);
+        url
+    };
     let client = CodexAppServerClient::new(CodexAppServerConfig {
         url: url.clone(),
         timeout_ms: cli.openai_codex_timeout_ms.max(1),
         approval_policy: "never".to_string(),
         sandbox: "workspace-write".to_string(),
     });
-    tracing::debug!(
+    tracing::info!(
         provider = provider.as_str(),
         auth_mode = "appserver_backend",
         url = %url,
