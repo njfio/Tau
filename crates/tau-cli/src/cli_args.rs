@@ -233,6 +233,24 @@ pub struct Cli {
     pub openai_codex_timeout_ms: u64,
 
     #[arg(
+        long = "openai-codex-appserver",
+        env = "TAU_OPENAI_CODEX_APPSERVER",
+        default_value_t = false,
+        action = ArgAction::Set,
+        num_args = 0..=1,
+        require_equals = true,
+        default_missing_value = "true",
+        help = "Use codex app-server WebSocket backend instead of codex exec subprocess"
+    )]
+    pub openai_codex_appserver: bool,
+
+    #[arg(
+        long = "openai-codex-appserver-url",
+        env = "TAU_OPENAI_CODEX_APPSERVER_URL",
+        help = "WebSocket URL for an existing codex app-server (e.g. ws://127.0.0.1:9876). When set, Tau connects to this server instead of launching one."
+    )]
+    pub openai_codex_appserver_url: Option<String>,
+    #[arg(
         long = "anthropic-auth-mode",
         env = "TAU_ANTHROPIC_AUTH_MODE",
         value_enum,
