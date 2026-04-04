@@ -7,7 +7,7 @@ use super::{
     ui,
 };
 
-fn render_text(app: &App, width: u16, height: u16) -> String {
+fn render_text(app: &mut App, width: u16, height: u16) -> String {
     let backend = TestBackend::new(width, height);
     let mut terminal = Terminal::new(backend).expect("terminal");
     terminal.draw(|frame| ui::render(frame, app)).expect("draw");
@@ -30,7 +30,7 @@ fn red_spec_3592_main_shell_surfaces_running_tool_activity_without_tools_panel()
     app.status.agent_state = AgentStateDisplay::ToolExec;
     app.push_tool_event("bash".to_string(), ToolStatus::Running, "pwd".to_string());
 
-    let rendered = render_text(&app, 100, 24);
+    let rendered = render_text(&mut app, 100, 24);
 
     assert!(
         rendered.contains("Running tool: bash"),
@@ -48,7 +48,7 @@ fn red_spec_3592_main_shell_surfaces_last_failed_tool_summary() {
         "permission denied".to_string(),
     );
 
-    let rendered = render_text(&app, 100, 24);
+    let rendered = render_text(&mut app, 100, 24);
 
     assert!(
         rendered.contains("Last tool failed: write"),
@@ -71,7 +71,7 @@ fn integration_spec_3592_real_render_path_keeps_tool_panel_and_main_shell_tool_s
         "/Users/n/RustroverProjects/rust_pi-3592".to_string(),
     );
 
-    let rendered = render_text(&app, 120, 28);
+    let rendered = render_text(&mut app, 120, 28);
 
     assert!(
         rendered.contains("Tools (0 active / 1 total)"),
@@ -95,7 +95,7 @@ fn red_spec_3594_transcript_surfaces_running_tool_entry() {
     });
     app.push_tool_event("bash".to_string(), ToolStatus::Running, "pwd".to_string());
 
-    let rendered = render_text(&app, 100, 24);
+    let rendered = render_text(&mut app, 100, 24);
 
     assert!(
         rendered.contains("Tool:"),
@@ -122,7 +122,7 @@ fn red_spec_3594_transcript_surfaces_terminal_tool_entry() {
         "permission denied".to_string(),
     );
 
-    let rendered = render_text(&app, 100, 24);
+    let rendered = render_text(&mut app, 100, 24);
 
     assert!(
         rendered.contains("Tool:"),
@@ -153,7 +153,7 @@ fn integration_spec_3594_real_render_path_keeps_side_panel_and_transcript_tool_e
         "/Users/n/RustroverProjects/rust_pi-3594".to_string(),
     );
 
-    let rendered = render_text(&app, 120, 28);
+    let rendered = render_text(&mut app, 120, 28);
 
     assert!(
         rendered.contains("Tools (0 active / 1 total)"),

@@ -6,7 +6,7 @@ use super::app::{App, FocusPanel};
 use super::{ui_body, ui_input, ui_layout, ui_overlays, ui_status};
 
 /// Render the full application UI.
-pub fn render(frame: &mut Frame, app: &App) {
+pub fn render(frame: &mut Frame, app: &mut App) {
     let size = frame.area();
     let layout = ui_layout::frame_layout(frame, app);
 

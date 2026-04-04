@@ -55,6 +55,7 @@ fn red_spec_3596_scroll_down_over_chat_moves_chat_scroll_offset() {
     for idx in 0..30 {
         app.push_message(MessageRole::Assistant, format!("message {idx}"));
     }
+    app.chat.set_max_scroll(100);
     app.chat.scroll_to_top();
 
     handle_mouse(&mut app, scroll_down(10, 5), terminal_area());

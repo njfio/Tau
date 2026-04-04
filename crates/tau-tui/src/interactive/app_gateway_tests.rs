@@ -245,7 +245,7 @@ fn red_spec_3618_matching_prompt_surfaces_active_skill_name_in_rendered_tui() {
     let backend = ratatui::backend::TestBackend::new(120, 24);
     let mut terminal = ratatui::Terminal::new(backend).expect("terminal");
     terminal
-        .draw(|frame| super::ui::render(frame, &app))
+        .draw(|frame| super::ui::render(frame, &mut app))
         .expect("draw");
     let buffer = terminal.backend().buffer().clone();
     let mut rendered = String::new();
@@ -275,7 +275,7 @@ fn red_spec_3618_non_matching_prompt_omits_active_skill_label() {
     let backend = ratatui::backend::TestBackend::new(120, 24);
     let mut terminal = ratatui::Terminal::new(backend).expect("terminal");
     terminal
-        .draw(|frame| super::ui::render(frame, &app))
+        .draw(|frame| super::ui::render(frame, &mut app))
         .expect("draw");
     let buffer = terminal.backend().buffer().clone();
     let mut rendered = String::new();
@@ -336,7 +336,7 @@ fn red_spec_3659_resume_command_binds_active_mission_and_surfaces_status() {
     let backend = ratatui::backend::TestBackend::new(120, 24);
     let mut terminal = ratatui::Terminal::new(backend).expect("terminal");
     terminal
-        .draw(|frame| super::ui::render(frame, &app))
+        .draw(|frame| super::ui::render(frame, &mut app))
         .expect("draw");
     let buffer = terminal.backend().buffer().clone();
     let mut rendered = String::new();
