@@ -2588,8 +2588,10 @@ fn regression_execute_auth_command_rotate_key_fails_closed_for_invalid_inputs() 
         },
     );
 
-    let wrong_old_key_output =
-        execute_auth_command(&config, "rotate-key --new-key new-key-xxxxxxxxxx --old-key wrong-key-xxxxxxx");
+    let wrong_old_key_output = execute_auth_command(
+        &config,
+        "rotate-key --new-key new-key-xxxxxxxxxx --old-key wrong-key-xxxxxxx",
+    );
     assert!(wrong_old_key_output.contains("auth rotate-key error:"));
 
     let still_old = load_credential_store(
@@ -2608,7 +2610,8 @@ fn regression_execute_auth_command_rotate_key_fails_closed_for_invalid_inputs() 
 
     let mut unkeyed_config = config.clone();
     unkeyed_config.credential_store_encryption = CredentialStoreEncryptionMode::None;
-    let unkeyed_output = execute_auth_command(&unkeyed_config, "rotate-key --new-key next-key-xxxxxxxx");
+    let unkeyed_output =
+        execute_auth_command(&unkeyed_config, "rotate-key --new-key next-key-xxxxxxxx");
     assert!(unkeyed_output.contains("auth rotate-key error:"));
     assert!(unkeyed_output.contains("credential store encryption mode"));
 }
