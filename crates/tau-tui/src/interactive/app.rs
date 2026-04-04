@@ -68,7 +68,7 @@ pub struct App {
     pub show_help: bool,
     pub command_input: String,
     pub show_tool_panel: bool,
-    pub mouse_captured: bool,
+    mouse_captured: bool,
     current_turn_tool_start: usize,
     pending_turn: Option<Receiver<GatewayTurnResponse>>,
 }

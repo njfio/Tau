@@ -1,14 +1,16 @@
 use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::Rect;
 
+const SCROLL_LINES_PER_TICK: i16 = 3;
+
 use super::app::{App, FocusPanel};
 use super::ui_layout::active_panel_at;
 
 pub(crate) fn handle_mouse(app: &mut App, mouse: MouseEvent, terminal_area: Rect) {
     match mouse.kind {
         MouseEventKind::Down(MouseButton::Left) => focus_panel_at_cursor(app, mouse, terminal_area),
-        MouseEventKind::ScrollDown => scroll_panel_at_cursor(app, mouse, terminal_area, 3),
-        MouseEventKind::ScrollUp => scroll_panel_at_cursor(app, mouse, terminal_area, -3),
+        MouseEventKind::ScrollDown => scroll_panel_at_cursor(app, mouse, terminal_area, SCROLL_LINES_PER_TICK),
+        MouseEventKind::ScrollUp => scroll_panel_at_cursor(app, mouse, terminal_area, -SCROLL_LINES_PER_TICK),
         _ => {}
     }
 }

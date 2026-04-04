@@ -10,12 +10,6 @@ use super::app::App;
 
 pub(crate) fn render_help_overlay(frame: &mut Frame, area: Rect) {
     let help_width = 60u16.min(area.width.saturating_sub(4));
-    let help_height = 32u16.min(area.height.saturating_sub(4));
-    let x = (area.width - help_width) / 2;
-    let y = (area.height - help_height) / 2;
-    let popup_area = Rect::new(x, y, help_width, help_height);
-
-    frame.render_widget(Clear, popup_area);
 
     let help_text = vec![
         Line::from(Span::styled(
@@ -61,7 +55,7 @@ pub(crate) fn render_help_overlay(frame: &mut Frame, area: Rect) {
         Line::from("  Ctrl+l    Clear chat"),
         Line::from("  Ctrl+t    Toggle tool panel"),
         Line::from("  Ctrl+p    Command palette"),
-        Line::from("  Ctrl+m    Toggle mouse capture"),
+        Line::from("  Ctrl+y    Toggle mouse capture"),
         Line::from("  y         Yank last assistant response (normal mode)"),
         Line::from(""),
         Line::from(Span::styled(
@@ -70,6 +64,13 @@ pub(crate) fn render_help_overlay(frame: &mut Frame, area: Rect) {
         )),
         Line::from("  Option+drag (macOS) or Shift+drag to select text"),
     ];
+
+    let help_height = ((help_text.len() + 2) as u16).min(area.height.saturating_sub(4));
+    let x = (area.width - help_width) / 2;
+    let y = (area.height - help_height) / 2;
+    let popup_area = Rect::new(x, y, help_width, help_height);
+
+    frame.render_widget(Clear, popup_area);
 
     let paragraph = Paragraph::new(Text::from(help_text))
         .block(

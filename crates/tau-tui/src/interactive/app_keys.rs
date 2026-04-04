@@ -31,7 +31,7 @@ fn handle_global_shortcut(app: &mut App, key: KeyEvent) -> bool {
         (KeyModifiers::CONTROL, KeyCode::Char('l')) => app.chat.clear(),
         (KeyModifiers::CONTROL, KeyCode::Char('t')) => app.show_tool_panel = !app.show_tool_panel,
         (KeyModifiers::CONTROL, KeyCode::Char('p')) => toggle_command_palette(app),
-        (KeyModifiers::CONTROL, KeyCode::Char('m')) => app.toggle_mouse_capture(),
+        (KeyModifiers::CONTROL, KeyCode::Char('y')) => app.toggle_mouse_capture(),
         _ => return false,
     }
     true
