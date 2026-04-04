@@ -10,7 +10,7 @@ use super::app::App;
 
 pub(crate) fn render_help_overlay(frame: &mut Frame, area: Rect) {
     let help_width = 60u16.min(area.width.saturating_sub(4));
-    let help_height = 22u16.min(area.height.saturating_sub(4));
+    let help_height = 32u16.min(area.height.saturating_sub(4));
     let x = (area.width - help_width) / 2;
     let y = (area.height - help_height) / 2;
     let popup_area = Rect::new(x, y, help_width, help_height);
@@ -49,6 +49,9 @@ pub(crate) fn render_help_overlay(frame: &mut Frame, area: Rect) {
         Line::from("  Shift+Enter / Alt+Enter  New line"),
         Line::from("  Esc       Back to normal mode"),
         Line::from("  /copy-target  Copy latest write/edit target path"),
+        Line::from("  /copy-last    Copy last assistant message"),
+        Line::from("  /copy         Copy full chat transcript"),
+        Line::from("  /toggle-mouse Disable mouse capture for text selection"),
         Line::from(""),
         Line::from(Span::styled(
             "Global",
@@ -58,6 +61,14 @@ pub(crate) fn render_help_overlay(frame: &mut Frame, area: Rect) {
         Line::from("  Ctrl+l    Clear chat"),
         Line::from("  Ctrl+t    Toggle tool panel"),
         Line::from("  Ctrl+p    Command palette"),
+        Line::from("  Ctrl+m    Toggle mouse capture"),
+        Line::from("  y         Yank last assistant response (normal mode)"),
+        Line::from(""),
+        Line::from(Span::styled(
+            "Text Selection",
+            Style::default().add_modifier(Modifier::BOLD),
+        )),
+        Line::from("  Option+drag (macOS) or Shift+drag to select text"),
     ];
 
     let paragraph = Paragraph::new(Text::from(help_text))
