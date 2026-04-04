@@ -364,6 +364,8 @@ pub(crate) fn test_cli() -> Cli {
         openai_codex_cli: "codex".to_string(),
         openai_codex_args: vec![],
         openai_codex_timeout_ms: 120_000,
+        openai_codex_appserver: false,
+        openai_codex_appserver_url: None,
         anthropic_auth_mode: CliProviderAuthMode::ApiKey,
         anthropic_claude_backend: true,
         anthropic_claude_cli: "claude".to_string(),
