@@ -85,7 +85,10 @@ fn kill_orphan_from_pid_file(pid_file: &Path) {
         return;
     };
 
-    tracing::info!(pid = pid, "killing orphan codex app-server from previous run");
+    tracing::info!(
+        pid = pid,
+        "killing orphan codex app-server from previous run"
+    );
 
     #[cfg(unix)]
     {
