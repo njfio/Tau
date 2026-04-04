@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <title>Pacman Tetris</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #05060c;
+        --panel: rgba(9, 12, 24, 0.92);
+        --rail: #17d7c8;
+        --accent: #ffb84d;
+        --text: #f6f2d8;
+        --muted: #9fb1c7;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background:
+          radial-gradient(circle at top, rgba(32, 67, 128, 0.35), transparent 42%),
+          radial-gradient(circle at bottom, rgba(255, 152, 64, 0.12), transparent 32%),
+          linear-gradient(180deg, #060914 0%, #05060c 100%);
+        color: var(--text);
+        font-family: "Trebuchet MS", "Avenir Next", sans-serif;
+      }
+
+      main {
+        width: min(100%, 980px);
+        padding: 24px;
+      }
+
+      .frame {
+        display: grid;
+        gap: 16px;
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .header {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: end;
+      }
+
+      .eyebrow {
+        margin: 0 0 6px;
+        color: var(--accent);
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        font-size: 0.75rem;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: clamp(2rem, 4vw, 3rem);
+        line-height: 0.95;
+      }
+
+      .summary {
+        margin: 10px 0 0;
+        max-width: 56ch;
+        color: var(--muted);
+      }
+
+      .game-card {
+        padding: 16px;
+        border: 1px solid rgba(98, 129, 180, 0.35);
+        border-radius: 22px;
+        background: var(--panel);
+        box-shadow:
+          0 24px 80px rgba(0, 0, 0, 0.45),
+          inset 0 1px 0 rgba(255, 255, 255, 0.05);
+      }
+
+      #game {
+        display: flex;
+        justify-content: center;
+        min-height: 632px;
+      }
+
+      .footnote {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.95rem;
+      }
+
+      code {
+        font-family: "SF Mono", "Menlo", monospace;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="frame">
+        <header class="header">
+          <div>
+            <p class="eyebrow">Examples / Phaser 3</p>
+            <h1>Pacman Tetris</h1>
+            <p class="summary">
+              Pilot Pac-Man through a pellet field while tetrominoes rain down
+              and reshape the arena. Arrow keys steer Pac-Man. <code>A</code>,
+              <code>D</code>, <code>W</code>, <code>S</code>, and
+              <code>Space</code> drive the falling piece.
+            </p>
+          </div>
+        </header>
+        <section class="game-card">
+          <div id="game" aria-label="Pacman Tetris game canvas"></div>
+        </section>
+        <p class="footnote">
+          Serve locally with
+          <code>python3 -m http.server 4173 --directory examples/pacman-tetris</code>.
+        </p>
+      </div>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.90.0/dist/phaser.min.js"></script>
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>

@@ -1,0 +1,64 @@
+{
+  "pid": 58323,
+  "parent_pid": 94625,
+  "started_at": "2026-04-03T23:01:26.257Z",
+  "cwd": "/Users/n/RustroverProjects/rust_pi",
+  "notify_script": "/opt/homebrew/lib/node_modules/oh-my-codex/dist/scripts/notify-hook.js",
+  "poll_ms": 75,
+  "pid_file": null,
+  "max_lifetime_ms": 0,
+  "tracked_files": 0,
+  "seen_turns": 0,
+  "dispatch_drain": {
+    "enabled": true,
+    "max_per_tick": 5,
+    "run_count": 1,
+    "leader_only": true,
+    "last_tick_at": "2026-04-03T23:01:26.262Z",
+    "last_result": {
+      "processed": 0,
+      "skipped": 0,
+      "failed": 0
+    },
+    "last_error": null
+  },
+  "leader_nudge": {
+    "enabled": true,
+    "leader_only": true,
+    "stale_threshold_ms": 180000,
+    "precomputed_leader_stale": true,
+    "last_tick_at": "2026-04-03T23:01:26.263Z",
+    "last_error": null,
+    "run_count": 1
+  },
+  "ralph_continue_steer": {
+    "enabled": true,
+    "cadence_ms": 60000,
+    "message": "Ralph loop active continue",
+    "active": false,
+    "last_state_check_at": "2026-04-03T23:01:26.333Z",
+    "last_sent_at": "",
+    "cooldown_anchor_at": "",
+    "last_reason": "blocked_by_current_session",
+    "last_error": null,
+    "state_path": "",
+    "pane_id": "",
+    "pane_current_command": "",
+    "current_phase": "",
+    "shared_timestamp_path": "/Users/n/RustroverProjects/rust_pi/.omx/state/ralph-last-steer-at",
+    "shared_last_sent_at": "",
+    "singleton_lock_path": "/Users/n/RustroverProjects/rust_pi/.omx/state/ralph-continue-steer.lock"
+  },
+  "fallback_auto_nudge": {
+    "enabled": true,
+    "stall_ms": 5000,
+    "last_tick_at": "2026-04-03T23:01:26.304Z",
+    "last_turn_at": "2026-04-03T22:40:08.199Z",
+    "last_turn_count": 13,
+    "last_message": "Done.\n\nMerged\n- `#3743` — `fix(provider): align cli adapters on textual tool-call contract`\n\nClosed\n",
+    "last_reason": "eligible_but_not_sent",
+    "last_error": null,
+    "last_nudged_signature": "hud:4|2026-04-03T20:36:34.309Z|proceeded just landed ' 3737' merged 'refactor gateway hoist action history i o out of ret",
+    "last_nudged_at": "2026-04-03T20:37:18.389Z"
+  }
+}

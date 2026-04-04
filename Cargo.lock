@@ -5774,6 +5774,7 @@ dependencies = [
  "argon2",
  "async-trait",
  "base64 0.22.1",
+ "futures-util",
  "httpmock",
  "libc",
  "reqwest 0.12.28",
@@ -5786,6 +5787,7 @@ dependencies = [
  "tau-core",
  "tempfile",
  "tokio",
+ "tokio-tungstenite 0.28.0",
  "tracing",
  "wait-timeout",
 ]
