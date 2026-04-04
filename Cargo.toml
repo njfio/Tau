@@ -82,7 +82,7 @@ tokio-stream = "0.1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 jsonschema = "0.42"
-minijinja = "2.12"
+minijinja = "2.18"
 leptos = { version = "0.8", default-features = false, features = ["ssr"] }
 notify = "7.0"
 arc-swap = "1.7"
