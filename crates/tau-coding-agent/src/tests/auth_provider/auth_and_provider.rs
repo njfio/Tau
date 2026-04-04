@@ -2494,7 +2494,7 @@ fn functional_execute_auth_command_rotate_key_rotates_store_without_data_loss() 
     let mut config = test_auth_command_config();
     config.credential_store = temp.path().join("credentials.json");
     config.credential_store_encryption = CredentialStoreEncryptionMode::Keyed;
-    config.credential_store_key = Some("old-store-key".to_string());
+    config.credential_store_key = Some("old-store-key-xxx".to_string());
 
     let mut store = CredentialStoreData {
         encryption: CredentialStoreEncryptionMode::Keyed,
@@ -2519,25 +2519,25 @@ fn functional_execute_auth_command_rotate_key_rotates_store_without_data_loss() 
             updated_unix: Some(current_unix_timestamp()),
         },
     );
-    save_credential_store(&config.credential_store, &store, Some("old-store-key"))
+    save_credential_store(&config.credential_store, &store, Some("old-store-key-xxx"))
         .expect("seed credential store");
 
     let rotate_output = execute_auth_command(
         &config,
-        "rotate-key --new-key next-store-key --old-key old-store-key --json",
+        "rotate-key --new-key next-store-key-xx --old-key old-store-key-xxx --json",
     );
     let payload: serde_json::Value = serde_json::from_str(&rotate_output).expect("json output");
     assert_eq!(payload["command"], "auth.rotate_key");
     assert_eq!(payload["status"], "rotated");
     assert_eq!(payload["provider_entries"], 1);
     assert_eq!(payload["integration_entries"], 1);
-    assert!(!rotate_output.contains("old-store-key"));
-    assert!(!rotate_output.contains("next-store-key"));
+    assert!(!rotate_output.contains("old-store-key-xxx"));
+    assert!(!rotate_output.contains("next-store-key-xx"));
 
     let rotated = load_credential_store(
         &config.credential_store,
         CredentialStoreEncryptionMode::Keyed,
-        Some("next-store-key"),
+        Some("next-store-key-xx"),
     )
     .expect("load rotated store with new key");
     assert_eq!(rotated.providers.len(), 1);
@@ -2560,7 +2560,7 @@ fn functional_execute_auth_command_rotate_key_rotates_store_without_data_loss() 
     let old_key_error = load_credential_store(
         &config.credential_store,
         CredentialStoreEncryptionMode::Keyed,
-        Some("old-store-key"),
+        Some("old-store-key-xxx"),
     )
     .expect_err("old key should no longer decrypt rotated store");
     assert!(old_key_error.to_string().contains("invalid or corrupted"));
@@ -2572,12 +2572,12 @@ fn regression_execute_auth_command_rotate_key_fails_closed_for_invalid_inputs() 
     let mut config = test_auth_command_config();
     config.credential_store = temp.path().join("credentials.json");
     config.credential_store_encryption = CredentialStoreEncryptionMode::Keyed;
-    config.credential_store_key = Some("primary-key".to_string());
+    config.credential_store_key = Some("primary-key-xxxxx".to_string());
 
     write_test_provider_credential(
         &config.credential_store,
         CredentialStoreEncryptionMode::Keyed,
-        Some("primary-key"),
+        Some("primary-key-xxxxx"),
         Provider::OpenAi,
         ProviderCredentialStoreRecord {
             auth_method: ProviderAuthMethod::ApiKey,
@@ -2589,13 +2589,13 @@ fn regression_execute_auth_command_rotate_key_fails_closed_for_invalid_inputs() 
     );
 
     let wrong_old_key_output =
-        execute_auth_command(&config, "rotate-key --new-key new-key --old-key wrong-key");
+        execute_auth_command(&config, "rotate-key --new-key new-key-xxxxxxxxxx --old-key wrong-key-xxxxxxx");
     assert!(wrong_old_key_output.contains("auth rotate-key error:"));
 
     let still_old = load_credential_store(
         &config.credential_store,
         CredentialStoreEncryptionMode::Keyed,
-        Some("primary-key"),
+        Some("primary-key-xxxxx"),
     )
     .expect("store should remain decryptable with original key after failed rotation");
     assert_eq!(
@@ -2608,7 +2608,7 @@ fn regression_execute_auth_command_rotate_key_fails_closed_for_invalid_inputs() 
 
     let mut unkeyed_config = config.clone();
     unkeyed_config.credential_store_encryption = CredentialStoreEncryptionMode::None;
-    let unkeyed_output = execute_auth_command(&unkeyed_config, "rotate-key --new-key next-key");
+    let unkeyed_output = execute_auth_command(&unkeyed_config, "rotate-key --new-key next-key-xxxxxxxx");
     assert!(unkeyed_output.contains("auth rotate-key error:"));
     assert!(unkeyed_output.contains("credential store encryption mode"));
 }

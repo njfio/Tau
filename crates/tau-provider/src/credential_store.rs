@@ -881,8 +881,11 @@ mod tests {
     #[test]
     fn regression_spec_2774_c04_tampered_v2_payload_fails_closed() {
         let payload = build_v2_payload("super-secret-token", Some("credential-store-passphrase"));
+        let base64_part = payload
+            .strip_prefix(CREDENTIAL_STORE_ENCRYPTED_V2_PREFIX)
+            .expect("v2 payload must have enc:v2: prefix");
         let mut raw = BASE64_STANDARD
-            .decode(payload)
+            .decode(base64_part)
             .expect("payload must be base64");
         let last = raw
             .last_mut()
