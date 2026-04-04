@@ -243,12 +243,15 @@ impl CodexAppServerClient {
                     }
                 }
                 "thread/tokenUsage/updated" => {
-                    if let Some(tu) = params.get("tokenUsage") {
+                    if let Some(total) = params.get("tokenUsage").and_then(|tu| tu.get("total")) {
                         usage.input_tokens =
-                            tu["inputTokens"].as_u64().unwrap_or(usage.input_tokens);
+                            total["inputTokens"].as_u64().unwrap_or(usage.input_tokens);
                         usage.output_tokens =
-                            tu["outputTokens"].as_u64().unwrap_or(usage.output_tokens);
-                        usage.total_tokens = usage.input_tokens + usage.output_tokens;
+                            total["outputTokens"].as_u64().unwrap_or(usage.output_tokens);
+                        usage.total_tokens =
+                            total["totalTokens"].as_u64().unwrap_or(usage.input_tokens + usage.output_tokens);
+                        usage.cached_input_tokens =
+                            total["cachedInputTokens"].as_u64().unwrap_or(0);
                     }
                 }
                 "turn/completed" => {

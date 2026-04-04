@@ -341,8 +341,9 @@ fn build_openai_appserver_client(cli: &Cli, provider: Provider) -> Result<Arc<dy
     let url = if let Some(ref url) = cli.openai_codex_appserver_url {
         url.clone()
     } else {
-        // Auto-spawn the app-server process
-        let process = CodexAppServerProcess::spawn(&cli.openai_codex_cli)
+        // Auto-spawn the app-server process (PID file in .tau/gateway/)
+        let state_dir = std::path::PathBuf::from(".tau/gateway");
+        let process = CodexAppServerProcess::spawn(&cli.openai_codex_cli, &state_dir)
             .map_err(|e| anyhow::anyhow!("codex app-server launch failed: {e}"))?;
         let url = process.url();
         // Leak the process handle so it lives for the program's lifetime.
