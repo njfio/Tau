@@ -37,6 +37,9 @@ pub struct GatewayOpenResponsesServerConfig {
     pub max_input_chars: usize,
     pub runtime_heartbeat: RuntimeHeartbeatSchedulerConfig,
     pub external_coding_agent_bridge: ExternalCodingAgentBridgeConfig,
+    /// When true, tool execution is delegated to the LLM backend (e.g. codex app-server).
+    /// The verifier skips mutation/validation evidence requirements.
+    pub delegated_tool_execution: bool,
 }
 
 #[derive(Clone)]

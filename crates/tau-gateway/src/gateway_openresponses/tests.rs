@@ -631,6 +631,7 @@ fn test_state_with_client_and_auth(
                 ..RuntimeHeartbeatSchedulerConfig::default()
             },
             external_coding_agent_bridge: tau_runtime::ExternalCodingAgentBridgeConfig::default(),
+            delegated_tool_execution: false,
         },
     ))
 }
@@ -9831,6 +9832,7 @@ async fn red_spec_3618_openresponses_request_uses_bundled_web_game_skill_guidanc
                 ..RuntimeHeartbeatSchedulerConfig::default()
             },
             external_coding_agent_bridge: ExternalCodingAgentBridgeConfig::default(),
+            delegated_tool_execution: false,
         },
     ));
     let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
@@ -11849,6 +11851,7 @@ async fn regression_gateway_password_session_token_expires_and_fails_closed() {
                 ..RuntimeHeartbeatSchedulerConfig::default()
             },
             external_coding_agent_bridge: tau_runtime::ExternalCodingAgentBridgeConfig::default(),
+            delegated_tool_execution: false,
         },
     ));
     let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
@@ -12235,6 +12238,7 @@ async fn integration_external_coding_agent_subprocess_mode_streams_worker_stdout
                     env: subprocess_env,
                 }),
             },
+            delegated_tool_execution: false,
         },
     ));
     let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
@@ -12358,6 +12362,7 @@ async fn regression_external_coding_agent_reap_endpoint_times_out_stale_sessions
                 max_events_per_session: 64,
                 subprocess: None,
             },
+            delegated_tool_execution: false,
         },
     ));
     let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
@@ -13005,6 +13010,7 @@ async fn regression_openresponses_honors_configured_max_turns_limit() {
                 ..RuntimeHeartbeatSchedulerConfig::default()
             },
             external_coding_agent_bridge: tau_runtime::ExternalCodingAgentBridgeConfig::default(),
+            delegated_tool_execution: false,
         },
     ));
     let (addr, handle) = spawn_test_server(state)
@@ -13382,6 +13388,7 @@ async fn regression_openresponses_timeout_after_read_only_tooling_retries_into_m
                 ..RuntimeHeartbeatSchedulerConfig::default()
             },
             external_coding_agent_bridge: tau_runtime::ExternalCodingAgentBridgeConfig::default(),
+            delegated_tool_execution: false,
         },
     ));
     let (addr, handle) = spawn_test_server(state.clone())
@@ -13487,6 +13494,7 @@ async fn regression_openresponses_stream_timeout_finalizes_pending_tool_executio
                 ..RuntimeHeartbeatSchedulerConfig::default()
             },
             external_coding_agent_bridge: tau_runtime::ExternalCodingAgentBridgeConfig::default(),
+            delegated_tool_execution: false,
         },
     ));
     let (addr, handle) = spawn_test_server(state.clone())
@@ -13572,6 +13580,7 @@ async fn regression_openresponses_stream_emits_completed_event_for_non_timeout_t
                 ..RuntimeHeartbeatSchedulerConfig::default()
             },
             external_coding_agent_bridge: tau_runtime::ExternalCodingAgentBridgeConfig::default(),
+            delegated_tool_execution: false,
         },
     ));
     let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
@@ -13682,6 +13691,7 @@ async fn regression_openresponses_timeout_retry_exhaustion_fails_closed_after_bu
                 ..RuntimeHeartbeatSchedulerConfig::default()
             },
             external_coding_agent_bridge: tau_runtime::ExternalCodingAgentBridgeConfig::default(),
+            delegated_tool_execution: false,
         },
     ));
     let (addr, handle) = spawn_test_server(state.clone())
@@ -13783,6 +13793,7 @@ async fn regression_openresponses_zero_tool_timeout_fails_without_outer_retry() 
                 ..RuntimeHeartbeatSchedulerConfig::default()
             },
             external_coding_agent_bridge: tau_runtime::ExternalCodingAgentBridgeConfig::default(),
+            delegated_tool_execution: false,
         },
     ));
     let (addr, handle) = spawn_test_server(state.clone())
@@ -16549,6 +16560,7 @@ async fn tier_weekly_ch15_chaos_matrix() {
                 ..RuntimeHeartbeatSchedulerConfig::default()
             },
             external_coding_agent_bridge: tau_runtime::ExternalCodingAgentBridgeConfig::default(),
+            delegated_tool_execution: false,
         },
     ));
     let (timeout_addr, timeout_handle) = spawn_test_server(timeout_state)
