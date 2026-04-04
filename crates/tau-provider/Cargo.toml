@@ -19,6 +19,8 @@ tau-ai = { path = "../tau-ai" }
 tau-cli = { path = "../tau-cli" }
 tau-core = { path = "../tau-core" }
 tokio.workspace = true
+tokio-tungstenite.workspace = true
+futures-util.workspace = true
 tracing.workspace = true
 wait-timeout.workspace = true
 
