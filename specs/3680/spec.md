@@ -1,6 +1,16 @@
 # Spec: Issue #3680 - Add local session persistence to `tau-tui` REPL
 
-Status: Implemented
+Status: Not Integrated (2026-04-23 reclassification — see below)
+
+> **2026-04-23 status correction**: although this spec was previously marked
+> "Implemented", an audit discovered that the implementation modules
+> (`session_state.rs` + `session_state_tests.rs`) were introduced to the tree
+> in commit `8926bd4a` but were **never referenced from any `mod` declaration
+> in any git revision**. The compiler never saw them; the feature shipped zero
+> runtime behavior. The orphan files were removed in the audit-follow-up
+> cleanup. Re-implementing this feature is pending a dedicated spec cycle;
+> see `docs/solutions/patterns/fallibility-audit-workspace-2026-04.md`
+> (Category A) for the forensic trail.
 
 ## Problem Statement
 `tau-tui` now has runtime control, prompt history, and transcript search/copy,
