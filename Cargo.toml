@@ -90,11 +90,15 @@ toml = "0.9"
 sha2 = "0.10"
 wait-timeout = "0.2"
 yrs = "0.25"
-wasmparser = "0.225"
-wasmtime = "25.0.3"
+wasmparser = "0.232"
+wasmtime = "36"
 wat = "1.225.0"
 ratatui = "0.29"
 crossterm = "0.28"
 rustyline = "14"
 fastembed = { version = "5.9.0", default-features = false, features = ["hf-hub-rustls-tls", "ort-download-binaries-rustls-tls"] }
-serenity = { version = "0.12", default-features = false, features = ["client", "gateway", "model", "rustls_backend"] }
+# NOTE: using native_tls_backend (not rustls_backend) to exit the transitive
+# rustls 0.22.4 / rustls-webpki 0.102.8 dependency chain locked by serenity
+# 0.12.5 (latest on crates.io as of 2026-04). See RUSTSEC-2026-0049/0098/0099/0104.
+# Revisit when serenity upstream bumps to a rustls version using rustls-webpki >= 0.103.
+serenity = { version = "0.12", default-features = false, features = ["client", "gateway", "model", "native_tls_backend"] }

@@ -116,6 +116,12 @@ impl EventRunner for TauEventRunner {
             },
         );
         crate::tools::register_builtin_tools(&mut agent, self.tool_policy.clone());
+        crate::tools::register_self_modification_synthesis(
+            &mut agent,
+            &self.tool_policy,
+            self.client.clone(),
+            self.model.clone(),
+        );
 
         let usage = std::sync::Arc::new(std::sync::Mutex::new((0_u64, 0_u64, 0_u64)));
         agent.subscribe({

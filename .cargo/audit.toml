@@ -1,0 +1,31 @@
+# cargo-audit configuration
+# https://github.com/rustsec/rustsec/blob/main/cargo-audit/README.md#configuration
+#
+# This file declares which advisories are accepted as known-and-tracked, with
+# rationale for each. Reviewed on every release; re-evaluate if the advisory
+# becomes a real exposure or if upstream ships a fix.
+
+[advisories]
+ignore = [
+    # fxhash unmaintained; pulled in transitively by ratatui and several
+    # internal-only deps. Hashing-only use, no cryptographic surface. Low
+    # risk; tracked for replacement when ratatui migrates to foldhash/ahash.
+    "RUSTSEC-2025-0057",
+
+    # `instant` unmaintained; pulled in transitively by time/observability
+    # crates for Wasm compatibility. We do not build for wasm32-unknown-unknown
+    # in production paths, so this is inert. Upstream migration to `web-time`
+    # is in progress across the ecosystem.
+    "RUSTSEC-2024-0384",
+
+    # `paste` unmaintained; declarative macro helper pulled transitively by
+    # ratatui, tokenizers, leptos. No security surface (compile-time only).
+    # Ecosystem is gradually moving to native macro_rules expansion.
+    "RUSTSEC-2024-0436",
+
+    # `lru` 0.12 IterMut stacked-borrows unsoundness; transitive via
+    # ratatui 0.29 -> tau-tui. We do not use IterMut in any code path; the
+    # unsoundness is not reachable from our call graph. Will be resolved
+    # automatically when ratatui updates its lru pin.
+    "RUSTSEC-2026-0002",
+]

@@ -2,11 +2,17 @@
 //!
 //! Provides a shared broadcast channel that branch workers can use to share
 //! discoveries, coordinate work, and report partial results.
+//!
+//! The bus is a thin wrapper over [`tokio::sync::broadcast`]. Send failures
+//! are returned to the caller (they do not panic) and are also logged via
+//! `tracing` so operator tooling can observe lost messages — the most likely
+//! cause of a send failure is that no subscriber is currently attached.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::broadcast;
+use tracing::{debug, warn};
 
 /// Message types for inter-agent communication.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -82,9 +88,34 @@ impl AgentMessageBus {
         self.sender.subscribe()
     }
 
-    /// Send a message on the bus. Returns Ok(()) on success.
+    /// Send a message on the bus.
+    ///
+    /// Returns `Ok(())` on successful publish. When no subscribers are
+    /// attached, [`broadcast::Sender::send`] returns an error carrying the
+    /// original message — that error is propagated back to the caller and
+    /// additionally logged at `warn` level so that silent message loss is
+    /// observable in operator tooling. Successful sends emit a `debug`
+    /// trace with the current receiver count.
     pub fn send(&self, message: AgentMessage) -> Result<(), AgentMessage> {
-        self.sender.send(message).map(|_| ()).map_err(|e| e.0)
+        match self.sender.send(message) {
+            Ok(receivers) => {
+                debug!(
+                    receiver_count = receivers,
+                    "agent message dispatched on bus",
+                );
+                Ok(())
+            }
+            Err(err) => {
+                let lost = err.0;
+                warn!(
+                    from_agent_id = %lost.from_agent_id,
+                    to_agent_id = lost.to_agent_id.as_deref().unwrap_or("*"),
+                    message_type = ?lost.message_type,
+                    "agent message dropped: no active subscribers on bus",
+                );
+                Err(lost)
+            }
+        }
     }
 
     /// Returns the number of active subscribers.
@@ -137,5 +168,30 @@ mod tests {
         let received = rx.recv().await.unwrap();
         assert_eq!(received.from_agent_id, "test");
         assert_eq!(received.message_type, AgentMessageType::StepCompleted);
+    }
+
+    #[tokio::test]
+    async fn bus_send_without_subscribers_returns_message_without_panic() {
+        // With no subscribers attached, send must return the message back
+        // as Err rather than panic. This guarantees a crashing agent cannot
+        // be produced by race-free shutdown orderings.
+        let bus = AgentMessageBus::new(4);
+        let msg = AgentMessage::broadcast(
+            "orphan",
+            AgentMessageType::Discovery,
+            json!({"note": "no one listening"}),
+        );
+        let result = bus.send(msg);
+        let err = result.expect_err("expected send error with no subscribers");
+        assert_eq!(err.from_agent_id, "orphan");
+    }
+
+    #[tokio::test]
+    async fn bus_receiver_count_tracks_subscribers() {
+        let bus = AgentMessageBus::new(4);
+        assert_eq!(bus.receiver_count(), 0);
+        let _rx1 = bus.subscribe();
+        let _rx2 = bus.subscribe();
+        assert_eq!(bus.receiver_count(), 2);
     }
 }

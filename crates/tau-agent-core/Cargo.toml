@@ -13,6 +13,7 @@ serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
+tracing = { workspace = true }
 tau-ai = { path = "../tau-ai" }
 tau-memory = { path = "../tau-memory" }
 tau-safety = { path = "../tau-safety" }

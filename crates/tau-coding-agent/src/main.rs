@@ -34,7 +34,9 @@ mod runtime_output;
 mod runtime_profile_policy_bridge;
 mod runtime_prompt_template_bridge;
 mod runtime_types;
-mod self_modification_runtime;
+// `self_modification_pipeline` and `self_modification_runtime` live in
+// `lib.rs` so the `self-mod-dry-run` bin (and future integration tests) can
+// share one canonical compilation of those modules.
 mod startup_dispatch;
 mod startup_local_runtime;
 mod startup_model_catalog;

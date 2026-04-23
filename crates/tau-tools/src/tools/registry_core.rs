@@ -237,6 +237,24 @@ pub struct ToolPolicy {
     pub tool_builder_output_root: PathBuf,
     pub tool_builder_extension_root: PathBuf,
     pub tool_builder_max_attempts: usize,
+    /// When `true`, callers that use the coding-agent's augmented
+    /// `register_builtin_tools` wrapper will also register the
+    /// `self_modification_propose` tool. The tool itself remains fail-closed
+    /// at execute-time via the `TAU_AUTONOMOUS_SELF_MOD` environment
+    /// variable; this flag is defense-in-depth letting policy-driven
+    /// deployments opt in/out without setting env vars. Defaults to `false`.
+    ///
+    /// Base tau-tools `register_builtin_tools` does not consult this flag —
+    /// it has no dependency on tau-coding-agent.
+    pub self_modification_propose_enabled: bool,
+    /// When `true`, callers that use the coding-agent's
+    /// `register_self_modification_synthesis` helper will register the
+    /// `self_modification_synthesize` tool. Synthesis takes a
+    /// natural-language intent and returns a structured proposal via an
+    /// LLM call; it does NOT mutate state. Same env-gate
+    /// (`TAU_AUTONOMOUS_SELF_MOD`) applies at execute time. Defaults to
+    /// `false`.
+    pub self_modification_synthesize_enabled: bool,
     pub rbac_principal: Option<String>,
     pub rbac_policy_path: Option<PathBuf>,
     pub tool_rate_limit_max_requests: u32,
@@ -321,6 +339,8 @@ impl ToolPolicy {
             tool_builder_output_root: PathBuf::from(".tau/generated-tools"),
             tool_builder_extension_root: PathBuf::from(".tau/extensions/generated"),
             tool_builder_max_attempts: TOOL_BUILDER_MAX_ATTEMPTS_DEFAULT,
+            self_modification_propose_enabled: false,
+            self_modification_synthesize_enabled: false,
             rbac_principal: None,
             rbac_policy_path: None,
             tool_rate_limit_max_requests: TOOL_RATE_LIMIT_MAX_REQUESTS_BALANCED,

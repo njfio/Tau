@@ -2921,6 +2921,99 @@ fn unit_register_builtin_tools_includes_tool_builder_when_enabled() {
 }
 
 #[test]
+fn unit_register_builtin_tools_omits_self_modification_propose_by_default() {
+    let temp = tempdir().expect("tempdir");
+    let client = Arc::new(QueueClient {
+        responses: AsyncMutex::new(VecDeque::new()),
+    });
+    let mut agent = Agent::new(client, AgentConfig::default());
+    let policy = crate::tools::ToolPolicy::new(vec![temp.path().to_path_buf()]);
+    assert!(
+        !policy.self_modification_propose_enabled,
+        "default must keep self-modification tool unregistered"
+    );
+    crate::tools::register_builtin_tools(&mut agent, policy);
+
+    assert!(
+        !agent
+            .registered_tool_names()
+            .iter()
+            .any(|name| name == "self_modification_propose"),
+        "self_modification_propose must not be registered when policy flag is false"
+    );
+}
+
+#[test]
+fn unit_register_builtin_tools_includes_self_modification_propose_when_enabled() {
+    let temp = tempdir().expect("tempdir");
+    let client = Arc::new(QueueClient {
+        responses: AsyncMutex::new(VecDeque::new()),
+    });
+    let mut agent = Agent::new(client, AgentConfig::default());
+    let mut policy = crate::tools::ToolPolicy::new(vec![temp.path().to_path_buf()]);
+    policy.self_modification_propose_enabled = true;
+    crate::tools::register_builtin_tools(&mut agent, policy);
+
+    assert!(
+        agent
+            .registered_tool_names()
+            .iter()
+            .any(|name| name == "self_modification_propose"),
+        "self_modification_propose must be registered when policy flag is true"
+    );
+}
+
+#[test]
+fn unit_register_self_modification_synthesis_omits_tool_by_default() {
+    let temp = tempdir().expect("tempdir");
+    let client = Arc::new(QueueClient {
+        responses: AsyncMutex::new(VecDeque::new()),
+    });
+    let mut agent = Agent::new(client.clone(), AgentConfig::default());
+    let policy = crate::tools::ToolPolicy::new(vec![temp.path().to_path_buf()]);
+    assert!(!policy.self_modification_synthesize_enabled);
+    crate::tools::register_self_modification_synthesis(
+        &mut agent,
+        &policy,
+        client,
+        "test-model",
+    );
+
+    assert!(
+        !agent
+            .registered_tool_names()
+            .iter()
+            .any(|name| name == "self_modification_synthesize"),
+        "self_modification_synthesize must not be registered when policy flag is false"
+    );
+}
+
+#[test]
+fn unit_register_self_modification_synthesis_includes_tool_when_enabled() {
+    let temp = tempdir().expect("tempdir");
+    let client = Arc::new(QueueClient {
+        responses: AsyncMutex::new(VecDeque::new()),
+    });
+    let mut agent = Agent::new(client.clone(), AgentConfig::default());
+    let mut policy = crate::tools::ToolPolicy::new(vec![temp.path().to_path_buf()]);
+    policy.self_modification_synthesize_enabled = true;
+    crate::tools::register_self_modification_synthesis(
+        &mut agent,
+        &policy,
+        client,
+        "test-model",
+    );
+
+    assert!(
+        agent
+            .registered_tool_names()
+            .iter()
+            .any(|name| name == "self_modification_synthesize"),
+        "self_modification_synthesize must be registered when policy flag is true"
+    );
+}
+
+#[test]
 fn branch_undo_redo_and_resume_commands_reload_agent_messages() {
     let temp = tempdir().expect("tempdir");
     let path = temp.path().join("session.jsonl");
