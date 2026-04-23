@@ -185,16 +185,6 @@ fn classify_for_projection(
     }
 }
 
-impl Default for SelfModificationSynthesizeTool {
-    // Explicit: no sensible default client. Callers must construct via `new`.
-    // We do NOT implement `Default` to force the call site to provide a
-    // client + model; silently falling back to a no-op client would be a
-    // footgun for autonomous paths.
-    fn default() -> Self {
-        panic!("SelfModificationSynthesizeTool has no Default; construct via ::new(client, model)")
-    }
-}
-
 #[async_trait]
 impl AgentTool for SelfModificationSynthesizeTool {
     fn definition(&self) -> ToolDefinition {
