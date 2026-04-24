@@ -156,7 +156,7 @@ impl Trainer {
                     transient_error_backoff_initial: self.config.poll_interval,
                     transient_error_backoff_max: self.config.poll_interval * 8,
                 },
-            );
+            )?;
             let runner_shutdown = shutdown_rx.clone();
             workers.spawn(async move { runner.run(runner_shutdown).await });
         }
