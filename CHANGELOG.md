@@ -35,6 +35,11 @@ The format is inspired by Keep a Changelog and follows milestone-based delivery 
 - `wasmtime`: 25.0.3 → 36
 - `wasmparser`: 0.225 → 0.232
 
+## [0.2.0] - 2026-04-26
+
+### Added
+- Product proof readiness: added `scripts/dev/prove-tau-product.sh` as the canonical executable local proof path, with `--check`, live `--run`, `--report <path>` machine-readable proof evidence, documented consumer parsing examples, and opt-in `--webchat-smoke` validation for the `/webchat` product surface. See [docs/guides/canonical-product-proof.md](docs/guides/canonical-product-proof.md) and [docs/solutions/patterns/opt-in-product-proof-live-surface-smoke.md](docs/solutions/patterns/opt-in-product-proof-live-surface-smoke.md).
+
 ## [Unreleased] - 2026-02-19 (pre-agent-safety-harness)
 
 ### Added
