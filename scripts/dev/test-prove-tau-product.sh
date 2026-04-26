@@ -118,6 +118,8 @@ case "${TAU_PRODUCT_PROOF_CURL_CASE:-success}" in
       printf '<!doctype html><title>Tau Gateway Webchat</title><button>Dashboard</button><pre id="dashboardStatus"></pre>\n'
     elif [[ "${url}" == */gateway/sessions ]]; then
       printf '{"sessions":[]}\n'
+    elif [[ "${url}" == */gateway/memory/* ]]; then
+      printf '{"exists":false}\n'
     else
       printf '{"status":"ok","source":"fake-product-proof"}\n'
     fi
@@ -133,6 +135,8 @@ case "${TAU_PRODUCT_PROOF_CURL_CASE:-success}" in
       printf '<!doctype html><title>Not the webchat shell</title>\n'
     elif [[ "${url}" == */gateway/sessions ]]; then
       printf '{"sessions":[]}\n'
+    elif [[ "${url}" == */gateway/memory/* ]]; then
+      printf '{"exists":false}\n'
     else
       printf '{"status":"ok","source":"fake-product-proof"}\n'
     fi
@@ -145,11 +149,36 @@ case "${TAU_PRODUCT_PROOF_CURL_CASE:-success}" in
       printf '{"sessions":[]}\n'
       exit 0
     fi
+    if [[ "${url}" == */gateway/memory/* ]]; then
+      printf '{"exists":false}\n'
+      exit 0
+    fi
     printf '{"status":"ok","source":"fake-product-proof"}\n'
     ;;
   sessions-invalid-json)
     if [[ "${url}" == */gateway/sessions ]]; then
       printf '[]\n'
+      exit 0
+    fi
+    printf '{"status":"ok","source":"fake-product-proof"}\n'
+    ;;
+  memory-invalid-json)
+    if [[ "${url}" == */gateway/memory/* ]]; then
+      printf '[]\n'
+      exit 0
+    fi
+    if [[ "${url}" == */gateway/sessions ]]; then
+      printf '{"sessions":[]}\n'
+      exit 0
+    fi
+    printf '{"status":"ok","source":"fake-product-proof"}\n'
+    ;;
+  memory-curl-failure)
+    if [[ "${url}" == */gateway/memory/* ]]; then
+      exit 7
+    fi
+    if [[ "${url}" == */gateway/sessions ]]; then
+      printf '{"sessions":[]}\n'
       exit 0
     fi
     printf '{"status":"ok","source":"fake-product-proof"}\n'
@@ -177,6 +206,7 @@ run_case() {
   local expect_curl_url="${6:-yes}"
   local webchat_smoke="${7:-no}"
   local sessions_smoke="${8:-no}"
+  local memory_smoke="${9:-no}"
   local case_dir="${tmp_dir}/${case_name}"
   local runtime_dir="${case_dir}/runtime"
   local runner_log="${case_dir}/runner.log"
@@ -192,6 +222,9 @@ run_case() {
   fi
   if [[ "${sessions_smoke}" == "yes" ]]; then
     proof_args=("${proof_args[@]:0:1}" --sessions-smoke "${proof_args[@]:1}")
+  fi
+  if [[ "${memory_smoke}" == "yes" ]]; then
+    proof_args=("${proof_args[@]:0:1}" --memory-smoke "${proof_args[@]:1}")
   fi
 
   mkdir -p "${case_dir}"
@@ -237,9 +270,12 @@ run_case() {
   if [[ "${sessions_smoke}" == "yes" ]]; then
     assert_contains "$(cat "${curl_log}" 2>/dev/null || true)" "http://127.0.0.1:8898/gateway/sessions" "${case_name} gateway sessions URL"
   fi
+  if [[ "${memory_smoke}" == "yes" ]]; then
+    assert_contains "$(cat "${curl_log}" 2>/dev/null || true)" "http://127.0.0.1:8898/gateway/memory/default" "${case_name} gateway memory URL"
+  fi
 
   if [[ "${expected_status}" == "success" ]]; then
-    python3 - "${report_json}" "${webchat_smoke}" "${sessions_smoke}" <<'PY'
+    python3 - "${report_json}" "${webchat_smoke}" "${sessions_smoke}" "${memory_smoke}" <<'PY'
 import json
 import sys
 
@@ -248,12 +284,15 @@ with open(sys.argv[1], encoding="utf-8") as handle:
 
 webchat_smoke = sys.argv[2] == "yes"
 sessions_smoke = sys.argv[3] == "yes"
+memory_smoke = sys.argv[4] == "yes"
 expected_steps = ["up", "status", "gateway_status", "tui", "down"]
 expected_middle_steps = []
 if webchat_smoke:
     expected_middle_steps.append("webchat")
 if sessions_smoke:
     expected_middle_steps.append("sessions_api")
+if memory_smoke:
+  expected_middle_steps.append("memory_api")
 if expected_middle_steps:
     expected_steps = ["up", "status", "gateway_status", *expected_middle_steps, "tui", "down"]
 
@@ -269,6 +308,10 @@ if sessions_smoke:
     assert payload["gateway_sessions_url"] == "http://127.0.0.1:8898/gateway/sessions"
 else:
     assert "gateway_sessions_url" not in payload
+if memory_smoke:
+  assert payload["gateway_memory_url"] == "http://127.0.0.1:8898/gateway/memory/default"
+else:
+  assert "gateway_memory_url" not in payload
 PY
   fi
 
@@ -291,6 +334,14 @@ webchat_sessions_success_runner_log="$(run_case webchat-sessions-success success
 assert_runner_mode_seen status "${webchat_sessions_success_runner_log}"
 assert_runner_mode_seen tui "${webchat_sessions_success_runner_log}"
 
+memory_success_runner_log="$(run_case memory-success success "Tau product proof passed" success "" yes no no yes)"
+assert_runner_mode_seen status "${memory_success_runner_log}"
+assert_runner_mode_seen tui "${memory_success_runner_log}"
+
+all_smokes_success_runner_log="$(run_case all-smokes-success success "Tau product proof passed" success "" yes yes yes yes)"
+assert_runner_mode_seen status "${all_smokes_success_runner_log}"
+assert_runner_mode_seen tui "${all_smokes_success_runner_log}"
+
 webchat_missing_marker_runner_log="$(run_case webchat-missing-marker failure "webchat response missing expected marker" webchat-missing-marker "" yes yes)"
 assert_runner_mode_seen down "${webchat_missing_marker_runner_log}"
 
@@ -302,6 +353,12 @@ assert_runner_mode_seen down "${sessions_invalid_json_runner_log}"
 
 sessions_curl_failure_runner_log="$(run_case sessions-curl-failure failure "gateway sessions endpoint did not respond" sessions-curl-failure "" yes no yes)"
 assert_runner_mode_seen down "${sessions_curl_failure_runner_log}"
+
+memory_invalid_json_runner_log="$(run_case memory-invalid-json failure "gateway memory response is not a JSON object with exists boolean" memory-invalid-json "" yes no no yes)"
+assert_runner_mode_seen down "${memory_invalid_json_runner_log}"
+
+memory_curl_failure_runner_log="$(run_case memory-curl-failure failure "gateway memory endpoint did not respond" memory-curl-failure "" yes no no yes)"
+assert_runner_mode_seen down "${memory_curl_failure_runner_log}"
 
 invalid_json_runner_log="$(run_case invalid-json failure "gateway/status response is not a JSON object" invalid-json)"
 assert_runner_mode_seen down "${invalid_json_runner_log}"

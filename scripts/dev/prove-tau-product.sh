@@ -11,14 +11,16 @@ GUIDE="${REPO_ROOT}/docs/guides/canonical-product-proof.md"
 PRODUCT_PROOF_STATUS_JSON=""
 PRODUCT_PROOF_WEBCHAT_HTML=""
 PRODUCT_PROOF_SESSIONS_JSON=""
+PRODUCT_PROOF_MEMORY_JSON=""
 PRODUCT_PROOF_RUNTIME_STARTED="false"
 REPORT_PATH=""
 WEBCHAT_SMOKE="false"
 SESSIONS_SMOKE="false"
+MEMORY_SMOKE="false"
 
 usage() {
   cat <<'EOF'
-Usage: scripts/dev/prove-tau-product.sh [--check|--run] [--webchat-smoke] [--sessions-smoke] [--report <path>]
+Usage: scripts/dev/prove-tau-product.sh [--check|--run] [--webchat-smoke] [--sessions-smoke] [--memory-smoke] [--report <path>]
 
 Modes:
   --check  Validate the canonical Tau product-proof command surface without starting the real runtime.
@@ -27,6 +29,8 @@ Modes:
       With --run, also fetch /webchat and assert stable product-surface markers.
     --sessions-smoke
       With --run, also fetch /gateway/sessions and assert the sessions API JSON shape.
+    --memory-smoke
+      With --run, also fetch /gateway/memory/default and assert the read JSON shape.
   --report Write a machine-readable JSON evidence report to the given path after success.
   --help   Show this help.
 EOF
@@ -101,15 +105,17 @@ write_run_report() {
   local webchat_smoke="$6"
   local sessions_url="$7"
   local sessions_smoke="$8"
+  local memory_url="$9"
+  local memory_smoke="${10}"
   require_command python3
   prepare_report_parent "${REPORT_PATH}"
-  python3 - "${REPORT_PATH}" "${bind}" "${auth_mode}" "${model}" "${status_url}" "${webchat_url}" "${webchat_smoke}" "${sessions_url}" "${sessions_smoke}" <<'PY'
+  python3 - "${REPORT_PATH}" "${bind}" "${auth_mode}" "${model}" "${status_url}" "${webchat_url}" "${webchat_smoke}" "${sessions_url}" "${sessions_smoke}" "${memory_url}" "${memory_smoke}" <<'PY'
 from __future__ import annotations
 
 import json
 import sys
 
-_, report_path, bind, auth_mode, model, status_url, webchat_url, webchat_smoke, sessions_url, sessions_smoke = sys.argv
+_, report_path, bind, auth_mode, model, status_url, webchat_url, webchat_smoke, sessions_url, sessions_smoke, memory_url, memory_smoke = sys.argv
 completed_steps = ["up", "status", "gateway_status"]
 
 payload = {
@@ -128,6 +134,10 @@ if webchat_smoke == "true":
 if sessions_smoke == "true":
   payload["gateway_sessions_url"] = sessions_url
   completed_steps.append("sessions_api")
+
+if memory_smoke == "true":
+  payload["gateway_memory_url"] = memory_url
+  completed_steps.append("memory_api")
 
 completed_steps.extend(["tui", "down"])
 payload["completed_steps"] = completed_steps
@@ -211,6 +221,27 @@ PY
   fi
 }
 
+validate_gateway_memory_json() {
+  local json_path="$1"
+  if command -v jq >/dev/null 2>&1; then
+    jq -e 'type == "object" and (.exists | type == "boolean")' "${json_path}" >/dev/null || die "gateway memory response is not a JSON object with exists boolean"
+  else
+    require_command python3
+    python3 - "${json_path}" <<'PY'
+from __future__ import annotations
+
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    payload = json.load(handle)
+
+if not isinstance(payload, dict) or not isinstance(payload.get("exists"), bool):
+    raise SystemExit("gateway memory response is not a JSON object with exists boolean")
+PY
+  fi
+}
+
 run_live() {
   require_command cargo
 
@@ -225,15 +256,19 @@ run_live() {
   local status_url="http://${bind}/gateway/status"
   local webchat_url="http://${bind}/webchat"
   local sessions_url="http://${bind}/gateway/sessions"
+  local memory_url="http://${bind}/gateway/memory/default"
   local status_json
   status_json="$(mktemp)"
   local webchat_html
   webchat_html="$(mktemp)"
   local sessions_json
   sessions_json="$(mktemp)"
+  local memory_json
+  memory_json="$(mktemp)"
   PRODUCT_PROOF_STATUS_JSON="${status_json}"
   PRODUCT_PROOF_WEBCHAT_HTML="${webchat_html}"
   PRODUCT_PROOF_SESSIONS_JSON="${sessions_json}"
+  PRODUCT_PROOF_MEMORY_JSON="${memory_json}"
   PRODUCT_PROOF_RUNTIME_STARTED="false"
 
   require_command "${curl_bin}"
@@ -247,6 +282,9 @@ run_live() {
     fi
     if [[ -n "${PRODUCT_PROOF_SESSIONS_JSON}" ]]; then
       rm -f "${PRODUCT_PROOF_SESSIONS_JSON}"
+    fi
+    if [[ -n "${PRODUCT_PROOF_MEMORY_JSON}" ]]; then
+      rm -f "${PRODUCT_PROOF_MEMORY_JSON}"
     fi
     if [[ "${PRODUCT_PROOF_RUNTIME_STARTED}" == "true" ]]; then
       "${LAUNCHER}" down >/dev/null 2>&1 || true
@@ -281,6 +319,11 @@ run_live() {
     validate_gateway_sessions_json "${sessions_json}"
   fi
 
+  if [[ "${MEMORY_SMOKE}" == "true" ]]; then
+    "${curl_bin}" -fsS "${memory_url}" >"${memory_json}" || die "gateway memory endpoint did not respond: ${memory_url}"
+    validate_gateway_memory_json "${memory_json}"
+  fi
+
   "${LAUNCHER}" tui --live-shell --iterations 1 --interval-ms 1000 --no-color
 
   "${LAUNCHER}" down
@@ -289,11 +332,13 @@ run_live() {
   rm -f "${status_json}"
   rm -f "${webchat_html}"
   rm -f "${sessions_json}"
+  rm -f "${memory_json}"
   PRODUCT_PROOF_STATUS_JSON=""
   PRODUCT_PROOF_WEBCHAT_HTML=""
   PRODUCT_PROOF_SESSIONS_JSON=""
+  PRODUCT_PROOF_MEMORY_JSON=""
 
-  write_run_report "${bind}" "${auth_mode}" "${model}" "${status_url}" "${webchat_url}" "${WEBCHAT_SMOKE}" "${sessions_url}" "${SESSIONS_SMOKE}"
+  write_run_report "${bind}" "${auth_mode}" "${model}" "${status_url}" "${webchat_url}" "${WEBCHAT_SMOKE}" "${sessions_url}" "${SESSIONS_SMOKE}" "${memory_url}" "${MEMORY_SMOKE}"
   echo "Tau product proof passed: runtime up/status/gateway/live-shell/down completed"
 }
 
@@ -318,6 +363,10 @@ while [[ $# -gt 0 ]]; do
       SESSIONS_SMOKE="true"
       shift
       ;;
+    --memory-smoke)
+      MEMORY_SMOKE="true"
+      shift
+      ;;
     --help|-h)
       mode="--help"
       shift
@@ -335,6 +384,10 @@ fi
 
 if [[ "${SESSIONS_SMOKE}" == "true" && "${mode}" != "--run" ]]; then
   die "--sessions-smoke requires --run"
+fi
+
+if [[ "${MEMORY_SMOKE}" == "true" && "${mode}" != "--run" ]]; then
+  die "--memory-smoke requires --run"
 fi
 
 case "${mode}" in

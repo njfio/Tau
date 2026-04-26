@@ -65,6 +65,12 @@ To also verify the Gateway sessions API readiness surface, add `--sessions-smoke
 ./scripts/dev/prove-tau-product.sh --run --sessions-smoke --report /tmp/tau-product-proof-sessions.json
 ```
 
+To verify the read-only Gateway memory API readiness surface, add `--memory-smoke`. This fetches `/gateway/memory/default`, validates the JSON response shape, and records the memory endpoint in the report:
+
+```bash
+./scripts/dev/prove-tau-product.sh --run --memory-smoke --report /tmp/tau-product-proof-memory.json
+```
+
 ## Consuming Report JSON
 
 Use report output when a reviewer, CI job, or release handoff needs machine-readable proof instead of terminal text. A successful `--check` report contains `mode`, `status`, and a `checks` object for `guide_contract`, `launcher_contract`, and `run_contract`.
@@ -87,7 +93,7 @@ assert payload["checks"]["run_contract"] == "passed"
 PY
 ```
 
-A successful `--run` report adds the runtime evidence fields `bind`, `auth_mode`, `model`, `gateway_status_url`, and `completed_steps`. Consumers should treat the step list as the proof sequence and assert that the live path reached shutdown. When `--webchat-smoke` is used, the report also includes `webchat_url` and inserts `webchat` between `gateway_status` and `tui` in `completed_steps`. When `--sessions-smoke` is used, the report includes `gateway_sessions_url` and inserts `sessions_api` before `tui`.
+A successful `--run` report adds the runtime evidence fields `bind`, `auth_mode`, `model`, `gateway_status_url`, and `completed_steps`. Consumers should treat the step list as the proof sequence and assert that the live path reached shutdown. When `--webchat-smoke` is used, the report also includes `webchat_url` and inserts `webchat` between `gateway_status` and `tui` in `completed_steps`. When `--sessions-smoke` is used, the report includes `gateway_sessions_url` and inserts `sessions_api` before `tui`. When `--memory-smoke` is used, the report includes `gateway_memory_url` and inserts `memory_api` before `tui`.
 
 ```bash
 report=/tmp/tau-product-proof-run.json
@@ -144,6 +150,25 @@ assert payload["completed_steps"] == ["up", "status", "gateway_status", "session
 PY
 ```
 
+For the opt-in memory proof, assert the Gateway memory URL and step:
+
+```bash
+report=/tmp/tau-product-proof-memory.json
+./scripts/dev/prove-tau-product.sh --run --memory-smoke --report "$report"
+python3 - "$report" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+	payload = json.load(handle)
+
+assert payload["mode"] == "run"
+assert payload["status"] == "passed"
+assert payload["gateway_memory_url"].endswith("/gateway/memory/default")
+assert payload["completed_steps"] == ["up", "status", "gateway_status", "memory_api", "tui", "down"]
+PY
+```
+
 If the script exits nonzero, do not parse a partial report as success. Use the terminal error and `.tau/unified/tau-unified.log` for triage, then regenerate the report after the proof passes.
 
 ## Command Path
@@ -178,13 +203,19 @@ curl -sS http://127.0.0.1:8791/webchat | grep -F "Tau Gateway Webchat"
 curl -sS http://127.0.0.1:8791/gateway/sessions | jq '.sessions'
 ```
 
-6. Check the read-only dashboard artifact path through live-shell mode.
+6. Optional: check the read-only Gateway memory API readiness surface.
+
+```bash
+curl -sS http://127.0.0.1:8791/gateway/memory/default | jq '.exists'
+```
+
+7. Check the read-only dashboard artifact path through live-shell mode.
 
 ```bash
 ./scripts/run/tau-unified.sh tui --live-shell --iterations 1 --interval-ms 1000 --no-color
 ```
 
-7. Stop the runtime.
+8. Stop the runtime.
 
 ```bash
 ./scripts/run/tau-unified.sh down
