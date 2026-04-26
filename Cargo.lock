@@ -2863,7 +2863,7 @@ dependencies = [
 
 [[package]]
 name = "kamn-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -2873,7 +2873,7 @@ dependencies = [
 
 [[package]]
 name = "kamn-sdk"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "kamn-core",
@@ -5531,7 +5531,7 @@ dependencies = [
 
 [[package]]
 name = "tau-agent-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "arc-swap",
  "async-trait",
@@ -5551,7 +5551,7 @@ dependencies = [
 
 [[package]]
 name = "tau-ai"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "chrono",
@@ -5566,7 +5566,7 @@ dependencies = [
 
 [[package]]
 name = "tau-algorithm"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5612,7 +5612,7 @@ dependencies = [
 
 [[package]]
 name = "tau-coding-agent"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -5690,7 +5690,7 @@ dependencies = [
 
 [[package]]
 name = "tau-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "tempfile",
@@ -5727,7 +5727,7 @@ dependencies = [
 
 [[package]]
 name = "tau-dashboard-ui"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "leptos",
  "tau-tui",
@@ -5755,7 +5755,7 @@ dependencies = [
 
 [[package]]
 name = "tau-diagnostics"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "serde",
@@ -5771,7 +5771,7 @@ dependencies = [
 
 [[package]]
 name = "tau-discord-runtime"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde",
  "serenity",
@@ -5817,7 +5817,7 @@ dependencies = [
 
 [[package]]
 name = "tau-gateway"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5971,7 +5971,7 @@ dependencies = [
 
 [[package]]
 name = "tau-ops"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -6010,7 +6010,7 @@ dependencies = [
 
 [[package]]
 name = "tau-provider"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -6037,7 +6037,7 @@ dependencies = [
 
 [[package]]
 name = "tau-release-channel"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "httpmock",
@@ -6051,7 +6051,7 @@ dependencies = [
 
 [[package]]
 name = "tau-runtime"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -6075,7 +6075,7 @@ dependencies = [
 
 [[package]]
 name = "tau-safety"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "aho-corasick",
  "regex",
@@ -6194,7 +6194,7 @@ dependencies = [
 
 [[package]]
 name = "tau-trainer"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -6210,7 +6210,7 @@ dependencies = [
 
 [[package]]
 name = "tau-training-proxy"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -6226,7 +6226,7 @@ dependencies = [
 
 [[package]]
 name = "tau-training-runner"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -6241,7 +6241,7 @@ dependencies = [
 
 [[package]]
 name = "tau-training-store"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "chrono",
@@ -6256,7 +6256,7 @@ dependencies = [
 
 [[package]]
 name = "tau-training-tracer"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chrono",
  "serde_json",
@@ -6269,7 +6269,7 @@ dependencies = [
 
 [[package]]
 name = "tau-training-types"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chrono",
  "serde",
@@ -6279,7 +6279,7 @@ dependencies = [
 
 [[package]]
 name = "tau-tui"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "base64 0.22.1",
  "chrono",
