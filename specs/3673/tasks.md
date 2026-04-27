@@ -12,4 +12,5 @@
 - Added gateway regression proving generic mutation recovery retries fall back to `ToolChoice::Required` when the concrete `write` heuristic does not apply.
 - Added gateway regression proving a no-tool response after a `ToolChoice::Required` retry blocks with `required_tool_evidence_missing_exhausted` instead of drifting into another soft retry.
 - Added gateway/TUI bridge regressions proving `required_tool_evidence_missing_exhausted` is exposed through additive operator snapshots and rendered once in the TUI instead of being replaced by a generic gateway error.
+- Added provider tool-choice matrix coverage proving Auto, Required, and concrete Tool prompt contracts across Codex, Claude, and Gemini; concrete Tool now requires the named tool instead of sharing Auto's soft prompt contract.
 - Verified scoped provider/gateway regressions plus the full `gateway_openresponses` gateway test filter before closeout.

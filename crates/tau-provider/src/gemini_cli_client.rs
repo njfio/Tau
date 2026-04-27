@@ -300,16 +300,31 @@ fn render_gemini_prompt(request: &ChatRequest) -> String {
         "Respond with the assistant's next message for the conversation below.".to_string(),
     ];
 
-    if matches!(
-        request.tool_choice.as_ref(),
-        Some(tau_ai::ToolChoice::Required)
-    ) {
-        lines.push("A Tau tool call is required for this turn.".to_string());
-        lines.push("Return only assistant text containing JSON exactly shaped like {\"tool_calls\":[{\"id\":\"call_1\",\"name\":\"<exact-tool-name>\",\"arguments\":{}}]}.".to_string());
-    } else {
-        lines.push("Return plain assistant text only when no tool is required.".to_string());
-        lines.push("If you need a Tau tool, do not describe the action in prose.".to_string());
-        lines.push("Instead, return assistant text containing JSON exactly shaped like {\"tool_calls\":[{\"id\":\"call_1\",\"name\":\"<exact-tool-name>\",\"arguments\":{}}]}.".to_string());
+    match request.tool_choice.as_ref() {
+        Some(tau_ai::ToolChoice::Required) => {
+            lines.push("A Tau tool call is required for this turn.".to_string());
+            lines.push(format!(
+                "Return only assistant text containing JSON exactly shaped like {}.",
+                render_textual_tool_call_shape("<exact-tool-name>")
+            ));
+        }
+        Some(tau_ai::ToolChoice::Tool { name }) => {
+            lines.push(format!(
+                "A Tau tool call to `{name}` is required for this turn."
+            ));
+            lines.push(format!(
+                "Return only assistant text containing JSON exactly shaped like {}.",
+                render_textual_tool_call_shape(name)
+            ));
+        }
+        _ => {
+            lines.push("Return plain assistant text only when no tool is required.".to_string());
+            lines.push("If you need a Tau tool, do not describe the action in prose.".to_string());
+            lines.push(format!(
+                "Instead, return assistant text containing JSON exactly shaped like {}.",
+                render_textual_tool_call_shape("<exact-tool-name>")
+            ));
+        }
     }
     lines.push(
         "Use an exact tool name from the available list and provide JSON arguments.".to_string(),
@@ -355,6 +370,11 @@ fn render_gemini_prompt(request: &ChatRequest) -> String {
     }
 
     lines.join("\n")
+}
+
+fn render_textual_tool_call_shape(tool_name: &str) -> String {
+    let escaped_tool_name = tool_name.replace('\\', "\\\\").replace('"', "\\\"");
+    format!("{{\"tool_calls\":[{{\"id\":\"call_1\",\"name\":\"{escaped_tool_name}\",\"arguments\":{{}}}}]}}")
 }
 
 fn role_label(role: MessageRole) -> &'static str {
@@ -610,6 +630,33 @@ printf '{"response":"late"}'
         assert!(prompt.contains("A Tau tool call is required for this turn."));
         assert!(prompt.contains("Return only assistant text containing JSON exactly shaped like"));
         assert!(!prompt.contains("Return plain assistant text only when no tool is required."));
+    }
+
+    #[test]
+    fn provider_tool_choice_matrix_gemini_prompt_distinguishes_auto_required_and_named_tool() {
+        let auto_prompt = render_gemini_prompt(&test_request());
+        assert!(auto_prompt.contains("Return plain assistant text only when no tool is required."));
+        assert!(!auto_prompt.contains("A Tau tool call is required for this turn."));
+
+        let mut required_request = test_request();
+        required_request.tool_choice = Some(tau_ai::ToolChoice::Required);
+        let required_prompt = render_gemini_prompt(&required_request);
+        assert!(required_prompt.contains("A Tau tool call is required for this turn."));
+        assert!(required_prompt.contains("\"name\":\"<exact-tool-name>\""));
+        assert!(
+            !required_prompt.contains("Return plain assistant text only when no tool is required.")
+        );
+
+        let mut named_request = test_request();
+        named_request.tool_choice = Some(tau_ai::ToolChoice::Tool {
+            name: "write".to_string(),
+        });
+        let named_prompt = render_gemini_prompt(&named_request);
+        assert!(named_prompt.contains("A Tau tool call to `write` is required for this turn."));
+        assert!(named_prompt.contains("\"name\":\"write\""));
+        assert!(
+            !named_prompt.contains("Return plain assistant text only when no tool is required.")
+        );
     }
 
     #[test]
