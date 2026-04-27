@@ -92,6 +92,12 @@ impl ChatPanel {
         &self.messages
     }
 
+    pub fn latest_message_index(&self, role: MessageRole) -> Option<usize> {
+        self.messages
+            .iter()
+            .rposition(|message| message.role == role)
+    }
+
     pub fn scroll_offset(&self) -> usize {
         self.scroll_offset
     }

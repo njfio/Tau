@@ -296,6 +296,10 @@ impl App {
                 self.append_assistant_delta(&delta);
                 false
             }
+            GatewayTurnEvent::OperatorStateSnapshot(state) => {
+                super::operator_state::apply_operator_turn_state(self, &state);
+                false
+            }
             GatewayTurnEvent::ToolStarted {
                 tool_call_id,
                 tool_name,
@@ -351,7 +355,9 @@ impl App {
                 }
             }
             None => {
-                self.push_timestamped_message(MessageRole::Assistant, result.output_text);
+                if self.chat.last_assistant_content() != Some(result.output_text.as_str()) {
+                    self.push_timestamped_message(MessageRole::Assistant, result.output_text);
+                }
             }
         }
     }

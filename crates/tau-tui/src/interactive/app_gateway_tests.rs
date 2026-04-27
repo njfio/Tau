@@ -513,6 +513,79 @@ data: [DONE]
 }
 
 #[test]
+fn operator_turn_state_snapshot_updates_transcript_status_and_tools() {
+    let (bind, _) = spawn_streaming_gateway_server(vec![
+        r#"event: response.operator_turn_state.snapshot
+data: {"schema_version":1,"turn_id":"turn-3582-live","task_id":"task-3582-live","session_key":"session-3582-live","mission_id":"mission-3582-live","phase":"completed","status":"succeeded","assistant_text":"snapshot says ready","tools":[{"tool_call_id":"call-snapshot","tool_name":"read_file","status":"completed","summary":"latency_ms=34","started_at_ms":10,"completed_at_ms":44}],"events":[{"event_id":"evt-snapshot","kind":"final_answer","summary":"snapshot final","text_delta":null,"tool_call_id":null,"tool_name":null,"reason_code":null,"occurred_at_ms":44}],"error":null}
+
+"#,
+        r#"event: response.completed
+data: {"type":"response.completed","response":{"output_text":"snapshot says ready","usage":{"total_tokens":17}}}
+
+data: [DONE]
+
+"#,
+    ]);
+    let mut app = build_app(bind);
+    set_input(&mut app, "consume shared snapshot");
+
+    app_commands::submit_input(&mut app);
+    wait_for_turn(&mut app);
+
+    assert_eq!(
+        last_message(&app, MessageRole::Assistant),
+        Some("snapshot says ready")
+    );
+    assert_eq!(app.status.agent_state, AgentStateDisplay::Idle);
+    assert_eq!(
+        app.status.active_mission_id.as_deref(),
+        Some("mission-3582-live")
+    );
+    let latest = app.tools.latest_entry().expect("snapshot tool row");
+    assert_eq!(latest.tool_call_id.as_deref(), Some("call-snapshot"));
+    assert_eq!(latest.name, "read_file");
+    assert_eq!(latest.status, super::tools::ToolStatus::Success);
+    assert_eq!(latest.detail, "latency_ms=34");
+}
+
+#[test]
+fn operator_turn_state_snapshot_coexists_with_legacy_text_delta_without_duplicate_assistant() {
+    let (bind, _) = spawn_streaming_gateway_server(vec![
+        r#"event: response.output_text.delta
+data: {"type":"response.output_text.delta","delta":"legacy "}
+
+"#,
+        r#"event: response.operator_turn_state.snapshot
+data: {"schema_version":1,"turn_id":"turn-3582-mixed","task_id":"task-3582-mixed","session_key":"session-3582-live","mission_id":"mission-3582-live","phase":"completed","status":"succeeded","assistant_text":"legacy snapshot complete","tools":[],"events":[{"event_id":"evt-snapshot","kind":"final_answer","summary":"snapshot final","text_delta":null,"tool_call_id":null,"tool_name":null,"reason_code":null,"occurred_at_ms":44}],"error":null}
+
+event: response.completed
+data: {"type":"response.completed","response":{"output_text":"legacy snapshot complete","usage":{"total_tokens":19}}}
+
+data: [DONE]
+
+"#,
+    ]);
+    let mut app = build_app(bind);
+    set_input(&mut app, "consume mixed stream");
+
+    app_commands::submit_input(&mut app);
+    wait_for_turn(&mut app);
+
+    let assistant_messages = app
+        .chat
+        .messages()
+        .iter()
+        .filter(|message| message.role == MessageRole::Assistant)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        assistant_messages.len(),
+        1,
+        "assistant_messages={assistant_messages:?}"
+    );
+    assert_eq!(assistant_messages[0].content, "legacy snapshot complete");
+}
+
+#[test]
 fn spec_3669_streaming_error_frame_sets_error_state() {
     let (bind, _) = spawn_streaming_gateway_server(vec![
         r#"event: response.failed

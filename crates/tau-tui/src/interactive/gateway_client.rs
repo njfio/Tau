@@ -9,6 +9,7 @@ use reqwest::blocking::Client;
 use reqwest::header::CONTENT_TYPE;
 use serde::Deserialize;
 use serde_json::{json, Value};
+use tau_contract::operator_state::OperatorTurnState;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GatewayRuntimeConfig {
@@ -49,6 +50,7 @@ pub enum GatewayToolStatus {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GatewayTurnEvent {
     TextDelta(String),
+    OperatorStateSnapshot(OperatorTurnState),
     ToolStarted {
         tool_call_id: String,
         tool_name: String,
@@ -378,6 +380,15 @@ fn process_sse_frame(
                     output_text.push_str(text);
                 }
             }
+        }
+        "response.operator_turn_state.snapshot" => {
+            let state = serde_json::from_value::<OperatorTurnState>(value).map_err(|error| {
+                format!("failed to parse response.operator_turn_state.snapshot: {error}")
+            })?;
+            if output_text.trim().is_empty() && !state.assistant_text.trim().is_empty() {
+                output_text.push_str(&state.assistant_text);
+            }
+            let _ = sender.send(GatewayTurnEvent::OperatorStateSnapshot(state));
         }
         "response.tool_execution.started" => {
             let tool_call_id = value

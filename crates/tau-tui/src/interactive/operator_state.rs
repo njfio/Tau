@@ -26,7 +26,19 @@ fn apply_assistant_text(app: &mut App, assistant_text: &str) {
     if assistant_text.trim().is_empty() {
         return;
     }
-    if app.chat.last_assistant_content() == Some(assistant_text) {
+    if let Some(index) = latest_current_turn_assistant_index(app) {
+        let current = app.chat.message_content(index).unwrap_or_default();
+        if current == assistant_text {
+            return;
+        }
+        if assistant_text.starts_with(current) || current.starts_with(assistant_text) {
+            let _ = app
+                .chat
+                .set_message_content(index, assistant_text.to_string());
+            app.chat.scroll_to_bottom();
+            return;
+        }
+    } else if app.chat.last_assistant_content() == Some(assistant_text) {
         return;
     }
     app.chat.add_message(ChatMessage {
@@ -35,6 +47,16 @@ fn apply_assistant_text(app: &mut App, assistant_text: &str) {
         timestamp: now_timestamp(),
     });
     app.chat.scroll_to_bottom();
+}
+
+fn latest_current_turn_assistant_index(app: &App) -> Option<usize> {
+    let assistant_index = app.chat.latest_message_index(MessageRole::Assistant)?;
+    let latest_user_index = app.chat.latest_message_index(MessageRole::User);
+    if latest_user_index.is_none_or(|user_index| assistant_index > user_index) {
+        Some(assistant_index)
+    } else {
+        None
+    }
 }
 
 fn apply_operator_tools(app: &mut App, tools: &[OperatorToolState]) {

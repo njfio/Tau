@@ -3,6 +3,8 @@
 ## Summary
 The Tau TUI now exposes an additive `interactive::operator_state` adapter that consumes the shared `OperatorTurnState` contract from `tau-contract`. The adapter maps a shared turn snapshot into the existing TUI transcript, status bar, mission binding, and tool panel state without changing the gateway streaming client.
 
+The live gateway client also accepts an optional `response.operator_turn_state.snapshot` SSE frame. Its `data` payload is parsed as `OperatorTurnState` and applied through the same adapter used by direct tests.
+
 ## Consumption Boundary
 `OperatorTurnState` remains owned by `tau-contract`, as accepted in ADR 0005. `tau-tui` depends on that crate and does not redeclare the schema. The first TUI consumption boundary is deliberately small:
 
@@ -13,6 +15,17 @@ The Tau TUI now exposes an additive `interactive::operator_state` adapter that c
 - surface timed-out, failed, cancelled, and blocked turns as operator-readable system messages with reason codes.
 
 This is a transcript-first bridge, not a full UI redesign. It gives future gateway and webchat work a shared state target while preserving the current TUI event loop.
+
+## Live stream event
+
+`response.operator_turn_state.snapshot` is an additive SSE event. TUI treats it as a richer state projection that may appear beside legacy response frames:
+
+- `response.output_text.delta` can still stream incremental text;
+- `response.tool_execution.started` and `response.tool_execution.completed` can still drive live tool rows;
+- `response.completed` still finishes the turn and carries usage metadata;
+- `response.failed` still fails the turn.
+
+When a snapshot and legacy text delta describe the same current assistant turn, the adapter reconciles the assistant message instead of adding a duplicate. This keeps transcript-first rendering stable while the gateway and clients transition from event-level deltas toward shared state snapshots.
 
 ## Status Mapping
 - `succeeded` + `completed` maps to idle after writing assistant text.
