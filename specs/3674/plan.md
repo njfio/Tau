@@ -21,6 +21,12 @@
 - `crates/tau-gateway/src/gateway_openresponses/verifier_runtime.rs`
 - `crates/tau-gateway/src/gateway_openresponses/tests.rs`
 
+## Current Code Reality
+
+- The current gateway retry path has the #3672 compact retry prompt and failed-attempt context stripping.
+- It does not yet have attempt-local read-only saturation detection, cooperative cancellation, or a widened mutation-recovery retry timeout floor.
+- The existing timeout/read-only regressions live in `crates/tau-gateway/src/gateway_openresponses/tests.rs` near the OpenResponses mission retry band.
+
 ## Risks
 
 - Cancelling too aggressively could stop legitimate discovery before mutation.

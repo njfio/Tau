@@ -19,6 +19,12 @@ The helper will only run on retry turns where mutation evidence is still missing
 - `crates/tau-gateway/src/gateway_openresponses/openresponses_execution_handler.rs`
 - `crates/tau-gateway/src/gateway_openresponses/tests.rs`
 
+## Current Code Reality
+
+- The current gateway retry path can force a generic required tool response and now emits #3672 mutation-first retry guidance.
+- It does not yet infer a concrete `write` tool choice for create/build/scaffold/new-folder recovery retries.
+- The selector should be isolated enough to test fallback behavior without changing validation-only or non-mutation retries.
+
 ## Risks
 
 - Over-constraining retries to `write` when `edit` would be more natural.

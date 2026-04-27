@@ -1,6 +1,7 @@
 # Spec: Force Concrete Mutating Tool Choice On Ralph-Loop Recovery Retries
 
 Status: Reviewed
+Issue: #3675
 
 ## Problem Statement
 
