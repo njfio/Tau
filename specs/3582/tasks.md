@@ -70,3 +70,17 @@
 - [x] T23 (COMPAT): keep #3673 no-tool recovery and existing TUI snapshot reconciliation tests green after the bridge.
 
 - [x] T24 (CLOSEOUT): path-limit commit/push the recovery-policy snapshot bridge and comment issues #3582/#3673 with evidence.
+
+- [x] T25 (DOCS): document checkpointed, blocked, and timed-out operator snapshot rendering semantics in the TUI architecture note.
+  - `mission.checkpointed` snapshots keep assistant text visible and add one positive checkpoint system line.
+  - `mission.blocked` and `timed_out` snapshots keep using the operator error path and suppress following generic `response.failed` duplicates.
+
+- [x] T26 (RED): add TUI SSE regression coverage for checkpointed, blocked, and timed-out operator snapshots.
+  - Verify coverage marker with: `rg -q "operator_turn_state_checkpoint_blocked_timeout" crates/tau-tui/src/interactive/app_gateway_tests.rs`
+
+- [x] T27 (GREEN): render checkpointed mission snapshots as a concise non-error transcript system line while preserving blocked/timeout error rendering.
+  - Verify with: `cargo test -p tau-tui operator_turn_state_checkpoint_blocked_timeout -- --test-threads=1`
+  - Verify with: `cargo test -p tau-tui operator_turn_state_snapshot -- --test-threads=1`
+  - Verify with: `cargo test -p tau-tui operator_turn_state_recovery_policy -- --test-threads=1`
+
+- [ ] T28 (CLOSEOUT): run final tau-tui format/lint gates, path-limit commit/push, and comment issues #3582/#3583 with evidence for mission-state rendering.

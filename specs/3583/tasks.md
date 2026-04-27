@@ -23,3 +23,5 @@
 	keeps completion-outcome snapshot semantics stable.
 - `cargo test -p tau-gateway operator_turn_state_recovery_policy_snapshot -- --test-threads=1`
 	keeps verifier-blocked recovery snapshots stable.
+- `cargo test -p tau-tui operator_turn_state_checkpoint_blocked_timeout -- --test-threads=1`
+	proves the TUI preserves timeout partial assistant output from a timed-out operator snapshot and suppresses the following generic `response.failed` duplicate.

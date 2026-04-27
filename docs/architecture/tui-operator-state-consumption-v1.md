@@ -64,8 +64,13 @@ Turn-keyed reconciliation expectations:
 
 Recovery-policy failure snapshots: gateway failure paths that end in a verifier-controlled blocked mission should emit an additive `response.operator_turn_state.snapshot` before the legacy `response.failed` frame. The snapshot carries `status: "blocked"`, a `mission.blocked` event, and `error.reason_code` so clients can show domain-specific recovery policy failures such as `required_tool_evidence_missing_exhausted`. The TUI treats that operator snapshot as the richer active-turn error and suppresses the duplicate generic gateway error message from the following compatibility `response.failed` frame.
 
+Mission outcome snapshots: gateway completion paths can emit `mission.checkpointed` and `mission.blocked` events from `complete_task`. A checkpointed snapshot is a positive terminal turn state, so the TUI should keep assistant text visible and add at most one concise system line that the mission was checkpointed, using the event summary as the operator-readable next step. A blocked completion snapshot remains an error-style operator state: render the assistant text first, then show the `mission.blocked` reason through the existing operator error path and suppress any following generic `response.failed` duplicate.
+
+Runtime timeout snapshots: gateway runtime timeout paths can emit `status: "timed_out"`, `error.reason_code: "gateway_timeout"`, partial assistant text, and failed pending-tool state before the legacy `response.failed` frame. The TUI should preserve that partial assistant text, render one operator-readable timeout system message, and treat the following compatibility failure as already explained for the active turn.
+
 ## Status Mapping
 - `succeeded` + `completed` maps to idle after writing assistant text.
+- `succeeded` + `completed` with a `mission.checkpointed` event maps to idle after writing assistant text and one checkpoint system message.
 - `tool_running` or `waiting_for_tool` maps to tool execution.
 - `streaming` maps to streaming.
 - `pending`, `queued`, and `running` map to thinking.
@@ -91,6 +96,7 @@ Runtime/gateway code can now emit full `OperatorTurnState` snapshots and call th
 - `cargo test -p tau-gateway operator_turn_state_tool_failure_snapshot -- --test-threads=1`
 - `cargo test -p tau-gateway operator_turn_state_recovery_policy_snapshot -- --test-threads=1`
 - `cargo test -p tau-tui operator_turn_state_recovery_policy -- --test-threads=1`
+- `cargo test -p tau-tui operator_turn_state_checkpoint_blocked_timeout -- --test-threads=1`
 - `cargo clippy -p tau-tui --tests --no-deps -- -D warnings`
 - `cargo fmt --check`
 - `git diff --quiet -- Cargo.toml`

@@ -704,6 +704,163 @@ data: [DONE]
 }
 
 #[test]
+fn operator_turn_state_checkpoint_blocked_timeout_snapshots_render_once() {
+    let (checkpoint_bind, _) = spawn_streaming_gateway_server(vec![
+        r#"event: response.created
+data: {"type":"response.created","response":{"id":"turn-checkpoint"}}
+
+"#,
+        r#"event: response.operator_turn_state.snapshot
+data: {"schema_version":1,"turn_id":"turn-checkpoint","task_id":"task-checkpoint","session_key":"session-checkpoint","mission_id":"mission-checkpoint","phase":"completed","status":"succeeded","assistant_text":"checkpoint saved","tools":[],"events":[{"event_id":"evt-checkpoint","kind":"mission.checkpointed","summary":"run validation next","text_delta":null,"tool_call_id":null,"tool_name":null,"reason_code":"mission_completion_partial","occurred_at_ms":44}],"error":null}
+
+"#,
+        r#"event: response.completed
+data: {"type":"response.completed","response":{"id":"turn-checkpoint","output_text":"checkpoint saved","usage":{"total_tokens":11}}}
+
+data: [DONE]
+
+"#,
+    ]);
+    let mut checkpoint_app = build_app(checkpoint_bind);
+    set_input(&mut checkpoint_app, "consume checkpoint snapshot");
+
+    app_commands::submit_input(&mut checkpoint_app);
+    wait_for_turn(&mut checkpoint_app);
+
+    assert_eq!(
+        last_message(&checkpoint_app, MessageRole::Assistant),
+        Some("checkpoint saved")
+    );
+    assert_eq!(checkpoint_app.status.agent_state, AgentStateDisplay::Idle);
+    let checkpoint_system_messages = checkpoint_app
+        .chat
+        .messages()
+        .iter()
+        .filter(|message| message.role == MessageRole::System)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        checkpoint_system_messages.len(),
+        1,
+        "checkpoint_system_messages={checkpoint_system_messages:?}"
+    );
+    assert!(checkpoint_system_messages[0]
+        .content
+        .contains("mission checkpointed"));
+    assert!(checkpoint_system_messages[0]
+        .content
+        .contains("run validation next"));
+
+    let (blocked_bind, _) = spawn_streaming_gateway_server(vec![
+        r#"event: response.created
+data: {"type":"response.created","response":{"id":"turn-blocked"}}
+
+"#,
+        r#"event: response.operator_turn_state.snapshot
+data: {"schema_version":1,"turn_id":"turn-blocked","task_id":"task-blocked","session_key":"session-blocked","mission_id":"mission-blocked","phase":"completed","status":"blocked","assistant_text":"blocked on approval","tools":[],"events":[{"event_id":"evt-blocked","kind":"mission.blocked","summary":"waiting for operator approval","text_delta":null,"tool_call_id":null,"tool_name":null,"reason_code":"mission_completion_blocked","occurred_at_ms":45}],"error":{"reason_code":"mission_completion_blocked","message":"waiting for operator approval","retryable":false}}
+
+"#,
+        r#"event: response.failed
+data: {"type":"response.failed","error":{"code":"gateway_runtime_error","message":"waiting for operator approval"}}
+
+data: [DONE]
+
+"#,
+    ]);
+    let mut blocked_app = build_app(blocked_bind);
+    set_input(&mut blocked_app, "consume blocked snapshot");
+
+    app_commands::submit_input(&mut blocked_app);
+    wait_until(&mut blocked_app, "blocked operator error", |app| {
+        app.chat.messages().iter().any(|message| {
+            message.role == MessageRole::System
+                && message.content.contains("mission_completion_blocked")
+        })
+    });
+    for _ in 0..20 {
+        blocked_app.tick();
+        thread::sleep(Duration::from_millis(10));
+    }
+
+    assert_eq!(blocked_app.status.agent_state, AgentStateDisplay::Error);
+    assert_eq!(
+        last_message(&blocked_app, MessageRole::Assistant),
+        Some("blocked on approval")
+    );
+    let blocked_system_messages = blocked_app
+        .chat
+        .messages()
+        .iter()
+        .filter(|message| message.role == MessageRole::System)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        blocked_system_messages.len(),
+        1,
+        "blocked_system_messages={blocked_system_messages:?}"
+    );
+    assert!(blocked_system_messages[0]
+        .content
+        .contains("mission_completion_blocked"));
+    assert!(
+        !blocked_system_messages[0].content.contains("gateway error"),
+        "blocked_system_messages={blocked_system_messages:?}"
+    );
+
+    let (timeout_bind, _) = spawn_streaming_gateway_server(vec![
+        r#"event: response.created
+data: {"type":"response.created","response":{"id":"turn-timeout"}}
+
+"#,
+        r#"event: response.operator_turn_state.snapshot
+data: {"schema_version":1,"turn_id":"turn-timeout","task_id":"task-timeout","session_key":"session-timeout","mission_id":"mission-timeout","phase":"completed","status":"timed_out","assistant_text":"partial timeout draft","tools":[],"events":[{"event_id":"evt-timeout","kind":"timeout","summary":"response generation timed out before completion","text_delta":null,"tool_call_id":null,"tool_name":null,"reason_code":"gateway_timeout","occurred_at_ms":46}],"error":{"reason_code":"gateway_timeout","message":"response generation timed out before completion","retryable":false}}
+
+"#,
+        r#"event: response.failed
+data: {"type":"response.failed","error":{"code":"request_timeout","message":"response generation timed out before completion"}}
+
+data: [DONE]
+
+"#,
+    ]);
+    let mut timeout_app = build_app(timeout_bind);
+    set_input(&mut timeout_app, "consume timeout snapshot");
+
+    app_commands::submit_input(&mut timeout_app);
+    wait_until(&mut timeout_app, "timeout operator error", |app| {
+        app.chat.messages().iter().any(|message| {
+            message.role == MessageRole::System && message.content.contains("gateway_timeout")
+        })
+    });
+    for _ in 0..20 {
+        timeout_app.tick();
+        thread::sleep(Duration::from_millis(10));
+    }
+
+    assert_eq!(timeout_app.status.agent_state, AgentStateDisplay::Error);
+    assert_eq!(
+        last_message(&timeout_app, MessageRole::Assistant),
+        Some("partial timeout draft")
+    );
+    let timeout_system_messages = timeout_app
+        .chat
+        .messages()
+        .iter()
+        .filter(|message| message.role == MessageRole::System)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        timeout_system_messages.len(),
+        1,
+        "timeout_system_messages={timeout_system_messages:?}"
+    );
+    assert!(timeout_system_messages[0]
+        .content
+        .contains("gateway_timeout"));
+    assert!(
+        !timeout_system_messages[0].content.contains("gateway error"),
+        "timeout_system_messages={timeout_system_messages:?}"
+    );
+}
+
+#[test]
 fn spec_3669_streaming_error_frame_sets_error_state() {
     let (bind, _) = spawn_streaming_gateway_server(vec![
         r#"event: response.failed

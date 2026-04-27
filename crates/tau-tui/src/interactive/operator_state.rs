@@ -1,5 +1,6 @@
 use tau_contract::operator_state::{
-    OperatorToolState, OperatorToolStatus, OperatorTurnPhase, OperatorTurnState, OperatorTurnStatus,
+    OperatorToolState, OperatorToolStatus, OperatorTurnEventKind, OperatorTurnPhase,
+    OperatorTurnState, OperatorTurnStatus,
 };
 
 use super::{
@@ -122,7 +123,10 @@ fn map_tool_status(status: &OperatorToolStatus) -> ToolStatus {
 
 fn apply_operator_status(app: &mut App, state: &OperatorTurnState) {
     app.status.agent_state = match (&state.status, &state.phase) {
-        (OperatorTurnStatus::Succeeded, OperatorTurnPhase::Completed) => AgentStateDisplay::Idle,
+        (OperatorTurnStatus::Succeeded, OperatorTurnPhase::Completed) => {
+            push_operator_checkpoint_message(app, state);
+            AgentStateDisplay::Idle
+        }
         (OperatorTurnStatus::ToolRunning, _) | (_, OperatorTurnPhase::WaitingForTool) => {
             AgentStateDisplay::ToolExec
         }
@@ -143,6 +147,40 @@ fn apply_operator_status(app: &mut App, state: &OperatorTurnState) {
         }
         _ => AgentStateDisplay::Thinking,
     };
+}
+
+fn push_operator_checkpoint_message(app: &mut App, state: &OperatorTurnState) {
+    let Some(event) = state
+        .events
+        .iter()
+        .rev()
+        .find(|event| event.kind == OperatorTurnEventKind::MissionCheckpointed)
+    else {
+        return;
+    };
+    let message = if event.summary.trim().is_empty() {
+        format!("mission checkpointed for operator turn {}", state.turn_id)
+    } else {
+        format!(
+            "mission checkpointed for operator turn {}: {}",
+            state.turn_id, event.summary
+        )
+    };
+    if app
+        .chat
+        .messages()
+        .iter()
+        .rev()
+        .any(|entry| entry.role == MessageRole::System && entry.content == message)
+    {
+        return;
+    }
+    app.chat.add_message(ChatMessage {
+        role: MessageRole::System,
+        content: message,
+        timestamp: now_timestamp(),
+    });
+    app.chat.scroll_to_bottom();
 }
 
 fn push_operator_error_message(app: &mut App, state: &OperatorTurnState) {
