@@ -1299,14 +1299,11 @@ fn gateway_mutation_recovery_tool_choice(
     prompt_tokens: &[String],
     agent: &Agent,
 ) -> Option<ToolChoice> {
-    if retry_attempt == 0
-        || !requires_mutation_evidence
-        || !gateway_prompt_prefers_concrete_write_recovery(prompt_tokens)
-    {
+    if retry_attempt == 0 || !requires_mutation_evidence {
         return None;
     }
 
-    if agent.has_tool("write") {
+    if gateway_prompt_prefers_concrete_write_recovery(prompt_tokens) && agent.has_tool("write") {
         Some(ToolChoice::Tool {
             name: "write".to_string(),
         })

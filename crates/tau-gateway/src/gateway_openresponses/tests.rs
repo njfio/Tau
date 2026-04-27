@@ -8389,6 +8389,96 @@ async fn issue_3675_mutation_recovery_retry_for_create_task_forces_write_tool_ch
 }
 
 #[tokio::test]
+async fn issue_3673_required_tool_choice_retry_without_concrete_write_hint_uses_required() {
+    let temp = tempdir().expect("tempdir");
+    let scripted = Arc::new(ScriptedGatewayLlmClient::new(vec![
+        scripted_gateway_response("I will fix the validation next."),
+        ChatResponse {
+            message: Message::assistant_blocks(vec![ContentBlock::ToolCall {
+                id: "call-write-generic-required-retry".to_string(),
+                name: "write".to_string(),
+                arguments: json!({"path":"fix.txt","content":"fixed by required retry"}),
+            }]),
+            finish_reason: Some("tool_calls".to_string()),
+            usage: ChatUsage::default(),
+        },
+        scripted_gateway_response("fixed validation"),
+    ]));
+    let tool_root = temp.path().join("workspace");
+    std::fs::create_dir_all(&tool_root).expect("create tool workspace");
+    let state = test_state_with_client_and_auth(
+        temp.path(),
+        10_000,
+        scripted.clone(),
+        Arc::new(FixturePipelineToolRegistrar::new(
+            tool_root.clone(),
+            temp.path().join(".tau/gateway"),
+        )),
+        GatewayOpenResponsesAuthMode::Token,
+        Some("secret"),
+        None,
+        60,
+        120,
+    );
+    let (addr, handle) = spawn_test_server(state.clone())
+        .await
+        .expect("spawn server");
+
+    let client = Client::builder()
+        .timeout(Duration::from_secs(2))
+        .build()
+        .expect("client with timeout");
+    let response = client
+        .post(format!("http://{addr}{OPENRESPONSES_ENDPOINT}"))
+        .bearer_auth("secret")
+        .json(&json!({
+            "input": "fix the failing validation in this workspace",
+            "metadata": {
+                "session_id": "required-tool-choice-session",
+                "mission_id": "required-tool-choice-mission"
+            }
+        }))
+        .send()
+        .await
+        .expect("send required tool-choice request");
+    let status = response.status();
+    let payload = response
+        .json::<Value>()
+        .await
+        .expect("parse required tool-choice payload");
+    assert_eq!(status, StatusCode::OK, "unexpected payload: {payload}");
+    assert_eq!(
+        std::fs::read_to_string(tool_root.join("fix.txt")).expect("read fixed file"),
+        "fixed by required retry"
+    );
+
+    let captured_requests = scripted.captured_requests().await;
+    assert!(
+        captured_requests.len() >= 2,
+        "expected initial and recovery retry request, got {} request(s)",
+        captured_requests.len()
+    );
+    assert_eq!(captured_requests[0].tool_choice, Some(ToolChoice::Auto));
+    assert_eq!(captured_requests[1].tool_choice, Some(ToolChoice::Required));
+
+    let mission_path =
+        gateway_mission_state_path(&state.config.state_dir, "required-tool-choice-mission");
+    let mission_state = load_gateway_mission_state(&mission_path).expect("load mission state");
+    assert_eq!(mission_state.status, GatewayMissionStatus::Completed);
+    assert_eq!(mission_state.iteration_count, 2);
+    assert_eq!(
+        mission_state.iterations[0].verifier.overall.reason_code,
+        "tool_evidence_missing_continue"
+    );
+    assert_eq!(
+        mission_state.iterations[1].verifier.overall.reason_code,
+        "mutation_evidence_observed"
+    );
+
+    handle.abort();
+}
+
+#[tokio::test]
 async fn regression_openresponses_stream_timeout_finalizes_pending_tool_execution() {
     let temp = tempdir().expect("tempdir");
     let scripted = Arc::new(ScriptedGatewayLlmClient::new(vec![ChatResponse {

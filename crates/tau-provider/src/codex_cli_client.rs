@@ -324,12 +324,23 @@ fn render_codex_exec_prompt(request: &ChatRequest) -> String {
     let mut lines = vec![
         "You are the OpenAI-compatible Tau backend.".to_string(),
         "Respond with the assistant's next message for the conversation below.".to_string(),
-        "Return plain assistant text only when no tool is required.".to_string(),
-        "If you need a Tau tool, do not describe the action in prose.".to_string(),
-        "Instead, return assistant text containing JSON exactly shaped like {\"tool_calls\":[{\"id\":\"call_1\",\"name\":\"<exact-tool-name>\",\"arguments\":{}}]}.".to_string(),
-        "Use an exact tool name from the available list and provide JSON arguments.".to_string(),
-        "Conversation:".to_string(),
     ];
+
+    if matches!(
+        request.tool_choice.as_ref(),
+        Some(tau_ai::ToolChoice::Required)
+    ) {
+        lines.push("A Tau tool call is required for this turn.".to_string());
+        lines.push("Return only assistant text containing JSON exactly shaped like {\"tool_calls\":[{\"id\":\"call_1\",\"name\":\"<exact-tool-name>\",\"arguments\":{}}]}.".to_string());
+    } else {
+        lines.push("Return plain assistant text only when no tool is required.".to_string());
+        lines.push("If you need a Tau tool, do not describe the action in prose.".to_string());
+        lines.push("Instead, return assistant text containing JSON exactly shaped like {\"tool_calls\":[{\"id\":\"call_1\",\"name\":\"<exact-tool-name>\",\"arguments\":{}}]}.".to_string());
+    }
+    lines.push(
+        "Use an exact tool name from the available list and provide JSON arguments.".to_string(),
+    );
+    lines.push("Conversation:".to_string());
 
     for message in &request.messages {
         lines.push(format!("[{}]", role_label(message.role)));
@@ -567,6 +578,18 @@ printf "stdout fallback reply"
         assert!(prompt.contains("\"tool_calls\""));
         assert!(prompt.contains("<exact-tool-name>"));
         assert!(prompt.contains("Use an exact tool name from the available list"));
+    }
+
+    #[test]
+    fn provider_required_tool_choice_contract_codex_prompt_requires_textual_tool_call() {
+        let mut request = test_request();
+        request.tool_choice = Some(tau_ai::ToolChoice::Required);
+
+        let prompt = render_codex_exec_prompt(&request);
+
+        assert!(prompt.contains("A Tau tool call is required for this turn."));
+        assert!(prompt.contains("Return only assistant text containing JSON exactly shaped like"));
+        assert!(!prompt.contains("Return plain assistant text only when no tool is required."));
     }
 
     #[cfg(unix)]
