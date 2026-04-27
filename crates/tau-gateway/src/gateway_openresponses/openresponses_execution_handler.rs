@@ -301,7 +301,7 @@ pub(super) async fn execute_openresponses_request(
             &prompt_tokens,
             &agent,
         );
-        agent.set_next_tool_choice(attempt_tool_choice);
+        agent.set_next_tool_choice(attempt_tool_choice.clone());
         let cancellation_token = CooperativeCancellationToken::new();
         agent.set_cancellation_token(Some(cancellation_token.clone()));
         set_gateway_attempt_cancellation_token(
@@ -559,13 +559,20 @@ pub(super) async fn execute_openresponses_request(
         let retry_exhausted = retry_attempt >= ACTION_TOOL_EVIDENCE_MAX_RETRIES;
         let verifier_traces = snapshot_gateway_verifier_traces(&tool_execution_traces)?;
         let completion_signal = extract_gateway_completion_signal(&verifier_traces);
-        let verifier = build_gateway_verifier_bundle(
-            requires_tool_evidence,
-            requires_mutation_evidence,
-            requires_validation_evidence,
-            verifier_traces.as_slice(),
-            retry_exhausted,
-        );
+        let verifier = if matches!(attempt_tool_choice, Some(ToolChoice::Required))
+            && requires_tool_evidence
+            && tool_execution_delta == 0
+        {
+            build_gateway_required_tool_retry_exhausted_verifier_bundle()
+        } else {
+            build_gateway_verifier_bundle(
+                requires_tool_evidence,
+                requires_mutation_evidence,
+                requires_validation_evidence,
+                verifier_traces.as_slice(),
+                retry_exhausted,
+            )
+        };
         let attempt_response_payload = build_gateway_attempt_response_payload(
             &agent.messages()[attempt_start_index..],
             &tool_execution_traces,

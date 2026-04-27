@@ -230,7 +230,8 @@ use types::{
     OpenResponsesUsage, OpenResponsesUsageSummary, SseFrame,
 };
 use verifier_runtime::{
-    build_gateway_read_only_saturation_verifier_bundle, build_gateway_retry_feedback,
+    build_gateway_read_only_saturation_verifier_bundle,
+    build_gateway_required_tool_retry_exhausted_verifier_bundle, build_gateway_retry_feedback,
     build_gateway_runtime_failure_verifier_bundle, build_gateway_verifier_bundle,
     gateway_trace_is_mutating, GatewayMissionVerifierBundle, GatewayMissionVerifierRecord,
     GatewayMissionVerifierStatus, GatewayVerifierToolTrace,

@@ -8479,6 +8479,96 @@ async fn issue_3673_required_tool_choice_retry_without_concrete_write_hint_uses_
 }
 
 #[tokio::test]
+async fn issue_3673_no_tool_required_retry_exhaustion_blocks_after_required_turn() {
+    let temp = tempdir().expect("tempdir");
+    let scripted = Arc::new(ScriptedGatewayLlmClient::new(vec![
+        scripted_gateway_response("I will fix the validation next."),
+        scripted_gateway_response("I still need to think before using tools."),
+    ]));
+    let tool_root = temp.path().join("workspace");
+    std::fs::create_dir_all(&tool_root).expect("create tool workspace");
+    let state = test_state_with_client_and_auth(
+        temp.path(),
+        10_000,
+        scripted.clone(),
+        Arc::new(FixturePipelineToolRegistrar::new(
+            tool_root,
+            temp.path().join(".tau/gateway"),
+        )),
+        GatewayOpenResponsesAuthMode::Token,
+        Some("secret"),
+        None,
+        60,
+        120,
+    );
+    let (addr, handle) = spawn_test_server(state.clone())
+        .await
+        .expect("spawn server");
+
+    let client = Client::builder()
+        .timeout(Duration::from_secs(2))
+        .build()
+        .expect("client with timeout");
+    let response = client
+        .post(format!("http://{addr}{OPENRESPONSES_ENDPOINT}"))
+        .bearer_auth("secret")
+        .json(&json!({
+            "input": "fix the failing validation in this workspace",
+            "metadata": {
+                "session_id": "required-no-tool-exhaustion-session",
+                "mission_id": "required-no-tool-exhaustion-mission"
+            }
+        }))
+        .send()
+        .await
+        .expect("send required no-tool exhaustion request");
+    let status = response.status();
+    let payload = response
+        .json::<Value>()
+        .await
+        .expect("parse required no-tool exhaustion payload");
+    assert_eq!(
+        status,
+        StatusCode::BAD_GATEWAY,
+        "unexpected payload: {payload}"
+    );
+    assert!(
+        payload["error"]["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("required tool retry exhausted"),
+        "expected required-tool exhaustion message: {payload}"
+    );
+
+    let captured_requests = scripted.captured_requests().await;
+    assert_eq!(captured_requests.len(), 2);
+    assert_eq!(captured_requests[0].tool_choice, Some(ToolChoice::Auto));
+    assert_eq!(captured_requests[1].tool_choice, Some(ToolChoice::Required));
+
+    let mission_path = gateway_mission_state_path(
+        &state.config.state_dir,
+        "required-no-tool-exhaustion-mission",
+    );
+    let mission_state = load_gateway_mission_state(&mission_path).expect("load mission state");
+    assert_eq!(mission_state.status, GatewayMissionStatus::Blocked);
+    assert_eq!(mission_state.iteration_count, 2);
+    assert_eq!(
+        mission_state.iterations[0].verifier.overall.reason_code,
+        "tool_evidence_missing_continue"
+    );
+    assert_eq!(
+        mission_state.iterations[1].verifier.overall.reason_code,
+        "required_tool_evidence_missing_exhausted"
+    );
+    assert_eq!(
+        mission_state.latest_verifier.reason_code,
+        "required_tool_evidence_missing_exhausted"
+    );
+
+    handle.abort();
+}
+
+#[tokio::test]
 async fn regression_openresponses_stream_timeout_finalizes_pending_tool_execution() {
     let temp = tempdir().expect("tempdir");
     let scripted = Arc::new(ScriptedGatewayLlmClient::new(vec![ChatResponse {

@@ -4,6 +4,8 @@ use super::*;
 
 const ACTION_TOOL_EVIDENCE_RETRY_EXHAUSTED_MESSAGE: &str =
     "gateway action request exhausted action retries without satisfying verifier requirements";
+const REQUIRED_TOOL_RETRY_EXHAUSTED_MESSAGE: &str =
+    "required tool retry exhausted without observing tool execution evidence";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -196,6 +198,21 @@ pub(super) fn build_gateway_runtime_failure_verifier_bundle(
         reason_code,
         message,
         [("retry_exhausted", json!(false))],
+    )])
+}
+
+pub(super) fn build_gateway_required_tool_retry_exhausted_verifier_bundle(
+) -> GatewayMissionVerifierBundle {
+    GatewayMissionVerifierBundle::from_records(vec![gateway_verifier_record(
+        "action_tool_evidence",
+        GatewayMissionVerifierStatus::Failed,
+        "required_tool_evidence_missing_exhausted",
+        REQUIRED_TOOL_RETRY_EXHAUSTED_MESSAGE,
+        [
+            ("observed_count", json!(0)),
+            ("required_tool_choice", json!(true)),
+            ("retry_exhausted", json!(true)),
+        ],
     )])
 }
 

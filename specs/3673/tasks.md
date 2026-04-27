@@ -10,4 +10,5 @@
 
 - Added provider prompt-contract regressions proving `ToolChoice::Required` renders a hard textual tool-call requirement for Codex, Claude, and Gemini CLI adapters.
 - Added gateway regression proving generic mutation recovery retries fall back to `ToolChoice::Required` when the concrete `write` heuristic does not apply.
+- Added gateway regression proving a no-tool response after a `ToolChoice::Required` retry blocks with `required_tool_evidence_missing_exhausted` instead of drifting into another soft retry.
 - Verified scoped provider/gateway regressions plus the full `gateway_openresponses` gateway test filter before closeout.
