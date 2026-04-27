@@ -36,3 +36,13 @@
 - [x] T11 (COMPAT): verify tau-gateway and tau-tui snapshot paths together and preserve root manifest stability.
 
 - [x] T12 (CLOSEOUT): path-limit commit/push the gateway emission slice and comment issue #3582 with evidence.
+
+- [x] T13 (RED): map transcript-first layout boundaries and add failing tau-tui render tests for the operator shell layout.
+  - Verify RED with: `bash -c '! cargo test -p tau-tui transcript_first_layout -- --test-threads=1'`
+
+- [x] T14 (GREEN): refine the TUI render layer so transcript content stays primary while status, input, help, and tool progress remain stable.
+  - Verify with: `cargo test -p tau-tui transcript_first_layout -- --test-threads=1`
+
+- [x] T15 (COMPAT): keep existing operator-state snapshot and gateway streaming render behavior green alongside the new layout tests.
+
+- [x] T16 (CLOSEOUT): path-limit commit/push the layout slice and comment issue #3582 with evidence.

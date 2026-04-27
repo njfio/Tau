@@ -28,6 +28,39 @@ pub(crate) fn build_tool_summary_lines(app: &App) -> Vec<Line<'static>> {
     lines
 }
 
+pub(crate) fn build_transcript_first_turn_lines(app: &App) -> Vec<Line<'static>> {
+    let has_active_turn = app.status.agent_state != super::status::AgentStateDisplay::Idle;
+    let latest_running_tool = app.tools.latest_running();
+    if !has_active_turn && latest_running_tool.is_none() {
+        return Vec::new();
+    }
+
+    let mut spans = vec![
+        Span::styled(
+            "Current turn: ",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            app.status.agent_state.label(),
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        ),
+    ];
+
+    if let Some(entry) = latest_running_tool {
+        spans.push(Span::raw("  "));
+        spans.push(Span::styled(
+            format!("Active tool: {}", entry.name),
+            Style::default().fg(Color::Yellow),
+        ));
+    }
+
+    vec![Line::from(spans), Line::from("")]
+}
+
 pub(crate) fn build_transcript_tool_lines(app: &App) -> Vec<Line<'static>> {
     let Some(entry) = app
         .tools

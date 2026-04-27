@@ -8,7 +8,9 @@ use ratatui::{
 
 use super::app::{App, FocusPanel};
 use super::chat::MessageRole;
-use super::ui_chat_tool_lines::{build_tool_summary_lines, build_transcript_tool_lines};
+use super::ui_chat_tool_lines::{
+    build_tool_summary_lines, build_transcript_first_turn_lines, build_transcript_tool_lines,
+};
 
 pub(crate) fn render_chat_panel(frame: &mut Frame, app: &mut App, area: Rect) {
     let border_style = if app.focus == FocusPanel::Chat {
@@ -19,7 +21,7 @@ pub(crate) fn render_chat_panel(frame: &mut Frame, app: &mut App, area: Rect) {
 
     let block = Block::default()
         .title(Span::styled(
-            " Chat ",
+            " Transcript ",
             Style::default()
                 .fg(Color::White)
                 .add_modifier(Modifier::BOLD),
@@ -30,7 +32,8 @@ pub(crate) fn render_chat_panel(frame: &mut Frame, app: &mut App, area: Rect) {
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let tool_summary_lines = build_tool_summary_lines(app);
+    let mut tool_summary_lines = build_transcript_first_turn_lines(app);
+    tool_summary_lines.extend(build_tool_summary_lines(app));
     let content_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([

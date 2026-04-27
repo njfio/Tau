@@ -36,6 +36,22 @@ Expected gateway touchpoints:
 - `gateway_openresponses/openresponses_execution_handler.rs` owns execution state, response ids, text deltas, and tool lifecycle frames.
 - `tau-contract::operator_state` owns the snapshot schema and must remain the only schema source.
 
+Transcript-first layout boundary: the TUI render layer should keep the conversation transcript as the primary surface while preserving a stable status bar, input editor, help line, and secondary tool-progress panel. The layout slice should refine the existing `ui_layout`, `ui_chat`, `ui_tools`, and `ui_status` modules rather than replacing the application shell. Transcript-first means current assistant output and operator-readable turn state remain visible in the main panel, while tool summaries augment the transcript and the side panel provides scannable execution detail.
+
+Expected layout touchpoints:
+
+- `interactive/ui_layout.rs` owns the status/body/input/help rectangles and chat/tools split.
+- `interactive/ui_chat.rs` owns transcript rendering and tool summary lines in the main panel.
+- `interactive/ui_chat_tool_lines.rs` owns transcript-visible tool progress rows.
+- `interactive/ui_tools.rs` owns the secondary tools panel.
+- `interactive/ui_status.rs` owns compact status chips for model, mission, tokens, and agent state.
+- Existing keyboard, mouse, command palette, and input behavior must remain unchanged.
+
+Layout verification:
+
+- Focused render tests cover the transcript-first label, assistant transcript visibility, current turn state, active tool progress, status mission chip, input editor, and secondary tools panel.
+- Existing operator-state and gateway snapshot tests remain the compatibility guard for the shared-state transport path.
+
 ## Status Mapping
 - `succeeded` + `completed` maps to idle after writing assistant text.
 - `tool_running` or `waiting_for_tool` maps to tool execution.

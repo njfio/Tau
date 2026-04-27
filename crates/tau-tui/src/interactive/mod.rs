@@ -46,6 +46,8 @@ mod ui_status;
 #[cfg(test)]
 mod ui_tool_visibility_tests;
 mod ui_tools;
+#[cfg(test)]
+mod ui_transcript_first_layout_tests;
 
 pub use app::{App, AppConfig};
 pub use app_runtime::run_interactive;
