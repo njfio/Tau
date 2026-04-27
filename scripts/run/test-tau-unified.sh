@@ -44,6 +44,18 @@ count_runner_mode() {
   grep -c "^runner_mode=${mode}\$" "${log_path}" 2>/dev/null || true
 }
 
+assert_runner_mode_absent() {
+  local mode="$1"
+  local log_path="$2"
+  local label="$3"
+  if grep -q "^runner_mode=${mode}\$" "${log_path}" 2>/dev/null; then
+    echo "assertion failed (${label}): expected runner mode '${mode}' to be absent" >&2
+    echo "runner log:" >&2
+    cat "${log_path}" >&2
+    exit 1
+  fi
+}
+
 if [[ ! -x "${LAUNCHER_SCRIPT}" ]]; then
   echo "error: launcher script missing or not executable: ${LAUNCHER_SCRIPT}" >&2
   exit 1
@@ -70,6 +82,18 @@ case "${mode}" in
     nohup sleep 120 >/dev/null 2>&1 &
     bg_pid=$!
     echo "${bg_pid}" > "${pid_path}"
+    if [[ "${TAU_UNIFIED_RUNNER_WRITE_DASHBOARD_ARTIFACTS:-false}" == "true" ]]; then
+      dashboard_state_dir=""
+      for arg in "$@"; do
+        dashboard_state_dir="${arg}"
+      done
+      if [[ -n "${dashboard_state_dir}" ]]; then
+        mkdir -p "${dashboard_state_dir}"
+        printf '{}\n' >"${dashboard_state_dir}/state.json"
+        printf '{}\n' >"${dashboard_state_dir}/control-state.json"
+        printf '{}\n' >"${dashboard_state_dir}/auth-status.json"
+      fi
+    fi
     ;;
   down)
     printf 'runner_mode=down\nargs=%s\n' "$*" >>"${log_path}"
@@ -91,6 +115,91 @@ case "${mode}" in
 esac
 EOF
 chmod +x "${runner}"
+
+test_tui_bootstrap_readiness_fails_closed_without_artifacts() {
+  local test_runtime_dir="${tmp_dir}/readiness-runtime"
+  local test_runner_log="${tmp_dir}/readiness-runner.log"
+  local test_runner_pid="${tmp_dir}/readiness-runner.pid"
+  local test_dashboard_state_dir="${tmp_dir}/readiness-dashboard"
+
+  set +e
+  local readiness_output
+  readiness_output="$(
+    TAU_UNIFIED_RUNNER="${runner}" \
+    TAU_UNIFIED_RUNNER_LOG="${test_runner_log}" \
+    TAU_UNIFIED_RUNNER_PID="${test_runner_pid}" \
+    TAU_UNIFIED_RUNTIME_DIR="${test_runtime_dir}" \
+    TAU_UNIFIED_TUI_READINESS_TIMEOUT_MS=200 \
+    "${LAUNCHER_SCRIPT}" tui --bootstrap-runtime --dashboard-state-dir "${test_dashboard_state_dir}" --no-color 2>&1
+  )"
+  local readiness_rc=$?
+  set -e
+
+  assert_equals "2" "${readiness_rc}" "tui bootstrap readiness failure exit"
+  assert_contains "${readiness_output}" "tau-unified: runtime bootstrap not ready" "tui bootstrap readiness diagnostic"
+  assert_runner_mode_absent "tui" "${test_runner_log}" "tui launch skipped after readiness failure"
+}
+
+test_tui_bootstrap_readiness_failed_bootstrap_does_not_launch_tui() {
+  local test_runtime_dir="${tmp_dir}/failed-bootstrap-runtime"
+  local test_runner_log="${tmp_dir}/failed-bootstrap-runner.log"
+  local test_runner_pid="${tmp_dir}/failed-bootstrap-runner.pid"
+  local failed_runner="${tmp_dir}/failed-runner.sh"
+
+  cat >"${failed_runner}" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+mode="$1"
+log_path="$2"
+pid_path="$3"
+shift 3
+printf 'runner_mode=%s\nargs=%s\n' "${mode}" "$*" >>"${log_path}"
+case "${mode}" in
+  up)
+    echo "tau-unified test: bind conflict on requested port" >&2
+    exit 98
+    ;;
+  tui)
+    exit 99
+    ;;
+  down|status)
+    rm -f "${pid_path}"
+    ;;
+esac
+EOF
+  chmod +x "${failed_runner}"
+
+  set +e
+  local bootstrap_output
+  bootstrap_output="$(
+    TAU_UNIFIED_RUNNER="${failed_runner}" \
+    TAU_UNIFIED_RUNNER_LOG="${test_runner_log}" \
+    TAU_UNIFIED_RUNNER_PID="${test_runner_pid}" \
+    TAU_UNIFIED_RUNTIME_DIR="${test_runtime_dir}" \
+    "${LAUNCHER_SCRIPT}" tui --bootstrap-runtime --bind 127.0.0.1:8899 --no-color 2>&1
+  )"
+  local bootstrap_rc=$?
+  set -e
+
+  assert_equals "98" "${bootstrap_rc}" "tui failed bootstrap exit"
+  assert_contains "${bootstrap_output}" "bind conflict" "tui failed bootstrap diagnostic"
+  assert_runner_mode_absent "tui" "${test_runner_log}" "tui launch skipped after failed bootstrap"
+}
+
+case "${1:-all}" in
+  all)
+    ;;
+  tui_bootstrap_readiness)
+    test_tui_bootstrap_readiness_fails_closed_without_artifacts
+    test_tui_bootstrap_readiness_failed_bootstrap_does_not_launch_tui
+    echo "tau-unified tui bootstrap readiness tests passed"
+    exit 0
+    ;;
+  *)
+    echo "unknown test selector: $1" >&2
+    exit 2
+    ;;
+esac
 
 bash -n "${LAUNCHER_SCRIPT}"
 
@@ -249,6 +358,7 @@ tui_bootstrap_output="$(
   TAU_UNIFIED_RUNNER_LOG="${runner_log}" \
   TAU_UNIFIED_RUNNER_PID="${runner_pid}" \
   TAU_UNIFIED_RUNTIME_DIR="${runtime_dir}" \
+  TAU_UNIFIED_RUNNER_WRITE_DASHBOARD_ARTIFACTS=true \
   "${LAUNCHER_SCRIPT}" tui --bootstrap-runtime --no-color 2>&1 || true
 )"
 assert_contains "${tui_bootstrap_output}" "tau-unified: bootstrapping runtime for tui" "tui bootstrap marker"
@@ -269,6 +379,7 @@ tui_same_bootstrap_output="$(
   TAU_UNIFIED_RUNNER_LOG="${runner_log}" \
   TAU_UNIFIED_RUNNER_PID="${runner_pid}" \
   TAU_UNIFIED_RUNTIME_DIR="${runtime_dir}" \
+  TAU_UNIFIED_RUNNER_WRITE_DASHBOARD_ARTIFACTS=true \
   "${LAUNCHER_SCRIPT}" tui --bootstrap-runtime --no-color 2>&1 || true
 )"
 assert_not_contains "${tui_same_bootstrap_output}" "tau-unified: recycling stale runtime" "tui bootstrap same fingerprint reuse"
@@ -285,6 +396,7 @@ tui_stale_bootstrap_output="$(
   TAU_UNIFIED_RUNNER_LOG="${runner_log}" \
   TAU_UNIFIED_RUNNER_PID="${runner_pid}" \
   TAU_UNIFIED_RUNTIME_DIR="${runtime_dir}" \
+  TAU_UNIFIED_RUNNER_WRITE_DASHBOARD_ARTIFACTS=true \
   "${LAUNCHER_SCRIPT}" tui --bootstrap-runtime --no-color 2>&1 || true
 )"
 assert_contains "${tui_stale_bootstrap_output}" "tau-unified: recycling stale runtime" "tui bootstrap stale recycle marker"
@@ -321,7 +433,7 @@ assert_contains "${tui_override_output}" "tau-unified: launching tui (interactiv
 
 up_override_count_before="$(count_runner_mode up "${runner_log}")"
 tui_override_bootstrap_output="$(
-  TAU_UNIFIED_RUNNER="${runner}"   TAU_UNIFIED_RUNNER_LOG="${runner_log}"   TAU_UNIFIED_RUNNER_PID="${runner_pid}"   TAU_UNIFIED_RUNTIME_DIR="${runtime_dir}"   "${LAUNCHER_SCRIPT}" tui --bootstrap-runtime --request-timeout-ms 9000 --agent-request-max-retries 2 --no-color 2>&1 || true
+  TAU_UNIFIED_RUNNER="${runner}"   TAU_UNIFIED_RUNNER_LOG="${runner_log}"   TAU_UNIFIED_RUNNER_PID="${runner_pid}"   TAU_UNIFIED_RUNTIME_DIR="${runtime_dir}"   TAU_UNIFIED_RUNNER_WRITE_DASHBOARD_ARTIFACTS=true   "${LAUNCHER_SCRIPT}" tui --bootstrap-runtime --request-timeout-ms 9000 --agent-request-max-retries 2 --no-color 2>&1 || true
 )"
 assert_contains "${tui_override_bootstrap_output}" "tau-unified: bootstrapping runtime for tui" "tui override bootstrap marker"
 up_override_count_after="$(count_runner_mode up "${runner_log}")"

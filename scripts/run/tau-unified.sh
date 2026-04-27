@@ -22,6 +22,7 @@ DASHBOARD_STATE_DIR_DEFAULT="${TAU_UNIFIED_DASHBOARD_STATE_DIR:-.tau/dashboard}"
 REQUEST_TIMEOUT_MS_DEFAULT="${TAU_UNIFIED_REQUEST_TIMEOUT_MS:-180000}"
 AGENT_REQUEST_MAX_RETRIES_DEFAULT="${TAU_UNIFIED_AGENT_REQUEST_MAX_RETRIES:-0}"
 PROVIDER_MAX_RETRIES_DEFAULT="${TAU_UNIFIED_PROVIDER_MAX_RETRIES:-0}"
+TUI_READINESS_TIMEOUT_MS_DEFAULT="${TAU_UNIFIED_TUI_READINESS_TIMEOUT_MS:-6000}"
 
 RUNNER="${TAU_UNIFIED_RUNNER:-}"
 RUNNER_LOG="${TAU_UNIFIED_RUNNER_LOG:-}"
@@ -446,6 +447,9 @@ bootstrap_runtime_for_tui() {
   local dashboard_state_dir="$8"
   local request_timeout_ms="$9"
   local agent_request_max_retries="${10}"
+  local readiness_timeout_ms="${TUI_READINESS_TIMEOUT_MS_DEFAULT}"
+
+  require_positive_integer "${readiness_timeout_ms}" "TAU_UNIFIED_TUI_READINESS_TIMEOUT_MS"
 
   log "tau-unified: bootstrapping runtime for tui"
   cmd_up \
@@ -460,10 +464,10 @@ bootstrap_runtime_for_tui() {
     --request-timeout-ms "${request_timeout_ms}" \
     --agent-request-max-retries "${agent_request_max_retries}"
 
-  if wait_for_dashboard_artifacts "${dashboard_state_dir}" 6000; then
+  if wait_for_dashboard_artifacts "${dashboard_state_dir}" "${readiness_timeout_ms}"; then
     log "tau-unified: dashboard artifacts ready (${dashboard_state_dir})"
   else
-    log "tau-unified: continuing while dashboard artifacts initialize (${dashboard_state_dir})"
+    die "tau-unified: runtime bootstrap not ready after ${readiness_timeout_ms}ms (bind=${bind}, dashboard_state_dir=${dashboard_state_dir}); use --no-bootstrap-runtime to attach manually once the runtime is ready"
   fi
 }
 
