@@ -40,6 +40,8 @@ use std::path::Path;
 use anyhow::{bail, Context, Result};
 use serde::de::DeserializeOwned;
 
+pub mod operator_state;
+
 /// Parses a contract fixture payload and runs caller-provided validation.
 pub fn parse_fixture_with_validation<F>(
     raw: &str,
