@@ -1,6 +1,12 @@
-use std::{sync::mpsc, thread, time::Duration};
+use std::{
+    io::{BufRead, BufReader, Read},
+    sync::mpsc,
+    thread,
+    time::Duration,
+};
 
 use reqwest::blocking::Client;
+use reqwest::header::CONTENT_TYPE;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -32,6 +38,30 @@ pub struct GatewayTurnResult {
 }
 
 pub type GatewayTurnResponse = Result<GatewayTurnResult, String>;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GatewayToolStatus {
+    Success,
+    Failed,
+    Timeout,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GatewayTurnEvent {
+    TextDelta(String),
+    ToolStarted {
+        tool_call_id: String,
+        tool_name: String,
+        detail: String,
+    },
+    ToolCompleted {
+        tool_call_id: String,
+        tool_name: String,
+        status: GatewayToolStatus,
+        detail: String,
+    },
+    Finished(GatewayTurnResponse),
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct GatewayMissionVerifierSummary {
@@ -75,11 +105,11 @@ struct GatewayMissionDetailEnvelope {
 pub fn spawn_gateway_turn(
     config: GatewayRuntimeConfig,
     prompt: String,
-) -> mpsc::Receiver<GatewayTurnResponse> {
+) -> mpsc::Receiver<GatewayTurnEvent> {
     let (sender, receiver) = mpsc::channel();
     thread::spawn(move || {
-        let result = submit_gateway_turn(&config, &prompt);
-        let _ = sender.send(result);
+        let result = submit_gateway_turn(&config, &prompt, &sender);
+        let _ = sender.send(GatewayTurnEvent::Finished(result));
     });
     receiver
 }
@@ -142,22 +172,39 @@ pub fn fetch_gateway_mission_detail(
     Ok(parsed.mission)
 }
 
-fn submit_gateway_turn(config: &GatewayRuntimeConfig, prompt: &str) -> GatewayTurnResponse {
+fn submit_gateway_turn(
+    config: &GatewayRuntimeConfig,
+    prompt: &str,
+    sender: &mpsc::Sender<GatewayTurnEvent>,
+) -> GatewayTurnResponse {
     let client = build_client(config)?;
-    let response = build_request(&client, config, prompt)?
+    let mut response = build_request(&client, config, prompt)?
         .send()
         .map_err(|error| format!("gateway request failed: {error}"))?;
     let status = response.status();
-    let body = response
-        .text()
-        .map_err(|error| format!("failed to read gateway response body: {error}"))?;
+    let is_stream = response
+        .headers()
+        .get(CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|content_type| content_type.contains("text/event-stream"));
 
     if !status.is_success() {
+        let mut body = String::new();
+        response
+            .read_to_string(&mut body)
+            .map_err(|error| format!("failed to read gateway response body: {error}"))?;
         return Err(parse_gateway_error(&body)
             .unwrap_or_else(|| format!("gateway request failed with status {status}")));
     }
 
-    parse_success_response(&body)
+    if is_stream {
+        parse_stream_response(response, sender)
+    } else {
+        let body = response
+            .text()
+            .map_err(|error| format!("failed to read gateway response body: {error}"))?;
+        parse_success_response(&body)
+    }
 }
 
 fn parse_gateway_error(body: &str) -> Option<String> {
@@ -199,6 +246,7 @@ fn build_request(
     }
     let payload = json!({
         "input": prompt,
+        "stream": true,
         "metadata": Value::Object(metadata),
     });
 
@@ -218,6 +266,185 @@ fn parse_success_response(body: &str) -> GatewayTurnResponse {
         output_text,
         total_tokens,
     })
+}
+
+fn parse_stream_response(
+    response: reqwest::blocking::Response,
+    sender: &mpsc::Sender<GatewayTurnEvent>,
+) -> GatewayTurnResponse {
+    let mut reader = BufReader::new(response);
+    let mut event_name = String::new();
+    let mut data_lines = Vec::<String>::new();
+    let mut output_text = String::new();
+    let mut total_tokens = 0;
+
+    loop {
+        let mut line = String::new();
+        let read = reader
+            .read_line(&mut line)
+            .map_err(|error| format!("failed to read gateway stream: {error}"))?;
+        if read == 0 {
+            break;
+        }
+        let line = line.trim_end_matches(['\r', '\n']);
+        if line.is_empty() {
+            if let Some(result) = process_sse_frame(
+                &event_name,
+                &data_lines,
+                sender,
+                &mut output_text,
+                &mut total_tokens,
+            )? {
+                return result;
+            }
+            event_name.clear();
+            data_lines.clear();
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("event:") {
+            event_name = rest.trim().to_string();
+        } else if let Some(rest) = line.strip_prefix("data:") {
+            data_lines.push(rest.trim_start().to_string());
+        }
+    }
+
+    if !event_name.is_empty() || !data_lines.is_empty() {
+        if let Some(result) = process_sse_frame(
+            &event_name,
+            &data_lines,
+            sender,
+            &mut output_text,
+            &mut total_tokens,
+        )? {
+            return result;
+        }
+    }
+
+    if output_text.trim().is_empty() {
+        Err("gateway stream ended without response.completed".to_string())
+    } else {
+        Ok(GatewayTurnResult {
+            output_text,
+            total_tokens,
+        })
+    }
+}
+
+fn process_sse_frame(
+    event_name: &str,
+    data_lines: &[String],
+    sender: &mpsc::Sender<GatewayTurnEvent>,
+    output_text: &mut String,
+    total_tokens: &mut u64,
+) -> Result<Option<GatewayTurnResponse>, String> {
+    if data_lines.is_empty() {
+        return Ok(None);
+    }
+    let data = data_lines.join("\n");
+    if data.trim() == "[DONE]" {
+        return Ok(None);
+    }
+    let value: Value = serde_json::from_str(&data)
+        .map_err(|error| format!("failed to parse gateway stream frame {event_name}: {error}"))?;
+
+    match event_name {
+        "response.output_text.delta" => {
+            if let Some(delta) = value.get("delta").and_then(Value::as_str) {
+                if !delta.is_empty() {
+                    output_text.push_str(delta);
+                    let _ = sender.send(GatewayTurnEvent::TextDelta(delta.to_string()));
+                }
+            }
+        }
+        "response.output_text.done" => {
+            if output_text.trim().is_empty() {
+                if let Some(text) = value.get("text").and_then(Value::as_str) {
+                    output_text.push_str(text);
+                }
+            }
+        }
+        "response.tool_execution.started" => {
+            let tool_call_id = value
+                .get("tool_call_id")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string();
+            let tool_name = value
+                .get("tool_name")
+                .and_then(Value::as_str)
+                .unwrap_or("tool")
+                .to_string();
+            let detail = value
+                .get("arguments")
+                .filter(|arguments| !arguments.is_null())
+                .map(Value::to_string)
+                .unwrap_or_default();
+            let _ = sender.send(GatewayTurnEvent::ToolStarted {
+                tool_call_id,
+                tool_name,
+                detail,
+            });
+        }
+        "response.tool_execution.completed" => {
+            let tool_call_id = value
+                .get("tool_call_id")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string();
+            let tool_name = value
+                .get("tool_name")
+                .and_then(Value::as_str)
+                .unwrap_or("tool")
+                .to_string();
+            let status = if value
+                .get("timed_out")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+            {
+                GatewayToolStatus::Timeout
+            } else if value
+                .get("success")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+            {
+                GatewayToolStatus::Success
+            } else {
+                GatewayToolStatus::Failed
+            };
+            let detail = value
+                .get("latency_ms")
+                .and_then(Value::as_u64)
+                .map(|latency_ms| format!("latency_ms={latency_ms}"))
+                .unwrap_or_default();
+            let _ = sender.send(GatewayTurnEvent::ToolCompleted {
+                tool_call_id,
+                tool_name,
+                status,
+                detail,
+            });
+        }
+        "response.completed" => {
+            let response = value.get("response").unwrap_or(&value);
+            *total_tokens = parse_total_tokens(response);
+            let final_text = parse_output_text(response).unwrap_or_else(|_| output_text.clone());
+            return Ok(Some(Ok(GatewayTurnResult {
+                output_text: final_text,
+                total_tokens: *total_tokens,
+            })));
+        }
+        "response.failed" => {
+            let message = value
+                .get("error")
+                .and_then(|error| error.get("message"))
+                .and_then(Value::as_str)
+                .unwrap_or("gateway stream failed")
+                .to_string();
+            return Ok(Some(Err(message)));
+        }
+        _ => {}
+    }
+
+    Ok(None)
 }
 
 fn parse_output_text(value: &Value) -> Result<String, String> {

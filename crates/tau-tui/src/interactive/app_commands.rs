@@ -184,10 +184,12 @@ fn execute_command(app: &mut App, cmd: &str) {
                 });
             }
         }
-        _ => app.chat.add_message(ChatMessage {
-            role: MessageRole::System,
-            content: format!("Unknown command: {trimmed}"),
-            timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
-        }),
+        _ => {
+            app.chat.add_message(ChatMessage {
+                role: MessageRole::System,
+                content: format!("Unknown command: {trimmed}"),
+                timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
+            });
+        }
     }
 }

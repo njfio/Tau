@@ -1,6 +1,10 @@
 # Plan: Issue #3669 - Stream gateway Ralph-loop progress into the TUI
 
 ## Approach
+Current code reality: gateway already emits tool lifecycle SSE frames for
+`response.tool_execution.started` and `response.tool_execution.completed`; the
+remaining implementation gap is the tau-tui client/app consumption path.
+
 1. Add red tests on the TUI side proving the gateway client must request
    `stream: true` and can assemble streamed text/tool events into visible UI
    state.
@@ -14,9 +18,10 @@
 
 ## Proposed Design
 ### Gateway SSE tool frames
-- Subscribe to agent tool lifecycle events already observed in
+- The gateway already emits tool lifecycle SSE frames by subscribing to agent
+  tool lifecycle events in
   `openresponses_execution_handler.rs`.
-- When streaming mode is active, emit additional SSE frames for:
+- When streaming mode is active, the existing gateway path emits SSE frames for:
   - tool execution start
   - tool execution end
 - Keep the existing `response.output_text.delta`, `response.output_text.done`,

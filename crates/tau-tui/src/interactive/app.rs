@@ -9,7 +9,8 @@ use tau_skills::{load_catalogs, select_skills_for_prompt};
 use super::chat::{ChatMessage, ChatPanel, MessageRole};
 use super::gateway_client::{
     fetch_gateway_mission_detail, fetch_gateway_missions, spawn_gateway_turn,
-    GatewayMissionSnapshot, GatewayRuntimeConfig, GatewayTurnResponse, GatewayTurnResult,
+    GatewayMissionSnapshot, GatewayRuntimeConfig, GatewayToolStatus, GatewayTurnEvent,
+    GatewayTurnResponse, GatewayTurnResult,
 };
 use super::input::InputEditor;
 use super::status::{AgentStateDisplay, StatusBar};
@@ -71,7 +72,8 @@ pub struct App {
     pub show_tool_panel: bool,
     mouse_captured: bool,
     current_turn_tool_start: usize,
-    pending_turn: Option<Receiver<GatewayTurnResponse>>,
+    streaming_assistant_index: Option<usize>,
+    pending_turn: Option<Receiver<GatewayTurnEvent>>,
 }
 
 impl App {
@@ -93,32 +95,39 @@ impl App {
             show_tool_panel: true,
             mouse_captured: true,
             current_turn_tool_start: 0,
+            streaming_assistant_index: None,
             pending_turn: None,
         }
     }
 
     pub fn list_missions(&mut self) {
         match fetch_gateway_missions(&self.config.gateway, 20) {
-            Ok(missions) => self.push_timestamped_message(
-                MessageRole::System,
-                render_mission_list(missions.as_slice()),
-            ),
-            Err(error) => self.push_timestamped_message(
-                MessageRole::System,
-                format!("mission control error: {error}"),
-            ),
+            Ok(missions) => {
+                self.push_timestamped_message(
+                    MessageRole::System,
+                    render_mission_list(missions.as_slice()),
+                );
+            }
+            Err(error) => {
+                self.push_timestamped_message(
+                    MessageRole::System,
+                    format!("mission control error: {error}"),
+                );
+            }
         }
     }
 
     pub fn show_mission(&mut self, mission_id: &str) {
         match fetch_gateway_mission_detail(&self.config.gateway, mission_id) {
             Ok(mission) => {
-                self.push_timestamped_message(MessageRole::System, render_mission_detail(&mission))
+                self.push_timestamped_message(MessageRole::System, render_mission_detail(&mission));
             }
-            Err(error) => self.push_timestamped_message(
-                MessageRole::System,
-                format!("mission control error: {error}"),
-            ),
+            Err(error) => {
+                self.push_timestamped_message(
+                    MessageRole::System,
+                    format!("mission control error: {error}"),
+                );
+            }
         }
     }
 
@@ -151,10 +160,12 @@ impl App {
                 }
                 self.push_timestamped_message(MessageRole::System, content);
             }
-            Err(error) => self.push_timestamped_message(
-                MessageRole::System,
-                format!("mission control error: {error}"),
-            ),
+            Err(error) => {
+                self.push_timestamped_message(
+                    MessageRole::System,
+                    format!("mission control error: {error}"),
+                );
+            }
         }
     }
 
@@ -168,12 +179,26 @@ impl App {
             return;
         };
 
-        match receiver.try_recv() {
-            Ok(result) => self.finish_turn(result),
-            Err(TryRecvError::Empty) => self.pending_turn = Some(receiver),
-            Err(TryRecvError::Disconnected) => {
-                self.fail_turn("gateway error: runtime worker disconnected".to_string());
+        let mut keep_receiver = true;
+        loop {
+            match receiver.try_recv() {
+                Ok(event) => {
+                    if self.apply_turn_event(event) {
+                        keep_receiver = false;
+                        break;
+                    }
+                }
+                Err(TryRecvError::Empty) => break,
+                Err(TryRecvError::Disconnected) => {
+                    self.fail_turn("gateway error: runtime worker disconnected".to_string());
+                    keep_receiver = false;
+                    break;
+                }
             }
+        }
+
+        if keep_receiver {
+            self.pending_turn = Some(receiver);
         }
     }
 
@@ -251,6 +276,37 @@ impl App {
 
     fn start_turn(&mut self) {
         self.current_turn_tool_start = self.tools.total_count();
+        self.streaming_assistant_index = None;
+    }
+
+    fn apply_turn_event(&mut self, event: GatewayTurnEvent) -> bool {
+        match event {
+            GatewayTurnEvent::TextDelta(delta) => {
+                self.append_assistant_delta(&delta);
+                false
+            }
+            GatewayTurnEvent::ToolStarted {
+                tool_name, detail, ..
+            } => {
+                self.status.agent_state = AgentStateDisplay::ToolExec;
+                self.push_tool_event(tool_name, ToolStatus::Running, detail);
+                false
+            }
+            GatewayTurnEvent::ToolCompleted {
+                tool_name,
+                status,
+                detail,
+                ..
+            } => {
+                self.complete_tool_event(tool_name, map_gateway_tool_status(status), detail);
+                self.status.agent_state = AgentStateDisplay::Thinking;
+                false
+            }
+            GatewayTurnEvent::Finished(result) => {
+                self.finish_turn(result);
+                true
+            }
+        }
     }
 
     fn finish_turn(&mut self, result: GatewayTurnResponse) {
@@ -264,21 +320,58 @@ impl App {
         self.status.agent_state = AgentStateDisplay::Idle;
         self.status.total_messages += 1;
         self.status.total_tokens = self.status.total_tokens.saturating_add(result.total_tokens);
-        self.push_timestamped_message(MessageRole::Assistant, result.output_text);
+        match self.streaming_assistant_index.take() {
+            Some(index) => {
+                let current = self.chat.message_content(index).unwrap_or_default();
+                if current.trim().is_empty() {
+                    let _ = self.chat.set_message_content(index, result.output_text);
+                }
+            }
+            None => {
+                self.push_timestamped_message(MessageRole::Assistant, result.output_text);
+            }
+        }
     }
 
     fn fail_turn(&mut self, message: String) {
         self.status.agent_state = AgentStateDisplay::Error;
+        self.streaming_assistant_index = None;
         self.push_timestamped_message(MessageRole::System, message);
     }
 
-    fn push_timestamped_message(&mut self, role: MessageRole, content: String) {
-        self.chat.add_message(ChatMessage {
+    fn append_assistant_delta(&mut self, delta: &str) {
+        if delta.is_empty() {
+            return;
+        }
+        if let Some(index) = self.streaming_assistant_index {
+            if self.chat.append_to_message(index, delta) {
+                self.chat.scroll_to_bottom();
+                return;
+            }
+        }
+        let index = self.push_timestamped_message(MessageRole::Assistant, String::new());
+        self.streaming_assistant_index = Some(index);
+        let _ = self.chat.append_to_message(index, delta);
+        self.chat.scroll_to_bottom();
+    }
+
+    fn complete_tool_event(&mut self, name: String, status: ToolStatus, detail: String) {
+        if !self
+            .tools
+            .complete_latest_running(&name, status, detail.clone())
+        {
+            self.push_tool_event(name, status, detail);
+        }
+    }
+
+    fn push_timestamped_message(&mut self, role: MessageRole, content: String) -> usize {
+        let index = self.chat.add_message(ChatMessage {
             role,
             content,
             timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
         });
         self.chat.scroll_to_bottom();
+        index
     }
 
     pub fn toggle_mouse_capture(&mut self) {
@@ -305,6 +398,14 @@ impl App {
         self.config.gateway.mission_id = Some(mission.mission_id.clone());
         self.config.gateway.session_key = mission.session_key.clone();
         self.status.active_mission_id = Some(mission.mission_id.clone());
+    }
+}
+
+fn map_gateway_tool_status(status: GatewayToolStatus) -> ToolStatus {
+    match status {
+        GatewayToolStatus::Success => ToolStatus::Success,
+        GatewayToolStatus::Failed => ToolStatus::Failed,
+        GatewayToolStatus::Timeout => ToolStatus::Timeout,
     }
 }
 

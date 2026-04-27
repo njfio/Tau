@@ -82,6 +82,25 @@ impl ToolPanel {
         }
     }
 
+    pub fn complete_latest_running(
+        &mut self,
+        name: &str,
+        status: ToolStatus,
+        detail: String,
+    ) -> bool {
+        let Some(entry) = self
+            .entries
+            .iter_mut()
+            .rev()
+            .find(|entry| entry.name == name && entry.status == ToolStatus::Running)
+        else {
+            return false;
+        };
+        entry.status = status;
+        entry.detail = detail;
+        true
+    }
+
     pub fn entries(&self) -> &[ToolEntry] {
         &self.entries
     }

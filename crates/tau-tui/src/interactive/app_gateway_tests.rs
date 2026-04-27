@@ -24,12 +24,30 @@ fn wait_for_turn(app: &mut App) {
     let started = Instant::now();
     while started.elapsed() < Duration::from_secs(2) {
         app.tick();
-        if app.status.agent_state != AgentStateDisplay::Thinking {
+        if matches!(
+            app.status.agent_state,
+            AgentStateDisplay::Idle | AgentStateDisplay::Error
+        ) {
             return;
         }
         thread::sleep(Duration::from_millis(10));
     }
     panic!("timed out waiting for gateway-backed turn to complete");
+}
+
+fn wait_until<F>(app: &mut App, description: &str, mut condition: F)
+where
+    F: FnMut(&App) -> bool,
+{
+    let started = Instant::now();
+    while started.elapsed() < Duration::from_secs(2) {
+        app.tick();
+        if condition(app) {
+            return;
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+    panic!("timed out waiting for {description}");
 }
 
 fn last_message(app: &App, role: MessageRole) -> Option<&str> {
@@ -172,6 +190,78 @@ fn spawn_scripted_gateway_server(
     (addr.to_string(), request_capture)
 }
 
+fn spawn_streaming_gateway_server(chunks: Vec<&'static str>) -> (String, Arc<Mutex<String>>) {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind streaming gateway");
+    let addr = listener.local_addr().expect("local addr");
+    let request_capture = Arc::new(Mutex::new(String::new()));
+    let request_capture_thread = Arc::clone(&request_capture);
+
+    thread::spawn(move || {
+        let (mut stream, _) = listener.accept().expect("accept streaming gateway request");
+        stream
+            .set_read_timeout(Some(Duration::from_secs(1)))
+            .expect("set timeout");
+        let mut buffer = Vec::new();
+        let mut chunk = [0_u8; 1024];
+        let mut header_len = None::<usize>;
+        let mut expected_total_len = None::<usize>;
+        loop {
+            match stream.read(&mut chunk) {
+                Ok(0) => break,
+                Ok(count) => {
+                    buffer.extend_from_slice(&chunk[..count]);
+                    if header_len.is_none() {
+                        header_len = buffer
+                            .windows(4)
+                            .position(|window| window == b"\r\n\r\n")
+                            .map(|index| index + 4);
+                        if let Some(header_len) = header_len {
+                            let headers = String::from_utf8_lossy(&buffer[..header_len]);
+                            let content_length = headers
+                                .lines()
+                                .find_map(|line| {
+                                    let (name, value) = line.split_once(':')?;
+                                    if name.eq_ignore_ascii_case("content-length") {
+                                        value.trim().parse::<usize>().ok()
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .unwrap_or(0);
+                            expected_total_len = Some(header_len + content_length);
+                        }
+                    }
+                    if let Some(expected_total_len) = expected_total_len {
+                        if buffer.len() >= expected_total_len {
+                            break;
+                        }
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+
+        *request_capture_thread.lock().expect("capture request") =
+            String::from_utf8_lossy(&buffer).to_string();
+
+        stream
+            .write_all(
+                b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n",
+            )
+            .expect("write streaming headers");
+        stream.flush().expect("flush streaming headers");
+        for chunk in chunks {
+            stream
+                .write_all(chunk.as_bytes())
+                .expect("write streaming chunk");
+            stream.flush().expect("flush streaming chunk");
+            thread::sleep(Duration::from_millis(40));
+        }
+    });
+
+    (addr.to_string(), request_capture)
+}
+
 #[test]
 fn red_spec_3616_submit_input_uses_gateway_response_instead_of_local_echo() {
     let (bind, request_capture) = spawn_gateway_server(
@@ -218,6 +308,132 @@ fn red_spec_3616_submit_input_surfaces_gateway_errors_loudly() {
 
     let system = last_message(&app, MessageRole::System).unwrap_or_default();
     assert!(system.contains("gateway runtime failed: test failure"));
+    assert_eq!(app.status.agent_state, AgentStateDisplay::Error);
+}
+
+#[test]
+fn spec_3669_submit_input_requests_streaming_gateway_path() {
+    let (bind, request_capture) = spawn_streaming_gateway_server(vec![
+        r#"event: response.completed
+data: {"type":"response.completed","response":{"output_text":"stream ok","usage":{"total_tokens":9}}}
+
+"#,
+        "data: [DONE]\n\n",
+    ]);
+    let mut app = build_app(bind);
+    set_input(&mut app, "stream this turn");
+
+    app_commands::submit_input(&mut app);
+    wait_for_turn(&mut app);
+
+    let request = request_capture.lock().expect("request capture").clone();
+    assert!(request.contains("POST /v1/responses"), "request={request}");
+    assert!(request.contains("\"stream\":true"), "request={request}");
+    assert_eq!(
+        last_message(&app, MessageRole::Assistant),
+        Some("stream ok")
+    );
+}
+
+#[test]
+fn spec_3669_streamed_text_deltas_update_assistant_incrementally() {
+    let (bind, _) = spawn_streaming_gateway_server(vec![
+        r#"event: response.output_text.delta
+data: {"type":"response.output_text.delta","delta":"hello "}
+
+"#,
+        r#"event: response.output_text.delta
+data: {"type":"response.output_text.delta","delta":"world"}
+
+event: response.output_text.done
+data: {"type":"response.output_text.done","text":"hello world"}
+
+event: response.completed
+data: {"type":"response.completed","response":{"output_text":"hello world","usage":{"total_tokens":7}}}
+
+data: [DONE]
+
+"#,
+    ]);
+    let mut app = build_app(bind);
+    set_input(&mut app, "stream text");
+
+    app_commands::submit_input(&mut app);
+    wait_until(&mut app, "first streamed text delta", |app| {
+        last_message(app, MessageRole::Assistant) == Some("hello ")
+            && app.status.agent_state == AgentStateDisplay::Thinking
+    });
+    wait_for_turn(&mut app);
+
+    assert_eq!(
+        last_message(&app, MessageRole::Assistant),
+        Some("hello world")
+    );
+    assert_eq!(app.status.agent_state, AgentStateDisplay::Idle);
+}
+
+#[test]
+fn spec_3669_tool_lifecycle_stream_updates_tools_panel() {
+    let (bind, _) = spawn_streaming_gateway_server(vec![
+        r#"event: response.tool_execution.started
+data: {"type":"response.tool_execution.started","tool_call_id":"call-1","tool_name":"read_file","arguments":{"path":"Cargo.toml"}}
+
+"#,
+        r#"event: response.tool_execution.completed
+data: {"type":"response.tool_execution.completed","tool_call_id":"call-1","tool_name":"read_file","success":true,"timed_out":false,"latency_ms":12}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","delta":"read complete"}
+
+event: response.completed
+data: {"type":"response.completed","response":{"output_text":"read complete","usage":{"total_tokens":11}}}
+
+data: [DONE]
+
+"#,
+    ]);
+    let mut app = build_app(bind);
+    set_input(&mut app, "inspect file");
+
+    app_commands::submit_input(&mut app);
+    wait_until(&mut app, "streamed tool start", |app| {
+        app.tools.active_count() == 1
+            && app
+                .tools
+                .latest_running()
+                .is_some_and(|entry| entry.name == "read_file")
+            && app.status.agent_state == AgentStateDisplay::ToolExec
+    });
+    wait_for_turn(&mut app);
+
+    let latest = app.tools.latest_entry().expect("latest tool entry");
+    assert_eq!(latest.name, "read_file");
+    assert_eq!(latest.status, super::tools::ToolStatus::Success);
+    assert_eq!(latest.detail, "latency_ms=12");
+    assert_eq!(app.tools.active_count(), 0);
+    assert_eq!(
+        last_message(&app, MessageRole::Assistant),
+        Some("read complete")
+    );
+}
+
+#[test]
+fn spec_3669_streaming_error_frame_sets_error_state() {
+    let (bind, _) = spawn_streaming_gateway_server(vec![
+        r#"event: response.failed
+data: {"type":"response.failed","error":{"code":"runtime_failed","message":"stream broke"}}
+
+"#,
+        "data: [DONE]\n\n",
+    ]);
+    let mut app = build_app(bind);
+    set_input(&mut app, "stream failure");
+
+    app_commands::submit_input(&mut app);
+    wait_for_turn(&mut app);
+
+    let system = last_message(&app, MessageRole::System).unwrap_or_default();
+    assert!(system.contains("gateway error: stream broke"));
     assert_eq!(app.status.agent_state, AgentStateDisplay::Error);
 }
 
