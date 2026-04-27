@@ -7998,6 +7998,155 @@ async fn regression_read_only_timeout_spiral_compacts_retry_context_into_mutatio
 }
 
 #[tokio::test]
+async fn issue_3674_read_only_saturation_cuts_off_attempt_and_widens_retry_budget() {
+    let temp = tempdir().expect("tempdir");
+    let scripted = Arc::new(DelayedScriptedGatewayLlmClient::new(vec![
+        (
+            0,
+            ChatResponse {
+                message: Message::assistant_blocks(vec![ContentBlock::ToolCall {
+                    id: "call-saturation-read-one".to_string(),
+                    name: "read".to_string(),
+                    arguments: json!({"path":"one.txt"}),
+                }]),
+                finish_reason: Some("tool_calls".to_string()),
+                usage: ChatUsage::default(),
+            },
+        ),
+        (
+            0,
+            ChatResponse {
+                message: Message::assistant_blocks(vec![ContentBlock::ToolCall {
+                    id: "call-saturation-read-two".to_string(),
+                    name: "read".to_string(),
+                    arguments: json!({"path":"two.txt"}),
+                }]),
+                finish_reason: Some("tool_calls".to_string()),
+                usage: ChatUsage::default(),
+            },
+        ),
+        (
+            250,
+            ChatResponse {
+                message: Message::assistant_blocks(vec![ContentBlock::ToolCall {
+                    id: "call-write-after-saturation-retry".to_string(),
+                    name: "write".to_string(),
+                    arguments: json!({"path":"recovered.txt","content":"mutation after saturation"}),
+                }]),
+                finish_reason: Some("tool_calls".to_string()),
+                usage: ChatUsage::default(),
+            },
+        ),
+        (
+            0,
+            scripted_gateway_response("created after saturation retry"),
+        ),
+    ]));
+    let tool_root = temp.path().join("workspace");
+    std::fs::create_dir_all(&tool_root).expect("create tool workspace");
+    std::fs::write(tool_root.join("one.txt"), "one").expect("write first seed file");
+    std::fs::write(tool_root.join("two.txt"), "two").expect("write second seed file");
+    let state = Arc::new(GatewayOpenResponsesServerState::new(
+        GatewayOpenResponsesServerConfig {
+            client: scripted.clone(),
+            model: "openai/gpt-5.2".to_string(),
+            model_input_cost_per_million: Some(10.0),
+            model_cached_input_cost_per_million: None,
+            model_output_cost_per_million: Some(20.0),
+            system_prompt: "You are Tau.".to_string(),
+            available_skills: Vec::new(),
+            explicit_skill_names: Vec::new(),
+            max_turns: 8,
+            tool_registrar: Arc::new(FixturePipelineToolRegistrar::new(
+                tool_root.clone(),
+                temp.path().join(".tau/gateway"),
+            )),
+            turn_timeout_ms: 120,
+            session_lock_wait_ms: 500,
+            session_lock_stale_ms: 10_000,
+            state_dir: temp.path().join(".tau/gateway"),
+            bind: "127.0.0.1:0".to_string(),
+            auth_mode: GatewayOpenResponsesAuthMode::Token,
+            auth_token: Some("secret".to_string()),
+            auth_password: None,
+            session_ttl_seconds: 3_600,
+            rate_limit_window_seconds: 60,
+            rate_limit_max_requests: 120,
+            max_input_chars: 10_000,
+            runtime_heartbeat: RuntimeHeartbeatSchedulerConfig {
+                enabled: false,
+                interval: std::time::Duration::from_secs(5),
+                state_path: temp
+                    .path()
+                    .join(".tau/runtime-heartbeat-read-only-saturation/state.json"),
+                ..RuntimeHeartbeatSchedulerConfig::default()
+            },
+            external_coding_agent_bridge: tau_runtime::ExternalCodingAgentBridgeConfig::default(),
+            delegated_tool_execution: false,
+        },
+    ));
+    let (addr, handle) = spawn_test_server(state.clone())
+        .await
+        .expect("spawn server");
+
+    let client = Client::builder()
+        .timeout(Duration::from_secs(2))
+        .build()
+        .expect("client with timeout");
+    let response = client
+        .post(format!("http://{addr}{OPENRESPONSES_ENDPOINT}"))
+        .bearer_auth("secret")
+        .json(&json!({
+            "input": "create a Phaser game in this workspace",
+            "metadata": {
+                "session_id": "saturation-retry-session",
+                "mission_id": "saturation-retry-mission"
+            }
+        }))
+        .send()
+        .await
+        .expect("send saturation retry request");
+    let status = response.status();
+    let payload = response
+        .json::<Value>()
+        .await
+        .expect("parse saturation retry payload");
+    assert_eq!(status, StatusCode::OK, "unexpected payload: {payload}");
+    assert_eq!(
+        payload["output_text"],
+        Value::String("created after saturation retry".to_string())
+    );
+
+    let recovered_file = std::fs::read_to_string(tool_root.join("recovered.txt"))
+        .expect("read recovered mutation file");
+    assert_eq!(recovered_file, "mutation after saturation");
+
+    let mission_path =
+        gateway_mission_state_path(&state.config.state_dir, "saturation-retry-mission");
+    let mission_state = load_gateway_mission_state(&mission_path).expect("load mission state");
+    assert_eq!(mission_state.status, GatewayMissionStatus::Completed);
+    assert_eq!(mission_state.iteration_count, 2);
+    assert_eq!(mission_state.iterations[0].tool_execution_count, 2);
+    assert_eq!(
+        mission_state.iterations[0].verifier.overall.reason_code,
+        "read_only_saturation_continue"
+    );
+    assert_eq!(
+        mission_state.iterations[1].verifier.overall.reason_code,
+        "mutation_evidence_observed"
+    );
+
+    let captured_requests = scripted.captured_requests().await;
+    assert!(
+        captured_requests.len() >= 3,
+        "expected retry request after saturation cutoff, got {} request(s)",
+        captured_requests.len()
+    );
+
+    handle.abort();
+}
+
+#[tokio::test]
 async fn regression_openresponses_stream_timeout_finalizes_pending_tool_execution() {
     let temp = tempdir().expect("tempdir");
     let scripted = Arc::new(ScriptedGatewayLlmClient::new(vec![ChatResponse {

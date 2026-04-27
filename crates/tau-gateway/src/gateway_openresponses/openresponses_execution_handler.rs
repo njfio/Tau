@@ -11,6 +11,8 @@ use super::learning_runtime::{
 };
 
 const GATEWAY_TOOL_SUMMARY_MAX_CHARS: usize = 240;
+const GATEWAY_READ_ONLY_SATURATION_THRESHOLD: usize = 2;
+const GATEWAY_MUTATION_RECOVERY_TIMEOUT_FLOOR_MS: u64 = 45_000;
 
 #[derive(Debug, Clone)]
 struct GatewayPendingToolExecution {
@@ -27,6 +29,19 @@ struct GatewayObservedToolExecution {
     success: bool,
     latency_ms: u64,
     timestamp_ms: u64,
+}
+
+#[derive(Debug, Default)]
+struct GatewayReadOnlySaturationState {
+    active: bool,
+    read_only_success_count: usize,
+    mutation_success_observed: bool,
+    triggered: bool,
+}
+
+#[derive(Debug, Clone)]
+struct GatewayReadOnlySaturationSnapshot {
+    read_only_success_count: usize,
 }
 
 pub(super) async fn execute_openresponses_request(
@@ -87,6 +102,9 @@ pub(super) async fn execute_openresponses_request(
         HashMap::<String, GatewayPendingToolExecution>::new(),
     ));
     let tool_execution_traces = Arc::new(Mutex::new(Vec::<GatewayObservedToolExecution>::new()));
+    let read_only_saturation_state =
+        Arc::new(Mutex::new(GatewayReadOnlySaturationState::default()));
+    let attempt_cancellation_token = Arc::new(Mutex::new(None::<CooperativeCancellationToken>));
     let event_response_id = response_id.clone();
     let event_stream_sender = stream_sender.clone();
     agent.subscribe({
@@ -95,6 +113,8 @@ pub(super) async fn execute_openresponses_request(
         let tool_execution_count = tool_execution_count.clone();
         let tool_execution_starts = tool_execution_starts.clone();
         let tool_execution_traces = tool_execution_traces.clone();
+        let read_only_saturation_state = read_only_saturation_state.clone();
+        let attempt_cancellation_token = attempt_cancellation_token.clone();
         let event_response_id = event_response_id.clone();
         let event_stream_sender = event_stream_sender.clone();
         move |event| match event {
@@ -173,6 +193,16 @@ pub(super) async fn execute_openresponses_request(
                         timestamp_ms: now_unix_ms,
                     });
                 }
+                record_gateway_read_only_saturation_observation(
+                    &read_only_saturation_state,
+                    &attempt_cancellation_token,
+                    tool_name.as_str(),
+                    pending
+                        .as_ref()
+                        .map(|entry| entry.arguments.clone())
+                        .unwrap_or_else(|| json!({})),
+                    !result.is_error,
+                );
                 if tool_name != GATEWAY_COMPLETE_TASK_TOOL_NAME {
                     if let Some(sender) = &event_stream_sender {
                         let _ = sender.send(SseFrame::Json {
@@ -243,6 +273,7 @@ pub(super) async fn execute_openresponses_request(
         None
     };
     let mut retry_attempt = 0usize;
+    let mut widen_next_attempt_timeout = false;
     let mut next_prompt = translated.prompt.clone();
     let mut terminal_success_verifier = None::<GatewayMissionVerifierBundle>;
     let mut terminal_completion_signal = None::<GatewayMissionCompletionSignalRecord>;
@@ -258,6 +289,20 @@ pub(super) async fn execute_openresponses_request(
         )?;
         let attempt_number = retry_attempt.saturating_add(1);
         let attempt_started_unix_ms = current_unix_timestamp_ms();
+        let attempt_timeout_ms = gateway_attempt_timeout_ms(
+            state.config.turn_timeout_ms,
+            widen_next_attempt_timeout && requires_mutation_evidence,
+        );
+        let cancellation_token = CooperativeCancellationToken::new();
+        agent.set_cancellation_token(Some(cancellation_token.clone()));
+        set_gateway_attempt_cancellation_token(
+            &attempt_cancellation_token,
+            Some(cancellation_token),
+        )?;
+        reset_gateway_read_only_saturation_state(
+            &read_only_saturation_state,
+            requires_mutation_evidence,
+        )?;
         reset_buffered_gateway_output(buffered_stream_output.as_ref())?;
         let attempt_start_index = agent.messages().len();
         let attempt_request_payload = build_gateway_attempt_request_payload(
@@ -265,6 +310,7 @@ pub(super) async fn execute_openresponses_request(
             translated.mission_id.as_str(),
             translated.session_key.as_str(),
             attempt_number,
+            attempt_timeout_ms,
             next_prompt.as_str(),
             agent.messages(),
         );
@@ -275,11 +321,11 @@ pub(super) async fn execute_openresponses_request(
             response_id.as_str(),
             buffered_stream_output.as_ref(),
         );
-        let attempt_result = if state.config.turn_timeout_ms == 0 {
+        let attempt_result = if attempt_timeout_ms == 0 {
             agent.prompt_with_stream(&next_prompt, stream_handler).await
         } else {
             match tokio::time::timeout(
-                Duration::from_millis(state.config.turn_timeout_ms),
+                Duration::from_millis(attempt_timeout_ms),
                 agent.prompt_with_stream(&next_prompt, stream_handler),
             )
             .await
@@ -347,6 +393,7 @@ pub(super) async fn execute_openresponses_request(
                         save_gateway_mission_state(&mission_path, &mission_state)?;
                         strip_failed_action_attempt_messages(&mut agent, attempt_start_index);
                         retry_attempt = retry_attempt.saturating_add(1);
+                        widen_next_attempt_timeout = false;
                         next_prompt = build_gateway_action_retry_prompt(
                             retry_attempt,
                             translated.prompt.as_str(),
@@ -380,6 +427,76 @@ pub(super) async fn execute_openresponses_request(
                 &tool_execution_traces,
                 tool_trace_start_index,
             )?;
+            if let Some(saturation) =
+                gateway_read_only_saturation_snapshot(&read_only_saturation_state)?
+            {
+                let finished_unix_ms = current_unix_timestamp_ms();
+                let assistant_summary =
+                    collect_assistant_reply(&agent.messages()[attempt_start_index..]);
+                let tool_execution_delta = tool_execution_count
+                    .load(Ordering::Relaxed)
+                    .saturating_sub(tool_execution_count_before);
+                let retry_exhausted = retry_attempt >= ACTION_TOOL_EVIDENCE_MAX_RETRIES;
+                let verifier_traces = snapshot_gateway_verifier_traces(&tool_execution_traces)?;
+                let verifier = if retry_exhausted {
+                    build_gateway_verifier_bundle(
+                        requires_tool_evidence,
+                        requires_mutation_evidence,
+                        requires_validation_evidence,
+                        verifier_traces.as_slice(),
+                        true,
+                    )
+                } else {
+                    build_gateway_read_only_saturation_verifier_bundle(
+                        saturation.read_only_success_count,
+                        GATEWAY_READ_ONLY_SATURATION_THRESHOLD,
+                    )
+                };
+                let attempt_response_payload = build_gateway_attempt_response_payload(
+                    &agent.messages()[attempt_start_index..],
+                    &tool_execution_traces,
+                    tool_trace_start_index,
+                    "cancelled",
+                    Some("read-only exploration saturation reached before mutation"),
+                )?;
+                mission_state.record_iteration(GatewayMissionIterationInput {
+                    attempt: attempt_number,
+                    prompt: next_prompt.as_str(),
+                    assistant_summary: assistant_summary.as_str(),
+                    tool_execution_count: tool_execution_delta,
+                    request_payload: attempt_request_payload.clone(),
+                    response_payload: attempt_response_payload,
+                    verifier: verifier.clone(),
+                    completion: None,
+                    started_unix_ms: attempt_started_unix_ms,
+                    finished_unix_ms,
+                });
+                if verifier.overall.status == GatewayMissionVerifierStatus::Continue
+                    && !retry_exhausted
+                {
+                    save_gateway_mission_state(&mission_path, &mission_state)?;
+                    strip_failed_action_attempt_messages(&mut agent, attempt_start_index);
+                    retry_attempt = retry_attempt.saturating_add(1);
+                    widen_next_attempt_timeout = true;
+                    next_prompt = build_gateway_action_retry_prompt(
+                        retry_attempt,
+                        translated.prompt.as_str(),
+                        &verifier,
+                        verifier_traces.as_slice(),
+                    );
+                    continue;
+                }
+                mission_state.mark_blocked(
+                    verifier.overall,
+                    None,
+                    assistant_summary.as_str(),
+                    finished_unix_ms,
+                );
+                save_gateway_mission_state(&mission_path, &mission_state)?;
+                break Err(OpenResponsesApiError::gateway_failure(
+                    "read-only exploration saturated before mutation evidence was observed",
+                ));
+            }
             let finished_unix_ms = current_unix_timestamp_ms();
             let message = format!("gateway runtime failed: {error}");
             let verifier = build_gateway_runtime_failure_verifier_bundle(
@@ -540,6 +657,7 @@ pub(super) async fn execute_openresponses_request(
         }
         strip_failed_action_attempt_messages(&mut agent, attempt_start_index);
         retry_attempt = retry_attempt.saturating_add(1);
+        widen_next_attempt_timeout = false;
         next_prompt = build_gateway_action_retry_prompt(
             retry_attempt,
             translated.prompt.as_str(),
@@ -771,6 +889,100 @@ fn flush_buffered_gateway_output(
     Ok(())
 }
 
+fn gateway_attempt_timeout_ms(base_timeout_ms: u64, widen_retry_timeout: bool) -> u64 {
+    if base_timeout_ms == 0 {
+        return 0;
+    }
+    if widen_retry_timeout {
+        return base_timeout_ms.max(GATEWAY_MUTATION_RECOVERY_TIMEOUT_FLOOR_MS);
+    }
+    base_timeout_ms
+}
+
+fn set_gateway_attempt_cancellation_token(
+    token_slot: &Arc<Mutex<Option<CooperativeCancellationToken>>>,
+    token: Option<CooperativeCancellationToken>,
+) -> Result<(), OpenResponsesApiError> {
+    let mut guard = token_slot.lock().map_err(|_| {
+        OpenResponsesApiError::internal("gateway cancellation token lock is poisoned")
+    })?;
+    *guard = token;
+    Ok(())
+}
+
+fn reset_gateway_read_only_saturation_state(
+    state: &Arc<Mutex<GatewayReadOnlySaturationState>>,
+    active: bool,
+) -> Result<(), OpenResponsesApiError> {
+    let mut guard = state.lock().map_err(|_| {
+        OpenResponsesApiError::internal("gateway read-only saturation lock is poisoned")
+    })?;
+    *guard = GatewayReadOnlySaturationState {
+        active,
+        read_only_success_count: 0,
+        mutation_success_observed: false,
+        triggered: false,
+    };
+    Ok(())
+}
+
+fn gateway_read_only_saturation_snapshot(
+    state: &Arc<Mutex<GatewayReadOnlySaturationState>>,
+) -> Result<Option<GatewayReadOnlySaturationSnapshot>, OpenResponsesApiError> {
+    let guard = state.lock().map_err(|_| {
+        OpenResponsesApiError::internal("gateway read-only saturation lock is poisoned")
+    })?;
+    if !guard.triggered {
+        return Ok(None);
+    }
+    Ok(Some(GatewayReadOnlySaturationSnapshot {
+        read_only_success_count: guard.read_only_success_count,
+    }))
+}
+
+fn record_gateway_read_only_saturation_observation(
+    state: &Arc<Mutex<GatewayReadOnlySaturationState>>,
+    token_slot: &Arc<Mutex<Option<CooperativeCancellationToken>>>,
+    tool_name: &str,
+    arguments: Value,
+    success: bool,
+) {
+    let trace = GatewayVerifierToolTrace {
+        tool_name: tool_name.to_string(),
+        arguments,
+        success,
+    };
+    let should_cancel = {
+        let Ok(mut guard) = state.lock() else {
+            return;
+        };
+        if !guard.active || guard.triggered || !trace.success {
+            return;
+        }
+        if gateway_trace_is_mutating(&trace) {
+            guard.mutation_success_observed = true;
+            return;
+        }
+        if guard.mutation_success_observed || !gateway_retry_trace_is_read_only(&trace) {
+            return;
+        }
+        guard.read_only_success_count = guard.read_only_success_count.saturating_add(1);
+        if guard.read_only_success_count >= GATEWAY_READ_ONLY_SATURATION_THRESHOLD {
+            guard.triggered = true;
+            true
+        } else {
+            false
+        }
+    };
+    if !should_cancel {
+        return;
+    }
+    let token = token_slot.lock().ok().and_then(|guard| guard.clone());
+    if let Some(token) = token {
+        token.cancel();
+    }
+}
+
 fn strip_failed_action_attempt_messages(agent: &mut Agent, attempt_start_index: usize) {
     let retained_messages = agent.messages()[..attempt_start_index].to_vec();
     agent.replace_messages(retained_messages);
@@ -878,6 +1090,7 @@ fn build_gateway_attempt_request_payload(
     mission_id: &str,
     session_key: &str,
     attempt_number: usize,
+    timeout_ms: u64,
     prompt: &str,
     messages_before: &[Message],
 ) -> Value {
@@ -886,6 +1099,7 @@ fn build_gateway_attempt_request_payload(
         "mission_id": mission_id,
         "session_id": session_key,
         "attempt": attempt_number,
+        "timeout_ms": timeout_ms,
         "prompt": prompt,
         "messages_before": serialize_gateway_messages(messages_before),
     })

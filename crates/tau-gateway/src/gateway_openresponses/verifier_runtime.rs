@@ -199,6 +199,33 @@ pub(super) fn build_gateway_runtime_failure_verifier_bundle(
     )])
 }
 
+pub(super) fn build_gateway_read_only_saturation_verifier_bundle(
+    read_only_count: usize,
+    threshold: usize,
+) -> GatewayMissionVerifierBundle {
+    GatewayMissionVerifierBundle::from_records(vec![
+        gateway_verifier_record(
+            "action_tool_evidence",
+            GatewayMissionVerifierStatus::Passed,
+            "tool_execution_observed",
+            format!("observed {read_only_count} read-only tool execution event(s)"),
+            [("observed_count", json!(read_only_count))],
+        ),
+        gateway_verifier_record(
+            "workspace_mutation_evidence",
+            GatewayMissionVerifierStatus::Continue,
+            "read_only_saturation_continue",
+            "read-only exploration saturated before any successful workspace mutation; retry with a workspace-mutating tool next",
+            [
+                ("observed_count", json!(0)),
+                ("read_only_count", json!(read_only_count)),
+                ("saturation_threshold", json!(threshold)),
+                ("retry_exhausted", json!(false)),
+            ],
+        ),
+    ])
+}
+
 pub(super) fn build_gateway_retry_feedback(bundle: &GatewayMissionVerifierBundle) -> String {
     let unresolved = bundle
         .records
@@ -261,7 +288,7 @@ fn gateway_verifier_record(
     }
 }
 
-fn gateway_trace_is_mutating(trace: &GatewayVerifierToolTrace) -> bool {
+pub(super) fn gateway_trace_is_mutating(trace: &GatewayVerifierToolTrace) -> bool {
     let tool_name = trace.tool_name.trim().to_ascii_lowercase();
     if matches!(
         tool_name.as_str(),
@@ -298,7 +325,7 @@ fn gateway_trace_is_mutating(trace: &GatewayVerifierToolTrace) -> bool {
     false
 }
 
-fn gateway_trace_is_validation(trace: &GatewayVerifierToolTrace) -> bool {
+pub(super) fn gateway_trace_is_validation(trace: &GatewayVerifierToolTrace) -> bool {
     let tool_name = trace.tool_name.trim().to_ascii_lowercase();
     if tool_name == "bash" {
         return gateway_bash_command_contains_any(

@@ -162,6 +162,64 @@ pub(super) fn scripted_gateway_response(text: &str) -> ChatResponse {
     }
 }
 
+#[derive(Clone)]
+pub(super) struct DelayedScriptedGatewayLlmClient {
+    responses: Arc<AsyncMutex<VecDeque<(u64, ChatResponse)>>>,
+    captured_requests: Arc<AsyncMutex<Vec<ChatRequest>>>,
+}
+
+impl DelayedScriptedGatewayLlmClient {
+    pub(super) fn new(responses: Vec<(u64, ChatResponse)>) -> Self {
+        Self {
+            responses: Arc::new(AsyncMutex::new(VecDeque::from(responses))),
+            captured_requests: Arc::new(AsyncMutex::new(Vec::new())),
+        }
+    }
+
+    pub(super) async fn captured_requests(&self) -> Vec<ChatRequest> {
+        self.captured_requests.lock().await.clone()
+    }
+}
+
+#[async_trait]
+impl LlmClient for DelayedScriptedGatewayLlmClient {
+    async fn complete(&self, request: ChatRequest) -> Result<ChatResponse, TauAiError> {
+        self.captured_requests.lock().await.push(request);
+        let delay_ms = {
+            let responses = self.responses.lock().await;
+            responses
+                .front()
+                .map(|(delay_ms, _)| *delay_ms)
+                .ok_or_else(|| {
+                    TauAiError::InvalidResponse("scripted response queue exhausted".into())
+                })?
+        };
+        if delay_ms > 0 {
+            tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+        }
+        let mut responses = self.responses.lock().await;
+        responses
+            .pop_front()
+            .map(|(_, response)| response)
+            .ok_or_else(|| TauAiError::InvalidResponse("scripted response queue exhausted".into()))
+    }
+
+    async fn complete_with_stream(
+        &self,
+        request: ChatRequest,
+        on_delta: Option<StreamDeltaHandler>,
+    ) -> Result<ChatResponse, TauAiError> {
+        let response = self.complete(request).await?;
+        if let Some(handler) = on_delta {
+            let text = response.message.text_content();
+            if !text.is_empty() {
+                handler(text);
+            }
+        }
+        Ok(response)
+    }
+}
+
 #[derive(Clone, Copy)]
 pub(super) struct SlowGatewayLlmClient {
     pub(super) delay_ms: u64,

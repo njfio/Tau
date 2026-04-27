@@ -24,7 +24,8 @@ use serde_json::{json, Value};
 use tau_agent_core::{
     default_safety_rule_set, enforce_safety_policy_floor, enforce_safety_rules_floor,
     format_learning_bulletin, scan_safety_rules, validate_safety_rule_set, Agent, AgentConfig,
-    AgentEvent, Cortex, CortexConfig, LearningInsight, SafetyMode, SafetyPolicy, SafetyRuleSet,
+    AgentEvent, CooperativeCancellationToken, Cortex, CortexConfig, LearningInsight, SafetyMode,
+    SafetyPolicy, SafetyRuleSet,
 };
 use tau_ai::{LlmClient, MessageRole, StreamDeltaHandler};
 use tau_core::{current_unix_timestamp, current_unix_timestamp_ms, write_text_atomic};
@@ -229,8 +230,9 @@ use types::{
     OpenResponsesUsageSummary, SseFrame,
 };
 use verifier_runtime::{
-    build_gateway_retry_feedback, build_gateway_runtime_failure_verifier_bundle,
-    build_gateway_verifier_bundle, GatewayMissionVerifierBundle, GatewayMissionVerifierRecord,
+    build_gateway_read_only_saturation_verifier_bundle, build_gateway_retry_feedback,
+    build_gateway_runtime_failure_verifier_bundle, build_gateway_verifier_bundle,
+    gateway_trace_is_mutating, GatewayMissionVerifierBundle, GatewayMissionVerifierRecord,
     GatewayMissionVerifierStatus, GatewayVerifierToolTrace,
 };
 #[cfg(test)]
