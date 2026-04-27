@@ -5167,6 +5167,151 @@ async fn operator_turn_state_recovery_policy_snapshot_stream_carries_required_to
 }
 
 #[tokio::test]
+async fn mission_completion_outcome_snapshot_stream_marks_partial_as_checkpointed_and_blocked_as_blocked(
+) {
+    let temp = tempdir().expect("tempdir");
+    let scripted = Arc::new(ScriptedGatewayLlmClient::new(vec![
+        ChatResponse {
+            message: Message::assistant_blocks(vec![ContentBlock::ToolCall {
+                id: "call-complete-partial-snapshot".to_string(),
+                name: GATEWAY_COMPLETE_TASK_TOOL_NAME.to_string(),
+                arguments: json!({
+                    "status": "partial",
+                    "summary": "checkpointed the first governed loop slice",
+                    "next_step": "wire blocked completion state"
+                }),
+            }]),
+            finish_reason: Some("tool_calls".to_string()),
+            usage: ChatUsage::default(),
+        },
+        scripted_gateway_response("checkpointed the first governed loop slice"),
+        ChatResponse {
+            message: Message::assistant_blocks(vec![ContentBlock::ToolCall {
+                id: "call-complete-blocked-snapshot".to_string(),
+                name: GATEWAY_COMPLETE_TASK_TOOL_NAME.to_string(),
+                arguments: json!({
+                    "status": "blocked",
+                    "summary": "blocked waiting for operator approval"
+                }),
+            }]),
+            finish_reason: Some("tool_calls".to_string()),
+            usage: ChatUsage::default(),
+        },
+        scripted_gateway_response("blocked waiting for operator approval"),
+    ]));
+    let tool_root = temp.path().join("workspace");
+    std::fs::create_dir_all(&tool_root).expect("create tool workspace");
+    let state = test_state_with_client_and_auth(
+        temp.path(),
+        10_000,
+        scripted,
+        Arc::new(FixturePipelineToolRegistrar::new(
+            tool_root,
+            temp.path().join(".tau/gateway"),
+        )),
+        GatewayOpenResponsesAuthMode::Token,
+        Some("secret"),
+        None,
+        60,
+        120,
+    );
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+
+    let client = Client::new();
+    let partial_response = client
+        .post(format!("http://{addr}/v1/responses"))
+        .bearer_auth("secret")
+        .json(&json!({
+            "input": "checkpoint the governed Ralph supervisor loop slice",
+            "stream": true,
+            "metadata": {
+                "session_id": "session-3654-partial-snapshot",
+                "mission_id": "mission-3654-partial-snapshot"
+            }
+        }))
+        .send()
+        .await
+        .expect("send partial completion snapshot request");
+
+    assert_eq!(partial_response.status(), StatusCode::OK);
+    let partial_body = partial_response.text().await.expect("read partial body");
+    assert!(
+        partial_body.contains("event: response.completed"),
+        "body={partial_body}"
+    );
+    let partial_snapshot_data = partial_body
+        .split("event: response.operator_turn_state.snapshot")
+        .nth(1)
+        .and_then(|section| section.split("data: ").nth(1))
+        .and_then(|section| section.split("\n\n").next())
+        .expect("partial operator state snapshot data");
+    let partial_snapshot: Value =
+        serde_json::from_str(partial_snapshot_data).expect("parse partial snapshot json");
+    assert_eq!(
+        partial_snapshot["status"],
+        Value::String("succeeded".to_string())
+    );
+    assert!(
+        partial_snapshot["events"]
+            .as_array()
+            .is_some_and(|events| events
+                .iter()
+                .any(|event| event["kind"] == "mission.checkpointed"
+                    && event["reason_code"] == "mission_completion_partial")),
+        "snapshot={partial_snapshot}"
+    );
+
+    let blocked_response = client
+        .post(format!("http://{addr}/v1/responses"))
+        .bearer_auth("secret")
+        .json(&json!({
+            "input": "block the governed Ralph supervisor loop slice",
+            "stream": true,
+            "metadata": {
+                "session_id": "session-3654-blocked-snapshot",
+                "mission_id": "mission-3654-blocked-snapshot"
+            }
+        }))
+        .send()
+        .await
+        .expect("send blocked completion snapshot request");
+
+    assert_eq!(blocked_response.status(), StatusCode::OK);
+    let blocked_body = blocked_response.text().await.expect("read blocked body");
+    assert!(
+        blocked_body.contains("event: response.completed"),
+        "body={blocked_body}"
+    );
+    let blocked_snapshot_data = blocked_body
+        .split("event: response.operator_turn_state.snapshot")
+        .nth(1)
+        .and_then(|section| section.split("data: ").nth(1))
+        .and_then(|section| section.split("\n\n").next())
+        .expect("blocked operator state snapshot data");
+    let blocked_snapshot: Value =
+        serde_json::from_str(blocked_snapshot_data).expect("parse blocked snapshot json");
+    assert_eq!(
+        blocked_snapshot["status"],
+        Value::String("blocked".to_string())
+    );
+    assert_eq!(
+        blocked_snapshot["error"]["reason_code"],
+        Value::String("mission_completion_blocked".to_string())
+    );
+    assert!(
+        blocked_snapshot["events"]
+            .as_array()
+            .is_some_and(
+                |events| events.iter().any(|event| event["kind"] == "mission.blocked"
+                    && event["reason_code"] == "mission_completion_blocked")
+            ),
+        "snapshot={blocked_snapshot}"
+    );
+
+    handle.abort();
+}
+
+#[tokio::test]
 async fn functional_openai_chat_completions_endpoint_returns_non_stream_response() {
     let temp = tempdir().expect("tempdir");
     let state = test_state(temp.path(), 10_000, "secret");

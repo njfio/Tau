@@ -2,8 +2,9 @@
 
 use super::*;
 use tau_contract::operator_state::{
-    OperatorToolState, OperatorToolStatus, OperatorTurnEvent, OperatorTurnEventKind,
-    OperatorTurnPhase, OperatorTurnState, OperatorTurnStatus, OPERATOR_TURN_STATE_SCHEMA_VERSION,
+    OperatorErrorContext, OperatorToolState, OperatorToolStatus, OperatorTurnEvent,
+    OperatorTurnEventKind, OperatorTurnPhase, OperatorTurnState, OperatorTurnStatus,
+    OPERATOR_TURN_STATE_SCHEMA_VERSION,
 };
 
 pub(super) async fn stream_openresponses(
@@ -21,6 +22,7 @@ pub(super) async fn stream_openresponses(
                 let OpenResponsesExecutionResult {
                     response,
                     tool_executions,
+                    completion_signal,
                 } = result;
                 let _ = tx.send(SseFrame::Json {
                     event: "response.output_text.done",
@@ -38,6 +40,7 @@ pub(super) async fn stream_openresponses(
                             session_key,
                             mission_id,
                             &tool_executions,
+                            completion_signal.as_ref(),
                         )),
                     });
                 }
@@ -78,6 +81,7 @@ fn build_operator_turn_state_snapshot(
     session_key: String,
     mission_id: String,
     tool_executions: &[OpenResponsesObservedToolExecution],
+    completion_signal: Option<&GatewayMissionCompletionSignalRecord>,
 ) -> OperatorTurnState {
     OperatorTurnState {
         schema_version: OPERATOR_TURN_STATE_SCHEMA_VERSION,
@@ -86,12 +90,32 @@ fn build_operator_turn_state_snapshot(
         session_key,
         mission_id: Some(mission_id),
         phase: OperatorTurnPhase::Completed,
-        status: OperatorTurnStatus::Succeeded,
+        status: build_operator_turn_status(completion_signal),
         assistant_text: response.output_text.clone(),
         tools: build_operator_tool_states(tool_executions),
-        events: build_operator_turn_events(response, tool_executions),
-        error: None,
+        events: build_operator_turn_events(response, tool_executions, completion_signal),
+        error: build_operator_error_context(completion_signal),
     }
+}
+
+fn build_operator_turn_status(
+    completion_signal: Option<&GatewayMissionCompletionSignalRecord>,
+) -> OperatorTurnStatus {
+    match completion_signal.map(|signal| &signal.status) {
+        Some(GatewayMissionCompletionStatus::Blocked) => OperatorTurnStatus::Blocked,
+        _ => OperatorTurnStatus::Succeeded,
+    }
+}
+
+fn build_operator_error_context(
+    completion_signal: Option<&GatewayMissionCompletionSignalRecord>,
+) -> Option<OperatorErrorContext> {
+    let completion = completion_signal?;
+    (completion.status == GatewayMissionCompletionStatus::Blocked).then(|| OperatorErrorContext {
+        reason_code: "mission_completion_blocked".to_string(),
+        message: completion.summary.clone(),
+        retryable: false,
+    })
 }
 
 fn build_operator_tool_states(
@@ -117,6 +141,7 @@ fn build_operator_tool_states(
 fn build_operator_turn_events(
     response: &OpenResponsesResponse,
     tool_executions: &[OpenResponsesObservedToolExecution],
+    completion_signal: Option<&GatewayMissionCompletionSignalRecord>,
 ) -> Vec<OperatorTurnEvent> {
     let mut events = tool_executions
         .iter()
@@ -136,6 +161,35 @@ fn build_operator_turn_events(
             occurred_at_ms: Some(tool.timestamp_ms),
         })
         .collect::<Vec<_>>();
+    if let Some(completion) = completion_signal {
+        match completion.status {
+            GatewayMissionCompletionStatus::Partial => events.push(OperatorTurnEvent {
+                event_id: format!("{}-mission-checkpointed", response.id),
+                kind: OperatorTurnEventKind::MissionCheckpointed,
+                summary: completion
+                    .next_step
+                    .as_ref()
+                    .map(|next_step| format!("{} Next step: {next_step}", completion.summary))
+                    .unwrap_or_else(|| completion.summary.clone()),
+                text_delta: None,
+                tool_call_id: None,
+                tool_name: None,
+                reason_code: Some("mission_completion_partial".to_string()),
+                occurred_at_ms: Some(response.created.saturating_mul(1000)),
+            }),
+            GatewayMissionCompletionStatus::Blocked => events.push(OperatorTurnEvent {
+                event_id: format!("{}-mission-blocked", response.id),
+                kind: OperatorTurnEventKind::MissionBlocked,
+                summary: completion.summary.clone(),
+                text_delta: None,
+                tool_call_id: None,
+                tool_name: None,
+                reason_code: Some("mission_completion_blocked".to_string()),
+                occurred_at_ms: Some(response.created.saturating_mul(1000)),
+            }),
+            GatewayMissionCompletionStatus::Success => {}
+        }
+    }
     events.push(OperatorTurnEvent {
         event_id: format!("{}-final", response.id),
         kind: OperatorTurnEventKind::FinalAnswer,

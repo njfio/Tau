@@ -81,6 +81,12 @@ single-mission path while the new loop becomes the preferred model.
 - C-04 / AC-4 / Architecture:
   an operator can inspect current mission progress, see the active verifier
   failure, and choose pause/resume/approve/retry from gateway or TUI surfaces.
+- C-04a / AC-4 / Gateway streaming:
+  a streamed `complete_task(status="partial")` produces a
+  `response.operator_turn_state.snapshot` with a `mission.checkpointed` event,
+  while a streamed `complete_task(status="blocked")` produces a blocked
+  operator snapshot with `mission_completion_blocked` error context, and both
+  still emit legacy `response.completed` compatibility frames.
 - C-05 / AC-5 / Compatibility:
   a legacy prompt-only flow runs as an implicit single-mission loop without
   breaking existing session semantics.

@@ -9,6 +9,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tau_agent_core::{SafetyPolicy, SafetyRuleSet};
 
+use super::GatewayMissionCompletionSignalRecord;
+
 /// Error payload mapped to OpenAI-compatible HTTP response envelope.
 #[derive(Debug)]
 pub(super) struct OpenResponsesApiError {
@@ -398,6 +400,7 @@ pub(super) struct OpenResponsesResponse {
 pub(super) struct OpenResponsesExecutionResult {
     pub(super) response: OpenResponsesResponse,
     pub(super) tool_executions: Vec<OpenResponsesObservedToolExecution>,
+    pub(super) completion_signal: Option<GatewayMissionCompletionSignalRecord>,
 }
 
 #[derive(Debug, Clone)]

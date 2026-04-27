@@ -718,7 +718,7 @@ pub(super) async fn execute_openresponses_request(
     if let Some(verifier) = terminal_success_verifier {
         mission_state.mark_completed(
             verifier.overall,
-            terminal_completion_signal,
+            terminal_completion_signal.clone(),
             output_text.as_str(),
             current_unix_timestamp_ms(),
         );
@@ -784,6 +784,7 @@ pub(super) async fn execute_openresponses_request(
     Ok(OpenResponsesExecutionResult {
         response,
         tool_executions,
+        completion_signal: terminal_completion_signal,
     })
 }
 
