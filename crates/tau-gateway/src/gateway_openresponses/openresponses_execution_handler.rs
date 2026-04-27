@@ -4,6 +4,10 @@ use super::*;
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tau_ai::{Message, ToolChoice};
+use tau_contract::operator_state::{
+    OperatorErrorContext, OperatorTurnEvent, OperatorTurnEventKind, OperatorTurnPhase,
+    OperatorTurnState, OperatorTurnStatus, OPERATOR_TURN_STATE_SCHEMA_VERSION,
+};
 use tau_memory::action_history::ActionHistoryStore;
 
 use super::learning_runtime::{
@@ -656,6 +660,15 @@ pub(super) async fn execute_openresponses_request(
                 break Ok(());
             }
             GatewayMissionVerifierStatus::Failed => {
+                emit_gateway_operator_blocked_snapshot(
+                    stream_sender.as_ref(),
+                    response_id.as_str(),
+                    translated.session_key.as_str(),
+                    translated.mission_id.as_str(),
+                    assistant_summary.as_str(),
+                    &verifier.overall,
+                    finished_unix_ms,
+                );
                 mission_state.mark_blocked(
                     verifier.overall.clone(),
                     None,
@@ -1317,6 +1330,49 @@ fn gateway_mutation_recovery_tool_choice(
     } else {
         Some(ToolChoice::Required)
     }
+}
+
+fn emit_gateway_operator_blocked_snapshot(
+    stream_sender: Option<&mpsc::UnboundedSender<SseFrame>>,
+    response_id: &str,
+    session_key: &str,
+    mission_id: &str,
+    assistant_summary: &str,
+    verifier: &GatewayMissionVerifierRecord,
+    occurred_at_ms: u64,
+) {
+    let Some(stream_sender) = stream_sender else {
+        return;
+    };
+    let _ = stream_sender.send(SseFrame::Json {
+        event: "response.operator_turn_state.snapshot",
+        payload: json!(OperatorTurnState {
+            schema_version: OPERATOR_TURN_STATE_SCHEMA_VERSION,
+            turn_id: response_id.to_string(),
+            task_id: None,
+            session_key: session_key.to_string(),
+            mission_id: Some(mission_id.to_string()),
+            phase: OperatorTurnPhase::Completed,
+            status: OperatorTurnStatus::Blocked,
+            assistant_text: assistant_summary.to_string(),
+            tools: Vec::new(),
+            events: vec![OperatorTurnEvent {
+                event_id: format!("{response_id}-blocked"),
+                kind: OperatorTurnEventKind::MissionBlocked,
+                summary: verifier.message.clone(),
+                text_delta: None,
+                tool_call_id: None,
+                tool_name: None,
+                reason_code: Some(verifier.reason_code.clone()),
+                occurred_at_ms: Some(occurred_at_ms),
+            }],
+            error: Some(OperatorErrorContext {
+                reason_code: verifier.reason_code.clone(),
+                message: verifier.message.clone(),
+                retryable: false,
+            }),
+        }),
+    });
 }
 
 fn gateway_prompt_prefers_concrete_write_recovery(prompt_tokens: &[String]) -> bool {

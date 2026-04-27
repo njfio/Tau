@@ -640,6 +640,70 @@ data: [DONE]
 }
 
 #[test]
+fn operator_turn_state_recovery_policy_snapshot_reconciles_blocked_failure_once() {
+    let (bind, _) = spawn_streaming_gateway_server(vec![
+        r#"event: response.created
+data: {"type":"response.created","response":{"id":"turn-recovery"}}
+
+"#,
+        r#"event: response.output_text.delta
+data: {"type":"response.output_text.delta","delta":"recovery retry emitted no tool"}
+
+"#,
+        r#"event: response.operator_turn_state.snapshot
+data: {"schema_version":1,"turn_id":"turn-recovery","task_id":"task-recovery","session_key":"session-recovery","mission_id":"mission-recovery","phase":"completed","status":"blocked","assistant_text":"recovery retry emitted no tool","tools":[],"events":[{"event_id":"evt-recovery-blocked","kind":"mission.blocked","summary":"required tool retry exhausted without observing tool execution evidence","text_delta":null,"tool_call_id":null,"tool_name":null,"reason_code":"required_tool_evidence_missing_exhausted","occurred_at_ms":44}],"error":{"reason_code":"required_tool_evidence_missing_exhausted","message":"required tool retry exhausted without observing tool execution evidence","retryable":false}}
+
+"#,
+        r#"event: response.failed
+data: {"type":"response.failed","error":{"code":"gateway_runtime_error","message":"required tool retry exhausted without observing tool execution evidence"}}
+
+data: [DONE]
+
+"#,
+    ]);
+    let mut app = build_app(bind);
+    set_input(&mut app, "consume recovery policy snapshot stream");
+
+    app_commands::submit_input(&mut app);
+    wait_until(&mut app, "operator recovery policy error", |app| {
+        app.chat.messages().iter().any(|message| {
+            message.role == MessageRole::System
+                && message
+                    .content
+                    .contains("required_tool_evidence_missing_exhausted")
+        })
+    });
+    for _ in 0..20 {
+        app.tick();
+        thread::sleep(Duration::from_millis(10));
+    }
+
+    assert_eq!(app.status.agent_state, AgentStateDisplay::Error);
+    assert_eq!(
+        last_message(&app, MessageRole::Assistant),
+        Some("recovery retry emitted no tool")
+    );
+    let system_messages = app
+        .chat
+        .messages()
+        .iter()
+        .filter(|message| message.role == MessageRole::System)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        system_messages.len(),
+        1,
+        "system_messages={system_messages:?}"
+    );
+    assert!(system_messages[0]
+        .content
+        .contains("required_tool_evidence_missing_exhausted"));
+    assert!(
+        !system_messages[0].content.contains("gateway error"),
+        "system_messages={system_messages:?}"
+    );
+}
+
+#[test]
 fn spec_3669_streaming_error_frame_sets_error_state() {
     let (bind, _) = spawn_streaming_gateway_server(vec![
         r#"event: response.failed

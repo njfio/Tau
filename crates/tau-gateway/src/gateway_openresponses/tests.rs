@@ -5099,6 +5099,74 @@ async fn operator_turn_state_tool_failure_snapshot_stream_carries_tool_context()
 }
 
 #[tokio::test]
+async fn operator_turn_state_recovery_policy_snapshot_stream_carries_required_tool_exhaustion() {
+    let temp = tempdir().expect("tempdir");
+    let scripted = Arc::new(ScriptedGatewayLlmClient::new(vec![
+        scripted_gateway_response("I will fix the validation next."),
+        scripted_gateway_response("I still need to think before using tools."),
+    ]));
+    let tool_root = temp.path().join("workspace");
+    std::fs::create_dir_all(&tool_root).expect("create tool workspace");
+    let state = test_state_with_client_and_auth(
+        temp.path(),
+        10_000,
+        scripted,
+        Arc::new(FixturePipelineToolRegistrar::new(
+            tool_root,
+            temp.path().join(".tau/gateway"),
+        )),
+        GatewayOpenResponsesAuthMode::Token,
+        Some("secret"),
+        None,
+        60,
+        120,
+    );
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+
+    let client = Client::new();
+    let response = client
+        .post(format!("http://{addr}/v1/responses"))
+        .bearer_auth("secret")
+        .json(&json!({
+            "input": "fix the failing validation in this workspace",
+            "stream": true,
+            "metadata": {
+                "session_id": "session-3582-recovery-policy",
+                "mission_id": "mission-3582-recovery-policy"
+            }
+        }))
+        .send()
+        .await
+        .expect("send recovery policy snapshot request");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.text().await.expect("read sse body");
+    assert!(body.contains("event: response.failed"), "body={body}");
+
+    let snapshot_data = body
+        .split("event: response.operator_turn_state.snapshot")
+        .nth(1)
+        .and_then(|section| section.split("data: ").nth(1))
+        .and_then(|section| section.split("\n\n").next())
+        .expect("operator state recovery snapshot data");
+    let snapshot: Value = serde_json::from_str(snapshot_data).expect("parse snapshot json");
+    assert_eq!(snapshot["status"], Value::String("blocked".to_string()));
+    assert_eq!(
+        snapshot["error"]["reason_code"],
+        Value::String("required_tool_evidence_missing_exhausted".to_string())
+    );
+    assert!(
+        snapshot["events"].as_array().is_some_and(|events| events
+            .iter()
+            .any(|event| event["kind"] == "mission.blocked"
+                && event["reason_code"] == "required_tool_evidence_missing_exhausted")),
+        "snapshot={snapshot}"
+    );
+
+    handle.abort();
+}
+
+#[tokio::test]
 async fn functional_openai_chat_completions_endpoint_returns_non_stream_response() {
     let temp = tempdir().expect("tempdir");
     let state = test_state(temp.path(), 10_000, "secret");

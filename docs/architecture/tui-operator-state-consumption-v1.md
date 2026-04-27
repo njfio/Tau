@@ -62,6 +62,8 @@ Turn-keyed reconciliation expectations:
 - failed, blocked, timed-out, and cancelled turn snapshots should produce one operator-readable system message with reason context.
 - current gateway success snapshots include observed tool rows and tool-completion/failure events while still preserving the legacy `response.tool_execution.*` frames for existing clients.
 
+Recovery-policy failure snapshots: gateway failure paths that end in a verifier-controlled blocked mission should emit an additive `response.operator_turn_state.snapshot` before the legacy `response.failed` frame. The snapshot carries `status: "blocked"`, a `mission.blocked` event, and `error.reason_code` so clients can show domain-specific recovery policy failures such as `required_tool_evidence_missing_exhausted`. The TUI treats that operator snapshot as the richer active-turn error and suppresses the duplicate generic gateway error message from the following compatibility `response.failed` frame.
+
 ## Status Mapping
 - `succeeded` + `completed` maps to idle after writing assistant text.
 - `tool_running` or `waiting_for_tool` maps to tool execution.
@@ -87,6 +89,8 @@ Runtime/gateway code can now emit full `OperatorTurnState` snapshots and call th
 - `cargo test -p tau-tui operator_state -- --test-threads=1`
 - `cargo test -p tau-tui operator_turn_state_snapshot_turn_keyed -- --test-threads=1`
 - `cargo test -p tau-gateway operator_turn_state_tool_failure_snapshot -- --test-threads=1`
+- `cargo test -p tau-gateway operator_turn_state_recovery_policy_snapshot -- --test-threads=1`
+- `cargo test -p tau-tui operator_turn_state_recovery_policy -- --test-threads=1`
 - `cargo clippy -p tau-tui --tests --no-deps -- -D warnings`
 - `cargo fmt --check`
 - `git diff --quiet -- Cargo.toml`

@@ -387,7 +387,24 @@ impl App {
     fn fail_turn(&mut self, message: String) {
         self.status.agent_state = AgentStateDisplay::Error;
         self.streaming_assistant_index = None;
+        if message.starts_with("gateway error:") && self.has_current_turn_operator_error() {
+            return;
+        }
         self.push_timestamped_message(MessageRole::System, message);
+    }
+
+    fn has_current_turn_operator_error(&self) -> bool {
+        let Some(system_index) = self.chat.latest_message_index(MessageRole::System) else {
+            return false;
+        };
+        if let Some(user_index) = self.chat.latest_message_index(MessageRole::User) {
+            if system_index <= user_index {
+                return false;
+            }
+        }
+        self.chat
+            .message_content(system_index)
+            .is_some_and(|content| content.starts_with("operator turn "))
     }
 
     fn append_assistant_delta(&mut self, delta: &str) {

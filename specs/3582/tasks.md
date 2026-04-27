@@ -58,3 +58,15 @@
 - [x] T19 (COMPAT): keep existing operator-state, snapshot, transcript-first layout, and gateway emission tests green after richer snapshot reconciliation.
 
 - [x] T20 (CLOSEOUT): path-limit commit/push the richer snapshot slice and comment issue #3582 with verification evidence.
+
+- [x] T21 (RED): add gateway/TUI regressions for #3673 recovery-policy failure snapshots flowing into the operator terminal.
+  - Verify RED with: `bash -c '! cargo test -p tau-gateway operator_turn_state_recovery_policy_snapshot -- --test-threads=1'`
+  - Verify RED with: `bash -c '! cargo test -p tau-tui operator_turn_state_recovery_policy -- --test-threads=1'`
+
+- [x] T22 (GREEN): emit blocked operator snapshots before legacy `response.failed` frames and keep the TUI to one rich operator error message.
+  - Verify with: `cargo test -p tau-gateway operator_turn_state_recovery_policy_snapshot -- --test-threads=1`
+  - Verify with: `cargo test -p tau-tui operator_turn_state_recovery_policy -- --test-threads=1`
+
+- [x] T23 (COMPAT): keep #3673 no-tool recovery and existing TUI snapshot reconciliation tests green after the bridge.
+
+- [x] T24 (CLOSEOUT): path-limit commit/push the recovery-policy snapshot bridge and comment issues #3582/#3673 with evidence.
