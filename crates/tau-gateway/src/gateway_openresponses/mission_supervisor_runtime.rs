@@ -21,6 +21,10 @@ pub(super) struct GatewayMissionIterationRecord {
     pub(super) prompt_summary: String,
     pub(super) assistant_summary: String,
     pub(super) tool_execution_count: usize,
+    #[serde(default)]
+    pub(super) request_payload: Value,
+    #[serde(default)]
+    pub(super) response_payload: Value,
     pub(super) verifier: GatewayMissionVerifierBundle,
     #[serde(default)]
     pub(super) completion: Option<GatewayMissionCompletionSignalRecord>,
@@ -33,6 +37,8 @@ pub(super) struct GatewayMissionIterationInput<'a> {
     pub(super) prompt: &'a str,
     pub(super) assistant_summary: &'a str,
     pub(super) tool_execution_count: usize,
+    pub(super) request_payload: Value,
+    pub(super) response_payload: Value,
     pub(super) verifier: GatewayMissionVerifierBundle,
     pub(super) completion: Option<GatewayMissionCompletionSignalRecord>,
     pub(super) started_unix_ms: u64,
@@ -107,6 +113,8 @@ impl GatewayMissionState {
             prompt_summary: summarize_gateway_mission_text(input.prompt),
             assistant_summary: summarize_gateway_mission_text(input.assistant_summary),
             tool_execution_count: input.tool_execution_count,
+            request_payload: input.request_payload,
+            response_payload: input.response_payload,
             verifier: input.verifier.clone(),
             completion: input.completion.clone(),
             started_unix_ms: input.started_unix_ms,
@@ -242,5 +250,59 @@ mod tests {
         let summary = summarize_gateway_mission_text(&format!("hello   world {}", "x".repeat(400)));
         assert!(summary.starts_with("hello world"));
         assert!(summary.chars().count() <= GATEWAY_MISSION_SUMMARY_MAX_CHARS);
+    }
+
+    #[test]
+    fn regression_openresponses_attempt_traces_capture_request_and_response_payloads() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let path = gateway_mission_state_path(temp.path(), "mission-payloads");
+        let mut state = GatewayMissionState::load_or_create(
+            &path,
+            "mission-payloads",
+            "session-alpha",
+            "resp_alpha",
+            "run payload trace",
+            100,
+        )
+        .expect("mission state");
+        let verifier =
+            GatewayMissionVerifierBundle::from_records(vec![GatewayMissionVerifierRecord {
+                kind: "runtime".to_string(),
+                status: GatewayMissionVerifierStatus::Passed,
+                reason_code: "ok".to_string(),
+                message: "ok".to_string(),
+                details: BTreeMap::new(),
+            }]);
+
+        state.record_iteration(GatewayMissionIterationInput {
+            attempt: 1,
+            prompt: "run payload trace",
+            assistant_summary: "payload trace complete",
+            tool_execution_count: 1,
+            request_payload: json!({
+                "attempt": 1,
+                "prompt": "run payload trace",
+                "messages_before": [],
+            }),
+            response_payload: json!({
+                "status": "completed",
+                "messages": [{"role": "assistant", "content": [{"type": "text", "text": "payload trace complete"}]}],
+                "tool_executions": [{"tool_call_id": "call-1", "tool_name": "read_file"}],
+            }),
+            verifier,
+            completion: None,
+            started_unix_ms: 110,
+            finished_unix_ms: 120,
+        });
+        save_gateway_mission_state(&path, &state).expect("save mission state");
+
+        let loaded = load_gateway_mission_state(&path).expect("load mission state");
+        let iteration = loaded.iterations.first().expect("iteration record");
+        assert_eq!(iteration.request_payload["prompt"], "run payload trace");
+        assert_eq!(iteration.response_payload["status"], "completed");
+        assert_eq!(
+            iteration.response_payload["tool_executions"][0]["tool_call_id"],
+            "call-1"
+        );
     }
 }

@@ -32,6 +32,7 @@ impl ToolStatus {
 /// A single tool execution entry.
 #[derive(Debug, Clone)]
 pub struct ToolEntry {
+    pub tool_call_id: Option<String>,
     pub name: String,
     pub status: ToolStatus,
     pub detail: String,
@@ -94,6 +95,26 @@ impl ToolPanel {
             .rev()
             .find(|entry| entry.name == name && entry.status == ToolStatus::Running)
         else {
+            return false;
+        };
+        entry.status = status;
+        entry.detail = detail;
+        true
+    }
+
+    pub fn complete_running_by_id(
+        &mut self,
+        tool_call_id: &str,
+        status: ToolStatus,
+        detail: String,
+    ) -> bool {
+        if tool_call_id.trim().is_empty() {
+            return false;
+        }
+        let Some(entry) = self.entries.iter_mut().rev().find(|entry| {
+            entry.tool_call_id.as_deref() == Some(tool_call_id)
+                && entry.status == ToolStatus::Running
+        }) else {
             return false;
         };
         entry.status = status;

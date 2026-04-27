@@ -3,6 +3,7 @@
 use super::*;
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use tau_ai::Message;
 use tau_memory::action_history::ActionHistoryStore;
 
 use super::learning_runtime::{
@@ -259,6 +260,14 @@ pub(super) async fn execute_openresponses_request(
         let attempt_started_unix_ms = current_unix_timestamp_ms();
         reset_buffered_gateway_output(buffered_stream_output.as_ref())?;
         let attempt_start_index = agent.messages().len();
+        let attempt_request_payload = build_gateway_attempt_request_payload(
+            response_id.as_str(),
+            translated.mission_id.as_str(),
+            translated.session_key.as_str(),
+            attempt_number,
+            next_prompt.as_str(),
+            agent.messages(),
+        );
         let tool_trace_start_index = gateway_tool_trace_len(&tool_execution_traces)?;
         let tool_execution_count_before = tool_execution_count.load(Ordering::Relaxed);
         let stream_handler = build_gateway_stream_handler(
@@ -313,11 +322,20 @@ pub(super) async fn execute_openresponses_request(
                             retry_exhausted,
                         )
                     };
+                    let attempt_response_payload = build_gateway_attempt_response_payload(
+                        &agent.messages()[attempt_start_index..],
+                        &tool_execution_traces,
+                        tool_trace_start_index,
+                        "timeout",
+                        Some("response generation timed out before completion"),
+                    )?;
                     mission_state.record_iteration(GatewayMissionIterationInput {
                         attempt: attempt_number,
                         prompt: next_prompt.as_str(),
                         assistant_summary: "",
                         tool_execution_count: tool_execution_delta,
+                        request_payload: attempt_request_payload.clone(),
+                        response_payload: attempt_response_payload,
                         verifier: verifier.clone(),
                         completion: None,
                         started_unix_ms: attempt_started_unix_ms,
@@ -368,11 +386,20 @@ pub(super) async fn execute_openresponses_request(
             );
             let assistant_summary =
                 collect_assistant_reply(&agent.messages()[attempt_start_index..]);
+            let attempt_response_payload = build_gateway_attempt_response_payload(
+                &agent.messages()[attempt_start_index..],
+                &tool_execution_traces,
+                tool_trace_start_index,
+                "error",
+                Some(message.as_str()),
+            )?;
             mission_state.record_iteration(GatewayMissionIterationInput {
                 attempt: attempt_number,
                 prompt: next_prompt.as_str(),
                 assistant_summary: assistant_summary.as_str(),
                 tool_execution_count: 0,
+                request_payload: attempt_request_payload.clone(),
+                response_payload: attempt_response_payload,
                 verifier: verifier.clone(),
                 completion: None,
                 started_unix_ms: attempt_started_unix_ms,
@@ -411,11 +438,20 @@ pub(super) async fn execute_openresponses_request(
             verifier_traces.as_slice(),
             retry_exhausted,
         );
+        let attempt_response_payload = build_gateway_attempt_response_payload(
+            &agent.messages()[attempt_start_index..],
+            &tool_execution_traces,
+            tool_trace_start_index,
+            "completed",
+            None,
+        )?;
         mission_state.record_iteration(GatewayMissionIterationInput {
             attempt: attempt_number,
             prompt: next_prompt.as_str(),
             assistant_summary: assistant_summary.as_str(),
             tool_execution_count: tool_execution_delta,
+            request_payload: attempt_request_payload.clone(),
+            response_payload: attempt_response_payload,
             verifier: verifier.clone(),
             completion: completion_signal.clone(),
             started_unix_ms: attempt_started_unix_ms,
@@ -799,6 +835,70 @@ fn gateway_tool_trace_len(
         .lock()
         .map(|guard| guard.len())
         .map_err(|_| OpenResponsesApiError::internal("gateway tool trace lock is poisoned"))
+}
+
+fn build_gateway_attempt_request_payload(
+    response_id: &str,
+    mission_id: &str,
+    session_key: &str,
+    attempt_number: usize,
+    prompt: &str,
+    messages_before: &[Message],
+) -> Value {
+    json!({
+        "response_id": response_id,
+        "mission_id": mission_id,
+        "session_id": session_key,
+        "attempt": attempt_number,
+        "prompt": prompt,
+        "messages_before": serialize_gateway_messages(messages_before),
+    })
+}
+
+fn build_gateway_attempt_response_payload(
+    messages_after: &[Message],
+    traces: &Arc<Mutex<Vec<GatewayObservedToolExecution>>>,
+    trace_start_index: usize,
+    status: &str,
+    error_message: Option<&str>,
+) -> Result<Value, OpenResponsesApiError> {
+    Ok(json!({
+        "status": status,
+        "error": error_message,
+        "messages": serialize_gateway_messages(messages_after),
+        "tool_executions": snapshot_gateway_attempt_tool_payloads(traces, trace_start_index)?,
+    }))
+}
+
+fn serialize_gateway_messages(messages: &[Message]) -> Value {
+    serde_json::to_value(messages).unwrap_or_else(|error| {
+        json!({
+            "serialization_error": error.to_string(),
+        })
+    })
+}
+
+fn snapshot_gateway_attempt_tool_payloads(
+    traces: &Arc<Mutex<Vec<GatewayObservedToolExecution>>>,
+    trace_start_index: usize,
+) -> Result<Vec<Value>, OpenResponsesApiError> {
+    let payloads = traces
+        .lock()
+        .map_err(|_| OpenResponsesApiError::internal("gateway tool trace lock is poisoned"))?
+        .iter()
+        .skip(trace_start_index)
+        .map(|trace| {
+            json!({
+                "tool_name": trace.tool_name,
+                "arguments": trace.arguments,
+                "output_summary": trace.output_summary,
+                "success": trace.success,
+                "latency_ms": trace.latency_ms,
+                "timestamp_ms": trace.timestamp_ms,
+            })
+        })
+        .collect::<Vec<_>>();
+    Ok(payloads)
 }
 
 fn snapshot_gateway_verifier_traces(

@@ -71,6 +71,7 @@ mod tests {
 
     fn entry(name: &str, status: ToolStatus) -> ToolEntry {
         ToolEntry {
+            tool_call_id: None,
             name: name.to_string(),
             status,
             detail: String::new(),

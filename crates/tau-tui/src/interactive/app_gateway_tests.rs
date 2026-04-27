@@ -418,6 +418,81 @@ data: [DONE]
 }
 
 #[test]
+fn spec_3671_tool_completion_reconciles_by_tool_call_id() {
+    let (bind, _) = spawn_streaming_gateway_server(vec![
+        r#"event: response.tool_execution.started
+data: {"type":"response.tool_execution.started","tool_call_id":"call-1","tool_name":"read_file","arguments":{"path":"Cargo.toml"}}
+
+event: response.tool_execution.started
+data: {"type":"response.tool_execution.started","tool_call_id":"call-2","tool_name":"read_file","arguments":{"path":"README.md"}}
+
+"#,
+        r#"event: response.tool_execution.completed
+data: {"type":"response.tool_execution.completed","tool_call_id":"call-1","tool_name":"read_file","success":true,"timed_out":false,"latency_ms":12}
+
+"#,
+        r#"event: response.tool_execution.completed
+data: {"type":"response.tool_execution.completed","tool_call_id":"call-2","tool_name":"read_file","success":true,"timed_out":false,"latency_ms":20}
+
+event: response.completed
+data: {"type":"response.completed","response":{"output_text":"both reads complete","usage":{"total_tokens":13}}}
+
+data: [DONE]
+
+"#,
+    ]);
+    let mut app = build_app(bind);
+    set_input(&mut app, "inspect two files");
+
+    app_commands::submit_input(&mut app);
+    wait_until(&mut app, "two running streamed tool calls", |app| {
+        app.tools.active_count() == 2
+            && app
+                .tools
+                .entries()
+                .iter()
+                .filter(|entry| entry.name == "read_file")
+                .count()
+                == 2
+    });
+    wait_until(
+        &mut app,
+        "first call completed while second remains running",
+        |app| {
+            let call_1 = app
+                .tools
+                .entries()
+                .iter()
+                .find(|entry| entry.tool_call_id.as_deref() == Some("call-1"));
+            let call_2 = app
+                .tools
+                .entries()
+                .iter()
+                .find(|entry| entry.tool_call_id.as_deref() == Some("call-2"));
+            call_1.is_some_and(|entry| {
+                entry.status == super::tools::ToolStatus::Success && entry.detail == "latency_ms=12"
+            }) && call_2.is_some_and(|entry| entry.status == super::tools::ToolStatus::Running)
+                && app.tools.active_count() == 1
+        },
+    );
+    wait_for_turn(&mut app);
+
+    assert_eq!(app.tools.active_count(), 0);
+    let call_2 = app
+        .tools
+        .entries()
+        .iter()
+        .find(|entry| entry.tool_call_id.as_deref() == Some("call-2"))
+        .expect("second tool entry");
+    assert_eq!(call_2.status, super::tools::ToolStatus::Success);
+    assert_eq!(call_2.detail, "latency_ms=20");
+    assert_eq!(
+        last_message(&app, MessageRole::Assistant),
+        Some("both reads complete")
+    );
+}
+
+#[test]
 fn spec_3669_streaming_error_frame_sets_error_state() {
     let (bind, _) = spawn_streaming_gateway_server(vec![
         r#"event: response.failed

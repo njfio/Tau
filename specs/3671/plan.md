@@ -1,6 +1,12 @@
 # Plan: Issue #3671 - Add raw gateway payload tracing and reconcile TUI tool lifecycle state
 
 ## Approach
+Current code reality: the TUI active-count symptom is partially fixed by
+completion matching on tool name, but tool_call_id reconciliation remains open in
+the reducer. Gateway mission iterations still persist summaries only;
+request_payload and response_payload fields are not yet persisted on mission
+iterations.
+
 1. Add red regressions for payload-rich attempt tracing and TUI tool lifecycle
    reconciliation.
 2. Extend gateway attempt trace records so they include structured outbound

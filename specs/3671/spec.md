@@ -1,6 +1,6 @@
 # Spec: Issue #3671 - Add raw gateway payload tracing and reconcile TUI tool lifecycle state
 
-Status: Reviewed
+Status: Implemented
 
 ## Problem Statement
 The latest live `just tui` repro exposed two separate debugging/runtime defects.
@@ -55,15 +55,16 @@ terminal tool lifecycle state without stale `Running` entries.
   a gateway attempt trace persists structured outbound request payload and
   inbound response payload fields for a retried action request.
 - C-02 / AC-2 / Regression:
-  a TUI streamed tool completion updates the existing running tool entry so
-  `active_count()` returns to zero.
+  TUI streamed completions with the same tool name reconcile by `tool_call_id`
+  so only the matching running entry is updated and `active_count()` returns to
+  zero after both calls complete.
 - C-03 / AC-3 / Functional:
   a timeout/failure after tool activity leaves inspectable payload trace
   records and no stale running-tool state in the TUI reducer.
 
 ## Success Metrics / Observable Signals
-- Fresh `attempt-traces.jsonl` records show both request and response payload
-  evidence instead of only lossy summaries.
+- Fresh gateway mission iteration records show both `request_payload` and
+  `response_payload` evidence instead of only lossy summaries.
 - A live TUI session no longer shows `N active` after all streamed tool
   completions have been received.
 - Gateway/TUI failures can be debugged from local traces without having to

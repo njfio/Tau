@@ -1,10 +1,11 @@
 # Tasks: Issue #3671 - Add raw gateway payload tracing and reconcile TUI tool lifecycle state
 
-- [x] T1 (RED): add gateway/TUI regressions for payload-rich attempt tracing and
-      reconciled tool lifecycle state.
-- [x] T2 (GREEN): persist structured request/response payload evidence per
-      attempt and reconcile TUI tool starts/completions by tool call id.
-- [x] T3 (VERIFY): rerun the scoped gateway/TUI verification stack.
+- [x] Prior TUI streaming slice: active-count symptom is partially fixed by
+      completion matching on tool name.
+- [x] R3671 corrected implementation (RED): add regressions for same-name
+      streamed tool executions and persisted attempt payload evidence.
+- [x] R3671 corrected implementation (GREEN): tool_call_id reconciliation remains open in the current TUI reducer; add it and persist gateway payload evidence.
+- [x] R3671 corrected implementation (VERIFY): request_payload and response_payload fields are not yet persisted on mission iterations; verify they are present along with scoped TUI/gateway gates.
 
 ## Tier Mapping
 - Functional: timeout/failure attempts remain inspectable through trace files

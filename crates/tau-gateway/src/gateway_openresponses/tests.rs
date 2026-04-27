@@ -8842,6 +8842,8 @@ async fn regression_gateway_missions_list_exposes_persisted_checkpointed_and_blo
                 prompt_summary: "create the initial project".to_string(),
                 assistant_summary: "scaffolded the first gameplay slice".to_string(),
                 tool_execution_count: 1,
+                request_payload: json!({}),
+                response_payload: json!({}),
                 verifier: GatewayMissionVerifierBundle::from_records(vec![
                     GatewayMissionVerifierRecord {
                         kind: "workspace_mutation_evidence".to_string(),
@@ -8893,6 +8895,8 @@ async fn regression_gateway_missions_list_exposes_persisted_checkpointed_and_blo
                 prompt_summary: "deploy the service".to_string(),
                 assistant_summary: "blocked waiting for credentials".to_string(),
                 tool_execution_count: 0,
+                request_payload: json!({}),
+                response_payload: json!({}),
                 verifier: GatewayMissionVerifierBundle::from_records(vec![
                     GatewayMissionVerifierRecord {
                         kind: "action_tool_evidence".to_string(),
@@ -8981,6 +8985,8 @@ async fn regression_gateway_mission_detail_exposes_verifier_and_completion_state
                 prompt_summary: "create the initial project".to_string(),
                 assistant_summary: "scaffolded the first gameplay slice".to_string(),
                 tool_execution_count: 1,
+                request_payload: json!({}),
+                response_payload: json!({}),
                 verifier: GatewayMissionVerifierBundle::from_records(vec![
                     GatewayMissionVerifierRecord {
                         kind: "workspace_mutation_evidence".to_string(),

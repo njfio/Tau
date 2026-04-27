@@ -266,7 +266,18 @@ impl App {
 
     /// Push a tool execution event externally.
     pub fn push_tool_event(&mut self, name: String, status: ToolStatus, detail: String) {
+        self.push_tool_event_with_id(None, name, status, detail);
+    }
+
+    fn push_tool_event_with_id(
+        &mut self,
+        tool_call_id: Option<String>,
+        name: String,
+        status: ToolStatus,
+        detail: String,
+    ) {
         self.tools.add_entry(ToolEntry {
+            tool_call_id,
             name,
             status,
             detail,
@@ -286,19 +297,31 @@ impl App {
                 false
             }
             GatewayTurnEvent::ToolStarted {
-                tool_name, detail, ..
+                tool_call_id,
+                tool_name,
+                detail,
             } => {
                 self.status.agent_state = AgentStateDisplay::ToolExec;
-                self.push_tool_event(tool_name, ToolStatus::Running, detail);
+                self.push_tool_event_with_id(
+                    Some(tool_call_id),
+                    tool_name,
+                    ToolStatus::Running,
+                    detail,
+                );
                 false
             }
             GatewayTurnEvent::ToolCompleted {
+                tool_call_id,
                 tool_name,
                 status,
                 detail,
-                ..
             } => {
-                self.complete_tool_event(tool_name, map_gateway_tool_status(status), detail);
+                self.complete_tool_event(
+                    tool_call_id,
+                    tool_name,
+                    map_gateway_tool_status(status),
+                    detail,
+                );
                 self.status.agent_state = AgentStateDisplay::Thinking;
                 false
             }
@@ -355,10 +378,19 @@ impl App {
         self.chat.scroll_to_bottom();
     }
 
-    fn complete_tool_event(&mut self, name: String, status: ToolStatus, detail: String) {
+    fn complete_tool_event(
+        &mut self,
+        tool_call_id: String,
+        name: String,
+        status: ToolStatus,
+        detail: String,
+    ) {
         if !self
             .tools
-            .complete_latest_running(&name, status, detail.clone())
+            .complete_running_by_id(&tool_call_id, status, detail.clone())
+            && !self
+                .tools
+                .complete_latest_running(&name, status, detail.clone())
         {
             self.push_tool_event(name, status, detail);
         }
