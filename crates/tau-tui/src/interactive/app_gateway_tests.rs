@@ -312,6 +312,26 @@ fn red_spec_3616_submit_input_surfaces_gateway_errors_loudly() {
 }
 
 #[test]
+fn codex_auth_unsupported_model_gateway_error_surfaces_actionable_guidance() {
+    let (bind, _) = spawn_gateway_server(
+        "400 Bad Request",
+        r#"{"error":{"code":"unsupported_codex_auth_model","message":"unsupported Codex auth model openai/gpt-5.2"}}"#,
+    );
+    let mut app = build_app(bind);
+    set_input(&mut app, "create a snake game");
+
+    app_commands::submit_input(&mut app);
+    wait_for_turn(&mut app);
+
+    let system = last_message(&app, MessageRole::System).unwrap_or_default();
+    assert!(system.contains("unsupported Codex auth model"));
+    assert!(system.contains("openai/gpt-5.2"));
+    assert!(system.contains("select a supported Codex-auth model"));
+    assert!(system.contains("change OpenAI auth mode"));
+    assert_eq!(app.status.agent_state, AgentStateDisplay::Error);
+}
+
+#[test]
 fn spec_3669_submit_input_requests_streaming_gateway_path() {
     let (bind, request_capture) = spawn_streaming_gateway_server(vec![
         r#"event: response.completed

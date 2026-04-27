@@ -314,6 +314,29 @@ fn openai_codex_backend_enabled(cli: &Cli, auth_mode: ProviderAuthMethod) -> boo
         )
 }
 
+fn validate_openai_codex_auth_model(
+    provider: Provider,
+    auth_mode: ProviderAuthMethod,
+    model: &str,
+) -> Result<()> {
+    let model = model.trim();
+    let model_name = model
+        .split_once('/')
+        .map(|(_provider, model)| model)
+        .unwrap_or(model)
+        .trim()
+        .to_ascii_lowercase();
+    if model_name.contains("codex") {
+        return Ok(());
+    }
+
+    bail!(
+        "unsupported Codex auth model '{model}' for provider '{}' auth mode '{}': select a supported Codex-auth model such as 'gpt-5-codex' or 'gpt-5.3-codex', or change OpenAI auth mode to api-key",
+        provider.as_str(),
+        auth_mode.as_str(),
+    )
+}
+
 fn openai_experimental_direct_transport_selected(
     provider: Provider,
     auth_mode: ProviderAuthMethod,
@@ -629,6 +652,8 @@ pub fn build_provider_client(cli: &Cli, provider: Provider) -> Result<Arc<dyn Ll
                 }
             }
 
+            validate_openai_codex_auth_model(provider, auth_mode, &cli.model)?;
+
             if cli.openai_codex_appserver {
                 return build_openai_appserver_client(cli, provider);
             }
@@ -739,8 +764,8 @@ mod tests {
     use super::{
         is_azure_openai_endpoint, maybe_wrap_provider_rate_limited_client,
         openai_experimental_direct_transport_selected, resolve_openrouter_api_base,
-        resolved_secret_for_provider, ProviderOutboundRateLimitConfig, ProviderRateLimitedClient,
-        ProviderTokenBucketLimiter,
+        resolved_secret_for_provider, validate_openai_codex_auth_model,
+        ProviderOutboundRateLimitConfig, ProviderRateLimitedClient, ProviderTokenBucketLimiter,
     };
     use crate::credentials::ProviderAuthCredential;
     use crate::types::ProviderAuthMethod;
@@ -852,6 +877,32 @@ mod tests {
         let error = resolved_secret_for_provider(&missing_secret, Provider::OpenAi)
             .expect_err("missing secret must fail closed");
         assert!(error.to_string().contains("did not provide a credential"));
+    }
+
+    #[test]
+    fn codex_auth_unsupported_model_rejects_openai_api_model_before_dispatch() {
+        let error = validate_openai_codex_auth_model(
+            Provider::OpenAi,
+            ProviderAuthMethod::SessionToken,
+            "openai/gpt-5.2",
+        )
+        .expect_err("non-codex OpenAI model must be rejected for Codex auth");
+        let message = error.to_string();
+        assert!(message.contains("unsupported Codex auth model"));
+        assert!(message.contains("openai/gpt-5.2"));
+        assert!(message.contains("session_token"));
+        assert!(message.contains("gpt-5-codex"));
+        assert!(message.contains("api-key"));
+    }
+
+    #[test]
+    fn codex_auth_unsupported_model_allows_codex_model() {
+        validate_openai_codex_auth_model(
+            Provider::OpenAi,
+            ProviderAuthMethod::SessionToken,
+            "openai/gpt-5.3-codex",
+        )
+        .expect("codex model should remain valid for Codex auth");
     }
 
     #[test]

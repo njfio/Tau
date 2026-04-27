@@ -209,11 +209,27 @@ fn submit_gateway_turn(
 
 fn parse_gateway_error(body: &str) -> Option<String> {
     let value = serde_json::from_str::<Value>(body).ok()?;
-    value
-        .get("error")
-        .and_then(|error| error.get("message"))
+    let error = value.get("error")?;
+    let code = error
+        .get("code")
         .and_then(Value::as_str)
-        .map(|message| message.to_string())
+        .unwrap_or_default();
+    let message = error
+        .get("message")
+        .and_then(Value::as_str)
+        .map(|message| message.to_string())?;
+    Some(actionable_gateway_error_message(code, &message))
+}
+
+fn actionable_gateway_error_message(code: &str, message: &str) -> String {
+    let normalized = message.to_ascii_lowercase();
+    if code == "unsupported_codex_auth_model" || normalized.contains("unsupported codex auth model")
+    {
+        return format!(
+            "{message}; select a supported Codex-auth model such as gpt-5-codex or gpt-5.3-codex, or change OpenAI auth mode to api-key"
+        );
+    }
+    message.to_string()
 }
 
 fn build_client(config: &GatewayRuntimeConfig) -> Result<Client, String> {
