@@ -26,3 +26,13 @@
 - [x] T7 (DOCS): update the TUI operator-state architecture note with the live snapshot event boundary and compatibility rules.
 
 - [x] T8 (CLOSEOUT): run final tau-tui gates, path-limit commit/push, and comment issue #3582 with evidence for the live snapshot slice.
+
+- [x] T9 (RED): map gateway emission touchpoints and add failing tau-gateway tests for additive `response.operator_turn_state.snapshot` emission.
+  - Verify RED with: `bash -c '! cargo test -p tau-gateway operator_turn_state_snapshot -- --test-threads=1'`
+
+- [x] T10 (GREEN): emit `response.operator_turn_state.snapshot` from gateway streaming responses without removing legacy `response.*` frames.
+  - Verify with: `cargo test -p tau-gateway operator_turn_state_snapshot -- --test-threads=1`
+
+- [x] T11 (COMPAT): verify tau-gateway and tau-tui snapshot paths together and preserve root manifest stability.
+
+- [x] T12 (CLOSEOUT): path-limit commit/push the gateway emission slice and comment issue #3582 with evidence.

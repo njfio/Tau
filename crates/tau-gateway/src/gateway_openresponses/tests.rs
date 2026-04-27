@@ -4952,6 +4952,74 @@ async fn functional_openresponses_endpoint_streams_sse_for_stream_true() {
 }
 
 #[tokio::test]
+async fn operator_turn_state_snapshot_stream_emits_additive_sse_frame_with_legacy_frames() {
+    let temp = tempdir().expect("tempdir");
+    let state = test_state(temp.path(), 10_000, "secret");
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+
+    let client = Client::new();
+    let response = client
+        .post(format!("http://{addr}/v1/responses"))
+        .bearer_auth("secret")
+        .json(&json!({
+            "input": "hello shared operator state",
+            "stream": true,
+            "metadata": {
+                "session_id": "session-3582-gateway",
+                "mission_id": "mission-3582-gateway"
+            }
+        }))
+        .send()
+        .await
+        .expect("send request");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let content_type = response
+        .headers()
+        .get("content-type")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default()
+        .to_string();
+    assert!(content_type.contains("text/event-stream"));
+
+    let body = response.text().await.expect("read sse body");
+    assert!(body.contains("event: response.created"), "body={body}");
+    assert!(
+        body.contains("event: response.output_text.delta"),
+        "body={body}"
+    );
+    assert!(
+        body.contains("event: response.operator_turn_state.snapshot"),
+        "body={body}"
+    );
+    assert!(body.contains("event: response.completed"), "body={body}");
+    assert!(body.contains("event: done"), "body={body}");
+    assert!(body.contains(r#""schema_version":1"#), "body={body}");
+    assert!(
+        body.contains(r#""session_key":"session-3582-gateway""#),
+        "body={body}"
+    );
+    assert!(
+        body.contains(r#""mission_id":"mission-3582-gateway""#),
+        "body={body}"
+    );
+    assert!(body.contains(r#""assistant_text""#), "body={body}");
+
+    let snapshot_index = body
+        .find("event: response.operator_turn_state.snapshot")
+        .expect("snapshot event index");
+    let completed_index = body
+        .find("event: response.completed")
+        .expect("completed event index");
+    assert!(
+        snapshot_index < completed_index,
+        "snapshot must arrive before response.completed, body={body}"
+    );
+
+    handle.abort();
+}
+
+#[tokio::test]
 async fn functional_openai_chat_completions_endpoint_returns_non_stream_response() {
     let temp = tempdir().expect("tempdir");
     let state = test_state(temp.path(), 10_000, "secret");

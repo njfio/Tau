@@ -27,6 +27,15 @@ This is a transcript-first bridge, not a full UI redesign. It gives future gatew
 
 When a snapshot and legacy text delta describe the same current assistant turn, the adapter reconciles the assistant message instead of adding a duplicate. This keeps transcript-first rendering stable while the gateway and clients transition from event-level deltas toward shared state snapshots.
 
+Gateway emission boundary: the producer side should emit `response.operator_turn_state.snapshot` through the existing gateway `SseFrame::Json` path. The emission should be additive and ordered before `response.completed` for successful turns so clients can apply the shared state before final turn completion. Legacy `response.output_text.done`, `response.completed`, `response.failed`, and tool execution frames remain required compatibility frames.
+
+Expected gateway touchpoints:
+
+- `gateway_openresponses/types.rs` owns `SseFrame` and already serializes named JSON SSE frames.
+- `gateway_openresponses/stream_response_handler.rs` owns final success/failure stream frames.
+- `gateway_openresponses/openresponses_execution_handler.rs` owns execution state, response ids, text deltas, and tool lifecycle frames.
+- `tau-contract::operator_state` owns the snapshot schema and must remain the only schema source.
+
 ## Status Mapping
 - `succeeded` + `completed` maps to idle after writing assistant text.
 - `tool_running` or `waiting_for_tool` maps to tool execution.
@@ -46,7 +55,7 @@ The existing gateway path remains intact:
 - mission list, mission detail, and mission resume commands are unchanged;
 - gateway JSON and SSE fallback/error handling remains in `gateway_client.rs`.
 
-A later runtime/gateway stage can emit full `OperatorTurnState` snapshots and call the adapter directly. Until then, the TUI supports both the legacy SSE event path and the shared-state consumption path side by side.
+Runtime/gateway code can now emit full `OperatorTurnState` snapshots and call the adapter directly. During transition, the TUI supports both the legacy SSE event path and the shared-state consumption path side by side.
 
 ## Verification
 - `cargo test -p tau-tui operator_state -- --test-threads=1`
