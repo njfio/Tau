@@ -81,6 +81,40 @@ pub(super) fn append_gateway_action_history_records(
     }
 }
 
+pub(super) fn append_gateway_completion_history_record(
+    store: &mut ActionHistoryStore,
+    session_key: &str,
+    mission_id: &str,
+    turn: usize,
+    completion: &GatewayMissionCompletionSignalRecord,
+    timestamp_ms: u64,
+) {
+    let status = match completion.status {
+        GatewayMissionCompletionStatus::Success => "success",
+        GatewayMissionCompletionStatus::Partial => "partial",
+        GatewayMissionCompletionStatus::Blocked => "blocked",
+    };
+    let mut input_summary = format!("completion_status={status}");
+    if let Some(next_step) = completion.next_step.as_deref() {
+        input_summary.push_str(" next_step=");
+        input_summary.push_str(next_step);
+    }
+    append_gateway_action_history_records(
+        store,
+        &[GatewayActionHistoryToolRecord {
+            session_key: session_key.to_string(),
+            mission_id: mission_id.to_string(),
+            turn,
+            tool_name: GATEWAY_COMPLETE_TASK_TOOL_NAME.to_string(),
+            input_summary,
+            output_summary: completion.summary.clone(),
+            success: completion.status != GatewayMissionCompletionStatus::Blocked,
+            latency_ms: 0,
+            timestamp_ms,
+        }],
+    );
+}
+
 pub(super) fn build_gateway_learning_insight(
     store: &ActionHistoryStore,
     lookback: usize,

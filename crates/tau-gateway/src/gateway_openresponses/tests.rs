@@ -5312,6 +5312,130 @@ async fn mission_completion_outcome_snapshot_stream_marks_partial_as_checkpointe
 }
 
 #[tokio::test]
+async fn mission_completion_learning_handoff_records_checkpointed_and_blocked_outcomes() {
+    let temp = tempdir().expect("tempdir");
+    let scripted = Arc::new(ScriptedGatewayLlmClient::new(vec![
+        ChatResponse {
+            message: Message::assistant_blocks(vec![ContentBlock::ToolCall {
+                id: "call-complete-partial-learning".to_string(),
+                name: GATEWAY_COMPLETE_TASK_TOOL_NAME.to_string(),
+                arguments: json!({
+                    "status": "partial",
+                    "summary": "checkpointed reusable learning context",
+                    "next_step": "resume with the learned checkpoint"
+                }),
+            }]),
+            finish_reason: Some("tool_calls".to_string()),
+            usage: ChatUsage::default(),
+        },
+        scripted_gateway_response("checkpointed reusable learning context"),
+        ChatResponse {
+            message: Message::assistant_blocks(vec![ContentBlock::ToolCall {
+                id: "call-complete-blocked-learning".to_string(),
+                name: GATEWAY_COMPLETE_TASK_TOOL_NAME.to_string(),
+                arguments: json!({
+                    "status": "blocked",
+                    "summary": "blocked on operator approval"
+                }),
+            }]),
+            finish_reason: Some("tool_calls".to_string()),
+            usage: ChatUsage::default(),
+        },
+        scripted_gateway_response("blocked on operator approval"),
+    ]));
+    let tool_root = temp.path().join("workspace");
+    std::fs::create_dir_all(&tool_root).expect("create tool workspace");
+    let state = test_state_with_client_and_auth(
+        temp.path(),
+        10_000,
+        scripted,
+        Arc::new(FixturePipelineToolRegistrar::new(
+            tool_root,
+            temp.path().join(".tau/gateway"),
+        )),
+        GatewayOpenResponsesAuthMode::Token,
+        Some("secret"),
+        None,
+        60,
+        120,
+    );
+    let state_dir = state.config.state_dir.clone();
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+
+    let client = Client::new();
+    for (input, session_id, mission_id) in [
+        (
+            "checkpoint this learning handoff",
+            "session-3654-learning-partial",
+            "mission-3654-learning-partial",
+        ),
+        (
+            "block this learning handoff",
+            "session-3654-learning-blocked",
+            "mission-3654-learning-blocked",
+        ),
+    ] {
+        let response = client
+            .post(format!("http://{addr}{OPENRESPONSES_ENDPOINT}"))
+            .bearer_auth("secret")
+            .json(&json!({
+                "input": input,
+                "metadata": {
+                    "session_id": session_id,
+                    "mission_id": mission_id
+                }
+            }))
+            .send()
+            .await
+            .expect("send learning handoff request");
+        let status = response.status();
+        let payload = response
+            .json::<Value>()
+            .await
+            .expect("parse learning handoff payload");
+        assert_eq!(status, StatusCode::OK, "unexpected payload: {payload}");
+    }
+
+    let store = load_gateway_action_history_store(&state_dir).expect("load action history");
+    let partial_records = store.query(&ActionFilter {
+        session_id: Some("session-3654-learning-partial".to_string()),
+        tool_name: Some(GATEWAY_COMPLETE_TASK_TOOL_NAME.to_string()),
+        max_results: Some(8),
+        ..Default::default()
+    });
+    assert!(
+        partial_records.iter().any(|record| record.success
+            && record
+                .input_summary
+                .contains("mission=mission-3654-learning-partial")
+            && record.input_summary.contains("completion_status=partial")
+            && record
+                .output_summary
+                .contains("checkpointed reusable learning context")),
+        "partial records={partial_records:?}"
+    );
+    let blocked_records = store.query(&ActionFilter {
+        session_id: Some("session-3654-learning-blocked".to_string()),
+        tool_name: Some(GATEWAY_COMPLETE_TASK_TOOL_NAME.to_string()),
+        max_results: Some(8),
+        ..Default::default()
+    });
+    assert!(
+        blocked_records.iter().any(|record| !record.success
+            && record
+                .input_summary
+                .contains("mission=mission-3654-learning-blocked")
+            && record.input_summary.contains("completion_status=blocked")
+            && record
+                .output_summary
+                .contains("blocked on operator approval")),
+        "blocked records={blocked_records:?}"
+    );
+
+    handle.abort();
+}
+
+#[tokio::test]
 async fn functional_openai_chat_completions_endpoint_returns_non_stream_response() {
     let temp = tempdir().expect("tempdir");
     let state = test_state(temp.path(), 10_000, "secret");

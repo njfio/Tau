@@ -11,7 +11,8 @@ use tau_contract::operator_state::{
 use tau_memory::action_history::ActionHistoryStore;
 
 use super::learning_runtime::{
-    load_gateway_action_history_store, save_gateway_action_history_store,
+    append_gateway_completion_history_record, load_gateway_action_history_store,
+    save_gateway_action_history_store,
 };
 
 const GATEWAY_TOOL_SUMMARY_MAX_CHARS: usize = 240;
@@ -577,6 +578,16 @@ pub(super) async fn execute_openresponses_request(
                 retry_exhausted,
             )
         };
+        if let Some(completion) = completion_signal.as_ref() {
+            append_gateway_completion_history_record(
+                &mut action_history_store,
+                translated.session_key.as_str(),
+                translated.mission_id.as_str(),
+                attempt_number,
+                completion,
+                finished_unix_ms,
+            );
+        }
         let attempt_response_payload = build_gateway_attempt_response_payload(
             &agent.messages()[attempt_start_index..],
             &tool_execution_traces,

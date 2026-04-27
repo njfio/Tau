@@ -29,3 +29,32 @@ Evidence:
 - `cargo test -p tau-gateway operator_turn_state_recovery_policy_snapshot -- --test-threads=1`
   keeps the #3673 verifier-blocked recovery policy snapshot path compatible
   with the mission completion outcome snapshot path.
+
+## Implementation slice: session memory learning handoff
+
+- [x] T7 RED: add gateway coverage for a mission completion learning handoff,
+                  proving checkpointed/blocked completion outcomes are written to
+                  action-history learning records with session and mission identifiers.
+- [x] T8 GREEN: persist completion outcome records into the existing
+                  `tau-memory` action-history store so the next Ralph-loop iteration can
+                  inject the outcome through the gateway learning bulletin.
+- [ ] T9 CLOSEOUT: verify the handoff with the mission outcome snapshot guard,
+                  document the session/memory/learning ownership boundary, and publish #3654
+                  evidence.
+
+Handoff boundary:
+- Session: the OpenResponses session key remains the durable lineage anchor for
+      action-history learning records.
+- Memory: `tau-memory` action history remains the reusable learning store; this
+      slice must not create a disconnected per-feature state file.
+- Learning: checkpointed and blocked mission completion outcomes should become
+      action-history learning inputs that can appear in the gateway learning bulletin
+      for a later Ralph-loop iteration.
+
+Evidence:
+- `cargo test -p tau-gateway mission_completion_learning_handoff -- --test-threads=1`
+      proves checkpointed and blocked `complete_task` outcomes are persisted as
+      `complete_task` action-history records keyed by session and mission.
+- `cargo test -p tau-gateway mission_completion_outcome_snapshot -- --test-threads=1`
+      proves the learning handoff does not regress the streamed operator snapshot
+      semantics for checkpointed and blocked mission outcomes.

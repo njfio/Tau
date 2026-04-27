@@ -78,6 +78,11 @@ single-mission path while the new loop becomes the preferred model.
 - C-03 / AC-3 / Architecture:
   repeated failures on a tool produce action-history and learning signals that
   appear in the next iteration context and in cortex/operator summaries.
+- C-03a / AC-3 / Gateway learning handoff:
+  checkpointed and blocked `complete_task` outcomes are written to the existing
+  `tau-memory` action-history store with session and mission identifiers so a
+  later gateway iteration can inject the learned outcome through the learning
+  bulletin.
 - C-04 / AC-4 / Architecture:
   an operator can inspect current mission progress, see the active verifier
   failure, and choose pause/resume/approve/retry from gateway or TUI surfaces.
