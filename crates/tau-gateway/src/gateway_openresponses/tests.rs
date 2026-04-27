@@ -34,7 +34,7 @@ use reqwest::Client;
 use safety_rules::*;
 use serde_json::Value;
 use state_helpers::*;
-use tau_ai::{ChatResponse, ChatUsage, ContentBlock, Message};
+use tau_ai::{ChatResponse, ChatUsage, ContentBlock, Message, ToolChoice};
 use tau_memory::action_history::{
     ActionFilter, ActionHistoryConfig, ActionHistoryStore, ActionRecord, ActionType,
 };
@@ -8141,6 +8141,101 @@ async fn issue_3674_read_only_saturation_cuts_off_attempt_and_widens_retry_budge
         captured_requests.len() >= 3,
         "expected retry request after saturation cutoff, got {} request(s)",
         captured_requests.len()
+    );
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn issue_3675_mutation_recovery_retry_for_create_task_forces_write_tool_choice() {
+    let temp = tempdir().expect("tempdir");
+    let scripted = Arc::new(ScriptedGatewayLlmClient::new(vec![
+        scripted_gateway_response("I will create the requested file next."),
+        ChatResponse {
+            message: Message::assistant_blocks(vec![ContentBlock::ToolCall {
+                id: "call-write-concrete-retry".to_string(),
+                name: "write".to_string(),
+                arguments: json!({"path":"new-game.txt","content":"created by concrete retry"}),
+            }]),
+            finish_reason: Some("tool_calls".to_string()),
+            usage: ChatUsage::default(),
+        },
+        scripted_gateway_response("created new-game.txt"),
+    ]));
+    let tool_root = temp.path().join("workspace");
+    std::fs::create_dir_all(&tool_root).expect("create tool workspace");
+    let state = test_state_with_client_and_auth(
+        temp.path(),
+        10_000,
+        scripted.clone(),
+        Arc::new(FixturePipelineToolRegistrar::new(
+            tool_root.clone(),
+            temp.path().join(".tau/gateway"),
+        )),
+        GatewayOpenResponsesAuthMode::Token,
+        Some("secret"),
+        None,
+        60,
+        120,
+    );
+    let (addr, handle) = spawn_test_server(state.clone())
+        .await
+        .expect("spawn server");
+
+    let client = Client::builder()
+        .timeout(Duration::from_secs(2))
+        .build()
+        .expect("client with timeout");
+    let response = client
+        .post(format!("http://{addr}{OPENRESPONSES_ENDPOINT}"))
+        .bearer_auth("secret")
+        .json(&json!({
+            "input": "create a new Phaser game file named new-game.txt",
+            "metadata": {
+                "session_id": "concrete-tool-choice-session",
+                "mission_id": "concrete-tool-choice-mission"
+            }
+        }))
+        .send()
+        .await
+        .expect("send concrete tool-choice request");
+    let status = response.status();
+    let payload = response
+        .json::<Value>()
+        .await
+        .expect("parse concrete tool-choice payload");
+    assert_eq!(status, StatusCode::OK, "unexpected payload: {payload}");
+    assert_eq!(
+        std::fs::read_to_string(tool_root.join("new-game.txt")).expect("read created file"),
+        "created by concrete retry"
+    );
+
+    let captured_requests = scripted.captured_requests().await;
+    assert!(
+        captured_requests.len() >= 2,
+        "expected initial and recovery retry request, got {} request(s)",
+        captured_requests.len()
+    );
+    assert_eq!(captured_requests[0].tool_choice, Some(ToolChoice::Auto));
+    assert_eq!(
+        captured_requests[1].tool_choice,
+        Some(ToolChoice::Tool {
+            name: "write".to_string(),
+        })
+    );
+
+    let mission_path =
+        gateway_mission_state_path(&state.config.state_dir, "concrete-tool-choice-mission");
+    let mission_state = load_gateway_mission_state(&mission_path).expect("load mission state");
+    assert_eq!(mission_state.status, GatewayMissionStatus::Completed);
+    assert_eq!(mission_state.iteration_count, 2);
+    assert_eq!(
+        mission_state.iterations[0].verifier.overall.reason_code,
+        "tool_evidence_missing_continue"
+    );
+    assert_eq!(
+        mission_state.iterations[1].verifier.overall.reason_code,
+        "mutation_evidence_observed"
     );
 
     handle.abort();
