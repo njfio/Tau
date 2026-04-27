@@ -12,15 +12,17 @@ PRODUCT_PROOF_STATUS_JSON=""
 PRODUCT_PROOF_WEBCHAT_HTML=""
 PRODUCT_PROOF_SESSIONS_JSON=""
 PRODUCT_PROOF_MEMORY_JSON=""
+PRODUCT_PROOF_CHANNEL_LIFECYCLE_JSON=""
 PRODUCT_PROOF_RUNTIME_STARTED="false"
 REPORT_PATH=""
 WEBCHAT_SMOKE="false"
 SESSIONS_SMOKE="false"
 MEMORY_SMOKE="false"
+CHANNEL_LIFECYCLE_SMOKE="false"
 
 usage() {
   cat <<'EOF'
-Usage: scripts/dev/prove-tau-product.sh [--check|--run] [--webchat-smoke] [--sessions-smoke] [--memory-smoke] [--report <path>]
+Usage: scripts/dev/prove-tau-product.sh [--check|--run] [--webchat-smoke] [--sessions-smoke] [--memory-smoke] [--channel-lifecycle-smoke] [--report <path>]
 
 Modes:
   --check  Validate the canonical Tau product-proof command surface without starting the real runtime.
@@ -31,6 +33,8 @@ Modes:
       With --run, also fetch /gateway/sessions and assert the sessions API JSON shape.
     --memory-smoke
       With --run, also fetch /gateway/memory/default and assert the read JSON shape.
+    --channel-lifecycle-smoke
+      With --run, also POST a status action to /gateway/channels/discord/lifecycle and assert the JSON shape.
   --report Write a machine-readable JSON evidence report to the given path after success.
   --help   Show this help.
 EOF
@@ -107,15 +111,17 @@ write_run_report() {
   local sessions_smoke="$8"
   local memory_url="$9"
   local memory_smoke="${10}"
+  local channel_lifecycle_url="${11}"
+  local channel_lifecycle_smoke="${12}"
   require_command python3
   prepare_report_parent "${REPORT_PATH}"
-  python3 - "${REPORT_PATH}" "${bind}" "${auth_mode}" "${model}" "${status_url}" "${webchat_url}" "${webchat_smoke}" "${sessions_url}" "${sessions_smoke}" "${memory_url}" "${memory_smoke}" <<'PY'
+  python3 - "${REPORT_PATH}" "${bind}" "${auth_mode}" "${model}" "${status_url}" "${webchat_url}" "${webchat_smoke}" "${sessions_url}" "${sessions_smoke}" "${memory_url}" "${memory_smoke}" "${channel_lifecycle_url}" "${channel_lifecycle_smoke}" <<'PY'
 from __future__ import annotations
 
 import json
 import sys
 
-_, report_path, bind, auth_mode, model, status_url, webchat_url, webchat_smoke, sessions_url, sessions_smoke, memory_url, memory_smoke = sys.argv
+_, report_path, bind, auth_mode, model, status_url, webchat_url, webchat_smoke, sessions_url, sessions_smoke, memory_url, memory_smoke, channel_lifecycle_url, channel_lifecycle_smoke = sys.argv
 completed_steps = ["up", "status", "gateway_status"]
 
 payload = {
@@ -138,6 +144,10 @@ if sessions_smoke == "true":
 if memory_smoke == "true":
   payload["gateway_memory_url"] = memory_url
   completed_steps.append("memory_api")
+
+if channel_lifecycle_smoke == "true":
+  payload["gateway_channel_lifecycle_url"] = channel_lifecycle_url
+  completed_steps.append("channel_lifecycle_api")
 
 completed_steps.extend(["tui", "down"])
 payload["completed_steps"] = completed_steps
@@ -242,6 +252,28 @@ PY
   fi
 }
 
+validate_gateway_channel_lifecycle_json() {
+  local json_path="$1"
+  if command -v jq >/dev/null 2>&1; then
+    jq -e 'type == "object" and .report.action == "status" and .report.channel == "discord"' "${json_path}" >/dev/null || die "gateway channel lifecycle response is not a JSON object with discord status report"
+  else
+    require_command python3
+    python3 - "${json_path}" <<'PY'
+from __future__ import annotations
+
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    payload = json.load(handle)
+
+report = payload.get("report") if isinstance(payload, dict) else None
+if not isinstance(report, dict) or report.get("action") != "status" or report.get("channel") != "discord":
+    raise SystemExit("gateway channel lifecycle response is not a JSON object with discord status report")
+PY
+  fi
+}
+
 run_live() {
   require_command cargo
 
@@ -257,6 +289,7 @@ run_live() {
   local webchat_url="http://${bind}/webchat"
   local sessions_url="http://${bind}/gateway/sessions"
   local memory_url="http://${bind}/gateway/memory/default"
+  local channel_lifecycle_url="http://${bind}/gateway/channels/discord/lifecycle"
   local status_json
   status_json="$(mktemp)"
   local webchat_html
@@ -265,10 +298,13 @@ run_live() {
   sessions_json="$(mktemp)"
   local memory_json
   memory_json="$(mktemp)"
+  local channel_lifecycle_json
+  channel_lifecycle_json="$(mktemp)"
   PRODUCT_PROOF_STATUS_JSON="${status_json}"
   PRODUCT_PROOF_WEBCHAT_HTML="${webchat_html}"
   PRODUCT_PROOF_SESSIONS_JSON="${sessions_json}"
   PRODUCT_PROOF_MEMORY_JSON="${memory_json}"
+  PRODUCT_PROOF_CHANNEL_LIFECYCLE_JSON="${channel_lifecycle_json}"
   PRODUCT_PROOF_RUNTIME_STARTED="false"
 
   require_command "${curl_bin}"
@@ -285,6 +321,9 @@ run_live() {
     fi
     if [[ -n "${PRODUCT_PROOF_MEMORY_JSON}" ]]; then
       rm -f "${PRODUCT_PROOF_MEMORY_JSON}"
+    fi
+    if [[ -n "${PRODUCT_PROOF_CHANNEL_LIFECYCLE_JSON}" ]]; then
+      rm -f "${PRODUCT_PROOF_CHANNEL_LIFECYCLE_JSON}"
     fi
     if [[ "${PRODUCT_PROOF_RUNTIME_STARTED}" == "true" ]]; then
       "${LAUNCHER}" down >/dev/null 2>&1 || true
@@ -324,6 +363,11 @@ run_live() {
     validate_gateway_memory_json "${memory_json}"
   fi
 
+  if [[ "${CHANNEL_LIFECYCLE_SMOKE}" == "true" ]]; then
+    "${curl_bin}" -fsS -X POST -H "Content-Type: application/json" -d '{"action":"status"}' "${channel_lifecycle_url}" >"${channel_lifecycle_json}" || die "gateway channel lifecycle endpoint did not respond: ${channel_lifecycle_url}"
+    validate_gateway_channel_lifecycle_json "${channel_lifecycle_json}"
+  fi
+
   "${LAUNCHER}" tui --live-shell --iterations 1 --interval-ms 1000 --no-color
 
   "${LAUNCHER}" down
@@ -333,12 +377,14 @@ run_live() {
   rm -f "${webchat_html}"
   rm -f "${sessions_json}"
   rm -f "${memory_json}"
+  rm -f "${channel_lifecycle_json}"
   PRODUCT_PROOF_STATUS_JSON=""
   PRODUCT_PROOF_WEBCHAT_HTML=""
   PRODUCT_PROOF_SESSIONS_JSON=""
   PRODUCT_PROOF_MEMORY_JSON=""
+  PRODUCT_PROOF_CHANNEL_LIFECYCLE_JSON=""
 
-  write_run_report "${bind}" "${auth_mode}" "${model}" "${status_url}" "${webchat_url}" "${WEBCHAT_SMOKE}" "${sessions_url}" "${SESSIONS_SMOKE}" "${memory_url}" "${MEMORY_SMOKE}"
+  write_run_report "${bind}" "${auth_mode}" "${model}" "${status_url}" "${webchat_url}" "${WEBCHAT_SMOKE}" "${sessions_url}" "${SESSIONS_SMOKE}" "${memory_url}" "${MEMORY_SMOKE}" "${channel_lifecycle_url}" "${CHANNEL_LIFECYCLE_SMOKE}"
   echo "Tau product proof passed: runtime up/status/gateway/live-shell/down completed"
 }
 
@@ -367,6 +413,10 @@ while [[ $# -gt 0 ]]; do
       MEMORY_SMOKE="true"
       shift
       ;;
+    --channel-lifecycle-smoke)
+      CHANNEL_LIFECYCLE_SMOKE="true"
+      shift
+      ;;
     --help|-h)
       mode="--help"
       shift
@@ -388,6 +438,10 @@ fi
 
 if [[ "${MEMORY_SMOKE}" == "true" && "${mode}" != "--run" ]]; then
   die "--memory-smoke requires --run"
+fi
+
+if [[ "${CHANNEL_LIFECYCLE_SMOKE}" == "true" && "${mode}" != "--run" ]]; then
+  die "--channel-lifecycle-smoke requires --run"
 fi
 
 case "${mode}" in

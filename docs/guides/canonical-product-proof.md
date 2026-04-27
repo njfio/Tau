@@ -71,6 +71,12 @@ To verify the read-only Gateway memory API readiness surface, add `--memory-smok
 ./scripts/dev/prove-tau-product.sh --run --memory-smoke --report /tmp/tau-product-proof-memory.json
 ```
 
+To verify the Gateway channel lifecycle status surface, add `--channel-lifecycle-smoke`. This posts a status action to `/gateway/channels/discord/lifecycle`, validates the JSON response shape, and records the channel lifecycle endpoint in the report:
+
+```bash
+./scripts/dev/prove-tau-product.sh --run --channel-lifecycle-smoke --report /tmp/tau-product-proof-channel-lifecycle.json
+```
+
 ## Consuming Report JSON
 
 Use report output when a reviewer, CI job, or release handoff needs machine-readable proof instead of terminal text. A successful `--check` report contains `mode`, `status`, and a `checks` object for `guide_contract`, `launcher_contract`, and `run_contract`.
@@ -93,7 +99,7 @@ assert payload["checks"]["run_contract"] == "passed"
 PY
 ```
 
-A successful `--run` report adds the runtime evidence fields `bind`, `auth_mode`, `model`, `gateway_status_url`, and `completed_steps`. Consumers should treat the step list as the proof sequence and assert that the live path reached shutdown. When `--webchat-smoke` is used, the report also includes `webchat_url` and inserts `webchat` between `gateway_status` and `tui` in `completed_steps`. When `--sessions-smoke` is used, the report includes `gateway_sessions_url` and inserts `sessions_api` before `tui`. When `--memory-smoke` is used, the report includes `gateway_memory_url` and inserts `memory_api` before `tui`.
+A successful `--run` report adds the runtime evidence fields `bind`, `auth_mode`, `model`, `gateway_status_url`, and `completed_steps`. Consumers should treat the step list as the proof sequence and assert that the live path reached shutdown. When `--webchat-smoke` is used, the report also includes `webchat_url` and inserts `webchat` between `gateway_status` and `tui` in `completed_steps`. When `--sessions-smoke` is used, the report includes `gateway_sessions_url` and inserts `sessions_api` before `tui`. When `--memory-smoke` is used, the report includes `gateway_memory_url` and inserts `memory_api` before `tui`. When `--channel-lifecycle-smoke` is used, the report includes `gateway_channel_lifecycle_url` and inserts `channel_lifecycle_api` before `tui`.
 
 ```bash
 report=/tmp/tau-product-proof-run.json
@@ -169,6 +175,25 @@ assert payload["completed_steps"] == ["up", "status", "gateway_status", "memory_
 PY
 ```
 
+For the opt-in channel lifecycle proof, assert the Gateway channel lifecycle URL and step:
+
+```bash
+report=/tmp/tau-product-proof-channel-lifecycle.json
+./scripts/dev/prove-tau-product.sh --run --channel-lifecycle-smoke --report "$report"
+python3 - "$report" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+	payload = json.load(handle)
+
+assert payload["mode"] == "run"
+assert payload["status"] == "passed"
+assert payload["gateway_channel_lifecycle_url"].endswith("/gateway/channels/discord/lifecycle")
+assert payload["completed_steps"] == ["up", "status", "gateway_status", "channel_lifecycle_api", "tui", "down"]
+PY
+```
+
 If the script exits nonzero, do not parse a partial report as success. Use the terminal error and `.tau/unified/tau-unified.log` for triage, then regenerate the report after the proof passes.
 
 ## Command Path
@@ -209,13 +234,19 @@ curl -sS http://127.0.0.1:8791/gateway/sessions | jq '.sessions'
 curl -sS http://127.0.0.1:8791/gateway/memory/default | jq '.exists'
 ```
 
-7. Check the read-only dashboard artifact path through live-shell mode.
+7. Optional: check the Gateway channel lifecycle status readiness surface.
+
+```bash
+curl -sS -X POST -H 'Content-Type: application/json' -d '{"action":"status"}' http://127.0.0.1:8791/gateway/channels/discord/lifecycle | jq '.report'
+```
+
+8. Check the read-only dashboard artifact path through live-shell mode.
 
 ```bash
 ./scripts/run/tau-unified.sh tui --live-shell --iterations 1 --interval-ms 1000 --no-color
 ```
 
-8. Stop the runtime.
+9. Stop the runtime.
 
 ```bash
 ./scripts/run/tau-unified.sh down

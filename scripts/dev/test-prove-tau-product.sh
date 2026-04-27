@@ -120,6 +120,8 @@ case "${TAU_PRODUCT_PROOF_CURL_CASE:-success}" in
       printf '{"sessions":[]}\n'
     elif [[ "${url}" == */gateway/memory/* ]]; then
       printf '{"exists":false}\n'
+    elif [[ "${url}" == */gateway/channels/*/lifecycle ]]; then
+      printf '{"report":{"action":"status","channel":"discord","lifecycle_status":"connected"}}\n'
     else
       printf '{"status":"ok","source":"fake-product-proof"}\n'
     fi
@@ -137,6 +139,8 @@ case "${TAU_PRODUCT_PROOF_CURL_CASE:-success}" in
       printf '{"sessions":[]}\n'
     elif [[ "${url}" == */gateway/memory/* ]]; then
       printf '{"exists":false}\n'
+    elif [[ "${url}" == */gateway/channels/*/lifecycle ]]; then
+      printf '{"report":{"action":"status","channel":"discord","lifecycle_status":"connected"}}\n'
     else
       printf '{"status":"ok","source":"fake-product-proof"}\n'
     fi
@@ -153,11 +157,19 @@ case "${TAU_PRODUCT_PROOF_CURL_CASE:-success}" in
       printf '{"exists":false}\n'
       exit 0
     fi
+    if [[ "${url}" == */gateway/channels/*/lifecycle ]]; then
+      printf '{"report":{"action":"status","channel":"discord","lifecycle_status":"connected"}}\n'
+      exit 0
+    fi
     printf '{"status":"ok","source":"fake-product-proof"}\n'
     ;;
   sessions-invalid-json)
     if [[ "${url}" == */gateway/sessions ]]; then
       printf '[]\n'
+      exit 0
+    fi
+    if [[ "${url}" == */gateway/channels/*/lifecycle ]]; then
+      printf '{"report":{"action":"status","channel":"discord","lifecycle_status":"connected"}}\n'
       exit 0
     fi
     printf '{"status":"ok","source":"fake-product-proof"}\n'
@@ -171,6 +183,10 @@ case "${TAU_PRODUCT_PROOF_CURL_CASE:-success}" in
       printf '{"sessions":[]}\n'
       exit 0
     fi
+    if [[ "${url}" == */gateway/channels/*/lifecycle ]]; then
+      printf '{"report":{"action":"status","channel":"discord","lifecycle_status":"connected"}}\n'
+      exit 0
+    fi
     printf '{"status":"ok","source":"fake-product-proof"}\n'
     ;;
   memory-curl-failure)
@@ -181,11 +197,48 @@ case "${TAU_PRODUCT_PROOF_CURL_CASE:-success}" in
       printf '{"sessions":[]}\n'
       exit 0
     fi
+    if [[ "${url}" == */gateway/channels/*/lifecycle ]]; then
+      printf '{"report":{"action":"status","channel":"discord","lifecycle_status":"connected"}}\n'
+      exit 0
+    fi
     printf '{"status":"ok","source":"fake-product-proof"}\n'
     ;;
   sessions-curl-failure)
     if [[ "${url}" == */gateway/sessions ]]; then
       exit 7
+    fi
+    if [[ "${url}" == */gateway/channels/*/lifecycle ]]; then
+      printf '{"report":{"action":"status","channel":"discord","lifecycle_status":"connected"}}\n'
+      exit 0
+    fi
+    printf '{"status":"ok","source":"fake-product-proof"}\n'
+    ;;
+  channel-lifecycle-invalid-json)
+    if [[ "${url}" == */gateway/channels/*/lifecycle ]]; then
+      printf '[]\n'
+      exit 0
+    fi
+    if [[ "${url}" == */gateway/sessions ]]; then
+      printf '{"sessions":[]}\n'
+      exit 0
+    fi
+    if [[ "${url}" == */gateway/memory/* ]]; then
+      printf '{"exists":false}\n'
+      exit 0
+    fi
+    printf '{"status":"ok","source":"fake-product-proof"}\n'
+    ;;
+  channel-lifecycle-curl-failure)
+    if [[ "${url}" == */gateway/channels/*/lifecycle ]]; then
+      exit 7
+    fi
+    if [[ "${url}" == */gateway/sessions ]]; then
+      printf '{"sessions":[]}\n'
+      exit 0
+    fi
+    if [[ "${url}" == */gateway/memory/* ]]; then
+      printf '{"exists":false}\n'
+      exit 0
     fi
     printf '{"status":"ok","source":"fake-product-proof"}\n'
     ;;
@@ -207,6 +260,7 @@ run_case() {
   local webchat_smoke="${7:-no}"
   local sessions_smoke="${8:-no}"
   local memory_smoke="${9:-no}"
+  local channel_lifecycle_smoke="${10:-no}"
   local case_dir="${tmp_dir}/${case_name}"
   local runtime_dir="${case_dir}/runtime"
   local runner_log="${case_dir}/runner.log"
@@ -225,6 +279,9 @@ run_case() {
   fi
   if [[ "${memory_smoke}" == "yes" ]]; then
     proof_args=("${proof_args[@]:0:1}" --memory-smoke "${proof_args[@]:1}")
+  fi
+  if [[ "${channel_lifecycle_smoke}" == "yes" ]]; then
+    proof_args=("${proof_args[@]:0:1}" --channel-lifecycle-smoke "${proof_args[@]:1}")
   fi
 
   mkdir -p "${case_dir}"
@@ -273,9 +330,12 @@ run_case() {
   if [[ "${memory_smoke}" == "yes" ]]; then
     assert_contains "$(cat "${curl_log}" 2>/dev/null || true)" "http://127.0.0.1:8898/gateway/memory/default" "${case_name} gateway memory URL"
   fi
+  if [[ "${channel_lifecycle_smoke}" == "yes" ]]; then
+    assert_contains "$(cat "${curl_log}" 2>/dev/null || true)" "http://127.0.0.1:8898/gateway/channels/discord/lifecycle" "${case_name} gateway channel lifecycle URL"
+  fi
 
   if [[ "${expected_status}" == "success" ]]; then
-    python3 - "${report_json}" "${webchat_smoke}" "${sessions_smoke}" "${memory_smoke}" <<'PY'
+    python3 - "${report_json}" "${webchat_smoke}" "${sessions_smoke}" "${memory_smoke}" "${channel_lifecycle_smoke}" <<'PY'
 import json
 import sys
 
@@ -285,6 +345,7 @@ with open(sys.argv[1], encoding="utf-8") as handle:
 webchat_smoke = sys.argv[2] == "yes"
 sessions_smoke = sys.argv[3] == "yes"
 memory_smoke = sys.argv[4] == "yes"
+channel_lifecycle_smoke = sys.argv[5] == "yes"
 expected_steps = ["up", "status", "gateway_status", "tui", "down"]
 expected_middle_steps = []
 if webchat_smoke:
@@ -293,6 +354,8 @@ if sessions_smoke:
     expected_middle_steps.append("sessions_api")
 if memory_smoke:
   expected_middle_steps.append("memory_api")
+if channel_lifecycle_smoke:
+  expected_middle_steps.append("channel_lifecycle_api")
 if expected_middle_steps:
     expected_steps = ["up", "status", "gateway_status", *expected_middle_steps, "tui", "down"]
 
@@ -312,6 +375,10 @@ if memory_smoke:
   assert payload["gateway_memory_url"] == "http://127.0.0.1:8898/gateway/memory/default"
 else:
   assert "gateway_memory_url" not in payload
+if channel_lifecycle_smoke:
+  assert payload["gateway_channel_lifecycle_url"] == "http://127.0.0.1:8898/gateway/channels/discord/lifecycle"
+else:
+  assert "gateway_channel_lifecycle_url" not in payload
 PY
   fi
 
@@ -338,7 +405,11 @@ memory_success_runner_log="$(run_case memory-success success "Tau product proof 
 assert_runner_mode_seen status "${memory_success_runner_log}"
 assert_runner_mode_seen tui "${memory_success_runner_log}"
 
-all_smokes_success_runner_log="$(run_case all-smokes-success success "Tau product proof passed" success "" yes yes yes yes)"
+channel_lifecycle_success_runner_log="$(run_case channel-lifecycle-success success "Tau product proof passed" success "" yes no no no yes)"
+assert_runner_mode_seen status "${channel_lifecycle_success_runner_log}"
+assert_runner_mode_seen tui "${channel_lifecycle_success_runner_log}"
+
+all_smokes_success_runner_log="$(run_case all-smokes-success success "Tau product proof passed" success "" yes yes yes yes yes)"
 assert_runner_mode_seen status "${all_smokes_success_runner_log}"
 assert_runner_mode_seen tui "${all_smokes_success_runner_log}"
 
@@ -359,6 +430,12 @@ assert_runner_mode_seen down "${memory_invalid_json_runner_log}"
 
 memory_curl_failure_runner_log="$(run_case memory-curl-failure failure "gateway memory endpoint did not respond" memory-curl-failure "" yes no no yes)"
 assert_runner_mode_seen down "${memory_curl_failure_runner_log}"
+
+channel_lifecycle_invalid_json_runner_log="$(run_case channel-lifecycle-invalid-json failure "gateway channel lifecycle response is not a JSON object with discord status report" channel-lifecycle-invalid-json "" yes no no no yes)"
+assert_runner_mode_seen down "${channel_lifecycle_invalid_json_runner_log}"
+
+channel_lifecycle_curl_failure_runner_log="$(run_case channel-lifecycle-curl-failure failure "gateway channel lifecycle endpoint did not respond" channel-lifecycle-curl-failure "" yes no no no yes)"
+assert_runner_mode_seen down "${channel_lifecycle_curl_failure_runner_log}"
 
 invalid_json_runner_log="$(run_case invalid-json failure "gateway/status response is not a JSON object" invalid-json)"
 assert_runner_mode_seen down "${invalid_json_runner_log}"
