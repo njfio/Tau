@@ -7856,7 +7856,7 @@ async fn regression_openresponses_retries_until_mutating_evidence_is_observed() 
 }
 
 #[tokio::test]
-async fn regression_openresponses_timeout_after_read_only_tooling_retries_into_mutation() {
+async fn regression_read_only_timeout_spiral_compacts_retry_context_into_mutation() {
     let temp = tempdir().expect("tempdir");
     let scripted = Arc::new(ScriptedGatewayLlmClient::new(vec![
         ChatResponse {
@@ -7971,6 +7971,27 @@ async fn regression_openresponses_timeout_after_read_only_tooling_retries_into_m
     assert_eq!(
         mission_state.iterations[1].verifier.overall.reason_code,
         "mutation_evidence_observed"
+    );
+    let retry_request = &mission_state.iterations[1].request_payload;
+    let retry_prompt = retry_request["prompt"]
+        .as_str()
+        .expect("retry prompt should be captured");
+    assert!(
+        retry_prompt.contains("create a Phaser game in this workspace"),
+        "retry prompt should preserve the original task: {retry_prompt}"
+    );
+    assert!(
+        retry_prompt.contains("Read-only timeout observations"),
+        "retry prompt should compact prior read-only evidence: {retry_prompt}"
+    );
+    assert!(
+        retry_prompt.contains("workspace-mutating tool"),
+        "retry prompt should require mutation-first recovery: {retry_prompt}"
+    );
+    let retry_messages_before = retry_request["messages_before"].to_string();
+    assert!(
+        !retry_messages_before.contains("seed"),
+        "retry context should not replay raw read output: {retry_messages_before}"
     );
 
     handle.abort();

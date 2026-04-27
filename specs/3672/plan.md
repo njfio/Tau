@@ -10,6 +10,17 @@
 4. Strengthen the retry prompt with mutation-first directives.
 5. Extend the existing timeout-retry regression to assert the new payload shape.
 
+## Current Code Reality
+
+- `crates/tau-gateway/src/gateway_openresponses/openresponses_execution_handler.rs`
+   already retries when verifier status is `Continue`, including timeout attempts
+   that observed tool execution.
+- The timeout branch still feeds `build_gateway_action_retry_prompt` only the
+   verifier bundle after stripping assistant messages, so the next prompt can
+   lack a compact explanation of prior read-only evidence.
+- The `request_payload` / `response_payload` mission trace fields from #3671
+   give this stage an observable place to assert retry payload shape.
+
 ## Affected Modules
 
 - `crates/tau-gateway/src/gateway_openresponses/openresponses_execution_handler.rs`

@@ -1,10 +1,13 @@
 # Spec: Break Read-Only Timeout Spiral In Gateway Action Retries
 
-Status: Reviewed
+Status: Implemented
+Issue: #3672
 
 ## Problem
 
 Mutating gateway tasks can spend an entire outer-loop attempt on broad read-only exploration, time out, then immediately time out again on the retry because Tau carries forward bulky tool payloads and only adds a generic retry prompt. The loop is technically running, but it is not converging.
+
+This is the read-only timeout spiral this issue must break.
 
 ## Scope
 

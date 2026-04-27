@@ -345,12 +345,14 @@ pub(super) async fn execute_openresponses_request(
                         && !retry_exhausted
                     {
                         save_gateway_mission_state(&mission_path, &mission_state)?;
-                        strip_failed_action_attempt_assistant_messages(
-                            &mut agent,
-                            attempt_start_index,
-                        );
+                        strip_failed_action_attempt_messages(&mut agent, attempt_start_index);
                         retry_attempt = retry_attempt.saturating_add(1);
-                        next_prompt = build_gateway_action_retry_prompt(retry_attempt, &verifier);
+                        next_prompt = build_gateway_action_retry_prompt(
+                            retry_attempt,
+                            translated.prompt.as_str(),
+                            &verifier,
+                            verifier_traces.as_slice(),
+                        );
                         continue;
                     }
                     mission_state.mark_blocked(verifier.overall, None, "", finished_unix_ms);
@@ -536,9 +538,14 @@ pub(super) async fn execute_openresponses_request(
                 save_gateway_mission_state(&mission_path, &mission_state)?;
             }
         }
-        strip_failed_action_attempt_assistant_messages(&mut agent, attempt_start_index);
+        strip_failed_action_attempt_messages(&mut agent, attempt_start_index);
         retry_attempt = retry_attempt.saturating_add(1);
-        next_prompt = build_gateway_action_retry_prompt(retry_attempt, &verifier);
+        next_prompt = build_gateway_action_retry_prompt(
+            retry_attempt,
+            translated.prompt.as_str(),
+            &verifier,
+            verifier_traces.as_slice(),
+        );
     };
     save_gateway_action_history_store(&state.config.state_dir, &action_history_store)?;
     let post_prompt_cost = agent.cost_snapshot();
@@ -764,27 +771,56 @@ fn flush_buffered_gateway_output(
     Ok(())
 }
 
-fn strip_failed_action_attempt_assistant_messages(agent: &mut Agent, attempt_start_index: usize) {
-    let retained_messages = agent.messages()[..attempt_start_index]
-        .iter()
-        .cloned()
-        .chain(
-            agent.messages()[attempt_start_index..]
-                .iter()
-                .filter(|message| message.role != MessageRole::Assistant)
-                .cloned(),
-        )
-        .collect::<Vec<_>>();
+fn strip_failed_action_attempt_messages(agent: &mut Agent, attempt_start_index: usize) {
+    let retained_messages = agent.messages()[..attempt_start_index].to_vec();
     agent.replace_messages(retained_messages);
 }
 
 fn build_gateway_action_retry_prompt(
     retry_attempt: usize,
+    original_prompt: &str,
     verifier: &GatewayMissionVerifierBundle,
+    traces: &[GatewayVerifierToolTrace],
 ) -> String {
-    format!(
-        "{} Retry attempt: {retry_attempt}. Do not reply with another promise, plan, or status update unless you have first satisfied the active verifier requirements or hit a concrete runtime blocker.",
+    let mut prompt = format!(
+        "Original task:\n{}\n\n{} Retry attempt: {retry_attempt}. Do not reply with another promise, plan, or status update unless you have first satisfied the active verifier requirements or hit a concrete runtime blocker.",
+        original_prompt.trim(),
         build_gateway_retry_feedback(verifier)
+    );
+    let observations = render_gateway_read_only_retry_observations(traces);
+    if !observations.is_empty() {
+        prompt.push_str("\n\nRead-only timeout observations:\n");
+        prompt.push_str(&observations);
+    }
+    prompt.push_str(
+        "\n\nUse a workspace-mutating tool next before doing more broad read-only exploration.",
+    );
+    prompt
+}
+
+fn render_gateway_read_only_retry_observations(traces: &[GatewayVerifierToolTrace]) -> String {
+    traces
+        .iter()
+        .filter(|trace| gateway_retry_trace_is_read_only(trace))
+        .take(6)
+        .map(|trace| {
+            let path = trace
+                .arguments
+                .get("path")
+                .and_then(Value::as_str)
+                .map(|path| format!(" path={path}"))
+                .unwrap_or_default();
+            format!("- observed `{}`{}", trace.tool_name, path)
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn gateway_retry_trace_is_read_only(trace: &GatewayVerifierToolTrace) -> bool {
+    let tool_name = trace.tool_name.trim().to_ascii_lowercase();
+    matches!(
+        tool_name.as_str(),
+        "read" | "ls" | "list" | "search" | "grep" | "cat" | "memory_search" | "jobs_status"
     )
 }
 
