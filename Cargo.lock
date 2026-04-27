@@ -6289,6 +6289,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
+ "tau-contract",
  "tau-skills",
  "tempfile",
  "thiserror 2.0.18",

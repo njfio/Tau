@@ -13,6 +13,7 @@ crossterm.workspace = true
 tokio.workspace = true
 chrono.workspace = true
 reqwest.workspace = true
+tau-contract = { path = "../tau-contract" }
 tau-skills = { path = "../tau-skills" }
 base64.workspace = true
 

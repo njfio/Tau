@@ -23,6 +23,9 @@ mod build_status;
 mod chat;
 mod gateway_client;
 mod input;
+pub mod operator_state;
+#[cfg(test)]
+mod operator_state_tests;
 mod status;
 mod tools;
 mod ui;
