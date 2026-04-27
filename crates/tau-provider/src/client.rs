@@ -368,11 +368,15 @@ fn openai_credential_store_missing_provider_entry(cli: &Cli, provider: Provider)
         .unwrap_or(false)
 }
 
+fn cli_backend_timeout_ms(backend_timeout_ms: u64, request_timeout_ms: u64) -> u64 {
+    backend_timeout_ms.max(request_timeout_ms).max(1)
+}
+
 fn build_openai_codex_client(cli: &Cli, provider: Provider) -> Result<Arc<dyn LlmClient>> {
     let client = CodexCliClient::new(CodexCliConfig {
         executable: cli.openai_codex_cli.clone(),
         extra_args: cli.openai_codex_args.clone(),
-        timeout_ms: cli.openai_codex_timeout_ms.max(1),
+        timeout_ms: cli_backend_timeout_ms(cli.openai_codex_timeout_ms, cli.request_timeout_ms),
     })?;
     tracing::debug!(
         provider = provider.as_str(),
@@ -399,7 +403,7 @@ fn build_openai_appserver_client(cli: &Cli, provider: Provider) -> Result<Arc<dy
     };
     let client = CodexAppServerClient::new(CodexAppServerConfig {
         url: url.clone(),
-        timeout_ms: cli.openai_codex_timeout_ms.max(1),
+        timeout_ms: cli_backend_timeout_ms(cli.openai_codex_timeout_ms, cli.request_timeout_ms),
         approval_policy: "never".to_string(),
         sandbox: "workspace-write".to_string(),
     });
@@ -427,7 +431,7 @@ fn build_anthropic_claude_client(
     let client = ClaudeCliClient::new(ClaudeCliConfig {
         executable: cli.anthropic_claude_cli.clone(),
         extra_args: cli.anthropic_claude_args.clone(),
-        timeout_ms: cli.anthropic_claude_timeout_ms.max(1),
+        timeout_ms: cli_backend_timeout_ms(cli.anthropic_claude_timeout_ms, cli.request_timeout_ms),
     })?;
     tracing::debug!(
         provider = Provider::Anthropic.as_str(),
@@ -453,7 +457,7 @@ fn build_google_gemini_client(
     let client = GeminiCliClient::new(GeminiCliConfig {
         executable: cli.google_gemini_cli.clone(),
         extra_args: cli.google_gemini_args.clone(),
-        timeout_ms: cli.google_gemini_timeout_ms.max(1),
+        timeout_ms: cli_backend_timeout_ms(cli.google_gemini_timeout_ms, cli.request_timeout_ms),
     })?;
     tracing::debug!(
         provider = Provider::Google.as_str(),
@@ -762,7 +766,7 @@ pub fn build_provider_client(cli: &Cli, provider: Provider) -> Result<Arc<dyn Ll
 #[cfg(test)]
 mod tests {
     use super::{
-        is_azure_openai_endpoint, maybe_wrap_provider_rate_limited_client,
+        cli_backend_timeout_ms, is_azure_openai_endpoint, maybe_wrap_provider_rate_limited_client,
         openai_experimental_direct_transport_selected, resolve_openrouter_api_base,
         resolved_secret_for_provider, validate_openai_codex_auth_model,
         ProviderOutboundRateLimitConfig, ProviderRateLimitedClient, ProviderTokenBucketLimiter,
@@ -812,6 +816,22 @@ mod tests {
     fn env_lock() -> &'static Mutex<()> {
         static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
         ENV_LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    #[test]
+    fn cli_backend_timeout_budget_uses_request_timeout_floor() {
+        assert_eq!(cli_backend_timeout_ms(120_000, 600_000), 600_000);
+    }
+
+    #[test]
+    fn cli_backend_timeout_budget_preserves_larger_backend_timeout() {
+        assert_eq!(cli_backend_timeout_ms(900_000, 600_000), 900_000);
+    }
+
+    #[test]
+    fn cli_backend_timeout_budget_normalizes_zero_values() {
+        assert_eq!(cli_backend_timeout_ms(0, 0), 1);
+        assert_eq!(cli_backend_timeout_ms(0, 600_000), 600_000);
     }
 
     #[test]
