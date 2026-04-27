@@ -27,7 +27,7 @@ use tau_agent_core::{
     AgentEvent, CooperativeCancellationToken, Cortex, CortexConfig, LearningInsight, SafetyMode,
     SafetyPolicy, SafetyRuleSet,
 };
-use tau_ai::{LlmClient, MessageRole, StreamDeltaHandler};
+use tau_ai::{LlmClient, StreamDeltaHandler};
 use tau_core::{current_unix_timestamp, current_unix_timestamp_ms, write_text_atomic};
 use tau_dashboard_ui::TauOpsDashboardRoute;
 use tau_runtime::{

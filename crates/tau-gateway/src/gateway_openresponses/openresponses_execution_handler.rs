@@ -3,7 +3,7 @@
 use super::*;
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use tau_ai::{ChatRequest, ChatResponse, Message, TauAiError, ToolChoice};
+use tau_ai::{Message, ToolChoice};
 use tau_memory::action_history::ActionHistoryStore;
 
 use super::learning_runtime::{
@@ -44,54 +44,6 @@ struct GatewayReadOnlySaturationSnapshot {
     read_only_success_count: usize,
 }
 
-#[derive(Clone)]
-struct GatewayToolChoiceOverrideLlmClient {
-    inner: Arc<dyn LlmClient>,
-    next_tool_choice: Arc<Mutex<Option<ToolChoice>>>,
-}
-
-impl GatewayToolChoiceOverrideLlmClient {
-    fn new(inner: Arc<dyn LlmClient>, next_tool_choice: Arc<Mutex<Option<ToolChoice>>>) -> Self {
-        Self {
-            inner,
-            next_tool_choice,
-        }
-    }
-
-    fn apply_next_tool_choice(&self, mut request: ChatRequest) -> Result<ChatRequest, TauAiError> {
-        let tool_choice = self
-            .next_tool_choice
-            .lock()
-            .map_err(|_| {
-                TauAiError::InvalidResponse("gateway tool-choice override lock is poisoned".into())
-            })?
-            .take();
-        if let Some(tool_choice) = tool_choice {
-            request.tool_choice = Some(tool_choice);
-        }
-        Ok(request)
-    }
-}
-
-#[async_trait::async_trait]
-impl LlmClient for GatewayToolChoiceOverrideLlmClient {
-    async fn complete(&self, request: ChatRequest) -> Result<ChatResponse, TauAiError> {
-        self.inner
-            .complete(self.apply_next_tool_choice(request)?)
-            .await
-    }
-
-    async fn complete_with_stream(
-        &self,
-        request: ChatRequest,
-        on_delta: Option<StreamDeltaHandler>,
-    ) -> Result<ChatResponse, TauAiError> {
-        self.inner
-            .complete_with_stream(self.apply_next_tool_choice(request)?, on_delta)
-            .await
-    }
-}
-
 pub(super) async fn execute_openresponses_request(
     state: Arc<GatewayOpenResponsesServerState>,
     request: OpenResponsesRequest,
@@ -122,12 +74,8 @@ pub(super) async fn execute_openresponses_request(
     }
 
     let resolved_system_prompt = state.resolved_system_prompt();
-    let next_tool_choice = Arc::new(Mutex::new(None::<ToolChoice>));
     let mut agent = Agent::new(
-        Arc::new(GatewayToolChoiceOverrideLlmClient::new(
-            state.config.client.clone(),
-            next_tool_choice.clone(),
-        )),
+        state.config.client.clone(),
         AgentConfig {
             model: state.config.model.clone(),
             model_input_cost_per_million: state.config.model_input_cost_per_million,
@@ -351,7 +299,7 @@ pub(super) async fn execute_openresponses_request(
             &prompt_tokens,
             &agent,
         );
-        set_gateway_next_tool_choice(&next_tool_choice, attempt_tool_choice)?;
+        agent.set_next_tool_choice(attempt_tool_choice);
         let cancellation_token = CooperativeCancellationToken::new();
         agent.set_cancellation_token(Some(cancellation_token.clone()));
         set_gateway_attempt_cancellation_token(
@@ -1322,17 +1270,6 @@ fn summarize_gateway_tool_text(raw: &str) -> String {
         .chars()
         .take(GATEWAY_TOOL_SUMMARY_MAX_CHARS)
         .collect()
-}
-
-fn set_gateway_next_tool_choice(
-    next_tool_choice: &Arc<Mutex<Option<ToolChoice>>>,
-    tool_choice: Option<ToolChoice>,
-) -> Result<(), OpenResponsesApiError> {
-    let mut guard = next_tool_choice.lock().map_err(|_| {
-        OpenResponsesApiError::internal("gateway tool-choice override lock is poisoned")
-    })?;
-    *guard = tool_choice;
-    Ok(())
 }
 
 fn gateway_mutation_recovery_tool_choice(

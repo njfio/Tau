@@ -750,7 +750,10 @@ mod tests {
         Arc, Mutex, OnceLock,
     };
     use std::time::{Duration, Instant};
-    use tau_ai::{ChatRequest, ChatResponse, ChatUsage, LlmClient, Message, Provider, TauAiError};
+    use tau_ai::{
+        ChatRequest, ChatResponse, ChatUsage, LlmClient, Message, OpenAiAuthScheme, OpenAiClient,
+        OpenAiConfig, Provider, TauAiError,
+    };
 
     struct StubLlmClient {
         calls: Arc<AtomicUsize>,
@@ -949,6 +952,76 @@ mod tests {
             true,
             Some(&credential),
         ));
+    }
+
+    #[tokio::test]
+    async fn openai_experimental_direct_transport_live_or_skip_safe_responses_probe() {
+        let live_enabled = std::env::var("TAU_OPENAI_EXPERIMENTAL_DIRECT_LIVE")
+            .map(|value| matches!(value.as_str(), "1" | "true" | "yes" | "on"))
+            .unwrap_or(false);
+        let bearer = std::env::var("TAU_OPENAI_EXPERIMENTAL_DIRECT_BEARER")
+            .ok()
+            .filter(|value| !value.trim().is_empty());
+        if !live_enabled || bearer.is_none() {
+            eprintln!(
+                "skip: set TAU_OPENAI_EXPERIMENTAL_DIRECT_LIVE=1 and TAU_OPENAI_EXPERIMENTAL_DIRECT_BEARER to run the live direct Responses probe"
+            );
+            return;
+        }
+
+        let credential = ProviderAuthCredential {
+            method: ProviderAuthMethod::SessionToken,
+            secret: bearer,
+            source: Some("env:TAU_OPENAI_EXPERIMENTAL_DIRECT_BEARER".to_string()),
+            expires_unix: None,
+            refreshable: false,
+            revoked: false,
+        };
+        assert!(openai_experimental_direct_transport_selected(
+            Provider::OpenAi,
+            ProviderAuthMethod::SessionToken,
+            true,
+            Some(&credential),
+        ));
+
+        let client = OpenAiClient::new(OpenAiConfig {
+            api_base: std::env::var("TAU_OPENAI_EXPERIMENTAL_DIRECT_API_BASE")
+                .unwrap_or_else(|_| "https://api.openai.com/v1".to_string()),
+            api_key: credential
+                .secret
+                .clone()
+                .expect("live bearer checked above"),
+            organization: None,
+            request_timeout_ms: 20_000,
+            max_retries: 0,
+            retry_budget_ms: 20_000,
+            retry_jitter: false,
+            auth_scheme: OpenAiAuthScheme::Bearer,
+            api_version: None,
+        })
+        .expect("build direct OpenAI client");
+
+        let response = client
+            .complete(ChatRequest {
+                model: std::env::var("TAU_OPENAI_EXPERIMENTAL_DIRECT_MODEL")
+                    .unwrap_or_else(|_| "gpt-5.2-codex".to_string()),
+                messages: vec![Message::user(
+                    "Reply with exactly the text tau-live-ok and nothing else.",
+                )],
+                tools: Vec::new(),
+                tool_choice: None,
+                json_mode: false,
+                max_tokens: Some(16),
+                temperature: Some(0.0),
+                prompt_cache: Default::default(),
+            })
+            .await
+            .expect("live direct Responses request should complete");
+        let output = response.message.text_content().to_ascii_lowercase();
+        assert!(
+            output.contains("tau-live-ok"),
+            "unexpected live Responses output: {output:?}"
+        );
     }
 
     #[test]

@@ -34,7 +34,7 @@ use reqwest::Client;
 use safety_rules::*;
 use serde_json::Value;
 use state_helpers::*;
-use tau_ai::{ChatResponse, ChatUsage, ContentBlock, Message, ToolChoice};
+use tau_ai::{ChatResponse, ChatUsage, ContentBlock, Message, MessageRole, ToolChoice};
 use tau_memory::action_history::{
     ActionFilter, ActionHistoryConfig, ActionHistoryStore, ActionRecord, ActionType,
 };

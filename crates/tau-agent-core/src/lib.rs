@@ -1038,6 +1038,7 @@ pub struct Agent {
     cumulative_usage: ChatUsage,
     cumulative_cost_usd: f64,
     emitted_cost_alert_thresholds: HashSet<u8>,
+    next_tool_choice: Option<ToolChoice>,
     skip_response_reason: Option<String>,
     warn_compaction_state: Arc<Mutex<WarnCompactionState>>,
     active_branch_runs: Arc<AtomicUsize>,
@@ -1078,6 +1079,7 @@ impl Agent {
             cumulative_usage: ChatUsage::default(),
             cumulative_cost_usd: 0.0,
             emitted_cost_alert_thresholds: HashSet::new(),
+            next_tool_choice: None,
             skip_response_reason: None,
             warn_compaction_state: Arc::new(Mutex::new(WarnCompactionState::default())),
             active_branch_runs: Arc::new(AtomicUsize::new(0)),
@@ -1402,6 +1404,11 @@ impl Agent {
     /// Installs or clears a cooperative cancellation token for subsequent runs.
     pub fn set_cancellation_token(&mut self, token: Option<CooperativeCancellationToken>) {
         self.cancellation_token = token;
+    }
+
+    /// Overrides the tool choice for the next model request, then clears it.
+    pub fn set_next_tool_choice(&mut self, tool_choice: Option<ToolChoice>) {
+        self.next_tool_choice = tool_choice;
     }
 
     /// Replaces the runtime safety policy.
@@ -2562,13 +2569,14 @@ impl Agent {
             self.emit(AgentEvent::TurnStart { turn });
 
             let tools = self.tool_definitions();
+            let next_tool_choice = self.next_tool_choice.take();
             let mut request = ChatRequest {
                 model: self.config.model.clone(),
                 messages: self.request_messages().await,
                 tool_choice: if tools.is_empty() {
                     None
                 } else {
-                    Some(ToolChoice::Auto)
+                    next_tool_choice.or(Some(ToolChoice::Auto))
                 },
                 json_mode,
                 tools,
