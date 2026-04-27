@@ -4,8 +4,10 @@
 //! and output parsing guards. Errors preserve subprocess/parse context so auth or
 //! executable failures can be diagnosed separately from model-response failures.
 
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::time::Duration;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
 use serde_json::Value;
@@ -15,6 +17,8 @@ use tau_ai::{
     promote_assistant_textual_tool_calls, ChatRequest, ChatResponse, ChatUsage, ContentBlock,
     LlmClient, MediaSource, Message, MessageRole, StreamDeltaHandler, TauAiError,
 };
+
+static EXECUTION_DIR_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// Public struct `ClaudeCliConfig` used across Tau components.
@@ -51,6 +55,50 @@ impl ClaudeCliClient {
     }
 }
 
+struct CliExecutionDirectory {
+    path: PathBuf,
+}
+
+impl CliExecutionDirectory {
+    fn new(prefix: &str) -> Result<Self, TauAiError> {
+        for _attempt in 0..10 {
+            let seq = EXECUTION_DIR_COUNTER.fetch_add(1, Ordering::Relaxed);
+            let now_nanos = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or(Duration::from_secs(0))
+                .as_nanos();
+            let mut path = std::env::temp_dir();
+            path.push(format!(
+                "tau-{prefix}-cli-cwd-{}-{now_nanos}-{seq}",
+                std::process::id()
+            ));
+            match std::fs::create_dir(&path) {
+                Ok(()) => return Ok(Self { path }),
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(error) => {
+                    return Err(TauAiError::InvalidResponse(format!(
+                        "failed to create isolated claude cli cwd: {error}"
+                    )))
+                }
+            }
+        }
+
+        Err(TauAiError::InvalidResponse(
+            "failed to create unique isolated claude cli cwd".to_string(),
+        ))
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for CliExecutionDirectory {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.path);
+    }
+}
+
 async fn spawn_with_text_file_busy_retry(
     command: &mut Command,
     executable: &str,
@@ -83,8 +131,10 @@ async fn spawn_with_text_file_busy_retry(
 impl LlmClient for ClaudeCliClient {
     async fn complete(&self, request: ChatRequest) -> Result<ChatResponse, TauAiError> {
         let prompt = render_claude_prompt(&request);
+        let execution_dir = CliExecutionDirectory::new("claude")?;
         let mut command = Command::new(&self.config.executable);
         command.kill_on_drop(true);
+        command.current_dir(execution_dir.path());
         command.arg("-p");
         command.arg(prompt);
         command.arg("--output-format");
@@ -462,6 +512,33 @@ printf '{"type":"result","subtype":"success","is_error":false,"result":"claude m
 
         let response = client.complete(test_request()).await.expect("completion");
         assert_eq!(response.message.text_content(), "plain claude stdout");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn regression_claude_cli_client_runs_from_isolated_working_directory() {
+        let caller_cwd = std::env::current_dir().expect("current dir");
+        let dir = tempdir().expect("tempdir");
+        let script = write_script(
+            dir.path(),
+            r#"
+cwd=$(pwd)
+printf '{"type":"result","subtype":"success","is_error":false,"result":"%s"}' "$cwd"
+"#,
+        );
+        let client = ClaudeCliClient::new(ClaudeCliConfig {
+            executable: script.display().to_string(),
+            extra_args: vec![],
+            timeout_ms: 30_000,
+        })
+        .expect("build client");
+
+        let response = client.complete(test_request()).await.expect("completion");
+        assert_ne!(
+            PathBuf::from(response.message.text_content()),
+            caller_cwd,
+            "claude cli subprocess inherited the caller repository cwd"
+        );
     }
 
     #[cfg(unix)]

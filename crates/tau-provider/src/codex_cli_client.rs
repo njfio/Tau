@@ -27,6 +27,7 @@ const DEFAULT_EXEC_ARGS: &[&str] = &[
 ];
 
 static OUTPUT_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
+static EXECUTION_DIR_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// Public struct `CodexCliConfig` used across Tau components.
@@ -63,6 +64,50 @@ impl CodexCliClient {
     }
 }
 
+struct CliExecutionDirectory {
+    path: PathBuf,
+}
+
+impl CliExecutionDirectory {
+    fn new(prefix: &str) -> Result<Self, TauAiError> {
+        for _attempt in 0..10 {
+            let seq = EXECUTION_DIR_COUNTER.fetch_add(1, Ordering::Relaxed);
+            let now_nanos = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or(Duration::from_secs(0))
+                .as_nanos();
+            let mut path = std::env::temp_dir();
+            path.push(format!(
+                "tau-{prefix}-cli-cwd-{}-{now_nanos}-{seq}",
+                std::process::id()
+            ));
+            match std::fs::create_dir(&path) {
+                Ok(()) => return Ok(Self { path }),
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(error) => {
+                    return Err(TauAiError::InvalidResponse(format!(
+                        "failed to create isolated codex cli cwd: {error}"
+                    )))
+                }
+            }
+        }
+
+        Err(TauAiError::InvalidResponse(
+            "failed to create unique isolated codex cli cwd".to_string(),
+        ))
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for CliExecutionDirectory {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.path);
+    }
+}
+
 async fn spawn_with_text_file_busy_retry(
     command: &mut Command,
     executable: &str,
@@ -95,8 +140,10 @@ async fn spawn_with_text_file_busy_retry(
 impl LlmClient for CodexCliClient {
     async fn complete(&self, request: ChatRequest) -> Result<ChatResponse, TauAiError> {
         let output_file = build_output_file_path();
+        let execution_dir = CliExecutionDirectory::new("codex")?;
         let mut command = Command::new(&self.config.executable);
         command.kill_on_drop(true);
+        command.current_dir(execution_dir.path());
         command.args(DEFAULT_EXEC_ARGS);
         command.arg("--model");
         command.arg(&request.model);
@@ -454,6 +501,40 @@ printf "path independent reply" > "$out"
 
         let response = client.complete(test_request()).await.expect("complete");
         assert_eq!(response.message.text_content(), "path independent reply");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn regression_codex_cli_client_runs_from_isolated_working_directory() {
+        let caller_cwd = std::env::current_dir().expect("current dir");
+        let dir = tempdir().expect("tempdir");
+        let script = write_script(
+            dir.path(),
+            r#"
+out=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --output-last-message) out="$2"; shift 2;;
+    *) shift;;
+  esac
+done
+while IFS= read -r _line; do :; done
+pwd > "$out"
+"#,
+        );
+        let client = CodexCliClient::new(CodexCliConfig {
+            executable: script.display().to_string(),
+            extra_args: vec![],
+            timeout_ms: TEST_TIMEOUT_MS,
+        })
+        .expect("client");
+
+        let response = client.complete(test_request()).await.expect("complete");
+        assert_ne!(
+            PathBuf::from(response.message.text_content()),
+            caller_cwd,
+            "codex cli subprocess inherited the caller repository cwd"
+        );
     }
 
     #[cfg(unix)]
