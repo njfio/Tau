@@ -225,9 +225,9 @@ use types::{
     GatewayMemoryGraphNode, GatewayMemoryGraphQuery, GatewayMemoryGraphResponse,
     GatewayMemoryReadQuery, GatewayMemoryUpdateRequest, GatewaySafetyPolicyUpdateRequest,
     GatewaySafetyRulesUpdateRequest, GatewaySafetyTestRequest, OpenResponsesApiError,
-    OpenResponsesExecutionResult, OpenResponsesOutputItem, OpenResponsesOutputTextItem,
-    OpenResponsesPrompt, OpenResponsesRequest, OpenResponsesResponse, OpenResponsesUsage,
-    OpenResponsesUsageSummary, SseFrame,
+    OpenResponsesExecutionResult, OpenResponsesObservedToolExecution, OpenResponsesOutputItem,
+    OpenResponsesOutputTextItem, OpenResponsesPrompt, OpenResponsesRequest, OpenResponsesResponse,
+    OpenResponsesUsage, OpenResponsesUsageSummary, SseFrame,
 };
 use verifier_runtime::{
     build_gateway_read_only_saturation_verifier_bundle, build_gateway_retry_feedback,

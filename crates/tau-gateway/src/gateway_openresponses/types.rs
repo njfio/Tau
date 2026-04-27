@@ -397,6 +397,17 @@ pub(super) struct OpenResponsesResponse {
 #[derive(Debug)]
 pub(super) struct OpenResponsesExecutionResult {
     pub(super) response: OpenResponsesResponse,
+    pub(super) tool_executions: Vec<OpenResponsesObservedToolExecution>,
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct OpenResponsesObservedToolExecution {
+    pub(super) tool_call_id: String,
+    pub(super) tool_name: String,
+    pub(super) output_summary: String,
+    pub(super) success: bool,
+    pub(super) latency_ms: u64,
+    pub(super) timestamp_ms: u64,
 }
 
 /// Server-sent-event frame variants emitted by streaming endpoints.

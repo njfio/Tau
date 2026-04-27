@@ -49,6 +49,9 @@ pub enum GatewayToolStatus {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GatewayTurnEvent {
+    TurnStarted {
+        turn_id: String,
+    },
     TextDelta(String),
     OperatorStateSnapshot(OperatorTurnState),
     ToolStarted {
@@ -366,6 +369,17 @@ fn process_sse_frame(
         .map_err(|error| format!("failed to parse gateway stream frame {event_name}: {error}"))?;
 
     match event_name {
+        "response.created" => {
+            let turn_id = value
+                .get("response")
+                .and_then(|response| response.get("id"))
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string();
+            if !turn_id.is_empty() {
+                let _ = sender.send(GatewayTurnEvent::TurnStarted { turn_id });
+            }
+        }
         "response.output_text.delta" => {
             if let Some(delta) = value.get("delta").and_then(Value::as_str) {
                 if !delta.is_empty() {

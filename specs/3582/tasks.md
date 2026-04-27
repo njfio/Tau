@@ -46,3 +46,15 @@
 - [x] T15 (COMPAT): keep existing operator-state snapshot and gateway streaming render behavior green alongside the new layout tests.
 
 - [x] T16 (CLOSEOUT): path-limit commit/push the layout slice and comment issue #3582 with evidence.
+
+- [x] T17 (RED): map richer live snapshot tool/failure and turn-keyed reconciliation boundaries, then add failing gateway/TUI tests.
+  - Verify RED with: `bash -c '! cargo test -p tau-gateway operator_turn_state_tool_failure_snapshot -- --test-threads=1'`
+  - Verify RED with: `bash -c '! cargo test -p tau-tui operator_turn_state_snapshot_turn_keyed -- --test-threads=1'`
+
+- [x] T18 (GREEN): emit richer live OperatorTurnState snapshots and reconcile TUI snapshots by turn identity without duplicating legacy deltas or tool rows.
+  - Verify with: `cargo test -p tau-gateway operator_turn_state_tool_failure_snapshot -- --test-threads=1`
+  - Verify with: `cargo test -p tau-tui operator_turn_state_snapshot_turn_keyed -- --test-threads=1`
+
+- [x] T19 (COMPAT): keep existing operator-state, snapshot, transcript-first layout, and gateway emission tests green after richer snapshot reconciliation.
+
+- [x] T20 (CLOSEOUT): path-limit commit/push the richer snapshot slice and comment issue #3582 with verification evidence.

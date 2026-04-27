@@ -5020,6 +5020,85 @@ async fn operator_turn_state_snapshot_stream_emits_additive_sse_frame_with_legac
 }
 
 #[tokio::test]
+async fn operator_turn_state_tool_failure_snapshot_stream_carries_tool_context() {
+    let temp = tempdir().expect("tempdir");
+    let scripted = Arc::new(ScriptedGatewayLlmClient::new(vec![
+        ChatResponse {
+            message: Message::assistant_blocks(vec![ContentBlock::ToolCall {
+                id: "call-snapshot-read".to_string(),
+                name: "read".to_string(),
+                arguments: json!({"path":"seed.txt"}),
+            }]),
+            finish_reason: Some("tool_calls".to_string()),
+            usage: ChatUsage::default(),
+        },
+        scripted_gateway_response("read complete with snapshot context"),
+    ]));
+    let tool_root = temp.path().join("workspace");
+    std::fs::create_dir_all(&tool_root).expect("create tool workspace");
+    std::fs::write(tool_root.join("seed.txt"), "seed").expect("write seed file");
+    let state = test_state_with_client_and_auth(
+        temp.path(),
+        10_000,
+        scripted,
+        Arc::new(FixturePipelineToolRegistrar::new(
+            tool_root,
+            temp.path().join(".tau/gateway"),
+        )),
+        GatewayOpenResponsesAuthMode::Token,
+        Some("secret"),
+        None,
+        60,
+        120,
+    );
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+
+    let client = Client::new();
+    let response = client
+        .post(format!("http://{addr}/v1/responses"))
+        .bearer_auth("secret")
+        .json(&json!({
+            "input": "read seed.txt and report back",
+            "stream": true,
+            "metadata": {
+                "session_id": "session-3582-tool-snapshot",
+                "mission_id": "mission-3582-tool-snapshot"
+            }
+        }))
+        .send()
+        .await
+        .expect("send request");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.text().await.expect("read sse body");
+    assert!(
+        body.contains("event: response.tool_execution.completed"),
+        "body={body}"
+    );
+
+    let snapshot_data = body
+        .split("event: response.operator_turn_state.snapshot")
+        .nth(1)
+        .and_then(|section| section.split("data: ").nth(1))
+        .and_then(|section| section.split("\n\n").next())
+        .expect("operator state snapshot data");
+    let snapshot: Value = serde_json::from_str(snapshot_data).expect("parse snapshot json");
+    assert_eq!(snapshot["status"], Value::String("succeeded".to_string()));
+    assert_eq!(snapshot["tools"][0]["tool_call_id"], "call-snapshot-read");
+    assert_eq!(snapshot["tools"][0]["tool_name"], "read");
+    assert_eq!(snapshot["tools"][0]["status"], "completed");
+    assert!(
+        snapshot["tools"][0]["summary"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("seed"),
+        "snapshot={snapshot}"
+    );
+
+    handle.abort();
+}
+
+#[tokio::test]
 async fn functional_openai_chat_completions_endpoint_returns_non_stream_response() {
     let temp = tempdir().expect("tempdir");
     let state = test_state(temp.path(), 10_000, "secret");

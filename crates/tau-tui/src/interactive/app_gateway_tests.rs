@@ -586,6 +586,60 @@ data: [DONE]
 }
 
 #[test]
+fn operator_turn_state_snapshot_turn_keyed_rejects_stale_snapshot_for_previous_turn() {
+    let (bind, _) = spawn_streaming_gateway_server(vec![
+        r#"event: response.created
+data: {"type":"response.created","response":{"id":"turn-current"}}
+
+"#,
+        r#"event: response.output_text.delta
+data: {"type":"response.output_text.delta","delta":"current turn draft"}
+
+"#,
+        r#"event: response.operator_turn_state.snapshot
+data: {"schema_version":1,"turn_id":"turn-previous","task_id":"task-previous","session_key":"session-3582-live","mission_id":"mission-3582-live","phase":"completed","status":"succeeded","assistant_text":"previous turn stale overwrite","tools":[],"events":[{"event_id":"evt-stale","kind":"final_answer","summary":"stale final","text_delta":null,"tool_call_id":null,"tool_name":null,"reason_code":null,"occurred_at_ms":44}],"error":null}
+
+"#,
+        r#"event: response.completed
+data: {"type":"response.completed","response":{"id":"turn-current","output_text":"current turn draft","usage":{"total_tokens":21}}}
+
+data: [DONE]
+
+"#,
+    ]);
+    let mut app = build_app(bind);
+    set_input(&mut app, "consume turn-keyed snapshot stream");
+
+    app_commands::submit_input(&mut app);
+    wait_for_turn(&mut app);
+
+    let assistant_messages = app
+        .chat
+        .messages()
+        .iter()
+        .filter(|message| message.role == MessageRole::Assistant)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        assistant_messages.len(),
+        1,
+        "assistant_messages={assistant_messages:?}"
+    );
+    assert_eq!(assistant_messages[0].content, "current turn draft");
+    assert!(
+        app.chat
+            .messages()
+            .iter()
+            .all(|message| !message.content.contains("previous turn stale overwrite")),
+        "messages={:?}",
+        app.chat
+            .messages()
+            .iter()
+            .map(|message| message.content.clone())
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
 fn spec_3669_streaming_error_frame_sets_error_state() {
     let (bind, _) = spawn_streaming_gateway_server(vec![
         r#"event: response.failed

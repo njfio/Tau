@@ -72,6 +72,7 @@ pub struct App {
     pub show_tool_panel: bool,
     mouse_captured: bool,
     current_turn_tool_start: usize,
+    current_operator_turn_id: Option<String>,
     streaming_assistant_index: Option<usize>,
     pending_turn: Option<Receiver<GatewayTurnEvent>>,
 }
@@ -95,6 +96,7 @@ impl App {
             show_tool_panel: true,
             mouse_captured: true,
             current_turn_tool_start: 0,
+            current_operator_turn_id: None,
             streaming_assistant_index: None,
             pending_turn: None,
         }
@@ -287,17 +289,37 @@ impl App {
 
     fn start_turn(&mut self) {
         self.current_turn_tool_start = self.tools.total_count();
+        self.current_operator_turn_id = None;
         self.streaming_assistant_index = None;
+    }
+
+    fn accept_operator_turn_snapshot(&mut self, turn_id: &str) -> bool {
+        if turn_id.trim().is_empty() {
+            return true;
+        }
+        match self.current_operator_turn_id.as_deref() {
+            Some(current_turn_id) => current_turn_id == turn_id,
+            None => {
+                self.current_operator_turn_id = Some(turn_id.to_string());
+                true
+            }
+        }
     }
 
     fn apply_turn_event(&mut self, event: GatewayTurnEvent) -> bool {
         match event {
+            GatewayTurnEvent::TurnStarted { turn_id } => {
+                self.current_operator_turn_id = Some(turn_id);
+                false
+            }
             GatewayTurnEvent::TextDelta(delta) => {
                 self.append_assistant_delta(&delta);
                 false
             }
             GatewayTurnEvent::OperatorStateSnapshot(state) => {
-                super::operator_state::apply_operator_turn_state(self, &state);
+                if self.accept_operator_turn_snapshot(state.turn_id.as_str()) {
+                    super::operator_state::apply_operator_turn_state(self, &state);
+                }
                 false
             }
             GatewayTurnEvent::ToolStarted {

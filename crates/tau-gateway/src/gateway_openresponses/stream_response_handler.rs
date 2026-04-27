@@ -2,8 +2,8 @@
 
 use super::*;
 use tau_contract::operator_state::{
-    OperatorTurnEvent, OperatorTurnEventKind, OperatorTurnPhase, OperatorTurnState,
-    OperatorTurnStatus, OPERATOR_TURN_STATE_SCHEMA_VERSION,
+    OperatorToolState, OperatorToolStatus, OperatorTurnEvent, OperatorTurnEventKind,
+    OperatorTurnPhase, OperatorTurnState, OperatorTurnStatus, OPERATOR_TURN_STATE_SCHEMA_VERSION,
 };
 
 pub(super) async fn stream_openresponses(
@@ -18,7 +18,10 @@ pub(super) async fn stream_openresponses(
                 .map(|prompt| (prompt.session_key, prompt.mission_id));
         match execute_openresponses_request(state, request, Some(tx.clone())).await {
             Ok(result) => {
-                let response = result.response;
+                let OpenResponsesExecutionResult {
+                    response,
+                    tool_executions,
+                } = result;
                 let _ = tx.send(SseFrame::Json {
                     event: "response.output_text.done",
                     payload: json!({
@@ -33,7 +36,8 @@ pub(super) async fn stream_openresponses(
                         payload: json!(build_operator_turn_state_snapshot(
                             &response,
                             session_key,
-                            mission_id
+                            mission_id,
+                            &tool_executions,
                         )),
                     });
                 }
@@ -73,6 +77,7 @@ fn build_operator_turn_state_snapshot(
     response: &OpenResponsesResponse,
     session_key: String,
     mission_id: String,
+    tool_executions: &[OpenResponsesObservedToolExecution],
 ) -> OperatorTurnState {
     OperatorTurnState {
         schema_version: OPERATOR_TURN_STATE_SCHEMA_VERSION,
@@ -83,17 +88,63 @@ fn build_operator_turn_state_snapshot(
         phase: OperatorTurnPhase::Completed,
         status: OperatorTurnStatus::Succeeded,
         assistant_text: response.output_text.clone(),
-        tools: Vec::new(),
-        events: vec![OperatorTurnEvent {
-            event_id: format!("{}-final", response.id),
-            kind: OperatorTurnEventKind::FinalAnswer,
-            summary: "response completed".to_string(),
-            text_delta: None,
-            tool_call_id: None,
-            tool_name: None,
-            reason_code: None,
-            occurred_at_ms: Some(response.created.saturating_mul(1000)),
-        }],
+        tools: build_operator_tool_states(tool_executions),
+        events: build_operator_turn_events(response, tool_executions),
         error: None,
     }
+}
+
+fn build_operator_tool_states(
+    tool_executions: &[OpenResponsesObservedToolExecution],
+) -> Vec<OperatorToolState> {
+    tool_executions
+        .iter()
+        .map(|tool| OperatorToolState {
+            tool_call_id: tool.tool_call_id.clone(),
+            tool_name: tool.tool_name.clone(),
+            status: if tool.success {
+                OperatorToolStatus::Completed
+            } else {
+                OperatorToolStatus::Failed
+            },
+            summary: (!tool.output_summary.trim().is_empty()).then(|| tool.output_summary.clone()),
+            started_at_ms: Some(tool.timestamp_ms.saturating_sub(tool.latency_ms)),
+            completed_at_ms: Some(tool.timestamp_ms),
+        })
+        .collect()
+}
+
+fn build_operator_turn_events(
+    response: &OpenResponsesResponse,
+    tool_executions: &[OpenResponsesObservedToolExecution],
+) -> Vec<OperatorTurnEvent> {
+    let mut events = tool_executions
+        .iter()
+        .enumerate()
+        .map(|(index, tool)| OperatorTurnEvent {
+            event_id: format!("{}-tool-{}", response.id, index + 1),
+            kind: if tool.success {
+                OperatorTurnEventKind::ResponseToolExecutionCompleted
+            } else {
+                OperatorTurnEventKind::ResponseToolExecutionFailed
+            },
+            summary: tool.output_summary.clone(),
+            text_delta: None,
+            tool_call_id: Some(tool.tool_call_id.clone()),
+            tool_name: Some(tool.tool_name.clone()),
+            reason_code: (!tool.success).then(|| "tool_execution_failed".to_string()),
+            occurred_at_ms: Some(tool.timestamp_ms),
+        })
+        .collect::<Vec<_>>();
+    events.push(OperatorTurnEvent {
+        event_id: format!("{}-final", response.id),
+        kind: OperatorTurnEventKind::FinalAnswer,
+        summary: "response completed".to_string(),
+        text_delta: None,
+        tool_call_id: None,
+        tool_name: None,
+        reason_code: None,
+        occurred_at_ms: Some(response.created.saturating_mul(1000)),
+    });
+    events
 }

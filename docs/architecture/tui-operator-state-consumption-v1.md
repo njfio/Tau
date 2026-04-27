@@ -52,6 +52,16 @@ Layout verification:
 - Focused render tests cover the transcript-first label, assistant transcript visibility, current turn state, active tool progress, status mission chip, input editor, and secondary tools panel.
 - Existing operator-state and gateway snapshot tests remain the compatibility guard for the shared-state transport path.
 
+Live snapshot tool/failure boundary: gateway snapshots should evolve from terminal success summaries into richer turn projections while remaining additive to legacy SSE frames. A live `OperatorTurnState` snapshot may carry tool rows, failure context, and partial assistant text, but it must not remove or reorder required compatibility events such as `response.output_text.delta`, `response.tool_execution.*`, `response.completed`, or `response.failed`. The TUI should reconcile snapshot rows by `tool_call_id` and apply assistant text only to the intended active turn.
+
+Turn-keyed reconciliation expectations:
+
+- `turn_id` is the snapshot identity boundary; mixed or stale snapshots must not overwrite an assistant message for a newer turn.
+- legacy text deltas and snapshots for the same turn should update one assistant transcript message rather than creating duplicates.
+- tool rows from snapshots and legacy tool lifecycle frames should converge on one tool entry per `tool_call_id`.
+- failed, blocked, timed-out, and cancelled turn snapshots should produce one operator-readable system message with reason context.
+- current gateway success snapshots include observed tool rows and tool-completion/failure events while still preserving the legacy `response.tool_execution.*` frames for existing clients.
+
 ## Status Mapping
 - `succeeded` + `completed` maps to idle after writing assistant text.
 - `tool_running` or `waiting_for_tool` maps to tool execution.
@@ -75,6 +85,8 @@ Runtime/gateway code can now emit full `OperatorTurnState` snapshots and call th
 
 ## Verification
 - `cargo test -p tau-tui operator_state -- --test-threads=1`
+- `cargo test -p tau-tui operator_turn_state_snapshot_turn_keyed -- --test-threads=1`
+- `cargo test -p tau-gateway operator_turn_state_tool_failure_snapshot -- --test-threads=1`
 - `cargo clippy -p tau-tui --tests --no-deps -- -D warnings`
 - `cargo fmt --check`
 - `git diff --quiet -- Cargo.toml`

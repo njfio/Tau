@@ -23,6 +23,7 @@ struct GatewayPendingToolExecution {
 
 #[derive(Debug, Clone)]
 struct GatewayObservedToolExecution {
+    tool_call_id: String,
     tool_name: String,
     arguments: Value,
     output_summary: String,
@@ -185,6 +186,7 @@ pub(super) async fn execute_openresponses_request(
                     .unwrap_or(0);
                 if let Ok(mut guard) = tool_execution_traces.lock() {
                     guard.push(GatewayObservedToolExecution {
+                        tool_call_id: tool_call_id.clone(),
                         tool_name: tool_name.clone(),
                         arguments,
                         output_summary: summarize_gateway_tool_text(result.as_text().as_str()),
@@ -743,8 +745,26 @@ pub(super) async fn execute_openresponses_request(
         },
         ignored_fields: ignored.into_iter().collect(),
     };
+    let tool_executions = tool_execution_traces
+        .lock()
+        .map_err(|_| OpenResponsesApiError::internal("gateway tool trace lock is poisoned"))?
+        .iter()
+        .filter(|trace| trace.tool_name != GATEWAY_COMPLETE_TASK_TOOL_NAME)
+        .cloned()
+        .map(|trace| OpenResponsesObservedToolExecution {
+            tool_call_id: trace.tool_call_id,
+            tool_name: trace.tool_name,
+            output_summary: trace.output_summary,
+            success: trace.success,
+            latency_ms: trace.latency_ms,
+            timestamp_ms: trace.timestamp_ms,
+        })
+        .collect::<Vec<_>>();
 
-    Ok(OpenResponsesExecutionResult { response })
+    Ok(OpenResponsesExecutionResult {
+        response,
+        tool_executions,
+    })
 }
 
 const AUTO_GATEWAY_SKILL_ACTION_TOKENS: &[&str] = &[
@@ -1200,6 +1220,7 @@ fn finalize_pending_gateway_tool_executions(
     for (tool_call_id, pending) in pending {
         let latency_ms = now_unix_ms.saturating_sub(pending.started_unix_ms);
         trace_guard.push(GatewayObservedToolExecution {
+            tool_call_id: tool_call_id.clone(),
             tool_name: pending.tool_name.clone(),
             arguments: pending.arguments.clone(),
             output_summary: output_summary.clone(),
