@@ -236,3 +236,41 @@ impl LlmClient for SlowGatewayLlmClient {
         })
     }
 }
+
+#[derive(Clone)]
+pub(super) struct PartialThenSlowGatewayLlmClient {
+    partial_text: String,
+    delay_ms: u64,
+}
+
+impl PartialThenSlowGatewayLlmClient {
+    pub(super) fn new(partial_text: &str, delay_ms: u64) -> Self {
+        Self {
+            partial_text: partial_text.to_string(),
+            delay_ms,
+        }
+    }
+}
+
+#[async_trait]
+impl LlmClient for PartialThenSlowGatewayLlmClient {
+    async fn complete(&self, _request: ChatRequest) -> Result<ChatResponse, TauAiError> {
+        tokio::time::sleep(Duration::from_millis(self.delay_ms)).await;
+        Ok(ChatResponse {
+            message: Message::assistant_text(self.partial_text.clone()),
+            finish_reason: Some("stop".to_string()),
+            usage: ChatUsage::default(),
+        })
+    }
+
+    async fn complete_with_stream(
+        &self,
+        request: ChatRequest,
+        on_delta: Option<StreamDeltaHandler>,
+    ) -> Result<ChatResponse, TauAiError> {
+        if let Some(handler) = on_delta {
+            handler(self.partial_text.clone());
+        }
+        self.complete(request).await
+    }
+}

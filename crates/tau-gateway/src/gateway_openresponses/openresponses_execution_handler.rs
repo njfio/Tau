@@ -5,8 +5,9 @@ use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tau_ai::{Message, ToolChoice};
 use tau_contract::operator_state::{
-    OperatorErrorContext, OperatorTurnEvent, OperatorTurnEventKind, OperatorTurnPhase,
-    OperatorTurnState, OperatorTurnStatus, OPERATOR_TURN_STATE_SCHEMA_VERSION,
+    OperatorErrorContext, OperatorToolState, OperatorToolStatus, OperatorTurnEvent,
+    OperatorTurnEventKind, OperatorTurnPhase, OperatorTurnState, OperatorTurnStatus,
+    OPERATOR_TURN_STATE_SCHEMA_VERSION,
 };
 use tau_memory::action_history::ActionHistoryStore;
 
@@ -416,6 +417,19 @@ pub(super) async fn execute_openresponses_request(
                         );
                         continue;
                     }
+                    let partial_output =
+                        snapshot_buffered_gateway_output(buffered_stream_output.as_ref())?;
+                    emit_gateway_operator_timeout_snapshot(GatewayOperatorTimeoutSnapshotInput {
+                        stream_sender: stream_sender.as_ref(),
+                        response_id: response_id.as_str(),
+                        session_key: translated.session_key.as_str(),
+                        mission_id: translated.mission_id.as_str(),
+                        partial_output: partial_output.as_str(),
+                        verifier: &verifier.overall,
+                        traces: &tool_execution_traces,
+                        trace_start_index: tool_trace_start_index,
+                        occurred_at_ms: finished_unix_ms,
+                    })?;
                     mission_state.mark_blocked(verifier.overall, None, "", finished_unix_ms);
                     save_gateway_mission_state(&mission_path, &mission_state)?;
                     break Err(OpenResponsesApiError::timeout(
@@ -948,6 +962,18 @@ fn flush_buffered_gateway_output(
     Ok(())
 }
 
+fn snapshot_buffered_gateway_output(
+    buffered_output: Option<&Arc<Mutex<String>>>,
+) -> Result<String, OpenResponsesApiError> {
+    let Some(buffer) = buffered_output else {
+        return Ok(String::new());
+    };
+    buffer
+        .lock()
+        .map(|guard| guard.clone())
+        .map_err(|_| OpenResponsesApiError::internal("gateway stream buffer lock is poisoned"))
+}
+
 fn gateway_attempt_timeout_ms(base_timeout_ms: u64, widen_retry_timeout: bool) -> u64 {
     if base_timeout_ms == 0 {
         return 0;
@@ -1385,6 +1411,85 @@ fn emit_gateway_operator_blocked_snapshot(
             }),
         }),
     });
+}
+
+struct GatewayOperatorTimeoutSnapshotInput<'a> {
+    stream_sender: Option<&'a mpsc::UnboundedSender<SseFrame>>,
+    response_id: &'a str,
+    session_key: &'a str,
+    mission_id: &'a str,
+    partial_output: &'a str,
+    verifier: &'a GatewayMissionVerifierRecord,
+    traces: &'a Arc<Mutex<Vec<GatewayObservedToolExecution>>>,
+    trace_start_index: usize,
+    occurred_at_ms: u64,
+}
+
+fn emit_gateway_operator_timeout_snapshot(
+    input: GatewayOperatorTimeoutSnapshotInput<'_>,
+) -> Result<(), OpenResponsesApiError> {
+    let Some(stream_sender) = input.stream_sender else {
+        return Ok(());
+    };
+    let tools = snapshot_gateway_operator_tool_states(input.traces, input.trace_start_index)?;
+    let _ = stream_sender.send(SseFrame::Json {
+        event: "response.operator_turn_state.snapshot",
+        payload: json!(OperatorTurnState {
+            schema_version: OPERATOR_TURN_STATE_SCHEMA_VERSION,
+            turn_id: input.response_id.to_string(),
+            task_id: None,
+            session_key: input.session_key.to_string(),
+            mission_id: Some(input.mission_id.to_string()),
+            phase: OperatorTurnPhase::Completed,
+            status: OperatorTurnStatus::TimedOut,
+            assistant_text: input.partial_output.to_string(),
+            tools,
+            events: vec![OperatorTurnEvent {
+                event_id: format!("{}-timeout", input.response_id),
+                kind: OperatorTurnEventKind::Timeout,
+                summary: input.verifier.message.clone(),
+                text_delta: None,
+                tool_call_id: None,
+                tool_name: None,
+                reason_code: Some(input.verifier.reason_code.clone()),
+                occurred_at_ms: Some(input.occurred_at_ms),
+            }],
+            error: Some(OperatorErrorContext {
+                reason_code: input.verifier.reason_code.clone(),
+                message: input.verifier.message.clone(),
+                retryable: false,
+            }),
+        }),
+    });
+    Ok(())
+}
+
+fn snapshot_gateway_operator_tool_states(
+    traces: &Arc<Mutex<Vec<GatewayObservedToolExecution>>>,
+    trace_start_index: usize,
+) -> Result<Vec<OperatorToolState>, OpenResponsesApiError> {
+    traces
+        .lock()
+        .map_err(|_| OpenResponsesApiError::internal("gateway tool trace lock is poisoned"))?
+        .iter()
+        .skip(trace_start_index)
+        .filter(|trace| trace.tool_name != GATEWAY_COMPLETE_TASK_TOOL_NAME)
+        .map(|trace| {
+            Ok(OperatorToolState {
+                tool_call_id: trace.tool_call_id.clone(),
+                tool_name: trace.tool_name.clone(),
+                status: if trace.success {
+                    OperatorToolStatus::Completed
+                } else {
+                    OperatorToolStatus::Failed
+                },
+                summary: (!trace.output_summary.trim().is_empty())
+                    .then(|| trace.output_summary.clone()),
+                started_at_ms: Some(trace.timestamp_ms.saturating_sub(trace.latency_ms)),
+                completed_at_ms: Some(trace.timestamp_ms),
+            })
+        })
+        .collect()
 }
 
 fn gateway_prompt_prefers_concrete_write_recovery(prompt_tokens: &[String]) -> bool {
