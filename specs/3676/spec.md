@@ -1,6 +1,7 @@
 # Spec: Direct OpenAI Responses Transport With Experimental OAuth/Session Mode
 
-Status: Reviewed
+Status: Implemented
+Issue: #3676
 
 ## Problem Statement
 
@@ -79,3 +80,19 @@ Responses endpoint behavior already covered by `tau-ai`.
   OpenAI Responses transport for oauth/session auth.
 - Existing supported API-key behavior is unchanged.
 - The new path is isolated behind explicit opt-in and test coverage.
+
+## Verification Evidence
+
+- `cargo test -p tau-provider openai_experimental_direct_transport -- --test-threads=1`
+- `cargo test -p tau-provider codex -- --test-threads=1`
+- `cargo fmt --check`
+- `cargo clippy -p tau-provider --tests --no-deps -- -D warnings`
+
+## External API Verification
+
+- Official OpenAI Responses documentation describes `POST /v1/responses` at
+  `https://api.openai.com/v1/responses` with `Authorization: Bearer $OPENAI_API_KEY`.
+- Official documentation describes `stream: true` as server-sent event streaming.
+- Direct use of Codex/OpenAI OAuth or session tokens for this endpoint is not a
+  documented public API contract; this stage must remain explicit opt-in and
+  preserve Codex CLI fallback.

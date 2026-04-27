@@ -209,6 +209,18 @@ pub struct Cli {
     pub openai_codex_backend: bool,
 
     #[arg(
+        long = "openai-experimental-direct-oauth-session",
+        env = "TAU_OPENAI_EXPERIMENTAL_DIRECT_OAUTH_SESSION",
+        default_value_t = false,
+        action = ArgAction::Set,
+        num_args = 0..=1,
+        require_equals = true,
+        default_missing_value = "true",
+        help = "Experimental: allow OpenAI oauth/session auth to use direct Responses HTTP transport when a bearer token is available"
+    )]
+    pub openai_experimental_direct_oauth_session: bool,
+
+    #[arg(
         long = "openai-codex-cli",
         env = "TAU_OPENAI_CODEX_CLI",
         default_value = "codex",

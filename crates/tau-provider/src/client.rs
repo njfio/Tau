@@ -314,6 +314,29 @@ fn openai_codex_backend_enabled(cli: &Cli, auth_mode: ProviderAuthMethod) -> boo
         )
 }
 
+fn openai_experimental_direct_transport_selected(
+    provider: Provider,
+    auth_mode: ProviderAuthMethod,
+    experimental_direct_oauth_session: bool,
+    resolved: Option<&ProviderAuthCredential>,
+) -> bool {
+    let Some(resolved) = resolved else {
+        return false;
+    };
+    if resolved.secret.is_none() {
+        return false;
+    }
+    if resolved.method == ProviderAuthMethod::ApiKey {
+        return true;
+    }
+    provider == Provider::OpenAi
+        && experimental_direct_oauth_session
+        && matches!(
+            auth_mode,
+            ProviderAuthMethod::OauthToken | ProviderAuthMethod::SessionToken
+        )
+}
+
 fn openai_credential_store_missing_provider_entry(cli: &Cli, provider: Provider) -> bool {
     let key = cli.credential_store_key.as_deref();
     let default_mode = resolve_credential_store_encryption_mode(cli);
@@ -595,8 +618,15 @@ pub fn build_provider_client(cli: &Cli, provider: Provider) -> Result<Arc<dyn Ll
                 }
             };
 
-            if let Some(resolved) = resolved {
-                return build_openai_http_client(cli, &resolved, provider);
+            if openai_experimental_direct_transport_selected(
+                provider,
+                auth_mode,
+                cli.openai_experimental_direct_oauth_session,
+                resolved.as_ref(),
+            ) {
+                if let Some(resolved) = resolved.as_ref() {
+                    return build_openai_http_client(cli, resolved, provider);
+                }
             }
 
             if cli.openai_codex_appserver {
@@ -708,8 +738,9 @@ pub fn build_provider_client(cli: &Cli, provider: Provider) -> Result<Arc<dyn Ll
 mod tests {
     use super::{
         is_azure_openai_endpoint, maybe_wrap_provider_rate_limited_client,
-        resolve_openrouter_api_base, resolved_secret_for_provider, ProviderOutboundRateLimitConfig,
-        ProviderRateLimitedClient, ProviderTokenBucketLimiter,
+        openai_experimental_direct_transport_selected, resolve_openrouter_api_base,
+        resolved_secret_for_provider, ProviderOutboundRateLimitConfig, ProviderRateLimitedClient,
+        ProviderTokenBucketLimiter,
     };
     use crate::credentials::ProviderAuthCredential;
     use crate::types::ProviderAuthMethod;
@@ -818,6 +849,106 @@ mod tests {
         let error = resolved_secret_for_provider(&missing_secret, Provider::OpenAi)
             .expect_err("missing secret must fail closed");
         assert!(error.to_string().contains("did not provide a credential"));
+    }
+
+    #[test]
+    fn openai_experimental_direct_transport_oauth_requires_flag_and_bearer() {
+        let credential = ProviderAuthCredential {
+            method: ProviderAuthMethod::OauthToken,
+            secret: Some("oauth-access-token".to_string()),
+            source: Some("credential_store".to_string()),
+            expires_unix: None,
+            refreshable: true,
+            revoked: false,
+        };
+
+        assert!(openai_experimental_direct_transport_selected(
+            Provider::OpenAi,
+            ProviderAuthMethod::OauthToken,
+            true,
+            Some(&credential),
+        ));
+        assert!(!openai_experimental_direct_transport_selected(
+            Provider::OpenAi,
+            ProviderAuthMethod::OauthToken,
+            false,
+            Some(&credential),
+        ));
+        assert!(!openai_experimental_direct_transport_selected(
+            Provider::OpenAi,
+            ProviderAuthMethod::OauthToken,
+            true,
+            None,
+        ));
+    }
+
+    #[test]
+    fn openai_experimental_direct_transport_keeps_api_key_direct_by_default() {
+        let credential = ProviderAuthCredential {
+            method: ProviderAuthMethod::ApiKey,
+            secret: Some("sk-test".to_string()),
+            source: Some("env:OPENAI_API_KEY".to_string()),
+            expires_unix: None,
+            refreshable: false,
+            revoked: false,
+        };
+
+        assert!(openai_experimental_direct_transport_selected(
+            Provider::OpenAi,
+            ProviderAuthMethod::ApiKey,
+            false,
+            Some(&credential),
+        ));
+        assert!(!openai_experimental_direct_transport_selected(
+            Provider::OpenAi,
+            ProviderAuthMethod::ApiKey,
+            false,
+            None,
+        ));
+    }
+
+    #[test]
+    fn openai_experimental_direct_transport_preserves_api_key_fallback_direct_path() {
+        let credential = ProviderAuthCredential {
+            method: ProviderAuthMethod::ApiKey,
+            secret: Some("sk-fallback".to_string()),
+            source: Some("env:OPENAI_API_KEY".to_string()),
+            expires_unix: None,
+            refreshable: false,
+            revoked: false,
+        };
+
+        assert!(openai_experimental_direct_transport_selected(
+            Provider::OpenAi,
+            ProviderAuthMethod::OauthToken,
+            false,
+            Some(&credential),
+        ));
+    }
+
+    #[test]
+    fn openai_experimental_direct_transport_session_is_openai_only() {
+        let credential = ProviderAuthCredential {
+            method: ProviderAuthMethod::SessionToken,
+            secret: Some("session-token".to_string()),
+            source: Some("credential_store".to_string()),
+            expires_unix: None,
+            refreshable: true,
+            revoked: false,
+        };
+
+        assert!(openai_experimental_direct_transport_selected(
+            Provider::OpenAi,
+            ProviderAuthMethod::SessionToken,
+            true,
+            Some(&credential),
+        ));
+        assert!(!openai_experimental_direct_transport_selected(
+            Provider::OpenRouter,
+            ProviderAuthMethod::SessionToken,
+            true,
+            Some(&credential),
+        ));
     }
 
     #[test]

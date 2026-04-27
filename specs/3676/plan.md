@@ -13,12 +13,12 @@ implementation_strategy:
       compatibility: "caution"
       reason: "Behavior changes only for explicit opt-in experimental mode; default path remains unchanged"
     - symbol: "tau_cli::Cli openai auth flags"
-      location: "crates/tau-cli/src/cli_args.rs"
+      location: "crates/tau-provider/src/types.rs"
       change_type: "additive"
       current: "OpenAI auth mode and Codex backend flags"
-      proposed: "New experimental direct transport flag for oauth/session auth"
+      proposed: "New experimental direct transport configuration for oauth/session auth"
       compatibility: "safe"
-      reason: "Purely additive CLI/env flag"
+      reason: "Purely additive config field with the default disabled"
   overall_compatibility: "caution"
   approach:
     strategy: "Direct implementation behind explicit opt-in flag with fallback"
@@ -31,8 +31,8 @@ implementation_strategy:
 
 ## Implementation Approach
 
-1. Add a new CLI/env flag for OpenAI experimental direct oauth/session
-   transport.
+1. Add a new configuration flag for OpenAI experimental direct oauth/session
+  transport through `crates/tau-provider`.
 2. Inspect resolved OpenAI credentials and identify when Tau has a bearer token
    that can be passed directly to `build_openai_http_client`.
 3. Update `build_provider_client` so:
@@ -40,6 +40,18 @@ implementation_strategy:
    - oauth/session auth with experimental flag enabled prefers direct HTTP
    - fallback remains Codex CLI when direct auth material is unavailable
 4. Add focused tests around provider selection and auth wiring.
+
+## External API Knowledge Report
+
+- Service: OpenAI API.
+- Endpoint verified: `POST /v1/responses`.
+- Documentation source: official OpenAI developer API reference at
+  `https://developers.openai.com/api/reference/resources/responses/methods/create`.
+- Confirmed request shape: JSON body with `model` and `input`; `stream: true`
+  enables server-sent event streaming.
+- Confirmed supported authentication: `Authorization: Bearer $OPENAI_API_KEY`.
+- Caveat: OAuth/session-token direct use is undocumented. The implementation
+  must treat it as experimental, opt-in, reversible, and fallback-capable.
 
 ## Risks
 
@@ -58,3 +70,7 @@ implementation_strategy:
 - provider selection tests in `tau-provider`
 - any existing OpenAI HTTP client tests needed to validate auth/wiring
 - scoped runtime rebuild after implementation
+
+## ADR
+
+- `docs/adrs/0004-experimental-openai-responses-oauth-session-transport.md`
