@@ -45,6 +45,7 @@ fn toggle_command_palette(app: &mut App) {
 
     app.focus = FocusPanel::CommandPalette;
     app.command_input.clear();
+    app.command_cursor_col = 0;
 }
 
 fn handle_normal_mode(app: &mut App, key: KeyEvent) {

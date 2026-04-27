@@ -8,6 +8,8 @@
 //! - Mouse-aware panel focus and scrolling
 
 mod app;
+#[cfg(test)]
+mod app_command_palette_tests;
 mod app_commands;
 mod app_copy_target;
 #[cfg(test)]

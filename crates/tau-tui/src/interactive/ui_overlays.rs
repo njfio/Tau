@@ -101,8 +101,8 @@ pub(crate) fn render_command_palette(frame: &mut Frame, app: &App, area: Rect) {
         .style(Style::default().bg(Color::Black));
 
     frame.render_widget(input, popup_area);
-    frame.set_cursor_position((
-        popup_area.x + 1 + app.command_input.len() as u16,
-        popup_area.y + 1,
-    ));
+    let cursor_col = app
+        .command_cursor_col
+        .min(app.command_input.chars().count()) as u16;
+    frame.set_cursor_position((popup_area.x + 1 + cursor_col, popup_area.y + 1));
 }
