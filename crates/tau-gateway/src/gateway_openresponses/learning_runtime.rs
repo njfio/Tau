@@ -146,7 +146,10 @@ pub(super) fn append_gateway_verifier_blocked_history_record(
             turn,
             tool_name: GATEWAY_VERIFIER_HISTORY_TOOL_NAME.to_string(),
             input_summary,
-            output_summary: verifier.overall.message.clone(),
+            output_summary: format!(
+                "reason_code={} {}",
+                verifier.overall.reason_code, verifier.overall.message
+            ),
             success: false,
             latency_ms: 0,
             timestamp_ms,

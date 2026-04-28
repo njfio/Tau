@@ -103,3 +103,36 @@ Evidence:
       recovery learning evidence.
 - `cargo fmt --check`, `cargo clippy -p tau-gateway --tests --no-deps -- -D warnings`,
       and `git diff --quiet -- Cargo.toml` passed for the slice.
+
+## Implementation slice: verifier-blocked recovery learning bulletin replay
+
+- [x] T14 Specify: require `gateway_verifier` action-history records from
+      fail-closed verifier blocks to appear in later Ralph learning bulletins with
+      reason-code evidence.
+- [x] T15 RED: add gateway coverage proving a follow-up request after a verifier-blocked
+      fabricated-progress mission receives a `## Learning Insights` bulletin containing
+      `gateway_verifier` and the exhausted verifier `reason_code`.
+- [x] T16 GREEN: preserve verifier reason-code evidence through action-history failure
+      pattern rendering so the next Ralph-loop prompt can avoid repeating assistant-only
+      or read-only-only completion claims.
+- [x] T17 CLOSEOUT: verify the replay path alongside verifier-blocked persistence,
+      existing learning bulletin behavior, formatting, clippy, and Cargo manifest stability.
+
+Learning bulletin replay boundary:
+- `gateway_verifier` is the learning signal name for verifier-blocked recovery evidence;
+      it must not become a normal observed tool row.
+- `reason_code` is part of the replay contract, not only mission-state metadata; later
+      Ralph-loop prompts need the exhausted fail-closed reason to steer recovery.
+- `complete_task` remains reserved for explicit mission completion signals, not verifier
+      block replay evidence.
+
+Evidence:
+- `cargo test -p tau-gateway verifier_blocked_learning_bulletin -- --test-threads=1`
+      proves `gateway_verifier` and `claimed_completion_without_tool_evidence_exhausted`
+      survive from action history into a follow-up `## Learning Insights` bulletin.
+- `cargo test -p tau-gateway verifier_blocked_learning -- --test-threads=1`
+      keeps verifier-blocked persistence and `complete_task` separation intact.
+- `cargo test -p tau-gateway regression_openresponses_injects_learning_insights_into_followup_system_prompt -- --test-threads=1`
+      keeps existing generic learning-bulletin injection behavior intact.
+- `cargo fmt --check`, `cargo clippy -p tau-gateway --tests --no-deps -- -D warnings`,
+      and `git diff --quiet -- Cargo.toml` passed for the replay slice.

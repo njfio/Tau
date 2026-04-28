@@ -10721,6 +10721,95 @@ async fn regression_openresponses_injects_learning_insights_into_followup_system
 }
 
 #[tokio::test]
+async fn verifier_blocked_learning_bulletin_replays_reason_code_into_followup_system_prompt() {
+    let temp = tempdir().expect("tempdir");
+    let scripted = Arc::new(ScriptedGatewayLlmClient::new(vec![
+        scripted_gateway_response(
+            "I built the markdown todo app and the implementation is complete.",
+        ),
+        scripted_gateway_response(
+            "The app has been created successfully and no further workspace changes are needed.",
+        ),
+        scripted_gateway_response("follow-up request complete"),
+    ]));
+    let tool_root = temp.path().join("workspace");
+    std::fs::create_dir_all(&tool_root).expect("create tool workspace");
+    let state = test_state_with_client_and_auth(
+        temp.path(),
+        10_000,
+        scripted.clone(),
+        Arc::new(FixturePipelineToolRegistrar::new(
+            tool_root,
+            temp.path().join(".tau/gateway"),
+        )),
+        GatewayOpenResponsesAuthMode::Token,
+        Some("secret"),
+        None,
+        60,
+        120,
+    );
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+
+    let client = Client::builder()
+        .timeout(Duration::from_secs(2))
+        .build()
+        .expect("client with timeout");
+    let blocked = client
+        .post(format!("http://{addr}{OPENRESPONSES_ENDPOINT}"))
+        .bearer_auth("secret")
+        .json(&json!({
+            "input": "build a markdown todo app in this workspace",
+            "metadata": {
+                "session_id": "session-3654-learning-bulletin-seed",
+                "mission_id": "mission-3654-learning-bulletin-seed"
+            }
+        }))
+        .send()
+        .await
+        .expect("send fabricated progress seed request");
+    assert_eq!(blocked.status(), StatusCode::BAD_GATEWAY);
+
+    let followup = client
+        .post(format!("http://{addr}{OPENRESPONSES_ENDPOINT}"))
+        .bearer_auth("secret")
+        .json(&json!({
+            "input": "what should you do next",
+            "metadata": {
+                "session_id": "session-3654-learning-bulletin-followup",
+                "mission_id": "mission-3654-learning-bulletin-followup"
+            }
+        }))
+        .send()
+        .await
+        .expect("send verifier learning follow-up request");
+    assert_eq!(followup.status(), StatusCode::OK);
+
+    let captured_requests = scripted.captured_requests().await;
+    assert!(
+        captured_requests.len() >= 3,
+        "expected blocked seed plus follow-up request capture"
+    );
+    let followup_request = captured_requests
+        .last()
+        .expect("captured follow-up request");
+    let system_text = followup_request
+        .messages
+        .iter()
+        .find(|message| message.role == MessageRole::System)
+        .expect("system message")
+        .text_content();
+    assert!(system_text.contains("## Learning Insights"));
+    assert!(system_text.contains("gateway_verifier"));
+    assert!(
+        system_text.contains("claimed_completion_without_tool_evidence_exhausted"),
+        "expected verifier reason code in learning bulletin: {system_text}"
+    );
+    assert!(system_text.contains("claimed completion without tool evidence"));
+
+    handle.abort();
+}
+
+#[tokio::test]
 async fn regression_openresponses_persists_blocked_mission_state_for_retry_exhaustion() {
     let temp = tempdir().expect("tempdir");
     let scripted = Arc::new(ScriptedGatewayLlmClient::new(vec![
