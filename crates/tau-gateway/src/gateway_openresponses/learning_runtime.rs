@@ -6,6 +6,7 @@ use tau_memory::action_history::{
 };
 
 pub(super) const GATEWAY_ACTION_HISTORY_LOOKBACK: usize = 128;
+pub(super) const GATEWAY_RUNTIME_HISTORY_TOOL_NAME: &str = "gateway_runtime";
 pub(super) const GATEWAY_VERIFIER_HISTORY_TOOL_NAME: &str = "gateway_verifier";
 
 const GATEWAY_ACTION_HISTORY_FILE: &str = "action-history.jsonl";
@@ -21,6 +22,16 @@ pub(super) struct GatewayActionHistoryToolRecord {
     pub(super) output_summary: String,
     pub(super) success: bool,
     pub(super) latency_ms: u64,
+    pub(super) timestamp_ms: u64,
+}
+
+pub(super) struct GatewayRuntimeRecoveryHistoryRecord<'a> {
+    pub(super) session_key: &'a str,
+    pub(super) mission_id: &'a str,
+    pub(super) turn: usize,
+    pub(super) reason_code: &'a str,
+    pub(super) message: &'a str,
+    pub(super) assistant_summary: &'a str,
     pub(super) timestamp_ms: u64,
 }
 
@@ -157,7 +168,37 @@ pub(super) fn append_gateway_verifier_blocked_history_record(
     );
 }
 
+pub(super) fn append_gateway_runtime_recovery_history_record(
+    store: &mut ActionHistoryStore,
+    record: GatewayRuntimeRecoveryHistoryRecord<'_>,
+) {
+    let mut input_summary = format!("runtime_status=blocked reason_code={}", record.reason_code);
+    let assistant_summary = summarize_gateway_history_text(record.assistant_summary);
+    if !assistant_summary.is_empty() {
+        input_summary.push_str(" assistant_summary=");
+        input_summary.push_str(assistant_summary.as_str());
+    }
+    append_gateway_action_history_records(
+        store,
+        &[GatewayActionHistoryToolRecord {
+            session_key: record.session_key.to_string(),
+            mission_id: record.mission_id.to_string(),
+            turn: record.turn,
+            tool_name: GATEWAY_RUNTIME_HISTORY_TOOL_NAME.to_string(),
+            input_summary,
+            output_summary: format!("reason_code={} {}", record.reason_code, record.message),
+            success: false,
+            latency_ms: 0,
+            timestamp_ms: record.timestamp_ms,
+        }],
+    );
+}
+
 fn summarize_gateway_verifier_history_text(raw: &str) -> String {
+    summarize_gateway_history_text(raw)
+}
+
+fn summarize_gateway_history_text(raw: &str) -> String {
     let summary = raw.split_whitespace().collect::<Vec<_>>().join(" ");
     summary
         .chars()

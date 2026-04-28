@@ -10810,6 +10810,194 @@ async fn verifier_blocked_learning_bulletin_replays_reason_code_into_followup_sy
 }
 
 #[tokio::test]
+async fn runtime_recovery_learning_bulletin_replays_cancelled_reason_code_into_followup_system_prompt(
+) {
+    let temp = tempdir().expect("tempdir");
+    let scripted = Arc::new(ScriptedGatewayLlmClient::new(vec![
+        ChatResponse {
+            message: Message::assistant_blocks(vec![
+                ContentBlock::Text {
+                    text: "partial cancellation learning draft".to_string(),
+                },
+                ContentBlock::ToolCall {
+                    id: "call-learning-cancel-read-one-a".to_string(),
+                    name: "read".to_string(),
+                    arguments: json!({"path":"one.txt"}),
+                },
+            ]),
+            finish_reason: Some("tool_calls".to_string()),
+            usage: ChatUsage::default(),
+        },
+        ChatResponse {
+            message: Message::assistant_blocks(vec![ContentBlock::ToolCall {
+                id: "call-learning-cancel-read-one-b".to_string(),
+                name: "read".to_string(),
+                arguments: json!({"path":"two.txt"}),
+            }]),
+            finish_reason: Some("tool_calls".to_string()),
+            usage: ChatUsage::default(),
+        },
+        ChatResponse {
+            message: Message::assistant_blocks(vec![
+                ContentBlock::Text {
+                    text: "partial cancellation learning draft".to_string(),
+                },
+                ContentBlock::ToolCall {
+                    id: "call-learning-cancel-read-two-a".to_string(),
+                    name: "read".to_string(),
+                    arguments: json!({"path":"one.txt"}),
+                },
+            ]),
+            finish_reason: Some("tool_calls".to_string()),
+            usage: ChatUsage::default(),
+        },
+        ChatResponse {
+            message: Message::assistant_blocks(vec![ContentBlock::ToolCall {
+                id: "call-learning-cancel-read-two-b".to_string(),
+                name: "read".to_string(),
+                arguments: json!({"path":"two.txt"}),
+            }]),
+            finish_reason: Some("tool_calls".to_string()),
+            usage: ChatUsage::default(),
+        },
+        ChatResponse {
+            message: Message::assistant_blocks(vec![
+                ContentBlock::Text {
+                    text: "partial cancellation learning draft".to_string(),
+                },
+                ContentBlock::ToolCall {
+                    id: "call-learning-cancel-read-three-a".to_string(),
+                    name: "read".to_string(),
+                    arguments: json!({"path":"one.txt"}),
+                },
+            ]),
+            finish_reason: Some("tool_calls".to_string()),
+            usage: ChatUsage::default(),
+        },
+        ChatResponse {
+            message: Message::assistant_blocks(vec![ContentBlock::ToolCall {
+                id: "call-learning-cancel-read-three-b".to_string(),
+                name: "read".to_string(),
+                arguments: json!({"path":"two.txt"}),
+            }]),
+            finish_reason: Some("tool_calls".to_string()),
+            usage: ChatUsage::default(),
+        },
+        scripted_gateway_response("follow-up request complete"),
+    ]));
+    let tool_root = temp.path().join("workspace");
+    std::fs::create_dir_all(&tool_root).expect("create tool workspace");
+    std::fs::write(tool_root.join("one.txt"), "one").expect("write first seed file");
+    std::fs::write(tool_root.join("two.txt"), "two").expect("write second seed file");
+    let state = Arc::new(GatewayOpenResponsesServerState::new(
+        GatewayOpenResponsesServerConfig {
+            client: scripted.clone(),
+            model: "openai/gpt-5.2".to_string(),
+            model_input_cost_per_million: Some(10.0),
+            model_cached_input_cost_per_million: None,
+            model_output_cost_per_million: Some(20.0),
+            system_prompt: "You are Tau.".to_string(),
+            available_skills: Vec::new(),
+            explicit_skill_names: Vec::new(),
+            max_turns: 8,
+            tool_registrar: Arc::new(FixturePipelineToolRegistrar::new(
+                tool_root,
+                temp.path().join(".tau/gateway-runtime-learning"),
+            )),
+            turn_timeout_ms: 500,
+            session_lock_wait_ms: 500,
+            session_lock_stale_ms: 10_000,
+            state_dir: temp.path().join(".tau/gateway-runtime-learning"),
+            bind: "127.0.0.1:0".to_string(),
+            auth_mode: GatewayOpenResponsesAuthMode::Token,
+            auth_token: Some("secret".to_string()),
+            auth_password: None,
+            session_ttl_seconds: 3_600,
+            rate_limit_window_seconds: 60,
+            rate_limit_max_requests: 120,
+            max_input_chars: 10_000,
+            runtime_heartbeat: RuntimeHeartbeatSchedulerConfig {
+                enabled: false,
+                interval: std::time::Duration::from_secs(5),
+                state_path: temp
+                    .path()
+                    .join(".tau/runtime-heartbeat-runtime-learning/state.json"),
+                ..RuntimeHeartbeatSchedulerConfig::default()
+            },
+            external_coding_agent_bridge: tau_runtime::ExternalCodingAgentBridgeConfig::default(),
+            delegated_tool_execution: false,
+        },
+    ));
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+
+    let client = Client::builder()
+        .timeout(Duration::from_secs(2))
+        .build()
+        .expect("client with timeout");
+    let cancelled = client
+        .post(format!("http://{addr}{OPENRESPONSES_ENDPOINT}"))
+        .bearer_auth("secret")
+        .json(&json!({
+            "input": "create a Phaser game in this workspace",
+            "stream": true,
+            "metadata": {
+                "session_id": "session-3583-runtime-learning-seed",
+                "mission_id": "mission-3583-runtime-learning-seed"
+            }
+        }))
+        .send()
+        .await
+        .expect("send runtime cancellation seed request");
+    assert_eq!(cancelled.status(), StatusCode::OK);
+    let cancelled_body = cancelled
+        .text()
+        .await
+        .expect("read runtime cancellation seed body");
+    assert!(
+        cancelled_body.contains("gateway_cancelled"),
+        "expected cancelled seed body to prove runtime recovery path: {cancelled_body}"
+    );
+
+    let followup = client
+        .post(format!("http://{addr}{OPENRESPONSES_ENDPOINT}"))
+        .bearer_auth("secret")
+        .json(&json!({
+            "input": "what should you do next",
+            "metadata": {
+                "session_id": "session-3583-runtime-learning-followup",
+                "mission_id": "mission-3583-runtime-learning-followup"
+            }
+        }))
+        .send()
+        .await
+        .expect("send runtime learning follow-up request");
+    assert_eq!(followup.status(), StatusCode::OK);
+
+    let captured_requests = scripted.captured_requests().await;
+    assert!(
+        captured_requests.len() >= 7,
+        "expected cancellation seed plus follow-up request capture"
+    );
+    let followup_request = captured_requests
+        .last()
+        .expect("captured runtime learning follow-up request");
+    let system_text = followup_request
+        .messages
+        .iter()
+        .find(|message| message.role == MessageRole::System)
+        .expect("system message")
+        .text_content();
+    assert!(system_text.contains("## Learning Insights"));
+    assert!(system_text.contains("gateway_runtime"));
+    assert!(
+        system_text.contains("gateway_cancelled"),
+        "expected runtime cancellation reason code in learning bulletin: {system_text}"
+    );
+
+    handle.abort();
+}
+
+#[tokio::test]
 async fn regression_openresponses_persists_blocked_mission_state_for_retry_exhaustion() {
     let temp = tempdir().expect("tempdir");
     let scripted = Arc::new(ScriptedGatewayLlmClient::new(vec![

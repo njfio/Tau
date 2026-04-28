@@ -12,8 +12,9 @@ use tau_contract::operator_state::{
 use tau_memory::action_history::ActionHistoryStore;
 
 use super::learning_runtime::{
-    append_gateway_completion_history_record, append_gateway_verifier_blocked_history_record,
-    load_gateway_action_history_store, save_gateway_action_history_store,
+    append_gateway_completion_history_record, append_gateway_runtime_recovery_history_record,
+    append_gateway_verifier_blocked_history_record, load_gateway_action_history_store,
+    save_gateway_action_history_store, GatewayRuntimeRecoveryHistoryRecord,
 };
 
 const GATEWAY_TOOL_SUMMARY_MAX_CHARS: usize = 240;
@@ -431,6 +432,18 @@ pub(super) async fn execute_openresponses_request(
                         trace_start_index: tool_trace_start_index,
                         occurred_at_ms: finished_unix_ms,
                     })?;
+                    append_gateway_runtime_recovery_history_record(
+                        &mut action_history_store,
+                        GatewayRuntimeRecoveryHistoryRecord {
+                            session_key: translated.session_key.as_str(),
+                            mission_id: translated.mission_id.as_str(),
+                            turn: attempt_number,
+                            reason_code: "gateway_timeout",
+                            message: "response generation timed out before completion",
+                            assistant_summary: "",
+                            timestamp_ms: finished_unix_ms,
+                        },
+                    );
                     mission_state.mark_blocked(verifier.overall, None, "", finished_unix_ms);
                     save_gateway_mission_state(&mission_path, &mission_state)?;
                     break Err(OpenResponsesApiError::timeout(
@@ -532,6 +545,19 @@ pub(super) async fn execute_openresponses_request(
                     trace_start_index: tool_trace_start_index,
                     occurred_at_ms: finished_unix_ms,
                 })?;
+                    append_gateway_runtime_recovery_history_record(
+                        &mut action_history_store,
+                        GatewayRuntimeRecoveryHistoryRecord {
+                            session_key: translated.session_key.as_str(),
+                            mission_id: translated.mission_id.as_str(),
+                            turn: attempt_number,
+                            reason_code: "gateway_cancelled",
+                            message:
+                                "read-only exploration saturated before mutation evidence was observed",
+                            assistant_summary: assistant_summary.as_str(),
+                            timestamp_ms: finished_unix_ms,
+                        },
+                    );
                     mission_state.mark_blocked(
                         verifier.overall,
                         None,
