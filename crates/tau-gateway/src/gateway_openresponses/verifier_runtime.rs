@@ -4,6 +4,8 @@ use super::*;
 
 const ACTION_TOOL_EVIDENCE_RETRY_EXHAUSTED_MESSAGE: &str =
     "gateway action request exhausted action retries without satisfying verifier requirements";
+const CLAIMED_COMPLETION_WITHOUT_TOOL_EVIDENCE_MESSAGE: &str =
+    "claimed completion without tool evidence for a workspace-changing request";
 const REQUIRED_TOOL_RETRY_EXHAUSTED_MESSAGE: &str =
     "required tool retry exhausted without observing tool execution evidence";
 
@@ -50,6 +52,7 @@ pub(super) fn build_gateway_verifier_bundle(
     requires_mutation_evidence: bool,
     requires_validation_evidence: bool,
     traces: &[GatewayVerifierToolTrace],
+    assistant_summary: Option<&str>,
     retry_exhausted: bool,
 ) -> GatewayMissionVerifierBundle {
     let mut records = Vec::new();
@@ -71,6 +74,10 @@ pub(super) fn build_gateway_verifier_bundle(
     }
 
     let tool_execution_count = evidence_traces.len();
+    let claimed_completion_without_tool_evidence = tool_execution_count == 0
+        && assistant_summary
+            .map(gateway_text_claims_workspace_completion)
+            .unwrap_or(false);
     records.push(if tool_execution_count > 0 {
         gateway_verifier_record(
             "action_tool_evidence",
@@ -80,6 +87,30 @@ pub(super) fn build_gateway_verifier_bundle(
                 "observed {tool_execution_count} tool execution event(s) during mission execution"
             ),
             [("observed_count", json!(tool_execution_count))],
+        )
+    } else if claimed_completion_without_tool_evidence && retry_exhausted {
+        gateway_verifier_record(
+            "action_tool_evidence",
+            GatewayMissionVerifierStatus::Failed,
+            "claimed_completion_without_tool_evidence_exhausted",
+            CLAIMED_COMPLETION_WITHOUT_TOOL_EVIDENCE_MESSAGE,
+            [
+                ("observed_count", json!(0)),
+                ("claimed_completion", json!(true)),
+                ("retry_exhausted", json!(true)),
+            ],
+        )
+    } else if claimed_completion_without_tool_evidence {
+        gateway_verifier_record(
+            "action_tool_evidence",
+            GatewayMissionVerifierStatus::Continue,
+            "claimed_completion_without_tool_evidence_continue",
+            "claimed completion without tool evidence; use workspace tools before claiming progress",
+            [
+                ("observed_count", json!(0)),
+                ("claimed_completion", json!(true)),
+                ("retry_exhausted", json!(false)),
+            ],
         )
     } else if retry_exhausted {
         gateway_verifier_record(
@@ -216,6 +247,37 @@ pub(super) fn build_gateway_required_tool_retry_exhausted_verifier_bundle(
     )])
 }
 
+pub(super) fn build_gateway_claimed_completion_without_tool_evidence_verifier_bundle(
+    retry_exhausted: bool,
+) -> GatewayMissionVerifierBundle {
+    let status = if retry_exhausted {
+        GatewayMissionVerifierStatus::Failed
+    } else {
+        GatewayMissionVerifierStatus::Continue
+    };
+    let reason_code = if retry_exhausted {
+        "claimed_completion_without_tool_evidence_exhausted"
+    } else {
+        "claimed_completion_without_tool_evidence_continue"
+    };
+    let message = if retry_exhausted {
+        CLAIMED_COMPLETION_WITHOUT_TOOL_EVIDENCE_MESSAGE
+    } else {
+        "claimed completion without tool evidence; use workspace tools before claiming progress"
+    };
+    GatewayMissionVerifierBundle::from_records(vec![gateway_verifier_record(
+        "action_tool_evidence",
+        status,
+        reason_code,
+        message,
+        [
+            ("observed_count", json!(0)),
+            ("claimed_completion", json!(true)),
+            ("retry_exhausted", json!(retry_exhausted)),
+        ],
+    )])
+}
+
 pub(super) fn build_gateway_read_only_saturation_verifier_bundle(
     read_only_count: usize,
     threshold: usize,
@@ -340,6 +402,23 @@ pub(super) fn gateway_trace_is_mutating(trace: &GatewayVerifierToolTrace) -> boo
         );
     }
     false
+}
+
+pub(super) fn gateway_text_claims_workspace_completion(text: &str) -> bool {
+    let normalized = text.to_ascii_lowercase();
+    [
+        "built",
+        "created",
+        "implemented",
+        "fixed",
+        "completed",
+        "complete",
+        "done",
+        "successfully",
+        "no further workspace changes",
+    ]
+    .iter()
+    .any(|needle| normalized.contains(needle))
 }
 
 pub(super) fn gateway_trace_is_validation(trace: &GatewayVerifierToolTrace) -> bool {

@@ -247,6 +247,7 @@ fn unit_gateway_verifier_bundle_aggregates_tool_mutation_and_validation_backpres
             arguments: json!({"path":"game.js","content":"hello"}),
             success: true,
         }],
+        None,
         false,
     );
     assert_eq!(
@@ -283,6 +284,7 @@ fn unit_gateway_verifier_bundle_aggregates_tool_mutation_and_validation_backpres
                 success: true,
             },
         ],
+        None,
         false,
     );
     assert_eq!(
@@ -8900,6 +8902,216 @@ async fn issue_3673_no_tool_required_retry_exhaustion_blocks_after_required_turn
     assert_eq!(
         mission_state.latest_verifier.reason_code,
         "required_tool_evidence_missing_exhausted"
+    );
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn issue_3602_fabricated_progress_without_tool_evidence_blocks_with_structured_reason() {
+    let temp = tempdir().expect("tempdir");
+    let scripted = Arc::new(ScriptedGatewayLlmClient::new(vec![
+        scripted_gateway_response(
+            "I built the markdown todo app and the implementation is complete.",
+        ),
+        scripted_gateway_response(
+            "The app has been created successfully and no further workspace changes are needed.",
+        ),
+    ]));
+    let tool_root = temp.path().join("workspace");
+    std::fs::create_dir_all(&tool_root).expect("create tool workspace");
+    let state = test_state_with_client_and_auth(
+        temp.path(),
+        10_000,
+        scripted.clone(),
+        Arc::new(FixturePipelineToolRegistrar::new(
+            tool_root,
+            temp.path().join(".tau/gateway"),
+        )),
+        GatewayOpenResponsesAuthMode::Token,
+        Some("secret"),
+        None,
+        60,
+        120,
+    );
+    let (addr, handle) = spawn_test_server(state.clone())
+        .await
+        .expect("spawn server");
+
+    let client = Client::builder()
+        .timeout(Duration::from_secs(2))
+        .build()
+        .expect("client with timeout");
+    let response = client
+        .post(format!("http://{addr}{OPENRESPONSES_ENDPOINT}"))
+        .bearer_auth("secret")
+        .json(&json!({
+            "input": "build a markdown todo app in this workspace",
+            "metadata": {
+                "session_id": "fabricated-progress-session",
+                "mission_id": "fabricated-progress-mission"
+            }
+        }))
+        .send()
+        .await
+        .expect("send fabricated progress request");
+    let status = response.status();
+    let payload = response
+        .json::<Value>()
+        .await
+        .expect("parse fabricated progress payload");
+    assert_eq!(
+        status,
+        StatusCode::BAD_GATEWAY,
+        "unexpected payload: {payload}"
+    );
+    assert!(
+        payload["error"]["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("claimed completion without tool evidence"),
+        "expected no-tool evidence message: {payload}"
+    );
+
+    let captured_requests = scripted.captured_requests().await;
+    assert_eq!(captured_requests.len(), 2);
+    assert_eq!(captured_requests[0].tool_choice, Some(ToolChoice::Auto));
+    let recovery_prompt = captured_requests[1]
+        .messages
+        .iter()
+        .map(Message::text_content)
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        recovery_prompt.contains("claimed completion without tool evidence"),
+        "expected recovery prompt to explain missing tool evidence: {recovery_prompt}"
+    );
+
+    let mission_path =
+        gateway_mission_state_path(&state.config.state_dir, "fabricated-progress-mission");
+    let mission_state = load_gateway_mission_state(&mission_path).expect("load mission state");
+    assert_eq!(mission_state.status, GatewayMissionStatus::Blocked);
+    assert_eq!(mission_state.iteration_count, 2);
+    assert_eq!(
+        mission_state.iterations[0].verifier.overall.reason_code,
+        "claimed_completion_without_tool_evidence_continue"
+    );
+    assert_eq!(
+        mission_state.iterations[1].verifier.overall.reason_code,
+        "claimed_completion_without_tool_evidence_exhausted"
+    );
+    assert_eq!(
+        mission_state.latest_verifier.reason_code,
+        "claimed_completion_without_tool_evidence_exhausted"
+    );
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn issue_3603_read_only_completion_without_mutating_tool_evidence_blocks() {
+    let temp = tempdir().expect("tempdir");
+    let scripted = Arc::new(ScriptedGatewayLlmClient::new(vec![
+        ChatResponse {
+            message: Message::assistant_blocks(vec![ContentBlock::ToolCall {
+                id: "call-read-only-before-claim".to_string(),
+                name: "read".to_string(),
+                arguments: json!({"path":"seed.txt"}),
+            }]),
+            finish_reason: Some("tool_calls".to_string()),
+            usage: ChatUsage::default(),
+        },
+        scripted_gateway_response("I inspected the workspace and created the markdown todo app."),
+        ChatResponse {
+            message: Message::assistant_blocks(vec![ContentBlock::ToolCall {
+                id: "call-read-only-before-second-claim".to_string(),
+                name: "read".to_string(),
+                arguments: json!({"path":"seed.txt"}),
+            }]),
+            finish_reason: Some("tool_calls".to_string()),
+            usage: ChatUsage::default(),
+        },
+        scripted_gateway_response("Done, the app has been created successfully."),
+    ]));
+    let tool_root = temp.path().join("workspace");
+    std::fs::create_dir_all(&tool_root).expect("create tool workspace");
+    std::fs::write(tool_root.join("seed.txt"), "seed").expect("write seed file");
+    let state = test_state_with_client_and_auth(
+        temp.path(),
+        10_000,
+        scripted.clone(),
+        Arc::new(FixturePipelineToolRegistrar::new(
+            tool_root,
+            temp.path().join(".tau/gateway"),
+        )),
+        GatewayOpenResponsesAuthMode::Token,
+        Some("secret"),
+        None,
+        60,
+        120,
+    );
+    let (addr, handle) = spawn_test_server(state.clone())
+        .await
+        .expect("spawn server");
+
+    let client = Client::builder()
+        .timeout(Duration::from_secs(2))
+        .build()
+        .expect("client with timeout");
+    let response = client
+        .post(format!("http://{addr}{OPENRESPONSES_ENDPOINT}"))
+        .bearer_auth("secret")
+        .json(&json!({
+            "input": "build a markdown todo app in this workspace",
+            "metadata": {
+                "session_id": "read-only-mutation-evidence-session",
+                "mission_id": "read-only-mutation-evidence-mission"
+            }
+        }))
+        .send()
+        .await
+        .expect("send read-only mutation evidence request");
+    let status = response.status();
+    let payload = response
+        .json::<Value>()
+        .await
+        .expect("parse read-only mutation evidence payload");
+    assert_eq!(
+        status,
+        StatusCode::BAD_GATEWAY,
+        "unexpected payload: {payload}"
+    );
+    assert!(
+        payload["error"]["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("mutating evidence"),
+        "expected mutation-evidence message: {payload}"
+    );
+
+    let captured_requests = scripted.captured_requests().await;
+    assert_eq!(captured_requests.len(), 4);
+
+    let mission_path = gateway_mission_state_path(
+        &state.config.state_dir,
+        "read-only-mutation-evidence-mission",
+    );
+    let mission_state = load_gateway_mission_state(&mission_path).expect("load mission state");
+    assert_eq!(mission_state.status, GatewayMissionStatus::Blocked);
+    assert_eq!(mission_state.iteration_count, 2);
+    assert_eq!(mission_state.iterations[0].tool_execution_count, 1);
+    assert_eq!(mission_state.iterations[1].tool_execution_count, 1);
+    assert_eq!(
+        mission_state.iterations[0].verifier.overall.reason_code,
+        "mutation_evidence_missing_continue"
+    );
+    assert_eq!(
+        mission_state.iterations[1].verifier.overall.reason_code,
+        "mutation_evidence_missing_exhausted"
+    );
+    assert_eq!(
+        mission_state.latest_verifier.reason_code,
+        "mutation_evidence_missing_exhausted"
     );
 
     handle.abort();

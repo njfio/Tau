@@ -380,6 +380,7 @@ pub(super) async fn execute_openresponses_request(
                             requires_mutation_evidence,
                             requires_validation_evidence,
                             verifier_traces.as_slice(),
+                            None,
                             retry_exhausted,
                         )
                     };
@@ -438,85 +439,88 @@ pub(super) async fn execute_openresponses_request(
                 }
             }
         };
-        if let Err(error) = attempt_result {
-            finalize_pending_gateway_tool_executions(
-                &tool_execution_starts,
-                &tool_execution_traces,
-                stream_sender.as_ref(),
-                response_id.as_str(),
-                false,
-                "tool execution aborted before completion",
-            )?;
-            persist_gateway_attempt_tool_history(
-                &mut action_history_store,
-                translated.session_key.as_str(),
-                translated.mission_id.as_str(),
-                attempt_number,
-                &tool_execution_traces,
-                tool_trace_start_index,
-            )?;
-            if let Some(saturation) =
-                gateway_read_only_saturation_snapshot(&read_only_saturation_state)?
-            {
-                let finished_unix_ms = current_unix_timestamp_ms();
-                let assistant_summary =
-                    collect_assistant_reply(&agent.messages()[attempt_start_index..]);
-                let tool_execution_delta = tool_execution_count
-                    .load(Ordering::Relaxed)
-                    .saturating_sub(tool_execution_count_before);
-                let retry_exhausted = retry_attempt >= ACTION_TOOL_EVIDENCE_MAX_RETRIES;
-                let verifier_traces = snapshot_gateway_verifier_traces(&tool_execution_traces)?;
-                let verifier = if retry_exhausted {
-                    build_gateway_verifier_bundle(
-                        requires_tool_evidence,
-                        requires_mutation_evidence,
-                        requires_validation_evidence,
-                        verifier_traces.as_slice(),
-                        true,
-                    )
-                } else {
-                    build_gateway_read_only_saturation_verifier_bundle(
-                        saturation.read_only_success_count,
-                        GATEWAY_READ_ONLY_SATURATION_THRESHOLD,
-                    )
-                };
-                let attempt_response_payload = build_gateway_attempt_response_payload(
-                    &agent.messages()[attempt_start_index..],
+        let attempt_messages = match attempt_result {
+            Ok(messages) => messages,
+            Err(error) => {
+                finalize_pending_gateway_tool_executions(
+                    &tool_execution_starts,
+                    &tool_execution_traces,
+                    stream_sender.as_ref(),
+                    response_id.as_str(),
+                    false,
+                    "tool execution aborted before completion",
+                )?;
+                persist_gateway_attempt_tool_history(
+                    &mut action_history_store,
+                    translated.session_key.as_str(),
+                    translated.mission_id.as_str(),
+                    attempt_number,
                     &tool_execution_traces,
                     tool_trace_start_index,
-                    "cancelled",
-                    Some("read-only exploration saturation reached before mutation"),
                 )?;
-                mission_state.record_iteration(GatewayMissionIterationInput {
-                    attempt: attempt_number,
-                    prompt: next_prompt.as_str(),
-                    assistant_summary: assistant_summary.as_str(),
-                    tool_execution_count: tool_execution_delta,
-                    request_payload: attempt_request_payload.clone(),
-                    response_payload: attempt_response_payload,
-                    verifier: verifier.clone(),
-                    completion: None,
-                    started_unix_ms: attempt_started_unix_ms,
-                    finished_unix_ms,
-                });
-                if verifier.overall.status == GatewayMissionVerifierStatus::Continue
-                    && !retry_exhausted
+                if let Some(saturation) =
+                    gateway_read_only_saturation_snapshot(&read_only_saturation_state)?
                 {
-                    save_gateway_mission_state(&mission_path, &mission_state)?;
-                    strip_failed_action_attempt_messages(&mut agent, attempt_start_index);
-                    retry_attempt = retry_attempt.saturating_add(1);
-                    widen_next_attempt_timeout = true;
-                    next_prompt = build_gateway_action_retry_prompt(
-                        retry_attempt,
-                        translated.prompt.as_str(),
-                        &verifier,
-                        verifier_traces.as_slice(),
-                    );
-                    continue;
-                }
-                let partial_output =
-                    snapshot_buffered_gateway_output(buffered_stream_output.as_ref())?;
-                emit_gateway_operator_cancelled_snapshot(GatewayOperatorCancelledSnapshotInput {
+                    let finished_unix_ms = current_unix_timestamp_ms();
+                    let assistant_summary =
+                        collect_assistant_reply(&agent.messages()[attempt_start_index..]);
+                    let tool_execution_delta = tool_execution_count
+                        .load(Ordering::Relaxed)
+                        .saturating_sub(tool_execution_count_before);
+                    let retry_exhausted = retry_attempt >= ACTION_TOOL_EVIDENCE_MAX_RETRIES;
+                    let verifier_traces = snapshot_gateway_verifier_traces(&tool_execution_traces)?;
+                    let verifier = if retry_exhausted {
+                        build_gateway_verifier_bundle(
+                            requires_tool_evidence,
+                            requires_mutation_evidence,
+                            requires_validation_evidence,
+                            verifier_traces.as_slice(),
+                            None,
+                            true,
+                        )
+                    } else {
+                        build_gateway_read_only_saturation_verifier_bundle(
+                            saturation.read_only_success_count,
+                            GATEWAY_READ_ONLY_SATURATION_THRESHOLD,
+                        )
+                    };
+                    let attempt_response_payload = build_gateway_attempt_response_payload(
+                        &agent.messages()[attempt_start_index..],
+                        &tool_execution_traces,
+                        tool_trace_start_index,
+                        "cancelled",
+                        Some("read-only exploration saturation reached before mutation"),
+                    )?;
+                    mission_state.record_iteration(GatewayMissionIterationInput {
+                        attempt: attempt_number,
+                        prompt: next_prompt.as_str(),
+                        assistant_summary: assistant_summary.as_str(),
+                        tool_execution_count: tool_execution_delta,
+                        request_payload: attempt_request_payload.clone(),
+                        response_payload: attempt_response_payload,
+                        verifier: verifier.clone(),
+                        completion: None,
+                        started_unix_ms: attempt_started_unix_ms,
+                        finished_unix_ms,
+                    });
+                    if verifier.overall.status == GatewayMissionVerifierStatus::Continue
+                        && !retry_exhausted
+                    {
+                        save_gateway_mission_state(&mission_path, &mission_state)?;
+                        strip_failed_action_attempt_messages(&mut agent, attempt_start_index);
+                        retry_attempt = retry_attempt.saturating_add(1);
+                        widen_next_attempt_timeout = true;
+                        next_prompt = build_gateway_action_retry_prompt(
+                            retry_attempt,
+                            translated.prompt.as_str(),
+                            &verifier,
+                            verifier_traces.as_slice(),
+                        );
+                        continue;
+                    }
+                    let partial_output =
+                        snapshot_buffered_gateway_output(buffered_stream_output.as_ref())?;
+                    emit_gateway_operator_cancelled_snapshot(GatewayOperatorCancelledSnapshotInput {
                     stream_sender: stream_sender.as_ref(),
                     response_id: response_id.as_str(),
                     session_key: translated.session_key.as_str(),
@@ -528,6 +532,44 @@ pub(super) async fn execute_openresponses_request(
                     trace_start_index: tool_trace_start_index,
                     occurred_at_ms: finished_unix_ms,
                 })?;
+                    mission_state.mark_blocked(
+                        verifier.overall,
+                        None,
+                        assistant_summary.as_str(),
+                        finished_unix_ms,
+                    );
+                    save_gateway_mission_state(&mission_path, &mission_state)?;
+                    break Err(OpenResponsesApiError::gateway_failure(
+                        "read-only exploration saturated before mutation evidence was observed",
+                    ));
+                }
+                let finished_unix_ms = current_unix_timestamp_ms();
+                let message = format!("gateway runtime failed: {error}");
+                let verifier = build_gateway_runtime_failure_verifier_bundle(
+                    "gateway_runtime_error",
+                    message.as_str(),
+                );
+                let assistant_summary =
+                    collect_assistant_reply(&agent.messages()[attempt_start_index..]);
+                let attempt_response_payload = build_gateway_attempt_response_payload(
+                    &agent.messages()[attempt_start_index..],
+                    &tool_execution_traces,
+                    tool_trace_start_index,
+                    "error",
+                    Some(message.as_str()),
+                )?;
+                mission_state.record_iteration(GatewayMissionIterationInput {
+                    attempt: attempt_number,
+                    prompt: next_prompt.as_str(),
+                    assistant_summary: assistant_summary.as_str(),
+                    tool_execution_count: 0,
+                    request_payload: attempt_request_payload.clone(),
+                    response_payload: attempt_response_payload,
+                    verifier: verifier.clone(),
+                    completion: None,
+                    started_unix_ms: attempt_started_unix_ms,
+                    finished_unix_ms,
+                });
                 mission_state.mark_blocked(
                     verifier.overall,
                     None,
@@ -535,46 +577,9 @@ pub(super) async fn execute_openresponses_request(
                     finished_unix_ms,
                 );
                 save_gateway_mission_state(&mission_path, &mission_state)?;
-                break Err(OpenResponsesApiError::gateway_failure(
-                    "read-only exploration saturated before mutation evidence was observed",
-                ));
+                break Err(OpenResponsesApiError::gateway_failure(message));
             }
-            let finished_unix_ms = current_unix_timestamp_ms();
-            let message = format!("gateway runtime failed: {error}");
-            let verifier = build_gateway_runtime_failure_verifier_bundle(
-                "gateway_runtime_error",
-                message.as_str(),
-            );
-            let assistant_summary =
-                collect_assistant_reply(&agent.messages()[attempt_start_index..]);
-            let attempt_response_payload = build_gateway_attempt_response_payload(
-                &agent.messages()[attempt_start_index..],
-                &tool_execution_traces,
-                tool_trace_start_index,
-                "error",
-                Some(message.as_str()),
-            )?;
-            mission_state.record_iteration(GatewayMissionIterationInput {
-                attempt: attempt_number,
-                prompt: next_prompt.as_str(),
-                assistant_summary: assistant_summary.as_str(),
-                tool_execution_count: 0,
-                request_payload: attempt_request_payload.clone(),
-                response_payload: attempt_response_payload,
-                verifier: verifier.clone(),
-                completion: None,
-                started_unix_ms: attempt_started_unix_ms,
-                finished_unix_ms,
-            });
-            mission_state.mark_blocked(
-                verifier.overall,
-                None,
-                assistant_summary.as_str(),
-                finished_unix_ms,
-            );
-            save_gateway_mission_state(&mission_path, &mission_state)?;
-            break Err(OpenResponsesApiError::gateway_failure(message));
-        }
+        };
 
         let tool_execution_delta = tool_execution_count
             .load(Ordering::Relaxed)
@@ -588,11 +593,28 @@ pub(super) async fn execute_openresponses_request(
             tool_trace_start_index,
         )?;
         let finished_unix_ms = current_unix_timestamp_ms();
-        let assistant_summary = collect_assistant_reply(&agent.messages()[attempt_start_index..]);
+        let assistant_summary = collect_assistant_reply(&attempt_messages);
         let retry_exhausted = retry_attempt >= ACTION_TOOL_EVIDENCE_MAX_RETRIES;
         let verifier_traces = snapshot_gateway_verifier_traces(&tool_execution_traces)?;
         let completion_signal = extract_gateway_completion_signal(&verifier_traces);
-        let verifier = if matches!(attempt_tool_choice, Some(ToolChoice::Required))
+        let assistant_claims_workspace_completion =
+            gateway_text_claims_workspace_completion(assistant_summary.as_str());
+        let successful_mutation_observed = verifier_traces
+            .iter()
+            .any(|trace| trace.success && gateway_trace_is_mutating(trace));
+        let mutation_evidence_retry_exhausted = retry_exhausted
+            || (retry_attempt > 0
+                && requires_mutation_evidence
+                && assistant_claims_workspace_completion
+                && !successful_mutation_observed);
+        let claimed_completion_without_tool_evidence = requires_tool_evidence
+            && tool_execution_delta == 0
+            && assistant_claims_workspace_completion;
+        let verifier = if claimed_completion_without_tool_evidence {
+            build_gateway_claimed_completion_without_tool_evidence_verifier_bundle(
+                retry_exhausted || retry_attempt > 0,
+            )
+        } else if matches!(attempt_tool_choice, Some(ToolChoice::Required))
             && requires_tool_evidence
             && tool_execution_delta == 0
         {
@@ -603,7 +625,8 @@ pub(super) async fn execute_openresponses_request(
                 requires_mutation_evidence,
                 requires_validation_evidence,
                 verifier_traces.as_slice(),
-                retry_exhausted,
+                Some(assistant_summary.as_str()),
+                mutation_evidence_retry_exhausted,
             )
         };
         if let Some(completion) = completion_signal.as_ref() {
@@ -617,7 +640,7 @@ pub(super) async fn execute_openresponses_request(
             );
         }
         let attempt_response_payload = build_gateway_attempt_response_payload(
-            &agent.messages()[attempt_start_index..],
+            &attempt_messages,
             &tool_execution_traces,
             tool_trace_start_index,
             "completed",
@@ -1582,6 +1605,7 @@ fn gateway_prompt_tokens_request_mutation(prompt_tokens: &[String]) -> bool {
         matches!(
             token.as_str(),
             "create"
+                | "build"
                 | "fix"
                 | "write"
                 | "edit"
