@@ -68,6 +68,8 @@ Mission outcome snapshots: gateway completion paths can emit `mission.checkpoint
 
 Runtime timeout snapshots: gateway runtime timeout paths can emit `status: "timed_out"`, `error.reason_code: "gateway_timeout"`, partial assistant text, and failed pending-tool state before the legacy `response.failed` frame. The TUI should preserve that partial assistant text, render one operator-readable timeout system message, and treat the following compatibility failure as already explained for the active turn.
 
+Runtime cancellation snapshots: gateway cancellation paths should follow the same shared-state recovery shape as runtime timeouts. If cancellation happens after streamed assistant text or tool progress, the gateway should emit `status: "cancelled"`, an operator cancellation reason code, partial assistant text, and finalized pending-tool state before any legacy compatibility failure frame. The TUI should preserve the partial assistant text, render one operator-readable cancellation system message, and avoid adding a second generic gateway error for the same active turn.
+
 ## Status Mapping
 - `succeeded` + `completed` maps to idle after writing assistant text.
 - `succeeded` + `completed` with a `mission.checkpointed` event maps to idle after writing assistant text and one checkpoint system message.

@@ -514,6 +514,20 @@ pub(super) async fn execute_openresponses_request(
                     );
                     continue;
                 }
+                let partial_output =
+                    snapshot_buffered_gateway_output(buffered_stream_output.as_ref())?;
+                emit_gateway_operator_cancelled_snapshot(GatewayOperatorCancelledSnapshotInput {
+                    stream_sender: stream_sender.as_ref(),
+                    response_id: response_id.as_str(),
+                    session_key: translated.session_key.as_str(),
+                    mission_id: translated.mission_id.as_str(),
+                    partial_output: partial_output.as_str(),
+                    message:
+                        "read-only exploration saturated before mutation evidence was observed",
+                    traces: &tool_execution_traces,
+                    trace_start_index: tool_trace_start_index,
+                    occurred_at_ms: finished_unix_ms,
+                })?;
                 mission_state.mark_blocked(
                     verifier.overall,
                     None,
@@ -1425,6 +1439,18 @@ struct GatewayOperatorTimeoutSnapshotInput<'a> {
     occurred_at_ms: u64,
 }
 
+struct GatewayOperatorCancelledSnapshotInput<'a> {
+    stream_sender: Option<&'a mpsc::UnboundedSender<SseFrame>>,
+    response_id: &'a str,
+    session_key: &'a str,
+    mission_id: &'a str,
+    partial_output: &'a str,
+    message: &'a str,
+    traces: &'a Arc<Mutex<Vec<GatewayObservedToolExecution>>>,
+    trace_start_index: usize,
+    occurred_at_ms: u64,
+}
+
 fn emit_gateway_operator_timeout_snapshot(
     input: GatewayOperatorTimeoutSnapshotInput<'_>,
 ) -> Result<(), OpenResponsesApiError> {
@@ -1457,6 +1483,45 @@ fn emit_gateway_operator_timeout_snapshot(
             error: Some(OperatorErrorContext {
                 reason_code: input.verifier.reason_code.clone(),
                 message: input.verifier.message.clone(),
+                retryable: false,
+            }),
+        }),
+    });
+    Ok(())
+}
+
+fn emit_gateway_operator_cancelled_snapshot(
+    input: GatewayOperatorCancelledSnapshotInput<'_>,
+) -> Result<(), OpenResponsesApiError> {
+    let Some(stream_sender) = input.stream_sender else {
+        return Ok(());
+    };
+    let tools = snapshot_gateway_operator_tool_states(input.traces, input.trace_start_index)?;
+    let _ = stream_sender.send(SseFrame::Json {
+        event: "response.operator_turn_state.snapshot",
+        payload: json!(OperatorTurnState {
+            schema_version: OPERATOR_TURN_STATE_SCHEMA_VERSION,
+            turn_id: input.response_id.to_string(),
+            task_id: None,
+            session_key: input.session_key.to_string(),
+            mission_id: Some(input.mission_id.to_string()),
+            phase: OperatorTurnPhase::Completed,
+            status: OperatorTurnStatus::Cancelled,
+            assistant_text: input.partial_output.to_string(),
+            tools,
+            events: vec![OperatorTurnEvent {
+                event_id: format!("{}-cancelled", input.response_id),
+                kind: OperatorTurnEventKind::ResponseFailed,
+                summary: input.message.to_string(),
+                text_delta: None,
+                tool_call_id: None,
+                tool_name: None,
+                reason_code: Some("gateway_cancelled".to_string()),
+                occurred_at_ms: Some(input.occurred_at_ms),
+            }],
+            error: Some(OperatorErrorContext {
+                reason_code: "gateway_cancelled".to_string(),
+                message: input.message.to_string(),
                 retryable: false,
             }),
         }),

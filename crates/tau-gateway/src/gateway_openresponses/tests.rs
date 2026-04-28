@@ -9099,6 +9099,183 @@ async fn runtime_timeout_partial_output_recovery_stream_emits_timeout_operator_s
 }
 
 #[tokio::test]
+async fn runtime_cancelled_partial_output_recovery_stream_emits_cancelled_operator_snapshot() {
+    let temp = tempdir().expect("tempdir");
+    let scripted = Arc::new(ScriptedGatewayLlmClient::new(vec![
+        ChatResponse {
+            message: Message::assistant_blocks(vec![
+                ContentBlock::Text {
+                    text: "partial cancellation draft".to_string(),
+                },
+                ContentBlock::ToolCall {
+                    id: "call-cancel-read-one-a".to_string(),
+                    name: "read".to_string(),
+                    arguments: json!({"path":"one.txt"}),
+                },
+            ]),
+            finish_reason: Some("tool_calls".to_string()),
+            usage: ChatUsage::default(),
+        },
+        ChatResponse {
+            message: Message::assistant_blocks(vec![ContentBlock::ToolCall {
+                id: "call-cancel-read-one-b".to_string(),
+                name: "read".to_string(),
+                arguments: json!({"path":"two.txt"}),
+            }]),
+            finish_reason: Some("tool_calls".to_string()),
+            usage: ChatUsage::default(),
+        },
+        ChatResponse {
+            message: Message::assistant_blocks(vec![
+                ContentBlock::Text {
+                    text: "partial cancellation draft".to_string(),
+                },
+                ContentBlock::ToolCall {
+                    id: "call-cancel-read-two-a".to_string(),
+                    name: "read".to_string(),
+                    arguments: json!({"path":"one.txt"}),
+                },
+            ]),
+            finish_reason: Some("tool_calls".to_string()),
+            usage: ChatUsage::default(),
+        },
+        ChatResponse {
+            message: Message::assistant_blocks(vec![ContentBlock::ToolCall {
+                id: "call-cancel-read-two-b".to_string(),
+                name: "read".to_string(),
+                arguments: json!({"path":"two.txt"}),
+            }]),
+            finish_reason: Some("tool_calls".to_string()),
+            usage: ChatUsage::default(),
+        },
+        ChatResponse {
+            message: Message::assistant_blocks(vec![
+                ContentBlock::Text {
+                    text: "partial cancellation draft".to_string(),
+                },
+                ContentBlock::ToolCall {
+                    id: "call-cancel-read-three-a".to_string(),
+                    name: "read".to_string(),
+                    arguments: json!({"path":"one.txt"}),
+                },
+            ]),
+            finish_reason: Some("tool_calls".to_string()),
+            usage: ChatUsage::default(),
+        },
+        ChatResponse {
+            message: Message::assistant_blocks(vec![ContentBlock::ToolCall {
+                id: "call-cancel-read-three-b".to_string(),
+                name: "read".to_string(),
+                arguments: json!({"path":"two.txt"}),
+            }]),
+            finish_reason: Some("tool_calls".to_string()),
+            usage: ChatUsage::default(),
+        },
+    ]));
+    let tool_root = temp.path().join("workspace");
+    std::fs::create_dir_all(&tool_root).expect("create tool workspace");
+    std::fs::write(tool_root.join("one.txt"), "one").expect("write first seed file");
+    std::fs::write(tool_root.join("two.txt"), "two").expect("write second seed file");
+    let state = Arc::new(GatewayOpenResponsesServerState::new(
+        GatewayOpenResponsesServerConfig {
+            client: scripted,
+            model: "openai/gpt-5.2".to_string(),
+            model_input_cost_per_million: Some(10.0),
+            model_cached_input_cost_per_million: None,
+            model_output_cost_per_million: Some(20.0),
+            system_prompt: "You are Tau.".to_string(),
+            available_skills: Vec::new(),
+            explicit_skill_names: Vec::new(),
+            max_turns: 8,
+            tool_registrar: Arc::new(FixturePipelineToolRegistrar::new(
+                tool_root,
+                temp.path().join(".tau/gateway-cancelled-partial"),
+            )),
+            turn_timeout_ms: 500,
+            session_lock_wait_ms: 500,
+            session_lock_stale_ms: 10_000,
+            state_dir: temp.path().join(".tau/gateway-cancelled-partial"),
+            bind: "127.0.0.1:0".to_string(),
+            auth_mode: GatewayOpenResponsesAuthMode::Token,
+            auth_token: Some("secret".to_string()),
+            auth_password: None,
+            session_ttl_seconds: 3_600,
+            rate_limit_window_seconds: 60,
+            rate_limit_max_requests: 120,
+            max_input_chars: 10_000,
+            runtime_heartbeat: RuntimeHeartbeatSchedulerConfig {
+                enabled: false,
+                interval: std::time::Duration::from_secs(5),
+                state_path: temp
+                    .path()
+                    .join(".tau/runtime-heartbeat-cancelled-partial/state.json"),
+                ..RuntimeHeartbeatSchedulerConfig::default()
+            },
+            external_coding_agent_bridge: tau_runtime::ExternalCodingAgentBridgeConfig::default(),
+            delegated_tool_execution: false,
+        },
+    ));
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+
+    let client = Client::new();
+    let response = client
+        .post(format!("http://{addr}{OPENRESPONSES_ENDPOINT}"))
+        .bearer_auth("secret")
+        .json(&json!({
+            "input": "create a Phaser game in this workspace",
+            "stream": true,
+            "metadata": {
+                "session_id": "cancelled-partial-session",
+                "mission_id": "cancelled-partial-mission"
+            }
+        }))
+        .send()
+        .await
+        .expect("send cancelled partial stream request");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response
+        .text()
+        .await
+        .expect("read cancelled partial stream body");
+    assert!(
+        body.contains("event: response.operator_turn_state.snapshot"),
+        "body={body}"
+    );
+    assert!(body.contains("event: response.failed"), "body={body}");
+
+    let snapshot_data = body
+        .split("event: response.operator_turn_state.snapshot")
+        .nth(1)
+        .and_then(|section| section.split("data: ").nth(1))
+        .and_then(|section| section.split("\n\n").next())
+        .expect("cancelled operator state snapshot data");
+    let snapshot: Value =
+        serde_json::from_str(snapshot_data).expect("parse cancelled snapshot json");
+    assert_eq!(snapshot["status"], Value::String("cancelled".to_string()));
+    assert_eq!(
+        snapshot["assistant_text"],
+        Value::String("partial cancellation draft".to_string())
+    );
+    assert_eq!(
+        snapshot["error"]["reason_code"],
+        Value::String("gateway_cancelled".to_string())
+    );
+
+    let snapshot_index = body
+        .find("event: response.operator_turn_state.snapshot")
+        .expect("snapshot event index");
+    let failed_index = body
+        .find("event: response.failed")
+        .expect("failed event index");
+    assert!(
+        snapshot_index < failed_index,
+        "cancelled snapshot must arrive before response.failed, body={body}"
+    );
+
+    handle.abort();
+}
+
+#[tokio::test]
 async fn regression_openresponses_stream_emits_completed_event_for_non_timeout_tool() {
     let temp = tempdir().expect("tempdir");
     let scripted = Arc::new(ScriptedGatewayLlmClient::new(vec![ChatResponse {

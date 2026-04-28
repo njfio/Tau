@@ -6,7 +6,7 @@
 - [x] T2 RED: add a gateway stream regression proving partial-output recovery emits an operator snapshot before the legacy `response.failed` compatibility frame.
 - [x] T3 GREEN: emit a timeout `response.operator_turn_state.snapshot` with `status=timed_out`, `error.reason_code=gateway_timeout`, the partial assistant output observed before timeout, and any finalized pending tool context.
 - [x] T4 COMPAT: keep legacy `response.failed` and pending `response.tool_execution.completed` timeout frames compatible for existing clients.
-- [ ] T5 CLOSEOUT: verify scoped gateway tests, format/lint, Cargo manifest stability, and publish #3583 evidence.
+- [x] T5 CLOSEOUT: verify scoped gateway tests, format/lint, Cargo manifest stability, and publish #3583 evidence.
 
 ## Semantics
 
@@ -14,6 +14,7 @@
 - Runtime timeout after partial output should preserve the partial output in the operator snapshot instead of making operators reconstruct it from legacy deltas.
 - Pending tools finalized during timeout should remain visible as failed tool context with `timed_out=true` in legacy frames and failed tool state in operator snapshots.
 - The operator snapshot is additive: clients that only understand `response.failed` keep working.
+- Runtime cancellation should mirror timeout recovery where practical: preserve buffered partial assistant output, finalize pending tool state as cancelled/failed context, emit an operator-visible `cancelled` snapshot before compatibility failure frames, and let clients suppress duplicate generic gateway errors.
 
 ## Evidence
 
@@ -25,3 +26,11 @@
 	keeps verifier-blocked recovery snapshots stable.
 - `cargo test -p tau-tui operator_turn_state_checkpoint_blocked_timeout -- --test-threads=1`
 	proves the TUI preserves timeout partial assistant output from a timed-out operator snapshot and suppresses the following generic `response.failed` duplicate.
+- `cargo test -p tau-gateway runtime_cancel -- --test-threads=1`
+	proves a cancelled streamed turn emits an operator snapshot with buffered partial output before legacy compatibility failure frames.
+- `cargo fmt --check`
+	keeps the workspace format-clean after timeout/cancellation recovery changes.
+- `cargo clippy -p tau-gateway -p tau-tui --tests --no-deps -- -D warnings`
+	keeps gateway and TUI compatibility paths warning-free.
+- `git diff --quiet -- Cargo.toml`
+	confirms the cancellation recovery slice did not mutate workspace manifests.
