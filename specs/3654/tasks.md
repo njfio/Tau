@@ -58,3 +58,48 @@ Evidence:
 - `cargo test -p tau-gateway mission_completion_outcome_snapshot -- --test-threads=1`
       proves the learning handoff does not regress the streamed operator snapshot
       semantics for checkpointed and blocked mission outcomes.
+
+## Implementation slice: verifier-blocked recovery learning handoff
+
+- [x] T10 Specify: define verifier-blocked fail-closed recovery outcomes as
+       reusable Ralph learning signals when gateway verifiers block no-tool fabricated
+       progress or read-only-only implementation completion claims.
+- [x] T11 RED: add gateway coverage proving a verifier-blocked fabricated-progress
+       mission writes an unsuccessful action-history record with the verifier reason code,
+       session key, and mission id.
+- [x] T12 GREEN: persist verifier-blocked recovery records into the existing
+       `tau-memory` action-history store so future learning bulletins can warn against
+       repeating no-tool or missing-mutation completion claims.
+- [x] T13 CLOSEOUT: verify the new verifier-blocked learning handoff alongside
+       fabricated-progress blocking, mutating-evidence blocking, existing mission
+       completion learning, formatting, clippy, and Cargo manifest stability.
+
+Verifier-blocked handoff boundary:
+- Session: the OpenResponses session key remains the durable lineage anchor for
+      verifier-blocked action-history learning records.
+- Memory: `tau-memory` action history remains the shared learning store; this
+      slice must not introduce a separate verifier-specific learning file.
+- Learning: fail-closed verifier outcomes should become unsuccessful action-history
+      records that preserve the verifier reason code and mission id so a later
+      Ralph-loop iteration can learn that assistant-only or read-only-only completion
+      claims were blocked.
+- Operator rows: verifier-blocked learning records must not reintroduce
+      `complete_task` or verifier internals into normal observed tool rows; they are
+      learning evidence, not user-visible tool execution evidence.
+
+Evidence:
+- `cargo test -p tau-gateway verifier_blocked_learning -- --test-threads=1`
+      proves verifier-blocked fabricated-progress outcomes are persisted as unsuccessful
+      `gateway_verifier` action-history learning records keyed by session and mission,
+      without creating `complete_task` rows.
+- `cargo test -p tau-gateway fabricated_progress -- --test-threads=1`
+      keeps the #3602 no-tool fabricated-progress fail-closed policy compatible with
+      verifier-blocked learning records.
+- `cargo test -p tau-gateway mutating_tool_evidence -- --test-threads=1`
+      keeps the #3603 read-only-only missing-mutation fail-closed policy compatible with
+      verifier-blocked learning records.
+- `cargo test -p tau-gateway mission_completion_learning_handoff -- --test-threads=1`
+      keeps normal `complete_task` completion learning separated from verifier-blocked
+      recovery learning evidence.
+- `cargo fmt --check`, `cargo clippy -p tau-gateway --tests --no-deps -- -D warnings`,
+      and `git diff --quiet -- Cargo.toml` passed for the slice.

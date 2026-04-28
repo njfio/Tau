@@ -6,8 +6,10 @@ use tau_memory::action_history::{
 };
 
 pub(super) const GATEWAY_ACTION_HISTORY_LOOKBACK: usize = 128;
+pub(super) const GATEWAY_VERIFIER_HISTORY_TOOL_NAME: &str = "gateway_verifier";
 
 const GATEWAY_ACTION_HISTORY_FILE: &str = "action-history.jsonl";
+const GATEWAY_VERIFIER_HISTORY_SUMMARY_MAX_CHARS: usize = 240;
 
 #[derive(Debug, Clone)]
 pub(super) struct GatewayActionHistoryToolRecord {
@@ -113,6 +115,51 @@ pub(super) fn append_gateway_completion_history_record(
             timestamp_ms,
         }],
     );
+}
+
+pub(super) fn append_gateway_verifier_blocked_history_record(
+    store: &mut ActionHistoryStore,
+    session_key: &str,
+    mission_id: &str,
+    turn: usize,
+    verifier: &GatewayMissionVerifierBundle,
+    assistant_summary: &str,
+    timestamp_ms: u64,
+) {
+    if verifier.overall.status != GatewayMissionVerifierStatus::Failed {
+        return;
+    }
+    let mut input_summary = format!(
+        "verifier_status=blocked reason_code={}",
+        verifier.overall.reason_code
+    );
+    let assistant_summary = summarize_gateway_verifier_history_text(assistant_summary);
+    if !assistant_summary.is_empty() {
+        input_summary.push_str(" assistant_summary=");
+        input_summary.push_str(assistant_summary.as_str());
+    }
+    append_gateway_action_history_records(
+        store,
+        &[GatewayActionHistoryToolRecord {
+            session_key: session_key.to_string(),
+            mission_id: mission_id.to_string(),
+            turn,
+            tool_name: GATEWAY_VERIFIER_HISTORY_TOOL_NAME.to_string(),
+            input_summary,
+            output_summary: verifier.overall.message.clone(),
+            success: false,
+            latency_ms: 0,
+            timestamp_ms,
+        }],
+    );
+}
+
+fn summarize_gateway_verifier_history_text(raw: &str) -> String {
+    let summary = raw.split_whitespace().collect::<Vec<_>>().join(" ");
+    summary
+        .chars()
+        .take(GATEWAY_VERIFIER_HISTORY_SUMMARY_MAX_CHARS)
+        .collect()
 }
 
 pub(super) fn build_gateway_learning_insight(

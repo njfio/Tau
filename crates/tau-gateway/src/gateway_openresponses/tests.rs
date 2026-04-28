@@ -5438,6 +5438,98 @@ async fn mission_completion_learning_handoff_records_checkpointed_and_blocked_ou
 }
 
 #[tokio::test]
+async fn verifier_blocked_learning_handoff_records_fabricated_progress_fail_closed_outcome() {
+    let temp = tempdir().expect("tempdir");
+    let scripted = Arc::new(ScriptedGatewayLlmClient::new(vec![
+        scripted_gateway_response(
+            "I built the markdown todo app and the implementation is complete.",
+        ),
+        scripted_gateway_response(
+            "The app has been created successfully and no further workspace changes are needed.",
+        ),
+    ]));
+    let tool_root = temp.path().join("workspace");
+    std::fs::create_dir_all(&tool_root).expect("create tool workspace");
+    let state = test_state_with_client_and_auth(
+        temp.path(),
+        10_000,
+        scripted,
+        Arc::new(FixturePipelineToolRegistrar::new(
+            tool_root,
+            temp.path().join(".tau/gateway"),
+        )),
+        GatewayOpenResponsesAuthMode::Token,
+        Some("secret"),
+        None,
+        60,
+        120,
+    );
+    let state_dir = state.config.state_dir.clone();
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+
+    let client = Client::builder()
+        .timeout(Duration::from_secs(2))
+        .build()
+        .expect("client with timeout");
+    let response = client
+        .post(format!("http://{addr}{OPENRESPONSES_ENDPOINT}"))
+        .bearer_auth("secret")
+        .json(&json!({
+            "input": "build a markdown todo app in this workspace",
+            "metadata": {
+                "session_id": "session-3654-verifier-blocked-fabricated",
+                "mission_id": "mission-3654-verifier-blocked-fabricated"
+            }
+        }))
+        .send()
+        .await
+        .expect("send fabricated progress request");
+    let status = response.status();
+    let payload = response
+        .json::<Value>()
+        .await
+        .expect("parse fabricated progress payload");
+    assert_eq!(
+        status,
+        StatusCode::BAD_GATEWAY,
+        "unexpected payload: {payload}"
+    );
+
+    let store = load_gateway_action_history_store(&state_dir).expect("load action history");
+    let verifier_records = store.query(&ActionFilter {
+        session_id: Some("session-3654-verifier-blocked-fabricated".to_string()),
+        tool_name: Some("gateway_verifier".to_string()),
+        max_results: Some(8),
+        ..Default::default()
+    });
+    assert!(
+        verifier_records.iter().any(|record| !record.success
+            && record
+                .input_summary
+                .contains("mission=mission-3654-verifier-blocked-fabricated")
+            && record
+                .input_summary
+                .contains("reason_code=claimed_completion_without_tool_evidence_exhausted")
+            && record
+                .output_summary
+                .contains("claimed completion without tool evidence")),
+        "verifier records={verifier_records:?}"
+    );
+    let completion_records = store.query(&ActionFilter {
+        session_id: Some("session-3654-verifier-blocked-fabricated".to_string()),
+        tool_name: Some(GATEWAY_COMPLETE_TASK_TOOL_NAME.to_string()),
+        max_results: Some(8),
+        ..Default::default()
+    });
+    assert!(
+        completion_records.is_empty(),
+        "verifier-blocked learning must not create complete_task rows: {completion_records:?}"
+    );
+
+    handle.abort();
+}
+
+#[tokio::test]
 async fn functional_openai_chat_completions_endpoint_returns_non_stream_response() {
     let temp = tempdir().expect("tempdir");
     let state = test_state(temp.path(), 10_000, "secret");

@@ -12,8 +12,8 @@ use tau_contract::operator_state::{
 use tau_memory::action_history::ActionHistoryStore;
 
 use super::learning_runtime::{
-    append_gateway_completion_history_record, load_gateway_action_history_store,
-    save_gateway_action_history_store,
+    append_gateway_completion_history_record, append_gateway_verifier_blocked_history_record,
+    load_gateway_action_history_store, save_gateway_action_history_store,
 };
 
 const GATEWAY_TOOL_SUMMARY_MAX_CHARS: usize = 240;
@@ -722,6 +722,15 @@ pub(super) async fn execute_openresponses_request(
                 break Ok(());
             }
             GatewayMissionVerifierStatus::Failed => {
+                append_gateway_verifier_blocked_history_record(
+                    &mut action_history_store,
+                    translated.session_key.as_str(),
+                    translated.mission_id.as_str(),
+                    attempt_number,
+                    &verifier,
+                    assistant_summary.as_str(),
+                    finished_unix_ms,
+                );
                 emit_gateway_operator_blocked_snapshot(
                     stream_sender.as_ref(),
                     response_id.as_str(),
