@@ -10810,6 +10810,91 @@ async fn verifier_blocked_learning_bulletin_replays_reason_code_into_followup_sy
 }
 
 #[tokio::test]
+async fn issue_3673_required_tool_learning_bulletin_replays_reason_code_into_followup_system_prompt(
+) {
+    let temp = tempdir().expect("tempdir");
+    let scripted = Arc::new(ScriptedGatewayLlmClient::new(vec![
+        scripted_gateway_response("I will fix the validation next."),
+        scripted_gateway_response("I still need to think before using tools."),
+        scripted_gateway_response("follow-up request complete"),
+    ]));
+    let tool_root = temp.path().join("workspace");
+    std::fs::create_dir_all(&tool_root).expect("create tool workspace");
+    let state = test_state_with_client_and_auth(
+        temp.path(),
+        10_000,
+        scripted.clone(),
+        Arc::new(FixturePipelineToolRegistrar::new(
+            tool_root,
+            temp.path().join(".tau/gateway"),
+        )),
+        GatewayOpenResponsesAuthMode::Token,
+        Some("secret"),
+        None,
+        60,
+        120,
+    );
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+
+    let client = Client::builder()
+        .timeout(Duration::from_secs(2))
+        .build()
+        .expect("client with timeout");
+    let blocked = client
+        .post(format!("http://{addr}{OPENRESPONSES_ENDPOINT}"))
+        .bearer_auth("secret")
+        .json(&json!({
+            "input": "fix the failing validation in this workspace",
+            "metadata": {
+                "session_id": "session-3673-required-tool-learning-seed",
+                "mission_id": "mission-3673-required-tool-learning-seed"
+            }
+        }))
+        .send()
+        .await
+        .expect("send required-tool learning seed request");
+    assert_eq!(blocked.status(), StatusCode::BAD_GATEWAY);
+
+    let followup = client
+        .post(format!("http://{addr}{OPENRESPONSES_ENDPOINT}"))
+        .bearer_auth("secret")
+        .json(&json!({
+            "input": "what should you do next",
+            "metadata": {
+                "session_id": "session-3673-required-tool-learning-followup",
+                "mission_id": "mission-3673-required-tool-learning-followup"
+            }
+        }))
+        .send()
+        .await
+        .expect("send required-tool learning follow-up request");
+    assert_eq!(followup.status(), StatusCode::OK);
+
+    let captured_requests = scripted.captured_requests().await;
+    assert!(
+        captured_requests.len() >= 3,
+        "expected required-tool seed plus follow-up request capture"
+    );
+    let followup_request = captured_requests
+        .last()
+        .expect("captured required-tool learning follow-up request");
+    let system_text = followup_request
+        .messages
+        .iter()
+        .find(|message| message.role == MessageRole::System)
+        .expect("system message")
+        .text_content();
+    assert!(system_text.contains("## Learning Insights"));
+    assert!(system_text.contains("gateway_verifier"));
+    assert!(
+        system_text.contains("required_tool_evidence_missing_exhausted"),
+        "expected required-tool reason code in learning bulletin: {system_text}"
+    );
+
+    handle.abort();
+}
+
+#[tokio::test]
 async fn runtime_recovery_learning_bulletin_replays_cancelled_reason_code_into_followup_system_prompt(
 ) {
     let temp = tempdir().expect("tempdir");

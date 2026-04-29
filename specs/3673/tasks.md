@@ -14,3 +14,12 @@
 - Added gateway/TUI bridge regressions proving `required_tool_evidence_missing_exhausted` is exposed through additive operator snapshots and rendered once in the TUI instead of being replaced by a generic gateway error.
 - Added provider tool-choice matrix coverage proving Auto, Required, and concrete Tool prompt contracts across Codex, Claude, and Gemini; concrete Tool now requires the named tool instead of sharing Auto's soft prompt contract.
 - Verified scoped provider/gateway regressions plus the full `gateway_openresponses` gateway test filter before closeout.
+
+## Required-tool learning bulletin replay slice
+
+- [x] T6. Define required-tool exhaustion as verifier-blocked recovery evidence: later Ralph turns must receive a `## Learning Insights` bulletin that names `gateway_verifier` and replays the exact `required_tool_evidence_missing_exhausted` reason code.
+- [x] T7. Add a focused replay regression that seeds a required-tool exhausted mission, sends a follow-up request, and asserts the follow-up system prompt contains `gateway_verifier` plus `required_tool_evidence_missing_exhausted`.
+- [x] T8. Preserve the reason code in the verifier action-history output summary so generic failure-pattern rendering can replay it without special-casing #3673. Existing `gateway_verifier` output-summary preservation covers this path; no #3673-specific runtime branch is required.
+- [ ] T9. Verify scoped gateway/provider regressions, format, clippy, and Cargo manifest stability before posting #3673 evidence.
+
+Boundary: `complete_task` remains reserved for explicit mission completion. Required-tool retry exhaustion is fail-closed verifier evidence, so the replay signal stays under `gateway_verifier` with the operational `reason_code` preserved for follow-up learning prompts.
