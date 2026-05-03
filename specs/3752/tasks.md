@@ -9,6 +9,13 @@ Status: Completed
 - [x] T5 (GREEN): add gateway adapter projection into shared mission snapshots.
 - [x] T6 (VERIFY): run scoped core/gateway tests and static checks.
 - [x] T7 (CLOSEOUT): update spec/tasks status and report AC evidence.
+- [x] T8 (SPEC): extend #3752 for Slice 3 mission DAG/checkpoint runtime.
+- [x] T9 (RED): add failing core tests for DAG readiness, checkpoint resume,
+      and completion blockers.
+- [x] T10 (GREEN): implement mission DAG validation/readiness helpers.
+- [x] T11 (GREEN): implement checkpoint/recovery and completion readiness
+      helpers.
+- [x] T12 (VERIFY): run scoped core tests, fmt, Clippy, and PR checks.
 
 ## Verification Evidence
 
@@ -23,3 +30,10 @@ Status: Completed
 - Static: `cargo fmt --check -p tau-agent-core -p tau-gateway` passed.
 - Static: `cargo check -p tau-agent-core -p tau-gateway` passed.
 - Static: `cargo clippy -p tau-agent-core -p tau-gateway -- -D warnings` passed.
+- RED: `cargo test -p tau-agent-core mission --lib` failed before Slice 3
+  implementation with missing `validate_plan_dag`, `ready_plan_node_ids`,
+  `record_checkpoint`, `block_for_recovery`, `completion_blockers`, and related
+  error/blocker types.
+- GREEN: `cargo test -p tau-agent-core mission --lib` passed, 6 tests.
+- Static: `cargo fmt --check -p tau-agent-core` passed.
+- Static: `cargo clippy -p tau-agent-core --all-targets --all-features -- -D warnings` passed.

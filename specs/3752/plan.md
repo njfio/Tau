@@ -57,3 +57,44 @@ gateway behavior.
 - Static: `cargo fmt --check`
 - Static: `cargo check -p tau-agent-core -p tau-gateway`
 - Static: `cargo clippy -p tau-agent-core -p tau-gateway -- -D warnings`
+
+## Slice 3 Addendum: Plan DAG and Checkpoint Runtime
+
+### Goal
+
+Make the shared mission contract executable enough for harness runtime code to
+ask core questions without gateway ownership: which plan nodes are ready, which
+DAG defects block execution, what checkpoint should resume, and what evidence
+still blocks completion.
+
+### Approach
+
+1. Add RED unit tests in `tau-agent-core` for plan readiness, DAG validation,
+   checkpoint pending-node capture, and completion blockers.
+2. Keep the public mission schema lightweight and backward-compatible by
+   preserving the existing string plan-node status field.
+3. Add core helper methods on `MissionSnapshot` for DAG validation, ready-node
+   selection, checkpoint recording, recovery blocking, and completion readiness.
+4. Export any new core error/blocker types from `tau-agent-core`.
+5. Re-run focused mission tests and static checks for `tau-agent-core`.
+
+### Additional Affected Modules
+
+- `crates/tau-agent-core/src/mission.rs`
+- `crates/tau-agent-core/src/lib.rs`
+
+### Additional Risks / Mitigations
+
+- Risk: introducing a richer plan-node enum breaks adapter compatibility.
+  Mitigation: keep the serialized `status` field as a string in this slice and
+  centralize status interpretation in core helper methods.
+- Risk: completion semantics become too strict for existing gateway snapshots.
+  Mitigation: expose completion readiness as an explicit helper instead of
+  changing gateway completion behavior in this slice.
+
+### Additional Verification
+
+- RED: `cargo test -p tau-agent-core mission --lib`
+- GREEN: `cargo test -p tau-agent-core mission --lib`
+- Static: `cargo fmt --check -p tau-agent-core`
+- Static: `cargo clippy -p tau-agent-core --all-targets --all-features -- -D warnings`

@@ -69,6 +69,27 @@ when the shared mission projection is introduced,
 then existing gateway mission state serialization and existing endpoint fields
 remain compatible, and additive harness projections expose shared mission state.
 
+### AC-5 Mission plan DAG exposes executable readiness
+
+Given a shared mission snapshot with plan nodes and dependencies,
+when the harness asks for ready work,
+then only pending nodes whose dependencies are completed or skipped are returned,
+and invalid DAGs are rejected before execution.
+
+### AC-6 Checkpoints preserve resumable mission work
+
+Given an executing mission with unfinished plan nodes,
+when the mission records a checkpoint,
+then the checkpoint stores the pending plan node IDs and the recovery state can
+refer to the last checkpoint without importing gateway runtime code.
+
+### AC-7 Completion requires plan, verification, and learning proof
+
+Given a mission that is about to complete,
+when the harness evaluates completion readiness,
+then incomplete plan nodes, non-passing verification gates, and missing final
+learning output are reported as deterministic blockers.
+
 ## Conformance Cases
 
 | Case | AC | Tier | Given | When | Then |
@@ -77,6 +98,10 @@ remain compatible, and additive harness projections expose shared mission state.
 | C-02 | AC-2 | Unit | mission status `Completed` | transition to `Executing` is requested | transition fails and status remains `Completed` |
 | C-03 | AC-3 | Conformance | gateway mission with verifier/completion/iteration data | projected to shared mission snapshot | core identity/status/proof fields match gateway state |
 | C-04 | AC-4 | Regression | existing gateway mission runtime/list/detail tests | scoped gateway tests run | existing fields stay green and additive harness projection fields are present |
+| C-05 | AC-5 | Unit | mission plan DAG with pending/completed/skipped dependencies | ready node IDs are requested | only executable nodes are returned |
+| C-06 | AC-5 | Unit | mission plan DAG with a missing dependency or cycle | DAG validation runs | deterministic validation errors are returned |
+| C-07 | AC-6 | Unit | executing mission with unfinished plan nodes | checkpoint is recorded | checkpoint stores pending node IDs and mission enters checkpointed state |
+| C-08 | AC-7 | Unit | mission with incomplete plan/verification/learning proof | completion readiness is evaluated | deterministic completion blockers are returned |
 
 ## Success Metrics / Observable Signals
 
@@ -87,3 +112,6 @@ remain compatible, and additive harness projections expose shared mission state.
   projection fields in this slice.
 - The ownership-inversion ADR exists and links this issue to the harness lane
   plan.
+- Mission plan DAG readiness, checkpoint resume state, and completion blockers
+  can be evaluated in `tau-agent-core` without importing gateway or dashboard
+  code.
