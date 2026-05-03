@@ -105,6 +105,8 @@ pub struct MissionSnapshot {
     #[serde(default)]
     pub tool_budget: MissionToolBudget,
     #[serde(default)]
+    pub tool_evidence: Vec<MissionToolCallEvidence>,
+    #[serde(default)]
     pub memory_hits: Vec<MissionMemoryHit>,
     #[serde(default)]
     pub verification_gates: Vec<MissionVerificationGate>,
@@ -143,6 +145,7 @@ impl MissionSnapshot {
             acceptance_criteria: Vec::new(),
             plan_dag: Vec::new(),
             tool_budget: MissionToolBudget::default(),
+            tool_evidence: Vec::new(),
             memory_hits: Vec::new(),
             verification_gates: Vec::new(),
             checkpoints: Vec::new(),
@@ -310,11 +313,110 @@ impl MissionSnapshot {
             blockers.push(MissionCompletionBlocker::MissingFinalLearningOutput);
         }
 
+        if self.tool_budget.consumed_tool_calls > self.tool_evidence.len() {
+            blockers.push(MissionCompletionBlocker::MissingToolEvidence {
+                consumed_tool_calls: self.tool_budget.consumed_tool_calls,
+                recorded_tool_calls: self.tool_evidence.len(),
+            });
+        }
+
         blockers
     }
 
     pub fn ready_for_completion(&self) -> bool {
         self.completion_blockers().is_empty()
+    }
+
+    pub fn ensure_tool_budget_available(
+        &self,
+        tool_name: &str,
+        runtime_ms: Option<u64>,
+        cost_usd: Option<f64>,
+    ) -> Result<(), MissionToolBudgetError> {
+        if !self.tool_budget.allowed_tools.is_empty()
+            && !self
+                .tool_budget
+                .allowed_tools
+                .iter()
+                .any(|allowed_tool| allowed_tool == tool_name)
+        {
+            return Err(MissionToolBudgetError::ToolNotAllowed {
+                tool_name: tool_name.to_string(),
+            });
+        }
+
+        if let Some(max_tool_calls) = self.tool_budget.max_tool_calls {
+            if self.tool_budget.consumed_tool_calls >= max_tool_calls {
+                return Err(MissionToolBudgetError::ToolCallBudgetExhausted { max_tool_calls });
+            }
+        }
+
+        if let Some(max_runtime_ms) = self.tool_budget.max_runtime_ms {
+            let next_runtime = self
+                .tool_budget
+                .consumed_runtime_ms
+                .saturating_add(runtime_ms.unwrap_or_default());
+            if next_runtime > max_runtime_ms {
+                return Err(MissionToolBudgetError::RuntimeBudgetExhausted { max_runtime_ms });
+            }
+        }
+
+        if let Some(max_cost_usd) = self.tool_budget.max_cost_usd {
+            let next_cost = self.tool_budget.consumed_cost_usd.unwrap_or_default()
+                + cost_usd.unwrap_or_default();
+            if next_cost > max_cost_usd {
+                return Err(MissionToolBudgetError::CostBudgetExhausted { max_cost_usd });
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn record_tool_call_evidence(
+        &mut self,
+        evidence: MissionToolCallEvidence,
+    ) -> Result<(), MissionToolEvidenceError> {
+        if evidence.mission_id != self.mission_id {
+            return Err(MissionToolEvidenceError::MissionIdMismatch {
+                expected: self.mission_id.clone(),
+                actual: evidence.mission_id,
+            });
+        }
+
+        self.ensure_tool_budget_available(
+            &evidence.tool_name,
+            evidence.runtime_ms,
+            evidence.cost_usd,
+        )
+        .map_err(MissionToolEvidenceError::Budget)?;
+
+        self.tool_budget.consumed_tool_calls =
+            self.tool_budget.consumed_tool_calls.saturating_add(1);
+        self.tool_budget.consumed_runtime_ms = self
+            .tool_budget
+            .consumed_runtime_ms
+            .saturating_add(evidence.runtime_ms.unwrap_or_default());
+        if let Some(cost_usd) = evidence.cost_usd {
+            self.tool_budget.consumed_cost_usd =
+                Some(self.tool_budget.consumed_cost_usd.unwrap_or_default() + cost_usd);
+        }
+        self.tool_evidence.push(evidence);
+        Ok(())
+    }
+
+    pub fn tool_evidence_for_verification_gate(
+        &self,
+        gate_id: &str,
+    ) -> Vec<&MissionToolCallEvidence> {
+        self.tool_evidence
+            .iter()
+            .filter(|evidence| {
+                evidence
+                    .verification_gate_ids
+                    .iter()
+                    .any(|candidate_gate_id| candidate_gate_id == gate_id)
+            })
+            .collect()
     }
 
     fn plan_dag_contains_cycle(&self) -> bool {
@@ -411,6 +513,40 @@ pub struct MissionToolBudget {
     pub consumed_runtime_ms: u64,
     #[serde(default)]
     pub consumed_cost_usd: Option<f64>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum MissionToolCallStatus {
+    Started,
+    Succeeded,
+    Failed,
+    Blocked,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct MissionToolCallEvidence {
+    pub tool_call_id: String,
+    pub mission_id: String,
+    #[serde(default)]
+    pub plan_node_id: Option<String>,
+    pub tool_name: String,
+    pub status: MissionToolCallStatus,
+    pub started_unix_ms: u64,
+    #[serde(default)]
+    pub completed_unix_ms: Option<u64>,
+    #[serde(default)]
+    pub runtime_ms: Option<u64>,
+    #[serde(default)]
+    pub cost_usd: Option<f64>,
+    #[serde(default)]
+    pub summary: Option<String>,
+    #[serde(default)]
+    pub artifact_ids: Vec<String>,
+    #[serde(default)]
+    pub verification_gate_ids: Vec<String>,
+    #[serde(default)]
+    pub metadata: BTreeMap<String, Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -514,6 +650,30 @@ pub enum MissionCompletionBlocker {
         status: Option<MissionVerifierStatus>,
     },
     MissingFinalLearningOutput,
+    MissingToolEvidence {
+        consumed_tool_calls: usize,
+        recorded_tool_calls: usize,
+    },
+}
+
+#[derive(Debug, Clone, Error, PartialEq)]
+pub enum MissionToolBudgetError {
+    #[error("tool {tool_name} is not allowed by mission tool budget")]
+    ToolNotAllowed { tool_name: String },
+    #[error("mission tool call budget exhausted at {max_tool_calls} calls")]
+    ToolCallBudgetExhausted { max_tool_calls: usize },
+    #[error("mission runtime budget exhausted at {max_runtime_ms}ms")]
+    RuntimeBudgetExhausted { max_runtime_ms: u64 },
+    #[error("mission cost budget exhausted at ${max_cost_usd}")]
+    CostBudgetExhausted { max_cost_usd: f64 },
+}
+
+#[derive(Debug, Clone, Error, PartialEq)]
+pub enum MissionToolEvidenceError {
+    #[error("tool evidence mission id mismatch: expected {expected}, got {actual}")]
+    MissionIdMismatch { expected: String, actual: String },
+    #[error(transparent)]
+    Budget(#[from] MissionToolBudgetError),
 }
 
 #[derive(Debug, Clone, Copy, Error, PartialEq, Eq)]
@@ -565,6 +725,7 @@ mod tests {
         assert!(mission.acceptance_criteria.is_empty());
         assert!(mission.plan_dag.is_empty());
         assert!(mission.tool_budget.allowed_tools.is_empty());
+        assert!(mission.tool_evidence.is_empty());
         assert!(mission.memory_hits.is_empty());
         assert!(mission.verification_gates.is_empty());
         assert!(mission.checkpoints.is_empty());
@@ -706,6 +867,157 @@ mod tests {
             records: vec!["learning-record-1".to_string()],
             curator_recommendation: Some("retain skill prompt".to_string()),
         });
+
+        assert!(mission.completion_blockers().is_empty());
+        assert!(mission.ready_for_completion());
+    }
+
+    fn tool_evidence(
+        mission_id: &str,
+        plan_node_id: Option<&str>,
+        tool_call_id: &str,
+        tool_name: &str,
+    ) -> MissionToolCallEvidence {
+        MissionToolCallEvidence {
+            tool_call_id: tool_call_id.to_string(),
+            mission_id: mission_id.to_string(),
+            plan_node_id: plan_node_id.map(str::to_string),
+            tool_name: tool_name.to_string(),
+            status: MissionToolCallStatus::Succeeded,
+            started_unix_ms: 700,
+            completed_unix_ms: Some(725),
+            runtime_ms: Some(25),
+            cost_usd: Some(0.01),
+            summary: Some("tool completed".to_string()),
+            artifact_ids: vec!["artifact-1".to_string()],
+            verification_gate_ids: vec!["gate-1".to_string()],
+            metadata: BTreeMap::from([("stdout_excerpt".to_string(), Value::String("ok".into()))]),
+        }
+    }
+
+    #[test]
+    fn mission_tool_evidence_preserves_attribution_and_links() {
+        let mut mission = MissionSnapshot::new("mission-theta", "run tests", 700);
+        mission.tool_budget.allowed_tools = vec!["bash".to_string()];
+        mission.tool_budget.max_tool_calls = Some(2);
+        let evidence = tool_evidence(&mission.mission_id, Some("verify"), "tool-1", "bash");
+
+        mission
+            .record_tool_call_evidence(evidence.clone())
+            .expect("record tool evidence");
+
+        assert_eq!(mission.tool_budget.consumed_tool_calls, 1);
+        assert_eq!(mission.tool_budget.consumed_runtime_ms, 25);
+        assert_eq!(mission.tool_budget.consumed_cost_usd, Some(0.01));
+        assert_eq!(mission.tool_evidence, vec![evidence]);
+        assert_eq!(
+            mission.tool_evidence_for_verification_gate("gate-1"),
+            vec![&mission.tool_evidence[0]]
+        );
+    }
+
+    #[test]
+    fn mission_tool_budget_blocks_disallowed_and_exhausted_calls() {
+        let mut exhausted = MissionSnapshot::new("mission-iota", "respect budget", 800);
+        exhausted.tool_budget.allowed_tools = vec!["bash".to_string()];
+        exhausted.tool_budget.max_tool_calls = Some(1);
+        exhausted
+            .record_tool_call_evidence(tool_evidence(&exhausted.mission_id, None, "tool-1", "bash"))
+            .expect("first call is inside budget");
+
+        let before = exhausted.tool_evidence.clone();
+        let error = exhausted
+            .record_tool_call_evidence(tool_evidence(&exhausted.mission_id, None, "tool-2", "bash"))
+            .expect_err("second call exceeds max calls");
+
+        assert_eq!(
+            error,
+            MissionToolEvidenceError::Budget(MissionToolBudgetError::ToolCallBudgetExhausted {
+                max_tool_calls: 1,
+            })
+        );
+        assert_eq!(exhausted.tool_evidence, before);
+        assert_eq!(exhausted.tool_budget.consumed_tool_calls, 1);
+
+        let mut disallowed = MissionSnapshot::new("mission-kappa", "respect tool allowlist", 810);
+        disallowed.tool_budget.allowed_tools = vec!["bash".to_string()];
+
+        let error = disallowed
+            .record_tool_call_evidence(tool_evidence(
+                &disallowed.mission_id,
+                None,
+                "tool-1",
+                "python",
+            ))
+            .expect_err("python is not allowed");
+
+        assert_eq!(
+            error,
+            MissionToolEvidenceError::Budget(MissionToolBudgetError::ToolNotAllowed {
+                tool_name: "python".to_string(),
+            })
+        );
+        assert!(disallowed.tool_evidence.is_empty());
+        assert_eq!(disallowed.tool_budget.consumed_tool_calls, 0);
+
+        let mut runtime = MissionSnapshot::new("mission-runtime", "respect runtime", 820);
+        runtime.tool_budget.max_runtime_ms = Some(20);
+        let error = runtime
+            .record_tool_call_evidence(tool_evidence(&runtime.mission_id, None, "tool-1", "bash"))
+            .expect_err("runtime exceeds budget");
+        assert_eq!(
+            error,
+            MissionToolEvidenceError::Budget(MissionToolBudgetError::RuntimeBudgetExhausted {
+                max_runtime_ms: 20,
+            })
+        );
+        assert!(runtime.tool_evidence.is_empty());
+
+        let mut cost = MissionSnapshot::new("mission-cost", "respect cost", 830);
+        cost.tool_budget.max_cost_usd = Some(0.005);
+        let error = cost
+            .record_tool_call_evidence(tool_evidence(&cost.mission_id, None, "tool-1", "bash"))
+            .expect_err("cost exceeds budget");
+        assert_eq!(
+            error,
+            MissionToolEvidenceError::Budget(MissionToolBudgetError::CostBudgetExhausted {
+                max_cost_usd: 0.005,
+            })
+        );
+        assert!(cost.tool_evidence.is_empty());
+    }
+
+    #[test]
+    fn mission_completion_blocks_consumed_tools_without_ledger_evidence() {
+        let mut mission = MissionSnapshot::new("mission-lambda", "complete with tool proof", 900);
+        mission.plan_dag = vec![plan_node("verify", &[], "completed")];
+        mission.verification_gates.push(MissionVerificationGate {
+            id: "gate-1".to_string(),
+            description: "tests passed".to_string(),
+            status: Some(MissionVerifierStatus::Passed),
+            evidence: BTreeMap::new(),
+        });
+        mission.final_learning_output = Some(MissionLearningOutput {
+            summary: "tool trace proved".to_string(),
+            records: vec!["learning-record-1".to_string()],
+            curator_recommendation: None,
+        });
+        mission.tool_budget.consumed_tool_calls = 1;
+
+        assert_eq!(
+            mission.completion_blockers(),
+            vec![MissionCompletionBlocker::MissingToolEvidence {
+                consumed_tool_calls: 1,
+                recorded_tool_calls: 0,
+            }]
+        );
+
+        mission.tool_evidence.push(tool_evidence(
+            &mission.mission_id,
+            Some("verify"),
+            "tool-1",
+            "bash",
+        ));
 
         assert!(mission.completion_blockers().is_empty());
         assert!(mission.ready_for_completion());

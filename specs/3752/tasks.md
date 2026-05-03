@@ -16,6 +16,12 @@ Status: Completed
 - [x] T11 (GREEN): implement checkpoint/recovery and completion readiness
       helpers.
 - [x] T12 (VERIFY): run scoped core tests, fmt, Clippy, and PR checks.
+- [x] T13 (SPEC): extend #3752 for Slice 4 tool budget/evidence ledger.
+- [x] T14 (RED): add failing core tests for tool-call attribution, budget
+      exhaustion, and missing tool-evidence completion blockers.
+- [x] T15 (GREEN): implement shared mission tool evidence ledger records.
+- [x] T16 (GREEN): implement shared mission budget enforcement helpers.
+- [x] T17 (VERIFY): run scoped core tests, fmt, Clippy, and PR checks.
 
 ## Verification Evidence
 
@@ -37,3 +43,12 @@ Status: Completed
 - GREEN: `cargo test -p tau-agent-core mission --lib` passed, 6 tests.
 - Static: `cargo fmt --check -p tau-agent-core` passed.
 - Static: `cargo clippy -p tau-agent-core --all-targets --all-features -- -D warnings` passed.
+- RED: `cargo test -p tau-agent-core mission --lib` failed before Slice 4
+  implementation with missing `MissionToolCallEvidence`,
+  `MissionToolCallStatus`, `MissionToolBudgetError`,
+  `MissionToolEvidenceError`, `record_tool_call_evidence`,
+  `tool_evidence_for_verification_gate`, and `MissingToolEvidence`.
+- GREEN: `cargo test -p tau-agent-core mission --lib` passed, 9 tests.
+- Static: `cargo fmt --check -p tau-agent-core` passed.
+- Static: `cargo clippy -p tau-agent-core --all-targets --all-features -- -D warnings` passed.
+- Static: `rustup run 1.95.0 cargo fmt --check -p tau-agent-core && rustup run 1.95.0 cargo test -p tau-agent-core mission --lib && rustup run 1.95.0 cargo clippy -p tau-agent-core --all-targets --all-features -- -D warnings` passed.

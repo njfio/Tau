@@ -55,8 +55,10 @@ pub use mission::{
     MissionAcceptanceCriterion, MissionArtifactRef, MissionCheckpoint, MissionCompletion,
     MissionCompletionBlocker, MissionCompletionStatus, MissionLearningOutput,
     MissionLifecycleStatus, MissionMemoryHit, MissionPlanDagError, MissionPlanNode,
-    MissionRecoveryState, MissionSnapshot, MissionToolBudget, MissionTransitionError,
-    MissionVerificationGate, MissionVerifierRecord, MissionVerifierStatus, MISSION_SCHEMA_VERSION,
+    MissionRecoveryState, MissionSnapshot, MissionToolBudget, MissionToolBudgetError,
+    MissionToolCallEvidence, MissionToolCallStatus, MissionToolEvidenceError,
+    MissionTransitionError, MissionVerificationGate, MissionVerifierRecord, MissionVerifierStatus,
+    MISSION_SCHEMA_VERSION,
 };
 pub use process_types::{
     ProcessLifecycleState, ProcessManager, ProcessManagerError, ProcessRuntimeProfile,

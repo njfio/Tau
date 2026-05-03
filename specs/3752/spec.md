@@ -90,6 +90,27 @@ when the harness evaluates completion readiness,
 then incomplete plan nodes, non-passing verification gates, and missing final
 learning output are reported as deterministic blockers.
 
+### AC-8 Tool calls are attributable to mission and plan node
+
+Given a mission tool execution record,
+when it is added to the shared mission ledger,
+then the record preserves mission ID, optional plan node ID, tool name, timing,
+status, artifact links, and verification-gate links.
+
+### AC-9 Tool budget exhaustion blocks autonomous tool execution
+
+Given a mission tool budget with allowed tools and call/runtime/cost limits,
+when a proposed tool call would exceed those limits,
+then the core mission contract rejects the call with a deterministic budget
+error before the ledger is mutated.
+
+### AC-10 Completion reports include tool trace evidence
+
+Given mission budget consumption,
+when the harness evaluates completion readiness,
+then missing ledger entries for consumed tool calls are reported as completion
+blockers so final reports cannot claim tool execution without evidence.
+
 ## Conformance Cases
 
 | Case | AC | Tier | Given | When | Then |
@@ -102,6 +123,9 @@ learning output are reported as deterministic blockers.
 | C-06 | AC-5 | Unit | mission plan DAG with a missing dependency or cycle | DAG validation runs | deterministic validation errors are returned |
 | C-07 | AC-6 | Unit | executing mission with unfinished plan nodes | checkpoint is recorded | checkpoint stores pending node IDs and mission enters checkpointed state |
 | C-08 | AC-7 | Unit | mission with incomplete plan/verification/learning proof | completion readiness is evaluated | deterministic completion blockers are returned |
+| C-09 | AC-8 | Unit | mission tool-call evidence with mission and plan-node IDs | evidence is recorded | ledger preserves attribution and links to artifacts/gates |
+| C-10 | AC-9 | Unit | mission budget has one allowed call | second call or disallowed tool is proposed | budget error is returned and ledger does not change |
+| C-11 | AC-10 | Unit | mission budget shows consumed tool calls without ledger evidence | completion readiness is evaluated | missing tool evidence blocker is returned |
 
 ## Success Metrics / Observable Signals
 
@@ -115,3 +139,5 @@ learning output are reported as deterministic blockers.
 - Mission plan DAG readiness, checkpoint resume state, and completion blockers
   can be evaluated in `tau-agent-core` without importing gateway or dashboard
   code.
+- Mission tool evidence and budget exhaustion can be evaluated in
+  `tau-agent-core` before adapters write gateway/session projections.

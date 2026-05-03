@@ -98,3 +98,45 @@ still blocks completion.
 - GREEN: `cargo test -p tau-agent-core mission --lib`
 - Static: `cargo fmt --check -p tau-agent-core`
 - Static: `cargo clippy -p tau-agent-core --all-targets --all-features -- -D warnings`
+
+## Slice 4 Addendum: Tool Budget and Evidence Ledger
+
+### Goal
+
+Make mission tool proof explicit in the shared harness contract. Core mission
+state should be able to record attributable tool-call evidence, enforce
+configured budgets, and block completion when budget consumption is not backed
+by ledger evidence.
+
+### Approach
+
+1. Add RED unit tests in `tau-agent-core` for tool-call attribution, budget
+   exhaustion, and missing tool-evidence completion blockers.
+2. Add a serialized `tool_evidence` ledger to `MissionSnapshot` with
+   mission/plan-node/tool/status/timing/artifact/gate fields.
+3. Add core budget checks for allowed tools, max calls, runtime, and cost.
+4. Add a recording helper that enforces budget before mutating consumed budget
+   counters or the evidence ledger.
+5. Keep gateway and `tau-tools` wiring deferred until the shared contract is
+   stable; `tau-tools` currently does not expose a reusable mission ledger type.
+
+### Additional Affected Modules
+
+- `crates/tau-agent-core/src/mission.rs`
+- `crates/tau-agent-core/src/lib.rs`
+
+### Additional Risks / Mitigations
+
+- Risk: budget accounting semantics diverge between adapters.
+  Mitigation: keep accounting helpers in `tau-agent-core` and make adapters
+  call the shared methods later.
+- Risk: completion readiness becomes too strict for legacy snapshots.
+  Mitigation: only require ledger evidence for consumed tool calls in this
+  slice.
+
+### Additional Verification
+
+- RED: `cargo test -p tau-agent-core mission --lib`
+- GREEN: `cargo test -p tau-agent-core mission --lib`
+- Static: `cargo fmt --check -p tau-agent-core`
+- Static: `cargo clippy -p tau-agent-core --all-targets --all-features -- -D warnings`
