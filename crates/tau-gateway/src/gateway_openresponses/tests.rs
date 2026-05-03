@@ -10463,6 +10463,19 @@ async fn regression_gateway_missions_list_exposes_persisted_checkpointed_and_blo
         missions[1]["latest_completion"]["status"],
         Value::String("blocked".to_string())
     );
+    let harness_missions = payload["harness_missions"]
+        .as_array()
+        .expect("harness missions array");
+    assert_eq!(harness_missions.len(), 2);
+    assert_eq!(harness_missions[0]["mission_id"], "checkpoint-alpha");
+    assert_eq!(harness_missions[0]["status"], "checkpointed");
+    assert_eq!(harness_missions[0]["tool_budget"]["consumed_tool_calls"], 1);
+    assert_eq!(harness_missions[1]["mission_id"], "blocked-beta");
+    assert_eq!(harness_missions[1]["status"], "blocked");
+    assert_eq!(
+        harness_missions[1]["recovery_state"]["reason"],
+        "blocked waiting for credentials"
+    );
 
     handle.abort();
 }
@@ -10555,6 +10568,23 @@ async fn regression_gateway_mission_detail_exposes_verifier_and_completion_state
     assert_eq!(
         payload["mission"]["iterations"][0]["tool_execution_count"],
         1
+    );
+    assert_eq!(
+        payload["harness_mission"]["mission_id"],
+        payload["mission"]["mission_id"]
+    );
+    assert_eq!(payload["harness_mission"]["status"], "checkpointed");
+    assert_eq!(
+        payload["harness_mission"]["latest_completion"]["status"],
+        "partial"
+    );
+    assert_eq!(
+        payload["harness_mission"]["tool_budget"]["consumed_tool_calls"],
+        1
+    );
+    assert_eq!(
+        payload["harness_mission"]["checkpoints"][0]["pending_plan_node_ids"][0],
+        "run validation"
     );
 
     handle.abort();

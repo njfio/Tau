@@ -1,6 +1,11 @@
 //! Gateway-local mission supervisor persistence for the first Tau Ralph loop slice.
 
 use super::*;
+use tau_agent_core::{
+    MissionCheckpoint, MissionCompletion, MissionCompletionStatus, MissionLifecycleStatus,
+    MissionRecoveryState, MissionSnapshot, MissionVerificationGate, MissionVerifierRecord,
+    MissionVerifierStatus,
+};
 
 const GATEWAY_MISSION_SCHEMA_VERSION: u32 = 1;
 const GATEWAY_MISSION_SUMMARY_MAX_CHARS: usize = 240;
@@ -174,6 +179,115 @@ impl GatewayMissionState {
         self.latest_output_summary = summarize_gateway_mission_text(latest_output_summary);
         self.updated_unix_ms = updated_unix_ms;
     }
+
+    pub(super) fn to_shared_mission_snapshot(&self) -> MissionSnapshot {
+        let mut snapshot =
+            MissionSnapshot::new(&self.mission_id, &self.goal_summary, self.created_unix_ms);
+        snapshot.session_key = Some(self.session_key.clone());
+        snapshot.response_id = Some(self.response_id.clone());
+        snapshot.latest_output_summary = self.latest_output_summary.clone();
+        snapshot.status = shared_status_from_gateway(&self.status);
+        snapshot.updated_unix_ms = self.updated_unix_ms;
+        snapshot.iteration_count = self.iteration_count;
+        snapshot.tool_budget.consumed_tool_calls = self
+            .iterations
+            .iter()
+            .map(|iteration| iteration.tool_execution_count)
+            .sum();
+        snapshot.latest_verifier = Some(shared_verifier_from_gateway(&self.latest_verifier));
+        snapshot.latest_completion = self
+            .latest_completion
+            .as_ref()
+            .map(shared_completion_from_gateway);
+        snapshot.verification_gates.push(MissionVerificationGate {
+            id: self.latest_verifier.kind.clone(),
+            description: self.latest_verifier.message.clone(),
+            status: Some(shared_verifier_status_from_gateway(
+                &self.latest_verifier.status,
+            )),
+            evidence: self.latest_verifier.details.clone(),
+        });
+
+        if self.status == GatewayMissionStatus::Checkpointed {
+            let next_step = self
+                .latest_completion
+                .as_ref()
+                .and_then(|completion| completion.next_step.clone());
+            snapshot.checkpoints.push(MissionCheckpoint {
+                checkpoint_id: format!("{}:checkpoint:{}", self.mission_id, self.iteration_count),
+                summary: checkpoint_summary(self),
+                created_unix_ms: self.updated_unix_ms,
+                pending_plan_node_ids: next_step.into_iter().collect(),
+            });
+        }
+
+        if self.status == GatewayMissionStatus::Blocked {
+            snapshot.recovery_state = Some(MissionRecoveryState {
+                reason: checkpoint_summary(self),
+                next_action: self
+                    .latest_completion
+                    .as_ref()
+                    .and_then(|completion| completion.next_step.clone()),
+                retry_count: self.iteration_count,
+                last_checkpoint_id: None,
+            });
+        }
+
+        snapshot
+    }
+}
+
+fn shared_status_from_gateway(status: &GatewayMissionStatus) -> MissionLifecycleStatus {
+    match status {
+        GatewayMissionStatus::Running => MissionLifecycleStatus::Executing,
+        GatewayMissionStatus::Completed => MissionLifecycleStatus::Completed,
+        GatewayMissionStatus::Checkpointed => MissionLifecycleStatus::Checkpointed,
+        GatewayMissionStatus::Blocked => MissionLifecycleStatus::Blocked,
+    }
+}
+
+fn shared_verifier_status_from_gateway(
+    status: &GatewayMissionVerifierStatus,
+) -> MissionVerifierStatus {
+    match status {
+        GatewayMissionVerifierStatus::Passed => MissionVerifierStatus::Passed,
+        GatewayMissionVerifierStatus::Continue => MissionVerifierStatus::Continue,
+        GatewayMissionVerifierStatus::Failed => MissionVerifierStatus::Failed,
+    }
+}
+
+fn shared_verifier_from_gateway(record: &GatewayMissionVerifierRecord) -> MissionVerifierRecord {
+    MissionVerifierRecord {
+        kind: record.kind.clone(),
+        status: shared_verifier_status_from_gateway(&record.status),
+        reason_code: record.reason_code.clone(),
+        message: record.message.clone(),
+        details: record.details.clone(),
+    }
+}
+
+fn shared_completion_from_gateway(
+    completion: &GatewayMissionCompletionSignalRecord,
+) -> MissionCompletion {
+    MissionCompletion {
+        status: match &completion.status {
+            GatewayMissionCompletionStatus::Success => MissionCompletionStatus::Success,
+            GatewayMissionCompletionStatus::Partial => MissionCompletionStatus::Partial,
+            GatewayMissionCompletionStatus::Blocked => MissionCompletionStatus::Blocked,
+        },
+        summary: completion.summary.clone(),
+        next_step: completion.next_step.clone(),
+    }
+}
+
+fn checkpoint_summary(state: &GatewayMissionState) -> String {
+    if !state.latest_output_summary.is_empty() {
+        return state.latest_output_summary.clone();
+    }
+    if let Some(completion) = &state.latest_completion {
+        return completion.summary.clone();
+    }
+    state.latest_verifier.message.clone()
 }
 
 pub(super) fn gateway_mission_state_path(state_dir: &Path, mission_id: &str) -> PathBuf {
@@ -303,6 +417,82 @@ mod tests {
         assert_eq!(
             iteration.response_payload["tool_executions"][0]["tool_call_id"],
             "call-1"
+        );
+    }
+
+    #[test]
+    fn gateway_mission_state_projects_to_shared_snapshot() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let path = gateway_mission_state_path(temp.path(), "mission-shared");
+        let mut state = GatewayMissionState::load_or_create(
+            &path,
+            "mission-shared",
+            "session-alpha",
+            "resp_alpha",
+            "ship the harness contract",
+            100,
+        )
+        .expect("mission state");
+        let verifier =
+            GatewayMissionVerifierBundle::from_records(vec![GatewayMissionVerifierRecord {
+                kind: "validation_evidence".to_string(),
+                status: GatewayMissionVerifierStatus::Passed,
+                reason_code: "validation_evidence_observed".to_string(),
+                message: "validation passed".to_string(),
+                details: BTreeMap::from([("command".to_string(), json!("cargo test"))]),
+            }]);
+        state.record_iteration(GatewayMissionIterationInput {
+            attempt: 1,
+            prompt: "ship the harness contract",
+            assistant_summary: "checkpointed with tests",
+            tool_execution_count: 2,
+            request_payload: json!({"prompt": "ship the harness contract"}),
+            response_payload: json!({"status": "completed"}),
+            verifier: verifier.clone(),
+            completion: Some(GatewayMissionCompletionSignalRecord {
+                status: GatewayMissionCompletionStatus::Partial,
+                summary: "checkpointed shared projection".to_string(),
+                next_step: Some("resume adapter migration".to_string()),
+            }),
+            started_unix_ms: 110,
+            finished_unix_ms: 120,
+        });
+        state.mark_checkpointed(
+            verifier.overall,
+            GatewayMissionCompletionSignalRecord {
+                status: GatewayMissionCompletionStatus::Partial,
+                summary: "checkpointed shared projection".to_string(),
+                next_step: Some("resume adapter migration".to_string()),
+            },
+            "shared projection ready",
+            130,
+        );
+
+        let shared = state.to_shared_mission_snapshot();
+
+        assert_eq!(shared.mission_id, "mission-shared");
+        assert_eq!(shared.session_key.as_deref(), Some("session-alpha"));
+        assert_eq!(shared.response_id.as_deref(), Some("resp_alpha"));
+        assert_eq!(shared.goal, "ship the harness contract");
+        assert_eq!(shared.status, MissionLifecycleStatus::Checkpointed);
+        assert_eq!(shared.iteration_count, 1);
+        assert_eq!(shared.tool_budget.consumed_tool_calls, 2);
+        assert_eq!(
+            shared.latest_verifier.as_ref().map(|record| record.status),
+            Some(MissionVerifierStatus::Passed)
+        );
+        assert_eq!(
+            shared
+                .latest_completion
+                .as_ref()
+                .map(|record| record.status),
+            Some(MissionCompletionStatus::Partial)
+        );
+        assert_eq!(shared.verification_gates.len(), 1);
+        assert_eq!(shared.checkpoints.len(), 1);
+        assert_eq!(
+            shared.checkpoints[0].pending_plan_node_ids,
+            vec!["resume adapter migration".to_string()]
         );
     }
 }
