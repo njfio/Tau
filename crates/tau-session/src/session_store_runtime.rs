@@ -356,8 +356,8 @@ impl SessionStore {
             }
             SessionMergeStrategy::Append => {
                 let mut parent_id = Some(target_head);
-                let mut next_id = entries.iter().map(|entry| entry.id).max().unwrap_or(0) + 1;
-                for source_id in source_unique_ids {
+                let next_id = entries.iter().map(|entry| entry.id).max().unwrap_or(0) + 1;
+                for (next_id, source_id) in (next_id..).zip(source_unique_ids) {
                     let source_entry = entry_by_id
                         .get(&source_id)
                         .ok_or_else(|| anyhow!("missing source session id {}", source_id))?;
@@ -368,7 +368,6 @@ impl SessionStore {
                     };
                     parent_id = Some(new_entry.id);
                     entries.push(new_entry);
-                    next_id += 1;
                     appended_entries += 1;
                 }
                 parent_id.unwrap_or(target_head)

@@ -243,7 +243,7 @@ pub fn rank_text_candidates_bm25(
     let doc_count = candidates.len() as f32;
     let average_doc_len = (total_doc_len as f32 / doc_count).max(1.0);
     let mut matches = Vec::new();
-    for (candidate, tokens) in candidates.into_iter().zip(corpus_tokens.into_iter()) {
+    for (candidate, tokens) in candidates.into_iter().zip(corpus_tokens) {
         if tokens.is_empty() {
             continue;
         }
@@ -675,7 +675,7 @@ impl FileMemoryStore {
             .map_err(|error| anyhow!(error))?;
 
         let mut migrated = 0usize;
-        for (record, vector) in to_migrate.into_iter().zip(vectors.into_iter()) {
+        for (record, vector) in to_migrate.into_iter().zip(vectors) {
             let migrated_record = RuntimeMemoryRecord {
                 schema_version: MEMORY_RUNTIME_SCHEMA_VERSION,
                 updated_unix_ms: current_unix_timestamp_ms(),
