@@ -59,7 +59,7 @@ pub(super) async fn handle_gateway_missions_list(
         }
     }
 
-    missions.sort_by(|left, right| right.updated_unix_ms.cmp(&left.updated_unix_ms));
+    missions.sort_by_key(|mission| std::cmp::Reverse(mission.updated_unix_ms));
     missions.truncate(limit);
     let harness_missions = missions
         .iter()
