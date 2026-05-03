@@ -2958,6 +2958,7 @@ fn integration_build_provider_client_supports_openai_oauth_from_env_when_store_e
     let temp = tempdir().expect("tempdir");
     let mut cli = test_cli();
     cli.openai_auth_mode = CliProviderAuthMode::OauthToken;
+    cli.model = "openai/gpt-5.3-codex".to_string();
     cli.credential_store = temp.path().join("missing-store-entry.json");
     cli.credential_store_encryption = CliCredentialStoreEncryptionMode::None;
 
@@ -3006,6 +3007,7 @@ printf "codex fallback response" > "$out"
 
     let mut cli = test_cli();
     cli.openai_auth_mode = CliProviderAuthMode::OauthToken;
+    cli.model = "openai/gpt-5.3-codex".to_string();
     cli.credential_store = temp.path().join("missing-store-entry.json");
     cli.credential_store_encryption = CliCredentialStoreEncryptionMode::None;
     cli.openai_codex_backend = true;
