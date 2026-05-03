@@ -360,6 +360,7 @@ pub(crate) fn test_cli() -> Cli {
         anthropic_api_key: None,
         google_api_key: None,
         openai_auth_mode: CliProviderAuthMode::ApiKey,
+        openai_experimental_direct_oauth_session: false,
         openai_codex_backend: true,
         openai_codex_cli: "codex".to_string(),
         openai_codex_args: vec![],
