@@ -351,6 +351,7 @@ printf "codex api-key fallback response" > "$out"
 
     let mut cli = test_cli();
     cli.openai_auth_mode = CliProviderAuthMode::ApiKey;
+    cli.model = "openai/gpt-5.3-codex".to_string();
     cli.openai_codex_backend = true;
     cli.openai_codex_cli = script.display().to_string();
     cli.openai_codex_timeout_ms = 5_000;
