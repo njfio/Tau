@@ -123,6 +123,8 @@ pub struct MissionSnapshot {
     #[serde(default)]
     pub learning_records: Vec<MissionLearningRecord>,
     #[serde(default)]
+    pub improvement_proposals: Vec<MissionImprovementProposal>,
+    #[serde(default)]
     pub iteration_count: usize,
     #[serde(default)]
     pub latest_verifier: Option<MissionVerifierRecord>,
@@ -158,6 +160,7 @@ impl MissionSnapshot {
             artifacts: Vec::new(),
             final_learning_output: None,
             learning_records: Vec::new(),
+            improvement_proposals: Vec::new(),
             iteration_count: 0,
             latest_verifier: None,
             latest_completion: None,
@@ -525,6 +528,133 @@ impl MissionSnapshot {
         Ok(result)
     }
 
+    pub fn record_improvement_proposal_from_failure(
+        &mut self,
+        mut proposal: MissionImprovementProposal,
+    ) -> Result<(), MissionImprovementProposalError> {
+        self.validate_improvement_proposal(&proposal)?;
+
+        if !self.learning_records.iter().any(|record| {
+            record.record_id == proposal.source_learning_record_id
+                && record.kind == MissionLearningRecordKind::Failure
+        }) {
+            return Err(
+                MissionImprovementProposalError::MissingFailureLearningRecord {
+                    record_id: proposal.source_learning_record_id,
+                },
+            );
+        }
+
+        proposal.status = MissionImprovementProposalStatus::Proposed;
+        upsert_improvement_proposal(&mut self.improvement_proposals, proposal);
+        Ok(())
+    }
+
+    pub fn record_improvement_dry_run(
+        &mut self,
+        proposal_id: &str,
+        dry_run: MissionImprovementDryRun,
+    ) -> Result<(), MissionImprovementProposalError> {
+        let proposal = self.improvement_proposal_mut(proposal_id)?;
+        proposal.dry_run = Some(dry_run);
+        proposal.status = MissionImprovementProposalStatus::DryRunRecorded;
+        Ok(())
+    }
+
+    pub fn record_improvement_test_evidence(
+        &mut self,
+        proposal_id: &str,
+        evidence: MissionImprovementTestEvidence,
+    ) -> Result<(), MissionImprovementProposalError> {
+        let proposal = self.improvement_proposal_mut(proposal_id)?;
+        proposal.tests.push(evidence);
+        Ok(())
+    }
+
+    pub fn record_improvement_safety_check(
+        &mut self,
+        proposal_id: &str,
+        check: MissionImprovementSafetyCheck,
+    ) -> Result<(), MissionImprovementProposalError> {
+        let proposal = self.improvement_proposal_mut(proposal_id)?;
+        proposal.safety_checks.push(check);
+        Ok(())
+    }
+
+    pub fn approve_improvement_proposal(
+        &mut self,
+        proposal_id: &str,
+        approval: MissionOperatorApproval,
+    ) -> Result<(), MissionImprovementProposalError> {
+        validate_improvement_approval_eligibility(self.improvement_proposal(proposal_id)?)?;
+        let proposal = self.improvement_proposal_mut(proposal_id)?;
+        proposal.approval = Some(approval);
+        proposal.status = MissionImprovementProposalStatus::Approved;
+        Ok(())
+    }
+
+    pub fn apply_approved_improvement(
+        &mut self,
+        proposal_id: &str,
+        applied_unix_ms: u64,
+        curator_memory_record_id: impl Into<String>,
+    ) -> Result<(), MissionImprovementProposalError> {
+        let curator_memory_record_id = curator_memory_record_id.into();
+        if curator_memory_record_id.trim().is_empty() {
+            return Err(MissionImprovementProposalError::EmptyCuratorMemoryRecordId);
+        }
+
+        let proposal_index = self.improvement_proposal_index(proposal_id)?;
+        if self.improvement_proposals[proposal_index]
+            .approval
+            .is_none()
+        {
+            return Err(MissionImprovementProposalError::MissingOperatorApproval {
+                proposal_id: proposal_id.to_string(),
+            });
+        }
+        if self.improvement_proposals[proposal_index].status
+            == MissionImprovementProposalStatus::Applied
+        {
+            return Err(MissionImprovementProposalError::AlreadyApplied {
+                proposal_id: proposal_id.to_string(),
+            });
+        }
+
+        let source_learning_record_id = self.improvement_proposals[proposal_index]
+            .source_learning_record_id
+            .clone();
+        let proposal_id = self.improvement_proposals[proposal_index]
+            .proposal_id
+            .clone();
+        self.improvement_proposals[proposal_index].status =
+            MissionImprovementProposalStatus::Applied;
+        self.improvement_proposals[proposal_index].applied_unix_ms = Some(applied_unix_ms);
+        self.improvement_proposals[proposal_index].curator_memory_record_id =
+            Some(curator_memory_record_id.clone());
+
+        let learning_record = self
+            .learning_records
+            .iter_mut()
+            .find(|record| record.record_id == source_learning_record_id)
+            .ok_or_else(
+                || MissionImprovementProposalError::MissingFailureLearningRecord {
+                    record_id: source_learning_record_id.clone(),
+                },
+            )?;
+        learning_record.curator_status = MissionCuratorReviewStatus::Applied;
+        learning_record.metadata.insert(
+            "accepted_improvement_proposal_id".to_string(),
+            Value::String(proposal_id),
+        );
+        learning_record.metadata.insert(
+            "accepted_improvement_curator_memory_record_id".to_string(),
+            Value::String(curator_memory_record_id),
+        );
+
+        Ok(())
+    }
+
     fn validate_learning_record(
         &self,
         record: &MissionLearningRecord,
@@ -546,6 +676,81 @@ impl MissionSnapshot {
             });
         }
         Ok(())
+    }
+
+    fn validate_improvement_proposal(
+        &self,
+        proposal: &MissionImprovementProposal,
+    ) -> Result<(), MissionImprovementProposalError> {
+        if proposal.proposal_id.trim().is_empty() {
+            return Err(MissionImprovementProposalError::EmptyProposalId);
+        }
+        if proposal.mission_id != self.mission_id {
+            return Err(MissionImprovementProposalError::MissionIdMismatch {
+                expected: self.mission_id.clone(),
+                actual: proposal.mission_id.clone(),
+            });
+        }
+        if !proposal.target_kind.is_allowed_in_conservative_loop() {
+            return Err(MissionImprovementProposalError::UnsafeTargetKind {
+                target_kind: proposal.target_kind,
+            });
+        }
+
+        let safety_proposal = tau_safety::SelfModificationProposal {
+            target_path: proposal.target_path.clone(),
+            diff: proposal.patch_summary.clone(),
+            rationale: proposal.rationale.clone(),
+            trigger_source: proposal.trigger_kind.as_str().to_string(),
+        };
+        let safety_eval = tau_safety::evaluate_self_modification(
+            &safety_proposal,
+            &tau_safety::default_self_modification_rules(),
+        );
+        if !safety_eval.allowed {
+            return Err(MissionImprovementProposalError::SafetyBlocked {
+                proposal_id: proposal.proposal_id.clone(),
+                blocked_by: safety_eval.blocked_by,
+            });
+        }
+
+        Ok(())
+    }
+
+    fn improvement_proposal(
+        &self,
+        proposal_id: &str,
+    ) -> Result<&MissionImprovementProposal, MissionImprovementProposalError> {
+        self.improvement_proposals
+            .iter()
+            .find(|proposal| proposal.proposal_id == proposal_id)
+            .ok_or_else(|| MissionImprovementProposalError::ProposalNotFound {
+                proposal_id: proposal_id.to_string(),
+            })
+    }
+
+    fn improvement_proposal_mut(
+        &mut self,
+        proposal_id: &str,
+    ) -> Result<&mut MissionImprovementProposal, MissionImprovementProposalError> {
+        self.improvement_proposals
+            .iter_mut()
+            .find(|proposal| proposal.proposal_id == proposal_id)
+            .ok_or_else(|| MissionImprovementProposalError::ProposalNotFound {
+                proposal_id: proposal_id.to_string(),
+            })
+    }
+
+    fn improvement_proposal_index(
+        &self,
+        proposal_id: &str,
+    ) -> Result<usize, MissionImprovementProposalError> {
+        self.improvement_proposals
+            .iter()
+            .position(|proposal| proposal.proposal_id == proposal_id)
+            .ok_or_else(|| MissionImprovementProposalError::ProposalNotFound {
+                proposal_id: proposal_id.to_string(),
+            })
     }
 
     fn plan_dag_contains_cycle(&self) -> bool {
@@ -832,6 +1037,131 @@ pub struct MissionLearningRecord {
     pub metadata: BTreeMap<String, Value>,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum MissionImprovementTriggerKind {
+    BenchmarkFailure,
+    VerifierFailure,
+    OperatorCorrection,
+    RecoveryFallback,
+}
+
+impl MissionImprovementTriggerKind {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::BenchmarkFailure => "benchmark_failure",
+            Self::VerifierFailure => "verifier_failure",
+            Self::OperatorCorrection => "operator_correction",
+            Self::RecoveryFallback => "recovery_fallback",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum MissionImprovementTargetKind {
+    Skill,
+    Config,
+    Prompt,
+    SourceCode,
+    SafetyPolicy,
+}
+
+impl MissionImprovementTargetKind {
+    fn is_allowed_in_conservative_loop(self) -> bool {
+        matches!(self, Self::Skill | Self::Config | Self::Prompt)
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum MissionImprovementProposalStatus {
+    Proposed,
+    DryRunRecorded,
+    Approved,
+    Applied,
+    Rejected,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum MissionImprovementEvidenceStatus {
+    Passed,
+    Failed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct MissionImprovementDryRun {
+    pub ran_unix_ms: u64,
+    pub passed: bool,
+    pub summary: String,
+    #[serde(default)]
+    pub artifact_ids: Vec<String>,
+    #[serde(default)]
+    pub metadata: BTreeMap<String, Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct MissionImprovementTestEvidence {
+    pub command: String,
+    pub status: MissionImprovementEvidenceStatus,
+    pub ran_unix_ms: u64,
+    pub summary: String,
+    #[serde(default)]
+    pub artifact_ids: Vec<String>,
+    #[serde(default)]
+    pub metadata: BTreeMap<String, Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct MissionImprovementSafetyCheck {
+    pub check_id: String,
+    pub status: MissionImprovementEvidenceStatus,
+    pub ran_unix_ms: u64,
+    pub summary: String,
+    #[serde(default)]
+    pub blocked_by: Vec<String>,
+    #[serde(default)]
+    pub metadata: BTreeMap<String, Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MissionOperatorApproval {
+    pub approval_id: String,
+    pub operator_id: String,
+    pub approved_unix_ms: u64,
+    pub summary: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct MissionImprovementProposal {
+    pub proposal_id: String,
+    pub mission_id: String,
+    pub source_learning_record_id: String,
+    pub trigger_kind: MissionImprovementTriggerKind,
+    pub target_kind: MissionImprovementTargetKind,
+    pub target_path: String,
+    pub patch_summary: String,
+    pub rationale: String,
+    pub rollback_plan: String,
+    pub proposed_unix_ms: u64,
+    pub status: MissionImprovementProposalStatus,
+    #[serde(default)]
+    pub dry_run: Option<MissionImprovementDryRun>,
+    #[serde(default)]
+    pub tests: Vec<MissionImprovementTestEvidence>,
+    #[serde(default)]
+    pub safety_checks: Vec<MissionImprovementSafetyCheck>,
+    #[serde(default)]
+    pub approval: Option<MissionOperatorApproval>,
+    #[serde(default)]
+    pub applied_unix_ms: Option<u64>,
+    #[serde(default)]
+    pub curator_memory_record_id: Option<String>,
+    #[serde(default)]
+    pub metadata: BTreeMap<String, Value>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct MissionVerifierRecord {
     pub kind: String,
@@ -934,6 +1264,82 @@ fn upsert_learning_record(records: &mut Vec<MissionLearningRecord>, record: Miss
     }
 }
 
+fn upsert_improvement_proposal(
+    proposals: &mut Vec<MissionImprovementProposal>,
+    proposal: MissionImprovementProposal,
+) {
+    if let Some(existing) = proposals
+        .iter_mut()
+        .find(|existing| existing.proposal_id == proposal.proposal_id)
+    {
+        *existing = proposal;
+    } else {
+        proposals.push(proposal);
+    }
+}
+
+fn validate_improvement_approval_eligibility(
+    proposal: &MissionImprovementProposal,
+) -> Result<(), MissionImprovementProposalError> {
+    match &proposal.dry_run {
+        Some(dry_run) if dry_run.passed => {}
+        Some(_) => {
+            return Err(MissionImprovementProposalError::DryRunFailed {
+                proposal_id: proposal.proposal_id.clone(),
+            });
+        }
+        None => {
+            return Err(MissionImprovementProposalError::MissingDryRun {
+                proposal_id: proposal.proposal_id.clone(),
+            });
+        }
+    }
+
+    if !proposal
+        .tests
+        .iter()
+        .any(|test| test.status == MissionImprovementEvidenceStatus::Passed)
+    {
+        return Err(
+            MissionImprovementProposalError::MissingPassingTestEvidence {
+                proposal_id: proposal.proposal_id.clone(),
+            },
+        );
+    }
+    if proposal
+        .tests
+        .iter()
+        .any(|test| test.status == MissionImprovementEvidenceStatus::Failed)
+    {
+        return Err(MissionImprovementProposalError::FailingTestEvidence {
+            proposal_id: proposal.proposal_id.clone(),
+        });
+    }
+
+    if !proposal
+        .safety_checks
+        .iter()
+        .any(|check| check.status == MissionImprovementEvidenceStatus::Passed)
+    {
+        return Err(
+            MissionImprovementProposalError::MissingPassingSafetyEvidence {
+                proposal_id: proposal.proposal_id.clone(),
+            },
+        );
+    }
+    if proposal
+        .safety_checks
+        .iter()
+        .any(|check| check.status == MissionImprovementEvidenceStatus::Failed)
+    {
+        return Err(MissionImprovementProposalError::FailingSafetyEvidence {
+            proposal_id: proposal.proposal_id.clone(),
+        });
+    }
+
+    Ok(())
+}
+
 #[derive(Debug, Clone, Error, PartialEq, Eq)]
 pub enum MissionPlanDagError {
     #[error("duplicate mission plan node id {node_id}")]
@@ -1014,6 +1420,45 @@ pub enum MissionLearningRecordError {
     MemoryWrite { message: String },
 }
 
+#[derive(Debug, Clone, Error, PartialEq, Eq)]
+pub enum MissionImprovementProposalError {
+    #[error("mission improvement proposal id must not be empty")]
+    EmptyProposalId,
+    #[error("improvement proposal mission id mismatch: expected {expected}, got {actual}")]
+    MissionIdMismatch { expected: String, actual: String },
+    #[error("improvement proposal target kind {target_kind:?} is outside the conservative loop")]
+    UnsafeTargetKind {
+        target_kind: MissionImprovementTargetKind,
+    },
+    #[error("improvement proposal {proposal_id} was blocked by safety rules: {blocked_by:?}")]
+    SafetyBlocked {
+        proposal_id: String,
+        blocked_by: Vec<String>,
+    },
+    #[error("failure learning record {record_id} was not found")]
+    MissingFailureLearningRecord { record_id: String },
+    #[error("improvement proposal {proposal_id} was not found")]
+    ProposalNotFound { proposal_id: String },
+    #[error("improvement proposal {proposal_id} is missing dry-run evidence")]
+    MissingDryRun { proposal_id: String },
+    #[error("improvement proposal {proposal_id} dry run failed")]
+    DryRunFailed { proposal_id: String },
+    #[error("improvement proposal {proposal_id} is missing passing test evidence")]
+    MissingPassingTestEvidence { proposal_id: String },
+    #[error("improvement proposal {proposal_id} has failing test evidence")]
+    FailingTestEvidence { proposal_id: String },
+    #[error("improvement proposal {proposal_id} is missing passing safety evidence")]
+    MissingPassingSafetyEvidence { proposal_id: String },
+    #[error("improvement proposal {proposal_id} has failing safety evidence")]
+    FailingSafetyEvidence { proposal_id: String },
+    #[error("improvement proposal {proposal_id} is missing operator approval")]
+    MissingOperatorApproval { proposal_id: String },
+    #[error("improvement proposal {proposal_id} was already applied")]
+    AlreadyApplied { proposal_id: String },
+    #[error("curator memory record id must not be empty")]
+    EmptyCuratorMemoryRecordId,
+}
+
 #[derive(Debug, Clone, Copy, Error, PartialEq, Eq)]
 #[error("invalid mission transition from {from:?} to {to:?}")]
 pub struct MissionTransitionError {
@@ -1071,6 +1516,7 @@ mod tests {
         assert!(mission.artifacts.is_empty());
         assert!(mission.final_learning_output.is_none());
         assert!(mission.learning_records.is_empty());
+        assert!(mission.improvement_proposals.is_empty());
     }
 
     fn plan_node(id: &str, depends_on: &[&str], status: &str) -> MissionPlanNode {
@@ -1582,6 +2028,335 @@ mod tests {
         assert_eq!(
             saved.memory_type,
             tau_memory::runtime::MemoryType::Observation
+        );
+    }
+
+    fn failure_learning_record(mission_id: &str, record_id: &str) -> MissionLearningRecord {
+        MissionLearningRecord {
+            record_id: record_id.to_string(),
+            mission_id: mission_id.to_string(),
+            kind: MissionLearningRecordKind::Failure,
+            summary: "Benchmark failure exposed a missing recovery prompt".to_string(),
+            created_unix_ms: 1_600,
+            curator_status: MissionCuratorReviewStatus::QueuedForReview,
+            root_cause: Some("missing recovery prompt".to_string()),
+            evidence: vec!["benchmark repo_bugfix failed verification".to_string()],
+            artifact_ids: Vec::new(),
+            verification_gate_ids: Vec::new(),
+            rollback_plan: Some("remove the prompt change".to_string()),
+            metadata: BTreeMap::new(),
+        }
+    }
+
+    fn skill_improvement_proposal(
+        mission_id: &str,
+        proposal_id: &str,
+        source_learning_record_id: &str,
+    ) -> MissionImprovementProposal {
+        MissionImprovementProposal {
+            proposal_id: proposal_id.to_string(),
+            mission_id: mission_id.to_string(),
+            source_learning_record_id: source_learning_record_id.to_string(),
+            trigger_kind: MissionImprovementTriggerKind::BenchmarkFailure,
+            target_kind: MissionImprovementTargetKind::Skill,
+            target_path: "skills/recovery/SKILL.md".to_string(),
+            patch_summary: "Add a recovery prompt checklist".to_string(),
+            rationale: "The benchmark failed because recovery skipped memory proof".to_string(),
+            rollback_plan: "Remove the checklist section".to_string(),
+            proposed_unix_ms: 1_610,
+            status: MissionImprovementProposalStatus::Proposed,
+            dry_run: None,
+            tests: Vec::new(),
+            safety_checks: Vec::new(),
+            approval: None,
+            applied_unix_ms: None,
+            curator_memory_record_id: None,
+            metadata: BTreeMap::new(),
+        }
+    }
+
+    #[test]
+    fn mission_improvement_proposal_is_limited_to_safe_skill_config_prompt_targets() {
+        let mut mission = MissionSnapshot::new("mission-pi", "improve conservatively", 1_600);
+        mission.learning_records.push(failure_learning_record(
+            &mission.mission_id,
+            "learning-failure-2",
+        ));
+
+        let proposal =
+            skill_improvement_proposal(&mission.mission_id, "improvement-1", "learning-failure-2");
+
+        mission
+            .record_improvement_proposal_from_failure(proposal.clone())
+            .expect("safe skill proposal should be recorded");
+
+        assert_eq!(mission.improvement_proposals, vec![proposal]);
+
+        let mut source_code = skill_improvement_proposal(
+            &mission.mission_id,
+            "improvement-source",
+            "learning-failure-2",
+        );
+        source_code.target_kind = MissionImprovementTargetKind::SourceCode;
+        source_code.target_path = "crates/tau-agent-core/src/lib.rs".to_string();
+
+        let error = mission
+            .record_improvement_proposal_from_failure(source_code)
+            .expect_err("source-code proposal should be rejected");
+
+        assert_eq!(
+            error,
+            MissionImprovementProposalError::UnsafeTargetKind {
+                target_kind: MissionImprovementTargetKind::SourceCode,
+            }
+        );
+
+        let mut blocked_path = skill_improvement_proposal(
+            &mission.mission_id,
+            "improvement-blocked-path",
+            "learning-failure-2",
+        );
+        blocked_path.target_path = "crates/tau-agent-core/src/lib.rs".to_string();
+
+        let error = mission
+            .record_improvement_proposal_from_failure(blocked_path)
+            .expect_err("source path should be blocked by safety rules");
+
+        assert_eq!(
+            error,
+            MissionImprovementProposalError::SafetyBlocked {
+                proposal_id: "improvement-blocked-path".to_string(),
+                blocked_by: vec!["self_mod_block_source_default".to_string()],
+            }
+        );
+    }
+
+    #[test]
+    fn mission_improvement_approval_requires_dry_run_tests_safety_and_operator() {
+        let mut mission = MissionSnapshot::new("mission-rho", "approve conservatively", 1_700);
+        mission.learning_records.push(failure_learning_record(
+            &mission.mission_id,
+            "learning-failure-3",
+        ));
+        mission
+            .record_improvement_proposal_from_failure(skill_improvement_proposal(
+                &mission.mission_id,
+                "improvement-2",
+                "learning-failure-3",
+            ))
+            .expect("proposal");
+
+        let approval = MissionOperatorApproval {
+            approval_id: "approval-1".to_string(),
+            operator_id: "operator".to_string(),
+            approved_unix_ms: 1_740,
+            summary: "Approved after dry-run evidence".to_string(),
+        };
+
+        let error = mission
+            .approve_improvement_proposal("improvement-2", approval.clone())
+            .expect_err("approval needs dry-run proof");
+        assert_eq!(
+            error,
+            MissionImprovementProposalError::MissingDryRun {
+                proposal_id: "improvement-2".to_string(),
+            }
+        );
+
+        mission
+            .record_improvement_dry_run(
+                "improvement-2",
+                MissionImprovementDryRun {
+                    ran_unix_ms: 1_710,
+                    passed: true,
+                    summary: "patch preview applied cleanly".to_string(),
+                    artifact_ids: vec!["dry-run-artifact".to_string()],
+                    metadata: BTreeMap::new(),
+                },
+            )
+            .expect("dry-run");
+
+        let error = mission
+            .approve_improvement_proposal("improvement-2", approval.clone())
+            .expect_err("approval needs test proof");
+        assert_eq!(
+            error,
+            MissionImprovementProposalError::MissingPassingTestEvidence {
+                proposal_id: "improvement-2".to_string(),
+            }
+        );
+
+        mission
+            .record_improvement_test_evidence(
+                "improvement-2",
+                MissionImprovementTestEvidence {
+                    command: "cargo test -p tau-agent-core mission --lib".to_string(),
+                    status: MissionImprovementEvidenceStatus::Passed,
+                    ran_unix_ms: 1_720,
+                    summary: "mission tests passed".to_string(),
+                    artifact_ids: Vec::new(),
+                    metadata: BTreeMap::new(),
+                },
+            )
+            .expect("test evidence");
+
+        let error = mission
+            .approve_improvement_proposal("improvement-2", approval.clone())
+            .expect_err("approval needs safety proof");
+        assert_eq!(
+            error,
+            MissionImprovementProposalError::MissingPassingSafetyEvidence {
+                proposal_id: "improvement-2".to_string(),
+            }
+        );
+
+        mission
+            .record_improvement_safety_check(
+                "improvement-2",
+                MissionImprovementSafetyCheck {
+                    check_id: "self-mod-policy".to_string(),
+                    status: MissionImprovementEvidenceStatus::Passed,
+                    ran_unix_ms: 1_730,
+                    summary: "target stayed within skills".to_string(),
+                    blocked_by: Vec::new(),
+                    metadata: BTreeMap::new(),
+                },
+            )
+            .expect("safety evidence");
+
+        mission
+            .approve_improvement_proposal("improvement-2", approval.clone())
+            .expect("approval eligible");
+
+        assert_eq!(
+            mission.improvement_proposals[0].approval,
+            Some(approval.clone())
+        );
+        assert_eq!(
+            mission.improvement_proposals[0].status,
+            MissionImprovementProposalStatus::Approved
+        );
+
+        let mut unapproved =
+            MissionSnapshot::new("mission-sigma", "apply requires approval", 1_800);
+        unapproved.learning_records.push(failure_learning_record(
+            &unapproved.mission_id,
+            "learning-failure-4",
+        ));
+        unapproved
+            .record_improvement_proposal_from_failure(skill_improvement_proposal(
+                &unapproved.mission_id,
+                "improvement-3",
+                "learning-failure-4",
+            ))
+            .expect("proposal");
+
+        let error = unapproved
+            .apply_approved_improvement("improvement-3", 1_850, "curator-memory-1")
+            .expect_err("apply requires approval");
+        assert_eq!(
+            error,
+            MissionImprovementProposalError::MissingOperatorApproval {
+                proposal_id: "improvement-3".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn mission_improvement_apply_updates_curator_metadata() {
+        let mut mission = MissionSnapshot::new("mission-tau", "apply accepted improvement", 1_900);
+        mission.learning_records.push(failure_learning_record(
+            &mission.mission_id,
+            "learning-failure-5",
+        ));
+        mission
+            .record_improvement_proposal_from_failure(skill_improvement_proposal(
+                &mission.mission_id,
+                "improvement-4",
+                "learning-failure-5",
+            ))
+            .expect("proposal");
+        mission
+            .record_improvement_dry_run(
+                "improvement-4",
+                MissionImprovementDryRun {
+                    ran_unix_ms: 1_910,
+                    passed: true,
+                    summary: "preview succeeded".to_string(),
+                    artifact_ids: Vec::new(),
+                    metadata: BTreeMap::new(),
+                },
+            )
+            .expect("dry-run");
+        mission
+            .record_improvement_test_evidence(
+                "improvement-4",
+                MissionImprovementTestEvidence {
+                    command: "cargo test -p tau-agent-core mission --lib".to_string(),
+                    status: MissionImprovementEvidenceStatus::Passed,
+                    ran_unix_ms: 1_920,
+                    summary: "tests passed".to_string(),
+                    artifact_ids: Vec::new(),
+                    metadata: BTreeMap::new(),
+                },
+            )
+            .expect("test evidence");
+        mission
+            .record_improvement_safety_check(
+                "improvement-4",
+                MissionImprovementSafetyCheck {
+                    check_id: "self-mod-policy".to_string(),
+                    status: MissionImprovementEvidenceStatus::Passed,
+                    ran_unix_ms: 1_930,
+                    summary: "safety passed".to_string(),
+                    blocked_by: Vec::new(),
+                    metadata: BTreeMap::new(),
+                },
+            )
+            .expect("safety evidence");
+        mission
+            .approve_improvement_proposal(
+                "improvement-4",
+                MissionOperatorApproval {
+                    approval_id: "approval-4".to_string(),
+                    operator_id: "operator".to_string(),
+                    approved_unix_ms: 1_940,
+                    summary: "approved".to_string(),
+                },
+            )
+            .expect("approve");
+
+        mission
+            .apply_approved_improvement("improvement-4", 1_950, "curator-memory-4")
+            .expect("apply");
+
+        assert_eq!(
+            mission.improvement_proposals[0].status,
+            MissionImprovementProposalStatus::Applied
+        );
+        assert_eq!(
+            mission.improvement_proposals[0].applied_unix_ms,
+            Some(1_950)
+        );
+        assert_eq!(
+            mission.improvement_proposals[0].curator_memory_record_id,
+            Some("curator-memory-4".to_string())
+        );
+        assert_eq!(
+            mission.learning_records[0].curator_status,
+            MissionCuratorReviewStatus::Applied
+        );
+        assert_eq!(
+            mission.learning_records[0]
+                .metadata
+                .get("accepted_improvement_proposal_id"),
+            Some(&Value::String("improvement-4".to_string()))
+        );
+        assert_eq!(
+            mission.learning_records[0]
+                .metadata
+                .get("accepted_improvement_curator_memory_record_id"),
+            Some(&Value::String("curator-memory-4".to_string()))
         );
     }
 }

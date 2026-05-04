@@ -29,6 +29,14 @@ Status: Completed
 - [x] T21 (GREEN): implement mission learning records and `tau-memory` write
       helpers.
 - [x] T22 (VERIFY): run scoped core tests, fmt, Clippy, and PR checks.
+- [x] T23 (SPEC): extend #3752 for Slice 6 conservative self-improvement.
+- [x] T24 (RED): add failing core tests for safe proposal targets, dry-run
+      evidence, approval gates, apply gates, and curator metadata updates.
+- [x] T25 (GREEN): implement shared mission improvement proposal records and
+      target/safety validation.
+- [x] T26 (GREEN): implement dry-run, test, safety, operator approval, apply,
+      and curator metadata gates.
+- [x] T27 (VERIFY): run scoped core tests, fmt, Clippy, and PR checks.
 
 ## Verification Evidence
 
@@ -56,6 +64,21 @@ Status: Completed
   `MissionToolEvidenceError`, `record_tool_call_evidence`,
   `tool_evidence_for_verification_gate`, and `MissingToolEvidence`.
 - GREEN: `cargo test -p tau-agent-core mission --lib` passed, 9 tests.
+- Static: `cargo fmt --check -p tau-agent-core` passed.
+- Static: `cargo clippy -p tau-agent-core --all-targets --all-features -- -D warnings` passed.
+- Static: `rustup run 1.95.0 cargo fmt --check -p tau-agent-core && rustup run 1.95.0 cargo test -p tau-agent-core mission --lib && rustup run 1.95.0 cargo clippy -p tau-agent-core --all-targets --all-features -- -D warnings` passed.
+- RED: `cargo test -p tau-agent-core mission --lib` failed before Slice 6
+  implementation with missing `MissionImprovementProposal`,
+  `MissionImprovementTriggerKind`, `MissionImprovementTargetKind`,
+  `MissionImprovementProposalStatus`, `MissionImprovementEvidenceStatus`,
+  `MissionImprovementDryRun`, `MissionImprovementTestEvidence`,
+  `MissionImprovementSafetyCheck`, `MissionOperatorApproval`,
+  `MissionImprovementProposalError`, `improvement_proposals`,
+  `record_improvement_proposal_from_failure`,
+  `record_improvement_dry_run`, `record_improvement_test_evidence`,
+  `record_improvement_safety_check`, `approve_improvement_proposal`, and
+  `apply_approved_improvement`.
+- GREEN: `cargo test -p tau-agent-core mission --lib` passed, 15 tests.
 - Static: `cargo fmt --check -p tau-agent-core` passed.
 - Static: `cargo clippy -p tau-agent-core --all-targets --all-features -- -D warnings` passed.
 - Static: `rustup run 1.95.0 cargo fmt --check -p tau-agent-core && rustup run 1.95.0 cargo test -p tau-agent-core mission --lib && rustup run 1.95.0 cargo clippy -p tau-agent-core --all-targets --all-features -- -D warnings` passed.

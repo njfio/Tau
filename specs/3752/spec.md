@@ -32,6 +32,10 @@ In scope:
   with plan rationale or an explicit no-memory result
 - write final and failure learning records through `tau-memory`
 - attach curator review status to mission learning records
+- record conservative skill/config/prompt improvement proposals from failure
+  learning without allowing source-code or safety-policy mutation
+- require dry-run, test, safety, and operator approval evidence before an
+  improvement proposal can be applied
 
 Out of scope:
 
@@ -136,6 +140,34 @@ when failure learning is captured,
 then the mission writes a failure learning record through `tau-memory` with root
 cause, evidence, rollback guidance, and curator review status.
 
+### AC-14 Improvement proposals stay inside safe target kinds
+
+Given a failure learning record,
+when the harness records a self-improvement proposal,
+then only skill, config, and prompt targets are accepted, while source-code and
+safety-policy targets are rejected before proposal state is mutated.
+
+### AC-15 Dry-run proposal evidence is required
+
+Given a benchmark-triggered improvement proposal,
+when the harness records dry-run evidence,
+then the proposal stores the preview result and approval remains blocked until a
+passing dry run exists.
+
+### AC-16 Tests, safety checks, and operator approval gate apply
+
+Given an improvement proposal with a passing dry run,
+when approval or apply is requested,
+then passing test evidence, passing safety evidence, and explicit operator
+approval are required before apply can succeed.
+
+### AC-17 Accepted improvements update curator metadata
+
+Given an approved improvement proposal,
+when the harness marks it applied,
+then the proposal records applied time and curator memory ID, and the source
+failure learning record is marked applied with accepted-improvement metadata.
+
 ## Conformance Cases
 
 | Case | AC | Tier | Given | When | Then |
@@ -154,6 +186,10 @@ cause, evidence, rollback guidance, and curator review status.
 | C-12 | AC-11 | Unit | mission planning finds a relevant memory hit | memory evidence is recorded | hit key, score, source event, rationale, plan-node links, and recall status are preserved |
 | C-13 | AC-12 | Unit | mission has plan/verification/memory proof but no final learning | final learning is written | `tau-memory` stores a final learning record and completion unblocks |
 | C-14 | AC-13 | Unit | mission failure learning is proposed before and after recovery state exists | failure learning write runs | missing recovery is rejected, then a curator-queued failure memory record is stored |
+| C-15 | AC-14 | Unit | failure learning record exists and proposals target skill/source paths | proposals are recorded | skill target is stored, unsafe target kind and source path are rejected |
+| C-16 | AC-15 | Unit | benchmark-triggered improvement proposal exists | dry-run evidence is recorded | proposal stores dry-run result and remains unapproved |
+| C-17 | AC-16 | Unit | improvement proposal lacks dry-run/test/safety/approval proof | approval/apply is requested | deterministic gate errors are returned until all proof is present |
+| C-18 | AC-17 | Unit | approved improvement proposal is applied | curator update runs | proposal is marked applied and source learning metadata links accepted improvement and curator memory |
 
 ## Success Metrics / Observable Signals
 
@@ -172,3 +208,6 @@ cause, evidence, rollback guidance, and curator review status.
 - Mission memory recall proof and learning records can be evaluated in
   `tau-agent-core` while persisting final/failure learning through the existing
   `tau-memory` store API.
+- Conservative self-improvement can be represented in `tau-agent-core` as
+  skill/config/prompt proposals with dry-run, test, safety, approval, and
+  curator-update proof before any adapter applies changes.

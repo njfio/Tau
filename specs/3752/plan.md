@@ -99,6 +99,57 @@ still blocks completion.
 - Static: `cargo fmt --check -p tau-agent-core`
 - Static: `cargo clippy -p tau-agent-core --all-targets --all-features -- -D warnings`
 
+## Slice 6 Addendum: Conservative Self-Improvement
+
+### Goal
+
+Represent the observe-to-curator self-improvement loop in the shared mission
+contract without enabling autonomous source mutation. The first contract accepts
+only skill, config, and prompt proposals from failure learning records, records
+dry-run/test/safety proof, requires explicit operator approval, and updates
+curator metadata only after approval.
+
+### Approach
+
+1. Add RED unit tests in `tau-agent-core` for safe target limits, dry-run
+   evidence, approval gates, apply gates, and curator metadata updates.
+2. Add mission-owned improvement proposal records with trigger, target,
+   rationale, rollback plan, dry-run evidence, test evidence, safety checks,
+   operator approval, applied state, and curator memory linkage.
+3. Bind proposal validation to `tau_safety::evaluate_self_modification` and the
+   default self-modification rules so source paths and safety paths remain
+   blocked even if the proposal labels itself as a skill/config/prompt change.
+4. Gate approval on a passing dry run plus passing test and safety evidence.
+5. Gate apply on explicit operator approval, then mark the source failure
+   learning record as applied and attach accepted-improvement metadata.
+6. Keep `tau-coding-agent` dry-run/self-modification preview files untouched in
+   this slice; they are dirty from another workstream and remain adapter/runtime
+   plumbing for later integration.
+
+### Additional Affected Modules
+
+- `crates/tau-agent-core/src/mission.rs`
+- `crates/tau-agent-core/src/lib.rs`
+
+### Additional Risks / Mitigations
+
+- Risk: self-improvement becomes source mutation by another name.
+  Mitigation: reject source-code and safety-policy target kinds in core and
+  also run `tau-safety` default self-modification rules against target paths.
+- Risk: apply happens without enough proof.
+  Mitigation: approval requires passing dry-run, test, and safety evidence;
+  apply separately requires operator approval.
+- Risk: `tau-coding-agent` dirty self-modification files get mixed into this
+  slice.
+  Mitigation: keep write scope to `tau-agent-core` and specs only.
+
+### Additional Verification
+
+- RED: `cargo test -p tau-agent-core mission --lib`
+- GREEN: `cargo test -p tau-agent-core mission --lib`
+- Static: `cargo fmt --check -p tau-agent-core`
+- Static: `cargo clippy -p tau-agent-core --all-targets --all-features -- -D warnings`
+
 ## Slice 4 Addendum: Tool Budget and Evidence Ledger
 
 ### Goal
