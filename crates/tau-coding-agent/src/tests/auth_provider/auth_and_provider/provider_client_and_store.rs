@@ -351,6 +351,7 @@ printf "codex api-key fallback response" > "$out"
 
     let mut cli = test_cli();
     cli.openai_auth_mode = CliProviderAuthMode::ApiKey;
+    cli.model = "openai/gpt-5.3-codex".to_string();
     cli.openai_codex_backend = true;
     cli.openai_codex_cli = script.display().to_string();
     cli.openai_codex_timeout_ms = 5_000;
@@ -846,6 +847,7 @@ fn integration_build_provider_client_supports_openai_oauth_from_credential_store
 
     let mut cli = test_cli();
     cli.openai_auth_mode = CliProviderAuthMode::OauthToken;
+    cli.model = "openai/gpt-5.3-codex".to_string();
     cli.credential_store = store_path;
     cli.credential_store_encryption = CliCredentialStoreEncryptionMode::None;
 
@@ -874,6 +876,7 @@ fn integration_build_provider_client_supports_openai_session_token_from_credenti
 
     let mut cli = test_cli();
     cli.openai_auth_mode = CliProviderAuthMode::SessionToken;
+    cli.model = "openai/gpt-5.3-codex".to_string();
     cli.credential_store = store_path;
     cli.credential_store_encryption = CliCredentialStoreEncryptionMode::None;
 

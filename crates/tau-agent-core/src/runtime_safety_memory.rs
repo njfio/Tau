@@ -84,7 +84,7 @@ pub(crate) async fn retrieve_memory_matches(
 
     let mut matches = candidates
         .into_iter()
-        .zip(candidate_embeddings.into_iter())
+        .zip(candidate_embeddings)
         .filter_map(|((role, text), candidate_embedding)| {
             let score = cosine_similarity(&query_embedding, &candidate_embedding);
             if score >= min_similarity {

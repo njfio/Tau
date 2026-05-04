@@ -33,6 +33,7 @@ pub mod context_ranking;
 mod cortex_runtime;
 pub mod failure_detector;
 pub mod metrics;
+pub mod mission;
 mod process_types;
 pub mod recovery;
 mod runtime_safety_memory;
@@ -50,6 +51,21 @@ pub use cortex_runtime::{
 };
 pub use failure_detector::{FailureDetector, FailureDetectorConfig, FailureSignal};
 pub use metrics::{AgentMetrics, AgentMetricsSnapshot, ToolHealthStats};
+pub use mission::{
+    MissionAcceptanceCriterion, MissionArtifactRef, MissionCheckpoint, MissionCompletion,
+    MissionCompletionBlocker, MissionCompletionStatus, MissionCuratorReviewStatus,
+    MissionImprovementDryRun, MissionImprovementEvidenceStatus, MissionImprovementProposal,
+    MissionImprovementProposalError, MissionImprovementProposalStatus,
+    MissionImprovementSafetyCheck, MissionImprovementTargetKind, MissionImprovementTestEvidence,
+    MissionImprovementTriggerKind, MissionLearningOutput, MissionLearningRecord,
+    MissionLearningRecordError, MissionLearningRecordKind, MissionLifecycleStatus,
+    MissionMemoryEvidenceError, MissionMemoryHit, MissionMemoryRecallEvidence,
+    MissionMemoryRecallStatus, MissionOperatorApproval, MissionPlanDagError, MissionPlanNode,
+    MissionRecoveryState, MissionSnapshot, MissionToolBudget, MissionToolBudgetError,
+    MissionToolCallEvidence, MissionToolCallStatus, MissionToolEvidenceError,
+    MissionTransitionError, MissionVerificationGate, MissionVerifierRecord, MissionVerifierStatus,
+    MISSION_SCHEMA_VERSION,
+};
 pub use process_types::{
     ProcessLifecycleState, ProcessManager, ProcessManagerError, ProcessRuntimeProfile,
     ProcessSnapshot, ProcessSpawnSpec, ProcessType,

@@ -2972,12 +2972,7 @@ fn unit_register_self_modification_synthesis_omits_tool_by_default() {
     let mut agent = Agent::new(client.clone(), AgentConfig::default());
     let policy = crate::tools::ToolPolicy::new(vec![temp.path().to_path_buf()]);
     assert!(!policy.self_modification_synthesize_enabled);
-    crate::tools::register_self_modification_synthesis(
-        &mut agent,
-        &policy,
-        client,
-        "test-model",
-    );
+    crate::tools::register_self_modification_synthesis(&mut agent, &policy, client, "test-model");
 
     assert!(
         !agent
@@ -2997,12 +2992,7 @@ fn unit_register_self_modification_synthesis_includes_tool_when_enabled() {
     let mut agent = Agent::new(client.clone(), AgentConfig::default());
     let mut policy = crate::tools::ToolPolicy::new(vec![temp.path().to_path_buf()]);
     policy.self_modification_synthesize_enabled = true;
-    crate::tools::register_self_modification_synthesis(
-        &mut agent,
-        &policy,
-        client,
-        "test-model",
-    );
+    crate::tools::register_self_modification_synthesis(&mut agent, &policy, client, "test-model");
 
     assert!(
         agent

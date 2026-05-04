@@ -277,7 +277,7 @@ impl ActionHistoryStore {
             })
             .collect();
 
-        patterns.sort_by(|a, b| b.occurrence_count.cmp(&a.occurrence_count));
+        patterns.sort_by_key(|pattern| std::cmp::Reverse(pattern.occurrence_count));
         patterns
     }
 

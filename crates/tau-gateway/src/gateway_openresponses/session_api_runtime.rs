@@ -94,7 +94,7 @@ pub(super) async fn handle_gateway_sessions_list(
         }
     }
 
-    entries.sort_by(|left, right| right.0.cmp(&left.0));
+    entries.sort_by_key(|entry| std::cmp::Reverse(entry.0));
     entries.truncate(limit);
     let sessions = entries.into_iter().map(|entry| entry.1).collect::<Vec<_>>();
 

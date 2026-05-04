@@ -388,11 +388,9 @@ fn process_sse_frame(
                 }
             }
         }
-        "response.output_text.done" => {
-            if output_text.trim().is_empty() {
-                if let Some(text) = value.get("text").and_then(Value::as_str) {
-                    output_text.push_str(text);
-                }
+        "response.output_text.done" if output_text.trim().is_empty() => {
+            if let Some(text) = value.get("text").and_then(Value::as_str) {
+                output_text.push_str(text);
             }
         }
         "response.operator_turn_state.snapshot" => {

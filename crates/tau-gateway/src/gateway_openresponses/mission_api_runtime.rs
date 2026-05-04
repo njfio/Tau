@@ -59,14 +59,19 @@ pub(super) async fn handle_gateway_missions_list(
         }
     }
 
-    missions.sort_by(|left, right| right.updated_unix_ms.cmp(&left.updated_unix_ms));
+    missions.sort_by_key(|mission| std::cmp::Reverse(mission.updated_unix_ms));
     missions.truncate(limit);
+    let harness_missions = missions
+        .iter()
+        .map(GatewayMissionState::to_shared_mission_snapshot)
+        .collect::<Vec<_>>();
 
     state.record_ui_telemetry_event("missions", "list", "mission_list_requested");
     (
         StatusCode::OK,
         Json(json!({
             "missions": missions,
+            "harness_missions": harness_missions,
             "limit": limit,
         })),
     )
@@ -96,12 +101,14 @@ pub(super) async fn handle_gateway_mission_detail(
         Ok(mission) => mission,
         Err(error) => return error.into_response(),
     };
+    let harness_mission = mission.to_shared_mission_snapshot();
 
     state.record_ui_telemetry_event("missions", "detail", "mission_detail_requested");
     (
         StatusCode::OK,
         Json(json!({
             "mission": mission,
+            "harness_mission": harness_mission,
             "path": mission_path.display().to_string(),
         })),
     )

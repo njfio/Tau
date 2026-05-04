@@ -30,3 +30,8 @@ ci-artifacts/
 
 # Local backup scratch space
 /specs/_local_backups/
+
+# Local OMX runtime state
+/.omx/logs/
+/.omx/metrics.json
+/.omx/state/

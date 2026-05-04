@@ -490,12 +490,10 @@ impl LiveRlRuntimeBridge {
                 self.handle_message_event(message.role, message.text_content())
                     .await;
             }
-            AgentEvent::ToolExecutionEnd { result, .. } => {
-                if result.is_error {
-                    let mut state = self.inner.state.lock().await;
-                    if let Some(run) = state.active_run.as_mut() {
-                        run.tool_errors = run.tool_errors.saturating_add(1);
-                    }
+            AgentEvent::ToolExecutionEnd { result, .. } if result.is_error => {
+                let mut state = self.inner.state.lock().await;
+                if let Some(run) = state.active_run.as_mut() {
+                    run.tool_errors = run.tool_errors.saturating_add(1);
                 }
             }
             AgentEvent::TurnEnd { .. } => {
@@ -504,12 +502,10 @@ impl LiveRlRuntimeBridge {
                     run.turns = run.turns.saturating_add(1);
                 }
             }
-            AgentEvent::SafetyPolicyApplied { blocked, .. } => {
-                if blocked {
-                    let mut state = self.inner.state.lock().await;
-                    if let Some(run) = state.active_run.as_mut() {
-                        run.safety_blocked = true;
-                    }
+            AgentEvent::SafetyPolicyApplied { blocked, .. } if blocked => {
+                let mut state = self.inner.state.lock().await;
+                if let Some(run) = state.active_run.as_mut() {
+                    run.safety_blocked = true;
                 }
             }
             _ => {}
@@ -598,10 +594,8 @@ impl LiveRlRuntimeBridge {
             return;
         };
         match role {
-            MessageRole::User => {
-                if run.prompt.is_none() {
-                    run.prompt = Some(normalized.to_string());
-                }
+            MessageRole::User if run.prompt.is_none() => {
+                run.prompt = Some(normalized.to_string());
             }
             MessageRole::Assistant => {
                 run.assistant_reply = Some(normalized.to_string());
