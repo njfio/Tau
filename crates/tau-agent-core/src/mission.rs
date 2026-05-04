@@ -109,6 +109,8 @@ pub struct MissionSnapshot {
     #[serde(default)]
     pub memory_hits: Vec<MissionMemoryHit>,
     #[serde(default)]
+    pub memory_recall: Option<MissionMemoryRecallEvidence>,
+    #[serde(default)]
     pub verification_gates: Vec<MissionVerificationGate>,
     #[serde(default)]
     pub checkpoints: Vec<MissionCheckpoint>,
@@ -118,6 +120,8 @@ pub struct MissionSnapshot {
     pub artifacts: Vec<MissionArtifactRef>,
     #[serde(default)]
     pub final_learning_output: Option<MissionLearningOutput>,
+    #[serde(default)]
+    pub learning_records: Vec<MissionLearningRecord>,
     #[serde(default)]
     pub iteration_count: usize,
     #[serde(default)]
@@ -147,11 +151,13 @@ impl MissionSnapshot {
             tool_budget: MissionToolBudget::default(),
             tool_evidence: Vec::new(),
             memory_hits: Vec::new(),
+            memory_recall: None,
             verification_gates: Vec::new(),
             checkpoints: Vec::new(),
             recovery_state: None,
             artifacts: Vec::new(),
             final_learning_output: None,
+            learning_records: Vec::new(),
             iteration_count: 0,
             latest_verifier: None,
             latest_completion: None,
@@ -313,6 +319,10 @@ impl MissionSnapshot {
             blockers.push(MissionCompletionBlocker::MissingFinalLearningOutput);
         }
 
+        if self.memory_recall.is_none() {
+            blockers.push(MissionCompletionBlocker::MissingMemoryRecallEvidence);
+        }
+
         if self.tool_budget.consumed_tool_calls > self.tool_evidence.len() {
             blockers.push(MissionCompletionBlocker::MissingToolEvidence {
                 consumed_tool_calls: self.tool_budget.consumed_tool_calls,
@@ -417,6 +427,125 @@ impl MissionSnapshot {
                     .any(|candidate_gate_id| candidate_gate_id == gate_id)
             })
             .collect()
+    }
+
+    pub fn record_memory_hit(
+        &mut self,
+        query: impl Into<String>,
+        rationale: impl Into<String>,
+        checked_unix_ms: u64,
+        hit: MissionMemoryHit,
+    ) -> Result<(), MissionMemoryEvidenceError> {
+        if hit.key.trim().is_empty() {
+            return Err(MissionMemoryEvidenceError::EmptyMemoryHitKey);
+        }
+
+        if self
+            .memory_recall
+            .as_ref()
+            .is_some_and(|recall| recall.status == MissionMemoryRecallStatus::NoRelevantMemory)
+        {
+            return Err(MissionMemoryEvidenceError::MemoryHitConflictsWithNoMemoryResult);
+        }
+
+        self.memory_hits.push(hit);
+        self.memory_recall = Some(MissionMemoryRecallEvidence {
+            query: query.into(),
+            status: MissionMemoryRecallStatus::UsedHits,
+            checked_unix_ms,
+            rationale: rationale.into(),
+            hit_keys: self
+                .memory_hits
+                .iter()
+                .map(|memory_hit| memory_hit.key.clone())
+                .collect(),
+        });
+        Ok(())
+    }
+
+    pub fn record_no_memory_result(
+        &mut self,
+        query: impl Into<String>,
+        rationale: impl Into<String>,
+        checked_unix_ms: u64,
+    ) -> Result<(), MissionMemoryEvidenceError> {
+        if !self.memory_hits.is_empty() {
+            return Err(
+                MissionMemoryEvidenceError::NoMemoryResultConflictsWithHits {
+                    recorded_hits: self.memory_hits.len(),
+                },
+            );
+        }
+
+        self.memory_recall = Some(MissionMemoryRecallEvidence {
+            query: query.into(),
+            status: MissionMemoryRecallStatus::NoRelevantMemory,
+            checked_unix_ms,
+            rationale: rationale.into(),
+            hit_keys: Vec::new(),
+        });
+        Ok(())
+    }
+
+    pub fn write_final_learning_output(
+        &mut self,
+        store: &tau_memory::runtime::FileMemoryStore,
+        scope: &tau_memory::memory_contract::MemoryScope,
+        mut output: MissionLearningOutput,
+        record: MissionLearningRecord,
+    ) -> Result<tau_memory::runtime::MemoryWriteResult, MissionLearningRecordError> {
+        self.validate_learning_record(&record, MissionLearningRecordKind::Final)?;
+        if !output
+            .records
+            .iter()
+            .any(|record_id| record_id == &record.record_id)
+        {
+            output.records.push(record.record_id.clone());
+        }
+
+        let result = write_learning_record_to_memory(store, scope, &record)?;
+        upsert_learning_record(&mut self.learning_records, record);
+        self.final_learning_output = Some(output);
+        Ok(result)
+    }
+
+    pub fn write_failure_learning_record(
+        &mut self,
+        store: &tau_memory::runtime::FileMemoryStore,
+        scope: &tau_memory::memory_contract::MemoryScope,
+        record: MissionLearningRecord,
+    ) -> Result<tau_memory::runtime::MemoryWriteResult, MissionLearningRecordError> {
+        if self.recovery_state.is_none() {
+            return Err(MissionLearningRecordError::MissingRecoveryState);
+        }
+
+        self.validate_learning_record(&record, MissionLearningRecordKind::Failure)?;
+        let result = write_learning_record_to_memory(store, scope, &record)?;
+        upsert_learning_record(&mut self.learning_records, record);
+        Ok(result)
+    }
+
+    fn validate_learning_record(
+        &self,
+        record: &MissionLearningRecord,
+        expected_kind: MissionLearningRecordKind,
+    ) -> Result<(), MissionLearningRecordError> {
+        if record.record_id.trim().is_empty() {
+            return Err(MissionLearningRecordError::EmptyRecordId);
+        }
+        if record.mission_id != self.mission_id {
+            return Err(MissionLearningRecordError::MissionIdMismatch {
+                expected: self.mission_id.clone(),
+                actual: record.mission_id.clone(),
+            });
+        }
+        if record.kind != expected_kind {
+            return Err(MissionLearningRecordError::UnexpectedKind {
+                expected: expected_kind,
+                actual: record.kind,
+            });
+        }
+        Ok(())
     }
 
     fn plan_dag_contains_cycle(&self) -> bool {
@@ -555,6 +684,31 @@ pub struct MissionMemoryHit {
     pub summary: String,
     #[serde(default)]
     pub score: Option<f64>,
+    #[serde(default)]
+    pub source_event_key: Option<String>,
+    #[serde(default)]
+    pub plan_rationale: Option<String>,
+    #[serde(default)]
+    pub used_in_plan_node_ids: Vec<String>,
+    #[serde(default)]
+    pub metadata: BTreeMap<String, Value>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum MissionMemoryRecallStatus {
+    UsedHits,
+    NoRelevantMemory,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MissionMemoryRecallEvidence {
+    pub query: String,
+    pub status: MissionMemoryRecallStatus,
+    pub checked_unix_ms: u64,
+    pub rationale: String,
+    #[serde(default)]
+    pub hit_keys: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -606,6 +760,78 @@ pub struct MissionLearningOutput {
     pub curator_recommendation: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum MissionLearningRecordKind {
+    Final,
+    Failure,
+}
+
+impl MissionLearningRecordKind {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Final => "final",
+            Self::Failure => "failure",
+        }
+    }
+
+    fn memory_type(self) -> tau_memory::runtime::MemoryType {
+        match self {
+            Self::Final => tau_memory::runtime::MemoryType::Decision,
+            Self::Failure => tau_memory::runtime::MemoryType::Observation,
+        }
+    }
+
+    fn importance(self) -> f32 {
+        match self {
+            Self::Final => 0.85,
+            Self::Failure => 0.75,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum MissionCuratorReviewStatus {
+    QueuedForReview,
+    Reviewed,
+    Applied,
+    Rejected,
+}
+
+impl MissionCuratorReviewStatus {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::QueuedForReview => "queued_for_review",
+            Self::Reviewed => "reviewed",
+            Self::Applied => "applied",
+            Self::Rejected => "rejected",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct MissionLearningRecord {
+    pub record_id: String,
+    pub mission_id: String,
+    pub kind: MissionLearningRecordKind,
+    pub summary: String,
+    pub created_unix_ms: u64,
+    pub curator_status: MissionCuratorReviewStatus,
+    #[serde(default)]
+    pub root_cause: Option<String>,
+    #[serde(default)]
+    pub evidence: Vec<String>,
+    #[serde(default)]
+    pub artifact_ids: Vec<String>,
+    #[serde(default)]
+    pub verification_gate_ids: Vec<String>,
+    #[serde(default)]
+    pub rollback_plan: Option<String>,
+    #[serde(default)]
+    pub metadata: BTreeMap<String, Value>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct MissionVerifierRecord {
     pub kind: String,
@@ -622,6 +848,90 @@ pub struct MissionCompletion {
     pub summary: String,
     #[serde(default)]
     pub next_step: Option<String>,
+}
+
+fn write_learning_record_to_memory(
+    store: &tau_memory::runtime::FileMemoryStore,
+    scope: &tau_memory::memory_contract::MemoryScope,
+    record: &MissionLearningRecord,
+) -> Result<tau_memory::runtime::MemoryWriteResult, MissionLearningRecordError> {
+    let entry = tau_memory::memory_contract::MemoryEntry {
+        memory_id: record.record_id.clone(),
+        summary: record.summary.clone(),
+        tags: learning_record_tags(record),
+        facts: learning_record_facts(record),
+        source_event_key: format!(
+            "mission:{}:learning:{}",
+            record.mission_id, record.record_id
+        ),
+        recency_weight_bps: 1_000,
+        confidence_bps: 9_000,
+    };
+
+    store
+        .write_entry_with_metadata(
+            scope,
+            entry,
+            Some(record.kind.memory_type()),
+            Some(record.kind.importance()),
+        )
+        .map_err(|error| MissionLearningRecordError::MemoryWrite {
+            message: error.to_string(),
+        })
+}
+
+fn learning_record_tags(record: &MissionLearningRecord) -> Vec<String> {
+    let mut tags = vec![
+        "mission_learning".to_string(),
+        format!("mission:{}", record.mission_id),
+        format!("kind:{}", record.kind.as_str()),
+        format!("curator:{}", record.curator_status.as_str()),
+    ];
+    tags.extend(
+        record
+            .artifact_ids
+            .iter()
+            .map(|artifact_id| format!("artifact:{artifact_id}")),
+    );
+    tags.extend(
+        record
+            .verification_gate_ids
+            .iter()
+            .map(|gate_id| format!("verification_gate:{gate_id}")),
+    );
+    tags
+}
+
+fn learning_record_facts(record: &MissionLearningRecord) -> Vec<String> {
+    let mut facts = vec![
+        format!("mission_id: {}", record.mission_id),
+        format!("kind: {}", record.kind.as_str()),
+        format!("curator_status: {}", record.curator_status.as_str()),
+    ];
+    if let Some(root_cause) = &record.root_cause {
+        facts.push(format!("root_cause: {root_cause}"));
+    }
+    if let Some(rollback_plan) = &record.rollback_plan {
+        facts.push(format!("rollback_plan: {rollback_plan}"));
+    }
+    facts.extend(
+        record
+            .evidence
+            .iter()
+            .map(|evidence| format!("evidence: {evidence}")),
+    );
+    facts
+}
+
+fn upsert_learning_record(records: &mut Vec<MissionLearningRecord>, record: MissionLearningRecord) {
+    if let Some(existing) = records
+        .iter_mut()
+        .find(|existing| existing.record_id == record.record_id)
+    {
+        *existing = record;
+    } else {
+        records.push(record);
+    }
 }
 
 #[derive(Debug, Clone, Error, PartialEq, Eq)]
@@ -650,6 +960,7 @@ pub enum MissionCompletionBlocker {
         status: Option<MissionVerifierStatus>,
     },
     MissingFinalLearningOutput,
+    MissingMemoryRecallEvidence,
     MissingToolEvidence {
         consumed_tool_calls: usize,
         recorded_tool_calls: usize,
@@ -674,6 +985,33 @@ pub enum MissionToolEvidenceError {
     MissionIdMismatch { expected: String, actual: String },
     #[error(transparent)]
     Budget(#[from] MissionToolBudgetError),
+}
+
+#[derive(Debug, Clone, Error, PartialEq, Eq)]
+pub enum MissionMemoryEvidenceError {
+    #[error("mission memory hit key must not be empty")]
+    EmptyMemoryHitKey,
+    #[error("cannot record memory hit after an explicit no-memory result")]
+    MemoryHitConflictsWithNoMemoryResult,
+    #[error("cannot record explicit no-memory result with {recorded_hits} memory hits")]
+    NoMemoryResultConflictsWithHits { recorded_hits: usize },
+}
+
+#[derive(Debug, Clone, Error, PartialEq, Eq)]
+pub enum MissionLearningRecordError {
+    #[error("mission learning record id must not be empty")]
+    EmptyRecordId,
+    #[error("learning record mission id mismatch: expected {expected}, got {actual}")]
+    MissionIdMismatch { expected: String, actual: String },
+    #[error("learning record kind mismatch: expected {expected:?}, got {actual:?}")]
+    UnexpectedKind {
+        expected: MissionLearningRecordKind,
+        actual: MissionLearningRecordKind,
+    },
+    #[error("failure learning record requires recovery state")]
+    MissingRecoveryState,
+    #[error("failed to write learning record to memory: {message}")]
+    MemoryWrite { message: String },
 }
 
 #[derive(Debug, Clone, Copy, Error, PartialEq, Eq)]
@@ -727,10 +1065,12 @@ mod tests {
         assert!(mission.tool_budget.allowed_tools.is_empty());
         assert!(mission.tool_evidence.is_empty());
         assert!(mission.memory_hits.is_empty());
+        assert!(mission.memory_recall.is_none());
         assert!(mission.verification_gates.is_empty());
         assert!(mission.checkpoints.is_empty());
         assert!(mission.artifacts.is_empty());
         assert!(mission.final_learning_output.is_none());
+        assert!(mission.learning_records.is_empty());
     }
 
     fn plan_node(id: &str, depends_on: &[&str], status: &str) -> MissionPlanNode {
@@ -856,12 +1196,16 @@ mod tests {
                     status: Some(MissionVerifierStatus::Continue),
                 },
                 MissionCompletionBlocker::MissingFinalLearningOutput,
+                MissionCompletionBlocker::MissingMemoryRecallEvidence,
             ]
         );
         assert!(!mission.ready_for_completion());
 
         mission.plan_dag[1].status = "completed".to_string();
         mission.verification_gates[0].status = Some(MissionVerifierStatus::Passed);
+        mission
+            .record_no_memory_result("complete with proof", "no relevant prior memory", 610)
+            .expect("memory proof");
         mission.final_learning_output = Some(MissionLearningOutput {
             summary: "learned to keep proof attached".to_string(),
             records: vec!["learning-record-1".to_string()],
@@ -1002,6 +1346,9 @@ mod tests {
             records: vec!["learning-record-1".to_string()],
             curator_recommendation: None,
         });
+        mission
+            .record_no_memory_result("complete with tool proof", "no relevant prior memory", 910)
+            .expect("memory proof");
         mission.tool_budget.consumed_tool_calls = 1;
 
         assert_eq!(
@@ -1021,5 +1368,220 @@ mod tests {
 
         assert!(mission.completion_blockers().is_empty());
         assert!(mission.ready_for_completion());
+    }
+
+    #[test]
+    fn mission_memory_recall_preserves_hits_or_explicit_no_memory_result() {
+        let mut mission = MissionSnapshot::new("mission-mu", "plan with memory proof", 1_000);
+        let hit = MissionMemoryHit {
+            key: "memory-1".to_string(),
+            summary: "prior verifier recovery pattern".to_string(),
+            score: Some(0.91),
+            source_event_key: Some("source-memory-1".to_string()),
+            plan_rationale: Some("use the recovery pattern for verify node".to_string()),
+            used_in_plan_node_ids: vec!["verify".to_string()],
+            metadata: BTreeMap::from([("rank".to_string(), Value::from(1))]),
+        };
+
+        mission
+            .record_memory_hit(
+                "verifier recovery",
+                "memory shaped the verify plan node",
+                1_010,
+                hit.clone(),
+            )
+            .expect("record memory hit");
+
+        assert_eq!(mission.memory_hits, vec![hit]);
+        assert_eq!(
+            mission.memory_recall,
+            Some(MissionMemoryRecallEvidence {
+                query: "verifier recovery".to_string(),
+                status: MissionMemoryRecallStatus::UsedHits,
+                checked_unix_ms: 1_010,
+                rationale: "memory shaped the verify plan node".to_string(),
+                hit_keys: vec!["memory-1".to_string()],
+            })
+        );
+
+        let error = mission
+            .record_no_memory_result(
+                "verifier recovery",
+                "search returned no relevant memories",
+                1_020,
+            )
+            .expect_err("no-memory proof cannot conflict with recorded hits");
+
+        assert_eq!(
+            error,
+            MissionMemoryEvidenceError::NoMemoryResultConflictsWithHits { recorded_hits: 1 }
+        );
+
+        let mut no_memory = MissionSnapshot::new("mission-nu", "plan without memory hits", 1_100);
+        no_memory
+            .record_no_memory_result(
+                "new task shape",
+                "search returned no relevant memories",
+                1_110,
+            )
+            .expect("record no-memory proof");
+
+        assert_eq!(
+            no_memory.memory_recall,
+            Some(MissionMemoryRecallEvidence {
+                query: "new task shape".to_string(),
+                status: MissionMemoryRecallStatus::NoRelevantMemory,
+                checked_unix_ms: 1_110,
+                rationale: "search returned no relevant memories".to_string(),
+                hit_keys: Vec::new(),
+            })
+        );
+    }
+
+    #[test]
+    fn mission_final_learning_output_writes_tau_memory_record_and_unblocks_completion() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let store = tau_memory::runtime::FileMemoryStore::new(temp.path());
+        let scope = tau_memory::memory_contract::MemoryScope {
+            workspace_id: "workspace".to_string(),
+            channel_id: "mission".to_string(),
+            actor_id: "tau".to_string(),
+        };
+        let mut mission =
+            MissionSnapshot::new("mission-xi", "complete with learning memory", 1_200);
+        mission.plan_dag = vec![plan_node("verify", &[], "completed")];
+        mission.verification_gates.push(MissionVerificationGate {
+            id: "gate-1".to_string(),
+            description: "tests passed".to_string(),
+            status: Some(MissionVerifierStatus::Passed),
+            evidence: BTreeMap::new(),
+        });
+        mission
+            .record_no_memory_result(
+                "complete with learning memory",
+                "no relevant prior memory",
+                1_210,
+            )
+            .expect("memory proof");
+
+        assert_eq!(
+            mission.completion_blockers(),
+            vec![MissionCompletionBlocker::MissingFinalLearningOutput]
+        );
+
+        let record = MissionLearningRecord {
+            record_id: "learning-final-1".to_string(),
+            mission_id: mission.mission_id.clone(),
+            kind: MissionLearningRecordKind::Final,
+            summary: "Keep mission proof fields attached before completion".to_string(),
+            created_unix_ms: 1_220,
+            curator_status: MissionCuratorReviewStatus::QueuedForReview,
+            root_cause: None,
+            evidence: vec!["gate-1 passed".to_string()],
+            artifact_ids: vec!["artifact-1".to_string()],
+            verification_gate_ids: vec!["gate-1".to_string()],
+            rollback_plan: Some("remove the queued learning record".to_string()),
+            metadata: BTreeMap::new(),
+        };
+
+        let write = mission
+            .write_final_learning_output(
+                &store,
+                &scope,
+                MissionLearningOutput {
+                    summary: "mission finished with proof".to_string(),
+                    records: Vec::new(),
+                    curator_recommendation: Some("review for skill prompt update".to_string()),
+                },
+                record.clone(),
+            )
+            .expect("write final learning");
+
+        assert!(write.created);
+        assert_eq!(mission.learning_records, vec![record]);
+        assert_eq!(
+            mission
+                .final_learning_output
+                .as_ref()
+                .map(|output| &output.records),
+            Some(&vec!["learning-final-1".to_string()])
+        );
+
+        let saved = store
+            .read_entry("learning-final-1", None)
+            .expect("read final learning")
+            .expect("final learning stored");
+        assert_eq!(
+            saved.entry.summary,
+            "Keep mission proof fields attached before completion"
+        );
+        assert!(saved.entry.tags.contains(&"mission_learning".to_string()));
+        assert!(saved
+            .entry
+            .tags
+            .contains(&"curator:queued_for_review".to_string()));
+        assert_eq!(saved.memory_type, tau_memory::runtime::MemoryType::Decision);
+        assert!(mission.ready_for_completion());
+    }
+
+    #[test]
+    fn mission_failure_learning_record_requires_recovery_and_writes_curator_queue() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let store = tau_memory::runtime::FileMemoryStore::new(temp.path());
+        let scope = tau_memory::memory_contract::MemoryScope {
+            workspace_id: "workspace".to_string(),
+            channel_id: "mission".to_string(),
+            actor_id: "tau".to_string(),
+        };
+        let mut mission = MissionSnapshot::new("mission-omicron", "learn from failure", 1_300);
+        let record = MissionLearningRecord {
+            record_id: "learning-failure-1".to_string(),
+            mission_id: mission.mission_id.clone(),
+            kind: MissionLearningRecordKind::Failure,
+            summary: "Verifier blocked because the harness lacked memory proof".to_string(),
+            created_unix_ms: 1_320,
+            curator_status: MissionCuratorReviewStatus::QueuedForReview,
+            root_cause: Some("missing memory proof gate".to_string()),
+            evidence: vec!["completion blocker: missing memory proof".to_string()],
+            artifact_ids: Vec::new(),
+            verification_gate_ids: Vec::new(),
+            rollback_plan: Some("drop the learning if benchmark replay disagrees".to_string()),
+            metadata: BTreeMap::new(),
+        };
+
+        let error = mission
+            .write_failure_learning_record(&store, &scope, record.clone())
+            .expect_err("failure learning requires recovery state");
+
+        assert_eq!(error, MissionLearningRecordError::MissingRecoveryState);
+
+        mission
+            .transition_to(MissionLifecycleStatus::Planned, 1_305)
+            .expect("planned");
+        mission
+            .transition_to(MissionLifecycleStatus::Executing, 1_310)
+            .expect("executing");
+        mission
+            .block_for_recovery("verifier blocked", Some("queue failure learning"), 1_315)
+            .expect("blocked");
+
+        mission
+            .write_failure_learning_record(&store, &scope, record.clone())
+            .expect("write failure learning");
+
+        assert_eq!(mission.learning_records, vec![record]);
+        let saved = store
+            .read_entry("learning-failure-1", None)
+            .expect("read failure learning")
+            .expect("failure learning stored");
+        assert!(saved.entry.tags.contains(&"kind:failure".to_string()));
+        assert!(saved
+            .entry
+            .facts
+            .contains(&"root_cause: missing memory proof gate".to_string()));
+        assert_eq!(
+            saved.memory_type,
+            tau_memory::runtime::MemoryType::Observation
+        );
     }
 }

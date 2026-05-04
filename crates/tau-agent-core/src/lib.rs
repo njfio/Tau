@@ -53,12 +53,14 @@ pub use failure_detector::{FailureDetector, FailureDetectorConfig, FailureSignal
 pub use metrics::{AgentMetrics, AgentMetricsSnapshot, ToolHealthStats};
 pub use mission::{
     MissionAcceptanceCriterion, MissionArtifactRef, MissionCheckpoint, MissionCompletion,
-    MissionCompletionBlocker, MissionCompletionStatus, MissionLearningOutput,
-    MissionLifecycleStatus, MissionMemoryHit, MissionPlanDagError, MissionPlanNode,
-    MissionRecoveryState, MissionSnapshot, MissionToolBudget, MissionToolBudgetError,
-    MissionToolCallEvidence, MissionToolCallStatus, MissionToolEvidenceError,
-    MissionTransitionError, MissionVerificationGate, MissionVerifierRecord, MissionVerifierStatus,
-    MISSION_SCHEMA_VERSION,
+    MissionCompletionBlocker, MissionCompletionStatus, MissionCuratorReviewStatus,
+    MissionLearningOutput, MissionLearningRecord, MissionLearningRecordError,
+    MissionLearningRecordKind, MissionLifecycleStatus, MissionMemoryEvidenceError,
+    MissionMemoryHit, MissionMemoryRecallEvidence, MissionMemoryRecallStatus, MissionPlanDagError,
+    MissionPlanNode, MissionRecoveryState, MissionSnapshot, MissionToolBudget,
+    MissionToolBudgetError, MissionToolCallEvidence, MissionToolCallStatus,
+    MissionToolEvidenceError, MissionTransitionError, MissionVerificationGate,
+    MissionVerifierRecord, MissionVerifierStatus, MISSION_SCHEMA_VERSION,
 };
 pub use process_types::{
     ProcessLifecycleState, ProcessManager, ProcessManagerError, ProcessRuntimeProfile,

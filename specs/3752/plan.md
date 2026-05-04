@@ -140,3 +140,52 @@ by ledger evidence.
 - GREEN: `cargo test -p tau-agent-core mission --lib`
 - Static: `cargo fmt --check -p tau-agent-core`
 - Static: `cargo clippy -p tau-agent-core --all-targets --all-features -- -D warnings`
+
+## Slice 5 Addendum: Memory and Learning Records
+
+### Goal
+
+Make mission memory proof and mission learning records first-class in the
+shared harness contract. Core mission state should record whether planning used
+memory or explicitly found no relevant memory, and final/failure learning should
+write through `tau-memory` with curator review status.
+
+### Approach
+
+1. Add RED unit tests in `tau-agent-core` for memory-hit/no-memory recall proof,
+   final learning writes, and failure learning writes.
+2. Extend `MissionMemoryHit` with source-event, plan rationale, plan-node link,
+   and metadata fields while preserving serde defaults.
+3. Add `MissionMemoryRecallEvidence` so a mission can prove either used hits or
+   an explicit no-memory result.
+4. Add `MissionLearningRecord` with kind, curator status, root cause, evidence,
+   artifacts, verification gates, rollback plan, and metadata.
+5. Add helpers that write final/failure learning records through
+   `tau_memory::runtime::FileMemoryStore` using the existing public
+   `tau-memory` API.
+6. Require memory recall evidence as part of mission completion readiness.
+
+### Additional Affected Modules
+
+- `crates/tau-agent-core/src/mission.rs`
+- `crates/tau-agent-core/src/lib.rs`
+
+### Additional Risks / Mitigations
+
+- Risk: adding memory proof breaks legacy snapshots that predate Slice 5.
+  Mitigation: keep new fields serde-defaulted and expose completion readiness as
+  an explicit helper; adapters can add no-memory proof before relying on the
+  stricter readiness gate.
+- Risk: curator queues become gateway-owned again.
+  Mitigation: store curator status directly on mission learning records and
+  persist it through `tau-memory` tags/facts before any gateway adapter wiring.
+- Risk: touching dirty `tau-memory` runtime files causes unrelated churn.
+  Mitigation: use only the existing public `FileMemoryStore` API from
+  `tau-agent-core`.
+
+### Additional Verification
+
+- RED: `cargo test -p tau-agent-core mission --lib`
+- GREEN: `cargo test -p tau-agent-core mission --lib`
+- Static: `cargo fmt --check -p tau-agent-core`
+- Static: `cargo clippy -p tau-agent-core --all-targets --all-features -- -D warnings`

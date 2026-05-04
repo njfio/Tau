@@ -28,6 +28,10 @@ In scope:
 - document the ownership inversion from gateway-local mission truth to
   harness-owned mission truth
 - validate with focused core and gateway tests
+- require mission planning to record memory recall proof, either relevant hits
+  with plan rationale or an explicit no-memory result
+- write final and failure learning records through `tau-memory`
+- attach curator review status to mission learning records
 
 Out of scope:
 
@@ -111,6 +115,27 @@ when the harness evaluates completion readiness,
 then missing ledger entries for consumed tool calls are reported as completion
 blockers so final reports cannot claim tool execution without evidence.
 
+### AC-11 Planning records memory recall proof
+
+Given a mission planning step,
+when the harness consults memory,
+then the mission records either relevant memory hits with plan rationale and
+plan-node links, or an explicit no-relevant-memory result.
+
+### AC-12 Completion writes final learning through tau-memory
+
+Given a mission with complete plan, verification, tool, and memory proof,
+when final learning output is recorded,
+then a typed mission learning record is written through `tau-memory` and the
+mission references that record before completion can pass.
+
+### AC-13 Failure recovery writes curator-queued learning
+
+Given a blocked or recovering mission,
+when failure learning is captured,
+then the mission writes a failure learning record through `tau-memory` with root
+cause, evidence, rollback guidance, and curator review status.
+
 ## Conformance Cases
 
 | Case | AC | Tier | Given | When | Then |
@@ -126,6 +151,9 @@ blockers so final reports cannot claim tool execution without evidence.
 | C-09 | AC-8 | Unit | mission tool-call evidence with mission and plan-node IDs | evidence is recorded | ledger preserves attribution and links to artifacts/gates |
 | C-10 | AC-9 | Unit | mission budget has one allowed call | second call or disallowed tool is proposed | budget error is returned and ledger does not change |
 | C-11 | AC-10 | Unit | mission budget shows consumed tool calls without ledger evidence | completion readiness is evaluated | missing tool evidence blocker is returned |
+| C-12 | AC-11 | Unit | mission planning finds a relevant memory hit | memory evidence is recorded | hit key, score, source event, rationale, plan-node links, and recall status are preserved |
+| C-13 | AC-12 | Unit | mission has plan/verification/memory proof but no final learning | final learning is written | `tau-memory` stores a final learning record and completion unblocks |
+| C-14 | AC-13 | Unit | mission failure learning is proposed before and after recovery state exists | failure learning write runs | missing recovery is rejected, then a curator-queued failure memory record is stored |
 
 ## Success Metrics / Observable Signals
 
@@ -141,3 +169,6 @@ blockers so final reports cannot claim tool execution without evidence.
   code.
 - Mission tool evidence and budget exhaustion can be evaluated in
   `tau-agent-core` before adapters write gateway/session projections.
+- Mission memory recall proof and learning records can be evaluated in
+  `tau-agent-core` while persisting final/failure learning through the existing
+  `tau-memory` store API.

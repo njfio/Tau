@@ -22,6 +22,13 @@ Status: Completed
 - [x] T15 (GREEN): implement shared mission tool evidence ledger records.
 - [x] T16 (GREEN): implement shared mission budget enforcement helpers.
 - [x] T17 (VERIFY): run scoped core tests, fmt, Clippy, and PR checks.
+- [x] T18 (SPEC): extend #3752 for Slice 5 memory and learning records.
+- [x] T19 (RED): add failing core tests for memory recall proof, final learning
+      memory writes, and failure learning curator queue writes.
+- [x] T20 (GREEN): implement shared mission memory recall evidence helpers.
+- [x] T21 (GREEN): implement mission learning records and `tau-memory` write
+      helpers.
+- [x] T22 (VERIFY): run scoped core tests, fmt, Clippy, and PR checks.
 
 ## Verification Evidence
 
@@ -49,6 +56,18 @@ Status: Completed
   `MissionToolEvidenceError`, `record_tool_call_evidence`,
   `tool_evidence_for_verification_gate`, and `MissingToolEvidence`.
 - GREEN: `cargo test -p tau-agent-core mission --lib` passed, 9 tests.
+- Static: `cargo fmt --check -p tau-agent-core` passed.
+- Static: `cargo clippy -p tau-agent-core --all-targets --all-features -- -D warnings` passed.
+- Static: `rustup run 1.95.0 cargo fmt --check -p tau-agent-core && rustup run 1.95.0 cargo test -p tau-agent-core mission --lib && rustup run 1.95.0 cargo clippy -p tau-agent-core --all-targets --all-features -- -D warnings` passed.
+- RED: `cargo test -p tau-agent-core mission --lib` failed before Slice 5
+  implementation with missing `MissionMemoryRecallEvidence`,
+  `MissionMemoryRecallStatus`, `MissionLearningRecord`,
+  `MissionLearningRecordKind`, `MissionCuratorReviewStatus`,
+  `MissionMemoryEvidenceError`, `MissionLearningRecordError`,
+  `record_memory_hit`, `record_no_memory_result`,
+  `write_final_learning_output`, `write_failure_learning_record`, and
+  `learning_records`.
+- GREEN: `cargo test -p tau-agent-core mission --lib` passed, 12 tests.
 - Static: `cargo fmt --check -p tau-agent-core` passed.
 - Static: `cargo clippy -p tau-agent-core --all-targets --all-features -- -D warnings` passed.
 - Static: `rustup run 1.95.0 cargo fmt --check -p tau-agent-core && rustup run 1.95.0 cargo test -p tau-agent-core mission --lib && rustup run 1.95.0 cargo clippy -p tau-agent-core --all-targets --all-features -- -D warnings` passed.
