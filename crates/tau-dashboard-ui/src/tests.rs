@@ -493,8 +493,8 @@ fn functional_spec_3756_c02_harness_controls_expose_benchmark_and_policy_contrac
         "id=\"tau-ops-harness-action-approve\" type=\"submit\" data-action=\"approve\"",
         "id=\"tau-ops-harness-action-reject\" type=\"submit\" data-action=\"reject\"",
         "id=\"tau-ops-harness-action-dry-run\" type=\"submit\" data-action=\"dry-run\"",
-        "id=\"tau-ops-harness-action-view-diff\" data-action=\"view-diff\" href=\"/ops/harness/proposals/PR-044/diff\"",
-        "id=\"tau-ops-harness-action-apply\" type=\"button\" data-action=\"apply\" data-disabled=\"true\" aria-disabled=\"true\" data-approval-required=\"true\"",
+        "id=\"tau-ops-harness-action-view-diff\" data-action=\"view-diff\" data-action-tone=\"secondary\" href=\"/ops/harness/proposals/PR-044/diff\"",
+        "id=\"tau-ops-harness-action-apply\" type=\"button\" data-action=\"apply\" data-action-tone=\"disabled\" data-disabled=\"true\" aria-disabled=\"true\" data-approval-required=\"true\"",
     ] {
         assert!(
             html.contains(marker),
@@ -726,8 +726,8 @@ fn functional_spec_3764_c01_c02_c03_harness_prioritizes_self_improvement_actions
         "id=\"tau-ops-harness-approve-form\" action=\"/ops/harness/proposals/PR-044/approve\" method=\"post\"",
         "id=\"tau-ops-harness-reject-form\" action=\"/ops/harness/proposals/PR-044/reject\" method=\"post\"",
         "id=\"tau-ops-harness-dry-run-form\" action=\"/ops/harness/proposals/PR-044/dry-run\" method=\"post\"",
-        "id=\"tau-ops-harness-action-view-diff\" data-action=\"view-diff\" href=\"/ops/harness/proposals/PR-044/diff\"",
-        "id=\"tau-ops-harness-action-apply\" type=\"button\" data-action=\"apply\" data-disabled=\"true\" aria-disabled=\"true\" data-approval-required=\"true\"",
+        "id=\"tau-ops-harness-action-view-diff\" data-action=\"view-diff\" data-action-tone=\"secondary\" href=\"/ops/harness/proposals/PR-044/diff\"",
+        "id=\"tau-ops-harness-action-apply\" type=\"button\" data-action=\"apply\" data-action-tone=\"disabled\" data-disabled=\"true\" aria-disabled=\"true\" data-approval-required=\"true\"",
     ] {
         assert!(
             html.contains(marker),
@@ -832,6 +832,29 @@ fn functional_spec_3768_c01_c02_c03_harness_compacts_proof_dag_to_single_row() {
         assert!(
             html.contains(marker),
             "missing compact proof DAG marker `{marker}`"
+        );
+    }
+}
+
+#[test]
+fn functional_spec_3769_c01_c02_c03_harness_uses_distinct_operator_action_tones() {
+    let html = render_tau_ops_dashboard_shell_for_route("/ops/harness");
+
+    for marker in [
+        "id=\"tau-ops-harness-run-benchmark\" type=\"submit\" data-action-tone=\"benchmark\"",
+        "id=\"tau-ops-harness-action-approve\" type=\"submit\" data-action=\"approve\" data-action-tone=\"approve\"",
+        "id=\"tau-ops-harness-action-reject\" type=\"submit\" data-action=\"reject\" data-action-tone=\"reject\"",
+        "id=\"tau-ops-harness-action-dry-run\" type=\"submit\" data-action=\"dry-run\" data-action-tone=\"secondary\"",
+        "id=\"tau-ops-harness-action-view-diff\" data-action=\"view-diff\" data-action-tone=\"secondary\"",
+        "id=\"tau-ops-harness-action-apply\" type=\"button\" data-action=\"apply\" data-action-tone=\"disabled\" data-disabled=\"true\"",
+        "#tau-ops-harness-panel button[type=\"submit\"] {\n                                background: #132a38;",
+        "#tau-ops-harness-panel #tau-ops-harness-run-benchmark,\n                            #tau-ops-harness-panel #tau-ops-harness-action-dry-run {\n                                background: linear-gradient(180deg, #1d4f68, #173b4e);",
+        "#tau-ops-harness-panel #tau-ops-harness-action-approve[data-action-tone=\"approve\"] {\n                                background: linear-gradient(180deg, #2d7446, #1e5934);",
+        "#tau-ops-harness-panel #tau-ops-harness-action-reject[data-action-tone=\"reject\"] {\n                                background: linear-gradient(180deg, #7a342c, #5f261f);",
+    ] {
+        assert!(
+            html.contains(marker),
+            "missing distinct action tone marker `{marker}`"
         );
     }
 }

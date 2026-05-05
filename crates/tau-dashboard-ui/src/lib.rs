@@ -4021,12 +4021,21 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 outline: 2px solid var(--tau-harness-cyan);
                                 outline-offset: 2px;
                             }
-                            #tau-ops-harness-panel button[type="submit"],
-                            #tau-ops-harness-action-approve {
-                                background: linear-gradient(180deg, #2d7446, #1e5934);
+                            #tau-ops-harness-panel button[type="submit"] {
+                                background: #132a38;
                             }
-                            #tau-ops-harness-action-reject {
+                            #tau-ops-harness-panel #tau-ops-harness-run-benchmark,
+                            #tau-ops-harness-panel #tau-ops-harness-action-dry-run {
+                                background: linear-gradient(180deg, #1d4f68, #173b4e);
+                                border-color: rgba(123, 214, 232, .42);
+                            }
+                            #tau-ops-harness-panel #tau-ops-harness-action-approve[data-action-tone="approve"] {
+                                background: linear-gradient(180deg, #2d7446, #1e5934);
+                                border-color: rgba(95, 202, 122, .58);
+                            }
+                            #tau-ops-harness-panel #tau-ops-harness-action-reject[data-action-tone="reject"] {
                                 background: linear-gradient(180deg, #7a342c, #5f261f);
+                                border-color: rgba(223, 99, 91, .58);
                             }
                             #tau-ops-harness-action-apply[aria-disabled="true"] {
                                 color: var(--tau-harness-muted);
@@ -4594,7 +4603,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                         method="post"
                                         data-command="tau_agent_harness"
                                     >
-                                        <button id="tau-ops-harness-run-benchmark" type="submit">"Run Benchmark"</button>
+                                        <button id="tau-ops-harness-run-benchmark" type="submit" data-action-tone="benchmark">"Run Benchmark"</button>
                                     </form>
                                 </section>
                             </section>
@@ -4748,11 +4757,11 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     data-action-grid="two-column-priority"
                                 >
                                     <h4>"Operator Actions"</h4>
-                                    <form id="tau-ops-harness-approve-form" action="/ops/harness/proposals/PR-044/approve" method="post"><button id="tau-ops-harness-action-approve" type="submit" data-action="approve">"Approve"</button></form>
-                                    <form id="tau-ops-harness-reject-form" action="/ops/harness/proposals/PR-044/reject" method="post"><button id="tau-ops-harness-action-reject" type="submit" data-action="reject">"Reject"</button></form>
-                                    <form id="tau-ops-harness-dry-run-form" action="/ops/harness/proposals/PR-044/dry-run" method="post"><button id="tau-ops-harness-action-dry-run" type="submit" data-action="dry-run">"Dry Run Again"</button></form>
-                                    <a id="tau-ops-harness-action-view-diff" data-action="view-diff" href="/ops/harness/proposals/PR-044/diff">"View Diff"</a>
-                                    <button id="tau-ops-harness-action-apply" type="button" data-action="apply" data-disabled="true" aria-disabled="true" data-approval-required="true">"Apply (Approval Required)"</button>
+                                    <form id="tau-ops-harness-approve-form" action="/ops/harness/proposals/PR-044/approve" method="post"><button id="tau-ops-harness-action-approve" type="submit" data-action="approve" data-action-tone="approve">"Approve"</button></form>
+                                    <form id="tau-ops-harness-reject-form" action="/ops/harness/proposals/PR-044/reject" method="post"><button id="tau-ops-harness-action-reject" type="submit" data-action="reject" data-action-tone="reject">"Reject"</button></form>
+                                    <form id="tau-ops-harness-dry-run-form" action="/ops/harness/proposals/PR-044/dry-run" method="post"><button id="tau-ops-harness-action-dry-run" type="submit" data-action="dry-run" data-action-tone="secondary">"Dry Run Again"</button></form>
+                                    <a id="tau-ops-harness-action-view-diff" data-action="view-diff" data-action-tone="secondary" href="/ops/harness/proposals/PR-044/diff">"View Diff"</a>
+                                    <button id="tau-ops-harness-action-apply" type="button" data-action="apply" data-action-tone="disabled" data-disabled="true" aria-disabled="true" data-approval-required="true">"Apply (Approval Required)"</button>
                                 </section>
                                 <section
                                     id="tau-ops-harness-conservative-policy"
