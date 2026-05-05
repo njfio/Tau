@@ -4158,6 +4158,19 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 height: 8px;
                                 vertical-align: middle;
                             }
+                            #tau-ops-harness-missions-table td[data-mission-summary="inline-status"] {
+                                white-space: normal;
+                            }
+                            #tau-ops-harness-missions-table .tau-harness-mission-title {
+                                display: block;
+                                line-height: 1.24;
+                            }
+                            #tau-ops-harness-missions-table .tau-harness-mission-meta {
+                                display: flex;
+                                flex-wrap: wrap;
+                                gap: 5px;
+                                margin-top: 6px;
+                            }
                             .tau-harness-status-chip,
                             #tau-ops-harness-verification-gates li,
                             #tau-ops-harness-acceptance li,
@@ -4200,6 +4213,37 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             [data-verification-state="needs-review"] .tau-harness-status-chip {
                                 border-color: rgba(216, 173, 69, .78);
                                 color: #f2d590;
+                            }
+                            #tau-ops-harness-missions-table .tau-harness-mission-meta .tau-harness-status-chip {
+                                padding: 2px 6px;
+                                gap: 4px;
+                                font-size: .64rem;
+                                color: var(--tau-harness-text);
+                                border-color: var(--tau-harness-line);
+                            }
+                            #tau-ops-harness-missions-table .tau-harness-mission-meta .tau-harness-status-chip::before {
+                                width: 6px;
+                                height: 6px;
+                            }
+                            .tau-harness-status-chip[data-mission-state-chip="running"]::before,
+                            .tau-harness-status-chip[data-mission-state-chip="verifying"]::before,
+                            .tau-harness-status-chip[data-mission-gate-chip="running"]::before {
+                                background: var(--tau-harness-blue);
+                            }
+                            .tau-harness-status-chip[data-mission-state-chip="completed"]::before,
+                            .tau-harness-status-chip[data-mission-gate-chip="passed"]::before {
+                                background: var(--tau-harness-green);
+                            }
+                            .tau-harness-status-chip[data-mission-state-chip="blocked"]::before,
+                            .tau-harness-status-chip[data-mission-gate-chip="failed"]::before {
+                                background: var(--tau-harness-red);
+                            }
+                            .tau-harness-status-chip[data-mission-gate-chip="needs-review"] {
+                                border-color: rgba(216, 173, 69, .78);
+                                color: #f2d590;
+                            }
+                            .tau-harness-status-chip[data-mission-gate-chip="needs-review"]::before {
+                                background: #d8ad45;
                             }
                             #tau-ops-harness-plan-dag {
                                 display: grid;
@@ -4515,6 +4559,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     data-running-count="3"
                                     data-blocked-count="1"
                                     data-compact-table-breakpoint="1400px"
+                                    data-compact-mission-summary="status-and-gates"
                                 >
                                     <h4>"Active Missions"</h4>
                                     <div class="tau-harness-table-wrap">
@@ -4533,7 +4578,13 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                             </thead>
                                             <tbody>
                                                 <tr id="tau-ops-harness-mission-row-0" data-mission-id="run_linux_ci" data-status="running" data-plan-progress="68" data-verification-state="needs-review">
-                                                    <td>"Port repo test harness to Linux CI"</td>
+                                                    <td data-mission-summary="inline-status">
+                                                        <span class="tau-harness-mission-title">"Port repo test harness to Linux CI"</span>
+                                                        <span class="tau-harness-mission-meta" data-compact-mission-meta="status-gates">
+                                                            <span class="tau-harness-status-chip" data-mission-state-chip="running">"Running"</span>
+                                                            <span class="tau-harness-status-chip" data-mission-gate-chip="needs-review">"3/5 gates"</span>
+                                                        </span>
+                                                    </td>
                                                     <td>"4/5"</td>
                                                     <td><meter min="0" max="100" value="68">"68%"</meter></td>
                                                     <td>"34/60"</td>
@@ -4543,7 +4594,13 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                                     <td>"5"</td>
                                                 </tr>
                                                 <tr id="tau-ops-harness-mission-row-1" data-mission-id="run_m334_flaky" data-status="verifying" data-plan-progress="72" data-verification-state="needs-review">
-                                                    <td>"Investigate flaky benchmark on M334"</td>
+                                                    <td data-mission-summary="inline-status">
+                                                        <span class="tau-harness-mission-title">"Investigate flaky benchmark on M334"</span>
+                                                        <span class="tau-harness-mission-meta" data-compact-mission-meta="status-gates">
+                                                            <span class="tau-harness-status-chip" data-mission-state-chip="verifying">"Verifying"</span>
+                                                            <span class="tau-harness-status-chip" data-mission-gate-chip="needs-review">"2/5 gates"</span>
+                                                        </span>
+                                                    </td>
                                                     <td>"3/5"</td>
                                                     <td><meter min="0" max="100" value="72">"72%"</meter></td>
                                                     <td>"28/60"</td>
@@ -4553,7 +4610,13 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                                     <td>"4"</td>
                                                 </tr>
                                                 <tr id="tau-ops-harness-mission-row-2" data-mission-id="run_research_brief" data-status="completed" data-plan-progress="100" data-verification-state="passed">
-                                                    <td>"Generate weekly research brief on model routing"</td>
+                                                    <td data-mission-summary="inline-status">
+                                                        <span class="tau-harness-mission-title">"Generate weekly research brief on model routing"</span>
+                                                        <span class="tau-harness-mission-meta" data-compact-mission-meta="status-gates">
+                                                            <span class="tau-harness-status-chip" data-mission-state-chip="completed">"Completed"</span>
+                                                            <span class="tau-harness-status-chip" data-mission-gate-chip="passed">"5/5 gates"</span>
+                                                        </span>
+                                                    </td>
                                                     <td>"5/5"</td>
                                                     <td><meter min="0" max="100" value="100">"100%"</meter></td>
                                                     <td>"18/60"</td>
@@ -4563,7 +4626,13 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                                     <td>"7"</td>
                                                 </tr>
                                                 <tr id="tau-ops-harness-mission-row-3" data-mission-id="run_receipts" data-status="blocked" data-plan-progress="36" data-verification-state="failed">
-                                                    <td>"Automate receipt classification pipeline"</td>
+                                                    <td data-mission-summary="inline-status">
+                                                        <span class="tau-harness-mission-title">"Automate receipt classification pipeline"</span>
+                                                        <span class="tau-harness-mission-meta" data-compact-mission-meta="status-gates">
+                                                            <span class="tau-harness-status-chip" data-mission-state-chip="blocked">"Blocked"</span>
+                                                            <span class="tau-harness-status-chip" data-mission-gate-chip="failed">"1/5 gates"</span>
+                                                        </span>
+                                                    </td>
                                                     <td>"2/5"</td>
                                                     <td><meter min="0" max="100" value="36">"36%"</meter></td>
                                                     <td>"16/60"</td>
@@ -4573,7 +4642,13 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                                     <td>"3"</td>
                                                 </tr>
                                                 <tr id="tau-ops-harness-mission-row-4" data-mission-id="run_8f3a2" data-status="running" data-plan-progress="55" data-verification-state="running">
-                                                    <td>"Refactor plugin registry for safer hot reload"</td>
+                                                    <td data-mission-summary="inline-status">
+                                                        <span class="tau-harness-mission-title">"Refactor plugin registry for safer hot reload"</span>
+                                                        <span class="tau-harness-mission-meta" data-compact-mission-meta="status-gates">
+                                                            <span class="tau-harness-status-chip" data-mission-state-chip="running">"Running"</span>
+                                                            <span class="tau-harness-status-chip" data-mission-gate-chip="running">"2/5 gates"</span>
+                                                        </span>
+                                                    </td>
                                                     <td>"3/5"</td>
                                                     <td><meter min="0" max="100" value="55">"55%"</meter></td>
                                                     <td>"42/60"</td>

@@ -960,6 +960,57 @@ fn functional_spec_3771_c01_c02_c03_harness_prioritizes_verification_gates_after
 }
 
 #[test]
+fn functional_spec_3772_c01_c02_c03_harness_keeps_mission_state_visible_in_compact_table() {
+    let html = render_tau_ops_dashboard_shell_for_route("/ops/harness");
+
+    for marker in [
+        "id=\"tau-ops-harness-active-missions\" data-active-count=\"5\" data-running-count=\"3\" data-blocked-count=\"1\" data-compact-table-breakpoint=\"1400px\" data-compact-mission-summary=\"status-and-gates\"",
+        "data-mission-summary=\"inline-status\"",
+        "class=\"tau-harness-mission-title\"",
+        "class=\"tau-harness-mission-meta\" data-compact-mission-meta=\"status-gates\"",
+        "data-mission-state-chip=\"running\">Running",
+        "data-mission-state-chip=\"verifying\">Verifying",
+        "data-mission-state-chip=\"completed\">Completed",
+        "data-mission-state-chip=\"blocked\">Blocked",
+        "data-mission-gate-chip=\"needs-review\">3/5 gates",
+        "data-mission-gate-chip=\"failed\">1/5 gates",
+        "#tau-ops-harness-missions-table .tau-harness-mission-meta {\n                                display: flex;",
+        "#tau-ops-harness-missions-table .tau-harness-mission-meta .tau-harness-status-chip {\n                                padding: 2px 6px;",
+        "#tau-ops-harness-missions-table th:nth-child(n+4)",
+    ] {
+        assert!(
+            html.contains(marker),
+            "missing compact mission status marker `{marker}`"
+        );
+    }
+
+    let first_row = html
+        .find("id=\"tau-ops-harness-mission-row-0\"")
+        .expect("first mission row should render");
+    let first_title = html[first_row..]
+        .find("class=\"tau-harness-mission-title\"")
+        .expect("first mission title should render")
+        + first_row;
+    let first_state = html[first_row..]
+        .find("data-mission-state-chip=\"running\"")
+        .expect("first mission state chip should render")
+        + first_row;
+    let first_gate = html[first_row..]
+        .find("data-mission-gate-chip=\"needs-review\"")
+        .expect("first mission gate chip should render")
+        + first_row;
+
+    assert!(
+        first_title < first_state,
+        "mission state chip should follow the title inside the compact goal cell"
+    );
+    assert!(
+        first_state < first_gate,
+        "mission gate chip should follow the state chip inside the compact goal cell"
+    );
+}
+
+#[test]
 fn functional_spec_3759_c02_c03_harness_static_preview_guard_preserves_gateway_forms() {
     let html = render_tau_ops_dashboard_shell_for_route("/ops/harness");
 
