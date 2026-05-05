@@ -1248,6 +1248,59 @@ fn functional_spec_3779_c01_c02_c03_harness_keeps_recent_audit_proof_visible() {
 }
 
 #[test]
+fn functional_spec_3780_c01_c02_c03_harness_keeps_all_verification_gates_visible() {
+    let html = render_tau_ops_dashboard_shell_for_route("/ops/harness");
+
+    let gates_index = html
+        .find("id=\"tau-ops-harness-verification-gates\"")
+        .expect("verification gates section should render");
+    let memory_index = html
+        .find("id=\"tau-ops-harness-memory-learning\"")
+        .expect("memory proof section should render");
+    let artifacts_index = html
+        .find("id=\"tau-ops-harness-artifacts\"")
+        .expect("artifacts proof section should render");
+
+    assert!(
+        gates_index < memory_index,
+        "memory proof output should remain after verification gates"
+    );
+    assert!(
+        memory_index < artifacts_index,
+        "artifacts proof output should remain after memory proof output"
+    );
+
+    let mut previous_gate_index = gates_index;
+    for gate_id in ["VG-01", "VG-02", "VG-03", "VG-04", "VG-05"] {
+        let marker = format!("data-gate-id=\"{gate_id}\"");
+        let gate_index = html[previous_gate_index..]
+            .find(&marker)
+            .unwrap_or_else(|| panic!("missing ordered verification gate marker `{marker}`"))
+            + previous_gate_index;
+        assert!(
+            previous_gate_index <= gate_index,
+            "gate `{gate_id}` should remain in verification order"
+        );
+        previous_gate_index = gate_index;
+    }
+
+    for marker in [
+        "id=\"tau-ops-harness-verification-gates\" data-gate-count=\"5\" data-failed-gate-count=\"1\" data-proof-secondary-priority=\"first-screen\" data-proof-detail-budget=\"compact-scroll\" data-gate-visibility=\"all-gates-first-viewport\" data-gate-layout=\"two-column-compact\"",
+        "#tau-ops-harness-verification-gates[data-gate-visibility=\"all-gates-first-viewport\"] {\n                                overflow: hidden;",
+        "#tau-ops-harness-verification-gates[data-gate-visibility=\"all-gates-first-viewport\"] ul {\n                                display: grid;\n                                grid-template-columns: repeat(2, minmax(0, 1fr));",
+        "#tau-ops-harness-verification-gates[data-gate-visibility=\"all-gates-first-viewport\"] li {\n                                min-width: 0;\n                                justify-content: flex-start;",
+        "id=\"tau-ops-harness-gate-learning\" data-gate-id=\"VG-05\" data-gate-status=\"pending\">Learning proof</li>",
+        "id=\"tau-ops-harness-memory-learning\" data-memory-hits=\"12\" data-learning-records=\"2\" data-last-memory-write=\"10:20:55\" data-proof-footer-priority=\"first-viewport\"",
+        "id=\"tau-ops-harness-artifacts\" data-artifact-count=\"3\" data-proof-footer-priority=\"first-viewport\"",
+    ] {
+        assert!(
+            html.contains(marker),
+            "missing all-gates visibility marker `{marker}`"
+        );
+    }
+}
+
+#[test]
 fn functional_spec_3775_c01_c02_c03_harness_keeps_benchmark_panel_in_left_first_viewport() {
     let html = render_tau_ops_dashboard_shell_for_route("/ops/harness");
 

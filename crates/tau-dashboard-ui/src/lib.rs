@@ -4384,6 +4384,21 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             #tau-ops-harness-verification-gates li {
                                 padding: 3px 7px;
                             }
+                            #tau-ops-harness-verification-gates[data-gate-visibility="all-gates-first-viewport"] {
+                                overflow: hidden;
+                            }
+                            #tau-ops-harness-verification-gates[data-gate-visibility="all-gates-first-viewport"] ul {
+                                display: grid;
+                                grid-template-columns: repeat(2, minmax(0, 1fr));
+                                gap: 5px;
+                            }
+                            #tau-ops-harness-verification-gates[data-gate-visibility="all-gates-first-viewport"] li {
+                                min-width: 0;
+                                justify-content: flex-start;
+                                padding: 3px 6px;
+                                font-size: .68rem;
+                                line-height: 1.15;
+                            }
                             #tau-ops-harness-conservative-policy {
                                 display: grid;
                                 grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -4860,7 +4875,15 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                             <li data-ac-id="VG-05" data-ac-status="pending">"Benchmark proof emitted"</li>
                                         </ul>
                                     </section>
-                                    <section id="tau-ops-harness-verification-gates" data-gate-count="5" data-failed-gate-count="1" data-proof-secondary-priority="first-screen" data-proof-detail-budget="compact-scroll">
+                                    <section
+                                        id="tau-ops-harness-verification-gates"
+                                        data-gate-count="5"
+                                        data-failed-gate-count="1"
+                                        data-proof-secondary-priority="first-screen"
+                                        data-proof-detail-budget="compact-scroll"
+                                        data-gate-visibility="all-gates-first-viewport"
+                                        data-gate-layout="two-column-compact"
+                                    >
                                         <h4>"Verification Gates"</h4>
                                         <ul>
                                             <li id="tau-ops-harness-gate-planning" data-gate-id="VG-01" data-gate-status="passed">"Planning proof"</li>
