@@ -4409,6 +4409,33 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 padding: 2px 6px;
                                 font-size: .66rem;
                             }
+                            #tau-ops-harness-learning-queue[data-queue-readability="full-labels"] {
+                                max-height: 112px;
+                                overflow: hidden;
+                            }
+                            #tau-ops-harness-learning-queue[data-queue-readability="full-labels"] ul {
+                                display: grid;
+                                grid-template-columns: minmax(0, 1fr);
+                                gap: 3px;
+                                margin-top: 6px;
+                            }
+                            #tau-ops-harness-learning-queue[data-queue-readability="full-labels"] li {
+                                width: 100%;
+                                min-width: 0;
+                                overflow: hidden;
+                                white-space: nowrap;
+                                text-overflow: clip;
+                                justify-content: flex-start;
+                                border-radius: 6px;
+                                padding: 1px 6px;
+                                font-size: .62rem;
+                                line-height: 1.05;
+                            }
+                            #tau-ops-harness-learning-queue[data-queue-readability="full-labels"] li::before {
+                                flex: 0 0 6px;
+                                width: 6px;
+                                height: 6px;
+                            }
                             #tau-ops-harness-operator-actions {
                                 gap: 6px;
                             }
@@ -5094,6 +5121,9 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     data-queue-count="4"
                                     data-queue-density="all-items-visible"
                                     data-queue-overflow-budget="none"
+                                    data-queue-readability="full-labels"
+                                    data-queue-layout="single-column-readable"
+                                    data-queue-truncation-budget="none"
                                 >
                                     <h4>"Learning & Proposals"</h4>
                                     <ul>

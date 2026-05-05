@@ -1396,7 +1396,7 @@ fn functional_spec_3783_c01_c02_c03_harness_review_pane_contains_compact_proof_r
         "id=\"tau-ops-harness-learning-queue\" data-queue-count=\"4\" data-queue-density=\"all-items-visible\" data-queue-overflow-budget=\"none\"",
         "id=\"tau-ops-harness-proposal-detail\" data-proposal-id=\"PR-044\" data-learning-record=\"LR-044\" data-target-type=\"Prompt\" data-target-path=\"prompts/research_to_doc/system.md\" data-proposal-detail-priority=\"first-viewport-summary\" data-proposal-detail-density=\"compact-scroll\" data-proposal-detail-overflow-budget=\"contained\" data-proposal-visible-rows=\"7\"",
         "id=\"tau-ops-harness-audit-log\" data-audit-row-count=\"4\" data-audit-source=\"fallback\" data-audit-priority=\"first-viewport-recent-proof\" data-audit-density=\"compact-scroll\" data-audit-visible-columns=\"time,action,item,result\" data-audit-overflow-budget=\"all-rows-visible\"",
-        "#tau-ops-harness-learning-queue[data-queue-density=\"all-items-visible\"] ul {\n                                display: grid;\n                                grid-template-columns: repeat(2, minmax(0, 1fr));",
+        "#tau-ops-harness-learning-queue[data-queue-readability=\"full-labels\"] ul {\n                                display: grid;\n                                grid-template-columns: minmax(0, 1fr);",
         "#tau-ops-harness-proposal-detail[data-proposal-detail-overflow-budget=\"contained\"] dl {\n                                gap: 3px 10px;",
         "#tau-ops-harness-proposal-detail[data-proposal-detail-overflow-budget=\"contained\"] a {\n                                min-height: 0;\n                                padding: 0;",
         "#tau-ops-harness-audit-log[data-audit-overflow-budget=\"all-rows-visible\"] td {\n                                padding: 2px 5px;",
@@ -1444,6 +1444,52 @@ fn functional_spec_3784_c01_c02_c03_harness_center_proof_evidence_stays_containe
         assert!(
             html.contains(marker),
             "missing center proof containment marker `{marker}`"
+        );
+    }
+}
+
+#[test]
+fn functional_spec_3785_c01_c02_c03_harness_review_queue_labels_are_readable() {
+    let html = render_tau_ops_dashboard_shell_for_route("/ops/harness");
+
+    let queue_index = html
+        .find("id=\"tau-ops-harness-learning-queue\"")
+        .expect("learning queue should render");
+    let actions_index = html
+        .find("id=\"tau-ops-harness-operator-actions\"")
+        .expect("operator actions should render");
+
+    assert!(
+        queue_index < actions_index,
+        "learning queue should remain before operator actions"
+    );
+
+    let mut previous_index = queue_index;
+    for item in [
+        "data-learning-id=\"LR-219\" data-status=\"needs-review\">Retry storm in document synthesis</li>",
+        "data-learning-id=\"LR-220\" data-status=\"needs-review\">Missing memory write after verification</li>",
+        "data-learning-id=\"PR-044\" data-status=\"proposal\">Prompt compression for research tasks</li>",
+        "data-learning-id=\"PR-045\" data-status=\"proposal\">Skill patch for benchmark artifact naming</li>",
+    ] {
+        let item_index = html
+            .find(item)
+            .unwrap_or_else(|| panic!("missing readable queue item `{item}`"));
+        assert!(
+            item_index >= previous_index,
+            "queue item `{item}` should preserve DOM order"
+        );
+        previous_index = item_index;
+    }
+
+    for marker in [
+        "id=\"tau-ops-harness-learning-queue\" data-queue-count=\"4\" data-queue-density=\"all-items-visible\" data-queue-overflow-budget=\"none\" data-queue-readability=\"full-labels\" data-queue-layout=\"single-column-readable\" data-queue-truncation-budget=\"none\"",
+        "#tau-ops-harness-learning-queue[data-queue-readability=\"full-labels\"] ul {\n                                display: grid;\n                                grid-template-columns: minmax(0, 1fr);",
+        "#tau-ops-harness-learning-queue[data-queue-readability=\"full-labels\"] li {\n                                width: 100%;\n                                min-width: 0;",
+        "#tau-ops-harness-learning-queue[data-queue-readability=\"full-labels\"] li {\n                                width: 100%;\n                                min-width: 0;\n                                overflow: hidden;\n                                white-space: nowrap;",
+    ] {
+        assert!(
+            html.contains(marker),
+            "missing readable review queue marker `{marker}`"
         );
     }
 }
