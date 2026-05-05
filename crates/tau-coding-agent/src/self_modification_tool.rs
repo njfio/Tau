@@ -136,9 +136,7 @@ impl AgentTool for SelfModificationProposeTool {
             }
         };
 
-        let workspace_root = args
-            .workspace_root
-            .unwrap_or_else(|| PathBuf::from("."));
+        let workspace_root = args.workspace_root.unwrap_or_else(|| PathBuf::from("."));
         let config = SelfModificationConfig::default();
 
         info!(

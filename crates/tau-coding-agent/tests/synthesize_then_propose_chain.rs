@@ -21,9 +21,7 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use serde_json::{json, Value};
 use tau_agent_core::AgentTool;
-use tau_ai::{
-    ChatRequest, ChatResponse, ChatUsage, LlmClient, Message, TauAiError,
-};
+use tau_ai::{ChatRequest, ChatResponse, ChatUsage, LlmClient, Message, TauAiError};
 use tau_coding_agent::self_modification_synthesis_tool::SelfModificationSynthesizeTool;
 use tau_coding_agent::self_modification_tool::{
     SelfModificationProposeTool, AUTONOMOUS_SELF_MOD_ENV,
@@ -58,10 +56,7 @@ impl FakeLlm {
 
 #[async_trait]
 impl LlmClient for FakeLlm {
-    async fn complete(
-        &self,
-        _request: ChatRequest,
-    ) -> Result<ChatResponse, TauAiError> {
+    async fn complete(&self, _request: ChatRequest) -> Result<ChatResponse, TauAiError> {
         let mut q = self.responses.lock().await;
         q.pop_front()
             .unwrap_or(Err(TauAiError::InvalidResponse("empty queue".into())))
@@ -106,10 +101,8 @@ fn synthesize_output_is_directly_consumable_by_propose_tool() {
     let (synthesized_target, propose_result) = with_env_set("1", || {
         rt.block_on(async {
             // Step 1: synthesis tool produces a structured proposal.
-            let synth = SelfModificationSynthesizeTool::new(
-                FakeLlm::with_text(llm_reply),
-                "fake-model",
-            );
+            let synth =
+                SelfModificationSynthesizeTool::new(FakeLlm::with_text(llm_reply), "fake-model");
             let synth_result = synth
                 .execute(json!({
                     "intent": "Improve the retry loop in the autonomy skill.",
@@ -187,10 +180,8 @@ fn synthesize_output_with_would_be_blocked_target_still_chains_cleanly_to_propos
 
     let propose_result = with_env_set("1", || {
         rt.block_on(async {
-            let synth = SelfModificationSynthesizeTool::new(
-                FakeLlm::with_text(llm_reply),
-                "fake-model",
-            );
+            let synth =
+                SelfModificationSynthesizeTool::new(FakeLlm::with_text(llm_reply), "fake-model");
             let synth_result = synth
                 .execute(json!({
                     "intent": "Add a --dry-run flag to tau-ops.",
@@ -199,8 +190,7 @@ fn synthesize_output_with_would_be_blocked_target_still_chains_cleanly_to_propos
                 .await;
             assert!(!synth_result.is_error);
             assert_eq!(
-                synth_result.content["policy_projected"],
-                "would_be_blocked",
+                synth_result.content["policy_projected"], "would_be_blocked",
                 "source target must project as blocked under default config"
             );
 

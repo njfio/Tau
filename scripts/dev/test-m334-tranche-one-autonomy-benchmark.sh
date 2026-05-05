@@ -139,4 +139,41 @@ if [[ "${invalid_checkpoint_rc}" -eq 0 ]]; then
 fi
 assert_contains "${invalid_checkpoint_output}" "declares unsupported allowed_checkpoints" "invalid checkpoint message"
 
+HARNESS_PROOF_PATH="${tmpdir}/harness-proof.json"
+HARNESS_MEMORY_ROOT="${tmpdir}/harness-memory"
+cargo run -p tau-coding-agent --quiet --bin tau_agent_harness -- \
+  --fixture "${FIXTURE_PATH}" \
+  --output "${HARNESS_PROOF_PATH}" \
+  --memory-root "${HARNESS_MEMORY_ROOT}" \
+  --run-id "m334-script-test" \
+  --started-unix-ms 1000 >/dev/null
+
+harness_check_output="$(python3 - "${HARNESS_PROOF_PATH}" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+proof = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+if proof["benchmark_id"] != "m334-tranche-one-autonomy":
+    raise SystemExit("unexpected benchmark_id")
+if proof["passed"] is not True:
+    raise SystemExit(f"harness proof did not pass: {proof.get('failure_reasons')}")
+if len(proof["tasks"]) != 4:
+    raise SystemExit(f"expected 4 task proofs, got {len(proof['tasks'])}")
+for task in proof["tasks"]:
+    if task["passed"] is not True:
+        raise SystemExit(f"task {task['task_id']} did not pass")
+    if task["mission"]["status"] != "completed":
+        raise SystemExit(f"task {task['task_id']} mission not completed")
+    if not task["mission"]["tool_evidence"]:
+        raise SystemExit(f"task {task['task_id']} missing tool evidence")
+    if not task["mission"]["memory_recall"]:
+        raise SystemExit(f"task {task['task_id']} missing memory recall")
+    if not task["mission"]["final_learning_output"]["records"]:
+        raise SystemExit(f"task {task['task_id']} missing final learning records")
+print("harness proof ok")
+PY
+)"
+assert_equals "harness proof ok" "${harness_check_output}" "harness proof contract"
+
 echo "m334 tranche-one autonomy benchmark contract tests passed"

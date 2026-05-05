@@ -149,7 +149,10 @@ mod tests {
             .expect("pipeline should succeed");
 
         assert!(!result.applied, "dry-run must never apply");
-        assert!(result.safety_evaluation.allowed, "skills auto-apply by default");
+        assert!(
+            result.safety_evaluation.allowed,
+            "skills auto-apply by default"
+        );
         assert!(result.safety_evaluation.blocked_by.is_empty());
         assert!(result.worktree_path.is_some());
         // worktree must have been cleaned up
@@ -176,8 +179,7 @@ mod tests {
     fn dry_run_classifies_hostile_target_path_as_other_and_denies() {
         let tmp = tempfile::tempdir().expect("tempdir");
         let config = SelfModificationConfig::default();
-        let result =
-            run_dry_run_pipeline(tmp.path(), "../../etc/passwd", None, &config).unwrap();
+        let result = run_dry_run_pipeline(tmp.path(), "../../etc/passwd", None, &config).unwrap();
 
         assert!(!result.applied);
         assert!(!result.safety_evaluation.allowed);

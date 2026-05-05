@@ -18,8 +18,8 @@
 use std::process::Command;
 
 use assert_cmd::cargo_bin;
-use predicates::Predicate;
 use predicates::str::contains;
+use predicates::Predicate;
 use serde_json::Value;
 use tempfile::TempDir;
 
@@ -32,11 +32,7 @@ fn dry_run_allows_skill_target_and_emits_containment_path() {
     let workspace = TempDir::new().unwrap();
 
     let output = bin()
-        .args([
-            "--target",
-            "skills/foo/manifest.toml",
-            "--workspace-root",
-        ])
+        .args(["--target", "skills/foo/manifest.toml", "--workspace-root"])
         .arg(workspace.path())
         .output()
         .expect("bin runs");
@@ -48,8 +44,7 @@ fn dry_run_allows_skill_target_and_emits_containment_path() {
         String::from_utf8_lossy(&output.stderr),
     );
 
-    let json: Value =
-        serde_json::from_slice(&output.stdout).expect("stdout is valid JSON");
+    let json: Value = serde_json::from_slice(&output.stdout).expect("stdout is valid JSON");
     assert_eq!(json["applied"], Value::Bool(false));
     assert_eq!(json["safety_evaluation"]["allowed"], Value::Bool(true));
     assert_eq!(
@@ -62,10 +57,7 @@ fn dry_run_allows_skill_target_and_emits_containment_path() {
     let worktree = json["worktree_path"]
         .as_str()
         .expect("worktree_path is a string");
-    let expected_root = workspace
-        .path()
-        .join(".tau")
-        .join("self-mod-worktrees");
+    let expected_root = workspace.path().join(".tau").join("self-mod-worktrees");
     assert!(
         worktree.starts_with(expected_root.to_str().unwrap()),
         "worktree {worktree:?} must live under {expected_root:?}",
@@ -77,11 +69,7 @@ fn dry_run_denies_source_target_with_policy_blocker() {
     let workspace = TempDir::new().unwrap();
 
     let output = bin()
-        .args([
-            "--target",
-            "crates/tau-ops/src/main.rs",
-            "--workspace-root",
-        ])
+        .args(["--target", "crates/tau-ops/src/main.rs", "--workspace-root"])
         .arg(workspace.path())
         .output()
         .expect("bin runs");
@@ -93,8 +81,7 @@ fn dry_run_denies_source_target_with_policy_blocker() {
         String::from_utf8_lossy(&output.stderr),
     );
 
-    let json: Value =
-        serde_json::from_slice(&output.stdout).expect("stdout is valid JSON");
+    let json: Value = serde_json::from_slice(&output.stdout).expect("stdout is valid JSON");
     assert_eq!(json["safety_evaluation"]["allowed"], Value::Bool(false));
 
     let blocked_by = json["safety_evaluation"]["blocked_by"]
@@ -132,18 +119,14 @@ fn dry_run_rejects_hostile_proposal_id_override_with_nonzero_exit() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        contains("proposal-id-override").eval(&stderr)
-            && contains("rejected").eval(&stderr),
+        contains("proposal-id-override").eval(&stderr) && contains("rejected").eval(&stderr),
         "stderr should mention proposal-id-override rejection, got: {stderr}",
     );
 
     // Containment invariant: no worktree directory must exist for a rejected
     // override. We check the parent root rather than a specific id because the
     // rejection happens before any id is chosen.
-    let worktrees_root = workspace
-        .path()
-        .join(".tau")
-        .join("self-mod-worktrees");
+    let worktrees_root = workspace.path().join(".tau").join("self-mod-worktrees");
     if worktrees_root.exists() {
         let entries: Vec<_> = std::fs::read_dir(&worktrees_root)
             .unwrap()

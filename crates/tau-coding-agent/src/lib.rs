@@ -10,6 +10,7 @@
 //! Only genuinely cross-binary surface belongs here. Binary-internal plumbing
 //! stays in `src/main.rs` under `mod …;` to keep the library footprint small.
 
+pub mod mission_self_improvement;
 pub mod self_modification_pipeline;
 pub mod self_modification_runtime;
 pub mod self_modification_synthesis_tool;
@@ -21,5 +22,4 @@ pub mod self_modification_tool;
 /// flaky failures like "execute_refuses_when_env_gate_is_off" observing "1".
 /// Putting the lock on the shared lib surface guarantees a single instance.
 #[cfg(test)]
-pub(crate) static AUTONOMOUS_SELF_MOD_ENV_LOCK: std::sync::Mutex<()> =
-    std::sync::Mutex::new(());
+pub(crate) static AUTONOMOUS_SELF_MOD_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
