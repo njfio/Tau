@@ -4299,6 +4299,35 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     grid-template-columns: minmax(6rem, max-content) minmax(0, 1fr);
                                     width: 100%;
                                 }
+                                #tau-ops-harness-tool-evidence table {
+                                    min-width: 0;
+                                    table-layout: fixed;
+                                }
+                                #tau-ops-harness-tool-evidence th,
+                                #tau-ops-harness-tool-evidence td {
+                                    white-space: normal;
+                                    overflow-wrap: anywhere;
+                                }
+                                #tau-ops-harness-tool-evidence th:nth-child(6),
+                                #tau-ops-harness-tool-evidence td:nth-child(6) {
+                                    display: none;
+                                }
+                                #tau-ops-harness-tool-evidence th:nth-child(2),
+                                #tau-ops-harness-tool-evidence td:nth-child(2) {
+                                    width: 78px;
+                                }
+                                #tau-ops-harness-tool-evidence th:nth-child(4),
+                                #tau-ops-harness-tool-evidence td:nth-child(4),
+                                #tau-ops-harness-tool-evidence th:nth-child(5),
+                                #tau-ops-harness-tool-evidence td:nth-child(5) {
+                                    width: 70px;
+                                }
+                                #tau-ops-harness-operator-log pre,
+                                #tau-ops-harness-tui-companion pre {
+                                    overflow-x: hidden;
+                                    overflow-wrap: anywhere;
+                                    white-space: pre-wrap;
+                                }
                             }
                             @media (max-width: 1180px) {
                                 #tau-ops-harness-panel {
@@ -4604,7 +4633,11 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                         </ul>
                                     </section>
                                 </div>
-                                <section id="tau-ops-harness-tool-evidence" data-tool-call-count="8">
+                                <section
+                                    id="tau-ops-harness-tool-evidence"
+                                    data-tool-call-count="8"
+                                    data-compact-evidence-breakpoint="1400px"
+                                >
                                     <h4>"Tool Execution Evidence"</h4>
                                     <div class="tau-harness-table-wrap">
                                         <table>
@@ -4620,7 +4653,11 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                         </table>
                                     </div>
                                 </section>
-                                <section id="tau-ops-harness-operator-log" data-log-follow="true">
+                                <section
+                                    id="tau-ops-harness-operator-log"
+                                    data-log-follow="true"
+                                    data-log-wrap="pre-wrap"
+                                >
                                     <h4>"Operator Log"</h4>
                                     <pre>"10:18:22  Plan accepted
 10:18:23  Executing plan with tool budget 42/60
@@ -4706,7 +4743,13 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     </div>
                                 </section>
                             </section>
-                            <aside id="tau-ops-harness-tui-companion" data-component="TuiCompanion" data-command="tau status" data-window-chrome="compact">
+                            <aside
+                                id="tau-ops-harness-tui-companion"
+                                data-component="TuiCompanion"
+                                data-command="tau status"
+                                data-window-chrome="compact"
+                                data-log-wrap="pre-wrap"
+                            >
                                 <header class="tau-harness-window-titlebar">
                                     <div>
                                         <small>"Terminal"</small>

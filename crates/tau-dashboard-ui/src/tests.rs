@@ -655,6 +655,27 @@ fn functional_spec_3762_c01_c02_c03_harness_compacts_dashboard_without_clipping(
 }
 
 #[test]
+fn functional_spec_3763_c01_c02_c03_harness_wraps_proof_evidence_and_terminal_logs() {
+    let html = render_tau_ops_dashboard_shell_for_route("/ops/harness");
+
+    for marker in [
+        "data-compact-evidence-breakpoint=\"1400px\"",
+        "data-log-wrap=\"pre-wrap\"",
+        "#tau-ops-harness-tool-evidence table {\n                                    min-width: 0;",
+        "#tau-ops-harness-tool-evidence th,\n                                #tau-ops-harness-tool-evidence td {\n                                    white-space: normal;",
+        "#tau-ops-harness-tool-evidence th:nth-child(6)",
+        "#tau-ops-harness-tool-evidence th:nth-child(2),\n                                #tau-ops-harness-tool-evidence td:nth-child(2) {\n                                    width: 78px;",
+        "#tau-ops-harness-operator-log pre,\n                                #tau-ops-harness-tui-companion pre {\n                                    overflow-x: hidden;",
+        "white-space: pre-wrap;",
+    ] {
+        assert!(
+            html.contains(marker),
+            "missing compact proof/log marker `{marker}`"
+        );
+    }
+}
+
+#[test]
 fn functional_spec_3759_c02_c03_harness_static_preview_guard_preserves_gateway_forms() {
     let html = render_tau_ops_dashboard_shell_for_route("/ops/harness");
 
