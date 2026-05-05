@@ -144,6 +144,54 @@ async fn integration_spec_3756_c05_ops_harness_actions_execute_and_persist_proof
 }
 
 #[tokio::test]
+async fn integration_spec_3757_c03_ops_harness_route_reflects_state_backed_proof_and_audit() {
+    let temp = tempdir().expect("tempdir");
+    let state = test_state(temp.path(), 4_096, "secret");
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+    let client = Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .expect("build no-redirect client");
+
+    let benchmark_response = client
+        .post(format!("http://{addr}/ops/harness/run-benchmark"))
+        .send()
+        .await
+        .expect("run benchmark");
+    assert_eq!(benchmark_response.status(), StatusCode::SEE_OTHER);
+
+    let apply_response = client
+        .post(format!("http://{addr}/ops/harness/proposals/PR-044/apply"))
+        .send()
+        .await
+        .expect("apply is blocked and audited");
+    assert_eq!(apply_response.status(), StatusCode::FORBIDDEN);
+
+    let harness_response = client
+        .get(format!("http://{addr}/ops/harness"))
+        .send()
+        .await
+        .expect("load state-backed harness route");
+    assert_eq!(harness_response.status(), StatusCode::OK);
+    let body = harness_response.text().await.expect("read harness body");
+
+    for marker in [
+        "data-task-count=\"4\" data-pass-count=\"4\" data-failed-gates=\"none\" data-proof-source=\"state\"",
+        "data-category=\"repo_build\" data-task-count=\"1\" data-last-run=\"1/1 pass\" data-pass-rate=\"100\"",
+        "id=\"tau-ops-harness-audit-log\" data-audit-row-count=\"1\" data-audit-source=\"state\"",
+        "data-action=\"apply\" data-result=\"blocked_approval_required\"",
+        "Blocked Approval Required",
+    ] {
+        assert!(
+            body.contains(marker),
+            "missing state-backed harness marker `{marker}`"
+        );
+    }
+
+    handle.abort();
+}
+
+#[tokio::test]
 async fn integration_spec_3144_c03_ops_config_route_renders_profile_policy_contract_markers() {
     let temp = tempdir().expect("tempdir");
     let state = test_state(temp.path(), 4_096, "secret");

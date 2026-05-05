@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -7,7 +8,7 @@ use axum::extract::{Form, Path as AxumPath, State};
 use axum::http::StatusCode;
 use axum::response::{Html, IntoResponse, Redirect, Response};
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{json, Value};
 use tau_agent_core::{
     load_autonomy_benchmark_fixture, run_autonomy_benchmark_fixture, Agent, AgentConfig,
     MissionHarnessConfig,
@@ -16,12 +17,13 @@ use tau_ai::{Message, MessageRole};
 use tau_dashboard_ui::{
     render_tau_ops_dashboard_shell_with_context, TauOpsDashboardAuthMode,
     TauOpsDashboardChatMessageRow, TauOpsDashboardChatSessionOptionRow,
-    TauOpsDashboardChatSnapshot, TauOpsDashboardJobRow, TauOpsDashboardMemoryGraphEdgeRow,
-    TauOpsDashboardMemoryGraphNodeRow, TauOpsDashboardMemoryRelationRow,
-    TauOpsDashboardMemorySearchRow, TauOpsDashboardRoute, TauOpsDashboardSessionGraphEdgeRow,
-    TauOpsDashboardSessionGraphNodeRow, TauOpsDashboardSessionTimelineRow,
-    TauOpsDashboardShellContext, TauOpsDashboardSidebarState, TauOpsDashboardTheme,
-    TauOpsDashboardToolInventoryRow, TauOpsDashboardToolInvocationRow,
+    TauOpsDashboardChatSnapshot, TauOpsDashboardHarnessAuditRow,
+    TauOpsDashboardHarnessBenchmarkCategoryRow, TauOpsDashboardHarnessSnapshot,
+    TauOpsDashboardJobRow, TauOpsDashboardMemoryGraphEdgeRow, TauOpsDashboardMemoryGraphNodeRow,
+    TauOpsDashboardMemoryRelationRow, TauOpsDashboardMemorySearchRow, TauOpsDashboardRoute,
+    TauOpsDashboardSessionGraphEdgeRow, TauOpsDashboardSessionGraphNodeRow,
+    TauOpsDashboardSessionTimelineRow, TauOpsDashboardShellContext, TauOpsDashboardSidebarState,
+    TauOpsDashboardTheme, TauOpsDashboardToolInventoryRow, TauOpsDashboardToolInvocationRow,
     TauOpsDashboardToolUsageHistogramRow,
 };
 use tau_memory::memory_contract::{MemoryEntry, MemoryScope};
@@ -1138,6 +1140,7 @@ pub(super) fn render_tau_ops_dashboard_shell_for_route(
         collect_tau_ops_dashboard_command_center_snapshot(&state.config.state_dir);
     command_center.timeline_range = controls.timeline_range().to_string();
     let chat = collect_tau_ops_dashboard_chat_snapshot(state, &controls, detail_session_key);
+    let harness = collect_tau_ops_dashboard_harness_snapshot(&state.config.state_dir);
 
     Html(render_tau_ops_dashboard_shell_with_context(
         TauOpsDashboardShellContext {
@@ -1147,8 +1150,122 @@ pub(super) fn render_tau_ops_dashboard_shell_for_route(
             sidebar_state: controls.sidebar_state(),
             command_center,
             chat,
+            harness,
         },
     ))
+}
+
+fn collect_tau_ops_dashboard_harness_snapshot(state_dir: &Path) -> TauOpsDashboardHarnessSnapshot {
+    let mut snapshot = TauOpsDashboardHarnessSnapshot::default();
+    let proof_path = harness_artifact_dir(state_dir).join("latest.json");
+    if let Ok(proof_json) = std::fs::read_to_string(&proof_path) {
+        if let Ok(proof) = serde_json::from_str::<Value>(&proof_json) {
+            if let Some(tasks) = proof.get("tasks").and_then(Value::as_array) {
+                snapshot.proof_source = "state".to_string();
+                snapshot.proof_artifact = proof_path.display().to_string();
+                snapshot.benchmark_id = proof
+                    .get("benchmark_id")
+                    .and_then(Value::as_str)
+                    .unwrap_or(snapshot.benchmark_id.as_str())
+                    .to_string();
+                snapshot.task_count = tasks.len();
+                snapshot.pass_count = tasks
+                    .iter()
+                    .filter(|task| task.get("passed").and_then(Value::as_bool).unwrap_or(false))
+                    .count();
+                let failure_count = proof
+                    .get("failure_reasons")
+                    .and_then(Value::as_array)
+                    .map(Vec::len)
+                    .unwrap_or(0);
+                snapshot.failed_gate_count = failure_count;
+                snapshot.failed_gate_label = if failure_count == 0 {
+                    "none".to_string()
+                } else {
+                    failure_count.to_string()
+                };
+                snapshot.latest_result = format!("{}/{}", snapshot.pass_count, snapshot.task_count);
+                snapshot.latest_runtime = "state".to_string();
+                snapshot.latest_summary = format!(
+                    "Latest state-backed result: {}. Failed gates: {}.",
+                    snapshot.latest_result, snapshot.failed_gate_label
+                );
+
+                let mut category_totals: BTreeMap<String, (usize, usize)> = BTreeMap::new();
+                for task in tasks {
+                    let category = task
+                        .get("category")
+                        .and_then(Value::as_str)
+                        .unwrap_or("unknown")
+                        .to_string();
+                    let passed = task.get("passed").and_then(Value::as_bool).unwrap_or(false);
+                    let entry = category_totals.entry(category).or_insert((0, 0));
+                    entry.0 += 1;
+                    if passed {
+                        entry.1 += 1;
+                    }
+                }
+                snapshot.benchmark_rows = category_totals
+                    .into_iter()
+                    .map(|(category, (total_count, pass_count))| {
+                        let pass_rate = if total_count == 0 {
+                            0
+                        } else {
+                            (pass_count * 100) / total_count
+                        };
+                        TauOpsDashboardHarnessBenchmarkCategoryRow {
+                            category,
+                            task_count: total_count,
+                            pass_count,
+                            total_count,
+                            pass_rate: pass_rate.to_string(),
+                        }
+                    })
+                    .collect();
+            }
+        }
+    }
+
+    let audit_path = state_dir.join("ops-harness").join("audit.jsonl");
+    if let Ok(audit_jsonl) = std::fs::read_to_string(&audit_path) {
+        let audit_rows = audit_jsonl
+            .lines()
+            .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+            .filter_map(|record| {
+                let proposal_id = record.get("proposal_id").and_then(Value::as_str)?;
+                let action = record
+                    .get("action")
+                    .and_then(Value::as_str)
+                    .unwrap_or("unknown");
+                let result = record
+                    .get("result")
+                    .and_then(Value::as_str)
+                    .unwrap_or("unknown");
+                let timestamp = record
+                    .get("timestamp_unix_ms")
+                    .and_then(Value::as_u64)
+                    .unwrap_or_default();
+                Some(TauOpsDashboardHarnessAuditRow {
+                    timestamp_label: format!("ts:{timestamp}"),
+                    actor: "Gateway".to_string(),
+                    action_label: humanize_harness_token(action),
+                    action_key: action.to_string(),
+                    scope: "Prompt".to_string(),
+                    item: proposal_id.to_string(),
+                    result_label: humanize_harness_token(result),
+                    result_key: result.to_string(),
+                })
+            })
+            .rev()
+            .take(4)
+            .collect::<Vec<_>>();
+        if !audit_rows.is_empty() {
+            snapshot.audit_source = "state".to_string();
+            snapshot.audit_rows = audit_rows;
+        }
+    }
+
+    snapshot
 }
 
 pub(super) async fn handle_ops_dashboard_harness_run_benchmark(
@@ -1315,6 +1432,25 @@ fn sanitize_harness_token(token: &str) -> String {
     } else {
         sanitized
     }
+}
+
+fn humanize_harness_token(token: &str) -> String {
+    token
+        .split(['-', '_'])
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            let mut chars = part.chars();
+            match chars.next() {
+                Some(first) => {
+                    let mut word = first.to_ascii_uppercase().to_string();
+                    word.push_str(chars.as_str());
+                    word
+                }
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn now_unix_ms() -> u64 {

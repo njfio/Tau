@@ -613,6 +613,139 @@ impl Default for TauOpsDashboardCommandCenterSnapshot {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Public struct `TauOpsDashboardHarnessBenchmarkCategoryRow` in `tau-dashboard-ui`.
+pub struct TauOpsDashboardHarnessBenchmarkCategoryRow {
+    pub category: String,
+    pub task_count: usize,
+    pub pass_count: usize,
+    pub total_count: usize,
+    pub pass_rate: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// Public struct `TauOpsDashboardHarnessAuditRow` in `tau-dashboard-ui`.
+pub struct TauOpsDashboardHarnessAuditRow {
+    pub timestamp_label: String,
+    pub actor: String,
+    pub action_label: String,
+    pub action_key: String,
+    pub scope: String,
+    pub item: String,
+    pub result_label: String,
+    pub result_key: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// Public struct `TauOpsDashboardHarnessSnapshot` in `tau-dashboard-ui`.
+pub struct TauOpsDashboardHarnessSnapshot {
+    pub proof_source: String,
+    pub benchmark_id: String,
+    pub proof_artifact: String,
+    pub task_count: usize,
+    pub pass_count: usize,
+    pub failed_gate_count: usize,
+    pub failed_gate_label: String,
+    pub latest_result: String,
+    pub latest_runtime: String,
+    pub latest_cost: String,
+    pub latest_summary: String,
+    pub benchmark_rows: Vec<TauOpsDashboardHarnessBenchmarkCategoryRow>,
+    pub audit_source: String,
+    pub audit_rows: Vec<TauOpsDashboardHarnessAuditRow>,
+}
+
+impl Default for TauOpsDashboardHarnessSnapshot {
+    fn default() -> Self {
+        Self {
+            proof_source: "fallback".to_string(),
+            benchmark_id: "m334-tranche-one-autonomy".to_string(),
+            proof_artifact: "/artifacts/bench/m334/latest.json".to_string(),
+            task_count: 4,
+            pass_count: 4,
+            failed_gate_count: 0,
+            failed_gate_label: "none".to_string(),
+            latest_result: "4/4".to_string(),
+            latest_runtime: "00:42:31".to_string(),
+            latest_cost: "0.00".to_string(),
+            latest_summary: "Latest deterministic result: 4/4. Failed gates: none.".to_string(),
+            benchmark_rows: vec![
+                TauOpsDashboardHarnessBenchmarkCategoryRow {
+                    category: "repo_build".to_string(),
+                    task_count: 1,
+                    pass_count: 4,
+                    total_count: 4,
+                    pass_rate: "100".to_string(),
+                },
+                TauOpsDashboardHarnessBenchmarkCategoryRow {
+                    category: "greenfield_build".to_string(),
+                    task_count: 1,
+                    pass_count: 4,
+                    total_count: 4,
+                    pass_rate: "100".to_string(),
+                },
+                TauOpsDashboardHarnessBenchmarkCategoryRow {
+                    category: "research_design".to_string(),
+                    task_count: 1,
+                    pass_count: 4,
+                    total_count: 4,
+                    pass_rate: "100".to_string(),
+                },
+                TauOpsDashboardHarnessBenchmarkCategoryRow {
+                    category: "data_to_deliverable".to_string(),
+                    task_count: 1,
+                    pass_count: 4,
+                    total_count: 4,
+                    pass_rate: "100".to_string(),
+                },
+            ],
+            audit_source: "fallback".to_string(),
+            audit_rows: vec![
+                TauOpsDashboardHarnessAuditRow {
+                    timestamp_label: "May 15, 10:11".to_string(),
+                    actor: "Operator".to_string(),
+                    action_label: "Dry Run".to_string(),
+                    action_key: "dry-run".to_string(),
+                    scope: "Prompt".to_string(),
+                    item: "PR-044".to_string(),
+                    result_label: "Passed".to_string(),
+                    result_key: "passed".to_string(),
+                },
+                TauOpsDashboardHarnessAuditRow {
+                    timestamp_label: "May 15, 09:42".to_string(),
+                    actor: "Operator".to_string(),
+                    action_label: "Apply".to_string(),
+                    action_key: "apply".to_string(),
+                    scope: "Config".to_string(),
+                    item: "CL-031".to_string(),
+                    result_label: "Applied".to_string(),
+                    result_key: "applied".to_string(),
+                },
+                TauOpsDashboardHarnessAuditRow {
+                    timestamp_label: "May 15, 09:12".to_string(),
+                    actor: "Curator".to_string(),
+                    action_label: "Apply".to_string(),
+                    action_key: "apply".to_string(),
+                    scope: "Skill".to_string(),
+                    item: "SK-102".to_string(),
+                    result_label: "Applied".to_string(),
+                    result_key: "applied".to_string(),
+                },
+                TauOpsDashboardHarnessAuditRow {
+                    timestamp_label: "May 15, 08:33".to_string(),
+                    actor: "Operator".to_string(),
+                    action_label: "Reject".to_string(),
+                    action_key: "reject".to_string(),
+                    scope: "Prompt".to_string(),
+                    item: "PR-029".to_string(),
+                    result_label: "Rejected".to_string(),
+                    result_key: "rejected".to_string(),
+                },
+            ],
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 /// Public struct `TauOpsDashboardShellContext` in `tau-dashboard-ui`.
 pub struct TauOpsDashboardShellContext {
     pub auth_mode: TauOpsDashboardAuthMode,
@@ -621,6 +754,7 @@ pub struct TauOpsDashboardShellContext {
     pub sidebar_state: TauOpsDashboardSidebarState,
     pub command_center: TauOpsDashboardCommandCenterSnapshot,
     pub chat: TauOpsDashboardChatSnapshot,
+    pub harness: TauOpsDashboardHarnessSnapshot,
 }
 
 impl Default for TauOpsDashboardShellContext {
@@ -632,6 +766,7 @@ impl Default for TauOpsDashboardShellContext {
             sidebar_state: TauOpsDashboardSidebarState::Expanded,
             command_center: TauOpsDashboardCommandCenterSnapshot::default(),
             chat: TauOpsDashboardChatSnapshot::default(),
+            harness: TauOpsDashboardHarnessSnapshot::default(),
         }
     }
 }
@@ -824,6 +959,57 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     } else {
         "false"
     };
+    let harness_task_count = context.harness.task_count.to_string();
+    let harness_pass_count = context.harness.pass_count.to_string();
+    let harness_audit_row_count = context.harness.audit_rows.len().to_string();
+    let harness_benchmark_rows = context
+        .harness
+        .benchmark_rows
+        .iter()
+        .map(|row| {
+            let task_count = row.task_count.to_string();
+            let last_run = format!("{}/{} pass", row.pass_count, row.total_count);
+            let last_run_attr = last_run.clone();
+            view! {
+                <tr
+                    data-category=row.category.clone()
+                    data-task-count=task_count
+                    data-last-run=last_run_attr
+                    data-pass-rate=row.pass_rate.clone()
+                >
+                    <td>{row.category.clone()}</td>
+                    <td>{row.task_count}</td>
+                    <td>{last_run}</td>
+                    <td>{format!("{}%", row.pass_rate)}</td>
+                </tr>
+            }
+        })
+        .collect_view();
+    let harness_audit_rows = context
+        .harness
+        .audit_rows
+        .iter()
+        .map(|row| {
+            view! {
+                <tr data-action=row.action_key.clone() data-result=row.result_key.clone()>
+                    <td>{row.timestamp_label.clone()}</td>
+                    <td>{row.actor.clone()}</td>
+                    <td>{row.action_label.clone()}</td>
+                    <td>{row.scope.clone()}</td>
+                    <td>{row.item.clone()}</td>
+                    <td>{row.result_label.clone()}</td>
+                </tr>
+            }
+        })
+        .collect_view();
+    let harness_tui_summary = format!(
+        "tau@harness:~$ tau status\nmission=run_8f3a2\ntransport=gateway\nskill=repo_patch\nstatus=verifying\ncalls: repo.read, repo.edit, test.run, report.write\nbench: {} pass; proof {}\n\nBenchmark M334\nPassed: {}\nFailed Gates:\n  {}\nProof: {}",
+        context.harness.latest_result.clone(),
+        context.harness.proof_artifact.clone(),
+        context.harness.latest_result.clone(),
+        context.harness.failed_gate_label.clone(),
+        context.harness.proof_artifact.clone()
+    );
     let config_panel_hidden = if matches!(context.active_route, TauOpsDashboardRoute::Config) {
         "false"
     } else {
@@ -3933,23 +4119,26 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 </section>
                                 <section
                                     id="tau-ops-harness-benchmark-panel"
-                                    data-benchmark-id="m334-tranche-one-autonomy"
-                                    data-proof-artifact="/artifacts/bench/m334/latest.json"
-                                    data-task-count="4"
-                                    data-pass-count="4"
-                                    data-failed-gates="none"
+                                    data-benchmark-id=context.harness.benchmark_id.clone()
+                                    data-proof-artifact=context.harness.proof_artifact.clone()
+                                    data-task-count=harness_task_count
+                                    data-pass-count=harness_pass_count
+                                    data-failed-gates=context.harness.failed_gate_label.clone()
+                                    data-proof-source=context.harness.proof_source.clone()
                                 >
                                     <h4>"M334 Autonomy Benchmark"</h4>
                                     <table id="tau-ops-harness-benchmark-table">
                                         <tbody>
-                                            <tr data-category="repo_build" data-task-count="1" data-last-run="4/4 pass" data-pass-rate="100"><td>"repo_build"</td><td>"1"</td><td>"4/4 pass"</td><td>"100%"</td></tr>
-                                            <tr data-category="greenfield_build" data-task-count="1" data-last-run="4/4 pass" data-pass-rate="100"><td>"greenfield_build"</td><td>"1"</td><td>"4/4 pass"</td><td>"100%"</td></tr>
-                                            <tr data-category="research_design" data-task-count="1" data-last-run="4/4 pass" data-pass-rate="100"><td>"research_design"</td><td>"1"</td><td>"4/4 pass"</td><td>"100%"</td></tr>
-                                            <tr data-category="data_to_deliverable" data-task-count="1" data-last-run="4/4 pass" data-pass-rate="100"><td>"data_to_deliverable"</td><td>"1"</td><td>"4/4 pass"</td><td>"100%"</td></tr>
+                                            {harness_benchmark_rows}
                                         </tbody>
                                     </table>
-                                    <p id="tau-ops-harness-benchmark-latest" data-latest-result="4/4" data-runtime="00:42:31" data-cost="0.00">
-                                        "Latest deterministic result: 4/4. Failed gates: none."
+                                    <p
+                                        id="tau-ops-harness-benchmark-latest"
+                                        data-latest-result=context.harness.latest_result.clone()
+                                        data-runtime=context.harness.latest_runtime.clone()
+                                        data-cost=context.harness.latest_cost.clone()
+                                    >
+                                        {context.harness.latest_summary.clone()}
                                     </p>
                                     <form
                                         id="tau-ops-harness-run-benchmark-form"
@@ -4099,33 +4288,22 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     <a id="tau-ops-harness-action-view-diff" data-action="view-diff" href="/ops/harness/proposals/PR-044/diff">"View Diff"</a>
                                     <button id="tau-ops-harness-action-apply" type="button" data-action="apply" data-disabled="true" aria-disabled="true" data-approval-required="true">"Apply (Approval Required)"</button>
                                 </section>
-                                <section id="tau-ops-harness-audit-log" data-audit-row-count="4">
+                                <section
+                                    id="tau-ops-harness-audit-log"
+                                    data-audit-row-count=harness_audit_row_count
+                                    data-audit-source=context.harness.audit_source.clone()
+                                >
                                     <h4>"Audit Log (Recent)"</h4>
                                     <table>
                                         <tbody>
-                                            <tr data-action="dry-run" data-result="passed"><td>"May 15, 10:11"</td><td>"Operator"</td><td>"Dry Run"</td><td>"Prompt"</td><td>"PR-044"</td><td>"Passed"</td></tr>
-                                            <tr data-action="apply" data-result="applied"><td>"May 15, 09:42"</td><td>"Operator"</td><td>"Apply"</td><td>"Config"</td><td>"CL-031"</td><td>"Applied"</td></tr>
-                                            <tr data-action="apply" data-result="applied"><td>"May 15, 09:12"</td><td>"Curator"</td><td>"Apply"</td><td>"Skill"</td><td>"SK-102"</td><td>"Applied"</td></tr>
-                                            <tr data-action="reject" data-result="rejected"><td>"May 15, 08:33"</td><td>"Operator"</td><td>"Reject"</td><td>"Prompt"</td><td>"PR-029"</td><td>"Rejected"</td></tr>
+                                            {harness_audit_rows}
                                         </tbody>
                                     </table>
                                 </section>
                             </section>
                             <aside id="tau-ops-harness-tui-companion" data-component="TuiCompanion" data-command="tau status">
                                 <h3>"TUI Companion"</h3>
-                                <pre>"tau@harness:~$ tau status
-mission=run_8f3a2
-transport=gateway
-skill=repo_patch
-status=verifying
-calls: repo.read, repo.edit, test.run, report.write
-bench: 4/4 pass; proof latest.json
-
-Benchmark M334
-Passed: 4/4
-Failed Gates:
-  none
-Proof: latest.json"</pre>
+                                <pre>{harness_tui_summary}</pre>
                             </aside>
                         </section>
                         <section

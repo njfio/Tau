@@ -4,11 +4,13 @@ use super::{
     render_tau_ops_dashboard_shell_for_route, render_tau_ops_dashboard_shell_with_context,
     TauOpsDashboardAlertFeedRow, TauOpsDashboardAuthMode, TauOpsDashboardChatMessageRow,
     TauOpsDashboardChatSessionOptionRow, TauOpsDashboardChatSnapshot,
-    TauOpsDashboardCommandCenterSnapshot, TauOpsDashboardConnectorHealthRow, TauOpsDashboardJobRow,
-    TauOpsDashboardMemoryGraphEdgeRow, TauOpsDashboardMemoryGraphNodeRow, TauOpsDashboardRoute,
-    TauOpsDashboardSessionGraphEdgeRow, TauOpsDashboardSessionGraphNodeRow,
-    TauOpsDashboardSessionTimelineRow, TauOpsDashboardShellContext, TauOpsDashboardSidebarState,
-    TauOpsDashboardTheme, TauOpsDashboardToolInventoryRow, TauOpsDashboardToolInvocationRow,
+    TauOpsDashboardCommandCenterSnapshot, TauOpsDashboardConnectorHealthRow,
+    TauOpsDashboardHarnessAuditRow, TauOpsDashboardHarnessBenchmarkCategoryRow,
+    TauOpsDashboardHarnessSnapshot, TauOpsDashboardJobRow, TauOpsDashboardMemoryGraphEdgeRow,
+    TauOpsDashboardMemoryGraphNodeRow, TauOpsDashboardRoute, TauOpsDashboardSessionGraphEdgeRow,
+    TauOpsDashboardSessionGraphNodeRow, TauOpsDashboardSessionTimelineRow,
+    TauOpsDashboardShellContext, TauOpsDashboardSidebarState, TauOpsDashboardTheme,
+    TauOpsDashboardToolInventoryRow, TauOpsDashboardToolInvocationRow,
     TauOpsDashboardToolUsageHistogramRow,
 };
 use tau_tui::{render_operator_shell_frame, OperatorShellFrame};
@@ -244,6 +246,7 @@ fn conformance_spec_2786_c03_shell_login_route_marks_login_panel_visible() {
         sidebar_state: TauOpsDashboardSidebarState::Expanded,
         command_center: TauOpsDashboardCommandCenterSnapshot::default(),
         chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
     assert!(html.contains("data-auth-mode=\"password-session\""));
     assert!(html.contains("data-active-route=\"login\""));
@@ -261,6 +264,7 @@ fn regression_spec_2786_c03_shell_none_mode_marks_auth_not_required() {
         sidebar_state: TauOpsDashboardSidebarState::Expanded,
         command_center: TauOpsDashboardCommandCenterSnapshot::default(),
         chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
     assert!(html.contains("data-auth-mode=\"none\""));
     assert!(html.contains("data-login-required=\"false\""));
@@ -284,6 +288,7 @@ fn spec_c28_regression_dashboard_and_tui_require_shared_operator_flow_markers() 
             ..TauOpsDashboardCommandCenterSnapshot::default()
         },
         chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     };
 
     let dashboard_html = render_tau_ops_dashboard_shell_with_context(context);
@@ -369,6 +374,7 @@ fn functional_spec_2790_c03_breadcrumb_markers_reflect_login_route() {
         sidebar_state: TauOpsDashboardSidebarState::Expanded,
         command_center: TauOpsDashboardCommandCenterSnapshot::default(),
         chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
     assert!(html.contains("id=\"tau-ops-breadcrumbs\""));
     assert!(html.contains("data-breadcrumb-current=\"login\""));
@@ -416,6 +422,7 @@ fn functional_spec_2794_c02_c03_route_context_tokens_match_expected_values() {
             sidebar_state: TauOpsDashboardSidebarState::Expanded,
             command_center: TauOpsDashboardCommandCenterSnapshot::default(),
             chat: TauOpsDashboardChatSnapshot::default(),
+            harness: TauOpsDashboardHarnessSnapshot::default(),
         });
         assert!(html.contains(&format!("data-active-route=\"{expected_active_route}\"")));
         assert!(html.contains(&format!(
@@ -475,6 +482,60 @@ fn functional_spec_3756_c02_harness_controls_expose_benchmark_and_policy_contrac
 }
 
 #[test]
+fn functional_spec_3757_c01_c02_harness_snapshot_drives_benchmark_and_audit_rows() {
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        active_route: TauOpsDashboardRoute::Harness,
+        harness: TauOpsDashboardHarnessSnapshot {
+            proof_source: "state".to_string(),
+            benchmark_id: "m334-tranche-one-autonomy".to_string(),
+            proof_artifact: "/state/ops-harness/m334/latest.json".to_string(),
+            task_count: 7,
+            pass_count: 6,
+            failed_gate_count: 1,
+            failed_gate_label: "1".to_string(),
+            latest_result: "6/7".to_string(),
+            latest_runtime: "state".to_string(),
+            latest_cost: "0.00".to_string(),
+            latest_summary: "Latest state-backed result: 6/7. Failed gates: 1.".to_string(),
+            benchmark_rows: vec![TauOpsDashboardHarnessBenchmarkCategoryRow {
+                category: "repo_build".to_string(),
+                task_count: 3,
+                pass_count: 2,
+                total_count: 3,
+                pass_rate: "67".to_string(),
+            }],
+            audit_source: "state".to_string(),
+            audit_rows: vec![TauOpsDashboardHarnessAuditRow {
+                timestamp_label: "ts:1777986484661".to_string(),
+                actor: "Gateway".to_string(),
+                action_label: "Apply".to_string(),
+                action_key: "apply".to_string(),
+                scope: "Prompt".to_string(),
+                item: "PR-044".to_string(),
+                result_label: "Blocked Approval Required".to_string(),
+                result_key: "blocked_approval_required".to_string(),
+            }],
+        },
+        ..TauOpsDashboardShellContext::default()
+    });
+
+    for marker in [
+        "id=\"tau-ops-harness-benchmark-panel\" data-benchmark-id=\"m334-tranche-one-autonomy\" data-proof-artifact=\"/state/ops-harness/m334/latest.json\" data-task-count=\"7\" data-pass-count=\"6\" data-failed-gates=\"1\" data-proof-source=\"state\"",
+        "data-category=\"repo_build\" data-task-count=\"3\" data-last-run=\"2/3 pass\" data-pass-rate=\"67\"",
+        "id=\"tau-ops-harness-benchmark-latest\" data-latest-result=\"6/7\" data-runtime=\"state\" data-cost=\"0.00\"",
+        "Latest state-backed result: 6/7. Failed gates: 1.",
+        "id=\"tau-ops-harness-audit-log\" data-audit-row-count=\"1\" data-audit-source=\"state\"",
+        "data-action=\"apply\" data-result=\"blocked_approval_required\"",
+        "Blocked Approval Required",
+    ] {
+        assert!(
+            html.contains(marker),
+            "missing state-backed harness marker `{marker}`"
+        );
+    }
+}
+
+#[test]
 fn regression_spec_3756_c03_non_harness_routes_hide_harness_panel() {
     let html = render_tau_ops_dashboard_shell_for_route("/ops");
 
@@ -508,6 +569,7 @@ fn functional_spec_2798_c02_shell_sidebar_collapsed_state_updates_toggle_markers
         sidebar_state: TauOpsDashboardSidebarState::Collapsed,
         command_center: TauOpsDashboardCommandCenterSnapshot::default(),
         chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
     assert!(html.contains("data-sidebar-state=\"collapsed\""));
     assert!(html.contains("data-sidebar-target-state=\"expanded\""));
@@ -524,6 +586,7 @@ fn functional_spec_2798_c03_shell_light_theme_state_updates_theme_markers() {
         sidebar_state: TauOpsDashboardSidebarState::Expanded,
         command_center: TauOpsDashboardCommandCenterSnapshot::default(),
         chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
     assert!(html.contains("data-theme=\"light\""));
     assert!(html.contains(
@@ -544,6 +607,7 @@ fn functional_spec_2830_c01_chat_route_renders_send_form_and_fallback_transcript
         sidebar_state: TauOpsDashboardSidebarState::Expanded,
         command_center: TauOpsDashboardCommandCenterSnapshot::default(),
         chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains("id=\"tau-ops-chat-panel\" data-route=\"/ops/chat\" aria-hidden=\"false\" data-active-session-key=\"default\""));
@@ -587,6 +651,7 @@ fn functional_spec_2830_c02_chat_route_renders_snapshot_message_rows_for_active_
             ],
             ..TauOpsDashboardChatSnapshot::default()
         },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains("data-active-session-key=\"session-42\""));
@@ -616,6 +681,7 @@ fn functional_spec_2872_c01_chat_route_renders_new_session_form_contract_markers
             active_session_key: "chat-c01".to_string(),
             ..TauOpsDashboardChatSnapshot::default()
         },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains(
@@ -644,6 +710,7 @@ fn functional_spec_2881_c01_chat_route_renders_multiline_compose_contract_marker
             active_session_key: "chat-multiline".to_string(),
             ..TauOpsDashboardChatSnapshot::default()
         },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains(
@@ -673,6 +740,7 @@ fn functional_spec_2862_c01_c02_c03_chat_route_renders_token_counter_marker_cont
             session_detail_usage_total_tokens: 34,
             ..TauOpsDashboardChatSnapshot::default()
         },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains(
@@ -698,6 +766,7 @@ fn regression_spec_2862_c04_non_chat_routes_keep_hidden_chat_token_counter_marke
             session_detail_usage_total_tokens: 0,
             ..TauOpsDashboardChatSnapshot::default()
         },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
     assert!(ops_html.contains(
             "id=\"tau-ops-chat-panel\" data-route=\"/ops/chat\" aria-hidden=\"true\" data-active-session-key=\"chat-c01\" data-panel-visible=\"false\""
@@ -719,6 +788,7 @@ fn regression_spec_2862_c04_non_chat_routes_keep_hidden_chat_token_counter_marke
             session_detail_usage_total_tokens: 0,
             ..TauOpsDashboardChatSnapshot::default()
         },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
     assert!(sessions_html.contains(
             "id=\"tau-ops-chat-panel\" data-route=\"/ops/chat\" aria-hidden=\"true\" data-active-session-key=\"chat-c01\" data-panel-visible=\"false\""
@@ -754,6 +824,7 @@ fn functional_spec_2866_c01_c02_chat_route_renders_inline_tool_card_for_tool_row
             ],
             ..TauOpsDashboardChatSnapshot::default()
         },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains("id=\"tau-ops-chat-message-row-1\" data-message-role=\"tool\""));
@@ -780,6 +851,7 @@ fn regression_spec_2866_c04_non_chat_routes_keep_hidden_chat_tool_card_markers()
             }],
             ..TauOpsDashboardChatSnapshot::default()
         },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
     assert!(ops_html.contains(
             "id=\"tau-ops-chat-panel\" data-route=\"/ops/chat\" aria-hidden=\"true\" data-active-session-key=\"chat-tool-session\" data-panel-visible=\"false\""
@@ -802,6 +874,7 @@ fn regression_spec_2866_c04_non_chat_routes_keep_hidden_chat_tool_card_markers()
             }],
             ..TauOpsDashboardChatSnapshot::default()
         },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
     assert!(sessions_html.contains(
             "id=\"tau-ops-chat-panel\" data-route=\"/ops/chat\" aria-hidden=\"true\" data-active-session-key=\"chat-tool-session\" data-panel-visible=\"false\""
@@ -838,6 +911,7 @@ fn functional_spec_2870_c01_c02_chat_route_renders_markdown_and_code_markers() {
             ],
             ..TauOpsDashboardChatSnapshot::default()
         },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains("id=\"tau-ops-chat-message-row-1\" data-message-role=\"assistant\""));
@@ -867,6 +941,7 @@ fn regression_spec_2870_c04_non_chat_routes_keep_hidden_markdown_and_code_marker
             }],
             ..TauOpsDashboardChatSnapshot::default()
         },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
     assert!(ops_html.contains(
             "id=\"tau-ops-chat-panel\" data-route=\"/ops/chat\" aria-hidden=\"true\" data-active-session-key=\"chat-markdown-code\" data-panel-visible=\"false\""
@@ -890,6 +965,7 @@ fn regression_spec_2870_c04_non_chat_routes_keep_hidden_markdown_and_code_marker
             }],
             ..TauOpsDashboardChatSnapshot::default()
         },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
     assert!(sessions_html.contains(
             "id=\"tau-ops-chat-panel\" data-route=\"/ops/chat\" aria-hidden=\"true\" data-active-session-key=\"chat-markdown-code\" data-panel-visible=\"false\""
@@ -911,6 +987,7 @@ fn functional_spec_2834_c01_chat_route_renders_session_selector_markers() {
         sidebar_state: TauOpsDashboardSidebarState::Expanded,
         command_center: TauOpsDashboardCommandCenterSnapshot::default(),
         chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains(
@@ -943,6 +1020,7 @@ fn functional_spec_2834_c02_chat_route_keeps_active_session_selected_in_selector
             }],
             ..TauOpsDashboardChatSnapshot::default()
         },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html
@@ -984,6 +1062,7 @@ fn functional_spec_2834_c03_chat_route_adds_missing_active_session_option_marker
             }],
             ..TauOpsDashboardChatSnapshot::default()
         },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains(
@@ -1019,6 +1098,7 @@ fn functional_spec_2901_c01_c03_chat_route_renders_assistant_token_stream_marker
             ],
             ..TauOpsDashboardChatSnapshot::default()
         },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains(
@@ -1046,6 +1126,7 @@ fn functional_spec_2905_c01_c03_memory_route_renders_search_panel_and_empty_stat
         sidebar_state: TauOpsDashboardSidebarState::Collapsed,
         command_center: TauOpsDashboardCommandCenterSnapshot::default(),
         chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains(
@@ -1068,6 +1149,7 @@ fn functional_spec_2909_c01_c03_memory_route_renders_scope_filter_controls() {
         sidebar_state: TauOpsDashboardSidebarState::Collapsed,
         command_center: TauOpsDashboardCommandCenterSnapshot::default(),
         chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains(
@@ -1089,6 +1171,7 @@ fn functional_spec_2913_c01_c03_memory_route_renders_type_filter_control() {
         sidebar_state: TauOpsDashboardSidebarState::Collapsed,
         command_center: TauOpsDashboardCommandCenterSnapshot::default(),
         chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains(
@@ -1105,6 +1188,7 @@ fn functional_spec_2917_c01_c03_memory_route_renders_create_form_and_status_mark
         sidebar_state: TauOpsDashboardSidebarState::Collapsed,
         command_center: TauOpsDashboardCommandCenterSnapshot::default(),
         chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains(
@@ -1166,6 +1250,7 @@ fn functional_spec_2921_c01_c03_memory_route_renders_edit_form_and_status_marker
         sidebar_state: TauOpsDashboardSidebarState::Collapsed,
         command_center: TauOpsDashboardCommandCenterSnapshot::default(),
         chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains(
@@ -1201,6 +1286,7 @@ fn regression_spec_2921_memory_edit_status_updated_renders_updated_message_marke
             memory_create_created_entry_id: "mem-edit-1".to_string(),
             ..TauOpsDashboardChatSnapshot::default()
         },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     let edit_status_marker = "id=\"tau-ops-memory-edit-status\" data-edit-status=\"updated\" data-edited-memory-id=\"mem-edit-1\"";
@@ -1224,6 +1310,7 @@ fn regression_spec_2917_memory_create_status_created_renders_created_message_mar
             memory_create_created_entry_id: "mem-create-1".to_string(),
             ..TauOpsDashboardChatSnapshot::default()
         },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains(
@@ -1245,6 +1332,7 @@ fn regression_spec_2917_memory_create_status_updated_renders_updated_message_mar
             memory_create_created_entry_id: "mem-create-1".to_string(),
             ..TauOpsDashboardChatSnapshot::default()
         },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains(
@@ -1262,6 +1350,7 @@ fn functional_spec_3060_c01_memory_route_renders_delete_form_and_confirmation_ma
         sidebar_state: TauOpsDashboardSidebarState::Collapsed,
         command_center: TauOpsDashboardCommandCenterSnapshot::default(),
         chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains(
@@ -1293,6 +1382,7 @@ fn regression_spec_3060_c04_non_memory_routes_keep_hidden_memory_delete_markers(
         sidebar_state: TauOpsDashboardSidebarState::Collapsed,
         command_center: TauOpsDashboardCommandCenterSnapshot::default(),
         chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains(
@@ -1315,6 +1405,7 @@ fn functional_spec_3064_c01_memory_route_renders_detail_panel_default_markers() 
         sidebar_state: TauOpsDashboardSidebarState::Collapsed,
         command_center: TauOpsDashboardCommandCenterSnapshot::default(),
         chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains(
@@ -1336,6 +1427,7 @@ fn regression_spec_3064_c04_non_memory_routes_keep_hidden_detail_panel_markers()
         sidebar_state: TauOpsDashboardSidebarState::Collapsed,
         command_center: TauOpsDashboardCommandCenterSnapshot::default(),
         chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains(
@@ -1355,6 +1447,7 @@ fn functional_spec_3068_c01_memory_graph_route_renders_graph_panel_default_marke
         sidebar_state: TauOpsDashboardSidebarState::Collapsed,
         command_center: TauOpsDashboardCommandCenterSnapshot::default(),
         chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains(
@@ -1374,6 +1467,7 @@ fn regression_spec_3068_c03_non_memory_graph_routes_keep_hidden_graph_markers() 
         sidebar_state: TauOpsDashboardSidebarState::Collapsed,
         command_center: TauOpsDashboardCommandCenterSnapshot::default(),
         chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains(
@@ -1406,6 +1500,7 @@ fn functional_spec_3070_c01_c02_memory_graph_route_renders_node_size_markers_fro
             ],
             ..TauOpsDashboardChatSnapshot::default()
         },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains(
@@ -1439,6 +1534,7 @@ fn functional_spec_3078_c02_memory_graph_route_renders_node_color_markers_from_m
             ],
             ..TauOpsDashboardChatSnapshot::default()
         },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains(
@@ -1486,6 +1582,7 @@ fn functional_spec_3082_c02_memory_graph_route_renders_edge_style_markers_from_r
             ],
             ..TauOpsDashboardChatSnapshot::default()
         },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains(
@@ -1534,6 +1631,7 @@ fn functional_spec_3086_c02_memory_graph_route_renders_selected_node_detail_pane
             ],
             ..TauOpsDashboardChatSnapshot::default()
         },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains("id=\"tau-ops-memory-graph-node-0\" data-memory-id=\"mem-detail-graph\""));
@@ -1599,6 +1697,7 @@ fn functional_spec_3090_c02_memory_graph_route_marks_connected_edges_and_neighbo
             ],
             ..TauOpsDashboardChatSnapshot::default()
         },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains("id=\"tau-ops-memory-graph-node-0\" data-memory-id=\"mem-focus\""));
@@ -1630,6 +1729,7 @@ fn functional_spec_3094_c01_c02_memory_graph_route_renders_default_zoom_markers_
             memory_search_memory_type: "goal".to_string(),
             ..TauOpsDashboardChatSnapshot::default()
         },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains(
@@ -1659,6 +1759,7 @@ fn functional_spec_3099_c01_c02_memory_graph_route_renders_default_pan_markers_a
             memory_search_memory_type: "goal".to_string(),
             ..TauOpsDashboardChatSnapshot::default()
         },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains(
@@ -1725,6 +1826,7 @@ fn functional_spec_3103_c01_c02_memory_graph_route_renders_filter_controls_and_c
             ],
             ..TauOpsDashboardChatSnapshot::default()
         },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains(
@@ -1747,6 +1849,7 @@ fn functional_spec_3106_c01_c03_tools_route_renders_inventory_panel_markers() {
         sidebar_state: TauOpsDashboardSidebarState::Collapsed,
         command_center: TauOpsDashboardCommandCenterSnapshot::default(),
         chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains(
@@ -1788,6 +1891,7 @@ fn functional_spec_3106_c02_tools_route_renders_deterministic_inventory_rows() {
             ],
             ..TauOpsDashboardChatSnapshot::default()
         },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains(
@@ -1812,6 +1916,7 @@ fn regression_spec_3106_c04_non_tools_routes_keep_hidden_tools_panel_markers() {
         sidebar_state: TauOpsDashboardSidebarState::Expanded,
         command_center: TauOpsDashboardCommandCenterSnapshot::default(),
         chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains(
@@ -1847,6 +1952,7 @@ fn functional_spec_3112_c01_c02_tools_route_renders_tool_detail_metadata_and_pol
             tool_detail_policy_sandbox_mode: "default".to_string(),
             ..TauOpsDashboardChatSnapshot::default()
         },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains(
@@ -1900,6 +2006,7 @@ fn functional_spec_3112_c03_tools_route_renders_usage_histogram_and_recent_invoc
             }],
             ..TauOpsDashboardChatSnapshot::default()
         },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains("id=\"tau-ops-tool-detail-usage-histogram\" data-bucket-count=\"2\""));
@@ -1924,6 +2031,7 @@ fn regression_spec_3112_c04_non_tools_routes_keep_hidden_tool_detail_markers() {
         sidebar_state: TauOpsDashboardSidebarState::Expanded,
         command_center: TauOpsDashboardCommandCenterSnapshot::default(),
         chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains(
@@ -1967,6 +2075,7 @@ fn functional_spec_3116_c01_c02_tools_route_renders_jobs_summary_and_rows() {
             ],
             ..TauOpsDashboardChatSnapshot::default()
         },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html
@@ -1996,6 +2105,7 @@ fn regression_spec_3116_c04_non_tools_routes_keep_hidden_jobs_markers() {
         sidebar_state: TauOpsDashboardSidebarState::Expanded,
         command_center: TauOpsDashboardCommandCenterSnapshot::default(),
         chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html
@@ -2038,6 +2148,7 @@ fn functional_spec_3120_c01_c02_tools_route_renders_job_detail_output_markers() 
             job_detail_stderr: String::new(),
             ..TauOpsDashboardChatSnapshot::default()
         },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains(
@@ -2060,6 +2171,7 @@ fn regression_spec_3120_c04_non_tools_routes_keep_hidden_job_detail_markers() {
         sidebar_state: TauOpsDashboardSidebarState::Expanded,
         command_center: TauOpsDashboardCommandCenterSnapshot::default(),
         chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains(
@@ -2108,6 +2220,7 @@ fn functional_spec_3124_c01_c02_tools_route_renders_job_cancel_action_markers() 
             job_detail_status: "cancelled".to_string(),
             ..TauOpsDashboardChatSnapshot::default()
         },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains(
@@ -2136,6 +2249,7 @@ fn regression_spec_3124_c04_non_tools_routes_keep_hidden_job_cancel_markers() {
         sidebar_state: TauOpsDashboardSidebarState::Expanded,
         command_center: TauOpsDashboardCommandCenterSnapshot::default(),
         chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains(
@@ -2173,6 +2287,7 @@ fn functional_spec_3128_c01_c02_channels_route_renders_panel_summary_and_rows() 
             ..TauOpsDashboardCommandCenterSnapshot::default()
         },
         chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains(
@@ -2199,6 +2314,7 @@ fn regression_spec_3128_c04_non_channels_routes_keep_hidden_channels_markers() {
         sidebar_state: TauOpsDashboardSidebarState::Expanded,
         command_center: TauOpsDashboardCommandCenterSnapshot::default(),
         chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains(
@@ -2237,6 +2353,7 @@ fn functional_spec_3132_c01_c02_channels_route_renders_channel_action_markers() 
             ..TauOpsDashboardCommandCenterSnapshot::default()
         },
         chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains(
@@ -2268,6 +2385,7 @@ fn regression_spec_3132_c04_non_channels_routes_keep_hidden_channel_action_marke
         sidebar_state: TauOpsDashboardSidebarState::Expanded,
         command_center: TauOpsDashboardCommandCenterSnapshot::default(),
         chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains(
@@ -2290,6 +2408,7 @@ fn functional_spec_3140_c01_config_route_renders_configuration_panel_contracts()
         sidebar_state: TauOpsDashboardSidebarState::Collapsed,
         command_center: TauOpsDashboardCommandCenterSnapshot::default(),
         chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains(
@@ -2309,6 +2428,7 @@ fn functional_spec_3140_c02_training_route_renders_training_panel_contracts() {
         sidebar_state: TauOpsDashboardSidebarState::Expanded,
         command_center: TauOpsDashboardCommandCenterSnapshot::default(),
         chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains(
@@ -2328,6 +2448,7 @@ fn functional_spec_3140_c03_safety_and_diagnostics_routes_render_panel_contracts
         sidebar_state: TauOpsDashboardSidebarState::Expanded,
         command_center: TauOpsDashboardCommandCenterSnapshot::default(),
         chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
     assert!(safety_html.contains(
         "id=\"tau-ops-safety-panel\" data-route=\"/ops/safety\" aria-hidden=\"false\" data-panel-visible=\"true\""
@@ -2344,6 +2465,7 @@ fn functional_spec_3140_c03_safety_and_diagnostics_routes_render_panel_contracts
             sidebar_state: TauOpsDashboardSidebarState::Collapsed,
             command_center: TauOpsDashboardCommandCenterSnapshot::default(),
             chat: TauOpsDashboardChatSnapshot::default(),
+            harness: TauOpsDashboardHarnessSnapshot::default(),
         });
     assert!(diagnostics_html.contains(
         "id=\"tau-ops-diagnostics-panel\" data-route=\"/ops/diagnostics\" aria-hidden=\"false\" data-panel-visible=\"true\""
@@ -2362,6 +2484,7 @@ fn regression_spec_3140_c05_non_target_routes_keep_hidden_route_panels() {
         sidebar_state: TauOpsDashboardSidebarState::Expanded,
         command_center: TauOpsDashboardCommandCenterSnapshot::default(),
         chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains(
@@ -2387,6 +2510,7 @@ fn functional_spec_3144_c01_config_route_renders_profile_control_contracts() {
         sidebar_state: TauOpsDashboardSidebarState::Collapsed,
         command_center: TauOpsDashboardCommandCenterSnapshot::default(),
         chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains(
@@ -2414,6 +2538,7 @@ fn functional_spec_3144_c02_config_route_renders_policy_control_contracts() {
         sidebar_state: TauOpsDashboardSidebarState::Expanded,
         command_center: TauOpsDashboardCommandCenterSnapshot::default(),
         chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains(
@@ -2439,6 +2564,7 @@ fn regression_spec_3144_c04_non_config_routes_keep_config_controls_hidden() {
         sidebar_state: TauOpsDashboardSidebarState::Expanded,
         command_center: TauOpsDashboardCommandCenterSnapshot::default(),
         chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains(
@@ -2462,6 +2588,7 @@ fn functional_spec_3148_c01_training_route_renders_status_markers() {
             ..TauOpsDashboardCommandCenterSnapshot::default()
         },
         chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains(
@@ -2478,6 +2605,7 @@ fn functional_spec_3148_c02_training_route_renders_rollout_and_optimizer_markers
         sidebar_state: TauOpsDashboardSidebarState::Expanded,
         command_center: TauOpsDashboardCommandCenterSnapshot::default(),
         chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains(
@@ -2497,6 +2625,7 @@ fn functional_spec_3148_c03_training_route_renders_action_markers() {
         sidebar_state: TauOpsDashboardSidebarState::Expanded,
         command_center: TauOpsDashboardCommandCenterSnapshot::default(),
         chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains(
@@ -2522,6 +2651,7 @@ fn regression_spec_3148_c05_non_training_routes_keep_training_panel_hidden() {
         sidebar_state: TauOpsDashboardSidebarState::Expanded,
         command_center: TauOpsDashboardCommandCenterSnapshot::default(),
         chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains(
@@ -2565,6 +2695,7 @@ fn functional_spec_2838_c01_c02_c03_sessions_route_renders_sessions_panel_list_r
             message_rows: vec![],
             ..TauOpsDashboardChatSnapshot::default()
         },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains(
@@ -2601,6 +2732,7 @@ fn functional_spec_2838_c04_sessions_route_renders_empty_state_marker_when_no_se
             message_rows: vec![],
             ..TauOpsDashboardChatSnapshot::default()
         },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains(
@@ -2644,6 +2776,7 @@ fn functional_spec_2893_c01_sessions_route_renders_row_metadata_markers() {
             message_rows: vec![],
             ..TauOpsDashboardChatSnapshot::default()
         },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains(
@@ -2680,6 +2813,7 @@ fn functional_spec_2842_c01_c03_c05_sessions_route_renders_detail_panel_and_empt
             session_detail_route: "/ops/sessions/session-empty".to_string(),
             ..TauOpsDashboardChatSnapshot::default()
         },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains(
@@ -2741,6 +2875,7 @@ fn functional_spec_2842_c02_c04_sessions_route_renders_detail_timeline_rows_and_
             ],
             ..TauOpsDashboardChatSnapshot::default()
         },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains("id=\"tau-ops-session-message-timeline\" data-entry-count=\"2\""));
@@ -2804,6 +2939,7 @@ fn functional_spec_2897_c01_c02_session_detail_timeline_exposes_complete_content
             ],
             ..TauOpsDashboardChatSnapshot::default()
         },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains("id=\"tau-ops-session-message-timeline\" data-entry-count=\"4\""));
@@ -2835,6 +2971,7 @@ fn functional_spec_2846_c01_c04_c05_sessions_route_renders_graph_panel_summary_a
             session_detail_route: "/ops/sessions/session-empty".to_string(),
             ..TauOpsDashboardChatSnapshot::default()
         },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains(
@@ -2883,6 +3020,7 @@ fn functional_spec_2846_c02_c03_sessions_route_renders_graph_node_and_edge_rows(
             ],
             ..TauOpsDashboardChatSnapshot::default()
         },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains("id=\"tau-ops-session-graph-nodes\" data-node-count=\"3\""));
@@ -2930,6 +3068,7 @@ fn functional_spec_2885_c01_sessions_route_renders_timeline_row_branch_form_cont
             ],
             ..TauOpsDashboardChatSnapshot::default()
         },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains(
@@ -2974,6 +3113,7 @@ fn functional_spec_2889_c01_sessions_route_renders_reset_confirmation_form_contr
             }],
             ..TauOpsDashboardChatSnapshot::default()
         },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains(
@@ -3010,6 +3150,7 @@ fn regression_spec_2842_session_detail_panel_stays_hidden_on_non_sessions_route(
             session_detail_route: "/ops/sessions/session-alpha".to_string(),
             ..TauOpsDashboardChatSnapshot::default()
         },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains(
@@ -3055,6 +3196,7 @@ fn functional_spec_2806_c01_c02_c03_command_center_snapshot_markers_render() {
             connector_health_rows: vec![],
         },
         chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains("data-health-state=\"healthy\""));
@@ -3099,6 +3241,7 @@ fn functional_spec_2854_c01_command_center_panel_visible_on_ops_route() {
         sidebar_state: TauOpsDashboardSidebarState::Expanded,
         command_center: TauOpsDashboardCommandCenterSnapshot::default(),
         chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(
@@ -3115,6 +3258,7 @@ fn functional_spec_2854_c02_c03_command_center_panel_hidden_on_non_ops_routes() 
         sidebar_state: TauOpsDashboardSidebarState::Collapsed,
         command_center: TauOpsDashboardCommandCenterSnapshot::default(),
         chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
     assert!(chat_html
         .contains("id=\"tau-ops-command-center\" data-route=\"/ops\" aria-hidden=\"true\""));
@@ -3126,6 +3270,7 @@ fn functional_spec_2854_c02_c03_command_center_panel_hidden_on_non_ops_routes() 
         sidebar_state: TauOpsDashboardSidebarState::Expanded,
         command_center: TauOpsDashboardCommandCenterSnapshot::default(),
         chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
     assert!(sessions_html
         .contains("id=\"tau-ops-command-center\" data-route=\"/ops\" aria-hidden=\"true\""));
@@ -3140,6 +3285,7 @@ fn functional_spec_2858_c01_c03_chat_route_panel_visibility_state_contracts() {
         sidebar_state: TauOpsDashboardSidebarState::Expanded,
         command_center: TauOpsDashboardCommandCenterSnapshot::default(),
         chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains(
@@ -3159,6 +3305,7 @@ fn functional_spec_2858_c02_c04_sessions_route_panel_visibility_state_contracts(
         sidebar_state: TauOpsDashboardSidebarState::Collapsed,
         command_center: TauOpsDashboardCommandCenterSnapshot::default(),
         chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains(
@@ -3178,6 +3325,7 @@ fn regression_spec_2858_c05_ops_route_panels_remain_hidden_with_visibility_state
         sidebar_state: TauOpsDashboardSidebarState::Expanded,
         command_center: TauOpsDashboardCommandCenterSnapshot::default(),
         chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains(
@@ -3226,6 +3374,7 @@ fn functional_spec_2810_c01_c02_c03_command_center_control_markers_render() {
             connector_health_rows: vec![],
         },
         chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains("id=\"tau-ops-control-panel\""));
@@ -3280,6 +3429,7 @@ fn functional_spec_2826_c01_c02_control_actions_expose_confirmation_markers() {
             connector_health_rows: vec![],
         },
         chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains("id=\"tau-ops-control-action-pause\""));
@@ -3323,6 +3473,7 @@ fn functional_spec_3466_c04_control_action_status_panel_renders_marker_contracts
             control_action_reason: "invalid_dashboard_action".to_string(),
             ..TauOpsDashboardChatSnapshot::default()
         },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains(
@@ -3342,6 +3493,7 @@ fn regression_spec_3466_c05_control_action_status_panel_defaults_to_idle_contrac
         sidebar_state: TauOpsDashboardSidebarState::Expanded,
         command_center: TauOpsDashboardCommandCenterSnapshot::default(),
         chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains(
@@ -3366,6 +3518,7 @@ fn functional_spec_3478_c01_last_action_section_renders_readable_detail_rows() {
             ..TauOpsDashboardCommandCenterSnapshot::default()
         },
         chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains("id=\"tau-ops-control-last-action\""));
@@ -3386,6 +3539,7 @@ fn regression_spec_3478_c02_last_action_section_defaults_to_fallback_rows() {
         sidebar_state: TauOpsDashboardSidebarState::Expanded,
         command_center: TauOpsDashboardCommandCenterSnapshot::default(),
         chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains("id=\"tau-ops-last-action-request-id\">request.id: none"));
@@ -3410,6 +3564,7 @@ fn functional_spec_3482_c01_last_action_section_exposes_reason_row_and_marker_co
             ..TauOpsDashboardCommandCenterSnapshot::default()
         },
         chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains("id=\"tau-ops-control-last-action\""));
@@ -3426,6 +3581,7 @@ fn regression_spec_3482_c02_last_action_reason_row_defaults_to_none() {
         sidebar_state: TauOpsDashboardSidebarState::Expanded,
         command_center: TauOpsDashboardCommandCenterSnapshot::default(),
         chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains("data-last-action-reason=\"none\""));
@@ -3470,6 +3626,7 @@ fn functional_spec_2814_c01_c02_c03_timeline_chart_and_range_markers_render() {
             connector_health_rows: vec![],
         },
         chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains("id=\"tau-ops-queue-timeline-chart\""));
@@ -3507,6 +3664,7 @@ fn functional_spec_2850_c01_c02_c04_recent_cycles_table_renders_panel_and_summar
             ..TauOpsDashboardCommandCenterSnapshot::default()
         },
         chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(
@@ -3534,6 +3692,7 @@ fn functional_spec_2850_c03_recent_cycles_table_renders_empty_state_marker() {
             ..TauOpsDashboardCommandCenterSnapshot::default()
         },
         chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(
@@ -3594,6 +3753,7 @@ fn functional_spec_2818_c01_c02_alert_feed_row_markers_render_for_snapshot_alert
             connector_health_rows: vec![],
         },
         chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains("id=\"tau-ops-alert-feed-list\""));
@@ -3648,6 +3808,7 @@ fn functional_spec_2818_c03_alert_feed_row_markers_render_nominal_fallback_alert
             connector_health_rows: vec![],
         },
         chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains("id=\"tau-ops-alert-feed-list\""));
@@ -3699,6 +3860,7 @@ fn functional_spec_2822_c03_connector_health_table_renders_fallback_row_markers(
             connector_health_rows: vec![],
         },
         chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains("id=\"tau-ops-connector-health-table\""));
@@ -3756,6 +3918,7 @@ fn functional_spec_2822_c01_c02_connector_health_table_rows_render_for_snapshot_
             }],
         },
         chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains("id=\"tau-ops-connector-health-table\""));
