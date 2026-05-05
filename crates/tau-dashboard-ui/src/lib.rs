@@ -2325,19 +2325,24 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                         radial-gradient(circle at top left, rgba(36, 87, 112, .24), transparent 28rem),
                         #06121a;
                     color: #dbe8ef;
+                    width: 100%;
+                    max-width: 100%;
+                    overflow-x: hidden;
                 }
                 #tau-ops-shell[data-active-route="harness"] #tau-ops-header {
                     display: none;
                 }
                 #tau-ops-shell[data-active-route="harness"] #tau-ops-layout {
                     display: grid;
-                    grid-template-columns: 104px minmax(0, 1fr);
+                    grid-template-columns: 80px minmax(0, 1fr);
                     min-height: 100vh;
                     width: 100%;
+                    max-width: 100vw;
                     gap: 0;
+                    overflow-x: hidden;
                 }
                 #tau-ops-shell[data-active-route="harness"] #tau-ops-sidebar {
-                    padding: 12px 8px;
+                    padding: 10px 6px;
                     border-right: 1px solid #243e4d;
                     background: linear-gradient(180deg, #0e2433, #07131b);
                 }
@@ -2351,10 +2356,10 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                 #tau-ops-shell[data-active-route="harness"] #tau-ops-sidebar a {
                     display: block;
                     border-radius: 6px;
-                    padding: 7px 6px;
+                    padding: 6px 4px;
                     color: #b8cfda;
-                    font-size: .72rem;
-                    line-height: 1.15;
+                    font-size: .64rem;
+                    line-height: 1.08;
                     text-decoration: none;
                     overflow-wrap: anywhere;
                 }
@@ -2369,7 +2374,9 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     overflow-x: hidden;
                 }
                 #tau-ops-shell[data-active-route="harness"] #tau-ops-protected-shell {
-                    padding: 10px;
+                    padding: 8px;
+                    width: 100%;
+                    max-width: 100%;
                 }
                 @media (max-width: 900px) {
                     #tau-ops-shell[data-active-route="harness"] #tau-ops-layout {
@@ -2379,6 +2386,10 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                         border-right: 0;
                         border-bottom: 1px solid #243e4d;
                         overflow-x: hidden;
+                    }
+                    #tau-ops-shell[data-active-route="harness"] #tau-ops-protected-shell {
+                        width: 100%;
+                        max-width: 100%;
                     }
                     #tau-ops-shell[data-active-route="harness"] #tau-ops-sidebar ul {
                         grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -3867,15 +3878,15 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 --tau-harness-red: #df635b;
                                 --tau-harness-cyan: #7bd6e8;
                                 display: grid;
-                                grid-template-columns: minmax(0, .95fr) minmax(0, 1.18fr) minmax(0, 1fr);
+                                grid-template-columns: minmax(0, .82fr) minmax(0, 1.04fr) minmax(0, .86fr);
                                 grid-template-areas:
                                     "topbar topbar topbar"
                                     "dashboard proof review"
                                     "dashboard proof tui";
-                                gap: 12px;
+                                gap: 8px;
                                 align-items: start;
-                                min-height: calc(100vh - 20px);
-                                padding: 12px;
+                                min-height: calc(100vh - 16px);
+                                padding: 10px;
                                 border: 1px solid var(--tau-harness-line);
                                 border-radius: 6px;
                                 background:
@@ -3884,16 +3895,21 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
                                 font-size: 13px;
                                 line-height: 1.35;
-                                width: 100%;
-                                max-width: 100%;
+                                width: min(100%, calc(100vw - 112px));
+                                min-width: 0;
+                                max-width: calc(100vw - 112px);
                                 overflow: hidden;
                             }
                             #tau-ops-harness-panel h2,
                             #tau-ops-harness-panel h3,
                             #tau-ops-harness-panel h4,
                             #tau-ops-harness-panel h5,
-                            #tau-ops-harness-panel p {
+                            #tau-ops-harness-panel p,
+                            #tau-ops-harness-panel dd,
+                            #tau-ops-harness-panel li {
                                 margin: 0;
+                                min-width: 0;
+                                overflow-wrap: anywhere;
                             }
                             #tau-ops-harness-panel h2,
                             #tau-ops-harness-panel h3 {
@@ -3952,6 +3968,19 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             #tau-ops-harness-tui-companion {
                                 grid-area: tui;
                             }
+                            #tau-ops-harness-dashboard-window,
+                            #tau-ops-harness-proof-window {
+                                max-height: calc(100vh - 88px);
+                                overflow: auto;
+                            }
+                            #tau-ops-harness-self-improvement-window {
+                                max-height: calc(100vh - 326px);
+                                overflow: auto;
+                            }
+                            #tau-ops-harness-tui-companion {
+                                max-height: 230px;
+                                overflow: auto;
+                            }
                             #tau-ops-harness-topbar nav,
                             #tau-ops-harness-operator-actions {
                                 display: flex;
@@ -3969,6 +3998,8 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 text-decoration: none;
                                 transition: border-color .14s ease, background .14s ease, transform .14s ease;
                                 cursor: pointer;
+                                max-width: 100%;
+                                white-space: normal;
                             }
                             #tau-ops-harness-panel a:hover,
                             #tau-ops-harness-panel button:hover {
@@ -4011,6 +4042,9 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 min-height: 28px;
                                 padding-bottom: 8px;
                                 border-bottom: 1px solid var(--tau-harness-line-soft);
+                            }
+                            .tau-harness-window-titlebar > div {
+                                min-width: 0;
                             }
                             .tau-harness-window-titlebar small {
                                 color: var(--tau-harness-dim);
@@ -4169,7 +4203,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             #tau-ops-harness-proof-header dl,
                             #tau-ops-harness-proposal-detail dl {
                                 display: grid;
-                                grid-template-columns: max-content 1fr;
+                                grid-template-columns: minmax(7rem, max-content) minmax(0, 1fr);
                                 gap: 6px 12px;
                                 margin: 8px 0 0;
                             }
@@ -4215,7 +4249,16 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 max-height: 180px;
                                 margin-top: 8px;
                             }
-                            @media (max-width: 1680px) {
+                            @media (max-width: 1400px) {
+                                #tau-ops-harness-missions-table th:nth-child(7),
+                                #tau-ops-harness-missions-table td:nth-child(7),
+                                #tau-ops-harness-missions-table th:nth-child(8),
+                                #tau-ops-harness-missions-table td:nth-child(8),
+                                #tau-ops-harness-benchmark-table td:nth-child(2) {
+                                    display: none;
+                                }
+                            }
+                            @media (max-width: 1180px) {
                                 #tau-ops-harness-panel {
                                     grid-template-columns: minmax(0, 1fr);
                                     grid-template-areas:
@@ -4235,12 +4278,11 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 #tau-ops-harness-plan-dag {
                                     grid-template-columns: repeat(2, minmax(0, 1fr));
                                 }
-                                #tau-ops-harness-missions-table th:nth-child(7),
-                                #tau-ops-harness-missions-table td:nth-child(7),
-                                #tau-ops-harness-missions-table th:nth-child(8),
-                                #tau-ops-harness-missions-table td:nth-child(8),
-                                #tau-ops-harness-benchmark-table td:nth-child(2) {
-                                    display: none;
+                                #tau-ops-harness-dashboard-window,
+                                #tau-ops-harness-proof-window,
+                                #tau-ops-harness-self-improvement-window,
+                                #tau-ops-harness-tui-companion {
+                                    max-height: none;
                                 }
                             }
                             @media (max-width: 760px) {
@@ -4276,6 +4318,8 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             data-panel-visible=harness_panel_visible
                             data-layout-density="operator-console"
                             data-visual-contract="mission-control"
+                            data-desktop-preview-layout="three-window"
+                            data-responsive-collapse-width="1180px"
                         >
                             <p
                                 id="tau-ops-harness-preview-status"

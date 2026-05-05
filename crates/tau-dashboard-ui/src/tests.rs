@@ -569,6 +569,7 @@ fn functional_spec_3758_c01_harness_uses_operator_console_visual_contract() {
         "class=\"tau-harness-window-grid\"",
         "class=\"tau-harness-status-chip\"",
         "class=\"tau-harness-table-wrap\"",
+        "grid-template-columns: 80px minmax(0, 1fr);",
     ] {
         assert!(
             html.contains(marker),
@@ -585,13 +586,43 @@ fn functional_spec_3758_c03_harness_style_guards_overflow_focus_and_responsive_l
         "#tau-ops-harness-panel :is(a, button):focus-visible",
         ".tau-harness-table-wrap",
         "overflow-x: auto;",
-        "grid-template-columns: minmax(0, .95fr) minmax(0, 1.18fr) minmax(0, 1fr);",
+        "grid-template-columns: minmax(0, .82fr) minmax(0, 1.04fr) minmax(0, .86fr);",
         "@media (max-width: 760px)",
         "minmax(0, 1fr)",
     ] {
         assert!(
             html.contains(marker),
             "missing harness responsive/focus style contract `{marker}`"
+        );
+    }
+}
+
+#[test]
+fn functional_spec_3761_c01_c02_c03_harness_keeps_desktop_three_window_layout() {
+    let html = render_tau_ops_dashboard_shell_for_route("/ops/harness");
+
+    for marker in [
+        "data-desktop-preview-layout=\"three-window\"",
+        "data-responsive-collapse-width=\"1180px\"",
+        "grid-template-columns: minmax(0, .82fr) minmax(0, 1.04fr) minmax(0, .86fr);",
+        "#tau-ops-shell[data-active-route=\"harness\"] {\n                    background:",
+        "max-width: 100vw;",
+        "width: min(100%, calc(100vw - 112px));",
+        "max-width: calc(100vw - 112px);",
+        "@media (max-width: 1400px)",
+        "@media (max-width: 1180px)",
+        "max-height: calc(100vh - 88px);",
+        "overflow: auto;",
+        "overflow-wrap: anywhere;",
+        "white-space: normal;",
+        ".tau-harness-window-titlebar > div",
+        "grid-template-columns: minmax(7rem, max-content) minmax(0, 1fr);",
+        "#tau-ops-harness-self-improvement-window {\n                                max-height: calc(100vh - 326px);",
+        "#tau-ops-harness-tui-companion {\n                                max-height: 230px;",
+    ] {
+        assert!(
+            html.contains(marker),
+            "missing harness desktop layout marker `{marker}`"
         );
     }
 }
