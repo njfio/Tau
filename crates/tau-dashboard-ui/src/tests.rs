@@ -536,6 +536,45 @@ fn functional_spec_3757_c01_c02_harness_snapshot_drives_benchmark_and_audit_rows
 }
 
 #[test]
+fn functional_spec_3758_c01_harness_uses_operator_console_visual_contract() {
+    let html = render_tau_ops_dashboard_shell_for_route("/ops/harness");
+
+    for marker in [
+        "data-layout-density=\"operator-console\"",
+        "data-visual-contract=\"mission-control\"",
+        "data-window-chrome=\"compact\"",
+        "class=\"tau-harness-window-titlebar\"",
+        "class=\"tau-harness-window-grid\"",
+        "class=\"tau-harness-status-chip\"",
+        "class=\"tau-harness-table-wrap\"",
+    ] {
+        assert!(
+            html.contains(marker),
+            "missing harness visual contract marker `{marker}`"
+        );
+    }
+}
+
+#[test]
+fn functional_spec_3758_c03_harness_style_guards_overflow_focus_and_responsive_layout() {
+    let html = render_tau_ops_dashboard_shell_for_route("/ops/harness");
+
+    for marker in [
+        "#tau-ops-harness-panel :is(a, button):focus-visible",
+        ".tau-harness-table-wrap",
+        "overflow-x: auto;",
+        "grid-template-columns: minmax(0, .95fr) minmax(0, 1.18fr) minmax(0, 1fr);",
+        "@media (max-width: 760px)",
+        "minmax(0, 1fr)",
+    ] {
+        assert!(
+            html.contains(marker),
+            "missing harness responsive/focus style contract `{marker}`"
+        );
+    }
+}
+
+#[test]
 fn regression_spec_3756_c03_non_harness_routes_hide_harness_panel() {
     let html = render_tau_ops_dashboard_shell_for_route("/ops");
 

@@ -2333,6 +2333,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     display: grid;
                     grid-template-columns: 104px minmax(0, 1fr);
                     min-height: 100vh;
+                    width: 100%;
                     gap: 0;
                 }
                 #tau-ops-shell[data-active-route="harness"] #tau-ops-sidebar {
@@ -2355,6 +2356,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     font-size: .72rem;
                     line-height: 1.15;
                     text-decoration: none;
+                    overflow-wrap: anywhere;
                 }
                 #tau-ops-shell[data-active-route="harness"] #tau-ops-nav-harness a {
                     background: #1b5fbf;
@@ -2363,6 +2365,8 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                 #tau-ops-shell[data-active-route="harness"] #tau-ops-auth-shell,
                 #tau-ops-shell[data-active-route="harness"] #tau-ops-protected-shell {
                     min-width: 0;
+                    max-width: 100%;
+                    overflow-x: hidden;
                 }
                 #tau-ops-shell[data-active-route="harness"] #tau-ops-protected-shell {
                     padding: 10px;
@@ -2374,9 +2378,15 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     #tau-ops-shell[data-active-route="harness"] #tau-ops-sidebar {
                         border-right: 0;
                         border-bottom: 1px solid #243e4d;
+                        overflow-x: hidden;
                     }
                     #tau-ops-shell[data-active-route="harness"] #tau-ops-sidebar ul {
                         grid-template-columns: repeat(3, minmax(0, 1fr));
+                    }
+                }
+                @media (max-width: 760px) {
+                    #tau-ops-shell[data-active-route="harness"] #tau-ops-sidebar ul {
+                        grid-template-columns: repeat(2, minmax(0, 1fr));
                     }
                 }
                 "#
@@ -3833,26 +3843,42 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 display: none;
                             }
                             #tau-ops-harness-panel {
-                                --tau-harness-bg: #07131a;
-                                --tau-harness-panel: #0d1b24;
-                                --tau-harness-panel-2: #102331;
-                                --tau-harness-line: #2d4655;
-                                --tau-harness-text: #d9e6ee;
-                                --tau-harness-muted: #8fa9b7;
-                                --tau-harness-blue: #2f80ed;
-                                --tau-harness-green: #58c878;
-                                --tau-harness-yellow: #caa13a;
-                                --tau-harness-red: #d25a53;
+                                --tau-harness-bg: #071118;
+                                --tau-harness-rail: #0b1a23;
+                                --tau-harness-panel: #0f202a;
+                                --tau-harness-panel-2: #142935;
+                                --tau-harness-panel-3: #182f3c;
+                                --tau-harness-line: #2f4652;
+                                --tau-harness-line-soft: #1e3440;
+                                --tau-harness-text: #e3eef3;
+                                --tau-harness-muted: #8fa8b3;
+                                --tau-harness-dim: #68818d;
+                                --tau-harness-blue: #4d8dff;
+                                --tau-harness-green: #5fca7a;
+                                --tau-harness-yellow: #d8ad45;
+                                --tau-harness-red: #df635b;
+                                --tau-harness-cyan: #7bd6e8;
                                 display: grid;
-                                grid-template-columns: minmax(280px, 1fr) minmax(360px, 1.12fr) minmax(320px, .98fr);
-                                gap: 14px;
+                                grid-template-columns: minmax(0, .95fr) minmax(0, 1.18fr) minmax(0, 1fr);
+                                grid-template-areas:
+                                    "topbar topbar topbar"
+                                    "dashboard proof review"
+                                    "dashboard proof tui";
+                                gap: 12px;
                                 align-items: start;
-                                padding: 14px;
+                                min-height: calc(100vh - 20px);
+                                padding: 12px;
                                 border: 1px solid var(--tau-harness-line);
-                                border-radius: 8px;
-                                background: var(--tau-harness-bg);
+                                border-radius: 6px;
+                                background:
+                                    linear-gradient(180deg, #091821 0%, var(--tau-harness-bg) 58%, #050c11 100%);
                                 color: var(--tau-harness-text);
                                 font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+                                font-size: 13px;
+                                line-height: 1.35;
+                                width: 100%;
+                                max-width: 100%;
+                                overflow: hidden;
                             }
                             #tau-ops-harness-panel h2,
                             #tau-ops-harness-panel h3,
@@ -3861,23 +3887,62 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             #tau-ops-harness-panel p {
                                 margin: 0;
                             }
+                            #tau-ops-harness-panel h2,
+                            #tau-ops-harness-panel h3 {
+                                letter-spacing: 0;
+                            }
+                            #tau-ops-harness-panel h2 {
+                                font-size: 1.05rem;
+                                font-weight: 700;
+                            }
+                            #tau-ops-harness-panel h3 {
+                                font-size: .98rem;
+                                font-weight: 700;
+                            }
+                            #tau-ops-harness-panel h4 {
+                                color: #f2f8fb;
+                                font-size: .82rem;
+                                font-weight: 700;
+                            }
+                            #tau-ops-harness-panel h5 {
+                                font-size: .78rem;
+                                font-weight: 700;
+                            }
                             #tau-ops-harness-topbar,
                             #tau-ops-harness-dashboard-window,
                             #tau-ops-harness-proof-window,
                             #tau-ops-harness-self-improvement-window,
                             #tau-ops-harness-tui-companion {
                                 border: 1px solid var(--tau-harness-line);
-                                border-radius: 7px;
-                                background: linear-gradient(180deg, var(--tau-harness-panel-2), var(--tau-harness-panel));
-                                box-shadow: 0 14px 32px rgba(0, 0, 0, .32);
+                                border-radius: 6px;
+                                background:
+                                    linear-gradient(180deg, rgba(24, 47, 60, .94), rgba(13, 29, 39, .96));
+                                box-shadow: 0 16px 34px rgba(0, 0, 0, .34);
+                                min-width: 0;
+                                overflow: hidden;
                             }
                             #tau-ops-harness-topbar {
-                                grid-column: 1 / -1;
+                                grid-area: topbar;
                                 display: flex;
                                 justify-content: space-between;
                                 gap: 12px;
                                 align-items: center;
-                                padding: 10px 12px;
+                                min-height: 46px;
+                                padding: 9px 12px;
+                                background:
+                                    linear-gradient(180deg, #132833, #0a1821);
+                            }
+                            #tau-ops-harness-dashboard-window {
+                                grid-area: dashboard;
+                            }
+                            #tau-ops-harness-proof-window {
+                                grid-area: proof;
+                            }
+                            #tau-ops-harness-self-improvement-window {
+                                grid-area: review;
+                            }
+                            #tau-ops-harness-tui-companion {
+                                grid-area: tui;
                             }
                             #tau-ops-harness-topbar nav,
                             #tau-ops-harness-operator-actions {
@@ -3888,69 +3953,188 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             #tau-ops-harness-panel a,
                             #tau-ops-harness-panel button {
                                 border: 1px solid var(--tau-harness-line);
-                                border-radius: 5px;
-                                background: #132838;
+                                border-radius: 4px;
+                                background: #132a38;
                                 color: var(--tau-harness-text);
+                                min-height: 30px;
                                 padding: 6px 10px;
                                 text-decoration: none;
+                                transition: border-color .14s ease, background .14s ease, transform .14s ease;
+                                cursor: pointer;
+                            }
+                            #tau-ops-harness-panel a:hover,
+                            #tau-ops-harness-panel button:hover {
+                                border-color: #557181;
+                                background: #193343;
+                            }
+                            #tau-ops-harness-panel :is(a, button):focus-visible {
+                                outline: 2px solid var(--tau-harness-cyan);
+                                outline-offset: 2px;
                             }
                             #tau-ops-harness-panel button[type="submit"],
                             #tau-ops-harness-action-approve {
-                                background: #1d5b36;
+                                background: linear-gradient(180deg, #2d7446, #1e5934);
                             }
                             #tau-ops-harness-action-reject {
-                                background: #61261f;
+                                background: linear-gradient(180deg, #7a342c, #5f261f);
                             }
                             #tau-ops-harness-action-apply[aria-disabled="true"] {
                                 color: var(--tau-harness-muted);
                                 opacity: .72;
+                                cursor: not-allowed;
                             }
                             #tau-ops-harness-dashboard-window,
                             #tau-ops-harness-proof-window,
                             #tau-ops-harness-self-improvement-window,
                             #tau-ops-harness-tui-companion {
-                                padding: 12px;
+                                padding: 10px;
                             }
                             #tau-ops-harness-dashboard-window,
                             #tau-ops-harness-proof-window,
                             #tau-ops-harness-self-improvement-window {
                                 display: grid;
-                                gap: 12px;
+                                gap: 10px;
+                            }
+                            .tau-harness-window-titlebar {
+                                display: flex;
+                                align-items: center;
+                                justify-content: space-between;
+                                gap: 10px;
+                                min-height: 28px;
+                                padding-bottom: 8px;
+                                border-bottom: 1px solid var(--tau-harness-line-soft);
+                            }
+                            .tau-harness-window-titlebar small {
+                                color: var(--tau-harness-dim);
+                                text-transform: uppercase;
+                                font-size: .66rem;
+                                font-weight: 700;
+                            }
+                            .tau-harness-window-grid {
+                                display: grid;
+                                grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+                                gap: 10px;
+                                min-width: 0;
                             }
                             #tau-ops-harness-kpi-grid {
                                 display: grid;
                                 grid-template-columns: repeat(4, minmax(0, 1fr));
-                                gap: 8px;
+                                gap: 7px;
                             }
                             #tau-ops-harness-kpi-grid article,
                             #tau-ops-harness-proof-window section,
                             #tau-ops-harness-self-improvement-window section {
-                                border: 1px solid #253f4f;
-                                border-radius: 6px;
-                                background: rgba(9, 24, 34, .76);
-                                padding: 10px;
+                                border: 1px solid var(--tau-harness-line-soft);
+                                border-radius: 5px;
+                                background: rgba(7, 18, 25, .68);
+                                padding: 9px;
+                                min-width: 0;
+                            }
+                            #tau-ops-harness-kpi-grid article {
+                                min-height: 82px;
+                                overflow: hidden;
+                            }
+                            #tau-ops-harness-kpi-grid p {
+                                margin-top: 6px;
+                                color: white;
+                                font-size: 1.36rem;
+                                font-weight: 750;
+                            }
+                            .tau-harness-table-wrap {
+                                min-width: 0;
+                                width: 100%;
+                                max-width: 100%;
+                                overflow-x: auto;
+                                border: 1px solid var(--tau-harness-line-soft);
+                                border-radius: 5px;
+                                background: rgba(5, 14, 20, .44);
                             }
                             #tau-ops-harness-panel table {
                                 width: 100%;
                                 border-collapse: collapse;
-                                font-size: .82rem;
+                                min-width: 520px;
+                                font-size: .78rem;
                             }
                             #tau-ops-harness-panel th,
                             #tau-ops-harness-panel td {
-                                border-bottom: 1px solid #203845;
-                                padding: 7px 6px;
+                                border-bottom: 1px solid var(--tau-harness-line-soft);
+                                padding: 7px 8px;
                                 text-align: left;
+                                vertical-align: middle;
+                                white-space: nowrap;
+                            }
+                            #tau-ops-harness-panel td {
+                                color: var(--tau-harness-text);
+                            }
+                            #tau-ops-harness-panel td:first-child {
+                                color: #cfe1e8;
+                                font-weight: 560;
+                            }
+                            #tau-ops-harness-panel tbody tr {
+                                background: rgba(7, 18, 25, .52);
+                            }
+                            #tau-ops-harness-panel tbody tr:hover {
+                                background: rgba(77, 141, 255, .08);
                             }
                             #tau-ops-harness-panel small,
                             #tau-ops-harness-panel dt,
                             #tau-ops-harness-panel th {
                                 color: var(--tau-harness-muted);
                             }
+                            #tau-ops-harness-panel meter {
+                                width: 82px;
+                                height: 8px;
+                                vertical-align: middle;
+                            }
+                            .tau-harness-status-chip,
+                            #tau-ops-harness-verification-gates li,
+                            #tau-ops-harness-acceptance li,
+                            #tau-ops-harness-learning-queue li {
+                                display: inline-flex;
+                                align-items: center;
+                                gap: 6px;
+                                border: 1px solid var(--tau-harness-line);
+                                border-radius: 999px;
+                                background: rgba(20, 43, 59, .9);
+                                padding: 4px 8px;
+                                color: var(--tau-harness-text);
+                                font-size: .74rem;
+                            }
+                            .tau-harness-status-chip::before,
+                            #tau-ops-harness-verification-gates li::before,
+                            #tau-ops-harness-acceptance li::before,
+                            #tau-ops-harness-learning-queue li::before {
+                                content: "";
+                                width: 7px;
+                                height: 7px;
+                                border-radius: 999px;
+                                background: var(--tau-harness-muted);
+                            }
+                            [data-status="running"] .tau-harness-status-chip::before,
+                            [data-status="verifying"] .tau-harness-status-chip::before,
+                            #tau-ops-harness-verification-gates [data-gate-status="running"]::before {
+                                background: var(--tau-harness-blue);
+                            }
+                            [data-status="completed"] .tau-harness-status-chip::before,
+                            #tau-ops-harness-verification-gates [data-gate-status="passed"]::before,
+                            #tau-ops-harness-acceptance [data-ac-status="met"]::before,
+                            #tau-ops-harness-learning-queue [data-status="proposal"]::before {
+                                background: var(--tau-harness-green);
+                            }
+                            [data-status="blocked"] .tau-harness-status-chip::before,
+                            #tau-ops-harness-verification-gates [data-gate-status="failed"]::before {
+                                background: var(--tau-harness-red);
+                            }
+                            [data-verification-state="needs-review"] .tau-harness-status-chip {
+                                border-color: rgba(216, 173, 69, .78);
+                                color: #f2d590;
+                            }
                             #tau-ops-harness-plan-dag {
                                 display: grid;
-                                grid-template-columns: repeat(5, minmax(0, 1fr));
+                                grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
                                 gap: 8px;
-                                padding: 0;
+                                margin: 0;
+                                padding: 2px 0;
                                 list-style: none;
                             }
                             #tau-ops-harness-plan-dag li {
@@ -3959,6 +4143,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 padding: 6px 8px;
                                 text-align: center;
                                 background: #142b3b;
+                                min-width: 0;
                             }
                             #tau-ops-harness-plan-dag [data-node-status="passed"],
                             #tau-ops-harness-verification-gates [data-gate-status="passed"],
@@ -3978,24 +4163,98 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 display: grid;
                                 grid-template-columns: max-content 1fr;
                                 gap: 6px 12px;
+                                margin: 8px 0 0;
+                            }
+                            #tau-ops-harness-acceptance ul,
+                            #tau-ops-harness-verification-gates ul,
+                            #tau-ops-harness-artifacts ul,
+                            #tau-ops-harness-learning-queue ul,
+                            #tau-ops-harness-conservative-policy ul {
+                                display: flex;
+                                flex-wrap: wrap;
+                                gap: 7px;
+                                margin: 8px 0 0;
+                                padding: 0;
+                                list-style: none;
+                            }
+                            #tau-ops-harness-conservative-policy {
+                                display: grid;
+                                grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+                                gap: 8px;
+                            }
+                            #tau-ops-harness-conservative-policy h4 {
+                                grid-column: 1 / -1;
+                            }
+                            #tau-ops-harness-operator-actions {
+                                align-items: center;
+                            }
+                            #tau-ops-harness-operator-actions h4 {
+                                width: 100%;
                             }
                             #tau-ops-harness-panel pre {
                                 overflow: auto;
                                 border: 1px solid #1f3644;
-                                border-radius: 6px;
+                                border-radius: 5px;
                                 background: #061016;
-                                color: #b8d2df;
+                                color: #c3dce7;
                                 padding: 10px;
                                 font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
-                                font-size: .8rem;
+                                font-size: .76rem;
+                                line-height: 1.5;
+                                max-height: 250px;
                             }
-                            @media (max-width: 1100px) {
+                            #tau-ops-harness-tui-companion pre {
+                                max-height: 180px;
+                                margin-top: 8px;
+                            }
+                            @media (max-width: 1680px) {
                                 #tau-ops-harness-panel {
-                                    grid-template-columns: 1fr;
+                                    grid-template-columns: minmax(0, 1fr);
+                                    grid-template-areas:
+                                        "topbar"
+                                        "dashboard"
+                                        "proof"
+                                        "review"
+                                        "tui";
                                 }
-                                #tau-ops-harness-kpi-grid,
+                                .tau-harness-window-grid,
+                                #tau-ops-harness-conservative-policy {
+                                    grid-template-columns: minmax(0, 1fr);
+                                }
+                                #tau-ops-harness-kpi-grid {
+                                    grid-template-columns: repeat(2, minmax(0, 1fr));
+                                }
                                 #tau-ops-harness-plan-dag {
                                     grid-template-columns: repeat(2, minmax(0, 1fr));
+                                }
+                                #tau-ops-harness-missions-table th:nth-child(7),
+                                #tau-ops-harness-missions-table td:nth-child(7),
+                                #tau-ops-harness-missions-table th:nth-child(8),
+                                #tau-ops-harness-missions-table td:nth-child(8),
+                                #tau-ops-harness-benchmark-table td:nth-child(2) {
+                                    display: none;
+                                }
+                            }
+                            @media (max-width: 760px) {
+                                #tau-ops-harness-panel {
+                                    padding: 8px;
+                                    gap: 8px;
+                                }
+                                #tau-ops-harness-topbar {
+                                    align-items: flex-start;
+                                    flex-direction: column;
+                                }
+                                .tau-harness-window-titlebar {
+                                    align-items: flex-start;
+                                    flex-direction: column;
+                                }
+                                #tau-ops-harness-proof-header dl,
+                                #tau-ops-harness-proposal-detail dl {
+                                    grid-template-columns: max-content minmax(0, 1fr);
+                                    width: 100%;
+                                }
+                                #tau-ops-harness-kpi-grid {
+                                    grid-template-columns: minmax(0, 1fr);
                                 }
                             }
                             "#
@@ -4007,9 +4266,14 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             data-design-template="three-window-agent-harness"
                             aria-hidden=harness_panel_hidden
                             data-panel-visible=harness_panel_visible
+                            data-layout-density="operator-console"
+                            data-visual-contract="mission-control"
                         >
-                            <header id="tau-ops-harness-topbar" data-workspace="/workspace/tau" data-model="gpt-5.4" data-transport="gateway" data-health="healthy">
-                                <h2>"Tau Agent Harness"</h2>
+                            <header id="tau-ops-harness-topbar" data-workspace="/workspace/tau" data-model="gpt-5.4" data-transport="gateway" data-health="healthy" data-window-chrome="compact">
+                                <div>
+                                    <small>"Tau"</small>
+                                    <h2>"Tau Agent Harness"</h2>
+                                </div>
                                 <nav aria-label="Mission harness actions">
                                     <a id="tau-ops-harness-new-mission" data-action="new-mission" href="/ops/harness?intent=new-mission">"New Mission"</a>
                                     <a id="tau-ops-harness-history" data-action="history" href="/ops/harness?view=history">"History"</a>
@@ -4019,8 +4283,15 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 id="tau-ops-harness-dashboard-window"
                                 data-window="mission-harness-dashboard"
                                 data-window-order="1"
+                                data-window-chrome="compact"
                             >
-                                <h3>"Mission Harness Dashboard"</h3>
+                                <header class="tau-harness-window-titlebar">
+                                    <div>
+                                        <small>"Dashboard"</small>
+                                        <h3>"Mission Harness Dashboard"</h3>
+                                    </div>
+                                    <span class="tau-harness-status-chip">"Healthy"</span>
+                                </header>
                                 <section id="tau-ops-harness-kpi-grid" data-kpi-card-count="4">
                                     <article id="tau-ops-harness-kpi-active" data-harness-kpi-card="active-missions" data-kpi-value="5">
                                         <h4>"Active Missions"</h4>
@@ -4050,72 +4321,74 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     data-blocked-count="1"
                                 >
                                     <h4>"Active Missions"</h4>
-                                    <table id="tau-ops-harness-missions-table">
-                                        <thead>
-                                            <tr>
-                                                <th scope="col">"Goal"</th>
-                                                <th scope="col">"Acceptance"</th>
-                                                <th scope="col">"Plan"</th>
-                                                <th scope="col">"Tool Budget"</th>
-                                                <th scope="col">"Memory Hits"</th>
-                                                <th scope="col">"Verification"</th>
-                                                <th scope="col">"Last Checkpoint"</th>
-                                                <th scope="col">"Artifacts"</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            <tr id="tau-ops-harness-mission-row-0" data-mission-id="run_linux_ci" data-status="running" data-plan-progress="68" data-verification-state="needs-review">
-                                                <td>"Port repo test harness to Linux CI"</td>
-                                                <td>"4/5"</td>
-                                                <td><meter min="0" max="100" value="68">"68%"</meter></td>
-                                                <td>"34/60"</td>
-                                                <td>"12"</td>
-                                                <td><span data-gate-status="needs-review">"3/5 gates"</span></td>
-                                                <td>"10:22:31 May 15"</td>
-                                                <td>"5"</td>
-                                            </tr>
-                                            <tr id="tau-ops-harness-mission-row-1" data-mission-id="run_m334_flaky" data-status="verifying" data-plan-progress="72" data-verification-state="needs-review">
-                                                <td>"Investigate flaky benchmark on M334"</td>
-                                                <td>"3/5"</td>
-                                                <td><meter min="0" max="100" value="72">"72%"</meter></td>
-                                                <td>"28/60"</td>
-                                                <td>"8"</td>
-                                                <td><span data-gate-status="needs-review">"2/5 gates"</span></td>
-                                                <td>"10:25:52 May 15"</td>
-                                                <td>"4"</td>
-                                            </tr>
-                                            <tr id="tau-ops-harness-mission-row-2" data-mission-id="run_research_brief" data-status="completed" data-plan-progress="100" data-verification-state="passed">
-                                                <td>"Generate weekly research brief on model routing"</td>
-                                                <td>"5/5"</td>
-                                                <td><meter min="0" max="100" value="100">"100%"</meter></td>
-                                                <td>"18/60"</td>
-                                                <td>"15"</td>
-                                                <td><span data-gate-status="passed">"5/5 gates"</span></td>
-                                                <td>"09:55:11 May 15"</td>
-                                                <td>"7"</td>
-                                            </tr>
-                                            <tr id="tau-ops-harness-mission-row-3" data-mission-id="run_receipts" data-status="blocked" data-plan-progress="36" data-verification-state="failed">
-                                                <td>"Automate receipt classification pipeline"</td>
-                                                <td>"2/5"</td>
-                                                <td><meter min="0" max="100" value="36">"36%"</meter></td>
-                                                <td>"16/60"</td>
-                                                <td>"6"</td>
-                                                <td><span data-gate-status="failed">"1/5 gates"</span></td>
-                                                <td>"09:48:03 May 15"</td>
-                                                <td>"3"</td>
-                                            </tr>
-                                            <tr id="tau-ops-harness-mission-row-4" data-mission-id="run_8f3a2" data-status="running" data-plan-progress="55" data-verification-state="running">
-                                                <td>"Refactor plugin registry for safer hot reload"</td>
-                                                <td>"3/5"</td>
-                                                <td><meter min="0" max="100" value="55">"55%"</meter></td>
-                                                <td>"42/60"</td>
-                                                <td>"12"</td>
-                                                <td><span data-gate-status="running">"2/5 gates"</span></td>
-                                                <td>"10:24:18 May 15"</td>
-                                                <td>"6"</td>
-                                            </tr>
-                                        </tbody>
-                                    </table>
+                                    <div class="tau-harness-table-wrap">
+                                        <table id="tau-ops-harness-missions-table">
+                                            <thead>
+                                                <tr>
+                                                    <th scope="col">"Goal"</th>
+                                                    <th scope="col">"Acceptance"</th>
+                                                    <th scope="col">"Plan"</th>
+                                                    <th scope="col">"Tool Budget"</th>
+                                                    <th scope="col">"Memory Hits"</th>
+                                                    <th scope="col">"Verification"</th>
+                                                    <th scope="col">"Last Checkpoint"</th>
+                                                    <th scope="col">"Artifacts"</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <tr id="tau-ops-harness-mission-row-0" data-mission-id="run_linux_ci" data-status="running" data-plan-progress="68" data-verification-state="needs-review">
+                                                    <td>"Port repo test harness to Linux CI"</td>
+                                                    <td>"4/5"</td>
+                                                    <td><meter min="0" max="100" value="68">"68%"</meter></td>
+                                                    <td>"34/60"</td>
+                                                    <td>"12"</td>
+                                                    <td><span class="tau-harness-status-chip" data-gate-status="needs-review">"3/5 gates"</span></td>
+                                                    <td>"10:22:31 May 15"</td>
+                                                    <td>"5"</td>
+                                                </tr>
+                                                <tr id="tau-ops-harness-mission-row-1" data-mission-id="run_m334_flaky" data-status="verifying" data-plan-progress="72" data-verification-state="needs-review">
+                                                    <td>"Investigate flaky benchmark on M334"</td>
+                                                    <td>"3/5"</td>
+                                                    <td><meter min="0" max="100" value="72">"72%"</meter></td>
+                                                    <td>"28/60"</td>
+                                                    <td>"8"</td>
+                                                    <td><span class="tau-harness-status-chip" data-gate-status="needs-review">"2/5 gates"</span></td>
+                                                    <td>"10:25:52 May 15"</td>
+                                                    <td>"4"</td>
+                                                </tr>
+                                                <tr id="tau-ops-harness-mission-row-2" data-mission-id="run_research_brief" data-status="completed" data-plan-progress="100" data-verification-state="passed">
+                                                    <td>"Generate weekly research brief on model routing"</td>
+                                                    <td>"5/5"</td>
+                                                    <td><meter min="0" max="100" value="100">"100%"</meter></td>
+                                                    <td>"18/60"</td>
+                                                    <td>"15"</td>
+                                                    <td><span class="tau-harness-status-chip" data-gate-status="passed">"5/5 gates"</span></td>
+                                                    <td>"09:55:11 May 15"</td>
+                                                    <td>"7"</td>
+                                                </tr>
+                                                <tr id="tau-ops-harness-mission-row-3" data-mission-id="run_receipts" data-status="blocked" data-plan-progress="36" data-verification-state="failed">
+                                                    <td>"Automate receipt classification pipeline"</td>
+                                                    <td>"2/5"</td>
+                                                    <td><meter min="0" max="100" value="36">"36%"</meter></td>
+                                                    <td>"16/60"</td>
+                                                    <td>"6"</td>
+                                                    <td><span class="tau-harness-status-chip" data-gate-status="failed">"1/5 gates"</span></td>
+                                                    <td>"09:48:03 May 15"</td>
+                                                    <td>"3"</td>
+                                                </tr>
+                                                <tr id="tau-ops-harness-mission-row-4" data-mission-id="run_8f3a2" data-status="running" data-plan-progress="55" data-verification-state="running">
+                                                    <td>"Refactor plugin registry for safer hot reload"</td>
+                                                    <td>"3/5"</td>
+                                                    <td><meter min="0" max="100" value="55">"55%"</meter></td>
+                                                    <td>"42/60"</td>
+                                                    <td>"12"</td>
+                                                    <td><span class="tau-harness-status-chip" data-gate-status="running">"2/5 gates"</span></td>
+                                                    <td>"10:24:18 May 15"</td>
+                                                    <td>"6"</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
                                 </section>
                                 <section
                                     id="tau-ops-harness-benchmark-panel"
@@ -4127,11 +4400,13 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     data-proof-source=context.harness.proof_source.clone()
                                 >
                                     <h4>"M334 Autonomy Benchmark"</h4>
-                                    <table id="tau-ops-harness-benchmark-table">
-                                        <tbody>
-                                            {harness_benchmark_rows}
-                                        </tbody>
-                                    </table>
+                                    <div class="tau-harness-table-wrap">
+                                        <table id="tau-ops-harness-benchmark-table">
+                                            <tbody>
+                                                {harness_benchmark_rows}
+                                            </tbody>
+                                        </table>
+                                    </div>
                                     <p
                                         id="tau-ops-harness-benchmark-latest"
                                         data-latest-result=context.harness.latest_result.clone()
@@ -4157,10 +4432,13 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 data-run-id="run_8f3a2"
                                 data-mission-status="running"
                                 data-tool-budget="42/60"
+                                data-window-chrome="compact"
                             >
-                                <header id="tau-ops-harness-proof-header">
-                                    <p>"Goal"</p>
-                                    <h3>"Refactor plugin registry for safer hot reload"</h3>
+                                <header id="tau-ops-harness-proof-header" class="tau-harness-window-titlebar">
+                                    <div>
+                                        <p>"Goal"</p>
+                                        <h3>"Refactor plugin registry for safer hot reload"</h3>
+                                    </div>
                                     <dl>
                                         <dt>"Run ID"</dt><dd>"run_8f3a2"</dd>
                                         <dt>"Elapsed"</dt><dd>"01:42:18"</dd>
@@ -4176,53 +4454,57 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     <li id="tau-ops-harness-dag-verify" data-plan-node="Verify" data-node-status="running">"Verify"</li>
                                     <li id="tau-ops-harness-dag-learn" data-plan-node="Learn" data-node-status="pending">"Learn"</li>
                                 </ol>
-                                <section id="tau-ops-harness-acceptance" data-acceptance-met="3" data-acceptance-total="5">
-                                    <h4>"Acceptance Criteria"</h4>
-                                    <ul>
-                                        <li data-ac-id="VG-01" data-ac-status="met">"Registry loads plugins deterministically"</li>
-                                        <li data-ac-id="VG-02" data-ac-status="met">"Hot reload preserves active sessions"</li>
-                                        <li data-ac-id="VG-03" data-ac-status="met">"Added regression tests"</li>
-                                        <li data-ac-id="VG-04" data-ac-status="pending">"Docs updated"</li>
-                                        <li data-ac-id="VG-05" data-ac-status="pending">"Benchmark proof emitted"</li>
-                                    </ul>
-                                </section>
+                                <div class="tau-harness-window-grid">
+                                    <section id="tau-ops-harness-acceptance" data-acceptance-met="3" data-acceptance-total="5">
+                                        <h4>"Acceptance Criteria"</h4>
+                                        <ul>
+                                            <li data-ac-id="VG-01" data-ac-status="met">"Registry loads plugins deterministically"</li>
+                                            <li data-ac-id="VG-02" data-ac-status="met">"Hot reload preserves active sessions"</li>
+                                            <li data-ac-id="VG-03" data-ac-status="met">"Added regression tests"</li>
+                                            <li data-ac-id="VG-04" data-ac-status="pending">"Docs updated"</li>
+                                            <li data-ac-id="VG-05" data-ac-status="pending">"Benchmark proof emitted"</li>
+                                        </ul>
+                                    </section>
+                                    <section id="tau-ops-harness-memory-learning" data-memory-hits="12" data-learning-records="2" data-last-memory-write="10:20:55">
+                                        <h4>"Memory / Learning"</h4>
+                                        <p>"Memory hits: 12"</p>
+                                        <p>"No-memory evidence: Collected"</p>
+                                        <p>"Learning records: 2"</p>
+                                    </section>
+                                    <section id="tau-ops-harness-verification-gates" data-gate-count="5" data-failed-gate-count="1">
+                                        <h4>"Verification Gates"</h4>
+                                        <ul>
+                                            <li id="tau-ops-harness-gate-planning" data-gate-id="VG-01" data-gate-status="passed">"Planning proof"</li>
+                                            <li id="tau-ops-harness-gate-tool-exec" data-gate-id="VG-02" data-gate-status="passed">"Tool execution proof"</li>
+                                            <li id="tau-ops-harness-gate-memory" data-gate-id="VG-03" data-gate-status="failed">"Memory proof"</li>
+                                            <li id="tau-ops-harness-gate-verification" data-gate-id="VG-04" data-gate-status="running">"Verification proof"</li>
+                                            <li id="tau-ops-harness-gate-learning" data-gate-id="VG-05" data-gate-status="pending">"Learning proof"</li>
+                                        </ul>
+                                    </section>
+                                    <section id="tau-ops-harness-artifacts" data-artifact-count="3">
+                                        <h4>"Artifacts"</h4>
+                                        <ul>
+                                            <li><a href="/artifacts/code.diff">"Code changes"</a></li>
+                                            <li><a href="/artifacts/docs.md">"Docs"</a></li>
+                                            <li><a href="/artifacts/proof.json">"Benchmark proof"</a></li>
+                                        </ul>
+                                    </section>
+                                </div>
                                 <section id="tau-ops-harness-tool-evidence" data-tool-call-count="8">
                                     <h4>"Tool Execution Evidence"</h4>
-                                    <table>
-                                        <thead><tr><th scope="col">"Tool"</th><th scope="col">"Call ID"</th><th scope="col">"Plan Node"</th><th scope="col">"Runtime"</th><th scope="col">"Status"</th><th scope="col">"Artifact"</th></tr></thead>
-                                        <tbody>
-                                            <tr data-tool="repo.read" data-status="passed"><td>"repo.read"</td><td>"c1a2bf3"</td><td>"Execute"</td><td>"00:01:12"</td><td>"passed"</td><td>"/artifacts/repo-read.json"</td></tr>
-                                            <tr data-tool="repo.edit" data-status="passed"><td>"repo.edit"</td><td>"c1a2b4c"</td><td>"Execute"</td><td>"00:02:34"</td><td>"passed"</td><td>"/artifacts/edit.patch"</td></tr>
-                                            <tr data-tool="test.run" data-status="passed"><td>"test.run"</td><td>"c1a2b6e"</td><td>"Execute"</td><td>"00:08:42"</td><td>"passed"</td><td>"/artifacts/tests.json"</td></tr>
-                                            <tr data-tool="memory.search" data-status="passed"><td>"memory.search"</td><td>"c1a2b7f"</td><td>"Memory Write"</td><td>"00:00:48"</td><td>"passed"</td><td>"/artifacts/memory.json"</td></tr>
-                                            <tr data-tool="memory.write" data-status="passed"><td>"memory.write"</td><td>"c1a2b8e"</td><td>"Memory Write"</td><td>"00:00:36"</td><td>"passed"</td><td>"/artifacts/learning.json"</td></tr>
-                                            <tr data-tool="report.write" data-status="running"><td>"report.write"</td><td>"c1a2b9"</td><td>"Verify"</td><td>"00:01:21"</td><td>"running"</td><td>"/artifacts/report.md"</td></tr>
-                                        </tbody>
-                                    </table>
-                                </section>
-                                <section id="tau-ops-harness-memory-learning" data-memory-hits="12" data-learning-records="2" data-last-memory-write="10:20:55">
-                                    <h4>"Memory / Learning"</h4>
-                                    <p>"Memory hits: 12"</p>
-                                    <p>"No-memory evidence: Collected"</p>
-                                    <p>"Learning records: 2"</p>
-                                </section>
-                                <section id="tau-ops-harness-verification-gates" data-gate-count="5" data-failed-gate-count="1">
-                                    <h4>"Verification Gates"</h4>
-                                    <ul>
-                                        <li id="tau-ops-harness-gate-planning" data-gate-id="VG-01" data-gate-status="passed">"Planning proof"</li>
-                                        <li id="tau-ops-harness-gate-tool-exec" data-gate-id="VG-02" data-gate-status="passed">"Tool execution proof"</li>
-                                        <li id="tau-ops-harness-gate-memory" data-gate-id="VG-03" data-gate-status="failed">"Memory proof"</li>
-                                        <li id="tau-ops-harness-gate-verification" data-gate-id="VG-04" data-gate-status="running">"Verification proof"</li>
-                                        <li id="tau-ops-harness-gate-learning" data-gate-id="VG-05" data-gate-status="pending">"Learning proof"</li>
-                                    </ul>
-                                </section>
-                                <section id="tau-ops-harness-artifacts" data-artifact-count="3">
-                                    <h4>"Artifacts"</h4>
-                                    <ul>
-                                        <li><a href="/artifacts/code.diff">"Code changes"</a></li>
-                                        <li><a href="/artifacts/docs.md">"Docs"</a></li>
-                                        <li><a href="/artifacts/proof.json">"Benchmark proof"</a></li>
-                                    </ul>
+                                    <div class="tau-harness-table-wrap">
+                                        <table>
+                                            <thead><tr><th scope="col">"Tool"</th><th scope="col">"Call ID"</th><th scope="col">"Plan Node"</th><th scope="col">"Runtime"</th><th scope="col">"Status"</th><th scope="col">"Artifact"</th></tr></thead>
+                                            <tbody>
+                                                <tr data-tool="repo.read" data-status="passed"><td>"repo.read"</td><td>"c1a2bf3"</td><td>"Execute"</td><td>"00:01:12"</td><td>"passed"</td><td>"/artifacts/repo-read.json"</td></tr>
+                                                <tr data-tool="repo.edit" data-status="passed"><td>"repo.edit"</td><td>"c1a2b4c"</td><td>"Execute"</td><td>"00:02:34"</td><td>"passed"</td><td>"/artifacts/edit.patch"</td></tr>
+                                                <tr data-tool="test.run" data-status="passed"><td>"test.run"</td><td>"c1a2b6e"</td><td>"Execute"</td><td>"00:08:42"</td><td>"passed"</td><td>"/artifacts/tests.json"</td></tr>
+                                                <tr data-tool="memory.search" data-status="passed"><td>"memory.search"</td><td>"c1a2b7f"</td><td>"Memory Write"</td><td>"00:00:48"</td><td>"passed"</td><td>"/artifacts/memory.json"</td></tr>
+                                                <tr data-tool="memory.write" data-status="passed"><td>"memory.write"</td><td>"c1a2b8e"</td><td>"Memory Write"</td><td>"00:00:36"</td><td>"passed"</td><td>"/artifacts/learning.json"</td></tr>
+                                                <tr data-tool="report.write" data-status="running"><td>"report.write"</td><td>"c1a2b9"</td><td>"Verify"</td><td>"00:01:21"</td><td>"running"</td><td>"/artifacts/report.md"</td></tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
                                 </section>
                                 <section id="tau-ops-harness-operator-log" data-log-follow="true">
                                     <h4>"Operator Log"</h4>
@@ -4241,8 +4523,15 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 data-window-order="3"
                                 data-selected-proposal="PR-044"
                                 data-approval-gated="true"
+                                data-window-chrome="compact"
                             >
-                                <h3>"Self-Improvement Review / Apply Flow"</h3>
+                                <header class="tau-harness-window-titlebar">
+                                    <div>
+                                        <small>"Review"</small>
+                                        <h3>"Self-Improvement Review / Apply Flow"</h3>
+                                    </div>
+                                    <span class="tau-harness-status-chip">"Approval gated"</span>
+                                </header>
                                 <section id="tau-ops-harness-learning-queue" data-queue-count="4">
                                     <h4>"Learning & Proposals"</h4>
                                     <ul>
@@ -4294,15 +4583,23 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     data-audit-source=context.harness.audit_source.clone()
                                 >
                                     <h4>"Audit Log (Recent)"</h4>
-                                    <table>
-                                        <tbody>
-                                            {harness_audit_rows}
-                                        </tbody>
-                                    </table>
+                                    <div class="tau-harness-table-wrap">
+                                        <table>
+                                            <tbody>
+                                                {harness_audit_rows}
+                                            </tbody>
+                                        </table>
+                                    </div>
                                 </section>
                             </section>
-                            <aside id="tau-ops-harness-tui-companion" data-component="TuiCompanion" data-command="tau status">
-                                <h3>"TUI Companion"</h3>
+                            <aside id="tau-ops-harness-tui-companion" data-component="TuiCompanion" data-command="tau status" data-window-chrome="compact">
+                                <header class="tau-harness-window-titlebar">
+                                    <div>
+                                        <small>"Terminal"</small>
+                                        <h3>"TUI Companion"</h3>
+                                    </div>
+                                    <span class="tau-harness-status-chip">"Connected"</span>
+                                </header>
                                 <pre>{harness_tui_summary}</pre>
                             </aside>
                         </section>
