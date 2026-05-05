@@ -14,4 +14,6 @@
   - `cargo run --manifest-path /tmp/tau-preview-render/Cargo.toml` regenerated `/tmp/tau-harness-after.html`.
   - Browser Use `iab` was attempted first and reported no active Codex browser pane.
   - Playwright fallback at `1512x1038` confirmed zero console errors, zero horizontal overflow, three whole visible mission rows, zero partial rows, and benchmark/TUI still in viewport.
-- [ ] T5: Commit, push, and confirm clean worktree.
+- [x] T5: Commit, push, and confirm clean worktree.
+  - Commit: `c92db72b fix(harness): preserve operator trust at mission scroll boundary (#3781)`.
+  - Push: `master` updated on `origin`.
