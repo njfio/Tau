@@ -4814,7 +4814,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 data-selected-proposal="PR-044"
                                 data-approval-gated="true"
                                 data-window-chrome="compact"
-                                data-review-action-placement="actions-before-policy"
+                                data-review-action-placement="actions-before-detail"
                             >
                                 <header class="tau-harness-window-titlebar">
                                     <div>
@@ -4832,6 +4832,20 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                         <li data-learning-id="PR-045" data-status="proposal">"Skill patch for benchmark artifact naming"</li>
                                     </ul>
                                 </section>
+                                <section
+                                    id="tau-ops-harness-operator-actions"
+                                    data-apply-requires-approval="true"
+                                    data-action-row-priority="approval-flow"
+                                    data-action-grid="two-column-priority"
+                                    data-action-first-viewport="all-controls"
+                                >
+                                    <h4>"Operator Actions"</h4>
+                                    <form id="tau-ops-harness-approve-form" action="/ops/harness/proposals/PR-044/approve" method="post"><button id="tau-ops-harness-action-approve" type="submit" data-action="approve" data-action-tone="approve">"Approve"</button></form>
+                                    <form id="tau-ops-harness-reject-form" action="/ops/harness/proposals/PR-044/reject" method="post"><button id="tau-ops-harness-action-reject" type="submit" data-action="reject" data-action-tone="reject">"Reject"</button></form>
+                                    <form id="tau-ops-harness-dry-run-form" action="/ops/harness/proposals/PR-044/dry-run" method="post"><button id="tau-ops-harness-action-dry-run" type="submit" data-action="dry-run" data-action-tone="secondary">"Dry Run Again"</button></form>
+                                    <a id="tau-ops-harness-action-view-diff" data-action="view-diff" data-action-tone="secondary" href="/ops/harness/proposals/PR-044/diff">"View Diff"</a>
+                                    <button id="tau-ops-harness-action-apply" type="button" data-action="apply" data-action-tone="disabled" data-disabled="true" aria-disabled="true" data-approval-required="true">"Apply (Approval Required)"</button>
+                                </section>
                                 <section id="tau-ops-harness-proposal-detail" data-proposal-id="PR-044" data-learning-record="LR-044" data-target-type="Prompt" data-target-path="prompts/research_to_doc/system.md">
                                     <h4>"PR-044 Prompt compression for research tasks"</h4>
                                     <dl>
@@ -4843,19 +4857,6 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                         <dt>"Safety Check"</dt><dd data-result="passed">"Passed"</dd>
                                         <dt>"Rollback Plan"</dt><dd>"Revert to previous prompt version"</dd>
                                     </dl>
-                                </section>
-                                <section
-                                    id="tau-ops-harness-operator-actions"
-                                    data-apply-requires-approval="true"
-                                    data-action-row-priority="approval-flow"
-                                    data-action-grid="two-column-priority"
-                                >
-                                    <h4>"Operator Actions"</h4>
-                                    <form id="tau-ops-harness-approve-form" action="/ops/harness/proposals/PR-044/approve" method="post"><button id="tau-ops-harness-action-approve" type="submit" data-action="approve" data-action-tone="approve">"Approve"</button></form>
-                                    <form id="tau-ops-harness-reject-form" action="/ops/harness/proposals/PR-044/reject" method="post"><button id="tau-ops-harness-action-reject" type="submit" data-action="reject" data-action-tone="reject">"Reject"</button></form>
-                                    <form id="tau-ops-harness-dry-run-form" action="/ops/harness/proposals/PR-044/dry-run" method="post"><button id="tau-ops-harness-action-dry-run" type="submit" data-action="dry-run" data-action-tone="secondary">"Dry Run Again"</button></form>
-                                    <a id="tau-ops-harness-action-view-diff" data-action="view-diff" data-action-tone="secondary" href="/ops/harness/proposals/PR-044/diff">"View Diff"</a>
-                                    <button id="tau-ops-harness-action-apply" type="button" data-action="apply" data-action-tone="disabled" data-disabled="true" aria-disabled="true" data-approval-required="true">"Apply (Approval Required)"</button>
                                 </section>
                                 <section
                                     id="tau-ops-harness-conservative-policy"

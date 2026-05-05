@@ -716,8 +716,8 @@ fn functional_spec_3764_c01_c02_c03_harness_prioritizes_self_improvement_actions
     );
 
     for marker in [
-        "data-review-action-placement=\"actions-before-policy\"",
-        "id=\"tau-ops-harness-operator-actions\" data-apply-requires-approval=\"true\" data-action-row-priority=\"approval-flow\" data-action-grid=\"two-column-priority\"",
+        "data-review-action-placement=\"actions-before-detail\"",
+        "id=\"tau-ops-harness-operator-actions\" data-apply-requires-approval=\"true\" data-action-row-priority=\"approval-flow\" data-action-grid=\"two-column-priority\" data-action-first-viewport=\"all-controls\"",
         "#tau-ops-harness-self-improvement-window {\n                                max-height: calc(100vh - 354px);",
         "#tau-ops-harness-tui-companion pre {\n                                max-height: 126px;",
         "#tau-ops-harness-operator-actions {\n                                display: grid;\n                                grid-template-columns: repeat(2, minmax(0, 1fr));",
@@ -1029,6 +1029,53 @@ fn functional_spec_3773_c01_c02_c03_harness_keeps_tui_companion_in_first_viewpor
         assert!(
             html.contains(marker),
             "missing first-viewport TUI marker `{marker}`"
+        );
+    }
+}
+
+#[test]
+fn functional_spec_3774_c01_c02_c03_harness_keeps_all_operator_actions_visible_before_detail() {
+    let html = render_tau_ops_dashboard_shell_for_route("/ops/harness");
+
+    let queue_index = html
+        .find("id=\"tau-ops-harness-learning-queue\"")
+        .expect("learning queue should render");
+    let action_index = html
+        .find("id=\"tau-ops-harness-operator-actions\"")
+        .expect("operator actions section should render");
+    let detail_index = html
+        .find("id=\"tau-ops-harness-proposal-detail\"")
+        .expect("proposal detail should render");
+    let policy_index = html
+        .find("id=\"tau-ops-harness-conservative-policy\"")
+        .expect("conservative policy should render");
+
+    assert!(
+        queue_index < action_index,
+        "operator actions should follow the learning queue context"
+    );
+    assert!(
+        action_index < detail_index,
+        "operator actions should be visible before long proposal detail content"
+    );
+    assert!(
+        action_index < policy_index,
+        "operator actions should still be prioritized before conservative policy"
+    );
+
+    for marker in [
+        "data-review-action-placement=\"actions-before-detail\"",
+        "id=\"tau-ops-harness-operator-actions\" data-apply-requires-approval=\"true\" data-action-row-priority=\"approval-flow\" data-action-grid=\"two-column-priority\" data-action-first-viewport=\"all-controls\"",
+        "id=\"tau-ops-harness-approve-form\" action=\"/ops/harness/proposals/PR-044/approve\" method=\"post\"",
+        "id=\"tau-ops-harness-reject-form\" action=\"/ops/harness/proposals/PR-044/reject\" method=\"post\"",
+        "id=\"tau-ops-harness-dry-run-form\" action=\"/ops/harness/proposals/PR-044/dry-run\" method=\"post\"",
+        "id=\"tau-ops-harness-action-view-diff\" data-action=\"view-diff\" data-action-tone=\"secondary\" href=\"/ops/harness/proposals/PR-044/diff\"",
+        "id=\"tau-ops-harness-action-apply\" type=\"button\" data-action=\"apply\" data-action-tone=\"disabled\" data-disabled=\"true\" aria-disabled=\"true\" data-approval-required=\"true\"",
+        "id=\"tau-ops-harness-conservative-policy\"",
+    ] {
+        assert!(
+            html.contains(marker),
+            "missing first-viewport operator action marker `{marker}`"
         );
     }
 }
