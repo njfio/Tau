@@ -4342,6 +4342,39 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 max-height: 128px;
                                 overflow: auto;
                             }
+                            #tau-ops-harness-proposal-detail[data-proposal-detail-overflow-budget="contained"] {
+                                overflow: hidden;
+                            }
+                            #tau-ops-harness-proposal-detail[data-proposal-detail-overflow-budget="contained"] h4 {
+                                overflow: hidden;
+                                text-overflow: ellipsis;
+                                white-space: nowrap;
+                                font-size: .74rem;
+                                line-height: 1.12;
+                            }
+                            #tau-ops-harness-proposal-detail[data-proposal-detail-overflow-budget="contained"] dl {
+                                gap: 3px 10px;
+                                margin-top: 5px;
+                                grid-template-columns: minmax(6.7rem, max-content) minmax(0, 1fr);
+                                font-size: .64rem;
+                                line-height: 1.06;
+                            }
+                            #tau-ops-harness-proposal-detail[data-proposal-detail-overflow-budget="contained"] dt,
+                            #tau-ops-harness-proposal-detail[data-proposal-detail-overflow-budget="contained"] dd {
+                                min-width: 0;
+                                margin: 0;
+                                overflow: hidden;
+                                text-overflow: ellipsis;
+                                white-space: nowrap;
+                            }
+                            #tau-ops-harness-proposal-detail[data-proposal-detail-overflow-budget="contained"] a {
+                                min-height: 0;
+                                padding: 0;
+                                border: 0;
+                                background: transparent;
+                                display: inline;
+                                font: inherit;
+                            }
                             #tau-ops-harness-self-improvement-window[data-review-audit-priority="first-viewport-recent-history"] {
                                 gap: 8px;
                             }
@@ -4359,9 +4392,22 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             #tau-ops-harness-learning-queue ul {
                                 gap: 5px;
                             }
+                            #tau-ops-harness-learning-queue[data-queue-density="all-items-visible"] ul {
+                                display: grid;
+                                grid-template-columns: repeat(2, minmax(0, 1fr));
+                                gap: 5px;
+                            }
                             #tau-ops-harness-learning-queue li {
                                 padding: 3px 7px;
                                 font-size: .70rem;
+                            }
+                            #tau-ops-harness-learning-queue[data-queue-density="all-items-visible"] li {
+                                min-width: 0;
+                                overflow: hidden;
+                                text-overflow: ellipsis;
+                                white-space: nowrap;
+                                padding: 2px 6px;
+                                font-size: .66rem;
                             }
                             #tau-ops-harness-operator-actions {
                                 gap: 6px;
@@ -4393,6 +4439,11 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             }
                             #tau-ops-harness-audit-log td {
                                 padding: 4px 5px;
+                            }
+                            #tau-ops-harness-audit-log[data-audit-overflow-budget="all-rows-visible"] td {
+                                padding: 2px 5px;
+                                font-size: .62rem;
+                                line-height: 1.05;
                             }
                             #tau-ops-harness-audit-log td:nth-child(2),
                             #tau-ops-harness-audit-log td:nth-child(4) {
@@ -4968,6 +5019,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 data-review-action-placement="actions-before-detail"
                                 data-review-audit-priority="first-viewport-recent-history"
                                 data-review-density="audit-visible"
+                                data-review-overflow-contract="contained-proof-rows"
                             >
                                 <header class="tau-harness-window-titlebar">
                                     <div>
@@ -4976,7 +5028,12 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     </div>
                                     <span class="tau-harness-status-chip">"Approval gated"</span>
                                 </header>
-                                <section id="tau-ops-harness-learning-queue" data-queue-count="4">
+                                <section
+                                    id="tau-ops-harness-learning-queue"
+                                    data-queue-count="4"
+                                    data-queue-density="all-items-visible"
+                                    data-queue-overflow-budget="none"
+                                >
                                     <h4>"Learning & Proposals"</h4>
                                     <ul>
                                         <li data-learning-id="LR-219" data-status="needs-review">"Retry storm in document synthesis"</li>
@@ -5024,6 +5081,8 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     data-target-path="prompts/research_to_doc/system.md"
                                     data-proposal-detail-priority="first-viewport-summary"
                                     data-proposal-detail-density="compact-scroll"
+                                    data-proposal-detail-overflow-budget="contained"
+                                    data-proposal-visible-rows="7"
                                 >
                                     <h4>"PR-044 Prompt compression for research tasks"</h4>
                                     <dl>
@@ -5043,6 +5102,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     data-audit-priority="first-viewport-recent-proof"
                                     data-audit-density="compact-scroll"
                                     data-audit-visible-columns="time,action,item,result"
+                                    data-audit-overflow-budget="all-rows-visible"
                                 >
                                     <h4>"Audit Log (Recent)"</h4>
                                     <div class="tau-harness-table-wrap">

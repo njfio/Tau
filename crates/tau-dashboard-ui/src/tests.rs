@@ -1373,6 +1373,45 @@ fn functional_spec_3782_c01_c02_c03_harness_left_tables_do_not_overflow_column()
 }
 
 #[test]
+fn functional_spec_3783_c01_c02_c03_harness_review_pane_contains_compact_proof_rows() {
+    let html = render_tau_ops_dashboard_shell_for_route("/ops/harness");
+
+    let queue_index = html
+        .find("id=\"tau-ops-harness-learning-queue\"")
+        .expect("learning queue should render");
+    let detail_index = html
+        .find("id=\"tau-ops-harness-proposal-detail\"")
+        .expect("proposal detail should render");
+    let audit_index = html
+        .find("id=\"tau-ops-harness-audit-log\"")
+        .expect("audit log should render");
+
+    assert!(
+        queue_index < detail_index && detail_index < audit_index,
+        "review proof sections should remain in queue, detail, audit order"
+    );
+
+    for marker in [
+        "id=\"tau-ops-harness-self-improvement-window\" data-window=\"self-improvement-review-apply-flow\" data-window-order=\"3\" data-selected-proposal=\"PR-044\" data-approval-gated=\"true\" data-window-chrome=\"compact\" data-review-action-placement=\"actions-before-detail\" data-review-audit-priority=\"first-viewport-recent-history\" data-review-density=\"audit-visible\" data-review-overflow-contract=\"contained-proof-rows\"",
+        "id=\"tau-ops-harness-learning-queue\" data-queue-count=\"4\" data-queue-density=\"all-items-visible\" data-queue-overflow-budget=\"none\"",
+        "id=\"tau-ops-harness-proposal-detail\" data-proposal-id=\"PR-044\" data-learning-record=\"LR-044\" data-target-type=\"Prompt\" data-target-path=\"prompts/research_to_doc/system.md\" data-proposal-detail-priority=\"first-viewport-summary\" data-proposal-detail-density=\"compact-scroll\" data-proposal-detail-overflow-budget=\"contained\" data-proposal-visible-rows=\"7\"",
+        "id=\"tau-ops-harness-audit-log\" data-audit-row-count=\"4\" data-audit-source=\"fallback\" data-audit-priority=\"first-viewport-recent-proof\" data-audit-density=\"compact-scroll\" data-audit-visible-columns=\"time,action,item,result\" data-audit-overflow-budget=\"all-rows-visible\"",
+        "#tau-ops-harness-learning-queue[data-queue-density=\"all-items-visible\"] ul {\n                                display: grid;\n                                grid-template-columns: repeat(2, minmax(0, 1fr));",
+        "#tau-ops-harness-proposal-detail[data-proposal-detail-overflow-budget=\"contained\"] dl {\n                                gap: 3px 10px;",
+        "#tau-ops-harness-proposal-detail[data-proposal-detail-overflow-budget=\"contained\"] a {\n                                min-height: 0;\n                                padding: 0;",
+        "#tau-ops-harness-audit-log[data-audit-overflow-budget=\"all-rows-visible\"] td {\n                                padding: 2px 5px;",
+        "data-learning-id=\"PR-045\" data-status=\"proposal\">Skill patch for benchmark artifact naming</li>",
+        "<dt>Test Evidence</dt><dd><a href=\"/evidence/pr-044-dryrun.json\">evidence/pr-044-dryrun.json</a></dd>",
+        "data-action=\"reject\" data-result=\"rejected\"><td>May 15, 08:33</td><td>Operator</td><td>Reject</td><td>Prompt</td><td>PR-029</td><td>Rejected</td>",
+    ] {
+        assert!(
+            html.contains(marker),
+            "missing right review contained proof marker `{marker}`"
+        );
+    }
+}
+
+#[test]
 fn functional_spec_3775_c01_c02_c03_harness_keeps_benchmark_panel_in_left_first_viewport() {
     let html = render_tau_ops_dashboard_shell_for_route("/ops/harness");
 
