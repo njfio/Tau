@@ -1114,6 +1114,58 @@ fn functional_spec_3775_c01_c02_c03_harness_keeps_benchmark_panel_in_left_first_
 }
 
 #[test]
+fn functional_spec_3776_c01_c02_c03_harness_keeps_memory_and_artifacts_in_proof_viewport() {
+    let html = render_tau_ops_dashboard_shell_for_route("/ops/harness");
+
+    let log_index = html
+        .find("id=\"tau-ops-harness-operator-log\"")
+        .expect("operator log section should render");
+    let acceptance_index = html
+        .find("id=\"tau-ops-harness-acceptance\"")
+        .expect("acceptance section should render");
+    let gates_index = html
+        .find("id=\"tau-ops-harness-verification-gates\"")
+        .expect("verification gates section should render");
+    let memory_index = html
+        .find("id=\"tau-ops-harness-memory-learning\"")
+        .expect("memory learning section should render");
+    let artifacts_index = html
+        .find("id=\"tau-ops-harness-artifacts\"")
+        .expect("artifacts section should render");
+
+    assert!(
+        log_index < acceptance_index,
+        "operator log should remain before acceptance detail"
+    );
+    assert!(
+        acceptance_index < gates_index,
+        "acceptance detail should remain before verification gates"
+    );
+    assert!(
+        gates_index < memory_index,
+        "verification gates should remain before memory proof output"
+    );
+    assert!(
+        memory_index < artifacts_index,
+        "memory proof output should remain before artifacts"
+    );
+
+    for marker in [
+        "id=\"tau-ops-harness-acceptance\" data-acceptance-met=\"3\" data-acceptance-total=\"5\" data-proof-detail-budget=\"compact-scroll\"",
+        "id=\"tau-ops-harness-verification-gates\" data-gate-count=\"5\" data-failed-gate-count=\"1\" data-proof-secondary-priority=\"first-screen\" data-proof-detail-budget=\"compact-scroll\"",
+        "id=\"tau-ops-harness-memory-learning\" data-memory-hits=\"12\" data-learning-records=\"2\" data-last-memory-write=\"10:20:55\" data-proof-footer-priority=\"first-viewport\"",
+        "id=\"tau-ops-harness-artifacts\" data-artifact-count=\"3\" data-proof-footer-priority=\"first-viewport\"",
+        "#tau-ops-harness-acceptance,\n                            #tau-ops-harness-verification-gates {\n                                max-height: 160px;\n                                overflow: auto;",
+        "#tau-ops-harness-memory-learning,\n                            #tau-ops-harness-artifacts {\n                                min-height: 0;",
+    ] {
+        assert!(
+            html.contains(marker),
+            "missing first-viewport proof footer marker `{marker}`"
+        );
+    }
+}
+
+#[test]
 fn functional_spec_3759_c02_c03_harness_static_preview_guard_preserves_gateway_forms() {
     let html = render_tau_ops_dashboard_shell_for_route("/ops/harness");
 

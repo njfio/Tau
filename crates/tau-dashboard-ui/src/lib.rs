@@ -4311,6 +4311,15 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             #tau-ops-harness-verification-gates ul {
                                 gap: 5px;
                             }
+                            #tau-ops-harness-acceptance,
+                            #tau-ops-harness-verification-gates {
+                                max-height: 160px;
+                                overflow: auto;
+                            }
+                            #tau-ops-harness-memory-learning,
+                            #tau-ops-harness-artifacts {
+                                min-height: 0;
+                            }
                             #tau-ops-harness-acceptance li,
                             #tau-ops-harness-verification-gates li {
                                 padding: 3px 7px;
@@ -4781,7 +4790,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
 10:24:18  Verification started
 10:25:52  verification gate VG-03 pending (collecting no-memory evidence)"</pre>
                                     </section>
-                                    <section id="tau-ops-harness-acceptance" data-acceptance-met="3" data-acceptance-total="5">
+                                    <section id="tau-ops-harness-acceptance" data-acceptance-met="3" data-acceptance-total="5" data-proof-detail-budget="compact-scroll">
                                         <h4>"Acceptance Criteria"</h4>
                                         <ul>
                                             <li data-ac-id="VG-01" data-ac-status="met">"Registry loads plugins deterministically"</li>
@@ -4791,7 +4800,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                             <li data-ac-id="VG-05" data-ac-status="pending">"Benchmark proof emitted"</li>
                                         </ul>
                                     </section>
-                                    <section id="tau-ops-harness-verification-gates" data-gate-count="5" data-failed-gate-count="1" data-proof-secondary-priority="first-screen">
+                                    <section id="tau-ops-harness-verification-gates" data-gate-count="5" data-failed-gate-count="1" data-proof-secondary-priority="first-screen" data-proof-detail-budget="compact-scroll">
                                         <h4>"Verification Gates"</h4>
                                         <ul>
                                             <li id="tau-ops-harness-gate-planning" data-gate-id="VG-01" data-gate-status="passed">"Planning proof"</li>
@@ -4801,13 +4810,13 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                             <li id="tau-ops-harness-gate-learning" data-gate-id="VG-05" data-gate-status="pending">"Learning proof"</li>
                                         </ul>
                                     </section>
-                                    <section id="tau-ops-harness-memory-learning" data-memory-hits="12" data-learning-records="2" data-last-memory-write="10:20:55">
+                                    <section id="tau-ops-harness-memory-learning" data-memory-hits="12" data-learning-records="2" data-last-memory-write="10:20:55" data-proof-footer-priority="first-viewport">
                                         <h4>"Memory / Learning"</h4>
                                         <p>"Memory hits: 12"</p>
                                         <p>"No-memory evidence: Collected"</p>
                                         <p>"Learning records: 2"</p>
                                     </section>
-                                    <section id="tau-ops-harness-artifacts" data-artifact-count="3">
+                                    <section id="tau-ops-harness-artifacts" data-artifact-count="3" data-proof-footer-priority="first-viewport">
                                         <h4>"Artifacts"</h4>
                                         <ul>
                                             <li><a href="/artifacts/code.diff">"Code changes"</a></li>
