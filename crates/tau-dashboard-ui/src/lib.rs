@@ -4374,6 +4374,11 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 font-size: .64rem;
                                 line-height: 1.06;
                             }
+                            #tau-ops-harness-proposal-detail[data-proposal-summary-fit="full-text"] dl {
+                                gap: 2px 10px;
+                                font-size: .62rem;
+                                line-height: 1.04;
+                            }
                             #tau-ops-harness-proposal-detail[data-proposal-detail-overflow-budget="contained"] dt,
                             #tau-ops-harness-proposal-detail[data-proposal-detail-overflow-budget="contained"] dd {
                                 min-width: 0;
@@ -4381,6 +4386,12 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 overflow: hidden;
                                 text-overflow: ellipsis;
                                 white-space: nowrap;
+                            }
+                            #tau-ops-harness-proposal-detail[data-proposal-summary-fit="full-text"] dd[data-summary-fit="full-text"] {
+                                white-space: normal;
+                                overflow-wrap: normal;
+                                overflow: visible;
+                                text-overflow: clip;
                             }
                             #tau-ops-harness-proposal-detail[data-proposal-detail-overflow-budget="contained"] a {
                                 min-height: 0;
@@ -5192,13 +5203,15 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     data-proposal-detail-density="compact-scroll"
                                     data-proposal-detail-overflow-budget="contained"
                                     data-proposal-visible-rows="7"
+                                    data-proposal-summary-fit="full-text"
+                                    data-proposal-summary-overflow-budget="none"
                                 >
                                     <h4>"PR-044 Prompt compression for research tasks"</h4>
                                     <dl>
                                         <dt>"Dry-run Result"</dt><dd data-result="passed">"Tests passed (18/18)"</dd>
                                         <dt>"Safety Check"</dt><dd data-result="passed">"Passed"</dd>
                                         <dt>"Rollback Plan"</dt><dd>"Revert to previous prompt version"</dd>
-                                        <dt>"Patch Summary"</dt><dd>"Compress system prompt by removing redundant instructions and examples."</dd>
+                                        <dt>"Patch Summary"</dt><dd data-proposal-row="patch-summary" data-summary-fit="full-text">"Compress system prompt by removing redundant instructions and examples."</dd>
                                         <dt>"Failure Observed"</dt><dd>"Token overrun during research-to-doc tasks"</dd>
                                         <dt>"Root Cause"</dt><dd>"Verbose prompts with redundant context"</dd>
                                         <dt>"Test Evidence"</dt><dd><a href="/evidence/pr-044-dryrun.json">"evidence/pr-044-dryrun.json"</a></dd>
