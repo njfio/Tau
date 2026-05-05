@@ -617,8 +617,8 @@ fn functional_spec_3761_c01_c02_c03_harness_keeps_desktop_three_window_layout() 
         "white-space: normal;",
         ".tau-harness-window-titlebar > div",
         "grid-template-columns: minmax(7rem, max-content) minmax(0, 1fr);",
-        "#tau-ops-harness-self-improvement-window {\n                                max-height: calc(100vh - 326px);",
-        "#tau-ops-harness-tui-companion {\n                                max-height: 230px;",
+        "#tau-ops-harness-self-improvement-window {\n                                max-height: calc(100vh - 246px);",
+        "#tau-ops-harness-tui-companion {\n                                max-height: 150px;",
     ] {
         assert!(
             html.contains(marker),
@@ -664,13 +664,74 @@ fn functional_spec_3763_c01_c02_c03_harness_wraps_proof_evidence_and_terminal_lo
         "#tau-ops-harness-tool-evidence table {\n                                    min-width: 0;",
         "#tau-ops-harness-tool-evidence th,\n                                #tau-ops-harness-tool-evidence td {\n                                    white-space: normal;",
         "#tau-ops-harness-tool-evidence th:nth-child(6)",
-        "#tau-ops-harness-tool-evidence th:nth-child(2),\n                                #tau-ops-harness-tool-evidence td:nth-child(2) {\n                                    width: 78px;",
+        "#tau-ops-harness-tool-evidence th:nth-child(2)",
         "#tau-ops-harness-operator-log pre,\n                                #tau-ops-harness-tui-companion pre {\n                                    overflow-x: hidden;",
         "white-space: pre-wrap;",
     ] {
         assert!(
             html.contains(marker),
             "missing compact proof/log marker `{marker}`"
+        );
+    }
+}
+
+#[test]
+fn functional_spec_3765_c01_c02_c03_harness_prioritizes_compact_evidence_columns() {
+    let html = render_tau_ops_dashboard_shell_for_route("/ops/harness");
+
+    for marker in [
+        "data-compact-call-id-visibility=\"hidden-at-1400px\"",
+        "#tau-ops-harness-tool-evidence th:nth-child(6),\n                                #tau-ops-harness-tool-evidence td:nth-child(6),\n                                #tau-ops-harness-tool-evidence th:nth-child(2),\n                                #tau-ops-harness-tool-evidence td:nth-child(2) {\n                                    display: none;",
+        "#tau-ops-harness-tool-evidence th:nth-child(4),\n                                #tau-ops-harness-tool-evidence td:nth-child(4),\n                                #tau-ops-harness-tool-evidence th:nth-child(5),\n                                #tau-ops-harness-tool-evidence td:nth-child(5) {\n                                    width: 82px;\n                                    white-space: nowrap;",
+        "overflow-wrap: normal;",
+    ] {
+        assert!(
+            html.contains(marker),
+            "missing compact evidence column-priority marker `{marker}`"
+        );
+    }
+}
+
+#[test]
+fn functional_spec_3764_c01_c02_c03_harness_prioritizes_self_improvement_actions() {
+    let html = render_tau_ops_dashboard_shell_for_route("/ops/harness");
+
+    let action_index = html
+        .find("id=\"tau-ops-harness-operator-actions\"")
+        .expect("operator actions section should render");
+    let policy_index = html
+        .find("id=\"tau-ops-harness-conservative-policy\"")
+        .expect("conservative policy section should render");
+    let audit_index = html
+        .find("id=\"tau-ops-harness-audit-log\"")
+        .expect("audit log section should render");
+
+    assert!(
+        action_index < policy_index,
+        "operator actions should be prioritized before conservative policy"
+    );
+    assert!(
+        policy_index < audit_index,
+        "conservative policy should remain before audit history"
+    );
+
+    for marker in [
+        "data-review-action-placement=\"actions-before-policy\"",
+        "id=\"tau-ops-harness-operator-actions\" data-apply-requires-approval=\"true\" data-action-row-priority=\"approval-flow\" data-action-grid=\"two-column-priority\"",
+        "#tau-ops-harness-self-improvement-window {\n                                max-height: calc(100vh - 246px);",
+        "#tau-ops-harness-tui-companion pre {\n                                max-height: 94px;",
+        "#tau-ops-harness-operator-actions {\n                                display: grid;\n                                grid-template-columns: repeat(2, minmax(0, 1fr));",
+        "#tau-ops-harness-operator-actions button,\n                            #tau-ops-harness-operator-actions a {\n                                width: 100%;",
+        "#tau-ops-harness-action-apply {\n                                grid-column: 1 / -1;",
+        "id=\"tau-ops-harness-approve-form\" action=\"/ops/harness/proposals/PR-044/approve\" method=\"post\"",
+        "id=\"tau-ops-harness-reject-form\" action=\"/ops/harness/proposals/PR-044/reject\" method=\"post\"",
+        "id=\"tau-ops-harness-dry-run-form\" action=\"/ops/harness/proposals/PR-044/dry-run\" method=\"post\"",
+        "id=\"tau-ops-harness-action-view-diff\" data-action=\"view-diff\" href=\"/ops/harness/proposals/PR-044/diff\"",
+        "id=\"tau-ops-harness-action-apply\" type=\"button\" data-action=\"apply\" data-disabled=\"true\" aria-disabled=\"true\" data-approval-required=\"true\"",
+    ] {
+        assert!(
+            html.contains(marker),
+            "missing self-improvement action priority marker `{marker}`"
         );
     }
 }

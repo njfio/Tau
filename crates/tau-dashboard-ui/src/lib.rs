@@ -3975,15 +3975,14 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 overflow: auto;
                             }
                             #tau-ops-harness-self-improvement-window {
-                                max-height: calc(100vh - 326px);
+                                max-height: calc(100vh - 246px);
                                 overflow: auto;
                             }
                             #tau-ops-harness-tui-companion {
-                                max-height: 230px;
+                                max-height: 150px;
                                 overflow: auto;
                             }
-                            #tau-ops-harness-topbar nav,
-                            #tau-ops-harness-operator-actions {
+                            #tau-ops-harness-topbar nav {
                                 display: flex;
                                 gap: 8px;
                                 flex-wrap: wrap;
@@ -4236,10 +4235,26 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 grid-column: 1 / -1;
                             }
                             #tau-ops-harness-operator-actions {
-                                align-items: center;
+                                display: grid;
+                                grid-template-columns: repeat(2, minmax(0, 1fr));
+                                align-items: stretch;
+                                gap: 8px;
                             }
                             #tau-ops-harness-operator-actions h4 {
+                                grid-column: 1 / -1;
+                            }
+                            #tau-ops-harness-operator-actions form {
+                                margin: 0;
+                                min-width: 0;
+                            }
+                            #tau-ops-harness-operator-actions button,
+                            #tau-ops-harness-operator-actions a {
                                 width: 100%;
+                                justify-content: center;
+                                text-align: center;
+                            }
+                            #tau-ops-harness-action-apply {
+                                grid-column: 1 / -1;
                             }
                             #tau-ops-harness-panel pre {
                                 overflow: auto;
@@ -4254,7 +4269,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 max-height: 250px;
                             }
                             #tau-ops-harness-tui-companion pre {
-                                max-height: 180px;
+                                max-height: 94px;
                                 margin-top: 8px;
                             }
                             @media (max-width: 1400px) {
@@ -4309,18 +4324,18 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     overflow-wrap: anywhere;
                                 }
                                 #tau-ops-harness-tool-evidence th:nth-child(6),
-                                #tau-ops-harness-tool-evidence td:nth-child(6) {
-                                    display: none;
-                                }
+                                #tau-ops-harness-tool-evidence td:nth-child(6),
                                 #tau-ops-harness-tool-evidence th:nth-child(2),
                                 #tau-ops-harness-tool-evidence td:nth-child(2) {
-                                    width: 78px;
+                                    display: none;
                                 }
                                 #tau-ops-harness-tool-evidence th:nth-child(4),
                                 #tau-ops-harness-tool-evidence td:nth-child(4),
                                 #tau-ops-harness-tool-evidence th:nth-child(5),
                                 #tau-ops-harness-tool-evidence td:nth-child(5) {
-                                    width: 70px;
+                                    width: 82px;
+                                    white-space: nowrap;
+                                    overflow-wrap: normal;
                                 }
                                 #tau-ops-harness-operator-log pre,
                                 #tau-ops-harness-tui-companion pre {
@@ -4637,6 +4652,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     id="tau-ops-harness-tool-evidence"
                                     data-tool-call-count="8"
                                     data-compact-evidence-breakpoint="1400px"
+                                    data-compact-call-id-visibility="hidden-at-1400px"
                                 >
                                     <h4>"Tool Execution Evidence"</h4>
                                     <div class="tau-harness-table-wrap">
@@ -4675,6 +4691,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 data-selected-proposal="PR-044"
                                 data-approval-gated="true"
                                 data-window-chrome="compact"
+                                data-review-action-placement="actions-before-policy"
                             >
                                 <header class="tau-harness-window-titlebar">
                                     <div>
@@ -4705,6 +4722,19 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     </dl>
                                 </section>
                                 <section
+                                    id="tau-ops-harness-operator-actions"
+                                    data-apply-requires-approval="true"
+                                    data-action-row-priority="approval-flow"
+                                    data-action-grid="two-column-priority"
+                                >
+                                    <h4>"Operator Actions"</h4>
+                                    <form id="tau-ops-harness-approve-form" action="/ops/harness/proposals/PR-044/approve" method="post"><button id="tau-ops-harness-action-approve" type="submit" data-action="approve">"Approve"</button></form>
+                                    <form id="tau-ops-harness-reject-form" action="/ops/harness/proposals/PR-044/reject" method="post"><button id="tau-ops-harness-action-reject" type="submit" data-action="reject">"Reject"</button></form>
+                                    <form id="tau-ops-harness-dry-run-form" action="/ops/harness/proposals/PR-044/dry-run" method="post"><button id="tau-ops-harness-action-dry-run" type="submit" data-action="dry-run">"Dry Run Again"</button></form>
+                                    <a id="tau-ops-harness-action-view-diff" data-action="view-diff" href="/ops/harness/proposals/PR-044/diff">"View Diff"</a>
+                                    <button id="tau-ops-harness-action-apply" type="button" data-action="apply" data-disabled="true" aria-disabled="true" data-approval-required="true">"Apply (Approval Required)"</button>
+                                </section>
+                                <section
                                     id="tau-ops-harness-conservative-policy"
                                     data-policy="conservative-self-improvement"
                                     data-allowed-targets="skill,config,prompt"
@@ -4719,14 +4749,6 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                         <h5>"Blocked"</h5>
                                         <ul><li>"Source Code"</li><li>"Safety Policy"</li></ul>
                                     </div>
-                                </section>
-                                <section id="tau-ops-harness-operator-actions" data-apply-requires-approval="true">
-                                    <h4>"Operator Actions"</h4>
-                                    <form id="tau-ops-harness-approve-form" action="/ops/harness/proposals/PR-044/approve" method="post"><button id="tau-ops-harness-action-approve" type="submit" data-action="approve">"Approve"</button></form>
-                                    <form id="tau-ops-harness-reject-form" action="/ops/harness/proposals/PR-044/reject" method="post"><button id="tau-ops-harness-action-reject" type="submit" data-action="reject">"Reject"</button></form>
-                                    <form id="tau-ops-harness-dry-run-form" action="/ops/harness/proposals/PR-044/dry-run" method="post"><button id="tau-ops-harness-action-dry-run" type="submit" data-action="dry-run">"Dry Run Again"</button></form>
-                                    <a id="tau-ops-harness-action-view-diff" data-action="view-diff" href="/ops/harness/proposals/PR-044/diff">"View Diff"</a>
-                                    <button id="tau-ops-harness-action-apply" type="button" data-action="apply" data-disabled="true" aria-disabled="true" data-approval-required="true">"Apply (Approval Required)"</button>
                                 </section>
                                 <section
                                     id="tau-ops-harness-audit-log"
