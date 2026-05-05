@@ -4418,6 +4418,37 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 padding: 4px 8px;
                                 font-size: .76rem;
                             }
+                            #tau-ops-harness-tool-evidence[data-tool-evidence-fit="compact-no-overflow"] table {
+                                min-width: 0;
+                                width: 100%;
+                                table-layout: fixed;
+                                font-size: .68rem;
+                            }
+                            #tau-ops-harness-tool-evidence[data-tool-evidence-fit="compact-no-overflow"] th,
+                            #tau-ops-harness-tool-evidence[data-tool-evidence-fit="compact-no-overflow"] td {
+                                overflow: hidden;
+                                text-overflow: ellipsis;
+                                white-space: nowrap;
+                                padding: 5px 6px;
+                            }
+                            #tau-ops-harness-tool-evidence[data-tool-evidence-fit="compact-no-overflow"] th:nth-child(1),
+                            #tau-ops-harness-tool-evidence[data-tool-evidence-fit="compact-no-overflow"] td:nth-child(1) {
+                                width: 82px;
+                            }
+                            #tau-ops-harness-tool-evidence[data-tool-evidence-fit="compact-no-overflow"] th:nth-child(2),
+                            #tau-ops-harness-tool-evidence[data-tool-evidence-fit="compact-no-overflow"] td:nth-child(2) {
+                                display: none;
+                            }
+                            #tau-ops-harness-tool-evidence[data-tool-evidence-fit="compact-no-overflow"] th:nth-child(3),
+                            #tau-ops-harness-tool-evidence[data-tool-evidence-fit="compact-no-overflow"] td:nth-child(3) {
+                                width: 86px;
+                            }
+                            #tau-ops-harness-tool-evidence[data-tool-evidence-fit="compact-no-overflow"] th:nth-child(4),
+                            #tau-ops-harness-tool-evidence[data-tool-evidence-fit="compact-no-overflow"] td:nth-child(4),
+                            #tau-ops-harness-tool-evidence[data-tool-evidence-fit="compact-no-overflow"] th:nth-child(5),
+                            #tau-ops-harness-tool-evidence[data-tool-evidence-fit="compact-no-overflow"] td:nth-child(5) {
+                                width: 66px;
+                            }
                             #tau-ops-harness-conservative-policy {
                                 gap: 6px;
                             }
@@ -4477,6 +4508,26 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             #tau-ops-harness-acceptance li,
                             #tau-ops-harness-verification-gates li {
                                 padding: 3px 7px;
+                            }
+                            #tau-ops-harness-acceptance[data-acceptance-overflow-budget="all-criteria-visible"] {
+                                overflow: hidden;
+                            }
+                            #tau-ops-harness-acceptance[data-acceptance-overflow-budget="all-criteria-visible"] ul {
+                                display: grid;
+                                grid-template-columns: minmax(0, 1fr);
+                                gap: 4px;
+                                margin-top: 6px;
+                            }
+                            #tau-ops-harness-acceptance[data-acceptance-overflow-budget="all-criteria-visible"] li {
+                                min-width: 0;
+                                width: 100%;
+                                justify-content: flex-start;
+                                overflow: hidden;
+                                text-overflow: ellipsis;
+                                white-space: nowrap;
+                                padding: 2px 6px;
+                                font-size: .64rem;
+                                line-height: 1.05;
                             }
                             #tau-ops-harness-verification-gates[data-gate-visibility="all-gates-first-viewport"] {
                                 overflow: hidden;
@@ -4934,6 +4985,9 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                         data-compact-evidence-breakpoint="1400px"
                                         data-compact-call-id-visibility="hidden-at-1400px"
                                         data-proof-evidence-priority="first-screen"
+                                        data-tool-evidence-fit="compact-no-overflow"
+                                        data-tool-evidence-overflow-budget="none"
+                                        data-tool-evidence-visible-columns="tool,plan-node,runtime,status,artifact"
                                     >
                                         <h4>"Tool Execution Evidence"</h4>
                                         <div class="tau-harness-table-wrap">
@@ -4965,7 +5019,14 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
 10:24:18  Verification started
 10:25:52  verification gate VG-03 pending (collecting no-memory evidence)"</pre>
                                     </section>
-                                    <section id="tau-ops-harness-acceptance" data-acceptance-met="3" data-acceptance-total="5" data-proof-detail-budget="compact-scroll">
+                                    <section
+                                        id="tau-ops-harness-acceptance"
+                                        data-acceptance-met="3"
+                                        data-acceptance-total="5"
+                                        data-proof-detail-budget="compact-scroll"
+                                        data-acceptance-overflow-budget="all-criteria-visible"
+                                        data-acceptance-layout="compact-contained"
+                                    >
                                         <h4>"Acceptance Criteria"</h4>
                                         <ul>
                                             <li data-ac-id="VG-01" data-ac-status="met">"Registry loads plugins deterministically"</li>

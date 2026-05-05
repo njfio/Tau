@@ -1412,6 +1412,43 @@ fn functional_spec_3783_c01_c02_c03_harness_review_pane_contains_compact_proof_r
 }
 
 #[test]
+fn functional_spec_3784_c01_c02_c03_harness_center_proof_evidence_stays_contained() {
+    let html = render_tau_ops_dashboard_shell_for_route("/ops/harness");
+
+    let evidence_index = html
+        .find("id=\"tau-ops-harness-tool-evidence\"")
+        .expect("tool evidence section should render");
+    let acceptance_index = html
+        .find("id=\"tau-ops-harness-acceptance\"")
+        .expect("acceptance criteria section should render");
+    let gates_index = html
+        .find("id=\"tau-ops-harness-verification-gates\"")
+        .expect("verification gates section should render");
+
+    assert!(
+        evidence_index < acceptance_index && acceptance_index < gates_index,
+        "center proof sections should remain in evidence, acceptance, gate order"
+    );
+
+    for marker in [
+        "id=\"tau-ops-harness-tool-evidence\" data-tool-call-count=\"8\" data-compact-evidence-breakpoint=\"1400px\" data-compact-call-id-visibility=\"hidden-at-1400px\" data-proof-evidence-priority=\"first-screen\" data-tool-evidence-fit=\"compact-no-overflow\" data-tool-evidence-overflow-budget=\"none\" data-tool-evidence-visible-columns=\"tool,plan-node,runtime,status,artifact\"",
+        "id=\"tau-ops-harness-acceptance\" data-acceptance-met=\"3\" data-acceptance-total=\"5\" data-proof-detail-budget=\"compact-scroll\" data-acceptance-overflow-budget=\"all-criteria-visible\" data-acceptance-layout=\"compact-contained\"",
+        "#tau-ops-harness-tool-evidence[data-tool-evidence-fit=\"compact-no-overflow\"] table {\n                                min-width: 0;\n                                width: 100%;\n                                table-layout: fixed;",
+        "#tau-ops-harness-tool-evidence[data-tool-evidence-fit=\"compact-no-overflow\"] th:nth-child(2),\n                            #tau-ops-harness-tool-evidence[data-tool-evidence-fit=\"compact-no-overflow\"] td:nth-child(2) {\n                                display: none;",
+        "#tau-ops-harness-tool-evidence[data-tool-evidence-fit=\"compact-no-overflow\"] th,\n                            #tau-ops-harness-tool-evidence[data-tool-evidence-fit=\"compact-no-overflow\"] td {\n                                overflow: hidden;\n                                text-overflow: ellipsis;",
+        "#tau-ops-harness-acceptance[data-acceptance-overflow-budget=\"all-criteria-visible\"] ul {\n                                display: grid;\n                                grid-template-columns: minmax(0, 1fr);",
+        "#tau-ops-harness-acceptance[data-acceptance-overflow-budget=\"all-criteria-visible\"] li {\n                                min-width: 0;\n                                width: 100%;",
+        "data-tool=\"report.write\" data-status=\"running\"><td>report.write</td><td>c1a2b9</td><td>Verify</td><td>00:01:21</td><td>running</td><td>/artifacts/report.md</td>",
+        "data-ac-id=\"VG-05\" data-ac-status=\"pending\">Benchmark proof emitted</li>",
+    ] {
+        assert!(
+            html.contains(marker),
+            "missing center proof containment marker `{marker}`"
+        );
+    }
+}
+
+#[test]
 fn functional_spec_3775_c01_c02_c03_harness_keeps_benchmark_panel_in_left_first_viewport() {
     let html = render_tau_ops_dashboard_shell_for_route("/ops/harness");
 
