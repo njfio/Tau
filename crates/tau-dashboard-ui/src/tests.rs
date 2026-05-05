@@ -1628,6 +1628,24 @@ fn functional_spec_3790_c01_c02_c03_harness_tool_evidence_shows_memory_tool_name
 }
 
 #[test]
+fn functional_spec_3791_c01_c02_c03_harness_proposal_detail_has_no_vertical_clip() {
+    let html = render_tau_ops_dashboard_shell_for_route("/ops/harness");
+
+    for marker in [
+        "id=\"tau-ops-harness-proposal-detail\" data-proposal-id=\"PR-044\" data-learning-record=\"LR-044\" data-target-type=\"Prompt\" data-target-path=\"prompts/research_to_doc/system.md\" data-proposal-detail-priority=\"first-viewport-summary\" data-proposal-detail-density=\"compact-scroll\" data-proposal-detail-overflow-budget=\"contained\" data-proposal-visible-rows=\"7\" data-proposal-summary-fit=\"full-text\" data-proposal-summary-overflow-budget=\"none\" data-proposal-detail-vertical-overflow-budget=\"none\" data-proposal-detail-max-height=\"132px\"",
+        "#tau-ops-harness-proposal-detail[data-proposal-detail-vertical-overflow-budget=\"none\"] {\n                                max-height: 132px;",
+        "<dt>Dry-run Result</dt><dd data-result=\"passed\">Tests passed (18/18)</dd>",
+        "<dt>Patch Summary</dt><dd data-proposal-row=\"patch-summary\" data-summary-fit=\"full-text\">Compress system prompt by removing redundant instructions and examples.</dd>",
+        "<dt>Test Evidence</dt><dd><a href=\"/evidence/pr-044-dryrun.json\">evidence/pr-044-dryrun.json</a></dd>",
+    ] {
+        assert!(
+            html.contains(marker),
+            "proposal detail should preserve no-clip marker `{marker}`"
+        );
+    }
+}
+
+#[test]
 fn functional_spec_3775_c01_c02_c03_harness_keeps_benchmark_panel_in_left_first_viewport() {
     let html = render_tau_ops_dashboard_shell_for_route("/ops/harness");
 

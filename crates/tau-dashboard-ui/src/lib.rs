@@ -4401,6 +4401,9 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             #tau-ops-harness-proposal-detail[data-proposal-detail-overflow-budget="contained"] {
                                 overflow: hidden;
                             }
+                            #tau-ops-harness-proposal-detail[data-proposal-detail-vertical-overflow-budget="none"] {
+                                max-height: 132px;
+                            }
                             #tau-ops-harness-proposal-detail[data-proposal-detail-overflow-budget="contained"] h4 {
                                 overflow: hidden;
                                 text-overflow: ellipsis;
@@ -5269,6 +5272,8 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     data-proposal-visible-rows="7"
                                     data-proposal-summary-fit="full-text"
                                     data-proposal-summary-overflow-budget="none"
+                                    data-proposal-detail-vertical-overflow-budget="none"
+                                    data-proposal-detail-max-height="132px"
                                 >
                                     <h4>"PR-044 Prompt compression for research tasks"</h4>
                                     <dl>
