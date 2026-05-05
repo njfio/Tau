@@ -617,8 +617,8 @@ fn functional_spec_3761_c01_c02_c03_harness_keeps_desktop_three_window_layout() 
         "white-space: normal;",
         ".tau-harness-window-titlebar > div",
         "grid-template-columns: minmax(7rem, max-content) minmax(0, 1fr);",
-        "#tau-ops-harness-self-improvement-window {\n                                max-height: calc(100vh - 246px);",
-        "#tau-ops-harness-tui-companion {\n                                max-height: 150px;",
+        "#tau-ops-harness-self-improvement-window {\n                                max-height: calc(100vh - 354px);",
+        "#tau-ops-harness-tui-companion {\n                                max-height: 200px;",
     ] {
         assert!(
             html.contains(marker),
@@ -718,8 +718,8 @@ fn functional_spec_3764_c01_c02_c03_harness_prioritizes_self_improvement_actions
     for marker in [
         "data-review-action-placement=\"actions-before-policy\"",
         "id=\"tau-ops-harness-operator-actions\" data-apply-requires-approval=\"true\" data-action-row-priority=\"approval-flow\" data-action-grid=\"two-column-priority\"",
-        "#tau-ops-harness-self-improvement-window {\n                                max-height: calc(100vh - 246px);",
-        "#tau-ops-harness-tui-companion pre {\n                                max-height: 94px;",
+        "#tau-ops-harness-self-improvement-window {\n                                max-height: calc(100vh - 354px);",
+        "#tau-ops-harness-tui-companion pre {\n                                max-height: 126px;",
         "#tau-ops-harness-operator-actions {\n                                display: grid;\n                                grid-template-columns: repeat(2, minmax(0, 1fr));",
         "#tau-ops-harness-operator-actions button,\n                            #tau-ops-harness-operator-actions a {\n                                width: 100%;",
         "#tau-ops-harness-action-apply {\n                                grid-column: 1 / -1;",
@@ -1008,6 +1008,29 @@ fn functional_spec_3772_c01_c02_c03_harness_keeps_mission_state_visible_in_compa
         first_state < first_gate,
         "mission gate chip should follow the state chip inside the compact goal cell"
     );
+}
+
+#[test]
+fn functional_spec_3773_c01_c02_c03_harness_keeps_tui_companion_in_first_viewport() {
+    let html = render_tau_ops_dashboard_shell_for_route("/ops/harness");
+
+    for marker in [
+        "id=\"tau-ops-harness-tui-companion\" data-component=\"TuiCompanion\" data-command=\"tau status\" data-window-chrome=\"compact\" data-log-wrap=\"pre-wrap\" data-tui-priority=\"first-viewport-summary\"",
+        "#tau-ops-harness-self-improvement-window {\n                                max-height: calc(100vh - 354px);",
+        "#tau-ops-harness-tui-companion {\n                                max-height: 200px;",
+        "#tau-ops-harness-tui-companion pre {\n                                max-height: 126px;",
+        "box-sizing: border-box;",
+        "mission=run_8f3a2",
+        "status=verifying",
+        "calls: repo.read, repo.edit, test.run, report.write",
+        "bench: ",
+        "Proof: ",
+    ] {
+        assert!(
+            html.contains(marker),
+            "missing first-viewport TUI marker `{marker}`"
+        );
+    }
 }
 
 #[test]

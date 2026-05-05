@@ -3954,6 +3954,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 background:
                                     linear-gradient(180deg, rgba(24, 47, 60, .94), rgba(13, 29, 39, .96));
                                 box-shadow: 0 16px 34px rgba(0, 0, 0, .34);
+                                box-sizing: border-box;
                                 min-width: 0;
                                 overflow: hidden;
                             }
@@ -3986,11 +3987,11 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 overflow: auto;
                             }
                             #tau-ops-harness-self-improvement-window {
-                                max-height: calc(100vh - 246px);
+                                max-height: calc(100vh - 354px);
                                 overflow: auto;
                             }
                             #tau-ops-harness-tui-companion {
-                                max-height: 150px;
+                                max-height: 200px;
                                 overflow: auto;
                             }
                             #tau-ops-harness-topbar nav {
@@ -4355,8 +4356,11 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 max-height: 118px;
                             }
                             #tau-ops-harness-tui-companion pre {
-                                max-height: 94px;
-                                margin-top: 8px;
+                                max-height: 126px;
+                                margin-top: 6px;
+                                padding: 8px;
+                                font-size: .72rem;
+                                line-height: 1.35;
                             }
                             @media (max-width: 1400px) {
                                 #tau-ops-harness-kpi-grid {
@@ -4890,6 +4894,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 data-command="tau status"
                                 data-window-chrome="compact"
                                 data-log-wrap="pre-wrap"
+                                data-tui-priority="first-viewport-summary"
                             >
                                 <header class="tau-harness-window-titlebar">
                                     <div>
