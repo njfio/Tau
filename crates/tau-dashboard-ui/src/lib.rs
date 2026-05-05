@@ -4299,6 +4299,62 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 max-height: 128px;
                                 overflow: auto;
                             }
+                            #tau-ops-harness-self-improvement-window[data-review-audit-priority="first-viewport-recent-history"] {
+                                gap: 8px;
+                            }
+                            #tau-ops-harness-self-improvement-window[data-review-audit-priority="first-viewport-recent-history"] section {
+                                padding: 8px;
+                            }
+                            #tau-ops-harness-self-improvement-window[data-review-audit-priority="first-viewport-recent-history"] h4,
+                            #tau-ops-harness-self-improvement-window[data-review-audit-priority="first-viewport-recent-history"] h5 {
+                                margin: 0;
+                            }
+                            #tau-ops-harness-learning-queue {
+                                max-height: 124px;
+                                overflow: auto;
+                            }
+                            #tau-ops-harness-learning-queue ul {
+                                gap: 5px;
+                            }
+                            #tau-ops-harness-learning-queue li {
+                                padding: 3px 7px;
+                                font-size: .70rem;
+                            }
+                            #tau-ops-harness-operator-actions {
+                                gap: 6px;
+                            }
+                            #tau-ops-harness-operator-actions button,
+                            #tau-ops-harness-operator-actions a {
+                                min-height: 26px;
+                                padding: 4px 8px;
+                                font-size: .76rem;
+                            }
+                            #tau-ops-harness-conservative-policy {
+                                gap: 6px;
+                            }
+                            #tau-ops-harness-conservative-policy ul {
+                                gap: 5px;
+                                margin-top: 5px;
+                            }
+                            #tau-ops-harness-audit-log {
+                                max-height: 104px;
+                                overflow: hidden;
+                            }
+                            #tau-ops-harness-audit-log .tau-harness-table-wrap {
+                                max-height: 64px;
+                                overflow: auto;
+                            }
+                            #tau-ops-harness-audit-log table {
+                                min-width: 0;
+                                font-size: .68rem;
+                            }
+                            #tau-ops-harness-audit-log td {
+                                padding: 4px 5px;
+                            }
+                            #tau-ops-harness-audit-log td:nth-child(2),
+                            #tau-ops-harness-audit-log td:nth-child(4) {
+                                display: none;
+                            }
                             #tau-ops-harness-acceptance ul,
                             #tau-ops-harness-verification-gates ul,
                             #tau-ops-harness-artifacts ul,
@@ -4838,6 +4894,8 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 data-approval-gated="true"
                                 data-window-chrome="compact"
                                 data-review-action-placement="actions-before-detail"
+                                data-review-audit-priority="first-viewport-recent-history"
+                                data-review-density="audit-visible"
                             >
                                 <header class="tau-harness-window-titlebar">
                                     <div>
@@ -4910,6 +4968,9 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     id="tau-ops-harness-audit-log"
                                     data-audit-row-count=harness_audit_row_count
                                     data-audit-source=context.harness.audit_source.clone()
+                                    data-audit-priority="first-viewport-recent-proof"
+                                    data-audit-density="compact-scroll"
+                                    data-audit-visible-columns="time,action,item,result"
                                 >
                                     <h4>"Audit Log (Recent)"</h4>
                                     <div class="tau-harness-table-wrap">

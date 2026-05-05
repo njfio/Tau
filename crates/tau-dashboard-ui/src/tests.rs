@@ -1208,6 +1208,46 @@ fn functional_spec_3778_c01_c02_c03_harness_keeps_proposal_safety_summary_visibl
 }
 
 #[test]
+fn functional_spec_3779_c01_c02_c03_harness_keeps_recent_audit_proof_visible() {
+    let html = render_tau_ops_dashboard_shell_for_route("/ops/harness");
+
+    let detail_index = html
+        .find("id=\"tau-ops-harness-proposal-detail\"")
+        .expect("proposal detail should render");
+    let audit_index = html
+        .find("id=\"tau-ops-harness-audit-log\"")
+        .expect("audit log should render");
+    let tui_index = html
+        .find("id=\"tau-ops-harness-tui-companion\"")
+        .expect("TUI companion should render");
+
+    assert!(
+        detail_index < audit_index,
+        "audit proof should remain after proposal detail"
+    );
+    assert!(
+        audit_index < tui_index,
+        "audit proof should remain in the review pane before the TUI companion"
+    );
+
+    for marker in [
+        "id=\"tau-ops-harness-self-improvement-window\" data-window=\"self-improvement-review-apply-flow\" data-window-order=\"3\" data-selected-proposal=\"PR-044\" data-approval-gated=\"true\" data-window-chrome=\"compact\" data-review-action-placement=\"actions-before-detail\" data-review-audit-priority=\"first-viewport-recent-history\" data-review-density=\"audit-visible\"",
+        "id=\"tau-ops-harness-audit-log\" data-audit-row-count=\"4\" data-audit-source=\"fallback\" data-audit-priority=\"first-viewport-recent-proof\" data-audit-density=\"compact-scroll\" data-audit-visible-columns=\"time,action,item,result\"",
+        "#tau-ops-harness-audit-log {\n                                max-height: 104px;\n                                overflow: hidden;",
+        "#tau-ops-harness-audit-log .tau-harness-table-wrap {\n                                max-height: 64px;\n                                overflow: auto;",
+        "#tau-ops-harness-audit-log table {\n                                min-width: 0;",
+        "#tau-ops-harness-audit-log td:nth-child(2),\n                            #tau-ops-harness-audit-log td:nth-child(4) {\n                                display: none;",
+        "data-action=\"dry-run\" data-result=\"passed\"><td>May 15, 10:11</td><td>Operator</td><td>Dry Run</td><td>Prompt</td><td>PR-044</td><td>Passed</td>",
+        "data-action=\"apply\" data-result=\"applied\"><td>May 15, 09:42</td><td>Operator</td><td>Apply</td><td>Config</td><td>CL-031</td><td>Applied</td>",
+    ] {
+        assert!(
+            html.contains(marker),
+            "missing compact recent audit marker `{marker}`"
+        );
+    }
+}
+
+#[test]
 fn functional_spec_3775_c01_c02_c03_harness_keeps_benchmark_panel_in_left_first_viewport() {
     let html = render_tau_ops_dashboard_shell_for_route("/ops/harness");
 
