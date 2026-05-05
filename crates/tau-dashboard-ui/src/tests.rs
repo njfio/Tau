@@ -569,7 +569,7 @@ fn functional_spec_3758_c01_harness_uses_operator_console_visual_contract() {
         "class=\"tau-harness-window-grid\"",
         "class=\"tau-harness-status-chip\"",
         "class=\"tau-harness-table-wrap\"",
-        "grid-template-columns: 80px minmax(0, 1fr);",
+        "grid-template-columns: 96px minmax(0, 1fr);",
     ] {
         assert!(
             html.contains(marker),
@@ -607,8 +607,8 @@ fn functional_spec_3761_c01_c02_c03_harness_keeps_desktop_three_window_layout() 
         "grid-template-columns: minmax(0, .82fr) minmax(0, 1.04fr) minmax(0, .86fr);",
         "#tau-ops-shell[data-active-route=\"harness\"] {\n                    background:",
         "max-width: 100vw;",
-        "width: min(100%, calc(100vw - 112px));",
-        "max-width: calc(100vw - 112px);",
+        "width: min(100%, calc(100vw - 128px));",
+        "max-width: calc(100vw - 128px);",
         "@media (max-width: 1400px)",
         "@media (max-width: 1180px)",
         "max-height: calc(100vh - 88px);",
@@ -623,6 +623,33 @@ fn functional_spec_3761_c01_c02_c03_harness_keeps_desktop_three_window_layout() 
         assert!(
             html.contains(marker),
             "missing harness desktop layout marker `{marker}`"
+        );
+    }
+}
+
+#[test]
+fn functional_spec_3762_c01_c02_c03_harness_compacts_dashboard_without_clipping() {
+    let html = render_tau_ops_dashboard_shell_for_route("/ops/harness");
+
+    for marker in [
+        "data-compact-dashboard-breakpoint=\"1400px\"",
+        "data-compact-table-breakpoint=\"1400px\"",
+        "data-compact-metadata-breakpoint=\"1400px\"",
+        "#tau-ops-harness-kpi-grid {\n                                    grid-template-columns: repeat(2, minmax(0, 1fr));",
+        "#tau-ops-harness-active-missions,\n                            #tau-ops-harness-benchmark-panel {\n                                min-width: 0;",
+        "#tau-ops-harness-panel #tau-ops-harness-missions-table,\n                                #tau-ops-harness-panel #tau-ops-harness-benchmark-table {\n                                    min-width: 0;",
+        "table-layout: fixed;",
+        "#tau-ops-harness-missions-table th:nth-child(n+4)",
+        "white-space: normal;",
+        "#tau-ops-harness-missions-table th {\n                                    font-size: .66rem;",
+        "#tau-ops-harness-missions-table meter {\n                                    width: 58px;",
+        "#tau-ops-harness-proof-header {\n                                    align-items: stretch;\n                                    flex-direction: column;",
+        "#tau-ops-harness-proof-header dl {\n                                    grid-template-columns: minmax(6rem, max-content) minmax(0, 1fr);",
+        "@media (max-width: 900px)",
+    ] {
+        assert!(
+            html.contains(marker),
+            "missing compact dashboard marker `{marker}`"
         );
     }
 }
