@@ -15,4 +15,6 @@
   - `cargo run --manifest-path /tmp/tau-preview-render/Cargo.toml` regenerated `/tmp/tau-harness-after.html`.
   - Browser Use `iab` was attempted first and reported no active Codex browser pane.
   - Playwright fallback at `1512x1038` confirmed zero console errors, no document horizontal overflow, Active Missions and benchmark tables inside their wrappers, and mission state/gate chips still visible.
-- [ ] T5: Commit, push, and confirm clean worktree.
+- [x] T5: Commit, push, and confirm clean worktree.
+  - Commit: `773a393c fix(harness): remove clipped left dashboard tables (#3782)`.
+  - Push: `master` updated on `origin`.
