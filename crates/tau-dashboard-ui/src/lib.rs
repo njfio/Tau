@@ -4518,6 +4518,9 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 table-layout: fixed;
                                 font-size: .68rem;
                             }
+                            #tau-ops-harness-tool-evidence[data-tool-label-fit="full-memory-tool-names"] table {
+                                font-size: .66rem;
+                            }
                             #tau-ops-harness-tool-evidence[data-tool-evidence-fit="compact-no-overflow"] th,
                             #tau-ops-harness-tool-evidence[data-tool-evidence-fit="compact-no-overflow"] td {
                                 overflow: hidden;
@@ -4529,6 +4532,10 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             #tau-ops-harness-tool-evidence[data-tool-evidence-fit="compact-no-overflow"] td:nth-child(1) {
                                 width: 82px;
                             }
+                            #tau-ops-harness-tool-evidence[data-tool-label-fit="full-memory-tool-names"] th:nth-child(1),
+                            #tau-ops-harness-tool-evidence[data-tool-label-fit="full-memory-tool-names"] td:nth-child(1) {
+                                width: 96px;
+                            }
                             #tau-ops-harness-tool-evidence[data-tool-evidence-fit="compact-no-overflow"] th:nth-child(2),
                             #tau-ops-harness-tool-evidence[data-tool-evidence-fit="compact-no-overflow"] td:nth-child(2) {
                                 display: none;
@@ -4537,11 +4544,23 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             #tau-ops-harness-tool-evidence[data-tool-evidence-fit="compact-no-overflow"] td:nth-child(3) {
                                 width: 86px;
                             }
+                            #tau-ops-harness-tool-evidence[data-tool-label-fit="full-memory-tool-names"] th:nth-child(3),
+                            #tau-ops-harness-tool-evidence[data-tool-label-fit="full-memory-tool-names"] td:nth-child(3) {
+                                width: 86px;
+                            }
                             #tau-ops-harness-tool-evidence[data-tool-evidence-fit="compact-no-overflow"] th:nth-child(4),
                             #tau-ops-harness-tool-evidence[data-tool-evidence-fit="compact-no-overflow"] td:nth-child(4),
                             #tau-ops-harness-tool-evidence[data-tool-evidence-fit="compact-no-overflow"] th:nth-child(5),
                             #tau-ops-harness-tool-evidence[data-tool-evidence-fit="compact-no-overflow"] td:nth-child(5) {
                                 width: 66px;
+                            }
+                            #tau-ops-harness-tool-evidence[data-tool-label-fit="full-memory-tool-names"] th:nth-child(4),
+                            #tau-ops-harness-tool-evidence[data-tool-label-fit="full-memory-tool-names"] td:nth-child(4) {
+                                width: 60px;
+                            }
+                            #tau-ops-harness-tool-evidence[data-tool-label-fit="full-memory-tool-names"] th:nth-child(5),
+                            #tau-ops-harness-tool-evidence[data-tool-label-fit="full-memory-tool-names"] td:nth-child(5) {
+                                width: 56px;
                             }
                             #tau-ops-harness-conservative-policy {
                                 gap: 6px;
@@ -5087,6 +5106,8 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                         data-tool-evidence-fit="compact-no-overflow"
                                         data-tool-evidence-overflow-budget="none"
                                         data-tool-evidence-visible-columns="tool,plan-node,runtime,status,artifact"
+                                        data-tool-label-fit="full-memory-tool-names"
+                                        data-tool-column-overflow-budget="none"
                                     >
                                         <h4>"Tool Execution Evidence"</h4>
                                         <div class="tau-harness-table-wrap">

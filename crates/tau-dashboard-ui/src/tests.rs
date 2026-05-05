@@ -1609,6 +1609,25 @@ fn functional_spec_3789_c01_c02_c03_harness_benchmark_categories_are_operator_re
 }
 
 #[test]
+fn functional_spec_3790_c01_c02_c03_harness_tool_evidence_shows_memory_tool_names() {
+    let html = render_tau_ops_dashboard_shell_for_route("/ops/harness");
+
+    for marker in [
+        "id=\"tau-ops-harness-tool-evidence\" data-tool-call-count=\"8\" data-compact-evidence-breakpoint=\"1400px\" data-compact-call-id-visibility=\"hidden-at-1400px\" data-proof-evidence-priority=\"first-screen\" data-tool-evidence-fit=\"compact-no-overflow\" data-tool-evidence-overflow-budget=\"none\" data-tool-evidence-visible-columns=\"tool,plan-node,runtime,status,artifact\" data-tool-label-fit=\"full-memory-tool-names\" data-tool-column-overflow-budget=\"none\"",
+        "data-tool=\"memory.search\" data-status=\"passed\"><td>memory.search</td><td>c1a2b7f</td><td>Memory Write</td><td>00:00:48</td><td>passed</td><td>/artifacts/memory.json</td>",
+        "data-tool=\"memory.write\" data-status=\"passed\"><td>memory.write</td><td>c1a2b8e</td><td>Memory Write</td><td>00:00:36</td><td>passed</td><td>/artifacts/learning.json</td>",
+        "#tau-ops-harness-tool-evidence[data-tool-label-fit=\"full-memory-tool-names\"] th:nth-child(1),\n                            #tau-ops-harness-tool-evidence[data-tool-label-fit=\"full-memory-tool-names\"] td:nth-child(1) {\n                                width: 96px;",
+        "#tau-ops-harness-tool-evidence[data-tool-label-fit=\"full-memory-tool-names\"] table {\n                                font-size: .66rem;",
+        "#tau-ops-harness-tool-evidence[data-tool-label-fit=\"full-memory-tool-names\"] th:nth-child(3),\n                            #tau-ops-harness-tool-evidence[data-tool-label-fit=\"full-memory-tool-names\"] td:nth-child(3) {\n                                width: 86px;",
+    ] {
+        assert!(
+            html.contains(marker),
+            "Tool evidence should preserve full memory tool label marker `{marker}`"
+        );
+    }
+}
+
+#[test]
 fn functional_spec_3775_c01_c02_c03_harness_keeps_benchmark_panel_in_left_first_viewport() {
     let html = render_tau_ops_dashboard_shell_for_route("/ops/harness");
 
