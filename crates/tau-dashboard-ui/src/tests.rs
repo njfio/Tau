@@ -1301,6 +1301,45 @@ fn functional_spec_3780_c01_c02_c03_harness_keeps_all_verification_gates_visible
 }
 
 #[test]
+fn functional_spec_3781_c01_c02_c03_harness_uses_clean_active_mission_scroll_boundary() {
+    let html = render_tau_ops_dashboard_shell_for_route("/ops/harness");
+
+    let missions_index = html
+        .find("id=\"tau-ops-harness-active-missions\"")
+        .expect("active missions section should render");
+    let benchmark_index = html
+        .find("id=\"tau-ops-harness-benchmark-panel\"")
+        .expect("benchmark panel should render");
+
+    assert!(
+        missions_index < benchmark_index,
+        "benchmark panel should remain directly after active missions"
+    );
+
+    for row_id in 0..=4 {
+        let marker = format!("id=\"tau-ops-harness-mission-row-{row_id}\"");
+        assert!(
+            html.contains(&marker),
+            "mission row `{row_id}` should remain available inside the scroll region"
+        );
+    }
+
+    for marker in [
+        "id=\"tau-ops-harness-active-missions\" data-active-count=\"5\" data-running-count=\"3\" data-blocked-count=\"1\" data-compact-table-breakpoint=\"1400px\" data-compact-mission-summary=\"status-and-gates\" data-first-viewport-budget=\"benchmark-visible\" data-active-mission-scroll-boundary=\"whole-row\" data-active-mission-visible-rows=\"3\"",
+        "class=\"tau-harness-table-wrap\" data-scroll-region=\"active-missions\" data-scroll-boundary=\"whole-row\"",
+        "#tau-ops-harness-active-missions[data-active-mission-scroll-boundary=\"whole-row\"] .tau-harness-table-wrap {\n                                max-height: 388px;\n                                overflow: auto;",
+        "#tau-ops-harness-active-missions[data-active-mission-scroll-boundary=\"whole-row\"] #tau-ops-harness-missions-table tbody tr {\n                                scroll-snap-align: start;",
+        "#tau-ops-harness-active-missions[data-active-mission-scroll-boundary=\"whole-row\"] #tau-ops-harness-missions-table td {\n                                vertical-align: top;",
+        "id=\"tau-ops-harness-benchmark-panel\" data-benchmark-id=\"m334-tranche-one-autonomy\"",
+    ] {
+        assert!(
+            html.contains(marker),
+            "missing active mission whole-row boundary marker `{marker}`"
+        );
+    }
+}
+
+#[test]
 fn functional_spec_3775_c01_c02_c03_harness_keeps_benchmark_panel_in_left_first_viewport() {
     let html = render_tau_ops_dashboard_shell_for_route("/ops/harness");
 

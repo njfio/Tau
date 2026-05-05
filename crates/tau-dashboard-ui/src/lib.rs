@@ -4099,6 +4099,13 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 max-height: 432px;
                                 overflow: auto;
                             }
+                            #tau-ops-harness-active-missions[data-active-mission-scroll-boundary="whole-row"] .tau-harness-table-wrap {
+                                max-height: 388px;
+                                overflow: auto;
+                                overscroll-behavior: contain;
+                                scrollbar-gutter: stable;
+                                scroll-snap-type: y proximity;
+                            }
                             #tau-ops-harness-kpi-grid article,
                             #tau-ops-harness-proof-window section,
                             #tau-ops-harness-self-improvement-window section {
@@ -4179,6 +4186,12 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 flex-wrap: wrap;
                                 gap: 5px;
                                 margin-top: 6px;
+                            }
+                            #tau-ops-harness-active-missions[data-active-mission-scroll-boundary="whole-row"] #tau-ops-harness-missions-table tbody tr {
+                                scroll-snap-align: start;
+                            }
+                            #tau-ops-harness-active-missions[data-active-mission-scroll-boundary="whole-row"] #tau-ops-harness-missions-table td {
+                                vertical-align: top;
                             }
                             .tau-harness-status-chip,
                             #tau-ops-harness-verification-gates li,
@@ -4657,9 +4670,11 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     data-compact-table-breakpoint="1400px"
                                     data-compact-mission-summary="status-and-gates"
                                     data-first-viewport-budget="benchmark-visible"
+                                    data-active-mission-scroll-boundary="whole-row"
+                                    data-active-mission-visible-rows="3"
                                 >
                                     <h4>"Active Missions"</h4>
-                                    <div class="tau-harness-table-wrap" data-scroll-region="active-missions">
+                                    <div class="tau-harness-table-wrap" data-scroll-region="active-missions" data-scroll-boundary="whole-row">
                                         <table id="tau-ops-harness-missions-table">
                                             <thead>
                                                 <tr>
