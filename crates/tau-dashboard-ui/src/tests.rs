@@ -1340,6 +1340,39 @@ fn functional_spec_3781_c01_c02_c03_harness_uses_clean_active_mission_scroll_bou
 }
 
 #[test]
+fn functional_spec_3782_c01_c02_c03_harness_left_tables_do_not_overflow_column() {
+    let html = render_tau_ops_dashboard_shell_for_route("/ops/harness");
+
+    let missions_index = html
+        .find("id=\"tau-ops-harness-active-missions\"")
+        .expect("active missions section should render");
+    let benchmark_index = html
+        .find("id=\"tau-ops-harness-benchmark-panel\"")
+        .expect("benchmark panel should render");
+
+    assert!(
+        missions_index < benchmark_index,
+        "benchmark panel should remain after active missions"
+    );
+
+    for marker in [
+        "id=\"tau-ops-harness-active-missions\" data-active-count=\"5\" data-running-count=\"3\" data-blocked-count=\"1\" data-compact-table-breakpoint=\"1400px\" data-compact-mission-summary=\"status-and-gates\" data-first-viewport-budget=\"benchmark-visible\" data-active-mission-scroll-boundary=\"whole-row\" data-active-mission-visible-rows=\"3\" data-left-table-fit=\"compact-no-overflow\" data-horizontal-overflow-budget=\"none\"",
+        "id=\"tau-ops-harness-benchmark-panel\" data-benchmark-id=\"m334-tranche-one-autonomy\" data-proof-artifact=\"/artifacts/bench/m334/latest.json\" data-task-count=\"4\" data-pass-count=\"4\" data-failed-gates=\"none\" data-proof-source=\"fallback\" data-first-viewport-anchor=\"canonical-benchmark\" data-left-table-fit=\"compact-no-overflow\" data-horizontal-overflow-budget=\"none\"",
+        "#tau-ops-harness-active-missions[data-left-table-fit=\"compact-no-overflow\"] #tau-ops-harness-missions-table,\n                            #tau-ops-harness-benchmark-panel[data-left-table-fit=\"compact-no-overflow\"] #tau-ops-harness-benchmark-table {\n                                min-width: 0;\n                                table-layout: fixed;",
+        "#tau-ops-harness-active-missions[data-left-table-fit=\"compact-no-overflow\"] #tau-ops-harness-missions-table th:nth-child(n+4),",
+        "#tau-ops-harness-active-missions[data-left-table-fit=\"compact-no-overflow\"] #tau-ops-harness-missions-table td:nth-child(n+4) {\n                                display: none;",
+        "#tau-ops-harness-active-missions[data-left-table-fit=\"compact-no-overflow\"] #tau-ops-harness-missions-table th,\n                            #tau-ops-harness-active-missions[data-left-table-fit=\"compact-no-overflow\"] #tau-ops-harness-missions-table td,\n                            #tau-ops-harness-benchmark-panel[data-left-table-fit=\"compact-no-overflow\"] #tau-ops-harness-benchmark-table td {\n                                white-space: normal;",
+        "data-mission-state-chip=\"running\">Running",
+        "data-mission-gate-chip=\"needs-review\">3/5 gates",
+    ] {
+        assert!(
+            html.contains(marker),
+            "missing left table no-overflow marker `{marker}`"
+        );
+    }
+}
+
+#[test]
 fn functional_spec_3775_c01_c02_c03_harness_keeps_benchmark_panel_in_left_first_viewport() {
     let html = render_tau_ops_dashboard_shell_for_route("/ops/harness");
 

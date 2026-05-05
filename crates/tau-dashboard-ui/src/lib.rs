@@ -4106,6 +4106,11 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 scrollbar-gutter: stable;
                                 scroll-snap-type: y proximity;
                             }
+                            #tau-ops-harness-active-missions[data-left-table-fit="compact-no-overflow"] #tau-ops-harness-missions-table,
+                            #tau-ops-harness-benchmark-panel[data-left-table-fit="compact-no-overflow"] #tau-ops-harness-benchmark-table {
+                                min-width: 0;
+                                table-layout: fixed;
+                            }
                             #tau-ops-harness-kpi-grid article,
                             #tau-ops-harness-proof-window section,
                             #tau-ops-harness-self-improvement-window section {
@@ -4186,6 +4191,31 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 flex-wrap: wrap;
                                 gap: 5px;
                                 margin-top: 6px;
+                            }
+                            #tau-ops-harness-active-missions[data-left-table-fit="compact-no-overflow"] #tau-ops-harness-missions-table th:nth-child(n+4),
+                            #tau-ops-harness-active-missions[data-left-table-fit="compact-no-overflow"] #tau-ops-harness-missions-table td:nth-child(n+4) {
+                                display: none;
+                            }
+                            #tau-ops-harness-active-missions[data-left-table-fit="compact-no-overflow"] #tau-ops-harness-missions-table th,
+                            #tau-ops-harness-active-missions[data-left-table-fit="compact-no-overflow"] #tau-ops-harness-missions-table td,
+                            #tau-ops-harness-benchmark-panel[data-left-table-fit="compact-no-overflow"] #tau-ops-harness-benchmark-table td {
+                                white-space: normal;
+                            }
+                            #tau-ops-harness-active-missions[data-left-table-fit="compact-no-overflow"] #tau-ops-harness-missions-table th {
+                                font-size: .66rem;
+                                padding-inline: 6px;
+                                white-space: nowrap;
+                            }
+                            #tau-ops-harness-active-missions[data-left-table-fit="compact-no-overflow"] #tau-ops-harness-missions-table th:nth-child(2),
+                            #tau-ops-harness-active-missions[data-left-table-fit="compact-no-overflow"] #tau-ops-harness-missions-table td:nth-child(2) {
+                                width: 76px;
+                            }
+                            #tau-ops-harness-active-missions[data-left-table-fit="compact-no-overflow"] #tau-ops-harness-missions-table th:nth-child(3),
+                            #tau-ops-harness-active-missions[data-left-table-fit="compact-no-overflow"] #tau-ops-harness-missions-table td:nth-child(3) {
+                                width: 70px;
+                            }
+                            #tau-ops-harness-active-missions[data-left-table-fit="compact-no-overflow"] #tau-ops-harness-missions-table meter {
+                                width: 58px;
                             }
                             #tau-ops-harness-active-missions[data-active-mission-scroll-boundary="whole-row"] #tau-ops-harness-missions-table tbody tr {
                                 scroll-snap-align: start;
@@ -4672,6 +4702,8 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     data-first-viewport-budget="benchmark-visible"
                                     data-active-mission-scroll-boundary="whole-row"
                                     data-active-mission-visible-rows="3"
+                                    data-left-table-fit="compact-no-overflow"
+                                    data-horizontal-overflow-budget="none"
                                 >
                                     <h4>"Active Missions"</h4>
                                     <div class="tau-harness-table-wrap" data-scroll-region="active-missions" data-scroll-boundary="whole-row">
@@ -4782,6 +4814,8 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     data-failed-gates=context.harness.failed_gate_label.clone()
                                     data-proof-source=context.harness.proof_source.clone()
                                     data-first-viewport-anchor="canonical-benchmark"
+                                    data-left-table-fit="compact-no-overflow"
+                                    data-horizontal-overflow-budget="none"
                                 >
                                     <h4>"M334 Autonomy Benchmark"</h4>
                                     <div class="tau-harness-table-wrap">
