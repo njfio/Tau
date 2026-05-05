@@ -813,6 +813,30 @@ fn functional_spec_3767_c01_c02_c03_harness_prioritizes_proof_evidence_in_primar
 }
 
 #[test]
+fn functional_spec_3768_c01_c02_c03_harness_compacts_proof_dag_to_single_row() {
+    let html = render_tau_ops_dashboard_shell_for_route("/ops/harness");
+
+    for marker in [
+        "id=\"tau-ops-harness-plan-dag\" data-dag-node-count=\"5\" data-current-node=\"verify\" data-proof-dag-density=\"single-row\"",
+        "grid-template-columns: repeat(5, minmax(0, 1fr));",
+        "#tau-ops-harness-plan-dag li {\n                                border: 1px solid var(--tau-harness-line);\n                                border-radius: 999px;\n                                min-height: 30px;\n                                padding: 5px 4px;",
+        "font-size: .66rem;",
+        "white-space: nowrap;",
+        "text-overflow: ellipsis;",
+        "id=\"tau-ops-harness-dag-plan\" data-plan-node=\"Plan\" data-node-status=\"passed\"",
+        "id=\"tau-ops-harness-dag-execute\" data-plan-node=\"Execute\" data-node-status=\"passed\"",
+        "id=\"tau-ops-harness-dag-memory-write\" data-plan-node=\"Memory Write\" data-node-status=\"passed\"",
+        "id=\"tau-ops-harness-dag-verify\" data-plan-node=\"Verify\" data-node-status=\"running\"",
+        "id=\"tau-ops-harness-dag-learn\" data-plan-node=\"Learn\" data-node-status=\"pending\"",
+    ] {
+        assert!(
+            html.contains(marker),
+            "missing compact proof DAG marker `{marker}`"
+        );
+    }
+}
+
+#[test]
 fn functional_spec_3759_c02_c03_harness_static_preview_guard_preserves_gateway_forms() {
     let html = render_tau_ops_dashboard_shell_for_route("/ops/harness");
 

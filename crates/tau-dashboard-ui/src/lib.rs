@@ -4194,19 +4194,24 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             }
                             #tau-ops-harness-plan-dag {
                                 display: grid;
-                                grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
-                                gap: 8px;
+                                grid-template-columns: repeat(5, minmax(0, 1fr));
+                                gap: 6px;
                                 margin: 0;
-                                padding: 2px 0;
+                                padding: 0;
                                 list-style: none;
                             }
                             #tau-ops-harness-plan-dag li {
                                 border: 1px solid var(--tau-harness-line);
                                 border-radius: 999px;
-                                padding: 6px 8px;
+                                min-height: 30px;
+                                padding: 5px 4px;
                                 text-align: center;
                                 background: #142b3b;
                                 min-width: 0;
+                                overflow: hidden;
+                                text-overflow: ellipsis;
+                                white-space: nowrap;
+                                font-size: .66rem;
                             }
                             #tau-ops-harness-plan-dag [data-node-status="passed"],
                             #tau-ops-harness-verification-gates [data-gate-status="passed"],
@@ -4619,7 +4624,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                         <dt>"Retry Count"</dt><dd>"1"</dd>
                                     </dl>
                                 </header>
-                                <ol id="tau-ops-harness-plan-dag" data-dag-node-count="5" data-current-node="verify">
+                                <ol id="tau-ops-harness-plan-dag" data-dag-node-count="5" data-current-node="verify" data-proof-dag-density="single-row">
                                     <li id="tau-ops-harness-dag-plan" data-plan-node="Plan" data-node-status="passed">"Plan"</li>
                                     <li id="tau-ops-harness-dag-execute" data-plan-node="Execute" data-node-status="passed">"Execute"</li>
                                     <li id="tau-ops-harness-dag-memory-write" data-plan-node="Memory Write" data-node-status="passed">"Memory Write"</li>
