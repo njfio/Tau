@@ -1495,6 +1495,39 @@ fn functional_spec_3785_c01_c02_c03_harness_review_queue_labels_are_readable() {
 }
 
 #[test]
+fn functional_spec_3786_c01_c02_c03_harness_proof_header_metadata_does_not_wrap() {
+    let html = render_tau_ops_dashboard_shell_for_route("/ops/harness");
+
+    let header_index = html
+        .find("id=\"tau-ops-harness-proof-header\"")
+        .expect("proof header should render");
+    let dag_index = html
+        .find("id=\"tau-ops-harness-plan-dag\"")
+        .expect("plan dag should render");
+
+    assert!(
+        header_index < dag_index,
+        "proof metadata should remain before the plan DAG"
+    );
+
+    for marker in [
+        "id=\"tau-ops-harness-proof-header\" class=\"tau-harness-window-titlebar\" data-compact-metadata-breakpoint=\"1400px\" data-metadata-fit=\"no-wrap\" data-run-id-wrap=\"single-line\" data-metadata-value-overflow-budget=\"none\"",
+        "<dt>Run ID</dt><dd>run_8f3a2</dd>",
+        "<dt>Elapsed</dt><dd>01:42:18</dd>",
+        "<dt>Tool Budget</dt><dd>42/60</dd>",
+        "<dt>Cost</dt><dd>$3.82</dd>",
+        "<dt>Retry Count</dt><dd>1</dd>",
+        "#tau-ops-harness-proof-header[data-metadata-fit=\"no-wrap\"] dl {\n                                grid-template-columns: minmax(5.5rem, max-content) minmax(4.75rem, max-content);",
+        "#tau-ops-harness-proof-header[data-metadata-fit=\"no-wrap\"] dt,\n                            #tau-ops-harness-proof-header[data-metadata-fit=\"no-wrap\"] dd {\n                                white-space: nowrap;\n                                overflow-wrap: normal;",
+    ] {
+        assert!(
+            html.contains(marker),
+            "missing proof header no-wrap marker `{marker}`"
+        );
+    }
+}
+
+#[test]
 fn functional_spec_3775_c01_c02_c03_harness_keeps_benchmark_panel_in_left_first_viewport() {
     let html = render_tau_ops_dashboard_shell_for_route("/ops/harness");
 

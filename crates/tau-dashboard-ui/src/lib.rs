@@ -4338,6 +4338,21 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 gap: 6px 12px;
                                 margin: 8px 0 0;
                             }
+                            #tau-ops-harness-proof-header[data-metadata-fit="no-wrap"] dl {
+                                grid-template-columns: minmax(5.5rem, max-content) minmax(4.75rem, max-content);
+                                gap: 4px 8px;
+                                margin-left: auto;
+                                font-size: .78rem;
+                            }
+                            #tau-ops-harness-proof-header[data-metadata-fit="no-wrap"] dt,
+                            #tau-ops-harness-proof-header[data-metadata-fit="no-wrap"] dd {
+                                white-space: nowrap;
+                                overflow-wrap: normal;
+                            }
+                            #tau-ops-harness-proof-header[data-metadata-fit="no-wrap"] dd {
+                                overflow: hidden;
+                                text-overflow: clip;
+                            }
                             #tau-ops-harness-proposal-detail {
                                 max-height: 128px;
                                 overflow: auto;
@@ -4985,6 +5000,9 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     id="tau-ops-harness-proof-header"
                                     class="tau-harness-window-titlebar"
                                     data-compact-metadata-breakpoint="1400px"
+                                    data-metadata-fit="no-wrap"
+                                    data-run-id-wrap="single-line"
+                                    data-metadata-value-overflow-budget="none"
                                 >
                                     <div>
                                         <p>"Goal"</p>
