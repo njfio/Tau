@@ -5,12 +5,16 @@ async fn integration_spec_3140_c04_ops_routes_render_config_training_safety_diag
     let temp = tempdir().expect("tempdir");
     let state = test_state(temp.path(), 4_096, "secret");
     let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
-    let client = Client::new();
+    let client = Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .expect("build no-redirect client");
     let route_cases = [
         ("/ops/config", "id=\"tau-ops-config-panel\" data-route=\"/ops/config\" aria-hidden=\"false\" data-panel-visible=\"true\""),
         ("/ops/training", "id=\"tau-ops-training-panel\" data-route=\"/ops/training\" aria-hidden=\"false\" data-panel-visible=\"true\""),
         ("/ops/safety", "id=\"tau-ops-safety-panel\" data-route=\"/ops/safety\" aria-hidden=\"false\" data-panel-visible=\"true\""),
         ("/ops/diagnostics", "id=\"tau-ops-diagnostics-panel\" data-route=\"/ops/diagnostics\" aria-hidden=\"false\" data-panel-visible=\"true\""),
+        ("/ops/harness", "id=\"tau-ops-harness-panel\" data-route=\"/ops/harness\" data-component=\"MissionHarnessWorkspace\" data-design-template=\"three-window-agent-harness\" aria-hidden=\"false\" data-panel-visible=\"true\""),
     ];
 
     for (route, expected_panel_marker) in route_cases {
@@ -28,6 +32,113 @@ async fn integration_spec_3140_c04_ops_routes_render_config_training_safety_diag
             "missing marker for route {route}"
         );
     }
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn integration_spec_3756_c04_ops_harness_route_renders_benchmark_and_apply_markers() {
+    let temp = tempdir().expect("tempdir");
+    let state = test_state(temp.path(), 4_096, "secret");
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+    let client = Client::new();
+
+    let response = client
+        .get(format!(
+            "http://{addr}/ops/harness?theme=dark&sidebar=expanded&session=ops-harness-contract"
+        ))
+        .send()
+        .await
+        .expect("load ops harness route");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.text().await.expect("read ops harness route body");
+
+    for marker in [
+        "id=\"tau-ops-harness-benchmark-panel\" data-benchmark-id=\"m334-tranche-one-autonomy\"",
+        "id=\"tau-ops-harness-run-benchmark-form\" action=\"/ops/harness/run-benchmark\" method=\"post\" data-command=\"tau_agent_harness\"",
+        "id=\"tau-ops-harness-conservative-policy\" data-policy=\"conservative-self-improvement\" data-allowed-targets=\"skill,config,prompt\" data-blocked-targets=\"source-code,safety-policy\"",
+        "id=\"tau-ops-harness-action-apply\" type=\"button\" data-action=\"apply\" data-disabled=\"true\" aria-disabled=\"true\" data-approval-required=\"true\"",
+        "id=\"tau-ops-harness-tui-companion\" data-component=\"TuiCompanion\" data-command=\"tau status\"",
+    ] {
+        assert!(
+            body.contains(marker),
+            "missing harness gateway marker `{marker}`"
+        );
+    }
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn integration_spec_3756_c05_ops_harness_actions_execute_and_persist_proof() {
+    let temp = tempdir().expect("tempdir");
+    let state = test_state(temp.path(), 4_096, "secret");
+    let state_dir = state.config.state_dir.clone();
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+    let client = Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .expect("build no-redirect client");
+
+    let benchmark_response = client
+        .post(format!("http://{addr}/ops/harness/run-benchmark"))
+        .send()
+        .await
+        .expect("run harness benchmark");
+    assert_eq!(benchmark_response.status(), StatusCode::SEE_OTHER);
+    let benchmark_location = benchmark_response
+        .headers()
+        .get(reqwest::header::LOCATION)
+        .expect("benchmark redirect location")
+        .to_str()
+        .expect("location header is utf8");
+    assert!(benchmark_location.contains("benchmark_status=passed"));
+
+    let proof_path = state_dir.join("ops-harness/m334/latest.json");
+    let proof_json = std::fs::read_to_string(&proof_path).expect("read benchmark proof");
+    let proof: serde_json::Value =
+        serde_json::from_str(&proof_json).expect("benchmark proof is json");
+    assert_eq!(proof["benchmark_id"], "m334-tranche-one-autonomy");
+    assert_eq!(proof["passed"], true);
+    assert_eq!(proof["tasks"].as_array().expect("task array").len(), 4);
+
+    let approve_response = client
+        .post(format!(
+            "http://{addr}/ops/harness/proposals/PR-044/approve"
+        ))
+        .send()
+        .await
+        .expect("approve proposal");
+    assert_eq!(approve_response.status(), StatusCode::SEE_OTHER);
+    let audit_log =
+        std::fs::read_to_string(state_dir.join("ops-harness/audit.jsonl")).expect("audit log");
+    assert!(audit_log.contains("\"proposal_id\":\"PR-044\""));
+    assert!(audit_log.contains("\"action\":\"approve\""));
+    assert!(audit_log.contains("\"result\":\"recorded\""));
+
+    let apply_response = client
+        .post(format!("http://{addr}/ops/harness/proposals/PR-044/apply"))
+        .send()
+        .await
+        .expect("direct apply is rejected");
+    assert_eq!(apply_response.status(), StatusCode::FORBIDDEN);
+    let apply_body = apply_response.text().await.expect("read apply rejection");
+    assert!(apply_body.contains("id=\"tau-ops-harness-apply-blocked\""));
+    assert!(apply_body.contains("data-result=\"blocked_approval_required\""));
+    let audit_log =
+        std::fs::read_to_string(state_dir.join("ops-harness/audit.jsonl")).expect("audit log");
+    assert!(audit_log.contains("\"action\":\"apply\""));
+    assert!(audit_log.contains("\"result\":\"blocked_approval_required\""));
+
+    let diff_response = client
+        .get(format!("http://{addr}/ops/harness/proposals/PR-044/diff"))
+        .send()
+        .await
+        .expect("load proposal diff");
+    assert_eq!(diff_response.status(), StatusCode::OK);
+    let diff_body = diff_response.text().await.expect("read diff body");
+    assert!(diff_body.contains("id=\"tau-ops-harness-diff\""));
+    assert!(diff_body.contains("data-proposal-id=\"PR-044\""));
 
     handle.abort();
 }

@@ -43,6 +43,10 @@ define_ops_shell_handler!(
     TauOpsDashboardRoute::Channels
 );
 define_ops_shell_handler!(
+    handle_ops_dashboard_harness_shell_page,
+    TauOpsDashboardRoute::Harness
+);
+define_ops_shell_handler!(
     handle_ops_dashboard_config_shell_page,
     TauOpsDashboardRoute::Config
 );

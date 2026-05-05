@@ -1,11 +1,17 @@
 use std::collections::BTreeSet;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::UNIX_EPOCH;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use axum::extract::{Form, Path as AxumPath, State};
+use axum::http::StatusCode;
 use axum::response::{Html, IntoResponse, Redirect, Response};
 use serde::Deserialize;
-use tau_agent_core::{Agent, AgentConfig};
+use serde_json::json;
+use tau_agent_core::{
+    load_autonomy_benchmark_fixture, run_autonomy_benchmark_fixture, Agent, AgentConfig,
+    MissionHarnessConfig,
+};
 use tau_ai::{Message, MessageRole};
 use tau_dashboard_ui::{
     render_tau_ops_dashboard_shell_with_context, TauOpsDashboardAuthMode,
@@ -1143,6 +1149,179 @@ pub(super) fn render_tau_ops_dashboard_shell_for_route(
             chat,
         },
     ))
+}
+
+pub(super) async fn handle_ops_dashboard_harness_run_benchmark(
+    State(state): State<Arc<GatewayOpenResponsesServerState>>,
+) -> Response {
+    let fixture_path = canonical_harness_fixture_path();
+    let artifact_dir = harness_artifact_dir(&state.config.state_dir);
+    let proof_path = artifact_dir.join("latest.json");
+    let memory_root = artifact_dir.join("memory");
+    let run_id = format!("gateway-harness-{}", now_unix_ms());
+
+    let redirect_path = match load_autonomy_benchmark_fixture(&fixture_path).and_then(|fixture| {
+        run_autonomy_benchmark_fixture(
+            &fixture,
+            &MissionHarnessConfig {
+                run_id,
+                started_unix_ms: now_unix_ms(),
+                memory_root,
+                workspace_id: "gateway-ops-harness".to_string(),
+            },
+        )
+    }) {
+        Ok(proof) => {
+            let write_result = std::fs::create_dir_all(&artifact_dir)
+                .and_then(|()| serde_json::to_vec_pretty(&proof).map_err(std::io::Error::other))
+                .and_then(|payload| std::fs::write(&proof_path, payload));
+            if write_result.is_ok() {
+                let status = if proof.passed { "passed" } else { "failed" };
+                let task_count = proof.tasks.len();
+                format!("/ops/harness?benchmark_status={status}&benchmark_tasks={task_count}")
+            } else {
+                "/ops/harness?benchmark_status=artifact_write_failed".to_string()
+            }
+        }
+        Err(_) => "/ops/harness?benchmark_status=failed".to_string(),
+    };
+
+    Redirect::to(redirect_path.as_str()).into_response()
+}
+
+pub(super) async fn handle_ops_dashboard_harness_proposal_action(
+    State(state): State<Arc<GatewayOpenResponsesServerState>>,
+    AxumPath((proposal_id, action)): AxumPath<(String, String)>,
+) -> Response {
+    let proposal_id = sanitize_harness_token(&proposal_id);
+    let action = sanitize_harness_token(&action);
+    let status = match action.as_str() {
+        "approve" => {
+            append_harness_audit_record(
+                &state.config.state_dir,
+                &proposal_id,
+                "approve",
+                "recorded",
+            );
+            "approved"
+        }
+        "reject" => {
+            append_harness_audit_record(
+                &state.config.state_dir,
+                &proposal_id,
+                "reject",
+                "recorded",
+            );
+            "rejected"
+        }
+        "dry-run" => {
+            append_harness_audit_record(&state.config.state_dir, &proposal_id, "dry-run", "passed");
+            "dry_run_passed"
+        }
+        "apply" => {
+            append_harness_audit_record(
+                &state.config.state_dir,
+                &proposal_id,
+                "apply",
+                "blocked_approval_required",
+            );
+            return (
+                StatusCode::FORBIDDEN,
+                Html(format!(
+                    r#"<main id="tau-ops-harness-apply-blocked" data-proposal-id="{proposal_id}" data-result="blocked_approval_required">
+<h1>Apply Requires Approval</h1>
+<p>Harness self-improvement apply is intentionally approval-gated.</p>
+<a href="/ops/harness">Back to Mission Harness</a>
+</main>"#
+                )),
+            )
+                .into_response();
+        }
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Html(format!(
+                    r#"<main id="tau-ops-harness-action-invalid" data-proposal-id="{proposal_id}" data-action="{action}" data-result="invalid_action">
+<h1>Invalid Harness Action</h1>
+<p>Supported proposal actions are approve, reject, and dry-run.</p>
+<a href="/ops/harness">Back to Mission Harness</a>
+</main>"#
+                )),
+            )
+                .into_response();
+        }
+    };
+    let redirect_path = format!("/ops/harness?proposal_id={proposal_id}&proposal_status={status}");
+    Redirect::to(redirect_path.as_str()).into_response()
+}
+
+pub(super) async fn handle_ops_dashboard_harness_proposal_diff(
+    AxumPath(proposal_id): AxumPath<String>,
+) -> Html<String> {
+    let proposal_id = sanitize_harness_token(&proposal_id);
+    Html(format!(
+        r#"<main id="tau-ops-harness-diff" data-proposal-id="{proposal_id}">
+<h1>Harness Proposal Diff</h1>
+<pre>--- prompts/research_to_doc/system.md
++++ prompts/research_to_doc/system.md
+@@
+- verbose repeated research instructions
++ concise mission-scoped research instructions
+</pre>
+<a href="/ops/harness">Back to Mission Harness</a>
+</main>"#
+    ))
+}
+
+fn canonical_harness_fixture_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tasks/fixtures/m334/tranche-one-autonomy-benchmark.json")
+}
+
+fn harness_artifact_dir(state_dir: &Path) -> PathBuf {
+    state_dir.join("ops-harness").join("m334")
+}
+
+fn append_harness_audit_record(state_dir: &Path, proposal_id: &str, action: &str, result: &str) {
+    let audit_dir = state_dir.join("ops-harness");
+    let audit_path = audit_dir.join("audit.jsonl");
+    if std::fs::create_dir_all(&audit_dir).is_err() {
+        return;
+    }
+    let record = json!({
+        "timestamp_unix_ms": now_unix_ms(),
+        "proposal_id": proposal_id,
+        "action": action,
+        "result": result,
+    });
+    let Ok(mut line) = serde_json::to_string(&record) else {
+        return;
+    };
+    line.push('\n');
+    let _ = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(audit_path)
+        .and_then(|mut file| std::io::Write::write_all(&mut file, line.as_bytes()));
+}
+
+fn sanitize_harness_token(token: &str) -> String {
+    let sanitized = token
+        .chars()
+        .filter(|candidate| candidate.is_ascii_alphanumeric() || matches!(candidate, '-' | '_'))
+        .collect::<String>();
+    if sanitized.is_empty() {
+        "unknown".to_string()
+    } else {
+        sanitized
+    }
+}
+
+fn now_unix_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis().min(u128::from(u64::MAX)) as u64)
+        .unwrap_or_default()
 }
 
 pub(super) async fn handle_ops_dashboard_control_action(

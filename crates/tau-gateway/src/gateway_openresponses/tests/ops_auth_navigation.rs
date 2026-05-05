@@ -230,7 +230,7 @@ async fn functional_spec_2790_c05_ops_routes_include_navigation_and_breadcrumb_m
             .expect("ops route request");
         assert_eq!(response.status(), StatusCode::OK);
         let body = response.text().await.expect("read ops route body");
-        assert_eq!(body.matches("data-nav-item=").count(), 14);
+        assert_eq!(body.matches("data-nav-item=").count(), 15);
         assert!(body.contains("id=\"tau-ops-breadcrumbs\""));
         assert!(body.contains("id=\"tau-ops-breadcrumb-current\""));
         assert!(body.contains(&format!("data-breadcrumb-current=\"{breadcrumb_current}\"")));
@@ -256,6 +256,7 @@ async fn functional_spec_2794_c01_c02_c03_all_sidebar_ops_routes_return_shell_wi
         ("/ops/memory-graph", "memory-graph", "memory-graph"),
         ("/ops/tools-jobs", "tools-jobs", "tools-jobs"),
         ("/ops/channels", "channels", "channels"),
+        ("/ops/harness", "harness", "mission-harness"),
         ("/ops/config", "config", "config"),
         ("/ops/training", "training", "training"),
         ("/ops/safety", "safety", "safety"),
@@ -279,7 +280,7 @@ async fn functional_spec_2794_c01_c02_c03_all_sidebar_ops_routes_return_shell_wi
         assert!(body.contains(&format!("data-active-route=\"{active_route}\"")));
         assert!(body.contains("id=\"tau-ops-breadcrumbs\""));
         assert!(body.contains(&format!("data-breadcrumb-current=\"{breadcrumb_current}\"")));
-        assert_eq!(body.matches("data-nav-item=").count(), 14);
+        assert_eq!(body.matches("data-nav-item=").count(), 15);
     }
 
     handle.abort();

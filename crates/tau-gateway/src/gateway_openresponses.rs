@@ -175,20 +175,22 @@ use openresponses_entry_handler::handle_openresponses;
 use openresponses_execution_handler::execute_openresponses_request;
 use ops_dashboard_shell::{
     handle_ops_dashboard_chat_new, handle_ops_dashboard_chat_send,
-    handle_ops_dashboard_control_action, handle_ops_dashboard_memory_create,
-    handle_ops_dashboard_session_detail_reset, handle_ops_dashboard_sessions_branch,
-    render_tau_ops_dashboard_shell_for_route,
+    handle_ops_dashboard_control_action, handle_ops_dashboard_harness_proposal_action,
+    handle_ops_dashboard_harness_proposal_diff, handle_ops_dashboard_harness_run_benchmark,
+    handle_ops_dashboard_memory_create, handle_ops_dashboard_session_detail_reset,
+    handle_ops_dashboard_sessions_branch, render_tau_ops_dashboard_shell_for_route,
 };
 use ops_shell_controls::OpsShellControlsQuery;
 use ops_shell_handlers::{
     handle_ops_dashboard_agent_detail_shell_page, handle_ops_dashboard_agents_shell_page,
     handle_ops_dashboard_channels_shell_page, handle_ops_dashboard_chat_shell_page,
     handle_ops_dashboard_config_shell_page, handle_ops_dashboard_deploy_shell_page,
-    handle_ops_dashboard_diagnostics_shell_page, handle_ops_dashboard_login_shell_page,
-    handle_ops_dashboard_memory_graph_shell_page, handle_ops_dashboard_memory_shell_page,
-    handle_ops_dashboard_safety_shell_page, handle_ops_dashboard_session_detail_shell_page,
-    handle_ops_dashboard_sessions_shell_page, handle_ops_dashboard_shell_page,
-    handle_ops_dashboard_tools_jobs_shell_page, handle_ops_dashboard_training_shell_page,
+    handle_ops_dashboard_diagnostics_shell_page, handle_ops_dashboard_harness_shell_page,
+    handle_ops_dashboard_login_shell_page, handle_ops_dashboard_memory_graph_shell_page,
+    handle_ops_dashboard_memory_shell_page, handle_ops_dashboard_safety_shell_page,
+    handle_ops_dashboard_session_detail_shell_page, handle_ops_dashboard_sessions_shell_page,
+    handle_ops_dashboard_shell_page, handle_ops_dashboard_tools_jobs_shell_page,
+    handle_ops_dashboard_training_shell_page,
 };
 use request_preflight::{
     authorize_and_enforce_gateway_limits, enforce_policy_gate, parse_gateway_json_body,

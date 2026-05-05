@@ -264,6 +264,22 @@ pub(super) fn build_gateway_openresponses_router(
             get(handle_ops_dashboard_channels_shell_page),
         )
         .route(
+            OPS_DASHBOARD_HARNESS_ENDPOINT,
+            get(handle_ops_dashboard_harness_shell_page),
+        )
+        .route(
+            OPS_DASHBOARD_HARNESS_RUN_BENCHMARK_ENDPOINT,
+            post(handle_ops_dashboard_harness_run_benchmark),
+        )
+        .route(
+            OPS_DASHBOARD_HARNESS_PROPOSAL_ACTION_ENDPOINT,
+            post(handle_ops_dashboard_harness_proposal_action),
+        )
+        .route(
+            OPS_DASHBOARD_HARNESS_PROPOSAL_DIFF_ENDPOINT,
+            get(handle_ops_dashboard_harness_proposal_diff),
+        )
+        .route(
             OPS_DASHBOARD_CONFIG_ENDPOINT,
             get(handle_ops_dashboard_config_shell_page),
         )

@@ -941,7 +941,7 @@ mod tests {
         let lines = render_operator_shell_frame(&frame, 78);
         let rendered = lines.join("\n");
 
-        for panel in ["STATUS", "AUTH", "TRAINING", "ALERTS", "ACTIONS"] {
+        for panel in ["STATUS", "AUTH", "TRAINING", "HARNESS", "ALERTS", "ACTIONS"] {
             assert!(
                 rendered.contains(panel),
                 "missing shell panel header `{panel}` in:\n{rendered}"

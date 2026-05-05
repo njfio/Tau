@@ -17,6 +17,12 @@ pub(super) const OPS_DASHBOARD_MEMORY_ENDPOINT: &str = "/ops/memory";
 pub(super) const OPS_DASHBOARD_MEMORY_GRAPH_ENDPOINT: &str = "/ops/memory-graph";
 pub(super) const OPS_DASHBOARD_TOOLS_JOBS_ENDPOINT: &str = "/ops/tools-jobs";
 pub(super) const OPS_DASHBOARD_CHANNELS_ENDPOINT: &str = "/ops/channels";
+pub(super) const OPS_DASHBOARD_HARNESS_ENDPOINT: &str = "/ops/harness";
+pub(super) const OPS_DASHBOARD_HARNESS_RUN_BENCHMARK_ENDPOINT: &str = "/ops/harness/run-benchmark";
+pub(super) const OPS_DASHBOARD_HARNESS_PROPOSAL_ACTION_ENDPOINT: &str =
+    "/ops/harness/proposals/{proposal_id}/{action}";
+pub(super) const OPS_DASHBOARD_HARNESS_PROPOSAL_DIFF_ENDPOINT: &str =
+    "/ops/harness/proposals/{proposal_id}/diff";
 pub(super) const OPS_DASHBOARD_CONFIG_ENDPOINT: &str = "/ops/config";
 pub(super) const OPS_DASHBOARD_TRAINING_ENDPOINT: &str = "/ops/training";
 pub(super) const OPS_DASHBOARD_SAFETY_ENDPOINT: &str = "/ops/safety";

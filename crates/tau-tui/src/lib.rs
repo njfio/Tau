@@ -568,6 +568,20 @@ pub struct OperatorShellAuthRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Mission harness proof summary shown in the operator shell.
+pub struct OperatorHarnessSummary {
+    pub benchmark_id: String,
+    pub mission_id: String,
+    pub transport: String,
+    pub skill: String,
+    pub status: String,
+    pub passed: usize,
+    pub total: usize,
+    pub failed_gates: Vec<String>,
+    pub proof_artifact: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 /// Operator-shell view model for deterministic status rendering.
 pub struct OperatorShellFrame {
     pub environment: String,
@@ -587,6 +601,7 @@ pub struct OperatorShellFrame {
     pub auth_rows: Vec<OperatorShellAuthRow>,
     pub alerts: Vec<String>,
     pub actions: Vec<String>,
+    pub harness_summary: Option<OperatorHarnessSummary>,
 }
 
 impl OperatorShellFrame {
@@ -633,6 +648,17 @@ impl OperatorShellFrame {
                 "press a: open auth matrix".to_string(),
                 "press t: open training summary".to_string(),
             ],
+            harness_summary: Some(OperatorHarnessSummary {
+                benchmark_id: "M334".to_string(),
+                mission_id: "run_8f3a2".to_string(),
+                transport: "gateway".to_string(),
+                skill: "repo_patch".to_string(),
+                status: "verifying".to_string(),
+                passed: 4,
+                total: 4,
+                failed_gates: Vec::new(),
+                proof_artifact: "latest.json".to_string(),
+            }),
         }
     }
 
@@ -918,6 +944,7 @@ impl OperatorShellFrame {
             auth_rows,
             alerts,
             actions,
+            harness_summary: None,
         }
     }
 }
@@ -1065,6 +1092,26 @@ pub fn render_operator_shell_frame(frame: &OperatorShellFrame, width: usize) -> 
     ];
     output.extend(render_shell_panel("TRAINING", &training_lines, panel_width));
     output.push(String::new());
+
+    if let Some(summary) = &frame.harness_summary {
+        let failed_gates = if summary.failed_gates.is_empty() {
+            "none".to_string()
+        } else {
+            summary.failed_gates.join(", ")
+        };
+        let harness_lines = vec![
+            format!("benchmark.id : {}", summary.benchmark_id),
+            format!("mission.id   : {}", summary.mission_id),
+            format!("transport    : {}", summary.transport),
+            format!("skill        : {}", summary.skill),
+            format!("status       : {}", summary.status),
+            format!("passed       : {}/{}", summary.passed, summary.total),
+            format!("failed.gates : {failed_gates}"),
+            format!("proof        : {}", summary.proof_artifact),
+        ];
+        output.extend(render_shell_panel("HARNESS", &harness_lines, panel_width));
+        output.push(String::new());
+    }
 
     let mut alert_lines = vec![
         format!("primary_alert.code     : {}", frame.primary_alert_code),
@@ -1724,7 +1771,7 @@ mod tests {
     fn spec_c01_operator_shell_renderer_outputs_expected_panel_headers() {
         let frame = OperatorShellFrame::deterministic_fixture("local-dev".to_string());
         let rendered = super::render_operator_shell_frame(&frame, 72).join("\n");
-        for panel in ["STATUS", "AUTH", "TRAINING", "ALERTS", "ACTIONS"] {
+        for panel in ["STATUS", "AUTH", "TRAINING", "HARNESS", "ALERTS", "ACTIONS"] {
             assert!(rendered.contains(panel), "missing panel {panel}");
         }
     }
@@ -1754,12 +1801,36 @@ mod tests {
             }],
             alerts: vec!["gateway latency elevated".to_string()],
             actions: vec!["press a: open auth".to_string()],
+            harness_summary: None,
         };
 
         let rendered = super::render_operator_shell_frame(&frame, 68).join("\n");
         assert!(rendered.contains("openrouter"));
         assert!(rendered.contains("rollouts.total"));
         assert!(rendered.contains("75.00%"));
+    }
+
+    #[test]
+    fn functional_operator_shell_renderer_includes_harness_summary() {
+        let frame = OperatorShellFrame::deterministic_fixture("ops-west".to_string());
+        let rendered = super::render_operator_shell_frame(&frame, 72).join("\n");
+
+        for marker in [
+            "HARNESS",
+            "benchmark.id : M334",
+            "mission.id   : run_8f3a2",
+            "transport    : gateway",
+            "skill        : repo_patch",
+            "status       : verifying",
+            "passed       : 4/4",
+            "failed.gates : none",
+            "proof        : latest.json",
+        ] {
+            assert!(
+                rendered.contains(marker),
+                "missing harness marker `{marker}` in TUI output:\n{rendered}"
+            );
+        }
     }
 
     #[test]

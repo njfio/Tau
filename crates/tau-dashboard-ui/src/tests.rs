@@ -322,9 +322,9 @@ fn spec_c28_regression_dashboard_and_tui_require_shared_operator_flow_markers() 
 }
 
 #[test]
-fn functional_spec_2790_c01_sidebar_includes_14_ops_route_links() {
+fn functional_spec_2790_c01_sidebar_includes_15_ops_route_links() {
     let html = render_tau_ops_dashboard_shell();
-    assert_eq!(html.matches("data-nav-item=").count(), 14);
+    assert_eq!(html.matches("data-nav-item=").count(), 15);
 
     let expected_routes = [
         "/ops",
@@ -336,6 +336,7 @@ fn functional_spec_2790_c01_sidebar_includes_14_ops_route_links() {
         "/ops/memory-graph",
         "/ops/tools-jobs",
         "/ops/channels",
+        "/ops/harness",
         "/ops/config",
         "/ops/training",
         "/ops/safety",
@@ -394,6 +395,7 @@ fn functional_spec_2794_c02_c03_route_context_tokens_match_expected_values() {
         ),
         (TauOpsDashboardRoute::ToolsJobs, "tools-jobs", "tools-jobs"),
         (TauOpsDashboardRoute::Channels, "channels", "channels"),
+        (TauOpsDashboardRoute::Harness, "harness", "mission-harness"),
         (TauOpsDashboardRoute::Config, "config", "config"),
         (TauOpsDashboardRoute::Training, "training", "training"),
         (TauOpsDashboardRoute::Safety, "safety", "safety"),
@@ -420,6 +422,68 @@ fn functional_spec_2794_c02_c03_route_context_tokens_match_expected_values() {
             "data-breadcrumb-current=\"{expected_breadcrumb}\""
         )));
     }
+}
+
+#[test]
+fn functional_spec_3756_c01_harness_route_renders_template_panels() {
+    let html = render_tau_ops_dashboard_shell_for_route("/ops/harness");
+
+    for marker in [
+        "id=\"tau-ops-nav-harness\"",
+        "data-nav-item=\"mission-harness\" href=\"/ops/harness\"",
+        "id=\"tau-ops-dashboard-base-style\"",
+        "data-active-route=\"harness\"",
+        "id=\"tau-ops-breadcrumbs\"",
+        "data-breadcrumb-current=\"mission-harness\"",
+        "id=\"tau-ops-harness-template-style\"",
+        "id=\"tau-ops-harness-panel\" data-route=\"/ops/harness\" data-component=\"MissionHarnessWorkspace\" data-design-template=\"three-window-agent-harness\" aria-hidden=\"false\" data-panel-visible=\"true\"",
+        "id=\"tau-ops-harness-dashboard-window\"",
+        "id=\"tau-ops-harness-proof-window\"",
+        "id=\"tau-ops-harness-self-improvement-window\"",
+        "id=\"tau-ops-harness-tui-companion\"",
+    ] {
+        assert!(
+            html.contains(marker),
+            "missing harness template marker `{marker}`"
+        );
+    }
+}
+
+#[test]
+fn functional_spec_3756_c02_harness_controls_expose_benchmark_and_policy_contracts() {
+    let html = render_tau_ops_dashboard_shell_for_route("/ops/harness");
+
+    for marker in [
+        "id=\"tau-ops-harness-kpi-grid\" data-kpi-card-count=\"4\"",
+        "id=\"tau-ops-harness-benchmark-panel\" data-benchmark-id=\"m334-tranche-one-autonomy\" data-proof-artifact=\"/artifacts/bench/m334/latest.json\" data-task-count=\"4\" data-pass-count=\"4\" data-failed-gates=\"none\"",
+        "id=\"tau-ops-harness-run-benchmark-form\" action=\"/ops/harness/run-benchmark\" method=\"post\" data-command=\"tau_agent_harness\"",
+        "id=\"tau-ops-harness-gate-memory\" data-gate-id=\"VG-03\" data-gate-status=\"failed\"",
+        "id=\"tau-ops-harness-gate-learning\" data-gate-id=\"VG-05\" data-gate-status=\"pending\"",
+        "id=\"tau-ops-harness-conservative-policy\" data-policy=\"conservative-self-improvement\" data-allowed-targets=\"skill,config,prompt\" data-blocked-targets=\"source-code,safety-policy\"",
+        "id=\"tau-ops-harness-operator-actions\" data-apply-requires-approval=\"true\"",
+        "id=\"tau-ops-harness-action-approve\" type=\"submit\" data-action=\"approve\"",
+        "id=\"tau-ops-harness-action-reject\" type=\"submit\" data-action=\"reject\"",
+        "id=\"tau-ops-harness-action-dry-run\" type=\"submit\" data-action=\"dry-run\"",
+        "id=\"tau-ops-harness-action-view-diff\" data-action=\"view-diff\" href=\"/ops/harness/proposals/PR-044/diff\"",
+        "id=\"tau-ops-harness-action-apply\" type=\"button\" data-action=\"apply\" data-disabled=\"true\" aria-disabled=\"true\" data-approval-required=\"true\"",
+    ] {
+        assert!(
+            html.contains(marker),
+            "missing harness control marker `{marker}`"
+        );
+    }
+}
+
+#[test]
+fn regression_spec_3756_c03_non_harness_routes_hide_harness_panel() {
+    let html = render_tau_ops_dashboard_shell_for_route("/ops");
+
+    assert!(html.contains(
+        "id=\"tau-ops-harness-panel\" data-route=\"/ops/harness\" data-component=\"MissionHarnessWorkspace\" data-design-template=\"three-window-agent-harness\" aria-hidden=\"true\" data-panel-visible=\"false\""
+    ));
+    assert!(
+        html.contains("id=\"tau-ops-command-center\" data-route=\"/ops\" aria-hidden=\"false\"")
+    );
 }
 
 #[test]
