@@ -358,6 +358,28 @@ fn functional_spec_2790_c01_sidebar_includes_15_ops_route_links() {
 }
 
 #[test]
+fn functional_spec_3760_c02_c03_static_preview_link_guard_preserves_gateway_routes() {
+    let html = render_tau_ops_dashboard_shell();
+
+    for marker in [
+        "data-nav-item=\"agent-fleet\" href=\"/ops/agents\"",
+        "data-nav-item=\"mission-harness\" href=\"/ops/harness\"",
+        "id=\"tau-ops-breadcrumb-home\"><a href=\"/ops\"",
+        "id=\"tau-ops-static-preview-status\" data-preview-route-status=\"idle\" hidden",
+        "id=\"tau-ops-static-preview-route-guard\" data-preview-link-guard=\"file-protocol-absolute-routes\"",
+        "window.location.protocol !== \"file:\"",
+        "anchor.setAttribute(\"data-preview-link-blocked\", \"true\")",
+        "shell.contains(anchor)",
+        "rawHref.charAt(0) !== \"/\" || rawHref.charAt(1) === \"/\"",
+    ] {
+        assert!(
+            html.contains(marker),
+            "missing static preview link guard marker `{marker}`"
+        );
+    }
+}
+
+#[test]
 fn functional_spec_2790_c02_breadcrumb_markers_reflect_ops_route() {
     let html = render_tau_ops_dashboard_shell();
     assert!(html.contains("id=\"tau-ops-breadcrumbs\""));

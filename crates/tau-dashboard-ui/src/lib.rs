@@ -2391,6 +2391,14 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                 }
                 "#
             </style>
+            <p
+                id="tau-ops-static-preview-status"
+                data-preview-route-status="idle"
+                hidden
+                aria-live="polite"
+            >
+                "Preview route idle."
+            </p>
             <header id="tau-ops-header">
                 <h1>Tau Ops Dashboard</h1>
                 <p>Leptos SSR foundation shell</p>
@@ -5098,6 +5106,40 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     </main>
                 </div>
             </div>
+            <script
+                id="tau-ops-static-preview-route-guard"
+                data-preview-link-guard="file-protocol-absolute-routes"
+            >
+                r#"
+                (function () {
+                    if (window.location.protocol !== "file:") {
+                        return;
+                    }
+
+                    document.addEventListener("click", function (event) {
+                        var shell = document.getElementById("tau-ops-shell");
+                        var target = event.target;
+                        var anchor = target && target.closest ? target.closest("a[href]") : null;
+                        if (!shell || !anchor || !shell.contains(anchor)) {
+                            return;
+                        }
+
+                        var rawHref = anchor.getAttribute("href") || "";
+                        if (rawHref.charAt(0) !== "/" || rawHref.charAt(1) === "/") {
+                            return;
+                        }
+
+                        event.preventDefault();
+                        anchor.setAttribute("data-preview-link-blocked", "true");
+                        var status = document.getElementById("tau-ops-static-preview-status");
+                        if (status) {
+                            status.setAttribute("data-preview-route-status", "blocked-link");
+                            status.textContent = "Preview navigation blocked for local file review.";
+                        }
+                    });
+                })();
+                "#
+            </script>
         </div>
     };
     shell.to_html()
