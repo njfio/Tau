@@ -1081,6 +1081,58 @@ fn functional_spec_3774_c01_c02_c03_harness_keeps_all_operator_actions_visible_b
 }
 
 #[test]
+fn functional_spec_3777_c01_c02_c03_harness_keeps_conservative_policy_visible_before_detail() {
+    let html = render_tau_ops_dashboard_shell_for_route("/ops/harness");
+
+    let queue_index = html
+        .find("id=\"tau-ops-harness-learning-queue\"")
+        .expect("learning queue should render");
+    let action_index = html
+        .find("id=\"tau-ops-harness-operator-actions\"")
+        .expect("operator actions should render");
+    let policy_index = html
+        .find("id=\"tau-ops-harness-conservative-policy\"")
+        .expect("conservative policy should render");
+    let detail_index = html
+        .find("id=\"tau-ops-harness-proposal-detail\"")
+        .expect("proposal detail should render");
+    let audit_index = html
+        .find("id=\"tau-ops-harness-audit-log\"")
+        .expect("audit log should render");
+
+    assert!(
+        queue_index < action_index,
+        "operator actions should remain after learning queue context"
+    );
+    assert!(
+        action_index < policy_index,
+        "conservative policy should remain after operator actions"
+    );
+    assert!(
+        policy_index < detail_index,
+        "conservative policy should be visible before long proposal detail"
+    );
+    assert!(
+        detail_index < audit_index,
+        "audit history should remain after proposal detail"
+    );
+
+    for marker in [
+        "id=\"tau-ops-harness-conservative-policy\" data-policy=\"conservative-self-improvement\" data-allowed-targets=\"skill,config,prompt\" data-blocked-targets=\"source-code,safety-policy\" data-review-policy-priority=\"first-viewport\"",
+        "id=\"tau-ops-harness-policy-allowed\" data-policy-side=\"allowed\"",
+        "<ul><li>Skill</li><li>Config</li><li>Prompt</li></ul>",
+        "id=\"tau-ops-harness-policy-blocked\" data-policy-side=\"blocked\"",
+        "<ul><li>Source Code</li><li>Safety Policy</li></ul>",
+        "id=\"tau-ops-harness-audit-log\"",
+    ] {
+        assert!(
+            html.contains(marker),
+            "missing first-viewport conservative policy marker `{marker}`"
+        );
+    }
+}
+
+#[test]
 fn functional_spec_3775_c01_c02_c03_harness_keeps_benchmark_panel_in_left_first_viewport() {
     let html = render_tau_ops_dashboard_shell_for_route("/ops/harness");
 

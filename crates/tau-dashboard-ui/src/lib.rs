@@ -4865,6 +4865,23 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     <a id="tau-ops-harness-action-view-diff" data-action="view-diff" data-action-tone="secondary" href="/ops/harness/proposals/PR-044/diff">"View Diff"</a>
                                     <button id="tau-ops-harness-action-apply" type="button" data-action="apply" data-action-tone="disabled" data-disabled="true" aria-disabled="true" data-approval-required="true">"Apply (Approval Required)"</button>
                                 </section>
+                                <section
+                                    id="tau-ops-harness-conservative-policy"
+                                    data-policy="conservative-self-improvement"
+                                    data-allowed-targets="skill,config,prompt"
+                                    data-blocked-targets="source-code,safety-policy"
+                                    data-review-policy-priority="first-viewport"
+                                >
+                                    <h4>"Conservative Change Policy"</h4>
+                                    <div id="tau-ops-harness-policy-allowed" data-policy-side="allowed">
+                                        <h5>"Allowed"</h5>
+                                        <ul><li>"Skill"</li><li>"Config"</li><li>"Prompt"</li></ul>
+                                    </div>
+                                    <div id="tau-ops-harness-policy-blocked" data-policy-side="blocked">
+                                        <h5>"Blocked"</h5>
+                                        <ul><li>"Source Code"</li><li>"Safety Policy"</li></ul>
+                                    </div>
+                                </section>
                                 <section id="tau-ops-harness-proposal-detail" data-proposal-id="PR-044" data-learning-record="LR-044" data-target-type="Prompt" data-target-path="prompts/research_to_doc/system.md">
                                     <h4>"PR-044 Prompt compression for research tasks"</h4>
                                     <dl>
@@ -4876,22 +4893,6 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                         <dt>"Safety Check"</dt><dd data-result="passed">"Passed"</dd>
                                         <dt>"Rollback Plan"</dt><dd>"Revert to previous prompt version"</dd>
                                     </dl>
-                                </section>
-                                <section
-                                    id="tau-ops-harness-conservative-policy"
-                                    data-policy="conservative-self-improvement"
-                                    data-allowed-targets="skill,config,prompt"
-                                    data-blocked-targets="source-code,safety-policy"
-                                >
-                                    <h4>"Conservative Change Policy"</h4>
-                                    <div id="tau-ops-harness-policy-allowed" data-policy-side="allowed">
-                                        <h5>"Allowed"</h5>
-                                        <ul><li>"Skill"</li><li>"Config"</li><li>"Prompt"</li></ul>
-                                    </div>
-                                    <div id="tau-ops-harness-policy-blocked" data-policy-side="blocked">
-                                        <h5>"Blocked"</h5>
-                                        <ul><li>"Source Code"</li><li>"Safety Policy"</li></ul>
-                                    </div>
                                 </section>
                                 <section
                                     id="tau-ops-harness-audit-log"
