@@ -1081,6 +1081,39 @@ fn functional_spec_3774_c01_c02_c03_harness_keeps_all_operator_actions_visible_b
 }
 
 #[test]
+fn functional_spec_3775_c01_c02_c03_harness_keeps_benchmark_panel_in_left_first_viewport() {
+    let html = render_tau_ops_dashboard_shell_for_route("/ops/harness");
+
+    let missions_index = html
+        .find("id=\"tau-ops-harness-active-missions\"")
+        .expect("active missions section should render");
+    let benchmark_index = html
+        .find("id=\"tau-ops-harness-benchmark-panel\"")
+        .expect("benchmark panel should render");
+
+    assert!(
+        missions_index < benchmark_index,
+        "benchmark panel should remain directly after active missions"
+    );
+
+    for marker in [
+        "id=\"tau-ops-harness-active-missions\" data-active-count=\"5\" data-running-count=\"3\" data-blocked-count=\"1\" data-compact-table-breakpoint=\"1400px\" data-compact-mission-summary=\"status-and-gates\" data-first-viewport-budget=\"benchmark-visible\"",
+        "class=\"tau-harness-table-wrap\" data-scroll-region=\"active-missions\"",
+        "#tau-ops-harness-active-missions {\n                                max-height: 480px;",
+        "#tau-ops-harness-active-missions .tau-harness-table-wrap {\n                                max-height: 432px;\n                                overflow: auto;",
+        "id=\"tau-ops-harness-benchmark-panel\" data-benchmark-id=\"m334-tranche-one-autonomy\" data-proof-artifact=\"/artifacts/bench/m334/latest.json\" data-task-count=\"4\" data-pass-count=\"4\" data-failed-gates=\"none\" data-proof-source=\"fallback\" data-first-viewport-anchor=\"canonical-benchmark\"",
+        "id=\"tau-ops-harness-run-benchmark-form\" action=\"/ops/harness/run-benchmark\" method=\"post\" data-command=\"tau_agent_harness\"",
+        "data-mission-state-chip=\"running\">Running",
+        "data-mission-gate-chip=\"needs-review\">3/5 gates",
+    ] {
+        assert!(
+            html.contains(marker),
+            "missing first-viewport benchmark marker `{marker}`"
+        );
+    }
+}
+
+#[test]
 fn functional_spec_3759_c02_c03_harness_static_preview_guard_preserves_gateway_forms() {
     let html = render_tau_ops_dashboard_shell_for_route("/ops/harness");
 

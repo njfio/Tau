@@ -4091,6 +4091,14 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 min-width: 0;
                                 max-width: 100%;
                             }
+                            #tau-ops-harness-active-missions {
+                                max-height: 480px;
+                                overflow: hidden;
+                            }
+                            #tau-ops-harness-active-missions .tau-harness-table-wrap {
+                                max-height: 432px;
+                                overflow: auto;
+                            }
                             #tau-ops-harness-kpi-grid article,
                             #tau-ops-harness-proof-window section,
                             #tau-ops-harness-self-improvement-window section {
@@ -4564,9 +4572,10 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     data-blocked-count="1"
                                     data-compact-table-breakpoint="1400px"
                                     data-compact-mission-summary="status-and-gates"
+                                    data-first-viewport-budget="benchmark-visible"
                                 >
                                     <h4>"Active Missions"</h4>
-                                    <div class="tau-harness-table-wrap">
+                                    <div class="tau-harness-table-wrap" data-scroll-region="active-missions">
                                         <table id="tau-ops-harness-missions-table">
                                             <thead>
                                                 <tr>
@@ -4673,6 +4682,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     data-pass-count=harness_pass_count
                                     data-failed-gates=context.harness.failed_gate_label.clone()
                                     data-proof-source=context.harness.proof_source.clone()
+                                    data-first-viewport-anchor="canonical-benchmark"
                                 >
                                     <h4>"M334 Autonomy Benchmark"</h4>
                                     <div class="tau-harness-table-wrap">
