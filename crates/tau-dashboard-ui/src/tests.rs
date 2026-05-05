@@ -569,7 +569,7 @@ fn functional_spec_3758_c01_harness_uses_operator_console_visual_contract() {
         "class=\"tau-harness-window-grid\"",
         "class=\"tau-harness-status-chip\"",
         "class=\"tau-harness-table-wrap\"",
-        "grid-template-columns: 96px minmax(0, 1fr);",
+        "grid-template-columns: 76px minmax(0, 1fr);",
     ] {
         assert!(
             html.contains(marker),
@@ -607,8 +607,8 @@ fn functional_spec_3761_c01_c02_c03_harness_keeps_desktop_three_window_layout() 
         "grid-template-columns: minmax(0, .82fr) minmax(0, 1.04fr) minmax(0, .86fr);",
         "#tau-ops-shell[data-active-route=\"harness\"] {\n                    background:",
         "max-width: 100vw;",
-        "width: min(100%, calc(100vw - 128px));",
-        "max-width: calc(100vw - 128px);",
+        "width: min(100%, calc(100vw - 108px));",
+        "max-width: calc(100vw - 108px);",
         "@media (max-width: 1400px)",
         "@media (max-width: 1180px)",
         "max-height: calc(100vh - 88px);",
@@ -732,6 +732,37 @@ fn functional_spec_3764_c01_c02_c03_harness_prioritizes_self_improvement_actions
         assert!(
             html.contains(marker),
             "missing self-improvement action priority marker `{marker}`"
+        );
+    }
+}
+
+#[test]
+fn functional_spec_3766_c01_c02_c03_harness_uses_compact_navigation_rail() {
+    let html = render_tau_ops_dashboard_shell_for_route("/ops/harness");
+
+    for marker in [
+        "grid-template-columns: 76px minmax(0, 1fr);",
+        "data-harness-rail=\"compact\"",
+        "data-nav-item=\"command-center\" href=\"/ops\" data-harness-rail-label=\"Command\"",
+        "data-nav-item=\"agent-fleet\" href=\"/ops/agents\" data-harness-rail-label=\"Fleet\"",
+        "data-nav-item=\"agent-detail\" href=\"/ops/agents/default\" data-harness-rail-label=\"Agent\"",
+        "data-nav-item=\"chat\" href=\"/ops/chat\" data-harness-rail-label=\"Chat\"",
+        "data-nav-item=\"sessions\" href=\"/ops/sessions\" data-harness-rail-label=\"Sessions\"",
+        "data-nav-item=\"memory\" href=\"/ops/memory\" data-harness-rail-label=\"Memory\"",
+        "data-nav-item=\"memory-graph\" href=\"/ops/memory-graph\" data-harness-rail-label=\"Graph\"",
+        "data-nav-item=\"tools-jobs\" href=\"/ops/tools-jobs\" data-harness-rail-label=\"Tools\"",
+        "data-nav-item=\"channels\" href=\"/ops/channels\" data-harness-rail-label=\"Channels\"",
+        "id=\"tau-ops-nav-harness\"><a data-nav-item=\"mission-harness\" href=\"/ops/harness\" data-harness-rail-label=\"Missions\">Mission Harness</a>",
+        "data-nav-item=\"deploy\" href=\"/ops/deploy\" data-harness-rail-label=\"Deploy\"",
+        "#tau-ops-shell[data-active-route=\"harness\"] #tau-ops-sidebar a {\n                    display: flex;",
+        "font-size: 0;",
+        "#tau-ops-shell[data-active-route=\"harness\"] #tau-ops-sidebar a::before {\n                    content: attr(data-harness-rail-label);",
+        "width: min(100%, calc(100vw - 108px));",
+        "max-width: calc(100vw - 108px);",
+    ] {
+        assert!(
+            html.contains(marker),
+            "missing compact harness rail marker `{marker}`"
         );
     }
 }

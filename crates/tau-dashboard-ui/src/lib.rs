@@ -2334,7 +2334,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                 }
                 #tau-ops-shell[data-active-route="harness"] #tau-ops-layout {
                     display: grid;
-                    grid-template-columns: 96px minmax(0, 1fr);
+                    grid-template-columns: 76px minmax(0, 1fr);
                     min-height: 100vh;
                     width: 100%;
                     max-width: 100vw;
@@ -2342,7 +2342,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     overflow-x: hidden;
                 }
                 #tau-ops-shell[data-active-route="harness"] #tau-ops-sidebar {
-                    padding: 10px 6px;
+                    padding: 10px 5px;
                     border-right: 1px solid #243e4d;
                     background: linear-gradient(180deg, #0e2433, #07131b);
                 }
@@ -2354,15 +2354,26 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     list-style: none;
                 }
                 #tau-ops-shell[data-active-route="harness"] #tau-ops-sidebar a {
-                    display: block;
-                    border-radius: 6px;
-                    padding: 6px 5px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    min-height: 30px;
+                    border-radius: 5px;
+                    padding: 6px 4px;
                     color: #b8cfda;
-                    font-size: .68rem;
-                    line-height: 1.12;
+                    font-size: 0;
+                    line-height: 1;
                     text-decoration: none;
-                    overflow-wrap: normal;
-                    word-break: normal;
+                    white-space: nowrap;
+                    overflow: hidden;
+                }
+                #tau-ops-shell[data-active-route="harness"] #tau-ops-sidebar a::before {
+                    content: attr(data-harness-rail-label);
+                    color: inherit;
+                    font-size: .68rem;
+                    font-weight: 650;
+                    line-height: 1;
+                    text-align: center;
                 }
                 #tau-ops-shell[data-active-route="harness"] #tau-ops-nav-harness a {
                     background: #1b5fbf;
@@ -2471,27 +2482,27 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                 </nav>
             </header>
             <div id="tau-ops-layout">
-                <aside id="tau-ops-sidebar">
+                <aside id="tau-ops-sidebar" data-harness-rail="compact">
                     <nav aria-label="Tau Ops navigation">
                         <ul>
-                            <li id="tau-ops-nav-command-center"><a data-nav-item="command-center" href="/ops">Command Center</a></li>
-                            <li id="tau-ops-nav-agent-fleet"><a data-nav-item="agent-fleet" href="/ops/agents">Agent Fleet</a></li>
-                            <li id="tau-ops-nav-agent-detail"><a data-nav-item="agent-detail" href="/ops/agents/default">Agent Detail</a></li>
-                            <li id="tau-ops-nav-chat"><a data-nav-item="chat" href="/ops/chat">Conversation / Chat</a></li>
-                            <li id="tau-ops-nav-sessions"><a data-nav-item="sessions" href="/ops/sessions">Sessions Explorer</a></li>
-                            <li id="tau-ops-nav-memory"><a data-nav-item="memory" href="/ops/memory">Memory Explorer</a></li>
-                            <li id="tau-ops-nav-memory-graph"><a data-nav-item="memory-graph" href="/ops/memory-graph">Memory Graph</a></li>
-                            <li id="tau-ops-nav-tools-jobs"><a data-nav-item="tools-jobs" href="/ops/tools-jobs">Tools & Jobs</a></li>
-                            <li id="tau-ops-nav-channels"><a data-nav-item="channels" href="/ops/channels">Multi-Channel</a></li>
-                            <li id="tau-ops-nav-harness"><a data-nav-item="mission-harness" href="/ops/harness">Mission Harness</a></li>
-                            <li id="tau-ops-nav-config"><a data-nav-item="config" href="/ops/config">Configuration</a></li>
-                            <li id="tau-ops-nav-training"><a data-nav-item="training" href="/ops/training">Training & RL</a></li>
-                            <li id="tau-ops-nav-safety"><a data-nav-item="safety" href="/ops/safety">Safety & Security</a></li>
-                            <li id="tau-ops-nav-diagnostics"><a data-nav-item="diagnostics" href="/ops/diagnostics">Diagnostics & Audit</a></li>
-                            <li id="tau-ops-nav-deploy"><a data-nav-item="deploy" href="/ops/deploy">Deploy Agent</a></li>
-                            <li id="tau-ops-nav-login"><a href="/ops/login">Operator Login</a></li>
-                            <li id="tau-ops-nav-legacy-dashboard"><a href="/dashboard">Legacy Dashboard</a></li>
-                            <li id="tau-ops-nav-webchat"><a href="/webchat">Webchat</a></li>
+                            <li id="tau-ops-nav-command-center"><a data-nav-item="command-center" href="/ops" data-harness-rail-label="Command">Command Center</a></li>
+                            <li id="tau-ops-nav-agent-fleet"><a data-nav-item="agent-fleet" href="/ops/agents" data-harness-rail-label="Fleet">Agent Fleet</a></li>
+                            <li id="tau-ops-nav-agent-detail"><a data-nav-item="agent-detail" href="/ops/agents/default" data-harness-rail-label="Agent">Agent Detail</a></li>
+                            <li id="tau-ops-nav-chat"><a data-nav-item="chat" href="/ops/chat" data-harness-rail-label="Chat">Conversation / Chat</a></li>
+                            <li id="tau-ops-nav-sessions"><a data-nav-item="sessions" href="/ops/sessions" data-harness-rail-label="Sessions">Sessions Explorer</a></li>
+                            <li id="tau-ops-nav-memory"><a data-nav-item="memory" href="/ops/memory" data-harness-rail-label="Memory">Memory Explorer</a></li>
+                            <li id="tau-ops-nav-memory-graph"><a data-nav-item="memory-graph" href="/ops/memory-graph" data-harness-rail-label="Graph">Memory Graph</a></li>
+                            <li id="tau-ops-nav-tools-jobs"><a data-nav-item="tools-jobs" href="/ops/tools-jobs" data-harness-rail-label="Tools">Tools & Jobs</a></li>
+                            <li id="tau-ops-nav-channels"><a data-nav-item="channels" href="/ops/channels" data-harness-rail-label="Channels">Multi-Channel</a></li>
+                            <li id="tau-ops-nav-harness"><a data-nav-item="mission-harness" href="/ops/harness" data-harness-rail-label="Missions">Mission Harness</a></li>
+                            <li id="tau-ops-nav-config"><a data-nav-item="config" href="/ops/config" data-harness-rail-label="Config">Configuration</a></li>
+                            <li id="tau-ops-nav-training"><a data-nav-item="training" href="/ops/training" data-harness-rail-label="Training">Training & RL</a></li>
+                            <li id="tau-ops-nav-safety"><a data-nav-item="safety" href="/ops/safety" data-harness-rail-label="Safety">Safety & Security</a></li>
+                            <li id="tau-ops-nav-diagnostics"><a data-nav-item="diagnostics" href="/ops/diagnostics" data-harness-rail-label="Audit">Diagnostics & Audit</a></li>
+                            <li id="tau-ops-nav-deploy"><a data-nav-item="deploy" href="/ops/deploy" data-harness-rail-label="Deploy">Deploy Agent</a></li>
+                            <li id="tau-ops-nav-login"><a href="/ops/login" data-harness-rail-label="Login">Operator Login</a></li>
+                            <li id="tau-ops-nav-legacy-dashboard"><a href="/dashboard" data-harness-rail-label="Legacy">Legacy Dashboard</a></li>
+                            <li id="tau-ops-nav-webchat"><a href="/webchat" data-harness-rail-label="Webchat">Webchat</a></li>
                         </ul>
                     </nav>
                 </aside>
@@ -3896,9 +3907,9 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
                                 font-size: 13px;
                                 line-height: 1.35;
-                                width: min(100%, calc(100vw - 128px));
+                                width: min(100%, calc(100vw - 108px));
                                 min-width: 0;
-                                max-width: calc(100vw - 128px);
+                                max-width: calc(100vw - 108px);
                                 overflow: hidden;
                             }
                             #tau-ops-harness-panel h2,
