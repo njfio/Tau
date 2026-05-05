@@ -768,6 +768,51 @@ fn functional_spec_3766_c01_c02_c03_harness_uses_compact_navigation_rail() {
 }
 
 #[test]
+fn functional_spec_3767_c01_c02_c03_harness_prioritizes_proof_evidence_in_primary_grid() {
+    let html = render_tau_ops_dashboard_shell_for_route("/ops/harness");
+
+    let evidence_index = html
+        .find("id=\"tau-ops-harness-tool-evidence\"")
+        .expect("tool evidence section should render");
+    let acceptance_index = html
+        .find("id=\"tau-ops-harness-acceptance\"")
+        .expect("acceptance section should render");
+    let gates_index = html
+        .find("id=\"tau-ops-harness-verification-gates\"")
+        .expect("verification gates section should render");
+    let artifacts_index = html
+        .find("id=\"tau-ops-harness-artifacts\"")
+        .expect("artifacts section should render");
+
+    assert!(
+        evidence_index < acceptance_index,
+        "tool evidence should precede acceptance criteria in the proof grid"
+    );
+    assert!(
+        evidence_index < gates_index,
+        "tool evidence should precede verification gates in the proof grid"
+    );
+    assert!(
+        evidence_index < artifacts_index,
+        "tool evidence should precede artifacts in the proof grid"
+    );
+
+    for marker in [
+        "class=\"tau-harness-window-grid\" data-proof-grid-priority=\"evidence-first\"",
+        "id=\"tau-ops-harness-tool-evidence\"",
+        "data-proof-evidence-priority=\"first-screen\"",
+        "data-tool-call-count=\"8\"",
+        "#tau-ops-harness-tool-evidence {\n                                grid-column: 1 / -1;",
+        "data-compact-call-id-visibility=\"hidden-at-1400px\"",
+    ] {
+        assert!(
+            html.contains(marker),
+            "missing proof evidence priority marker `{marker}`"
+        );
+    }
+}
+
+#[test]
 fn functional_spec_3759_c02_c03_harness_static_preview_guard_preserves_gateway_forms() {
     let html = render_tau_ops_dashboard_shell_for_route("/ops/harness");
 

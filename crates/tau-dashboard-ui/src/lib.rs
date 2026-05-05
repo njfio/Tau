@@ -4094,6 +4094,9 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 min-height: 82px;
                                 overflow: hidden;
                             }
+                            #tau-ops-harness-tool-evidence {
+                                grid-column: 1 / -1;
+                            }
                             #tau-ops-harness-kpi-grid p {
                                 margin-top: 6px;
                                 color: white;
@@ -4623,7 +4626,29 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     <li id="tau-ops-harness-dag-verify" data-plan-node="Verify" data-node-status="running">"Verify"</li>
                                     <li id="tau-ops-harness-dag-learn" data-plan-node="Learn" data-node-status="pending">"Learn"</li>
                                 </ol>
-                                <div class="tau-harness-window-grid">
+                                <div class="tau-harness-window-grid" data-proof-grid-priority="evidence-first">
+                                    <section
+                                        id="tau-ops-harness-tool-evidence"
+                                        data-tool-call-count="8"
+                                        data-compact-evidence-breakpoint="1400px"
+                                        data-compact-call-id-visibility="hidden-at-1400px"
+                                        data-proof-evidence-priority="first-screen"
+                                    >
+                                        <h4>"Tool Execution Evidence"</h4>
+                                        <div class="tau-harness-table-wrap">
+                                            <table>
+                                                <thead><tr><th scope="col">"Tool"</th><th scope="col">"Call ID"</th><th scope="col">"Plan Node"</th><th scope="col">"Runtime"</th><th scope="col">"Status"</th><th scope="col">"Artifact"</th></tr></thead>
+                                                <tbody>
+                                                    <tr data-tool="repo.read" data-status="passed"><td>"repo.read"</td><td>"c1a2bf3"</td><td>"Execute"</td><td>"00:01:12"</td><td>"passed"</td><td>"/artifacts/repo-read.json"</td></tr>
+                                                    <tr data-tool="repo.edit" data-status="passed"><td>"repo.edit"</td><td>"c1a2b4c"</td><td>"Execute"</td><td>"00:02:34"</td><td>"passed"</td><td>"/artifacts/edit.patch"</td></tr>
+                                                    <tr data-tool="test.run" data-status="passed"><td>"test.run"</td><td>"c1a2b6e"</td><td>"Execute"</td><td>"00:08:42"</td><td>"passed"</td><td>"/artifacts/tests.json"</td></tr>
+                                                    <tr data-tool="memory.search" data-status="passed"><td>"memory.search"</td><td>"c1a2b7f"</td><td>"Memory Write"</td><td>"00:00:48"</td><td>"passed"</td><td>"/artifacts/memory.json"</td></tr>
+                                                    <tr data-tool="memory.write" data-status="passed"><td>"memory.write"</td><td>"c1a2b8e"</td><td>"Memory Write"</td><td>"00:00:36"</td><td>"passed"</td><td>"/artifacts/learning.json"</td></tr>
+                                                    <tr data-tool="report.write" data-status="running"><td>"report.write"</td><td>"c1a2b9"</td><td>"Verify"</td><td>"00:01:21"</td><td>"running"</td><td>"/artifacts/report.md"</td></tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </section>
                                     <section id="tau-ops-harness-acceptance" data-acceptance-met="3" data-acceptance-total="5">
                                         <h4>"Acceptance Criteria"</h4>
                                         <ul>
@@ -4659,27 +4684,6 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                         </ul>
                                     </section>
                                 </div>
-                                <section
-                                    id="tau-ops-harness-tool-evidence"
-                                    data-tool-call-count="8"
-                                    data-compact-evidence-breakpoint="1400px"
-                                    data-compact-call-id-visibility="hidden-at-1400px"
-                                >
-                                    <h4>"Tool Execution Evidence"</h4>
-                                    <div class="tau-harness-table-wrap">
-                                        <table>
-                                            <thead><tr><th scope="col">"Tool"</th><th scope="col">"Call ID"</th><th scope="col">"Plan Node"</th><th scope="col">"Runtime"</th><th scope="col">"Status"</th><th scope="col">"Artifact"</th></tr></thead>
-                                            <tbody>
-                                                <tr data-tool="repo.read" data-status="passed"><td>"repo.read"</td><td>"c1a2bf3"</td><td>"Execute"</td><td>"00:01:12"</td><td>"passed"</td><td>"/artifacts/repo-read.json"</td></tr>
-                                                <tr data-tool="repo.edit" data-status="passed"><td>"repo.edit"</td><td>"c1a2b4c"</td><td>"Execute"</td><td>"00:02:34"</td><td>"passed"</td><td>"/artifacts/edit.patch"</td></tr>
-                                                <tr data-tool="test.run" data-status="passed"><td>"test.run"</td><td>"c1a2b6e"</td><td>"Execute"</td><td>"00:08:42"</td><td>"passed"</td><td>"/artifacts/tests.json"</td></tr>
-                                                <tr data-tool="memory.search" data-status="passed"><td>"memory.search"</td><td>"c1a2b7f"</td><td>"Memory Write"</td><td>"00:00:48"</td><td>"passed"</td><td>"/artifacts/memory.json"</td></tr>
-                                                <tr data-tool="memory.write" data-status="passed"><td>"memory.write"</td><td>"c1a2b8e"</td><td>"Memory Write"</td><td>"00:00:36"</td><td>"passed"</td><td>"/artifacts/learning.json"</td></tr>
-                                                <tr data-tool="report.write" data-status="running"><td>"report.write"</td><td>"c1a2b9"</td><td>"Verify"</td><td>"00:01:21"</td><td>"running"</td><td>"/artifacts/report.md"</td></tr>
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </section>
                                 <section
                                     id="tau-ops-harness-operator-log"
                                     data-log-follow="true"
