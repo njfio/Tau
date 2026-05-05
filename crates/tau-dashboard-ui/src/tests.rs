@@ -575,6 +575,28 @@ fn functional_spec_3758_c03_harness_style_guards_overflow_focus_and_responsive_l
 }
 
 #[test]
+fn functional_spec_3759_c02_c03_harness_static_preview_guard_preserves_gateway_forms() {
+    let html = render_tau_ops_dashboard_shell_for_route("/ops/harness");
+
+    for marker in [
+        "id=\"tau-ops-harness-run-benchmark-form\" action=\"/ops/harness/run-benchmark\" method=\"post\" data-command=\"tau_agent_harness\"",
+        "id=\"tau-ops-harness-approve-form\" action=\"/ops/harness/proposals/PR-044/approve\" method=\"post\"",
+        "id=\"tau-ops-harness-reject-form\" action=\"/ops/harness/proposals/PR-044/reject\" method=\"post\"",
+        "id=\"tau-ops-harness-dry-run-form\" action=\"/ops/harness/proposals/PR-044/dry-run\" method=\"post\"",
+        "id=\"tau-ops-harness-preview-status\" data-preview-status=\"idle\" hidden",
+        "id=\"tau-ops-harness-preview-guard\" data-preview-submit-guard=\"file-protocol-post-forms\"",
+        "window.location.protocol !== \"file:\"",
+        "form.setAttribute(\"data-preview-submit-blocked\", \"true\")",
+        "panel.contains(form)",
+    ] {
+        assert!(
+            html.contains(marker),
+            "missing harness static preview guard marker `{marker}`"
+        );
+    }
+}
+
+#[test]
 fn regression_spec_3756_c03_non_harness_routes_hide_harness_panel() {
     let html = render_tau_ops_dashboard_shell_for_route("/ops");
 

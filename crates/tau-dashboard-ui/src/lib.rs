@@ -4269,6 +4269,14 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             data-layout-density="operator-console"
                             data-visual-contract="mission-control"
                         >
+                            <p
+                                id="tau-ops-harness-preview-status"
+                                data-preview-status="idle"
+                                hidden
+                                aria-live="polite"
+                            >
+                                "Preview action idle."
+                            </p>
                             <header id="tau-ops-harness-topbar" data-workspace="/workspace/tau" data-model="gpt-5.4" data-transport="gateway" data-health="healthy" data-window-chrome="compact">
                                 <div>
                                     <small>"Tau"</small>
@@ -4602,6 +4610,37 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 </header>
                                 <pre>{harness_tui_summary}</pre>
                             </aside>
+                            <script
+                                id="tau-ops-harness-preview-guard"
+                                data-preview-submit-guard="file-protocol-post-forms"
+                            >
+                                r#"
+                                (function () {
+                                    if (window.location.protocol !== "file:") {
+                                        return;
+                                    }
+
+                                    document.addEventListener("submit", function (event) {
+                                        var panel = document.getElementById("tau-ops-harness-panel");
+                                        var form = event.target;
+                                        if (!panel || !(form instanceof HTMLFormElement) || !panel.contains(form)) {
+                                            return;
+                                        }
+                                        if ((form.method || "").toLowerCase() !== "post") {
+                                            return;
+                                        }
+
+                                        event.preventDefault();
+                                        form.setAttribute("data-preview-submit-blocked", "true");
+                                        var status = document.getElementById("tau-ops-harness-preview-status");
+                                        if (status) {
+                                            status.setAttribute("data-preview-status", "blocked-post");
+                                            status.textContent = "Preview submission blocked for local file review.";
+                                        }
+                                    });
+                                })();
+                                "#
+                            </script>
                         </section>
                         <section
                             id="tau-ops-command-center"
