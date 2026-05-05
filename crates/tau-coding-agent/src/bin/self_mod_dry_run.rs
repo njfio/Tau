@@ -76,8 +76,8 @@ fn init_tracing() {
     // Default to silent so stdout remains pure JSON for consumers. Operators
     // opt in to logs via TAU_SELF_MOD_LOG (e.g. "info" or "debug"). Logs go
     // to stderr so they never corrupt the stdout JSON contract.
-    let filter = EnvFilter::try_from_env("TAU_SELF_MOD_LOG")
-        .unwrap_or_else(|_| EnvFilter::new("off"));
+    let filter =
+        EnvFilter::try_from_env("TAU_SELF_MOD_LOG").unwrap_or_else(|_| EnvFilter::new("off"));
     let _ = fmt()
         .with_env_filter(filter)
         .with_target(false)

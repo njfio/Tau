@@ -34,6 +34,7 @@ mod cortex_runtime;
 pub mod failure_detector;
 pub mod metrics;
 pub mod mission;
+pub mod mission_harness;
 mod process_types;
 pub mod recovery;
 mod runtime_safety_memory;
@@ -65,6 +66,13 @@ pub use mission::{
     MissionToolCallEvidence, MissionToolCallStatus, MissionToolEvidenceError,
     MissionTransitionError, MissionVerificationGate, MissionVerifierRecord, MissionVerifierStatus,
     MISSION_SCHEMA_VERSION,
+};
+pub use mission_harness::{
+    load_autonomy_benchmark_fixture, parse_autonomy_benchmark_fixture,
+    run_autonomy_benchmark_fixture, run_harness_mission, validate_autonomy_benchmark_fixture,
+    AutonomyBenchmarkFixture, AutonomyBenchmarkProof, AutonomyBenchmarkSuccessBar,
+    AutonomyBenchmarkSuitePolicy, AutonomyBenchmarkTask, AutonomyBenchmarkTaskProof,
+    MissionHarnessConfig, MissionHarnessError,
 };
 pub use process_types::{
     ProcessLifecycleState, ProcessManager, ProcessManagerError, ProcessRuntimeProfile,

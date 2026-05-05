@@ -143,12 +143,9 @@ fn validate_target_path(target: &str) -> Result<(), String> {
         }
     }
     for ch in target.chars() {
-        let ok = ch.is_ascii_alphanumeric()
-            || matches!(ch, '/' | '.' | '_' | '-' | '\\');
+        let ok = ch.is_ascii_alphanumeric() || matches!(ch, '/' | '.' | '_' | '-' | '\\');
         if !ok {
-            return Err(format!(
-                "target path contains disallowed character: {ch:?}"
-            ));
+            return Err(format!("target path contains disallowed character: {ch:?}"));
         }
     }
     Ok(())
@@ -253,9 +250,7 @@ impl AgentTool for SelfModificationSynthesizeTool {
             }));
         }
 
-        let workspace_root = args
-            .workspace_root
-            .unwrap_or_else(|| PathBuf::from("."));
+        let workspace_root = args.workspace_root.unwrap_or_else(|| PathBuf::from("."));
 
         info!(
             tool = TOOL_NAME,
@@ -266,10 +261,7 @@ impl AgentTool for SelfModificationSynthesizeTool {
 
         let request = ChatRequest {
             model: self.model.clone(),
-            messages: vec![
-                Message::system(SYSTEM_PROMPT),
-                Message::user(&args.intent),
-            ],
+            messages: vec![Message::system(SYSTEM_PROMPT), Message::user(&args.intent)],
             tools: Vec::new(),
             tool_choice: None,
             json_mode: true,
@@ -336,8 +328,7 @@ impl AgentTool for SelfModificationSynthesizeTool {
         }
 
         let config = SelfModificationConfig::default();
-        let policy_projected =
-            classify_for_projection(&workspace_root, &proposal.target, &config);
+        let policy_projected = classify_for_projection(&workspace_root, &proposal.target, &config);
 
         info!(
             tool = TOOL_NAME,
@@ -423,10 +414,7 @@ mod tests {
 
     #[async_trait]
     impl LlmClient for QueueClient {
-        async fn complete(
-            &self,
-            _request: ChatRequest,
-        ) -> Result<ChatResponse, TauAiError> {
+        async fn complete(&self, _request: ChatRequest) -> Result<ChatResponse, TauAiError> {
             let mut q = self.responses.lock().await;
             q.pop_front()
                 .unwrap_or(Err(TauAiError::InvalidResponse("queue empty".into())))
@@ -478,7 +466,11 @@ mod tests {
             t.execute(json!({ "intent": "add bar section to foo skill" }))
                 .await
         });
-        assert!(!result.is_error, "expected success, got: {}", result.content);
+        assert!(
+            !result.is_error,
+            "expected success, got: {}",
+            result.content
+        );
         let payload = &result.content;
         assert_eq!(payload["target"], "skills/foo.md");
         assert_eq!(payload["change_type"], "skill");
@@ -512,7 +504,8 @@ mod tests {
         }"#;
         let result = run_with_env(Some("1"), || async {
             let t = tool(QueueClient::with_text_response(llm_reply));
-            t.execute(json!({ "intent": "another hostile intent" })).await
+            t.execute(json!({ "intent": "another hostile intent" }))
+                .await
         });
         assert!(result.is_error);
         let payload = &result.content;
@@ -550,9 +543,9 @@ mod tests {
     #[test]
     fn execute_surfaces_llm_transport_error() {
         let result = run_with_env(Some("1"), || async {
-            let t = tool(QueueClient::with_error(
-                TauAiError::InvalidResponse("upstream 503".into()),
-            ));
+            let t = tool(QueueClient::with_error(TauAiError::InvalidResponse(
+                "upstream 503".into(),
+            )));
             t.execute(json!({ "intent": "x" })).await
         });
         assert!(result.is_error);
@@ -567,6 +560,10 @@ mod tests {
             let t = tool(QueueClient::with_text_response(llm_reply));
             t.execute(json!({ "intent": "x" })).await
         });
-        assert!(!result.is_error, "expected success, got: {}", result.content);
+        assert!(
+            !result.is_error,
+            "expected success, got: {}",
+            result.content
+        );
     }
 }
