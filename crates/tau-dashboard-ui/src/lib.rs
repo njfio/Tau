@@ -4124,6 +4124,19 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 min-height: 82px;
                                 overflow: hidden;
                             }
+                            #tau-ops-harness-kpi-grid[data-kpi-label-fit="word-boundary"] h4 {
+                                overflow-wrap: normal;
+                                word-break: normal;
+                                hyphens: none;
+                                font-size: .7rem;
+                                line-height: 1.05;
+                                letter-spacing: 0;
+                            }
+                            #tau-ops-harness-kpi-grid[data-kpi-label-fit="word-boundary"] h4 span {
+                                display: block;
+                                white-space: nowrap;
+                                max-width: 100%;
+                            }
                             #tau-ops-harness-tool-evidence {
                                 grid-column: 1 / -1;
                             }
@@ -4825,23 +4838,23 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     </div>
                                     <span class="tau-harness-status-chip">"Healthy"</span>
                                 </header>
-                                <section id="tau-ops-harness-kpi-grid" data-kpi-card-count="4">
-                                    <article id="tau-ops-harness-kpi-active" data-harness-kpi-card="active-missions" data-kpi-value="5">
+                                <section id="tau-ops-harness-kpi-grid" data-kpi-card-count="4" data-kpi-label-fit="word-boundary" data-kpi-label-overflow-budget="none">
+                                    <article id="tau-ops-harness-kpi-active" data-harness-kpi-card="active-missions" data-kpi-value="5" data-kpi-heading-fit="word-boundary">
                                         <h4>"Active Missions"</h4>
                                         <p>"5"</p>
                                         <small>"3 running"</small>
                                     </article>
-                                    <article id="tau-ops-harness-kpi-verifications" data-harness-kpi-card="pending-verifications" data-kpi-value="3">
-                                        <h4>"Pending Verifications"</h4>
+                                    <article id="tau-ops-harness-kpi-verifications" data-harness-kpi-card="pending-verifications" data-kpi-value="3" data-kpi-heading-fit="word-boundary">
+                                        <h4 aria-label="Pending Verifications"><span>"Pending"</span><span>"Verifications"</span></h4>
                                         <p>"3"</p>
                                         <small>"2 need review"</small>
                                     </article>
-                                    <article id="tau-ops-harness-kpi-memory" data-harness-kpi-card="memory-writes" data-kpi-value="12">
+                                    <article id="tau-ops-harness-kpi-memory" data-harness-kpi-card="memory-writes" data-kpi-value="12" data-kpi-heading-fit="word-boundary">
                                         <h4>"Memory Writes"</h4>
                                         <p>"12"</p>
                                         <small>"Today"</small>
                                     </article>
-                                    <article id="tau-ops-harness-kpi-cost" data-harness-kpi-card="runtime-cost-today" data-kpi-value="18.74">
+                                    <article id="tau-ops-harness-kpi-cost" data-harness-kpi-card="runtime-cost-today" data-kpi-value="18.74" data-kpi-heading-fit="word-boundary">
                                         <h4>"Runtime Cost Today"</h4>
                                         <p>"$18.74"</p>
                                         <small>"Across 5 runs"</small>

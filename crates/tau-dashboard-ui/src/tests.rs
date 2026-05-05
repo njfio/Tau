@@ -1571,6 +1571,24 @@ fn functional_spec_3787_c01_c02_c03_harness_proposal_patch_summary_is_readable()
 }
 
 #[test]
+fn functional_spec_3788_c01_c02_c03_harness_kpi_labels_avoid_mid_word_breaks() {
+    let html = render_tau_ops_dashboard_shell_for_route("/ops/harness");
+
+    for marker in [
+        "id=\"tau-ops-harness-kpi-grid\" data-kpi-card-count=\"4\" data-kpi-label-fit=\"word-boundary\" data-kpi-label-overflow-budget=\"none\"",
+        "id=\"tau-ops-harness-kpi-verifications\" data-harness-kpi-card=\"pending-verifications\" data-kpi-value=\"3\" data-kpi-heading-fit=\"word-boundary\"",
+        "<h4 aria-label=\"Pending Verifications\"><span>Pending</span><span>Verifications</span></h4>",
+        "#tau-ops-harness-kpi-grid[data-kpi-label-fit=\"word-boundary\"] h4 {\n                                overflow-wrap: normal;\n                                word-break: normal;",
+        "#tau-ops-harness-kpi-grid[data-kpi-label-fit=\"word-boundary\"] h4 span {\n                                display: block;",
+    ] {
+        assert!(
+            html.contains(marker),
+            "KPI labels should preserve word-boundary fit marker `{marker}`"
+        );
+    }
+}
+
+#[test]
 fn functional_spec_3775_c01_c02_c03_harness_keeps_benchmark_panel_in_left_first_viewport() {
     let html = render_tau_ops_dashboard_shell_for_route("/ops/harness");
 
