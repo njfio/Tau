@@ -4254,6 +4254,14 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 padding: 0;
                                 list-style: none;
                             }
+                            #tau-ops-harness-acceptance ul,
+                            #tau-ops-harness-verification-gates ul {
+                                gap: 5px;
+                            }
+                            #tau-ops-harness-acceptance li,
+                            #tau-ops-harness-verification-gates li {
+                                padding: 3px 7px;
+                            }
                             #tau-ops-harness-conservative-policy {
                                 display: grid;
                                 grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -4646,7 +4654,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     <li id="tau-ops-harness-dag-verify" data-plan-node="Verify" data-node-status="running">"Verify"</li>
                                     <li id="tau-ops-harness-dag-learn" data-plan-node="Learn" data-node-status="pending">"Learn"</li>
                                 </ol>
-                                <div class="tau-harness-window-grid" data-proof-grid-priority="evidence-log-first">
+                                <div class="tau-harness-window-grid" data-proof-grid-priority="evidence-log-gates-first">
                                     <section
                                         id="tau-ops-harness-tool-evidence"
                                         data-tool-call-count="8"
@@ -4694,13 +4702,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                             <li data-ac-id="VG-05" data-ac-status="pending">"Benchmark proof emitted"</li>
                                         </ul>
                                     </section>
-                                    <section id="tau-ops-harness-memory-learning" data-memory-hits="12" data-learning-records="2" data-last-memory-write="10:20:55">
-                                        <h4>"Memory / Learning"</h4>
-                                        <p>"Memory hits: 12"</p>
-                                        <p>"No-memory evidence: Collected"</p>
-                                        <p>"Learning records: 2"</p>
-                                    </section>
-                                    <section id="tau-ops-harness-verification-gates" data-gate-count="5" data-failed-gate-count="1">
+                                    <section id="tau-ops-harness-verification-gates" data-gate-count="5" data-failed-gate-count="1" data-proof-secondary-priority="first-screen">
                                         <h4>"Verification Gates"</h4>
                                         <ul>
                                             <li id="tau-ops-harness-gate-planning" data-gate-id="VG-01" data-gate-status="passed">"Planning proof"</li>
@@ -4709,6 +4711,12 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                             <li id="tau-ops-harness-gate-verification" data-gate-id="VG-04" data-gate-status="running">"Verification proof"</li>
                                             <li id="tau-ops-harness-gate-learning" data-gate-id="VG-05" data-gate-status="pending">"Learning proof"</li>
                                         </ul>
+                                    </section>
+                                    <section id="tau-ops-harness-memory-learning" data-memory-hits="12" data-learning-records="2" data-last-memory-write="10:20:55">
+                                        <h4>"Memory / Learning"</h4>
+                                        <p>"Memory hits: 12"</p>
+                                        <p>"No-memory evidence: Collected"</p>
+                                        <p>"Learning records: 2"</p>
                                     </section>
                                     <section id="tau-ops-harness-artifacts" data-artifact-count="3">
                                         <h4>"Artifacts"</h4>

@@ -798,7 +798,7 @@ fn functional_spec_3767_c01_c02_c03_harness_prioritizes_proof_evidence_in_primar
     );
 
     for marker in [
-        "class=\"tau-harness-window-grid\" data-proof-grid-priority=\"evidence-log-first\"",
+        "class=\"tau-harness-window-grid\" data-proof-grid-priority=\"evidence-log-gates-first\"",
         "id=\"tau-ops-harness-tool-evidence\"",
         "data-proof-evidence-priority=\"first-screen\"",
         "data-tool-call-count=\"8\"",
@@ -900,11 +900,61 @@ fn functional_spec_3770_c01_c02_c03_harness_keeps_operator_log_in_first_proof_vi
         "id=\"tau-ops-harness-operator-log\" data-log-follow=\"true\" data-log-wrap=\"pre-wrap\" data-log-priority=\"first-screen\"",
         "#tau-ops-harness-operator-log {\n                                grid-column: 1 / -1;",
         "#tau-ops-harness-operator-log pre {\n                                max-height: 118px;",
-        "class=\"tau-harness-window-grid\" data-proof-grid-priority=\"evidence-log-first\"",
+        "class=\"tau-harness-window-grid\" data-proof-grid-priority=\"evidence-log-gates-first\"",
     ] {
         assert!(
             html.contains(marker),
             "missing first-screen operator log marker `{marker}`"
+        );
+    }
+}
+
+#[test]
+fn functional_spec_3771_c01_c02_c03_harness_prioritizes_verification_gates_after_log() {
+    let html = render_tau_ops_dashboard_shell_for_route("/ops/harness");
+
+    let log_index = html
+        .find("id=\"tau-ops-harness-operator-log\"")
+        .expect("operator log section should render");
+    let acceptance_index = html
+        .find("id=\"tau-ops-harness-acceptance\"")
+        .expect("acceptance section should render");
+    let gates_index = html
+        .find("id=\"tau-ops-harness-verification-gates\"")
+        .expect("verification gates section should render");
+    let memory_index = html
+        .find("id=\"tau-ops-harness-memory-learning\"")
+        .expect("memory learning section should render");
+    let artifacts_index = html
+        .find("id=\"tau-ops-harness-artifacts\"")
+        .expect("artifacts section should render");
+
+    assert!(
+        log_index < acceptance_index,
+        "acceptance should remain directly after the operator log"
+    );
+    assert!(
+        acceptance_index < gates_index,
+        "verification gates should be promoted after acceptance"
+    );
+    assert!(
+        gates_index < memory_index,
+        "verification gates should appear before memory summary"
+    );
+    assert!(
+        gates_index < artifacts_index,
+        "verification gates should appear before artifacts"
+    );
+
+    for marker in [
+        "class=\"tau-harness-window-grid\" data-proof-grid-priority=\"evidence-log-gates-first\"",
+        "id=\"tau-ops-harness-verification-gates\" data-gate-count=\"5\" data-failed-gate-count=\"1\" data-proof-secondary-priority=\"first-screen\"",
+        "#tau-ops-harness-acceptance li,\n                            #tau-ops-harness-verification-gates li {\n                                padding: 3px 7px;",
+        "#tau-ops-harness-acceptance ul,\n                            #tau-ops-harness-verification-gates ul {\n                                gap: 5px;",
+    ] {
+        assert!(
+            html.contains(marker),
+            "missing first-screen verification gate marker `{marker}`"
         );
     }
 }
