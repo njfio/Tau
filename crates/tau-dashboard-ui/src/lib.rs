@@ -622,6 +622,22 @@ pub struct TauOpsDashboardHarnessBenchmarkCategoryRow {
     pub pass_rate: String,
 }
 
+fn harness_benchmark_category_label(category: &str) -> String {
+    let label = category
+        .split(['_', '-'])
+        .filter(|word| !word.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    if label.is_empty() {
+        return "Uncategorized".to_string();
+    }
+
+    let mut chars = label.chars();
+    let first = chars.next().expect("non-empty label").to_ascii_uppercase();
+    format!("{first}{}", chars.as_str())
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// Public struct `TauOpsDashboardHarnessAuditRow` in `tau-dashboard-ui`.
 pub struct TauOpsDashboardHarnessAuditRow {
@@ -970,6 +986,8 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
             let task_count = row.task_count.to_string();
             let last_run = format!("{}/{} pass", row.pass_count, row.total_count);
             let last_run_attr = last_run.clone();
+            let category_label = harness_benchmark_category_label(&row.category);
+            let category_label_attr = category_label.clone();
             view! {
                 <tr
                     data-category=row.category.clone()
@@ -977,7 +995,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     data-last-run=last_run_attr
                     data-pass-rate=row.pass_rate.clone()
                 >
-                    <td>{row.category.clone()}</td>
+                    <td data-category-label=category_label_attr><span class="tau-harness-benchmark-category-label">{category_label}</span></td>
                     <td>{row.task_count}</td>
                     <td>{last_run}</td>
                     <td>{format!("{}%", row.pass_rate)}</td>
@@ -4214,6 +4232,16 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             #tau-ops-harness-benchmark-panel[data-left-table-fit="compact-no-overflow"] #tau-ops-harness-benchmark-table td {
                                 white-space: normal;
                             }
+                            #tau-ops-harness-benchmark-panel[data-category-label-fit="operator-readable"] #tau-ops-harness-benchmark-table td:first-child {
+                                white-space: normal;
+                                overflow-wrap: normal;
+                                word-break: normal;
+                            }
+                            #tau-ops-harness-benchmark-panel[data-category-label-fit="operator-readable"] .tau-harness-benchmark-category-label {
+                                display: block;
+                                line-height: 1.16;
+                                max-width: 100%;
+                            }
                             #tau-ops-harness-active-missions[data-left-table-fit="compact-no-overflow"] #tau-ops-harness-missions-table th {
                                 font-size: .66rem;
                                 padding-inline: 6px;
@@ -4984,6 +5012,8 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     data-first-viewport-anchor="canonical-benchmark"
                                     data-left-table-fit="compact-no-overflow"
                                     data-horizontal-overflow-budget="none"
+                                    data-category-label-fit="operator-readable"
+                                    data-category-overflow-budget="none"
                                 >
                                     <h4>"M334 Autonomy Benchmark"</h4>
                                     <div class="tau-harness-table-wrap">

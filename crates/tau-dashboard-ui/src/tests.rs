@@ -1589,6 +1589,26 @@ fn functional_spec_3788_c01_c02_c03_harness_kpi_labels_avoid_mid_word_breaks() {
 }
 
 #[test]
+fn functional_spec_3789_c01_c02_c03_harness_benchmark_categories_are_operator_readable() {
+    let html = render_tau_ops_dashboard_shell_for_route("/ops/harness");
+
+    for marker in [
+        "id=\"tau-ops-harness-benchmark-panel\" data-benchmark-id=\"m334-tranche-one-autonomy\" data-proof-artifact=\"/artifacts/bench/m334/latest.json\" data-task-count=\"4\" data-pass-count=\"4\" data-failed-gates=\"none\" data-proof-source=\"fallback\" data-first-viewport-anchor=\"canonical-benchmark\" data-left-table-fit=\"compact-no-overflow\" data-horizontal-overflow-budget=\"none\" data-category-label-fit=\"operator-readable\" data-category-overflow-budget=\"none\"",
+        "data-category=\"greenfield_build\" data-task-count=\"1\" data-last-run=\"4/4 pass\" data-pass-rate=\"100\"",
+        "<td data-category-label=\"Greenfield build\"><span class=\"tau-harness-benchmark-category-label\">Greenfield build</span></td>",
+        "<td data-category-label=\"Research design\"><span class=\"tau-harness-benchmark-category-label\">Research design</span></td>",
+        "<td data-category-label=\"Data to deliverable\"><span class=\"tau-harness-benchmark-category-label\">Data to deliverable</span></td>",
+        "#tau-ops-harness-benchmark-panel[data-category-label-fit=\"operator-readable\"] #tau-ops-harness-benchmark-table td:first-child {\n                                white-space: normal;\n                                overflow-wrap: normal;",
+        "#tau-ops-harness-benchmark-panel[data-category-label-fit=\"operator-readable\"] .tau-harness-benchmark-category-label {\n                                display: block;",
+    ] {
+        assert!(
+            html.contains(marker),
+            "benchmark categories should preserve readable label marker `{marker}`"
+        );
+    }
+}
+
+#[test]
 fn functional_spec_3775_c01_c02_c03_harness_keeps_benchmark_panel_in_left_first_viewport() {
     let html = render_tau_ops_dashboard_shell_for_route("/ops/harness");
 
