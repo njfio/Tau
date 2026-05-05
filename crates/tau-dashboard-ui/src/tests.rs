@@ -1133,6 +1133,81 @@ fn functional_spec_3777_c01_c02_c03_harness_keeps_conservative_policy_visible_be
 }
 
 #[test]
+fn functional_spec_3778_c01_c02_c03_harness_keeps_proposal_safety_summary_visible_after_policy() {
+    let html = render_tau_ops_dashboard_shell_for_route("/ops/harness");
+
+    let policy_index = html
+        .find("id=\"tau-ops-harness-conservative-policy\"")
+        .expect("conservative policy should render");
+    let detail_index = html
+        .find("id=\"tau-ops-harness-proposal-detail\"")
+        .expect("proposal detail should render");
+    let audit_index = html
+        .find("id=\"tau-ops-harness-audit-log\"")
+        .expect("audit log should render");
+
+    let dry_run_index = html[detail_index..]
+        .find("<dt>Dry-run Result</dt>")
+        .expect("dry-run result row should render")
+        + detail_index;
+    let safety_index = html[detail_index..]
+        .find("<dt>Safety Check</dt>")
+        .expect("safety check row should render")
+        + detail_index;
+    let rollback_index = html[detail_index..]
+        .find("<dt>Rollback Plan</dt>")
+        .expect("rollback plan row should render")
+        + detail_index;
+    let patch_index = html[detail_index..]
+        .find("<dt>Patch Summary</dt>")
+        .expect("patch summary row should render")
+        + detail_index;
+    let failure_index = html[detail_index..]
+        .find("<dt>Failure Observed</dt>")
+        .expect("failure observed row should render")
+        + detail_index;
+    let root_cause_index = html[detail_index..]
+        .find("<dt>Root Cause</dt>")
+        .expect("root cause row should render")
+        + detail_index;
+
+    assert!(
+        policy_index < detail_index,
+        "proposal detail should remain directly after the conservative policy"
+    );
+    assert!(
+        detail_index < dry_run_index
+            && dry_run_index < safety_index
+            && safety_index < rollback_index
+            && rollback_index < patch_index
+            && patch_index < failure_index
+            && failure_index < root_cause_index,
+        "proposal detail should prioritize safety summary before explanatory rows"
+    );
+    assert!(
+        detail_index < audit_index,
+        "audit history should remain after proposal detail"
+    );
+
+    for marker in [
+        "id=\"tau-ops-harness-proposal-detail\" data-proposal-id=\"PR-044\" data-learning-record=\"LR-044\" data-target-type=\"Prompt\" data-target-path=\"prompts/research_to_doc/system.md\" data-proposal-detail-priority=\"first-viewport-summary\" data-proposal-detail-density=\"compact-scroll\"",
+        "#tau-ops-harness-proposal-detail {\n                                max-height: 128px;\n                                overflow: auto;",
+        "<dt>Dry-run Result</dt><dd data-result=\"passed\">Tests passed (18/18)</dd>",
+        "<dt>Safety Check</dt><dd data-result=\"passed\">Passed</dd>",
+        "<dt>Rollback Plan</dt><dd>Revert to previous prompt version</dd>",
+        "<dt>Test Evidence</dt><dd><a href=\"/evidence/pr-044-dryrun.json\">evidence/pr-044-dryrun.json</a></dd>",
+        "<dt>Failure Observed</dt><dd>Token overrun during research-to-doc tasks</dd>",
+        "<dt>Root Cause</dt><dd>Verbose prompts with redundant context</dd>",
+        "id=\"tau-ops-harness-audit-log\"",
+    ] {
+        assert!(
+            html.contains(marker),
+            "missing compact proposal detail marker `{marker}`"
+        );
+    }
+}
+
+#[test]
 fn functional_spec_3775_c01_c02_c03_harness_keeps_benchmark_panel_in_left_first_viewport() {
     let html = render_tau_ops_dashboard_shell_for_route("/ops/harness");
 

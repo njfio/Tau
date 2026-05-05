@@ -4295,6 +4295,10 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 gap: 6px 12px;
                                 margin: 8px 0 0;
                             }
+                            #tau-ops-harness-proposal-detail {
+                                max-height: 128px;
+                                overflow: auto;
+                            }
                             #tau-ops-harness-acceptance ul,
                             #tau-ops-harness-verification-gates ul,
                             #tau-ops-harness-artifacts ul,
@@ -4882,16 +4886,24 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                         <ul><li>"Source Code"</li><li>"Safety Policy"</li></ul>
                                     </div>
                                 </section>
-                                <section id="tau-ops-harness-proposal-detail" data-proposal-id="PR-044" data-learning-record="LR-044" data-target-type="Prompt" data-target-path="prompts/research_to_doc/system.md">
+                                <section
+                                    id="tau-ops-harness-proposal-detail"
+                                    data-proposal-id="PR-044"
+                                    data-learning-record="LR-044"
+                                    data-target-type="Prompt"
+                                    data-target-path="prompts/research_to_doc/system.md"
+                                    data-proposal-detail-priority="first-viewport-summary"
+                                    data-proposal-detail-density="compact-scroll"
+                                >
                                     <h4>"PR-044 Prompt compression for research tasks"</h4>
                                     <dl>
-                                        <dt>"Failure Observed"</dt><dd>"Token overrun during research-to-doc tasks"</dd>
-                                        <dt>"Root Cause"</dt><dd>"Verbose prompts with redundant context"</dd>
-                                        <dt>"Patch Summary"</dt><dd>"Compress system prompt by removing redundant instructions and examples."</dd>
                                         <dt>"Dry-run Result"</dt><dd data-result="passed">"Tests passed (18/18)"</dd>
-                                        <dt>"Test Evidence"</dt><dd><a href="/evidence/pr-044-dryrun.json">"evidence/pr-044-dryrun.json"</a></dd>
                                         <dt>"Safety Check"</dt><dd data-result="passed">"Passed"</dd>
                                         <dt>"Rollback Plan"</dt><dd>"Revert to previous prompt version"</dd>
+                                        <dt>"Patch Summary"</dt><dd>"Compress system prompt by removing redundant instructions and examples."</dd>
+                                        <dt>"Failure Observed"</dt><dd>"Token overrun during research-to-doc tasks"</dd>
+                                        <dt>"Root Cause"</dt><dd>"Verbose prompts with redundant context"</dd>
+                                        <dt>"Test Evidence"</dt><dd><a href="/evidence/pr-044-dryrun.json">"evidence/pr-044-dryrun.json"</a></dd>
                                     </dl>
                                 </section>
                                 <section
