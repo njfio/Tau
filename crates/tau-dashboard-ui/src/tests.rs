@@ -798,7 +798,7 @@ fn functional_spec_3767_c01_c02_c03_harness_prioritizes_proof_evidence_in_primar
     );
 
     for marker in [
-        "class=\"tau-harness-window-grid\" data-proof-grid-priority=\"evidence-first\"",
+        "class=\"tau-harness-window-grid\" data-proof-grid-priority=\"evidence-log-first\"",
         "id=\"tau-ops-harness-tool-evidence\"",
         "data-proof-evidence-priority=\"first-screen\"",
         "data-tool-call-count=\"8\"",
@@ -855,6 +855,56 @@ fn functional_spec_3769_c01_c02_c03_harness_uses_distinct_operator_action_tones(
         assert!(
             html.contains(marker),
             "missing distinct action tone marker `{marker}`"
+        );
+    }
+}
+
+#[test]
+fn functional_spec_3770_c01_c02_c03_harness_keeps_operator_log_in_first_proof_view() {
+    let html = render_tau_ops_dashboard_shell_for_route("/ops/harness");
+
+    let evidence_index = html
+        .find("id=\"tau-ops-harness-tool-evidence\"")
+        .expect("tool evidence section should render");
+    let log_index = html
+        .find("id=\"tau-ops-harness-operator-log\"")
+        .expect("operator log section should render");
+    let acceptance_index = html
+        .find("id=\"tau-ops-harness-acceptance\"")
+        .expect("acceptance section should render");
+    let gates_index = html
+        .find("id=\"tau-ops-harness-verification-gates\"")
+        .expect("verification gates section should render");
+    let artifacts_index = html
+        .find("id=\"tau-ops-harness-artifacts\"")
+        .expect("artifacts section should render");
+
+    assert!(
+        evidence_index < log_index,
+        "operator log should remain after tool evidence"
+    );
+    assert!(
+        log_index < acceptance_index,
+        "operator log should be promoted before secondary acceptance detail"
+    );
+    assert!(
+        log_index < gates_index,
+        "operator log should be promoted before secondary gate detail"
+    );
+    assert!(
+        log_index < artifacts_index,
+        "operator log should be promoted before secondary artifact detail"
+    );
+
+    for marker in [
+        "id=\"tau-ops-harness-operator-log\" data-log-follow=\"true\" data-log-wrap=\"pre-wrap\" data-log-priority=\"first-screen\"",
+        "#tau-ops-harness-operator-log {\n                                grid-column: 1 / -1;",
+        "#tau-ops-harness-operator-log pre {\n                                max-height: 118px;",
+        "class=\"tau-harness-window-grid\" data-proof-grid-priority=\"evidence-log-first\"",
+    ] {
+        assert!(
+            html.contains(marker),
+            "missing first-screen operator log marker `{marker}`"
         );
     }
 }

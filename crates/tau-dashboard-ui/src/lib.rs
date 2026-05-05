@@ -4284,6 +4284,9 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             #tau-ops-harness-action-apply {
                                 grid-column: 1 / -1;
                             }
+                            #tau-ops-harness-operator-log {
+                                grid-column: 1 / -1;
+                            }
                             #tau-ops-harness-panel pre {
                                 overflow: auto;
                                 border: 1px solid #1f3644;
@@ -4295,6 +4298,9 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 font-size: .76rem;
                                 line-height: 1.5;
                                 max-height: 250px;
+                            }
+                            #tau-ops-harness-operator-log pre {
+                                max-height: 118px;
                             }
                             #tau-ops-harness-tui-companion pre {
                                 max-height: 94px;
@@ -4640,7 +4646,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     <li id="tau-ops-harness-dag-verify" data-plan-node="Verify" data-node-status="running">"Verify"</li>
                                     <li id="tau-ops-harness-dag-learn" data-plan-node="Learn" data-node-status="pending">"Learn"</li>
                                 </ol>
-                                <div class="tau-harness-window-grid" data-proof-grid-priority="evidence-first">
+                                <div class="tau-harness-window-grid" data-proof-grid-priority="evidence-log-first">
                                     <section
                                         id="tau-ops-harness-tool-evidence"
                                         data-tool-call-count="8"
@@ -4662,6 +4668,21 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                                 </tbody>
                                             </table>
                                         </div>
+                                    </section>
+                                    <section
+                                        id="tau-ops-harness-operator-log"
+                                        data-log-follow="true"
+                                        data-log-wrap="pre-wrap"
+                                        data-log-priority="first-screen"
+                                    >
+                                        <h4>"Operator Log"</h4>
+                                        <pre>"10:18:22  Plan accepted
+10:18:23  Executing plan with tool budget 42/60
+10:18:25  repo.read call_id=c1a2b3 path=src/registry/**
+10:18:37  repo.edit completed (42 files)
+10:20:55  memory.write call_id=c1a2b8 record=learning
+10:24:18  Verification started
+10:25:52  verification gate VG-03 pending (collecting no-memory evidence)"</pre>
                                     </section>
                                     <section id="tau-ops-harness-acceptance" data-acceptance-met="3" data-acceptance-total="5">
                                         <h4>"Acceptance Criteria"</h4>
@@ -4698,20 +4719,6 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                         </ul>
                                     </section>
                                 </div>
-                                <section
-                                    id="tau-ops-harness-operator-log"
-                                    data-log-follow="true"
-                                    data-log-wrap="pre-wrap"
-                                >
-                                    <h4>"Operator Log"</h4>
-                                    <pre>"10:18:22  Plan accepted
-10:18:23  Executing plan with tool budget 42/60
-10:18:25  repo.read call_id=c1a2b3 path=src/registry/**
-10:18:37  repo.edit completed (42 files)
-10:20:55  memory.write call_id=c1a2b8 record=learning
-10:24:18  Verification started
-10:25:52  verification gate VG-03 pending (collecting no-memory evidence)"</pre>
-                                </section>
                             </section>
                             <section
                                 id="tau-ops-harness-self-improvement-window"
