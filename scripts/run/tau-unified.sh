@@ -189,6 +189,44 @@ run_runner_mode() {
   "${RUNNER}" "${mode}" "${RUNNER_LOG}" "${RUNNER_PID}" "$@"
 }
 
+start_detached_runtime_process() {
+  local command="$1"
+
+  if command -v perl >/dev/null 2>&1; then
+    TAU_UNIFIED_DAEMON_COMMAND="${command}" \
+    TAU_UNIFIED_DAEMON_LOG="${LOG_FILE}" \
+    TAU_UNIFIED_DAEMON_ROOT="${REPO_ROOT}" \
+      perl -MPOSIX=setsid -e '
+        use strict;
+        use warnings;
+
+        my $command = $ENV{"TAU_UNIFIED_DAEMON_COMMAND"} // die "missing daemon command\n";
+        my $log = $ENV{"TAU_UNIFIED_DAEMON_LOG"} // die "missing daemon log\n";
+        my $root = $ENV{"TAU_UNIFIED_DAEMON_ROOT"} // die "missing daemon root\n";
+
+        defined(my $pid = fork) or die "fork failed: $!\n";
+        if ($pid) {
+          print "$pid\n";
+          exit 0;
+        }
+
+        setsid() or die "setsid failed: $!\n";
+        chdir $root or die "chdir $root failed: $!\n";
+        open STDIN, "<", "/dev/null" or die "open /dev/null failed: $!\n";
+        open STDOUT, ">>", $log or die "open $log failed: $!\n";
+        open STDERR, ">&", \*STDOUT or die "redirect stderr failed: $!\n";
+        exec "bash", "-lc", $command;
+        die "exec failed: $!\n";
+      ' >"${PID_FILE}"
+  else
+    (
+      cd "${REPO_ROOT}"
+      nohup bash -lc "${command}" </dev/null >>"${LOG_FILE}" 2>&1 &
+      echo $! > "${PID_FILE}"
+    )
+  fi
+}
+
 build_up_command() {
   local model="$1"
   local bind="$2"
@@ -202,7 +240,7 @@ build_up_command() {
   local provider_max_retries="${10}"
 
   local cmd=(
-    cargo run -p tau-coding-agent --
+    cargo run -p tau-coding-agent --bin tau-coding-agent --
     --model "${model}"
     --gateway-state-dir "${gateway_state_dir}"
     --dashboard-state-dir "${dashboard_state_dir}"
@@ -340,11 +378,7 @@ cmd_up() {
     fi
     cp "${RUNNER_PID}" "${PID_FILE}"
   else
-    (
-      cd "${REPO_ROOT}"
-      nohup bash -lc "${command}" >>"${LOG_FILE}" 2>&1 &
-      echo $! > "${PID_FILE}"
-    )
+    start_detached_runtime_process "${command}"
   fi
 
   local pid

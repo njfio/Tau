@@ -603,7 +603,7 @@ fn functional_spec_3761_c01_c02_c03_harness_keeps_desktop_three_window_layout() 
 
     for marker in [
         "data-desktop-preview-layout=\"three-window\"",
-        "data-responsive-collapse-width=\"1180px\"",
+        "data-responsive-collapse-width=\"1450px\"",
         "grid-template-columns: minmax(0, .82fr) minmax(0, 1.04fr) minmax(0, .86fr);",
         "#tau-ops-shell[data-active-route=\"harness\"] {\n                    background:",
         "max-width: 100vw;",
@@ -623,6 +623,24 @@ fn functional_spec_3761_c01_c02_c03_harness_keeps_desktop_three_window_layout() 
         assert!(
             html.contains(marker),
             "missing harness desktop layout marker `{marker}`"
+        );
+    }
+}
+
+#[test]
+fn functional_spec_3795_c01_c02_harness_fits_in_app_browser_without_review_rail_clipping() {
+    let html = render_tau_ops_dashboard_shell_for_route("/ops/harness");
+
+    for marker in [
+        "data-responsive-collapse-width=\"1450px\"",
+        "data-in-app-browser-fit=\"no-right-rail-clipping\"",
+        "@media (max-width: 1450px)",
+        "grid-template-areas:\n                                        \"topbar topbar\"\n                                        \"dashboard proof\"\n                                        \"review tui\";",
+        "#tau-ops-harness-tui-companion {\n                                    max-height: 260px;",
+    ] {
+        assert!(
+            html.contains(marker),
+            "missing in-app browser fit marker `{marker}`"
         );
     }
 }

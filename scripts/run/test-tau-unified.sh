@@ -246,6 +246,7 @@ if [[ ! -f "${fingerprint_file}" ]]; then
   exit 1
 fi
 assert_contains "$(cat "${cmd_file}")" "--model gpt-5.3-codex" "up default model flag"
+assert_contains "$(cat "${cmd_file}")" "cargo run -p tau-coding-agent --bin tau-coding-agent --" "up explicit cargo binary"
 assert_contains "$(cat "${cmd_file}")" "--request-timeout-ms 180000" "up default timeout flag"
 assert_contains "$(cat "${cmd_file}")" "--turn-timeout-ms 180000" "up default turn timeout flag"
 assert_contains "$(cat "${cmd_file}")" "--agent-request-max-retries 0" "up default agent retries flag"

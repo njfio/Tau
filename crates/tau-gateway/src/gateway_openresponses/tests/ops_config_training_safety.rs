@@ -139,6 +139,16 @@ async fn integration_spec_3756_c05_ops_harness_actions_execute_and_persist_proof
     let diff_body = diff_response.text().await.expect("read diff body");
     assert!(diff_body.contains("id=\"tau-ops-harness-diff\""));
     assert!(diff_body.contains("data-proposal-id=\"PR-044\""));
+    assert!(diff_body.contains("data-diff-view=\"operator-review\""));
+    assert!(diff_body.contains("data-target-path=\"prompts/research_to_doc/system.md\""));
+    assert!(diff_body.contains("data-dry-run-result=\"passed\""));
+    assert!(diff_body.contains("data-safety-check=\"passed\""));
+    assert!(diff_body.contains("data-policy-allowed=\"skill,config,prompt\""));
+    assert!(diff_body.contains("data-policy-blocked=\"source-code,safety-policy\""));
+    assert!(diff_body
+        .contains("Compress system prompt by removing redundant instructions and examples."));
+    assert!(diff_body.contains("class=\"tau-harness-diff-line tau-harness-diff-line-remove\""));
+    assert!(diff_body.contains("class=\"tau-harness-diff-line tau-harness-diff-line-add\""));
 
     handle.abort();
 }

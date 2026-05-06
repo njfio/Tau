@@ -1,6 +1,7 @@
 //! Gateway OpenResponses server bootstrap and router wiring.
 
 use super::*;
+use std::future::{pending, Future};
 
 /// Public `fn` `run_gateway_openresponses_server` in `tau-gateway`.
 ///
@@ -50,7 +51,7 @@ pub async fn run_gateway_openresponses_server(
     let app = build_gateway_openresponses_router(state);
     let serve_result = axum::serve(listener, app)
         .with_graceful_shutdown(async {
-            let _ = tokio::signal::ctrl_c().await;
+            wait_for_gateway_openresponses_shutdown_signal(tokio::signal::ctrl_c).await;
         })
         .await;
     cortex_bulletin_runtime.shutdown().await;
@@ -69,6 +70,19 @@ pub async fn run_gateway_openresponses_server(
     }
 
     Ok(())
+}
+
+async fn wait_for_gateway_openresponses_shutdown_signal<F, Fut>(wait_for_ctrl_c: F)
+where
+    F: FnOnce() -> Fut,
+    Fut: Future<Output = std::io::Result<()>>,
+{
+    if let Err(error) = wait_for_ctrl_c().await {
+        eprintln!(
+            "gateway openresponses server: ctrl-c shutdown signal unavailable ({error}); continuing until process termination"
+        );
+        pending::<()>().await;
+    }
 }
 
 pub(super) fn build_gateway_openresponses_router(
@@ -321,4 +335,39 @@ pub(super) fn build_gateway_openresponses_router(
         .route(DASHBOARD_STREAM_ENDPOINT, get(handle_dashboard_stream))
         .route(GATEWAY_WS_ENDPOINT, get(handle_gateway_ws_upgrade))
         .with_state(state)
+}
+
+#[cfg(test)]
+mod shutdown_signal_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn regression_ctrl_c_registration_error_does_not_resolve_shutdown_signal() {
+        let result = tokio::time::timeout(
+            std::time::Duration::from_millis(10),
+            wait_for_gateway_openresponses_shutdown_signal(|| async {
+                Err(std::io::Error::other("signal ignored by parent shell"))
+            }),
+        )
+        .await;
+
+        assert!(
+            result.is_err(),
+            "shutdown signal future should remain pending when ctrl-c cannot be registered"
+        );
+    }
+
+    #[tokio::test]
+    async fn unit_ctrl_c_success_resolves_shutdown_signal() {
+        let result = tokio::time::timeout(
+            std::time::Duration::from_millis(10),
+            wait_for_gateway_openresponses_shutdown_signal(|| async { Ok(()) }),
+        )
+        .await;
+
+        assert!(
+            result.is_ok(),
+            "shutdown signal future should resolve after ctrl-c is observed"
+        );
+    }
 }

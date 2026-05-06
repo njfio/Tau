@@ -1377,16 +1377,222 @@ pub(super) async fn handle_ops_dashboard_harness_proposal_diff(
 ) -> Html<String> {
     let proposal_id = sanitize_harness_token(&proposal_id);
     Html(format!(
-        r#"<main id="tau-ops-harness-diff" data-proposal-id="{proposal_id}">
-<h1>Harness Proposal Diff</h1>
-<pre>--- prompts/research_to_doc/system.md
-+++ prompts/research_to_doc/system.md
-@@
-- verbose repeated research instructions
-+ concise mission-scoped research instructions
-</pre>
-<a href="/ops/harness">Back to Mission Harness</a>
-</main>"#
+        r#"<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Harness Proposal Diff {proposal_id}</title>
+<style>
+:root {{
+  color-scheme: dark;
+  --bg: #061017;
+  --panel: #0d1b25;
+  --panel-2: #101f2c;
+  --line: #264154;
+  --text: #e7f0f6;
+  --muted: #9fb4c2;
+  --green: #56d075;
+  --red: #ee746c;
+  --blue: #66a6ff;
+}}
+* {{ box-sizing: border-box; }}
+body {{
+  margin: 0;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.45 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}}
+a {{ color: var(--blue); }}
+#tau-ops-harness-diff {{
+  width: min(1120px, calc(100vw - 32px));
+  margin: 24px auto;
+  display: grid;
+  gap: 16px;
+}}
+.tau-harness-diff-header,
+.tau-harness-diff-card {{
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, .28);
+}}
+.tau-harness-diff-header {{
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 20px;
+}}
+.tau-harness-diff-header p,
+.tau-harness-diff-card p {{
+  margin: 0;
+  color: var(--muted);
+}}
+.tau-harness-diff-header h1 {{
+  margin: 3px 0 0;
+  font-size: 1.35rem;
+  letter-spacing: 0;
+}}
+.tau-harness-diff-card {{
+  padding: 18px 20px;
+}}
+.tau-harness-diff-meta {{
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}}
+.tau-harness-diff-meta div {{
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-2);
+}}
+.tau-harness-diff-meta dt {{
+  margin: 0 0 4px;
+  color: var(--muted);
+  font-size: .72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}}
+.tau-harness-diff-meta dd {{
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-weight: 700;
+}}
+.tau-harness-diff-policy {{
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}}
+.tau-harness-diff-policy section {{
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 12px;
+  background: var(--panel-2);
+}}
+.tau-harness-diff-policy h2 {{
+  margin: 0 0 8px;
+  font-size: .86rem;
+}}
+.tau-harness-diff-chips {{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}}
+.tau-harness-diff-chip {{
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: .78rem;
+  font-weight: 700;
+}}
+.tau-harness-diff-chip[data-scope="allowed"] {{ color: var(--green); }}
+.tau-harness-diff-chip[data-scope="blocked"] {{ color: var(--red); }}
+.tau-harness-diff-code {{
+  margin: 0;
+  max-height: 54vh;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #050b10;
+  color: var(--text);
+  font: 13px/1.5 "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}}
+.tau-harness-diff-line {{
+  display: block;
+  min-width: max-content;
+  padding: 0 14px;
+  white-space: pre;
+}}
+.tau-harness-diff-line:first-child {{ padding-top: 12px; }}
+.tau-harness-diff-line:last-child {{ padding-bottom: 12px; }}
+.tau-harness-diff-line-remove {{
+  background: rgba(238, 116, 108, .14);
+  color: #ffada8;
+}}
+.tau-harness-diff-line-add {{
+  background: rgba(86, 208, 117, .13);
+  color: #b6f0bf;
+}}
+.tau-harness-diff-actions {{
+  display: flex;
+  justify-content: flex-start;
+}}
+.tau-harness-diff-actions a {{
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0 12px;
+  background: var(--panel-2);
+  color: var(--text);
+  font-weight: 700;
+  text-decoration: none;
+}}
+@media (max-width: 760px) {{
+  #tau-ops-harness-diff {{ width: calc(100vw - 20px); margin: 10px auto; }}
+  .tau-harness-diff-header,
+  .tau-harness-diff-policy {{ grid-template-columns: minmax(0, 1fr); }}
+  .tau-harness-diff-header {{ display: grid; }}
+  .tau-harness-diff-meta {{ grid-template-columns: minmax(0, 1fr); }}
+}}
+</style>
+</head>
+<body>
+<main id="tau-ops-harness-diff" data-proposal-id="{proposal_id}" data-diff-view="operator-review" data-target-path="prompts/research_to_doc/system.md" data-dry-run-result="passed" data-safety-check="passed" data-policy-allowed="skill,config,prompt" data-policy-blocked="source-code,safety-policy">
+  <header class="tau-harness-diff-header">
+    <div>
+      <p>Harness Proposal Diff</p>
+      <h1>{proposal_id} Prompt compression for research tasks</h1>
+    </div>
+    <p>Operator review required before apply.</p>
+  </header>
+  <section class="tau-harness-diff-card" aria-labelledby="tau-harness-diff-summary">
+    <h2 id="tau-harness-diff-summary">Change Summary</h2>
+    <p>Compress system prompt by removing redundant instructions and examples.</p>
+    <dl class="tau-harness-diff-meta">
+      <div><dt>Target Path</dt><dd>prompts/research_to_doc/system.md</dd></div>
+      <div><dt>Dry-run Result</dt><dd>Tests passed (18/18)</dd></div>
+      <div><dt>Safety Check</dt><dd>Passed</dd></div>
+      <div><dt>Rollback Plan</dt><dd>Revert to previous prompt version</dd></div>
+    </dl>
+    <div class="tau-harness-diff-policy">
+      <section>
+        <h2>Allowed Scope</h2>
+        <div class="tau-harness-diff-chips">
+          <span class="tau-harness-diff-chip" data-scope="allowed">Skill</span>
+          <span class="tau-harness-diff-chip" data-scope="allowed">Config</span>
+          <span class="tau-harness-diff-chip" data-scope="allowed">Prompt</span>
+        </div>
+      </section>
+      <section>
+        <h2>Blocked Scope</h2>
+        <div class="tau-harness-diff-chips">
+          <span class="tau-harness-diff-chip" data-scope="blocked">Source code</span>
+          <span class="tau-harness-diff-chip" data-scope="blocked">Safety policy</span>
+        </div>
+      </section>
+    </div>
+  </section>
+  <section class="tau-harness-diff-card" aria-labelledby="tau-harness-diff-patch">
+    <h2 id="tau-harness-diff-patch">Patch Preview</h2>
+    <pre class="tau-harness-diff-code" data-diff-artifact="fallback-patch"><code><span class="tau-harness-diff-line">--- prompts/research_to_doc/system.md</span>
+<span class="tau-harness-diff-line">+++ prompts/research_to_doc/system.md</span>
+<span class="tau-harness-diff-line">@@</span>
+<span class="tau-harness-diff-line tau-harness-diff-line-remove">- verbose repeated research instructions</span>
+<span class="tau-harness-diff-line tau-harness-diff-line-add">+ concise mission-scoped research instructions</span></code></pre>
+  </section>
+  <nav class="tau-harness-diff-actions" aria-label="Harness diff actions">
+    <a href="/ops/harness">Back to Mission Harness</a>
+  </nav>
+</main>
+</body>
+</html>"#
     ))
 }
 
