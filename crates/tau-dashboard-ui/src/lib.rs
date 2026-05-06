@@ -117,7 +117,7 @@ impl TauOpsDashboardRoute {
             Self::Memory => "Memory Explorer",
             Self::MemoryGraph => "Memory Graph",
             Self::ToolsJobs => "Tools & Jobs",
-            Self::Channels => "Multi-Channel",
+            Self::Channels => "Channels",
             Self::Harness => "Mission Harness",
             Self::Config => "Configuration",
             Self::Training => "Training & RL",
@@ -2204,6 +2204,12 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
         })
         .count()
         .to_string();
+    let channels_online_count_summary = channels_online_count.clone();
+    let channels_online_count_card = channels_online_count.clone();
+    let channels_offline_count_summary = channels_offline_count.clone();
+    let channels_offline_count_card = channels_offline_count.clone();
+    let channels_degraded_count_summary = channels_degraded_count.clone();
+    let channels_degraded_count_card = channels_degraded_count.clone();
     let channels_row_count_value = connector_health_rows.len().to_string();
     let channels_row_count_table_value = channels_row_count_value.clone();
     let channels_row_count_body_value = channels_row_count_value.clone();
@@ -2233,6 +2239,17 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                 "false"
             };
             let probe_enabled = "true";
+            let login_aria_disabled = if login_enabled == "true" {
+                "false"
+            } else {
+                "true"
+            };
+            let logout_aria_disabled = if logout_enabled == "true" {
+                "false"
+            } else {
+                "true"
+            };
+            let probe_aria_disabled = "false";
             let login_href = format!(
                 "{active_shell_path}?theme={theme_attr}&sidebar={sidebar_state_attr}&session={chat_session_key}&channel={channel}&channel_action=login"
             );
@@ -2251,39 +2268,54 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     data-events-ingested=events_ingested_attr
                     data-provider-failures=provider_failures_attr
                 >
-                    <td>{row.channel.clone()}</td>
-                    <td>{row.mode.clone()}</td>
-                    <td>{row.liveness.clone()}</td>
+                    <td><span class="tau-ops-channel-name">{row.channel.clone()}</span></td>
+                    <td><span class="tau-ops-channel-mode">{row.mode.clone()}</span></td>
+                    <td>
+                        <span
+                            class="tau-ops-channel-liveness"
+                            data-liveness=row.liveness.clone()
+                        >
+                            {row.liveness.clone()}
+                        </span>
+                    </td>
                     <td>{events_ingested}</td>
                     <td>{provider_failures}</td>
                     <td>
-                        <a
-                            id=login_id
-                            data-action="channel-login"
-                            data-channel=row.channel.clone()
-                            data-action-enabled=login_enabled
-                            href=login_href
-                        >
-                            Login
-                        </a>
-                        <a
-                            id=logout_id
-                            data-action="channel-logout"
-                            data-channel=row.channel.clone()
-                            data-action-enabled=logout_enabled
-                            href=logout_href
-                        >
-                            Logout
-                        </a>
-                        <a
-                            id=probe_id
-                            data-action="channel-probe"
-                            data-channel=row.channel.clone()
-                            data-action-enabled=probe_enabled
-                            href=probe_href
-                        >
-                            Probe
-                        </a>
+                        <div class="tau-ops-channel-actions" data-action-count="3">
+                            <a
+                                id=login_id
+                                data-action="channel-login"
+                                data-channel=row.channel.clone()
+                                data-action-enabled=login_enabled
+                                role="button"
+                                aria-disabled=login_aria_disabled
+                                href=login_href
+                            >
+                                Login
+                            </a>
+                            <a
+                                id=logout_id
+                                data-action="channel-logout"
+                                data-channel=row.channel.clone()
+                                data-action-enabled=logout_enabled
+                                role="button"
+                                aria-disabled=logout_aria_disabled
+                                href=logout_href
+                            >
+                                Logout
+                            </a>
+                            <a
+                                id=probe_id
+                                data-action="channel-probe"
+                                data-channel=row.channel.clone()
+                                data-action-enabled=probe_enabled
+                                role="button"
+                                aria-disabled=probe_aria_disabled
+                                href=probe_href
+                            >
+                                Probe
+                            </a>
+                        </div>
                     </td>
                 </tr>
             }
@@ -2617,6 +2649,99 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                 #tau-ops-deploy-model-selection select {
                     max-width: 100%;
                 }
+                #tau-ops-channels-panel {
+                    display: grid;
+                    gap: 12px;
+                }
+                #tau-ops-channels-header {
+                    display: grid;
+                    gap: 4px;
+                }
+                #tau-ops-channels-header h2,
+                #tau-ops-channels-header p {
+                    margin: 0;
+                }
+                #tau-ops-channels-kpi-grid {
+                    display: grid;
+                    grid-template-columns: repeat(3, minmax(0, 1fr));
+                    gap: 10px;
+                }
+                #tau-ops-channels-kpi-grid article {
+                    border: 1px solid #243e4d;
+                    border-radius: 7px;
+                    padding: 10px;
+                    background: #102838;
+                }
+                #tau-ops-channels-kpi-grid h3 {
+                    margin: 0;
+                    color: #9bb6c2;
+                    font-size: .72rem;
+                    letter-spacing: 0;
+                }
+                #tau-ops-channels-kpi-grid p {
+                    margin: 4px 0 0;
+                    color: #edf8fb;
+                    font-size: 1.12rem;
+                    font-weight: 760;
+                }
+                #tau-ops-channels-table-wrap {
+                    max-width: 100%;
+                    overflow-x: auto;
+                }
+                #tau-ops-channels-table {
+                    min-width: 760px;
+                }
+                .tau-ops-channel-name,
+                .tau-ops-channel-mode,
+                .tau-ops-channel-liveness {
+                    display: inline-flex;
+                    align-items: center;
+                    min-height: 22px;
+                    border-radius: 999px;
+                    padding: 3px 7px;
+                    background: #102838;
+                    color: #edf8fb;
+                    font-size: .72rem;
+                    font-weight: 700;
+                    overflow-wrap: anywhere;
+                }
+                .tau-ops-channel-liveness[data-liveness="open"],
+                .tau-ops-channel-liveness[data-liveness="online"] {
+                    background: #123c2f;
+                    color: #9cf0bd;
+                }
+                .tau-ops-channel-liveness[data-liveness="offline"],
+                .tau-ops-channel-liveness[data-liveness="unknown"] {
+                    background: #3d2f12;
+                    color: #f7d77b;
+                }
+                .tau-ops-channel-actions {
+                    display: grid;
+                    grid-template-columns: repeat(3, minmax(0, 1fr));
+                    gap: 6px;
+                }
+                #tau-ops-channels-panel a[data-action^="channel-"] {
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    min-height: 30px;
+                    border: 1px solid #31596e;
+                    border-radius: 6px;
+                    padding: 5px 8px;
+                    background: #123149;
+                    color: #edf8fb;
+                    font-size: .72rem;
+                    font-weight: 700;
+                    text-decoration: none;
+                    white-space: nowrap;
+                }
+                #tau-ops-channels-panel a[data-action^="channel-"][data-action-enabled="false"] {
+                    border-color: #263f4e;
+                    background: #0b1d28;
+                    color: #6f8996;
+                    cursor: not-allowed;
+                    pointer-events: none;
+                }
                 @media (max-width: 900px) {
                     #tau-ops-header {
                         grid-template-columns: 1fr;
@@ -2644,6 +2769,9 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                         padding: 10px;
                         width: 100%;
                         max-width: 100%;
+                    }
+                    #tau-ops-channels-kpi-grid {
+                        grid-template-columns: 1fr;
                     }
                 }
                 @media (max-width: 640px) {
@@ -2834,7 +2962,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             <li id="tau-ops-nav-memory"><a data-nav-item="memory" href="/ops/memory" data-harness-rail-label="Memory" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::Memory)>Memory Explorer</a></li>
                             <li id="tau-ops-nav-memory-graph"><a data-nav-item="memory-graph" href="/ops/memory-graph" data-harness-rail-label="Graph" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::MemoryGraph)>Memory Graph</a></li>
                             <li id="tau-ops-nav-tools-jobs"><a data-nav-item="tools-jobs" href="/ops/tools-jobs" data-harness-rail-label="Tools" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::ToolsJobs)>Tools & Jobs</a></li>
-                            <li id="tau-ops-nav-channels"><a data-nav-item="channels" href="/ops/channels" data-harness-rail-label="Channels" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::Channels)>Multi-Channel</a></li>
+                            <li id="tau-ops-nav-channels"><a data-nav-item="channels" href="/ops/channels" data-harness-rail-label="Channels" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::Channels)>Channels</a></li>
                             <li id="tau-ops-nav-harness"><a data-nav-item="mission-harness" href="/ops/harness" data-harness-rail-label="Missions" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::Harness)>Mission Harness</a></li>
                             <li id="tau-ops-nav-config"><a data-nav-item="config" href="/ops/config" data-harness-rail-label="Config" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::Config)>Configuration</a></li>
                             <li id="tau-ops-nav-training"><a data-nav-item="training" href="/ops/training" data-harness-rail-label="Training" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::Training)>Training & RL</a></li>
@@ -3973,34 +4101,56 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             aria-hidden=channels_panel_hidden
                             data-panel-visible=channels_panel_visible
                             data-channel-count=channels_row_count_panel_value
+                            data-visual-contract="channel-operator-console"
                         >
-                            <h2>Multi-Channel</h2>
-                            <p
-                                id="tau-ops-channels-summary"
-                                data-online-count=channels_online_count
-                                data-offline-count=channels_offline_count
-                                data-degraded-count=channels_degraded_count
-                            >
-                                Channel health summary for all configured connectors.
-                            </p>
-                            <table id="tau-ops-channels-table" data-row-count=channels_row_count_table_value>
-                                <thead>
-                                    <tr>
-                                        <th scope="col">Channel</th>
-                                        <th scope="col">Mode</th>
-                                        <th scope="col">Liveness</th>
-                                        <th scope="col">Events Ingested</th>
-                                        <th scope="col">Provider Failures</th>
-                                        <th scope="col">Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody
-                                    id="tau-ops-channels-body"
-                                    data-row-count=channels_row_count_body_value
+                            <section id="tau-ops-channels-header" data-layout="summary-with-kpis">
+                                <h2>Channels</h2>
+                                <p
+                                    id="tau-ops-channels-summary"
+                                    data-online-count=channels_online_count_summary
+                                    data-offline-count=channels_offline_count_summary
+                                    data-degraded-count=channels_degraded_count_summary
                                 >
-                                    {channels_rows_view}
-                                </tbody>
-                            </table>
+                                    Connector health, liveness, and operator action state for configured channels.
+                                </p>
+                            </section>
+                            <section id="tau-ops-channels-kpi-grid" data-card-count="3" aria-label="Channel health summary">
+                                <article id="tau-ops-channels-online-card" data-kpi="online" data-count=channels_online_count_card>
+                                    <h3>Online</h3>
+                                    <p>{channels_online_count}</p>
+                                </article>
+                                <article id="tau-ops-channels-offline-card" data-kpi="offline" data-count=channels_offline_count_card>
+                                    <h3>Offline</h3>
+                                    <p>{channels_offline_count}</p>
+                                </article>
+                                <article id="tau-ops-channels-degraded-card" data-kpi="degraded" data-count=channels_degraded_count_card>
+                                    <h3>Degraded</h3>
+                                    <p>{channels_degraded_count}</p>
+                                </article>
+                            </section>
+                            <section id="tau-ops-channels-table-section" data-layout="connector-action-matrix">
+                                <h3>Connector Matrix</h3>
+                                <div id="tau-ops-channels-table-wrap" class="tau-ops-table-wrap" data-horizontal-overflow="contained">
+                                    <table id="tau-ops-channels-table" data-row-count=channels_row_count_table_value>
+                                        <thead>
+                                            <tr>
+                                                <th scope="col">Channel</th>
+                                                <th scope="col">Mode</th>
+                                                <th scope="col">Liveness</th>
+                                                <th scope="col">Events Ingested</th>
+                                                <th scope="col">Provider Failures</th>
+                                                <th scope="col">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody
+                                            id="tau-ops-channels-body"
+                                            data-row-count=channels_row_count_body_value
+                                        >
+                                            {channels_rows_view}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </section>
                         </section>
                         <section
                             id="tau-ops-config-panel"

@@ -3680,6 +3680,91 @@ fn functional_spec_3132_c01_c02_channels_route_renders_channel_action_markers() 
 }
 
 #[test]
+fn functional_spec_3797_c01_channels_route_exposes_operator_kpi_contract() {
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        auth_mode: TauOpsDashboardAuthMode::Token,
+        active_route: TauOpsDashboardRoute::Channels,
+        theme: TauOpsDashboardTheme::Dark,
+        sidebar_state: TauOpsDashboardSidebarState::Expanded,
+        command_center: TauOpsDashboardCommandCenterSnapshot {
+            connector_health_rows: vec![
+                TauOpsDashboardConnectorHealthRow {
+                    channel: "telegram".to_string(),
+                    mode: "polling".to_string(),
+                    liveness: "open".to_string(),
+                    events_ingested: 6,
+                    provider_failures: 2,
+                },
+                TauOpsDashboardConnectorHealthRow {
+                    channel: "discord".to_string(),
+                    mode: "gateway".to_string(),
+                    liveness: "offline".to_string(),
+                    events_ingested: 0,
+                    provider_failures: 1,
+                },
+            ],
+            ..TauOpsDashboardCommandCenterSnapshot::default()
+        },
+        chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
+    });
+
+    for marker in [
+        "id=\"tau-ops-channels-panel\" data-route=\"/ops/channels\" aria-hidden=\"false\" data-panel-visible=\"true\" data-channel-count=\"2\" data-visual-contract=\"channel-operator-console\"",
+        "id=\"tau-ops-channels-header\" data-layout=\"summary-with-kpis\"",
+        "id=\"tau-ops-channels-kpi-grid\" data-card-count=\"3\"",
+        "id=\"tau-ops-channels-online-card\" data-kpi=\"online\" data-count=\"1\"",
+        "id=\"tau-ops-channels-offline-card\" data-kpi=\"offline\" data-count=\"1\"",
+        "id=\"tau-ops-channels-degraded-card\" data-kpi=\"degraded\" data-count=\"0\"",
+        "data-nav-item=\"channels\" href=\"/ops/channels\" data-harness-rail-label=\"Channels\" aria-current=\"page\">Channels</a>",
+    ] {
+        assert!(
+            html.contains(marker),
+            "missing channels operator KPI marker `{marker}`"
+        );
+    }
+}
+
+#[test]
+fn functional_spec_3797_c02_channels_route_groups_actions_as_controls() {
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        auth_mode: TauOpsDashboardAuthMode::Token,
+        active_route: TauOpsDashboardRoute::Channels,
+        theme: TauOpsDashboardTheme::Dark,
+        sidebar_state: TauOpsDashboardSidebarState::Expanded,
+        command_center: TauOpsDashboardCommandCenterSnapshot {
+            connector_health_rows: vec![TauOpsDashboardConnectorHealthRow {
+                channel: "telegram".to_string(),
+                mode: "polling".to_string(),
+                liveness: "open".to_string(),
+                events_ingested: 6,
+                provider_failures: 2,
+            }],
+            ..TauOpsDashboardCommandCenterSnapshot::default()
+        },
+        chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
+    });
+
+    for marker in [
+        "id=\"tau-ops-channels-table-wrap\"",
+        "class=\"tau-ops-table-wrap\"",
+        "data-horizontal-overflow=\"contained\"",
+        "class=\"tau-ops-channel-actions\"",
+        "data-action-count=\"3\"",
+        "id=\"tau-ops-channels-login-0\" data-action=\"channel-login\" data-channel=\"telegram\" data-action-enabled=\"false\" role=\"button\" aria-disabled=\"true\"",
+        "id=\"tau-ops-channels-logout-0\" data-action=\"channel-logout\" data-channel=\"telegram\" data-action-enabled=\"true\" role=\"button\" aria-disabled=\"false\"",
+        "#tau-ops-channels-panel a[data-action^=\"channel-\"]",
+        "#tau-ops-channels-panel a[data-action^=\"channel-\"][data-action-enabled=\"false\"]",
+    ] {
+        assert!(
+            html.contains(marker),
+            "missing channels action-control marker `{marker}`"
+        );
+    }
+}
+
+#[test]
 fn regression_spec_3132_c04_non_channels_routes_keep_hidden_channel_action_markers() {
     let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
         auth_mode: TauOpsDashboardAuthMode::Token,
