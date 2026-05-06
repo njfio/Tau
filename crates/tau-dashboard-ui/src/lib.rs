@@ -4786,6 +4786,13 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     overflow-wrap: anywhere;
                                     white-space: pre-wrap;
                                 }
+                                #tau-ops-harness-acceptance[data-narrow-label-fit="full-labels-at-1400px"][data-acceptance-overflow-budget="all-criteria-visible"] li {
+                                    font-size: .59rem;
+                                    padding-inline: 5px;
+                                }
+                                #tau-ops-harness-verification-gates[data-narrow-height-budget="no-hidden-overflow"][data-gate-visibility="all-gates-first-viewport"] {
+                                    max-height: 168px;
+                                }
                             }
                             @media (max-width: 1180px) {
                                 #tau-ops-harness-panel {
@@ -5071,6 +5078,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 data-mission-status="running"
                                 data-tool-budget="42/60"
                                 data-window-chrome="compact"
+                                data-narrow-proof-fit="no-hidden-overflow"
                             >
                                 <header
                                     id="tau-ops-harness-proof-header"
@@ -5149,6 +5157,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                         data-proof-detail-budget="compact-scroll"
                                         data-acceptance-overflow-budget="all-criteria-visible"
                                         data-acceptance-layout="compact-contained"
+                                        data-narrow-label-fit="full-labels-at-1400px"
                                     >
                                         <h4>"Acceptance Criteria"</h4>
                                         <ul>
@@ -5167,6 +5176,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                         data-proof-detail-budget="compact-scroll"
                                         data-gate-visibility="all-gates-first-viewport"
                                         data-gate-layout="two-column-compact"
+                                        data-narrow-height-budget="no-hidden-overflow"
                                     >
                                         <h4>"Verification Gates"</h4>
                                         <ul>
