@@ -172,6 +172,17 @@ impl TauOpsDashboardRoute {
     }
 }
 
+fn aria_current_for(
+    active_route: TauOpsDashboardRoute,
+    target_route: TauOpsDashboardRoute,
+) -> &'static str {
+    if active_route == target_route {
+        "page"
+    } else {
+        "false"
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// Public enum `TauOpsDashboardTheme` in `tau-dashboard-ui`.
 pub enum TauOpsDashboardTheme {
@@ -888,6 +899,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     let sidebar_state_attr = context.sidebar_state.as_str();
     let breadcrumb_current = context.active_route.breadcrumb_token();
     let breadcrumb_label = context.active_route.breadcrumb_label();
+    let shell_subtitle = format!("{breadcrumb_label} operator control surface");
     let sidebar_toggle_target_state = context.sidebar_state.toggled().as_str();
     let sidebar_toggle_href =
         format!("{active_shell_path}?theme={theme_attr}&sidebar={sidebar_toggle_target_state}");
@@ -2309,6 +2321,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
             data-sidebar-state=sidebar_state_attr
             data-sidebar-mobile-default="collapsed"
             data-active-route=active_route_attr
+            data-shell-quality="operator-route-parity"
         >
             <style id="tau-ops-dashboard-base-style">
                 r#"
@@ -2317,6 +2330,9 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     background: #08141c;
                     color: #dbe8ef;
                     font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+                    width: 100%;
+                    max-width: 100%;
+                    overflow-x: hidden;
                 }
                 #tau-ops-shell,
                 #tau-ops-shell * {
@@ -2327,6 +2343,313 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                 }
                 #tau-ops-shell [aria-hidden="true"] {
                     display: none !important;
+                }
+                #tau-ops-header {
+                    display: grid;
+                    grid-template-columns: minmax(0, 1fr) auto;
+                    gap: 8px 16px;
+                    align-items: center;
+                    padding: 12px 16px;
+                    border-bottom: 1px solid #203847;
+                    background: #0a1a24;
+                }
+                #tau-ops-header h1 {
+                    margin: 0;
+                    color: #edf8fb;
+                    font-size: 1.05rem;
+                    font-weight: 720;
+                    letter-spacing: 0;
+                }
+                #tau-ops-header p {
+                    margin: 2px 0 0;
+                    color: #8fa8b3;
+                    font-size: .76rem;
+                }
+                #tau-ops-skip-to-main {
+                    position: absolute;
+                    left: 12px;
+                    top: 12px;
+                    transform: translateY(-150%);
+                    padding: 6px 10px;
+                    border-radius: 6px;
+                    background: #e8f4ff;
+                    color: #051018;
+                    font-size: .76rem;
+                    font-weight: 700;
+                    text-decoration: none;
+                    z-index: 3;
+                }
+                #tau-ops-skip-to-main:focus-visible {
+                    transform: translateY(0);
+                    outline: 2px solid #66b8ff;
+                    outline-offset: 2px;
+                }
+                #tau-ops-shell-controls {
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    grid-column: 2;
+                    grid-row: 1 / span 2;
+                }
+                #tau-ops-sidebar-hamburger,
+                #tau-ops-theme-controls a {
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    min-height: 30px;
+                    border: 1px solid #2b4b5d;
+                    border-radius: 6px;
+                    padding: 5px 9px;
+                    background: #102838;
+                    color: #d9edf6;
+                    font-size: .72rem;
+                    font-weight: 700;
+                    text-decoration: none;
+                }
+                #tau-ops-theme-controls {
+                    display: flex;
+                    gap: 5px;
+                    padding: 3px;
+                    border: 1px solid #263f4e;
+                    border-radius: 7px;
+                    background: #07151d;
+                }
+                #tau-ops-theme-controls a[aria-pressed="true"] {
+                    background: #1b5fbf;
+                    border-color: #3d8fff;
+                    color: #fff;
+                }
+                #tau-ops-breadcrumbs {
+                    grid-column: 1 / -1;
+                    color: #8fa8b3;
+                    font-size: .72rem;
+                }
+                #tau-ops-breadcrumbs ol {
+                    display: flex;
+                    gap: 6px;
+                    margin: 0;
+                    padding: 0;
+                    list-style: none;
+                }
+                #tau-ops-breadcrumb-home::after {
+                    content: "/";
+                    margin-left: 6px;
+                    color: #547181;
+                }
+                #tau-ops-layout {
+                    display: grid;
+                    grid-template-columns: 176px minmax(0, 1fr);
+                    min-height: calc(100vh - 82px);
+                    width: 100%;
+                    max-width: 100vw;
+                    overflow-x: hidden;
+                }
+                #tau-ops-sidebar {
+                    padding: 10px 6px;
+                    border-right: 1px solid #203847;
+                    background: #0a1a24;
+                }
+                #tau-ops-sidebar ul {
+                    display: grid;
+                    gap: 6px;
+                    margin: 0;
+                    padding: 0;
+                    list-style: none;
+                }
+                #tau-ops-sidebar a {
+                    display: flex;
+                    align-items: center;
+                    justify-content: flex-start;
+                    min-height: 32px;
+                    border: 1px solid transparent;
+                    border-radius: 6px;
+                    padding: 7px 10px;
+                    color: #bdd5df;
+                    font-size: .74rem;
+                    font-weight: 700;
+                    line-height: 1.1;
+                    text-align: left;
+                    text-decoration: none;
+                    overflow-wrap: normal;
+                    word-break: normal;
+                }
+                #tau-ops-sidebar a:hover,
+                #tau-ops-sidebar a:focus-visible {
+                    border-color: #31596e;
+                    background: #122d3d;
+                    outline: none;
+                }
+                #tau-ops-sidebar a[aria-current="page"] {
+                    border-color: #3d8fff;
+                    background: #1b5fbf;
+                    color: #fff;
+                }
+                #tau-ops-auth-shell,
+                #tau-ops-protected-shell {
+                    min-width: 0;
+                    max-width: 100%;
+                    overflow-x: hidden;
+                }
+                #tau-ops-protected-shell {
+                    display: block;
+                    padding: 14px;
+                    width: calc(100vw - 208px);
+                    max-width: calc(100vw - 208px);
+                }
+                #tau-ops-protected-shell > section[data-panel-visible="true"],
+                #tau-ops-command-center[aria-hidden="false"] {
+                    min-width: 0;
+                    max-width: 100%;
+                    overflow-x: hidden;
+                    border: 1px solid #243e4d;
+                    border-radius: 8px;
+                    padding: 14px;
+                    background: #0b1d28;
+                    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .04);
+                }
+                #tau-ops-protected-shell > section[data-panel-visible="true"] > h2,
+                #tau-ops-command-center[aria-hidden="false"] > h2,
+                #tau-ops-protected-shell > section[data-panel-visible="true"] h2,
+                #tau-ops-command-center[aria-hidden="false"] h2 {
+                    margin-top: 0;
+                    color: #edf8fb;
+                    font-size: .95rem;
+                    letter-spacing: 0;
+                }
+                #tau-ops-protected-shell section section,
+                #tau-ops-protected-shell article {
+                    min-width: 0;
+                }
+                #tau-ops-protected-shell form,
+                #tau-ops-deploy-model-selection {
+                    display: grid;
+                    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+                    gap: 8px 10px;
+                    align-items: end;
+                    margin: 10px 0;
+                }
+                #tau-ops-protected-shell label {
+                    display: grid;
+                    gap: 5px;
+                    color: #9bb6c2;
+                    font-size: .72rem;
+                    font-weight: 700;
+                }
+                #tau-ops-protected-shell input,
+                #tau-ops-protected-shell textarea,
+                #tau-ops-protected-shell select {
+                    width: 100%;
+                    min-height: 32px;
+                    border: 1px solid #2c4b5d;
+                    border-radius: 6px;
+                    padding: 6px 8px;
+                    background: #07151d;
+                    color: #edf8fb;
+                    font: inherit;
+                    font-size: .78rem;
+                }
+                #tau-ops-protected-shell button,
+                #tau-ops-protected-shell a[role="button"] {
+                    min-height: 32px;
+                    border: 1px solid #31596e;
+                    border-radius: 6px;
+                    padding: 6px 10px;
+                    background: #123149;
+                    color: #edf8fb;
+                    font: inherit;
+                    font-size: .76rem;
+                    font-weight: 700;
+                }
+                #tau-ops-protected-shell table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    table-layout: fixed;
+                    font-size: .74rem;
+                }
+                #tau-ops-protected-shell th,
+                #tau-ops-protected-shell td {
+                    border-bottom: 1px solid #203847;
+                    padding: 7px 8px;
+                    text-align: left;
+                    vertical-align: top;
+                    overflow-wrap: anywhere;
+                }
+                #tau-ops-protected-shell th {
+                    color: #8fa8b3;
+                    font-weight: 700;
+                }
+                #tau-ops-protected-shell ul,
+                #tau-ops-protected-shell ol {
+                    padding-left: 1rem;
+                }
+                #tau-ops-kpi-grid {
+                    display: grid;
+                    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+                    gap: 10px;
+                    margin-bottom: 12px;
+                }
+                #tau-ops-kpi-grid article {
+                    border: 1px solid #243e4d;
+                    border-radius: 7px;
+                    padding: 10px;
+                    background: #102838;
+                }
+                #tau-ops-kpi-grid article p {
+                    margin: 4px 0 0;
+                }
+                #tau-ops-deploy-wizard-steps ol {
+                    display: grid;
+                    grid-template-columns: minmax(0, 640px);
+                    gap: 8px;
+                    margin: 0 0 12px;
+                    padding: 0;
+                    list-style: none;
+                }
+                #tau-ops-deploy-wizard-steps button {
+                    min-width: 0;
+                    width: 100%;
+                    overflow-wrap: anywhere;
+                }
+                #tau-ops-deploy-model-selection {
+                    grid-template-columns: minmax(0, 420px);
+                    align-items: start;
+                }
+                #tau-ops-deploy-model-selection select {
+                    max-width: 100%;
+                }
+                @media (max-width: 900px) {
+                    #tau-ops-header {
+                        grid-template-columns: 1fr;
+                    }
+                    #tau-ops-shell-controls {
+                        grid-column: 1;
+                        grid-row: auto;
+                        flex-wrap: wrap;
+                    }
+                    #tau-ops-layout {
+                        grid-template-columns: 1fr;
+                    }
+                    #tau-ops-sidebar {
+                        border-right: 0;
+                        border-bottom: 1px solid #203847;
+                    }
+                    #tau-ops-sidebar ul {
+                        grid-template-columns: repeat(3, minmax(0, 1fr));
+                    }
+                    #tau-ops-sidebar a {
+                        justify-content: center;
+                        text-align: center;
+                    }
+                    #tau-ops-protected-shell {
+                        padding: 10px;
+                        width: 100%;
+                        max-width: 100%;
+                    }
+                }
+                @media (max-width: 640px) {
+                    #tau-ops-sidebar ul {
+                        grid-template-columns: repeat(2, minmax(0, 1fr));
+                    }
                 }
                 #tau-ops-accessibility-contract,
                 #tau-ops-stream-contract,
@@ -2442,7 +2765,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
             </p>
             <header id="tau-ops-header">
                 <h1>Tau Ops Dashboard</h1>
-                <p>Leptos SSR foundation shell</p>
+                <p>{shell_subtitle}</p>
                 <a
                     id="tau-ops-skip-to-main"
                     href="#tau-ops-protected-shell"
@@ -2503,22 +2826,22 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                 <aside id="tau-ops-sidebar" data-harness-rail="compact">
                     <nav aria-label="Tau Ops navigation">
                         <ul>
-                            <li id="tau-ops-nav-command-center"><a data-nav-item="command-center" href="/ops" data-harness-rail-label="Command">Command Center</a></li>
-                            <li id="tau-ops-nav-agent-fleet"><a data-nav-item="agent-fleet" href="/ops/agents" data-harness-rail-label="Fleet">Agent Fleet</a></li>
-                            <li id="tau-ops-nav-agent-detail"><a data-nav-item="agent-detail" href="/ops/agents/default" data-harness-rail-label="Agent">Agent Detail</a></li>
-                            <li id="tau-ops-nav-chat"><a data-nav-item="chat" href="/ops/chat" data-harness-rail-label="Chat">Conversation / Chat</a></li>
-                            <li id="tau-ops-nav-sessions"><a data-nav-item="sessions" href="/ops/sessions" data-harness-rail-label="Sessions">Sessions Explorer</a></li>
-                            <li id="tau-ops-nav-memory"><a data-nav-item="memory" href="/ops/memory" data-harness-rail-label="Memory">Memory Explorer</a></li>
-                            <li id="tau-ops-nav-memory-graph"><a data-nav-item="memory-graph" href="/ops/memory-graph" data-harness-rail-label="Graph">Memory Graph</a></li>
-                            <li id="tau-ops-nav-tools-jobs"><a data-nav-item="tools-jobs" href="/ops/tools-jobs" data-harness-rail-label="Tools">Tools & Jobs</a></li>
-                            <li id="tau-ops-nav-channels"><a data-nav-item="channels" href="/ops/channels" data-harness-rail-label="Channels">Multi-Channel</a></li>
-                            <li id="tau-ops-nav-harness"><a data-nav-item="mission-harness" href="/ops/harness" data-harness-rail-label="Missions">Mission Harness</a></li>
-                            <li id="tau-ops-nav-config"><a data-nav-item="config" href="/ops/config" data-harness-rail-label="Config">Configuration</a></li>
-                            <li id="tau-ops-nav-training"><a data-nav-item="training" href="/ops/training" data-harness-rail-label="Training">Training & RL</a></li>
-                            <li id="tau-ops-nav-safety"><a data-nav-item="safety" href="/ops/safety" data-harness-rail-label="Safety">Safety & Security</a></li>
-                            <li id="tau-ops-nav-diagnostics"><a data-nav-item="diagnostics" href="/ops/diagnostics" data-harness-rail-label="Audit">Diagnostics & Audit</a></li>
-                            <li id="tau-ops-nav-deploy"><a data-nav-item="deploy" href="/ops/deploy" data-harness-rail-label="Deploy">Deploy Agent</a></li>
-                            <li id="tau-ops-nav-login"><a href="/ops/login" data-harness-rail-label="Login">Operator Login</a></li>
+                            <li id="tau-ops-nav-command-center"><a data-nav-item="command-center" href="/ops" data-harness-rail-label="Command" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::Ops)>Command Center</a></li>
+                            <li id="tau-ops-nav-agent-fleet"><a data-nav-item="agent-fleet" href="/ops/agents" data-harness-rail-label="Fleet" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::Agents)>Agent Fleet</a></li>
+                            <li id="tau-ops-nav-agent-detail"><a data-nav-item="agent-detail" href="/ops/agents/default" data-harness-rail-label="Agent" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::AgentDetail)>Agent Detail</a></li>
+                            <li id="tau-ops-nav-chat"><a data-nav-item="chat" href="/ops/chat" data-harness-rail-label="Chat" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::Chat)>Conversation / Chat</a></li>
+                            <li id="tau-ops-nav-sessions"><a data-nav-item="sessions" href="/ops/sessions" data-harness-rail-label="Sessions" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::Sessions)>Sessions Explorer</a></li>
+                            <li id="tau-ops-nav-memory"><a data-nav-item="memory" href="/ops/memory" data-harness-rail-label="Memory" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::Memory)>Memory Explorer</a></li>
+                            <li id="tau-ops-nav-memory-graph"><a data-nav-item="memory-graph" href="/ops/memory-graph" data-harness-rail-label="Graph" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::MemoryGraph)>Memory Graph</a></li>
+                            <li id="tau-ops-nav-tools-jobs"><a data-nav-item="tools-jobs" href="/ops/tools-jobs" data-harness-rail-label="Tools" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::ToolsJobs)>Tools & Jobs</a></li>
+                            <li id="tau-ops-nav-channels"><a data-nav-item="channels" href="/ops/channels" data-harness-rail-label="Channels" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::Channels)>Multi-Channel</a></li>
+                            <li id="tau-ops-nav-harness"><a data-nav-item="mission-harness" href="/ops/harness" data-harness-rail-label="Missions" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::Harness)>Mission Harness</a></li>
+                            <li id="tau-ops-nav-config"><a data-nav-item="config" href="/ops/config" data-harness-rail-label="Config" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::Config)>Configuration</a></li>
+                            <li id="tau-ops-nav-training"><a data-nav-item="training" href="/ops/training" data-harness-rail-label="Training" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::Training)>Training & RL</a></li>
+                            <li id="tau-ops-nav-safety"><a data-nav-item="safety" href="/ops/safety" data-harness-rail-label="Safety" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::Safety)>Safety & Security</a></li>
+                            <li id="tau-ops-nav-diagnostics"><a data-nav-item="diagnostics" href="/ops/diagnostics" data-harness-rail-label="Audit" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::Diagnostics)>Diagnostics & Audit</a></li>
+                            <li id="tau-ops-nav-deploy"><a data-nav-item="deploy" href="/ops/deploy" data-harness-rail-label="Deploy" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::Deploy)>Deploy Agent</a></li>
+                            <li id="tau-ops-nav-login"><a href="/ops/login" data-harness-rail-label="Login" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::Login)>Operator Login</a></li>
                             <li id="tau-ops-nav-legacy-dashboard"><a href="/dashboard" data-harness-rail-label="Legacy">Legacy Dashboard</a></li>
                             <li id="tau-ops-nav-webchat"><a href="/webchat" data-harness-rail-label="Webchat">Webchat</a></li>
                         </ul>

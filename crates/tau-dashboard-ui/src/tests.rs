@@ -358,6 +358,53 @@ fn functional_spec_2790_c01_sidebar_includes_15_ops_route_links() {
 }
 
 #[test]
+fn functional_spec_3796_c01_non_harness_routes_use_operator_shell_chrome() {
+    let html = render_tau_ops_dashboard_shell_for_route("/ops/deploy");
+
+    for marker in [
+        "data-shell-quality=\"operator-route-parity\"",
+        "#tau-ops-layout {\n                    display: grid;",
+        "grid-template-columns: 176px minmax(0, 1fr);",
+        "#tau-ops-protected-shell {\n                    display: block;\n                    padding: 14px;\n                    width: calc(100vw - 208px);\n                    max-width: calc(100vw - 208px);",
+        "#tau-ops-protected-shell > section[data-panel-visible=\"true\"]",
+        "#tau-ops-sidebar a[aria-current=\"page\"]",
+        "#tau-ops-deploy-wizard-steps ol {\n                    display: grid;\n                    grid-template-columns: minmax(0, 640px);",
+        "id=\"tau-ops-deploy-panel\" data-route=\"/ops/deploy\" data-component=\"DeployWizard\" aria-hidden=\"false\" data-panel-visible=\"true\"",
+    ] {
+        assert!(
+            html.contains(marker),
+            "missing non-harness operator shell marker `{marker}`"
+        );
+    }
+
+    assert!(
+        !html.contains("Leptos SSR foundation shell"),
+        "non-harness routes should not expose the foundation-shell placeholder subtitle"
+    );
+}
+
+#[test]
+fn functional_spec_3796_c02_left_nav_marks_active_route() {
+    let deploy_html = render_tau_ops_dashboard_shell_for_route("/ops/deploy");
+    assert_eq!(deploy_html.matches("aria-current=\"page\">").count(), 1);
+    assert!(deploy_html.contains(
+        "id=\"tau-ops-nav-deploy\"><a data-nav-item=\"deploy\" href=\"/ops/deploy\" data-harness-rail-label=\"Deploy\" aria-current=\"page\""
+    ));
+    assert!(deploy_html.contains(
+        "id=\"tau-ops-nav-chat\"><a data-nav-item=\"chat\" href=\"/ops/chat\" data-harness-rail-label=\"Chat\" aria-current=\"false\""
+    ));
+
+    let chat_html = render_tau_ops_dashboard_shell_for_route("/ops/chat");
+    assert_eq!(chat_html.matches("aria-current=\"page\">").count(), 1);
+    assert!(chat_html.contains(
+        "id=\"tau-ops-nav-chat\"><a data-nav-item=\"chat\" href=\"/ops/chat\" data-harness-rail-label=\"Chat\" aria-current=\"page\""
+    ));
+    assert!(chat_html.contains(
+        "id=\"tau-ops-nav-deploy\"><a data-nav-item=\"deploy\" href=\"/ops/deploy\" data-harness-rail-label=\"Deploy\" aria-current=\"false\""
+    ));
+}
+
+#[test]
 fn functional_spec_3760_c02_c03_static_preview_link_guard_preserves_gateway_routes() {
     let html = render_tau_ops_dashboard_shell();
 
@@ -770,7 +817,7 @@ fn functional_spec_3766_c01_c02_c03_harness_uses_compact_navigation_rail() {
         "data-nav-item=\"memory-graph\" href=\"/ops/memory-graph\" data-harness-rail-label=\"Graph\"",
         "data-nav-item=\"tools-jobs\" href=\"/ops/tools-jobs\" data-harness-rail-label=\"Tools\"",
         "data-nav-item=\"channels\" href=\"/ops/channels\" data-harness-rail-label=\"Channels\"",
-        "id=\"tau-ops-nav-harness\"><a data-nav-item=\"mission-harness\" href=\"/ops/harness\" data-harness-rail-label=\"Missions\">Mission Harness</a>",
+        "id=\"tau-ops-nav-harness\"><a data-nav-item=\"mission-harness\" href=\"/ops/harness\" data-harness-rail-label=\"Missions\" aria-current=\"page\">Mission Harness</a>",
         "data-nav-item=\"deploy\" href=\"/ops/deploy\" data-harness-rail-label=\"Deploy\"",
         "#tau-ops-shell[data-active-route=\"harness\"] #tau-ops-sidebar a {\n                    display: flex;",
         "font-size: 0;",
