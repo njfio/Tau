@@ -614,9 +614,10 @@ async fn integration_spec_2830_c02_c03_ops_chat_send_appends_message_and_renders
         .expect("ops chat render request");
     assert_eq!(chat_response.status(), StatusCode::OK);
     let chat_body = chat_response.text().await.expect("read ops chat body");
-    assert!(chat_body.contains("id=\"tau-ops-chat-transcript\" data-message-count=\"1\""));
+    assert!(chat_body.contains("id=\"tau-ops-chat-transcript\" data-message-count=\"2\""));
     assert!(chat_body.contains("id=\"tau-ops-chat-message-row-0\" data-message-role=\"user\""));
     assert!(chat_body.contains("hello ops chat"));
+    assert!(chat_body.contains("id=\"tau-ops-chat-message-row-1\" data-message-role=\"assistant\""));
 
     let session_path = gateway_session_path(&state.config.state_dir, "chat-send-session");
     let store = SessionStore::load(&session_path).expect("load ops chat session");
@@ -627,6 +628,76 @@ async fn integration_spec_2830_c02_c03_ops_chat_send_appends_message_and_renders
         .iter()
         .any(|message| message.role == MessageRole::User
             && message.text_content() == "hello ops chat"));
+    assert!(lineage
+        .iter()
+        .any(|message| message.role == MessageRole::Assistant));
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn integration_spec_3799_c01_ops_chat_send_appends_assistant_reply() {
+    let temp = tempdir().expect("tempdir");
+    let state = test_state_with_client_and_auth(
+        temp.path(),
+        4_096,
+        Arc::new(CaptureGatewayLlmClient::new("ops assistant answer")),
+        Arc::new(NoopGatewayToolRegistrar),
+        GatewayOpenResponsesAuthMode::Token,
+        Some("secret"),
+        None,
+        60,
+        120,
+    );
+    let (addr, handle) = spawn_test_server(state.clone())
+        .await
+        .expect("spawn server");
+    let client = Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .expect("build client");
+
+    let send_response = client
+        .post(format!("http://{addr}/ops/chat/send"))
+        .form(&[
+            ("session_key", "chat-reply-session"),
+            ("message", "hello ops chat"),
+            ("theme", "dark"),
+            ("sidebar", "expanded"),
+        ])
+        .send()
+        .await
+        .expect("ops chat send request");
+    assert_eq!(send_response.status(), StatusCode::SEE_OTHER);
+
+    let chat_response = client
+        .get(format!(
+            "http://{addr}/ops/chat?theme=dark&sidebar=expanded&session=chat-reply-session"
+        ))
+        .send()
+        .await
+        .expect("ops chat render request");
+    assert_eq!(chat_response.status(), StatusCode::OK);
+    let chat_body = chat_response.text().await.expect("read ops chat body");
+    assert!(chat_body.contains("id=\"tau-ops-chat-transcript\" data-message-count=\"2\""));
+    assert!(chat_body.contains("id=\"tau-ops-chat-message-row-0\" data-message-role=\"user\""));
+    assert!(chat_body.contains("hello ops chat"));
+    assert!(chat_body.contains("id=\"tau-ops-chat-message-row-1\" data-message-role=\"assistant\""));
+    assert!(chat_body.contains("ops assistant answer"));
+
+    let session_path = gateway_session_path(&state.config.state_dir, "chat-reply-session");
+    let store = SessionStore::load(&session_path).expect("load ops chat session");
+    let lineage = store
+        .lineage_messages(store.head_id())
+        .expect("lineage messages");
+    assert!(lineage
+        .iter()
+        .any(|message| message.role == MessageRole::User
+            && message.text_content() == "hello ops chat"));
+    assert!(lineage
+        .iter()
+        .any(|message| message.role == MessageRole::Assistant
+            && message.text_content() == "ops assistant answer"));
 
     handle.abort();
 }
@@ -831,7 +902,7 @@ async fn integration_spec_2881_c02_c03_c04_ops_chat_send_preserves_multiline_pay
         .expect("ops chat render request");
     assert_eq!(chat_response.status(), StatusCode::OK);
     let chat_body = chat_response.text().await.expect("read ops chat body");
-    assert!(chat_body.contains("id=\"tau-ops-chat-transcript\" data-message-count=\"1\""));
+    assert!(chat_body.contains("id=\"tau-ops-chat-transcript\" data-message-count=\"2\""));
     assert!(chat_body.contains("first line"));
     assert!(chat_body.contains("second line"));
 

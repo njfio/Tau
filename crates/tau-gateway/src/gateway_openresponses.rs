@@ -108,10 +108,11 @@ use compat_state_runtime::{
 use config_runtime::{handle_gateway_config_get, handle_gateway_config_patch};
 use cortex_bulletin_runtime::start_cortex_bulletin_runtime;
 use cortex_runtime::{
-    handle_cortex_chat, handle_cortex_status, record_cortex_external_followup_event,
-    record_cortex_external_progress_event, record_cortex_external_session_closed,
-    record_cortex_external_session_opened, record_cortex_memory_entry_delete_event,
-    record_cortex_memory_entry_write_event, record_cortex_memory_write_event,
+    complete_cortex_chat, handle_cortex_chat, handle_cortex_status,
+    record_cortex_external_followup_event, record_cortex_external_progress_event,
+    record_cortex_external_session_closed, record_cortex_external_session_opened,
+    record_cortex_memory_entry_delete_event, record_cortex_memory_entry_write_event,
+    record_cortex_memory_write_event, record_cortex_observer_event,
     record_cortex_session_append_event, record_cortex_session_reset_event,
 };
 use dashboard_runtime::{

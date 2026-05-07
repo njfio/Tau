@@ -45,10 +45,10 @@ const CORTEX_CHAT_SYSTEM_PROMPT: &str = "You are Tau Cortex admin copilot. Provi
  actionable operator guidance grounded in supplied runtime context. Respond with plain text only.";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct CortexChatOutput {
-    output_text: String,
-    reason_code: &'static str,
-    fallback: bool,
+pub(super) struct CortexChatOutput {
+    pub(super) output_text: String,
+    pub(super) reason_code: &'static str,
+    pub(super) fallback: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -554,7 +554,7 @@ fn gateway_cortex_observer_events_path(state_dir: &Path) -> PathBuf {
         .join(CORTEX_OBSERVER_EVENTS_FILE)
 }
 
-async fn complete_cortex_chat(
+pub(super) async fn complete_cortex_chat(
     state: &Arc<GatewayOpenResponsesServerState>,
     input: &str,
 ) -> CortexChatOutput {

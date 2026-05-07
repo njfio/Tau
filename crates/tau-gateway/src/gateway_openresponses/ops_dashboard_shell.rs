@@ -40,8 +40,9 @@ use super::channel_telemetry_runtime::build_gateway_multi_channel_lifecycle_comm
 use super::types::GatewayChannelLifecycleRequest;
 use super::{
     apply_gateway_dashboard_action, collect_tau_ops_dashboard_command_center_snapshot,
-    gateway_memory_store, gateway_session_path, record_cortex_memory_entry_delete_event,
-    record_cortex_memory_entry_write_event, record_cortex_session_append_event,
+    complete_cortex_chat, gateway_memory_store, gateway_session_path,
+    record_cortex_memory_entry_delete_event, record_cortex_memory_entry_write_event,
+    record_cortex_observer_event, record_cortex_session_append_event,
     record_cortex_session_reset_event, sanitize_session_key, GatewayDashboardActionRequest,
     GatewayOpenResponsesServerState, OpenResponsesApiError, OpsShellControlsQuery,
     DEFAULT_SESSION_KEY, OPS_DASHBOARD_CHANNELS_ENDPOINT, OPS_DASHBOARD_CHAT_ENDPOINT,
@@ -2048,11 +2049,37 @@ pub(super) async fn handle_ops_dashboard_chat_send(
         }
     };
 
+    let assistant_output = complete_cortex_chat(&state, content.trim()).await;
+    let assistant_message = Message::assistant_text(assistant_output.output_text.clone());
+    let assistant_head = match store.append_messages(new_head, &[assistant_message]) {
+        Ok(head) => head,
+        Err(error) => {
+            return OpenResponsesApiError::internal(format!(
+                "failed to append assistant session message '{}': {error}",
+                session_path.display()
+            ))
+            .into_response();
+        }
+    };
+
+    let _ = record_cortex_observer_event(
+        &state.config.state_dir,
+        "cortex.chat.request",
+        json!({
+            "surface": "ops.chat",
+            "session_key": session_key.as_str(),
+            "input_chars": content.trim().chars().count(),
+            "output_chars": assistant_output.output_text.chars().count(),
+            "reason_code": assistant_output.reason_code,
+            "fallback": assistant_output.fallback,
+        }),
+    );
     state.record_ui_telemetry_event("chat", "send", "chat_message_appended");
+    state.record_ui_telemetry_event("chat", "send", "chat_assistant_message_appended");
     record_cortex_session_append_event(
         &state.config.state_dir,
         session_key.as_str(),
-        new_head,
+        assistant_head,
         store.entries().len(),
     );
     Redirect::to(redirect_path.as_str()).into_response()
