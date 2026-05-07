@@ -278,6 +278,10 @@ pub(super) fn build_gateway_openresponses_router(
             get(handle_ops_dashboard_channels_shell_page),
         )
         .route(
+            OPS_DASHBOARD_CHANNEL_ACTION_ENDPOINT,
+            post(handle_ops_dashboard_channel_action),
+        )
+        .route(
             OPS_DASHBOARD_HARNESS_ENDPOINT,
             get(handle_ops_dashboard_harness_shell_page),
         )

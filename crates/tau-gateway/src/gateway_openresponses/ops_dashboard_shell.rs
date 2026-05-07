@@ -30,16 +30,22 @@ use tau_memory::memory_contract::{MemoryEntry, MemoryScope};
 use tau_memory::runtime::{
     MemoryRelationInput, MemoryScopeFilter, MemorySearchOptions, MemoryType,
 };
+use tau_multi_channel::multi_channel_contract::MultiChannelTransport;
+use tau_multi_channel::multi_channel_lifecycle::{
+    execute_multi_channel_lifecycle_action, MultiChannelLifecycleAction,
+};
 use tau_session::SessionStore;
 
+use super::channel_telemetry_runtime::build_gateway_multi_channel_lifecycle_command_config;
+use super::types::GatewayChannelLifecycleRequest;
 use super::{
     apply_gateway_dashboard_action, collect_tau_ops_dashboard_command_center_snapshot,
     gateway_memory_store, gateway_session_path, record_cortex_memory_entry_delete_event,
     record_cortex_memory_entry_write_event, record_cortex_session_append_event,
     record_cortex_session_reset_event, sanitize_session_key, GatewayDashboardActionRequest,
     GatewayOpenResponsesServerState, OpenResponsesApiError, OpsShellControlsQuery,
-    DEFAULT_SESSION_KEY, OPS_DASHBOARD_CHAT_ENDPOINT, OPS_DASHBOARD_CHAT_NEW_ENDPOINT,
-    OPS_DASHBOARD_CHAT_SEND_ENDPOINT, OPS_DASHBOARD_ENDPOINT,
+    DEFAULT_SESSION_KEY, OPS_DASHBOARD_CHANNELS_ENDPOINT, OPS_DASHBOARD_CHAT_ENDPOINT,
+    OPS_DASHBOARD_CHAT_NEW_ENDPOINT, OPS_DASHBOARD_CHAT_SEND_ENDPOINT, OPS_DASHBOARD_ENDPOINT,
 };
 use crate::remote_profile::GatewayOpenResponsesAuthMode;
 
@@ -109,6 +115,39 @@ pub(super) struct OpsDashboardControlActionForm {
     theme: String,
     #[serde(default)]
     sidebar: String,
+}
+
+#[derive(Debug, Deserialize, Default)]
+pub(super) struct OpsDashboardChannelActionForm {
+    #[serde(default)]
+    channel: String,
+    #[serde(default)]
+    action: String,
+    #[serde(default)]
+    theme: String,
+    #[serde(default)]
+    sidebar: String,
+    #[serde(default)]
+    session: String,
+}
+
+impl OpsDashboardChannelActionForm {
+    fn resolved_theme(&self) -> TauOpsDashboardTheme {
+        resolve_chat_theme(self.theme.as_str())
+    }
+
+    fn resolved_sidebar_state(&self) -> TauOpsDashboardSidebarState {
+        resolve_chat_sidebar_state(self.sidebar.as_str())
+    }
+
+    fn resolved_session_key(&self) -> String {
+        let session = self.session.trim();
+        if session.is_empty() {
+            DEFAULT_SESSION_KEY.to_string()
+        } else {
+            sanitize_session_key(session)
+        }
+    }
 }
 
 impl OpsDashboardControlActionForm {
@@ -536,6 +575,87 @@ fn normalize_ops_control_action_reason_marker(reason: &str) -> &'static str {
         "unauthorized" => "unauthorized",
         "internal_error" => "internal_error",
         _ => "none",
+    }
+}
+
+fn normalize_ops_channel_action_status_marker(status: &str) -> &'static str {
+    match status {
+        "applied" => "applied",
+        "missing" => "missing",
+        "failed" => "failed",
+        _ => "idle",
+    }
+}
+
+fn normalize_ops_channel_action_marker(action: &str) -> &'static str {
+    match action {
+        "login" => "login",
+        "logout" => "logout",
+        "probe" => "probe",
+        "status" => "status",
+        _ => "none",
+    }
+}
+
+fn normalize_ops_channel_marker(channel: &str) -> &'static str {
+    match channel {
+        "telegram" => "telegram",
+        "discord" => "discord",
+        "whatsapp" => "whatsapp",
+        _ => "none",
+    }
+}
+
+fn normalize_ops_channel_action_reason_marker(reason: &str) -> &'static str {
+    match reason {
+        "channel_lifecycle_action_login_applied" => "channel_lifecycle_action_login_applied",
+        "channel_lifecycle_action_logout_applied" => "channel_lifecycle_action_logout_applied",
+        "channel_lifecycle_action_probe_applied" => "channel_lifecycle_action_probe_applied",
+        "channel_lifecycle_action_status_applied" => "channel_lifecycle_action_status_applied",
+        "missing_channel_action" => "missing_channel_action",
+        "invalid_channel" => "invalid_channel",
+        "invalid_lifecycle_action" => "invalid_lifecycle_action",
+        "internal_error" => "internal_error",
+        _ => "none",
+    }
+}
+
+fn build_ops_channels_redirect_path(
+    theme: TauOpsDashboardTheme,
+    sidebar_state: TauOpsDashboardSidebarState,
+    session_key: &str,
+    channel_action_status: &str,
+    channel_action: &str,
+    channel_action_channel: &str,
+    channel_action_reason: &str,
+) -> String {
+    let status = normalize_ops_channel_action_status_marker(channel_action_status);
+    let action = normalize_ops_channel_action_marker(channel_action);
+    let channel = normalize_ops_channel_marker(channel_action_channel);
+    let reason = normalize_ops_channel_action_reason_marker(channel_action_reason);
+    format!(
+        "{OPS_DASHBOARD_CHANNELS_ENDPOINT}?theme={}&sidebar={}&session={session_key}&channel_action_status={status}&channel_action={action}&channel_action_channel={channel}&channel_action_reason={reason}",
+        theme.as_str(),
+        sidebar_state.as_str()
+    )
+}
+
+fn parse_ops_channel_transport(raw: &str) -> Option<MultiChannelTransport> {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "telegram" => Some(MultiChannelTransport::Telegram),
+        "discord" => Some(MultiChannelTransport::Discord),
+        "whatsapp" => Some(MultiChannelTransport::Whatsapp),
+        _ => None,
+    }
+}
+
+fn parse_ops_channel_lifecycle_action(raw: &str) -> Option<MultiChannelLifecycleAction> {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "status" => Some(MultiChannelLifecycleAction::Status),
+        "login" => Some(MultiChannelLifecycleAction::Login),
+        "logout" => Some(MultiChannelLifecycleAction::Logout),
+        "probe" => Some(MultiChannelLifecycleAction::Probe),
+        _ => None,
     }
 }
 
@@ -1139,6 +1259,10 @@ pub(super) fn render_tau_ops_dashboard_shell_for_route(
     let mut command_center =
         collect_tau_ops_dashboard_command_center_snapshot(&state.config.state_dir);
     command_center.timeline_range = controls.timeline_range().to_string();
+    command_center.channel_action_status = controls.requested_channel_action_status().to_string();
+    command_center.channel_action = controls.requested_channel_action().to_string();
+    command_center.channel_action_channel = controls.requested_channel_action_channel().to_string();
+    command_center.channel_action_reason = controls.requested_channel_action_reason().to_string();
     let chat = collect_tau_ops_dashboard_chat_snapshot(state, &controls, detail_session_key);
     let harness = collect_tau_ops_dashboard_harness_snapshot(&state.config.state_dir);
 
@@ -1718,6 +1842,113 @@ pub(super) async fn handle_ops_dashboard_control_action(
                 "failed",
                 action_marker,
                 reason_marker,
+            );
+            Redirect::to(redirect_path.as_str()).into_response()
+        }
+    }
+}
+
+pub(super) async fn handle_ops_dashboard_channel_action(
+    State(state): State<Arc<GatewayOpenResponsesServerState>>,
+    Form(form): Form<OpsDashboardChannelActionForm>,
+) -> Response {
+    let redirect_theme = form.resolved_theme();
+    let redirect_sidebar_state = form.resolved_sidebar_state();
+    let redirect_session_key = form.resolved_session_key();
+    let action_input = form.action.trim().to_ascii_lowercase();
+    let channel_input = form.channel.trim().to_ascii_lowercase();
+
+    if action_input.is_empty() || channel_input.is_empty() {
+        state.record_ui_telemetry_event(
+            "channels",
+            "lifecycle-action",
+            "channel_lifecycle_form_missing_action",
+        );
+        let redirect_path = build_ops_channels_redirect_path(
+            redirect_theme,
+            redirect_sidebar_state,
+            redirect_session_key.as_str(),
+            "missing",
+            "none",
+            "none",
+            "missing_channel_action",
+        );
+        return Redirect::to(redirect_path.as_str()).into_response();
+    }
+
+    let Some(channel) = parse_ops_channel_transport(channel_input.as_str()) else {
+        state.record_ui_telemetry_event(
+            "channels",
+            "lifecycle-action",
+            "channel_lifecycle_form_invalid_channel",
+        );
+        let redirect_path = build_ops_channels_redirect_path(
+            redirect_theme,
+            redirect_sidebar_state,
+            redirect_session_key.as_str(),
+            "failed",
+            action_input.as_str(),
+            "none",
+            "invalid_channel",
+        );
+        return Redirect::to(redirect_path.as_str()).into_response();
+    };
+
+    let Some(action) = parse_ops_channel_lifecycle_action(action_input.as_str()) else {
+        state.record_ui_telemetry_event(
+            "channels",
+            "lifecycle-action",
+            "channel_lifecycle_form_invalid_action",
+        );
+        let redirect_path = build_ops_channels_redirect_path(
+            redirect_theme,
+            redirect_sidebar_state,
+            redirect_session_key.as_str(),
+            "failed",
+            "none",
+            channel.as_str(),
+            "invalid_lifecycle_action",
+        );
+        return Redirect::to(redirect_path.as_str()).into_response();
+    };
+
+    let lifecycle_request = GatewayChannelLifecycleRequest {
+        action: action_input.clone(),
+        ..GatewayChannelLifecycleRequest::default()
+    };
+    let command_config = build_gateway_multi_channel_lifecycle_command_config(
+        &state.config.state_dir,
+        &lifecycle_request,
+    );
+    match execute_multi_channel_lifecycle_action(&command_config, action, channel) {
+        Ok(_) => {
+            let reason_code = format!("channel_lifecycle_action_{}_applied", action_input);
+            state.record_ui_telemetry_event("channels", "lifecycle-action", reason_code.as_str());
+            let redirect_path = build_ops_channels_redirect_path(
+                redirect_theme,
+                redirect_sidebar_state,
+                redirect_session_key.as_str(),
+                "applied",
+                action_input.as_str(),
+                channel.as_str(),
+                reason_code.as_str(),
+            );
+            Redirect::to(redirect_path.as_str()).into_response()
+        }
+        Err(_) => {
+            state.record_ui_telemetry_event(
+                "channels",
+                "lifecycle-action",
+                "channel_lifecycle_action_failed",
+            );
+            let redirect_path = build_ops_channels_redirect_path(
+                redirect_theme,
+                redirect_sidebar_state,
+                redirect_session_key.as_str(),
+                "failed",
+                action_input.as_str(),
+                channel.as_str(),
+                "internal_error",
             );
             Redirect::to(redirect_path.as_str()).into_response()
         }

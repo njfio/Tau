@@ -576,6 +576,10 @@ pub struct TauOpsDashboardCommandCenterSnapshot {
     pub primary_alert_message: String,
     pub alert_feed_rows: Vec<TauOpsDashboardAlertFeedRow>,
     pub connector_health_rows: Vec<TauOpsDashboardConnectorHealthRow>,
+    pub channel_action_status: String,
+    pub channel_action: String,
+    pub channel_action_channel: String,
+    pub channel_action_reason: String,
 }
 
 impl Default for TauOpsDashboardCommandCenterSnapshot {
@@ -619,6 +623,10 @@ impl Default for TauOpsDashboardCommandCenterSnapshot {
                 events_ingested: 0,
                 provider_failures: 0,
             }],
+            channel_action_status: "idle".to_string(),
+            channel_action: "none".to_string(),
+            channel_action_channel: "none".to_string(),
+            channel_action_reason: "none".to_string(),
         }
     }
 }
@@ -2084,6 +2092,18 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
         "failed" => format!("Failed to apply {control_action} action ({control_action_reason})."),
         _ => "No control action submitted yet.".to_string(),
     };
+    let channel_action_status = context.command_center.channel_action_status.clone();
+    let channel_action = context.command_center.channel_action.clone();
+    let channel_action_channel = context.command_center.channel_action_channel.clone();
+    let channel_action_reason = context.command_center.channel_action_reason.clone();
+    let channel_action_status_message = match channel_action_status.as_str() {
+        "applied" => format!("Applied {channel_action} for {channel_action_channel}."),
+        "missing" => "No channel action was submitted.".to_string(),
+        "failed" => format!(
+            "Failed to apply {channel_action} for {channel_action_channel} ({channel_action_reason})."
+        ),
+        _ => "No channel action submitted yet.".to_string(),
+    };
     let health_state = context.command_center.health_state.clone();
     let health_reason = context.command_center.health_reason.clone();
     let rollout_gate = context.command_center.rollout_gate.clone();
@@ -2222,6 +2242,11 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
             let login_id = format!("tau-ops-channels-login-{index}");
             let logout_id = format!("tau-ops-channels-logout-{index}");
             let probe_id = format!("tau-ops-channels-probe-{index}");
+            let action_form_id = format!("tau-ops-channels-action-form-{index}");
+            let channel_input_id = format!("tau-ops-channels-action-{index}-channel");
+            let theme_input_id = format!("tau-ops-channels-action-{index}-theme");
+            let sidebar_input_id = format!("tau-ops-channels-action-{index}-sidebar");
+            let session_input_id = format!("tau-ops-channels-action-{index}-session");
             let channel = row.channel.clone();
             let liveness = row.liveness.clone();
             let events_ingested = row.events_ingested.to_string();
@@ -2250,15 +2275,6 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                 "true"
             };
             let probe_aria_disabled = "false";
-            let login_href = format!(
-                "{active_shell_path}?theme={theme_attr}&sidebar={sidebar_state_attr}&session={chat_session_key}&channel={channel}&channel_action=login"
-            );
-            let logout_href = format!(
-                "{active_shell_path}?theme={theme_attr}&sidebar={sidebar_state_attr}&session={chat_session_key}&channel={channel}&channel_action=logout"
-            );
-            let probe_href = format!(
-                "{active_shell_path}?theme={theme_attr}&sidebar={sidebar_state_attr}&session={chat_session_key}&channel={channel}&channel_action=probe"
-            );
             view! {
                 <tr
                     id=row_id
@@ -2280,41 +2296,62 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     </td>
                     <td>{events_ingested}</td>
                     <td>{provider_failures}</td>
-                    <td>
-                        <div class="tau-ops-channel-actions" data-action-count="3">
-                            <a
-                                id=login_id
-                                data-action="channel-login"
+                    <td class="tau-ops-channel-action-cell" data-column="actions">
+                        <div
+                            class="tau-ops-channel-actions"
+                            data-action-count="3"
+                            data-hit-target-contract="separate-action-buttons"
+                        >
+                            <form
+                                id=action_form_id
+                                action="/ops/channels/action"
+                                method="post"
+                                data-action="channel-lifecycle"
                                 data-channel=row.channel.clone()
-                                data-action-enabled=login_enabled
-                                role="button"
-                                aria-disabled=login_aria_disabled
-                                href=login_href
+                                data-action-enabled="true"
+                                data-submit-contract="clicked-button-action"
                             >
-                                Login
-                            </a>
-                            <a
-                                id=logout_id
-                                data-action="channel-logout"
-                                data-channel=row.channel.clone()
-                                data-action-enabled=logout_enabled
-                                role="button"
-                                aria-disabled=logout_aria_disabled
-                                href=logout_href
-                            >
-                                Logout
-                            </a>
-                            <a
-                                id=probe_id
-                                data-action="channel-probe"
-                                data-channel=row.channel.clone()
-                                data-action-enabled=probe_enabled
-                                role="button"
-                                aria-disabled=probe_aria_disabled
-                                href=probe_href
-                            >
-                                Probe
-                            </a>
+                                <input id=channel_input_id type="hidden" name="channel" value=channel.clone() />
+                                <input id=theme_input_id type="hidden" name="theme" value=theme_attr />
+                                <input id=sidebar_input_id type="hidden" name="sidebar" value=sidebar_state_attr />
+                                <input id=session_input_id type="hidden" name="session" value=chat_session_key.clone() />
+                                <button
+                                    id=login_id
+                                    data-action="channel-login"
+                                    data-channel=row.channel.clone()
+                                    data-action-enabled=login_enabled
+                                    type="submit"
+                                    name="action"
+                                    value="login"
+                                    aria-disabled=login_aria_disabled
+                                >
+                                    Login
+                                </button>
+                                <button
+                                    id=logout_id
+                                    data-action="channel-logout"
+                                    data-channel=row.channel.clone()
+                                    data-action-enabled=logout_enabled
+                                    type="submit"
+                                    name="action"
+                                    value="logout"
+                                    aria-disabled=logout_aria_disabled
+                                >
+                                    Logout
+                                </button>
+                                <button
+                                    id=probe_id
+                                    data-action="channel-probe"
+                                    data-channel=row.channel.clone()
+                                    data-action-enabled=probe_enabled
+                                    type="submit"
+                                    name="action"
+                                    value="probe"
+                                    aria-disabled=probe_aria_disabled
+                                >
+                                    Probe
+                                </button>
+                            </form>
                         </div>
                     </td>
                 </tr>
@@ -2684,6 +2721,21 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     font-size: 1.12rem;
                     font-weight: 760;
                 }
+                #tau-ops-channels-action-status {
+                    border: 1px solid #24475a;
+                    border-radius: 7px;
+                    padding: 10px;
+                    background: #0d2331;
+                }
+                #tau-ops-channels-action-status h3,
+                #tau-ops-channels-action-status p {
+                    margin: 0;
+                }
+                #tau-ops-channels-action-status p {
+                    margin-top: 4px;
+                    color: #abc0c9;
+                    font-size: .76rem;
+                }
                 #tau-ops-channels-table-wrap {
                     max-width: 100%;
                     overflow-x: auto;
@@ -2715,15 +2767,30 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     background: #3d2f12;
                     color: #f7d77b;
                 }
+                #tau-ops-channels-table th[data-column="actions"],
+                #tau-ops-channels-table td[data-column="actions"] {
+                    min-width: 270px;
+                    width: 270px;
+                }
                 .tau-ops-channel-actions {
                     display: grid;
-                    grid-template-columns: repeat(3, minmax(0, 1fr));
+                    grid-template-columns: repeat(3, minmax(78px, 1fr));
                     gap: 6px;
+                    min-width: 252px;
                 }
-                #tau-ops-channels-panel a[data-action^="channel-"] {
+                .tau-ops-channel-actions form {
+                    display: block;
+                    margin: 0;
+                    min-width: 0;
+                }
+                #tau-ops-channels-panel button[data-action^="channel-"] {
                     display: inline-flex;
                     align-items: center;
                     justify-content: center;
+                    box-sizing: border-box;
+                    position: relative;
+                    z-index: 1;
+                    width: 100%;
                     min-height: 30px;
                     border: 1px solid #31596e;
                     border-radius: 6px;
@@ -2734,8 +2801,9 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     font-weight: 700;
                     text-decoration: none;
                     white-space: nowrap;
+                    cursor: pointer;
                 }
-                #tau-ops-channels-panel a[data-action^="channel-"][data-action-enabled="false"] {
+                #tau-ops-channels-panel button[data-action^="channel-"][data-action-enabled="false"] {
                     border-color: #263f4e;
                     background: #0b1d28;
                     color: #6f8996;
@@ -4114,6 +4182,16 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     Connector health, liveness, and operator action state for configured channels.
                                 </p>
                             </section>
+                            <section
+                                id="tau-ops-channels-action-status"
+                                data-channel-action-status=channel_action_status
+                                data-channel-action=channel_action
+                                data-channel-action-channel=channel_action_channel
+                                data-channel-action-reason=channel_action_reason
+                            >
+                                <h3>Lifecycle Action</h3>
+                                <p>{channel_action_status_message}</p>
+                            </section>
                             <section id="tau-ops-channels-kpi-grid" data-card-count="3" aria-label="Channel health summary">
                                 <article id="tau-ops-channels-online-card" data-kpi="online" data-count=channels_online_count_card>
                                     <h3>Online</h3>
@@ -4139,7 +4217,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                                 <th scope="col">Liveness</th>
                                                 <th scope="col">Events Ingested</th>
                                                 <th scope="col">Provider Failures</th>
-                                                <th scope="col">Actions</th>
+                                                <th scope="col" data-column="actions">Actions</th>
                                             </tr>
                                         </thead>
                                         <tbody

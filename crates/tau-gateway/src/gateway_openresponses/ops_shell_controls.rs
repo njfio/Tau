@@ -58,6 +58,14 @@ pub(super) struct OpsShellControlsQuery {
     control_action: String,
     #[serde(default)]
     control_action_reason: String,
+    #[serde(default)]
+    channel_action_status: String,
+    #[serde(default)]
+    channel_action: String,
+    #[serde(default)]
+    channel_action_channel: String,
+    #[serde(default)]
+    channel_action_reason: String,
 }
 
 impl OpsShellControlsQuery {
@@ -290,6 +298,48 @@ impl OpsShellControlsQuery {
             "missing_action" => "missing_action",
             "invalid_dashboard_action" => "invalid_dashboard_action",
             "unauthorized" => "unauthorized",
+            "internal_error" => "internal_error",
+            _ => "none",
+        }
+    }
+
+    pub(super) fn requested_channel_action_status(&self) -> &'static str {
+        match self.channel_action_status.trim() {
+            "applied" => "applied",
+            "missing" => "missing",
+            "failed" => "failed",
+            _ => "idle",
+        }
+    }
+
+    pub(super) fn requested_channel_action(&self) -> &'static str {
+        match self.channel_action.trim() {
+            "login" => "login",
+            "logout" => "logout",
+            "probe" => "probe",
+            "status" => "status",
+            _ => "none",
+        }
+    }
+
+    pub(super) fn requested_channel_action_channel(&self) -> &'static str {
+        match self.channel_action_channel.trim() {
+            "telegram" => "telegram",
+            "discord" => "discord",
+            "whatsapp" => "whatsapp",
+            _ => "none",
+        }
+    }
+
+    pub(super) fn requested_channel_action_reason(&self) -> &'static str {
+        match self.channel_action_reason.trim() {
+            "channel_lifecycle_action_login_applied" => "channel_lifecycle_action_login_applied",
+            "channel_lifecycle_action_logout_applied" => "channel_lifecycle_action_logout_applied",
+            "channel_lifecycle_action_probe_applied" => "channel_lifecycle_action_probe_applied",
+            "channel_lifecycle_action_status_applied" => "channel_lifecycle_action_status_applied",
+            "missing_channel_action" => "missing_channel_action",
+            "invalid_channel" => "invalid_channel",
+            "invalid_lifecycle_action" => "invalid_lifecycle_action",
             "internal_error" => "internal_error",
             _ => "none",
         }

@@ -244,3 +244,69 @@ async fn integration_spec_3132_c03_ops_channels_route_renders_channel_action_con
 
     handle.abort();
 }
+
+#[tokio::test]
+async fn integration_spec_3798_c01_ops_channels_action_persists_lifecycle_state() {
+    let temp = tempdir().expect("tempdir");
+    write_dashboard_runtime_fixture(temp.path());
+    write_training_runtime_fixture(temp.path(), 0);
+    write_multi_channel_runtime_fixture(temp.path(), true);
+    let state = test_state(temp.path(), 4_096, "secret");
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+    let client = Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .expect("build no-redirect client");
+    let follow_client = Client::new();
+
+    let response = client
+        .post(format!(
+            "http://{addr}{OPS_DASHBOARD_CHANNEL_ACTION_ENDPOINT}"
+        ))
+        .form(&[
+            ("channel", "telegram"),
+            ("action", "logout"),
+            ("theme", "light"),
+            ("sidebar", "collapsed"),
+            ("session", "ops-channels-live"),
+        ])
+        .send()
+        .await
+        .expect("submit ops channel action");
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    let location = response
+        .headers()
+        .get(reqwest::header::LOCATION)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default()
+        .to_string();
+    assert_eq!(
+        location,
+        "/ops/channels?theme=light&sidebar=collapsed&session=ops-channels-live&channel_action_status=applied&channel_action=logout&channel_action_channel=telegram&channel_action_reason=channel_lifecycle_action_logout_applied"
+    );
+
+    let lifecycle_state = std::fs::read_to_string(
+        temp.path()
+            .join(".tau")
+            .join("multi-channel")
+            .join("security")
+            .join("channel-lifecycle.json"),
+    )
+    .expect("read lifecycle state");
+    assert!(lifecycle_state.contains("\"telegram\""));
+    assert!(lifecycle_state.contains("\"lifecycle_status\": \"logged_out\""));
+    assert!(lifecycle_state.contains("\"last_action\": \"logout\""));
+
+    let redirected = follow_client
+        .get(format!("http://{addr}{location}"))
+        .send()
+        .await
+        .expect("load redirected channels route");
+    assert_eq!(redirected.status(), StatusCode::OK);
+    let body = redirected.text().await.expect("read redirected body");
+    assert!(body.contains(
+        "id=\"tau-ops-channels-action-status\" data-channel-action-status=\"applied\" data-channel-action=\"logout\" data-channel-action-channel=\"telegram\" data-channel-action-reason=\"channel_lifecycle_action_logout_applied\""
+    ));
+
+    handle.abort();
+}

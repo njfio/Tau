@@ -162,7 +162,7 @@ fn parse_gateway_channel_lifecycle_action(
     }
 }
 
-fn build_gateway_multi_channel_lifecycle_command_config(
+pub(super) fn build_gateway_multi_channel_lifecycle_command_config(
     gateway_state_dir: &Path,
     request: &GatewayChannelLifecycleRequest,
 ) -> MultiChannelLifecycleCommandConfig {
@@ -192,15 +192,24 @@ fn build_gateway_multi_channel_lifecycle_command_config(
         whatsapp_api_base: "https://graph.facebook.com/v20.0".to_string(),
         credential_store: None,
         credential_store_unreadable: false,
-        telegram_bot_token: None,
-        discord_bot_token: None,
-        whatsapp_access_token: None,
-        whatsapp_phone_number_id: None,
+        telegram_bot_token: resolve_gateway_channel_env_secret("TAU_TELEGRAM_BOT_TOKEN"),
+        discord_bot_token: resolve_gateway_channel_env_secret("TAU_DISCORD_BOT_TOKEN"),
+        whatsapp_access_token: resolve_gateway_channel_env_secret("TAU_WHATSAPP_ACCESS_TOKEN"),
+        whatsapp_phone_number_id: resolve_gateway_channel_env_secret(
+            "TAU_WHATSAPP_PHONE_NUMBER_ID",
+        ),
         probe_online,
         probe_online_timeout_ms,
         probe_online_max_attempts,
         probe_online_retry_delay_ms,
     }
+}
+
+fn resolve_gateway_channel_env_secret(name: &str) -> Option<String> {
+    std::env::var(name)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
 }
 
 pub(super) fn gateway_ui_telemetry_path(state_dir: &Path) -> PathBuf {

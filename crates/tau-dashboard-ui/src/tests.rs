@@ -3752,14 +3752,54 @@ fn functional_spec_3797_c02_channels_route_groups_actions_as_controls() {
         "data-horizontal-overflow=\"contained\"",
         "class=\"tau-ops-channel-actions\"",
         "data-action-count=\"3\"",
-        "id=\"tau-ops-channels-login-0\" data-action=\"channel-login\" data-channel=\"telegram\" data-action-enabled=\"false\" role=\"button\" aria-disabled=\"true\"",
-        "id=\"tau-ops-channels-logout-0\" data-action=\"channel-logout\" data-channel=\"telegram\" data-action-enabled=\"true\" role=\"button\" aria-disabled=\"false\"",
-        "#tau-ops-channels-panel a[data-action^=\"channel-\"]",
-        "#tau-ops-channels-panel a[data-action^=\"channel-\"][data-action-enabled=\"false\"]",
+        "data-hit-target-contract=\"separate-action-buttons\"",
+        "data-submit-contract=\"clicked-button-action\"",
+        "data-column=\"actions\"",
+        "grid-template-columns: repeat(3, minmax(78px, 1fr));",
+        "id=\"tau-ops-channels-login-0\" data-action=\"channel-login\" data-channel=\"telegram\" data-action-enabled=\"false\" type=\"submit\" name=\"action\" value=\"login\" aria-disabled=\"true\"",
+        "id=\"tau-ops-channels-logout-0\" data-action=\"channel-logout\" data-channel=\"telegram\" data-action-enabled=\"true\" type=\"submit\" name=\"action\" value=\"logout\" aria-disabled=\"false\"",
+        "#tau-ops-channels-panel button[data-action^=\"channel-\"]",
+        "#tau-ops-channels-panel button[data-action^=\"channel-\"][data-action-enabled=\"false\"]",
     ] {
         assert!(
             html.contains(marker),
             "missing channels action-control marker `{marker}`"
+        );
+    }
+}
+
+#[test]
+fn functional_spec_3798_c02_channels_route_posts_lifecycle_action_forms() {
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        auth_mode: TauOpsDashboardAuthMode::Token,
+        active_route: TauOpsDashboardRoute::Channels,
+        theme: TauOpsDashboardTheme::Light,
+        sidebar_state: TauOpsDashboardSidebarState::Collapsed,
+        command_center: TauOpsDashboardCommandCenterSnapshot {
+            connector_health_rows: vec![TauOpsDashboardConnectorHealthRow {
+                channel: "telegram".to_string(),
+                mode: "polling".to_string(),
+                liveness: "open".to_string(),
+                events_ingested: 6,
+                provider_failures: 2,
+            }],
+            ..TauOpsDashboardCommandCenterSnapshot::default()
+        },
+        chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
+    });
+
+    for marker in [
+        "id=\"tau-ops-channels-action-status\" data-channel-action-status=\"idle\" data-channel-action=\"none\" data-channel-action-channel=\"none\" data-channel-action-reason=\"none\"",
+        "id=\"tau-ops-channels-action-form-0\" action=\"/ops/channels/action\" method=\"post\" data-action=\"channel-lifecycle\" data-channel=\"telegram\" data-action-enabled=\"true\" data-submit-contract=\"clicked-button-action\"",
+        "id=\"tau-ops-channels-action-0-channel\" type=\"hidden\" name=\"channel\" value=\"telegram\"",
+        "id=\"tau-ops-channels-action-0-theme\" type=\"hidden\" name=\"theme\" value=\"light\"",
+        "id=\"tau-ops-channels-action-0-sidebar\" type=\"hidden\" name=\"sidebar\" value=\"collapsed\"",
+        "id=\"tau-ops-channels-logout-0\" data-action=\"channel-logout\" data-channel=\"telegram\" data-action-enabled=\"true\" type=\"submit\" name=\"action\" value=\"logout\" aria-disabled=\"false\"",
+    ] {
+        assert!(
+            html.contains(marker),
+            "missing channels lifecycle form marker `{marker}`"
         );
     }
 }
@@ -4582,6 +4622,10 @@ fn functional_spec_2806_c01_c02_c03_command_center_snapshot_markers_render() {
             primary_alert_message: "runtime backlog detected (queue_depth=3)".to_string(),
             alert_feed_rows: vec![],
             connector_health_rows: vec![],
+            channel_action_status: "idle".to_string(),
+            channel_action: "none".to_string(),
+            channel_action_channel: "none".to_string(),
+            channel_action_reason: "none".to_string(),
         },
         chat: TauOpsDashboardChatSnapshot::default(),
         harness: TauOpsDashboardHarnessSnapshot::default(),
@@ -4760,6 +4804,10 @@ fn functional_spec_2810_c01_c02_c03_command_center_control_markers_render() {
             primary_alert_message: "runtime backlog detected (queue_depth=1)".to_string(),
             alert_feed_rows: vec![],
             connector_health_rows: vec![],
+            channel_action_status: "idle".to_string(),
+            channel_action: "none".to_string(),
+            channel_action_channel: "none".to_string(),
+            channel_action_reason: "none".to_string(),
         },
         chat: TauOpsDashboardChatSnapshot::default(),
         harness: TauOpsDashboardHarnessSnapshot::default(),
@@ -4815,6 +4863,10 @@ fn functional_spec_2826_c01_c02_control_actions_expose_confirmation_markers() {
             primary_alert_message: "dashboard runtime health is nominal".to_string(),
             alert_feed_rows: vec![],
             connector_health_rows: vec![],
+            channel_action_status: "idle".to_string(),
+            channel_action: "none".to_string(),
+            channel_action_channel: "none".to_string(),
+            channel_action_reason: "none".to_string(),
         },
         chat: TauOpsDashboardChatSnapshot::default(),
         harness: TauOpsDashboardHarnessSnapshot::default(),
@@ -5012,6 +5064,10 @@ fn functional_spec_2814_c01_c02_c03_timeline_chart_and_range_markers_render() {
             primary_alert_message: "runtime backlog detected (queue_depth=1)".to_string(),
             alert_feed_rows: vec![],
             connector_health_rows: vec![],
+            channel_action_status: "idle".to_string(),
+            channel_action: "none".to_string(),
+            channel_action_channel: "none".to_string(),
+            channel_action_reason: "none".to_string(),
         },
         chat: TauOpsDashboardChatSnapshot::default(),
         harness: TauOpsDashboardHarnessSnapshot::default(),
@@ -5139,6 +5195,10 @@ fn functional_spec_2818_c01_c02_alert_feed_row_markers_render_for_snapshot_alert
                 },
             ],
             connector_health_rows: vec![],
+            channel_action_status: "idle".to_string(),
+            channel_action: "none".to_string(),
+            channel_action_channel: "none".to_string(),
+            channel_action_reason: "none".to_string(),
         },
         chat: TauOpsDashboardChatSnapshot::default(),
         harness: TauOpsDashboardHarnessSnapshot::default(),
@@ -5194,6 +5254,10 @@ fn functional_spec_2818_c03_alert_feed_row_markers_render_nominal_fallback_alert
                 message: "dashboard runtime health is nominal".to_string(),
             }],
             connector_health_rows: vec![],
+            channel_action_status: "idle".to_string(),
+            channel_action: "none".to_string(),
+            channel_action_channel: "none".to_string(),
+            channel_action_reason: "none".to_string(),
         },
         chat: TauOpsDashboardChatSnapshot::default(),
         harness: TauOpsDashboardHarnessSnapshot::default(),
@@ -5246,6 +5310,10 @@ fn functional_spec_2822_c03_connector_health_table_renders_fallback_row_markers(
                 message: "dashboard runtime health is nominal".to_string(),
             }],
             connector_health_rows: vec![],
+            channel_action_status: "idle".to_string(),
+            channel_action: "none".to_string(),
+            channel_action_channel: "none".to_string(),
+            channel_action_reason: "none".to_string(),
         },
         chat: TauOpsDashboardChatSnapshot::default(),
         harness: TauOpsDashboardHarnessSnapshot::default(),
@@ -5304,6 +5372,10 @@ fn functional_spec_2822_c01_c02_connector_health_table_rows_render_for_snapshot_
                 events_ingested: 6,
                 provider_failures: 2,
             }],
+            channel_action_status: "idle".to_string(),
+            channel_action: "none".to_string(),
+            channel_action_channel: "none".to_string(),
+            channel_action_reason: "none".to_string(),
         },
         chat: TauOpsDashboardChatSnapshot::default(),
         harness: TauOpsDashboardHarnessSnapshot::default(),

@@ -651,6 +651,10 @@ pub(super) fn collect_tau_ops_dashboard_command_center_snapshot(
             })
             .collect(),
         connector_health_rows,
+        channel_action_status: "idle".to_string(),
+        channel_action: "none".to_string(),
+        channel_action_channel: "none".to_string(),
+        channel_action_reason: "none".to_string(),
     }
 }
 
