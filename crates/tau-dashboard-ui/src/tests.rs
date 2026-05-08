@@ -1970,6 +1970,12 @@ fn functional_spec_2830_c02_chat_route_renders_snapshot_message_rows_for_active_
     assert!(html.contains("id=\"tau-ops-chat-message-row-1\" data-message-role=\"assistant\""));
     assert!(html.contains("first message"));
     assert!(html.contains("second message"));
+    assert!(html.contains("#tau-ops-chat-panel[aria-hidden=\"false\"]"));
+    assert!(html.contains("grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);"));
+    assert!(html.contains("#tau-ops-chat-transcript {"));
+    assert!(html.contains("list-style: none;"));
+    assert!(html.contains("#tau-ops-chat-transcript [data-token-stream=\"assistant\"]"));
+    assert!(html.contains("clip-path: inset(50%);"));
 }
 
 #[test]
