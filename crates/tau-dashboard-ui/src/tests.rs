@@ -1927,6 +1927,9 @@ fn functional_spec_2830_c01_chat_route_renders_send_form_and_fallback_transcript
     assert!(html.contains("id=\"tau-ops-chat-transcript\" data-message-count=\"1\""));
     assert!(html.contains("id=\"tau-ops-chat-message-row-0\" data-message-role=\"system\""));
     assert!(html.contains("No chat messages yet."));
+    assert!(html.contains(
+        "id=\"tau-ops-chat-latest-turn\" data-latest-turn-visible=\"false\" aria-hidden=\"true\""
+    ));
 }
 
 #[test]
@@ -1970,6 +1973,13 @@ fn functional_spec_2830_c02_chat_route_renders_snapshot_message_rows_for_active_
     assert!(html.contains("id=\"tau-ops-chat-message-row-1\" data-message-role=\"assistant\""));
     assert!(html.contains("first message"));
     assert!(html.contains("second message"));
+    assert!(html.contains(
+        "id=\"tau-ops-chat-latest-turn\" data-latest-turn-visible=\"true\" aria-hidden=\"false\""
+    ));
+    assert!(html.contains("data-latest-user-index=\"0\""));
+    assert!(html.contains("data-latest-assistant-index=\"1\""));
+    assert!(html.contains("id=\"tau-ops-chat-latest-user\" data-message-role=\"user\""));
+    assert!(html.contains("id=\"tau-ops-chat-latest-assistant\" data-message-role=\"assistant\""));
     assert!(html.contains("#tau-ops-chat-panel[aria-hidden=\"false\"]"));
     assert!(html.contains("grid-template-columns: minmax(0, 1fr);"));
     assert!(html.contains("max-width: 720px;"));

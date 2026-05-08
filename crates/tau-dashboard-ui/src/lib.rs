@@ -2079,6 +2079,39 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
         .collect_view();
     let chat_session_option_count_value = chat_session_options.len().to_string();
     let chat_message_count_value = chat_message_rows.len().to_string();
+    let latest_user_row = chat_message_rows
+        .iter()
+        .enumerate()
+        .rev()
+        .find(|(_, row)| row.role == "user");
+    let latest_assistant_row = chat_message_rows
+        .iter()
+        .enumerate()
+        .rev()
+        .find(|(_, row)| row.role == "assistant");
+    let chat_latest_turn_visible_bool = latest_user_row.is_some() || latest_assistant_row.is_some();
+    let chat_latest_turn_visible = if chat_latest_turn_visible_bool {
+        "true"
+    } else {
+        "false"
+    };
+    let chat_latest_turn_hidden = if chat_latest_turn_visible_bool {
+        "false"
+    } else {
+        "true"
+    };
+    let chat_latest_user_index = latest_user_row
+        .map(|(index, _)| index.to_string())
+        .unwrap_or_else(|| "none".to_string());
+    let chat_latest_assistant_index = latest_assistant_row
+        .map(|(index, _)| index.to_string())
+        .unwrap_or_else(|| "none".to_string());
+    let chat_latest_user_content = latest_user_row
+        .map(|(_, row)| row.content.clone())
+        .unwrap_or_default();
+    let chat_latest_assistant_content = latest_assistant_row
+        .map(|(_, row)| row.content.clone())
+        .unwrap_or_default();
     let chat_new_session_form_action = context.chat.new_session_form_action.clone();
     let chat_new_session_form_method = context.chat.new_session_form_method.clone();
     let chat_send_form_action = context.chat.send_form_action.clone();
@@ -2670,6 +2703,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     max-width: 420px;
                 }
                 #tau-ops-chat-send-form,
+                #tau-ops-chat-latest-turn,
                 #tau-ops-chat-transcript,
                 #tau-ops-chat-token-counter {
                     grid-column: 1;
@@ -2750,6 +2784,57 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                 #tau-ops-chat-send-button {
                     width: 100%;
                     min-height: 42px;
+                }
+                #tau-ops-chat-latest-turn {
+                    display: grid;
+                    gap: 8px;
+                    margin: 0;
+                    border: 1px solid #2c4b5d;
+                    border-radius: 7px;
+                    padding: 10px;
+                    background: #091923;
+                }
+                #tau-ops-chat-latest-turn h3 {
+                    margin: 0;
+                    color: #edf8fb;
+                    font-size: .82rem;
+                    letter-spacing: 0;
+                }
+                #tau-ops-chat-latest-turn section {
+                    display: grid;
+                    gap: 5px;
+                    min-width: 0;
+                    border: 1px solid #24475a;
+                    border-radius: 7px;
+                    padding: 9px 10px;
+                    background: #0d2331;
+                    overflow-wrap: anywhere;
+                    word-break: break-word;
+                }
+                #tau-ops-chat-latest-turn section[data-message-role="user"] {
+                    border-color: #2d6ead;
+                    background: #123b61;
+                }
+                #tau-ops-chat-latest-turn section[data-message-role="assistant"] {
+                    border-color: #255845;
+                    background: #102c24;
+                }
+                #tau-ops-chat-latest-turn h4,
+                #tau-ops-chat-latest-turn p {
+                    margin: 0;
+                }
+                #tau-ops-chat-latest-turn h4 {
+                    color: #8fa8b3;
+                    font-size: .64rem;
+                    font-weight: 800;
+                    letter-spacing: .02em;
+                    text-transform: uppercase;
+                }
+                #tau-ops-chat-latest-turn p {
+                    color: #dbe8ef;
+                    font-size: .78rem;
+                    line-height: 1.45;
+                    white-space: pre-wrap;
                 }
                 #tau-ops-chat-transcript {
                     display: grid;
@@ -3390,6 +3475,26 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 ></textarea>
                                 <button id="tau-ops-chat-send-button" type="submit">Send</button>
                             </form>
+                            <article
+                                id="tau-ops-chat-latest-turn"
+                                data-latest-turn-visible=chat_latest_turn_visible
+                                aria-hidden=chat_latest_turn_hidden
+                                data-latest-user-index=chat_latest_user_index
+                                data-latest-assistant-index=chat_latest_assistant_index
+                            >
+                                <h3>Latest Turn</h3>
+                                <section id="tau-ops-chat-latest-user" data-message-role="user">
+                                    <h4>User</h4>
+                                    <p>{chat_latest_user_content}</p>
+                                </section>
+                                <section
+                                    id="tau-ops-chat-latest-assistant"
+                                    data-message-role="assistant"
+                                >
+                                    <h4>Assistant</h4>
+                                    <p>{chat_latest_assistant_content}</p>
+                                </section>
+                            </article>
                             <ul id="tau-ops-chat-transcript" data-message-count=chat_message_count_value>
                                 {chat_message_rows
                                     .iter()
