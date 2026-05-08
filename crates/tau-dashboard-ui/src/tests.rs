@@ -1971,18 +1971,20 @@ fn functional_spec_2830_c02_chat_route_renders_snapshot_message_rows_for_active_
     assert!(html.contains("first message"));
     assert!(html.contains("second message"));
     assert!(html.contains("#tau-ops-chat-panel[aria-hidden=\"false\"]"));
-    assert!(html.contains("grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);"));
+    assert!(html.contains("grid-template-columns: minmax(0, 1fr);"));
+    assert!(html.contains("max-width: 720px;"));
     assert!(html.contains("#tau-ops-chat-transcript {"));
     assert!(html.contains("grid-template-columns: minmax(0, 1fr);"));
     assert!(html.contains("overflow-x: hidden;"));
-    assert!(html.contains("max-width: 820px;"));
+    assert!(html.contains("max-width: 420px;"));
+    assert!(html.contains("#tau-ops-protected-shell #tau-ops-chat-new-session-form"));
+    assert!(html.contains("#tau-ops-protected-shell #tau-ops-chat-send-form"));
     assert!(html.contains("list-style: none;"));
     assert!(html.contains("width: min(760px, 100%);"));
     assert!(html.contains("max-width: min(760px, 100%);"));
     assert!(html.contains("min-width: 0;"));
     assert!(html.contains("word-break: break-word;"));
-    assert!(html.contains("@media (max-width: 1200px)"));
-    assert!(html.contains("#tau-ops-chat-send-form,"));
+    assert!(!html.contains("grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);"));
     assert!(html.contains("#tau-ops-chat-transcript [data-token-stream=\"assistant\"]"));
     assert!(html.contains("display: none;"));
 }

@@ -2653,11 +2653,11 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                 }
                 #tau-ops-chat-panel[aria-hidden="false"] {
                     display: grid;
-                    grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+                    grid-template-columns: minmax(0, 1fr);
                     gap: 12px;
                     align-items: start;
                     width: 100%;
-                    max-width: 1180px;
+                    max-width: 720px;
                 }
                 #tau-ops-chat-panel[aria-hidden="false"] > h2 {
                     grid-column: 1 / -1;
@@ -2666,14 +2666,16 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                 #tau-ops-chat-session-selector,
                 #tau-ops-chat-new-session-form {
                     grid-column: 1;
+                    width: 100%;
+                    max-width: 420px;
                 }
                 #tau-ops-chat-send-form,
                 #tau-ops-chat-transcript,
                 #tau-ops-chat-token-counter {
-                    grid-column: 2;
+                    grid-column: 1;
                     min-width: 0;
                     width: 100%;
-                    max-width: 820px;
+                    max-width: 720px;
                 }
                 #tau-ops-chat-session-selector {
                     border: 1px solid #203847;
@@ -2714,7 +2716,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     background: #123b61;
                     color: #fff;
                 }
-                #tau-ops-chat-new-session-form {
+                #tau-ops-protected-shell #tau-ops-chat-new-session-form {
                     display: grid;
                     grid-template-columns: minmax(0, 1fr);
                     gap: 8px;
@@ -2725,9 +2727,9 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     padding: 10px;
                     background: #091923;
                 }
-                #tau-ops-chat-send-form {
+                #tau-ops-protected-shell #tau-ops-chat-send-form {
                     display: grid;
-                    grid-template-columns: minmax(0, 1fr) minmax(86px, auto);
+                    grid-template-columns: minmax(0, 1fr);
                     gap: 8px;
                     align-items: stretch;
                     margin: 0;
@@ -2747,7 +2749,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                 }
                 #tau-ops-chat-send-button {
                     width: 100%;
-                    min-height: 92px;
+                    min-height: 42px;
                 }
                 #tau-ops-chat-transcript {
                     display: grid;
@@ -2808,32 +2810,6 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                 }
                 #tau-ops-chat-transcript [data-token-stream="assistant"] {
                     display: none;
-                }
-                @media (max-width: 1200px) {
-                    #tau-ops-chat-panel[aria-hidden="false"] {
-                        grid-template-columns: minmax(0, 1fr);
-                        max-width: 100%;
-                    }
-                    #tau-ops-chat-session-selector,
-                    #tau-ops-chat-new-session-form,
-                    #tau-ops-chat-send-form,
-                    #tau-ops-chat-transcript,
-                    #tau-ops-chat-token-counter {
-                        grid-column: 1;
-                    }
-                    #tau-ops-chat-send-form {
-                        grid-template-columns: minmax(0, 1fr);
-                    }
-                    #tau-ops-chat-send-button {
-                        min-height: 42px;
-                    }
-                    #tau-ops-chat-transcript {
-                        max-height: none;
-                        min-height: 240px;
-                    }
-                    #tau-ops-chat-transcript > li {
-                        max-width: 100%;
-                    }
                 }
                 #tau-ops-chat-token-counter {
                     margin: 0;
