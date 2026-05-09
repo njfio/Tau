@@ -672,6 +672,58 @@ pub struct TauOpsDashboardHarnessAuditRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Public struct `TauOpsDashboardHarnessProposalQueueRow` in `tau-dashboard-ui`.
+pub struct TauOpsDashboardHarnessProposalQueueRow {
+    pub item_id: String,
+    pub status_key: String,
+    pub label: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// Public struct `TauOpsDashboardHarnessProposalDetail` in `tau-dashboard-ui`.
+pub struct TauOpsDashboardHarnessProposalDetail {
+    pub proposal_id: String,
+    pub learning_record_id: String,
+    pub title: String,
+    pub target_type: String,
+    pub target_path: String,
+    pub dry_run_result_label: String,
+    pub dry_run_result_key: String,
+    pub safety_check_label: String,
+    pub safety_check_key: String,
+    pub rollback_plan: String,
+    pub patch_summary: String,
+    pub failure_observed: String,
+    pub root_cause: String,
+    pub test_evidence_href: String,
+    pub test_evidence_label: String,
+}
+
+impl Default for TauOpsDashboardHarnessProposalDetail {
+    fn default() -> Self {
+        Self {
+            proposal_id: "PR-044".to_string(),
+            learning_record_id: "LR-044".to_string(),
+            title: "Prompt compression for research tasks".to_string(),
+            target_type: "Prompt".to_string(),
+            target_path: "prompts/research_to_doc/system.md".to_string(),
+            dry_run_result_label: "Tests passed (18/18)".to_string(),
+            dry_run_result_key: "passed".to_string(),
+            safety_check_label: "Passed".to_string(),
+            safety_check_key: "passed".to_string(),
+            rollback_plan: "Revert to previous prompt version".to_string(),
+            patch_summary:
+                "Compress system prompt by removing redundant instructions and examples."
+                    .to_string(),
+            failure_observed: "Token overrun during research-to-doc tasks".to_string(),
+            root_cause: "Verbose prompts with redundant context".to_string(),
+            test_evidence_href: "/evidence/pr-044-dryrun.json".to_string(),
+            test_evidence_label: "evidence/pr-044-dryrun.json".to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 /// Public struct `TauOpsDashboardHarnessSnapshot` in `tau-dashboard-ui`.
 pub struct TauOpsDashboardHarnessSnapshot {
     pub proof_source: String,
@@ -688,6 +740,9 @@ pub struct TauOpsDashboardHarnessSnapshot {
     pub benchmark_rows: Vec<TauOpsDashboardHarnessBenchmarkCategoryRow>,
     pub audit_source: String,
     pub audit_rows: Vec<TauOpsDashboardHarnessAuditRow>,
+    pub selected_proposal_id: String,
+    pub proposal_queue_rows: Vec<TauOpsDashboardHarnessProposalQueueRow>,
+    pub selected_proposal: TauOpsDashboardHarnessProposalDetail,
 }
 
 impl Default for TauOpsDashboardHarnessSnapshot {
@@ -777,6 +832,30 @@ impl Default for TauOpsDashboardHarnessSnapshot {
                     result_key: "rejected".to_string(),
                 },
             ],
+            selected_proposal_id: "PR-044".to_string(),
+            proposal_queue_rows: vec![
+                TauOpsDashboardHarnessProposalQueueRow {
+                    item_id: "LR-219".to_string(),
+                    status_key: "needs-review".to_string(),
+                    label: "Retry storm in document synthesis".to_string(),
+                },
+                TauOpsDashboardHarnessProposalQueueRow {
+                    item_id: "LR-220".to_string(),
+                    status_key: "needs-review".to_string(),
+                    label: "Missing memory write after verification".to_string(),
+                },
+                TauOpsDashboardHarnessProposalQueueRow {
+                    item_id: "PR-044".to_string(),
+                    status_key: "proposal".to_string(),
+                    label: "Prompt compression for research tasks".to_string(),
+                },
+                TauOpsDashboardHarnessProposalQueueRow {
+                    item_id: "PR-045".to_string(),
+                    status_key: "proposal".to_string(),
+                    label: "Skill patch for benchmark artifact naming".to_string(),
+                },
+            ],
+            selected_proposal: TauOpsDashboardHarnessProposalDetail::default(),
         }
     }
 }
@@ -1038,34 +1117,67 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
         "/ops/harness/run-benchmark?session={}",
         context.chat.active_session_key.clone()
     );
-    let harness_pr044_latest_operator_decision = context.harness.audit_rows.iter().find(|row| {
-        row.item == "PR-044" && matches!(row.action_key.as_str(), "approve" | "reject" | "apply")
+    let harness_selected_proposal_id = context.harness.selected_proposal.proposal_id.clone();
+    let harness_selected_approve_action = format!(
+        "/ops/harness/proposals/{}/approve",
+        harness_selected_proposal_id
+    );
+    let harness_selected_reject_action = format!(
+        "/ops/harness/proposals/{}/reject",
+        harness_selected_proposal_id
+    );
+    let harness_selected_dry_run_action = format!(
+        "/ops/harness/proposals/{}/dry-run",
+        harness_selected_proposal_id
+    );
+    let harness_selected_apply_action = format!(
+        "/ops/harness/proposals/{}/apply",
+        harness_selected_proposal_id
+    );
+    let harness_selected_diff_href = format!(
+        "/ops/harness/proposals/{}/diff",
+        harness_selected_proposal_id
+    );
+    let harness_selected_latest_operator_decision = context.harness.audit_rows.iter().find(|row| {
+        row.item == harness_selected_proposal_id
+            && matches!(row.action_key.as_str(), "approve" | "reject" | "apply")
     });
-    let harness_pr044_apply_enabled = harness_pr044_latest_operator_decision.is_some_and(|row| {
-        row.action_key == "approve"
-            && !row.result_key.starts_with("blocked")
-            && !row.result_key.ends_with("failed")
-    });
-    let harness_pr044_apply_disabled = if harness_pr044_apply_enabled {
+    let harness_selected_apply_enabled =
+        harness_selected_latest_operator_decision.is_some_and(|row| {
+            row.action_key == "approve"
+                && !row.result_key.starts_with("blocked")
+                && !row.result_key.ends_with("failed")
+        });
+    let harness_selected_apply_disabled = if harness_selected_apply_enabled {
         "false"
     } else {
         "true"
     };
-    let harness_pr044_apply_aria_disabled = harness_pr044_apply_disabled;
-    let harness_pr044_apply_state = harness_pr044_latest_operator_decision
+    let harness_selected_apply_aria_disabled = harness_selected_apply_disabled;
+    let harness_selected_apply_state = harness_selected_latest_operator_decision
         .map(|row| match row.action_key.as_str() {
-            "approve" if harness_pr044_apply_enabled => "approved",
+            "approve" if harness_selected_apply_enabled => "approved",
             "reject" => "rejected",
             "apply" if row.result_key == "applied" => "applied",
             _ => "approval-required",
         })
         .unwrap_or("approval-required");
-    let harness_pr044_apply_label = match harness_pr044_apply_state {
+    let harness_selected_apply_label = match harness_selected_apply_state {
         "approved" => "Apply",
         "applied" => "Applied",
         "rejected" => "Rejected",
         _ => "Apply (Approval Required)",
     };
+    let harness_proposal_queue_rows = context
+        .harness
+        .proposal_queue_rows
+        .iter()
+        .map(|row| {
+            view! {
+                <li data-learning-id=row.item_id.clone() data-status=row.status_key.clone()>{row.label.clone()}</li>
+            }
+        })
+        .collect_view();
     let harness_benchmark_rows = context
         .harness
         .benchmark_rows
@@ -6516,7 +6628,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 id="tau-ops-harness-self-improvement-window"
                                 data-window="self-improvement-review-apply-flow"
                                 data-window-order="3"
-                                data-selected-proposal="PR-044"
+                                data-selected-proposal=context.harness.selected_proposal_id.clone()
                                 data-approval-gated="true"
                                 data-window-chrome="compact"
                                 data-review-action-placement="actions-before-detail"
@@ -6542,10 +6654,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 >
                                     <h4>"Learning & Proposals"</h4>
                                     <ul>
-                                        <li data-learning-id="LR-219" data-status="needs-review">"Retry storm in document synthesis"</li>
-                                        <li data-learning-id="LR-220" data-status="needs-review">"Missing memory write after verification"</li>
-                                        <li data-learning-id="PR-044" data-status="proposal">"Prompt compression for research tasks"</li>
-                                        <li data-learning-id="PR-045" data-status="proposal">"Skill patch for benchmark artifact naming"</li>
+                                        {harness_proposal_queue_rows}
                                     </ul>
                                 </section>
                                 <section
@@ -6556,22 +6665,22 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     data-action-first-viewport="all-controls"
                                 >
                                     <h4>"Operator Actions"</h4>
-                                    <form id="tau-ops-harness-approve-form" action="/ops/harness/proposals/PR-044/approve" method="post"><button id="tau-ops-harness-action-approve" type="submit" data-action="approve" data-action-tone="approve">"Approve"</button></form>
-                                    <form id="tau-ops-harness-reject-form" action="/ops/harness/proposals/PR-044/reject" method="post"><button id="tau-ops-harness-action-reject" type="submit" data-action="reject" data-action-tone="reject">"Reject"</button></form>
-                                    <form id="tau-ops-harness-dry-run-form" action="/ops/harness/proposals/PR-044/dry-run" method="post"><button id="tau-ops-harness-action-dry-run" type="submit" data-action="dry-run" data-action-tone="secondary">"Dry Run Again"</button></form>
-                                    <a id="tau-ops-harness-action-view-diff" data-action="view-diff" data-action-tone="secondary" href="/ops/harness/proposals/PR-044/diff">"View Diff"</a>
-                                    <form id="tau-ops-harness-apply-form" action="/ops/harness/proposals/PR-044/apply" method="post" data-approval-state=harness_pr044_apply_state>
+                                    <form id="tau-ops-harness-approve-form" action=harness_selected_approve_action method="post"><button id="tau-ops-harness-action-approve" type="submit" data-action="approve" data-action-tone="approve">"Approve"</button></form>
+                                    <form id="tau-ops-harness-reject-form" action=harness_selected_reject_action method="post"><button id="tau-ops-harness-action-reject" type="submit" data-action="reject" data-action-tone="reject">"Reject"</button></form>
+                                    <form id="tau-ops-harness-dry-run-form" action=harness_selected_dry_run_action method="post"><button id="tau-ops-harness-action-dry-run" type="submit" data-action="dry-run" data-action-tone="secondary">"Dry Run Again"</button></form>
+                                    <a id="tau-ops-harness-action-view-diff" data-action="view-diff" data-action-tone="secondary" href=harness_selected_diff_href>"View Diff"</a>
+                                    <form id="tau-ops-harness-apply-form" action=harness_selected_apply_action method="post" data-approval-state=harness_selected_apply_state>
                                         <button
                                             id="tau-ops-harness-action-apply"
                                             type="submit"
                                             data-action="apply"
                                             data-action-tone="disabled"
-                                            data-disabled=harness_pr044_apply_disabled
-                                            aria-disabled=harness_pr044_apply_aria_disabled
+                                            data-disabled=harness_selected_apply_disabled
+                                            aria-disabled=harness_selected_apply_aria_disabled
                                             data-approval-required="true"
-                                            disabled=!harness_pr044_apply_enabled
+                                            disabled=!harness_selected_apply_enabled
                                         >
-                                            {harness_pr044_apply_label}
+                                            {harness_selected_apply_label}
                                         </button>
                                     </form>
                                 </section>
@@ -6594,10 +6703,10 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 </section>
                                 <section
                                     id="tau-ops-harness-proposal-detail"
-                                    data-proposal-id="PR-044"
-                                    data-learning-record="LR-044"
-                                    data-target-type="Prompt"
-                                    data-target-path="prompts/research_to_doc/system.md"
+                                    data-proposal-id=context.harness.selected_proposal.proposal_id.clone()
+                                    data-learning-record=context.harness.selected_proposal.learning_record_id.clone()
+                                    data-target-type=context.harness.selected_proposal.target_type.clone()
+                                    data-target-path=context.harness.selected_proposal.target_path.clone()
                                     data-proposal-detail-priority="first-viewport-summary"
                                     data-proposal-detail-density="compact-scroll"
                                     data-proposal-detail-overflow-budget="contained"
@@ -6607,15 +6716,15 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     data-proposal-detail-vertical-overflow-budget="none"
                                     data-proposal-detail-max-height="132px"
                                 >
-                                    <h4>"PR-044 Prompt compression for research tasks"</h4>
+                                    <h4>{format!("{} {}", context.harness.selected_proposal.proposal_id, context.harness.selected_proposal.title)}</h4>
                                     <dl>
-                                        <dt>"Dry-run Result"</dt><dd data-result="passed">"Tests passed (18/18)"</dd>
-                                        <dt>"Safety Check"</dt><dd data-result="passed">"Passed"</dd>
-                                        <dt>"Rollback Plan"</dt><dd>"Revert to previous prompt version"</dd>
-                                        <dt>"Patch Summary"</dt><dd data-proposal-row="patch-summary" data-summary-fit="full-text">"Compress system prompt by removing redundant instructions and examples."</dd>
-                                        <dt>"Failure Observed"</dt><dd>"Token overrun during research-to-doc tasks"</dd>
-                                        <dt>"Root Cause"</dt><dd>"Verbose prompts with redundant context"</dd>
-                                        <dt>"Test Evidence"</dt><dd><a href="/evidence/pr-044-dryrun.json">"evidence/pr-044-dryrun.json"</a></dd>
+                                        <dt>"Dry-run Result"</dt><dd data-result=context.harness.selected_proposal.dry_run_result_key.clone()>{context.harness.selected_proposal.dry_run_result_label.clone()}</dd>
+                                        <dt>"Safety Check"</dt><dd data-result=context.harness.selected_proposal.safety_check_key.clone()>{context.harness.selected_proposal.safety_check_label.clone()}</dd>
+                                        <dt>"Rollback Plan"</dt><dd>{context.harness.selected_proposal.rollback_plan.clone()}</dd>
+                                        <dt>"Patch Summary"</dt><dd data-proposal-row="patch-summary" data-summary-fit="full-text">{context.harness.selected_proposal.patch_summary.clone()}</dd>
+                                        <dt>"Failure Observed"</dt><dd>{context.harness.selected_proposal.failure_observed.clone()}</dd>
+                                        <dt>"Root Cause"</dt><dd>{context.harness.selected_proposal.root_cause.clone()}</dd>
+                                        <dt>"Test Evidence"</dt><dd><a href=context.harness.selected_proposal.test_evidence_href.clone()>{context.harness.selected_proposal.test_evidence_label.clone()}</a></dd>
                                     </dl>
                                 </section>
                                 <section

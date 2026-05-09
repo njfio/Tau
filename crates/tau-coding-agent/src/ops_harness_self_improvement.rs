@@ -9,13 +9,13 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Context, Result};
-use serde::{Deserialize, Serialize};
 use tau_agent_core::{
     MissionCuratorReviewStatus, MissionImprovementProposalStatus, MissionLearningRecord,
     MissionLearningRecordKind, MissionLifecycleStatus, MissionOperatorApproval,
     MissionRecoveryState, MissionSnapshot,
 };
 use tau_gateway::{
+    find_ops_harness_proposal, GatewayOpsHarnessProposalDefinition,
     GatewayOpsHarnessSelfImprovementRequest, GatewayOpsHarnessSelfImprovementResult,
     GatewayOpsHarnessSelfImprovementRunner,
 };
@@ -45,8 +45,8 @@ impl GatewayOpsHarnessSelfImprovementRunner for CodingAgentOpsHarnessSelfImprove
         request: GatewayOpsHarnessSelfImprovementRequest,
     ) -> Result<GatewayOpsHarnessSelfImprovementResult> {
         let spec = harness_proposal_spec(&request.proposal_id)?;
-        let mut mission = load_or_seed_mission(&request, &spec)?;
-        let input = mission_input(&request, &spec, None);
+        let mut mission = load_or_seed_mission(&request, spec)?;
+        let input = mission_input(&request, spec, None);
         let config = self_modification_config(self.workspace_root.as_path());
         let dry_run = record_self_modification_dry_run_on_mission(
             &mut mission,
@@ -61,7 +61,7 @@ impl GatewayOpsHarnessSelfImprovementRunner for CodingAgentOpsHarnessSelfImprove
             &serde_json::json!({
                 "proposal_id": request.proposal_id.as_str(),
                 "mission_id": mission.mission_id.as_str(),
-                "target_path": spec.target_path.as_str(),
+                "target_path": spec.target_path,
                 "allowed": dry_run.safety_evaluation.allowed,
                 "blocked_by": dry_run.safety_evaluation.blocked_by,
                 "applied": dry_run.applied,
@@ -71,7 +71,7 @@ impl GatewayOpsHarnessSelfImprovementRunner for CodingAgentOpsHarnessSelfImprove
         Ok(GatewayOpsHarnessSelfImprovementResult {
             proposal_id: request.proposal_id,
             mission_id: mission.mission_id,
-            target_path: spec.target_path,
+            target_path: spec.target_path.to_string(),
             result_key: if dry_run.safety_evaluation.allowed {
                 "passed".to_string()
             } else {
@@ -120,7 +120,7 @@ impl GatewayOpsHarnessSelfImprovementRunner for CodingAgentOpsHarnessSelfImprove
             &mut mission,
             self.workspace_root.as_path(),
             &request.proposal_id,
-            spec.proposed_content.as_str(),
+            spec.proposed_content,
             request.requested_unix_ms,
             &format!("curator-{}", request.proposal_id.to_ascii_lowercase()),
         )?;
@@ -140,7 +140,7 @@ impl GatewayOpsHarnessSelfImprovementRunner for CodingAgentOpsHarnessSelfImprove
         Ok(GatewayOpsHarnessSelfImprovementResult {
             proposal_id: request.proposal_id,
             mission_id: mission.mission_id,
-            target_path: spec.target_path,
+            target_path: spec.target_path.to_string(),
             result_key: "applied".to_string(),
             summary: "coding-agent self-modification apply completed".to_string(),
             artifact_path: Some(artifact_path),
@@ -149,47 +149,11 @@ impl GatewayOpsHarnessSelfImprovementRunner for CodingAgentOpsHarnessSelfImprove
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct HarnessProposalSpec {
-    proposal_id: String,
-    source_learning_record_id: String,
-    mission_id: String,
-    goal: String,
-    target_path: String,
-    proposed_content: String,
-    rationale: String,
-    patch_summary: String,
-    rollback_plan: String,
-    failure_summary: String,
-    root_cause: String,
-    test_command: String,
-    safety_check_id: String,
-}
+type HarnessProposalSpec = GatewayOpsHarnessProposalDefinition;
 
-fn harness_proposal_spec(proposal_id: &str) -> Result<HarnessProposalSpec> {
-    match proposal_id {
-        "PR-044" => Ok(HarnessProposalSpec {
-            proposal_id: proposal_id.to_string(),
-            source_learning_record_id: "LR-044".to_string(),
-            mission_id: "ops-harness-self-improve-pr-044".to_string(),
-            goal: "Apply prompt compression learning for research tasks".to_string(),
-            target_path: "prompts/research_to_doc/system.md".to_string(),
-            proposed_content:
-                "# Research To Doc System\n\nUse concise mission-scoped research instructions.\n"
-                    .to_string(),
-            rationale: "Token overruns came from repeated research prompt context.".to_string(),
-            patch_summary:
-                "Compress system prompt by removing redundant instructions and examples."
-                    .to_string(),
-            rollback_plan: "Restore the previous prompt file from rollback metadata.".to_string(),
-            failure_summary: "Token overrun during research-to-doc tasks.".to_string(),
-            root_cause: "Verbose prompts with redundant context.".to_string(),
-            test_command: "cargo test -p tau-coding-agent --test mission_self_improvement"
-                .to_string(),
-            safety_check_id: "ops-harness-self-mod-policy".to_string(),
-        }),
-        other => Err(anyhow!("unknown ops harness proposal {other:?}")),
-    }
+fn harness_proposal_spec(proposal_id: &str) -> Result<&'static HarnessProposalSpec> {
+    find_ops_harness_proposal(proposal_id)
+        .ok_or_else(|| anyhow!("unknown ops harness proposal {proposal_id:?}"))
 }
 
 fn self_modification_config(workspace_root: &Path) -> SelfModificationConfig {
@@ -205,18 +169,18 @@ fn mission_input(
     operator_approval: Option<MissionOperatorApproval>,
 ) -> MissionSelfModificationInput {
     MissionSelfModificationInput {
-        target_path: spec.target_path.clone(),
-        proposed_content: spec.proposed_content.clone(),
+        target_path: spec.target_path.to_string(),
+        proposed_content: spec.proposed_content.to_string(),
         proposal_id: request.proposal_id.clone(),
-        source_learning_record_id: spec.source_learning_record_id.clone(),
-        rationale: spec.rationale.clone(),
-        patch_summary: spec.patch_summary.clone(),
-        rollback_plan: spec.rollback_plan.clone(),
+        source_learning_record_id: spec.source_learning_record_id.to_string(),
+        rationale: spec.rationale.to_string(),
+        patch_summary: spec.patch_summary.to_string(),
+        rollback_plan: spec.rollback_plan.to_string(),
         proposed_unix_ms: request.requested_unix_ms,
         dry_run_unix_ms: request.requested_unix_ms,
-        test_command: spec.test_command.clone(),
+        test_command: spec.test_command.to_string(),
         test_passed: true,
-        safety_check_id: spec.safety_check_id.clone(),
+        safety_check_id: spec.safety_check_id.to_string(),
         operator_approval,
         curator_memory_record_id: format!("curator-{}", request.proposal_id.to_ascii_lowercase()),
     }
@@ -240,29 +204,29 @@ fn seed_harness_self_improvement_mission(
     spec: &HarnessProposalSpec,
 ) -> MissionSnapshot {
     let mut mission = MissionSnapshot::new(
-        spec.mission_id.clone(),
-        spec.goal.clone(),
+        spec.mission_id.to_string(),
+        spec.goal.to_string(),
         created_unix_ms.saturating_sub(10),
     );
     mission.status = MissionLifecycleStatus::Blocked;
     mission.recovery_state = Some(MissionRecoveryState {
-        reason: spec.failure_summary.clone(),
+        reason: spec.failure_summary.to_string(),
         next_action: Some("dry-run a conservative self-improvement proposal".to_string()),
         retry_count: 1,
         last_checkpoint_id: None,
     });
     mission.learning_records.push(MissionLearningRecord {
-        record_id: spec.source_learning_record_id.clone(),
+        record_id: spec.source_learning_record_id.to_string(),
         mission_id: mission.mission_id.clone(),
         kind: MissionLearningRecordKind::Failure,
-        summary: spec.failure_summary.clone(),
+        summary: spec.failure_summary.to_string(),
         created_unix_ms: created_unix_ms.saturating_sub(5),
         curator_status: MissionCuratorReviewStatus::QueuedForReview,
-        root_cause: Some(spec.root_cause.clone()),
+        root_cause: Some(spec.root_cause.to_string()),
         evidence: vec!["ops harness proposal review".to_string()],
         artifact_ids: Vec::new(),
         verification_gate_ids: Vec::new(),
-        rollback_plan: Some(spec.rollback_plan.clone()),
+        rollback_plan: Some(spec.rollback_plan.to_string()),
         metadata: Default::default(),
     });
     mission

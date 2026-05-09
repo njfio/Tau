@@ -18,8 +18,9 @@ use tau_dashboard_ui::{
     render_tau_ops_dashboard_shell_with_context, TauOpsDashboardAuthMode,
     TauOpsDashboardChatMessageRow, TauOpsDashboardChatSessionOptionRow,
     TauOpsDashboardChatSnapshot, TauOpsDashboardHarnessAuditRow,
-    TauOpsDashboardHarnessBenchmarkCategoryRow, TauOpsDashboardHarnessSnapshot,
-    TauOpsDashboardJobRow, TauOpsDashboardMemoryGraphEdgeRow, TauOpsDashboardMemoryGraphNodeRow,
+    TauOpsDashboardHarnessBenchmarkCategoryRow, TauOpsDashboardHarnessProposalDetail,
+    TauOpsDashboardHarnessProposalQueueRow, TauOpsDashboardHarnessSnapshot, TauOpsDashboardJobRow,
+    TauOpsDashboardMemoryGraphEdgeRow, TauOpsDashboardMemoryGraphNodeRow,
     TauOpsDashboardMemoryRelationRow, TauOpsDashboardMemorySearchRow, TauOpsDashboardRoute,
     TauOpsDashboardSessionGraphEdgeRow, TauOpsDashboardSessionGraphNodeRow,
     TauOpsDashboardSessionTimelineRow, TauOpsDashboardShellContext, TauOpsDashboardSidebarState,
@@ -40,14 +41,15 @@ use super::channel_telemetry_runtime::build_gateway_multi_channel_lifecycle_comm
 use super::types::GatewayChannelLifecycleRequest;
 use super::{
     apply_gateway_dashboard_action, collect_tau_ops_dashboard_command_center_snapshot,
-    complete_cortex_chat, gateway_memory_store, gateway_memory_store_root, gateway_session_path,
+    complete_cortex_chat, find_ops_harness_proposal, gateway_memory_store,
+    gateway_memory_store_root, gateway_session_path, list_ops_harness_proposals,
     record_cortex_memory_entry_delete_event, record_cortex_memory_entry_write_event,
     record_cortex_observer_event, record_cortex_session_append_event,
     record_cortex_session_reset_event, sanitize_session_key, GatewayDashboardActionRequest,
-    GatewayOpenResponsesServerState, GatewayOpsHarnessSelfImprovementRequest,
-    OpenResponsesApiError, OpsShellControlsQuery, DEFAULT_SESSION_KEY,
-    OPS_DASHBOARD_CHANNELS_ENDPOINT, OPS_DASHBOARD_CHAT_ENDPOINT, OPS_DASHBOARD_CHAT_NEW_ENDPOINT,
-    OPS_DASHBOARD_CHAT_SEND_ENDPOINT, OPS_DASHBOARD_ENDPOINT,
+    GatewayOpenResponsesServerState, GatewayOpsHarnessProposalDefinition,
+    GatewayOpsHarnessSelfImprovementRequest, OpenResponsesApiError, OpsShellControlsQuery,
+    DEFAULT_SESSION_KEY, OPS_DASHBOARD_CHANNELS_ENDPOINT, OPS_DASHBOARD_CHAT_ENDPOINT,
+    OPS_DASHBOARD_CHAT_NEW_ENDPOINT, OPS_DASHBOARD_CHAT_SEND_ENDPOINT, OPS_DASHBOARD_ENDPOINT,
 };
 use crate::remote_profile::GatewayOpenResponsesAuthMode;
 
@@ -1266,7 +1268,10 @@ pub(super) fn render_tau_ops_dashboard_shell_for_route(
     command_center.channel_action_channel = controls.requested_channel_action_channel().to_string();
     command_center.channel_action_reason = controls.requested_channel_action_reason().to_string();
     let chat = collect_tau_ops_dashboard_chat_snapshot(state, &controls, detail_session_key);
-    let harness = collect_tau_ops_dashboard_harness_snapshot(&state.config.state_dir);
+    let harness = collect_tau_ops_dashboard_harness_snapshot(
+        &state.config.state_dir,
+        controls.requested_harness_proposal_id(),
+    );
 
     Html(render_tau_ops_dashboard_shell_with_context(
         TauOpsDashboardShellContext {
@@ -1281,8 +1286,65 @@ pub(super) fn render_tau_ops_dashboard_shell_for_route(
     ))
 }
 
-fn collect_tau_ops_dashboard_harness_snapshot(state_dir: &Path) -> TauOpsDashboardHarnessSnapshot {
-    let mut snapshot = TauOpsDashboardHarnessSnapshot::default();
+fn harness_proposal_detail_from_definition(
+    proposal: &GatewayOpsHarnessProposalDefinition,
+) -> TauOpsDashboardHarnessProposalDetail {
+    TauOpsDashboardHarnessProposalDetail {
+        proposal_id: proposal.proposal_id.to_string(),
+        learning_record_id: proposal.source_learning_record_id.to_string(),
+        title: proposal.title.to_string(),
+        target_type: proposal.target_type.to_string(),
+        target_path: proposal.target_path.to_string(),
+        dry_run_result_label: proposal.dry_run_result_label.to_string(),
+        dry_run_result_key: proposal.dry_run_result_key.to_string(),
+        safety_check_label: proposal.safety_check_label.to_string(),
+        safety_check_key: proposal.safety_check_key.to_string(),
+        rollback_plan: proposal.rollback_plan.to_string(),
+        patch_summary: proposal.patch_summary.to_string(),
+        failure_observed: proposal.failure_summary.to_string(),
+        root_cause: proposal.root_cause.to_string(),
+        test_evidence_href: proposal.test_evidence_href.to_string(),
+        test_evidence_label: proposal.test_evidence_label.to_string(),
+    }
+}
+
+fn collect_tau_ops_dashboard_harness_snapshot(
+    state_dir: &Path,
+    requested_proposal_id: Option<&str>,
+) -> TauOpsDashboardHarnessSnapshot {
+    let proposal_queue_rows = vec![
+        TauOpsDashboardHarnessProposalQueueRow {
+            item_id: "LR-219".to_string(),
+            status_key: "needs-review".to_string(),
+            label: "Retry storm in document synthesis".to_string(),
+        },
+        TauOpsDashboardHarnessProposalQueueRow {
+            item_id: "LR-220".to_string(),
+            status_key: "needs-review".to_string(),
+            label: "Missing memory write after verification".to_string(),
+        },
+    ];
+    let mut snapshot = TauOpsDashboardHarnessSnapshot {
+        proposal_queue_rows,
+        ..TauOpsDashboardHarnessSnapshot::default()
+    };
+    snapshot
+        .proposal_queue_rows
+        .extend(list_ops_harness_proposals().iter().map(|proposal| {
+            TauOpsDashboardHarnessProposalQueueRow {
+                item_id: proposal.proposal_id.to_string(),
+                status_key: proposal.status_key.to_string(),
+                label: proposal.queue_label.to_string(),
+            }
+        }));
+    let selected_proposal = requested_proposal_id
+        .and_then(find_ops_harness_proposal)
+        .or_else(|| list_ops_harness_proposals().first());
+    if let Some(selected_proposal) = selected_proposal {
+        snapshot.selected_proposal_id = selected_proposal.proposal_id.to_string();
+        snapshot.selected_proposal = harness_proposal_detail_from_definition(selected_proposal);
+    }
+
     let proof_path = harness_artifact_dir(state_dir).join("latest.json");
     if let Ok(proof_json) = std::fs::read_to_string(&proof_path) {
         if let Ok(proof) = serde_json::from_str::<Value>(&proof_json) {
@@ -1443,6 +1505,16 @@ pub(super) async fn handle_ops_dashboard_harness_proposal_action(
 ) -> Response {
     let proposal_id = sanitize_harness_token(&proposal_id);
     let action = sanitize_harness_token(&action);
+    if find_ops_harness_proposal(&proposal_id).is_none() {
+        return render_harness_action_error(
+            StatusCode::NOT_FOUND,
+            &proposal_id,
+            &action,
+            "unknown_proposal",
+            "Harness proposal is not registered.",
+        );
+    }
+
     let status = match action.as_str() {
         "approve" => {
             append_harness_audit_record(
@@ -1602,8 +1674,22 @@ fn render_harness_action_error(
 
 pub(super) async fn handle_ops_dashboard_harness_proposal_diff(
     AxumPath(proposal_id): AxumPath<String>,
-) -> Html<String> {
+) -> Response {
     let proposal_id = sanitize_harness_token(&proposal_id);
+    let Some(proposal) = find_ops_harness_proposal(&proposal_id) else {
+        return (
+            StatusCode::NOT_FOUND,
+            Html(format!(
+                r#"<main id="tau-ops-harness-diff-missing" data-proposal-id="{proposal_id}" data-result="unknown_proposal">
+<h1>Harness Proposal Not Found</h1>
+<p>The requested proposal is not registered.</p>
+<a href="/ops/harness">Back to Mission Harness</a>
+</main>"#
+            )),
+        )
+            .into_response();
+    };
+    let diff_lines = harness_proposal_diff_lines(proposal);
     Html(format!(
         r#"<!doctype html>
 <html lang="en">
@@ -1772,22 +1858,22 @@ a {{ color: var(--blue); }}
 </style>
 </head>
 <body>
-<main id="tau-ops-harness-diff" data-proposal-id="{proposal_id}" data-diff-view="operator-review" data-target-path="prompts/research_to_doc/system.md" data-dry-run-result="passed" data-safety-check="passed" data-policy-allowed="skill,config,prompt" data-policy-blocked="source-code,safety-policy">
+<main id="tau-ops-harness-diff" data-proposal-id="{proposal_id}" data-diff-view="operator-review" data-target-path="{target_path}" data-dry-run-result="{dry_run_result_key}" data-safety-check="{safety_check_key}" data-policy-allowed="skill,config,prompt" data-policy-blocked="source-code,safety-policy">
   <header class="tau-harness-diff-header">
     <div>
       <p>Harness Proposal Diff</p>
-      <h1>{proposal_id} Prompt compression for research tasks</h1>
+      <h1>{proposal_id} {title}</h1>
     </div>
     <p>Operator review required before apply.</p>
   </header>
   <section class="tau-harness-diff-card" aria-labelledby="tau-harness-diff-summary">
     <h2 id="tau-harness-diff-summary">Change Summary</h2>
-    <p>Compress system prompt by removing redundant instructions and examples.</p>
+    <p>{patch_summary}</p>
     <dl class="tau-harness-diff-meta">
-      <div><dt>Target Path</dt><dd>prompts/research_to_doc/system.md</dd></div>
-      <div><dt>Dry-run Result</dt><dd>Tests passed (18/18)</dd></div>
-      <div><dt>Safety Check</dt><dd>Passed</dd></div>
-      <div><dt>Rollback Plan</dt><dd>Revert to previous prompt version</dd></div>
+      <div><dt>Target Path</dt><dd>{target_path}</dd></div>
+      <div><dt>Dry-run Result</dt><dd>{dry_run_result_label}</dd></div>
+      <div><dt>Safety Check</dt><dd>{safety_check_label}</dd></div>
+      <div><dt>Rollback Plan</dt><dd>{rollback_plan}</dd></div>
     </dl>
     <div class="tau-harness-diff-policy">
       <section>
@@ -1809,19 +1895,45 @@ a {{ color: var(--blue); }}
   </section>
   <section class="tau-harness-diff-card" aria-labelledby="tau-harness-diff-patch">
     <h2 id="tau-harness-diff-patch">Patch Preview</h2>
-    <pre class="tau-harness-diff-code" data-diff-artifact="fallback-patch"><code><span class="tau-harness-diff-line">--- prompts/research_to_doc/system.md</span>
-<span class="tau-harness-diff-line">+++ prompts/research_to_doc/system.md</span>
-<span class="tau-harness-diff-line">@@</span>
-<span class="tau-harness-diff-line tau-harness-diff-line-remove">- verbose repeated research instructions</span>
-<span class="tau-harness-diff-line tau-harness-diff-line-add">+ concise mission-scoped research instructions</span></code></pre>
+    <pre class="tau-harness-diff-code" data-diff-artifact="proposal-registry"><code>{diff_lines}</code></pre>
   </section>
   <nav class="tau-harness-diff-actions" aria-label="Harness diff actions">
     <a href="/ops/harness">Back to Mission Harness</a>
   </nav>
 </main>
 </body>
-</html>"#
+ </html>"#,
+        target_path = proposal.target_path,
+        dry_run_result_key = proposal.dry_run_result_key,
+        safety_check_key = proposal.safety_check_key,
+        title = proposal.title,
+        patch_summary = proposal.patch_summary,
+        dry_run_result_label = proposal.dry_run_result_label,
+        safety_check_label = proposal.safety_check_label,
+        rollback_plan = proposal.rollback_plan,
     ))
+    .into_response()
+}
+
+fn harness_proposal_diff_lines(proposal: &GatewayOpsHarnessProposalDefinition) -> String {
+    let mut lines = vec![
+        format!(
+            r#"<span class="tau-harness-diff-line">--- {}</span>"#,
+            proposal.target_path
+        ),
+        format!(
+            r#"<span class="tau-harness-diff-line">+++ {}</span>"#,
+            proposal.target_path
+        ),
+        r#"<span class="tau-harness-diff-line">@@</span>"#.to_string(),
+    ];
+    lines.extend(proposal.diff_removed_lines.iter().map(|line| {
+        format!(r#"<span class="tau-harness-diff-line tau-harness-diff-line-remove">{line}</span>"#)
+    }));
+    lines.extend(proposal.diff_added_lines.iter().map(|line| {
+        format!(r#"<span class="tau-harness-diff-line tau-harness-diff-line-add">{line}</span>"#)
+    }));
+    lines.join("\n")
 }
 
 fn canonical_harness_fixture_path() -> PathBuf {

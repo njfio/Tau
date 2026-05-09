@@ -338,6 +338,64 @@ async fn integration_ops_harness_proposal_actions_delegate_dry_run_and_approved_
 }
 
 #[tokio::test]
+async fn integration_ops_harness_proposal_registry_renders_selected_proposal() {
+    let temp = tempdir().expect("tempdir");
+    let state = test_state(temp.path(), 4_096, "secret");
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+    let client = Client::new();
+
+    let harness_response = client
+        .get(format!(
+            "http://{addr}/ops/harness?proposal_id=PR-045&theme=dark&sidebar=expanded"
+        ))
+        .send()
+        .await
+        .expect("load selected harness proposal");
+    assert_eq!(harness_response.status(), StatusCode::OK);
+    let harness_body = harness_response.text().await.expect("harness body");
+    for marker in [
+        "id=\"tau-ops-harness-self-improvement-window\" data-window=\"self-improvement-review-apply-flow\" data-window-order=\"3\" data-selected-proposal=\"PR-045\"",
+        "id=\"tau-ops-harness-approve-form\" action=\"/ops/harness/proposals/PR-045/approve\" method=\"post\"",
+        "id=\"tau-ops-harness-proposal-detail\" data-proposal-id=\"PR-045\" data-learning-record=\"LR-045\" data-target-type=\"Skill\" data-target-path=\"skills/benchmark_artifacts/SKILL.md\"",
+        "PR-045 Skill patch for benchmark artifact naming",
+        "Add a skill rule for deterministic benchmark artifact naming.",
+    ] {
+        assert!(
+            harness_body.contains(marker),
+            "missing registry-backed harness marker `{marker}`"
+        );
+    }
+
+    let diff_response = client
+        .get(format!("http://{addr}/ops/harness/proposals/PR-045/diff"))
+        .send()
+        .await
+        .expect("load selected proposal diff");
+    assert_eq!(diff_response.status(), StatusCode::OK);
+    let diff_body = diff_response.text().await.expect("diff body");
+    for marker in [
+        "data-proposal-id=\"PR-045\"",
+        "data-target-path=\"skills/benchmark_artifacts/SKILL.md\"",
+        "PR-045 Skill patch for benchmark artifact naming",
+        "Name benchmark artifacts with mission id, benchmark id, run id, and proof type.",
+    ] {
+        assert!(
+            diff_body.contains(marker),
+            "missing registry-backed diff marker `{marker}`"
+        );
+    }
+
+    let missing_response = client
+        .get(format!("http://{addr}/ops/harness/proposals/PR-999/diff"))
+        .send()
+        .await
+        .expect("load missing proposal diff");
+    assert_eq!(missing_response.status(), StatusCode::NOT_FOUND);
+
+    handle.abort();
+}
+
+#[tokio::test]
 async fn integration_spec_3757_c03_ops_harness_route_reflects_state_backed_proof_and_audit() {
     let temp = tempdir().expect("tempdir");
     let state = test_state(temp.path(), 4_096, "secret");

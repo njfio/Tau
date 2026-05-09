@@ -66,6 +66,8 @@ pub(super) struct OpsShellControlsQuery {
     channel_action_channel: String,
     #[serde(default)]
     channel_action_reason: String,
+    #[serde(default)]
+    proposal_id: String,
 }
 
 impl OpsShellControlsQuery {
@@ -110,6 +112,15 @@ impl OpsShellControlsQuery {
             None
         } else {
             Some(query)
+        }
+    }
+
+    pub(super) fn requested_harness_proposal_id(&self) -> Option<&str> {
+        let value = self.proposal_id.trim();
+        if value.is_empty() {
+            None
+        } else {
+            Some(value)
         }
     }
 
