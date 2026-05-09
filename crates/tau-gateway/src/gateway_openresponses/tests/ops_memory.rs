@@ -1083,6 +1083,77 @@ async fn integration_spec_3068_c02_ops_memory_graph_route_renders_node_and_edge_
 }
 
 #[tokio::test]
+async fn integration_ops_memory_graph_renders_harness_self_improvement_lineage() {
+    let temp = tempdir().expect("tempdir");
+    let state = test_state(temp.path(), 10_000, "secret");
+    let mission_dir = state
+        .config
+        .state_dir
+        .clone()
+        .join("ops-harness")
+        .join("self-improvement")
+        .join("PR-045");
+    std::fs::create_dir_all(&mission_dir).expect("create harness mission dir");
+    std::fs::write(
+        mission_dir.join("mission.json"),
+        serde_json::to_vec_pretty(&json!({
+            "mission_id": "ops-harness-self-improve-pr-045",
+            "goal": "Standardize benchmark artifact names through a skill update",
+            "learning_records": [{
+                "record_id": "LR-045",
+                "summary": "Benchmark artifacts were hard to correlate with missions."
+            }],
+            "improvement_proposals": [{
+                "proposal_id": "PR-045",
+                "source_learning_record_id": "LR-045",
+                "target_path": "skills/benchmark_artifacts/SKILL.md",
+                "dry_run": {
+                    "passed": true
+                },
+                "applied_unix_ms": 1_700
+            }]
+        }))
+        .expect("serialize harness mission"),
+    )
+    .expect("write harness mission");
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+    let client = Client::new();
+
+    let response = client
+        .get(format!(
+            "http://{addr}/ops/memory-graph?theme=light&sidebar=collapsed&session=default"
+        ))
+        .send()
+        .await
+        .expect("load ops memory graph route");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response
+        .text()
+        .await
+        .expect("read ops memory graph lineage body");
+
+    assert!(body.contains("id=\"tau-ops-memory-graph-nodes\" data-node-count=\"6\""));
+    assert!(body.contains("id=\"tau-ops-memory-graph-edges\" data-edge-count=\"5\""));
+    assert!(body.contains("data-memory-id=\"ops-harness-self-improve-pr-045\""));
+    assert!(body.contains("data-memory-id=\"LR-045\""));
+    assert!(body.contains("data-memory-id=\"PR-045\""));
+    assert!(body.contains("data-memory-id=\"dry-run:PR-045\""));
+    assert!(body.contains("data-memory-id=\"apply:PR-045\""));
+    assert!(body.contains("data-memory-id=\"target:skills/benchmark_artifacts/SKILL.md\""));
+    assert!(body.contains(
+        "data-source-memory-id=\"LR-045\" data-target-memory-id=\"PR-045\" data-relation-type=\"supports\""
+    ));
+    assert!(body.contains(
+        "data-source-memory-id=\"PR-045\" data-target-memory-id=\"dry-run:PR-045\" data-relation-type=\"result_of\""
+    ));
+    assert!(body.contains(
+        "data-source-memory-id=\"PR-045\" data-target-memory-id=\"target:skills/benchmark_artifacts/SKILL.md\" data-relation-type=\"updates\""
+    ));
+
+    handle.abort();
+}
+
+#[tokio::test]
 async fn regression_spec_3068_c03_non_memory_graph_routes_keep_hidden_graph_markers() {
     let temp = tempdir().expect("tempdir");
     let state = test_state(temp.path(), 10_000, "secret");
