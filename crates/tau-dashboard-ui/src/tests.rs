@@ -1,16 +1,16 @@
 use super::{
     contains_markdown_contract_syntax, extract_assistant_stream_tokens,
-    extract_first_fenced_code_block, render_tau_ops_dashboard_shell,
-    render_tau_ops_dashboard_shell_for_route, render_tau_ops_dashboard_shell_with_context,
-    TauOpsDashboardAlertFeedRow, TauOpsDashboardAuthMode, TauOpsDashboardChatMessageRow,
-    TauOpsDashboardChatSessionOptionRow, TauOpsDashboardChatSnapshot,
-    TauOpsDashboardCommandCenterSnapshot, TauOpsDashboardConnectorHealthRow,
-    TauOpsDashboardHarnessAuditRow, TauOpsDashboardHarnessBenchmarkCategoryRow,
-    TauOpsDashboardHarnessSnapshot, TauOpsDashboardJobRow, TauOpsDashboardMemoryGraphEdgeRow,
-    TauOpsDashboardMemoryGraphNodeRow, TauOpsDashboardRoute, TauOpsDashboardSessionGraphEdgeRow,
-    TauOpsDashboardSessionGraphNodeRow, TauOpsDashboardSessionTimelineRow,
-    TauOpsDashboardShellContext, TauOpsDashboardSidebarState, TauOpsDashboardTheme,
-    TauOpsDashboardToolInventoryRow, TauOpsDashboardToolInvocationRow,
+    extract_first_fenced_code_block, format_chat_session_updated_label_at,
+    render_tau_ops_dashboard_shell, render_tau_ops_dashboard_shell_for_route,
+    render_tau_ops_dashboard_shell_with_context, TauOpsDashboardAlertFeedRow,
+    TauOpsDashboardAuthMode, TauOpsDashboardChatMessageRow, TauOpsDashboardChatSessionOptionRow,
+    TauOpsDashboardChatSnapshot, TauOpsDashboardCommandCenterSnapshot,
+    TauOpsDashboardConnectorHealthRow, TauOpsDashboardHarnessAuditRow,
+    TauOpsDashboardHarnessBenchmarkCategoryRow, TauOpsDashboardHarnessSnapshot,
+    TauOpsDashboardJobRow, TauOpsDashboardMemoryGraphEdgeRow, TauOpsDashboardMemoryGraphNodeRow,
+    TauOpsDashboardRoute, TauOpsDashboardSessionGraphEdgeRow, TauOpsDashboardSessionGraphNodeRow,
+    TauOpsDashboardSessionTimelineRow, TauOpsDashboardShellContext, TauOpsDashboardSidebarState,
+    TauOpsDashboardTheme, TauOpsDashboardToolInventoryRow, TauOpsDashboardToolInvocationRow,
     TauOpsDashboardToolUsageHistogramRow,
 };
 use tau_tui::{render_operator_shell_frame, OperatorShellFrame};
@@ -62,6 +62,27 @@ fn unit_extract_assistant_stream_tokens_normalizes_whitespace() {
 #[test]
 fn unit_extract_assistant_stream_tokens_ignores_blank_content() {
     assert!(extract_assistant_stream_tokens("   \n\t  ").is_empty());
+}
+
+#[test]
+fn unit_format_chat_session_updated_label_renders_operator_age_labels() {
+    assert_eq!(format_chat_session_updated_label_at(0, 100_000), "never");
+    assert_eq!(
+        format_chat_session_updated_label_at(100_000, 100_000),
+        "just now"
+    );
+    assert_eq!(
+        format_chat_session_updated_label_at(100_000, 400_000),
+        "5m ago"
+    );
+    assert_eq!(
+        format_chat_session_updated_label_at(100_000, 10_900_000),
+        "3h ago"
+    );
+    assert_eq!(
+        format_chat_session_updated_label_at(100_000, 172_900_000),
+        "2d ago"
+    );
 }
 
 #[test]
@@ -1917,6 +1938,14 @@ fn functional_spec_2830_c01_chat_route_renders_send_form_and_fallback_transcript
     assert!(html.contains(
         "id=\"tau-ops-chat-session-summary\" data-active-session-key=\"default\" data-entry-count=\"0\" data-total-tokens=\"0\" data-validation-state=\"valid\" data-updated-unix-ms=\"0\""
     ));
+    assert!(html.contains("data-latest-message-index=\"none\""));
+    assert!(
+        html.contains("id=\"tau-ops-chat-session-actions\" aria-label=\"Chat session actions\"")
+    );
+    assert!(html.contains("id=\"tau-ops-chat-open-session-detail\" href=\"/ops/sessions/default?theme=dark&amp;sidebar=expanded&amp;session=default\""));
+    assert!(html.contains("id=\"tau-ops-chat-jump-latest\" href=\"#tau-ops-chat-transcript\""));
+    assert!(html
+        .contains("id=\"tau-ops-chat-session-updated-label\" data-updated-unix-ms=\"0\">never<"));
     assert!(html.contains("Session Summary"));
     assert!(html.contains("id=\"tau-ops-chat-send-form\" action=\"/ops/chat/send\" method=\"post\" data-session-key=\"default\""));
     assert!(html.contains(
@@ -1949,6 +1978,7 @@ fn functional_spec_2830_c02_chat_route_renders_snapshot_message_rows_for_active_
             send_form_action: "/ops/chat/send".to_string(),
             send_form_method: "post".to_string(),
             session_options: vec![],
+            session_detail_route: "/ops/sessions/session-42".to_string(),
             message_rows: vec![
                 TauOpsDashboardChatMessageRow {
                     role: "user".to_string(),
@@ -1968,6 +1998,9 @@ fn functional_spec_2830_c02_chat_route_renders_snapshot_message_rows_for_active_
     assert!(html.contains(
         "id=\"tau-ops-chat-session-summary\" data-active-session-key=\"session-42\" data-entry-count=\"2\" data-total-tokens=\"0\" data-validation-state=\"valid\" data-updated-unix-ms=\"0\""
     ));
+    assert!(html.contains("data-latest-message-index=\"1\""));
+    assert!(html.contains("id=\"tau-ops-chat-open-session-detail\" href=\"/ops/sessions/session-42?theme=light&amp;sidebar=collapsed&amp;session=session-42\""));
+    assert!(html.contains("id=\"tau-ops-chat-jump-latest\" href=\"#tau-ops-chat-message-row-1\""));
     assert!(html.contains("id=\"tau-ops-chat-send-form\" action=\"/ops/chat/send\" method=\"post\" data-session-key=\"session-42\""));
     assert!(
         html.contains("id=\"tau-ops-chat-theme\" type=\"hidden\" name=\"theme\" value=\"light\"")

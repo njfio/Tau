@@ -1,6 +1,7 @@
 //! Leptos SSR shell foundations for Tau Ops Dashboard.
 
 use leptos::prelude::*;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// Public enum `TauOpsDashboardAuthMode` in `tau-dashboard-ui`.
@@ -842,6 +843,41 @@ fn extract_assistant_stream_tokens(content: &str) -> Vec<String> {
         .split_whitespace()
         .map(ToString::to_string)
         .collect()
+}
+
+fn current_unix_ms() -> u64 {
+    let Ok(duration) = SystemTime::now().duration_since(UNIX_EPOCH) else {
+        return 0;
+    };
+    duration.as_millis().min(u128::from(u64::MAX)) as u64
+}
+
+fn format_chat_session_updated_label_at(updated_unix_ms: u64, now_unix_ms: u64) -> String {
+    if updated_unix_ms == 0 {
+        return "never".to_string();
+    }
+    if updated_unix_ms >= now_unix_ms {
+        return "just now".to_string();
+    }
+
+    let age_ms = now_unix_ms - updated_unix_ms;
+    let age_seconds = age_ms / 1_000;
+    if age_seconds < 60 {
+        return "just now".to_string();
+    }
+
+    let age_minutes = age_seconds / 60;
+    if age_minutes < 60 {
+        return format!("{age_minutes}m ago");
+    }
+
+    let age_hours = age_minutes / 60;
+    if age_hours < 24 {
+        return format!("{age_hours}h ago");
+    }
+
+    let age_days = age_hours / 24;
+    format!("{age_days}d ago")
 }
 
 fn derive_memory_graph_node_size_contracts(importance: &str) -> (&'static str, String) {
@@ -2099,10 +2135,12 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     } else {
         "invalid"
     };
-    let active_session_updated_unix_ms_value = active_chat_session_option
+    let active_session_updated_unix_ms = active_chat_session_option
         .map(|option| option.updated_unix_ms)
-        .unwrap_or(0)
-        .to_string();
+        .unwrap_or(0);
+    let active_session_updated_unix_ms_value = active_session_updated_unix_ms.to_string();
+    let active_session_updated_label =
+        format_chat_session_updated_label_at(active_session_updated_unix_ms, current_unix_ms());
     let latest_user_row = chat_message_rows
         .iter()
         .enumerate()
@@ -2130,6 +2168,21 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     let chat_latest_assistant_index = latest_assistant_row
         .map(|(index, _)| index.to_string())
         .unwrap_or_else(|| "none".to_string());
+    let chat_latest_message_index = match (latest_user_row, latest_assistant_row) {
+        (Some((user_index, _)), Some((assistant_index, _))) => {
+            user_index.max(assistant_index).to_string()
+        }
+        (Some((index, _)), None) | (None, Some((index, _))) => index.to_string(),
+        (None, None) => "none".to_string(),
+    };
+    let chat_latest_message_href = if chat_latest_message_index == "none" {
+        "#tau-ops-chat-transcript".to_string()
+    } else {
+        format!("#tau-ops-chat-message-row-{chat_latest_message_index}")
+    };
+    let chat_session_detail_href = format!(
+        "{session_detail_route}?theme={theme_attr}&sidebar={sidebar_state_attr}&session={chat_session_key}"
+    );
     let chat_latest_user_content = latest_user_row
         .map(|(_, row)| row.content.clone())
         .unwrap_or_default();
@@ -2775,6 +2828,29 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     color: #edf8fb;
                     font-size: .8rem;
                     font-weight: 750;
+                    overflow-wrap: anywhere;
+                }
+                #tau-ops-chat-session-actions {
+                    display: grid;
+                    grid-template-columns: repeat(2, minmax(0, 1fr));
+                    gap: 6px;
+                    margin-top: 2px;
+                }
+                #tau-ops-chat-session-actions a {
+                    display: flex;
+                    min-width: 0;
+                    min-height: 30px;
+                    align-items: center;
+                    justify-content: center;
+                    border: 1px solid #2f5368;
+                    border-radius: 6px;
+                    padding: 6px 8px;
+                    background: #102b3a;
+                    color: #dbe8ef;
+                    font-size: .72rem;
+                    font-weight: 800;
+                    text-align: center;
+                    text-decoration: none;
                     overflow-wrap: anywhere;
                 }
                 #tau-ops-chat-session-selector {
@@ -3443,6 +3519,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 data-total-tokens=active_session_total_tokens_value.clone()
                                 data-validation-state=active_session_validation_state
                                 data-updated-unix-ms=active_session_updated_unix_ms_value.clone()
+                                data-latest-message-index=chat_latest_message_index.clone()
                             >
                                 <h3>Session Summary</h3>
                                 <dl>
@@ -3463,10 +3540,29 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                         <dd>{active_session_validation_state}</dd>
                                     </div>
                                     <div>
-                                        <dt>Updated</dt>
-                                        <dd>{active_session_updated_unix_ms_value.clone()}</dd>
+                                        <dt>Last Updated</dt>
+                                        <dd
+                                            id="tau-ops-chat-session-updated-label"
+                                            data-updated-unix-ms=active_session_updated_unix_ms_value.clone()
+                                        >
+                                            {active_session_updated_label}
+                                        </dd>
                                     </div>
                                 </dl>
+                                <nav
+                                    id="tau-ops-chat-session-actions"
+                                    aria-label="Chat session actions"
+                                >
+                                    <a
+                                        id="tau-ops-chat-open-session-detail"
+                                        href=chat_session_detail_href
+                                    >
+                                        Open Session Detail
+                                    </a>
+                                    <a id="tau-ops-chat-jump-latest" href=chat_latest_message_href>
+                                        Jump To Latest
+                                    </a>
+                                </nav>
                             </article>
                             <section
                                 id="tau-ops-chat-session-selector"
