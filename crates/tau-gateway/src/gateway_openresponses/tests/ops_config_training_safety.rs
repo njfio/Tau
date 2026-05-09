@@ -1,5 +1,40 @@
 use super::*;
 
+#[derive(Debug, Default)]
+struct FixtureHarnessSelfImprovementRunner;
+
+impl GatewayOpsHarnessSelfImprovementRunner for FixtureHarnessSelfImprovementRunner {
+    fn dry_run(
+        &self,
+        request: GatewayOpsHarnessSelfImprovementRequest,
+    ) -> Result<GatewayOpsHarnessSelfImprovementResult> {
+        Ok(GatewayOpsHarnessSelfImprovementResult {
+            proposal_id: request.proposal_id.clone(),
+            mission_id: format!("mission-{}", request.proposal_id),
+            target_path: "prompts/research_to_doc/system.md".to_string(),
+            result_key: "passed".to_string(),
+            summary: "fixture dry-run passed".to_string(),
+            artifact_path: Some(request.state_dir.join("fixture-dry-run.json")),
+            applied: false,
+        })
+    }
+
+    fn apply(
+        &self,
+        request: GatewayOpsHarnessSelfImprovementRequest,
+    ) -> Result<GatewayOpsHarnessSelfImprovementResult> {
+        Ok(GatewayOpsHarnessSelfImprovementResult {
+            proposal_id: request.proposal_id.clone(),
+            mission_id: format!("mission-{}", request.proposal_id),
+            target_path: "prompts/research_to_doc/system.md".to_string(),
+            result_key: "applied".to_string(),
+            summary: "fixture apply completed".to_string(),
+            artifact_path: Some(request.state_dir.join("fixture-apply.json")),
+            applied: true,
+        })
+    }
+}
+
 #[tokio::test]
 async fn integration_spec_3140_c04_ops_routes_render_config_training_safety_diagnostics_panels() {
     let temp = tempdir().expect("tempdir");
@@ -57,7 +92,8 @@ async fn integration_spec_3756_c04_ops_harness_route_renders_benchmark_and_apply
         "id=\"tau-ops-harness-benchmark-panel\" data-benchmark-id=\"m334-tranche-one-autonomy\"",
         "id=\"tau-ops-harness-run-benchmark-form\" action=\"/ops/harness/run-benchmark?session=ops-harness-contract\" method=\"post\" data-command=\"tau_agent_harness\"",
         "id=\"tau-ops-harness-conservative-policy\" data-policy=\"conservative-self-improvement\" data-allowed-targets=\"skill,config,prompt\" data-blocked-targets=\"source-code,safety-policy\"",
-        "id=\"tau-ops-harness-action-apply\" type=\"button\" data-action=\"apply\" data-action-tone=\"disabled\" data-disabled=\"true\" aria-disabled=\"true\" data-approval-required=\"true\"",
+        "id=\"tau-ops-harness-apply-form\" action=\"/ops/harness/proposals/PR-044/apply\" method=\"post\" data-approval-state=\"approval-required\"",
+        "id=\"tau-ops-harness-action-apply\" type=\"submit\" data-action=\"apply\" data-action-tone=\"disabled\" data-disabled=\"true\" aria-disabled=\"true\" data-approval-required=\"true\" disabled",
         "id=\"tau-ops-harness-tui-companion\" data-component=\"TuiCompanion\" data-command=\"tau status\"",
     ] {
         assert!(
@@ -148,20 +184,6 @@ async fn integration_spec_3756_c05_ops_harness_actions_execute_and_persist_proof
             .unwrap_or_default()
             .contains("Autonomy benchmark task")));
 
-    let approve_response = client
-        .post(format!(
-            "http://{addr}/ops/harness/proposals/PR-044/approve"
-        ))
-        .send()
-        .await
-        .expect("approve proposal");
-    assert_eq!(approve_response.status(), StatusCode::SEE_OTHER);
-    let audit_log =
-        std::fs::read_to_string(state_dir.join("ops-harness/audit.jsonl")).expect("audit log");
-    assert!(audit_log.contains("\"proposal_id\":\"PR-044\""));
-    assert!(audit_log.contains("\"action\":\"approve\""));
-    assert!(audit_log.contains("\"result\":\"recorded\""));
-
     let apply_response = client
         .post(format!("http://{addr}/ops/harness/proposals/PR-044/apply"))
         .send()
@@ -175,6 +197,20 @@ async fn integration_spec_3756_c05_ops_harness_actions_execute_and_persist_proof
         std::fs::read_to_string(state_dir.join("ops-harness/audit.jsonl")).expect("audit log");
     assert!(audit_log.contains("\"action\":\"apply\""));
     assert!(audit_log.contains("\"result\":\"blocked_approval_required\""));
+
+    let approve_response = client
+        .post(format!(
+            "http://{addr}/ops/harness/proposals/PR-044/approve"
+        ))
+        .send()
+        .await
+        .expect("approve proposal");
+    assert_eq!(approve_response.status(), StatusCode::SEE_OTHER);
+    let audit_log =
+        std::fs::read_to_string(state_dir.join("ops-harness/audit.jsonl")).expect("audit log");
+    assert!(audit_log.contains("\"proposal_id\":\"PR-044\""));
+    assert!(audit_log.contains("\"action\":\"approve\""));
+    assert!(audit_log.contains("\"result\":\"recorded\""));
 
     let diff_response = client
         .get(format!("http://{addr}/ops/harness/proposals/PR-044/diff"))
@@ -195,6 +231,108 @@ async fn integration_spec_3756_c05_ops_harness_actions_execute_and_persist_proof
         .contains("Compress system prompt by removing redundant instructions and examples."));
     assert!(diff_body.contains("class=\"tau-harness-diff-line tau-harness-diff-line-remove\""));
     assert!(diff_body.contains("class=\"tau-harness-diff-line tau-harness-diff-line-add\""));
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn integration_ops_harness_proposal_actions_delegate_dry_run_and_approved_apply() {
+    let temp = tempdir().expect("tempdir");
+    let state = test_state_with_client_auth_and_harness_runner(
+        temp.path(),
+        4_096,
+        Arc::new(MockGatewayLlmClient::default()),
+        Arc::new(NoopGatewayToolRegistrar),
+        GatewayOpenResponsesAuthMode::Token,
+        Some("secret"),
+        None,
+        60,
+        120,
+        Arc::new(FixtureHarnessSelfImprovementRunner),
+    );
+    let state_dir = state.config.state_dir.clone();
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+    let client = Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .expect("build no-redirect client");
+
+    let dry_run = client
+        .post(format!(
+            "http://{addr}/ops/harness/proposals/PR-044/dry-run"
+        ))
+        .send()
+        .await
+        .expect("dry-run proposal");
+    assert_eq!(dry_run.status(), StatusCode::SEE_OTHER);
+    assert!(dry_run
+        .headers()
+        .get(reqwest::header::LOCATION)
+        .expect("dry-run redirect")
+        .to_str()
+        .expect("dry-run location")
+        .contains("proposal_status=dry_run_passed"));
+
+    let approve = client
+        .post(format!(
+            "http://{addr}/ops/harness/proposals/PR-044/approve"
+        ))
+        .send()
+        .await
+        .expect("approve proposal");
+    assert_eq!(approve.status(), StatusCode::SEE_OTHER);
+
+    let harness_response = client
+        .get(format!("http://{addr}/ops/harness"))
+        .send()
+        .await
+        .expect("load approved harness route");
+    assert_eq!(harness_response.status(), StatusCode::OK);
+    let harness_body = harness_response.text().await.expect("harness body");
+    assert!(harness_body.contains(
+        "id=\"tau-ops-harness-apply-form\" action=\"/ops/harness/proposals/PR-044/apply\" method=\"post\" data-approval-state=\"approved\""
+    ));
+    assert!(harness_body.contains(
+        "id=\"tau-ops-harness-action-apply\" type=\"submit\" data-action=\"apply\" data-action-tone=\"disabled\" data-disabled=\"false\" aria-disabled=\"false\""
+    ));
+
+    let apply = client
+        .post(format!("http://{addr}/ops/harness/proposals/PR-044/apply"))
+        .send()
+        .await
+        .expect("apply proposal");
+    assert_eq!(apply.status(), StatusCode::SEE_OTHER);
+    assert!(apply
+        .headers()
+        .get(reqwest::header::LOCATION)
+        .expect("apply redirect")
+        .to_str()
+        .expect("apply location")
+        .contains("proposal_status=applied"));
+
+    let applied_harness_response = client
+        .get(format!("http://{addr}/ops/harness"))
+        .send()
+        .await
+        .expect("load applied harness route");
+    assert_eq!(applied_harness_response.status(), StatusCode::OK);
+    let applied_harness_body = applied_harness_response
+        .text()
+        .await
+        .expect("applied harness body");
+    assert!(applied_harness_body.contains(
+        "id=\"tau-ops-harness-apply-form\" action=\"/ops/harness/proposals/PR-044/apply\" method=\"post\" data-approval-state=\"applied\""
+    ));
+    assert!(applied_harness_body.contains(
+        "id=\"tau-ops-harness-action-apply\" type=\"submit\" data-action=\"apply\" data-action-tone=\"disabled\" data-disabled=\"true\" aria-disabled=\"true\""
+    ));
+
+    let audit_log =
+        std::fs::read_to_string(state_dir.join("ops-harness/audit.jsonl")).expect("audit log");
+    assert!(audit_log.contains("\"action\":\"dry-run\""));
+    assert!(audit_log.contains("\"result\":\"passed\""));
+    assert!(audit_log.contains("\"action\":\"apply\""));
+    assert!(audit_log.contains("\"result\":\"applied\""));
 
     handle.abort();
 }

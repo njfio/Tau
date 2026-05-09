@@ -12,6 +12,33 @@ pub(super) fn test_state_with_client_and_auth(
     rate_limit_window_seconds: u64,
     rate_limit_max_requests: usize,
 ) -> Arc<GatewayOpenResponsesServerState> {
+    test_state_with_client_auth_and_harness_runner(
+        root,
+        max_input_chars,
+        client,
+        tool_registrar,
+        auth_mode,
+        token,
+        password,
+        rate_limit_window_seconds,
+        rate_limit_max_requests,
+        Arc::new(NoopGatewayOpsHarnessSelfImprovementRunner),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn test_state_with_client_auth_and_harness_runner(
+    root: &Path,
+    max_input_chars: usize,
+    client: Arc<dyn LlmClient>,
+    tool_registrar: Arc<dyn GatewayToolRegistrar>,
+    auth_mode: GatewayOpenResponsesAuthMode,
+    token: Option<&str>,
+    password: Option<&str>,
+    rate_limit_window_seconds: u64,
+    rate_limit_max_requests: usize,
+    ops_harness_self_improvement: Arc<dyn GatewayOpsHarnessSelfImprovementRunner>,
+) -> Arc<GatewayOpenResponsesServerState> {
     Arc::new(GatewayOpenResponsesServerState::new(
         GatewayOpenResponsesServerConfig {
             client,
@@ -43,6 +70,7 @@ pub(super) fn test_state_with_client_and_auth(
                 ..RuntimeHeartbeatSchedulerConfig::default()
             },
             external_coding_agent_bridge: tau_runtime::ExternalCodingAgentBridgeConfig::default(),
+            ops_harness_self_improvement,
             delegated_tool_execution: false,
         },
     ))

@@ -44,9 +44,10 @@ use super::{
     record_cortex_memory_entry_delete_event, record_cortex_memory_entry_write_event,
     record_cortex_observer_event, record_cortex_session_append_event,
     record_cortex_session_reset_event, sanitize_session_key, GatewayDashboardActionRequest,
-    GatewayOpenResponsesServerState, OpenResponsesApiError, OpsShellControlsQuery,
-    DEFAULT_SESSION_KEY, OPS_DASHBOARD_CHANNELS_ENDPOINT, OPS_DASHBOARD_CHAT_ENDPOINT,
-    OPS_DASHBOARD_CHAT_NEW_ENDPOINT, OPS_DASHBOARD_CHAT_SEND_ENDPOINT, OPS_DASHBOARD_ENDPOINT,
+    GatewayOpenResponsesServerState, GatewayOpsHarnessSelfImprovementRequest,
+    OpenResponsesApiError, OpsShellControlsQuery, DEFAULT_SESSION_KEY,
+    OPS_DASHBOARD_CHANNELS_ENDPOINT, OPS_DASHBOARD_CHAT_ENDPOINT, OPS_DASHBOARD_CHAT_NEW_ENDPOINT,
+    OPS_DASHBOARD_CHAT_SEND_ENDPOINT, OPS_DASHBOARD_ENDPOINT,
 };
 use crate::remote_profile::GatewayOpenResponsesAuthMode;
 
@@ -1462,27 +1463,92 @@ pub(super) async fn handle_ops_dashboard_harness_proposal_action(
             "rejected"
         }
         "dry-run" => {
-            append_harness_audit_record(&state.config.state_dir, &proposal_id, "dry-run", "passed");
-            "dry_run_passed"
+            let request =
+                build_harness_self_improvement_request(&state.config.state_dir, &proposal_id);
+            match state.config.ops_harness_self_improvement.dry_run(request) {
+                Ok(result) => {
+                    append_harness_audit_record(
+                        &state.config.state_dir,
+                        &proposal_id,
+                        "dry-run",
+                        result.result_key.as_str(),
+                    );
+                    if result.result_key == "passed" {
+                        "dry_run_passed"
+                    } else {
+                        "dry_run_failed"
+                    }
+                }
+                Err(error) => {
+                    append_harness_audit_record(
+                        &state.config.state_dir,
+                        &proposal_id,
+                        "dry-run",
+                        "runner_unavailable",
+                    );
+                    return render_harness_action_error(
+                        StatusCode::FAILED_DEPENDENCY,
+                        &proposal_id,
+                        "dry-run",
+                        "runner_unavailable",
+                        error.to_string().as_str(),
+                    );
+                }
+            }
         }
         "apply" => {
-            append_harness_audit_record(
-                &state.config.state_dir,
-                &proposal_id,
-                "apply",
-                "blocked_approval_required",
-            );
-            return (
-                StatusCode::FORBIDDEN,
-                Html(format!(
-                    r#"<main id="tau-ops-harness-apply-blocked" data-proposal-id="{proposal_id}" data-result="blocked_approval_required">
+            if !harness_latest_audit_action_is_approved(&state.config.state_dir, &proposal_id) {
+                append_harness_audit_record(
+                    &state.config.state_dir,
+                    &proposal_id,
+                    "apply",
+                    "blocked_approval_required",
+                );
+                return (
+                    StatusCode::FORBIDDEN,
+                    Html(format!(
+                        r#"<main id="tau-ops-harness-apply-blocked" data-proposal-id="{proposal_id}" data-result="blocked_approval_required">
 <h1>Apply Requires Approval</h1>
 <p>Harness self-improvement apply is intentionally approval-gated.</p>
 <a href="/ops/harness">Back to Mission Harness</a>
 </main>"#
-                )),
-            )
-                .into_response();
+                    )),
+                )
+                    .into_response();
+            }
+
+            let request =
+                build_harness_self_improvement_request(&state.config.state_dir, &proposal_id);
+            match state.config.ops_harness_self_improvement.apply(request) {
+                Ok(result) => {
+                    append_harness_audit_record(
+                        &state.config.state_dir,
+                        &proposal_id,
+                        "apply",
+                        result.result_key.as_str(),
+                    );
+                    if result.result_key == "applied" {
+                        "applied"
+                    } else {
+                        "apply_failed"
+                    }
+                }
+                Err(error) => {
+                    append_harness_audit_record(
+                        &state.config.state_dir,
+                        &proposal_id,
+                        "apply",
+                        "runner_failed",
+                    );
+                    return render_harness_action_error(
+                        StatusCode::FAILED_DEPENDENCY,
+                        &proposal_id,
+                        "apply",
+                        "runner_failed",
+                        error.to_string().as_str(),
+                    );
+                }
+            }
         }
         _ => {
             return (
@@ -1490,7 +1556,7 @@ pub(super) async fn handle_ops_dashboard_harness_proposal_action(
                 Html(format!(
                     r#"<main id="tau-ops-harness-action-invalid" data-proposal-id="{proposal_id}" data-action="{action}" data-result="invalid_action">
 <h1>Invalid Harness Action</h1>
-<p>Supported proposal actions are approve, reject, and dry-run.</p>
+<p>Supported proposal actions are approve, reject, dry-run, and apply.</p>
 <a href="/ops/harness">Back to Mission Harness</a>
 </main>"#
                 )),
@@ -1500,6 +1566,38 @@ pub(super) async fn handle_ops_dashboard_harness_proposal_action(
     };
     let redirect_path = format!("/ops/harness?proposal_id={proposal_id}&proposal_status={status}");
     Redirect::to(redirect_path.as_str()).into_response()
+}
+
+fn build_harness_self_improvement_request(
+    state_dir: &Path,
+    proposal_id: &str,
+) -> GatewayOpsHarnessSelfImprovementRequest {
+    GatewayOpsHarnessSelfImprovementRequest {
+        proposal_id: proposal_id.to_string(),
+        state_dir: state_dir.to_path_buf(),
+        workspace_root: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+        requested_unix_ms: now_unix_ms(),
+    }
+}
+
+fn render_harness_action_error(
+    status: StatusCode,
+    proposal_id: &str,
+    action: &str,
+    result: &str,
+    message: &str,
+) -> Response {
+    (
+        status,
+        Html(format!(
+            r#"<main id="tau-ops-harness-action-error" data-proposal-id="{proposal_id}" data-action="{action}" data-result="{result}">
+<h1>Harness Action Failed</h1>
+<p>{message}</p>
+<a href="/ops/harness">Back to Mission Harness</a>
+</main>"#
+        )),
+    )
+        .into_response()
 }
 
 pub(super) async fn handle_ops_dashboard_harness_proposal_diff(
@@ -1756,6 +1854,42 @@ fn append_harness_audit_record(state_dir: &Path, proposal_id: &str, action: &str
         .append(true)
         .open(audit_path)
         .and_then(|mut file| std::io::Write::write_all(&mut file, line.as_bytes()));
+}
+
+fn harness_latest_audit_action_is_approved(state_dir: &Path, proposal_id: &str) -> bool {
+    let audit_path = state_dir.join("ops-harness").join("audit.jsonl");
+    let Ok(audit_jsonl) = std::fs::read_to_string(audit_path) else {
+        return false;
+    };
+    audit_jsonl
+        .lines()
+        .rev()
+        .find_map(|line| {
+            let Ok(record) = serde_json::from_str::<Value>(line) else {
+                return None;
+            };
+            if record
+                .get("proposal_id")
+                .and_then(Value::as_str)
+                .is_none_or(|value| value != proposal_id)
+            {
+                return None;
+            }
+            let action = record.get("action").and_then(Value::as_str)?;
+            if !matches!(action, "approve" | "reject" | "apply") {
+                return None;
+            }
+            let result = record
+                .get("result")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            Some(
+                action == "approve"
+                    && !result.starts_with("blocked")
+                    && !result.ends_with("failed"),
+            )
+        })
+        .unwrap_or(false)
 }
 
 fn sanitize_harness_token(token: &str) -> String {

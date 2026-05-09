@@ -3,6 +3,67 @@
 use super::*;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Request passed from the ops harness adapter to a self-improvement runner.
+pub struct GatewayOpsHarnessSelfImprovementRequest {
+    pub proposal_id: String,
+    pub state_dir: PathBuf,
+    pub workspace_root: PathBuf,
+    pub requested_unix_ms: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// Result returned by the ops harness self-improvement runner.
+pub struct GatewayOpsHarnessSelfImprovementResult {
+    pub proposal_id: String,
+    pub mission_id: String,
+    pub target_path: String,
+    pub result_key: String,
+    pub summary: String,
+    pub artifact_path: Option<PathBuf>,
+    pub applied: bool,
+}
+
+/// Bridge used by `tau-coding-agent` to plug real self-improvement mechanics
+/// into the gateway-owned ops harness adapter.
+pub trait GatewayOpsHarnessSelfImprovementRunner: Send + Sync {
+    fn dry_run(
+        &self,
+        request: GatewayOpsHarnessSelfImprovementRequest,
+    ) -> Result<GatewayOpsHarnessSelfImprovementResult>;
+
+    fn apply(
+        &self,
+        request: GatewayOpsHarnessSelfImprovementRequest,
+    ) -> Result<GatewayOpsHarnessSelfImprovementResult>;
+}
+
+#[derive(Debug, Default)]
+/// Default runner for gateway-only tests and deployments.
+pub struct NoopGatewayOpsHarnessSelfImprovementRunner;
+
+impl GatewayOpsHarnessSelfImprovementRunner for NoopGatewayOpsHarnessSelfImprovementRunner {
+    fn dry_run(
+        &self,
+        request: GatewayOpsHarnessSelfImprovementRequest,
+    ) -> Result<GatewayOpsHarnessSelfImprovementResult> {
+        anyhow::bail!(
+            "ops harness self-improvement runner is not configured for proposal {}",
+            request.proposal_id
+        )
+    }
+
+    fn apply(
+        &self,
+        request: GatewayOpsHarnessSelfImprovementRequest,
+    ) -> Result<GatewayOpsHarnessSelfImprovementResult> {
+        anyhow::bail!(
+            "ops harness self-improvement runner is not configured for proposal {}",
+            request.proposal_id
+        )
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 /// Public struct `GatewayOpenResponsesSkillPrompt` used across Tau components.
 pub struct GatewayOpenResponsesSkillPrompt {
     pub name: String,
@@ -37,6 +98,7 @@ pub struct GatewayOpenResponsesServerConfig {
     pub max_input_chars: usize,
     pub runtime_heartbeat: RuntimeHeartbeatSchedulerConfig,
     pub external_coding_agent_bridge: ExternalCodingAgentBridgeConfig,
+    pub ops_harness_self_improvement: Arc<dyn GatewayOpsHarnessSelfImprovementRunner>,
     /// When true, tool execution is delegated to the LLM backend (e.g. codex app-server).
     /// The verifier skips mutation/validation evidence requirements.
     pub delegated_tool_execution: bool,

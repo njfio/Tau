@@ -5039,6 +5039,8 @@ async fn red_spec_3618_openresponses_request_uses_bundled_web_game_skill_guidanc
                 ..RuntimeHeartbeatSchedulerConfig::default()
             },
             external_coding_agent_bridge: ExternalCodingAgentBridgeConfig::default(),
+            ops_harness_self_improvement: Arc::new(NoopGatewayOpsHarnessSelfImprovementRunner),
+
             delegated_tool_execution: false,
         },
     ));
@@ -7634,6 +7636,7 @@ async fn regression_gateway_password_session_token_expires_and_fails_closed() {
                 ..RuntimeHeartbeatSchedulerConfig::default()
             },
             external_coding_agent_bridge: tau_runtime::ExternalCodingAgentBridgeConfig::default(),
+            ops_harness_self_improvement: Arc::new(NoopGatewayOpsHarnessSelfImprovementRunner),
             delegated_tool_execution: false,
         },
     ));
@@ -8021,6 +8024,7 @@ async fn integration_external_coding_agent_subprocess_mode_streams_worker_stdout
                     env: subprocess_env,
                 }),
             },
+            ops_harness_self_improvement: Arc::new(NoopGatewayOpsHarnessSelfImprovementRunner),
             delegated_tool_execution: false,
         },
     ));
@@ -8145,6 +8149,7 @@ async fn regression_external_coding_agent_reap_endpoint_times_out_stale_sessions
                 max_events_per_session: 64,
                 subprocess: None,
             },
+            ops_harness_self_improvement: Arc::new(NoopGatewayOpsHarnessSelfImprovementRunner),
             delegated_tool_execution: false,
         },
     ));
@@ -8266,6 +8271,7 @@ async fn regression_openresponses_honors_configured_max_turns_limit() {
                 ..RuntimeHeartbeatSchedulerConfig::default()
             },
             external_coding_agent_bridge: tau_runtime::ExternalCodingAgentBridgeConfig::default(),
+            ops_harness_self_improvement: Arc::new(NoopGatewayOpsHarnessSelfImprovementRunner),
             delegated_tool_execution: false,
         },
     ));
@@ -8644,6 +8650,7 @@ async fn regression_read_only_timeout_spiral_compacts_retry_context_into_mutatio
                 ..RuntimeHeartbeatSchedulerConfig::default()
             },
             external_coding_agent_bridge: tau_runtime::ExternalCodingAgentBridgeConfig::default(),
+            ops_harness_self_improvement: Arc::new(NoopGatewayOpsHarnessSelfImprovementRunner),
             delegated_tool_execution: false,
         },
     ));
@@ -8805,6 +8812,7 @@ async fn issue_3674_read_only_saturation_cuts_off_attempt_and_widens_retry_budge
                 ..RuntimeHeartbeatSchedulerConfig::default()
             },
             external_coding_agent_bridge: tau_runtime::ExternalCodingAgentBridgeConfig::default(),
+            ops_harness_self_improvement: Arc::new(NoopGatewayOpsHarnessSelfImprovementRunner),
             delegated_tool_execution: false,
         },
     ));
@@ -9405,6 +9413,7 @@ async fn regression_openresponses_stream_timeout_finalizes_pending_tool_executio
                 ..RuntimeHeartbeatSchedulerConfig::default()
             },
             external_coding_agent_bridge: tau_runtime::ExternalCodingAgentBridgeConfig::default(),
+            ops_harness_self_improvement: Arc::new(NoopGatewayOpsHarnessSelfImprovementRunner),
             delegated_tool_execution: false,
         },
     ));
@@ -9479,6 +9488,7 @@ async fn runtime_timeout_partial_output_recovery_stream_emits_timeout_operator_s
                 ..RuntimeHeartbeatSchedulerConfig::default()
             },
             external_coding_agent_bridge: tau_runtime::ExternalCodingAgentBridgeConfig::default(),
+            ops_harness_self_improvement: Arc::new(NoopGatewayOpsHarnessSelfImprovementRunner),
             delegated_tool_execution: false,
         },
     ));
@@ -9661,6 +9671,7 @@ async fn runtime_cancelled_partial_output_recovery_stream_emits_cancelled_operat
                 ..RuntimeHeartbeatSchedulerConfig::default()
             },
             external_coding_agent_bridge: tau_runtime::ExternalCodingAgentBridgeConfig::default(),
+            ops_harness_self_improvement: Arc::new(NoopGatewayOpsHarnessSelfImprovementRunner),
             delegated_tool_execution: false,
         },
     ));
@@ -9775,6 +9786,7 @@ async fn regression_openresponses_stream_emits_completed_event_for_non_timeout_t
                 ..RuntimeHeartbeatSchedulerConfig::default()
             },
             external_coding_agent_bridge: tau_runtime::ExternalCodingAgentBridgeConfig::default(),
+            ops_harness_self_improvement: Arc::new(NoopGatewayOpsHarnessSelfImprovementRunner),
             delegated_tool_execution: false,
         },
     ));
@@ -9886,6 +9898,7 @@ async fn regression_openresponses_timeout_retry_exhaustion_fails_closed_after_bu
                 ..RuntimeHeartbeatSchedulerConfig::default()
             },
             external_coding_agent_bridge: tau_runtime::ExternalCodingAgentBridgeConfig::default(),
+            ops_harness_self_improvement: Arc::new(NoopGatewayOpsHarnessSelfImprovementRunner),
             delegated_tool_execution: false,
         },
     ));
@@ -9988,6 +10001,7 @@ async fn regression_openresponses_zero_tool_timeout_fails_without_outer_retry() 
                 ..RuntimeHeartbeatSchedulerConfig::default()
             },
             external_coding_agent_bridge: tau_runtime::ExternalCodingAgentBridgeConfig::default(),
+            ops_harness_self_improvement: Arc::new(NoopGatewayOpsHarnessSelfImprovementRunner),
             delegated_tool_execution: false,
         },
     ));
@@ -11185,6 +11199,7 @@ async fn runtime_recovery_learning_bulletin_replays_cancelled_reason_code_into_f
                 ..RuntimeHeartbeatSchedulerConfig::default()
             },
             external_coding_agent_bridge: tau_runtime::ExternalCodingAgentBridgeConfig::default(),
+            ops_harness_self_improvement: Arc::new(NoopGatewayOpsHarnessSelfImprovementRunner),
             delegated_tool_execution: false,
         },
     ));
@@ -13136,6 +13151,7 @@ async fn tier_weekly_ch15_chaos_matrix() {
                 ..RuntimeHeartbeatSchedulerConfig::default()
             },
             external_coding_agent_bridge: tau_runtime::ExternalCodingAgentBridgeConfig::default(),
+            ops_harness_self_improvement: Arc::new(NoopGatewayOpsHarnessSelfImprovementRunner),
             delegated_tool_execution: false,
         },
     ));

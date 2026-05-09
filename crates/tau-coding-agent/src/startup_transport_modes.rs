@@ -3,7 +3,7 @@
 //! Selects and executes requested transport runtime modes after startup context
 //! resolution, preserving mode-specific failure diagnostics.
 
-use std::{sync::Arc, time::Duration};
+use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -12,12 +12,13 @@ use tau_cli::Cli;
 use tau_github_issues_runtime::{run_github_issues_bridge, GithubIssuesBridgeRuntimeConfig};
 use tau_onboarding::startup_config::build_auth_command_config;
 use tau_onboarding::startup_transport_modes::{
+    build_gateway_openresponses_server_config,
     build_transport_doctor_config as build_onboarding_transport_doctor_config,
     resolve_github_issues_bridge_repo_and_token_from_cli as resolve_onboarding_github_issues_bridge_repo_and_token_from_cli,
     resolve_slack_bridge_tokens_from_cli as resolve_onboarding_slack_bridge_tokens_from_cli,
     run_browser_automation_live_runner_if_requested, run_deployment_contract_runner_if_requested,
     run_events_runner_with_runtime_defaults_if_requested as run_onboarding_events_runner_with_runtime_defaults_if_requested,
-    run_gateway_contract_runner_if_requested, run_gateway_openresponses_server_if_requested,
+    run_gateway_contract_runner_if_requested,
     run_github_issues_bridge_with_runtime_defaults_if_requested as run_onboarding_github_issues_bridge_with_runtime_defaults_if_requested,
     run_multi_agent_contract_runner_if_requested,
     run_multi_channel_contract_runner_with_runtime_dependencies_if_requested as run_onboarding_multi_channel_contract_runner_with_runtime_dependencies_if_requested,
@@ -37,6 +38,7 @@ use crate::channel_adapters::{
 use crate::events::{run_event_scheduler, EventSchedulerConfig};
 use crate::runtime_types::RenderOptions;
 use crate::tools::ToolPolicy;
+use tau_coding_agent::ops_harness_self_improvement::CodingAgentOpsHarnessSelfImprovementRunner;
 
 struct CodingAgentTransportRuntimeExecutor<'a> {
     cli: &'a Cli,
@@ -50,14 +52,21 @@ struct CodingAgentTransportRuntimeExecutor<'a> {
 #[async_trait]
 impl TransportRuntimeExecutor for CodingAgentTransportRuntimeExecutor<'_> {
     async fn run_gateway_openresponses_server(&self) -> Result<()> {
-        run_gateway_openresponses_server_if_requested(
+        if !self.cli.gateway_openresponses_server {
+            return Ok(());
+        }
+        let mut config = build_gateway_openresponses_server_config(
             self.cli,
             self.client.clone(),
             self.model_ref,
             self.system_prompt,
             self.tool_policy,
-        )
-        .await?;
+        )?;
+        let workspace_root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        config.ops_harness_self_improvement = Arc::new(
+            CodingAgentOpsHarnessSelfImprovementRunner::new(workspace_root),
+        );
+        tau_gateway::run_gateway_openresponses_server(config).await?;
         Ok(())
     }
 

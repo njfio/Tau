@@ -209,7 +209,11 @@ use safety_runtime::{
 use server_bootstrap::build_gateway_openresponses_router;
 pub use server_bootstrap::run_gateway_openresponses_server;
 use server_state::GatewayOpenResponsesServerState;
-pub use server_state::{GatewayOpenResponsesServerConfig, GatewayOpenResponsesSkillPrompt};
+pub use server_state::{
+    GatewayOpenResponsesServerConfig, GatewayOpenResponsesSkillPrompt,
+    GatewayOpsHarnessSelfImprovementRequest, GatewayOpsHarnessSelfImprovementResult,
+    GatewayOpsHarnessSelfImprovementRunner, NoopGatewayOpsHarnessSelfImprovementRunner,
+};
 use session_api_runtime::{
     handle_gateway_session_append, handle_gateway_session_detail, handle_gateway_session_reset,
     handle_gateway_sessions_list,

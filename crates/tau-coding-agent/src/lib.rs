@@ -11,6 +11,7 @@
 //! stays in `src/main.rs` under `mod …;` to keep the library footprint small.
 
 pub mod mission_self_improvement;
+pub mod ops_harness_self_improvement;
 pub mod self_modification_pipeline;
 pub mod self_modification_runtime;
 pub mod self_modification_synthesis_tool;

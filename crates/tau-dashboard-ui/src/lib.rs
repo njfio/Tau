@@ -1038,6 +1038,34 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
         "/ops/harness/run-benchmark?session={}",
         context.chat.active_session_key.clone()
     );
+    let harness_pr044_latest_operator_decision = context.harness.audit_rows.iter().find(|row| {
+        row.item == "PR-044" && matches!(row.action_key.as_str(), "approve" | "reject" | "apply")
+    });
+    let harness_pr044_apply_enabled = harness_pr044_latest_operator_decision.is_some_and(|row| {
+        row.action_key == "approve"
+            && !row.result_key.starts_with("blocked")
+            && !row.result_key.ends_with("failed")
+    });
+    let harness_pr044_apply_disabled = if harness_pr044_apply_enabled {
+        "false"
+    } else {
+        "true"
+    };
+    let harness_pr044_apply_aria_disabled = harness_pr044_apply_disabled;
+    let harness_pr044_apply_state = harness_pr044_latest_operator_decision
+        .map(|row| match row.action_key.as_str() {
+            "approve" if harness_pr044_apply_enabled => "approved",
+            "reject" => "rejected",
+            "apply" if row.result_key == "applied" => "applied",
+            _ => "approval-required",
+        })
+        .unwrap_or("approval-required");
+    let harness_pr044_apply_label = match harness_pr044_apply_state {
+        "approved" => "Apply",
+        "applied" => "Applied",
+        "rejected" => "Rejected",
+        _ => "Apply (Approval Required)",
+    };
     let harness_benchmark_rows = context
         .harness
         .benchmark_rows
@@ -5953,6 +5981,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 justify-content: center;
                                 text-align: center;
                             }
+                            #tau-ops-harness-apply-form,
                             #tau-ops-harness-action-apply {
                                 grid-column: 1 / -1;
                             }
@@ -6531,7 +6560,20 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     <form id="tau-ops-harness-reject-form" action="/ops/harness/proposals/PR-044/reject" method="post"><button id="tau-ops-harness-action-reject" type="submit" data-action="reject" data-action-tone="reject">"Reject"</button></form>
                                     <form id="tau-ops-harness-dry-run-form" action="/ops/harness/proposals/PR-044/dry-run" method="post"><button id="tau-ops-harness-action-dry-run" type="submit" data-action="dry-run" data-action-tone="secondary">"Dry Run Again"</button></form>
                                     <a id="tau-ops-harness-action-view-diff" data-action="view-diff" data-action-tone="secondary" href="/ops/harness/proposals/PR-044/diff">"View Diff"</a>
-                                    <button id="tau-ops-harness-action-apply" type="button" data-action="apply" data-action-tone="disabled" data-disabled="true" aria-disabled="true" data-approval-required="true">"Apply (Approval Required)"</button>
+                                    <form id="tau-ops-harness-apply-form" action="/ops/harness/proposals/PR-044/apply" method="post" data-approval-state=harness_pr044_apply_state>
+                                        <button
+                                            id="tau-ops-harness-action-apply"
+                                            type="submit"
+                                            data-action="apply"
+                                            data-action-tone="disabled"
+                                            data-disabled=harness_pr044_apply_disabled
+                                            aria-disabled=harness_pr044_apply_aria_disabled
+                                            data-approval-required="true"
+                                            disabled=!harness_pr044_apply_enabled
+                                        >
+                                            {harness_pr044_apply_label}
+                                        </button>
+                                    </form>
                                 </section>
                                 <section
                                     id="tau-ops-harness-conservative-policy"

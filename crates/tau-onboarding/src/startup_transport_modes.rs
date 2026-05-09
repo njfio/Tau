@@ -506,6 +506,9 @@ pub fn build_gateway_openresponses_server_config(
         max_input_chars: cli.gateway_openresponses_max_input_chars,
         runtime_heartbeat,
         external_coding_agent_bridge: ExternalCodingAgentBridgeConfig::default(),
+        ops_harness_self_improvement: Arc::new(
+            tau_gateway::NoopGatewayOpsHarnessSelfImprovementRunner,
+        ),
         delegated_tool_execution: cli.openai_codex_appserver,
     })
 }
