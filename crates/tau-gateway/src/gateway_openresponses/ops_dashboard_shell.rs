@@ -40,12 +40,13 @@ use tau_session::SessionStore;
 use super::channel_telemetry_runtime::build_gateway_multi_channel_lifecycle_command_config;
 use super::types::GatewayChannelLifecycleRequest;
 use super::{
-    apply_gateway_dashboard_action, collect_tau_ops_dashboard_command_center_snapshot,
-    complete_cortex_chat, find_ops_harness_proposal, gateway_memory_store,
-    gateway_memory_store_root, gateway_session_path, list_ops_harness_proposals,
-    record_cortex_memory_entry_delete_event, record_cortex_memory_entry_write_event,
-    record_cortex_observer_event, record_cortex_session_append_event,
-    record_cortex_session_reset_event, sanitize_session_key, GatewayDashboardActionRequest,
+    apply_gateway_dashboard_action, collect_ops_harness_memory_graph_lineage,
+    collect_tau_ops_dashboard_command_center_snapshot, complete_cortex_chat,
+    find_ops_harness_proposal, gateway_memory_store, gateway_memory_store_root,
+    gateway_session_path, list_ops_harness_proposals, record_cortex_memory_entry_delete_event,
+    record_cortex_memory_entry_write_event, record_cortex_observer_event,
+    record_cortex_session_append_event, record_cortex_session_reset_event, sanitize_session_key,
+    GatewayDashboardActionRequest, GatewayMemoryGraphEdge, GatewayMemoryGraphNode,
     GatewayOpenResponsesServerState, GatewayOpsHarnessProposalDefinition,
     GatewayOpsHarnessSelfImprovementRequest, OpenResponsesApiError, OpsShellControlsQuery,
     DEFAULT_SESSION_KEY, OPS_DASHBOARD_CHANNELS_ENDPOINT, OPS_DASHBOARD_CHAT_ENDPOINT,
@@ -787,205 +788,25 @@ fn append_memory_graph_rows(
     });
 }
 
-fn collect_harness_memory_graph_lineage_rows(
-    state_dir: &Path,
-) -> (
-    Vec<TauOpsDashboardMemoryGraphNodeRow>,
-    Vec<TauOpsDashboardMemoryGraphEdgeRow>,
-) {
-    let self_improvement_root = state_dir.join("ops-harness").join("self-improvement");
-    let mut node_rows = Vec::new();
-    let mut edge_rows = Vec::new();
-    let mut node_ids = BTreeSet::new();
-    let mut edge_ids = BTreeSet::new();
-
-    for proposal_definition in list_ops_harness_proposals() {
-        let mission_path = self_improvement_root
-            .join(proposal_definition.proposal_id)
-            .join("mission.json");
-        let Ok(mission_json) = std::fs::read_to_string(&mission_path) else {
-            continue;
-        };
-        let Ok(mission_state) = serde_json::from_str::<Value>(&mission_json) else {
-            continue;
-        };
-        let mission_id = mission_state
-            .get("mission_id")
-            .and_then(Value::as_str)
-            .filter(|value| !value.trim().is_empty())
-            .unwrap_or(proposal_definition.mission_id);
-        add_memory_graph_node(&mut node_rows, &mut node_ids, mission_id, "goal", "0.9500");
-
-        if let Some(records) = mission_state
-            .get("learning_records")
-            .and_then(Value::as_array)
-        {
-            for record in records {
-                let Some(record_id) = record.get("record_id").and_then(Value::as_str) else {
-                    continue;
-                };
-                add_memory_graph_node(
-                    &mut node_rows,
-                    &mut node_ids,
-                    record_id,
-                    "observation",
-                    "0.8500",
-                );
-                add_memory_graph_edge(
-                    &mut edge_rows,
-                    &mut edge_ids,
-                    mission_id,
-                    record_id,
-                    "contains",
-                    "1.0000",
-                );
-            }
-        }
-
-        if let Some(proposals) = mission_state
-            .get("improvement_proposals")
-            .and_then(Value::as_array)
-        {
-            for proposal in proposals {
-                let Some(proposal_id) = proposal.get("proposal_id").and_then(Value::as_str) else {
-                    continue;
-                };
-                let source_learning_record_id = proposal
-                    .get("source_learning_record_id")
-                    .and_then(Value::as_str)
-                    .unwrap_or(proposal_definition.source_learning_record_id);
-                let target_path = proposal
-                    .get("target_path")
-                    .and_then(Value::as_str)
-                    .unwrap_or(proposal_definition.target_path);
-                let target_node_id = format!("target:{target_path}");
-                add_memory_graph_node(
-                    &mut node_rows,
-                    &mut node_ids,
-                    proposal_id,
-                    "event",
-                    "0.9000",
-                );
-                add_memory_graph_node(
-                    &mut node_rows,
-                    &mut node_ids,
-                    target_node_id.as_str(),
-                    "fact",
-                    "0.6500",
-                );
-                add_memory_graph_edge(
-                    &mut edge_rows,
-                    &mut edge_ids,
-                    source_learning_record_id,
-                    proposal_id,
-                    "supports",
-                    "1.0000",
-                );
-                add_memory_graph_edge(
-                    &mut edge_rows,
-                    &mut edge_ids,
-                    proposal_id,
-                    target_node_id.as_str(),
-                    "updates",
-                    "1.0000",
-                );
-
-                if proposal
-                    .get("dry_run")
-                    .is_some_and(|dry_run| !dry_run.is_null())
-                {
-                    let dry_run_node_id = format!("dry-run:{proposal_id}");
-                    add_memory_graph_node(
-                        &mut node_rows,
-                        &mut node_ids,
-                        dry_run_node_id.as_str(),
-                        "event",
-                        "0.7000",
-                    );
-                    add_memory_graph_edge(
-                        &mut edge_rows,
-                        &mut edge_ids,
-                        proposal_id,
-                        dry_run_node_id.as_str(),
-                        "result_of",
-                        "1.0000",
-                    );
-                }
-
-                if proposal
-                    .get("applied_unix_ms")
-                    .is_some_and(|applied| !applied.is_null())
-                {
-                    let apply_node_id = format!("apply:{proposal_id}");
-                    add_memory_graph_node(
-                        &mut node_rows,
-                        &mut node_ids,
-                        apply_node_id.as_str(),
-                        "event",
-                        "0.7500",
-                    );
-                    add_memory_graph_edge(
-                        &mut edge_rows,
-                        &mut edge_ids,
-                        dry_run_or_proposal_node(proposal, proposal_id).as_str(),
-                        apply_node_id.as_str(),
-                        "supports",
-                        "1.0000",
-                    );
-                }
-            }
-        }
-    }
-
-    (node_rows, edge_rows)
-}
-
-fn dry_run_or_proposal_node(proposal: &Value, proposal_id: &str) -> String {
-    if proposal
-        .get("dry_run")
-        .is_some_and(|dry_run| !dry_run.is_null())
-    {
-        format!("dry-run:{proposal_id}")
-    } else {
-        proposal_id.to_string()
+fn tau_ops_dashboard_memory_graph_node_row_from_gateway(
+    node: &GatewayMemoryGraphNode,
+) -> TauOpsDashboardMemoryGraphNodeRow {
+    TauOpsDashboardMemoryGraphNodeRow {
+        memory_id: node.id.clone(),
+        memory_type: node.category.clone(),
+        importance: format!("{:.4}", node.weight.clamp(0.0, 1.0)),
     }
 }
 
-fn add_memory_graph_node(
-    node_rows: &mut Vec<TauOpsDashboardMemoryGraphNodeRow>,
-    node_ids: &mut BTreeSet<String>,
-    memory_id: &str,
-    memory_type: &str,
-    importance: &str,
-) {
-    if !node_ids.insert(memory_id.to_string()) {
-        return;
+fn tau_ops_dashboard_memory_graph_edge_row_from_gateway(
+    edge: &GatewayMemoryGraphEdge,
+) -> TauOpsDashboardMemoryGraphEdgeRow {
+    TauOpsDashboardMemoryGraphEdgeRow {
+        source_memory_id: edge.source.clone(),
+        target_memory_id: edge.target.clone(),
+        relation_type: edge.relation_type.clone(),
+        effective_weight: format!("{:.4}", edge.weight),
     }
-    node_rows.push(TauOpsDashboardMemoryGraphNodeRow {
-        memory_id: memory_id.to_string(),
-        memory_type: memory_type.to_string(),
-        importance: importance.to_string(),
-    });
-}
-
-fn add_memory_graph_edge(
-    edge_rows: &mut Vec<TauOpsDashboardMemoryGraphEdgeRow>,
-    edge_ids: &mut BTreeSet<String>,
-    source_memory_id: &str,
-    target_memory_id: &str,
-    relation_type: &str,
-    effective_weight: &str,
-) {
-    let edge_id = format!("{source_memory_id}\u{1f}{target_memory_id}\u{1f}{relation_type}");
-    if !edge_ids.insert(edge_id) {
-        return;
-    }
-    edge_rows.push(TauOpsDashboardMemoryGraphEdgeRow {
-        source_memory_id: source_memory_id.to_string(),
-        target_memory_id: target_memory_id.to_string(),
-        relation_type: relation_type.to_string(),
-        effective_weight: effective_weight.to_string(),
-    });
 }
 
 fn collect_ops_tools_inventory_rows(
@@ -1369,12 +1190,18 @@ fn collect_tau_ops_dashboard_chat_snapshot(
     }
 
     let (harness_lineage_nodes, harness_lineage_edges) =
-        collect_harness_memory_graph_lineage_rows(&state.config.state_dir);
+        collect_ops_harness_memory_graph_lineage(&state.config.state_dir, None, 0.0);
     append_memory_graph_rows(
         &mut memory_graph_node_rows,
         &mut memory_graph_edge_rows,
-        harness_lineage_nodes,
-        harness_lineage_edges,
+        harness_lineage_nodes
+            .iter()
+            .map(tau_ops_dashboard_memory_graph_node_row_from_gateway)
+            .collect(),
+        harness_lineage_edges
+            .iter()
+            .map(tau_ops_dashboard_memory_graph_edge_row_from_gateway)
+            .collect(),
     );
 
     if let Ok(store) = SessionStore::load(&session_path) {

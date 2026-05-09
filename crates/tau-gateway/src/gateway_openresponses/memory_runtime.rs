@@ -16,13 +16,14 @@ use tau_memory::runtime::{
 };
 
 use super::{
-    authorize_and_enforce_gateway_limits, enforce_policy_gate, parse_gateway_json_body,
-    record_cortex_memory_entry_delete_event, record_cortex_memory_entry_write_event,
-    record_cortex_memory_write_event, sanitize_session_key, GatewayMemoryEntryDeleteRequest,
-    GatewayMemoryEntryUpsertRequest, GatewayMemoryGraphEdge, GatewayMemoryGraphFilterSummary,
-    GatewayMemoryGraphNode, GatewayMemoryGraphQuery, GatewayMemoryGraphResponse,
-    GatewayMemoryReadQuery, GatewayMemoryUpdateRequest, GatewayOpenResponsesServerState,
-    OpenResponsesApiError, DEFAULT_SESSION_KEY, MEMORY_WRITE_POLICY_GATE,
+    append_ops_harness_memory_graph_lineage, authorize_and_enforce_gateway_limits,
+    enforce_policy_gate, parse_gateway_json_body, record_cortex_memory_entry_delete_event,
+    record_cortex_memory_entry_write_event, record_cortex_memory_write_event, sanitize_session_key,
+    GatewayMemoryEntryDeleteRequest, GatewayMemoryEntryUpsertRequest, GatewayMemoryGraphEdge,
+    GatewayMemoryGraphFilterSummary, GatewayMemoryGraphNode, GatewayMemoryGraphQuery,
+    GatewayMemoryGraphResponse, GatewayMemoryReadQuery, GatewayMemoryUpdateRequest,
+    GatewayOpenResponsesServerState, OpenResponsesApiError, DEFAULT_SESSION_KEY,
+    MEMORY_WRITE_POLICY_GATE,
 };
 
 pub(super) async fn handle_gateway_memory_read(
@@ -508,8 +509,18 @@ fn build_gateway_memory_graph_response(
     };
 
     let relation_types = normalize_memory_graph_relation_types(query.relation_types.as_deref());
-    let nodes = build_memory_graph_nodes(&content, max_nodes);
-    let edges = build_memory_graph_edges(&nodes, &relation_types, min_edge_weight);
+    let mut nodes = build_memory_graph_nodes(&content, max_nodes);
+    let mut edges = build_memory_graph_edges(&nodes, &relation_types, min_edge_weight);
+    let harness_relation_filter =
+        normalize_memory_record_relation_types(query.relation_types.as_deref());
+    append_ops_harness_memory_graph_lineage(
+        &mut nodes,
+        &mut edges,
+        &state.config.state_dir,
+        harness_relation_filter.as_ref(),
+        min_edge_weight,
+    );
+    let exists = exists || !nodes.is_empty();
 
     Ok(GatewayMemoryGraphResponse {
         session_key,
@@ -564,9 +575,16 @@ fn build_gateway_memory_record_graph_response(
         .as_ref()
         .map(|filter| filter.iter().cloned().collect::<Vec<_>>())
         .unwrap_or_else(|| vec!["all".to_string()]);
-    let nodes = build_memory_record_graph_nodes(records.as_slice());
-    let edges = build_memory_record_graph_edges(
+    let mut nodes = build_memory_record_graph_nodes(records.as_slice());
+    let mut edges = build_memory_record_graph_edges(
         records.as_slice(),
+        relation_type_filter.as_ref(),
+        min_edge_weight,
+    );
+    append_ops_harness_memory_graph_lineage(
+        &mut nodes,
+        &mut edges,
+        &state.config.state_dir,
         relation_type_filter.as_ref(),
         min_edge_weight,
     );

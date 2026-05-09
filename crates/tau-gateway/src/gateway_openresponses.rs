@@ -70,6 +70,7 @@ mod openai_compat_runtime;
 mod openresponses_entry_handler;
 mod openresponses_execution_handler;
 mod ops_dashboard_shell;
+mod ops_harness_memory_graph;
 mod ops_harness_proposals;
 mod ops_shell_controls;
 mod ops_shell_handlers;
@@ -182,6 +183,9 @@ use ops_dashboard_shell::{
     handle_ops_dashboard_harness_run_benchmark, handle_ops_dashboard_memory_create,
     handle_ops_dashboard_session_detail_reset, handle_ops_dashboard_sessions_branch,
     render_tau_ops_dashboard_shell_for_route,
+};
+use ops_harness_memory_graph::{
+    append_ops_harness_memory_graph_lineage, collect_ops_harness_memory_graph_lineage,
 };
 pub use ops_harness_proposals::{
     find_ops_harness_proposal, list_ops_harness_proposals, GatewayOpsHarnessProposalDefinition,
