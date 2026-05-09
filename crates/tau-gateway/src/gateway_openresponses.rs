@@ -149,10 +149,10 @@ use learning_runtime::{
     build_gateway_learning_insight, gateway_action_history_path, load_gateway_action_history_store,
 };
 use memory_runtime::{
-    gateway_memory_store, gateway_memory_stores_root, handle_api_memories_graph,
-    handle_gateway_memory_entry_delete, handle_gateway_memory_entry_read,
-    handle_gateway_memory_entry_write, handle_gateway_memory_graph, handle_gateway_memory_read,
-    handle_gateway_memory_write,
+    gateway_memory_store, gateway_memory_store_root, gateway_memory_stores_root,
+    handle_api_memories_graph, handle_gateway_memory_entry_delete,
+    handle_gateway_memory_entry_read, handle_gateway_memory_entry_write,
+    handle_gateway_memory_graph, handle_gateway_memory_read, handle_gateway_memory_write,
 };
 use mission_api_runtime::{handle_gateway_mission_detail, handle_gateway_missions_list};
 use mission_completion_runtime::{

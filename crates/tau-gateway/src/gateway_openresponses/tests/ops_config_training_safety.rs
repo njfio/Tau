@@ -55,9 +55,9 @@ async fn integration_spec_3756_c04_ops_harness_route_renders_benchmark_and_apply
 
     for marker in [
         "id=\"tau-ops-harness-benchmark-panel\" data-benchmark-id=\"m334-tranche-one-autonomy\"",
-        "id=\"tau-ops-harness-run-benchmark-form\" action=\"/ops/harness/run-benchmark\" method=\"post\" data-command=\"tau_agent_harness\"",
+        "id=\"tau-ops-harness-run-benchmark-form\" action=\"/ops/harness/run-benchmark?session=ops-harness-contract\" method=\"post\" data-command=\"tau_agent_harness\"",
         "id=\"tau-ops-harness-conservative-policy\" data-policy=\"conservative-self-improvement\" data-allowed-targets=\"skill,config,prompt\" data-blocked-targets=\"source-code,safety-policy\"",
-        "id=\"tau-ops-harness-action-apply\" type=\"button\" data-action=\"apply\" data-disabled=\"true\" aria-disabled=\"true\" data-approval-required=\"true\"",
+        "id=\"tau-ops-harness-action-apply\" type=\"button\" data-action=\"apply\" data-action-tone=\"disabled\" data-disabled=\"true\" aria-disabled=\"true\" data-approval-required=\"true\"",
         "id=\"tau-ops-harness-tui-companion\" data-component=\"TuiCompanion\" data-command=\"tau status\"",
     ] {
         assert!(
@@ -101,6 +101,52 @@ async fn integration_spec_3756_c05_ops_harness_actions_execute_and_persist_proof
     assert_eq!(proof["benchmark_id"], "m334-tranche-one-autonomy");
     assert_eq!(proof["passed"], true);
     assert_eq!(proof["tasks"].as_array().expect("task array").len(), 4);
+
+    let harness_memory_records = gateway_memory_store(&state_dir, "default")
+        .list_latest_records(
+            Some(&tau_memory::runtime::MemoryScopeFilter {
+                workspace_id: Some("default".to_string()),
+                channel_id: Some("tau-agent-harness".to_string()),
+                actor_id: Some("tau".to_string()),
+            }),
+            10,
+        )
+        .expect("list harness learning records");
+    assert_eq!(harness_memory_records.len(), 4);
+    assert!(harness_memory_records
+        .iter()
+        .all(|record| record.memory_type.as_str() == "decision"));
+    assert!(harness_memory_records
+        .iter()
+        .all(|record| record.entry.tags.contains(&"mission_learning".to_string())));
+    assert!(harness_memory_records.iter().any(|record| record
+        .entry
+        .summary
+        .contains("repo_spec_to_pr_feature_delivery")));
+
+    let graph_endpoint = expand_session_template(GATEWAY_MEMORY_GRAPH_ENDPOINT, "default");
+    let graph_response = client
+        .get(format!(
+            "http://{addr}{graph_endpoint}?workspace_id=default&channel_id=tau-agent-harness&actor_id=tau&memory_type=decision"
+        ))
+        .bearer_auth("secret")
+        .send()
+        .await
+        .expect("request harness learning graph");
+    assert_eq!(graph_response.status(), StatusCode::OK);
+    let graph_payload = graph_response
+        .json::<Value>()
+        .await
+        .expect("parse harness learning graph");
+    assert!(graph_payload["node_count"].as_u64().unwrap_or_default() >= 4);
+    assert!(graph_payload["nodes"]
+        .as_array()
+        .expect("graph nodes")
+        .iter()
+        .any(|node| node["label"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("Autonomy benchmark task")));
 
     let approve_response = client
         .post(format!(

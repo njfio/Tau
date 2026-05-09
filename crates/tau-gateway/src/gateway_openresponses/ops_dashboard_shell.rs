@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use axum::extract::{Form, Path as AxumPath, State};
+use axum::extract::{Form, Path as AxumPath, Query, State};
 use axum::http::StatusCode;
 use axum::response::{Html, IntoResponse, Redirect, Response};
 use serde::Deserialize;
@@ -40,7 +40,7 @@ use super::channel_telemetry_runtime::build_gateway_multi_channel_lifecycle_comm
 use super::types::GatewayChannelLifecycleRequest;
 use super::{
     apply_gateway_dashboard_action, collect_tau_ops_dashboard_command_center_snapshot,
-    complete_cortex_chat, gateway_memory_store, gateway_session_path,
+    complete_cortex_chat, gateway_memory_store, gateway_memory_store_root, gateway_session_path,
     record_cortex_memory_entry_delete_event, record_cortex_memory_entry_write_event,
     record_cortex_observer_event, record_cortex_session_append_event,
     record_cortex_session_reset_event, sanitize_session_key, GatewayDashboardActionRequest,
@@ -1395,11 +1395,16 @@ fn collect_tau_ops_dashboard_harness_snapshot(state_dir: &Path) -> TauOpsDashboa
 
 pub(super) async fn handle_ops_dashboard_harness_run_benchmark(
     State(state): State<Arc<GatewayOpenResponsesServerState>>,
+    Query(controls): Query<OpsShellControlsQuery>,
 ) -> Response {
     let fixture_path = canonical_harness_fixture_path();
     let artifact_dir = harness_artifact_dir(&state.config.state_dir);
     let proof_path = artifact_dir.join("latest.json");
-    let memory_root = artifact_dir.join("memory");
+    let session_key = controls
+        .requested_session_key()
+        .map(sanitize_session_key)
+        .unwrap_or_else(|| "default".to_string());
+    let memory_root = gateway_memory_store_root(&state.config.state_dir, session_key.as_str());
     let run_id = format!("gateway-harness-{}", now_unix_ms());
 
     let redirect_path = match load_autonomy_benchmark_fixture(&fixture_path).and_then(|fixture| {
@@ -1409,7 +1414,7 @@ pub(super) async fn handle_ops_dashboard_harness_run_benchmark(
                 run_id,
                 started_unix_ms: now_unix_ms(),
                 memory_root,
-                workspace_id: "gateway-ops-harness".to_string(),
+                workspace_id: session_key.clone(),
             },
         )
     }) {

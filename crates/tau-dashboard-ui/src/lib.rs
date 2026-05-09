@@ -1034,6 +1034,10 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     let harness_task_count = context.harness.task_count.to_string();
     let harness_pass_count = context.harness.pass_count.to_string();
     let harness_audit_row_count = context.harness.audit_rows.len().to_string();
+    let harness_benchmark_action = format!(
+        "/ops/harness/run-benchmark?session={}",
+        context.chat.active_session_key.clone()
+    );
     let harness_benchmark_rows = context
         .harness
         .benchmark_rows
@@ -6338,7 +6342,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     </p>
                                     <form
                                         id="tau-ops-harness-run-benchmark-form"
-                                        action="/ops/harness/run-benchmark"
+                                        action=harness_benchmark_action
                                         method="post"
                                         data-command="tau_agent_harness"
                                     >

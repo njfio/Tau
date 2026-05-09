@@ -819,7 +819,7 @@ fn gateway_memory_path(state_dir: &Path, session_key: &str) -> PathBuf {
         .join(format!("{session_key}.md"))
 }
 
-fn gateway_memory_store_root(state_dir: &Path, session_key: &str) -> PathBuf {
+pub(super) fn gateway_memory_store_root(state_dir: &Path, session_key: &str) -> PathBuf {
     gateway_memory_stores_root(state_dir).join(session_key)
 }
 
