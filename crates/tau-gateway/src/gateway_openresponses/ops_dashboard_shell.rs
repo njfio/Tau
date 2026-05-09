@@ -2076,6 +2076,21 @@ pub(super) async fn handle_ops_dashboard_chat_send(
     );
     state.record_ui_telemetry_event("chat", "send", "chat_message_appended");
     state.record_ui_telemetry_event("chat", "send", "chat_assistant_message_appended");
+    if write_ops_chat_turn_memory(
+        &state,
+        session_key.as_str(),
+        assistant_head,
+        content.trim(),
+        assistant_output.output_text.as_str(),
+        assistant_output.reason_code,
+        assistant_output.fallback,
+    )
+    .is_ok()
+    {
+        state.record_ui_telemetry_event("memory", "entry_write", "ops_chat_turn_memory_written");
+    } else {
+        state.record_ui_telemetry_event("memory", "entry_write", "ops_chat_turn_memory_failed");
+    }
     record_cortex_session_append_event(
         &state.config.state_dir,
         session_key.as_str(),
@@ -2083,6 +2098,97 @@ pub(super) async fn handle_ops_dashboard_chat_send(
         store.entries().len(),
     );
     Redirect::to(redirect_path.as_str()).into_response()
+}
+
+fn write_ops_chat_turn_memory(
+    state: &GatewayOpenResponsesServerState,
+    session_key: &str,
+    assistant_head: Option<u64>,
+    user_input: &str,
+    assistant_output: &str,
+    reason_code: &str,
+    fallback: bool,
+) -> anyhow::Result<()> {
+    let scope = MemoryScope {
+        workspace_id: session_key.to_string(),
+        channel_id: "ops.chat".to_string(),
+        actor_id: "operator".to_string(),
+    };
+    let store = gateway_memory_store(&state.config.state_dir, session_key);
+    let scope_filter = MemoryScopeFilter {
+        workspace_id: Some(scope.workspace_id.clone()),
+        channel_id: Some(scope.channel_id.clone()),
+        actor_id: Some(scope.actor_id.clone()),
+    };
+    let previous_memory_id = store
+        .list_latest_records(Some(&scope_filter), 1)
+        .ok()
+        .and_then(|records| {
+            records
+                .into_iter()
+                .next()
+                .map(|record| record.entry.memory_id)
+        });
+    let head_label = assistant_head
+        .map(|head| head.to_string())
+        .unwrap_or_else(|| now_unix_ms().to_string());
+    let memory_id = format!("ops-chat-{session_key}-{head_label}");
+    let summary = format!(
+        "Ops chat turn: operator asked '{}' and assistant answered '{}'",
+        truncate_ops_chat_memory_text(user_input, 160),
+        truncate_ops_chat_memory_text(assistant_output, 220)
+    );
+    let mut facts = vec![
+        format!("session_key={session_key}"),
+        format!("assistant_head={head_label}"),
+        format!("reason_code={reason_code}"),
+        format!("fallback={fallback}"),
+    ];
+    if let Some(previous_memory_id) = previous_memory_id.as_deref() {
+        facts.push(format!("previous_chat_memory_id={previous_memory_id}"));
+    }
+    let entry = MemoryEntry {
+        memory_id: memory_id.clone(),
+        summary,
+        tags: vec![
+            "ops_chat".to_string(),
+            "automatic_memory".to_string(),
+            format!("session:{session_key}"),
+            format!("reason:{reason_code}"),
+        ],
+        facts,
+        source_event_key: format!("ops-chat:{session_key}:{head_label}"),
+        recency_weight_bps: 1_000,
+        confidence_bps: 8_500,
+    };
+    let relations = previous_memory_id
+        .filter(|previous| previous != &memory_id)
+        .map(|target_id| {
+            vec![MemoryRelationInput {
+                target_id,
+                relation_type: Some("updates".to_string()),
+                weight: Some(0.65),
+            }]
+        })
+        .unwrap_or_default();
+    store.write_entry_with_metadata_and_relations(
+        &scope,
+        entry,
+        Some(MemoryType::Event),
+        Some(0.7),
+        relations.as_slice(),
+    )?;
+    Ok(())
+}
+
+fn truncate_ops_chat_memory_text(value: &str, max_chars: usize) -> String {
+    let collapsed = value.split_whitespace().collect::<Vec<_>>().join(" ");
+    if collapsed.chars().count() <= max_chars {
+        return collapsed;
+    }
+    let mut truncated = collapsed.chars().take(max_chars).collect::<String>();
+    truncated.push_str("...");
+    truncated
 }
 
 pub(super) async fn handle_ops_dashboard_memory_create(

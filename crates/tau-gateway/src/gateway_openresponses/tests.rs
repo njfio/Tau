@@ -703,6 +703,80 @@ async fn integration_spec_3799_c01_ops_chat_send_appends_assistant_reply() {
 }
 
 #[tokio::test]
+async fn regression_ops_chat_send_writes_durable_memory_records_for_completed_turns() {
+    let temp = tempdir().expect("tempdir");
+    let state = test_state_with_client_and_auth(
+        temp.path(),
+        4_096,
+        Arc::new(CaptureGatewayLlmClient::new("ops assistant memory answer")),
+        Arc::new(NoopGatewayToolRegistrar),
+        GatewayOpenResponsesAuthMode::Token,
+        Some("secret"),
+        None,
+        60,
+        120,
+    );
+    let (addr, handle) = spawn_test_server(state.clone())
+        .await
+        .expect("spawn server");
+    let client = Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .expect("build client");
+
+    for message in [
+        "remember first ops chat turn",
+        "remember second ops chat turn",
+    ] {
+        let send_response = client
+            .post(format!("http://{addr}/ops/chat/send"))
+            .form(&[
+                ("session_key", "chat-memory-session"),
+                ("message", message),
+                ("theme", "dark"),
+                ("sidebar", "expanded"),
+            ])
+            .send()
+            .await
+            .expect("ops chat send request");
+        assert_eq!(send_response.status(), StatusCode::SEE_OTHER);
+    }
+
+    let store = gateway_memory_store(&state.config.state_dir, "chat-memory-session");
+    let records = store
+        .list_latest_records(
+            Some(&tau_memory::runtime::MemoryScopeFilter {
+                workspace_id: Some("chat-memory-session".to_string()),
+                channel_id: Some("ops.chat".to_string()),
+                actor_id: Some("operator".to_string()),
+            }),
+            10,
+        )
+        .expect("list ops chat memory records");
+    assert_eq!(records.len(), 2);
+    assert!(records
+        .iter()
+        .all(|record| record.memory_type.as_str() == "event"));
+    assert!(records.iter().any(|record| record
+        .entry
+        .summary
+        .contains("remember first ops chat turn")));
+    assert!(records.iter().any(|record| record
+        .entry
+        .summary
+        .contains("remember second ops chat turn")));
+    assert!(records
+        .iter()
+        .all(|record| record.entry.tags.contains(&"automatic_memory".to_string())));
+    assert!(records.iter().any(|record| record
+        .relations
+        .iter()
+        .any(|relation| relation.relation_type.as_str() == "updates")));
+
+    handle.abort();
+}
+
+#[tokio::test]
 async fn functional_spec_2872_c01_ops_chat_shell_exposes_new_session_form_contract_markers() {
     let temp = tempdir().expect("tempdir");
     let state = test_state(temp.path(), 4_096, "secret");

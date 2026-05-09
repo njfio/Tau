@@ -1582,6 +1582,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                 data-session-key=chat_session_key.clone()
                 data-node-count=memory_graph_node_count.clone()
                 data-edge-count=memory_graph_edge_count.clone()
+                data-scope-memory-type=memory_search_memory_type.clone()
                 data-filter-memory-type=memory_graph_filter_memory_type.clone()
                 data-filter-relation-type=memory_graph_filter_relation_type.clone()
                 data-graph-state=memory_graph_scope_state_label
@@ -1589,7 +1590,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                 <h3>Graph Scope</h3>
                 <p>
                     {format!(
-                        "session {chat_session_key} | nodes {memory_graph_node_count} | edges {memory_graph_edge_count} | memory type {memory_graph_filter_memory_type} | relation {memory_graph_filter_relation_type} | {memory_graph_scope_state_label}"
+                        "session {chat_session_key} | nodes {memory_graph_node_count} | edges {memory_graph_edge_count} | scope type {memory_scope_type_label} | graph type filter {memory_graph_filter_memory_type} | relation {memory_graph_filter_relation_type} | {memory_graph_scope_state_label}"
                     )}
                 </p>
                 <nav
