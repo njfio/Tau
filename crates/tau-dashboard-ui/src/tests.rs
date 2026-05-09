@@ -2508,6 +2508,13 @@ fn functional_spec_2905_c01_c03_memory_route_renders_search_panel_and_empty_stat
     assert!(html.contains(
             "id=\"tau-ops-memory-panel\" data-route=\"/ops/memory\" aria-hidden=\"false\" data-panel-visible=\"true\" data-query=\"\" data-result-count=\"0\""
         ));
+    assert!(html.contains(
+        "id=\"tau-ops-memory-scope-summary\" data-session-key=\"default\" data-result-count=\"0\" data-query=\"\" data-workspace-id=\"\" data-channel-id=\"\" data-actor-id=\"\" data-memory-type=\"\" data-create-status=\"idle\""
+    ));
+    assert!(html.contains("Memory Scope"));
+    assert!(html.contains("all entries"));
+    assert!(html.contains("id=\"tau-ops-memory-open-graph\" href=\"/ops/memory-graph?theme=light&amp;sidebar=collapsed&amp;session=default&amp;workspace_id=&amp;channel_id=&amp;actor_id=&amp;memory_type=\""));
+    assert!(html.contains("id=\"tau-ops-memory-open-session\" href=\"/ops/sessions/default?theme=light&amp;sidebar=collapsed&amp;session=default\""));
     assert!(
         html.contains("id=\"tau-ops-memory-search-form\" action=\"/ops/memory\" method=\"get\"")
     );

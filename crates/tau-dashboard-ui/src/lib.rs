@@ -1486,6 +1486,25 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     let memory_graph_route_href_base = format!(
         "/ops/memory-graph?theme={theme_attr}&sidebar={sidebar_state_attr}&session={chat_session_key}&workspace_id={memory_search_workspace_id}&channel_id={memory_search_channel_id}&actor_id={memory_search_actor_id}&memory_type={memory_search_memory_type}"
     );
+    let memory_scope_graph_href = memory_graph_route_href_base.clone();
+    let memory_scope_session_href = format!(
+        "/ops/sessions/{chat_session_key}?theme={theme_attr}&sidebar={sidebar_state_attr}&session={chat_session_key}"
+    );
+    let memory_scope_query_label = if memory_search_query.trim().is_empty() {
+        "all entries".to_string()
+    } else {
+        memory_search_query.clone()
+    };
+    let memory_scope_workspace_label = if memory_search_workspace_id.trim().is_empty() {
+        "all workspaces".to_string()
+    } else {
+        memory_search_workspace_id.clone()
+    };
+    let memory_scope_type_label = if memory_search_memory_type.trim().is_empty() {
+        "all types".to_string()
+    } else {
+        memory_search_memory_type.clone()
+    };
     let memory_graph_zoom_in_href = format!(
         "{memory_graph_route_href_base}&graph_zoom={memory_graph_zoom_in_level}&graph_pan_x={memory_graph_pan_x_level}&graph_pan_y={memory_graph_pan_y_level}&graph_filter_memory_type={memory_graph_filter_memory_type}&graph_filter_relation_type={memory_graph_filter_relation_type}"
     );
@@ -3047,6 +3066,71 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     color: #9bb6c2;
                     font-size: .72rem;
                 }
+                #tau-ops-memory-scope-summary {
+                    display: grid;
+                    gap: 8px;
+                    width: min(720px, 100%);
+                    margin: 0 0 12px;
+                    border: 1px solid #203847;
+                    border-radius: 7px;
+                    padding: 10px;
+                    background: #091923;
+                }
+                #tau-ops-memory-scope-summary h3 {
+                    margin: 0;
+                    color: #edf8fb;
+                    font-size: .82rem;
+                    letter-spacing: 0;
+                }
+                #tau-ops-memory-scope-summary dl {
+                    display: grid;
+                    grid-template-columns: repeat(3, minmax(0, 1fr));
+                    gap: 8px;
+                    margin: 0;
+                }
+                #tau-ops-memory-scope-summary div {
+                    min-width: 0;
+                    border: 1px solid #263f4e;
+                    border-radius: 6px;
+                    padding: 7px 8px;
+                    background: #0d2331;
+                }
+                #tau-ops-memory-scope-summary dt {
+                    color: #8fa8b3;
+                    font-size: .64rem;
+                    font-weight: 800;
+                    letter-spacing: .02em;
+                    text-transform: uppercase;
+                }
+                #tau-ops-memory-scope-summary dd {
+                    margin: 2px 0 0;
+                    color: #edf8fb;
+                    font-size: .8rem;
+                    font-weight: 750;
+                    overflow-wrap: anywhere;
+                }
+                #tau-ops-memory-scope-actions {
+                    display: grid;
+                    grid-template-columns: repeat(2, minmax(0, 1fr));
+                    gap: 6px;
+                }
+                #tau-ops-memory-scope-actions a {
+                    display: flex;
+                    min-width: 0;
+                    min-height: 30px;
+                    align-items: center;
+                    justify-content: center;
+                    border: 1px solid #2f5368;
+                    border-radius: 6px;
+                    padding: 6px 8px;
+                    background: #102b3a;
+                    color: #dbe8ef;
+                    font-size: .72rem;
+                    font-weight: 800;
+                    text-align: center;
+                    text-decoration: none;
+                    overflow-wrap: anywhere;
+                }
                 #tau-ops-kpi-grid {
                     display: grid;
                     grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -3997,6 +4081,57 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             data-deleted-memory-id=memory_delete_deleted_entry_id_panel_attr
                         >
                             <h2>Memory Explorer</h2>
+                            <article
+                                id="tau-ops-memory-scope-summary"
+                                data-session-key=chat_session_key.clone()
+                                data-result-count=memory_result_count_value.clone()
+                                data-query=memory_query_panel_attr.clone()
+                                data-workspace-id=memory_workspace_id_panel_attr.clone()
+                                data-channel-id=memory_channel_id_panel_attr.clone()
+                                data-actor-id=memory_actor_id_panel_attr.clone()
+                                data-memory-type=memory_type_panel_attr.clone()
+                                data-create-status=memory_create_status_panel_attr.clone()
+                                data-created-memory-id=memory_create_created_entry_id_panel_attr.clone()
+                            >
+                                <h3>Memory Scope</h3>
+                                <dl>
+                                    <div>
+                                        <dt>Session</dt>
+                                        <dd>{chat_session_key.clone()}</dd>
+                                    </div>
+                                    <div>
+                                        <dt>Results</dt>
+                                        <dd>{memory_result_count_value.clone()}</dd>
+                                    </div>
+                                    <div>
+                                        <dt>Query</dt>
+                                        <dd>{memory_scope_query_label}</dd>
+                                    </div>
+                                    <div>
+                                        <dt>Workspace</dt>
+                                        <dd>{memory_scope_workspace_label}</dd>
+                                    </div>
+                                    <div>
+                                        <dt>Type</dt>
+                                        <dd>{memory_scope_type_label}</dd>
+                                    </div>
+                                    <div>
+                                        <dt>Write Status</dt>
+                                        <dd>{memory_create_status_panel_attr.clone()}</dd>
+                                    </div>
+                                </dl>
+                                <nav
+                                    id="tau-ops-memory-scope-actions"
+                                    aria-label="Memory scope actions"
+                                >
+                                    <a id="tau-ops-memory-open-graph" href=memory_scope_graph_href>
+                                        Open Memory Graph
+                                    </a>
+                                    <a id="tau-ops-memory-open-session" href=memory_scope_session_href>
+                                        Open Session
+                                    </a>
+                                </nav>
+                            </article>
                             <form
                                 id="tau-ops-memory-search-form"
                                 action=memory_search_form_action
