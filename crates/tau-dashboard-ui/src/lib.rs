@@ -3669,6 +3669,49 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 ></textarea>
                                 <button id="tau-ops-chat-send-button" type="submit">Send</button>
                             </form>
+                            <script
+                                id="tau-ops-chat-compose-shortcuts"
+                                data-submit-shortcut="enter"
+                                data-newline-shortcut="shift-enter"
+                            >
+                                r#"
+                                (function () {
+                                    function installChatComposeShortcuts() {
+                                        var input = document.getElementById("tau-ops-chat-input");
+                                        var form = document.getElementById("tau-ops-chat-send-form");
+                                        if (!input || !form || input.getAttribute("data-compose-shortcuts-bound") === "true") {
+                                            return;
+                                        }
+
+                                        input.setAttribute("data-compose-shortcuts-bound", "true");
+                                        input.addEventListener("keydown", function (event) {
+                                            if (event.key !== "Enter" || event.shiftKey) {
+                                                return;
+                                            }
+
+                                            event.preventDefault();
+                                            if (!input.value || !input.value.trim()) {
+                                                input.setAttribute("data-submit-blocked", "empty-message");
+                                                return;
+                                            }
+
+                                            input.removeAttribute("data-submit-blocked");
+                                            if (typeof form.requestSubmit === "function") {
+                                                form.requestSubmit();
+                                            } else {
+                                                form.submit();
+                                            }
+                                        });
+                                    }
+
+                                    if (document.readyState === "loading") {
+                                        document.addEventListener("DOMContentLoaded", installChatComposeShortcuts);
+                                    } else {
+                                        installChatComposeShortcuts();
+                                    }
+                                })();
+                                "#
+                            </script>
                             <article
                                 id="tau-ops-chat-latest-turn"
                                 data-latest-turn-visible=chat_latest_turn_visible

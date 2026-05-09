@@ -2090,6 +2090,11 @@ fn functional_spec_2881_c01_chat_route_renders_multiline_compose_contract_marker
     assert!(html.contains(
         "id=\"tau-ops-chat-input-shortcut-hint\" data-shortcut-contract=\"shift-enter\""
     ));
+    assert!(html.contains(
+        "id=\"tau-ops-chat-compose-shortcuts\" data-submit-shortcut=\"enter\" data-newline-shortcut=\"shift-enter\""
+    ));
+    assert!(html.contains("form.requestSubmit()"));
+    assert!(html.contains("data-submit-blocked\", \"empty-message\""));
 }
 
 #[test]
