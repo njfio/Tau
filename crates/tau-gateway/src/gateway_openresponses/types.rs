@@ -199,6 +199,14 @@ pub(super) struct GatewayMemoryGraphQuery {
     pub(super) min_edge_weight: Option<f64>,
     #[serde(default)]
     pub(super) relation_types: Option<String>,
+    #[serde(default)]
+    pub(super) workspace_id: Option<String>,
+    #[serde(default)]
+    pub(super) channel_id: Option<String>,
+    #[serde(default)]
+    pub(super) actor_id: Option<String>,
+    #[serde(default)]
+    pub(super) memory_type: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Default)]

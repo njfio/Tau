@@ -482,6 +482,18 @@ fn build_gateway_memory_graph_response(
     query: &GatewayMemoryGraphQuery,
 ) -> Result<GatewayMemoryGraphResponse, OpenResponsesApiError> {
     let session_key = sanitize_session_key(session_key_raw);
+    let max_nodes = query.max_nodes.unwrap_or(24).clamp(1, 256);
+    let min_edge_weight = query.min_edge_weight.unwrap_or(0.0).max(0.0);
+    if let Some(response) = build_gateway_memory_record_graph_response(
+        state,
+        session_key.as_str(),
+        query,
+        max_nodes,
+        min_edge_weight,
+    )? {
+        return Ok(response);
+    }
+
     let memory_path = gateway_memory_path(&state.config.state_dir, session_key.as_str());
     let exists = memory_path.exists();
     let content = if exists {
@@ -495,8 +507,6 @@ fn build_gateway_memory_graph_response(
         String::new()
     };
 
-    let max_nodes = query.max_nodes.unwrap_or(24).clamp(1, 256);
-    let min_edge_weight = query.min_edge_weight.unwrap_or(1.0).max(0.0);
     let relation_types = normalize_memory_graph_relation_types(query.relation_types.as_deref());
     let nodes = build_memory_graph_nodes(&content, max_nodes);
     let edges = build_memory_graph_edges(&nodes, &relation_types, min_edge_weight);
@@ -516,6 +526,159 @@ fn build_gateway_memory_graph_response(
             relation_types,
         },
     })
+}
+
+fn build_gateway_memory_record_graph_response(
+    state: &GatewayOpenResponsesServerState,
+    session_key: &str,
+    query: &GatewayMemoryGraphQuery,
+    max_nodes: usize,
+    min_edge_weight: f64,
+) -> Result<Option<GatewayMemoryGraphResponse>, OpenResponsesApiError> {
+    let scope_filter = MemoryScopeFilter {
+        workspace_id: normalize_memory_graph_filter(query.workspace_id.as_deref()),
+        channel_id: normalize_memory_graph_filter(query.channel_id.as_deref()),
+        actor_id: normalize_memory_graph_filter(query.actor_id.as_deref()),
+    };
+    let memory_type_filter = normalize_memory_graph_filter(query.memory_type.as_deref());
+    let store = gateway_memory_store(&state.config.state_dir, session_key);
+    let mut records = store
+        .list_latest_records(Some(&scope_filter), max_nodes)
+        .map_err(|error| {
+            OpenResponsesApiError::internal(format!(
+                "failed to list memory records for session '{}': {error}",
+                session_key
+            ))
+        })?;
+    if let Some(memory_type) = memory_type_filter.as_deref() {
+        records.retain(|record| record.memory_type.as_str() == memory_type);
+    }
+    if records.is_empty() {
+        return Ok(None);
+    }
+
+    records.sort_by(|left, right| left.entry.memory_id.cmp(&right.entry.memory_id));
+    let relation_type_filter =
+        normalize_memory_record_relation_types(query.relation_types.as_deref());
+    let relation_types = relation_type_filter
+        .as_ref()
+        .map(|filter| filter.iter().cloned().collect::<Vec<_>>())
+        .unwrap_or_else(|| vec!["all".to_string()]);
+    let nodes = build_memory_record_graph_nodes(records.as_slice());
+    let edges = build_memory_record_graph_edges(
+        records.as_slice(),
+        relation_type_filter.as_ref(),
+        min_edge_weight,
+    );
+    let store_root = gateway_memory_store_root(&state.config.state_dir, session_key);
+
+    Ok(Some(GatewayMemoryGraphResponse {
+        session_key: session_key.to_string(),
+        path: store_root.display().to_string(),
+        exists: store_root.exists(),
+        bytes: 0,
+        node_count: nodes.len(),
+        edge_count: edges.len(),
+        nodes,
+        edges,
+        filters: GatewayMemoryGraphFilterSummary {
+            max_nodes,
+            min_edge_weight,
+            relation_types,
+        },
+    }))
+}
+
+fn normalize_memory_graph_filter(raw: Option<&str>) -> Option<String> {
+    raw.map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+fn normalize_memory_record_relation_types(raw: Option<&str>) -> Option<BTreeSet<String>> {
+    let relation_types = raw
+        .unwrap_or_default()
+        .split(',')
+        .map(str::trim)
+        .map(str::to_ascii_lowercase)
+        .filter(|value| !value.is_empty() && value != "all")
+        .collect::<BTreeSet<_>>();
+    if relation_types.is_empty() {
+        None
+    } else {
+        Some(relation_types)
+    }
+}
+
+fn build_memory_record_graph_nodes(records: &[RuntimeMemoryRecord]) -> Vec<GatewayMemoryGraphNode> {
+    records
+        .iter()
+        .map(|record| {
+            let importance = f64::from(record.importance.clamp(0.0, 1.0));
+            GatewayMemoryGraphNode {
+                id: record.entry.memory_id.clone(),
+                label: record.entry.summary.clone(),
+                category: record.memory_type.as_str().to_string(),
+                weight: importance,
+                size: 12.0 + (importance * 16.0),
+            }
+        })
+        .collect()
+}
+
+fn build_memory_record_graph_edges(
+    records: &[RuntimeMemoryRecord],
+    relation_type_filter: Option<&BTreeSet<String>>,
+    min_edge_weight: f64,
+) -> Vec<GatewayMemoryGraphEdge> {
+    let memory_ids = records
+        .iter()
+        .map(|record| record.entry.memory_id.as_str())
+        .collect::<BTreeSet<_>>();
+    let mut edges = Vec::new();
+    for record in records {
+        for relation in &record.relations {
+            if !memory_ids.contains(relation.target_id.as_str()) {
+                continue;
+            }
+            let relation_type = relation.relation_type.as_str().to_string();
+            if relation_type_filter
+                .map(|filter| !filter.contains(relation_type.as_str()))
+                .unwrap_or(false)
+            {
+                continue;
+            }
+            let weight = f64::from(relation.effective_weight.max(0.0));
+            if weight < min_edge_weight {
+                continue;
+            }
+            edges.push(GatewayMemoryGraphEdge {
+                id: format!(
+                    "edge:memory_relation:{}:{}:{}",
+                    record.entry.memory_id, relation.target_id, relation_type
+                ),
+                source: record.entry.memory_id.clone(),
+                target: relation.target_id.clone(),
+                relation_type,
+                weight,
+            });
+        }
+    }
+    edges.sort_by(|left, right| {
+        (
+            left.relation_type.as_str(),
+            left.source.as_str(),
+            left.target.as_str(),
+            left.id.as_str(),
+        )
+            .cmp(&(
+                right.relation_type.as_str(),
+                right.source.as_str(),
+                right.target.as_str(),
+                right.id.as_str(),
+            ))
+    });
+    edges
 }
 
 fn normalize_memory_graph_relation_types(raw: Option<&str>) -> Vec<String> {

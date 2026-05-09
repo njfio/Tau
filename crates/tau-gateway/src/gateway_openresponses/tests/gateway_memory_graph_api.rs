@@ -53,3 +53,87 @@ async fn functional_gateway_memory_graph_endpoint_returns_filtered_relations() {
 
     handle.abort();
 }
+
+#[tokio::test]
+async fn regression_gateway_memory_graph_endpoint_reads_durable_memory_records() {
+    let temp = tempdir().expect("tempdir");
+    let state = test_state(temp.path(), 10_000, "secret");
+    let (addr, handle) = spawn_test_server(state.clone())
+        .await
+        .expect("spawn server");
+    let session_key = "memory-graph-records";
+    let target_endpoint =
+        expand_memory_entry_template(GATEWAY_MEMORY_ENTRY_ENDPOINT, session_key, "mem-target");
+    let source_endpoint =
+        expand_memory_entry_template(GATEWAY_MEMORY_ENTRY_ENDPOINT, session_key, "mem-source");
+    let graph_endpoint = expand_session_template(GATEWAY_MEMORY_GRAPH_ENDPOINT, session_key);
+
+    let client = Client::new();
+    let target_create = client
+        .put(format!("http://{addr}{target_endpoint}"))
+        .bearer_auth("secret")
+        .json(&json!({
+            "summary": "Target memory record",
+            "workspace_id": "workspace-graph-api",
+            "channel_id": "channel-graph-api",
+            "actor_id": "operator",
+            "memory_type": "fact",
+            "importance": 0.66,
+            "policy_gate": MEMORY_WRITE_POLICY_GATE
+        }))
+        .send()
+        .await
+        .expect("create target memory record");
+    assert_eq!(target_create.status(), StatusCode::CREATED);
+
+    let source_create = client
+        .put(format!("http://{addr}{source_endpoint}"))
+        .bearer_auth("secret")
+        .json(&json!({
+            "summary": "Source memory record",
+            "workspace_id": "workspace-graph-api",
+            "channel_id": "channel-graph-api",
+            "actor_id": "operator",
+            "memory_type": "goal",
+            "importance": 0.88,
+            "relations": [{
+                "target_id": "mem-target",
+                "relation_type": "related_to",
+                "weight": 0.77
+            }],
+            "policy_gate": MEMORY_WRITE_POLICY_GATE
+        }))
+        .send()
+        .await
+        .expect("create source memory record");
+    assert_eq!(source_create.status(), StatusCode::CREATED);
+
+    let graph_response = client
+        .get(format!(
+            "http://{addr}{graph_endpoint}?workspace_id=workspace-graph-api&channel_id=channel-graph-api&actor_id=operator&relation_types=related_to"
+        ))
+        .bearer_auth("secret")
+        .send()
+        .await
+        .expect("request memory record graph");
+    assert_eq!(graph_response.status(), StatusCode::OK);
+    let payload = graph_response
+        .json::<Value>()
+        .await
+        .expect("parse memory record graph payload");
+
+    assert_eq!(payload["session_key"], session_key);
+    assert_eq!(payload["exists"], Value::Bool(true));
+    assert_eq!(payload["node_count"], Value::from(2));
+    assert_eq!(payload["edge_count"], Value::from(1));
+    assert_eq!(payload["nodes"][0]["id"], Value::from("mem-source"));
+    assert_eq!(payload["nodes"][1]["id"], Value::from("mem-target"));
+    assert_eq!(payload["edges"][0]["source"], Value::from("mem-source"));
+    assert_eq!(payload["edges"][0]["target"], Value::from("mem-target"));
+    assert_eq!(
+        payload["edges"][0]["relation_type"],
+        Value::from("related_to")
+    );
+
+    handle.abort();
+}
