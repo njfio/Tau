@@ -1914,6 +1914,10 @@ fn functional_spec_2830_c01_chat_route_renders_send_form_and_fallback_transcript
     });
 
     assert!(html.contains("id=\"tau-ops-chat-panel\" data-route=\"/ops/chat\" aria-hidden=\"false\" data-active-session-key=\"default\""));
+    assert!(html.contains(
+        "id=\"tau-ops-chat-session-summary\" data-active-session-key=\"default\" data-entry-count=\"0\" data-total-tokens=\"0\" data-validation-state=\"valid\" data-updated-unix-ms=\"0\""
+    ));
+    assert!(html.contains("Session Summary"));
     assert!(html.contains("id=\"tau-ops-chat-send-form\" action=\"/ops/chat/send\" method=\"post\" data-session-key=\"default\""));
     assert!(html.contains(
         "id=\"tau-ops-chat-session-key\" type=\"hidden\" name=\"session_key\" value=\"default\""
@@ -1961,6 +1965,9 @@ fn functional_spec_2830_c02_chat_route_renders_snapshot_message_rows_for_active_
     });
 
     assert!(html.contains("data-active-session-key=\"session-42\""));
+    assert!(html.contains(
+        "id=\"tau-ops-chat-session-summary\" data-active-session-key=\"session-42\" data-entry-count=\"2\" data-total-tokens=\"0\" data-validation-state=\"valid\" data-updated-unix-ms=\"0\""
+    ));
     assert!(html.contains("id=\"tau-ops-chat-send-form\" action=\"/ops/chat/send\" method=\"post\" data-session-key=\"session-42\""));
     assert!(
         html.contains("id=\"tau-ops-chat-theme\" type=\"hidden\" name=\"theme\" value=\"light\"")
@@ -1983,6 +1990,7 @@ fn functional_spec_2830_c02_chat_route_renders_snapshot_message_rows_for_active_
     assert!(html.contains("#tau-ops-chat-panel[aria-hidden=\"false\"]"));
     assert!(html.contains("grid-template-columns: minmax(0, 1fr);"));
     assert!(html.contains("max-width: 720px;"));
+    assert!(html.contains("#tau-ops-chat-session-summary"));
     assert!(html.contains("#tau-ops-chat-transcript {"));
     assert!(html.contains("grid-template-columns: minmax(0, 1fr);"));
     assert!(html.contains("overflow-x: hidden;"));

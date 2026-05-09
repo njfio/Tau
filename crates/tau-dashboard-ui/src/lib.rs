@@ -1116,6 +1116,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     let sessions_row_options = context.chat.session_options.clone();
     let sessions_row_count_value = sessions_row_options.len().to_string();
     let chat_session_key = context.chat.active_session_key.clone();
+    let rendered_chat_entry_count = context.chat.message_rows.len();
     let mut chat_session_options = sessions_row_options.clone();
     let mut active_session_marked = false;
     for option in &mut chat_session_options {
@@ -1128,7 +1129,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
         chat_session_options.push(TauOpsDashboardChatSessionOptionRow {
             session_key: chat_session_key.clone(),
             selected: true,
-            entry_count: 0,
+            entry_count: rendered_chat_entry_count,
             usage_total_tokens: 0,
             validation_is_valid: true,
             updated_unix_ms: 0,
@@ -2079,6 +2080,29 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
         .collect_view();
     let chat_session_option_count_value = chat_session_options.len().to_string();
     let chat_message_count_value = chat_message_rows.len().to_string();
+    let active_chat_session_option = chat_session_options
+        .iter()
+        .find(|option| option.session_key == chat_session_key);
+    let active_session_entry_count_value = active_chat_session_option
+        .map(|option| option.entry_count.max(rendered_chat_entry_count))
+        .unwrap_or(rendered_chat_entry_count)
+        .to_string();
+    let active_session_total_tokens_value = active_chat_session_option
+        .map(|option| option.usage_total_tokens)
+        .unwrap_or(context.chat.session_detail_usage_total_tokens)
+        .to_string();
+    let active_session_validation_state = if active_chat_session_option
+        .map(|option| option.validation_is_valid)
+        .unwrap_or(context.chat.session_detail_validation_is_valid)
+    {
+        "valid"
+    } else {
+        "invalid"
+    };
+    let active_session_updated_unix_ms_value = active_chat_session_option
+        .map(|option| option.updated_unix_ms)
+        .unwrap_or(0)
+        .to_string();
     let latest_user_row = chat_message_rows
         .iter()
         .enumerate()
@@ -2696,6 +2720,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     grid-column: 1 / -1;
                     margin-bottom: 0;
                 }
+                #tau-ops-chat-session-summary,
                 #tau-ops-chat-session-selector,
                 #tau-ops-chat-new-session-form {
                     grid-column: 1;
@@ -2710,6 +2735,47 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     min-width: 0;
                     width: 100%;
                     max-width: 720px;
+                }
+                #tau-ops-chat-session-summary {
+                    display: grid;
+                    gap: 8px;
+                    border: 1px solid #203847;
+                    border-radius: 7px;
+                    padding: 10px;
+                    background: #091923;
+                }
+                #tau-ops-chat-session-summary h3 {
+                    margin: 0;
+                    color: #edf8fb;
+                    font-size: .82rem;
+                    letter-spacing: 0;
+                }
+                #tau-ops-chat-session-summary dl {
+                    display: grid;
+                    grid-template-columns: repeat(2, minmax(0, 1fr));
+                    gap: 8px;
+                    margin: 0;
+                }
+                #tau-ops-chat-session-summary div {
+                    min-width: 0;
+                    border: 1px solid #263f4e;
+                    border-radius: 6px;
+                    padding: 7px 8px;
+                    background: #0d2331;
+                }
+                #tau-ops-chat-session-summary dt {
+                    color: #8fa8b3;
+                    font-size: .64rem;
+                    font-weight: 800;
+                    letter-spacing: .02em;
+                    text-transform: uppercase;
+                }
+                #tau-ops-chat-session-summary dd {
+                    margin: 2px 0 0;
+                    color: #edf8fb;
+                    font-size: .8rem;
+                    font-weight: 750;
+                    overflow-wrap: anywhere;
                 }
                 #tau-ops-chat-session-selector {
                     border: 1px solid #203847;
@@ -3370,6 +3436,38 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             data-panel-visible=chat_panel_visible
                         >
                             <h2>Conversation / Chat</h2>
+                            <article
+                                id="tau-ops-chat-session-summary"
+                                data-active-session-key=chat_session_key.clone()
+                                data-entry-count=active_session_entry_count_value.clone()
+                                data-total-tokens=active_session_total_tokens_value.clone()
+                                data-validation-state=active_session_validation_state
+                                data-updated-unix-ms=active_session_updated_unix_ms_value.clone()
+                            >
+                                <h3>Session Summary</h3>
+                                <dl>
+                                    <div>
+                                        <dt>Session</dt>
+                                        <dd>{chat_session_key.clone()}</dd>
+                                    </div>
+                                    <div>
+                                        <dt>Entries</dt>
+                                        <dd>{active_session_entry_count_value.clone()}</dd>
+                                    </div>
+                                    <div>
+                                        <dt>Tokens</dt>
+                                        <dd>{active_session_total_tokens_value.clone()}</dd>
+                                    </div>
+                                    <div>
+                                        <dt>Validation</dt>
+                                        <dd>{active_session_validation_state}</dd>
+                                    </div>
+                                    <div>
+                                        <dt>Updated</dt>
+                                        <dd>{active_session_updated_unix_ms_value.clone()}</dd>
+                                    </div>
+                                </dl>
+                            </article>
                             <section
                                 id="tau-ops-chat-session-selector"
                                 data-active-session-key=chat_session_key.clone()
