@@ -2836,6 +2836,13 @@ fn functional_spec_3068_c01_memory_graph_route_renders_graph_panel_default_marke
     assert!(html.contains(
         "id=\"tau-ops-memory-graph-panel\" data-route=\"/ops/memory-graph\" aria-hidden=\"false\" data-panel-visible=\"true\" data-node-count=\"0\" data-edge-count=\"0\""
     ));
+    assert!(html.contains(
+        "id=\"tau-ops-memory-graph-scope-summary\" data-session-key=\"default\" data-node-count=\"0\" data-edge-count=\"0\" data-filter-memory-type=\"all\" data-filter-relation-type=\"all\""
+    ));
+    assert!(html.contains("Graph Scope"));
+    assert!(html.contains("empty graph"));
+    assert!(html.contains("id=\"tau-ops-memory-graph-open-memory\" href=\"/ops/memory?theme=light&amp;sidebar=collapsed&amp;session=default&amp;workspace_id=&amp;channel_id=&amp;actor_id=&amp;memory_type=\""));
+    assert!(html.contains("id=\"tau-ops-memory-graph-open-session\" href=\"/ops/sessions/default?theme=light&amp;sidebar=collapsed&amp;session=default\""));
     assert!(html.contains("id=\"tau-ops-memory-graph-nodes\" data-node-count=\"0\""));
     assert!(html.contains("id=\"tau-ops-memory-graph-edges\" data-edge-count=\"0\""));
     assert!(html.contains("id=\"tau-ops-memory-graph-empty-state\" data-empty-state=\"true\""));

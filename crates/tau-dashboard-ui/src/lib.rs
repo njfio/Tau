@@ -1539,6 +1539,19 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     let memory_graph_edge_count = filtered_memory_graph_edge_rows.len().to_string();
     let memory_graph_node_count_panel_attr = memory_graph_node_count.clone();
     let memory_graph_edge_count_panel_attr = memory_graph_edge_count.clone();
+    let memory_graph_scope_state_label = if filtered_memory_graph_node_rows.is_empty()
+        && filtered_memory_graph_edge_rows.is_empty()
+    {
+        "empty graph"
+    } else {
+        "graph available"
+    };
+    let memory_graph_scope_memory_href = format!(
+        "/ops/memory?theme={theme_attr}&sidebar={sidebar_state_attr}&session={chat_session_key}&workspace_id={memory_search_workspace_id}&channel_id={memory_search_channel_id}&actor_id={memory_search_actor_id}&memory_type={memory_search_memory_type}"
+    );
+    let memory_graph_scope_session_href = format!(
+        "/ops/sessions/{chat_session_key}?theme={theme_attr}&sidebar={sidebar_state_attr}&session={chat_session_key}"
+    );
     let selected_memory_graph_detail_id = memory_detail_selected_entry_id.clone();
     let memory_graph_node_detail_href_prefix = format!(
         "/ops/memory-graph?theme={theme_attr}&sidebar={sidebar_state_attr}&session={chat_session_key}&workspace_id={memory_search_workspace_id}&channel_id={memory_search_channel_id}&actor_id={memory_search_actor_id}&memory_type={memory_search_memory_type}&detail_memory_id="
@@ -1559,6 +1572,48 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     let memory_graph_detail_open_memory_href = format!(
         "/ops/memory?theme={theme_attr}&sidebar={sidebar_state_attr}&session={chat_session_key}&workspace_id={memory_search_workspace_id}&channel_id={memory_search_channel_id}&actor_id={memory_search_actor_id}&memory_type={memory_search_memory_type}&detail_memory_id={memory_graph_detail_selected_entry_id}"
     );
+    let memory_graph_scope_summary_view = if matches!(
+        context.active_route,
+        TauOpsDashboardRoute::MemoryGraph
+    ) {
+        leptos::either::Either::Left(view! {
+            <article
+                id="tau-ops-memory-graph-scope-summary"
+                data-session-key=chat_session_key.clone()
+                data-node-count=memory_graph_node_count.clone()
+                data-edge-count=memory_graph_edge_count.clone()
+                data-filter-memory-type=memory_graph_filter_memory_type.clone()
+                data-filter-relation-type=memory_graph_filter_relation_type.clone()
+                data-graph-state=memory_graph_scope_state_label
+            >
+                <h3>Graph Scope</h3>
+                <p>
+                    {format!(
+                        "session {chat_session_key} | nodes {memory_graph_node_count} | edges {memory_graph_edge_count} | memory type {memory_graph_filter_memory_type} | relation {memory_graph_filter_relation_type} | {memory_graph_scope_state_label}"
+                    )}
+                </p>
+                <nav
+                    id="tau-ops-memory-graph-scope-actions"
+                    aria-label="Memory graph scope actions"
+                >
+                    <a
+                        id="tau-ops-memory-graph-open-memory"
+                        href=memory_graph_scope_memory_href
+                    >
+                        Open Memory Explorer
+                    </a>
+                    <a
+                        id="tau-ops-memory-graph-open-session"
+                        href=memory_graph_scope_session_href
+                    >
+                        Open Session
+                    </a>
+                </nav>
+            </article>
+        })
+    } else {
+        leptos::either::Either::Right(())
+    };
     let focused_memory_graph_detail_id =
         if memory_graph_detail_visible == "true" && !selected_memory_graph_detail_id.is_empty() {
             Some(selected_memory_graph_detail_id.clone())
@@ -3066,7 +3121,8 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     color: #9bb6c2;
                     font-size: .72rem;
                 }
-                #tau-ops-memory-scope-summary {
+                #tau-ops-memory-scope-summary,
+                #tau-ops-memory-graph-scope-summary {
                     display: grid;
                     gap: 8px;
                     width: min(720px, 100%);
@@ -3076,45 +3132,52 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     padding: 10px;
                     background: #091923;
                 }
-                #tau-ops-memory-scope-summary h3 {
+                #tau-ops-memory-scope-summary h3,
+                #tau-ops-memory-graph-scope-summary h3 {
                     margin: 0;
                     color: #edf8fb;
                     font-size: .82rem;
                     letter-spacing: 0;
                 }
-                #tau-ops-memory-scope-summary dl {
+                #tau-ops-memory-scope-summary dl,
+                #tau-ops-memory-graph-scope-summary dl {
                     display: grid;
                     grid-template-columns: repeat(3, minmax(0, 1fr));
                     gap: 8px;
                     margin: 0;
                 }
-                #tau-ops-memory-scope-summary div {
+                #tau-ops-memory-scope-summary div,
+                #tau-ops-memory-graph-scope-summary div {
                     min-width: 0;
                     border: 1px solid #263f4e;
                     border-radius: 6px;
                     padding: 7px 8px;
                     background: #0d2331;
                 }
-                #tau-ops-memory-scope-summary dt {
+                #tau-ops-memory-scope-summary dt,
+                #tau-ops-memory-graph-scope-summary dt {
                     color: #8fa8b3;
                     font-size: .64rem;
                     font-weight: 800;
                     letter-spacing: .02em;
                     text-transform: uppercase;
                 }
-                #tau-ops-memory-scope-summary dd {
+                #tau-ops-memory-scope-summary dd,
+                #tau-ops-memory-graph-scope-summary dd {
                     margin: 2px 0 0;
                     color: #edf8fb;
                     font-size: .8rem;
                     font-weight: 750;
                     overflow-wrap: anywhere;
                 }
-                #tau-ops-memory-scope-actions {
+                #tau-ops-memory-scope-actions,
+                #tau-ops-memory-graph-scope-actions {
                     display: grid;
                     grid-template-columns: repeat(2, minmax(0, 1fr));
                     gap: 6px;
                 }
-                #tau-ops-memory-scope-actions a {
+                #tau-ops-memory-scope-actions a,
+                #tau-ops-memory-graph-scope-actions a {
                     display: flex;
                     min-width: 0;
                     min-height: 30px;
@@ -4531,6 +4594,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             data-edge-count=memory_graph_edge_count_panel_attr
                         >
                             <h2>Memory Graph</h2>
+                            {memory_graph_scope_summary_view}
                             <ul id="tau-ops-memory-graph-nodes" data-node-count=memory_graph_node_count>
                                 {memory_graph_nodes_view}
                             </ul>
