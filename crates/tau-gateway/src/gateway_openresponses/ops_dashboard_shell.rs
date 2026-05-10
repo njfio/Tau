@@ -1686,6 +1686,9 @@ fn collect_tau_ops_dashboard_harness_snapshot(
                 } else {
                     record_proof_artifact.clone()
                 };
+                let proposal_scope = find_ops_harness_proposal(proposal_id)
+                    .map(|proposal| proposal.target_type.to_string())
+                    .unwrap_or_else(|| "Proposal".to_string());
                 let (scope, item, detail_label, detail_value, proof_artifact) = match action {
                     "start-mission" => (
                         "Mission".to_string(),
@@ -1714,7 +1717,7 @@ fn collect_tau_ops_dashboard_harness_snapshot(
                         record_proof_artifact,
                     ),
                     _ => (
-                        "Prompt".to_string(),
+                        proposal_scope,
                         proposal_id.to_string(),
                         String::new(),
                         String::new(),

@@ -830,6 +830,8 @@ async fn integration_ops_harness_proposal_registry_renders_selected_proposal() {
         "id=\"tau-ops-harness-self-improvement-proof\" data-proof-source=\"state\" data-mission-id=\"ops-harness-self-improve-pr-045\" data-mission-status=\"completed\" data-plan-completed=\"5\" data-plan-total=\"5\" data-gates-passed=\"3\" data-gates-total=\"3\" data-memory-hits=\"1\" data-artifact-count=\"3\" data-final-learning-records=\"LR-045\"",
         "Applied PR-045 and updated curator state for LR-045.",
         "<dt>Test Evidence</dt><dd><a href=\"/ops/harness/artifacts/view/ops-harness/self-improvement/PR-045/dry-run-result.json\">ops-harness/self-improvement/PR-045/dry-run-result.json</a></dd>",
+        "data-action=\"dry-run\" data-result=\"passed\" data-timestamp-unix-ms=\"1778419581966\" data-audit-detail-label=\"\" data-audit-detail-value=\"\" data-audit-proof-artifact=\"ops-harness/self-improvement/PR-045/dry-run-result.json\"",
+        "<td>Skill</td><td data-audit-item-cell=\"item-proof\"><span>PR-045</span>",
         "data-proof-row=\"artifact\" data-proof-id=\"target:skills/benchmark_artifacts/SKILL.md\" data-proof-status=\"skill\">skills/benchmark_artifacts/SKILL.md</li>",
     ] {
         assert!(
@@ -841,6 +843,7 @@ async fn integration_ops_harness_proposal_registry_renders_selected_proposal() {
         "data-learning-id=\"LR-219\"",
         "data-learning-id=\"LR-220\"",
         "data-learning-id=\"PR-044\"",
+        "<td>Prompt</td><td data-audit-item-cell=\"item-proof\"><span>PR-045</span>",
     ] {
         assert!(
             !harness_body.contains(stale_marker),
