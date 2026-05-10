@@ -778,6 +778,36 @@ async fn integration_ops_harness_proposal_registry_renders_selected_proposal() {
         draft_mission["final_learning_output"]["summary"],
         "Applied PR-045 and updated curator state for LR-045."
     );
+    let selected_mission_response = client
+        .get(format!("http://{addr}{start_location}"))
+        .send()
+        .await
+        .expect("load selected completed mission harness");
+    assert_eq!(selected_mission_response.status(), StatusCode::OK);
+    let selected_mission_body = selected_mission_response
+        .text()
+        .await
+        .expect("selected mission harness body");
+    for marker in [
+        format!(
+            "id=\"tau-ops-harness-proof-window\" data-window=\"mission-detail-proof-view\" data-window-order=\"2\" data-run-id=\"{mission_id}\" data-mission-status=\"completed\" data-tool-budget=\"1/40\""
+        ),
+        format!("ops-harness/missions/{mission_id}/mission.json"),
+        "PR-045 Skill patch for benchmark artifact naming".to_string(),
+        "data-tool=\"self_improvement.completed_proof\" data-status=\"passed\"".to_string(),
+        "data-gate-id=\"VG-LEARN\" data-gate-status=\"passed\"".to_string(),
+        "mission state loaded:".to_string(),
+        format!("mission={mission_id}"),
+        "Mission Proof".to_string(),
+        "Acceptance: 3/3".to_string(),
+        "Gates: 3/3 passed".to_string(),
+        "Proof:".to_string(),
+    ] {
+        assert!(
+            selected_mission_body.contains(&marker),
+            "selected mission route should render durable mission detail marker `{marker}`"
+        );
+    }
 
     let diff_response = client
         .get(format!("http://{addr}/ops/harness/proposals/PR-045/diff"))

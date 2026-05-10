@@ -1901,11 +1901,64 @@ fn functional_harness_draft_mission_exposes_start_action() {
 }
 
 #[test]
+fn functional_harness_selected_mission_detail_controls_tui_summary() {
+    let harness = TauOpsDashboardHarnessSnapshot {
+        detail_run_id: "mission-draft-123".to_string(),
+        detail_proof_artifact: "/state/ops-harness/missions/mission-draft-123/mission.json"
+            .to_string(),
+        detail_goal: "PR-045 Skill patch for benchmark artifact naming".to_string(),
+        detail_status: "completed".to_string(),
+        detail_tool_budget: "1/40".to_string(),
+        detail_acceptance_met_count: 3,
+        detail_acceptance_total_count: 3,
+        detail_gate_rows: vec![
+            TauOpsDashboardHarnessProofRow {
+                item_id: "VG-PLAN".to_string(),
+                status_key: "passed".to_string(),
+                label: "Plan DAG exists and is accepted.".to_string(),
+            },
+            TauOpsDashboardHarnessProofRow {
+                item_id: "VG-EXECUTE".to_string(),
+                status_key: "passed".to_string(),
+                label: "Coding-agent proof is linked.".to_string(),
+            },
+            TauOpsDashboardHarnessProofRow {
+                item_id: "VG-LEARN".to_string(),
+                status_key: "passed".to_string(),
+                label: "Final learning output is written.".to_string(),
+            },
+        ],
+        detail_memory_hit_count: 1,
+        detail_learning_record_count: 1,
+        ..TauOpsDashboardHarnessSnapshot::default()
+    };
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        active_route: TauOpsDashboardRoute::Harness,
+        harness,
+        ..TauOpsDashboardShellContext::default()
+    });
+
+    for marker in [
+        "id=\"tau-ops-harness-proof-window\" data-window=\"mission-detail-proof-view\" data-window-order=\"2\" data-run-id=\"mission-draft-123\" data-mission-status=\"completed\" data-tool-budget=\"1/40\" data-detail-proof-artifact=\"/state/ops-harness/missions/mission-draft-123/mission.json\"",
+        "mission=mission-draft-123",
+        "Mission Proof",
+        "Acceptance: 3/3",
+        "Gates: 3/3 passed",
+        "Proof: /state/ops-harness/missions/mission-draft-123/mission.json",
+    ] {
+        assert!(
+            html.contains(marker),
+            "selected mission detail should control TUI marker `{marker}`"
+        );
+    }
+}
+
+#[test]
 fn functional_spec_3792_c01_c02_c03_harness_proof_pane_fits_in_app_browser_width() {
     let html = render_tau_ops_dashboard_shell_for_route("/ops/harness");
 
     for marker in [
-        "id=\"tau-ops-harness-proof-window\" data-window=\"mission-detail-proof-view\" data-window-order=\"2\" data-run-id=\"run_8f3a2\" data-mission-status=\"running\" data-tool-budget=\"42/60\" data-window-chrome=\"compact\" data-narrow-proof-fit=\"no-hidden-overflow\"",
+        "id=\"tau-ops-harness-proof-window\" data-window=\"mission-detail-proof-view\" data-window-order=\"2\" data-run-id=\"run_8f3a2\" data-mission-status=\"running\" data-tool-budget=\"42/60\" data-detail-proof-artifact=\"/artifacts/bench/m334/latest.json\" data-window-chrome=\"compact\" data-narrow-proof-fit=\"no-hidden-overflow\"",
         "id=\"tau-ops-harness-acceptance\" data-acceptance-met=\"3\" data-acceptance-total=\"5\" data-proof-detail-budget=\"compact-scroll\" data-acceptance-overflow-budget=\"all-criteria-visible\" data-acceptance-layout=\"compact-contained\" data-narrow-label-fit=\"full-labels-at-1400px\"",
         "id=\"tau-ops-harness-verification-gates\" data-gate-count=\"5\" data-failed-gate-count=\"1\" data-proof-secondary-priority=\"first-screen\" data-proof-detail-budget=\"compact-scroll\" data-gate-visibility=\"all-gates-first-viewport\" data-gate-layout=\"two-column-compact\" data-narrow-height-budget=\"no-hidden-overflow\"",
         "#tau-ops-harness-acceptance[data-narrow-label-fit=\"full-labels-at-1400px\"][data-acceptance-overflow-budget=\"all-criteria-visible\"] li {\n                                    font-size: .59rem;",

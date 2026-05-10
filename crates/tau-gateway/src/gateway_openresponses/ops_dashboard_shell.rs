@@ -1379,6 +1379,9 @@ pub(super) fn render_tau_ops_dashboard_shell_for_route(
     harness.runtime_model_label = state.config.model.clone();
     harness.runtime_transport_label = "gateway".to_string();
     harness.runtime_health_key = command_center.health_state.clone();
+    if let Some(mission_id) = controls.requested_harness_mission_id() {
+        apply_harness_selected_mission_detail(&mut harness, &state.config.state_dir, mission_id);
+    }
     if matches!(route, TauOpsDashboardRoute::Harness) {
         if let Some(mission_status) = controls.requested_harness_mission_status() {
             let mission_id = controls
@@ -1928,6 +1931,7 @@ fn apply_harness_benchmark_detail_from_proof(
         .sum::<f64>();
 
     snapshot.detail_run_id = run_id.to_string();
+    snapshot.detail_proof_artifact = proof_path.display().to_string();
     snapshot.detail_goal = format!(
         "Canonical {} benchmark proof run",
         humanize_harness_token(&snapshot.benchmark_id)
@@ -2223,6 +2227,345 @@ fn apply_harness_benchmark_detail_from_proof(
         snapshot.detail_learning_record_count,
         snapshot.detail_status,
     );
+}
+
+fn apply_harness_selected_mission_detail(
+    snapshot: &mut TauOpsDashboardHarnessSnapshot,
+    state_dir: &Path,
+    mission_id: &str,
+) -> bool {
+    let mission_id = sanitize_harness_token(mission_id);
+    let mission_path = state_dir
+        .join("ops-harness")
+        .join("missions")
+        .join(&mission_id)
+        .join("mission.json");
+    let Ok(mission_json) = std::fs::read_to_string(&mission_path) else {
+        return false;
+    };
+    let Ok(mission) = serde_json::from_str::<Value>(&mission_json) else {
+        return false;
+    };
+
+    let actual_mission_id = mission
+        .get("mission_id")
+        .and_then(Value::as_str)
+        .map(sanitize_harness_token)
+        .unwrap_or_else(|| mission_id.clone());
+    let status = mission
+        .get("status")
+        .and_then(Value::as_str)
+        .unwrap_or("unknown");
+    let created_unix_ms = mission
+        .get("created_unix_ms")
+        .and_then(Value::as_u64)
+        .unwrap_or_default();
+    let updated_unix_ms = mission
+        .get("updated_unix_ms")
+        .and_then(Value::as_u64)
+        .unwrap_or_default();
+    let elapsed_ms = updated_unix_ms.saturating_sub(created_unix_ms);
+    let tool_budget = mission.get("tool_budget").unwrap_or(&Value::Null);
+    let consumed_tool_calls = tool_budget
+        .get("consumed_tool_calls")
+        .and_then(Value::as_u64)
+        .unwrap_or_default();
+    let max_tool_calls = tool_budget
+        .get("max_tool_calls")
+        .and_then(Value::as_u64)
+        .unwrap_or_default();
+    let consumed_cost = tool_budget
+        .get("consumed_cost_usd")
+        .and_then(Value::as_f64)
+        .unwrap_or_default();
+
+    snapshot.detail_run_id = actual_mission_id.clone();
+    snapshot.detail_proof_artifact = mission_path.display().to_string();
+    snapshot.detail_goal = mission
+        .get("goal")
+        .and_then(Value::as_str)
+        .unwrap_or(actual_mission_id.as_str())
+        .to_string();
+    snapshot.detail_status = status.to_string();
+    snapshot.detail_elapsed = if elapsed_ms == 0 {
+        "state".to_string()
+    } else {
+        format_harness_runtime_ms(elapsed_ms)
+    };
+    snapshot.detail_tool_budget = if max_tool_calls == 0 {
+        consumed_tool_calls.to_string()
+    } else {
+        format!("{consumed_tool_calls}/{max_tool_calls}")
+    };
+    snapshot.detail_cost = format!("${consumed_cost:.2}");
+    snapshot.detail_retry_count = mission
+        .get("recovery_state")
+        .and_then(|recovery| recovery.get("retry_count"))
+        .and_then(Value::as_u64)
+        .unwrap_or_default()
+        .to_string();
+
+    if let Some(plan_nodes) = mission.get("plan_dag").and_then(Value::as_array) {
+        snapshot.detail_plan_rows = plan_nodes
+            .iter()
+            .filter_map(|node| {
+                let item_id = node.get("id").and_then(Value::as_str)?;
+                Some(TauOpsDashboardHarnessProofRow {
+                    item_id: item_id.to_string(),
+                    status_key: harness_detail_status_key(
+                        node.get("status")
+                            .and_then(Value::as_str)
+                            .unwrap_or("pending"),
+                    ),
+                    label: node
+                        .get("description")
+                        .and_then(Value::as_str)
+                        .map(str::to_string)
+                        .unwrap_or_else(|| humanize_harness_token(item_id)),
+                })
+            })
+            .collect();
+        snapshot.detail_plan_current_node = snapshot
+            .detail_plan_rows
+            .iter()
+            .find(|row| row.status_key != "passed")
+            .or_else(|| snapshot.detail_plan_rows.last())
+            .map(|row| row.item_id.clone())
+            .unwrap_or_else(|| "plan".to_string());
+    }
+
+    if let Some(tool_evidence) = mission.get("tool_evidence").and_then(Value::as_array) {
+        snapshot.detail_tool_call_count = tool_evidence.len();
+        snapshot.detail_tool_rows = tool_evidence
+            .iter()
+            .filter_map(|tool| {
+                let tool_name = tool.get("tool_name").and_then(Value::as_str)?;
+                let call_id = tool
+                    .get("tool_call_id")
+                    .and_then(Value::as_str)
+                    .unwrap_or(tool_name);
+                let artifact_label = tool
+                    .get("artifact_ids")
+                    .and_then(Value::as_array)
+                    .and_then(|ids| ids.first())
+                    .and_then(Value::as_str)
+                    .unwrap_or("mission-json");
+                Some(TauOpsDashboardHarnessToolEvidenceRow {
+                    tool_name: tool_name.to_string(),
+                    call_id: compact_harness_call_id(call_id),
+                    plan_node: humanize_harness_token(
+                        tool.get("plan_node_id")
+                            .and_then(Value::as_str)
+                            .unwrap_or("execute"),
+                    ),
+                    runtime: format_harness_runtime_ms(
+                        tool.get("runtime_ms").and_then(Value::as_u64).unwrap_or(0),
+                    ),
+                    status_key: harness_detail_status_key(
+                        tool.get("status")
+                            .and_then(Value::as_str)
+                            .unwrap_or("pending"),
+                    ),
+                    artifact_label: artifact_label.to_string(),
+                })
+            })
+            .collect();
+    }
+
+    let gate_statuses = mission
+        .get("verification_gates")
+        .and_then(Value::as_array)
+        .map(|gates| {
+            gates
+                .iter()
+                .filter_map(|gate| {
+                    Some((
+                        gate.get("id").and_then(Value::as_str)?.to_string(),
+                        gate.get("status")
+                            .and_then(Value::as_str)
+                            .unwrap_or("pending")
+                            .to_string(),
+                    ))
+                })
+                .collect::<BTreeMap<_, _>>()
+        })
+        .unwrap_or_default();
+
+    if let Some(criteria) = mission.get("acceptance_criteria").and_then(Value::as_array) {
+        let mut met_count = 0;
+        snapshot.detail_acceptance_rows = criteria
+            .iter()
+            .enumerate()
+            .map(|(index, criterion)| {
+                let item_id = criterion
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+                    .unwrap_or_else(|| format!("AC-{}", index + 1));
+                let gate_ids = criterion
+                    .get("verification_gate_ids")
+                    .and_then(Value::as_array)
+                    .cloned()
+                    .unwrap_or_default();
+                let has_failed_gate = gate_ids.iter().any(|gate_id| {
+                    gate_id
+                        .as_str()
+                        .and_then(|id| gate_statuses.get(id))
+                        .is_some_and(|gate_status| gate_status == "failed")
+                });
+                let all_gates_passed = !gate_ids.is_empty()
+                    && gate_ids.iter().all(|gate_id| {
+                        gate_id
+                            .as_str()
+                            .and_then(|id| gate_statuses.get(id))
+                            .is_some_and(|gate_status| gate_status == "passed")
+                    });
+                let status_key = if all_gates_passed {
+                    met_count += 1;
+                    "met"
+                } else if has_failed_gate {
+                    "failed"
+                } else {
+                    "pending"
+                };
+                TauOpsDashboardHarnessProofRow {
+                    item_id,
+                    status_key: status_key.to_string(),
+                    label: criterion
+                        .get("description")
+                        .or_else(|| criterion.get("criterion"))
+                        .or_else(|| criterion.get("summary"))
+                        .and_then(Value::as_str)
+                        .unwrap_or("Mission acceptance criterion")
+                        .to_string(),
+                }
+            })
+            .collect();
+        snapshot.detail_acceptance_met_count = met_count;
+        snapshot.detail_acceptance_total_count = snapshot.detail_acceptance_rows.len();
+    }
+
+    if let Some(gates) = mission.get("verification_gates").and_then(Value::as_array) {
+        snapshot.detail_gate_rows = gates
+            .iter()
+            .filter_map(|gate| {
+                let item_id = gate.get("id").and_then(Value::as_str)?;
+                Some(TauOpsDashboardHarnessProofRow {
+                    item_id: item_id.to_string(),
+                    status_key: harness_detail_status_key(
+                        gate.get("status")
+                            .and_then(Value::as_str)
+                            .unwrap_or("pending"),
+                    ),
+                    label: gate
+                        .get("description")
+                        .and_then(Value::as_str)
+                        .map(str::to_string)
+                        .unwrap_or_else(|| humanize_harness_token(item_id)),
+                })
+            })
+            .collect();
+        snapshot.detail_gate_failed_count = snapshot
+            .detail_gate_rows
+            .iter()
+            .filter(|row| row.status_key == "failed")
+            .count();
+    }
+
+    snapshot.detail_memory_hit_count = mission
+        .get("memory_hits")
+        .and_then(Value::as_array)
+        .map(Vec::len)
+        .unwrap_or_default();
+    let learning_record_count = mission
+        .get("learning_records")
+        .and_then(Value::as_array)
+        .map(Vec::len)
+        .unwrap_or_default()
+        + mission
+            .get("final_learning_output")
+            .and_then(|output| output.get("records"))
+            .and_then(Value::as_array)
+            .map(Vec::len)
+            .unwrap_or_default();
+    snapshot.detail_learning_record_count = learning_record_count;
+    snapshot.detail_last_memory_write = if updated_unix_ms == 0 {
+        "state".to_string()
+    } else {
+        format_harness_audit_timestamp(updated_unix_ms)
+    };
+    snapshot.detail_memory_evidence_label = mission
+        .get("memory_recall")
+        .and_then(|recall| recall.get("status"))
+        .and_then(Value::as_str)
+        .map(humanize_harness_token)
+        .unwrap_or_else(|| format!("{} mission memory hits", snapshot.detail_memory_hit_count));
+
+    if let Some(artifacts) = mission.get("artifacts").and_then(Value::as_array) {
+        snapshot.detail_artifact_rows = artifacts
+            .iter()
+            .filter_map(|artifact| {
+                let artifact_id = artifact.get("artifact_id").and_then(Value::as_str)?;
+                let href = artifact
+                    .get("path")
+                    .and_then(Value::as_str)
+                    .unwrap_or_else(|| mission_path.to_str().unwrap_or("mission.json"));
+                Some(TauOpsDashboardHarnessArtifactRow {
+                    item_id: artifact_id.to_string(),
+                    status_key: artifact
+                        .get("kind")
+                        .and_then(Value::as_str)
+                        .unwrap_or("artifact")
+                        .to_string(),
+                    label: artifact
+                        .get("summary")
+                        .or_else(|| artifact.get("path"))
+                        .and_then(Value::as_str)
+                        .unwrap_or(artifact_id)
+                        .to_string(),
+                    href: href.to_string(),
+                })
+            })
+            .collect();
+    }
+    if snapshot.detail_artifact_rows.is_empty() {
+        snapshot.detail_artifact_rows = vec![TauOpsDashboardHarnessArtifactRow {
+            item_id: "mission-json".to_string(),
+            status_key: "mission-state".to_string(),
+            label: "Mission JSON".to_string(),
+            href: mission_path.display().to_string(),
+        }];
+    }
+
+    let passed_gate_count = snapshot
+        .detail_gate_rows
+        .iter()
+        .filter(|row| row.status_key == "passed")
+        .count();
+    let gate_total = snapshot.detail_gate_rows.len();
+    snapshot.kpi_memory_write_count = snapshot.detail_learning_record_count;
+    snapshot.kpi_memory_write_detail = "learning outputs".to_string();
+    snapshot.kpi_runtime_cost_today = snapshot.detail_cost.clone();
+    snapshot.kpi_runtime_cost_detail = "Selected mission".to_string();
+    snapshot.detail_operator_log = format!(
+        "mission state loaded: {}\nmission_id: {}\nstatus: {}\nverification gates: {}/{} passed\ntool evidence: {} calls\nmemory hits: {}\nlearning records: {}\nfinal learning: {}",
+        mission_path.display(),
+        snapshot.detail_run_id,
+        snapshot.detail_status,
+        passed_gate_count,
+        gate_total,
+        snapshot.detail_tool_call_count,
+        snapshot.detail_memory_hit_count,
+        snapshot.detail_learning_record_count,
+        mission
+            .get("final_learning_output")
+            .and_then(|output| output.get("summary"))
+            .or_else(|| mission.get("latest_output_summary"))
+            .and_then(Value::as_str)
+            .unwrap_or("not written yet"),
+    );
+
+    true
 }
 
 fn harness_detail_status_key(status: &str) -> String {

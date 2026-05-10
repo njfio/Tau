@@ -854,6 +854,7 @@ pub struct TauOpsDashboardHarnessSnapshot {
     pub latest_summary: String,
     pub benchmark_rows: Vec<TauOpsDashboardHarnessBenchmarkCategoryRow>,
     pub detail_run_id: String,
+    pub detail_proof_artifact: String,
     pub detail_goal: String,
     pub detail_status: String,
     pub detail_elapsed: String,
@@ -948,6 +949,7 @@ impl Default for TauOpsDashboardHarnessSnapshot {
                 },
             ],
             detail_run_id: "run_8f3a2".to_string(),
+            detail_proof_artifact: "/artifacts/bench/m334/latest.json".to_string(),
             detail_goal: "Refactor plugin registry for safer hot reload".to_string(),
             detail_status: "running".to_string(),
             detail_elapsed: "01:42:18".to_string(),
@@ -1980,6 +1982,13 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     let harness_detail_acceptance_total = context.harness.detail_acceptance_total_count.to_string();
     let harness_detail_gate_count = context.harness.detail_gate_rows.len().to_string();
     let harness_detail_failed_gate_count = context.harness.detail_gate_failed_count.to_string();
+    let harness_detail_passed_gate_count = context
+        .harness
+        .detail_gate_rows
+        .iter()
+        .filter(|row| row.status_key == "passed")
+        .count()
+        .to_string();
     let harness_detail_memory_hits = context.harness.detail_memory_hit_count.to_string();
     let harness_detail_learning_records = context.harness.detail_learning_record_count.to_string();
     let harness_detail_artifact_count = context.harness.detail_artifact_rows.len().to_string();
@@ -1988,17 +1997,38 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     let harness_runtime_transport_label = context.harness.runtime_transport_label.clone();
     let harness_runtime_health_key = context.harness.runtime_health_key.clone();
     let harness_runtime_health_label = harness_queue_status_label(&harness_runtime_health_key);
-    let harness_tui_summary = format!(
-        "tau@harness:~$ tau status\nmission={}\ntransport=gateway\nstatus={}\ntool_budget={}\nbench: {} pass; proof {}\n\nBenchmark M334\nPassed: {}\nFailed Gates:\n  {}\nProof: {}",
-        context.harness.detail_run_id.clone(),
-        context.harness.detail_status.clone(),
-        context.harness.detail_tool_budget.clone(),
-        context.harness.latest_result.clone(),
-        context.harness.proof_artifact.clone(),
-        context.harness.latest_result.clone(),
-        context.harness.failed_gate_label.clone(),
-        context.harness.proof_artifact.clone()
-    );
+    let harness_tui_summary = if context
+        .harness
+        .detail_proof_artifact
+        .contains("/ops-harness/missions/")
+    {
+        format!(
+            "tau@harness:~$ tau status\nmission={}\ntransport=gateway\nstatus={}\ntool_budget={}\nproof={}\n\nMission Proof\nAcceptance: {}/{}\nGates: {}/{} passed\nMemory Hits: {}\nLearning Records: {}\nProof: {}",
+            context.harness.detail_run_id.clone(),
+            context.harness.detail_status.clone(),
+            context.harness.detail_tool_budget.clone(),
+            context.harness.detail_proof_artifact.clone(),
+            context.harness.detail_acceptance_met_count,
+            context.harness.detail_acceptance_total_count,
+            harness_detail_passed_gate_count,
+            harness_detail_gate_count,
+            harness_detail_memory_hits,
+            harness_detail_learning_records,
+            context.harness.detail_proof_artifact.clone()
+        )
+    } else {
+        format!(
+            "tau@harness:~$ tau status\nmission={}\ntransport=gateway\nstatus={}\ntool_budget={}\nbench: {} pass; proof {}\n\nBenchmark M334\nPassed: {}\nFailed Gates:\n  {}\nProof: {}",
+            context.harness.detail_run_id.clone(),
+            context.harness.detail_status.clone(),
+            context.harness.detail_tool_budget.clone(),
+            context.harness.latest_result.clone(),
+            context.harness.proof_artifact.clone(),
+            context.harness.latest_result.clone(),
+            context.harness.failed_gate_label.clone(),
+            context.harness.proof_artifact.clone()
+        )
+    };
     let config_panel_hidden = if matches!(context.active_route, TauOpsDashboardRoute::Config) {
         "false"
     } else {
@@ -7373,6 +7403,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 data-run-id=context.harness.detail_run_id.clone()
                                 data-mission-status=context.harness.detail_status.clone()
                                 data-tool-budget=context.harness.detail_tool_budget.clone()
+                                data-detail-proof-artifact=context.harness.detail_proof_artifact.clone()
                                 data-window-chrome="compact"
                                 data-narrow-proof-fit="no-hidden-overflow"
                             >
