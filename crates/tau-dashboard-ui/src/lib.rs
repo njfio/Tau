@@ -1613,6 +1613,32 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
         "rejected" => "Rejected",
         _ => "Apply (Approval Required)",
     };
+    let harness_selected_review_terminal =
+        matches!(harness_selected_apply_state, "applied" | "rejected");
+    let harness_selected_review_terminal_attr = if harness_selected_review_terminal {
+        "true"
+    } else {
+        "false"
+    };
+    let harness_selected_decision_control_disabled = if harness_selected_review_terminal {
+        "true"
+    } else {
+        "false"
+    };
+    let harness_selected_decision_label = match harness_selected_apply_state {
+        "approved" => "Approved",
+        "applied" => "Applied",
+        "rejected" => "Rejected",
+        _ => "Awaiting approval",
+    };
+    let harness_selected_decision_detail = match harness_selected_apply_state {
+        "approved" => "Approval is recorded; apply remains available.",
+        "applied" => {
+            "Approval and rejection are closed; inspect diff, dry-run evidence, or audit history."
+        }
+        "rejected" => "This proposal was rejected; approval and apply are closed.",
+        _ => "Approve or reject before apply can run.",
+    };
     let harness_proposal_queue_rows = context
         .harness
         .proposal_queue_rows
@@ -7306,6 +7332,32 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             #tau-ops-harness-operator-actions h4 {
                                 grid-column: 1 / -1;
                             }
+                            #tau-ops-harness-operator-action-state {
+                                grid-column: 1 / -1;
+                                border: 1px solid rgba(148, 163, 184, .18);
+                                border-radius: 5px;
+                                padding: 7px 8px;
+                                background: rgba(15, 23, 42, .35);
+                            }
+                            #tau-ops-harness-operator-action-state h5,
+                            #tau-ops-harness-operator-action-state p,
+                            #tau-ops-harness-operator-action-state small {
+                                margin: 0;
+                            }
+                            #tau-ops-harness-operator-action-state h5 {
+                                color: var(--tau-harness-muted);
+                                font-size: .55rem;
+                            }
+                            #tau-ops-harness-operator-action-state p {
+                                color: var(--tau-harness-text);
+                                font-size: .7rem;
+                                font-weight: 700;
+                            }
+                            #tau-ops-harness-operator-action-state small {
+                                color: var(--tau-harness-muted);
+                                font-size: .6rem;
+                                line-height: 1.25;
+                            }
                             #tau-ops-harness-operator-actions form {
                                 margin: 0;
                                 min-width: 0;
@@ -7884,19 +7936,55 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     data-action-row-priority="approval-flow"
                                     data-action-grid="two-column-priority"
                                     data-action-first-viewport="all-controls"
+                                    data-review-state=harness_selected_apply_state
+                                    data-terminal-state=harness_selected_review_terminal_attr
+                                    data-selected-proposal=harness_selected_proposal_id.clone()
                                 >
                                     <h4>"Operator Actions"</h4>
+                                    <section
+                                        id="tau-ops-harness-operator-action-state"
+                                        data-review-state=harness_selected_apply_state
+                                        data-terminal-state=harness_selected_review_terminal_attr
+                                        data-selected-proposal=harness_selected_proposal_id.clone()
+                                        data-action-state-visible="true"
+                                    >
+                                        <h5>"Decision State"</h5>
+                                        <p>{harness_selected_decision_label}</p>
+                                        <small>{harness_selected_decision_detail}</small>
+                                    </section>
                                     <form id="tau-ops-harness-approve-form" action=harness_selected_approve_action method="post" data-preserves-shell-context="true">
                                         <input id="tau-ops-harness-approve-theme" type="hidden" name="theme" value=theme_attr />
                                         <input id="tau-ops-harness-approve-sidebar" type="hidden" name="sidebar" value=sidebar_state_attr />
                                         <input id="tau-ops-harness-approve-session" type="hidden" name="session" value=context.chat.active_session_key.clone() />
-                                        <button id="tau-ops-harness-action-approve" type="submit" data-action="approve" data-action-tone="approve">"Approve"</button>
+                                        <button
+                                            id="tau-ops-harness-action-approve"
+                                            type="submit"
+                                            data-action="approve"
+                                            data-action-tone="approve"
+                                            data-action-state=harness_selected_apply_state
+                                            data-disabled=harness_selected_decision_control_disabled
+                                            aria-disabled=harness_selected_decision_control_disabled
+                                            disabled=harness_selected_review_terminal
+                                        >
+                                            "Approve"
+                                        </button>
                                     </form>
                                     <form id="tau-ops-harness-reject-form" action=harness_selected_reject_action method="post" data-preserves-shell-context="true">
                                         <input id="tau-ops-harness-reject-theme" type="hidden" name="theme" value=theme_attr />
                                         <input id="tau-ops-harness-reject-sidebar" type="hidden" name="sidebar" value=sidebar_state_attr />
                                         <input id="tau-ops-harness-reject-session" type="hidden" name="session" value=context.chat.active_session_key.clone() />
-                                        <button id="tau-ops-harness-action-reject" type="submit" data-action="reject" data-action-tone="reject">"Reject"</button>
+                                        <button
+                                            id="tau-ops-harness-action-reject"
+                                            type="submit"
+                                            data-action="reject"
+                                            data-action-tone="reject"
+                                            data-action-state=harness_selected_apply_state
+                                            data-disabled=harness_selected_decision_control_disabled
+                                            aria-disabled=harness_selected_decision_control_disabled
+                                            disabled=harness_selected_review_terminal
+                                        >
+                                            "Reject"
+                                        </button>
                                     </form>
                                     <form id="tau-ops-harness-dry-run-form" action=harness_selected_dry_run_action method="post" data-preserves-shell-context="true">
                                         <input id="tau-ops-harness-dry-run-theme" type="hidden" name="theme" value=theme_attr />

@@ -1859,6 +1859,56 @@ fn functional_harness_self_improvement_proof_surfaces_completed_mission_state() 
 }
 
 #[test]
+fn functional_harness_applied_proposal_marks_terminal_operator_actions() {
+    let harness = TauOpsDashboardHarnessSnapshot {
+        selected_proposal_id: "PR-045".to_string(),
+        selected_proposal: TauOpsDashboardHarnessProposalDetail {
+            proposal_id: "PR-045".to_string(),
+            title: "Skill patch for benchmark artifact naming".to_string(),
+            ..TauOpsDashboardHarnessProposalDetail::default()
+        },
+        audit_rows: vec![TauOpsDashboardHarnessAuditRow {
+            timestamp_label: "2026-05-10 04:49:55 UTC".to_string(),
+            timestamp_unix_ms: "1778388595000".to_string(),
+            actor: "Operator".to_string(),
+            action_label: "Apply".to_string(),
+            action_key: "apply".to_string(),
+            scope: "Skill".to_string(),
+            item: "PR-045".to_string(),
+            result_label: "Applied".to_string(),
+            result_key: "applied".to_string(),
+        }],
+        ..TauOpsDashboardHarnessSnapshot::default()
+    };
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        active_route: TauOpsDashboardRoute::Harness,
+        harness,
+        ..TauOpsDashboardShellContext::default()
+    });
+
+    for marker in [
+        "id=\"tau-ops-harness-operator-actions\"",
+        "data-review-state=\"applied\"",
+        "data-terminal-state=\"true\"",
+        "data-selected-proposal=\"PR-045\"",
+        "id=\"tau-ops-harness-operator-action-state\"",
+        "data-action-state-visible=\"true\"",
+        "Decision State",
+        ">Applied</p>",
+        "Approval and rejection are closed; inspect diff, dry-run evidence, or audit history.",
+        "id=\"tau-ops-harness-action-approve\" type=\"submit\" data-action=\"approve\" data-action-tone=\"approve\" data-action-state=\"applied\" data-disabled=\"true\" aria-disabled=\"true\" disabled",
+        "id=\"tau-ops-harness-action-reject\" type=\"submit\" data-action=\"reject\" data-action-tone=\"reject\" data-action-state=\"applied\" data-disabled=\"true\" aria-disabled=\"true\" disabled",
+        "id=\"tau-ops-harness-action-apply\" type=\"submit\" data-action=\"apply\" data-action-tone=\"disabled\" data-disabled=\"true\" aria-disabled=\"true\" data-approval-required=\"true\" disabled",
+        ">Applied</button>",
+    ] {
+        assert!(
+            html.contains(marker),
+            "applied proposal should mark terminal operator action marker `{marker}`"
+        );
+    }
+}
+
+#[test]
 fn functional_harness_draft_mission_exposes_start_action() {
     let harness = TauOpsDashboardHarnessSnapshot {
         selected_proposal_id: "PR-045".to_string(),
