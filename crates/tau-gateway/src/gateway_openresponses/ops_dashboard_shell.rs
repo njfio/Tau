@@ -1351,10 +1351,14 @@ pub(super) fn render_tau_ops_dashboard_shell_for_route(
     command_center.channel_action_channel = controls.requested_channel_action_channel().to_string();
     command_center.channel_action_reason = controls.requested_channel_action_reason().to_string();
     let chat = collect_tau_ops_dashboard_chat_snapshot(state, &controls, detail_session_key);
-    let harness = collect_tau_ops_dashboard_harness_snapshot(
+    let mut harness = collect_tau_ops_dashboard_harness_snapshot(
         &state.config.state_dir,
         controls.requested_harness_proposal_id(),
     );
+    harness.runtime_workspace_label = state.config.state_dir.display().to_string();
+    harness.runtime_model_label = state.config.model.clone();
+    harness.runtime_transport_label = "gateway".to_string();
+    harness.runtime_health_key = command_center.health_state.clone();
 
     Html(render_tau_ops_dashboard_shell_with_context(
         TauOpsDashboardShellContext {

@@ -827,6 +827,10 @@ impl Default for TauOpsDashboardHarnessProposalDetail {
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// Public struct `TauOpsDashboardHarnessSnapshot` in `tau-dashboard-ui`.
 pub struct TauOpsDashboardHarnessSnapshot {
+    pub runtime_workspace_label: String,
+    pub runtime_model_label: String,
+    pub runtime_transport_label: String,
+    pub runtime_health_key: String,
     pub mission_table_title: String,
     pub kpi_missions_title: String,
     pub kpi_missions_count: usize,
@@ -884,6 +888,10 @@ pub struct TauOpsDashboardHarnessSnapshot {
 impl Default for TauOpsDashboardHarnessSnapshot {
     fn default() -> Self {
         Self {
+            runtime_workspace_label: "/workspace/tau".to_string(),
+            runtime_model_label: "gpt-5.4".to_string(),
+            runtime_transport_label: "gateway".to_string(),
+            runtime_health_key: "healthy".to_string(),
             mission_table_title: "Active Missions".to_string(),
             kpi_missions_title: "Active Missions".to_string(),
             kpi_missions_count: 5,
@@ -1903,6 +1911,11 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     let harness_detail_memory_hits = context.harness.detail_memory_hit_count.to_string();
     let harness_detail_learning_records = context.harness.detail_learning_record_count.to_string();
     let harness_detail_artifact_count = context.harness.detail_artifact_rows.len().to_string();
+    let harness_runtime_workspace_label = context.harness.runtime_workspace_label.clone();
+    let harness_runtime_model_label = context.harness.runtime_model_label.clone();
+    let harness_runtime_transport_label = context.harness.runtime_transport_label.clone();
+    let harness_runtime_health_key = context.harness.runtime_health_key.clone();
+    let harness_runtime_health_label = harness_queue_status_label(&harness_runtime_health_key);
     let harness_tui_summary = format!(
         "tau@harness:~$ tau status\nmission={}\ntransport=gateway\nstatus={}\ntool_budget={}\nbench: {} pass; proof {}\n\nBenchmark M334\nPassed: {}\nFailed Gates:\n  {}\nProof: {}",
         context.harness.detail_run_id.clone(),
@@ -6109,6 +6122,26 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 gap: 8px;
                                 flex-wrap: wrap;
                             }
+                            .tau-harness-topbar-meta {
+                                display: flex;
+                                flex-wrap: wrap;
+                                gap: 5px;
+                                margin-top: 3px;
+                                max-width: min(78vw, 760px);
+                            }
+                            .tau-harness-topbar-meta span {
+                                border: 1px solid var(--tau-harness-line);
+                                border-radius: 4px;
+                                color: var(--tau-harness-muted);
+                                font-size: .62rem;
+                                line-height: 1;
+                                max-width: 260px;
+                                min-width: 0;
+                                overflow: hidden;
+                                padding: 3px 5px;
+                                text-overflow: ellipsis;
+                                white-space: nowrap;
+                            }
                             #tau-ops-harness-panel a,
                             #tau-ops-harness-panel button {
                                 border: 1px solid var(--tau-harness-line);
@@ -7055,10 +7088,23 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             >
                                 "Preview action idle."
                             </p>
-                            <header id="tau-ops-harness-topbar" data-workspace="/workspace/tau" data-model="gpt-5.4" data-transport="gateway" data-health="healthy" data-window-chrome="compact">
+                            <header
+                                id="tau-ops-harness-topbar"
+                                data-workspace=harness_runtime_workspace_label.clone()
+                                data-model=harness_runtime_model_label.clone()
+                                data-transport=harness_runtime_transport_label.clone()
+                                data-health=harness_runtime_health_key.clone()
+                                data-window-chrome="compact"
+                            >
                                 <div>
                                     <small>"Tau"</small>
                                     <h2>"Tau Agent Harness"</h2>
+                                    <div class="tau-harness-topbar-meta" aria-label="Harness runtime context">
+                                        <span data-topbar-field="workspace">{harness_runtime_workspace_label.clone()}</span>
+                                        <span data-topbar-field="model">{harness_runtime_model_label.clone()}</span>
+                                        <span data-topbar-field="transport">{harness_runtime_transport_label.clone()}</span>
+                                        <span data-topbar-field="health">{harness_runtime_health_label}</span>
+                                    </div>
                                 </div>
                                 <nav aria-label="Mission harness actions">
                                     <a id="tau-ops-harness-new-mission" data-action="new-mission" href="/ops/harness?intent=new-mission">"New Mission"</a>

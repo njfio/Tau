@@ -75,6 +75,7 @@ async fn integration_spec_3140_c04_ops_routes_render_config_training_safety_diag
 async fn integration_spec_3756_c04_ops_harness_route_renders_benchmark_and_apply_markers() {
     let temp = tempdir().expect("tempdir");
     let state = test_state(temp.path(), 4_096, "secret");
+    let state_dir = state.config.state_dir.display().to_string();
     let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
     let client = Client::new();
 
@@ -90,6 +91,13 @@ async fn integration_spec_3756_c04_ops_harness_route_renders_benchmark_and_apply
 
     for marker in [
         "id=\"tau-ops-harness-benchmark-panel\" data-benchmark-id=\"m334-tranche-one-autonomy\"",
+        "id=\"tau-ops-harness-topbar\"",
+        "data-model=\"openai/gpt-5.2\"",
+        "data-transport=\"gateway\"",
+        "data-health=\"unknown\"",
+        "<span data-topbar-field=\"model\">openai/gpt-5.2</span>",
+        "<span data-topbar-field=\"transport\">gateway</span>",
+        "<span data-topbar-field=\"health\">Unknown</span>",
         "id=\"tau-ops-harness-run-benchmark-form\" action=\"/ops/harness/run-benchmark?session=ops-harness-contract\" method=\"post\" data-command=\"tau_agent_harness\"",
         "id=\"tau-ops-harness-conservative-policy\" data-policy=\"conservative-self-improvement\" data-allowed-targets=\"skill,config,prompt\" data-blocked-targets=\"source-code,safety-policy\"",
         "id=\"tau-ops-harness-apply-form\" action=\"/ops/harness/proposals/PR-044/apply\" method=\"post\" data-approval-state=\"approval-required\"",
@@ -101,6 +109,16 @@ async fn integration_spec_3756_c04_ops_harness_route_renders_benchmark_and_apply
             "missing harness gateway marker `{marker}`"
         );
     }
+    assert!(
+        body.contains(&format!("data-workspace=\"{state_dir}\"")),
+        "harness topbar should use gateway state dir instead of demo workspace"
+    );
+    assert!(
+        body.contains(&format!(
+            "<span data-topbar-field=\"workspace\">{state_dir}</span>"
+        )),
+        "harness topbar should visibly expose gateway state dir"
+    );
 
     handle.abort();
 }
