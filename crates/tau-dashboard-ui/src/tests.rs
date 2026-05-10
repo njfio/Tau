@@ -540,6 +540,8 @@ fn functional_spec_3756_c01_harness_route_renders_template_panels() {
         "<span data-topbar-field=\"model\">gpt-5.4</span>",
         "<span data-topbar-field=\"transport\">gateway</span>",
         "<span data-topbar-field=\"health\">Healthy</span>",
+        "id=\"tau-ops-harness-new-mission\" data-action=\"new-mission\" data-action-contract=\"context-preserving\" data-preserves-session=\"true\" data-preserves-proposal=\"true\" href=\"/ops/harness?theme=dark&amp;sidebar=expanded&amp;session=default&amp;proposal_id=PR-044&amp;intent=new-mission\"",
+        "id=\"tau-ops-harness-history\" data-action=\"history\" data-action-contract=\"context-preserving\" data-preserves-session=\"true\" data-preserves-proposal=\"true\" href=\"/ops/harness?theme=dark&amp;sidebar=expanded&amp;session=default&amp;proposal_id=PR-044&amp;view=history\"",
         "id=\"tau-ops-harness-dashboard-window\"",
         "id=\"tau-ops-harness-proof-window\"",
         "id=\"tau-ops-harness-self-improvement-window\"",

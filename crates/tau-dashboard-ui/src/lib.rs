@@ -1522,6 +1522,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     } else {
         "false"
     };
+    let harness_route_active = matches!(context.active_route, TauOpsDashboardRoute::Harness);
     let harness_task_count = context.harness.task_count.to_string();
     let harness_pass_count = context.harness.pass_count.to_string();
     let harness_audit_row_count = context.harness.audit_rows.len().to_string();
@@ -1553,6 +1554,14 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     let harness_queue_theme = theme_attr.to_string();
     let harness_queue_sidebar = sidebar_state_attr.to_string();
     let harness_queue_session_key = context.chat.active_session_key.clone();
+    let harness_new_mission_href = format!(
+        "/ops/harness?theme={theme_attr}&sidebar={sidebar_state_attr}&session={}&proposal_id={}&intent=new-mission",
+        context.chat.active_session_key, harness_selected_proposal_id
+    );
+    let harness_history_href = format!(
+        "/ops/harness?theme={theme_attr}&sidebar={sidebar_state_attr}&session={}&proposal_id={}&view=history",
+        context.chat.active_session_key, harness_selected_proposal_id
+    );
     let harness_selected_latest_operator_decision = context.harness.audit_rows.iter().find(|row| {
         row.item == harness_selected_proposal_id
             && matches!(row.action_key.as_str(), "approve" | "reject" | "apply")
@@ -1603,7 +1612,11 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
             } else {
                 "#tau-ops-harness-learning-queue".to_string()
             };
-            let row_current = if row_is_selected { "page" } else { "false" };
+            let row_current = if row_is_selected && harness_route_active {
+                "page"
+            } else {
+                "false"
+            };
             let row_status_label = harness_queue_status_label(&row.status_key);
             let row_content = if row_is_proposal {
                 leptos::either::Either::Left(view! {
@@ -7107,8 +7120,26 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     </div>
                                 </div>
                                 <nav aria-label="Mission harness actions">
-                                    <a id="tau-ops-harness-new-mission" data-action="new-mission" href="/ops/harness?intent=new-mission">"New Mission"</a>
-                                    <a id="tau-ops-harness-history" data-action="history" href="/ops/harness?view=history">"History"</a>
+                                    <a
+                                        id="tau-ops-harness-new-mission"
+                                        data-action="new-mission"
+                                        data-action-contract="context-preserving"
+                                        data-preserves-session="true"
+                                        data-preserves-proposal="true"
+                                        href=harness_new_mission_href
+                                    >
+                                        "New Mission"
+                                    </a>
+                                    <a
+                                        id="tau-ops-harness-history"
+                                        data-action="history"
+                                        data-action-contract="context-preserving"
+                                        data-preserves-session="true"
+                                        data-preserves-proposal="true"
+                                        href=harness_history_href
+                                    >
+                                        "History"
+                                    </a>
                                 </nav>
                             </header>
                             <section

@@ -98,6 +98,8 @@ async fn integration_spec_3756_c04_ops_harness_route_renders_benchmark_and_apply
         "<span data-topbar-field=\"model\">openai/gpt-5.2</span>",
         "<span data-topbar-field=\"transport\">gateway</span>",
         "<span data-topbar-field=\"health\">Unknown</span>",
+        "id=\"tau-ops-harness-new-mission\" data-action=\"new-mission\" data-action-contract=\"context-preserving\" data-preserves-session=\"true\" data-preserves-proposal=\"true\" href=\"/ops/harness?theme=dark&amp;sidebar=expanded&amp;session=ops-harness-contract&amp;proposal_id=PR-044&amp;intent=new-mission\"",
+        "id=\"tau-ops-harness-history\" data-action=\"history\" data-action-contract=\"context-preserving\" data-preserves-session=\"true\" data-preserves-proposal=\"true\" href=\"/ops/harness?theme=dark&amp;sidebar=expanded&amp;session=ops-harness-contract&amp;proposal_id=PR-044&amp;view=history\"",
         "id=\"tau-ops-harness-run-benchmark-form\" action=\"/ops/harness/run-benchmark?session=ops-harness-contract\" method=\"post\" data-command=\"tau_agent_harness\"",
         "id=\"tau-ops-harness-conservative-policy\" data-policy=\"conservative-self-improvement\" data-allowed-targets=\"skill,config,prompt\" data-blocked-targets=\"source-code,safety-policy\"",
         "id=\"tau-ops-harness-apply-form\" action=\"/ops/harness/proposals/PR-044/apply\" method=\"post\" data-approval-state=\"approval-required\"",
