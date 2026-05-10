@@ -20,6 +20,8 @@ In scope:
 - Load recent harness proposal audit records from gateway state when present.
 - Link Tool Execution Evidence artifact cells to the state-backed proof artifact
   when a safe harness artifact route exists.
+- Make `view=history` an explicit audit-history summary rather than only a
+  topbar acknowledgement.
 - Preserve deterministic fallback values when no gateway state exists.
 - Add UI and gateway integration tests proving state-backed rendering.
 
@@ -59,6 +61,14 @@ when an operator opens `/ops/harness`,
 then each row's artifact cell links to the corresponding harness artifact view
 instead of rendering proof evidence as inert text.
 
+### AC-5 History view exposes audit summary proof
+
+Given the operator opens `/ops/harness?view=history`,
+when audit rows are loaded from state or fallback data,
+then the route renders a dedicated history summary with row count, source,
+proof-link count, selected proposal, latest action, and a direct audit-log
+anchor.
+
 ## Conformance Cases
 
 | Case | AC | Tier | Given | When | Then |
@@ -67,6 +77,7 @@ instead of rendering proof evidence as inert text.
 | C-02 | AC-2, AC-3 | Functional | custom harness snapshot | shell renders | audit table uses custom action rows |
 | C-03 | AC-1, AC-2 | Integration | gateway state after benchmark/action POSTs | GET `/ops/harness` | page contains state-backed proof and audit markers |
 | C-04 | AC-4 | Functional, Integration | state-backed proof artifact | shell renders | tool evidence artifact cells link to `/ops/harness/artifacts/view/...` |
+| C-05 | AC-5 | Functional, Integration | history route request | GET `/ops/harness?view=history` | page contains dedicated history summary and audit anchor |
 
 ## Success Metrics / Observable Signals
 
@@ -75,5 +86,7 @@ instead of rendering proof evidence as inert text.
   next `/ops/harness` render.
 - Tool evidence rows expose state-backed proof links in both UI and gateway
   route tests.
+- History view exposes state-backed audit summary counts instead of only a
+  route-action banner.
 - Fallback dashboard tests remain green.
 - No new dependency is introduced.

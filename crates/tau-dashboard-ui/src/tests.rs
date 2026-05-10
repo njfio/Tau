@@ -2123,6 +2123,75 @@ fn functional_harness_audit_log_surfaces_mission_proof_identity() {
 }
 
 #[test]
+fn functional_harness_history_view_surfaces_state_audit_summary() {
+    let harness = TauOpsDashboardHarnessSnapshot {
+        route_action_key: "history".to_string(),
+        route_action_label: "Applied History".to_string(),
+        route_action_detail: "2 audit records loaded from state".to_string(),
+        route_action_count: 2,
+        selected_proposal_id: "PR-045".to_string(),
+        selected_proposal: TauOpsDashboardHarnessProposalDetail {
+            proposal_id: "PR-045".to_string(),
+            ..TauOpsDashboardHarnessProposalDetail::default()
+        },
+        audit_source: "state".to_string(),
+        audit_rows: vec![
+            TauOpsDashboardHarnessAuditRow {
+                timestamp_label: "2026-05-10 13:32:24 UTC".to_string(),
+                timestamp_unix_ms: "1778419944988".to_string(),
+                actor: "Gateway".to_string(),
+                action_label: "Dry Run".to_string(),
+                action_key: "dry-run".to_string(),
+                scope: "Skill".to_string(),
+                item: "PR-045".to_string(),
+                detail_label: String::new(),
+                detail_value: String::new(),
+                proof_artifact: "ops-harness/self-improvement/PR-045/dry-run-result.json"
+                    .to_string(),
+                result_label: "Passed".to_string(),
+                result_key: "passed".to_string(),
+            },
+            TauOpsDashboardHarnessAuditRow {
+                timestamp_label: "2026-05-10 13:09:13 UTC".to_string(),
+                timestamp_unix_ms: "1778418553411".to_string(),
+                actor: "Gateway".to_string(),
+                action_label: "Approve".to_string(),
+                action_key: "approve".to_string(),
+                scope: "Skill".to_string(),
+                item: "PR-045".to_string(),
+                detail_label: String::new(),
+                detail_value: String::new(),
+                proof_artifact: String::new(),
+                result_label: "Recorded".to_string(),
+                result_key: "recorded".to_string(),
+            },
+        ],
+        ..TauOpsDashboardHarnessSnapshot::default()
+    };
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        active_route: TauOpsDashboardRoute::Harness,
+        harness,
+        ..TauOpsDashboardShellContext::default()
+    });
+
+    for marker in [
+        "id=\"tau-ops-harness-history-view\" data-history-view=\"true\" data-history-source=\"state\" data-history-row-count=\"2\" data-history-proof-count=\"1\" data-history-selected-proposal=\"PR-045\" data-history-latest-action=\"Dry Run PR-045 Passed\" data-history-latest-timestamp=\"2026-05-10 13:32:24 UTC\"",
+        "<dd>2</dd>",
+        "<dd>state</dd>",
+        "<dd>1</dd>",
+        "<dd>PR-045</dd>",
+        "Latest: Dry Run PR-045 Passed at 2026-05-10 13:32:24 UTC",
+        "data-history-audit-anchor=\"true\"",
+        "data-audit-row=\"true\"",
+    ] {
+        assert!(
+            html.contains(marker),
+            "history view should surface state audit summary marker `{marker}`"
+        );
+    }
+}
+
+#[test]
 fn functional_harness_draft_mission_exposes_start_action() {
     let harness = TauOpsDashboardHarnessSnapshot {
         selected_proposal_id: "PR-045".to_string(),

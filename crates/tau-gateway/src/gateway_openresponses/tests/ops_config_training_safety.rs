@@ -173,6 +173,10 @@ async fn integration_spec_3756_c04_ops_harness_route_renders_benchmark_and_apply
         "id=\"tau-ops-harness-route-action\" data-route-action-key=\"history\" data-route-action-label=\"Applied History\""
     ));
     assert!(history_body.contains("data-route-action-visible=\"true\""));
+    assert!(history_body.contains(
+        "id=\"tau-ops-harness-history-view\" data-history-view=\"true\" data-history-source=\"fallback\" data-history-row-count=\"4\" data-history-proof-count=\"0\" data-history-selected-proposal=\"PR-044\""
+    ));
+    assert!(history_body.contains("data-history-audit-anchor=\"true\""));
 
     let draft_response = client
         .get(format!(
@@ -1246,6 +1250,27 @@ async fn integration_spec_3757_c03_ops_harness_route_reflects_state_backed_proof
         !body.contains(">ts:"),
         "state-backed harness audit rows should not expose raw timestamp labels"
     );
+
+    let history_response = client
+        .get(format!(
+            "http://{addr}/ops/harness?theme=dark&sidebar=expanded&session=default&proposal_id=PR-044&view=history"
+        ))
+        .send()
+        .await
+        .expect("load state-backed harness history route");
+    assert_eq!(history_response.status(), StatusCode::OK);
+    let history_body = history_response.text().await.expect("read history body");
+    for marker in [
+        "id=\"tau-ops-harness-history-view\" data-history-view=\"true\" data-history-source=\"state\" data-history-row-count=\"2\" data-history-proof-count=\"1\" data-history-selected-proposal=\"PR-044\"",
+        "data-history-latest-action=\"Apply PR-044 Blocked Approval Required\"",
+        "data-history-audit-anchor=\"true\"",
+        "data-audit-row=\"true\"",
+    ] {
+        assert!(
+            history_body.contains(marker),
+            "missing state-backed history marker `{marker}`"
+        );
+    }
 
     handle.abort();
 }

@@ -1567,9 +1567,30 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
             "false"
         };
     let harness_route_action_hidden = harness_route_action_visible == "false";
+    let harness_history_view_active =
+        harness_route_active && context.harness.route_action_key == "history";
     let harness_task_count = context.harness.task_count.to_string();
     let harness_pass_count = context.harness.pass_count.to_string();
     let harness_audit_row_count = context.harness.audit_rows.len().to_string();
+    let harness_history_proof_count = context
+        .harness
+        .audit_rows
+        .iter()
+        .filter(|row| !row.proof_artifact.is_empty())
+        .count()
+        .to_string();
+    let harness_history_latest_action = context
+        .harness
+        .audit_rows
+        .first()
+        .map(|row| format!("{} {} {}", row.action_label, row.item, row.result_label))
+        .unwrap_or_else(|| "No audit records".to_string());
+    let harness_history_latest_timestamp = context
+        .harness
+        .audit_rows
+        .first()
+        .map(|row| row.timestamp_label.clone())
+        .unwrap_or_else(|| "none".to_string());
     let harness_selected_proposal_id = context.harness.selected_proposal.proposal_id.clone();
     let harness_action_query = format!(
         "theme={theme_attr}&sidebar={sidebar_state_attr}&session={}",
@@ -1608,6 +1629,10 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     );
     let harness_history_href = format!(
         "/ops/harness?theme={theme_attr}&sidebar={sidebar_state_attr}&session={}&proposal_id={}&view=history",
+        context.chat.active_session_key, harness_selected_proposal_id
+    );
+    let harness_overview_href = format!(
+        "/ops/harness?theme={theme_attr}&sidebar={sidebar_state_attr}&session={}&proposal_id={}",
         context.chat.active_session_key, harness_selected_proposal_id
     );
     let harness_selected_latest_operator_decision = context.harness.audit_rows.iter().find(|row| {
@@ -1957,6 +1982,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     data-audit-detail-label=row.detail_label.clone()
                     data-audit-detail-value=row.detail_value.clone()
                     data-audit-proof-artifact=row.proof_artifact.clone()
+                    data-audit-row="true"
                 >
                     <td>{row.timestamp_label.clone()}</td>
                     <td>{row.actor.clone()}</td>
@@ -1968,6 +1994,52 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
             }
         })
         .collect_view();
+    let harness_history_view = if harness_history_view_active {
+        leptos::either::Either::Left(view! {
+            <section
+                id="tau-ops-harness-history-view"
+                data-history-view="true"
+                data-history-source=context.harness.audit_source.clone()
+                data-history-row-count=harness_audit_row_count.clone()
+                data-history-proof-count=harness_history_proof_count.clone()
+                data-history-selected-proposal=harness_selected_proposal_id.clone()
+                data-history-latest-action=harness_history_latest_action.clone()
+                data-history-latest-timestamp=harness_history_latest_timestamp.clone()
+            >
+                <header>
+                    <div>
+                        <h4>"Applied History"</h4>
+                        <p>"Audit records loaded for the current harness state."</p>
+                    </div>
+                    <a href=harness_overview_href.clone() data-history-overview-link="true">"Overview"</a>
+                </header>
+                <dl>
+                    <div>
+                        <dt>"Records"</dt>
+                        <dd>{harness_audit_row_count.clone()}</dd>
+                    </div>
+                    <div>
+                        <dt>"Source"</dt>
+                        <dd>{context.harness.audit_source.clone()}</dd>
+                    </div>
+                    <div>
+                        <dt>"Proof Links"</dt>
+                        <dd>{harness_history_proof_count.clone()}</dd>
+                    </div>
+                    <div>
+                        <dt>"Selected"</dt>
+                        <dd>{harness_selected_proposal_id.clone()}</dd>
+                    </div>
+                </dl>
+                <p data-history-latest="true">
+                    {format!("Latest: {} at {}", harness_history_latest_action, harness_history_latest_timestamp)}
+                </p>
+                <a href="#tau-ops-harness-audit-log" data-history-audit-anchor="true">"Open audit log"</a>
+            </section>
+        })
+    } else {
+        leptos::either::Either::Right(())
+    };
     let harness_detail_plan_rows = context
         .harness
         .detail_plan_rows
@@ -6604,6 +6676,52 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             #tau-ops-harness-route-action span {
                                 font-size: .66rem;
                             }
+                            #tau-ops-harness-history-view {
+                                border: 1px solid var(--tau-harness-line-soft);
+                                border-radius: 6px;
+                                background: rgba(123, 214, 232, .07);
+                                display: grid;
+                                gap: 6px;
+                                margin-bottom: 7px;
+                                padding: 8px;
+                            }
+                            #tau-ops-harness-history-view header {
+                                display: flex;
+                                align-items: flex-start;
+                                justify-content: space-between;
+                                gap: 8px;
+                            }
+                            #tau-ops-harness-history-view p {
+                                color: var(--tau-harness-muted);
+                                font-size: .62rem;
+                                line-height: 1.18;
+                            }
+                            #tau-ops-harness-history-view dl {
+                                display: grid;
+                                grid-template-columns: repeat(4, minmax(0, 1fr));
+                                gap: 5px;
+                            }
+                            #tau-ops-harness-history-view dt {
+                                color: var(--tau-harness-muted);
+                                font-size: .54rem;
+                                text-transform: uppercase;
+                            }
+                            #tau-ops-harness-history-view dd {
+                                color: var(--tau-harness-text);
+                                font-size: .68rem;
+                                font-weight: 700;
+                                white-space: nowrap;
+                                overflow: hidden;
+                                text-overflow: ellipsis;
+                            }
+                            #tau-ops-harness-history-view a {
+                                color: var(--tau-harness-blue);
+                                font-size: .62rem;
+                                text-decoration: none;
+                            }
+                            #tau-ops-harness-history-view a:hover {
+                                text-decoration: underline;
+                            }
                             .tau-harness-topbar-meta {
                                 display: flex;
                                 flex-wrap: wrap;
@@ -8101,6 +8219,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     </div>
                                     <span class="tau-harness-status-chip">"Approval gated"</span>
                                 </header>
+                                {harness_history_view}
                                 <section
                                     id="tau-ops-harness-learning-queue"
                                     data-queue-count=harness_proposal_queue_count

@@ -10,6 +10,8 @@ Status: Implemented
 - [x] T5 (VERIFY): run focused tests, fmt, clippy, and live smoke if needed.
 - [x] T6 (GREEN): link state-backed tool evidence artifact cells to the
   harness artifact view.
+- [x] T7 (GREEN): render a dedicated `view=history` audit summary with state
+  source, proof-link count, latest action, and audit-log anchor.
 
 ## Verification Evidence
 
@@ -40,3 +42,14 @@ Status: Implemented
 - BUILD: `cargo build -p tau-coding-agent` passed.
 - LIVE: Browser on `http://127.0.0.1:8795/ops/harness` found 5
   `data-tool-proof-artifact-href="true"` links and 5 state-backed tool rows.
+- GREEN: `cargo test -p tau-dashboard-ui functional_harness_history_view_surfaces_state_audit_summary`
+  passed (1 test).
+- REGRESSION: `cargo test -p tau-dashboard-ui harness` passed (52 tests).
+- REGRESSION: `cargo test -p tau-gateway ops_harness -- --test-threads=1`
+  passed (6 tests).
+- STATIC: `cargo clippy -p tau-dashboard-ui -p tau-gateway -- -D warnings`
+  passed.
+- BUILD: `cargo build -p tau-coding-agent` passed.
+- LIVE: Browser on `/ops/harness?view=history` found one history summary,
+  `data-history-source="state"`, 4 audit rows, 2 proof links, and one audit
+  anchor.
