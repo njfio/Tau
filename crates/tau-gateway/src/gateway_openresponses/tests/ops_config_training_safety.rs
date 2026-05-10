@@ -711,6 +711,16 @@ async fn integration_ops_harness_proposal_registry_renders_selected_proposal() {
         .expect("mission json"),
     )
     .expect("write mission");
+    std::fs::write(
+        mission_dir.join("dry-run-result.json"),
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "proposal_id": "PR-045",
+            "result": "passed",
+            "summary": "Dry-run passed for deterministic benchmark artifact naming."
+        }))
+        .expect("dry-run proof json"),
+    )
+    .expect("write dry-run proof");
     let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
     let client = Client::new();
     let no_redirect_client = Client::builder()
@@ -745,6 +755,7 @@ async fn integration_ops_harness_proposal_registry_renders_selected_proposal() {
         "id=\"tau-ops-harness-action-apply\" type=\"submit\" data-action=\"apply\" data-action-tone=\"disabled\" data-disabled=\"true\" aria-disabled=\"true\" data-approval-required=\"true\" disabled",
         "id=\"tau-ops-harness-self-improvement-proof\" data-proof-source=\"state\" data-mission-id=\"ops-harness-self-improve-pr-045\" data-mission-status=\"completed\" data-plan-completed=\"5\" data-plan-total=\"5\" data-gates-passed=\"3\" data-gates-total=\"3\" data-memory-hits=\"1\" data-artifact-count=\"3\" data-final-learning-records=\"LR-045\"",
         "Applied PR-045 and updated curator state for LR-045.",
+        "<dt>Test Evidence</dt><dd><a href=\"/ops/harness/artifacts/view/ops-harness/self-improvement/PR-045/dry-run-result.json\">ops-harness/self-improvement/PR-045/dry-run-result.json</a></dd>",
         "data-proof-row=\"artifact\" data-proof-id=\"target:skills/benchmark_artifacts/SKILL.md\" data-proof-status=\"skill\">skills/benchmark_artifacts/SKILL.md</li>",
     ] {
         assert!(
@@ -760,6 +771,26 @@ async fn integration_ops_harness_proposal_registry_renders_selected_proposal() {
         assert!(
             !harness_body.contains(stale_marker),
             "state-backed selected proposal queue rendered stale row `{stale_marker}`"
+        );
+    }
+
+    let evidence_response = client
+        .get(format!(
+            "http://{addr}/ops/harness/artifacts/view/ops-harness/self-improvement/PR-045/dry-run-result.json"
+        ))
+        .send()
+        .await
+        .expect("load selected proposal evidence artifact");
+    assert_eq!(evidence_response.status(), StatusCode::OK);
+    let evidence_body = evidence_response.text().await.expect("evidence body");
+    for marker in [
+        "id=\"tau-ops-harness-artifact-view\"",
+        "ops-harness/self-improvement/PR-045/dry-run-result.json",
+        "Dry-run passed for deterministic benchmark artifact naming.",
+    ] {
+        assert!(
+            evidence_body.contains(marker),
+            "missing selected proposal evidence marker `{marker}`"
         );
     }
 

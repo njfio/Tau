@@ -1439,8 +1439,11 @@ pub(super) fn render_tau_ops_dashboard_shell_for_route(
 }
 
 fn harness_proposal_detail_from_definition(
+    state_dir: &Path,
     proposal: &GatewayOpsHarnessProposalDefinition,
 ) -> TauOpsDashboardHarnessProposalDetail {
+    let (test_evidence_href, test_evidence_label) =
+        harness_proposal_test_evidence_link(state_dir, proposal);
     TauOpsDashboardHarnessProposalDetail {
         proposal_id: proposal.proposal_id.to_string(),
         learning_record_id: proposal.source_learning_record_id.to_string(),
@@ -1455,8 +1458,29 @@ fn harness_proposal_detail_from_definition(
         patch_summary: proposal.patch_summary.to_string(),
         failure_observed: proposal.failure_summary.to_string(),
         root_cause: proposal.root_cause.to_string(),
-        test_evidence_href: proposal.test_evidence_href.to_string(),
-        test_evidence_label: proposal.test_evidence_label.to_string(),
+        test_evidence_href,
+        test_evidence_label,
+    }
+}
+
+fn harness_proposal_test_evidence_link(
+    state_dir: &Path,
+    proposal: &GatewayOpsHarnessProposalDefinition,
+) -> (String, String) {
+    let state_artifact_path = format!(
+        "ops-harness/self-improvement/{}/dry-run-result.json",
+        sanitize_harness_token(proposal.proposal_id)
+    );
+    if state_dir.join(&state_artifact_path).is_file() {
+        (
+            harness_state_artifact_href(&state_artifact_path),
+            state_artifact_path,
+        )
+    } else {
+        (
+            proposal.test_evidence_href.to_string(),
+            proposal.test_evidence_label.to_string(),
+        )
     }
 }
 
@@ -1476,7 +1500,8 @@ fn collect_tau_ops_dashboard_harness_snapshot(
         .or_else(|| list_ops_harness_proposals().first());
     if let Some(selected_proposal) = selected_proposal {
         snapshot.selected_proposal_id = selected_proposal.proposal_id.to_string();
-        snapshot.selected_proposal = harness_proposal_detail_from_definition(selected_proposal);
+        snapshot.selected_proposal =
+            harness_proposal_detail_from_definition(state_dir, selected_proposal);
         snapshot.self_improvement_proof =
             collect_harness_self_improvement_proof(state_dir, selected_proposal);
     }
