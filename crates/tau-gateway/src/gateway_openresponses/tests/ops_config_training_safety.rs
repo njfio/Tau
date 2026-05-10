@@ -475,6 +475,16 @@ async fn integration_spec_3757_c03_ops_harness_route_reflects_state_backed_proof
         "id=\"tau-ops-harness-proof-window\" data-window=\"mission-detail-proof-view\" data-window-order=\"2\" data-run-id=\"gateway-harness-",
         "data-mission-status=\"completed\" data-tool-budget=\"20/32\"",
         "Canonical M334 Tranche One Autonomy benchmark proof run",
+        "id=\"tau-ops-harness-kpi-active\" data-harness-kpi-card=\"active-missions\" data-kpi-value=\"1\"",
+        "<h4>Benchmark Runs</h4><p>1</p><small>completed</small>",
+        "id=\"tau-ops-harness-kpi-verifications\" data-harness-kpi-card=\"pending-verifications\" data-kpi-value=\"0\"",
+        "<small>none failed</small>",
+        "id=\"tau-ops-harness-kpi-memory\" data-harness-kpi-card=\"memory-writes\" data-kpi-value=\"4\"",
+        "<h4>Memory Writes</h4><p>4</p><small>learning records</small>",
+        "id=\"tau-ops-harness-kpi-cost\" data-harness-kpi-card=\"runtime-cost-today\" data-kpi-value=\"$0.00\"",
+        "<h4>Runtime Cost Today</h4><p>$0.00</p><small>Across 1 run</small>",
+        "id=\"tau-ops-harness-active-missions\" data-active-count=\"1\" data-running-count=\"0\" data-blocked-count=\"0\"",
+        "<h4>Benchmark Runs</h4>",
         "Benchmark tasks passed 4/4",
         "data-gate-id=\"memory_write_proof\" data-gate-status=\"passed\"",
         "state proof loaded:",
@@ -485,6 +495,16 @@ async fn integration_spec_3757_c03_ops_harness_route_reflects_state_backed_proof
         assert!(
             body.contains(marker),
             "missing state-backed harness marker `{marker}`"
+        );
+    }
+    for stale_marker in [
+        "data-mission-id=\"run_linux_ci\"",
+        "data-mission-id=\"run_m334_flaky\"",
+        "data-mission-id=\"run_receipts\"",
+    ] {
+        assert!(
+            !body.contains(stale_marker),
+            "state-backed harness route still rendered stale demo mission `{stale_marker}`"
         );
     }
 

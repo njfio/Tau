@@ -18,10 +18,10 @@ use tau_dashboard_ui::{
     render_tau_ops_dashboard_shell_with_context, TauOpsDashboardAuthMode,
     TauOpsDashboardChatMessageRow, TauOpsDashboardChatSessionOptionRow,
     TauOpsDashboardChatSnapshot, TauOpsDashboardHarnessArtifactRow, TauOpsDashboardHarnessAuditRow,
-    TauOpsDashboardHarnessBenchmarkCategoryRow, TauOpsDashboardHarnessProofRow,
-    TauOpsDashboardHarnessProposalDetail, TauOpsDashboardHarnessProposalQueueRow,
-    TauOpsDashboardHarnessSelfImprovementProof, TauOpsDashboardHarnessSnapshot,
-    TauOpsDashboardHarnessToolEvidenceRow, TauOpsDashboardJobRow,
+    TauOpsDashboardHarnessBenchmarkCategoryRow, TauOpsDashboardHarnessMissionRow,
+    TauOpsDashboardHarnessProofRow, TauOpsDashboardHarnessProposalDetail,
+    TauOpsDashboardHarnessProposalQueueRow, TauOpsDashboardHarnessSelfImprovementProof,
+    TauOpsDashboardHarnessSnapshot, TauOpsDashboardHarnessToolEvidenceRow, TauOpsDashboardJobRow,
     TauOpsDashboardMemoryGraphEdgeRow, TauOpsDashboardMemoryGraphNodeRow,
     TauOpsDashboardMemoryRelationRow, TauOpsDashboardMemorySearchRow, TauOpsDashboardRoute,
     TauOpsDashboardSessionGraphEdgeRow, TauOpsDashboardSessionGraphNodeRow,
@@ -1813,6 +1813,60 @@ fn apply_harness_benchmark_detail_from_proof(
         })
     }))
     .collect();
+
+    let detail_gate_total = snapshot.detail_gate_rows.len();
+    let detail_gate_label = format!("{passed_gate_count}/{detail_gate_total} gates");
+    let detail_verification_state = if snapshot.detail_gate_failed_count > 0 {
+        "failed"
+    } else if detail_gate_total > 0 && passed_gate_count == detail_gate_total {
+        "passed"
+    } else {
+        snapshot.detail_status.as_str()
+    };
+    let detail_plan_progress = if snapshot.detail_plan_rows.is_empty() {
+        0
+    } else {
+        let passed_plan_count = snapshot
+            .detail_plan_rows
+            .iter()
+            .filter(|row| row.status_key == "passed")
+            .count();
+        (passed_plan_count * 100) / snapshot.detail_plan_rows.len()
+    };
+    let open_gate_count = detail_gate_total.saturating_sub(passed_gate_count);
+
+    snapshot.mission_table_title = "Benchmark Runs".to_string();
+    snapshot.kpi_missions_title = "Benchmark Runs".to_string();
+    snapshot.kpi_missions_count = 1;
+    snapshot.kpi_missions_detail = snapshot.detail_status.clone();
+    snapshot.kpi_pending_verification_count = open_gate_count;
+    snapshot.kpi_pending_verification_detail = if open_gate_count == 0 {
+        "none failed".to_string()
+    } else {
+        format!("{open_gate_count} open gates")
+    };
+    snapshot.kpi_memory_write_count = snapshot.detail_learning_record_count;
+    snapshot.kpi_memory_write_detail = "learning records".to_string();
+    snapshot.kpi_runtime_cost_today = snapshot.detail_cost.clone();
+    snapshot.kpi_runtime_cost_detail = "Across 1 run".to_string();
+    snapshot.mission_rows = vec![TauOpsDashboardHarnessMissionRow {
+        mission_id: snapshot.detail_run_id.clone(),
+        title: snapshot.detail_goal.clone(),
+        status_key: snapshot.detail_status.clone(),
+        status_label: humanize_harness_token(&snapshot.detail_status),
+        gate_status_key: detail_verification_state.to_string(),
+        gate_label: detail_gate_label,
+        acceptance_label: format!(
+            "{}/{}",
+            snapshot.detail_acceptance_met_count, snapshot.detail_acceptance_total_count
+        ),
+        plan_progress: detail_plan_progress,
+        tool_budget: snapshot.detail_tool_budget.clone(),
+        memory_hits: snapshot.detail_memory_hit_count,
+        verification_state: detail_verification_state.to_string(),
+        last_checkpoint: snapshot.detail_last_memory_write.clone(),
+        artifact_count: snapshot.detail_artifact_rows.len(),
+    }];
 
     snapshot.detail_operator_log = format!(
         "state proof loaded: {}\nrun_id: {}\nbenchmark: {}\ntasks: {}/{} passed\nverification gates: {}/{} passed\nmemory hits: {}\nlearning records: {}\nstatus: {}",

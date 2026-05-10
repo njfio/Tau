@@ -658,22 +658,6 @@ fn harness_benchmark_category_label(category: &str) -> String {
     format!("{first}{}", chars.as_str())
 }
 
-fn humanize_harness_label(value: &str) -> String {
-    let label = value
-        .split(['_', '-'])
-        .filter(|word| !word.is_empty())
-        .collect::<Vec<_>>()
-        .join(" ");
-
-    if label.is_empty() {
-        return "Unknown".to_string();
-    }
-
-    let mut chars = label.chars();
-    let first = chars.next().expect("non-empty label").to_ascii_uppercase();
-    format!("{first}{}", chars.as_str())
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// Public struct `TauOpsDashboardHarnessAuditRow` in `tau-dashboard-ui`.
 pub struct TauOpsDashboardHarnessAuditRow {
@@ -685,6 +669,24 @@ pub struct TauOpsDashboardHarnessAuditRow {
     pub item: String,
     pub result_label: String,
     pub result_key: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// Public struct `TauOpsDashboardHarnessMissionRow` in `tau-dashboard-ui`.
+pub struct TauOpsDashboardHarnessMissionRow {
+    pub mission_id: String,
+    pub title: String,
+    pub status_key: String,
+    pub status_label: String,
+    pub gate_status_key: String,
+    pub gate_label: String,
+    pub acceptance_label: String,
+    pub plan_progress: usize,
+    pub tool_budget: String,
+    pub memory_hits: usize,
+    pub verification_state: String,
+    pub last_checkpoint: String,
+    pub artifact_count: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -810,6 +812,16 @@ impl Default for TauOpsDashboardHarnessProposalDetail {
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// Public struct `TauOpsDashboardHarnessSnapshot` in `tau-dashboard-ui`.
 pub struct TauOpsDashboardHarnessSnapshot {
+    pub mission_table_title: String,
+    pub kpi_missions_title: String,
+    pub kpi_missions_count: usize,
+    pub kpi_missions_detail: String,
+    pub kpi_pending_verification_count: usize,
+    pub kpi_pending_verification_detail: String,
+    pub kpi_memory_write_count: usize,
+    pub kpi_memory_write_detail: String,
+    pub kpi_runtime_cost_today: String,
+    pub kpi_runtime_cost_detail: String,
     pub proof_source: String,
     pub benchmark_id: String,
     pub proof_artifact: String,
@@ -844,6 +856,7 @@ pub struct TauOpsDashboardHarnessSnapshot {
     pub detail_last_memory_write: String,
     pub detail_memory_evidence_label: String,
     pub detail_artifact_rows: Vec<TauOpsDashboardHarnessArtifactRow>,
+    pub mission_rows: Vec<TauOpsDashboardHarnessMissionRow>,
     pub audit_source: String,
     pub audit_rows: Vec<TauOpsDashboardHarnessAuditRow>,
     pub selected_proposal_id: String,
@@ -855,6 +868,16 @@ pub struct TauOpsDashboardHarnessSnapshot {
 impl Default for TauOpsDashboardHarnessSnapshot {
     fn default() -> Self {
         Self {
+            mission_table_title: "Active Missions".to_string(),
+            kpi_missions_title: "Active Missions".to_string(),
+            kpi_missions_count: 5,
+            kpi_missions_detail: "3 running".to_string(),
+            kpi_pending_verification_count: 3,
+            kpi_pending_verification_detail: "2 need review".to_string(),
+            kpi_memory_write_count: 12,
+            kpi_memory_write_detail: "Today".to_string(),
+            kpi_runtime_cost_today: "$18.74".to_string(),
+            kpi_runtime_cost_detail: "Across 5 runs".to_string(),
             proof_source: "fallback".to_string(),
             benchmark_id: "m334-tranche-one-autonomy".to_string(),
             proof_artifact: "/artifacts/bench/m334/latest.json".to_string(),
@@ -1069,6 +1092,83 @@ impl Default for TauOpsDashboardHarnessSnapshot {
                     status_key: "artifact".to_string(),
                     label: "Benchmark proof".to_string(),
                     href: "/artifacts/proof.json".to_string(),
+                },
+            ],
+            mission_rows: vec![
+                TauOpsDashboardHarnessMissionRow {
+                    mission_id: "run_linux_ci".to_string(),
+                    title: "Port repo test harness to Linux CI".to_string(),
+                    status_key: "running".to_string(),
+                    status_label: "Running".to_string(),
+                    gate_status_key: "needs-review".to_string(),
+                    gate_label: "3/5 gates".to_string(),
+                    acceptance_label: "4/5".to_string(),
+                    plan_progress: 68,
+                    tool_budget: "34/60".to_string(),
+                    memory_hits: 12,
+                    verification_state: "needs-review".to_string(),
+                    last_checkpoint: "10:22:31 May 15".to_string(),
+                    artifact_count: 5,
+                },
+                TauOpsDashboardHarnessMissionRow {
+                    mission_id: "run_m334_flaky".to_string(),
+                    title: "Investigate flaky benchmark on M334".to_string(),
+                    status_key: "verifying".to_string(),
+                    status_label: "Verifying".to_string(),
+                    gate_status_key: "needs-review".to_string(),
+                    gate_label: "2/5 gates".to_string(),
+                    acceptance_label: "3/5".to_string(),
+                    plan_progress: 72,
+                    tool_budget: "28/60".to_string(),
+                    memory_hits: 8,
+                    verification_state: "needs-review".to_string(),
+                    last_checkpoint: "10:25:52 May 15".to_string(),
+                    artifact_count: 4,
+                },
+                TauOpsDashboardHarnessMissionRow {
+                    mission_id: "run_research_brief".to_string(),
+                    title: "Generate weekly research brief on model routing".to_string(),
+                    status_key: "completed".to_string(),
+                    status_label: "Completed".to_string(),
+                    gate_status_key: "passed".to_string(),
+                    gate_label: "5/5 gates".to_string(),
+                    acceptance_label: "5/5".to_string(),
+                    plan_progress: 100,
+                    tool_budget: "18/60".to_string(),
+                    memory_hits: 15,
+                    verification_state: "passed".to_string(),
+                    last_checkpoint: "09:55:11 May 15".to_string(),
+                    artifact_count: 7,
+                },
+                TauOpsDashboardHarnessMissionRow {
+                    mission_id: "run_receipts".to_string(),
+                    title: "Automate receipt classification pipeline".to_string(),
+                    status_key: "blocked".to_string(),
+                    status_label: "Blocked".to_string(),
+                    gate_status_key: "failed".to_string(),
+                    gate_label: "1/5 gates".to_string(),
+                    acceptance_label: "2/5".to_string(),
+                    plan_progress: 36,
+                    tool_budget: "16/60".to_string(),
+                    memory_hits: 6,
+                    verification_state: "failed".to_string(),
+                    last_checkpoint: "09:48:03 May 15".to_string(),
+                    artifact_count: 3,
+                },
+                TauOpsDashboardHarnessMissionRow {
+                    mission_id: "run_8f3a2".to_string(),
+                    title: "Refactor plugin registry for safer hot reload".to_string(),
+                    status_key: "running".to_string(),
+                    status_label: "Running".to_string(),
+                    gate_status_key: "running".to_string(),
+                    gate_label: "2/5 gates".to_string(),
+                    acceptance_label: "3/5".to_string(),
+                    plan_progress: 55,
+                    tool_budget: "42/60".to_string(),
+                    memory_hits: 12,
+                    verification_state: "running".to_string(),
+                    last_checkpoint: "10:24:18 May 15".to_string(),
+                    artifact_count: 6,
                 },
             ],
             audit_source: "fallback".to_string(),
@@ -1693,6 +1793,44 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
             }
         })
         .collect_view();
+    let harness_mission_rows = context
+        .harness
+        .mission_rows
+        .iter()
+        .enumerate()
+        .map(|(index, row)| {
+            let row_id = format!("tau-ops-harness-mission-row-{index}");
+            let plan_progress = row.plan_progress.to_string();
+            view! {
+                <tr
+                    id=row_id
+                    data-mission-id=row.mission_id.clone()
+                    data-status=row.status_key.clone()
+                    data-plan-progress=plan_progress.clone()
+                    data-verification-state=row.verification_state.clone()
+                >
+                    <td data-mission-summary="inline-status">
+                        <span class="tau-harness-mission-title">{row.title.clone()}</span>
+                        <span class="tau-harness-mission-meta" data-compact-mission-meta="status-gates">
+                            <span class="tau-harness-status-chip" data-mission-state-chip=row.status_key.clone()>{row.status_label.clone()}</span>
+                            <span class="tau-harness-status-chip" data-mission-gate-chip=row.gate_status_key.clone()>{row.gate_label.clone()}</span>
+                        </span>
+                    </td>
+                    <td>{row.acceptance_label.clone()}</td>
+                    <td><meter min="0" max="100" value=plan_progress.clone()>{format!("{plan_progress}%")}</meter></td>
+                    <td>{row.tool_budget.clone()}</td>
+                    <td>{row.memory_hits}</td>
+                    <td><span class="tau-harness-status-chip" data-gate-status=row.verification_state.clone()>{row.gate_label.clone()}</span></td>
+                    <td>{row.last_checkpoint.clone()}</td>
+                    <td>{row.artifact_count}</td>
+                </tr>
+            }
+        })
+        .collect_view();
+    let harness_kpi_missions_count = context.harness.kpi_missions_count.to_string();
+    let harness_kpi_pending_verification_count =
+        context.harness.kpi_pending_verification_count.to_string();
+    let harness_kpi_memory_write_count = context.harness.kpi_memory_write_count.to_string();
     let harness_detail_tool_call_count = context.harness.detail_tool_call_count.to_string();
     let harness_detail_acceptance_met = context.harness.detail_acceptance_met_count.to_string();
     let harness_detail_acceptance_total = context.harness.detail_acceptance_total_count.to_string();
@@ -1701,42 +1839,6 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     let harness_detail_memory_hits = context.harness.detail_memory_hit_count.to_string();
     let harness_detail_learning_records = context.harness.detail_learning_record_count.to_string();
     let harness_detail_artifact_count = context.harness.detail_artifact_rows.len().to_string();
-    let harness_detail_passed_plan_count = context
-        .harness
-        .detail_plan_rows
-        .iter()
-        .filter(|row| row.status_key == "passed")
-        .count();
-    let harness_detail_plan_progress = if context.harness.detail_plan_rows.is_empty() {
-        "0".to_string()
-    } else {
-        ((harness_detail_passed_plan_count * 100) / context.harness.detail_plan_rows.len())
-            .to_string()
-    };
-    let harness_detail_passed_gate_count = context
-        .harness
-        .detail_gate_rows
-        .iter()
-        .filter(|row| row.status_key == "passed")
-        .count();
-    let harness_detail_gate_total_count = context.harness.detail_gate_rows.len();
-    let harness_detail_gate_label = format!(
-        "{}/{} gates",
-        harness_detail_passed_gate_count, harness_detail_gate_total_count
-    );
-    let harness_detail_verification_state = if context.harness.detail_gate_failed_count > 0 {
-        "failed"
-    } else if harness_detail_gate_total_count > 0
-        && harness_detail_passed_gate_count == harness_detail_gate_total_count
-    {
-        "passed"
-    } else {
-        context.harness.detail_status.as_str()
-    };
-    let harness_detail_acceptance_label = format!(
-        "{}/{}",
-        context.harness.detail_acceptance_met_count, context.harness.detail_acceptance_total_count
-    );
     let harness_tui_summary = format!(
         "tau@harness:~$ tau status\nmission={}\ntransport=gateway\nstatus={}\ntool_budget={}\nbench: {} pass; proof {}\n\nBenchmark M334\nPassed: {}\nFailed Gates:\n  {}\nProof: {}",
         context.harness.detail_run_id.clone(),
@@ -6882,32 +6984,32 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     <span class="tau-harness-status-chip">"Healthy"</span>
                                 </header>
                                 <section id="tau-ops-harness-kpi-grid" data-kpi-card-count="4" data-kpi-label-fit="word-boundary" data-kpi-label-overflow-budget="none">
-                                    <article id="tau-ops-harness-kpi-active" data-harness-kpi-card="active-missions" data-kpi-value="5" data-kpi-heading-fit="word-boundary">
-                                        <h4>"Active Missions"</h4>
-                                        <p>"5"</p>
-                                        <small>"3 running"</small>
+                                    <article id="tau-ops-harness-kpi-active" data-harness-kpi-card="active-missions" data-kpi-value=harness_kpi_missions_count.clone() data-kpi-heading-fit="word-boundary">
+                                        <h4>{context.harness.kpi_missions_title.clone()}</h4>
+                                        <p>{context.harness.kpi_missions_count}</p>
+                                        <small>{context.harness.kpi_missions_detail.clone()}</small>
                                     </article>
-                                    <article id="tau-ops-harness-kpi-verifications" data-harness-kpi-card="pending-verifications" data-kpi-value="3" data-kpi-heading-fit="word-boundary">
+                                    <article id="tau-ops-harness-kpi-verifications" data-harness-kpi-card="pending-verifications" data-kpi-value=harness_kpi_pending_verification_count data-kpi-heading-fit="word-boundary">
                                         <h4 aria-label="Pending Verifications"><span>"Pending"</span><span>"Verifications"</span></h4>
-                                        <p>"3"</p>
-                                        <small>"2 need review"</small>
+                                        <p>{context.harness.kpi_pending_verification_count}</p>
+                                        <small>{context.harness.kpi_pending_verification_detail.clone()}</small>
                                     </article>
-                                    <article id="tau-ops-harness-kpi-memory" data-harness-kpi-card="memory-writes" data-kpi-value="12" data-kpi-heading-fit="word-boundary">
+                                    <article id="tau-ops-harness-kpi-memory" data-harness-kpi-card="memory-writes" data-kpi-value=harness_kpi_memory_write_count data-kpi-heading-fit="word-boundary">
                                         <h4>"Memory Writes"</h4>
-                                        <p>"12"</p>
-                                        <small>"Today"</small>
+                                        <p>{context.harness.kpi_memory_write_count}</p>
+                                        <small>{context.harness.kpi_memory_write_detail.clone()}</small>
                                     </article>
-                                    <article id="tau-ops-harness-kpi-cost" data-harness-kpi-card="runtime-cost-today" data-kpi-value="18.74" data-kpi-heading-fit="word-boundary">
+                                    <article id="tau-ops-harness-kpi-cost" data-harness-kpi-card="runtime-cost-today" data-kpi-value=context.harness.kpi_runtime_cost_today.clone() data-kpi-heading-fit="word-boundary">
                                         <h4>"Runtime Cost Today"</h4>
-                                        <p>"$18.74"</p>
-                                        <small>"Across 5 runs"</small>
+                                        <p>{context.harness.kpi_runtime_cost_today.clone()}</p>
+                                        <small>{context.harness.kpi_runtime_cost_detail.clone()}</small>
                                     </article>
                                 </section>
                                 <section
                                     id="tau-ops-harness-active-missions"
-                                    data-active-count="5"
-                                    data-running-count="3"
-                                    data-blocked-count="1"
+                                    data-active-count=harness_kpi_missions_count
+                                    data-running-count=context.harness.mission_rows.iter().filter(|row| matches!(row.status_key.as_str(), "running" | "verifying")).count().to_string()
+                                    data-blocked-count=context.harness.mission_rows.iter().filter(|row| row.status_key == "blocked").count().to_string()
                                     data-compact-table-breakpoint="1400px"
                                     data-compact-mission-summary="status-and-gates"
                                     data-first-viewport-budget="benchmark-visible"
@@ -6916,7 +7018,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     data-left-table-fit="compact-no-overflow"
                                     data-horizontal-overflow-budget="none"
                                 >
-                                    <h4>"Active Missions"</h4>
+                                    <h4>{context.harness.mission_table_title.clone()}</h4>
                                     <div class="tau-harness-table-wrap" data-scroll-region="active-missions" data-scroll-boundary="whole-row">
                                         <table id="tau-ops-harness-missions-table">
                                             <thead>
@@ -6932,92 +7034,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                                 </tr>
                                             </thead>
                                             <tbody>
-                                                <tr id="tau-ops-harness-mission-row-0" data-mission-id="run_linux_ci" data-status="running" data-plan-progress="68" data-verification-state="needs-review">
-                                                    <td data-mission-summary="inline-status">
-                                                        <span class="tau-harness-mission-title">"Port repo test harness to Linux CI"</span>
-                                                        <span class="tau-harness-mission-meta" data-compact-mission-meta="status-gates">
-                                                            <span class="tau-harness-status-chip" data-mission-state-chip="running">"Running"</span>
-                                                            <span class="tau-harness-status-chip" data-mission-gate-chip="needs-review">"3/5 gates"</span>
-                                                        </span>
-                                                    </td>
-                                                    <td>"4/5"</td>
-                                                    <td><meter min="0" max="100" value="68">"68%"</meter></td>
-                                                    <td>"34/60"</td>
-                                                    <td>"12"</td>
-                                                    <td><span class="tau-harness-status-chip" data-gate-status="needs-review">"3/5 gates"</span></td>
-                                                    <td>"10:22:31 May 15"</td>
-                                                    <td>"5"</td>
-                                                </tr>
-                                                <tr id="tau-ops-harness-mission-row-1" data-mission-id="run_m334_flaky" data-status="verifying" data-plan-progress="72" data-verification-state="needs-review">
-                                                    <td data-mission-summary="inline-status">
-                                                        <span class="tau-harness-mission-title">"Investigate flaky benchmark on M334"</span>
-                                                        <span class="tau-harness-mission-meta" data-compact-mission-meta="status-gates">
-                                                            <span class="tau-harness-status-chip" data-mission-state-chip="verifying">"Verifying"</span>
-                                                            <span class="tau-harness-status-chip" data-mission-gate-chip="needs-review">"2/5 gates"</span>
-                                                        </span>
-                                                    </td>
-                                                    <td>"3/5"</td>
-                                                    <td><meter min="0" max="100" value="72">"72%"</meter></td>
-                                                    <td>"28/60"</td>
-                                                    <td>"8"</td>
-                                                    <td><span class="tau-harness-status-chip" data-gate-status="needs-review">"2/5 gates"</span></td>
-                                                    <td>"10:25:52 May 15"</td>
-                                                    <td>"4"</td>
-                                                </tr>
-                                                <tr id="tau-ops-harness-mission-row-2" data-mission-id="run_research_brief" data-status="completed" data-plan-progress="100" data-verification-state="passed">
-                                                    <td data-mission-summary="inline-status">
-                                                        <span class="tau-harness-mission-title">"Generate weekly research brief on model routing"</span>
-                                                        <span class="tau-harness-mission-meta" data-compact-mission-meta="status-gates">
-                                                            <span class="tau-harness-status-chip" data-mission-state-chip="completed">"Completed"</span>
-                                                            <span class="tau-harness-status-chip" data-mission-gate-chip="passed">"5/5 gates"</span>
-                                                        </span>
-                                                    </td>
-                                                    <td>"5/5"</td>
-                                                    <td><meter min="0" max="100" value="100">"100%"</meter></td>
-                                                    <td>"18/60"</td>
-                                                    <td>"15"</td>
-                                                    <td><span class="tau-harness-status-chip" data-gate-status="passed">"5/5 gates"</span></td>
-                                                    <td>"09:55:11 May 15"</td>
-                                                    <td>"7"</td>
-                                                </tr>
-                                                <tr id="tau-ops-harness-mission-row-3" data-mission-id="run_receipts" data-status="blocked" data-plan-progress="36" data-verification-state="failed">
-                                                    <td data-mission-summary="inline-status">
-                                                        <span class="tau-harness-mission-title">"Automate receipt classification pipeline"</span>
-                                                        <span class="tau-harness-mission-meta" data-compact-mission-meta="status-gates">
-                                                            <span class="tau-harness-status-chip" data-mission-state-chip="blocked">"Blocked"</span>
-                                                            <span class="tau-harness-status-chip" data-mission-gate-chip="failed">"1/5 gates"</span>
-                                                        </span>
-                                                    </td>
-                                                    <td>"2/5"</td>
-                                                    <td><meter min="0" max="100" value="36">"36%"</meter></td>
-                                                    <td>"16/60"</td>
-                                                    <td>"6"</td>
-                                                    <td><span class="tau-harness-status-chip" data-gate-status="failed">"1/5 gates"</span></td>
-                                                    <td>"09:48:03 May 15"</td>
-                                                    <td>"3"</td>
-                                                </tr>
-                                                <tr
-                                                    id="tau-ops-harness-mission-row-4"
-                                                    data-mission-id=context.harness.detail_run_id.clone()
-                                                    data-status=context.harness.detail_status.clone()
-                                                    data-plan-progress=harness_detail_plan_progress.clone()
-                                                    data-verification-state=harness_detail_verification_state
-                                                >
-                                                    <td data-mission-summary="inline-status">
-                                                        <span class="tau-harness-mission-title">{context.harness.detail_goal.clone()}</span>
-                                                        <span class="tau-harness-mission-meta" data-compact-mission-meta="status-gates">
-                                                            <span class="tau-harness-status-chip" data-mission-state-chip=context.harness.detail_status.clone()>{humanize_harness_label(&context.harness.detail_status)}</span>
-                                                            <span class="tau-harness-status-chip" data-mission-gate-chip=harness_detail_verification_state>{harness_detail_gate_label.clone()}</span>
-                                                        </span>
-                                                    </td>
-                                                    <td>{harness_detail_acceptance_label}</td>
-                                                    <td><meter min="0" max="100" value=harness_detail_plan_progress.clone()>{format!("{harness_detail_plan_progress}%")}</meter></td>
-                                                    <td>{context.harness.detail_tool_budget.clone()}</td>
-                                                    <td>{context.harness.detail_memory_hit_count}</td>
-                                                    <td><span class="tau-harness-status-chip" data-gate-status=harness_detail_verification_state>{harness_detail_gate_label}</span></td>
-                                                    <td>{context.harness.detail_last_memory_write.clone()}</td>
-                                                    <td>{context.harness.detail_artifact_rows.len()}</td>
-                                                </tr>
+                                                {harness_mission_rows}
                                             </tbody>
                                         </table>
                                     </div>
