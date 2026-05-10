@@ -1395,31 +1395,13 @@ fn collect_tau_ops_dashboard_harness_snapshot(
     state_dir: &Path,
     requested_proposal_id: Option<&str>,
 ) -> TauOpsDashboardHarnessSnapshot {
-    let proposal_queue_rows = vec![
-        TauOpsDashboardHarnessProposalQueueRow {
-            item_id: "LR-219".to_string(),
-            status_key: "needs-review".to_string(),
-            label: "Retry storm in document synthesis".to_string(),
-        },
-        TauOpsDashboardHarnessProposalQueueRow {
-            item_id: "LR-220".to_string(),
-            status_key: "needs-review".to_string(),
-            label: "Missing memory write after verification".to_string(),
-        },
-    ];
+    let (proposal_queue_source, proposal_queue_rows) =
+        collect_harness_proposal_queue_rows(state_dir);
     let mut snapshot = TauOpsDashboardHarnessSnapshot {
+        proposal_queue_source,
         proposal_queue_rows,
         ..TauOpsDashboardHarnessSnapshot::default()
     };
-    snapshot
-        .proposal_queue_rows
-        .extend(list_ops_harness_proposals().iter().map(|proposal| {
-            TauOpsDashboardHarnessProposalQueueRow {
-                item_id: proposal.proposal_id.to_string(),
-                status_key: proposal.status_key.to_string(),
-                label: proposal.queue_label.to_string(),
-            }
-        }));
     let selected_proposal = requested_proposal_id
         .and_then(find_ops_harness_proposal)
         .or_else(|| list_ops_harness_proposals().first());
@@ -1541,6 +1523,114 @@ fn collect_tau_ops_dashboard_harness_snapshot(
     }
 
     snapshot
+}
+
+fn collect_harness_proposal_queue_rows(
+    state_dir: &Path,
+) -> (String, Vec<TauOpsDashboardHarnessProposalQueueRow>) {
+    let latest_audit_results = collect_latest_harness_proposal_audit_results(state_dir);
+    let state_rows = list_ops_harness_proposals()
+        .iter()
+        .filter_map(|proposal| {
+            let mission_status = read_harness_proposal_mission_status(state_dir, proposal);
+            let latest_audit_result = latest_audit_results.get(proposal.proposal_id);
+            if mission_status.is_none() && latest_audit_result.is_none() {
+                return None;
+            }
+            Some(TauOpsDashboardHarnessProposalQueueRow {
+                item_id: proposal.proposal_id.to_string(),
+                status_key: harness_proposal_queue_status_key(
+                    proposal,
+                    mission_status.as_deref(),
+                    latest_audit_result.map(String::as_str),
+                ),
+                label: proposal.queue_label.to_string(),
+            })
+        })
+        .collect::<Vec<_>>();
+
+    if !state_rows.is_empty() {
+        return ("state".to_string(), state_rows);
+    }
+
+    (
+        "registry".to_string(),
+        list_ops_harness_proposals()
+            .iter()
+            .map(|proposal| TauOpsDashboardHarnessProposalQueueRow {
+                item_id: proposal.proposal_id.to_string(),
+                status_key: proposal.status_key.to_string(),
+                label: proposal.queue_label.to_string(),
+            })
+            .collect(),
+    )
+}
+
+fn read_harness_proposal_mission_status(
+    state_dir: &Path,
+    proposal: &GatewayOpsHarnessProposalDefinition,
+) -> Option<String> {
+    let mission_path = state_dir
+        .join("ops-harness")
+        .join("self-improvement")
+        .join(proposal.proposal_id)
+        .join("mission.json");
+    let mission_json = std::fs::read_to_string(mission_path).ok()?;
+    let mission = serde_json::from_str::<Value>(&mission_json).ok()?;
+    mission
+        .get("status")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+}
+
+fn collect_latest_harness_proposal_audit_results(state_dir: &Path) -> BTreeMap<String, String> {
+    let audit_path = state_dir.join("ops-harness").join("audit.jsonl");
+    let Ok(audit_jsonl) = std::fs::read_to_string(audit_path) else {
+        return BTreeMap::new();
+    };
+
+    let mut latest = BTreeMap::new();
+    for record in audit_jsonl
+        .lines()
+        .rev()
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+    {
+        let Some(proposal_id) = record.get("proposal_id").and_then(Value::as_str) else {
+            continue;
+        };
+        if latest.contains_key(proposal_id) {
+            continue;
+        }
+        let action = record
+            .get("action")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown");
+        let result = record
+            .get("result")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown");
+        latest.insert(proposal_id.to_string(), format!("{action}:{result}"));
+    }
+    latest
+}
+
+fn harness_proposal_queue_status_key(
+    proposal: &GatewayOpsHarnessProposalDefinition,
+    mission_status: Option<&str>,
+    latest_audit_result: Option<&str>,
+) -> String {
+    match latest_audit_result {
+        Some("apply:applied") => return "applied".to_string(),
+        Some("approve:recorded") => return "approved".to_string(),
+        Some("reject:rejected") => return "rejected".to_string(),
+        Some("dry-run:passed") => return "dry-run-passed".to_string(),
+        _ => {}
+    }
+
+    mission_status
+        .filter(|status| !status.is_empty())
+        .unwrap_or(proposal.status_key)
+        .to_string()
 }
 
 fn apply_harness_benchmark_detail_from_proof(

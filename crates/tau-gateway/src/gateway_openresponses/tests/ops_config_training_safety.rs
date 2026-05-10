@@ -398,6 +398,9 @@ async fn integration_ops_harness_proposal_registry_renders_selected_proposal() {
         "id=\"tau-ops-harness-proposal-detail\" data-proposal-id=\"PR-045\" data-learning-record=\"LR-045\" data-target-type=\"Skill\" data-target-path=\"skills/benchmark_artifacts/SKILL.md\"",
         "PR-045 Skill patch for benchmark artifact naming",
         "Add a skill rule for deterministic benchmark artifact naming.",
+        "id=\"tau-ops-harness-learning-queue\" data-queue-count=\"1\"",
+        "data-queue-source=\"state\"",
+        "data-learning-id=\"PR-045\" data-status=\"completed\">Skill patch for benchmark artifact naming</li>",
         "id=\"tau-ops-harness-self-improvement-proof\" data-proof-source=\"state\" data-mission-id=\"ops-harness-self-improve-pr-045\" data-mission-status=\"completed\" data-plan-completed=\"5\" data-plan-total=\"5\" data-gates-passed=\"3\" data-gates-total=\"3\" data-memory-hits=\"1\" data-artifact-count=\"3\" data-final-learning-records=\"LR-045\"",
         "Applied PR-045 and updated curator state for LR-045.",
         "data-proof-row=\"artifact\" data-proof-id=\"target:skills/benchmark_artifacts/SKILL.md\" data-proof-status=\"skill\">skills/benchmark_artifacts/SKILL.md</li>",
@@ -405,6 +408,16 @@ async fn integration_ops_harness_proposal_registry_renders_selected_proposal() {
         assert!(
             harness_body.contains(marker),
             "missing registry-backed harness marker `{marker}`"
+        );
+    }
+    for stale_marker in [
+        "data-learning-id=\"LR-219\"",
+        "data-learning-id=\"LR-220\"",
+        "data-learning-id=\"PR-044\"",
+    ] {
+        assert!(
+            !harness_body.contains(stale_marker),
+            "state-backed selected proposal queue rendered stale row `{stale_marker}`"
         );
     }
 
@@ -485,6 +498,8 @@ async fn integration_spec_3757_c03_ops_harness_route_reflects_state_backed_proof
         "<h4>Runtime Cost Today</h4><p>$0.00</p><small>Across 1 run</small>",
         "id=\"tau-ops-harness-active-missions\" data-active-count=\"1\" data-running-count=\"0\" data-blocked-count=\"0\"",
         "<h4>Benchmark Runs</h4>",
+        "id=\"tau-ops-harness-learning-queue\" data-queue-count=\"1\"",
+        "data-queue-source=\"state\"",
         "Benchmark tasks passed 4/4",
         "data-gate-id=\"memory_write_proof\" data-gate-status=\"passed\"",
         "state proof loaded:",
@@ -501,6 +516,8 @@ async fn integration_spec_3757_c03_ops_harness_route_reflects_state_backed_proof
         "data-mission-id=\"run_linux_ci\"",
         "data-mission-id=\"run_m334_flaky\"",
         "data-mission-id=\"run_receipts\"",
+        "data-learning-id=\"LR-219\"",
+        "data-learning-id=\"LR-220\"",
     ] {
         assert!(
             !body.contains(stale_marker),

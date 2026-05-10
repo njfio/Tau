@@ -861,6 +861,7 @@ pub struct TauOpsDashboardHarnessSnapshot {
     pub audit_source: String,
     pub audit_rows: Vec<TauOpsDashboardHarnessAuditRow>,
     pub selected_proposal_id: String,
+    pub proposal_queue_source: String,
     pub proposal_queue_rows: Vec<TauOpsDashboardHarnessProposalQueueRow>,
     pub selected_proposal: TauOpsDashboardHarnessProposalDetail,
     pub self_improvement_proof: TauOpsDashboardHarnessSelfImprovementProof,
@@ -1220,6 +1221,7 @@ impl Default for TauOpsDashboardHarnessSnapshot {
                 },
             ],
             selected_proposal_id: "PR-044".to_string(),
+            proposal_queue_source: "fallback".to_string(),
             proposal_queue_rows: vec![
                 TauOpsDashboardHarnessProposalQueueRow {
                     item_id: "LR-219".to_string(),
@@ -1566,6 +1568,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
             }
         })
         .collect_view();
+    let harness_proposal_queue_count = context.harness.proposal_queue_rows.len().to_string();
     let harness_self_improvement_plan_rows = context
         .harness
         .self_improvement_proof
@@ -7228,12 +7231,13 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 </header>
                                 <section
                                     id="tau-ops-harness-learning-queue"
-                                    data-queue-count="4"
+                                    data-queue-count=harness_proposal_queue_count
                                     data-queue-density="all-items-visible"
                                     data-queue-overflow-budget="none"
                                     data-queue-readability="full-labels"
                                     data-queue-layout="single-column-readable"
                                     data-queue-truncation-budget="none"
+                                    data-queue-source=context.harness.proposal_queue_source.clone()
                                 >
                                     <h4>"Learning & Proposals"</h4>
                                     <ul>
