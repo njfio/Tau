@@ -489,7 +489,7 @@ async fn integration_spec_3757_c03_ops_harness_route_reflects_state_backed_proof
         "data-gate-id=\"memory_write_proof\" data-gate-status=\"passed\"",
         "state proof loaded:",
         "id=\"tau-ops-harness-audit-log\" data-audit-row-count=\"1\" data-audit-source=\"state\"",
-        "data-action=\"apply\" data-result=\"blocked_approval_required\"",
+        "data-action=\"apply\" data-result=\"blocked_approval_required\" data-timestamp-unix-ms=\"",
         "Blocked Approval Required",
     ] {
         assert!(
@@ -507,6 +507,10 @@ async fn integration_spec_3757_c03_ops_harness_route_reflects_state_backed_proof
             "state-backed harness route still rendered stale demo mission `{stale_marker}`"
         );
     }
+    assert!(
+        !body.contains(">ts:"),
+        "state-backed harness audit rows should not expose raw timestamp labels"
+    );
 
     handle.abort();
 }

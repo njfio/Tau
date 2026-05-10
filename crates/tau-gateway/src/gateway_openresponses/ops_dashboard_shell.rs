@@ -1520,7 +1520,8 @@ fn collect_tau_ops_dashboard_harness_snapshot(
                     .and_then(Value::as_u64)
                     .unwrap_or_default();
                 Some(TauOpsDashboardHarnessAuditRow {
-                    timestamp_label: format!("ts:{timestamp}"),
+                    timestamp_label: format_harness_audit_timestamp(timestamp),
+                    timestamp_unix_ms: timestamp.to_string(),
                     actor: "Gateway".to_string(),
                     action_label: humanize_harness_token(action),
                     action_key: action.to_string(),
@@ -1791,7 +1792,7 @@ fn apply_harness_benchmark_detail_from_proof(
     snapshot.detail_last_memory_write = if latest_learning_ms == 0 {
         "state".to_string()
     } else {
-        format!("ts:{latest_learning_ms}")
+        format_harness_audit_timestamp(latest_learning_ms)
     };
     snapshot.detail_memory_evidence_label = format!(
         "{} benchmark memory hits used",
@@ -1907,6 +1908,42 @@ fn format_harness_runtime_ms(runtime_ms: u64) -> String {
     let minutes = total_seconds / 60;
     let seconds = total_seconds % 60;
     format!("{minutes:02}:{seconds:02}")
+}
+
+fn format_harness_audit_timestamp(timestamp_unix_ms: u64) -> String {
+    if timestamp_unix_ms == 0 {
+        return "unknown time".to_string();
+    }
+
+    let seconds = timestamp_unix_ms / 1_000;
+    let days = seconds / 86_400;
+    let seconds_of_day = seconds % 86_400;
+    let (year, month, day) = utc_date_from_unix_days(days);
+    let hour = seconds_of_day / 3_600;
+    let minute = (seconds_of_day % 3_600) / 60;
+    let second = seconds_of_day % 60;
+    format!("{year:04}-{month:02}-{day:02} {hour:02}:{minute:02}:{second:02} UTC")
+}
+
+fn utc_date_from_unix_days(days_since_epoch: u64) -> (i64, u64, u64) {
+    let mut days = match i64::try_from(days_since_epoch) {
+        Ok(days) => days,
+        Err(_) => return (9999, 12, 31),
+    };
+    days += 719_468;
+    let era = if days >= 0 { days } else { days - 146_096 } / 146_097;
+    let day_of_era = days - era * 146_097;
+    let year_of_era =
+        (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let mut year = year_of_era + era * 400;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let month_prime = (5 * day_of_year + 2) / 153;
+    let day = day_of_year - (153 * month_prime + 2) / 5 + 1;
+    let month = month_prime + if month_prime < 10 { 3 } else { -9 };
+    if month <= 2 {
+        year += 1;
+    }
+    (year, month as u64, day as u64)
 }
 
 fn collect_harness_self_improvement_proof(

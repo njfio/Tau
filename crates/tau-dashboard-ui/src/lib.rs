@@ -662,6 +662,7 @@ fn harness_benchmark_category_label(category: &str) -> String {
 /// Public struct `TauOpsDashboardHarnessAuditRow` in `tau-dashboard-ui`.
 pub struct TauOpsDashboardHarnessAuditRow {
     pub timestamp_label: String,
+    pub timestamp_unix_ms: String,
     pub actor: String,
     pub action_label: String,
     pub action_key: String,
@@ -1175,6 +1176,7 @@ impl Default for TauOpsDashboardHarnessSnapshot {
             audit_rows: vec![
                 TauOpsDashboardHarnessAuditRow {
                     timestamp_label: "May 15, 10:11".to_string(),
+                    timestamp_unix_ms: "".to_string(),
                     actor: "Operator".to_string(),
                     action_label: "Dry Run".to_string(),
                     action_key: "dry-run".to_string(),
@@ -1185,6 +1187,7 @@ impl Default for TauOpsDashboardHarnessSnapshot {
                 },
                 TauOpsDashboardHarnessAuditRow {
                     timestamp_label: "May 15, 09:42".to_string(),
+                    timestamp_unix_ms: "".to_string(),
                     actor: "Operator".to_string(),
                     action_label: "Apply".to_string(),
                     action_key: "apply".to_string(),
@@ -1195,6 +1198,7 @@ impl Default for TauOpsDashboardHarnessSnapshot {
                 },
                 TauOpsDashboardHarnessAuditRow {
                     timestamp_label: "May 15, 09:12".to_string(),
+                    timestamp_unix_ms: "".to_string(),
                     actor: "Curator".to_string(),
                     action_label: "Apply".to_string(),
                     action_key: "apply".to_string(),
@@ -1205,6 +1209,7 @@ impl Default for TauOpsDashboardHarnessSnapshot {
                 },
                 TauOpsDashboardHarnessAuditRow {
                     timestamp_label: "May 15, 08:33".to_string(),
+                    timestamp_unix_ms: "".to_string(),
                     actor: "Operator".to_string(),
                     action_label: "Reject".to_string(),
                     action_key: "reject".to_string(),
@@ -1697,7 +1702,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
         .iter()
         .map(|row| {
             view! {
-                <tr data-action=row.action_key.clone() data-result=row.result_key.clone()>
+                <tr data-action=row.action_key.clone() data-result=row.result_key.clone() data-timestamp-unix-ms=row.timestamp_unix_ms.clone()>
                     <td>{row.timestamp_label.clone()}</td>
                     <td>{row.actor.clone()}</td>
                     <td>{row.action_label.clone()}</td>

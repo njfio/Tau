@@ -599,6 +599,7 @@ fn functional_spec_3757_c01_c02_harness_snapshot_drives_benchmark_and_audit_rows
             audit_source: "state".to_string(),
             audit_rows: vec![TauOpsDashboardHarnessAuditRow {
                 timestamp_label: "ts:1777986484661".to_string(),
+                timestamp_unix_ms: "1777986484661".to_string(),
                 actor: "Gateway".to_string(),
                 action_label: "Apply".to_string(),
                 action_key: "apply".to_string(),
@@ -618,7 +619,7 @@ fn functional_spec_3757_c01_c02_harness_snapshot_drives_benchmark_and_audit_rows
         "id=\"tau-ops-harness-benchmark-latest\" data-latest-result=\"6/7\" data-runtime=\"state\" data-cost=\"0.00\"",
         "Latest state-backed result: 6/7. Failed gates: 1.",
         "id=\"tau-ops-harness-audit-log\" data-audit-row-count=\"1\" data-audit-source=\"state\"",
-        "data-action=\"apply\" data-result=\"blocked_approval_required\"",
+        "data-action=\"apply\" data-result=\"blocked_approval_required\" data-timestamp-unix-ms=\"1777986484661\"",
         "Blocked Approval Required",
     ] {
         assert!(
@@ -1332,8 +1333,10 @@ fn functional_spec_3779_c01_c02_c03_harness_keeps_recent_audit_proof_visible() {
         "#tau-ops-harness-audit-log .tau-harness-table-wrap {\n                                max-height: 64px;\n                                overflow: auto;",
         "#tau-ops-harness-audit-log table {\n                                min-width: 0;",
         "#tau-ops-harness-audit-log td:nth-child(2),\n                            #tau-ops-harness-audit-log td:nth-child(4) {\n                                display: none;",
-        "data-action=\"dry-run\" data-result=\"passed\"><td>May 15, 10:11</td><td>Operator</td><td>Dry Run</td><td>Prompt</td><td>PR-044</td><td>Passed</td>",
-        "data-action=\"apply\" data-result=\"applied\"><td>May 15, 09:42</td><td>Operator</td><td>Apply</td><td>Config</td><td>CL-031</td><td>Applied</td>",
+        "data-action=\"dry-run\" data-result=\"passed\" data-timestamp-unix-ms=\"\"",
+        "<td>May 15, 10:11</td><td>Operator</td><td>Dry Run</td><td>Prompt</td><td>PR-044</td><td>Passed</td>",
+        "data-action=\"apply\" data-result=\"applied\" data-timestamp-unix-ms=\"\"",
+        "<td>May 15, 09:42</td><td>Operator</td><td>Apply</td><td>Config</td><td>CL-031</td><td>Applied</td>",
     ] {
         assert!(
             html.contains(marker),
@@ -1508,7 +1511,8 @@ fn functional_spec_3783_c01_c02_c03_harness_review_pane_contains_compact_proof_r
         "#tau-ops-harness-audit-log[data-audit-overflow-budget=\"all-rows-visible\"] td {\n                                padding: 2px 5px;",
         "data-learning-id=\"PR-045\" data-status=\"proposal\">Skill patch for benchmark artifact naming</li>",
         "<dt>Test Evidence</dt><dd><a href=\"/evidence/pr-044-dryrun.json\">evidence/pr-044-dryrun.json</a></dd>",
-        "data-action=\"reject\" data-result=\"rejected\"><td>May 15, 08:33</td><td>Operator</td><td>Reject</td><td>Prompt</td><td>PR-029</td><td>Rejected</td>",
+        "data-action=\"reject\" data-result=\"rejected\" data-timestamp-unix-ms=\"\"",
+        "<td>May 15, 08:33</td><td>Operator</td><td>Reject</td><td>Prompt</td><td>PR-029</td><td>Rejected</td>",
     ] {
         assert!(
             html.contains(marker),
