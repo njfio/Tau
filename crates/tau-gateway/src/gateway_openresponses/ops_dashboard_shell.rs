@@ -1819,16 +1819,28 @@ fn collect_harness_durable_mission_rows(state_dir: &Path) -> Vec<TauOpsDashboard
             let mission_path = entry.path().join("mission.json");
             let mission_json = std::fs::read_to_string(mission_path).ok()?;
             let mission = serde_json::from_str::<Value>(&mission_json).ok()?;
+            let mission_id = mission.get("mission_id").and_then(Value::as_str)?;
+            let proposal_key = mission
+                .get("proposal_id")
+                .and_then(Value::as_str)
+                .filter(|proposal_id| !proposal_id.trim().is_empty())
+                .unwrap_or(mission_id)
+                .to_string();
             let updated_unix_ms = mission
                 .get("updated_unix_ms")
                 .and_then(Value::as_u64)
                 .unwrap_or_default();
             let row = harness_durable_mission_row_from_value(&mission)?;
-            Some((updated_unix_ms, row))
+            Some((proposal_key, updated_unix_ms, row))
         })
         .collect::<Vec<_>>();
-    rows.sort_by(|left, right| right.0.cmp(&left.0));
-    rows.into_iter().take(5).map(|(_, row)| row).collect()
+    rows.sort_by(|left, right| right.1.cmp(&left.1));
+
+    let mut seen_proposals = BTreeSet::new();
+    rows.into_iter()
+        .filter_map(|(proposal_key, _, row)| seen_proposals.insert(proposal_key).then_some(row))
+        .take(5)
+        .collect()
 }
 
 #[derive(Debug, Clone)]

@@ -478,6 +478,129 @@ async fn integration_spec_3756_c05_ops_harness_actions_execute_and_persist_proof
 }
 
 #[tokio::test]
+async fn integration_ops_harness_active_missions_keep_latest_mission_per_proposal() {
+    fn write_mission(
+        state_dir: &std::path::Path,
+        mission_id: &str,
+        proposal_id: &str,
+        status: &str,
+        updated_unix_ms: u64,
+        gate_statuses: &[&str],
+    ) {
+        let mission_dir = state_dir
+            .join("ops-harness")
+            .join("missions")
+            .join(mission_id);
+        std::fs::create_dir_all(&mission_dir).expect("mission dir");
+        let verification_gates = gate_statuses
+            .iter()
+            .enumerate()
+            .map(|(index, status)| {
+                serde_json::json!({
+                    "id": format!("VG-{}", index + 1),
+                    "description": format!("Gate {}", index + 1),
+                    "status": status
+                })
+            })
+            .collect::<Vec<_>>();
+        std::fs::write(
+            mission_dir.join("mission.json"),
+            serde_json::to_vec_pretty(&serde_json::json!({
+                "mission_id": mission_id,
+                "proposal_id": proposal_id,
+                "status": status,
+                "goal": format!("{proposal_id} harness mission"),
+                "updated_unix_ms": updated_unix_ms,
+                "acceptance_criteria": [
+                    {"id": "AC-1", "verification_gate_ids": ["VG-1"]},
+                    {"id": "AC-2", "verification_gate_ids": ["VG-2"]}
+                ],
+                "plan_dag": [
+                    {"id": "plan", "status": "completed"},
+                    {"id": "execute", "status": if status == "completed" { "completed" } else { "pending" }}
+                ],
+                "verification_gates": verification_gates,
+                "tool_budget": {
+                    "consumed_tool_calls": 2,
+                    "max_tool_calls": 40
+                },
+                "memory_hits": [{"key": "learning", "summary": "mission memory"}],
+                "artifacts": [
+                    {
+                        "artifact_id": "mission-json",
+                        "kind": "mission-state",
+                        "path": format!("ops-harness/missions/{mission_id}/mission.json")
+                    }
+                ],
+                "checkpoints": [
+                    {"summary": format!("{mission_id} checkpoint")}
+                ]
+            }))
+            .expect("mission json"),
+        )
+        .expect("write mission");
+    }
+
+    let temp = tempdir().expect("tempdir");
+    let state = test_state(temp.path(), 4_096, "secret");
+    let state_dir = state.config.state_dir.clone();
+    write_mission(
+        &state_dir,
+        "mission-stale-awaiting",
+        "PR-045",
+        "awaiting_approval",
+        1_000,
+        &["passed", "pending"],
+    );
+    write_mission(
+        &state_dir,
+        "mission-latest-completed",
+        "PR-045",
+        "completed",
+        2_000,
+        &["passed", "passed"],
+    );
+    write_mission(
+        &state_dir,
+        "mission-other-awaiting",
+        "PR-044",
+        "awaiting_approval",
+        1_500,
+        &["passed", "pending"],
+    );
+
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+    let client = Client::new();
+    let harness_response = client
+        .get(format!(
+            "http://{addr}/ops/harness?proposal_id=PR-045&theme=dark&sidebar=expanded"
+        ))
+        .send()
+        .await
+        .expect("load harness with duplicate proposal missions");
+    assert_eq!(harness_response.status(), StatusCode::OK);
+    let harness_body = harness_response.text().await.expect("harness body");
+
+    assert_eq!(
+        harness_body
+            .matches("id=\"tau-ops-harness-mission-row-")
+            .count(),
+        2,
+        "active missions should keep one latest row per proposal"
+    );
+    assert!(harness_body
+        .contains("data-mission-id=\"mission-latest-completed\" data-status=\"completed\""));
+    assert!(harness_body
+        .contains("data-mission-id=\"mission-other-awaiting\" data-status=\"awaiting_approval\""));
+    assert!(
+        !harness_body.contains("mission-stale-awaiting"),
+        "stale mission attempts for the same proposal should not remain active"
+    );
+
+    handle.abort();
+}
+
+#[tokio::test]
 async fn integration_ops_harness_proposal_actions_delegate_dry_run_and_approved_apply() {
     let temp = tempdir().expect("tempdir");
     let state = test_state_with_client_auth_and_harness_runner(
