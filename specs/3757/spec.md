@@ -18,6 +18,8 @@ In scope:
   proof summary from the harness snapshot.
 - Load the latest M334 proof artifact from gateway state when present.
 - Load recent harness proposal audit records from gateway state when present.
+- Link Tool Execution Evidence artifact cells to the state-backed proof artifact
+  when a safe harness artifact route exists.
 - Preserve deterministic fallback values when no gateway state exists.
 - Add UI and gateway integration tests proving state-backed rendering.
 
@@ -50,6 +52,13 @@ when the dashboard shell renders,
 then the existing deterministic fallback M334 and proposal review markers remain
 available for tests, demos, and offline rendering.
 
+### AC-4 Tool evidence artifacts are inspectable
+
+Given state-backed proof has tool evidence rows,
+when an operator opens `/ops/harness`,
+then each row's artifact cell links to the corresponding harness artifact view
+instead of rendering proof evidence as inert text.
+
 ## Conformance Cases
 
 | Case | AC | Tier | Given | When | Then |
@@ -57,11 +66,14 @@ available for tests, demos, and offline rendering.
 | C-01 | AC-1, AC-3 | Functional | custom harness snapshot | shell renders | benchmark panel uses custom counts and category rows |
 | C-02 | AC-2, AC-3 | Functional | custom harness snapshot | shell renders | audit table uses custom action rows |
 | C-03 | AC-1, AC-2 | Integration | gateway state after benchmark/action POSTs | GET `/ops/harness` | page contains state-backed proof and audit markers |
+| C-04 | AC-4 | Functional, Integration | state-backed proof artifact | shell renders | tool evidence artifact cells link to `/ops/harness/artifacts/view/...` |
 
 ## Success Metrics / Observable Signals
 
 - Dashboard UI tests prove custom harness snapshot values render.
 - Gateway integration test proves benchmark/action state is reflected on the
   next `/ops/harness` render.
+- Tool evidence rows expose state-backed proof links in both UI and gateway
+  route tests.
 - Fallback dashboard tests remain green.
 - No new dependency is introduced.

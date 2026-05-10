@@ -2270,6 +2270,7 @@ fn apply_harness_benchmark_detail_from_proof(
         .and_then(|mission| mission.get("tool_evidence"))
         .and_then(Value::as_array)
     {
+        let proof_artifact_href = harness_state_artifact_href_for_path(state_dir, proof_path);
         snapshot.detail_tool_call_count = tool_evidence.len();
         snapshot.detail_tool_rows = tool_evidence
             .iter()
@@ -2303,6 +2304,7 @@ fn apply_harness_benchmark_detail_from_proof(
                             .unwrap_or("pending"),
                     ),
                     artifact_label: artifact_label.to_string(),
+                    artifact_href: proof_artifact_href.clone(),
                 })
             })
             .collect();
@@ -2621,6 +2623,7 @@ fn apply_harness_selected_mission_detail(
     }
 
     if let Some(tool_evidence) = mission.get("tool_evidence").and_then(Value::as_array) {
+        let mission_artifact_href = harness_state_artifact_href_for_path(state_dir, &mission_path);
         snapshot.detail_tool_call_count = tool_evidence.len();
         snapshot.detail_tool_rows = tool_evidence
             .iter()
@@ -2653,6 +2656,7 @@ fn apply_harness_selected_mission_detail(
                             .unwrap_or("pending"),
                     ),
                     artifact_label: artifact_label.to_string(),
+                    artifact_href: mission_artifact_href.clone(),
                 })
             })
             .collect();

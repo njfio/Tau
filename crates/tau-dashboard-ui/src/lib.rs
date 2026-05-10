@@ -763,6 +763,7 @@ pub struct TauOpsDashboardHarnessToolEvidenceRow {
     pub runtime: String,
     pub status_key: String,
     pub artifact_label: String,
+    pub artifact_href: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1007,6 +1008,7 @@ impl Default for TauOpsDashboardHarnessSnapshot {
                     runtime: "00:01:12".to_string(),
                     status_key: "passed".to_string(),
                     artifact_label: "/artifacts/repo-read.json".to_string(),
+                    artifact_href: String::new(),
                 },
                 TauOpsDashboardHarnessToolEvidenceRow {
                     tool_name: "repo.edit".to_string(),
@@ -1015,6 +1017,7 @@ impl Default for TauOpsDashboardHarnessSnapshot {
                     runtime: "00:02:34".to_string(),
                     status_key: "passed".to_string(),
                     artifact_label: "/artifacts/edit.patch".to_string(),
+                    artifact_href: String::new(),
                 },
                 TauOpsDashboardHarnessToolEvidenceRow {
                     tool_name: "test.run".to_string(),
@@ -1023,6 +1026,7 @@ impl Default for TauOpsDashboardHarnessSnapshot {
                     runtime: "00:08:42".to_string(),
                     status_key: "passed".to_string(),
                     artifact_label: "/artifacts/tests.json".to_string(),
+                    artifact_href: String::new(),
                 },
                 TauOpsDashboardHarnessToolEvidenceRow {
                     tool_name: "memory.search".to_string(),
@@ -1031,6 +1035,7 @@ impl Default for TauOpsDashboardHarnessSnapshot {
                     runtime: "00:00:48".to_string(),
                     status_key: "passed".to_string(),
                     artifact_label: "/artifacts/memory.json".to_string(),
+                    artifact_href: String::new(),
                 },
                 TauOpsDashboardHarnessToolEvidenceRow {
                     tool_name: "memory.write".to_string(),
@@ -1039,6 +1044,7 @@ impl Default for TauOpsDashboardHarnessSnapshot {
                     runtime: "00:00:36".to_string(),
                     status_key: "passed".to_string(),
                     artifact_label: "/artifacts/learning.json".to_string(),
+                    artifact_href: String::new(),
                 },
                 TauOpsDashboardHarnessToolEvidenceRow {
                     tool_name: "report.write".to_string(),
@@ -1047,6 +1053,7 @@ impl Default for TauOpsDashboardHarnessSnapshot {
                     runtime: "00:01:21".to_string(),
                     status_key: "running".to_string(),
                     artifact_label: "/artifacts/report.md".to_string(),
+                    artifact_href: String::new(),
                 },
             ],
             detail_operator_log: "10:18:22  Plan accepted
@@ -1982,15 +1989,39 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
         .detail_tool_rows
         .iter()
         .map(|row| {
-            view! {
-                <tr data-tool=row.tool_name.clone() data-status=row.status_key.clone()>
+            if row.artifact_href.trim().is_empty() {
+                leptos::either::Either::Left(view! {
+                    <tr data-tool=row.tool_name.clone() data-status=row.status_key.clone()>
+                        <td>{row.tool_name.clone()}</td>
+                        <td>{row.call_id.clone()}</td>
+                        <td>{row.plan_node.clone()}</td>
+                        <td>{row.runtime.clone()}</td>
+                        <td>{row.status_key.clone()}</td>
+                        <td>{row.artifact_label.clone()}</td>
+                    </tr>
+                })
+            } else {
+                leptos::either::Either::Right(view! {
+                <tr
+                    data-tool=row.tool_name.clone()
+                    data-status=row.status_key.clone()
+                    data-tool-artifact-href=row.artifact_href.clone()
+                >
                     <td>{row.tool_name.clone()}</td>
                     <td>{row.call_id.clone()}</td>
                     <td>{row.plan_node.clone()}</td>
                     <td>{row.runtime.clone()}</td>
                     <td>{row.status_key.clone()}</td>
-                    <td>{row.artifact_label.clone()}</td>
+                    <td>
+                        <a
+                            href=row.artifact_href.clone()
+                            data-tool-proof-artifact-href="true"
+                        >
+                            {row.artifact_label.clone()}
+                        </a>
+                    </td>
                 </tr>
+                })
             }
         })
         .collect_view();

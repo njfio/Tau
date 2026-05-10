@@ -1211,6 +1211,8 @@ async fn integration_spec_3757_c03_ops_harness_route_reflects_state_backed_proof
         "Benchmark tasks passed 4/4",
         "href=\"/ops/harness/artifacts/view/ops-harness/m334/latest.json\"",
         "Benchmark proof artifact",
+        "data-tool-artifact-href=\"/ops/harness/artifacts/view/ops-harness/m334/latest.json\"",
+        "<a href=\"/ops/harness/artifacts/view/ops-harness/m334/latest.json\" data-tool-proof-artifact-href=\"true\">proof</a>",
         "data-gate-id=\"memory_write_proof\" data-gate-status=\"passed\"",
         "state proof loaded:",
         "id=\"tau-ops-harness-audit-log\" data-audit-row-count=\"2\" data-audit-source=\"state\"",

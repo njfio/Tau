@@ -9,11 +9,11 @@ use super::{
     TauOpsDashboardHarnessBenchmarkCategoryRow, TauOpsDashboardHarnessMissionRow,
     TauOpsDashboardHarnessProofRow, TauOpsDashboardHarnessProposalDetail,
     TauOpsDashboardHarnessProposalQueueRow, TauOpsDashboardHarnessSelfImprovementProof,
-    TauOpsDashboardHarnessSnapshot, TauOpsDashboardJobRow, TauOpsDashboardMemoryGraphEdgeRow,
-    TauOpsDashboardMemoryGraphNodeRow, TauOpsDashboardRoute, TauOpsDashboardSessionGraphEdgeRow,
-    TauOpsDashboardSessionGraphNodeRow, TauOpsDashboardSessionTimelineRow,
-    TauOpsDashboardShellContext, TauOpsDashboardSidebarState, TauOpsDashboardTheme,
-    TauOpsDashboardToolInventoryRow, TauOpsDashboardToolInvocationRow,
+    TauOpsDashboardHarnessSnapshot, TauOpsDashboardHarnessToolEvidenceRow, TauOpsDashboardJobRow,
+    TauOpsDashboardMemoryGraphEdgeRow, TauOpsDashboardMemoryGraphNodeRow, TauOpsDashboardRoute,
+    TauOpsDashboardSessionGraphEdgeRow, TauOpsDashboardSessionGraphNodeRow,
+    TauOpsDashboardSessionTimelineRow, TauOpsDashboardShellContext, TauOpsDashboardSidebarState,
+    TauOpsDashboardTheme, TauOpsDashboardToolInventoryRow, TauOpsDashboardToolInvocationRow,
     TauOpsDashboardToolUsageHistogramRow,
 };
 use tau_tui::{render_operator_shell_frame, OperatorShellFrame};
@@ -1771,6 +1771,38 @@ fn functional_spec_3790_c01_c02_c03_harness_tool_evidence_shows_memory_tool_name
         assert!(
             html.contains(marker),
             "Tool evidence should preserve full memory tool label marker `{marker}`"
+        );
+    }
+}
+
+#[test]
+fn regression_harness_tool_evidence_links_state_backed_proof_artifact() {
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        active_route: TauOpsDashboardRoute::Harness,
+        harness: TauOpsDashboardHarnessSnapshot {
+            detail_tool_call_count: 1,
+            detail_tool_rows: vec![TauOpsDashboardHarnessToolEvidenceRow {
+                tool_name: "verification_runner".to_string(),
+                call_id: "call-proof".to_string(),
+                plan_node: "Verify".to_string(),
+                runtime: "00:00:04".to_string(),
+                status_key: "passed".to_string(),
+                artifact_label: "proof".to_string(),
+                artifact_href: "/ops/harness/artifacts/view/ops-harness/m334/latest.json"
+                    .to_string(),
+            }],
+            ..TauOpsDashboardHarnessSnapshot::default()
+        },
+        ..TauOpsDashboardShellContext::default()
+    });
+
+    for marker in [
+        "data-tool=\"verification_runner\" data-status=\"passed\" data-tool-artifact-href=\"/ops/harness/artifacts/view/ops-harness/m334/latest.json\"",
+        "<td><a href=\"/ops/harness/artifacts/view/ops-harness/m334/latest.json\" data-tool-proof-artifact-href=\"true\">proof</a></td>",
+    ] {
+        assert!(
+            html.contains(marker),
+            "tool evidence proof artifact should be linked with marker `{marker}`"
         );
     }
 }
