@@ -2015,6 +2015,14 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     let harness_detail_memory_hits = context.harness.detail_memory_hit_count.to_string();
     let harness_detail_learning_records = context.harness.detail_learning_record_count.to_string();
     let harness_detail_artifact_count = context.harness.detail_artifact_rows.len().to_string();
+    let harness_selected_mission_acceptance_summary = format!(
+        "{}/{}",
+        harness_detail_acceptance_met, harness_detail_acceptance_total
+    );
+    let harness_selected_mission_gate_summary = format!(
+        "{}/{}",
+        harness_detail_passed_gate_count, harness_detail_gate_count
+    );
     let harness_runtime_workspace_label = context.harness.runtime_workspace_label.clone();
     let harness_runtime_model_label = context.harness.runtime_model_label.clone();
     let harness_runtime_transport_label = context.harness.runtime_transport_label.clone();
@@ -2040,6 +2048,14 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     data-selected-mission-action="start"
                     data-next-status="mission_started"
                     data-action-surface="proof-pane"
+                    data-acceptance-met=harness_detail_acceptance_met.clone()
+                    data-acceptance-total=harness_detail_acceptance_total.clone()
+                    data-gates-passed=harness_detail_passed_gate_count.clone()
+                    data-gates-total=harness_detail_gate_count.clone()
+                    data-tool-calls=harness_detail_tool_call_count.clone()
+                    data-memory-hits=harness_detail_memory_hits.clone()
+                    data-learning-records=harness_detail_learning_records.clone()
+                    data-transition-proof="pending-start"
                 >
                     <div>
                         <h4>"Selected Mission"</h4>
@@ -2075,10 +2091,43 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     data-selected-mission-action="inspect"
                     data-next-status="none"
                     data-action-surface="proof-pane"
+                    data-acceptance-met=harness_detail_acceptance_met.clone()
+                    data-acceptance-total=harness_detail_acceptance_total.clone()
+                    data-gates-passed=harness_detail_passed_gate_count.clone()
+                    data-gates-total=harness_detail_gate_count.clone()
+                    data-tool-calls=harness_detail_tool_call_count.clone()
+                    data-memory-hits=harness_detail_memory_hits.clone()
+                    data-learning-records=harness_detail_learning_records.clone()
+                    data-transition-proof="visible"
                 >
                     <div>
                         <h4>"Selected Mission"</h4>
                         <p>{format!("{} is loaded in the proof pane.", context.harness.detail_run_id)}</p>
+                        <dl
+                            class="tau-harness-selected-mission-proof"
+                            aria-label="Selected mission proof summary"
+                        >
+                            <div data-proof-metric="acceptance">
+                                <dt>"Acceptance"</dt>
+                                <dd>{harness_selected_mission_acceptance_summary.clone()}</dd>
+                            </div>
+                            <div data-proof-metric="gates">
+                                <dt>"Gates"</dt>
+                                <dd>{harness_selected_mission_gate_summary.clone()}</dd>
+                            </div>
+                            <div data-proof-metric="tool-calls">
+                                <dt>"Tool calls"</dt>
+                                <dd>{harness_detail_tool_call_count.clone()}</dd>
+                            </div>
+                            <div data-proof-metric="memory-hits">
+                                <dt>"Memory hits"</dt>
+                                <dd>{harness_detail_memory_hits.clone()}</dd>
+                            </div>
+                            <div data-proof-metric="learning-records">
+                                <dt>"Learning records"</dt>
+                                <dd>{harness_detail_learning_records.clone()}</dd>
+                            </div>
+                        </dl>
                     </div>
                     <span class="tau-harness-status-chip" data-selected-mission-state=context.harness.detail_status.clone()>
                         {harness_queue_status_label(&context.harness.detail_status)}
@@ -6800,6 +6849,35 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             #tau-ops-harness-selected-mission-actions p {
                                 color: var(--tau-harness-muted);
                                 font-size: .66rem;
+                            }
+                            .tau-harness-selected-mission-proof {
+                                display: grid;
+                                grid-template-columns: repeat(5, minmax(74px, 1fr));
+                                gap: 6px;
+                                margin: 7px 0 0;
+                            }
+                            .tau-harness-selected-mission-proof div {
+                                min-width: 0;
+                                border: 1px solid rgba(148, 163, 184, .18);
+                                border-radius: 5px;
+                                padding: 5px 6px;
+                                background: rgba(15, 23, 42, .28);
+                            }
+                            .tau-harness-selected-mission-proof dt,
+                            .tau-harness-selected-mission-proof dd {
+                                margin: 0;
+                                white-space: nowrap;
+                                overflow: hidden;
+                                text-overflow: ellipsis;
+                            }
+                            .tau-harness-selected-mission-proof dt {
+                                color: var(--tau-harness-muted);
+                                font-size: .55rem;
+                            }
+                            .tau-harness-selected-mission-proof dd {
+                                color: var(--tau-harness-text);
+                                font-size: .66rem;
+                                font-weight: 700;
                             }
                             #tau-ops-harness-start-selected-mission {
                                 min-height: 28px;

@@ -1988,6 +1988,7 @@ fn functional_harness_selected_mission_detail_controls_tui_summary() {
         detail_goal: "PR-045 Skill patch for benchmark artifact naming".to_string(),
         detail_status: "completed".to_string(),
         detail_tool_budget: "1/40".to_string(),
+        detail_tool_call_count: 1,
         detail_acceptance_met_count: 3,
         detail_acceptance_total_count: 3,
         detail_gate_rows: vec![
@@ -2024,6 +2025,15 @@ fn functional_harness_selected_mission_detail_controls_tui_summary() {
         "Acceptance: 3/3",
         "Gates: 3/3 passed",
         "Proof: /state/ops-harness/missions/mission-draft-123/mission.json",
+        "id=\"tau-ops-harness-selected-mission-actions\" data-selected-mission-id=\"mission-draft-123\" data-selected-mission-status=\"completed\" data-selected-mission-action=\"inspect\" data-next-status=\"none\" data-action-surface=\"proof-pane\"",
+        "data-acceptance-met=\"3\" data-acceptance-total=\"3\" data-gates-passed=\"3\" data-gates-total=\"3\" data-tool-calls=\"1\" data-memory-hits=\"1\" data-learning-records=\"1\" data-transition-proof=\"visible\"",
+        "tau-harness-selected-mission-proof",
+        "Selected mission proof summary",
+        "data-proof-metric=\"acceptance\"><dt>Acceptance</dt><dd>3/3</dd>",
+        "data-proof-metric=\"gates\"><dt>Gates</dt><dd>3/3</dd>",
+        "data-proof-metric=\"tool-calls\"><dt>Tool calls</dt><dd>1</dd>",
+        "data-proof-metric=\"memory-hits\"><dt>Memory hits</dt><dd>1</dd>",
+        "data-proof-metric=\"learning-records\"><dt>Learning records</dt><dd>1</dd>",
     ] {
         assert!(
             html.contains(marker),
