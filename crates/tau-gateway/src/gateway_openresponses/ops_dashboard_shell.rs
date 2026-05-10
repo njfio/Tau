@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -1546,7 +1546,12 @@ fn collect_tau_ops_dashboard_harness_snapshot(
                         }
                     })
                     .collect();
-                apply_harness_benchmark_detail_from_proof(&mut snapshot, &proof, &proof_path);
+                apply_harness_benchmark_detail_from_proof(
+                    &mut snapshot,
+                    state_dir,
+                    &proof,
+                    &proof_path,
+                );
             }
         }
     }
@@ -2036,8 +2041,55 @@ fn harness_proposal_queue_status_key(
         .to_string()
 }
 
+fn normalize_harness_state_artifact_path(artifact_path: &str) -> Option<PathBuf> {
+    let trimmed = artifact_path.trim().trim_start_matches('/');
+    if trimmed.is_empty() || trimmed.contains('\\') || !trimmed.starts_with("ops-harness/") {
+        return None;
+    }
+    let path = Path::new(trimmed);
+    let has_only_safe_components = path
+        .components()
+        .all(|component| matches!(component, Component::Normal(_)));
+    has_only_safe_components.then(|| path.to_path_buf())
+}
+
+fn harness_state_artifact_href(artifact_path: &str) -> String {
+    normalize_harness_state_artifact_path(artifact_path)
+        .and_then(|path| path.to_str().map(str::to_string))
+        .map(|path| format!("/ops/harness/artifacts/view/{path}"))
+        .unwrap_or_else(|| artifact_path.to_string())
+}
+
+fn harness_state_artifact_href_for_path(state_dir: &Path, artifact_path: &Path) -> String {
+    artifact_path
+        .strip_prefix(state_dir)
+        .ok()
+        .and_then(Path::to_str)
+        .map(harness_state_artifact_href)
+        .unwrap_or_else(|| artifact_path.display().to_string())
+}
+
+fn read_harness_state_artifact(
+    state: &GatewayOpenResponsesServerState,
+    artifact_path: &str,
+) -> Option<(PathBuf, String)> {
+    let relative_path = normalize_harness_state_artifact_path(artifact_path)?;
+    let absolute_path = state.config.state_dir.join(relative_path);
+    let payload = std::fs::read_to_string(&absolute_path).ok()?;
+    Some((absolute_path, payload))
+}
+
+fn escape_harness_artifact_html(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
 fn apply_harness_benchmark_detail_from_proof(
     snapshot: &mut TauOpsDashboardHarnessSnapshot,
+    state_dir: &Path,
     proof: &Value,
     proof_path: &Path,
 ) {
@@ -2296,7 +2348,7 @@ fn apply_harness_benchmark_detail_from_proof(
         item_id: "benchmark-proof".to_string(),
         status_key: "mission_harness_proof".to_string(),
         label: "Benchmark proof artifact".to_string(),
-        href: proof_path.display().to_string(),
+        href: harness_state_artifact_href_for_path(state_dir, proof_path),
     })
     .chain(tasks.iter().filter_map(|task| {
         let task_id = task.get("task_id").and_then(Value::as_str)?;
@@ -2304,7 +2356,7 @@ fn apply_harness_benchmark_detail_from_proof(
             item_id: task_id.to_string(),
             status_key: "mission_task_proof".to_string(),
             label: format!("{} proof", humanize_harness_token(task_id)),
-            href: proof_path.display().to_string(),
+            href: harness_state_artifact_href_for_path(state_dir, proof_path),
         })
     }))
     .collect();
@@ -2672,7 +2724,7 @@ fn apply_harness_selected_mission_detail(
                         .and_then(Value::as_str)
                         .unwrap_or(artifact_id)
                         .to_string(),
-                    href: href.to_string(),
+                    href: harness_state_artifact_href(href),
                 })
             })
             .collect();
@@ -2682,7 +2734,7 @@ fn apply_harness_selected_mission_detail(
             item_id: "mission-json".to_string(),
             status_key: "mission-state".to_string(),
             label: "Mission JSON".to_string(),
-            href: mission_path.display().to_string(),
+            href: harness_state_artifact_href_for_path(state_dir, &mission_path),
         }];
     }
 
@@ -3035,6 +3087,68 @@ pub(super) async fn handle_ops_dashboard_harness_run_benchmark(
     };
 
     Redirect::to(redirect_path.as_str()).into_response()
+}
+
+pub(super) async fn handle_ops_dashboard_harness_artifact(
+    State(state): State<Arc<GatewayOpenResponsesServerState>>,
+    AxumPath(artifact_path): AxumPath<String>,
+) -> Response {
+    let Some((absolute_path, payload)) = read_harness_state_artifact(&state, &artifact_path) else {
+        return OpenResponsesApiError::not_found(
+            "harness_artifact_not_found",
+            "harness artifact could not be read",
+        )
+        .into_response();
+    };
+    let content_type = match absolute_path
+        .extension()
+        .and_then(|extension| extension.to_str())
+    {
+        Some("json") => "application/json; charset=utf-8",
+        Some("md") => "text/markdown; charset=utf-8",
+        Some("txt" | "log") => "text/plain; charset=utf-8",
+        _ => "application/octet-stream",
+    };
+    (StatusCode::OK, [("content-type", content_type)], payload).into_response()
+}
+
+pub(super) async fn handle_ops_dashboard_harness_artifact_view(
+    State(state): State<Arc<GatewayOpenResponsesServerState>>,
+    AxumPath(artifact_path): AxumPath<String>,
+) -> Response {
+    let Some((_absolute_path, payload)) = read_harness_state_artifact(&state, &artifact_path)
+    else {
+        return OpenResponsesApiError::not_found(
+            "harness_artifact_not_found",
+            "harness artifact could not be read",
+        )
+        .into_response();
+    };
+    let escaped_path = escape_harness_artifact_html(&artifact_path);
+    let raw_href = format!("/ops/harness/artifacts/{escaped_path}");
+    let escaped_payload = escape_harness_artifact_html(&payload);
+    Html(format!(
+        r#"<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Tau Harness Artifact - {escaped_path}</title>
+  <style>
+    body {{ margin: 0; background: #07131d; color: #d9e7ef; font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }}
+    main {{ padding: 24px; }}
+    a {{ color: #74b9ff; }}
+    pre {{ white-space: pre-wrap; overflow-wrap: anywhere; background: #0d1c28; border: 1px solid #263b4b; border-radius: 6px; padding: 16px; }}
+  </style>
+</head>
+<body>
+  <main id="tau-ops-harness-artifact-view" data-artifact-path="{escaped_path}">
+    <p><a href="{raw_href}">Raw artifact</a></p>
+    <pre>{escaped_payload}</pre>
+  </main>
+</body>
+</html>"#
+    ))
+    .into_response()
 }
 
 pub(super) async fn handle_ops_dashboard_harness_create_mission_draft(

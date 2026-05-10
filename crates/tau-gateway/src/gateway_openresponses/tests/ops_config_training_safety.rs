@@ -299,6 +299,48 @@ async fn integration_spec_3756_c05_ops_harness_actions_execute_and_persist_proof
     assert_eq!(proof["benchmark_id"], "m334-tranche-one-autonomy");
     assert_eq!(proof["passed"], true);
     assert_eq!(proof["tasks"].as_array().expect("task array").len(), 4);
+    let artifact_response = client
+        .get(format!(
+            "http://{addr}/ops/harness/artifacts/ops-harness/m334/latest.json"
+        ))
+        .send()
+        .await
+        .expect("read harness benchmark artifact");
+    assert_eq!(artifact_response.status(), StatusCode::OK);
+    assert_eq!(
+        artifact_response
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok()),
+        Some("application/json; charset=utf-8")
+    );
+    let artifact_payload: serde_json::Value = serde_json::from_str(
+        artifact_response
+            .text()
+            .await
+            .expect("read benchmark artifact body")
+            .as_str(),
+    )
+    .expect("benchmark artifact endpoint returns json");
+    assert_eq!(
+        artifact_payload["benchmark_id"],
+        "m334-tranche-one-autonomy"
+    );
+    let artifact_view_response = client
+        .get(format!(
+            "http://{addr}/ops/harness/artifacts/view/ops-harness/m334/latest.json"
+        ))
+        .send()
+        .await
+        .expect("read harness benchmark artifact view");
+    assert_eq!(artifact_view_response.status(), StatusCode::OK);
+    let artifact_view_body = artifact_view_response
+        .text()
+        .await
+        .expect("read benchmark artifact view body");
+    assert!(artifact_view_body.contains("id=\"tau-ops-harness-artifact-view\""));
+    assert!(artifact_view_body.contains("data-artifact-path=\"ops-harness/m334/latest.json\""));
+    assert!(artifact_view_body.contains("m334-tranche-one-autonomy"));
 
     let harness_memory_records = gateway_memory_store(&state_dir, "ops-harness-context")
         .list_latest_records(
@@ -912,6 +954,8 @@ async fn integration_spec_3757_c03_ops_harness_route_reflects_state_backed_proof
         "<span class=\"tau-harness-queue-label\">Prompt compression for research tasks</span>",
         "<span class=\"tau-harness-queue-status\">Proposal</span>",
         "Benchmark tasks passed 4/4",
+        "href=\"/ops/harness/artifacts/view/ops-harness/m334/latest.json\"",
+        "Benchmark proof artifact",
         "data-gate-id=\"memory_write_proof\" data-gate-status=\"passed\"",
         "state proof loaded:",
         "id=\"tau-ops-harness-audit-log\" data-audit-row-count=\"2\" data-audit-source=\"state\"",

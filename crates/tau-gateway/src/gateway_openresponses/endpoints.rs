@@ -24,6 +24,10 @@ pub(super) const OPS_DASHBOARD_HARNESS_CREATE_MISSION_ENDPOINT: &str =
     "/ops/harness/missions/draft";
 pub(super) const OPS_DASHBOARD_HARNESS_START_MISSION_ENDPOINT: &str =
     "/ops/harness/missions/{mission_id}/start";
+pub(super) const OPS_DASHBOARD_HARNESS_ARTIFACT_ENDPOINT: &str =
+    "/ops/harness/artifacts/{*artifact_path}";
+pub(super) const OPS_DASHBOARD_HARNESS_ARTIFACT_VIEW_ENDPOINT: &str =
+    "/ops/harness/artifacts/view/{*artifact_path}";
 pub(super) const OPS_DASHBOARD_HARNESS_PROPOSAL_ACTION_ENDPOINT: &str =
     "/ops/harness/proposals/{proposal_id}/{action}";
 pub(super) const OPS_DASHBOARD_HARNESS_PROPOSAL_DIFF_ENDPOINT: &str =
