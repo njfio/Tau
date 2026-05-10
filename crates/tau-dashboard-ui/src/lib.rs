@@ -1595,8 +1595,8 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
         harness_selected_proposal_id, harness_action_query
     );
     let harness_selected_diff_href = format!(
-        "/ops/harness/proposals/{}/diff",
-        harness_selected_proposal_id
+        "/ops/harness/proposals/{}/diff?{}",
+        harness_selected_proposal_id, harness_action_query
     );
     let harness_queue_theme = theme_attr.to_string();
     let harness_queue_sidebar = sidebar_state_attr.to_string();

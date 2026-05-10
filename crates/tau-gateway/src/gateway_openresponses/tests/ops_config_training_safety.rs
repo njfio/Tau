@@ -466,6 +466,9 @@ async fn integration_spec_3756_c05_ops_harness_actions_execute_and_persist_proof
     assert!(diff_body.contains("data-safety-check=\"passed\""));
     assert!(diff_body.contains("data-policy-allowed=\"skill,config,prompt\""));
     assert!(diff_body.contains("data-policy-blocked=\"source-code,safety-policy\""));
+    assert!(diff_body.contains(
+        "href=\"/ops/harness?theme=dark&sidebar=expanded&session=default&proposal_id=PR-044\""
+    ));
     assert!(diff_body
         .contains("Compress system prompt by removing redundant instructions and examples."));
     assert!(diff_body.contains("class=\"tau-harness-diff-line tau-harness-diff-line-remove\""));
@@ -975,7 +978,9 @@ async fn integration_ops_harness_proposal_registry_renders_selected_proposal() {
     }
 
     let diff_response = client
-        .get(format!("http://{addr}/ops/harness/proposals/PR-045/diff"))
+        .get(format!(
+            "http://{addr}/ops/harness/proposals/PR-045/diff?theme=light&sidebar=collapsed&session=ops-harness-context"
+        ))
         .send()
         .await
         .expect("load selected proposal diff");
@@ -986,6 +991,7 @@ async fn integration_ops_harness_proposal_registry_renders_selected_proposal() {
         "data-target-path=\"skills/benchmark_artifacts/SKILL.md\"",
         "PR-045 Skill patch for benchmark artifact naming",
         "Name benchmark artifacts with mission id, benchmark id, run id, and proof type.",
+        "href=\"/ops/harness?theme=light&sidebar=collapsed&session=ops-harness-context&proposal_id=PR-045\"",
     ] {
         assert!(
             diff_body.contains(marker),
@@ -994,11 +1000,18 @@ async fn integration_ops_harness_proposal_registry_renders_selected_proposal() {
     }
 
     let missing_response = client
-        .get(format!("http://{addr}/ops/harness/proposals/PR-999/diff"))
+        .get(format!(
+            "http://{addr}/ops/harness/proposals/PR-999/diff?theme=light&sidebar=collapsed&session=ops-harness-context"
+        ))
         .send()
         .await
         .expect("load missing proposal diff");
     assert_eq!(missing_response.status(), StatusCode::NOT_FOUND);
+    let missing_body = missing_response.text().await.expect("missing diff body");
+    assert!(missing_body.contains("id=\"tau-ops-harness-diff-missing\""));
+    assert!(missing_body.contains(
+        "href=\"/ops/harness?theme=light&sidebar=collapsed&session=ops-harness-context&proposal_id=PR-999\""
+    ));
 
     handle.abort();
 }

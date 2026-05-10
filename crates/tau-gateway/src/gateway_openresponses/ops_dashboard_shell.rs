@@ -703,6 +703,21 @@ fn build_ops_harness_redirect_path(
     )
 }
 
+fn build_ops_harness_context_href(
+    theme: TauOpsDashboardTheme,
+    sidebar_state: TauOpsDashboardSidebarState,
+    session_key: &str,
+    proposal_id: &str,
+) -> String {
+    let session_key = sanitize_session_key(session_key);
+    let proposal_id = sanitize_harness_token(proposal_id);
+    format!(
+        "/ops/harness?theme={}&sidebar={}&session={session_key}&proposal_id={proposal_id}",
+        theme.as_str(),
+        sidebar_state.as_str()
+    )
+}
+
 fn build_ops_session_detail_redirect_path(
     theme: TauOpsDashboardTheme,
     sidebar_state: TauOpsDashboardSidebarState,
@@ -3781,8 +3796,19 @@ fn render_harness_action_error(
 
 pub(super) async fn handle_ops_dashboard_harness_proposal_diff(
     AxumPath(proposal_id): AxumPath<String>,
+    Query(controls): Query<OpsShellControlsQuery>,
 ) -> Response {
     let proposal_id = sanitize_harness_token(&proposal_id);
+    let session_key = controls
+        .requested_session_key()
+        .map(sanitize_session_key)
+        .unwrap_or_else(|| DEFAULT_SESSION_KEY.to_string());
+    let back_href = build_ops_harness_context_href(
+        controls.theme(),
+        controls.sidebar_state(),
+        session_key.as_str(),
+        proposal_id.as_str(),
+    );
     let Some(proposal) = find_ops_harness_proposal(&proposal_id) else {
         return (
             StatusCode::NOT_FOUND,
@@ -3790,7 +3816,7 @@ pub(super) async fn handle_ops_dashboard_harness_proposal_diff(
                 r#"<main id="tau-ops-harness-diff-missing" data-proposal-id="{proposal_id}" data-result="unknown_proposal">
 <h1>Harness Proposal Not Found</h1>
 <p>The requested proposal is not registered.</p>
-<a href="/ops/harness">Back to Mission Harness</a>
+<a href="{back_href}">Back to Mission Harness</a>
 </main>"#
             )),
         )
@@ -4005,7 +4031,7 @@ a {{ color: var(--blue); }}
     <pre class="tau-harness-diff-code" data-diff-artifact="proposal-registry"><code>{diff_lines}</code></pre>
   </section>
   <nav class="tau-harness-diff-actions" aria-label="Harness diff actions">
-    <a href="/ops/harness">Back to Mission Harness</a>
+    <a href="{back_href}">Back to Mission Harness</a>
   </nav>
 </main>
 </body>

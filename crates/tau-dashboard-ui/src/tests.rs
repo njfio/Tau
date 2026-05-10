@@ -580,7 +580,7 @@ fn functional_spec_3756_c02_harness_controls_expose_benchmark_and_policy_contrac
         "id=\"tau-ops-harness-action-approve\" type=\"submit\" data-action=\"approve\"",
         "id=\"tau-ops-harness-action-reject\" type=\"submit\" data-action=\"reject\"",
         "id=\"tau-ops-harness-action-dry-run\" type=\"submit\" data-action=\"dry-run\"",
-        "id=\"tau-ops-harness-action-view-diff\" data-action=\"view-diff\" data-action-tone=\"secondary\" href=\"/ops/harness/proposals/PR-044/diff\"",
+        "id=\"tau-ops-harness-action-view-diff\" data-action=\"view-diff\" data-action-tone=\"secondary\" href=\"/ops/harness/proposals/PR-044/diff?theme=dark&amp;sidebar=expanded&amp;session=default\"",
         "id=\"tau-ops-harness-apply-form\" action=\"/ops/harness/proposals/PR-044/apply?theme=dark&amp;sidebar=expanded&amp;session=default\" method=\"post\" data-approval-state=\"approval-required\"",
         "id=\"tau-ops-harness-action-apply\" type=\"submit\" data-action=\"apply\" data-action-tone=\"disabled\" data-disabled=\"true\" aria-disabled=\"true\" data-approval-required=\"true\" disabled",
     ] {
@@ -843,7 +843,7 @@ fn functional_spec_3764_c01_c02_c03_harness_prioritizes_self_improvement_actions
         "id=\"tau-ops-harness-approve-form\" action=\"/ops/harness/proposals/PR-044/approve?theme=dark&amp;sidebar=expanded&amp;session=default\" method=\"post\"",
         "id=\"tau-ops-harness-reject-form\" action=\"/ops/harness/proposals/PR-044/reject?theme=dark&amp;sidebar=expanded&amp;session=default\" method=\"post\"",
         "id=\"tau-ops-harness-dry-run-form\" action=\"/ops/harness/proposals/PR-044/dry-run?theme=dark&amp;sidebar=expanded&amp;session=default\" method=\"post\"",
-        "id=\"tau-ops-harness-action-view-diff\" data-action=\"view-diff\" data-action-tone=\"secondary\" href=\"/ops/harness/proposals/PR-044/diff\"",
+        "id=\"tau-ops-harness-action-view-diff\" data-action=\"view-diff\" data-action-tone=\"secondary\" href=\"/ops/harness/proposals/PR-044/diff?theme=dark&amp;sidebar=expanded&amp;session=default\"",
         "id=\"tau-ops-harness-action-apply\" type=\"submit\" data-action=\"apply\" data-action-tone=\"disabled\" data-disabled=\"true\" aria-disabled=\"true\" data-approval-required=\"true\" disabled",
     ] {
         assert!(
@@ -1192,7 +1192,7 @@ fn functional_spec_3774_c01_c02_c03_harness_keeps_all_operator_actions_visible_b
         "id=\"tau-ops-harness-approve-form\" action=\"/ops/harness/proposals/PR-044/approve?theme=dark&amp;sidebar=expanded&amp;session=default\" method=\"post\"",
         "id=\"tau-ops-harness-reject-form\" action=\"/ops/harness/proposals/PR-044/reject?theme=dark&amp;sidebar=expanded&amp;session=default\" method=\"post\"",
         "id=\"tau-ops-harness-dry-run-form\" action=\"/ops/harness/proposals/PR-044/dry-run?theme=dark&amp;sidebar=expanded&amp;session=default\" method=\"post\"",
-        "id=\"tau-ops-harness-action-view-diff\" data-action=\"view-diff\" data-action-tone=\"secondary\" href=\"/ops/harness/proposals/PR-044/diff\"",
+        "id=\"tau-ops-harness-action-view-diff\" data-action=\"view-diff\" data-action-tone=\"secondary\" href=\"/ops/harness/proposals/PR-044/diff?theme=dark&amp;sidebar=expanded&amp;session=default\"",
         "id=\"tau-ops-harness-action-apply\" type=\"submit\" data-action=\"apply\" data-action-tone=\"disabled\" data-disabled=\"true\" aria-disabled=\"true\" data-approval-required=\"true\" disabled",
         "id=\"tau-ops-harness-conservative-policy\"",
     ] {
