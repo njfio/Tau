@@ -72,6 +72,10 @@ pub(super) struct OpsShellControlsQuery {
     intent: String,
     #[serde(default)]
     view: String,
+    #[serde(default)]
+    mission_id: String,
+    #[serde(default)]
+    mission_status: String,
 }
 
 impl OpsShellControlsQuery {
@@ -138,6 +142,23 @@ impl OpsShellControlsQuery {
     pub(super) fn requested_harness_view(&self) -> Option<&'static str> {
         match self.view.trim() {
             "history" => Some("history"),
+            _ => None,
+        }
+    }
+
+    pub(super) fn requested_harness_mission_id(&self) -> Option<&str> {
+        let value = self.mission_id.trim();
+        if value.is_empty() {
+            None
+        } else {
+            Some(value)
+        }
+    }
+
+    pub(super) fn requested_harness_mission_status(&self) -> Option<&'static str> {
+        match self.mission_status.trim() {
+            "draft_created" => Some("draft_created"),
+            "write_failed" => Some("write_failed"),
             _ => None,
         }
     }
@@ -717,10 +738,29 @@ mod tests {
         let invalid = OpsShellControlsQuery {
             intent: "delete-all".to_string(),
             view: "unknown".to_string(),
+            mission_status: "unknown".to_string(),
             ..OpsShellControlsQuery::default()
         };
         assert_eq!(invalid.requested_harness_intent(), None);
         assert_eq!(invalid.requested_harness_view(), None);
+        assert_eq!(invalid.requested_harness_mission_status(), None);
+    }
+
+    #[test]
+    fn unit_requested_harness_mission_status_normalizes_supported_values() {
+        let created = OpsShellControlsQuery {
+            mission_id: "mission-draft-123".to_string(),
+            mission_status: "draft_created".to_string(),
+            ..OpsShellControlsQuery::default()
+        };
+        assert_eq!(
+            created.requested_harness_mission_id(),
+            Some("mission-draft-123")
+        );
+        assert_eq!(
+            created.requested_harness_mission_status(),
+            Some("draft_created")
+        );
     }
 
     #[test]

@@ -1573,8 +1573,8 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     let harness_queue_theme = theme_attr.to_string();
     let harness_queue_sidebar = sidebar_state_attr.to_string();
     let harness_queue_session_key = context.chat.active_session_key.clone();
-    let harness_new_mission_href = format!(
-        "/ops/harness?theme={theme_attr}&sidebar={sidebar_state_attr}&session={}&proposal_id={}&intent=new-mission",
+    let harness_new_mission_action = format!(
+        "/ops/harness/missions/draft?theme={theme_attr}&sidebar={sidebar_state_attr}&session={}&proposal_id={}",
         context.chat.active_session_key, harness_selected_proposal_id
     );
     let harness_history_href = format!(
@@ -6154,6 +6154,9 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 gap: 8px;
                                 flex-wrap: wrap;
                             }
+                            #tau-ops-harness-topbar nav form {
+                                margin: 0;
+                            }
                             #tau-ops-harness-route-action {
                                 border-left: 2px solid var(--tau-harness-cyan);
                                 color: var(--tau-harness-muted);
@@ -7167,16 +7170,24 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     </section>
                                 </div>
                                 <nav aria-label="Mission harness actions">
-                                    <a
+                                    <form
+                                        id="tau-ops-harness-new-mission-form"
+                                        action=harness_new_mission_action
+                                        method="post"
+                                        data-action-contract="durable-mission-draft"
+                                        data-preserves-shell-context="true"
+                                    >
+                                    <button
                                         id="tau-ops-harness-new-mission"
                                         data-action="new-mission"
-                                        data-action-contract="context-preserving"
+                                        data-action-contract="durable-mission-draft"
                                         data-preserves-session="true"
                                         data-preserves-proposal="true"
-                                        href=harness_new_mission_href
+                                        type="submit"
                                     >
                                         "New Mission"
-                                    </a>
+                                    </button>
+                                    </form>
                                     <a
                                         id="tau-ops-harness-history"
                                         data-action="history"

@@ -179,6 +179,7 @@ use openresponses_execution_handler::execute_openresponses_request;
 use ops_dashboard_shell::{
     handle_ops_dashboard_channel_action, handle_ops_dashboard_chat_new,
     handle_ops_dashboard_chat_send, handle_ops_dashboard_control_action,
+    handle_ops_dashboard_harness_create_mission_draft,
     handle_ops_dashboard_harness_proposal_action, handle_ops_dashboard_harness_proposal_diff,
     handle_ops_dashboard_harness_run_benchmark, handle_ops_dashboard_memory_create,
     handle_ops_dashboard_session_detail_reset, handle_ops_dashboard_sessions_branch,

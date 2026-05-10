@@ -98,7 +98,8 @@ async fn integration_spec_3756_c04_ops_harness_route_renders_benchmark_and_apply
         "<span data-topbar-field=\"model\">openai/gpt-5.2</span>",
         "<span data-topbar-field=\"transport\">gateway</span>",
         "<span data-topbar-field=\"health\">Unknown</span>",
-        "id=\"tau-ops-harness-new-mission\" data-action=\"new-mission\" data-action-contract=\"context-preserving\" data-preserves-session=\"true\" data-preserves-proposal=\"true\" href=\"/ops/harness?theme=dark&amp;sidebar=expanded&amp;session=ops-harness-contract&amp;proposal_id=PR-044&amp;intent=new-mission\"",
+        "id=\"tau-ops-harness-new-mission-form\" action=\"/ops/harness/missions/draft?theme=dark&amp;sidebar=expanded&amp;session=ops-harness-contract&amp;proposal_id=PR-044\" method=\"post\" data-action-contract=\"durable-mission-draft\" data-preserves-shell-context=\"true\"",
+        "id=\"tau-ops-harness-new-mission\" data-action=\"new-mission\" data-action-contract=\"durable-mission-draft\" data-preserves-session=\"true\" data-preserves-proposal=\"true\" type=\"submit\"",
         "id=\"tau-ops-harness-history\" data-action=\"history\" data-action-contract=\"context-preserving\" data-preserves-session=\"true\" data-preserves-proposal=\"true\" href=\"/ops/harness?theme=dark&amp;sidebar=expanded&amp;session=ops-harness-contract&amp;proposal_id=PR-044&amp;view=history\"",
         "id=\"tau-ops-harness-run-benchmark-form\" action=\"/ops/harness/run-benchmark?theme=dark&amp;sidebar=expanded&amp;session=ops-harness-contract&amp;proposal_id=PR-044\" method=\"post\" data-command=\"tau_agent_harness\" data-preserves-shell-context=\"true\"",
         "id=\"tau-ops-harness-conservative-policy\" data-policy=\"conservative-self-improvement\" data-allowed-targets=\"skill,config,prompt\" data-blocked-targets=\"source-code,safety-policy\"",
@@ -169,6 +170,103 @@ async fn integration_spec_3756_c05_ops_harness_actions_execute_and_persist_proof
         .redirect(reqwest::redirect::Policy::none())
         .build()
         .expect("build no-redirect client");
+
+    let draft_response = client
+        .post(format!("http://{addr}/ops/harness/missions/draft"))
+        .query(&[
+            ("theme", "light"),
+            ("sidebar", "collapsed"),
+            ("session", "ops-harness-context"),
+            ("proposal_id", "PR-045"),
+        ])
+        .send()
+        .await
+        .expect("create harness mission draft");
+    assert_eq!(draft_response.status(), StatusCode::SEE_OTHER);
+    let draft_location = draft_response
+        .headers()
+        .get(reqwest::header::LOCATION)
+        .expect("draft redirect location")
+        .to_str()
+        .expect("draft location is utf8");
+    assert!(draft_location.contains("mission_status=draft_created"));
+    assert!(draft_location.contains("theme=light"));
+    assert!(draft_location.contains("sidebar=collapsed"));
+    assert!(draft_location.contains("session=ops-harness-context"));
+    assert!(draft_location.contains("proposal_id=PR-045"));
+    let mission_id = draft_location
+        .split("mission_id=")
+        .nth(1)
+        .and_then(|value| value.split('&').next())
+        .expect("mission_id query param");
+    let mission_path = state_dir
+        .join("ops-harness")
+        .join("missions")
+        .join(mission_id)
+        .join("mission.json");
+    let mission_json = std::fs::read_to_string(&mission_path).expect("read mission draft");
+    let mission: serde_json::Value = serde_json::from_str(&mission_json).expect("mission json");
+    assert_eq!(mission["mission_id"], mission_id);
+    assert_eq!(mission["session_key"], "ops-harness-context");
+    assert_eq!(mission["status"], "draft");
+    assert!(mission["goal"]
+        .as_str()
+        .expect("mission goal")
+        .contains("PR-045"));
+    assert_eq!(
+        mission["acceptance_criteria"]
+            .as_array()
+            .expect("acceptance criteria")
+            .len(),
+        3
+    );
+    assert_eq!(mission["plan_dag"].as_array().expect("plan dag").len(), 5);
+    assert!(
+        mission["tool_budget"]["max_tool_calls"]
+            .as_u64()
+            .unwrap_or_default()
+            > 0
+    );
+    assert_eq!(
+        mission["verification_gates"]
+            .as_array()
+            .expect("verification gates")
+            .len(),
+        3
+    );
+    assert_eq!(
+        mission["checkpoints"]
+            .as_array()
+            .expect("checkpoints")
+            .len(),
+        1
+    );
+    assert!(mission["memory_hits"]
+        .as_array()
+        .expect("memory hits")
+        .is_empty());
+    assert!(mission["artifacts"]
+        .as_array()
+        .expect("artifacts")
+        .iter()
+        .any(|artifact| artifact["artifact_id"] == "mission-json"));
+    assert!(mission["final_learning_output"].is_null());
+
+    let draft_harness_response = client
+        .get(format!("http://{addr}{draft_location}"))
+        .send()
+        .await
+        .expect("load draft harness redirect");
+    assert_eq!(draft_harness_response.status(), StatusCode::OK);
+    let draft_harness_body = draft_harness_response
+        .text()
+        .await
+        .expect("draft harness body");
+    assert!(draft_harness_body.contains(
+        "id=\"tau-ops-harness-route-action\" data-route-action-key=\"mission-draft\" data-route-action-label=\"Mission Draft Created\""
+    ));
+    assert!(draft_harness_body.contains(&format!("data-mission-id=\"{mission_id}\"")));
+    assert!(draft_harness_body.contains("data-status=\"draft\""));
 
     let benchmark_response = client
         .post(format!("http://{addr}/ops/harness/run-benchmark"))

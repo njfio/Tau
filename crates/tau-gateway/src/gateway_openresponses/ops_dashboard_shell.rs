@@ -1379,7 +1379,24 @@ pub(super) fn render_tau_ops_dashboard_shell_for_route(
     harness.runtime_transport_label = "gateway".to_string();
     harness.runtime_health_key = command_center.health_state.clone();
     if matches!(route, TauOpsDashboardRoute::Harness) {
-        if controls.requested_harness_intent() == Some("new-mission") {
+        if let Some(mission_status) = controls.requested_harness_mission_status() {
+            let mission_id = controls
+                .requested_harness_mission_id()
+                .map(sanitize_harness_token)
+                .unwrap_or_else(|| "unknown".to_string());
+            harness.route_action_key = "mission-draft".to_string();
+            harness.route_action_label = if mission_status == "draft_created" {
+                "Mission Draft Created".to_string()
+            } else {
+                "Mission Draft Failed".to_string()
+            };
+            harness.route_action_detail = format!(
+                "Mission {mission_id} | session {} | selected {}",
+                chat.active_session_key.clone(),
+                harness.selected_proposal_id
+            );
+            harness.route_action_count = harness.mission_rows.len();
+        } else if controls.requested_harness_intent() == Some("new-mission") {
             harness.route_action_key = "new-mission".to_string();
             harness.route_action_label = "New Mission Draft".to_string();
             harness.route_action_detail = format!(
@@ -1526,6 +1543,28 @@ fn collect_tau_ops_dashboard_harness_snapshot(
         }
     }
 
+    let durable_mission_rows = collect_harness_durable_mission_rows(state_dir);
+    if !durable_mission_rows.is_empty() {
+        let pending_durable_missions = durable_mission_rows
+            .iter()
+            .filter(|row| row.verification_state != "passed")
+            .count();
+        if snapshot.proof_source == "state" {
+            snapshot.mission_rows.extend(durable_mission_rows);
+        } else {
+            snapshot.mission_rows = durable_mission_rows;
+            snapshot.kpi_pending_verification_count = pending_durable_missions;
+        }
+        snapshot.mission_table_title = "Active Missions".to_string();
+        snapshot.kpi_missions_title = "Active Missions".to_string();
+        snapshot.kpi_missions_count = snapshot.mission_rows.len();
+        snapshot.kpi_missions_detail = format!("{pending_durable_missions} draft/review");
+        if pending_durable_missions > 0 {
+            snapshot.kpi_pending_verification_detail =
+                format!("{pending_durable_missions} draft gates pending");
+        }
+    }
+
     let audit_path = state_dir.join("ops-harness").join("audit.jsonl");
     if let Ok(audit_jsonl) = std::fs::read_to_string(&audit_path) {
         let audit_rows = audit_jsonl
@@ -1608,6 +1647,138 @@ fn collect_harness_proposal_queue_rows(
             })
             .collect(),
     )
+}
+
+fn collect_harness_durable_mission_rows(state_dir: &Path) -> Vec<TauOpsDashboardHarnessMissionRow> {
+    let missions_dir = state_dir.join("ops-harness").join("missions");
+    let Ok(entries) = std::fs::read_dir(missions_dir) else {
+        return Vec::new();
+    };
+
+    let mut rows = entries
+        .filter_map(Result::ok)
+        .filter_map(|entry| {
+            let mission_path = entry.path().join("mission.json");
+            let mission_json = std::fs::read_to_string(mission_path).ok()?;
+            let mission = serde_json::from_str::<Value>(&mission_json).ok()?;
+            let updated_unix_ms = mission
+                .get("updated_unix_ms")
+                .and_then(Value::as_u64)
+                .unwrap_or_default();
+            let row = harness_durable_mission_row_from_value(&mission)?;
+            Some((updated_unix_ms, row))
+        })
+        .collect::<Vec<_>>();
+    rows.sort_by(|left, right| right.0.cmp(&left.0));
+    rows.into_iter().take(5).map(|(_, row)| row).collect()
+}
+
+fn harness_durable_mission_row_from_value(
+    mission: &Value,
+) -> Option<TauOpsDashboardHarnessMissionRow> {
+    let mission_id = mission.get("mission_id").and_then(Value::as_str)?;
+    let status_key = mission
+        .get("status")
+        .and_then(Value::as_str)
+        .unwrap_or("draft");
+    let acceptance_total = mission
+        .get("acceptance_criteria")
+        .and_then(Value::as_array)
+        .map(Vec::len)
+        .unwrap_or_default();
+    let plan_nodes = mission
+        .get("plan_dag")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let completed_plan_nodes = plan_nodes
+        .iter()
+        .filter(|node| {
+            node.get("status")
+                .and_then(Value::as_str)
+                .is_some_and(|status| matches!(status, "completed" | "skipped"))
+        })
+        .count();
+    let plan_progress = if plan_nodes.is_empty() {
+        0
+    } else {
+        (completed_plan_nodes * 100) / plan_nodes.len()
+    };
+    let gates = mission
+        .get("verification_gates")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let passed_gates = gates
+        .iter()
+        .filter(|gate| {
+            gate.get("status")
+                .and_then(Value::as_str)
+                .is_some_and(|status| status == "passed")
+        })
+        .count();
+    let failed_gates = gates
+        .iter()
+        .filter(|gate| {
+            gate.get("status")
+                .and_then(Value::as_str)
+                .is_some_and(|status| status == "failed")
+        })
+        .count();
+    let gate_total = gates.len();
+    let verification_state = if failed_gates > 0 {
+        "failed"
+    } else if gate_total > 0 && passed_gates == gate_total {
+        "passed"
+    } else {
+        "pending"
+    };
+    let tool_budget = mission.get("tool_budget").unwrap_or(&Value::Null);
+    let consumed_tool_calls = tool_budget
+        .get("consumed_tool_calls")
+        .and_then(Value::as_u64)
+        .unwrap_or_default();
+    let max_tool_calls = tool_budget
+        .get("max_tool_calls")
+        .and_then(Value::as_u64)
+        .unwrap_or_default();
+    let memory_hits = mission
+        .get("memory_hits")
+        .and_then(Value::as_array)
+        .map(Vec::len)
+        .unwrap_or_default();
+    let artifact_count = mission
+        .get("artifacts")
+        .and_then(Value::as_array)
+        .map(Vec::len)
+        .unwrap_or_default();
+    let last_checkpoint = mission
+        .get("checkpoints")
+        .and_then(Value::as_array)
+        .and_then(|checkpoints| checkpoints.last())
+        .and_then(|checkpoint| checkpoint.get("summary"))
+        .and_then(Value::as_str)
+        .unwrap_or("draft checkpoint");
+
+    Some(TauOpsDashboardHarnessMissionRow {
+        mission_id: mission_id.to_string(),
+        title: mission
+            .get("goal")
+            .and_then(Value::as_str)
+            .unwrap_or(mission_id)
+            .to_string(),
+        status_key: status_key.to_string(),
+        status_label: humanize_harness_token(status_key),
+        gate_status_key: verification_state.to_string(),
+        gate_label: format!("{passed_gates}/{gate_total} gates"),
+        acceptance_label: format!("0/{acceptance_total}"),
+        plan_progress,
+        tool_budget: format!("{consumed_tool_calls}/{max_tool_calls}"),
+        memory_hits,
+        verification_state: verification_state.to_string(),
+        last_checkpoint: last_checkpoint.to_string(),
+        artifact_count,
+    })
 }
 
 fn read_harness_proposal_mission_status(
@@ -2299,6 +2470,186 @@ pub(super) async fn handle_ops_dashboard_harness_run_benchmark(
         ),
     };
 
+    Redirect::to(redirect_path.as_str()).into_response()
+}
+
+pub(super) async fn handle_ops_dashboard_harness_create_mission_draft(
+    State(state): State<Arc<GatewayOpenResponsesServerState>>,
+    Query(controls): Query<OpsShellControlsQuery>,
+) -> Response {
+    let session_key = controls
+        .requested_session_key()
+        .map(sanitize_session_key)
+        .unwrap_or_else(|| DEFAULT_SESSION_KEY.to_string());
+    let selected_proposal = controls
+        .requested_harness_proposal_id()
+        .and_then(find_ops_harness_proposal)
+        .or_else(|| list_ops_harness_proposals().first());
+    let proposal_id = selected_proposal
+        .map(|proposal| proposal.proposal_id)
+        .unwrap_or("unknown");
+    let proposal_title = selected_proposal
+        .map(|proposal| proposal.title)
+        .unwrap_or("Operator defined harness mission");
+    let proposal_goal = selected_proposal
+        .map(|proposal| proposal.goal)
+        .unwrap_or("Define, plan, execute, verify, and learn from an autonomous harness mission.");
+    let now = now_unix_ms();
+    let mission_id = format!("mission-draft-{now}");
+    let relative_mission_path = format!("ops-harness/missions/{mission_id}/mission.json");
+    let mission_dir = state
+        .config
+        .state_dir
+        .join("ops-harness")
+        .join("missions")
+        .join(&mission_id);
+    let mission_path = mission_dir.join("mission.json");
+    let plan_node_ids = [
+        "clarify-goal",
+        "write-plan-dag",
+        "execute-with-budget",
+        "verify-gates",
+        "write-final-learning",
+    ];
+    let mission = json!({
+        "schema_version": 1,
+        "mission_id": mission_id.as_str(),
+        "session_key": session_key.as_str(),
+        "response_id": null,
+        "goal": format!("{proposal_id} {proposal_title}: {proposal_goal}"),
+        "latest_output_summary": "Draft mission created from the Tau harness New Mission action.",
+        "status": "draft",
+        "created_unix_ms": now,
+        "updated_unix_ms": now,
+        "acceptance_criteria": [
+            {
+                "id": "AC-PLAN",
+                "description": "Mission has a goal, acceptance criteria, plan DAG, and tool budget before execution.",
+                "verification_gate_ids": ["VG-PLAN"]
+            },
+            {
+                "id": "AC-EXECUTE",
+                "description": "Mission records tool execution, memory recall, checkpoints, artifacts, and recovery state.",
+                "verification_gate_ids": ["VG-EXECUTE"]
+            },
+            {
+                "id": "AC-LEARN",
+                "description": "Mission ends with verification evidence and final learning output for curator review.",
+                "verification_gate_ids": ["VG-LEARN"]
+            }
+        ],
+        "plan_dag": [
+            {
+                "id": "clarify-goal",
+                "description": "Normalize the selected proposal into a durable mission goal and constraints.",
+                "depends_on": [],
+                "status": "pending"
+            },
+            {
+                "id": "write-plan-dag",
+                "description": "Expand acceptance criteria into executable plan nodes and verification gates.",
+                "depends_on": ["clarify-goal"],
+                "status": "pending"
+            },
+            {
+                "id": "execute-with-budget",
+                "description": "Run the mission using approved tools within the configured budget.",
+                "depends_on": ["write-plan-dag"],
+                "status": "pending"
+            },
+            {
+                "id": "verify-gates",
+                "description": "Collect gate evidence, artifacts, memory writes, and recovery state before completion.",
+                "depends_on": ["execute-with-budget"],
+                "status": "pending"
+            },
+            {
+                "id": "write-final-learning",
+                "description": "Write the mission learning output and curator update proposal.",
+                "depends_on": ["verify-gates"],
+                "status": "pending"
+            }
+        ],
+        "tool_budget": {
+            "allowed_tools": ["repo.read", "memory.search", "tool.execute", "test.run", "report.write"],
+            "max_tool_calls": 40,
+            "max_runtime_ms": 1_800_000,
+            "max_cost_usd": 12.0,
+            "consumed_tool_calls": 0,
+            "consumed_runtime_ms": 0,
+            "consumed_cost_usd": null
+        },
+        "tool_evidence": [],
+        "memory_hits": [],
+        "memory_recall": {
+            "query": format!("proposal:{proposal_id} session:{session_key} harness mission draft"),
+            "status": "no_relevant_memory",
+            "checked_unix_ms": now,
+            "rationale": "Draft created before mission-specific memory retrieval executes.",
+            "hit_keys": []
+        },
+        "verification_gates": [
+            {
+                "id": "VG-PLAN",
+                "description": "Plan DAG and acceptance criteria are present.",
+                "status": null,
+                "evidence": {}
+            },
+            {
+                "id": "VG-EXECUTE",
+                "description": "Tool execution and artifacts are captured within budget.",
+                "status": null,
+                "evidence": {}
+            },
+            {
+                "id": "VG-LEARN",
+                "description": "Final learning output is written for curator review.",
+                "status": null,
+                "evidence": {}
+            }
+        ],
+        "checkpoints": [
+            {
+                "checkpoint_id": "draft-created",
+                "summary": "Draft mission saved before execution.",
+                "created_unix_ms": now,
+                "pending_plan_node_ids": plan_node_ids
+            }
+        ],
+        "recovery_state": null,
+        "artifacts": [
+            {
+                "artifact_id": "mission-json",
+                "kind": "mission-state",
+                "path": relative_mission_path,
+                "summary": "Durable mission draft state."
+            }
+        ],
+        "final_learning_output": null,
+        "learning_records": [],
+        "improvement_proposals": [],
+        "iteration_count": 0,
+        "latest_verifier": null,
+        "latest_completion": null
+    });
+
+    let mission_status = std::fs::create_dir_all(&mission_dir)
+        .and_then(|()| serde_json::to_vec_pretty(&mission).map_err(std::io::Error::other))
+        .and_then(|payload| std::fs::write(&mission_path, payload))
+        .map(|()| "draft_created")
+        .unwrap_or("write_failed");
+    let redirect_path = format!(
+        "{}&mission_id={}",
+        build_ops_harness_redirect_path(
+            controls.theme(),
+            controls.sidebar_state(),
+            session_key.as_str(),
+            proposal_id,
+            mission_status,
+            "mission_status",
+        ),
+        sanitize_harness_token(&mission_id)
+    );
     Redirect::to(redirect_path.as_str()).into_response()
 }
 
