@@ -6546,6 +6546,44 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 min-width: 0;
                                 table-layout: fixed;
                             }
+                            #tau-ops-harness-benchmark-proof {
+                                margin-top: 8px;
+                                padding-top: 8px;
+                                border-top: 1px solid var(--tau-harness-line-soft);
+                            }
+                            #tau-ops-harness-benchmark-proof h5 {
+                                margin: 0 0 6px;
+                                color: var(--tau-harness-text);
+                                font-size: .68rem;
+                                letter-spacing: 0;
+                                text-transform: none;
+                            }
+                            #tau-ops-harness-benchmark-proof dl {
+                                display: grid;
+                                grid-template-columns: repeat(2, minmax(0, 1fr));
+                                gap: 6px 8px;
+                                margin: 0;
+                            }
+                            #tau-ops-harness-benchmark-proof dt,
+                            #tau-ops-harness-benchmark-proof dd {
+                                margin: 0;
+                            }
+                            #tau-ops-harness-benchmark-proof dt {
+                                color: var(--tau-harness-muted);
+                                font-size: .55rem;
+                            }
+                            #tau-ops-harness-benchmark-proof dd {
+                                color: var(--tau-harness-text);
+                                font-size: .62rem;
+                                line-height: 1.22;
+                                overflow-wrap: anywhere;
+                            }
+                            #tau-ops-harness-benchmark-proof code {
+                                color: var(--tau-harness-green);
+                                font-family: var(--tau-harness-mono);
+                                font-size: .58rem;
+                                white-space: normal;
+                            }
                             #tau-ops-harness-kpi-grid article,
                             #tau-ops-harness-proof-window section,
                             #tau-ops-harness-self-improvement-window section {
@@ -7638,6 +7676,37 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     >
                                         {context.harness.latest_summary.clone()}
                                     </p>
+                                    <section
+                                        id="tau-ops-harness-benchmark-proof"
+                                        data-benchmark-id=context.harness.benchmark_id.clone()
+                                        data-proof-artifact=context.harness.proof_artifact.clone()
+                                        data-proof-source=context.harness.proof_source.clone()
+                                        data-latest-result=context.harness.latest_result.clone()
+                                        data-task-count=harness_task_count.clone()
+                                        data-pass-count=harness_pass_count.clone()
+                                        data-failed-gates=context.harness.failed_gate_label.clone()
+                                        data-proof-visible="true"
+                                    >
+                                        <h5>"Benchmark Proof"</h5>
+                                        <dl>
+                                            <div data-proof-metric="benchmark-id">
+                                                <dt>"Benchmark"</dt>
+                                                <dd>{context.harness.benchmark_id.clone()}</dd>
+                                            </div>
+                                            <div data-proof-metric="proof-artifact">
+                                                <dt>"Proof artifact"</dt>
+                                                <dd><code>{context.harness.proof_artifact.clone()}</code></dd>
+                                            </div>
+                                            <div data-proof-metric="latest-result">
+                                                <dt>"Result"</dt>
+                                                <dd>{context.harness.latest_result.clone()}</dd>
+                                            </div>
+                                            <div data-proof-metric="failed-gates">
+                                                <dt>"Failed gates"</dt>
+                                                <dd>{context.harness.failed_gate_label.clone()}</dd>
+                                            </div>
+                                        </dl>
+                                    </section>
                                     <form
                                         id="tau-ops-harness-run-benchmark-form"
                                         action=harness_benchmark_action
