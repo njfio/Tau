@@ -6,7 +6,8 @@ use super::{
     TauOpsDashboardAuthMode, TauOpsDashboardChatMessageRow, TauOpsDashboardChatSessionOptionRow,
     TauOpsDashboardChatSnapshot, TauOpsDashboardCommandCenterSnapshot,
     TauOpsDashboardConnectorHealthRow, TauOpsDashboardHarnessAuditRow,
-    TauOpsDashboardHarnessBenchmarkCategoryRow, TauOpsDashboardHarnessSnapshot,
+    TauOpsDashboardHarnessBenchmarkCategoryRow, TauOpsDashboardHarnessProofRow,
+    TauOpsDashboardHarnessSelfImprovementProof, TauOpsDashboardHarnessSnapshot,
     TauOpsDashboardJobRow, TauOpsDashboardMemoryGraphEdgeRow, TauOpsDashboardMemoryGraphNodeRow,
     TauOpsDashboardRoute, TauOpsDashboardSessionGraphEdgeRow, TauOpsDashboardSessionGraphNodeRow,
     TauOpsDashboardSessionTimelineRow, TauOpsDashboardShellContext, TauOpsDashboardSidebarState,
@@ -1729,6 +1730,75 @@ fn functional_spec_3791_c01_c02_c03_harness_proposal_detail_has_no_vertical_clip
         assert!(
             html.contains(marker),
             "proposal detail should preserve no-clip marker `{marker}`"
+        );
+    }
+}
+
+#[test]
+fn functional_harness_self_improvement_proof_surfaces_completed_mission_state() {
+    let harness = TauOpsDashboardHarnessSnapshot {
+        selected_proposal_id: "PR-045".to_string(),
+        self_improvement_proof: TauOpsDashboardHarnessSelfImprovementProof {
+            source: "state".to_string(),
+            mission_id: "ops-harness-self-improve-pr-045".to_string(),
+            mission_status: "completed".to_string(),
+            plan_completed_count: 5,
+            plan_total_count: 5,
+            gate_passed_count: 3,
+            gate_total_count: 3,
+            memory_hit_count: 1,
+            artifact_count: 3,
+            final_learning_summary: "Applied PR-045 and updated curator state for LR-045."
+                .to_string(),
+            final_learning_records: vec!["LR-045".to_string()],
+            plan_rows: vec![TauOpsDashboardHarnessProofRow {
+                item_id: "curate-learning".to_string(),
+                status_key: "completed".to_string(),
+                label: "Update the curator record after successful apply.".to_string(),
+            }],
+            gate_rows: vec![TauOpsDashboardHarnessProofRow {
+                item_id: "VG-APPLY".to_string(),
+                status_key: "passed".to_string(),
+                label: "Target update is applied and curator state is updated.".to_string(),
+            }],
+            artifact_rows: vec![TauOpsDashboardHarnessProofRow {
+                item_id: "target:skills/benchmark_artifacts/SKILL.md".to_string(),
+                status_key: "skill".to_string(),
+                label: "skills/benchmark_artifacts/SKILL.md".to_string(),
+            }],
+        },
+        ..TauOpsDashboardHarnessSnapshot::default()
+    };
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        active_route: TauOpsDashboardRoute::Harness,
+        harness,
+        ..TauOpsDashboardShellContext::default()
+    });
+
+    let detail_index = html
+        .find("id=\"tau-ops-harness-proposal-detail\"")
+        .expect("proposal detail should render");
+    let proof_index = html
+        .find("id=\"tau-ops-harness-self-improvement-proof\"")
+        .expect("self-improvement proof should render");
+    let audit_index = html
+        .find("id=\"tau-ops-harness-audit-log\"")
+        .expect("audit log should render");
+    assert!(
+        detail_index < proof_index && proof_index < audit_index,
+        "completed mission proof should sit between selected proposal detail and audit history"
+    );
+
+    for marker in [
+        "id=\"tau-ops-harness-self-improvement-proof\" data-proof-source=\"state\" data-mission-id=\"ops-harness-self-improve-pr-045\" data-mission-status=\"completed\" data-plan-completed=\"5\" data-plan-total=\"5\" data-gates-passed=\"3\" data-gates-total=\"3\" data-memory-hits=\"1\" data-artifact-count=\"3\" data-final-learning-records=\"LR-045\"",
+        "Applied PR-045 and updated curator state for LR-045.",
+        "data-proof-row=\"plan\" data-proof-id=\"curate-learning\" data-proof-status=\"completed\">Update the curator record after successful apply.</li>",
+        "data-proof-row=\"gate\" data-proof-id=\"VG-APPLY\" data-proof-status=\"passed\">VG-APPLY: Target update is applied and curator state is updated.</li>",
+        "data-proof-row=\"artifact\" data-proof-id=\"target:skills/benchmark_artifacts/SKILL.md\" data-proof-status=\"skill\">skills/benchmark_artifacts/SKILL.md</li>",
+    ] {
+        assert!(
+            html.contains(marker),
+            "missing completed self-improvement proof marker `{marker}`"
         );
     }
 }

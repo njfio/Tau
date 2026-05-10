@@ -699,6 +699,54 @@ pub struct TauOpsDashboardHarnessProposalDetail {
     pub test_evidence_label: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// Public struct `TauOpsDashboardHarnessProofRow` in `tau-dashboard-ui`.
+pub struct TauOpsDashboardHarnessProofRow {
+    pub item_id: String,
+    pub status_key: String,
+    pub label: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// Public struct `TauOpsDashboardHarnessSelfImprovementProof` in `tau-dashboard-ui`.
+pub struct TauOpsDashboardHarnessSelfImprovementProof {
+    pub source: String,
+    pub mission_id: String,
+    pub mission_status: String,
+    pub plan_completed_count: usize,
+    pub plan_total_count: usize,
+    pub gate_passed_count: usize,
+    pub gate_total_count: usize,
+    pub memory_hit_count: usize,
+    pub artifact_count: usize,
+    pub final_learning_summary: String,
+    pub final_learning_records: Vec<String>,
+    pub plan_rows: Vec<TauOpsDashboardHarnessProofRow>,
+    pub gate_rows: Vec<TauOpsDashboardHarnessProofRow>,
+    pub artifact_rows: Vec<TauOpsDashboardHarnessProofRow>,
+}
+
+impl Default for TauOpsDashboardHarnessSelfImprovementProof {
+    fn default() -> Self {
+        Self {
+            source: "missing".to_string(),
+            mission_id: String::new(),
+            mission_status: "unknown".to_string(),
+            plan_completed_count: 0,
+            plan_total_count: 0,
+            gate_passed_count: 0,
+            gate_total_count: 0,
+            memory_hit_count: 0,
+            artifact_count: 0,
+            final_learning_summary: String::new(),
+            final_learning_records: Vec::new(),
+            plan_rows: Vec::new(),
+            gate_rows: Vec::new(),
+            artifact_rows: Vec::new(),
+        }
+    }
+}
+
 impl Default for TauOpsDashboardHarnessProposalDetail {
     fn default() -> Self {
         Self {
@@ -743,6 +791,7 @@ pub struct TauOpsDashboardHarnessSnapshot {
     pub selected_proposal_id: String,
     pub proposal_queue_rows: Vec<TauOpsDashboardHarnessProposalQueueRow>,
     pub selected_proposal: TauOpsDashboardHarnessProposalDetail,
+    pub self_improvement_proof: TauOpsDashboardHarnessSelfImprovementProof,
 }
 
 impl Default for TauOpsDashboardHarnessSnapshot {
@@ -856,6 +905,7 @@ impl Default for TauOpsDashboardHarnessSnapshot {
                 },
             ],
             selected_proposal: TauOpsDashboardHarnessProposalDetail::default(),
+            self_improvement_proof: TauOpsDashboardHarnessSelfImprovementProof::default(),
         }
     }
 }
@@ -1178,6 +1228,111 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
             }
         })
         .collect_view();
+    let harness_self_improvement_plan_rows = context
+        .harness
+        .self_improvement_proof
+        .plan_rows
+        .iter()
+        .map(|row| {
+            view! {
+                <li data-proof-row="plan" data-proof-id=row.item_id.clone() data-proof-status=row.status_key.clone()>{row.label.clone()}</li>
+            }
+        })
+        .collect_view();
+    let harness_self_improvement_gate_rows = context
+        .harness
+        .self_improvement_proof
+        .gate_rows
+        .iter()
+        .map(|row| {
+            view! {
+                <li data-proof-row="gate" data-proof-id=row.item_id.clone() data-proof-status=row.status_key.clone()>{format!("{}: {}", row.item_id, row.label)}</li>
+            }
+        })
+        .collect_view();
+    let harness_self_improvement_artifact_rows = context
+        .harness
+        .self_improvement_proof
+        .artifact_rows
+        .iter()
+        .map(|row| {
+            view! {
+                <li data-proof-row="artifact" data-proof-id=row.item_id.clone() data-proof-status=row.status_key.clone()>{row.label.clone()}</li>
+            }
+        })
+        .collect_view();
+    let harness_self_improvement_records = context
+        .harness
+        .self_improvement_proof
+        .final_learning_records
+        .join(",");
+    let harness_self_improvement_plan_completed = context
+        .harness
+        .self_improvement_proof
+        .plan_completed_count
+        .to_string();
+    let harness_self_improvement_plan_total = context
+        .harness
+        .self_improvement_proof
+        .plan_total_count
+        .to_string();
+    let harness_self_improvement_gate_passed = context
+        .harness
+        .self_improvement_proof
+        .gate_passed_count
+        .to_string();
+    let harness_self_improvement_gate_total = context
+        .harness
+        .self_improvement_proof
+        .gate_total_count
+        .to_string();
+    let harness_self_improvement_memory_hits = context
+        .harness
+        .self_improvement_proof
+        .memory_hit_count
+        .to_string();
+    let harness_self_improvement_artifact_count = context
+        .harness
+        .self_improvement_proof
+        .artifact_count
+        .to_string();
+    let harness_self_improvement_proof = if context.harness.self_improvement_proof.source == "state"
+    {
+        leptos::either::Either::Left(view! {
+            <section
+                id="tau-ops-harness-self-improvement-proof"
+                data-proof-source=context.harness.self_improvement_proof.source.clone()
+                data-mission-id=context.harness.self_improvement_proof.mission_id.clone()
+                data-mission-status=context.harness.self_improvement_proof.mission_status.clone()
+                data-plan-completed=harness_self_improvement_plan_completed
+                data-plan-total=harness_self_improvement_plan_total
+                data-gates-passed=harness_self_improvement_gate_passed
+                data-gates-total=harness_self_improvement_gate_total
+                data-memory-hits=harness_self_improvement_memory_hits
+                data-artifact-count=harness_self_improvement_artifact_count
+                data-final-learning-records=harness_self_improvement_records
+            >
+                <h4>"Mission Proof"</h4>
+                <p data-proof-row="summary">{context.harness.self_improvement_proof.final_learning_summary.clone()}</p>
+                <div class="tau-harness-self-improvement-proof-grid">
+                    <section data-proof-group="plan">
+                        <h5>"Plan"</h5>
+                        <ul>{harness_self_improvement_plan_rows}</ul>
+                    </section>
+                    <section data-proof-group="gates">
+                        <h5>"Gates"</h5>
+                        <ul>{harness_self_improvement_gate_rows}</ul>
+                    </section>
+                    <section data-proof-group="artifacts">
+                        <h5>"Artifacts"</h5>
+                        <ul>{harness_self_improvement_artifact_rows}</ul>
+                    </section>
+                </div>
+            </section>
+        })
+    } else {
+        leptos::either::Either::Right(())
+    };
     let harness_benchmark_rows = context
         .harness
         .benchmark_rows
@@ -5851,6 +6006,49 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 display: inline;
                                 font: inherit;
                             }
+                            #tau-ops-harness-self-improvement-proof {
+                                max-height: 178px;
+                                overflow: auto;
+                            }
+                            #tau-ops-harness-self-improvement-proof p {
+                                margin: 5px 0 0;
+                                color: var(--tau-harness-text);
+                                font-size: .64rem;
+                                line-height: 1.18;
+                            }
+                            .tau-harness-self-improvement-proof-grid {
+                                display: grid;
+                                grid-template-columns: repeat(3, minmax(0, 1fr));
+                                gap: 6px;
+                                margin-top: 6px;
+                            }
+                            .tau-harness-self-improvement-proof-grid section {
+                                padding: 0;
+                                border: 0;
+                                background: transparent;
+                            }
+                            .tau-harness-self-improvement-proof-grid h5 {
+                                color: var(--tau-harness-muted);
+                                font-size: .62rem;
+                                text-transform: uppercase;
+                            }
+                            #tau-ops-harness-self-improvement-proof li {
+                                width: 100%;
+                                min-width: 0;
+                                justify-content: flex-start;
+                                overflow: hidden;
+                                text-overflow: ellipsis;
+                                white-space: nowrap;
+                                border-radius: 6px;
+                                padding: 2px 5px;
+                                font-size: .58rem;
+                                line-height: 1.04;
+                            }
+                            #tau-ops-harness-self-improvement-proof [data-proof-status="completed"]::before,
+                            #tau-ops-harness-self-improvement-proof [data-proof-status="passed"]::before,
+                            #tau-ops-harness-self-improvement-proof [data-proof-status="skill"]::before {
+                                background: var(--tau-harness-green);
+                            }
                             #tau-ops-harness-self-improvement-window[data-review-audit-priority="first-viewport-recent-history"] {
                                 gap: 8px;
                             }
@@ -6006,6 +6204,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             #tau-ops-harness-verification-gates ul,
                             #tau-ops-harness-artifacts ul,
                             #tau-ops-harness-learning-queue ul,
+                            #tau-ops-harness-self-improvement-proof ul,
                             #tau-ops-harness-conservative-policy ul {
                                 display: flex;
                                 flex-wrap: wrap;
@@ -6028,7 +6227,8 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 min-height: 0;
                             }
                             #tau-ops-harness-acceptance li,
-                            #tau-ops-harness-verification-gates li {
+                            #tau-ops-harness-verification-gates li,
+                            #tau-ops-harness-self-improvement-proof li {
                                 padding: 3px 7px;
                             }
                             #tau-ops-harness-acceptance[data-acceptance-overflow-budget="all-criteria-visible"] {
@@ -6727,6 +6927,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                         <dt>"Test Evidence"</dt><dd><a href=context.harness.selected_proposal.test_evidence_href.clone()>{context.harness.selected_proposal.test_evidence_label.clone()}</a></dd>
                                     </dl>
                                 </section>
+                                {harness_self_improvement_proof}
                                 <section
                                     id="tau-ops-harness-audit-log"
                                     data-audit-row-count=harness_audit_row_count

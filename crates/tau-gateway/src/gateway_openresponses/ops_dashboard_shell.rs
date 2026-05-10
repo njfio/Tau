@@ -18,9 +18,10 @@ use tau_dashboard_ui::{
     render_tau_ops_dashboard_shell_with_context, TauOpsDashboardAuthMode,
     TauOpsDashboardChatMessageRow, TauOpsDashboardChatSessionOptionRow,
     TauOpsDashboardChatSnapshot, TauOpsDashboardHarnessAuditRow,
-    TauOpsDashboardHarnessBenchmarkCategoryRow, TauOpsDashboardHarnessProposalDetail,
-    TauOpsDashboardHarnessProposalQueueRow, TauOpsDashboardHarnessSnapshot, TauOpsDashboardJobRow,
-    TauOpsDashboardMemoryGraphEdgeRow, TauOpsDashboardMemoryGraphNodeRow,
+    TauOpsDashboardHarnessBenchmarkCategoryRow, TauOpsDashboardHarnessProofRow,
+    TauOpsDashboardHarnessProposalDetail, TauOpsDashboardHarnessProposalQueueRow,
+    TauOpsDashboardHarnessSelfImprovementProof, TauOpsDashboardHarnessSnapshot,
+    TauOpsDashboardJobRow, TauOpsDashboardMemoryGraphEdgeRow, TauOpsDashboardMemoryGraphNodeRow,
     TauOpsDashboardMemoryRelationRow, TauOpsDashboardMemorySearchRow, TauOpsDashboardRoute,
     TauOpsDashboardSessionGraphEdgeRow, TauOpsDashboardSessionGraphNodeRow,
     TauOpsDashboardSessionTimelineRow, TauOpsDashboardShellContext, TauOpsDashboardSidebarState,
@@ -1424,6 +1425,8 @@ fn collect_tau_ops_dashboard_harness_snapshot(
     if let Some(selected_proposal) = selected_proposal {
         snapshot.selected_proposal_id = selected_proposal.proposal_id.to_string();
         snapshot.selected_proposal = harness_proposal_detail_from_definition(selected_proposal);
+        snapshot.self_improvement_proof =
+            collect_harness_self_improvement_proof(state_dir, selected_proposal);
     }
 
     let proof_path = harness_artifact_dir(state_dir).join("latest.json");
@@ -1535,6 +1538,151 @@ fn collect_tau_ops_dashboard_harness_snapshot(
     }
 
     snapshot
+}
+
+fn collect_harness_self_improvement_proof(
+    state_dir: &Path,
+    proposal: &GatewayOpsHarnessProposalDefinition,
+) -> TauOpsDashboardHarnessSelfImprovementProof {
+    let mission_path = state_dir
+        .join("ops-harness")
+        .join("self-improvement")
+        .join(proposal.proposal_id)
+        .join("mission.json");
+    let Ok(mission_json) = std::fs::read_to_string(&mission_path) else {
+        return TauOpsDashboardHarnessSelfImprovementProof::default();
+    };
+    let Ok(mission) = serde_json::from_str::<Value>(&mission_json) else {
+        return TauOpsDashboardHarnessSelfImprovementProof::default();
+    };
+
+    let plan_rows = mission
+        .get("plan_dag")
+        .and_then(Value::as_array)
+        .map(|nodes| {
+            nodes
+                .iter()
+                .filter_map(|node| {
+                    let item_id = node.get("id").and_then(Value::as_str)?;
+                    Some(TauOpsDashboardHarnessProofRow {
+                        item_id: item_id.to_string(),
+                        status_key: node
+                            .get("status")
+                            .and_then(Value::as_str)
+                            .unwrap_or("pending")
+                            .to_string(),
+                        label: node
+                            .get("description")
+                            .and_then(Value::as_str)
+                            .unwrap_or(item_id)
+                            .to_string(),
+                    })
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let gate_rows = mission
+        .get("verification_gates")
+        .and_then(Value::as_array)
+        .map(|gates| {
+            gates
+                .iter()
+                .filter_map(|gate| {
+                    let item_id = gate.get("id").and_then(Value::as_str)?;
+                    Some(TauOpsDashboardHarnessProofRow {
+                        item_id: item_id.to_string(),
+                        status_key: gate
+                            .get("status")
+                            .and_then(Value::as_str)
+                            .unwrap_or("pending")
+                            .to_string(),
+                        label: gate
+                            .get("description")
+                            .and_then(Value::as_str)
+                            .unwrap_or(item_id)
+                            .to_string(),
+                    })
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let artifact_rows = mission
+        .get("artifacts")
+        .and_then(Value::as_array)
+        .map(|artifacts| {
+            artifacts
+                .iter()
+                .filter_map(|artifact| {
+                    let item_id = artifact.get("artifact_id").and_then(Value::as_str)?;
+                    Some(TauOpsDashboardHarnessProofRow {
+                        item_id: item_id.to_string(),
+                        status_key: artifact
+                            .get("kind")
+                            .and_then(Value::as_str)
+                            .unwrap_or("artifact")
+                            .to_string(),
+                        label: artifact
+                            .get("path")
+                            .and_then(Value::as_str)
+                            .or_else(|| artifact.get("summary").and_then(Value::as_str))
+                            .unwrap_or(item_id)
+                            .to_string(),
+                    })
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let final_learning_output = mission.get("final_learning_output");
+    let final_learning_records = final_learning_output
+        .and_then(|output| output.get("records"))
+        .and_then(Value::as_array)
+        .map(|records| {
+            records
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    TauOpsDashboardHarnessSelfImprovementProof {
+        source: "state".to_string(),
+        mission_id: mission
+            .get("mission_id")
+            .and_then(Value::as_str)
+            .unwrap_or(proposal.mission_id)
+            .to_string(),
+        mission_status: mission
+            .get("status")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown")
+            .to_string(),
+        plan_completed_count: plan_rows
+            .iter()
+            .filter(|row| row.status_key == "completed")
+            .count(),
+        plan_total_count: plan_rows.len(),
+        gate_passed_count: gate_rows
+            .iter()
+            .filter(|row| row.status_key == "passed")
+            .count(),
+        gate_total_count: gate_rows.len(),
+        memory_hit_count: mission
+            .get("memory_hits")
+            .and_then(Value::as_array)
+            .map(Vec::len)
+            .unwrap_or_default(),
+        artifact_count: artifact_rows.len(),
+        final_learning_summary: final_learning_output
+            .and_then(|output| output.get("summary"))
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string(),
+        final_learning_records,
+        plan_rows,
+        gate_rows,
+        artifact_rows,
+    }
 }
 
 pub(super) async fn handle_ops_dashboard_harness_run_benchmark(

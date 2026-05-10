@@ -341,6 +341,45 @@ async fn integration_ops_harness_proposal_actions_delegate_dry_run_and_approved_
 async fn integration_ops_harness_proposal_registry_renders_selected_proposal() {
     let temp = tempdir().expect("tempdir");
     let state = test_state(temp.path(), 4_096, "secret");
+    let state_dir = state.config.state_dir.clone();
+    let mission_dir = state_dir
+        .join("ops-harness")
+        .join("self-improvement")
+        .join("PR-045");
+    std::fs::create_dir_all(&mission_dir).expect("mission dir");
+    std::fs::write(
+        mission_dir.join("mission.json"),
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "mission_id": "ops-harness-self-improve-pr-045",
+            "status": "completed",
+            "plan_dag": [
+                {"id": "observe-failure", "description": "Record failure learning from the harness observation.", "status": "completed"},
+                {"id": "dry-run", "description": "Dry-run the conservative proposal against the safety policy.", "status": "completed"},
+                {"id": "operator-approval", "description": "Record operator approval for the proposed change.", "status": "completed"},
+                {"id": "apply-update", "description": "Apply the approved target update with rollback metadata.", "status": "completed"},
+                {"id": "curate-learning", "description": "Update the curator record after successful apply.", "status": "completed"}
+            ],
+            "verification_gates": [
+                {"id": "VG-DRY-RUN", "description": "Self-modification dry-run passes safety policy.", "status": "passed"},
+                {"id": "VG-APPROVAL", "description": "Operator approval is present before apply.", "status": "passed"},
+                {"id": "VG-APPLY", "description": "Target update is applied and curator state is updated.", "status": "passed"}
+            ],
+            "memory_hits": [
+                {"key": "LR-045", "summary": "Benchmark artifacts were hard to correlate with missions."}
+            ],
+            "artifacts": [
+                {"artifact_id": "dry-run-result", "kind": "self-improvement-dry-run", "path": "ops-harness/self-improvement/PR-045/dry-run-result.json"},
+                {"artifact_id": "apply-result", "kind": "self-improvement-apply", "path": "ops-harness/self-improvement/PR-045/apply-result.json"},
+                {"artifact_id": "target:skills/benchmark_artifacts/SKILL.md", "kind": "skill", "path": "skills/benchmark_artifacts/SKILL.md"}
+            ],
+            "final_learning_output": {
+                "summary": "Applied PR-045 and updated curator state for LR-045.",
+                "records": ["LR-045"]
+            }
+        }))
+        .expect("mission json"),
+    )
+    .expect("write mission");
     let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
     let client = Client::new();
 
@@ -359,6 +398,9 @@ async fn integration_ops_harness_proposal_registry_renders_selected_proposal() {
         "id=\"tau-ops-harness-proposal-detail\" data-proposal-id=\"PR-045\" data-learning-record=\"LR-045\" data-target-type=\"Skill\" data-target-path=\"skills/benchmark_artifacts/SKILL.md\"",
         "PR-045 Skill patch for benchmark artifact naming",
         "Add a skill rule for deterministic benchmark artifact naming.",
+        "id=\"tau-ops-harness-self-improvement-proof\" data-proof-source=\"state\" data-mission-id=\"ops-harness-self-improve-pr-045\" data-mission-status=\"completed\" data-plan-completed=\"5\" data-plan-total=\"5\" data-gates-passed=\"3\" data-gates-total=\"3\" data-memory-hits=\"1\" data-artifact-count=\"3\" data-final-learning-records=\"LR-045\"",
+        "Applied PR-045 and updated curator state for LR-045.",
+        "data-proof-row=\"artifact\" data-proof-id=\"target:skills/benchmark_artifacts/SKILL.md\" data-proof-status=\"skill\">skills/benchmark_artifacts/SKILL.md</li>",
     ] {
         assert!(
             harness_body.contains(marker),
