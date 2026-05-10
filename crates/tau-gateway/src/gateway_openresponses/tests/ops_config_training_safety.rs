@@ -846,6 +846,7 @@ async fn integration_ops_harness_proposal_registry_renders_selected_proposal() {
 async fn integration_spec_3757_c03_ops_harness_route_reflects_state_backed_proof_and_audit() {
     let temp = tempdir().expect("tempdir");
     let state = test_state(temp.path(), 4_096, "secret");
+    let state_dir = state.config.state_dir.clone();
     let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
     let client = Client::builder()
         .redirect(reqwest::redirect::Policy::none())
@@ -858,6 +859,20 @@ async fn integration_spec_3757_c03_ops_harness_route_reflects_state_backed_proof
         .await
         .expect("run benchmark");
     assert_eq!(benchmark_response.status(), StatusCode::SEE_OTHER);
+    let benchmark_audit_log = std::fs::read_to_string(state_dir.join("ops-harness/audit.jsonl"))
+        .expect("benchmark audit log");
+    for marker in [
+        "\"action\":\"run-benchmark\"",
+        "\"result\":\"passed\"",
+        "\"benchmark_id\":\"m334-tranche-one-autonomy\"",
+        "\"run_id\":\"gateway-harness-",
+        "\"proof_artifact\":\"ops-harness/m334/latest.json\"",
+    ] {
+        assert!(
+            benchmark_audit_log.contains(marker),
+            "benchmark run should be audited with marker `{marker}`"
+        );
+    }
 
     let apply_response = client
         .post(format!("http://{addr}/ops/harness/proposals/PR-044/apply"))
@@ -899,8 +914,13 @@ async fn integration_spec_3757_c03_ops_harness_route_reflects_state_backed_proof
         "Benchmark tasks passed 4/4",
         "data-gate-id=\"memory_write_proof\" data-gate-status=\"passed\"",
         "state proof loaded:",
-        "id=\"tau-ops-harness-audit-log\" data-audit-row-count=\"1\" data-audit-source=\"state\"",
+        "id=\"tau-ops-harness-audit-log\" data-audit-row-count=\"2\" data-audit-source=\"state\"",
         "data-action=\"apply\" data-result=\"blocked_approval_required\" data-timestamp-unix-ms=\"",
+        "data-action=\"run-benchmark\" data-result=\"passed\" data-timestamp-unix-ms=\"",
+        "data-audit-detail-label=\"Run\" data-audit-detail-value=\"gateway-harness-",
+        "data-audit-proof-artifact=\"ops-harness/m334/latest.json\"",
+        "Run gateway-harness-",
+        "Proof ops-harness/m334/latest.json",
         "Blocked Approval Required",
     ] {
         assert!(

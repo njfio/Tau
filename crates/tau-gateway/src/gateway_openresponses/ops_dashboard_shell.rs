@@ -1589,6 +1589,14 @@ fn collect_tau_ops_dashboard_harness_snapshot(
                     .get("result")
                     .and_then(Value::as_str)
                     .unwrap_or("unknown");
+                let benchmark_id = record
+                    .get("benchmark_id")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
+                let run_id = record
+                    .get("run_id")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
                 let timestamp = record
                     .get("timestamp_unix_ms")
                     .and_then(Value::as_u64)
@@ -1609,16 +1617,52 @@ fn collect_tau_ops_dashboard_harness_snapshot(
                     .map(ToOwned::to_owned)
                     .or_else(|| matched_mission.map(|mission| mission.mission_id.clone()))
                     .unwrap_or_default();
-                let proof_artifact = record
+                let record_proof_artifact = record
                     .get("proof_artifact")
                     .and_then(Value::as_str)
                     .map(ToOwned::to_owned)
-                    .or_else(|| matched_mission.map(|mission| mission.proof_artifact.clone()))
                     .unwrap_or_default();
-                let detail_label = if mission_id.is_empty() {
-                    String::new()
+                let mission_proof_artifact = if record_proof_artifact.is_empty() {
+                    matched_mission
+                        .map(|mission| mission.proof_artifact.clone())
+                        .unwrap_or_default()
                 } else {
-                    "Mission".to_string()
+                    record_proof_artifact.clone()
+                };
+                let (scope, item, detail_label, detail_value, proof_artifact) = match action {
+                    "start-mission" => (
+                        "Mission".to_string(),
+                        proposal_id.to_string(),
+                        if mission_id.is_empty() {
+                            String::new()
+                        } else {
+                            "Mission".to_string()
+                        },
+                        mission_id,
+                        mission_proof_artifact,
+                    ),
+                    "run-benchmark" => (
+                        "Benchmark".to_string(),
+                        if benchmark_id.is_empty() {
+                            proposal_id.to_string()
+                        } else {
+                            benchmark_id.to_string()
+                        },
+                        if run_id.is_empty() {
+                            String::new()
+                        } else {
+                            "Run".to_string()
+                        },
+                        run_id.to_string(),
+                        record_proof_artifact,
+                    ),
+                    _ => (
+                        "Prompt".to_string(),
+                        proposal_id.to_string(),
+                        String::new(),
+                        String::new(),
+                        record_proof_artifact,
+                    ),
                 };
                 Some(TauOpsDashboardHarnessAuditRow {
                     timestamp_label: format_harness_audit_timestamp(timestamp),
@@ -1626,14 +1670,10 @@ fn collect_tau_ops_dashboard_harness_snapshot(
                     actor: "Gateway".to_string(),
                     action_label: humanize_harness_token(action),
                     action_key: action.to_string(),
-                    scope: if action == "start-mission" {
-                        "Mission".to_string()
-                    } else {
-                        "Prompt".to_string()
-                    },
-                    item: proposal_id.to_string(),
+                    scope,
+                    item,
                     detail_label,
-                    detail_value: mission_id,
+                    detail_value,
                     proof_artifact,
                     result_label: humanize_harness_token(result),
                     result_key: result.to_string(),
@@ -2907,12 +2947,13 @@ pub(super) async fn handle_ops_dashboard_harness_run_benchmark(
         .unwrap_or_else(|| "unknown".to_string());
     let memory_root = gateway_memory_store_root(&state.config.state_dir, session_key.as_str());
     let run_id = format!("gateway-harness-{}", now_unix_ms());
+    let proof_artifact = "ops-harness/m334/latest.json";
 
     let redirect_path = match load_autonomy_benchmark_fixture(&fixture_path).and_then(|fixture| {
         run_autonomy_benchmark_fixture(
             &fixture,
             &MissionHarnessConfig {
-                run_id,
+                run_id: run_id.clone(),
                 started_unix_ms: now_unix_ms(),
                 memory_root,
                 workspace_id: session_key.clone(),
@@ -2926,6 +2967,17 @@ pub(super) async fn handle_ops_dashboard_harness_run_benchmark(
             if write_result.is_ok() {
                 let status = if proof.passed { "passed" } else { "failed" };
                 let task_count = proof.tasks.len();
+                append_harness_audit_record_with_fields(
+                    &state.config.state_dir,
+                    proposal_id.as_str(),
+                    "run-benchmark",
+                    status,
+                    &[
+                        ("benchmark_id", proof.benchmark_id.as_str()),
+                        ("run_id", proof.run_id.as_str()),
+                        ("proof_artifact", proof_artifact),
+                    ],
+                );
                 format!(
                     "{}&benchmark_tasks={task_count}",
                     build_ops_harness_redirect_path(
@@ -2938,6 +2990,17 @@ pub(super) async fn handle_ops_dashboard_harness_run_benchmark(
                     )
                 )
             } else {
+                append_harness_audit_record_with_fields(
+                    &state.config.state_dir,
+                    proposal_id.as_str(),
+                    "run-benchmark",
+                    "artifact_write_failed",
+                    &[
+                        ("benchmark_id", proof.benchmark_id.as_str()),
+                        ("run_id", proof.run_id.as_str()),
+                        ("proof_artifact", proof_artifact),
+                    ],
+                );
                 build_ops_harness_redirect_path(
                     controls.theme(),
                     controls.sidebar_state(),
@@ -2948,14 +3011,27 @@ pub(super) async fn handle_ops_dashboard_harness_run_benchmark(
                 )
             }
         }
-        Err(_) => build_ops_harness_redirect_path(
-            controls.theme(),
-            controls.sidebar_state(),
-            session_key.as_str(),
-            proposal_id.as_str(),
-            "failed",
-            "benchmark_status",
-        ),
+        Err(_) => {
+            append_harness_audit_record_with_fields(
+                &state.config.state_dir,
+                proposal_id.as_str(),
+                "run-benchmark",
+                "failed",
+                &[
+                    ("benchmark_id", "m334-tranche-one-autonomy"),
+                    ("run_id", run_id.as_str()),
+                    ("proof_artifact", proof_artifact),
+                ],
+            );
+            build_ops_harness_redirect_path(
+                controls.theme(),
+                controls.sidebar_state(),
+                session_key.as_str(),
+                proposal_id.as_str(),
+                "failed",
+                "benchmark_status",
+            )
+        }
     };
 
     Redirect::to(redirect_path.as_str()).into_response()
