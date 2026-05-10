@@ -1907,6 +1907,20 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
         .map(|(index, row)| {
             let row_id = format!("tau-ops-harness-mission-row-{index}");
             let plan_progress = row.plan_progress.to_string();
+            let row_selected = row.mission_id == context.harness.detail_run_id;
+            let row_mission_status = match row.status_key.as_str() {
+                "completed" => "mission_completed",
+                "blocked" | "failed" => "mission_blocked",
+                "draft" => "draft_created",
+                "awaiting_approval" | "running" | "verifying" => "mission_started",
+                _ => "mission_started",
+            };
+            let row_detail_href = format!(
+                "/ops/harness?theme={theme_attr}&sidebar={sidebar_state_attr}&session={}&proposal_id={}&mission_status={row_mission_status}&mission_id={}",
+                context.chat.active_session_key.clone(),
+                harness_selected_proposal_id,
+                row.mission_id,
+            );
             let row_start_form_id = format!("tau-ops-harness-start-mission-form-{index}");
             let row_start_button_id = format!("tau-ops-harness-start-mission-{index}");
             let row_start_action = format!(
@@ -1953,9 +1967,18 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     data-status=row.status_key.clone()
                     data-plan-progress=plan_progress.clone()
                     data-verification-state=row.verification_state.clone()
+                    data-selected-proof=row_selected.to_string()
                 >
                     <td data-mission-summary="inline-status">
-                        <span class="tau-harness-mission-title">{row.title.clone()}</span>
+                        <a
+                            class="tau-harness-mission-title"
+                            href=row_detail_href
+                            data-mission-detail-link=row.mission_id.clone()
+                            data-mission-detail-status=row_mission_status
+                            data-selected-proof=row_selected.to_string()
+                        >
+                            {row.title.clone()}
+                        </a>
                         <div class="tau-harness-mission-meta" data-compact-mission-meta="status-gates">
                             <span class="tau-harness-status-chip" data-mission-state-chip=row.status_key.clone()>{row.status_label.clone()}</span>
                             <span class="tau-harness-status-chip" data-mission-gate-chip=row.gate_status_key.clone()>{row.gate_label.clone()}</span>
@@ -6462,6 +6485,17 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             #tau-ops-harness-missions-table .tau-harness-mission-title {
                                 display: block;
                                 line-height: 1.24;
+                                color: var(--tau-harness-text);
+                                text-decoration: none;
+                            }
+                            #tau-ops-harness-missions-table .tau-harness-mission-title:hover,
+                            #tau-ops-harness-missions-table .tau-harness-mission-title:focus-visible {
+                                color: var(--tau-harness-blue);
+                                text-decoration: underline;
+                            }
+                            #tau-ops-harness-missions-table tr[data-selected-proof="true"] {
+                                background: rgba(87, 225, 161, .08);
+                                box-shadow: inset 2px 0 0 rgba(87, 225, 161, .86);
                             }
                             #tau-ops-harness-missions-table .tau-harness-mission-meta {
                                 display: flex;

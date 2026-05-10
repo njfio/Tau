@@ -7,12 +7,12 @@ use super::{
     TauOpsDashboardChatSnapshot, TauOpsDashboardCommandCenterSnapshot,
     TauOpsDashboardConnectorHealthRow, TauOpsDashboardHarnessAuditRow,
     TauOpsDashboardHarnessBenchmarkCategoryRow, TauOpsDashboardHarnessMissionRow,
-    TauOpsDashboardHarnessProofRow, TauOpsDashboardHarnessSelfImprovementProof,
-    TauOpsDashboardHarnessSnapshot, TauOpsDashboardJobRow, TauOpsDashboardMemoryGraphEdgeRow,
-    TauOpsDashboardMemoryGraphNodeRow, TauOpsDashboardRoute, TauOpsDashboardSessionGraphEdgeRow,
-    TauOpsDashboardSessionGraphNodeRow, TauOpsDashboardSessionTimelineRow,
-    TauOpsDashboardShellContext, TauOpsDashboardSidebarState, TauOpsDashboardTheme,
-    TauOpsDashboardToolInventoryRow, TauOpsDashboardToolInvocationRow,
+    TauOpsDashboardHarnessProofRow, TauOpsDashboardHarnessProposalDetail,
+    TauOpsDashboardHarnessSelfImprovementProof, TauOpsDashboardHarnessSnapshot,
+    TauOpsDashboardJobRow, TauOpsDashboardMemoryGraphEdgeRow, TauOpsDashboardMemoryGraphNodeRow,
+    TauOpsDashboardRoute, TauOpsDashboardSessionGraphEdgeRow, TauOpsDashboardSessionGraphNodeRow,
+    TauOpsDashboardSessionTimelineRow, TauOpsDashboardShellContext, TauOpsDashboardSidebarState,
+    TauOpsDashboardTheme, TauOpsDashboardToolInventoryRow, TauOpsDashboardToolInvocationRow,
     TauOpsDashboardToolUsageHistogramRow,
 };
 use tau_tui::{render_operator_shell_frame, OperatorShellFrame};
@@ -1849,6 +1849,10 @@ fn functional_harness_self_improvement_proof_surfaces_completed_mission_state() 
 fn functional_harness_draft_mission_exposes_start_action() {
     let harness = TauOpsDashboardHarnessSnapshot {
         selected_proposal_id: "PR-045".to_string(),
+        selected_proposal: TauOpsDashboardHarnessProposalDetail {
+            proposal_id: "PR-045".to_string(),
+            ..TauOpsDashboardHarnessProposalDetail::default()
+        },
         mission_rows: vec![TauOpsDashboardHarnessMissionRow {
             mission_id: "mission-draft-123".to_string(),
             title: "PR-045 Skill patch for benchmark artifact naming".to_string(),
@@ -1886,6 +1890,10 @@ fn functional_harness_draft_mission_exposes_start_action() {
         "method=\"post\"",
         "data-action-contract=\"mission-start-dry-run\"",
         "data-preserves-shell-context=\"true\"",
+        "data-selected-proof=\"false\"",
+        "href=\"/ops/harness?theme=dark&amp;sidebar=expanded&amp;session=ops-harness-context&amp;proposal_id=PR-045&amp;mission_status=draft_created&amp;mission_id=mission-draft-123\"",
+        "data-mission-detail-link=\"mission-draft-123\"",
+        "data-mission-detail-status=\"draft_created\"",
         "id=\"tau-ops-harness-start-mission-0\"",
         "type=\"submit\" data-action=\"start-mission\"",
         "data-mission-id=\"mission-draft-123\"",
@@ -1896,6 +1904,77 @@ fn functional_harness_draft_mission_exposes_start_action() {
         assert!(
             html.contains(marker),
             "draft mission should expose start action marker `{marker}`"
+        );
+    }
+}
+
+#[test]
+fn functional_harness_mission_rows_link_to_detail_proof() {
+    let harness = TauOpsDashboardHarnessSnapshot {
+        selected_proposal_id: "PR-045".to_string(),
+        selected_proposal: TauOpsDashboardHarnessProposalDetail {
+            proposal_id: "PR-045".to_string(),
+            ..TauOpsDashboardHarnessProposalDetail::default()
+        },
+        detail_run_id: "mission-completed-123".to_string(),
+        mission_rows: vec![
+            TauOpsDashboardHarnessMissionRow {
+                mission_id: "mission-completed-123".to_string(),
+                title: "Completed PR-045 mission".to_string(),
+                status_key: "completed".to_string(),
+                status_label: "Completed".to_string(),
+                gate_status_key: "passed".to_string(),
+                gate_label: "3/3 gates".to_string(),
+                acceptance_label: "3/3".to_string(),
+                plan_progress: 100,
+                tool_budget: "1/40".to_string(),
+                memory_hits: 1,
+                verification_state: "passed".to_string(),
+                last_checkpoint: "Final learning written.".to_string(),
+                artifact_count: 2,
+            },
+            TauOpsDashboardHarnessMissionRow {
+                mission_id: "mission-awaiting-456".to_string(),
+                title: "Approval pending PR-045 mission".to_string(),
+                status_key: "awaiting_approval".to_string(),
+                status_label: "Awaiting Approval".to_string(),
+                gate_status_key: "pending".to_string(),
+                gate_label: "2/3 gates".to_string(),
+                acceptance_label: "2/3".to_string(),
+                plan_progress: 60,
+                tool_budget: "1/40".to_string(),
+                memory_hits: 1,
+                verification_state: "pending".to_string(),
+                last_checkpoint: "Waiting for approval.".to_string(),
+                artifact_count: 1,
+            },
+        ],
+        ..TauOpsDashboardHarnessSnapshot::default()
+    };
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        active_route: TauOpsDashboardRoute::Harness,
+        chat: TauOpsDashboardChatSnapshot {
+            active_session_key: "ops-harness-context".to_string(),
+            ..TauOpsDashboardChatSnapshot::default()
+        },
+        harness,
+        ..TauOpsDashboardShellContext::default()
+    });
+
+    for marker in [
+        "id=\"tau-ops-harness-mission-row-0\" data-mission-id=\"mission-completed-123\" data-status=\"completed\" data-plan-progress=\"100\" data-verification-state=\"passed\" data-selected-proof=\"true\"",
+        "href=\"/ops/harness?theme=dark&amp;sidebar=expanded&amp;session=ops-harness-context&amp;proposal_id=PR-045&amp;mission_status=mission_completed&amp;mission_id=mission-completed-123\"",
+        "data-mission-detail-link=\"mission-completed-123\"",
+        "data-mission-detail-status=\"mission_completed\"",
+        "id=\"tau-ops-harness-mission-row-1\" data-mission-id=\"mission-awaiting-456\" data-status=\"awaiting_approval\" data-plan-progress=\"60\" data-verification-state=\"pending\" data-selected-proof=\"false\"",
+        "href=\"/ops/harness?theme=dark&amp;sidebar=expanded&amp;session=ops-harness-context&amp;proposal_id=PR-045&amp;mission_status=mission_started&amp;mission_id=mission-awaiting-456\"",
+        "data-mission-detail-link=\"mission-awaiting-456\"",
+        "data-mission-detail-status=\"mission_started\"",
+        "#tau-ops-harness-missions-table tr[data-selected-proof=\"true\"]",
+    ] {
+        assert!(
+            html.contains(marker),
+            "mission row detail navigation should render marker `{marker}`"
         );
     }
 }
