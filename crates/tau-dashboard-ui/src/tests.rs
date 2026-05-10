@@ -2016,6 +2016,7 @@ fn functional_harness_audit_log_surfaces_mission_proof_identity() {
         "Mission mission-draft-1778383210307",
         "data-audit-proof-visible=\"true\"",
         "data-audit-proof-artifact=\"ops-harness/missions/mission-draft-1778383210307/mission.json\"",
+        "href=\"/ops/harness/artifacts/view/ops-harness/missions/mission-draft-1778383210307/mission.json\"",
         "Proof ops-harness/missions/mission-draft-1778383210307/mission.json",
     ] {
         assert!(

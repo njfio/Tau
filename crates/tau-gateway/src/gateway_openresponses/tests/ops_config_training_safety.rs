@@ -630,6 +630,7 @@ async fn integration_ops_harness_proposal_actions_delegate_dry_run_and_approved_
         "Proposal PR-044 | session ops-harness-context | selected PR-044",
         "data-action=\"dry-run\" data-result=\"passed\"",
         "data-audit-proof-artifact=\"ops-harness/self-improvement/PR-044/dry-run-result.json\"",
+        "href=\"/ops/harness/artifacts/view/ops-harness/self-improvement/PR-044/dry-run-result.json\"",
         "Proof ops-harness/self-improvement/PR-044/dry-run-result.json",
     ] {
         assert!(
@@ -709,6 +710,9 @@ async fn integration_ops_harness_proposal_actions_delegate_dry_run_and_approved_
     assert!(applied_harness_body.contains("data-action=\"apply\" data-result=\"applied\""));
     assert!(applied_harness_body.contains(
         "data-audit-proof-artifact=\"ops-harness/self-improvement/PR-044/apply-result.json\""
+    ));
+    assert!(applied_harness_body.contains(
+        "href=\"/ops/harness/artifacts/view/ops-harness/self-improvement/PR-044/apply-result.json\""
     ));
     assert!(applied_harness_body
         .contains("Proof ops-harness/self-improvement/PR-044/apply-result.json"));
@@ -832,6 +836,7 @@ async fn integration_ops_harness_proposal_registry_renders_selected_proposal() {
         "<dt>Test Evidence</dt><dd><a href=\"/ops/harness/artifacts/view/ops-harness/self-improvement/PR-045/dry-run-result.json\">ops-harness/self-improvement/PR-045/dry-run-result.json</a></dd>",
         "data-action=\"dry-run\" data-result=\"passed\" data-timestamp-unix-ms=\"1778419581966\" data-audit-detail-label=\"\" data-audit-detail-value=\"\" data-audit-proof-artifact=\"ops-harness/self-improvement/PR-045/dry-run-result.json\"",
         "<td>Skill</td><td data-audit-item-cell=\"item-proof\"><span>PR-045</span>",
+        "href=\"/ops/harness/artifacts/view/ops-harness/self-improvement/PR-045/dry-run-result.json\"",
         "data-proof-row=\"artifact\" data-proof-id=\"target:skills/benchmark_artifacts/SKILL.md\" data-proof-status=\"skill\">skills/benchmark_artifacts/SKILL.md</li>",
     ] {
         assert!(
@@ -1075,6 +1080,7 @@ async fn integration_spec_3757_c03_ops_harness_route_reflects_state_backed_proof
         "data-action=\"run-benchmark\" data-result=\"passed\" data-timestamp-unix-ms=\"",
         "data-audit-detail-label=\"Run\" data-audit-detail-value=\"gateway-harness-",
         "data-audit-proof-artifact=\"ops-harness/m334/latest.json\"",
+        "href=\"/ops/harness/artifacts/view/ops-harness/m334/latest.json\"",
         "Run gateway-harness-",
         "Proof ops-harness/m334/latest.json",
         "Blocked Approval Required",

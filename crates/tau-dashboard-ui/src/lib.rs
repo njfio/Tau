@@ -672,6 +672,21 @@ fn harness_queue_status_label(status: &str) -> String {
     }
 }
 
+fn harness_audit_proof_artifact_href(proof_artifact: &str) -> String {
+    let trimmed = proof_artifact.trim().trim_start_matches('/');
+    let is_ops_harness_artifact = trimmed.starts_with("ops-harness/")
+        && !trimmed.contains('\\')
+        && trimmed
+            .split('/')
+            .all(|part| !part.is_empty() && part != "." && part != "..");
+
+    if is_ops_harness_artifact {
+        format!("/ops/harness/artifacts/view/{trimmed}")
+    } else {
+        proof_artifact.to_string()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// Public struct `TauOpsDashboardHarnessAuditRow` in `tau-dashboard-ui`.
 pub struct TauOpsDashboardHarnessAuditRow {
@@ -1899,14 +1914,16 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     }
                     .into_any()
                 } else {
+                    let proof_href = harness_audit_proof_artifact_href(&row.proof_artifact);
                     view! {
-                        <span
+                        <a
+                            href=proof_href
                             class="tau-harness-audit-proof"
                             data-audit-proof-visible="true"
                             data-audit-proof-artifact=row.proof_artifact.clone()
                         >
                             {format!("Proof {}", row.proof_artifact)}
-                        </span>
+                        </a>
                     }
                     .into_any()
                 };
@@ -7347,7 +7364,8 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             #tau-ops-harness-audit-log td:nth-child(4) {
                                 display: none;
                             }
-                            #tau-ops-harness-audit-log td[data-audit-item-cell="item-proof"] > span {
+                            #tau-ops-harness-audit-log td[data-audit-item-cell="item-proof"] > span,
+                            #tau-ops-harness-audit-log td[data-audit-item-cell="item-proof"] > a {
                                 display: block;
                             }
                             #tau-ops-harness-audit-log .tau-harness-audit-detail,
@@ -7358,6 +7376,13 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 font-size: .55rem;
                                 line-height: 1.1;
                                 overflow-wrap: anywhere;
+                            }
+                            #tau-ops-harness-audit-log a.tau-harness-audit-proof {
+                                color: var(--tau-harness-blue);
+                                text-decoration: none;
+                            }
+                            #tau-ops-harness-audit-log a.tau-harness-audit-proof:hover {
+                                text-decoration: underline;
                             }
                             #tau-ops-harness-audit-log .tau-harness-audit-detail[data-audit-detail-visible="true"] {
                                 color: var(--tau-harness-green);
