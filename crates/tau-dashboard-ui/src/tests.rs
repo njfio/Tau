@@ -8,11 +8,12 @@ use super::{
     TauOpsDashboardConnectorHealthRow, TauOpsDashboardHarnessAuditRow,
     TauOpsDashboardHarnessBenchmarkCategoryRow, TauOpsDashboardHarnessMissionRow,
     TauOpsDashboardHarnessProofRow, TauOpsDashboardHarnessProposalDetail,
-    TauOpsDashboardHarnessSelfImprovementProof, TauOpsDashboardHarnessSnapshot,
-    TauOpsDashboardJobRow, TauOpsDashboardMemoryGraphEdgeRow, TauOpsDashboardMemoryGraphNodeRow,
-    TauOpsDashboardRoute, TauOpsDashboardSessionGraphEdgeRow, TauOpsDashboardSessionGraphNodeRow,
-    TauOpsDashboardSessionTimelineRow, TauOpsDashboardShellContext, TauOpsDashboardSidebarState,
-    TauOpsDashboardTheme, TauOpsDashboardToolInventoryRow, TauOpsDashboardToolInvocationRow,
+    TauOpsDashboardHarnessProposalQueueRow, TauOpsDashboardHarnessSelfImprovementProof,
+    TauOpsDashboardHarnessSnapshot, TauOpsDashboardJobRow, TauOpsDashboardMemoryGraphEdgeRow,
+    TauOpsDashboardMemoryGraphNodeRow, TauOpsDashboardRoute, TauOpsDashboardSessionGraphEdgeRow,
+    TauOpsDashboardSessionGraphNodeRow, TauOpsDashboardSessionTimelineRow,
+    TauOpsDashboardShellContext, TauOpsDashboardSidebarState, TauOpsDashboardTheme,
+    TauOpsDashboardToolInventoryRow, TauOpsDashboardToolInvocationRow,
     TauOpsDashboardToolUsageHistogramRow,
 };
 use tau_tui::{render_operator_shell_frame, OperatorShellFrame};
@@ -1910,6 +1911,70 @@ fn functional_harness_applied_proposal_marks_terminal_operator_actions() {
         assert!(
             html.contains(marker),
             "applied proposal should mark terminal operator action marker `{marker}`"
+        );
+    }
+}
+
+#[test]
+fn functional_harness_completed_self_improvement_proof_marks_terminal_actions_without_recent_apply_audit(
+) {
+    let harness = TauOpsDashboardHarnessSnapshot {
+        selected_proposal_id: "PR-045".to_string(),
+        selected_proposal: TauOpsDashboardHarnessProposalDetail {
+            proposal_id: "PR-045".to_string(),
+            title: "Skill patch for benchmark artifact naming".to_string(),
+            ..TauOpsDashboardHarnessProposalDetail::default()
+        },
+        proposal_queue_rows: vec![TauOpsDashboardHarnessProposalQueueRow {
+            item_id: "PR-045".to_string(),
+            status_key: "completed".to_string(),
+            label: "Skill patch for benchmark artifact naming".to_string(),
+        }],
+        self_improvement_proof: TauOpsDashboardHarnessSelfImprovementProof {
+            source: "state".to_string(),
+            mission_id: "ops-harness-self-improve-pr-045".to_string(),
+            mission_status: "completed".to_string(),
+            final_learning_summary: "Applied PR-045 and updated curator state for LR-045."
+                .to_string(),
+            ..TauOpsDashboardHarnessSelfImprovementProof::default()
+        },
+        audit_rows: vec![TauOpsDashboardHarnessAuditRow {
+            timestamp_label: "2026-05-10 06:31:21 UTC".to_string(),
+            timestamp_unix_ms: "1778394681072".to_string(),
+            actor: "Gateway".to_string(),
+            action_label: "Run Benchmark".to_string(),
+            action_key: "run-benchmark".to_string(),
+            scope: "Benchmark".to_string(),
+            item: "m334-tranche-one-autonomy".to_string(),
+            detail_label: "Run".to_string(),
+            detail_value: "gateway-harness-1778394681072".to_string(),
+            proof_artifact: "ops-harness/m334/latest.json".to_string(),
+            result_label: "Passed".to_string(),
+            result_key: "passed".to_string(),
+        }],
+        ..TauOpsDashboardHarnessSnapshot::default()
+    };
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        active_route: TauOpsDashboardRoute::Harness,
+        harness,
+        ..TauOpsDashboardShellContext::default()
+    });
+
+    for marker in [
+        "id=\"tau-ops-harness-operator-actions\"",
+        "data-review-state=\"applied\"",
+        "data-terminal-state=\"true\"",
+        "data-selected-proposal=\"PR-045\"",
+        ">Applied</p>",
+        "Approval and rejection are closed; inspect diff, dry-run evidence, or audit history.",
+        "id=\"tau-ops-harness-action-approve\" type=\"submit\" data-action=\"approve\" data-action-tone=\"approve\" data-action-state=\"applied\" data-disabled=\"true\" aria-disabled=\"true\" disabled",
+        "id=\"tau-ops-harness-action-reject\" type=\"submit\" data-action=\"reject\" data-action-tone=\"reject\" data-action-state=\"applied\" data-disabled=\"true\" aria-disabled=\"true\" disabled",
+        "id=\"tau-ops-harness-action-apply\" type=\"submit\" data-action=\"apply\" data-action-tone=\"disabled\" data-disabled=\"true\" aria-disabled=\"true\" data-approval-required=\"true\" disabled",
+        "data-action=\"run-benchmark\"",
+    ] {
+        assert!(
+            html.contains(marker),
+            "completed proof should keep terminal operator actions without recent apply audit marker `{marker}`"
         );
     }
 }

@@ -1602,6 +1602,14 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
         row.item == harness_selected_proposal_id
             && matches!(row.action_key.as_str(), "approve" | "reject" | "apply")
     });
+    let harness_selected_queue_status = context
+        .harness
+        .proposal_queue_rows
+        .iter()
+        .find(|row| row.item_id == harness_selected_proposal_id)
+        .map(|row| row.status_key.as_str());
+    let harness_selected_completed_proof = context.harness.self_improvement_proof.source == "state"
+        && context.harness.self_improvement_proof.mission_status == "completed";
     let harness_selected_apply_enabled =
         harness_selected_latest_operator_decision.is_some_and(|row| {
             row.action_key == "approve"
@@ -1621,7 +1629,20 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
             "apply" if row.result_key == "applied" => "applied",
             _ => "approval-required",
         })
-        .unwrap_or("approval-required");
+        .unwrap_or_else(|| {
+            if harness_selected_completed_proof
+                || harness_selected_queue_status == Some("completed")
+            {
+                "applied"
+            } else {
+                match harness_selected_queue_status {
+                    Some("applied") => "applied",
+                    Some("approved") => "approved",
+                    Some("rejected") => "rejected",
+                    _ => "approval-required",
+                }
+            }
+        });
     let harness_selected_apply_label = match harness_selected_apply_state {
         "approved" => "Apply",
         "applied" => "Applied",
