@@ -658,6 +658,20 @@ fn harness_benchmark_category_label(category: &str) -> String {
     format!("{first}{}", chars.as_str())
 }
 
+fn harness_queue_status_label(status: &str) -> String {
+    match status {
+        "applied" => "Applied".to_string(),
+        "approved" => "Approved".to_string(),
+        "blocked_approval_required" => "Blocked".to_string(),
+        "completed" => "Completed".to_string(),
+        "dry-run-passed" => "Dry Run Passed".to_string(),
+        "needs-review" => "Needs Review".to_string(),
+        "proposal" => "Proposal".to_string(),
+        "rejected" => "Rejected".to_string(),
+        other => harness_benchmark_category_label(other),
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// Public struct `TauOpsDashboardHarnessAuditRow` in `tau-dashboard-ui`.
 pub struct TauOpsDashboardHarnessAuditRow {
@@ -1528,6 +1542,9 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
         "/ops/harness/proposals/{}/diff",
         harness_selected_proposal_id
     );
+    let harness_queue_theme = theme_attr.to_string();
+    let harness_queue_sidebar = sidebar_state_attr.to_string();
+    let harness_queue_session_key = context.chat.active_session_key.clone();
     let harness_selected_latest_operator_decision = context.harness.audit_rows.iter().find(|row| {
         row.item == harness_selected_proposal_id
             && matches!(row.action_key.as_str(), "approve" | "reject" | "apply")
@@ -1563,8 +1580,47 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
         .proposal_queue_rows
         .iter()
         .map(|row| {
+            let row_is_selected = row.item_id == harness_selected_proposal_id;
+            let row_is_proposal = row.item_id.starts_with("PR-");
+            let row_selected = if row_is_selected { "true" } else { "false" };
+            let row_actionable = if row_is_proposal { "true" } else { "false" };
+            let row_href = if row_is_proposal {
+                format!(
+                    "/ops/harness?theme={}&sidebar={}&session={}&proposal_id={}",
+                    harness_queue_theme,
+                    harness_queue_sidebar,
+                    harness_queue_session_key,
+                    row.item_id
+                )
+            } else {
+                "#tau-ops-harness-learning-queue".to_string()
+            };
+            let row_current = if row_is_selected { "page" } else { "false" };
+            let row_status_label = harness_queue_status_label(&row.status_key);
+            let row_content = if row_is_proposal {
+                leptos::either::Either::Left(view! {
+                    <a href=row_href data-proposal-link=row.item_id.clone() aria-current=row_current>
+                        <span class="tau-harness-queue-label">{row.label.clone()}</span>
+                        <span class="tau-harness-queue-status">{row_status_label}</span>
+                    </a>
+                })
+            } else {
+                leptos::either::Either::Right(view! {
+                    <span class="tau-harness-queue-static">
+                        <span class="tau-harness-queue-label">{row.label.clone()}</span>
+                        <span class="tau-harness-queue-status">{row_status_label}</span>
+                    </span>
+                })
+            };
             view! {
-                <li data-learning-id=row.item_id.clone() data-status=row.status_key.clone()>{row.label.clone()}</li>
+                <li
+                    data-learning-id=row.item_id.clone()
+                    data-status=row.status_key.clone()
+                    data-selected=row_selected
+                    data-actionable=row_actionable
+                >
+                    {row_content}
+                </li>
             }
         })
         .collect_view();
@@ -6332,6 +6388,8 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             [data-status="completed"] .tau-harness-status-chip::before,
                             #tau-ops-harness-verification-gates [data-gate-status="passed"]::before,
                             #tau-ops-harness-acceptance [data-ac-status="met"]::before,
+                            #tau-ops-harness-learning-queue [data-status="applied"]::before,
+                            #tau-ops-harness-learning-queue [data-status="completed"]::before,
                             #tau-ops-harness-learning-queue [data-status="proposal"]::before {
                                 background: var(--tau-harness-green);
                             }
@@ -6579,6 +6637,36 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 padding: 1px 6px;
                                 font-size: .62rem;
                                 line-height: 1.05;
+                            }
+                            #tau-ops-harness-learning-queue li a,
+                            #tau-ops-harness-learning-queue .tau-harness-queue-static {
+                                display: flex;
+                                align-items: center;
+                                justify-content: space-between;
+                                gap: 8px;
+                                min-width: 0;
+                                width: 100%;
+                                color: inherit;
+                                text-decoration: none;
+                            }
+                            #tau-ops-harness-learning-queue li[data-selected="true"] {
+                                border-color: rgba(89, 151, 255, .82);
+                                background: rgba(33, 92, 158, .34);
+                            }
+                            #tau-ops-harness-learning-queue li[data-actionable="true"] {
+                                cursor: pointer;
+                            }
+                            #tau-ops-harness-learning-queue .tau-harness-queue-label {
+                                min-width: 0;
+                                overflow: hidden;
+                                text-overflow: ellipsis;
+                                white-space: nowrap;
+                            }
+                            #tau-ops-harness-learning-queue .tau-harness-queue-status {
+                                flex: 0 0 auto;
+                                color: var(--tau-harness-muted);
+                                font-size: .54rem;
+                                text-transform: uppercase;
                             }
                             #tau-ops-harness-learning-queue[data-queue-readability="full-labels"] li::before {
                                 flex: 0 0 6px;
@@ -7237,6 +7325,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     data-queue-readability="full-labels"
                                     data-queue-layout="single-column-readable"
                                     data-queue-truncation-budget="none"
+                                    data-queue-navigation="proposal-links"
                                     data-queue-source=context.harness.proposal_queue_source.clone()
                                 >
                                     <h4>"Learning & Proposals"</h4>

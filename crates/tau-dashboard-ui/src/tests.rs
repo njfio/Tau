@@ -1509,7 +1509,10 @@ fn functional_spec_3783_c01_c02_c03_harness_review_pane_contains_compact_proof_r
         "#tau-ops-harness-proposal-detail[data-proposal-detail-overflow-budget=\"contained\"] dl {\n                                gap: 3px 10px;",
         "#tau-ops-harness-proposal-detail[data-proposal-detail-overflow-budget=\"contained\"] a {\n                                min-height: 0;\n                                padding: 0;",
         "#tau-ops-harness-audit-log[data-audit-overflow-budget=\"all-rows-visible\"] td {\n                                padding: 2px 5px;",
-        "data-learning-id=\"PR-045\" data-status=\"proposal\">Skill patch for benchmark artifact naming</li>",
+        "data-learning-id=\"PR-045\" data-status=\"proposal\" data-selected=\"false\" data-actionable=\"true\"",
+        "href=\"/ops/harness?theme=dark&amp;sidebar=expanded&amp;session=default&amp;proposal_id=PR-045\" data-proposal-link=\"PR-045\" aria-current=\"false\"",
+        "<span class=\"tau-harness-queue-label\">Skill patch for benchmark artifact naming</span>",
+        "<span class=\"tau-harness-queue-status\">Proposal</span>",
         "<dt>Test Evidence</dt><dd><a href=\"/evidence/pr-044-dryrun.json\">evidence/pr-044-dryrun.json</a></dd>",
         "data-action=\"reject\" data-result=\"rejected\" data-timestamp-unix-ms=\"\"",
         "<td>May 15, 08:33</td><td>Operator</td><td>Reject</td><td>Prompt</td><td>PR-029</td><td>Rejected</td>",
@@ -1576,10 +1579,10 @@ fn functional_spec_3785_c01_c02_c03_harness_review_queue_labels_are_readable() {
 
     let mut previous_index = queue_index;
     for item in [
-        "data-learning-id=\"LR-219\" data-status=\"needs-review\">Retry storm in document synthesis</li>",
-        "data-learning-id=\"LR-220\" data-status=\"needs-review\">Missing memory write after verification</li>",
-        "data-learning-id=\"PR-044\" data-status=\"proposal\">Prompt compression for research tasks</li>",
-        "data-learning-id=\"PR-045\" data-status=\"proposal\">Skill patch for benchmark artifact naming</li>",
+        "data-learning-id=\"LR-219\" data-status=\"needs-review\" data-selected=\"false\" data-actionable=\"false\"",
+        "data-learning-id=\"LR-220\" data-status=\"needs-review\" data-selected=\"false\" data-actionable=\"false\"",
+        "data-learning-id=\"PR-044\" data-status=\"proposal\" data-selected=\"true\" data-actionable=\"true\"",
+        "data-learning-id=\"PR-045\" data-status=\"proposal\" data-selected=\"false\" data-actionable=\"true\"",
     ] {
         let item_index = html
             .find(item)
@@ -1592,10 +1595,17 @@ fn functional_spec_3785_c01_c02_c03_harness_review_queue_labels_are_readable() {
     }
 
     for marker in [
-        "id=\"tau-ops-harness-learning-queue\" data-queue-count=\"4\" data-queue-density=\"all-items-visible\" data-queue-overflow-budget=\"none\" data-queue-readability=\"full-labels\" data-queue-layout=\"single-column-readable\" data-queue-truncation-budget=\"none\"",
+        "id=\"tau-ops-harness-learning-queue\" data-queue-count=\"4\" data-queue-density=\"all-items-visible\" data-queue-overflow-budget=\"none\" data-queue-readability=\"full-labels\" data-queue-layout=\"single-column-readable\" data-queue-truncation-budget=\"none\" data-queue-navigation=\"proposal-links\" data-queue-source=\"fallback\"",
+        "<span class=\"tau-harness-queue-label\">Retry storm in document synthesis</span>",
+        "<span class=\"tau-harness-queue-label\">Missing memory write after verification</span>",
+        "href=\"/ops/harness?theme=dark&amp;sidebar=expanded&amp;session=default&amp;proposal_id=PR-044\" data-proposal-link=\"PR-044\" aria-current=\"page\"",
+        "href=\"/ops/harness?theme=dark&amp;sidebar=expanded&amp;session=default&amp;proposal_id=PR-045\" data-proposal-link=\"PR-045\" aria-current=\"false\"",
+        "<span class=\"tau-harness-queue-status\">Needs Review</span>",
+        "<span class=\"tau-harness-queue-status\">Proposal</span>",
         "#tau-ops-harness-learning-queue[data-queue-readability=\"full-labels\"] ul {\n                                display: grid;\n                                grid-template-columns: minmax(0, 1fr);",
         "#tau-ops-harness-learning-queue[data-queue-readability=\"full-labels\"] li {\n                                width: 100%;\n                                min-width: 0;",
         "#tau-ops-harness-learning-queue[data-queue-readability=\"full-labels\"] li {\n                                width: 100%;\n                                min-width: 0;\n                                overflow: hidden;\n                                white-space: nowrap;",
+        "#tau-ops-harness-learning-queue li[data-selected=\"true\"] {\n                                border-color: rgba(89, 151, 255, .82);",
     ] {
         assert!(
             html.contains(marker),
