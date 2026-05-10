@@ -1573,6 +1573,7 @@ fn collect_tau_ops_dashboard_harness_snapshot(
         }
     }
 
+    let audit_mission_index = collect_harness_audit_mission_index(state_dir);
     let audit_path = state_dir.join("ops-harness").join("audit.jsonl");
     if let Ok(audit_jsonl) = std::fs::read_to_string(&audit_path) {
         let audit_rows = audit_jsonl
@@ -1592,14 +1593,48 @@ fn collect_tau_ops_dashboard_harness_snapshot(
                     .get("timestamp_unix_ms")
                     .and_then(Value::as_u64)
                     .unwrap_or_default();
+                let matched_mission =
+                    if action == "start-mission" && record.get("mission_id").is_none() {
+                        find_harness_audit_mission_match(
+                            audit_mission_index.as_slice(),
+                            proposal_id,
+                            timestamp,
+                        )
+                    } else {
+                        None
+                    };
+                let mission_id = record
+                    .get("mission_id")
+                    .and_then(Value::as_str)
+                    .map(ToOwned::to_owned)
+                    .or_else(|| matched_mission.map(|mission| mission.mission_id.clone()))
+                    .unwrap_or_default();
+                let proof_artifact = record
+                    .get("proof_artifact")
+                    .and_then(Value::as_str)
+                    .map(ToOwned::to_owned)
+                    .or_else(|| matched_mission.map(|mission| mission.proof_artifact.clone()))
+                    .unwrap_or_default();
+                let detail_label = if mission_id.is_empty() {
+                    String::new()
+                } else {
+                    "Mission".to_string()
+                };
                 Some(TauOpsDashboardHarnessAuditRow {
                     timestamp_label: format_harness_audit_timestamp(timestamp),
                     timestamp_unix_ms: timestamp.to_string(),
                     actor: "Gateway".to_string(),
                     action_label: humanize_harness_token(action),
                     action_key: action.to_string(),
-                    scope: "Prompt".to_string(),
+                    scope: if action == "start-mission" {
+                        "Mission".to_string()
+                    } else {
+                        "Prompt".to_string()
+                    },
                     item: proposal_id.to_string(),
+                    detail_label,
+                    detail_value: mission_id,
+                    proof_artifact,
                     result_label: humanize_harness_token(result),
                     result_key: result.to_string(),
                 })
@@ -1679,6 +1714,80 @@ fn collect_harness_durable_mission_rows(state_dir: &Path) -> Vec<TauOpsDashboard
         .collect::<Vec<_>>();
     rows.sort_by(|left, right| right.0.cmp(&left.0));
     rows.into_iter().take(5).map(|(_, row)| row).collect()
+}
+
+#[derive(Debug, Clone)]
+struct HarnessAuditMissionIndexRow {
+    proposal_id: String,
+    mission_id: String,
+    updated_unix_ms: u64,
+    proof_artifact: String,
+}
+
+fn collect_harness_audit_mission_index(state_dir: &Path) -> Vec<HarnessAuditMissionIndexRow> {
+    let missions_dir = state_dir.join("ops-harness").join("missions");
+    let Ok(entries) = std::fs::read_dir(missions_dir) else {
+        return Vec::new();
+    };
+
+    entries
+        .filter_map(Result::ok)
+        .filter_map(|entry| {
+            let mission_path = entry.path().join("mission.json");
+            let mission_json = std::fs::read_to_string(&mission_path).ok()?;
+            let mission = serde_json::from_str::<Value>(&mission_json).ok()?;
+            let proposal_id = mission.get("proposal_id").and_then(Value::as_str)?;
+            let mission_id = mission.get("mission_id").and_then(Value::as_str)?;
+            let updated_unix_ms = mission
+                .get("updated_unix_ms")
+                .and_then(Value::as_u64)
+                .unwrap_or_default();
+            Some(HarnessAuditMissionIndexRow {
+                proposal_id: proposal_id.to_string(),
+                mission_id: mission_id.to_string(),
+                updated_unix_ms,
+                proof_artifact: harness_mission_state_artifact(&mission, mission_id),
+            })
+        })
+        .collect()
+}
+
+fn harness_mission_state_artifact(mission: &Value, mission_id: &str) -> String {
+    mission
+        .get("artifacts")
+        .and_then(Value::as_array)
+        .and_then(|artifacts| {
+            artifacts.iter().find_map(|artifact| {
+                let artifact_id = artifact.get("artifact_id").and_then(Value::as_str);
+                let kind = artifact.get("kind").and_then(Value::as_str);
+                let path = artifact.get("path").and_then(Value::as_str)?;
+                if artifact_id == Some("mission-json") || kind == Some("mission-state") {
+                    Some(path.to_string())
+                } else {
+                    None
+                }
+            })
+        })
+        .unwrap_or_else(|| format!("ops-harness/missions/{mission_id}/mission.json"))
+}
+
+fn find_harness_audit_mission_match<'a>(
+    mission_index: &'a [HarnessAuditMissionIndexRow],
+    proposal_id: &str,
+    timestamp_unix_ms: u64,
+) -> Option<&'a HarnessAuditMissionIndexRow> {
+    if timestamp_unix_ms == 0 {
+        return None;
+    }
+    mission_index
+        .iter()
+        .filter(|mission| mission.proposal_id == proposal_id)
+        .filter_map(|mission| {
+            let delta = mission.updated_unix_ms.abs_diff(timestamp_unix_ms);
+            (delta <= 10_000).then_some((delta, mission))
+        })
+        .min_by_key(|(delta, _)| *delta)
+        .map(|(_, mission)| mission)
 }
 
 fn harness_durable_mission_row_from_value(
@@ -3150,11 +3259,16 @@ pub(super) async fn handle_ops_dashboard_harness_start_mission(
         .and_then(|payload| std::fs::write(&mission_path, payload))
         .map(|()| mission_status)
         .unwrap_or("start_failed");
-    append_harness_audit_record(
+    let mission_proof_artifact = format!("ops-harness/missions/{mission_id}/mission.json");
+    append_harness_audit_record_with_fields(
         &state.config.state_dir,
         &proposal_id,
         "start-mission",
         &audit_result,
+        &[
+            ("mission_id", mission_id.as_str()),
+            ("proof_artifact", mission_proof_artifact.as_str()),
+        ],
     );
 
     let redirect_path = format!(
@@ -4002,17 +4116,32 @@ fn upsert_harness_mission_array_object(
 }
 
 fn append_harness_audit_record(state_dir: &Path, proposal_id: &str, action: &str, result: &str) {
+    append_harness_audit_record_with_fields(state_dir, proposal_id, action, result, &[]);
+}
+
+fn append_harness_audit_record_with_fields(
+    state_dir: &Path,
+    proposal_id: &str,
+    action: &str,
+    result: &str,
+    fields: &[(&str, &str)],
+) {
     let audit_dir = state_dir.join("ops-harness");
     let audit_path = audit_dir.join("audit.jsonl");
     if std::fs::create_dir_all(&audit_dir).is_err() {
         return;
     }
-    let record = json!({
+    let mut record = json!({
         "timestamp_unix_ms": now_unix_ms(),
         "proposal_id": proposal_id,
         "action": action,
         "result": result,
     });
+    if let Some(object) = record.as_object_mut() {
+        for (key, value) in fields {
+            object.insert((*key).to_string(), json!(*value));
+        }
+    }
     let Ok(mut line) = serde_json::to_string(&record) else {
         return;
     };

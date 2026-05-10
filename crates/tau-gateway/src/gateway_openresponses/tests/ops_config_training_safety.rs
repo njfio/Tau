@@ -614,6 +614,10 @@ async fn integration_ops_harness_proposal_actions_delegate_dry_run_and_approved_
     let audit_log =
         std::fs::read_to_string(state_dir.join("ops-harness/audit.jsonl")).expect("audit log");
     assert!(audit_log.contains("\"action\":\"start-mission\""));
+    assert!(audit_log.contains(&format!("\"mission_id\":\"{mission_id}\"")));
+    assert!(audit_log.contains(&format!(
+        "\"proof_artifact\":\"ops-harness/missions/{mission_id}/mission.json\""
+    )));
     assert!(audit_log.contains("\"action\":\"dry-run\""));
     assert!(audit_log.contains("\"result\":\"passed\""));
     assert!(audit_log.contains("\"action\":\"apply\""));

@@ -682,6 +682,9 @@ pub struct TauOpsDashboardHarnessAuditRow {
     pub action_key: String,
     pub scope: String,
     pub item: String,
+    pub detail_label: String,
+    pub detail_value: String,
+    pub proof_artifact: String,
     pub result_label: String,
     pub result_key: String,
 }
@@ -1211,6 +1214,9 @@ impl Default for TauOpsDashboardHarnessSnapshot {
                     action_key: "dry-run".to_string(),
                     scope: "Prompt".to_string(),
                     item: "PR-044".to_string(),
+                    detail_label: String::new(),
+                    detail_value: String::new(),
+                    proof_artifact: String::new(),
                     result_label: "Passed".to_string(),
                     result_key: "passed".to_string(),
                 },
@@ -1222,6 +1228,9 @@ impl Default for TauOpsDashboardHarnessSnapshot {
                     action_key: "apply".to_string(),
                     scope: "Config".to_string(),
                     item: "CL-031".to_string(),
+                    detail_label: String::new(),
+                    detail_value: String::new(),
+                    proof_artifact: String::new(),
                     result_label: "Applied".to_string(),
                     result_key: "applied".to_string(),
                 },
@@ -1233,6 +1242,9 @@ impl Default for TauOpsDashboardHarnessSnapshot {
                     action_key: "apply".to_string(),
                     scope: "Skill".to_string(),
                     item: "SK-102".to_string(),
+                    detail_label: String::new(),
+                    detail_value: String::new(),
+                    proof_artifact: String::new(),
                     result_label: "Applied".to_string(),
                     result_key: "applied".to_string(),
                 },
@@ -1244,6 +1256,9 @@ impl Default for TauOpsDashboardHarnessSnapshot {
                     action_key: "reject".to_string(),
                     scope: "Prompt".to_string(),
                     item: "PR-029".to_string(),
+                    detail_label: String::new(),
+                    detail_value: String::new(),
+                    proof_artifact: String::new(),
                     result_label: "Rejected".to_string(),
                     result_key: "rejected".to_string(),
                 },
@@ -1828,13 +1843,75 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
         .audit_rows
         .iter()
         .map(|row| {
+            let audit_item_cell = if row.detail_value.is_empty() && row.proof_artifact.is_empty() {
+                view! { <td>{row.item.clone()}</td> }.into_any()
+            } else {
+                let audit_detail = if row.detail_value.is_empty() {
+                    view! {
+                        <span
+                            class="tau-harness-audit-detail"
+                            data-audit-detail-visible="false"
+                            hidden
+                        ></span>
+                    }
+                    .into_any()
+                } else {
+                    view! {
+                        <span
+                            class="tau-harness-audit-detail"
+                            data-audit-detail-visible="true"
+                            data-audit-detail-label=row.detail_label.clone()
+                            data-audit-detail-value=row.detail_value.clone()
+                        >
+                            {format!("{} {}", row.detail_label, row.detail_value)}
+                        </span>
+                    }
+                    .into_any()
+                };
+                let audit_proof = if row.proof_artifact.is_empty() {
+                    view! {
+                        <span
+                            class="tau-harness-audit-proof"
+                            data-audit-proof-visible="false"
+                            hidden
+                        ></span>
+                    }
+                    .into_any()
+                } else {
+                    view! {
+                        <span
+                            class="tau-harness-audit-proof"
+                            data-audit-proof-visible="true"
+                            data-audit-proof-artifact=row.proof_artifact.clone()
+                        >
+                            {format!("Proof {}", row.proof_artifact)}
+                        </span>
+                    }
+                    .into_any()
+                };
+                view! {
+                    <td data-audit-item-cell="item-proof">
+                        <span>{row.item.clone()}</span>
+                        {audit_detail}
+                        {audit_proof}
+                    </td>
+                }
+                .into_any()
+            };
             view! {
-                <tr data-action=row.action_key.clone() data-result=row.result_key.clone() data-timestamp-unix-ms=row.timestamp_unix_ms.clone()>
+                <tr
+                    data-action=row.action_key.clone()
+                    data-result=row.result_key.clone()
+                    data-timestamp-unix-ms=row.timestamp_unix_ms.clone()
+                    data-audit-detail-label=row.detail_label.clone()
+                    data-audit-detail-value=row.detail_value.clone()
+                    data-audit-proof-artifact=row.proof_artifact.clone()
+                >
                     <td>{row.timestamp_label.clone()}</td>
                     <td>{row.actor.clone()}</td>
                     <td>{row.action_label.clone()}</td>
                     <td>{row.scope.clone()}</td>
-                    <td>{row.item.clone()}</td>
+                    {audit_item_cell}
                     <td>{row.result_label.clone()}</td>
                 </tr>
             }
@@ -7248,6 +7325,21 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             #tau-ops-harness-audit-log td:nth-child(2),
                             #tau-ops-harness-audit-log td:nth-child(4) {
                                 display: none;
+                            }
+                            #tau-ops-harness-audit-log td[data-audit-item-cell="item-proof"] > span {
+                                display: block;
+                            }
+                            #tau-ops-harness-audit-log .tau-harness-audit-detail,
+                            #tau-ops-harness-audit-log .tau-harness-audit-proof {
+                                margin-top: 2px;
+                                color: var(--tau-harness-muted);
+                                font-family: var(--tau-harness-mono);
+                                font-size: .55rem;
+                                line-height: 1.1;
+                                overflow-wrap: anywhere;
+                            }
+                            #tau-ops-harness-audit-log .tau-harness-audit-detail[data-audit-detail-visible="true"] {
+                                color: var(--tau-harness-green);
                             }
                             #tau-ops-harness-acceptance ul,
                             #tau-ops-harness-verification-gates ul,

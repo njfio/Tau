@@ -622,6 +622,9 @@ fn functional_spec_3757_c01_c02_harness_snapshot_drives_benchmark_and_audit_rows
                 action_key: "apply".to_string(),
                 scope: "Prompt".to_string(),
                 item: "PR-044".to_string(),
+                detail_label: String::new(),
+                detail_value: String::new(),
+                proof_artifact: String::new(),
                 result_label: "Blocked Approval Required".to_string(),
                 result_key: "blocked_approval_required".to_string(),
             }],
@@ -1875,6 +1878,9 @@ fn functional_harness_applied_proposal_marks_terminal_operator_actions() {
             action_key: "apply".to_string(),
             scope: "Skill".to_string(),
             item: "PR-045".to_string(),
+            detail_label: String::new(),
+            detail_value: String::new(),
+            proof_artifact: String::new(),
             result_label: "Applied".to_string(),
             result_key: "applied".to_string(),
         }],
@@ -1904,6 +1910,52 @@ fn functional_harness_applied_proposal_marks_terminal_operator_actions() {
         assert!(
             html.contains(marker),
             "applied proposal should mark terminal operator action marker `{marker}`"
+        );
+    }
+}
+
+#[test]
+fn functional_harness_audit_log_surfaces_mission_proof_identity() {
+    let harness = TauOpsDashboardHarnessSnapshot {
+        audit_source: "state".to_string(),
+        audit_rows: vec![TauOpsDashboardHarnessAuditRow {
+            timestamp_label: "2026-05-10 04:49:55 UTC".to_string(),
+            timestamp_unix_ms: "1778388595153".to_string(),
+            actor: "Gateway".to_string(),
+            action_label: "Start Mission".to_string(),
+            action_key: "start-mission".to_string(),
+            scope: "Mission".to_string(),
+            item: "PR-045".to_string(),
+            detail_label: "Mission".to_string(),
+            detail_value: "mission-draft-1778383210307".to_string(),
+            proof_artifact: "ops-harness/missions/mission-draft-1778383210307/mission.json"
+                .to_string(),
+            result_label: "Completed".to_string(),
+            result_key: "completed".to_string(),
+        }],
+        ..TauOpsDashboardHarnessSnapshot::default()
+    };
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        active_route: TauOpsDashboardRoute::Harness,
+        harness,
+        ..TauOpsDashboardShellContext::default()
+    });
+
+    for marker in [
+        "id=\"tau-ops-harness-audit-log\" data-audit-row-count=\"1\" data-audit-source=\"state\"",
+        "data-action=\"start-mission\" data-result=\"completed\" data-timestamp-unix-ms=\"1778388595153\" data-audit-detail-label=\"Mission\" data-audit-detail-value=\"mission-draft-1778383210307\" data-audit-proof-artifact=\"ops-harness/missions/mission-draft-1778383210307/mission.json\"",
+        "data-audit-item-cell=\"item-proof\"",
+        "data-audit-detail-visible=\"true\"",
+        "data-audit-detail-label=\"Mission\"",
+        "data-audit-detail-value=\"mission-draft-1778383210307\"",
+        "Mission mission-draft-1778383210307",
+        "data-audit-proof-visible=\"true\"",
+        "data-audit-proof-artifact=\"ops-harness/missions/mission-draft-1778383210307/mission.json\"",
+        "Proof ops-harness/missions/mission-draft-1778383210307/mission.json",
+    ] {
+        assert!(
+            html.contains(marker),
+            "audit log should surface mission proof identity marker `{marker}`"
         );
     }
 }
