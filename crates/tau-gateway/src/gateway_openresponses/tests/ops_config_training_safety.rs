@@ -8,13 +8,30 @@ impl GatewayOpsHarnessSelfImprovementRunner for FixtureHarnessSelfImprovementRun
         &self,
         request: GatewayOpsHarnessSelfImprovementRequest,
     ) -> Result<GatewayOpsHarnessSelfImprovementResult> {
+        let artifact_path = request
+            .state_dir
+            .join("ops-harness")
+            .join("self-improvement")
+            .join(&request.proposal_id)
+            .join("dry-run-result.json");
+        if let Some(parent) = artifact_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(
+            &artifact_path,
+            serde_json::to_vec_pretty(&serde_json::json!({
+                "proposal_id": request.proposal_id.as_str(),
+                "result": "passed",
+                "summary": "fixture dry-run passed"
+            }))?,
+        )?;
         Ok(GatewayOpsHarnessSelfImprovementResult {
             proposal_id: request.proposal_id.clone(),
             mission_id: format!("mission-{}", request.proposal_id),
             target_path: "prompts/research_to_doc/system.md".to_string(),
             result_key: "passed".to_string(),
             summary: "fixture dry-run passed".to_string(),
-            artifact_path: Some(request.state_dir.join("fixture-dry-run.json")),
+            artifact_path: Some(artifact_path),
             applied: false,
         })
     }
@@ -23,13 +40,30 @@ impl GatewayOpsHarnessSelfImprovementRunner for FixtureHarnessSelfImprovementRun
         &self,
         request: GatewayOpsHarnessSelfImprovementRequest,
     ) -> Result<GatewayOpsHarnessSelfImprovementResult> {
+        let artifact_path = request
+            .state_dir
+            .join("ops-harness")
+            .join("self-improvement")
+            .join(&request.proposal_id)
+            .join("apply-result.json");
+        if let Some(parent) = artifact_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(
+            &artifact_path,
+            serde_json::to_vec_pretty(&serde_json::json!({
+                "proposal_id": request.proposal_id.as_str(),
+                "result": "applied",
+                "summary": "fixture apply completed"
+            }))?,
+        )?;
         Ok(GatewayOpsHarnessSelfImprovementResult {
             proposal_id: request.proposal_id.clone(),
             mission_id: format!("mission-{}", request.proposal_id),
             target_path: "prompts/research_to_doc/system.md".to_string(),
             result_key: "applied".to_string(),
             summary: "fixture apply completed".to_string(),
-            artifact_path: Some(request.state_dir.join("fixture-apply.json")),
+            artifact_path: Some(artifact_path),
             applied: true,
         })
     }
@@ -594,6 +628,9 @@ async fn integration_ops_harness_proposal_actions_delegate_dry_run_and_approved_
         "id=\"tau-ops-harness-route-action\" data-route-action-key=\"proposal-dry-run\" data-route-action-label=\"Dry Run Passed\"",
         "data-route-action-visible=\"true\"",
         "Proposal PR-044 | session ops-harness-context | selected PR-044",
+        "data-action=\"dry-run\" data-result=\"passed\"",
+        "data-audit-proof-artifact=\"ops-harness/self-improvement/PR-044/dry-run-result.json\"",
+        "Proof ops-harness/self-improvement/PR-044/dry-run-result.json",
     ] {
         assert!(
             dry_run_harness_body.contains(marker),
@@ -669,6 +706,12 @@ async fn integration_ops_harness_proposal_actions_delegate_dry_run_and_approved_
     assert!(applied_harness_body.contains(
         "id=\"tau-ops-harness-action-apply\" type=\"submit\" data-action=\"apply\" data-action-tone=\"disabled\" data-disabled=\"true\" aria-disabled=\"true\""
     ));
+    assert!(applied_harness_body.contains("data-action=\"apply\" data-result=\"applied\""));
+    assert!(applied_harness_body.contains(
+        "data-audit-proof-artifact=\"ops-harness/self-improvement/PR-044/apply-result.json\""
+    ));
+    assert!(applied_harness_body
+        .contains("Proof ops-harness/self-improvement/PR-044/apply-result.json"));
 
     let audit_log =
         std::fs::read_to_string(state_dir.join("ops-harness/audit.jsonl")).expect("audit log");
@@ -679,8 +722,13 @@ async fn integration_ops_harness_proposal_actions_delegate_dry_run_and_approved_
     )));
     assert!(audit_log.contains("\"action\":\"dry-run\""));
     assert!(audit_log.contains("\"result\":\"passed\""));
+    assert!(audit_log.contains(
+        "\"proof_artifact\":\"ops-harness/self-improvement/PR-044/dry-run-result.json\""
+    ));
     assert!(audit_log.contains("\"action\":\"apply\""));
     assert!(audit_log.contains("\"result\":\"applied\""));
+    assert!(audit_log
+        .contains("\"proof_artifact\":\"ops-harness/self-improvement/PR-044/apply-result.json\""));
 
     handle.abort();
 }
@@ -738,6 +786,15 @@ async fn integration_ops_harness_proposal_registry_renders_selected_proposal() {
         .expect("dry-run proof json"),
     )
     .expect("write dry-run proof");
+    std::fs::write(
+        state_dir.join("ops-harness").join("audit.jsonl"),
+        concat!(
+            "{\"action\":\"dry-run\",\"proposal_id\":\"PR-045\",\"result\":\"passed\",",
+            "\"proof_artifact\":\"ops-harness/self-improvement/PR-045/dry-run-result.json\",",
+            "\"timestamp_unix_ms\":1778419581966}\n"
+        ),
+    )
+    .expect("write latest dry-run audit");
     let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
     let client = Client::new();
     let no_redirect_client = Client::builder()

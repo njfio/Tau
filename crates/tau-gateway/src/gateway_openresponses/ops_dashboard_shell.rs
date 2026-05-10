@@ -2079,6 +2079,9 @@ fn harness_proposal_queue_status_key(
     mission_status: Option<&str>,
     latest_audit_result: Option<&str>,
 ) -> String {
+    if mission_status == Some("completed") && latest_audit_result == Some("dry-run:passed") {
+        return "completed".to_string();
+    }
     match latest_audit_result {
         Some("apply:applied") => return "applied".to_string(),
         Some("approve:recorded") => return "approved".to_string(),
@@ -3568,11 +3571,22 @@ pub(super) async fn handle_ops_dashboard_harness_proposal_action(
                 build_harness_self_improvement_request(&state.config.state_dir, &proposal_id);
             match state.config.ops_harness_self_improvement.dry_run(request) {
                 Ok(result) => {
-                    append_harness_audit_record(
+                    let proof_artifact = harness_self_improvement_result_proof_artifact(
+                        &state.config.state_dir,
+                        &proposal_id,
+                        "dry-run",
+                        &result,
+                    );
+                    let fields = proof_artifact
+                        .as_deref()
+                        .map(|artifact| vec![("proof_artifact", artifact)])
+                        .unwrap_or_default();
+                    append_harness_audit_record_with_fields(
                         &state.config.state_dir,
                         &proposal_id,
                         "dry-run",
                         result.result_key.as_str(),
+                        fields.as_slice(),
                     );
                     if result.result_key == "passed" {
                         "dry_run_passed"
@@ -3622,11 +3636,22 @@ pub(super) async fn handle_ops_dashboard_harness_proposal_action(
                 build_harness_self_improvement_request(&state.config.state_dir, &proposal_id);
             match state.config.ops_harness_self_improvement.apply(request) {
                 Ok(result) => {
-                    append_harness_audit_record(
+                    let proof_artifact = harness_self_improvement_result_proof_artifact(
+                        &state.config.state_dir,
+                        &proposal_id,
+                        "apply",
+                        &result,
+                    );
+                    let fields = proof_artifact
+                        .as_deref()
+                        .map(|artifact| vec![("proof_artifact", artifact)])
+                        .unwrap_or_default();
+                    append_harness_audit_record_with_fields(
                         &state.config.state_dir,
                         &proposal_id,
                         "apply",
                         result.result_key.as_str(),
+                        fields.as_slice(),
                     );
                     if result.result_key == "applied" {
                         "applied"
@@ -3690,6 +3715,45 @@ fn build_harness_self_improvement_request(
         workspace_root: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
         requested_unix_ms: now_unix_ms(),
     }
+}
+
+fn harness_self_improvement_result_proof_artifact(
+    state_dir: &Path,
+    proposal_id: &str,
+    action: &str,
+    result: &GatewayOpsHarnessSelfImprovementResult,
+) -> Option<String> {
+    let result_file_name = match action {
+        "apply" => "apply-result.json",
+        "dry-run" => "dry-run-result.json",
+        _ => "",
+    };
+    if !result_file_name.is_empty() {
+        let state_artifact_path = format!(
+            "ops-harness/self-improvement/{}/{}",
+            sanitize_harness_token(proposal_id),
+            result_file_name
+        );
+        if state_dir.join(&state_artifact_path).is_file() {
+            return Some(state_artifact_path);
+        }
+    }
+    result
+        .artifact_path
+        .as_deref()
+        .and_then(|path| harness_state_artifact_relative_path_for_path(state_dir, path))
+}
+
+fn harness_state_artifact_relative_path_for_path(
+    state_dir: &Path,
+    artifact_path: &Path,
+) -> Option<String> {
+    artifact_path
+        .strip_prefix(state_dir)
+        .ok()
+        .and_then(Path::to_str)
+        .and_then(normalize_harness_state_artifact_path)
+        .and_then(|path| path.to_str().map(str::to_string))
 }
 
 fn render_harness_action_error(
