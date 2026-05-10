@@ -837,7 +837,9 @@ async fn integration_ops_harness_proposal_registry_renders_selected_proposal() {
         "data-action=\"dry-run\" data-result=\"passed\" data-timestamp-unix-ms=\"1778419581966\" data-audit-detail-label=\"\" data-audit-detail-value=\"\" data-audit-proof-artifact=\"ops-harness/self-improvement/PR-045/dry-run-result.json\"",
         "<td>Skill</td><td data-audit-item-cell=\"item-proof\"><span>PR-045</span>",
         "href=\"/ops/harness/artifacts/view/ops-harness/self-improvement/PR-045/dry-run-result.json\"",
-        "data-proof-row=\"artifact\" data-proof-id=\"target:skills/benchmark_artifacts/SKILL.md\" data-proof-status=\"skill\">skills/benchmark_artifacts/SKILL.md</li>",
+        "data-proof-row=\"artifact\" data-proof-id=\"dry-run-result\" data-proof-status=\"self-improvement-dry-run\"><a href=\"/ops/harness/artifacts/view/ops-harness/self-improvement/PR-045/dry-run-result.json\" data-proof-artifact-href=\"true\" data-proof-artifact-path=\"ops-harness/self-improvement/PR-045/dry-run-result.json\">ops-harness/self-improvement/PR-045/dry-run-result.json</a></li>",
+        "data-proof-row=\"artifact\" data-proof-id=\"apply-result\" data-proof-status=\"self-improvement-apply\"><a href=\"/ops/harness/artifacts/view/ops-harness/self-improvement/PR-045/apply-result.json\" data-proof-artifact-href=\"true\" data-proof-artifact-path=\"ops-harness/self-improvement/PR-045/apply-result.json\">ops-harness/self-improvement/PR-045/apply-result.json</a></li>",
+        "data-proof-row=\"artifact\" data-proof-id=\"target:skills/benchmark_artifacts/SKILL.md\" data-proof-status=\"skill\"><span>skills/benchmark_artifacts/SKILL.md</span></li>",
     ] {
         assert!(
             harness_body.contains(marker),

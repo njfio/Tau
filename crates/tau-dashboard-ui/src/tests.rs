@@ -1820,11 +1820,18 @@ fn functional_harness_self_improvement_proof_surfaces_completed_mission_state() 
                 status_key: "passed".to_string(),
                 label: "Target update is applied and curator state is updated.".to_string(),
             }],
-            artifact_rows: vec![TauOpsDashboardHarnessProofRow {
-                item_id: "target:skills/benchmark_artifacts/SKILL.md".to_string(),
-                status_key: "skill".to_string(),
-                label: "skills/benchmark_artifacts/SKILL.md".to_string(),
-            }],
+            artifact_rows: vec![
+                TauOpsDashboardHarnessProofRow {
+                    item_id: "dry-run-result".to_string(),
+                    status_key: "self-improvement-dry-run".to_string(),
+                    label: "ops-harness/self-improvement/PR-045/dry-run-result.json".to_string(),
+                },
+                TauOpsDashboardHarnessProofRow {
+                    item_id: "target:skills/benchmark_artifacts/SKILL.md".to_string(),
+                    status_key: "skill".to_string(),
+                    label: "skills/benchmark_artifacts/SKILL.md".to_string(),
+                },
+            ],
         },
         ..TauOpsDashboardHarnessSnapshot::default()
     };
@@ -1853,7 +1860,8 @@ fn functional_harness_self_improvement_proof_surfaces_completed_mission_state() 
         "Applied PR-045 and updated curator state for LR-045.",
         "data-proof-row=\"plan\" data-proof-id=\"curate-learning\" data-proof-status=\"completed\">Update the curator record after successful apply.</li>",
         "data-proof-row=\"gate\" data-proof-id=\"VG-APPLY\" data-proof-status=\"passed\">VG-APPLY: Target update is applied and curator state is updated.</li>",
-        "data-proof-row=\"artifact\" data-proof-id=\"target:skills/benchmark_artifacts/SKILL.md\" data-proof-status=\"skill\">skills/benchmark_artifacts/SKILL.md</li>",
+        "data-proof-row=\"artifact\" data-proof-id=\"dry-run-result\" data-proof-status=\"self-improvement-dry-run\"><a href=\"/ops/harness/artifacts/view/ops-harness/self-improvement/PR-045/dry-run-result.json\" data-proof-artifact-href=\"true\" data-proof-artifact-path=\"ops-harness/self-improvement/PR-045/dry-run-result.json\">ops-harness/self-improvement/PR-045/dry-run-result.json</a></li>",
+        "data-proof-row=\"artifact\" data-proof-id=\"target:skills/benchmark_artifacts/SKILL.md\" data-proof-status=\"skill\"><span>skills/benchmark_artifacts/SKILL.md</span></li>",
     ] {
         assert!(
             html.contains(marker),

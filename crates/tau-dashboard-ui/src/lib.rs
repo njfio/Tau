@@ -672,7 +672,7 @@ fn harness_queue_status_label(status: &str) -> String {
     }
 }
 
-fn harness_audit_proof_artifact_href(proof_artifact: &str) -> String {
+fn harness_ops_artifact_href(proof_artifact: &str) -> Option<String> {
     let trimmed = proof_artifact.trim().trim_start_matches('/');
     let is_ops_harness_artifact = trimmed.starts_with("ops-harness/")
         && !trimmed.contains('\\')
@@ -680,11 +680,7 @@ fn harness_audit_proof_artifact_href(proof_artifact: &str) -> String {
             .split('/')
             .all(|part| !part.is_empty() && part != "." && part != "..");
 
-    if is_ops_harness_artifact {
-        format!("/ops/harness/artifacts/view/{trimmed}")
-    } else {
-        proof_artifact.to_string()
-    }
+    is_ops_harness_artifact.then(|| format!("/ops/harness/artifacts/view/{trimmed}"))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1772,8 +1768,23 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
         .artifact_rows
         .iter()
         .map(|row| {
+            let artifact_content = if let Some(artifact_href) = harness_ops_artifact_href(&row.label)
+            {
+                view! {
+                    <a
+                        href=artifact_href
+                        data-proof-artifact-href="true"
+                        data-proof-artifact-path=row.label.clone()
+                    >
+                        {row.label.clone()}
+                    </a>
+                }
+                .into_any()
+            } else {
+                view! { <span>{row.label.clone()}</span> }.into_any()
+            };
             view! {
-                <li data-proof-row="artifact" data-proof-id=row.item_id.clone() data-proof-status=row.status_key.clone()>{row.label.clone()}</li>
+                <li data-proof-row="artifact" data-proof-id=row.item_id.clone() data-proof-status=row.status_key.clone()>{artifact_content}</li>
             }
         })
         .collect_view();
@@ -1914,7 +1925,8 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     }
                     .into_any()
                 } else {
-                    let proof_href = harness_audit_proof_artifact_href(&row.proof_artifact);
+                    let proof_href = harness_ops_artifact_href(&row.proof_artifact)
+                        .unwrap_or_else(|| row.proof_artifact.clone());
                     view! {
                         <a
                             href=proof_href
