@@ -887,7 +887,7 @@ fn functional_spec_3767_c01_c02_c03_harness_prioritizes_proof_evidence_in_primar
     );
 
     for marker in [
-        "class=\"tau-harness-window-grid\" data-proof-grid-priority=\"evidence-log-gates-first\"",
+        "data-proof-grid-priority=\"evidence-log-gates-first\"",
         "id=\"tau-ops-harness-tool-evidence\"",
         "data-proof-evidence-priority=\"first-screen\"",
         "data-tool-call-count=\"8\"",
@@ -989,7 +989,7 @@ fn functional_spec_3770_c01_c02_c03_harness_keeps_operator_log_in_first_proof_vi
         "id=\"tau-ops-harness-operator-log\" data-log-follow=\"true\" data-log-wrap=\"pre-wrap\" data-log-priority=\"first-screen\"",
         "#tau-ops-harness-operator-log {\n                                grid-column: 1 / -1;",
         "#tau-ops-harness-operator-log pre {\n                                max-height: 118px;",
-        "class=\"tau-harness-window-grid\" data-proof-grid-priority=\"evidence-log-gates-first\"",
+        "data-proof-grid-priority=\"evidence-log-gates-first\"",
     ] {
         assert!(
             html.contains(marker),
@@ -1036,9 +1036,9 @@ fn functional_spec_3771_c01_c02_c03_harness_prioritizes_verification_gates_after
     );
 
     for marker in [
-        "class=\"tau-harness-window-grid\" data-proof-grid-priority=\"evidence-log-gates-first\"",
+        "data-proof-grid-priority=\"evidence-log-gates-first\"",
         "id=\"tau-ops-harness-verification-gates\" data-gate-count=\"5\" data-failed-gate-count=\"1\" data-proof-secondary-priority=\"first-screen\"",
-        "#tau-ops-harness-acceptance li,\n                            #tau-ops-harness-verification-gates li {\n                                padding: 3px 7px;",
+        "#tau-ops-harness-verification-gates li,\n                            #tau-ops-harness-self-improvement-proof li {\n                                padding: 3px 7px;",
         "#tau-ops-harness-acceptance ul,\n                            #tau-ops-harness-verification-gates ul {\n                                gap: 5px;",
     ] {
         assert!(
@@ -1110,8 +1110,8 @@ fn functional_spec_3773_c01_c02_c03_harness_keeps_tui_companion_in_first_viewpor
         "#tau-ops-harness-tui-companion pre {\n                                max-height: 126px;",
         "box-sizing: border-box;",
         "mission=run_8f3a2",
-        "status=verifying",
-        "calls: repo.read, repo.edit, test.run, report.write",
+        "status=running",
+        "tool_budget=42/60",
         "bench: ",
         "Proof: ",
     ] {
@@ -1415,7 +1415,7 @@ fn functional_spec_3781_c01_c02_c03_harness_uses_clean_active_mission_scroll_bou
 
     for marker in [
         "id=\"tau-ops-harness-active-missions\" data-active-count=\"5\" data-running-count=\"3\" data-blocked-count=\"1\" data-compact-table-breakpoint=\"1400px\" data-compact-mission-summary=\"status-and-gates\" data-first-viewport-budget=\"benchmark-visible\" data-active-mission-scroll-boundary=\"whole-row\" data-active-mission-visible-rows=\"3\"",
-        "class=\"tau-harness-table-wrap\" data-scroll-region=\"active-missions\" data-scroll-boundary=\"whole-row\"",
+        "data-scroll-region=\"active-missions\" data-scroll-boundary=\"whole-row\"",
         "#tau-ops-harness-active-missions[data-active-mission-scroll-boundary=\"whole-row\"] .tau-harness-table-wrap {\n                                max-height: 388px;\n                                overflow: auto;",
         "#tau-ops-harness-active-missions[data-active-mission-scroll-boundary=\"whole-row\"] #tau-ops-harness-missions-table tbody tr {\n                                scroll-snap-align: start;",
         "#tau-ops-harness-active-missions[data-active-mission-scroll-boundary=\"whole-row\"] #tau-ops-harness-missions-table td {\n                                vertical-align: top;",
@@ -1600,7 +1600,8 @@ fn functional_spec_3786_c01_c02_c03_harness_proof_header_metadata_does_not_wrap(
     );
 
     for marker in [
-        "id=\"tau-ops-harness-proof-header\" class=\"tau-harness-window-titlebar\" data-compact-metadata-breakpoint=\"1400px\" data-metadata-fit=\"no-wrap\" data-run-id-wrap=\"single-line\" data-metadata-value-overflow-budget=\"none\"",
+        "id=\"tau-ops-harness-proof-header\"",
+        "data-compact-metadata-breakpoint=\"1400px\" data-metadata-fit=\"no-wrap\" data-run-id-wrap=\"single-line\" data-metadata-value-overflow-budget=\"none\"",
         "<dt>Run ID</dt><dd>run_8f3a2</dd>",
         "<dt>Elapsed</dt><dd>01:42:18</dd>",
         "<dt>Tool Budget</dt><dd>42/60</dd>",
@@ -1842,7 +1843,7 @@ fn functional_spec_3775_c01_c02_c03_harness_keeps_benchmark_panel_in_left_first_
 
     for marker in [
         "id=\"tau-ops-harness-active-missions\" data-active-count=\"5\" data-running-count=\"3\" data-blocked-count=\"1\" data-compact-table-breakpoint=\"1400px\" data-compact-mission-summary=\"status-and-gates\" data-first-viewport-budget=\"benchmark-visible\"",
-        "class=\"tau-harness-table-wrap\" data-scroll-region=\"active-missions\"",
+        "data-scroll-region=\"active-missions\"",
         "#tau-ops-harness-active-missions {\n                                max-height: 480px;",
         "#tau-ops-harness-active-missions .tau-harness-table-wrap {\n                                max-height: 432px;\n                                overflow: auto;",
         "id=\"tau-ops-harness-benchmark-panel\" data-benchmark-id=\"m334-tranche-one-autonomy\" data-proof-artifact=\"/artifacts/bench/m334/latest.json\" data-task-count=\"4\" data-pass-count=\"4\" data-failed-gates=\"none\" data-proof-source=\"fallback\" data-first-viewport-anchor=\"canonical-benchmark\"",

@@ -658,6 +658,22 @@ fn harness_benchmark_category_label(category: &str) -> String {
     format!("{first}{}", chars.as_str())
 }
 
+fn humanize_harness_label(value: &str) -> String {
+    let label = value
+        .split(['_', '-'])
+        .filter(|word| !word.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    if label.is_empty() {
+        return "Unknown".to_string();
+    }
+
+    let mut chars = label.chars();
+    let first = chars.next().expect("non-empty label").to_ascii_uppercase();
+    format!("{first}{}", chars.as_str())
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// Public struct `TauOpsDashboardHarnessAuditRow` in `tau-dashboard-ui`.
 pub struct TauOpsDashboardHarnessAuditRow {
@@ -705,6 +721,26 @@ pub struct TauOpsDashboardHarnessProofRow {
     pub item_id: String,
     pub status_key: String,
     pub label: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// Public struct `TauOpsDashboardHarnessToolEvidenceRow` in `tau-dashboard-ui`.
+pub struct TauOpsDashboardHarnessToolEvidenceRow {
+    pub tool_name: String,
+    pub call_id: String,
+    pub plan_node: String,
+    pub runtime: String,
+    pub status_key: String,
+    pub artifact_label: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// Public struct `TauOpsDashboardHarnessArtifactRow` in `tau-dashboard-ui`.
+pub struct TauOpsDashboardHarnessArtifactRow {
+    pub item_id: String,
+    pub status_key: String,
+    pub label: String,
+    pub href: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -786,6 +822,28 @@ pub struct TauOpsDashboardHarnessSnapshot {
     pub latest_cost: String,
     pub latest_summary: String,
     pub benchmark_rows: Vec<TauOpsDashboardHarnessBenchmarkCategoryRow>,
+    pub detail_run_id: String,
+    pub detail_goal: String,
+    pub detail_status: String,
+    pub detail_elapsed: String,
+    pub detail_tool_budget: String,
+    pub detail_cost: String,
+    pub detail_retry_count: String,
+    pub detail_plan_current_node: String,
+    pub detail_plan_rows: Vec<TauOpsDashboardHarnessProofRow>,
+    pub detail_tool_call_count: usize,
+    pub detail_tool_rows: Vec<TauOpsDashboardHarnessToolEvidenceRow>,
+    pub detail_operator_log: String,
+    pub detail_acceptance_met_count: usize,
+    pub detail_acceptance_total_count: usize,
+    pub detail_acceptance_rows: Vec<TauOpsDashboardHarnessProofRow>,
+    pub detail_gate_failed_count: usize,
+    pub detail_gate_rows: Vec<TauOpsDashboardHarnessProofRow>,
+    pub detail_memory_hit_count: usize,
+    pub detail_learning_record_count: usize,
+    pub detail_last_memory_write: String,
+    pub detail_memory_evidence_label: String,
+    pub detail_artifact_rows: Vec<TauOpsDashboardHarnessArtifactRow>,
     pub audit_source: String,
     pub audit_rows: Vec<TauOpsDashboardHarnessAuditRow>,
     pub selected_proposal_id: String,
@@ -836,6 +894,181 @@ impl Default for TauOpsDashboardHarnessSnapshot {
                     pass_count: 4,
                     total_count: 4,
                     pass_rate: "100".to_string(),
+                },
+            ],
+            detail_run_id: "run_8f3a2".to_string(),
+            detail_goal: "Refactor plugin registry for safer hot reload".to_string(),
+            detail_status: "running".to_string(),
+            detail_elapsed: "01:42:18".to_string(),
+            detail_tool_budget: "42/60".to_string(),
+            detail_cost: "$3.82".to_string(),
+            detail_retry_count: "1".to_string(),
+            detail_plan_current_node: "verify".to_string(),
+            detail_plan_rows: vec![
+                TauOpsDashboardHarnessProofRow {
+                    item_id: "plan".to_string(),
+                    status_key: "passed".to_string(),
+                    label: "Plan".to_string(),
+                },
+                TauOpsDashboardHarnessProofRow {
+                    item_id: "execute".to_string(),
+                    status_key: "passed".to_string(),
+                    label: "Execute".to_string(),
+                },
+                TauOpsDashboardHarnessProofRow {
+                    item_id: "memory-write".to_string(),
+                    status_key: "passed".to_string(),
+                    label: "Memory Write".to_string(),
+                },
+                TauOpsDashboardHarnessProofRow {
+                    item_id: "verify".to_string(),
+                    status_key: "running".to_string(),
+                    label: "Verify".to_string(),
+                },
+                TauOpsDashboardHarnessProofRow {
+                    item_id: "learn".to_string(),
+                    status_key: "pending".to_string(),
+                    label: "Learn".to_string(),
+                },
+            ],
+            detail_tool_call_count: 8,
+            detail_tool_rows: vec![
+                TauOpsDashboardHarnessToolEvidenceRow {
+                    tool_name: "repo.read".to_string(),
+                    call_id: "c1a2bf3".to_string(),
+                    plan_node: "Execute".to_string(),
+                    runtime: "00:01:12".to_string(),
+                    status_key: "passed".to_string(),
+                    artifact_label: "/artifacts/repo-read.json".to_string(),
+                },
+                TauOpsDashboardHarnessToolEvidenceRow {
+                    tool_name: "repo.edit".to_string(),
+                    call_id: "c1a2b4c".to_string(),
+                    plan_node: "Execute".to_string(),
+                    runtime: "00:02:34".to_string(),
+                    status_key: "passed".to_string(),
+                    artifact_label: "/artifacts/edit.patch".to_string(),
+                },
+                TauOpsDashboardHarnessToolEvidenceRow {
+                    tool_name: "test.run".to_string(),
+                    call_id: "c1a2b6e".to_string(),
+                    plan_node: "Execute".to_string(),
+                    runtime: "00:08:42".to_string(),
+                    status_key: "passed".to_string(),
+                    artifact_label: "/artifacts/tests.json".to_string(),
+                },
+                TauOpsDashboardHarnessToolEvidenceRow {
+                    tool_name: "memory.search".to_string(),
+                    call_id: "c1a2b7f".to_string(),
+                    plan_node: "Memory Write".to_string(),
+                    runtime: "00:00:48".to_string(),
+                    status_key: "passed".to_string(),
+                    artifact_label: "/artifacts/memory.json".to_string(),
+                },
+                TauOpsDashboardHarnessToolEvidenceRow {
+                    tool_name: "memory.write".to_string(),
+                    call_id: "c1a2b8e".to_string(),
+                    plan_node: "Memory Write".to_string(),
+                    runtime: "00:00:36".to_string(),
+                    status_key: "passed".to_string(),
+                    artifact_label: "/artifacts/learning.json".to_string(),
+                },
+                TauOpsDashboardHarnessToolEvidenceRow {
+                    tool_name: "report.write".to_string(),
+                    call_id: "c1a2b9".to_string(),
+                    plan_node: "Verify".to_string(),
+                    runtime: "00:01:21".to_string(),
+                    status_key: "running".to_string(),
+                    artifact_label: "/artifacts/report.md".to_string(),
+                },
+            ],
+            detail_operator_log: "10:18:22  Plan accepted
+10:18:23  Executing plan with tool budget 42/60
+10:18:25  repo.read call_id=c1a2b3 path=src/registry/**
+10:18:37  repo.edit completed (42 files)
+10:20:55  memory.write call_id=c1a2b8 record=learning
+10:24:18  Verification started
+10:25:52  verification gate VG-03 pending (collecting no-memory evidence)"
+                .to_string(),
+            detail_acceptance_met_count: 3,
+            detail_acceptance_total_count: 5,
+            detail_acceptance_rows: vec![
+                TauOpsDashboardHarnessProofRow {
+                    item_id: "VG-01".to_string(),
+                    status_key: "met".to_string(),
+                    label: "Registry loads plugins deterministically".to_string(),
+                },
+                TauOpsDashboardHarnessProofRow {
+                    item_id: "VG-02".to_string(),
+                    status_key: "met".to_string(),
+                    label: "Hot reload preserves active sessions".to_string(),
+                },
+                TauOpsDashboardHarnessProofRow {
+                    item_id: "VG-03".to_string(),
+                    status_key: "met".to_string(),
+                    label: "Added regression tests".to_string(),
+                },
+                TauOpsDashboardHarnessProofRow {
+                    item_id: "VG-04".to_string(),
+                    status_key: "pending".to_string(),
+                    label: "Docs updated".to_string(),
+                },
+                TauOpsDashboardHarnessProofRow {
+                    item_id: "VG-05".to_string(),
+                    status_key: "pending".to_string(),
+                    label: "Benchmark proof emitted".to_string(),
+                },
+            ],
+            detail_gate_failed_count: 1,
+            detail_gate_rows: vec![
+                TauOpsDashboardHarnessProofRow {
+                    item_id: "VG-01".to_string(),
+                    status_key: "passed".to_string(),
+                    label: "Planning proof".to_string(),
+                },
+                TauOpsDashboardHarnessProofRow {
+                    item_id: "VG-02".to_string(),
+                    status_key: "passed".to_string(),
+                    label: "Tool execution proof".to_string(),
+                },
+                TauOpsDashboardHarnessProofRow {
+                    item_id: "VG-03".to_string(),
+                    status_key: "failed".to_string(),
+                    label: "Memory proof".to_string(),
+                },
+                TauOpsDashboardHarnessProofRow {
+                    item_id: "VG-04".to_string(),
+                    status_key: "running".to_string(),
+                    label: "Verification proof".to_string(),
+                },
+                TauOpsDashboardHarnessProofRow {
+                    item_id: "VG-05".to_string(),
+                    status_key: "pending".to_string(),
+                    label: "Learning proof".to_string(),
+                },
+            ],
+            detail_memory_hit_count: 12,
+            detail_learning_record_count: 2,
+            detail_last_memory_write: "10:20:55".to_string(),
+            detail_memory_evidence_label: "Collected".to_string(),
+            detail_artifact_rows: vec![
+                TauOpsDashboardHarnessArtifactRow {
+                    item_id: "code-changes".to_string(),
+                    status_key: "artifact".to_string(),
+                    label: "Code changes".to_string(),
+                    href: "/artifacts/code.diff".to_string(),
+                },
+                TauOpsDashboardHarnessArtifactRow {
+                    item_id: "docs".to_string(),
+                    status_key: "artifact".to_string(),
+                    label: "Docs".to_string(),
+                    href: "/artifacts/docs.md".to_string(),
+                },
+                TauOpsDashboardHarnessArtifactRow {
+                    item_id: "benchmark-proof".to_string(),
+                    status_key: "artifact".to_string(),
+                    label: "Benchmark proof".to_string(),
+                    href: "/artifacts/proof.json".to_string(),
                 },
             ],
             audit_source: "fallback".to_string(),
@@ -1375,8 +1608,140 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
             }
         })
         .collect_view();
+    let harness_detail_plan_rows = context
+        .harness
+        .detail_plan_rows
+        .iter()
+        .map(|row| {
+            view! {
+                <li
+                    id=format!("tau-ops-harness-dag-{}", row.item_id)
+                    data-plan-node=row.label.clone()
+                    data-node-status=row.status_key.clone()
+                >
+                    {row.label.clone()}
+                </li>
+            }
+        })
+        .collect_view();
+    let harness_detail_tool_rows = context
+        .harness
+        .detail_tool_rows
+        .iter()
+        .map(|row| {
+            view! {
+                <tr data-tool=row.tool_name.clone() data-status=row.status_key.clone()>
+                    <td>{row.tool_name.clone()}</td>
+                    <td>{row.call_id.clone()}</td>
+                    <td>{row.plan_node.clone()}</td>
+                    <td>{row.runtime.clone()}</td>
+                    <td>{row.status_key.clone()}</td>
+                    <td>{row.artifact_label.clone()}</td>
+                </tr>
+            }
+        })
+        .collect_view();
+    let harness_detail_acceptance_rows = context
+        .harness
+        .detail_acceptance_rows
+        .iter()
+        .map(|row| {
+            view! {
+                <li data-ac-id=row.item_id.clone() data-ac-status=row.status_key.clone()>{row.label.clone()}</li>
+            }
+        })
+        .collect_view();
+    let harness_detail_gate_rows = context
+        .harness
+        .detail_gate_rows
+        .iter()
+        .map(|row| {
+            let lower_label = row.label.to_ascii_lowercase();
+            let gate_slug = if lower_label.contains("planning") {
+                "planning".to_string()
+            } else if lower_label.contains("tool") {
+                "tool-exec".to_string()
+            } else if lower_label.contains("memory") {
+                "memory".to_string()
+            } else if lower_label.contains("verification") {
+                "verification".to_string()
+            } else if lower_label.contains("learning") {
+                "learning".to_string()
+            } else {
+                row.item_id.to_ascii_lowercase().replace('_', "-")
+            };
+            view! {
+                <li
+                    id=format!("tau-ops-harness-gate-{gate_slug}")
+                    data-gate-id=row.item_id.clone()
+                    data-gate-status=row.status_key.clone()
+                >
+                    {row.label.clone()}
+                </li>
+            }
+        })
+        .collect_view();
+    let harness_detail_artifact_rows = context
+        .harness
+        .detail_artifact_rows
+        .iter()
+        .map(|row| {
+            view! {
+                <li data-artifact-id=row.item_id.clone() data-artifact-kind=row.status_key.clone()>
+                    <a href=row.href.clone()>{row.label.clone()}</a>
+                </li>
+            }
+        })
+        .collect_view();
+    let harness_detail_tool_call_count = context.harness.detail_tool_call_count.to_string();
+    let harness_detail_acceptance_met = context.harness.detail_acceptance_met_count.to_string();
+    let harness_detail_acceptance_total = context.harness.detail_acceptance_total_count.to_string();
+    let harness_detail_gate_count = context.harness.detail_gate_rows.len().to_string();
+    let harness_detail_failed_gate_count = context.harness.detail_gate_failed_count.to_string();
+    let harness_detail_memory_hits = context.harness.detail_memory_hit_count.to_string();
+    let harness_detail_learning_records = context.harness.detail_learning_record_count.to_string();
+    let harness_detail_artifact_count = context.harness.detail_artifact_rows.len().to_string();
+    let harness_detail_passed_plan_count = context
+        .harness
+        .detail_plan_rows
+        .iter()
+        .filter(|row| row.status_key == "passed")
+        .count();
+    let harness_detail_plan_progress = if context.harness.detail_plan_rows.is_empty() {
+        "0".to_string()
+    } else {
+        ((harness_detail_passed_plan_count * 100) / context.harness.detail_plan_rows.len())
+            .to_string()
+    };
+    let harness_detail_passed_gate_count = context
+        .harness
+        .detail_gate_rows
+        .iter()
+        .filter(|row| row.status_key == "passed")
+        .count();
+    let harness_detail_gate_total_count = context.harness.detail_gate_rows.len();
+    let harness_detail_gate_label = format!(
+        "{}/{} gates",
+        harness_detail_passed_gate_count, harness_detail_gate_total_count
+    );
+    let harness_detail_verification_state = if context.harness.detail_gate_failed_count > 0 {
+        "failed"
+    } else if harness_detail_gate_total_count > 0
+        && harness_detail_passed_gate_count == harness_detail_gate_total_count
+    {
+        "passed"
+    } else {
+        context.harness.detail_status.as_str()
+    };
+    let harness_detail_acceptance_label = format!(
+        "{}/{}",
+        context.harness.detail_acceptance_met_count, context.harness.detail_acceptance_total_count
+    );
     let harness_tui_summary = format!(
-        "tau@harness:~$ tau status\nmission=run_8f3a2\ntransport=gateway\nskill=repo_patch\nstatus=verifying\ncalls: repo.read, repo.edit, test.run, report.write\nbench: {} pass; proof {}\n\nBenchmark M334\nPassed: {}\nFailed Gates:\n  {}\nProof: {}",
+        "tau@harness:~$ tau status\nmission={}\ntransport=gateway\nstatus={}\ntool_budget={}\nbench: {} pass; proof {}\n\nBenchmark M334\nPassed: {}\nFailed Gates:\n  {}\nProof: {}",
+        context.harness.detail_run_id.clone(),
+        context.harness.detail_status.clone(),
+        context.harness.detail_tool_budget.clone(),
         context.harness.latest_result.clone(),
         context.harness.proof_artifact.clone(),
         context.harness.latest_result.clone(),
@@ -6631,21 +6996,27 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                                     <td>"09:48:03 May 15"</td>
                                                     <td>"3"</td>
                                                 </tr>
-                                                <tr id="tau-ops-harness-mission-row-4" data-mission-id="run_8f3a2" data-status="running" data-plan-progress="55" data-verification-state="running">
+                                                <tr
+                                                    id="tau-ops-harness-mission-row-4"
+                                                    data-mission-id=context.harness.detail_run_id.clone()
+                                                    data-status=context.harness.detail_status.clone()
+                                                    data-plan-progress=harness_detail_plan_progress.clone()
+                                                    data-verification-state=harness_detail_verification_state
+                                                >
                                                     <td data-mission-summary="inline-status">
-                                                        <span class="tau-harness-mission-title">"Refactor plugin registry for safer hot reload"</span>
+                                                        <span class="tau-harness-mission-title">{context.harness.detail_goal.clone()}</span>
                                                         <span class="tau-harness-mission-meta" data-compact-mission-meta="status-gates">
-                                                            <span class="tau-harness-status-chip" data-mission-state-chip="running">"Running"</span>
-                                                            <span class="tau-harness-status-chip" data-mission-gate-chip="running">"2/5 gates"</span>
+                                                            <span class="tau-harness-status-chip" data-mission-state-chip=context.harness.detail_status.clone()>{humanize_harness_label(&context.harness.detail_status)}</span>
+                                                            <span class="tau-harness-status-chip" data-mission-gate-chip=harness_detail_verification_state>{harness_detail_gate_label.clone()}</span>
                                                         </span>
                                                     </td>
-                                                    <td>"3/5"</td>
-                                                    <td><meter min="0" max="100" value="55">"55%"</meter></td>
-                                                    <td>"42/60"</td>
-                                                    <td>"12"</td>
-                                                    <td><span class="tau-harness-status-chip" data-gate-status="running">"2/5 gates"</span></td>
-                                                    <td>"10:24:18 May 15"</td>
-                                                    <td>"6"</td>
+                                                    <td>{harness_detail_acceptance_label}</td>
+                                                    <td><meter min="0" max="100" value=harness_detail_plan_progress.clone()>{format!("{harness_detail_plan_progress}%")}</meter></td>
+                                                    <td>{context.harness.detail_tool_budget.clone()}</td>
+                                                    <td>{context.harness.detail_memory_hit_count}</td>
+                                                    <td><span class="tau-harness-status-chip" data-gate-status=harness_detail_verification_state>{harness_detail_gate_label}</span></td>
+                                                    <td>{context.harness.detail_last_memory_write.clone()}</td>
+                                                    <td>{context.harness.detail_artifact_rows.len()}</td>
                                                 </tr>
                                             </tbody>
                                         </table>
@@ -6695,9 +7066,9 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 id="tau-ops-harness-proof-window"
                                 data-window="mission-detail-proof-view"
                                 data-window-order="2"
-                                data-run-id="run_8f3a2"
-                                data-mission-status="running"
-                                data-tool-budget="42/60"
+                                data-run-id=context.harness.detail_run_id.clone()
+                                data-mission-status=context.harness.detail_status.clone()
+                                data-tool-budget=context.harness.detail_tool_budget.clone()
                                 data-window-chrome="compact"
                                 data-narrow-proof-fit="no-hidden-overflow"
                             >
@@ -6711,27 +7082,28 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 >
                                     <div>
                                         <p>"Goal"</p>
-                                        <h3>"Refactor plugin registry for safer hot reload"</h3>
+                                        <h3>{context.harness.detail_goal.clone()}</h3>
                                     </div>
                                     <dl>
-                                        <dt>"Run ID"</dt><dd>"run_8f3a2"</dd>
-                                        <dt>"Elapsed"</dt><dd>"01:42:18"</dd>
-                                        <dt>"Tool Budget"</dt><dd>"42/60"</dd>
-                                        <dt>"Cost"</dt><dd>"$3.82"</dd>
-                                        <dt>"Retry Count"</dt><dd>"1"</dd>
+                                        <dt>"Run ID"</dt><dd>{context.harness.detail_run_id.clone()}</dd>
+                                        <dt>"Elapsed"</dt><dd>{context.harness.detail_elapsed.clone()}</dd>
+                                        <dt>"Tool Budget"</dt><dd>{context.harness.detail_tool_budget.clone()}</dd>
+                                        <dt>"Cost"</dt><dd>{context.harness.detail_cost.clone()}</dd>
+                                        <dt>"Retry Count"</dt><dd>{context.harness.detail_retry_count.clone()}</dd>
                                     </dl>
                                 </header>
-                                <ol id="tau-ops-harness-plan-dag" data-dag-node-count="5" data-current-node="verify" data-proof-dag-density="single-row">
-                                    <li id="tau-ops-harness-dag-plan" data-plan-node="Plan" data-node-status="passed">"Plan"</li>
-                                    <li id="tau-ops-harness-dag-execute" data-plan-node="Execute" data-node-status="passed">"Execute"</li>
-                                    <li id="tau-ops-harness-dag-memory-write" data-plan-node="Memory Write" data-node-status="passed">"Memory Write"</li>
-                                    <li id="tau-ops-harness-dag-verify" data-plan-node="Verify" data-node-status="running">"Verify"</li>
-                                    <li id="tau-ops-harness-dag-learn" data-plan-node="Learn" data-node-status="pending">"Learn"</li>
+                                <ol
+                                    id="tau-ops-harness-plan-dag"
+                                    data-dag-node-count=context.harness.detail_plan_rows.len().to_string()
+                                    data-current-node=context.harness.detail_plan_current_node.clone()
+                                    data-proof-dag-density="single-row"
+                                >
+                                    {harness_detail_plan_rows}
                                 </ol>
                                 <div class="tau-harness-window-grid" data-proof-grid-priority="evidence-log-gates-first">
                                     <section
                                         id="tau-ops-harness-tool-evidence"
-                                        data-tool-call-count="8"
+                                        data-tool-call-count=harness_detail_tool_call_count
                                         data-compact-evidence-breakpoint="1400px"
                                         data-compact-call-id-visibility="hidden-at-1400px"
                                         data-proof-evidence-priority="first-screen"
@@ -6746,12 +7118,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                             <table>
                                                 <thead><tr><th scope="col">"Tool"</th><th scope="col">"Call ID"</th><th scope="col">"Plan Node"</th><th scope="col">"Runtime"</th><th scope="col">"Status"</th><th scope="col">"Artifact"</th></tr></thead>
                                                 <tbody>
-                                                    <tr data-tool="repo.read" data-status="passed"><td>"repo.read"</td><td>"c1a2bf3"</td><td>"Execute"</td><td>"00:01:12"</td><td>"passed"</td><td>"/artifacts/repo-read.json"</td></tr>
-                                                    <tr data-tool="repo.edit" data-status="passed"><td>"repo.edit"</td><td>"c1a2b4c"</td><td>"Execute"</td><td>"00:02:34"</td><td>"passed"</td><td>"/artifacts/edit.patch"</td></tr>
-                                                    <tr data-tool="test.run" data-status="passed"><td>"test.run"</td><td>"c1a2b6e"</td><td>"Execute"</td><td>"00:08:42"</td><td>"passed"</td><td>"/artifacts/tests.json"</td></tr>
-                                                    <tr data-tool="memory.search" data-status="passed"><td>"memory.search"</td><td>"c1a2b7f"</td><td>"Memory Write"</td><td>"00:00:48"</td><td>"passed"</td><td>"/artifacts/memory.json"</td></tr>
-                                                    <tr data-tool="memory.write" data-status="passed"><td>"memory.write"</td><td>"c1a2b8e"</td><td>"Memory Write"</td><td>"00:00:36"</td><td>"passed"</td><td>"/artifacts/learning.json"</td></tr>
-                                                    <tr data-tool="report.write" data-status="running"><td>"report.write"</td><td>"c1a2b9"</td><td>"Verify"</td><td>"00:01:21"</td><td>"running"</td><td>"/artifacts/report.md"</td></tr>
+                                                    {harness_detail_tool_rows}
                                                 </tbody>
                                             </table>
                                         </div>
@@ -6763,18 +7130,12 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                         data-log-priority="first-screen"
                                     >
                                         <h4>"Operator Log"</h4>
-                                        <pre>"10:18:22  Plan accepted
-10:18:23  Executing plan with tool budget 42/60
-10:18:25  repo.read call_id=c1a2b3 path=src/registry/**
-10:18:37  repo.edit completed (42 files)
-10:20:55  memory.write call_id=c1a2b8 record=learning
-10:24:18  Verification started
-10:25:52  verification gate VG-03 pending (collecting no-memory evidence)"</pre>
+                                        <pre>{context.harness.detail_operator_log.clone()}</pre>
                                     </section>
                                     <section
                                         id="tau-ops-harness-acceptance"
-                                        data-acceptance-met="3"
-                                        data-acceptance-total="5"
+                                        data-acceptance-met=harness_detail_acceptance_met
+                                        data-acceptance-total=harness_detail_acceptance_total
                                         data-proof-detail-budget="compact-scroll"
                                         data-acceptance-overflow-budget="all-criteria-visible"
                                         data-acceptance-layout="compact-contained"
@@ -6782,17 +7143,13 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     >
                                         <h4>"Acceptance Criteria"</h4>
                                         <ul>
-                                            <li data-ac-id="VG-01" data-ac-status="met">"Registry loads plugins deterministically"</li>
-                                            <li data-ac-id="VG-02" data-ac-status="met">"Hot reload preserves active sessions"</li>
-                                            <li data-ac-id="VG-03" data-ac-status="met">"Added regression tests"</li>
-                                            <li data-ac-id="VG-04" data-ac-status="pending">"Docs updated"</li>
-                                            <li data-ac-id="VG-05" data-ac-status="pending">"Benchmark proof emitted"</li>
+                                            {harness_detail_acceptance_rows}
                                         </ul>
                                     </section>
                                     <section
                                         id="tau-ops-harness-verification-gates"
-                                        data-gate-count="5"
-                                        data-failed-gate-count="1"
+                                        data-gate-count=harness_detail_gate_count
+                                        data-failed-gate-count=harness_detail_failed_gate_count
                                         data-proof-secondary-priority="first-screen"
                                         data-proof-detail-budget="compact-scroll"
                                         data-gate-visibility="all-gates-first-viewport"
@@ -6801,25 +7158,29 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     >
                                         <h4>"Verification Gates"</h4>
                                         <ul>
-                                            <li id="tau-ops-harness-gate-planning" data-gate-id="VG-01" data-gate-status="passed">"Planning proof"</li>
-                                            <li id="tau-ops-harness-gate-tool-exec" data-gate-id="VG-02" data-gate-status="passed">"Tool execution proof"</li>
-                                            <li id="tau-ops-harness-gate-memory" data-gate-id="VG-03" data-gate-status="failed">"Memory proof"</li>
-                                            <li id="tau-ops-harness-gate-verification" data-gate-id="VG-04" data-gate-status="running">"Verification proof"</li>
-                                            <li id="tau-ops-harness-gate-learning" data-gate-id="VG-05" data-gate-status="pending">"Learning proof"</li>
+                                            {harness_detail_gate_rows}
                                         </ul>
                                     </section>
-                                    <section id="tau-ops-harness-memory-learning" data-memory-hits="12" data-learning-records="2" data-last-memory-write="10:20:55" data-proof-footer-priority="first-viewport">
+                                    <section
+                                        id="tau-ops-harness-memory-learning"
+                                        data-memory-hits=harness_detail_memory_hits
+                                        data-learning-records=harness_detail_learning_records
+                                        data-last-memory-write=context.harness.detail_last_memory_write.clone()
+                                        data-proof-footer-priority="first-viewport"
+                                    >
                                         <h4>"Memory / Learning"</h4>
-                                        <p>"Memory hits: 12"</p>
-                                        <p>"No-memory evidence: Collected"</p>
-                                        <p>"Learning records: 2"</p>
+                                        <p>{format!("Memory hits: {}", context.harness.detail_memory_hit_count)}</p>
+                                        <p>{format!("No-memory evidence: {}", context.harness.detail_memory_evidence_label)}</p>
+                                        <p>{format!("Learning records: {}", context.harness.detail_learning_record_count)}</p>
                                     </section>
-                                    <section id="tau-ops-harness-artifacts" data-artifact-count="3" data-proof-footer-priority="first-viewport">
+                                    <section
+                                        id="tau-ops-harness-artifacts"
+                                        data-artifact-count=harness_detail_artifact_count
+                                        data-proof-footer-priority="first-viewport"
+                                    >
                                         <h4>"Artifacts"</h4>
                                         <ul>
-                                            <li><a href="/artifacts/code.diff">"Code changes"</a></li>
-                                            <li><a href="/artifacts/docs.md">"Docs"</a></li>
-                                            <li><a href="/artifacts/proof.json">"Benchmark proof"</a></li>
+                                            {harness_detail_artifact_rows}
                                         </ul>
                                     </section>
                                 </div>

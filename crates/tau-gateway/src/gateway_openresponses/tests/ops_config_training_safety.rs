@@ -472,6 +472,12 @@ async fn integration_spec_3757_c03_ops_harness_route_reflects_state_backed_proof
     for marker in [
         "data-task-count=\"4\" data-pass-count=\"4\" data-failed-gates=\"none\" data-proof-source=\"state\"",
         "data-category=\"repo_build\" data-task-count=\"1\" data-last-run=\"1/1 pass\" data-pass-rate=\"100\"",
+        "id=\"tau-ops-harness-proof-window\" data-window=\"mission-detail-proof-view\" data-window-order=\"2\" data-run-id=\"gateway-harness-",
+        "data-mission-status=\"completed\" data-tool-budget=\"20/32\"",
+        "Canonical M334 Tranche One Autonomy benchmark proof run",
+        "Benchmark tasks passed 4/4",
+        "data-gate-id=\"memory_write_proof\" data-gate-status=\"passed\"",
+        "state proof loaded:",
         "id=\"tau-ops-harness-audit-log\" data-audit-row-count=\"1\" data-audit-source=\"state\"",
         "data-action=\"apply\" data-result=\"blocked_approval_required\"",
         "Blocked Approval Required",

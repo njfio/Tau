@@ -17,11 +17,12 @@ use tau_ai::{Message, MessageRole};
 use tau_dashboard_ui::{
     render_tau_ops_dashboard_shell_with_context, TauOpsDashboardAuthMode,
     TauOpsDashboardChatMessageRow, TauOpsDashboardChatSessionOptionRow,
-    TauOpsDashboardChatSnapshot, TauOpsDashboardHarnessAuditRow,
+    TauOpsDashboardChatSnapshot, TauOpsDashboardHarnessArtifactRow, TauOpsDashboardHarnessAuditRow,
     TauOpsDashboardHarnessBenchmarkCategoryRow, TauOpsDashboardHarnessProofRow,
     TauOpsDashboardHarnessProposalDetail, TauOpsDashboardHarnessProposalQueueRow,
     TauOpsDashboardHarnessSelfImprovementProof, TauOpsDashboardHarnessSnapshot,
-    TauOpsDashboardJobRow, TauOpsDashboardMemoryGraphEdgeRow, TauOpsDashboardMemoryGraphNodeRow,
+    TauOpsDashboardHarnessToolEvidenceRow, TauOpsDashboardJobRow,
+    TauOpsDashboardMemoryGraphEdgeRow, TauOpsDashboardMemoryGraphNodeRow,
     TauOpsDashboardMemoryRelationRow, TauOpsDashboardMemorySearchRow, TauOpsDashboardRoute,
     TauOpsDashboardSessionGraphEdgeRow, TauOpsDashboardSessionGraphNodeRow,
     TauOpsDashboardSessionTimelineRow, TauOpsDashboardShellContext, TauOpsDashboardSidebarState,
@@ -1494,6 +1495,7 @@ fn collect_tau_ops_dashboard_harness_snapshot(
                         }
                     })
                     .collect();
+                apply_harness_benchmark_detail_from_proof(&mut snapshot, &proof, &proof_path);
             }
         }
     }
@@ -1538,6 +1540,319 @@ fn collect_tau_ops_dashboard_harness_snapshot(
     }
 
     snapshot
+}
+
+fn apply_harness_benchmark_detail_from_proof(
+    snapshot: &mut TauOpsDashboardHarnessSnapshot,
+    proof: &Value,
+    proof_path: &Path,
+) {
+    let Some(tasks) = proof.get("tasks").and_then(Value::as_array) else {
+        return;
+    };
+    let run_id = proof
+        .get("run_id")
+        .and_then(Value::as_str)
+        .unwrap_or(snapshot.detail_run_id.as_str());
+    let passed = proof
+        .get("passed")
+        .and_then(Value::as_bool)
+        .unwrap_or(snapshot.failed_gate_count == 0);
+    let status = if passed { "completed" } else { "failed" };
+    let first_mission = tasks.first().and_then(|task| task.get("mission"));
+    let consumed_tool_calls = tasks
+        .iter()
+        .filter_map(|task| task.get("mission"))
+        .filter_map(|mission| mission.get("tool_budget"))
+        .filter_map(|budget| budget.get("consumed_tool_calls").and_then(Value::as_u64))
+        .sum::<u64>();
+    let max_tool_calls = tasks
+        .iter()
+        .filter_map(|task| task.get("mission"))
+        .filter_map(|mission| mission.get("tool_budget"))
+        .filter_map(|budget| budget.get("max_tool_calls").and_then(Value::as_u64))
+        .sum::<u64>();
+    let consumed_runtime_ms = tasks
+        .iter()
+        .filter_map(|task| task.get("mission"))
+        .filter_map(|mission| mission.get("tool_budget"))
+        .filter_map(|budget| budget.get("consumed_runtime_ms").and_then(Value::as_u64))
+        .sum::<u64>();
+    let consumed_cost = tasks
+        .iter()
+        .filter_map(|task| task.get("mission"))
+        .filter_map(|mission| mission.get("tool_budget"))
+        .filter_map(|budget| budget.get("consumed_cost_usd").and_then(Value::as_f64))
+        .sum::<f64>();
+
+    snapshot.detail_run_id = run_id.to_string();
+    snapshot.detail_goal = format!(
+        "Canonical {} benchmark proof run",
+        humanize_harness_token(&snapshot.benchmark_id)
+    );
+    snapshot.detail_status = status.to_string();
+    snapshot.detail_elapsed = format_harness_runtime_ms(consumed_runtime_ms);
+    snapshot.detail_tool_budget = if max_tool_calls == 0 {
+        consumed_tool_calls.to_string()
+    } else {
+        format!("{consumed_tool_calls}/{max_tool_calls}")
+    };
+    snapshot.detail_cost = format!("${consumed_cost:.2}");
+    snapshot.detail_retry_count = tasks
+        .iter()
+        .filter_map(|task| task.get("operator_interventions_used"))
+        .filter_map(Value::as_array)
+        .map(Vec::len)
+        .sum::<usize>()
+        .to_string();
+
+    if let Some(plan_nodes) = first_mission
+        .and_then(|mission| mission.get("plan_dag"))
+        .and_then(Value::as_array)
+    {
+        snapshot.detail_plan_rows = plan_nodes
+            .iter()
+            .filter_map(|node| {
+                let item_id = node.get("id").and_then(Value::as_str)?;
+                Some(TauOpsDashboardHarnessProofRow {
+                    item_id: item_id.replace('_', "-"),
+                    status_key: harness_detail_status_key(
+                        node.get("status")
+                            .and_then(Value::as_str)
+                            .unwrap_or("pending"),
+                    ),
+                    label: humanize_harness_token(item_id),
+                })
+            })
+            .collect();
+        snapshot.detail_plan_current_node = snapshot
+            .detail_plan_rows
+            .iter()
+            .find(|row| row.status_key != "passed")
+            .or_else(|| snapshot.detail_plan_rows.last())
+            .map(|row| row.item_id.clone())
+            .unwrap_or_else(|| "plan".to_string());
+    }
+
+    if let Some(tool_evidence) = first_mission
+        .and_then(|mission| mission.get("tool_evidence"))
+        .and_then(Value::as_array)
+    {
+        snapshot.detail_tool_call_count = tool_evidence.len();
+        snapshot.detail_tool_rows = tool_evidence
+            .iter()
+            .filter_map(|tool| {
+                let tool_name = tool.get("tool_name").and_then(Value::as_str)?;
+                let call_id = tool
+                    .get("tool_call_id")
+                    .and_then(Value::as_str)
+                    .unwrap_or(tool_name);
+                let artifact_label = tool
+                    .get("artifact_ids")
+                    .and_then(Value::as_array)
+                    .and_then(|ids| ids.first())
+                    .and_then(Value::as_str)
+                    .and_then(|artifact_id| artifact_id.rsplit(':').next())
+                    .unwrap_or("proof");
+                Some(TauOpsDashboardHarnessToolEvidenceRow {
+                    tool_name: tool_name.to_string(),
+                    call_id: compact_harness_call_id(call_id),
+                    plan_node: humanize_harness_token(
+                        tool.get("plan_node_id")
+                            .and_then(Value::as_str)
+                            .unwrap_or("execute"),
+                    ),
+                    runtime: format_harness_runtime_ms(
+                        tool.get("runtime_ms").and_then(Value::as_u64).unwrap_or(0),
+                    ),
+                    status_key: harness_detail_status_key(
+                        tool.get("status")
+                            .and_then(Value::as_str)
+                            .unwrap_or("pending"),
+                    ),
+                    artifact_label: artifact_label.to_string(),
+                })
+            })
+            .collect();
+    }
+
+    let task_count = tasks.len();
+    let pass_count = tasks
+        .iter()
+        .filter(|task| task.get("passed").and_then(Value::as_bool).unwrap_or(false))
+        .count();
+    let required_terminal_state = proof
+        .get("required_terminal_state")
+        .and_then(Value::as_str)
+        .unwrap_or("completed");
+    let unique_gate_rows = first_mission
+        .and_then(|mission| mission.get("verification_gates"))
+        .and_then(Value::as_array)
+        .map(|gates| {
+            gates
+                .iter()
+                .filter_map(|gate| {
+                    let item_id = gate.get("id").and_then(Value::as_str)?;
+                    Some(TauOpsDashboardHarnessProofRow {
+                        item_id: item_id.to_string(),
+                        status_key: harness_detail_status_key(
+                            gate.get("status")
+                                .and_then(Value::as_str)
+                                .unwrap_or("pending"),
+                        ),
+                        label: gate
+                            .get("description")
+                            .and_then(Value::as_str)
+                            .map(str::to_string)
+                            .unwrap_or_else(|| humanize_harness_token(item_id)),
+                    })
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let passed_gate_count = unique_gate_rows
+        .iter()
+        .filter(|row| row.status_key == "passed")
+        .count();
+
+    snapshot.detail_acceptance_rows = vec![
+        TauOpsDashboardHarnessProofRow {
+            item_id: "benchmark-tasks".to_string(),
+            status_key: if pass_count == task_count {
+                "met"
+            } else {
+                "pending"
+            }
+            .to_string(),
+            label: format!("Benchmark tasks passed {pass_count}/{task_count}"),
+        },
+        TauOpsDashboardHarnessProofRow {
+            item_id: "terminal-state".to_string(),
+            status_key: if status == required_terminal_state {
+                "met"
+            } else {
+                "pending"
+            }
+            .to_string(),
+            label: format!("Required terminal state {required_terminal_state}"),
+        },
+        TauOpsDashboardHarnessProofRow {
+            item_id: "planning-tool-memory-verification-learning".to_string(),
+            status_key: if passed_gate_count == unique_gate_rows.len() {
+                "met"
+            } else {
+                "pending"
+            }
+            .to_string(),
+            label: format!(
+                "Planning/tool/memory/verification/learning gates passed {}/{}",
+                passed_gate_count,
+                unique_gate_rows.len()
+            ),
+        },
+    ];
+    snapshot.detail_acceptance_met_count = snapshot
+        .detail_acceptance_rows
+        .iter()
+        .filter(|row| row.status_key == "met")
+        .count();
+    snapshot.detail_acceptance_total_count = snapshot.detail_acceptance_rows.len();
+    if !unique_gate_rows.is_empty() {
+        snapshot.detail_gate_failed_count = unique_gate_rows
+            .iter()
+            .filter(|row| row.status_key == "failed")
+            .count();
+        snapshot.detail_gate_rows = unique_gate_rows;
+    }
+
+    snapshot.detail_memory_hit_count = tasks
+        .iter()
+        .filter_map(|task| task.get("mission"))
+        .filter_map(|mission| mission.get("memory_hits"))
+        .filter_map(Value::as_array)
+        .map(Vec::len)
+        .sum();
+    snapshot.detail_learning_record_count = tasks
+        .iter()
+        .filter_map(|task| task.get("mission"))
+        .filter_map(|mission| mission.get("learning_records"))
+        .filter_map(Value::as_array)
+        .map(Vec::len)
+        .sum();
+    let latest_learning_ms = tasks
+        .iter()
+        .filter_map(|task| task.get("mission"))
+        .filter_map(|mission| mission.get("learning_records"))
+        .filter_map(Value::as_array)
+        .flat_map(|records| records.iter())
+        .filter_map(|record| record.get("created_unix_ms").and_then(Value::as_u64))
+        .max()
+        .unwrap_or_default();
+    snapshot.detail_last_memory_write = if latest_learning_ms == 0 {
+        "state".to_string()
+    } else {
+        format!("ts:{latest_learning_ms}")
+    };
+    snapshot.detail_memory_evidence_label = format!(
+        "{} benchmark memory hits used",
+        snapshot.detail_memory_hit_count
+    );
+    snapshot.detail_artifact_rows = std::iter::once(TauOpsDashboardHarnessArtifactRow {
+        item_id: "benchmark-proof".to_string(),
+        status_key: "mission_harness_proof".to_string(),
+        label: "Benchmark proof artifact".to_string(),
+        href: proof_path.display().to_string(),
+    })
+    .chain(tasks.iter().filter_map(|task| {
+        let task_id = task.get("task_id").and_then(Value::as_str)?;
+        Some(TauOpsDashboardHarnessArtifactRow {
+            item_id: task_id.to_string(),
+            status_key: "mission_task_proof".to_string(),
+            label: format!("{} proof", humanize_harness_token(task_id)),
+            href: proof_path.display().to_string(),
+        })
+    }))
+    .collect();
+
+    snapshot.detail_operator_log = format!(
+        "state proof loaded: {}\nrun_id: {}\nbenchmark: {}\ntasks: {}/{} passed\nverification gates: {}/{} passed\nmemory hits: {}\nlearning records: {}\nstatus: {}",
+        proof_path.display(),
+        snapshot.detail_run_id,
+        snapshot.benchmark_id,
+        pass_count,
+        task_count,
+        passed_gate_count,
+        snapshot.detail_gate_rows.len(),
+        snapshot.detail_memory_hit_count,
+        snapshot.detail_learning_record_count,
+        snapshot.detail_status,
+    );
+}
+
+fn harness_detail_status_key(status: &str) -> String {
+    match status {
+        "completed" | "succeeded" | "success" | "passed" => "passed".to_string(),
+        "failed" | "failure" => "failed".to_string(),
+        "running" | "in_progress" => "running".to_string(),
+        _ => "pending".to_string(),
+    }
+}
+
+fn compact_harness_call_id(call_id: &str) -> String {
+    call_id
+        .rsplit_once("-tool-")
+        .map(|(_, suffix)| format!("tool-{suffix}"))
+        .unwrap_or_else(|| call_id.to_string())
+}
+
+fn format_harness_runtime_ms(runtime_ms: u64) -> String {
+    if runtime_ms < 1000 {
+        return format!("{runtime_ms}ms");
+    }
+    let total_seconds = runtime_ms / 1000;
+    let minutes = total_seconds / 60;
+    let seconds = total_seconds % 60;
+    format!("{minutes:02}:{seconds:02}")
 }
 
 fn collect_harness_self_improvement_proof(
