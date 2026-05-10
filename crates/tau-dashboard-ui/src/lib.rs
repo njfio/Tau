@@ -1921,6 +1921,11 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                 harness_selected_proposal_id,
                 row.mission_id,
             );
+            let row_identity_label = if row_selected {
+                format!("Selected proof {}", row.mission_id)
+            } else {
+                format!("Proof {}", row.mission_id)
+            };
             let row_start_form_id = format!("tau-ops-harness-start-mission-form-{index}");
             let row_start_button_id = format!("tau-ops-harness-start-mission-{index}");
             let row_start_action = format!(
@@ -1979,6 +1984,14 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                         >
                             {row.title.clone()}
                         </a>
+                        <div
+                            class="tau-harness-mission-identity"
+                            data-mission-identity=row.mission_id.clone()
+                            data-selected-proof=row_selected.to_string()
+                            data-visible-proof-id="true"
+                        >
+                            {row_identity_label}
+                        </div>
                         <div class="tau-harness-mission-meta" data-compact-mission-meta="status-gates">
                             <span class="tau-harness-status-chip" data-mission-state-chip=row.status_key.clone()>{row.status_label.clone()}</span>
                             <span class="tau-harness-status-chip" data-mission-gate-chip=row.gate_status_key.clone()>{row.gate_label.clone()}</span>
@@ -6627,6 +6640,17 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             #tau-ops-harness-missions-table .tau-harness-mission-title:focus-visible {
                                 color: var(--tau-harness-blue);
                                 text-decoration: underline;
+                            }
+                            #tau-ops-harness-missions-table .tau-harness-mission-identity {
+                                margin-top: 4px;
+                                color: var(--tau-harness-muted);
+                                font-family: var(--tau-harness-mono);
+                                font-size: .59rem;
+                                line-height: 1.2;
+                                overflow-wrap: anywhere;
+                            }
+                            #tau-ops-harness-missions-table .tau-harness-mission-identity[data-selected-proof="true"] {
+                                color: var(--tau-harness-green);
                             }
                             #tau-ops-harness-missions-table tr[data-selected-proof="true"] {
                                 background: rgba(87, 225, 161, .08);
