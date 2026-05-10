@@ -1422,6 +1422,21 @@ pub(super) fn render_tau_ops_dashboard_shell_for_route(
                 harness.audit_source
             );
             harness.route_action_count = harness.audit_rows.len();
+        } else if let Some(proposal_status) = controls.requested_harness_proposal_status() {
+            let (route_action_key, route_action_label) =
+                harness_proposal_status_route_action(proposal_status);
+            harness.route_action_key = route_action_key.to_string();
+            harness.route_action_label = route_action_label.to_string();
+            harness.route_action_detail = format!(
+                "Proposal {} | session {} | selected {}",
+                controls
+                    .requested_harness_proposal_id()
+                    .map(sanitize_harness_token)
+                    .unwrap_or_else(|| harness.selected_proposal_id.clone()),
+                chat.active_session_key.clone(),
+                harness.selected_proposal_id
+            );
+            harness.route_action_count = harness.audit_rows.len();
         }
     }
 
@@ -1436,6 +1451,18 @@ pub(super) fn render_tau_ops_dashboard_shell_for_route(
             harness,
         },
     ))
+}
+
+fn harness_proposal_status_route_action(proposal_status: &str) -> (&'static str, &'static str) {
+    match proposal_status {
+        "applied" => ("proposal-applied", "Proposal Applied"),
+        "apply_failed" => ("proposal-apply-failed", "Proposal Apply Failed"),
+        "approved" => ("proposal-approved", "Proposal Approved"),
+        "dry_run_failed" => ("proposal-dry-run", "Dry Run Failed"),
+        "dry_run_passed" => ("proposal-dry-run", "Dry Run Passed"),
+        "rejected" => ("proposal-rejected", "Proposal Rejected"),
+        _ => ("proposal-action", "Proposal Action"),
+    }
 }
 
 fn harness_proposal_detail_from_definition(

@@ -76,6 +76,8 @@ pub(super) struct OpsShellControlsQuery {
     mission_id: String,
     #[serde(default)]
     mission_status: String,
+    #[serde(default)]
+    proposal_status: String,
 }
 
 impl OpsShellControlsQuery {
@@ -163,6 +165,18 @@ impl OpsShellControlsQuery {
             "mission_started" => Some("mission_started"),
             "start_failed" => Some("start_failed"),
             "write_failed" => Some("write_failed"),
+            _ => None,
+        }
+    }
+
+    pub(super) fn requested_harness_proposal_status(&self) -> Option<&'static str> {
+        match self.proposal_status.trim() {
+            "applied" => Some("applied"),
+            "apply_failed" => Some("apply_failed"),
+            "approved" => Some("approved"),
+            "dry_run_failed" => Some("dry_run_failed"),
+            "dry_run_passed" => Some("dry_run_passed"),
+            "rejected" => Some("rejected"),
             _ => None,
         }
     }
@@ -743,11 +757,13 @@ mod tests {
             intent: "delete-all".to_string(),
             view: "unknown".to_string(),
             mission_status: "unknown".to_string(),
+            proposal_status: "unknown".to_string(),
             ..OpsShellControlsQuery::default()
         };
         assert_eq!(invalid.requested_harness_intent(), None);
         assert_eq!(invalid.requested_harness_view(), None);
         assert_eq!(invalid.requested_harness_mission_status(), None);
+        assert_eq!(invalid.requested_harness_proposal_status(), None);
     }
 
     #[test]
@@ -780,6 +796,28 @@ mod tests {
                 controls.requested_harness_mission_status(),
                 Some(status),
                 "status `{status}` should be supported"
+            );
+        }
+    }
+
+    #[test]
+    fn unit_requested_harness_proposal_status_normalizes_supported_values() {
+        for status in [
+            "applied",
+            "apply_failed",
+            "approved",
+            "dry_run_failed",
+            "dry_run_passed",
+            "rejected",
+        ] {
+            let controls = OpsShellControlsQuery {
+                proposal_status: status.to_string(),
+                ..OpsShellControlsQuery::default()
+            };
+            assert_eq!(
+                controls.requested_harness_proposal_status(),
+                Some(status),
+                "proposal status `{status}` should be supported"
             );
         }
     }

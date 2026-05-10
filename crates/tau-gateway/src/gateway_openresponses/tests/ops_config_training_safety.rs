@@ -583,6 +583,23 @@ async fn integration_ops_harness_proposal_actions_delegate_dry_run_and_approved_
     assert!(dry_run_location.contains("sidebar=collapsed"));
     assert!(dry_run_location.contains("session=ops-harness-context"));
     assert!(dry_run_location.contains("proposal_id=PR-044"));
+    let dry_run_harness = client
+        .get(format!("http://{addr}{dry_run_location}"))
+        .send()
+        .await
+        .expect("load dry-run status harness route");
+    assert_eq!(dry_run_harness.status(), StatusCode::OK);
+    let dry_run_harness_body = dry_run_harness.text().await.expect("dry-run harness body");
+    for marker in [
+        "id=\"tau-ops-harness-route-action\" data-route-action-key=\"proposal-dry-run\" data-route-action-label=\"Dry Run Passed\"",
+        "data-route-action-visible=\"true\"",
+        "Proposal PR-044 | session ops-harness-context | selected PR-044",
+    ] {
+        assert!(
+            dry_run_harness_body.contains(marker),
+            "dry-run redirect should render visible proposal action marker `{marker}`"
+        );
+    }
 
     let approve = client
         .post(format!(
