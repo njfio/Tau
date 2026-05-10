@@ -158,6 +158,10 @@ impl OpsShellControlsQuery {
     pub(super) fn requested_harness_mission_status(&self) -> Option<&'static str> {
         match self.mission_status.trim() {
             "draft_created" => Some("draft_created"),
+            "mission_blocked" => Some("mission_blocked"),
+            "mission_completed" => Some("mission_completed"),
+            "mission_started" => Some("mission_started"),
+            "start_failed" => Some("start_failed"),
             "write_failed" => Some("write_failed"),
             _ => None,
         }
@@ -761,6 +765,23 @@ mod tests {
             created.requested_harness_mission_status(),
             Some("draft_created")
         );
+
+        for status in [
+            "mission_started",
+            "mission_completed",
+            "mission_blocked",
+            "start_failed",
+        ] {
+            let controls = OpsShellControlsQuery {
+                mission_status: status.to_string(),
+                ..OpsShellControlsQuery::default()
+            };
+            assert_eq!(
+                controls.requested_harness_mission_status(),
+                Some(status),
+                "status `{status}` should be supported"
+            );
+        }
     }
 
     #[test]

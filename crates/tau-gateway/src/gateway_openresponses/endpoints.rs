@@ -22,6 +22,8 @@ pub(super) const OPS_DASHBOARD_HARNESS_ENDPOINT: &str = "/ops/harness";
 pub(super) const OPS_DASHBOARD_HARNESS_RUN_BENCHMARK_ENDPOINT: &str = "/ops/harness/run-benchmark";
 pub(super) const OPS_DASHBOARD_HARNESS_CREATE_MISSION_ENDPOINT: &str =
     "/ops/harness/missions/draft";
+pub(super) const OPS_DASHBOARD_HARNESS_START_MISSION_ENDPOINT: &str =
+    "/ops/harness/missions/{mission_id}/start";
 pub(super) const OPS_DASHBOARD_HARNESS_PROPOSAL_ACTION_ENDPOINT: &str =
     "/ops/harness/proposals/{proposal_id}/{action}";
 pub(super) const OPS_DASHBOARD_HARNESS_PROPOSAL_DIFF_ENDPOINT: &str =

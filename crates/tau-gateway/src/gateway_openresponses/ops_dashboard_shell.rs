@@ -50,9 +50,10 @@ use super::{
     record_cortex_session_append_event, record_cortex_session_reset_event, sanitize_session_key,
     GatewayDashboardActionRequest, GatewayMemoryGraphEdge, GatewayMemoryGraphNode,
     GatewayOpenResponsesServerState, GatewayOpsHarnessProposalDefinition,
-    GatewayOpsHarnessSelfImprovementRequest, OpenResponsesApiError, OpsShellControlsQuery,
-    DEFAULT_SESSION_KEY, OPS_DASHBOARD_CHANNELS_ENDPOINT, OPS_DASHBOARD_CHAT_ENDPOINT,
-    OPS_DASHBOARD_CHAT_NEW_ENDPOINT, OPS_DASHBOARD_CHAT_SEND_ENDPOINT, OPS_DASHBOARD_ENDPOINT,
+    GatewayOpsHarnessSelfImprovementRequest, GatewayOpsHarnessSelfImprovementResult,
+    OpenResponsesApiError, OpsShellControlsQuery, DEFAULT_SESSION_KEY,
+    OPS_DASHBOARD_CHANNELS_ENDPOINT, OPS_DASHBOARD_CHAT_ENDPOINT, OPS_DASHBOARD_CHAT_NEW_ENDPOINT,
+    OPS_DASHBOARD_CHAT_SEND_ENDPOINT, OPS_DASHBOARD_ENDPOINT,
 };
 use crate::remote_profile::GatewayOpenResponsesAuthMode;
 
@@ -1384,12 +1385,16 @@ pub(super) fn render_tau_ops_dashboard_shell_for_route(
                 .requested_harness_mission_id()
                 .map(sanitize_harness_token)
                 .unwrap_or_else(|| "unknown".to_string());
-            harness.route_action_key = "mission-draft".to_string();
-            harness.route_action_label = if mission_status == "draft_created" {
-                "Mission Draft Created".to_string()
-            } else {
-                "Mission Draft Failed".to_string()
+            let (route_action_key, route_action_label) = match mission_status {
+                "draft_created" => ("mission-draft", "Mission Draft Created"),
+                "mission_started" => ("mission-start", "Mission Started"),
+                "mission_completed" => ("mission-start", "Mission Completed"),
+                "mission_blocked" => ("mission-start", "Mission Blocked"),
+                "start_failed" => ("mission-start", "Mission Start Failed"),
+                _ => ("mission-draft", "Mission Draft Failed"),
             };
+            harness.route_action_key = route_action_key.to_string();
+            harness.route_action_label = route_action_label.to_string();
             harness.route_action_detail = format!(
                 "Mission {mission_id} | session {} | selected {}",
                 chat.active_session_key.clone(),
@@ -1726,6 +1731,37 @@ fn harness_durable_mission_row_from_value(
         })
         .count();
     let gate_total = gates.len();
+    let passed_gate_ids = gates
+        .iter()
+        .filter(|gate| {
+            gate.get("status")
+                .and_then(Value::as_str)
+                .is_some_and(|status| status == "passed")
+        })
+        .filter_map(|gate| gate.get("id").and_then(Value::as_str).map(str::to_string))
+        .collect::<BTreeSet<_>>();
+    let acceptance_met = mission
+        .get("acceptance_criteria")
+        .and_then(Value::as_array)
+        .map(|criteria| {
+            criteria
+                .iter()
+                .filter(|criterion| {
+                    criterion
+                        .get("verification_gate_ids")
+                        .and_then(Value::as_array)
+                        .is_some_and(|gate_ids| {
+                            !gate_ids.is_empty()
+                                && gate_ids.iter().all(|gate_id| {
+                                    gate_id
+                                        .as_str()
+                                        .is_some_and(|id| passed_gate_ids.contains(id))
+                                })
+                        })
+                })
+                .count()
+        })
+        .unwrap_or_default();
     let verification_state = if failed_gates > 0 {
         "failed"
     } else if gate_total > 0 && passed_gates == gate_total {
@@ -1771,7 +1807,7 @@ fn harness_durable_mission_row_from_value(
         status_label: humanize_harness_token(status_key),
         gate_status_key: verification_state.to_string(),
         gate_label: format!("{passed_gates}/{gate_total} gates"),
-        acceptance_label: format!("0/{acceptance_total}"),
+        acceptance_label: format!("{acceptance_met}/{acceptance_total}"),
         plan_progress,
         tool_budget: format!("{consumed_tool_calls}/{max_tool_calls}"),
         memory_hits,
@@ -2515,6 +2551,7 @@ pub(super) async fn handle_ops_dashboard_harness_create_mission_draft(
         "schema_version": 1,
         "mission_id": mission_id.as_str(),
         "session_key": session_key.as_str(),
+        "proposal_id": proposal_id,
         "response_id": null,
         "goal": format!("{proposal_id} {proposal_title}: {proposal_goal}"),
         "latest_output_summary": "Draft mission created from the Tau harness New Mission action.",
@@ -2649,6 +2686,144 @@ pub(super) async fn handle_ops_dashboard_harness_create_mission_draft(
             "mission_status",
         ),
         sanitize_harness_token(&mission_id)
+    );
+    Redirect::to(redirect_path.as_str()).into_response()
+}
+
+pub(super) async fn handle_ops_dashboard_harness_start_mission(
+    State(state): State<Arc<GatewayOpenResponsesServerState>>,
+    AxumPath(mission_id): AxumPath<String>,
+    Query(controls): Query<OpsShellControlsQuery>,
+) -> Response {
+    let mission_id = sanitize_harness_token(&mission_id);
+    let session_key = controls
+        .requested_session_key()
+        .map(sanitize_session_key)
+        .unwrap_or_else(|| DEFAULT_SESSION_KEY.to_string());
+    let mission_path = state
+        .config
+        .state_dir
+        .join("ops-harness")
+        .join("missions")
+        .join(&mission_id)
+        .join("mission.json");
+    let selected_proposal_id = match std::fs::read_to_string(&mission_path)
+        .ok()
+        .and_then(|mission_json| serde_json::from_str::<Value>(&mission_json).ok())
+        .and_then(|mission| resolve_harness_mission_proposal_id(&mission, &controls))
+    {
+        Some(proposal_id) => proposal_id,
+        None => controls
+            .requested_harness_proposal_id()
+            .map(sanitize_harness_token)
+            .unwrap_or_else(|| "unknown".to_string()),
+    };
+
+    let mut mission = match std::fs::read_to_string(&mission_path)
+        .ok()
+        .and_then(|mission_json| serde_json::from_str::<Value>(&mission_json).ok())
+    {
+        Some(mission) => mission,
+        None => {
+            let redirect_path = format!(
+                "{}&mission_id={mission_id}",
+                build_ops_harness_redirect_path(
+                    controls.theme(),
+                    controls.sidebar_state(),
+                    session_key.as_str(),
+                    selected_proposal_id.as_str(),
+                    "start_failed",
+                    "mission_status",
+                )
+            );
+            return Redirect::to(redirect_path.as_str()).into_response();
+        }
+    };
+
+    let Some(proposal_id) = resolve_harness_mission_proposal_id(&mission, &controls) else {
+        record_harness_mission_start_failure(
+            &mut mission,
+            "Mission is missing a known proposal id.",
+            now_unix_ms(),
+        );
+        let _ = serde_json::to_vec_pretty(&mission)
+            .map_err(std::io::Error::other)
+            .and_then(|payload| std::fs::write(&mission_path, payload));
+        let redirect_path = format!(
+            "{}&mission_id={mission_id}",
+            build_ops_harness_redirect_path(
+                controls.theme(),
+                controls.sidebar_state(),
+                session_key.as_str(),
+                selected_proposal_id.as_str(),
+                "start_failed",
+                "mission_status",
+            )
+        );
+        return Redirect::to(redirect_path.as_str()).into_response();
+    };
+
+    let (mission_status, audit_result) = if let Some((result, final_learning_output)) =
+        read_completed_harness_self_improvement_result(&state.config.state_dir, &proposal_id)
+    {
+        record_harness_mission_start_result(
+            &mut mission,
+            &proposal_id,
+            &result,
+            now_unix_ms(),
+            true,
+            final_learning_output,
+        );
+        ("mission_completed", "completed".to_string())
+    } else {
+        let request = build_harness_self_improvement_request(&state.config.state_dir, &proposal_id);
+        match state.config.ops_harness_self_improvement.dry_run(request) {
+            Ok(result) => {
+                let passed = result.result_key == "passed";
+                record_harness_mission_start_result(
+                    &mut mission,
+                    &proposal_id,
+                    &result,
+                    now_unix_ms(),
+                    false,
+                    None,
+                );
+                if passed {
+                    ("mission_started", result.result_key)
+                } else {
+                    ("mission_blocked", result.result_key)
+                }
+            }
+            Err(error) => {
+                let error_summary = error.to_string();
+                record_harness_mission_start_failure(&mut mission, &error_summary, now_unix_ms());
+                ("start_failed", "failed".to_string())
+            }
+        }
+    };
+
+    let write_status = serde_json::to_vec_pretty(&mission)
+        .map_err(std::io::Error::other)
+        .and_then(|payload| std::fs::write(&mission_path, payload))
+        .map(|()| mission_status)
+        .unwrap_or("start_failed");
+    append_harness_audit_record(
+        &state.config.state_dir,
+        &proposal_id,
+        "start-mission",
+        &audit_result,
+    );
+
+    let redirect_path = format!(
+        "{}&mission_id={mission_id}",
+        build_ops_harness_redirect_path(
+            controls.theme(),
+            controls.sidebar_state(),
+            session_key.as_str(),
+            proposal_id.as_str(),
+            write_status,
+            "mission_status",
+        )
     );
     Redirect::to(redirect_path.as_str()).into_response()
 }
@@ -3109,6 +3284,378 @@ fn canonical_harness_fixture_path() -> PathBuf {
 
 fn harness_artifact_dir(state_dir: &Path) -> PathBuf {
     state_dir.join("ops-harness").join("m334")
+}
+
+fn resolve_harness_mission_proposal_id(
+    mission: &Value,
+    controls: &OpsShellControlsQuery,
+) -> Option<String> {
+    mission
+        .get("proposal_id")
+        .and_then(Value::as_str)
+        .or_else(|| controls.requested_harness_proposal_id())
+        .or_else(|| {
+            mission
+                .get("goal")
+                .and_then(Value::as_str)
+                .and_then(|goal| goal.split_whitespace().find(|part| part.starts_with("PR-")))
+        })
+        .map(sanitize_harness_token)
+        .filter(|proposal_id| find_ops_harness_proposal(proposal_id).is_some())
+}
+
+fn read_completed_harness_self_improvement_result(
+    state_dir: &Path,
+    proposal_id: &str,
+) -> Option<(GatewayOpsHarnessSelfImprovementResult, Option<Value>)> {
+    let mission_path = state_dir
+        .join("ops-harness")
+        .join("self-improvement")
+        .join(proposal_id)
+        .join("mission.json");
+    let mission_json = std::fs::read_to_string(&mission_path).ok()?;
+    let mission = serde_json::from_str::<Value>(&mission_json).ok()?;
+    if mission.get("status").and_then(Value::as_str) != Some("completed") {
+        return None;
+    }
+    let proposal = find_ops_harness_proposal(proposal_id)?;
+    let final_learning_output = mission.get("final_learning_output").cloned();
+    let summary = final_learning_output
+        .as_ref()
+        .and_then(|output| output.get("summary"))
+        .and_then(Value::as_str)
+        .or_else(|| mission.get("latest_output_summary").and_then(Value::as_str))
+        .unwrap_or("Existing completed self-improvement mission proof linked.")
+        .to_string();
+    let mission_id = mission
+        .get("mission_id")
+        .and_then(Value::as_str)
+        .unwrap_or(proposal.mission_id)
+        .to_string();
+    Some((
+        GatewayOpsHarnessSelfImprovementResult {
+            proposal_id: proposal_id.to_string(),
+            mission_id,
+            target_path: proposal.target_path.to_string(),
+            result_key: "completed".to_string(),
+            summary,
+            artifact_path: Some(mission_path),
+            applied: true,
+        },
+        final_learning_output,
+    ))
+}
+
+fn record_harness_mission_start_result(
+    mission: &mut Value,
+    proposal_id: &str,
+    result: &GatewayOpsHarnessSelfImprovementResult,
+    now: u64,
+    completed_proof: bool,
+    final_learning_output: Option<Value>,
+) {
+    let passed = completed_proof || result.result_key == "passed";
+    let checkpoint_id = format!("start-{now}");
+    mission["proposal_id"] = json!(proposal_id);
+    mission["linked_self_improvement_mission_id"] = json!(result.mission_id.as_str());
+    mission["status"] = json!(if completed_proof {
+        "completed"
+    } else if passed {
+        "awaiting_approval"
+    } else {
+        "blocked"
+    });
+    mission["latest_output_summary"] = json!(if completed_proof {
+        result.summary.clone()
+    } else if passed {
+        "Mission started through the coding-agent self-improvement dry-run; operator approval is required before apply.".to_string()
+    } else {
+        format!("Mission start dry-run blocked: {}", result.summary)
+    });
+    mission["updated_unix_ms"] = json!(now);
+    if let Some(budget) = mission.get_mut("tool_budget") {
+        let consumed = budget
+            .get("consumed_tool_calls")
+            .and_then(Value::as_u64)
+            .unwrap_or_default()
+            .saturating_add(1);
+        budget["consumed_tool_calls"] = json!(consumed);
+    }
+    set_harness_mission_plan_status(mission, "clarify-goal", "completed");
+    set_harness_mission_plan_status(mission, "write-plan-dag", "completed");
+    set_harness_mission_plan_status(
+        mission,
+        "execute-with-budget",
+        if passed { "completed" } else { "blocked" },
+    );
+    if completed_proof {
+        set_harness_mission_plan_status(mission, "verify-gates", "completed");
+        set_harness_mission_plan_status(mission, "write-final-learning", "completed");
+    }
+    set_harness_mission_gate_status(
+        mission,
+        "VG-PLAN",
+        "passed",
+        json!({ "proposal_id": proposal_id, "mission_id": result.mission_id.as_str() }),
+    );
+    set_harness_mission_gate_status(
+        mission,
+        "VG-EXECUTE",
+        if passed { "passed" } else { "failed" },
+        json!({
+            "proposal_id": proposal_id,
+            "target_path": result.target_path.as_str(),
+            "result_key": result.result_key.as_str(),
+            "summary": result.summary.as_str(),
+        }),
+    );
+    if completed_proof {
+        set_harness_mission_gate_status(
+            mission,
+            "VG-LEARN",
+            "passed",
+            json!({
+                "proposal_id": proposal_id,
+                "linked_mission_id": result.mission_id.as_str(),
+                "summary": result.summary.as_str(),
+            }),
+        );
+        if let Some(final_learning_output) = final_learning_output {
+            mission["final_learning_output"] = final_learning_output;
+        }
+    }
+    upsert_harness_mission_array_object(
+        mission,
+        "memory_hits",
+        "key",
+        format!("learning:{proposal_id}").as_str(),
+        json!({
+            "key": format!("learning:{proposal_id}"),
+            "summary": result.summary.as_str(),
+            "score": 0.85,
+            "source_event_key": proposal_id,
+            "used_in_plan_node_ids": ["execute-with-budget"]
+        }),
+    );
+    mission["memory_recall"] = json!({
+        "query": format!("proposal:{proposal_id} harness mission start"),
+        "status": "used_hits",
+        "checked_unix_ms": now,
+        "rationale": "Mission start used the selected proposal learning record and coding-agent dry-run result.",
+        "hit_keys": [format!("learning:{proposal_id}")]
+    });
+    upsert_harness_mission_array_object(
+        mission,
+        "tool_evidence",
+        "tool_call_id",
+        format!("tool-{proposal_id}-dry-run-{now}").as_str(),
+        json!({
+            "tool_call_id": format!("tool-{proposal_id}-dry-run-{now}"),
+            "plan_node_id": "execute-with-budget",
+            "tool_name": if completed_proof {
+                "self_improvement.completed_proof"
+            } else {
+                "self_modification.dry_run"
+            },
+            "status": if passed { "succeeded" } else { "blocked" },
+            "started_unix_ms": now,
+            "completed_unix_ms": now,
+            "runtime_ms": 0,
+            "cost_usd": null,
+            "summary": result.summary.as_str(),
+            "artifact_ids": ["self-improvement-dry-run"],
+            "verification_gate_ids": ["VG-EXECUTE"]
+        }),
+    );
+    if let Some(path) = result.artifact_path.as_ref() {
+        upsert_harness_mission_array_object(
+            mission,
+            "artifacts",
+            "artifact_id",
+            if completed_proof {
+                "self-improvement-proof"
+            } else {
+                "self-improvement-dry-run"
+            },
+            json!({
+                "artifact_id": if completed_proof {
+                    "self-improvement-proof"
+                } else {
+                    "self-improvement-dry-run"
+                },
+                "kind": if completed_proof {
+                    "coding-agent-completed-proof"
+                } else {
+                    "coding-agent-dry-run"
+                },
+                "path": path.display().to_string(),
+                "summary": if completed_proof {
+                    "Existing completed self-improvement mission proof."
+                } else {
+                    "Coding-agent self-improvement dry-run evidence."
+                }
+            }),
+        );
+    }
+    push_harness_mission_array_value(
+        mission,
+        "checkpoints",
+        json!({
+            "checkpoint_id": checkpoint_id,
+            "summary": if completed_proof {
+                "Started mission by linking existing completed self-improvement proof."
+            } else if passed {
+                "Started mission and completed coding-agent dry-run; waiting for operator approval."
+            } else {
+                "Started mission but coding-agent dry-run blocked execution."
+            },
+            "created_unix_ms": now,
+            "pending_plan_node_ids": if completed_proof {
+                json!([])
+            } else if passed {
+                json!(["verify-gates", "write-final-learning"])
+            } else {
+                json!(["execute-with-budget"])
+            }
+        }),
+    );
+    mission["recovery_state"] = if completed_proof {
+        Value::Null
+    } else {
+        json!({
+        "reason": if passed {
+            "Coding-agent dry-run completed; operator approval is required before apply."
+        } else {
+            "Coding-agent dry-run blocked the mission start."
+        },
+        "next_action": if passed {
+            "approve or reject the self-improvement proposal"
+        } else {
+            "inspect dry-run evidence before retry"
+        },
+        "retry_count": 0,
+        "last_checkpoint_id": checkpoint_id,
+        })
+    };
+    upsert_harness_mission_array_object(
+        mission,
+        "improvement_proposals",
+        "proposal_id",
+        proposal_id,
+        json!({
+            "proposal_id": proposal_id,
+            "linked_mission_id": result.mission_id.as_str(),
+            "target_path": result.target_path.as_str(),
+            "status": if completed_proof {
+                "applied"
+            } else if passed {
+                "dry_run_recorded"
+            } else {
+                "blocked"
+            },
+            "summary": result.summary.as_str()
+        }),
+    );
+}
+
+fn record_harness_mission_start_failure(mission: &mut Value, error_summary: &str, now: u64) {
+    let checkpoint_id = format!("start-failed-{now}");
+    mission["status"] = json!("blocked");
+    mission["latest_output_summary"] = json!(format!("Mission start failed: {error_summary}"));
+    mission["updated_unix_ms"] = json!(now);
+    set_harness_mission_plan_status(mission, "clarify-goal", "completed");
+    set_harness_mission_plan_status(mission, "write-plan-dag", "completed");
+    set_harness_mission_plan_status(mission, "execute-with-budget", "blocked");
+    set_harness_mission_gate_status(
+        mission,
+        "VG-PLAN",
+        "passed",
+        json!({ "checked_unix_ms": now }),
+    );
+    set_harness_mission_gate_status(
+        mission,
+        "VG-EXECUTE",
+        "failed",
+        json!({ "error": error_summary, "checked_unix_ms": now }),
+    );
+    push_harness_mission_array_value(
+        mission,
+        "checkpoints",
+        json!({
+            "checkpoint_id": checkpoint_id,
+            "summary": "Mission start failed before coding-agent dry-run completed.",
+            "created_unix_ms": now,
+            "pending_plan_node_ids": ["execute-with-budget"]
+        }),
+    );
+    mission["recovery_state"] = json!({
+        "reason": error_summary,
+        "next_action": "fix mission start blocker before retry",
+        "retry_count": 1,
+        "last_checkpoint_id": checkpoint_id,
+    });
+}
+
+fn set_harness_mission_plan_status(mission: &mut Value, node_id: &str, status: &str) {
+    if let Some(nodes) = mission.get_mut("plan_dag").and_then(Value::as_array_mut) {
+        for node in nodes {
+            if node.get("id").and_then(Value::as_str) == Some(node_id) {
+                node["status"] = json!(status);
+            }
+        }
+    }
+}
+
+fn set_harness_mission_gate_status(
+    mission: &mut Value,
+    gate_id: &str,
+    status: &str,
+    evidence: Value,
+) {
+    if let Some(gates) = mission
+        .get_mut("verification_gates")
+        .and_then(Value::as_array_mut)
+    {
+        for gate in gates {
+            if gate.get("id").and_then(Value::as_str) == Some(gate_id) {
+                gate["status"] = json!(status);
+                gate["evidence"] = evidence.clone();
+            }
+        }
+    }
+}
+
+fn push_harness_mission_array_value(mission: &mut Value, field: &str, value: Value) {
+    if let Some(values) = mission.get_mut(field).and_then(Value::as_array_mut) {
+        values.push(value);
+        return;
+    }
+    if let Some(object) = mission.as_object_mut() {
+        object.insert(field.to_string(), json!([value]));
+    }
+}
+
+fn upsert_harness_mission_array_object(
+    mission: &mut Value,
+    field: &str,
+    id_field: &str,
+    id_value: &str,
+    value: Value,
+) {
+    if let Some(values) = mission.get_mut(field).and_then(Value::as_array_mut) {
+        if let Some(existing) = values
+            .iter_mut()
+            .find(|candidate| candidate.get(id_field).and_then(Value::as_str) == Some(id_value))
+        {
+            *existing = value;
+        } else {
+            values.push(value);
+        }
+        return;
+    }
+    if let Some(object) = mission.as_object_mut() {
+        object.insert(field.to_string(), json!([value]));
+    }
 }
 
 fn append_harness_audit_record(state_dir: &Path, proposal_id: &str, action: &str, result: &str) {

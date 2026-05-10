@@ -6,12 +6,13 @@ use super::{
     TauOpsDashboardAuthMode, TauOpsDashboardChatMessageRow, TauOpsDashboardChatSessionOptionRow,
     TauOpsDashboardChatSnapshot, TauOpsDashboardCommandCenterSnapshot,
     TauOpsDashboardConnectorHealthRow, TauOpsDashboardHarnessAuditRow,
-    TauOpsDashboardHarnessBenchmarkCategoryRow, TauOpsDashboardHarnessProofRow,
-    TauOpsDashboardHarnessSelfImprovementProof, TauOpsDashboardHarnessSnapshot,
-    TauOpsDashboardJobRow, TauOpsDashboardMemoryGraphEdgeRow, TauOpsDashboardMemoryGraphNodeRow,
-    TauOpsDashboardRoute, TauOpsDashboardSessionGraphEdgeRow, TauOpsDashboardSessionGraphNodeRow,
-    TauOpsDashboardSessionTimelineRow, TauOpsDashboardShellContext, TauOpsDashboardSidebarState,
-    TauOpsDashboardTheme, TauOpsDashboardToolInventoryRow, TauOpsDashboardToolInvocationRow,
+    TauOpsDashboardHarnessBenchmarkCategoryRow, TauOpsDashboardHarnessMissionRow,
+    TauOpsDashboardHarnessProofRow, TauOpsDashboardHarnessSelfImprovementProof,
+    TauOpsDashboardHarnessSnapshot, TauOpsDashboardJobRow, TauOpsDashboardMemoryGraphEdgeRow,
+    TauOpsDashboardMemoryGraphNodeRow, TauOpsDashboardRoute, TauOpsDashboardSessionGraphEdgeRow,
+    TauOpsDashboardSessionGraphNodeRow, TauOpsDashboardSessionTimelineRow,
+    TauOpsDashboardShellContext, TauOpsDashboardSidebarState, TauOpsDashboardTheme,
+    TauOpsDashboardToolInventoryRow, TauOpsDashboardToolInvocationRow,
     TauOpsDashboardToolUsageHistogramRow,
 };
 use tau_tui::{render_operator_shell_frame, OperatorShellFrame};
@@ -1840,6 +1841,61 @@ fn functional_harness_self_improvement_proof_surfaces_completed_mission_state() 
         assert!(
             html.contains(marker),
             "missing completed self-improvement proof marker `{marker}`"
+        );
+    }
+}
+
+#[test]
+fn functional_harness_draft_mission_exposes_start_action() {
+    let harness = TauOpsDashboardHarnessSnapshot {
+        selected_proposal_id: "PR-045".to_string(),
+        mission_rows: vec![TauOpsDashboardHarnessMissionRow {
+            mission_id: "mission-draft-123".to_string(),
+            title: "PR-045 Skill patch for benchmark artifact naming".to_string(),
+            status_key: "draft".to_string(),
+            status_label: "Draft".to_string(),
+            gate_status_key: "pending".to_string(),
+            gate_label: "0/3 gates".to_string(),
+            acceptance_label: "0/3".to_string(),
+            plan_progress: 0,
+            tool_budget: "0/40".to_string(),
+            memory_hits: 0,
+            verification_state: "pending".to_string(),
+            last_checkpoint: "Draft mission saved before execution.".to_string(),
+            artifact_count: 1,
+        }],
+        ..TauOpsDashboardHarnessSnapshot::default()
+    };
+    let context = TauOpsDashboardShellContext {
+        active_route: TauOpsDashboardRoute::Harness,
+        chat: TauOpsDashboardChatSnapshot {
+            active_session_key: "ops-harness-context".to_string(),
+            ..TauOpsDashboardChatSnapshot::default()
+        },
+        harness,
+        ..TauOpsDashboardShellContext::default()
+    };
+    let html = render_tau_ops_dashboard_shell_with_context(context);
+
+    for marker in [
+        "id=\"tau-ops-harness-start-mission-form-0\"",
+        "/ops/harness/missions/mission-draft-123/start?theme=dark",
+        "sidebar=expanded",
+        "session=ops-harness-context",
+        "proposal_id=PR-045",
+        "method=\"post\"",
+        "data-action-contract=\"mission-start-dry-run\"",
+        "data-preserves-shell-context=\"true\"",
+        "id=\"tau-ops-harness-start-mission-0\"",
+        "type=\"submit\" data-action=\"start-mission\"",
+        "data-mission-id=\"mission-draft-123\"",
+        "data-action-contract=\"coding-agent-dry-run\"",
+        "data-mission-state-chip=\"draft\"",
+        "data-mission-gate-chip=\"pending\"",
+    ] {
+        assert!(
+            html.contains(marker),
+            "draft mission should expose start action marker `{marker}`"
         );
     }
 }

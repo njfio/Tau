@@ -1905,6 +1905,45 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
         .map(|(index, row)| {
             let row_id = format!("tau-ops-harness-mission-row-{index}");
             let plan_progress = row.plan_progress.to_string();
+            let row_start_form_id = format!("tau-ops-harness-start-mission-form-{index}");
+            let row_start_button_id = format!("tau-ops-harness-start-mission-{index}");
+            let row_start_action = format!(
+                "/ops/harness/missions/{}/start?theme={theme_attr}&sidebar={sidebar_state_attr}&session={}&proposal_id={}",
+                row.mission_id,
+                context.chat.active_session_key.clone(),
+                harness_selected_proposal_id
+            );
+            let row_action = if row.status_key == "draft" {
+                leptos::either::Either::Left(view! {
+                    <form
+                        id=row_start_form_id
+                        action=row_start_action
+                        method="post"
+                        data-action-contract="mission-start-dry-run"
+                        data-preserves-shell-context="true"
+                    >
+                        <button
+                            id=row_start_button_id
+                            type="submit"
+                            data-action="start-mission"
+                            data-mission-id=row.mission_id.clone()
+                            data-action-contract="coding-agent-dry-run"
+                        >
+                            "Start"
+                        </button>
+                    </form>
+                })
+            } else {
+                leptos::either::Either::Right(view! {
+                    <span
+                        class="tau-harness-row-action-status"
+                        data-action="mission-state"
+                        data-action-state=row.status_key.clone()
+                    >
+                        {row.status_label.clone()}
+                    </span>
+                })
+            };
             view! {
                 <tr
                     id=row_id
@@ -1915,10 +1954,11 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                 >
                     <td data-mission-summary="inline-status">
                         <span class="tau-harness-mission-title">{row.title.clone()}</span>
-                        <span class="tau-harness-mission-meta" data-compact-mission-meta="status-gates">
+                        <div class="tau-harness-mission-meta" data-compact-mission-meta="status-gates">
                             <span class="tau-harness-status-chip" data-mission-state-chip=row.status_key.clone()>{row.status_label.clone()}</span>
                             <span class="tau-harness-status-chip" data-mission-gate-chip=row.gate_status_key.clone()>{row.gate_label.clone()}</span>
-                        </span>
+                            {row_action}
+                        </div>
                     </td>
                     <td>{row.acceptance_label.clone()}</td>
                     <td><meter min="0" max="100" value=plan_progress.clone()>{format!("{plan_progress}%")}</meter></td>
@@ -6395,9 +6435,24 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             }
                             #tau-ops-harness-missions-table .tau-harness-mission-meta {
                                 display: flex;
+                                align-items: center;
                                 flex-wrap: wrap;
                                 gap: 5px;
                                 margin-top: 6px;
+                            }
+                            #tau-ops-harness-missions-table .tau-harness-mission-meta form {
+                                margin: 0;
+                            }
+                            #tau-ops-harness-missions-table [data-action="start-mission"] {
+                                min-height: 22px;
+                                padding: 2px 8px;
+                                background: linear-gradient(180deg, #1d4f68, #173b4e);
+                                border-color: rgba(123, 214, 232, .42);
+                                font-size: .68rem;
+                            }
+                            #tau-ops-harness-missions-table .tau-harness-row-action-status {
+                                color: var(--tau-harness-dim);
+                                font-size: .65rem;
                             }
                             #tau-ops-harness-active-missions[data-left-table-fit="compact-no-overflow"] #tau-ops-harness-missions-table th:nth-child(n+4),
                             #tau-ops-harness-active-missions[data-left-table-fit="compact-no-overflow"] #tau-ops-harness-missions-table td:nth-child(n+4) {

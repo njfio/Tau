@@ -294,6 +294,10 @@ pub(super) fn build_gateway_openresponses_router(
             post(handle_ops_dashboard_harness_create_mission_draft),
         )
         .route(
+            OPS_DASHBOARD_HARNESS_START_MISSION_ENDPOINT,
+            post(handle_ops_dashboard_harness_start_mission),
+        )
+        .route(
             OPS_DASHBOARD_HARNESS_PROPOSAL_ACTION_ENDPOINT,
             post(handle_ops_dashboard_harness_proposal_action),
         )

@@ -420,6 +420,97 @@ async fn integration_ops_harness_proposal_actions_delegate_dry_run_and_approved_
         .build()
         .expect("build no-redirect client");
 
+    let draft = client
+        .post(format!("http://{addr}/ops/harness/missions/draft"))
+        .query(&[
+            ("theme", "light"),
+            ("sidebar", "collapsed"),
+            ("session", "ops-harness-context"),
+            ("proposal_id", "PR-044"),
+        ])
+        .send()
+        .await
+        .expect("create mission draft");
+    assert_eq!(draft.status(), StatusCode::SEE_OTHER);
+    let draft_location = draft
+        .headers()
+        .get(reqwest::header::LOCATION)
+        .expect("draft redirect")
+        .to_str()
+        .expect("draft location");
+    let mission_id = draft_location
+        .split("mission_id=")
+        .nth(1)
+        .and_then(|value| value.split('&').next())
+        .expect("mission id from draft redirect")
+        .to_string();
+    let start = client
+        .post(format!(
+            "http://{addr}/ops/harness/missions/{mission_id}/start"
+        ))
+        .query(&[
+            ("theme", "light"),
+            ("sidebar", "collapsed"),
+            ("session", "ops-harness-context"),
+            ("proposal_id", "PR-044"),
+        ])
+        .send()
+        .await
+        .expect("start mission draft");
+    assert_eq!(start.status(), StatusCode::SEE_OTHER);
+    let start_location = start
+        .headers()
+        .get(reqwest::header::LOCATION)
+        .expect("start redirect")
+        .to_str()
+        .expect("start location");
+    assert!(start_location.contains("mission_status=mission_started"));
+    assert!(start_location.contains("theme=light"));
+    assert!(start_location.contains("sidebar=collapsed"));
+    assert!(start_location.contains("session=ops-harness-context"));
+    assert!(start_location.contains("proposal_id=PR-044"));
+    assert!(start_location.contains(&format!("mission_id={mission_id}")));
+    let mission_path = state_dir
+        .join("ops-harness")
+        .join("missions")
+        .join(&mission_id)
+        .join("mission.json");
+    let mission: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(&mission_path).expect("read started mission"),
+    )
+    .expect("started mission json");
+    assert_eq!(mission["status"], "awaiting_approval");
+    assert_eq!(mission["proposal_id"], "PR-044");
+    assert_eq!(
+        mission["linked_self_improvement_mission_id"],
+        "mission-PR-044"
+    );
+    assert_eq!(mission["verification_gates"][0]["status"], "passed");
+    assert_eq!(mission["verification_gates"][1]["status"], "passed");
+    assert!(mission["final_learning_output"].is_null());
+    assert!(mission["tool_evidence"]
+        .as_array()
+        .expect("tool evidence")
+        .iter()
+        .any(|tool| tool["tool_name"] == "self_modification.dry_run"));
+    assert!(mission["recovery_state"]["next_action"]
+        .as_str()
+        .expect("next action")
+        .contains("approve"));
+    let started_harness = client
+        .get(format!("http://{addr}{start_location}"))
+        .send()
+        .await
+        .expect("load started harness");
+    assert_eq!(started_harness.status(), StatusCode::OK);
+    let started_harness_body = started_harness.text().await.expect("started harness body");
+    assert!(started_harness_body.contains(
+        "id=\"tau-ops-harness-route-action\" data-route-action-key=\"mission-start\" data-route-action-label=\"Mission Started\""
+    ));
+    assert!(started_harness_body.contains(&format!("data-mission-id=\"{mission_id}\"")));
+    assert!(started_harness_body.contains("data-status=\"awaiting_approval\""));
+    assert!(started_harness_body.contains("data-mission-state-chip=\"awaiting_approval\""));
+
     let dry_run = client
         .post(format!(
             "http://{addr}/ops/harness/proposals/PR-044/dry-run"
@@ -522,6 +613,7 @@ async fn integration_ops_harness_proposal_actions_delegate_dry_run_and_approved_
 
     let audit_log =
         std::fs::read_to_string(state_dir.join("ops-harness/audit.jsonl")).expect("audit log");
+    assert!(audit_log.contains("\"action\":\"start-mission\""));
     assert!(audit_log.contains("\"action\":\"dry-run\""));
     assert!(audit_log.contains("\"result\":\"passed\""));
     assert!(audit_log.contains("\"action\":\"apply\""));
@@ -575,6 +667,10 @@ async fn integration_ops_harness_proposal_registry_renders_selected_proposal() {
     .expect("write mission");
     let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
     let client = Client::new();
+    let no_redirect_client = Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .expect("build no-redirect client");
 
     let harness_response = client
         .get(format!(
@@ -616,6 +712,72 @@ async fn integration_ops_harness_proposal_registry_renders_selected_proposal() {
             "state-backed selected proposal queue rendered stale row `{stale_marker}`"
         );
     }
+
+    let draft = no_redirect_client
+        .post(format!("http://{addr}/ops/harness/missions/draft"))
+        .query(&[
+            ("theme", "dark"),
+            ("sidebar", "expanded"),
+            ("session", "default"),
+            ("proposal_id", "PR-045"),
+        ])
+        .send()
+        .await
+        .expect("create draft for completed proposal");
+    assert_eq!(draft.status(), StatusCode::SEE_OTHER);
+    let draft_location = draft
+        .headers()
+        .get(reqwest::header::LOCATION)
+        .expect("draft redirect")
+        .to_str()
+        .expect("draft location");
+    let mission_id = draft_location
+        .split("mission_id=")
+        .nth(1)
+        .and_then(|value| value.split('&').next())
+        .expect("draft mission id");
+    let start = no_redirect_client
+        .post(format!(
+            "http://{addr}/ops/harness/missions/{mission_id}/start"
+        ))
+        .query(&[
+            ("theme", "dark"),
+            ("sidebar", "expanded"),
+            ("session", "default"),
+            ("proposal_id", "PR-045"),
+        ])
+        .send()
+        .await
+        .expect("start completed proposal draft");
+    assert_eq!(start.status(), StatusCode::SEE_OTHER);
+    let start_location = start
+        .headers()
+        .get(reqwest::header::LOCATION)
+        .expect("start redirect")
+        .to_str()
+        .expect("start location");
+    assert!(start_location.contains("mission_status=mission_completed"));
+    assert!(start_location.contains(&format!("mission_id={mission_id}")));
+    let draft_mission_path = state_dir
+        .join("ops-harness")
+        .join("missions")
+        .join(mission_id)
+        .join("mission.json");
+    let draft_mission: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(&draft_mission_path).expect("read completed draft mission"),
+    )
+    .expect("completed draft mission json");
+    assert_eq!(draft_mission["status"], "completed");
+    assert_eq!(
+        draft_mission["linked_self_improvement_mission_id"],
+        "ops-harness-self-improve-pr-045"
+    );
+    assert_eq!(draft_mission["verification_gates"][2]["status"], "passed");
+    assert!(draft_mission["recovery_state"].is_null());
+    assert_eq!(
+        draft_mission["final_learning_output"]["summary"],
+        "Applied PR-045 and updated curator state for LR-045."
+    );
 
     let diff_response = client
         .get(format!("http://{addr}/ops/harness/proposals/PR-045/diff"))
