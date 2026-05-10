@@ -68,6 +68,10 @@ pub(super) struct OpsShellControlsQuery {
     channel_action_reason: String,
     #[serde(default)]
     proposal_id: String,
+    #[serde(default)]
+    intent: String,
+    #[serde(default)]
+    view: String,
 }
 
 impl OpsShellControlsQuery {
@@ -121,6 +125,20 @@ impl OpsShellControlsQuery {
             None
         } else {
             Some(value)
+        }
+    }
+
+    pub(super) fn requested_harness_intent(&self) -> Option<&'static str> {
+        match self.intent.trim() {
+            "new-mission" => Some("new-mission"),
+            _ => None,
+        }
+    }
+
+    pub(super) fn requested_harness_view(&self) -> Option<&'static str> {
+        match self.view.trim() {
+            "history" => Some("history"),
+            _ => None,
         }
     }
 
@@ -680,6 +698,29 @@ mod tests {
             ..OpsShellControlsQuery::default()
         };
         assert_eq!(invalid.requested_memory_graph_filter_relation_type(), "all");
+    }
+
+    #[test]
+    fn unit_requested_harness_route_action_normalizes_supported_values() {
+        let intent = OpsShellControlsQuery {
+            intent: "new-mission".to_string(),
+            ..OpsShellControlsQuery::default()
+        };
+        assert_eq!(intent.requested_harness_intent(), Some("new-mission"));
+
+        let view = OpsShellControlsQuery {
+            view: "history".to_string(),
+            ..OpsShellControlsQuery::default()
+        };
+        assert_eq!(view.requested_harness_view(), Some("history"));
+
+        let invalid = OpsShellControlsQuery {
+            intent: "delete-all".to_string(),
+            view: "unknown".to_string(),
+            ..OpsShellControlsQuery::default()
+        };
+        assert_eq!(invalid.requested_harness_intent(), None);
+        assert_eq!(invalid.requested_harness_view(), None);
     }
 
     #[test]

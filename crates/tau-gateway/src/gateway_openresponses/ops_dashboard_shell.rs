@@ -683,6 +683,25 @@ fn build_ops_root_redirect_path(
     )
 }
 
+fn build_ops_harness_redirect_path(
+    theme: TauOpsDashboardTheme,
+    sidebar_state: TauOpsDashboardSidebarState,
+    session_key: &str,
+    proposal_id: &str,
+    status_key: &str,
+    status_param: &str,
+) -> String {
+    let session_key = sanitize_session_key(session_key);
+    let proposal_id = sanitize_harness_token(proposal_id);
+    let status_key = sanitize_harness_token(status_key);
+    let status_param = sanitize_harness_token(status_param);
+    format!(
+        "/ops/harness?theme={}&sidebar={}&session={session_key}&proposal_id={proposal_id}&{status_param}={status_key}",
+        theme.as_str(),
+        sidebar_state.as_str()
+    )
+}
+
 fn build_ops_session_detail_redirect_path(
     theme: TauOpsDashboardTheme,
     sidebar_state: TauOpsDashboardSidebarState,
@@ -1359,6 +1378,27 @@ pub(super) fn render_tau_ops_dashboard_shell_for_route(
     harness.runtime_model_label = state.config.model.clone();
     harness.runtime_transport_label = "gateway".to_string();
     harness.runtime_health_key = command_center.health_state.clone();
+    if matches!(route, TauOpsDashboardRoute::Harness) {
+        if controls.requested_harness_intent() == Some("new-mission") {
+            harness.route_action_key = "new-mission".to_string();
+            harness.route_action_label = "New Mission Draft".to_string();
+            harness.route_action_detail = format!(
+                "Session {} | selected {} | draft not submitted",
+                chat.active_session_key.clone(),
+                harness.selected_proposal_id
+            );
+            harness.route_action_count = harness.mission_rows.len();
+        } else if controls.requested_harness_view() == Some("history") {
+            harness.route_action_key = "history".to_string();
+            harness.route_action_label = "Applied History".to_string();
+            harness.route_action_detail = format!(
+                "{} audit records loaded from {}",
+                harness.audit_rows.len(),
+                harness.audit_source
+            );
+            harness.route_action_count = harness.audit_rows.len();
+        }
+    }
 
     Html(render_tau_ops_dashboard_shell_with_context(
         TauOpsDashboardShellContext {
@@ -2196,6 +2236,16 @@ pub(super) async fn handle_ops_dashboard_harness_run_benchmark(
         .requested_session_key()
         .map(sanitize_session_key)
         .unwrap_or_else(|| "default".to_string());
+    let proposal_id = controls
+        .requested_harness_proposal_id()
+        .map(sanitize_harness_token)
+        .filter(|proposal_id| find_ops_harness_proposal(proposal_id).is_some())
+        .or_else(|| {
+            list_ops_harness_proposals()
+                .first()
+                .map(|proposal| proposal.proposal_id.to_string())
+        })
+        .unwrap_or_else(|| "unknown".to_string());
     let memory_root = gateway_memory_store_root(&state.config.state_dir, session_key.as_str());
     let run_id = format!("gateway-harness-{}", now_unix_ms());
 
@@ -2217,12 +2267,36 @@ pub(super) async fn handle_ops_dashboard_harness_run_benchmark(
             if write_result.is_ok() {
                 let status = if proof.passed { "passed" } else { "failed" };
                 let task_count = proof.tasks.len();
-                format!("/ops/harness?benchmark_status={status}&benchmark_tasks={task_count}")
+                format!(
+                    "{}&benchmark_tasks={task_count}",
+                    build_ops_harness_redirect_path(
+                        controls.theme(),
+                        controls.sidebar_state(),
+                        session_key.as_str(),
+                        proposal_id.as_str(),
+                        status,
+                        "benchmark_status",
+                    )
+                )
             } else {
-                "/ops/harness?benchmark_status=artifact_write_failed".to_string()
+                build_ops_harness_redirect_path(
+                    controls.theme(),
+                    controls.sidebar_state(),
+                    session_key.as_str(),
+                    proposal_id.as_str(),
+                    "artifact_write_failed",
+                    "benchmark_status",
+                )
             }
         }
-        Err(_) => "/ops/harness?benchmark_status=failed".to_string(),
+        Err(_) => build_ops_harness_redirect_path(
+            controls.theme(),
+            controls.sidebar_state(),
+            session_key.as_str(),
+            proposal_id.as_str(),
+            "failed",
+            "benchmark_status",
+        ),
     };
 
     Redirect::to(redirect_path.as_str()).into_response()
@@ -2231,6 +2305,7 @@ pub(super) async fn handle_ops_dashboard_harness_run_benchmark(
 pub(super) async fn handle_ops_dashboard_harness_proposal_action(
     State(state): State<Arc<GatewayOpenResponsesServerState>>,
     AxumPath((proposal_id, action)): AxumPath<(String, String)>,
+    Query(controls): Query<OpsShellControlsQuery>,
 ) -> Response {
     let proposal_id = sanitize_harness_token(&proposal_id);
     let action = sanitize_harness_token(&action);
@@ -2365,7 +2440,18 @@ pub(super) async fn handle_ops_dashboard_harness_proposal_action(
                 .into_response();
         }
     };
-    let redirect_path = format!("/ops/harness?proposal_id={proposal_id}&proposal_status={status}");
+    let redirect_session_key = controls
+        .requested_session_key()
+        .map(sanitize_session_key)
+        .unwrap_or_else(|| DEFAULT_SESSION_KEY.to_string());
+    let redirect_path = build_ops_harness_redirect_path(
+        controls.theme(),
+        controls.sidebar_state(),
+        redirect_session_key.as_str(),
+        proposal_id.as_str(),
+        status,
+        "proposal_status",
+    );
     Redirect::to(redirect_path.as_str()).into_response()
 }
 

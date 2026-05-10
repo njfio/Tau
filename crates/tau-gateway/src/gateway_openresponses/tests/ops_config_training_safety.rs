@@ -100,9 +100,9 @@ async fn integration_spec_3756_c04_ops_harness_route_renders_benchmark_and_apply
         "<span data-topbar-field=\"health\">Unknown</span>",
         "id=\"tau-ops-harness-new-mission\" data-action=\"new-mission\" data-action-contract=\"context-preserving\" data-preserves-session=\"true\" data-preserves-proposal=\"true\" href=\"/ops/harness?theme=dark&amp;sidebar=expanded&amp;session=ops-harness-contract&amp;proposal_id=PR-044&amp;intent=new-mission\"",
         "id=\"tau-ops-harness-history\" data-action=\"history\" data-action-contract=\"context-preserving\" data-preserves-session=\"true\" data-preserves-proposal=\"true\" href=\"/ops/harness?theme=dark&amp;sidebar=expanded&amp;session=ops-harness-contract&amp;proposal_id=PR-044&amp;view=history\"",
-        "id=\"tau-ops-harness-run-benchmark-form\" action=\"/ops/harness/run-benchmark?session=ops-harness-contract\" method=\"post\" data-command=\"tau_agent_harness\"",
+        "id=\"tau-ops-harness-run-benchmark-form\" action=\"/ops/harness/run-benchmark?theme=dark&amp;sidebar=expanded&amp;session=ops-harness-contract&amp;proposal_id=PR-044\" method=\"post\" data-command=\"tau_agent_harness\" data-preserves-shell-context=\"true\"",
         "id=\"tau-ops-harness-conservative-policy\" data-policy=\"conservative-self-improvement\" data-allowed-targets=\"skill,config,prompt\" data-blocked-targets=\"source-code,safety-policy\"",
-        "id=\"tau-ops-harness-apply-form\" action=\"/ops/harness/proposals/PR-044/apply\" method=\"post\" data-approval-state=\"approval-required\"",
+        "id=\"tau-ops-harness-apply-form\" action=\"/ops/harness/proposals/PR-044/apply?theme=dark&amp;sidebar=expanded&amp;session=ops-harness-contract\" method=\"post\" data-approval-state=\"approval-required\"",
         "id=\"tau-ops-harness-action-apply\" type=\"submit\" data-action=\"apply\" data-action-tone=\"disabled\" data-disabled=\"true\" aria-disabled=\"true\" data-approval-required=\"true\" disabled",
         "id=\"tau-ops-harness-tui-companion\" data-component=\"TuiCompanion\" data-command=\"tau status\"",
     ] {
@@ -122,6 +122,40 @@ async fn integration_spec_3756_c04_ops_harness_route_renders_benchmark_and_apply
         "harness topbar should visibly expose gateway state dir"
     );
 
+    let history_response = client
+        .get(format!(
+            "http://{addr}/ops/harness?theme=dark&sidebar=expanded&session=ops-harness-contract&proposal_id=PR-044&view=history"
+        ))
+        .send()
+        .await
+        .expect("load ops harness history route");
+    assert_eq!(history_response.status(), StatusCode::OK);
+    let history_body = history_response
+        .text()
+        .await
+        .expect("read ops harness history body");
+    assert!(history_body.contains(
+        "id=\"tau-ops-harness-route-action\" data-route-action-key=\"history\" data-route-action-label=\"Applied History\""
+    ));
+    assert!(history_body.contains("data-route-action-visible=\"true\""));
+
+    let draft_response = client
+        .get(format!(
+            "http://{addr}/ops/harness?theme=dark&sidebar=expanded&session=ops-harness-contract&proposal_id=PR-044&intent=new-mission"
+        ))
+        .send()
+        .await
+        .expect("load ops harness new mission route");
+    assert_eq!(draft_response.status(), StatusCode::OK);
+    let draft_body = draft_response
+        .text()
+        .await
+        .expect("read ops harness new mission body");
+    assert!(draft_body.contains(
+        "id=\"tau-ops-harness-route-action\" data-route-action-key=\"new-mission\" data-route-action-label=\"New Mission Draft\""
+    ));
+    assert!(draft_body.contains("data-route-action-visible=\"true\""));
+
     handle.abort();
 }
 
@@ -138,6 +172,12 @@ async fn integration_spec_3756_c05_ops_harness_actions_execute_and_persist_proof
 
     let benchmark_response = client
         .post(format!("http://{addr}/ops/harness/run-benchmark"))
+        .query(&[
+            ("theme", "light"),
+            ("sidebar", "collapsed"),
+            ("session", "ops-harness-context"),
+            ("proposal_id", "PR-045"),
+        ])
         .send()
         .await
         .expect("run harness benchmark");
@@ -149,6 +189,10 @@ async fn integration_spec_3756_c05_ops_harness_actions_execute_and_persist_proof
         .to_str()
         .expect("location header is utf8");
     assert!(benchmark_location.contains("benchmark_status=passed"));
+    assert!(benchmark_location.contains("theme=light"));
+    assert!(benchmark_location.contains("sidebar=collapsed"));
+    assert!(benchmark_location.contains("session=ops-harness-context"));
+    assert!(benchmark_location.contains("proposal_id=PR-045"));
 
     let proof_path = state_dir.join("ops-harness/m334/latest.json");
     let proof_json = std::fs::read_to_string(&proof_path).expect("read benchmark proof");
@@ -158,10 +202,10 @@ async fn integration_spec_3756_c05_ops_harness_actions_execute_and_persist_proof
     assert_eq!(proof["passed"], true);
     assert_eq!(proof["tasks"].as_array().expect("task array").len(), 4);
 
-    let harness_memory_records = gateway_memory_store(&state_dir, "default")
+    let harness_memory_records = gateway_memory_store(&state_dir, "ops-harness-context")
         .list_latest_records(
             Some(&tau_memory::runtime::MemoryScopeFilter {
-                workspace_id: Some("default".to_string()),
+                workspace_id: Some("ops-harness-context".to_string()),
                 channel_id: Some("tau-agent-harness".to_string()),
                 actor_id: Some("tau".to_string()),
             }),
@@ -180,10 +224,11 @@ async fn integration_spec_3756_c05_ops_harness_actions_execute_and_persist_proof
         .summary
         .contains("repo_spec_to_pr_feature_delivery")));
 
-    let graph_endpoint = expand_session_template(GATEWAY_MEMORY_GRAPH_ENDPOINT, "default");
+    let graph_endpoint =
+        expand_session_template(GATEWAY_MEMORY_GRAPH_ENDPOINT, "ops-harness-context");
     let graph_response = client
         .get(format!(
-            "http://{addr}{graph_endpoint}?workspace_id=default&channel_id=tau-agent-harness&actor_id=tau&memory_type=decision"
+            "http://{addr}{graph_endpoint}?workspace_id=ops-harness-context&channel_id=tau-agent-harness&actor_id=tau&memory_type=decision"
         ))
         .bearer_auth("secret")
         .send()
@@ -281,6 +326,11 @@ async fn integration_ops_harness_proposal_actions_delegate_dry_run_and_approved_
         .post(format!(
             "http://{addr}/ops/harness/proposals/PR-044/dry-run"
         ))
+        .query(&[
+            ("theme", "light"),
+            ("sidebar", "collapsed"),
+            ("session", "ops-harness-context"),
+        ])
         .send()
         .await
         .expect("dry-run proposal");
@@ -292,6 +342,16 @@ async fn integration_ops_harness_proposal_actions_delegate_dry_run_and_approved_
         .to_str()
         .expect("dry-run location")
         .contains("proposal_status=dry_run_passed"));
+    let dry_run_location = dry_run
+        .headers()
+        .get(reqwest::header::LOCATION)
+        .expect("dry-run redirect")
+        .to_str()
+        .expect("dry-run location");
+    assert!(dry_run_location.contains("theme=light"));
+    assert!(dry_run_location.contains("sidebar=collapsed"));
+    assert!(dry_run_location.contains("session=ops-harness-context"));
+    assert!(dry_run_location.contains("proposal_id=PR-044"));
 
     let approve = client
         .post(format!(
@@ -310,7 +370,7 @@ async fn integration_ops_harness_proposal_actions_delegate_dry_run_and_approved_
     assert_eq!(harness_response.status(), StatusCode::OK);
     let harness_body = harness_response.text().await.expect("harness body");
     assert!(harness_body.contains(
-        "id=\"tau-ops-harness-apply-form\" action=\"/ops/harness/proposals/PR-044/apply\" method=\"post\" data-approval-state=\"approved\""
+        "id=\"tau-ops-harness-apply-form\" action=\"/ops/harness/proposals/PR-044/apply?theme=dark&amp;sidebar=expanded&amp;session=default\" method=\"post\" data-approval-state=\"approved\""
     ));
     assert!(harness_body.contains(
         "id=\"tau-ops-harness-action-apply\" type=\"submit\" data-action=\"apply\" data-action-tone=\"disabled\" data-disabled=\"false\" aria-disabled=\"false\""
@@ -318,6 +378,11 @@ async fn integration_ops_harness_proposal_actions_delegate_dry_run_and_approved_
 
     let apply = client
         .post(format!("http://{addr}/ops/harness/proposals/PR-044/apply"))
+        .query(&[
+            ("theme", "light"),
+            ("sidebar", "collapsed"),
+            ("session", "ops-harness-context"),
+        ])
         .send()
         .await
         .expect("apply proposal");
@@ -329,6 +394,16 @@ async fn integration_ops_harness_proposal_actions_delegate_dry_run_and_approved_
         .to_str()
         .expect("apply location")
         .contains("proposal_status=applied"));
+    let apply_location = apply
+        .headers()
+        .get(reqwest::header::LOCATION)
+        .expect("apply redirect")
+        .to_str()
+        .expect("apply location");
+    assert!(apply_location.contains("theme=light"));
+    assert!(apply_location.contains("sidebar=collapsed"));
+    assert!(apply_location.contains("session=ops-harness-context"));
+    assert!(apply_location.contains("proposal_id=PR-044"));
 
     let applied_harness_response = client
         .get(format!("http://{addr}/ops/harness"))
@@ -341,7 +416,7 @@ async fn integration_ops_harness_proposal_actions_delegate_dry_run_and_approved_
         .await
         .expect("applied harness body");
     assert!(applied_harness_body.contains(
-        "id=\"tau-ops-harness-apply-form\" action=\"/ops/harness/proposals/PR-044/apply\" method=\"post\" data-approval-state=\"applied\""
+        "id=\"tau-ops-harness-apply-form\" action=\"/ops/harness/proposals/PR-044/apply?theme=dark&amp;sidebar=expanded&amp;session=default\" method=\"post\" data-approval-state=\"applied\""
     ));
     assert!(applied_harness_body.contains(
         "id=\"tau-ops-harness-action-apply\" type=\"submit\" data-action=\"apply\" data-action-tone=\"disabled\" data-disabled=\"true\" aria-disabled=\"true\""
@@ -414,7 +489,7 @@ async fn integration_ops_harness_proposal_registry_renders_selected_proposal() {
     let harness_body = harness_response.text().await.expect("harness body");
     for marker in [
         "id=\"tau-ops-harness-self-improvement-window\" data-window=\"self-improvement-review-apply-flow\" data-window-order=\"3\" data-selected-proposal=\"PR-045\"",
-        "id=\"tau-ops-harness-approve-form\" action=\"/ops/harness/proposals/PR-045/approve\" method=\"post\"",
+        "id=\"tau-ops-harness-approve-form\" action=\"/ops/harness/proposals/PR-045/approve?theme=dark&amp;sidebar=expanded&amp;session=default\" method=\"post\"",
         "id=\"tau-ops-harness-proposal-detail\" data-proposal-id=\"PR-045\" data-learning-record=\"LR-045\" data-target-type=\"Skill\" data-target-path=\"skills/benchmark_artifacts/SKILL.md\"",
         "PR-045 Skill patch for benchmark artifact naming",
         "Add a skill rule for deterministic benchmark artifact naming.",

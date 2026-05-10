@@ -883,6 +883,10 @@ pub struct TauOpsDashboardHarnessSnapshot {
     pub proposal_queue_rows: Vec<TauOpsDashboardHarnessProposalQueueRow>,
     pub selected_proposal: TauOpsDashboardHarnessProposalDetail,
     pub self_improvement_proof: TauOpsDashboardHarnessSelfImprovementProof,
+    pub route_action_key: String,
+    pub route_action_label: String,
+    pub route_action_detail: String,
+    pub route_action_count: usize,
 }
 
 impl Default for TauOpsDashboardHarnessSnapshot {
@@ -1268,6 +1272,10 @@ impl Default for TauOpsDashboardHarnessSnapshot {
             ],
             selected_proposal: TauOpsDashboardHarnessProposalDetail::default(),
             self_improvement_proof: TauOpsDashboardHarnessSelfImprovementProof::default(),
+            route_action_key: "overview".to_string(),
+            route_action_label: "Overview".to_string(),
+            route_action_detail: String::new(),
+            route_action_count: 0,
         }
     }
 }
@@ -1523,29 +1531,40 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
         "false"
     };
     let harness_route_active = matches!(context.active_route, TauOpsDashboardRoute::Harness);
+    let harness_route_action_visible =
+        if harness_route_active && context.harness.route_action_key != "overview" {
+            "true"
+        } else {
+            "false"
+        };
+    let harness_route_action_hidden = harness_route_action_visible == "false";
     let harness_task_count = context.harness.task_count.to_string();
     let harness_pass_count = context.harness.pass_count.to_string();
     let harness_audit_row_count = context.harness.audit_rows.len().to_string();
-    let harness_benchmark_action = format!(
-        "/ops/harness/run-benchmark?session={}",
+    let harness_selected_proposal_id = context.harness.selected_proposal.proposal_id.clone();
+    let harness_action_query = format!(
+        "theme={theme_attr}&sidebar={sidebar_state_attr}&session={}",
         context.chat.active_session_key.clone()
     );
-    let harness_selected_proposal_id = context.harness.selected_proposal.proposal_id.clone();
+    let harness_benchmark_action = format!(
+        "/ops/harness/run-benchmark?theme={theme_attr}&sidebar={sidebar_state_attr}&session={}&proposal_id={}",
+        context.chat.active_session_key.clone(), harness_selected_proposal_id
+    );
     let harness_selected_approve_action = format!(
-        "/ops/harness/proposals/{}/approve",
-        harness_selected_proposal_id
+        "/ops/harness/proposals/{}/approve?{}",
+        harness_selected_proposal_id, harness_action_query
     );
     let harness_selected_reject_action = format!(
-        "/ops/harness/proposals/{}/reject",
-        harness_selected_proposal_id
+        "/ops/harness/proposals/{}/reject?{}",
+        harness_selected_proposal_id, harness_action_query
     );
     let harness_selected_dry_run_action = format!(
-        "/ops/harness/proposals/{}/dry-run",
-        harness_selected_proposal_id
+        "/ops/harness/proposals/{}/dry-run?{}",
+        harness_selected_proposal_id, harness_action_query
     );
     let harness_selected_apply_action = format!(
-        "/ops/harness/proposals/{}/apply",
-        harness_selected_proposal_id
+        "/ops/harness/proposals/{}/apply?{}",
+        harness_selected_proposal_id, harness_action_query
     );
     let harness_selected_diff_href = format!(
         "/ops/harness/proposals/{}/diff",
@@ -6135,6 +6154,22 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 gap: 8px;
                                 flex-wrap: wrap;
                             }
+                            #tau-ops-harness-route-action {
+                                border-left: 2px solid var(--tau-harness-cyan);
+                                color: var(--tau-harness-muted);
+                                display: grid;
+                                gap: 2px;
+                                margin-top: 6px;
+                                max-width: 760px;
+                                padding-left: 8px;
+                            }
+                            #tau-ops-harness-route-action strong {
+                                color: var(--tau-harness-text);
+                                font-size: .72rem;
+                            }
+                            #tau-ops-harness-route-action span {
+                                font-size: .66rem;
+                            }
                             .tau-harness-topbar-meta {
                                 display: flex;
                                 flex-wrap: wrap;
@@ -7118,6 +7153,18 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                         <span data-topbar-field="transport">{harness_runtime_transport_label.clone()}</span>
                                         <span data-topbar-field="health">{harness_runtime_health_label}</span>
                                     </div>
+                                    <section
+                                        id="tau-ops-harness-route-action"
+                                        data-route-action-key=context.harness.route_action_key.clone()
+                                        data-route-action-label=context.harness.route_action_label.clone()
+                                        data-route-action-count=context.harness.route_action_count
+                                        data-route-action-visible=harness_route_action_visible
+                                        hidden=harness_route_action_hidden
+                                        aria-live="polite"
+                                    >
+                                        <strong>{context.harness.route_action_label.clone()}</strong>
+                                        <span>{context.harness.route_action_detail.clone()}</span>
+                                    </section>
                                 </div>
                                 <nav aria-label="Mission harness actions">
                                     <a
@@ -7247,6 +7294,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                         action=harness_benchmark_action
                                         method="post"
                                         data-command="tau_agent_harness"
+                                        data-preserves-shell-context="true"
                                     >
                                         <button id="tau-ops-harness-run-benchmark" type="submit" data-action-tone="benchmark">"Run Benchmark"</button>
                                     </form>
@@ -7418,11 +7466,29 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     data-action-first-viewport="all-controls"
                                 >
                                     <h4>"Operator Actions"</h4>
-                                    <form id="tau-ops-harness-approve-form" action=harness_selected_approve_action method="post"><button id="tau-ops-harness-action-approve" type="submit" data-action="approve" data-action-tone="approve">"Approve"</button></form>
-                                    <form id="tau-ops-harness-reject-form" action=harness_selected_reject_action method="post"><button id="tau-ops-harness-action-reject" type="submit" data-action="reject" data-action-tone="reject">"Reject"</button></form>
-                                    <form id="tau-ops-harness-dry-run-form" action=harness_selected_dry_run_action method="post"><button id="tau-ops-harness-action-dry-run" type="submit" data-action="dry-run" data-action-tone="secondary">"Dry Run Again"</button></form>
+                                    <form id="tau-ops-harness-approve-form" action=harness_selected_approve_action method="post" data-preserves-shell-context="true">
+                                        <input id="tau-ops-harness-approve-theme" type="hidden" name="theme" value=theme_attr />
+                                        <input id="tau-ops-harness-approve-sidebar" type="hidden" name="sidebar" value=sidebar_state_attr />
+                                        <input id="tau-ops-harness-approve-session" type="hidden" name="session" value=context.chat.active_session_key.clone() />
+                                        <button id="tau-ops-harness-action-approve" type="submit" data-action="approve" data-action-tone="approve">"Approve"</button>
+                                    </form>
+                                    <form id="tau-ops-harness-reject-form" action=harness_selected_reject_action method="post" data-preserves-shell-context="true">
+                                        <input id="tau-ops-harness-reject-theme" type="hidden" name="theme" value=theme_attr />
+                                        <input id="tau-ops-harness-reject-sidebar" type="hidden" name="sidebar" value=sidebar_state_attr />
+                                        <input id="tau-ops-harness-reject-session" type="hidden" name="session" value=context.chat.active_session_key.clone() />
+                                        <button id="tau-ops-harness-action-reject" type="submit" data-action="reject" data-action-tone="reject">"Reject"</button>
+                                    </form>
+                                    <form id="tau-ops-harness-dry-run-form" action=harness_selected_dry_run_action method="post" data-preserves-shell-context="true">
+                                        <input id="tau-ops-harness-dry-run-theme" type="hidden" name="theme" value=theme_attr />
+                                        <input id="tau-ops-harness-dry-run-sidebar" type="hidden" name="sidebar" value=sidebar_state_attr />
+                                        <input id="tau-ops-harness-dry-run-session" type="hidden" name="session" value=context.chat.active_session_key.clone() />
+                                        <button id="tau-ops-harness-action-dry-run" type="submit" data-action="dry-run" data-action-tone="secondary">"Dry Run Again"</button>
+                                    </form>
                                     <a id="tau-ops-harness-action-view-diff" data-action="view-diff" data-action-tone="secondary" href=harness_selected_diff_href>"View Diff"</a>
-                                    <form id="tau-ops-harness-apply-form" action=harness_selected_apply_action method="post" data-approval-state=harness_selected_apply_state>
+                                    <form id="tau-ops-harness-apply-form" action=harness_selected_apply_action method="post" data-approval-state=harness_selected_apply_state data-preserves-shell-context="true">
+                                        <input id="tau-ops-harness-apply-theme" type="hidden" name="theme" value=theme_attr />
+                                        <input id="tau-ops-harness-apply-sidebar" type="hidden" name="sidebar" value=sidebar_state_attr />
+                                        <input id="tau-ops-harness-apply-session" type="hidden" name="session" value=context.chat.active_session_key.clone() />
                                         <button
                                             id="tau-ops-harness-action-apply"
                                             type="submit"
