@@ -2020,6 +2020,92 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     let harness_runtime_transport_label = context.harness.runtime_transport_label.clone();
     let harness_runtime_health_key = context.harness.runtime_health_key.clone();
     let harness_runtime_health_label = harness_queue_status_label(&harness_runtime_health_key);
+    let harness_selected_mission_is_durable = context
+        .harness
+        .detail_proof_artifact
+        .contains("/ops-harness/missions/");
+    let harness_selected_mission_start_action = format!(
+        "/ops/harness/missions/{}/start?theme={theme_attr}&sidebar={sidebar_state_attr}&session={}&proposal_id={}",
+        context.harness.detail_run_id.clone(),
+        context.chat.active_session_key.clone(),
+        harness_selected_proposal_id
+    );
+    let harness_selected_mission_actions = if harness_selected_mission_is_durable {
+        if context.harness.detail_status == "draft" {
+            view! {
+                <section
+                    id="tau-ops-harness-selected-mission-actions"
+                    data-selected-mission-id=context.harness.detail_run_id.clone()
+                    data-selected-mission-status=context.harness.detail_status.clone()
+                    data-selected-mission-action="start"
+                    data-next-status="mission_started"
+                    data-action-surface="proof-pane"
+                >
+                    <div>
+                        <h4>"Selected Mission"</h4>
+                        <p>{format!("{} is ready to start from this proof view.", context.harness.detail_run_id)}</p>
+                    </div>
+                    <form
+                        id="tau-ops-harness-start-selected-mission-form"
+                        action=harness_selected_mission_start_action
+                        method="post"
+                        data-action-contract="mission-start-dry-run"
+                        data-preserves-shell-context="true"
+                    >
+                        <button
+                            id="tau-ops-harness-start-selected-mission"
+                            type="submit"
+                            data-action="start-selected-mission"
+                            data-mission-id=context.harness.detail_run_id.clone()
+                            data-start-result-target="mission-proof-refresh"
+                            data-action-contract="coding-agent-dry-run"
+                        >
+                            "Start Selected"
+                        </button>
+                    </form>
+                </section>
+            }
+            .into_any()
+        } else {
+            view! {
+                <section
+                    id="tau-ops-harness-selected-mission-actions"
+                    data-selected-mission-id=context.harness.detail_run_id.clone()
+                    data-selected-mission-status=context.harness.detail_status.clone()
+                    data-selected-mission-action="inspect"
+                    data-next-status="none"
+                    data-action-surface="proof-pane"
+                >
+                    <div>
+                        <h4>"Selected Mission"</h4>
+                        <p>{format!("{} is loaded in the proof pane.", context.harness.detail_run_id)}</p>
+                    </div>
+                    <span class="tau-harness-status-chip" data-selected-mission-state=context.harness.detail_status.clone()>
+                        {harness_queue_status_label(&context.harness.detail_status)}
+                    </span>
+                </section>
+            }
+            .into_any()
+        }
+    } else {
+        view! {
+            <section
+                id="tau-ops-harness-selected-mission-actions"
+                data-selected-mission-id=context.harness.detail_run_id.clone()
+                data-selected-mission-status=context.harness.detail_status.clone()
+                data-selected-mission-action="benchmark-proof"
+                data-next-status="none"
+                data-action-surface="proof-pane"
+                hidden
+            >
+                <div>
+                    <h4>"Selected Mission"</h4>
+                    <p>"Benchmark proof selected."</p>
+                </div>
+            </section>
+        }
+        .into_any()
+    };
     let harness_tui_summary = if context
         .harness
         .detail_proof_artifact
@@ -6691,6 +6777,37 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 overflow: hidden;
                                 text-overflow: clip;
                             }
+                            #tau-ops-harness-selected-mission-actions {
+                                display: grid;
+                                grid-template-columns: minmax(0, 1fr) auto;
+                                gap: 8px;
+                                align-items: center;
+                                border: 1px solid rgba(87, 225, 161, .22);
+                                border-radius: 6px;
+                                padding: 8px 10px;
+                                background: rgba(87, 225, 161, .06);
+                            }
+                            #tau-ops-harness-selected-mission-actions h4,
+                            #tau-ops-harness-selected-mission-actions p,
+                            #tau-ops-harness-selected-mission-actions form {
+                                margin: 0;
+                            }
+                            #tau-ops-harness-selected-mission-actions h4 {
+                                color: var(--tau-harness-text);
+                                font-size: .72rem;
+                                letter-spacing: 0;
+                            }
+                            #tau-ops-harness-selected-mission-actions p {
+                                color: var(--tau-harness-muted);
+                                font-size: .66rem;
+                            }
+                            #tau-ops-harness-start-selected-mission {
+                                min-height: 28px;
+                                padding: 4px 10px;
+                                background: linear-gradient(180deg, #1d5f42, #164530);
+                                border-color: rgba(87, 225, 161, .48);
+                                font-size: .7rem;
+                            }
                             #tau-ops-harness-proposal-detail {
                                 max-height: 128px;
                                 overflow: auto;
@@ -7461,6 +7578,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                         <dt>"Retry Count"</dt><dd>{context.harness.detail_retry_count.clone()}</dd>
                                     </dl>
                                 </header>
+                                {harness_selected_mission_actions}
                                 <ol
                                     id="tau-ops-harness-plan-dag"
                                     data-dag-node-count=context.harness.detail_plan_rows.len().to_string()

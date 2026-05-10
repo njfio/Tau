@@ -2033,6 +2033,55 @@ fn functional_harness_selected_mission_detail_controls_tui_summary() {
 }
 
 #[test]
+fn functional_harness_selected_draft_proof_exposes_start_action() {
+    let harness = TauOpsDashboardHarnessSnapshot {
+        selected_proposal_id: "PR-045".to_string(),
+        selected_proposal: TauOpsDashboardHarnessProposalDetail {
+            proposal_id: "PR-045".to_string(),
+            ..TauOpsDashboardHarnessProposalDetail::default()
+        },
+        detail_run_id: "mission-draft-123".to_string(),
+        detail_proof_artifact: "/state/ops-harness/missions/mission-draft-123/mission.json"
+            .to_string(),
+        detail_goal: "PR-045 Skill patch for benchmark artifact naming".to_string(),
+        detail_status: "draft".to_string(),
+        detail_tool_budget: "0/40".to_string(),
+        detail_acceptance_met_count: 0,
+        detail_acceptance_total_count: 3,
+        detail_gate_rows: vec![TauOpsDashboardHarnessProofRow {
+            item_id: "VG-PLAN".to_string(),
+            status_key: "pending".to_string(),
+            label: "Plan DAG exists and is accepted.".to_string(),
+        }],
+        ..TauOpsDashboardHarnessSnapshot::default()
+    };
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        active_route: TauOpsDashboardRoute::Harness,
+        chat: TauOpsDashboardChatSnapshot {
+            active_session_key: "ops-harness-context".to_string(),
+            ..TauOpsDashboardChatSnapshot::default()
+        },
+        harness,
+        ..TauOpsDashboardShellContext::default()
+    });
+
+    for marker in [
+        "id=\"tau-ops-harness-selected-mission-actions\" data-selected-mission-id=\"mission-draft-123\" data-selected-mission-status=\"draft\" data-selected-mission-action=\"start\" data-next-status=\"mission_started\" data-action-surface=\"proof-pane\"",
+        "mission-draft-123 is ready to start from this proof view.",
+        "id=\"tau-ops-harness-start-selected-mission-form\" action=\"/ops/harness/missions/mission-draft-123/start?theme=dark&amp;sidebar=expanded&amp;session=ops-harness-context&amp;proposal_id=PR-045\" method=\"post\" data-action-contract=\"mission-start-dry-run\" data-preserves-shell-context=\"true\"",
+        "id=\"tau-ops-harness-start-selected-mission\" type=\"submit\" data-action=\"start-selected-mission\" data-mission-id=\"mission-draft-123\" data-start-result-target=\"mission-proof-refresh\" data-action-contract=\"coding-agent-dry-run\"",
+        "Start Selected",
+        "#tau-ops-harness-selected-mission-actions",
+        "#tau-ops-harness-start-selected-mission",
+    ] {
+        assert!(
+            html.contains(marker),
+            "selected draft proof should expose start action marker `{marker}`"
+        );
+    }
+}
+
+#[test]
 fn functional_spec_3792_c01_c02_c03_harness_proof_pane_fits_in_app_browser_width() {
     let html = render_tau_ops_dashboard_shell_for_route("/ops/harness");
 
