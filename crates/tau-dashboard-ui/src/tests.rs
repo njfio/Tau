@@ -1924,6 +1924,62 @@ fn functional_harness_applied_proposal_marks_terminal_operator_actions() {
 }
 
 #[test]
+fn regression_harness_route_omits_hidden_chat_and_session_detail_payload() {
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        active_route: TauOpsDashboardRoute::Harness,
+        chat: TauOpsDashboardChatSnapshot {
+            active_session_key: "default".to_string(),
+            message_rows: vec![TauOpsDashboardChatMessageRow {
+                role: "assistant".to_string(),
+                content: "sensitive non-harness chat transcript row".to_string(),
+            }],
+            session_detail_visible: true,
+            session_detail_route: "/ops/sessions/default".to_string(),
+            session_detail_timeline_rows: vec![TauOpsDashboardSessionTimelineRow {
+                entry_id: 42,
+                role: "assistant".to_string(),
+                content: "sensitive non-harness transcript row".to_string(),
+            }],
+            session_graph_node_rows: vec![TauOpsDashboardSessionGraphNodeRow {
+                entry_id: 42,
+                role: "assistant".to_string(),
+            }],
+            session_graph_edge_rows: vec![TauOpsDashboardSessionGraphEdgeRow {
+                source_entry_id: 41,
+                target_entry_id: 42,
+            }],
+            ..TauOpsDashboardChatSnapshot::default()
+        },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
+        ..TauOpsDashboardShellContext::default()
+    });
+
+    assert!(html.contains(
+        "id=\"tau-ops-session-detail-panel\" data-route=\"/ops/sessions/default\" data-session-key=\"default\" aria-hidden=\"true\""
+    ));
+    assert!(html.contains(
+        "id=\"tau-ops-chat-panel\" data-route=\"/ops/chat\" aria-hidden=\"true\" data-active-session-key=\"default\" data-panel-visible=\"false\""
+    ));
+    assert!(html.contains("id=\"tau-ops-chat-transcript\" data-message-count=\"0\""));
+    assert!(html.contains("id=\"tau-ops-session-message-timeline\" data-entry-count=\"0\""));
+    assert!(html.contains("id=\"tau-ops-session-graph-nodes\" data-node-count=\"0\""));
+    assert!(html.contains("id=\"tau-ops-session-graph-edges\" data-edge-count=\"0\""));
+    for stale_marker in [
+        "tau-ops-chat-message-row-0",
+        "sensitive non-harness chat transcript row",
+        "tau-ops-session-message-row-0",
+        "sensitive non-harness transcript row",
+        "tau-ops-session-graph-node-0",
+        "tau-ops-session-graph-edge-0",
+    ] {
+        assert!(
+            !html.contains(stale_marker),
+            "harness route should not render hidden session payload marker `{stale_marker}`"
+        );
+    }
+}
+
+#[test]
 fn functional_harness_completed_self_improvement_proof_marks_terminal_actions_without_recent_apply_audit(
 ) {
     let harness = TauOpsDashboardHarnessSnapshot {
@@ -2775,7 +2831,7 @@ fn functional_spec_2866_c01_c02_chat_route_renders_inline_tool_card_for_tool_row
 }
 
 #[test]
-fn regression_spec_2866_c04_non_chat_routes_keep_hidden_chat_tool_card_markers() {
+fn regression_spec_2866_c04_non_chat_routes_omit_hidden_chat_tool_card_markers() {
     let ops_html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
         auth_mode: TauOpsDashboardAuthMode::Token,
         active_route: TauOpsDashboardRoute::Ops,
@@ -2795,9 +2851,11 @@ fn regression_spec_2866_c04_non_chat_routes_keep_hidden_chat_tool_card_markers()
     assert!(ops_html.contains(
             "id=\"tau-ops-chat-panel\" data-route=\"/ops/chat\" aria-hidden=\"true\" data-active-session-key=\"chat-tool-session\" data-panel-visible=\"false\""
         ));
-    assert!(ops_html.contains(
+    assert!(ops_html.contains("id=\"tau-ops-chat-transcript\" data-message-count=\"0\""));
+    assert!(!ops_html.contains(
         "id=\"tau-ops-chat-tool-card-0\" data-tool-card=\"true\" data-inline-result=\"true\""
     ));
+    assert!(!ops_html.contains("{\"result\":\"ok\"}"));
 
     let sessions_html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
         auth_mode: TauOpsDashboardAuthMode::Token,
@@ -2818,9 +2876,11 @@ fn regression_spec_2866_c04_non_chat_routes_keep_hidden_chat_tool_card_markers()
     assert!(sessions_html.contains(
             "id=\"tau-ops-chat-panel\" data-route=\"/ops/chat\" aria-hidden=\"true\" data-active-session-key=\"chat-tool-session\" data-panel-visible=\"false\""
         ));
-    assert!(sessions_html.contains(
+    assert!(sessions_html.contains("id=\"tau-ops-chat-transcript\" data-message-count=\"0\""));
+    assert!(!sessions_html.contains(
         "id=\"tau-ops-chat-tool-card-0\" data-tool-card=\"true\" data-inline-result=\"true\""
     ));
+    assert!(!sessions_html.contains("{\"result\":\"ok\"}"));
 }
 
 #[test]
@@ -2864,7 +2924,7 @@ fn functional_spec_2870_c01_c02_chat_route_renders_markdown_and_code_markers() {
 }
 
 #[test]
-fn regression_spec_2870_c04_non_chat_routes_keep_hidden_markdown_and_code_markers() {
+fn regression_spec_2870_c04_non_chat_routes_omit_hidden_markdown_and_code_markers() {
     let markdown_code_message = "## Build report\n- item one\n[docs](https://example.com)\n|k|v|\n|---|---|\n|a|b|\n```rust\nfn main() {}\n```";
     let ops_html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
         auth_mode: TauOpsDashboardAuthMode::Token,
@@ -2885,10 +2945,12 @@ fn regression_spec_2870_c04_non_chat_routes_keep_hidden_markdown_and_code_marker
     assert!(ops_html.contains(
             "id=\"tau-ops-chat-panel\" data-route=\"/ops/chat\" aria-hidden=\"true\" data-active-session-key=\"chat-markdown-code\" data-panel-visible=\"false\""
         ));
-    assert!(ops_html.contains("id=\"tau-ops-chat-markdown-0\" data-markdown-rendered=\"true\""));
-    assert!(ops_html.contains(
+    assert!(ops_html.contains("id=\"tau-ops-chat-transcript\" data-message-count=\"0\""));
+    assert!(!ops_html.contains("id=\"tau-ops-chat-markdown-0\" data-markdown-rendered=\"true\""));
+    assert!(!ops_html.contains(
             "id=\"tau-ops-chat-code-block-0\" data-code-block=\"true\" data-language=\"rust\" data-code=\"fn main() {}\""
         ));
+    assert!(!ops_html.contains("Build report"));
 
     let sessions_html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
         auth_mode: TauOpsDashboardAuthMode::Token,
@@ -2909,12 +2971,14 @@ fn regression_spec_2870_c04_non_chat_routes_keep_hidden_markdown_and_code_marker
     assert!(sessions_html.contains(
             "id=\"tau-ops-chat-panel\" data-route=\"/ops/chat\" aria-hidden=\"true\" data-active-session-key=\"chat-markdown-code\" data-panel-visible=\"false\""
         ));
+    assert!(sessions_html.contains("id=\"tau-ops-chat-transcript\" data-message-count=\"0\""));
     assert!(
-        sessions_html.contains("id=\"tau-ops-chat-markdown-0\" data-markdown-rendered=\"true\"")
+        !sessions_html.contains("id=\"tau-ops-chat-markdown-0\" data-markdown-rendered=\"true\"")
     );
-    assert!(sessions_html.contains(
+    assert!(!sessions_html.contains(
             "id=\"tau-ops-chat-code-block-0\" data-code-block=\"true\" data-language=\"rust\" data-code=\"fn main() {}\""
         ));
+    assert!(!sessions_html.contains("Build report"));
 }
 
 #[test]

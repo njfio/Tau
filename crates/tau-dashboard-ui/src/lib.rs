@@ -1496,22 +1496,16 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     } else {
         "false"
     };
-    let chat_panel_hidden = if matches!(context.active_route, TauOpsDashboardRoute::Chat) {
+    let chat_route_active = matches!(context.active_route, TauOpsDashboardRoute::Chat);
+    let chat_panel_hidden = if chat_route_active { "false" } else { "true" };
+    let chat_panel_visible = if chat_route_active { "true" } else { "false" };
+    let sessions_route_active = matches!(context.active_route, TauOpsDashboardRoute::Sessions);
+    let sessions_panel_hidden = if sessions_route_active {
         "false"
     } else {
         "true"
     };
-    let chat_panel_visible = if matches!(context.active_route, TauOpsDashboardRoute::Chat) {
-        "true"
-    } else {
-        "false"
-    };
-    let sessions_panel_hidden = if matches!(context.active_route, TauOpsDashboardRoute::Sessions) {
-        "false"
-    } else {
-        "true"
-    };
-    let sessions_panel_visible = if matches!(context.active_route, TauOpsDashboardRoute::Sessions) {
+    let sessions_panel_visible = if sessions_route_active {
         "true"
     } else {
         "false"
@@ -2410,7 +2404,9 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     } else {
         "false"
     };
-    let chat_message_rows = if context.chat.message_rows.is_empty() {
+    let chat_message_rows = if !chat_route_active {
+        Vec::new()
+    } else if context.chat.message_rows.is_empty() {
         vec![TauOpsDashboardChatMessageRow {
             role: "system".to_string(),
             content: "No chat messages yet.".to_string(),
@@ -3296,14 +3292,12 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     let job_cancel_submit_href = format!(
         "{active_shell_path}?theme={theme_attr}&sidebar={sidebar_state_attr}&session={chat_session_key}&job={job_detail_selected_job_id}&cancel_job={job_detail_selected_job_id}"
     );
-    let session_detail_panel_hidden =
-        if matches!(context.active_route, TauOpsDashboardRoute::Sessions)
-            && context.chat.session_detail_visible
-        {
-            "false"
-        } else {
-            "true"
-        };
+    let session_detail_panel_active = sessions_route_active && context.chat.session_detail_visible;
+    let session_detail_panel_hidden = if session_detail_panel_active {
+        "false"
+    } else {
+        "true"
+    };
     let session_detail_route = context.chat.session_detail_route.clone();
     let session_graph_route = session_detail_route.clone();
     let session_reset_form_action = session_detail_route.clone();
@@ -3332,7 +3326,11 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
         context.chat.session_detail_usage_total_tokens.to_string();
     let session_detail_usage_estimated_cost_usd =
         context.chat.session_detail_usage_estimated_cost_usd.clone();
-    let session_detail_timeline_rows = context.chat.session_detail_timeline_rows.clone();
+    let session_detail_timeline_rows = if session_detail_panel_active {
+        context.chat.session_detail_timeline_rows.clone()
+    } else {
+        Vec::new()
+    };
     let session_detail_timeline_count = session_detail_timeline_rows.len().to_string();
     let session_detail_timeline_view = if session_detail_timeline_rows.is_empty() {
         leptos::either::Either::Left(view! {
@@ -3417,8 +3415,16 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                 .collect_view(),
         )
     };
-    let session_graph_node_rows = context.chat.session_graph_node_rows.clone();
-    let session_graph_edge_rows = context.chat.session_graph_edge_rows.clone();
+    let session_graph_node_rows = if session_detail_panel_active {
+        context.chat.session_graph_node_rows.clone()
+    } else {
+        Vec::new()
+    };
+    let session_graph_edge_rows = if session_detail_panel_active {
+        context.chat.session_graph_edge_rows.clone()
+    } else {
+        Vec::new()
+    };
     let session_graph_node_count = session_graph_node_rows.len().to_string();
     let session_graph_edge_count = session_graph_edge_rows.len().to_string();
     let session_graph_view = if session_graph_node_rows.is_empty() {
