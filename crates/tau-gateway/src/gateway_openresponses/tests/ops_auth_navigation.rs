@@ -248,7 +248,7 @@ async fn regression_ops_login_none_mode_continue_link_reaches_ops_shell() {
         "id=\"tau-ops-no-auth-status\" data-auth-status-mode=\"none\" aria-hidden=\"false\">Credential input is hidden because localhost-dev mode is active.<",
         "id=\"tau-ops-protected-shell\" data-route=\"/ops\" aria-hidden=\"true\" data-protected-payload=\"pruned\"",
         "id=\"tau-ops-sidebar\" data-harness-rail=\"compact\" data-nav-scope=\"login\"",
-        "id=\"tau-ops-breadcrumb-home\"><a href=\"/ops/login?theme=dark&amp;sidebar=expanded&amp;session=ops-login-live\" data-preserves-shell-context=\"true\"",
+        "id=\"tau-ops-breadcrumb-home\"><a href=\"/ops/login?theme=dark&amp;sidebar=expanded&amp;session=ops-login-live\" data-preserves-shell-context=\"true\">Login</a>",
         "id=\"tau-ops-nav-command-center\" hidden><a",
         "id=\"tau-ops-login-form\" data-login-continue-href=\"/ops?theme=dark&amp;sidebar=expanded&amp;session=ops-login-live\" data-login-action-enabled=\"true\"",
         "id=\"tau-ops-login-submit\" href=\"/ops?theme=dark&amp;sidebar=expanded&amp;session=ops-login-live\" data-login-action=\"continue\" data-login-action-enabled=\"true\" data-continue-href=\"/ops?theme=dark&amp;sidebar=expanded&amp;session=ops-login-live\" aria-disabled=\"false\"",

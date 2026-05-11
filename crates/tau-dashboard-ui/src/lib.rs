@@ -1744,6 +1744,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     } else {
         nav_command_center_href.clone()
     };
+    let breadcrumb_home_label = if login_route_active { "Login" } else { "Home" };
     let sidebar_nav_scope = if login_route_active {
         "login"
     } else {
@@ -5794,7 +5795,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                 >
                     <ol>
                         <li id="tau-ops-breadcrumb-home">
-                            <a href=breadcrumb_home_href data-preserves-shell-context="true">Home</a>
+                            <a href=breadcrumb_home_href data-preserves-shell-context="true">{breadcrumb_home_label}</a>
                         </li>
                         <li id="tau-ops-breadcrumb-current">{breadcrumb_label}</li>
                     </ol>

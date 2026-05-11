@@ -18,8 +18,8 @@
     button-role anchor.
 11. [x] T11 (REGRESSION): prune hidden protected route payload from
     `/ops/login`.
-12. [x] T12 (REGRESSION): narrow the visible `/ops/login` navigation rail to
-    login-only before Continue.
+12. [x] T12 (REGRESSION): narrow the visible `/ops/login` navigation rail and
+    breadcrumb to login-only before Continue.
 
 ## Tier Mapping
 - Unit: `tau-dashboard-ui` auth marker tests.
@@ -197,8 +197,9 @@
   failed before the login route had a login-scoped sidebar or hidden protected
   nav rows.
 - GREEN: `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo test -p tau-dashboard-ui regression_spec_2786_login_route_prunes_visible_protected_navigation -- --nocapture`
-  passed after `/ops/login` used `data-nav-scope=login`, kept breadcrumb Home
-  on `/ops/login`, and hid protected nav rows from the visible rail.
+  passed after `/ops/login` used `data-nav-scope=login`, labeled the breadcrumb
+  root as Login while keeping it on `/ops/login`, and hid protected nav rows
+  from the visible rail.
 - REGRESSION: `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo test -p tau-dashboard-ui 2786 -- --nocapture`
   passed 9 tests.
 - REGRESSION: `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo test -p tau-gateway ops_login -- --nocapture`
@@ -222,3 +223,30 @@
 - LIVE: Browser click on Continue navigated from `/ops/login` to
   `/ops?theme=dark&sidebar=expanded&session=default` and restored the full
   protected navigation rail on the ops shell.
+- RED: Live Browser on
+  `/ops/login?theme=dark&sidebar=expanded&session=default` still showed a
+  `Home` link even though that breadcrumb intentionally stayed on `/ops/login`.
+- GREEN: `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo test -p tau-dashboard-ui regression_spec_2786_login_route_prunes_visible_protected_navigation -- --nocapture`
+  passed after the login-route breadcrumb root rendered as `Login` and no
+  longer advertised a fake Home action.
+- REGRESSION: `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo test -p tau-dashboard-ui 2786 -- --nocapture`
+  passed 9 tests after the breadcrumb label change.
+- REGRESSION: `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo test -p tau-gateway ops_auth_navigation -- --test-threads=1 --nocapture`
+  passed 9 tests after the breadcrumb label change.
+- REGRESSION: `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo test -p tau-dashboard-ui -- --nocapture`
+  passed 208 tests plus doc tests after the breadcrumb label change.
+- STATIC: `cargo fmt --check --package tau-dashboard-ui --package tau-gateway`,
+  `git diff --check`, and
+  `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo clippy -p tau-dashboard-ui -p tau-gateway -- -D warnings`
+  passed after the breadcrumb label change.
+- BUILD: `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo build -p tau-coding-agent`
+  passed after the breadcrumb label change.
+- LIVE: Rebuilt `tau-coding-agent` running on `127.0.0.1:8795` reported
+  `auth.mode=localhost-dev`, `model=gpt-5.3-codex`, and
+  `service=running`; Browser verified `/ops/login` showed Login, Operator
+  Login, and Continue with no fake Home link. HTTP proof showed breadcrumb
+  `Login`, `data-nav-scope=login`, protected nav rows hidden, and Continue
+  still targeting `/ops`.
+- LIVE: Browser click on Continue navigated from `/ops/login` to
+  `/ops?theme=dark&sidebar=expanded&session=default`, where the real Home link
+  and full protected navigation rail returned.

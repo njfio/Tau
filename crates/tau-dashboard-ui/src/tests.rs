@@ -374,8 +374,14 @@ fn regression_spec_2786_login_route_prunes_visible_protected_navigation() {
     assert!(html
         .contains("id=\"tau-ops-sidebar\" data-harness-rail=\"compact\" data-nav-scope=\"login\""));
     assert!(html.contains(
-        "id=\"tau-ops-breadcrumb-home\"><a href=\"/ops/login?theme=dark&amp;sidebar=expanded&amp;session=default\" data-preserves-shell-context=\"true\""
+        "id=\"tau-ops-breadcrumb-home\"><a href=\"/ops/login?theme=dark&amp;sidebar=expanded&amp;session=default\" data-preserves-shell-context=\"true\">Login</a>"
     ));
+    assert!(
+        !html.contains(
+            "id=\"tau-ops-breadcrumb-home\"><a href=\"/ops/login?theme=dark&amp;sidebar=expanded&amp;session=default\" data-preserves-shell-context=\"true\">Home</a>"
+        ),
+        "login breadcrumb root must not advertise a fake Home link"
+    );
     assert!(html.contains(
         "id=\"tau-ops-nav-login\"><a href=\"/ops/login?theme=dark&amp;sidebar=expanded&amp;session=default\" data-harness-rail-label=\"Login\" data-preserves-shell-context=\"true\" aria-current=\"page\""
     ));
