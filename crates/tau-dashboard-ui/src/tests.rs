@@ -320,6 +320,25 @@ fn regression_spec_2786_c03_none_login_continue_links_to_ops_shell() {
 }
 
 #[test]
+fn regression_spec_2786_none_login_copy_does_not_imply_auth_is_required() {
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        auth_mode: TauOpsDashboardAuthMode::None,
+        active_route: TauOpsDashboardRoute::Login,
+        theme: TauOpsDashboardTheme::Dark,
+        sidebar_state: TauOpsDashboardSidebarState::Expanded,
+        command_center: TauOpsDashboardCommandCenterSnapshot::default(),
+        chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
+    });
+
+    assert!(html.contains(
+        "id=\"tau-ops-login-help\" data-auth-copy-mode=\"none\">Localhost-dev mode is active. No credential is required; continue directly to protected operations views.<"
+    ));
+    assert!(!html
+        .contains("Use configured gateway auth mode to continue to protected operations views."));
+}
+
+#[test]
 fn spec_c28_regression_dashboard_and_tui_require_shared_operator_flow_markers() {
     let context = TauOpsDashboardShellContext {
         auth_mode: TauOpsDashboardAuthMode::PasswordSession,

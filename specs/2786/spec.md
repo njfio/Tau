@@ -35,6 +35,12 @@ preserving the current theme, sidebar, and session query context. The disabled
 auth input is marked as not enabled so the no-auth page does not imply a
 password/token is required.
 
+### AC-6 Login help copy matches the active auth mode
+Given the gateway maps `localhost-dev` auth to `ui_auth_mode=none`,
+When an operator opens `/ops/login`,
+Then the help copy explicitly says no credential is required and does not reuse
+generic gateway-auth wording that implies an auth action is required.
+
 ## Scope
 
 ### In Scope
@@ -42,6 +48,7 @@ password/token is required.
 - Auth-aware shell context and markers in `tau-dashboard-ui`.
 - Gateway route wiring for `/ops/login` and context-aware `/ops` rendering.
 - Working no-auth Continue navigation for localhost-dev login shells.
+- Auth-mode-specific login help copy for the no-auth localhost-dev shell.
 - Scoped regression tests for dashboard shell and auth session behavior.
 
 ### Out of Scope
@@ -57,6 +64,8 @@ password/token is required.
 - C-05 (regression): existing `/dashboard` and `POST /gateway/auth/session` tests remain green.
 - C-06 (regression): localhost-dev `/ops/login` renders a Continue control that
   reaches `/ops` with theme/sidebar/session context preserved.
+- C-07 (regression): localhost-dev `/ops/login` renders no-auth help copy and
+  omits generic gateway-auth instructions.
 
 ## Success Metrics / Observable Signals
 - `cargo test -p tau-dashboard-ui -- --test-threads=1` passes with new auth/route marker coverage.
@@ -64,6 +73,8 @@ password/token is required.
 - Browser proof confirms the visible Continue control on a live
   localhost-dev `/ops/login` tab navigates to `/ops` with the same shell
   context.
+- Browser proof confirms live localhost-dev login copy says no credential is
+  required.
 - Existing dashboard/auth regression tests continue to pass.
 
 ## Approval Gate

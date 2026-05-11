@@ -41,6 +41,20 @@ impl TauOpsDashboardAuthMode {
             Self::PasswordSession => "Enter gateway password",
         }
     }
+
+    fn login_help_text(self) -> &'static str {
+        match self {
+            Self::None => {
+                "Localhost-dev mode is active. No credential is required; continue directly to protected operations views."
+            }
+            Self::Token => {
+                "Token authentication is required. Use the configured gateway auth flow before opening protected operations views."
+            }
+            Self::PasswordSession => {
+                "Gateway password authentication is required. Use the configured gateway auth flow before opening protected operations views."
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -5667,8 +5681,8 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                 >
                     <section id="tau-ops-login-shell" data-route="/ops/login" aria-hidden=login_hidden>
                         <h2>Operator Authentication</h2>
-                        <p>
-                            Use configured gateway auth mode to continue to protected operations views.
+                        <p id="tau-ops-login-help" data-auth-copy-mode=auth_mode_attr>
+                            {auth_mode.login_help_text()}
                         </p>
                         <form id="tau-ops-login-form" data-login-continue-href=login_continue_href.clone() data-login-action-enabled=login_action_enabled>
                             <label for="tau-ops-auth-input">{auth_mode.auth_input_label()}</label>
