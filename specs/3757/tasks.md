@@ -108,6 +108,37 @@ Status: Implemented
   primary `#tau-ops-harness-history-view` remained visible with
   `data-history-route-priority="primary"`, source `state`, row count `4`, and
   exactly one visible `Applied History` mention.
+- T14: Scope state-backed history rows to the selected proposal before applying
+  the route-backed action filter, and clarify the history summary copy so the
+  operator knows the rows are for the selected proposal.
+- RED: Live Browser on
+  `/ops/harness?proposal_id=PR-045&view=history&audit_action=apply` showed
+  `data-history-selected-proposal="PR-045"` while the audit table still
+  included a visible `PR-044` apply row.
+- GREEN: `cargo test -p tau-dashboard-ui functional_harness_history_view_surfaces_state_audit_summary -- --nocapture`
+  passed with selected-proposal history copy and proposal label markers (1
+  test).
+- GREEN: `cargo test -p tau-gateway integration_spec_3757_c03_ops_harness_route_reflects_state_backed_proof_and_audit -- --nocapture`
+  passed with a mixed-proposal audit regression proving PR-045 rows do not leak
+  into a PR-044 history route (1 test).
+- REGRESSION: `cargo test -p tau-dashboard-ui harness -- --nocapture` passed
+  (52 tests).
+- REGRESSION: `cargo test -p tau-gateway ops_harness -- --test-threads=1 --nocapture`
+  passed (6 tests).
+- STATIC: `cargo fmt --check --package tau-dashboard-ui --package tau-gateway`
+  passed.
+- STATIC: `git diff --check` passed.
+- STATIC: `cargo clippy -p tau-dashboard-ui -p tau-gateway -- -D warnings`
+  passed.
+- BUILD: `cargo build -p tau-coding-agent` passed.
+- LIVE: Browser on
+  `/ops/harness?proposal_id=PR-045&view=history&audit_action=apply` against the
+  restarted `127.0.0.1:8795` harness showed row count `3`, total count `17`,
+  selected proposal `PR-045`, latest `Apply PR-045 Applied`, selected-proposal
+  copy present, and no visible `PR-044` rows. The tab was then restored to
+  `/ops/harness?proposal_id=PR-045&view=history`, which showed row count `4`,
+  total count `17`, filter `all`, selected proposal `PR-045`, and no visible
+  `PR-044` rows.
 - GREEN: `cargo test -p tau-dashboard-ui functional_harness_history_view_surfaces_state_audit_summary`
   passed with context-preserving selected artifact links (1 test).
 - GREEN: `cargo test -p tau-gateway integration_spec_3757_c03_ops_harness_route_reflects_state_backed_proof_and_audit`

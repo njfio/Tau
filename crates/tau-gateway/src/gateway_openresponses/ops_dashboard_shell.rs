@@ -1665,11 +1665,17 @@ fn collect_tau_ops_dashboard_harness_snapshot(
     let audit_mission_index = collect_harness_audit_mission_index(state_dir);
     let audit_path = state_dir.join("ops-harness").join("audit.jsonl");
     if let Ok(audit_jsonl) = std::fs::read_to_string(&audit_path) {
+        let selected_audit_proposal_id = snapshot.selected_proposal_id.trim().to_string();
         let all_audit_rows = audit_jsonl
             .lines()
             .filter_map(|line| serde_json::from_str::<Value>(line).ok())
             .filter_map(|record| {
                 let proposal_id = record.get("proposal_id").and_then(Value::as_str)?;
+                if !selected_audit_proposal_id.is_empty()
+                    && proposal_id != selected_audit_proposal_id
+                {
+                    return None;
+                }
                 let action = record
                     .get("action")
                     .and_then(Value::as_str)
@@ -1779,12 +1785,10 @@ fn collect_tau_ops_dashboard_harness_snapshot(
             .filter(|row| requested_audit_action.is_none_or(|action| row.action_key == action))
             .take(4)
             .collect::<Vec<_>>();
-        if !audit_rows.is_empty() || audit_total_count > 0 {
-            snapshot.audit_source = "state".to_string();
-            snapshot.audit_filter_action = requested_audit_action.unwrap_or("all").to_string();
-            snapshot.audit_total_count = audit_total_count;
-            snapshot.audit_rows = audit_rows;
-        }
+        snapshot.audit_source = "state".to_string();
+        snapshot.audit_filter_action = requested_audit_action.unwrap_or("all").to_string();
+        snapshot.audit_total_count = audit_total_count;
+        snapshot.audit_rows = audit_rows;
     }
 
     snapshot

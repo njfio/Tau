@@ -79,7 +79,9 @@ chosen audit record with a capped inline preview for safe `ops-harness/...`
 proof artifacts. The history summary is promoted ahead of the default dashboard
 content while the history route is active, and the legacy topbar route-action
 banner is hidden so operators see one primary history heading rather than a
-duplicated "Applied History" banner.
+duplicated "Applied History" banner. State-backed history rows are scoped to
+the selected proposal before the selected action filter is applied, so a
+proposal-specific history route cannot mix rows from a different proposal.
 
 ## Conformance Cases
 
@@ -89,7 +91,7 @@ duplicated "Applied History" banner.
 | C-02 | AC-2, AC-3 | Functional | custom harness snapshot | shell renders | audit table uses custom action rows |
 | C-03 | AC-1, AC-2 | Integration | gateway state after benchmark/action POSTs | GET `/ops/harness` | page contains state-backed proof and audit markers |
 | C-04 | AC-4 | Functional, Integration | state-backed proof artifact | shell renders and artifact route opens | tool evidence artifact cells link to `/ops/harness/artifacts/view/...`; artifact view exposes JSON metadata, proof keys, raw access, and preserved return context |
-| C-05 | AC-5 | Functional, Integration | history route request | GET `/ops/harness?view=history`, `audit_action=run-benchmark`, and `audit_ref=<row-ref>` | page contains dedicated history summary promoted before the default dashboard, route-backed audit filter state, selected audit detail, capped proof preview, and audit anchor |
+| C-05 | AC-5 | Functional, Integration | history route request | GET `/ops/harness?view=history`, `audit_action=run-benchmark`, and `audit_ref=<row-ref>` | page contains dedicated history summary promoted before the default dashboard, route-backed audit filter state scoped to the selected proposal, selected audit detail, capped proof preview, and audit anchor |
 
 ## Success Metrics / Observable Signals
 
@@ -104,6 +106,8 @@ duplicated "Applied History" banner.
   route-action banner.
 - History view audit filters are route-backed and narrow state audit rows
   before the recent-row limit.
+- History view scopes state-backed audit rows and total counts to the selected
+  proposal before applying the action filter.
 - History view selected audit details are route-backed and preserve proof
   artifact links without requiring operators to leave the harness page first.
 - History view proof previews are capped, state-backed, and only read normalized

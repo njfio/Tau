@@ -1737,6 +1737,11 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     } else {
         format!("{harness_history_href}&audit_action={harness_history_filter_action}")
     };
+    let harness_history_scope_label = if harness_selected_proposal_id.trim().is_empty() {
+        "current harness state".to_string()
+    } else {
+        format!("selected proposal {harness_selected_proposal_id}")
+    };
     let harness_history_artifact_base_query = if harness_history_filter_action == "all" {
         format!(
             "theme={theme_attr}&sidebar={sidebar_state_attr}&session={}&proposal_id={}&view=history",
@@ -2372,7 +2377,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                 <header>
                     <div>
                         <h4>"Applied History"</h4>
-                        <p>"Audit records loaded for the current harness state."</p>
+                        <p>{format!("Audit records loaded for {}.", harness_history_scope_label)}</p>
                     </div>
                     <a href=harness_overview_href.clone() data-history-overview-link="true">"Overview"</a>
                 </header>
@@ -2435,7 +2440,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                         <dd>{harness_history_proof_count.clone()}</dd>
                     </div>
                     <div>
-                        <dt>"Selected"</dt>
+                        <dt>"Proposal"</dt>
                         <dd>{harness_selected_proposal_id.clone()}</dd>
                     </div>
                 </dl>

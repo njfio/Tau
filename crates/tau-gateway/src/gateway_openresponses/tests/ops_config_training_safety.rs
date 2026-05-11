@@ -1285,6 +1285,13 @@ async fn integration_spec_3757_c03_ops_harness_route_reflects_state_backed_proof
         !body.contains(">ts:"),
         "state-backed harness audit rows should not expose raw timestamp labels"
     );
+    let audit_path = state_dir.join("ops-harness/audit.jsonl");
+    let mut mixed_proposal_audit_log =
+        std::fs::read_to_string(&audit_path).expect("read mixed proposal audit log");
+    mixed_proposal_audit_log.push_str(
+        "\n{\"action\":\"apply\",\"proposal_id\":\"PR-045\",\"result\":\"scope_leak\",\"timestamp_unix_ms\":2778419944988}\n",
+    );
+    std::fs::write(&audit_path, mixed_proposal_audit_log).expect("write mixed proposal audit log");
 
     let history_response = client
         .get(format!(
@@ -1297,6 +1304,7 @@ async fn integration_spec_3757_c03_ops_harness_route_reflects_state_backed_proof
     let history_body = history_response.text().await.expect("read history body");
     for marker in [
         "id=\"tau-ops-harness-history-view\" data-history-view=\"true\" data-history-route-priority=\"primary\" data-history-source=\"state\" data-history-row-count=\"2\" data-history-total-count=\"2\" data-history-proof-count=\"1\" data-history-action-filter=\"all\" data-history-selected-proposal=\"PR-044\"",
+        "Audit records loaded for selected proposal PR-044.",
         "data-history-latest-action=\"Apply PR-044 Blocked Approval Required\"",
         "data-history-filter-action=\"all\" aria-current=\"page\"",
         "id=\"tau-ops-harness-history-detail\" data-history-selected-audit=\"true\"",
@@ -1308,6 +1316,16 @@ async fn integration_spec_3757_c03_ops_harness_route_reflects_state_backed_proof
         assert!(
             history_body.contains(marker),
             "missing state-backed history marker `{marker}`"
+        );
+    }
+    for stale_marker in [
+        "data-history-latest-action=\"Apply PR-045 Scope Leak\"",
+        "data-action=\"apply\" data-result=\"scope_leak\"",
+        "Scope Leak",
+    ] {
+        assert!(
+            !history_body.contains(stale_marker),
+            "state-backed history route leaked another proposal row `{stale_marker}`"
         );
     }
 
