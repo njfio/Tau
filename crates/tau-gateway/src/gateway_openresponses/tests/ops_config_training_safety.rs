@@ -1127,7 +1127,7 @@ async fn integration_ops_harness_proposal_registry_renders_selected_proposal() {
 
     let diff_response = client
         .get(format!(
-            "http://{addr}/ops/harness/proposals/PR-045/diff?theme=light&sidebar=collapsed&session=ops-harness-context"
+            "http://{addr}/ops/harness/proposals/PR-045/diff?theme=light&sidebar=collapsed&session=ops-harness-context&proposal_id=PR-045&view=history&audit_action=dry-run&audit_ref=1778419581966"
         ))
         .send()
         .await
@@ -1139,7 +1139,7 @@ async fn integration_ops_harness_proposal_registry_renders_selected_proposal() {
         "data-target-path=\"skills/benchmark_artifacts/SKILL.md\"",
         "PR-045 Skill patch for benchmark artifact naming",
         "Name benchmark artifacts with mission id, benchmark id, run id, and proof type.",
-        "href=\"/ops/harness?theme=light&sidebar=collapsed&session=ops-harness-context&proposal_id=PR-045\"",
+        "href=\"/ops/harness?theme=light&sidebar=collapsed&session=ops-harness-context&proposal_id=PR-045&view=history&audit_action=dry-run&audit_ref=1778419581966\"",
     ] {
         assert!(
             diff_body.contains(marker),

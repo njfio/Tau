@@ -85,6 +85,9 @@ banner is hidden so operators see one primary history heading rather than a
 duplicated "Applied History" banner. State-backed history rows are scoped to
 the selected proposal before the selected action filter is applied, so a
 proposal-specific history route cannot mix rows from a different proposal.
+Proposal review links opened from history, including `View Diff`, preserve the
+same selected proposal and history query context, and the diff page back link
+returns to that history context.
 
 ## Conformance Cases
 
@@ -115,6 +118,8 @@ proposal-specific history route cannot mix rows from a different proposal.
   proposal before applying the action filter.
 - History view selected audit details are route-backed and preserve proof
   artifact links without requiring operators to leave the harness page first.
+- History view proposal review links and their back links preserve the selected
+  proposal and history query context.
 - History view proof previews are capped, state-backed, and only read normalized
   `ops-harness/...` artifact paths.
 - History route promotes the audit-history surface before the default dashboard

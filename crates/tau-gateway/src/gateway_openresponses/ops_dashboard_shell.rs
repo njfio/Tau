@@ -719,6 +719,20 @@ fn build_ops_harness_context_href(
     )
 }
 
+fn append_ops_harness_history_query_context(href: &mut String, controls: &OpsShellControlsQuery) {
+    if controls.requested_harness_view() == Some("history") {
+        href.push_str("&view=history");
+        if let Some(audit_action) = controls.requested_harness_audit_action() {
+            href.push_str("&audit_action=");
+            href.push_str(audit_action);
+        }
+        if let Some(audit_ref) = controls.requested_harness_audit_ref() {
+            href.push_str("&audit_ref=");
+            href.push_str(&audit_ref);
+        }
+    }
+}
+
 fn build_ops_session_detail_redirect_path(
     theme: TauOpsDashboardTheme,
     sidebar_state: TauOpsDashboardSidebarState,
@@ -2295,17 +2309,7 @@ fn build_ops_harness_artifact_return_href(
         &proposal_id,
     );
 
-    if controls.requested_harness_view() == Some("history") {
-        href.push_str("&view=history");
-        if let Some(audit_action) = controls.requested_harness_audit_action() {
-            href.push_str("&audit_action=");
-            href.push_str(audit_action);
-        }
-        if let Some(audit_ref) = controls.requested_harness_audit_ref() {
-            href.push_str("&audit_ref=");
-            href.push_str(&audit_ref);
-        }
-    }
+    append_ops_harness_history_query_context(&mut href, controls);
 
     href
 }
@@ -4150,12 +4154,13 @@ pub(super) async fn handle_ops_dashboard_harness_proposal_diff(
         .requested_session_key()
         .map(sanitize_session_key)
         .unwrap_or_else(|| DEFAULT_SESSION_KEY.to_string());
-    let back_href = build_ops_harness_context_href(
+    let mut back_href = build_ops_harness_context_href(
         controls.theme(),
         controls.sidebar_state(),
         session_key.as_str(),
         proposal_id.as_str(),
     );
+    append_ops_harness_history_query_context(&mut back_href, &controls);
     let Some(proposal) = find_ops_harness_proposal(&proposal_id) else {
         return (
             StatusCode::NOT_FOUND,

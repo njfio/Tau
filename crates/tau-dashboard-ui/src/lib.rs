@@ -1700,10 +1700,6 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
         "/ops/harness/proposals/{}/apply?{}",
         harness_selected_proposal_id, harness_action_query
     );
-    let harness_selected_diff_href = format!(
-        "/ops/harness/proposals/{}/diff?{}",
-        harness_selected_proposal_id, harness_action_query
-    );
     let harness_queue_theme = theme_attr.to_string();
     let harness_queue_sidebar = sidebar_state_attr.to_string();
     let harness_queue_session_key = context.chat.active_session_key.clone();
@@ -1773,6 +1769,18 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
         None
     };
     let requested_audit_ref = sanitize_harness_audit_ref(&context.harness.audit_selected_ref);
+    let mut harness_selected_diff_query =
+        harness_artifact_context_query.clone().unwrap_or_else(|| {
+            format!("{harness_action_query}&proposal_id={harness_selected_proposal_id}")
+        });
+    if harness_history_view_active && !requested_audit_ref.is_empty() {
+        harness_selected_diff_query.push_str("&audit_ref=");
+        harness_selected_diff_query.push_str(&requested_audit_ref);
+    }
+    let harness_selected_diff_href = format!(
+        "/ops/harness/proposals/{}/diff?{}",
+        harness_selected_proposal_id, harness_selected_diff_query
+    );
     let harness_history_selected_audit_index = context
         .harness
         .audit_rows

@@ -581,7 +581,7 @@ fn functional_spec_3756_c02_harness_controls_expose_benchmark_and_policy_contrac
         "id=\"tau-ops-harness-action-approve\" type=\"submit\" data-action=\"approve\"",
         "id=\"tau-ops-harness-action-reject\" type=\"submit\" data-action=\"reject\"",
         "id=\"tau-ops-harness-action-dry-run\" type=\"submit\" data-action=\"dry-run\"",
-        "id=\"tau-ops-harness-action-view-diff\" data-action=\"view-diff\" data-action-tone=\"secondary\" href=\"/ops/harness/proposals/PR-044/diff?theme=dark&amp;sidebar=expanded&amp;session=default\"",
+        "id=\"tau-ops-harness-action-view-diff\" data-action=\"view-diff\" data-action-tone=\"secondary\" href=\"/ops/harness/proposals/PR-044/diff?theme=dark&amp;sidebar=expanded&amp;session=default&amp;proposal_id=PR-044\"",
         "id=\"tau-ops-harness-apply-form\" action=\"/ops/harness/proposals/PR-044/apply?theme=dark&amp;sidebar=expanded&amp;session=default\" method=\"post\" data-approval-state=\"approval-required\"",
         "id=\"tau-ops-harness-action-apply\" type=\"submit\" data-action=\"apply\" data-action-tone=\"disabled\" data-disabled=\"true\" aria-disabled=\"true\" data-approval-required=\"true\" disabled",
     ] {
@@ -844,7 +844,7 @@ fn functional_spec_3764_c01_c02_c03_harness_prioritizes_self_improvement_actions
         "id=\"tau-ops-harness-approve-form\" action=\"/ops/harness/proposals/PR-044/approve?theme=dark&amp;sidebar=expanded&amp;session=default\" method=\"post\"",
         "id=\"tau-ops-harness-reject-form\" action=\"/ops/harness/proposals/PR-044/reject?theme=dark&amp;sidebar=expanded&amp;session=default\" method=\"post\"",
         "id=\"tau-ops-harness-dry-run-form\" action=\"/ops/harness/proposals/PR-044/dry-run?theme=dark&amp;sidebar=expanded&amp;session=default\" method=\"post\"",
-        "id=\"tau-ops-harness-action-view-diff\" data-action=\"view-diff\" data-action-tone=\"secondary\" href=\"/ops/harness/proposals/PR-044/diff?theme=dark&amp;sidebar=expanded&amp;session=default\"",
+        "id=\"tau-ops-harness-action-view-diff\" data-action=\"view-diff\" data-action-tone=\"secondary\" href=\"/ops/harness/proposals/PR-044/diff?theme=dark&amp;sidebar=expanded&amp;session=default&amp;proposal_id=PR-044\"",
         "id=\"tau-ops-harness-action-apply\" type=\"submit\" data-action=\"apply\" data-action-tone=\"disabled\" data-disabled=\"true\" aria-disabled=\"true\" data-approval-required=\"true\" disabled",
     ] {
         assert!(
@@ -1193,7 +1193,7 @@ fn functional_spec_3774_c01_c02_c03_harness_keeps_all_operator_actions_visible_b
         "id=\"tau-ops-harness-approve-form\" action=\"/ops/harness/proposals/PR-044/approve?theme=dark&amp;sidebar=expanded&amp;session=default\" method=\"post\"",
         "id=\"tau-ops-harness-reject-form\" action=\"/ops/harness/proposals/PR-044/reject?theme=dark&amp;sidebar=expanded&amp;session=default\" method=\"post\"",
         "id=\"tau-ops-harness-dry-run-form\" action=\"/ops/harness/proposals/PR-044/dry-run?theme=dark&amp;sidebar=expanded&amp;session=default\" method=\"post\"",
-        "id=\"tau-ops-harness-action-view-diff\" data-action=\"view-diff\" data-action-tone=\"secondary\" href=\"/ops/harness/proposals/PR-044/diff?theme=dark&amp;sidebar=expanded&amp;session=default\"",
+        "id=\"tau-ops-harness-action-view-diff\" data-action=\"view-diff\" data-action-tone=\"secondary\" href=\"/ops/harness/proposals/PR-044/diff?theme=dark&amp;sidebar=expanded&amp;session=default&amp;proposal_id=PR-044\"",
         "id=\"tau-ops-harness-action-apply\" type=\"submit\" data-action=\"apply\" data-action-tone=\"disabled\" data-disabled=\"true\" aria-disabled=\"true\" data-approval-required=\"true\" disabled",
         "id=\"tau-ops-harness-conservative-policy\"",
     ] {
@@ -2235,6 +2235,7 @@ fn functional_harness_history_view_surfaces_state_audit_summary() {
         "data-history-selected-proof-link=\"true\" data-history-selected-proof-artifact=\"ops-harness/self-improvement/PR-045/dry-run-result.json\"",
         "href=\"/ops/harness/artifacts/view/ops-harness/self-improvement/PR-045/dry-run-result.json?theme=dark&amp;sidebar=expanded&amp;session=default&amp;proposal_id=PR-045&amp;view=history&amp;audit_action=dry-run&amp;audit_ref=1778419944988\"",
         "data-history-selected-preview=\"true\" data-history-selected-preview-status=\"loaded\" data-history-selected-preview-bytes=\"51\" data-history-selected-preview-limit=\"2048\" data-history-selected-preview-truncated=\"false\"",
+        "id=\"tau-ops-harness-action-view-diff\" data-action=\"view-diff\" data-action-tone=\"secondary\" href=\"/ops/harness/proposals/PR-045/diff?theme=dark&amp;sidebar=expanded&amp;session=default&amp;proposal_id=PR-045&amp;view=history&amp;audit_action=dry-run&amp;audit_ref=1778419944988\"",
         "data-tool=\"verification_runner\" data-status=\"passed\" data-tool-artifact-href=\"/ops/harness/artifacts/view/ops-harness/m334/latest.json?theme=dark&amp;sidebar=expanded&amp;session=default&amp;proposal_id=PR-045&amp;view=history&amp;audit_action=dry-run\"",
         "<td><a href=\"/ops/harness/artifacts/view/ops-harness/m334/latest.json?theme=dark&amp;sidebar=expanded&amp;session=default&amp;proposal_id=PR-045&amp;view=history&amp;audit_action=dry-run\" data-tool-proof-artifact-href=\"true\">proof</a></td>",
         "<a href=\"/ops/harness/artifacts/view/ops-harness/m334/latest.json?theme=dark&amp;sidebar=expanded&amp;session=default&amp;proposal_id=PR-045&amp;view=history&amp;audit_action=dry-run\">Benchmark proof artifact</a>",
