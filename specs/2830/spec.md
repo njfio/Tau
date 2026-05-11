@@ -32,12 +32,18 @@ Given an active chat session that contains hidden system entries,
 When `/ops/chat` renders the operator summary and transcript,
 Then the summary exposes total entries, rendered transcript rows, and hidden rows separately, and the transcript message count excludes empty-state placeholders.
 
+### AC-6 Empty chat sends are rejected visibly without mutating session state
+Given an operator submits an empty or whitespace-only message through `/ops/chat/send`,
+When the request is processed by the UI submit guard or backend handler,
+Then the send is blocked or redirected back to `/ops/chat` with `chat_status=empty-message`, no session entry is appended, and the chat page renders a visible send-status marker explaining the rejection.
+
 ## Scope
 
 ### In Scope
 - `tau-dashboard-ui` chat panel form/transcript SSR contract coverage.
 - `tau-gateway` ops chat transcript hydration from `SessionStore`.
 - `tau-gateway` `POST /ops/chat/send` append + redirect behavior.
+- Empty-message submit guard and visible backend rejection status.
 - Targeted regression validation for existing ops shell slices.
 
 ### Out of Scope
@@ -51,6 +57,7 @@ Then the summary exposes total entries, rendered transcript rows, and hidden row
 - C-03 (integration): `POST /ops/chat/send` appends user message, redirects to `/ops/chat`, and message appears in transcript markers.
 - C-04 (regression): existing ops shell suites (auth/nav/theme/control/timeline/alerts/connectors) remain green.
 - C-05 (functional): `/ops/chat` summary markers distinguish total stored entries from rendered transcript rows and hidden system entries.
+- C-06 (functional/integration): empty or whitespace-only chat sends are blocked by the form contract or redirected with `chat_status=empty-message` without creating or mutating a session store.
 
 ## Success Metrics / Observable Signals
 - `cargo test -p tau-dashboard-ui functional_spec_2830 -- --test-threads=1` passes.

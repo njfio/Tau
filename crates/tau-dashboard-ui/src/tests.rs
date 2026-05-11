@@ -3169,6 +3169,18 @@ fn functional_spec_2830_c01_chat_route_renders_send_form_and_fallback_transcript
     assert!(html.contains(
         "id=\"tau-ops-chat-sidebar\" type=\"hidden\" name=\"sidebar\" value=\"expanded\""
     ));
+    assert!(html.contains("id=\"tau-ops-chat-send-status\" data-chat-send-status=\"idle\""));
+    assert!(html.contains("id=\"tau-ops-chat-send-status-message\""));
+    assert!(html.contains(
+        "id=\"tau-ops-chat-send-form\" action=\"/ops/chat/send\" method=\"post\" data-session-key=\"default\" data-empty-message-submit-guard=\"true\""
+    ));
+    assert!(html.contains("data-empty-submit-guard=\"true\""));
+    assert!(html.contains("form.addEventListener(\"submit\""));
+    assert!(html.contains("event.preventDefault();"));
+    assert!(html.contains("data-submit-blocked\", \"empty-message\""));
+    assert!(html.contains("status.setAttribute(\"data-chat-send-status\", \"empty-message\")"));
+    assert!(html.contains("Message was not sent because it was empty."));
+    assert!(html.contains("input.addEventListener(\"input\""));
     assert!(html.contains(
         "id=\"tau-ops-chat-transcript\" data-message-count=\"0\" data-rendered-row-count=\"1\""
     ));

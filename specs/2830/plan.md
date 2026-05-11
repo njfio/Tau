@@ -6,7 +6,8 @@
 3. In `tau-gateway`, hydrate chat snapshot rows from active session lineage using query controls (`session`/`session_key`).
 4. Add `POST /ops/chat/send` to append user messages and redirect to `/ops/chat` with preserved `theme`/`sidebar`/`session` controls.
 5. Distinguish total session entries from rendered transcript rows when system entries are hidden from the operator transcript.
-6. Run targeted regressions for existing ops shell slices and validate crate gates.
+6. Add a form submit-event guard and backend `chat_status=empty-message` rejection path so blank sends are visibly rejected without creating or mutating session state.
+7. Run targeted regressions for existing ops shell slices and validate crate gates.
 
 ## Affected Modules
 - `crates/tau-dashboard-ui/src/lib.rs`
@@ -19,6 +20,8 @@
   - Mitigation: filter system rows and blank message payloads from rendered chat rows.
 - Risk: send endpoint drops operator shell controls after redirect.
   - Mitigation: deterministic redirect builder carries validated `theme`, `sidebar`, and sanitized `session` query tokens.
+- Risk: empty button clicks bypass the Enter-key guard and appear to submit successfully.
+  - Mitigation: install a submit-event guard in the form and preserve a backend empty-message status marker in the redirect.
 - Risk: control query expansion (`session`/`session_key`) regresses existing route behavior.
   - Mitigation: add unit coverage for control parsing + keep existing default behavior unchanged.
 
@@ -27,6 +30,8 @@
 - Existing route update: `GET /ops/chat` reads `session`/`session_key` query token and maps active session transcript rows.
 - UI shell contracts:
   - `id="tau-ops-chat-send-form"` with deterministic `action`, `method`, and session/theme/sidebar hidden inputs.
+  - `data-empty-message-submit-guard="true"` plus submit-event JavaScript that prevents whitespace-only form submissions.
+  - `id="tau-ops-chat-send-status"` with `data-chat-send-status`, including `empty-message` after backend rejection.
   - `id="tau-ops-chat-transcript"` with deterministic `data-message-count` and row markers.
   - `id="tau-ops-chat-session-summary"` with `data-entry-count`, `data-transcript-message-count`, and `data-hidden-entry-count` so hidden system entries are not mistaken for missing transcript rows.
 

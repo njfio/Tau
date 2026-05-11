@@ -579,6 +579,19 @@ fn build_ops_chat_redirect_path(
     )
 }
 
+fn build_ops_chat_redirect_path_with_status(
+    theme: TauOpsDashboardTheme,
+    sidebar_state: TauOpsDashboardSidebarState,
+    session_key: &str,
+    chat_status: &str,
+) -> String {
+    let mut redirect_path = build_ops_chat_redirect_path(theme, sidebar_state, session_key);
+    if matches!(chat_status, "empty-message") {
+        redirect_path.push_str("&chat_status=empty-message");
+    }
+    redirect_path
+}
+
 fn normalize_ops_control_action_status_marker(status: &str) -> &'static str {
     match status {
         "applied" => "applied",
@@ -1376,6 +1389,7 @@ fn collect_tau_ops_dashboard_chat_snapshot(
         control_action_status: controls.requested_control_action_status().to_string(),
         control_action: controls.requested_control_action().to_string(),
         control_action_reason: controls.requested_control_action_reason().to_string(),
+        send_status: controls.requested_chat_send_status().to_string(),
         session_options,
         message_rows,
         session_detail_visible: detail_session_key.is_some(),
@@ -5219,6 +5233,13 @@ pub(super) async fn handle_ops_dashboard_chat_send(
     );
     let content = form.message.as_str();
     if content.trim().is_empty() {
+        let redirect_path = build_ops_chat_redirect_path_with_status(
+            form.resolved_theme(),
+            form.resolved_sidebar_state(),
+            session_key.as_str(),
+            "empty-message",
+        );
+        state.record_ui_telemetry_event("chat", "send", "chat_empty_message_rejected");
         return Redirect::to(redirect_path.as_str()).into_response();
     }
 

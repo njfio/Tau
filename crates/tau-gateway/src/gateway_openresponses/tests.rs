@@ -638,6 +638,62 @@ async fn integration_spec_2830_c02_c03_ops_chat_send_appends_message_and_renders
 }
 
 #[tokio::test]
+async fn integration_spec_2830_c06_ops_chat_send_rejects_empty_message_with_visible_status() {
+    let temp = tempdir().expect("tempdir");
+    let state = test_state(temp.path(), 4_096, "secret");
+    let (addr, handle) = spawn_test_server(state.clone())
+        .await
+        .expect("spawn server");
+    let client = Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .expect("build client");
+
+    let send_response = client
+        .post(format!("http://{addr}/ops/chat/send"))
+        .form(&[
+            ("session_key", "blank-chat-session"),
+            ("message", "   \n\t  "),
+            ("theme", "dark"),
+            ("sidebar", "expanded"),
+        ])
+        .send()
+        .await
+        .expect("ops chat blank send request");
+    assert_eq!(send_response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        send_response
+            .headers()
+            .get("location")
+            .and_then(|value| value.to_str().ok()),
+        Some(
+            "/ops/chat?theme=dark&sidebar=expanded&session=blank-chat-session&chat_status=empty-message"
+        )
+    );
+
+    let session_path = gateway_session_path(&state.config.state_dir, "blank-chat-session");
+    assert!(
+        !session_path.exists(),
+        "blank message send should not create a session store"
+    );
+
+    let chat_response = client
+        .get(format!(
+            "http://{addr}/ops/chat?theme=dark&sidebar=expanded&session=blank-chat-session&chat_status=empty-message"
+        ))
+        .send()
+        .await
+        .expect("ops chat render blank status");
+    assert_eq!(chat_response.status(), StatusCode::OK);
+    let chat_body = chat_response.text().await.expect("read ops chat body");
+    assert!(chat_body
+        .contains("id=\"tau-ops-chat-send-status\" data-chat-send-status=\"empty-message\""));
+    assert!(chat_body.contains("Message was not sent because it was empty."));
+
+    handle.abort();
+}
+
+#[tokio::test]
 async fn integration_spec_3799_c01_ops_chat_send_appends_assistant_reply() {
     let temp = tempdir().expect("tempdir");
     let state = test_state_with_client_and_auth(

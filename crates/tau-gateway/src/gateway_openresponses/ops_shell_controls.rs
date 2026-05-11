@@ -59,6 +59,8 @@ pub(super) struct OpsShellControlsQuery {
     #[serde(default)]
     control_action_reason: String,
     #[serde(default)]
+    chat_status: String,
+    #[serde(default)]
     channel_action_status: String,
     #[serde(default)]
     channel_action: String,
@@ -376,6 +378,13 @@ impl OpsShellControlsQuery {
             "applied" => "applied",
             "missing" => "missing",
             "failed" => "failed",
+            _ => "idle",
+        }
+    }
+
+    pub(super) fn requested_chat_send_status(&self) -> &'static str {
+        match self.chat_status.trim() {
+            "empty-message" => "empty-message",
             _ => "idle",
         }
     }
