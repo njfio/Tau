@@ -37,6 +37,11 @@ Given an operator submits an empty or whitespace-only message through `/ops/chat
 When the request is processed by the UI submit guard or backend handler,
 Then the send is blocked or redirected back to `/ops/chat` with `chat_status=empty-message`, no session entry is appended, and the chat page renders a visible send-status marker explaining the rejection.
 
+### AC-7 Active chat composition stays above historical session navigation
+Given `/ops/chat` renders with multiple discovered sessions,
+When the operator arrives at the active chat page,
+Then the send form and send-status controls appear before the historical session selector so the primary compose action remains reachable without scanning past old sessions.
+
 ## Scope
 
 ### In Scope
@@ -44,6 +49,7 @@ Then the send is blocked or redirected back to `/ops/chat` with `chat_status=emp
 - `tau-gateway` ops chat transcript hydration from `SessionStore`.
 - `tau-gateway` `POST /ops/chat/send` append + redirect behavior.
 - Empty-message submit guard and visible backend rejection status.
+- Composer-first ordering before historical session selection.
 - Targeted regression validation for existing ops shell slices.
 
 ### Out of Scope
@@ -58,6 +64,7 @@ Then the send is blocked or redirected back to `/ops/chat` with `chat_status=emp
 - C-04 (regression): existing ops shell suites (auth/nav/theme/control/timeline/alerts/connectors) remain green.
 - C-05 (functional): `/ops/chat` summary markers distinguish total stored entries from rendered transcript rows and hidden system entries.
 - C-06 (functional/integration): empty or whitespace-only chat sends are blocked by the form contract or redirected with `chat_status=empty-message` without creating or mutating a session store.
+- C-07 (functional): `/ops/chat` places the send form and send-status marker before the historical session selector.
 
 ## Success Metrics / Observable Signals
 - `cargo test -p tau-dashboard-ui functional_spec_2830 -- --test-threads=1` passes.

@@ -3192,6 +3192,59 @@ fn functional_spec_2830_c01_chat_route_renders_send_form_and_fallback_transcript
 }
 
 #[test]
+fn functional_spec_2830_c07_chat_route_prioritizes_composer_before_session_selector() {
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        auth_mode: TauOpsDashboardAuthMode::Token,
+        active_route: TauOpsDashboardRoute::Chat,
+        theme: TauOpsDashboardTheme::Dark,
+        sidebar_state: TauOpsDashboardSidebarState::Expanded,
+        command_center: TauOpsDashboardCommandCenterSnapshot::default(),
+        chat: TauOpsDashboardChatSnapshot {
+            active_session_key: "default".to_string(),
+            session_options: vec![
+                TauOpsDashboardChatSessionOptionRow {
+                    session_key: "default".to_string(),
+                    selected: true,
+                    entry_count: 30,
+                    usage_total_tokens: 0,
+                    validation_is_valid: true,
+                    updated_unix_ms: 1_778_523_100_000,
+                },
+                TauOpsDashboardChatSessionOptionRow {
+                    session_key: "older-research-session".to_string(),
+                    selected: false,
+                    entry_count: 14,
+                    usage_total_tokens: 128,
+                    validation_is_valid: true,
+                    updated_unix_ms: 1_778_522_000_000,
+                },
+            ],
+            ..TauOpsDashboardChatSnapshot::default()
+        },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
+    });
+
+    let send_form_index = html
+        .find("id=\"tau-ops-chat-send-form\"")
+        .expect("send form marker should render");
+    let send_status_index = html
+        .find("id=\"tau-ops-chat-send-status\"")
+        .expect("send status marker should render");
+    let selector_index = html
+        .find("id=\"tau-ops-chat-session-selector\"")
+        .expect("session selector marker should render");
+
+    assert!(
+        send_form_index < selector_index,
+        "chat composer should render before historical session selector"
+    );
+    assert!(
+        send_status_index < selector_index,
+        "send status should render before historical session selector"
+    );
+}
+
+#[test]
 fn functional_spec_2830_c02_chat_route_renders_snapshot_message_rows_for_active_session() {
     let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
         auth_mode: TauOpsDashboardAuthMode::Token,

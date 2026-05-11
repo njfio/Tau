@@ -566,6 +566,23 @@ async fn functional_spec_2830_c01_ops_chat_shell_exposes_send_form_and_fallback_
     assert!(body.contains(
         "id=\"tau-ops-chat-sidebar\" type=\"hidden\" name=\"sidebar\" value=\"collapsed\""
     ));
+    let send_form_index = body
+        .find("id=\"tau-ops-chat-send-form\"")
+        .expect("send form marker should render");
+    let send_status_index = body
+        .find("id=\"tau-ops-chat-send-status\"")
+        .expect("send status marker should render");
+    let selector_index = body
+        .find("id=\"tau-ops-chat-session-selector\"")
+        .expect("session selector marker should render");
+    assert!(
+        send_form_index < selector_index,
+        "chat composer should render before historical session selector"
+    );
+    assert!(
+        send_status_index < selector_index,
+        "send status should render before historical session selector"
+    );
     assert!(body.contains(
         "id=\"tau-ops-chat-transcript\" data-message-count=\"0\" data-rendered-row-count=\"1\""
     ));
