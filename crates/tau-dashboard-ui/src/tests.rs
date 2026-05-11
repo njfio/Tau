@@ -4771,16 +4771,19 @@ fn functional_spec_3124_c01_c02_tools_route_renders_job_cancel_action_markers() 
         "id=\"tau-ops-jobs-cancel-0\" data-action=\"cancel-job\" data-job-id=\"job-001\" data-cancel-enabled=\"true\""
     ));
     assert!(html.contains(
-        "id=\"tau-ops-jobs-cancel-1\" data-action=\"cancel-job\" data-job-id=\"job-002\" data-cancel-enabled=\"false\""
+        "id=\"tau-ops-jobs-cancel-0\" data-action=\"cancel-job\" data-job-id=\"job-001\" data-cancel-enabled=\"true\" href="
     ));
     assert!(html.contains(
-        "id=\"tau-ops-jobs-cancel-2\" data-action=\"cancel-job\" data-job-id=\"job-003\" data-cancel-enabled=\"false\""
+        "id=\"tau-ops-jobs-cancel-1\" data-action=\"cancel-job\" data-job-id=\"job-002\" data-cancel-enabled=\"false\" aria-disabled=\"true\">Cancel unavailable</span>"
+    ));
+    assert!(html.contains(
+        "id=\"tau-ops-jobs-cancel-2\" data-action=\"cancel-job\" data-job-id=\"job-003\" data-cancel-enabled=\"false\" aria-disabled=\"true\">Cancel unavailable</span>"
     ));
     assert!(html.contains(
         "id=\"tau-ops-job-cancel-panel\" data-requested-job-id=\"job-003\" data-cancel-status=\"cancelled\" data-panel-visible=\"true\" data-cancel-endpoint-template=\"/gateway/jobs/{job_id}/cancel\""
     ));
     assert!(html.contains(
-        "id=\"tau-ops-job-cancel-submit\" data-action=\"cancel-job\" data-job-id=\"job-003\" data-cancel-enabled=\"false\""
+        "id=\"tau-ops-job-cancel-submit\" data-action=\"cancel-job\" data-job-id=\"job-003\" data-cancel-enabled=\"false\" aria-disabled=\"true\">Cancel unavailable</span>"
     ));
 }
 

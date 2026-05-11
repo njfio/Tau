@@ -168,6 +168,12 @@ async fn integration_spec_3124_c03_ops_tools_route_renders_job_cancel_contracts(
         "id=\"tau-ops-job-cancel-submit\" data-action=\"cancel-job\" data-job-id=\"job-001\" data-cancel-enabled=\"false\""
     ));
     assert!(body.contains(
+        "id=\"tau-ops-jobs-cancel-1\" data-action=\"cancel-job\" data-job-id=\"job-002\" data-cancel-enabled=\"false\" aria-disabled=\"true\">Cancel unavailable</span>"
+    ));
+    assert!(body.contains(
+        "id=\"tau-ops-jobs-cancel-2\" data-action=\"cancel-job\" data-job-id=\"job-003\" data-cancel-enabled=\"false\" aria-disabled=\"true\">Cancel unavailable</span>"
+    ));
+    assert!(body.contains(
         "id=\"tau-ops-job-detail-metadata\" data-job-id=\"job-001\" data-job-status=\"cancelled\" data-duration-ms=\"5\""
     ));
     assert!(body.contains("cancel requested"));

@@ -4101,6 +4101,31 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     } else {
                         "false"
                     };
+                    let cancel_action_view = if cancel_enabled == "true" {
+                        leptos::either::Either::Left(view! {
+                            <a
+                                id=cancel_id.clone()
+                                data-action="cancel-job"
+                                data-job-id=row.job_id.clone()
+                                data-cancel-enabled=cancel_enabled
+                                href=cancel_href
+                            >
+                                Cancel
+                            </a>
+                        })
+                    } else {
+                        leptos::either::Either::Right(view! {
+                            <span
+                                id=cancel_id.clone()
+                                data-action="cancel-job"
+                                data-job-id=row.job_id.clone()
+                                data-cancel-enabled=cancel_enabled
+                                aria-disabled="true"
+                            >
+                                Cancel unavailable
+                            </span>
+                        })
+                    };
                     view! {
                         <tr
                             id=row_id
@@ -4124,15 +4149,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 >
                                     View Output
                                 </a>
-                                <a
-                                    id=cancel_id
-                                    data-action="cancel-job"
-                                    data-job-id=row.job_id.clone()
-                                    data-cancel-enabled=cancel_enabled
-                                    href=cancel_href
-                                >
-                                    Cancel
-                                </a>
+                                {cancel_action_view}
                             </td>
                         </tr>
                     }
@@ -4200,6 +4217,31 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     let job_cancel_submit_href = format!(
         "{active_shell_path}?theme={theme_attr}&sidebar={sidebar_state_attr}&session={chat_session_key}&job={job_detail_selected_job_id}&cancel_job={job_detail_selected_job_id}"
     );
+    let job_cancel_submit_view = if job_cancel_enabled == "true" {
+        leptos::either::Either::Left(view! {
+            <a
+                id="tau-ops-job-cancel-submit"
+                data-action="cancel-job"
+                data-job-id=job_detail_selected_job_id.clone()
+                data-cancel-enabled=job_cancel_enabled
+                href=job_cancel_submit_href
+            >
+                Cancel Selected Job
+            </a>
+        })
+    } else {
+        leptos::either::Either::Right(view! {
+            <span
+                id="tau-ops-job-cancel-submit"
+                data-action="cancel-job"
+                data-job-id=job_detail_selected_job_id.clone()
+                data-cancel-enabled=job_cancel_enabled
+                aria-disabled="true"
+            >
+                Cancel unavailable
+            </span>
+        })
+    };
     let session_detail_panel_active = sessions_route_active && context.chat.session_detail_visible;
     let session_detail_panel_hidden = if session_detail_panel_active {
         "false"
@@ -7241,15 +7283,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 data-panel-visible=job_cancel_panel_visible
                                 data-cancel-endpoint-template="/gateway/jobs/{job_id}/cancel"
                             >
-                                <a
-                                    id="tau-ops-job-cancel-submit"
-                                    data-action="cancel-job"
-                                    data-job-id=job_detail_selected_job_id.clone()
-                                    data-cancel-enabled=job_cancel_enabled
-                                    href=job_cancel_submit_href
-                                >
-                                    Cancel Selected Job
-                                </a>
+                                {job_cancel_submit_view}
                             </section>
                         </section>
                         <section
