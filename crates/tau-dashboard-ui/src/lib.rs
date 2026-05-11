@@ -5175,6 +5175,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     margin-bottom: 0;
                 }
                 #tau-ops-chat-session-summary,
+                #tau-ops-chat-session-manager,
                 #tau-ops-chat-session-selector,
                 #tau-ops-chat-new-session-form,
                 #tau-ops-chat-new-session-status {
@@ -5254,6 +5255,43 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     text-align: center;
                     text-decoration: none;
                     overflow-wrap: anywhere;
+                }
+                #tau-ops-chat-session-manager {
+                    display: block;
+                    width: 100%;
+                    max-width: 420px;
+                }
+                #tau-ops-chat-session-manager[open] {
+                    display: grid;
+                    gap: 8px;
+                }
+                #tau-ops-chat-session-manager > summary {
+                    display: flex;
+                    min-height: 34px;
+                    align-items: center;
+                    justify-content: space-between;
+                    border: 1px solid #2f5368;
+                    border-radius: 6px;
+                    padding: 7px 9px;
+                    background: #102b3a;
+                    color: #dbe8ef;
+                    cursor: pointer;
+                    font-size: .74rem;
+                    font-weight: 800;
+                    list-style: none;
+                }
+                #tau-ops-chat-session-manager > summary::-webkit-details-marker {
+                    display: none;
+                }
+                #tau-ops-chat-session-manager > summary::after {
+                    color: #7fb4ff;
+                    content: "Open";
+                    font-size: .66rem;
+                    font-weight: 850;
+                    text-transform: uppercase;
+                }
+                #tau-ops-chat-session-manager[open] > summary::after {
+                    content: "Close";
                 }
                 #tau-ops-chat-session-selector {
                     border: 1px solid #203847;
@@ -6427,6 +6465,15 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     {chat_send_status_message}
                                 </p>
                             </article>
+                            <details
+                                id="tau-ops-chat-session-manager"
+                                data-secondary-session-management="true"
+                                data-collapsed-by-default="true"
+                                data-session-option-count=chat_session_option_count_value.clone()
+                            >
+                                <summary id="tau-ops-chat-session-manager-summary">
+                                    {format!("Sessions ({})", chat_session_option_count_value.clone())}
+                                </summary>
                             <form
                                 id="tau-ops-chat-new-session-form"
                                 action=chat_new_session_form_action
@@ -6546,7 +6593,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             <section
                                 id="tau-ops-chat-session-selector"
                                 data-active-session-key=chat_session_key.clone()
-                                data-option-count=chat_session_option_count_value
+                                data-option-count=chat_session_option_count_value.clone()
                             >
                                 <ul id="tau-ops-chat-session-options">
                                     {chat_session_options
@@ -6582,6 +6629,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                         .collect_view()}
                                 </ul>
                             </section>
+                            </details>
                             <article
                                 id="tau-ops-chat-latest-turn"
                                 data-latest-turn-visible=chat_latest_turn_visible

@@ -3233,6 +3233,9 @@ fn functional_spec_2830_c07_chat_route_prioritizes_composer_before_session_selec
     let selector_index = html
         .find("id=\"tau-ops-chat-session-selector\"")
         .expect("session selector marker should render");
+    let session_manager_index = html
+        .find("id=\"tau-ops-chat-session-manager\"")
+        .expect("session manager marker should render");
     let new_session_form_index = html
         .find("id=\"tau-ops-chat-new-session-form\"")
         .expect("new-session form marker should render");
@@ -3255,6 +3258,22 @@ fn functional_spec_2830_c07_chat_route_prioritizes_composer_before_session_selec
     assert!(
         send_status_index < new_session_status_index,
         "send status should render before secondary new-session status"
+    );
+    assert!(html.contains(
+        "id=\"tau-ops-chat-session-manager\" data-secondary-session-management=\"true\" data-collapsed-by-default=\"true\" data-session-option-count=\"2\""
+    ));
+    assert!(html.contains("id=\"tau-ops-chat-session-manager-summary\""));
+    assert!(
+        session_manager_index < new_session_form_index,
+        "session manager should contain new-session creation controls"
+    );
+    assert!(
+        session_manager_index < selector_index,
+        "session manager should contain historical session selector"
+    );
+    assert!(
+        send_status_index < session_manager_index,
+        "active send status should render before secondary session manager"
     );
 }
 

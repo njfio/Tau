@@ -47,6 +47,11 @@ Given `/ops/chat` renders for an active session,
 When the operator arrives at the active chat page,
 Then the message composer appears before new-session creation controls so the primary path is replying in the current session.
 
+### AC-9 Secondary session controls are grouped behind a compact session manager
+Given `/ops/chat` renders session creation and session history controls,
+When the operator lands on the active chat page,
+Then the new-session form and session selector are grouped inside a collapsed-by-default session manager summary so they do not flood the first view.
+
 ## Scope
 
 ### In Scope
@@ -56,6 +61,7 @@ Then the message composer appears before new-session creation controls so the pr
 - Empty-message submit guard and visible backend rejection status.
 - Composer-first ordering before historical session selection.
 - Composer-first ordering before secondary new-session creation controls.
+- Compact secondary session manager grouping around new-session and session-history controls.
 - Targeted regression validation for existing ops shell slices.
 
 ### Out of Scope
@@ -72,6 +78,7 @@ Then the message composer appears before new-session creation controls so the pr
 - C-06 (functional/integration): empty or whitespace-only chat sends are blocked by the form contract or redirected with `chat_status=empty-message` without creating or mutating a session store.
 - C-07 (functional): `/ops/chat` places the send form and send-status marker before the historical session selector.
 - C-08 (functional): `/ops/chat` places the send form and send-status marker before the new-session form and status controls.
+- C-09 (functional): `/ops/chat` groups new-session and session selector controls inside a collapsed secondary session manager with a summary count.
 
 ## Success Metrics / Observable Signals
 - `cargo test -p tau-dashboard-ui functional_spec_2830 -- --test-threads=1` passes.
