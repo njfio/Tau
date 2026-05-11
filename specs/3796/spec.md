@@ -23,6 +23,9 @@ In scope:
   rail item is clicked from a harness history subroute.
 - Keep internal contract-marker scaffolding out of the visible operator surface
   while preserving its machine-readable data markers.
+- Keep the Tau Ops left rail scoped to first-class `/ops/*` routes; legacy
+  dashboard and standalone webchat remain reachable as adapters but are not
+  promoted in the ops rail.
 - Verify the live `/ops/deploy` route in the in-app browser.
 
 Out of scope:
@@ -47,6 +50,10 @@ AC-3: Given the live `/ops/deploy` route is loaded in Browser Use, when the DOM
 and console are inspected, then the route exposes the operator-route contract and
 console errors are zero.
 
+AC-4: Given the Tau Ops left rail renders, when an operator scans navigation,
+then the rail contains the first-class ops routes and omits legacy dashboard and
+standalone webchat adapter links.
+
 ## Conformance Cases
 
 C-01 maps to AC-1: `tau-dashboard-ui` render tests assert global operator shell
@@ -62,6 +69,9 @@ selected proposal, history filter, and audit ref.
 C-03 maps to AC-3: Browser Use inspects the live localhost `/ops/deploy` route
 and verifies the operator-route contract marker with zero console errors.
 
+C-04 maps to AC-4: `tau-dashboard-ui` render tests assert the left rail contains
+the expected ops route links and omits `/dashboard` and `/webchat`.
+
 ## Success Signals
 
 - `cargo test -p tau-dashboard-ui functional_spec_3796_c01_non_harness_routes_use_operator_shell_chrome`
@@ -73,3 +83,5 @@ and verifies the operator-route contract marker with zero console errors.
 - Browser Use DOM inspection from a selected harness history record shows the
   active harness rail link preserving `proposal_id`, `view`, `audit_action`, and
   `audit_ref`.
+- Browser Use DOM inspection of a live ops route shows no legacy dashboard or
+  webchat links in the Tau Ops left rail.

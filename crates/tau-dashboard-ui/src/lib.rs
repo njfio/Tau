@@ -1731,18 +1731,6 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
         context.sidebar_state,
         shell_nav_session_key.as_str(),
     );
-    let nav_legacy_dashboard_href = ops_shell_context_href(
-        "/dashboard",
-        context.theme,
-        context.sidebar_state,
-        shell_nav_session_key.as_str(),
-    );
-    let nav_webchat_href = ops_shell_context_href(
-        "/webchat",
-        context.theme,
-        context.sidebar_state,
-        shell_nav_session_key.as_str(),
-    );
     let dark_theme_pressed = if matches!(context.theme, TauOpsDashboardTheme::Dark) {
         "true"
     } else {
@@ -5691,8 +5679,6 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             <li id="tau-ops-nav-diagnostics"><a data-nav-item="diagnostics" href=nav_diagnostics_href data-harness-rail-label="Audit" data-preserves-shell-context="true" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::Diagnostics)>Diagnostics & Audit</a></li>
                             <li id="tau-ops-nav-deploy"><a data-nav-item="deploy" href=nav_deploy_href data-harness-rail-label="Deploy" data-preserves-shell-context="true" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::Deploy)>Deploy Agent</a></li>
                             <li id="tau-ops-nav-login"><a href=nav_login_href data-harness-rail-label="Login" data-preserves-shell-context="true" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::Login)>Operator Login</a></li>
-                            <li id="tau-ops-nav-legacy-dashboard"><a href=nav_legacy_dashboard_href data-harness-rail-label="Legacy" data-preserves-shell-context="true">Legacy Dashboard</a></li>
-                            <li id="tau-ops-nav-webchat"><a href=nav_webchat_href data-harness-rail-label="Webchat" data-preserves-shell-context="true">Webchat</a></li>
                         </ul>
                     </nav>
                 </aside>

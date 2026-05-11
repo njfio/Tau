@@ -509,6 +509,20 @@ fn functional_spec_2790_c01_sidebar_includes_15_ops_route_links() {
             "missing nav route {route}"
         );
     }
+
+    for stale_adapter in [
+        "id=\"tau-ops-nav-legacy-dashboard\"",
+        "id=\"tau-ops-nav-webchat\"",
+        "Legacy Dashboard",
+        "Webchat",
+        "href=\"/dashboard?theme=dark&amp;sidebar=expanded&amp;session=default\"",
+        "href=\"/webchat?theme=dark&amp;sidebar=expanded&amp;session=default\"",
+    ] {
+        assert!(
+            !html.contains(stale_adapter),
+            "ops left rail should not link to adapter surface `{stale_adapter}`"
+        );
+    }
 }
 
 #[test]

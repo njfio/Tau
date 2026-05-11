@@ -1,4 +1,4 @@
-# Spec: Issue #2790 - PRD Phase 1C 14-item sidebar navigation and breadcrumb shell markers
+# Spec: Issue #2790 - PRD Phase 1C 15-item sidebar navigation and breadcrumb shell markers
 
 Status: Implemented
 
@@ -7,10 +7,10 @@ The current Tau Ops Dashboard shell exposes only a small subset of routes and ha
 
 ## Acceptance Criteria
 
-### AC-1 Sidebar renders 14 deterministic ops route links
+### AC-1 Sidebar renders 15 deterministic ops route links
 Given the SSR dashboard shell,
 When rendering navigation,
-Then output contains 14 route links aligned to PRD view sections under `/ops/*` with stable ids/tokens.
+Then output contains 15 route links aligned to PRD view sections under `/ops/*` with stable ids/tokens.
 
 ### AC-2 Breadcrumb contract reflects active route context
 Given shell context route selection,
@@ -31,7 +31,7 @@ Then responses contain expanded navigation and breadcrumb markers without regres
 
 ### In Scope
 - `tau-dashboard-ui` navigation model and breadcrumb render markers.
-- SSR marker tests for 14 links and route/breadcrumb state.
+- SSR marker tests for 15 links and route/breadcrumb state.
 - Gateway integration regression for `/ops` and `/ops/login` shell responses.
 
 ### Out of Scope
@@ -40,7 +40,7 @@ Then responses contain expanded navigation and breadcrumb markers without regres
 - Mobile drawer interactions and hamburger behavior.
 
 ## Conformance Cases
-- C-01 (conformance): shell includes 14 route links with expected ids/paths.
+- C-01 (conformance): shell includes 15 route links with expected ids/paths.
 - C-02 (functional): breadcrumb markers reflect `ops` active route.
 - C-03 (functional): breadcrumb markers reflect `login` active route.
 - C-04 (regression): auth shell markers remain present after nav expansion.
