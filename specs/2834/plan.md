@@ -5,7 +5,8 @@
 2. Add RED gateway tests that seed multiple session files and assert selector option rows + active selected-state on `/ops/chat`.
 3. Extend `TauOpsDashboardChatSnapshot` with selector option rows and render deterministic selector markers.
 4. In gateway ops shell, discover session keys from `state_dir/openresponses/sessions/*.jsonl`, sanitize/sort keys, ensure the active session key is included, and map options into the chat snapshot.
-5. Run targeted regressions for existing chat shell contracts and validate crate gates.
+5. Keep the active chat session first in the rendered selector so the current working session is not buried below historical sessions.
+6. Run targeted regressions for existing chat shell contracts and validate crate gates.
 
 ## Affected Modules
 - `crates/tau-dashboard-ui/src/lib.rs`
@@ -17,6 +18,8 @@
   - Mitigation: normalize, deduplicate, and sort keys before rendering.
 - Risk: active query session is missing from selector options when no file exists yet.
   - Mitigation: always include sanitized active session key in selector options.
+- Risk: historical or internal-looking session keys bury the selected session in long selectors.
+  - Mitigation: render selected option rows before historical rows while preserving deterministic order for the rest.
 - Risk: selector additions regress existing chat form/transcript contracts.
   - Mitigation: keep existing markers unchanged and run existing 2830 suites.
 

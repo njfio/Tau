@@ -3353,6 +3353,13 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
             updated_unix_ms: 0,
         });
     }
+    chat_session_options.sort_by(|left, right| {
+        right
+            .selected
+            .cmp(&left.selected)
+            .then_with(|| right.updated_unix_ms.cmp(&left.updated_unix_ms))
+            .then_with(|| left.session_key.cmp(&right.session_key))
+    });
     let sessions_rows_view = if sessions_row_options.is_empty() {
         leptos::either::Either::Left(view! {
             <li id="tau-ops-sessions-empty-state" data-empty-state="true">

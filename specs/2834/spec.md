@@ -27,6 +27,11 @@ Given existing phase 1A..1M suites,
 When active-session selector contracts land,
 Then prior suites remain green.
 
+### AC-5 Active session stays first in the chat selector
+Given multiple discovered sessions or an active session without a discovered backing file,
+When `/ops/chat` renders,
+Then the active session option appears as the first selector row before historical sessions.
+
 ## Scope
 
 ### In Scope
@@ -44,6 +49,7 @@ Then prior suites remain green.
 - C-02 (integration): selector rows include discovered session keys and selected marker matches active query session.
 - C-03 (integration): active selection synchronizes selector selected marker, transcript content, and send-form `session_key`.
 - C-04 (regression): existing Tau Ops shell suites remain green.
+- C-05 (functional/integration): active session option renders first even when discovery order or missing active-session files would otherwise bury it.
 
 ## Success Metrics / Observable Signals
 - `cargo test -p tau-dashboard-ui functional_spec_2834 -- --test-threads=1` passes.

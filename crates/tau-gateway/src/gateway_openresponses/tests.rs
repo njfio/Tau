@@ -1571,10 +1571,10 @@ async fn integration_spec_2834_c02_c03_ops_chat_selector_syncs_discovered_sessio
         "id=\"tau-ops-chat-session-selector\" data-active-session-key=\"session-beta\" data-option-count=\"2\""
     ));
     assert!(body.contains(
-        "id=\"tau-ops-chat-session-option-0\" data-session-key=\"session-alpha\" data-selected=\"false\""
+        "id=\"tau-ops-chat-session-option-0\" data-session-key=\"session-beta\" data-selected=\"true\""
     ));
     assert!(body.contains(
-        "id=\"tau-ops-chat-session-option-1\" data-session-key=\"session-beta\" data-selected=\"true\""
+        "id=\"tau-ops-chat-session-option-1\" data-session-key=\"session-alpha\" data-selected=\"false\""
     ));
     assert!(body.contains(
         "id=\"tau-ops-chat-session-key\" type=\"hidden\" name=\"session_key\" value=\"session-beta\""

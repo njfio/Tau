@@ -3833,11 +3833,11 @@ fn functional_spec_2834_c03_chat_route_adds_missing_active_session_option_marker
             "id=\"tau-ops-chat-session-selector\" data-active-session-key=\"session-zeta\" data-option-count=\"2\""
         ));
     assert!(html.contains(
-            "id=\"tau-ops-chat-session-option-0\" data-session-key=\"session-alpha\" data-selected=\"false\""
-        ));
+            "id=\"tau-ops-chat-session-option-0\" data-session-key=\"session-zeta\" data-selected=\"true\""
+    ));
     assert!(html.contains(
-            "id=\"tau-ops-chat-session-option-1\" data-session-key=\"session-zeta\" data-selected=\"true\""
-        ));
+            "id=\"tau-ops-chat-session-option-1\" data-session-key=\"session-alpha\" data-selected=\"false\""
+    ));
 }
 
 #[test]
