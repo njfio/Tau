@@ -852,10 +852,13 @@ async fn functional_spec_2872_c01_ops_chat_shell_exposes_new_session_form_contra
     let body = response.text().await.expect("read ops chat body");
 
     assert!(body.contains(
-        "id=\"tau-ops-chat-new-session-form\" action=\"/ops/chat/new\" method=\"post\" data-active-session-key=\"chat-c01\""
+        "id=\"tau-ops-chat-new-session-form\" action=\"/ops/chat/new\" method=\"post\" data-active-session-key=\"chat-c01\" data-empty-session-key-guard=\"true\""
     ));
     assert!(body.contains(
         "id=\"tau-ops-chat-new-session-key\" type=\"text\" name=\"session_key\" value=\"\""
+    ));
+    assert!(body.contains(
+        "id=\"tau-ops-chat-new-active-session-key\" type=\"hidden\" name=\"active_session_key\" value=\"chat-c01\""
     ));
     assert!(body
         .contains("id=\"tau-ops-chat-new-theme\" type=\"hidden\" name=\"theme\" value=\"light\""));
@@ -863,6 +866,67 @@ async fn functional_spec_2872_c01_ops_chat_shell_exposes_new_session_form_contra
         "id=\"tau-ops-chat-new-sidebar\" type=\"hidden\" name=\"sidebar\" value=\"collapsed\""
     ));
     assert!(body.contains("id=\"tau-ops-chat-new-session-button\" type=\"submit\""));
+    assert!(
+        body.contains("id=\"tau-ops-chat-new-session-status\" data-new-session-status=\"idle\"")
+    );
+    assert!(body
+        .contains("id=\"tau-ops-chat-new-session-guard\" data-empty-session-key-guard=\"true\""));
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn integration_spec_2872_c06_ops_chat_new_session_rejects_blank_key_with_visible_status() {
+    let temp = tempdir().expect("tempdir");
+    let state = test_state(temp.path(), 4_096, "secret");
+    let (addr, handle) = spawn_test_server(state.clone())
+        .await
+        .expect("spawn server");
+    let client = Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .expect("build client");
+
+    let create_response = client
+        .post(format!("http://{addr}/ops/chat/new"))
+        .form(&[
+            ("session_key", "   "),
+            ("active_session_key", "chat-current-session"),
+            ("theme", "dark"),
+            ("sidebar", "expanded"),
+        ])
+        .send()
+        .await
+        .expect("ops chat blank new-session request");
+    assert_eq!(create_response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        create_response
+            .headers()
+            .get("location")
+            .and_then(|value| value.to_str().ok()),
+        Some(
+            "/ops/chat?theme=dark&sidebar=expanded&session=chat-current-session&new_session_status=empty-key"
+        )
+    );
+
+    let session_path = gateway_session_path(&state.config.state_dir, "chat-current-session");
+    assert!(
+        !session_path.exists(),
+        "blank new-session submission should not create the active session"
+    );
+
+    let chat_response = client
+        .get(format!(
+            "http://{addr}/ops/chat?theme=dark&sidebar=expanded&session=chat-current-session&new_session_status=empty-key"
+        ))
+        .send()
+        .await
+        .expect("ops chat render blank new-session status");
+    assert_eq!(chat_response.status(), StatusCode::OK);
+    let chat_body = chat_response.text().await.expect("read ops chat body");
+    assert!(chat_body
+        .contains("id=\"tau-ops-chat-new-session-status\" data-new-session-status=\"empty-key\""));
+    assert!(chat_body.contains("Session was not created because the name was empty."));
 
     handle.abort();
 }
@@ -1195,8 +1259,7 @@ async fn functional_spec_2866_c01_c03_ops_chat_shell_exposes_inline_tool_card_ma
 }
 
 #[tokio::test]
-async fn integration_spec_2866_c04_ops_and_sessions_routes_preserve_hidden_inline_tool_card_markers(
-) {
+async fn integration_spec_2866_c04_ops_and_sessions_routes_omit_hidden_inline_tool_card_markers() {
     let temp = tempdir().expect("tempdir");
     let state = test_state(temp.path(), 4_096, "secret");
     let session_path = gateway_session_path(&state.config.state_dir, "chat-tool-card");
@@ -1231,9 +1294,13 @@ async fn integration_spec_2866_c04_ops_and_sessions_routes_preserve_hidden_inlin
     assert!(ops_body.contains(
         "id=\"tau-ops-chat-panel\" data-route=\"/ops/chat\" aria-hidden=\"true\" data-active-session-key=\"chat-tool-card\" data-panel-visible=\"false\""
     ));
-    assert!(ops_body.contains(
+    assert!(ops_body.contains("id=\"tau-ops-chat-transcript\""));
+    assert!(ops_body.contains("data-message-count=\"0\""));
+    assert!(ops_body.contains("data-rendered-row-count=\"0\""));
+    assert!(!ops_body.contains(
         "id=\"tau-ops-chat-tool-card-0\" data-tool-card=\"true\" data-inline-result=\"true\""
     ));
+    assert!(!ops_body.contains("{\"matches\":1}"));
 
     let sessions_response = client
         .get(format!(
@@ -1250,9 +1317,13 @@ async fn integration_spec_2866_c04_ops_and_sessions_routes_preserve_hidden_inlin
     assert!(sessions_body.contains(
         "id=\"tau-ops-chat-panel\" data-route=\"/ops/chat\" aria-hidden=\"true\" data-active-session-key=\"chat-tool-card\" data-panel-visible=\"false\""
     ));
-    assert!(sessions_body.contains(
+    assert!(sessions_body.contains("id=\"tau-ops-chat-transcript\""));
+    assert!(sessions_body.contains("data-message-count=\"0\""));
+    assert!(sessions_body.contains("data-rendered-row-count=\"0\""));
+    assert!(!sessions_body.contains(
         "id=\"tau-ops-chat-tool-card-0\" data-tool-card=\"true\" data-inline-result=\"true\""
     ));
+    assert!(!sessions_body.contains("{\"matches\":1}"));
 
     handle.abort();
 }
@@ -1300,8 +1371,7 @@ async fn functional_spec_2870_c01_c03_ops_chat_shell_exposes_markdown_and_code_m
 }
 
 #[tokio::test]
-async fn integration_spec_2870_c04_ops_and_sessions_routes_preserve_hidden_markdown_and_code_markers(
-) {
+async fn integration_spec_2870_c04_ops_and_sessions_routes_omit_hidden_markdown_and_code_markers() {
     let temp = tempdir().expect("tempdir");
     let state = test_state(temp.path(), 4_096, "secret");
     let session_path = gateway_session_path(&state.config.state_dir, "chat-markdown-code");
@@ -1333,10 +1403,14 @@ async fn integration_spec_2870_c04_ops_and_sessions_routes_preserve_hidden_markd
     assert!(ops_body.contains(
         "id=\"tau-ops-chat-panel\" data-route=\"/ops/chat\" aria-hidden=\"true\" data-active-session-key=\"chat-markdown-code\" data-panel-visible=\"false\""
     ));
-    assert!(ops_body.contains("id=\"tau-ops-chat-markdown-0\" data-markdown-rendered=\"true\""));
-    assert!(ops_body.contains(
+    assert!(ops_body.contains("id=\"tau-ops-chat-transcript\""));
+    assert!(ops_body.contains("data-message-count=\"0\""));
+    assert!(ops_body.contains("data-rendered-row-count=\"0\""));
+    assert!(!ops_body.contains("id=\"tau-ops-chat-markdown-0\" data-markdown-rendered=\"true\""));
+    assert!(!ops_body.contains(
         "id=\"tau-ops-chat-code-block-0\" data-code-block=\"true\" data-language=\"rust\" data-code=\"fn main() {}\""
     ));
+    assert!(!ops_body.contains("Build report"));
 
     let sessions_response = client
         .get(format!(
@@ -1353,12 +1427,16 @@ async fn integration_spec_2870_c04_ops_and_sessions_routes_preserve_hidden_markd
     assert!(sessions_body.contains(
         "id=\"tau-ops-chat-panel\" data-route=\"/ops/chat\" aria-hidden=\"true\" data-active-session-key=\"chat-markdown-code\" data-panel-visible=\"false\""
     ));
+    assert!(sessions_body.contains("id=\"tau-ops-chat-transcript\""));
+    assert!(sessions_body.contains("data-message-count=\"0\""));
+    assert!(sessions_body.contains("data-rendered-row-count=\"0\""));
     assert!(
-        sessions_body.contains("id=\"tau-ops-chat-markdown-0\" data-markdown-rendered=\"true\"")
+        !sessions_body.contains("id=\"tau-ops-chat-markdown-0\" data-markdown-rendered=\"true\"")
     );
-    assert!(sessions_body.contains(
+    assert!(!sessions_body.contains(
         "id=\"tau-ops-chat-code-block-0\" data-code-block=\"true\" data-language=\"rust\" data-code=\"fn main() {}\""
     ));
+    assert!(!sessions_body.contains("Build report"));
 
     handle.abort();
 }
@@ -1618,7 +1696,7 @@ async fn functional_spec_2893_c01_ops_sessions_shell_exposes_row_metadata_marker
     let body = response.text().await.expect("read ops sessions body");
 
     assert!(body.contains(
-        "id=\"tau-ops-sessions-row-0\" data-session-key=\"session-alpha\" data-selected=\"true\" data-entry-count=\"2\" data-total-tokens=\"0\" data-is-valid=\"true\" data-updated-unix-ms=\""
+        "id=\"tau-ops-sessions-row-0\" data-session-key=\"session-alpha\" data-selected=\"true\" data-entry-count=\"3\" data-total-tokens=\"0\" data-is-valid=\"true\" data-updated-unix-ms=\""
     ));
     assert!(body.contains(
         "href=\"/ops/chat?theme=light&amp;sidebar=collapsed&amp;session=session-alpha\""
@@ -1668,10 +1746,10 @@ async fn integration_spec_2893_c02_c03_c04_ops_sessions_shell_metadata_matches_s
 
     assert!(body.contains("id=\"tau-ops-sessions-list\" data-session-count=\"2\""));
     assert!(body.contains(
-        "id=\"tau-ops-sessions-row-0\" data-session-key=\"session-alpha\" data-selected=\"false\" data-entry-count=\"2\" data-total-tokens=\"0\" data-is-valid=\"true\" data-updated-unix-ms=\""
+        "id=\"tau-ops-sessions-row-0\" data-session-key=\"session-alpha\" data-selected=\"false\" data-entry-count=\"3\" data-total-tokens=\"0\" data-is-valid=\"true\" data-updated-unix-ms=\""
     ));
     assert!(body.contains(
-        "id=\"tau-ops-sessions-row-1\" data-session-key=\"session-beta\" data-selected=\"true\" data-entry-count=\"3\" data-total-tokens=\"0\" data-is-valid=\"true\" data-updated-unix-ms=\""
+        "id=\"tau-ops-sessions-row-1\" data-session-key=\"session-beta\" data-selected=\"true\" data-entry-count=\"5\" data-total-tokens=\"0\" data-is-valid=\"true\" data-updated-unix-ms=\""
     ));
     assert!(body.contains(
         "href=\"/ops/chat?theme=light&amp;sidebar=collapsed&amp;session=session-alpha\""
@@ -1928,8 +2006,8 @@ async fn integration_spec_2846_c02_c03_ops_session_detail_shell_renders_graph_no
     assert_eq!(response.status(), StatusCode::OK);
     let body = response.text().await.expect("read ops session graph body");
 
-    assert!(body.contains("id=\"tau-ops-session-graph-nodes\" data-node-count=\"3\""));
-    assert!(body.contains("id=\"tau-ops-session-graph-edges\" data-edge-count=\"2\""));
+    assert!(body.contains("id=\"tau-ops-session-graph-nodes\" data-node-count=\"5\""));
+    assert!(body.contains("id=\"tau-ops-session-graph-edges\" data-edge-count=\"4\""));
     assert!(body.contains(
         "id=\"tau-ops-session-graph-node-0\" data-entry-id=\"1\" data-message-role=\"system\""
     ));
@@ -1937,13 +2015,25 @@ async fn integration_spec_2846_c02_c03_ops_session_detail_shell_renders_graph_no
         "id=\"tau-ops-session-graph-node-1\" data-entry-id=\"2\" data-message-role=\"user\""
     ));
     assert!(body.contains(
-        "id=\"tau-ops-session-graph-node-2\" data-entry-id=\"3\" data-message-role=\"user\""
+        "id=\"tau-ops-session-graph-node-2\" data-entry-id=\"3\" data-message-role=\"assistant\""
+    ));
+    assert!(body.contains(
+        "id=\"tau-ops-session-graph-node-3\" data-entry-id=\"4\" data-message-role=\"user\""
+    ));
+    assert!(body.contains(
+        "id=\"tau-ops-session-graph-node-4\" data-entry-id=\"5\" data-message-role=\"assistant\""
     ));
     assert!(body.contains(
         "id=\"tau-ops-session-graph-edge-0\" data-source-entry-id=\"1\" data-target-entry-id=\"2\""
     ));
     assert!(body.contains(
         "id=\"tau-ops-session-graph-edge-1\" data-source-entry-id=\"2\" data-target-entry-id=\"3\""
+    ));
+    assert!(body.contains(
+        "id=\"tau-ops-session-graph-edge-2\" data-source-entry-id=\"3\" data-target-entry-id=\"4\""
+    ));
+    assert!(body.contains(
+        "id=\"tau-ops-session-graph-edge-3\" data-source-entry-id=\"4\" data-target-entry-id=\"5\""
     ));
 
     handle.abort();
@@ -13431,6 +13521,11 @@ async fn integration_spec_3454_c02_m7_memory_graph_and_persistence_matrix() {
                 "actor_id": "operator",
                 "memory_type": "fact",
                 "importance": 0.73,
+                "relations": [{
+                    "target_id": "m7-fact-a",
+                    "relation_type": "related_to",
+                    "weight": 1.0
+                }],
                 "policy_gate": MEMORY_WRITE_POLICY_GATE
             }),
         )
@@ -13677,7 +13772,7 @@ async fn integration_spec_3454_c02_m7_memory_graph_and_persistence_matrix() {
     let graph = harness
         .get_memory_graph(
             session_key,
-            Some("max_nodes=6&min_edge_weight=1&relation_types=contains,keyword_overlap"),
+            Some("max_nodes=6&min_edge_weight=1&relation_types=related_to"),
         )
         .await;
     assert_eq!(graph.status(), StatusCode::OK);
@@ -13697,6 +13792,14 @@ async fn integration_spec_3454_c02_m7_memory_graph_and_persistence_matrix() {
             .map(|edges| !edges.is_empty())
             .unwrap_or(false),
         "memory graph response should include edges for relation query"
+    );
+    assert!(
+        graph_payload["edges"]
+            .as_array()
+            .and_then(|edges| edges.first())
+            .and_then(|edge| edge["relation_type"].as_str())
+            == Some("related_to"),
+        "memory graph response should expose explicit durable memory relation edges"
     );
 }
 

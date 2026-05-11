@@ -61,6 +61,8 @@ pub(super) struct OpsShellControlsQuery {
     #[serde(default)]
     chat_status: String,
     #[serde(default)]
+    new_session_status: String,
+    #[serde(default)]
     channel_action_status: String,
     #[serde(default)]
     channel_action: String,
@@ -385,6 +387,13 @@ impl OpsShellControlsQuery {
     pub(super) fn requested_chat_send_status(&self) -> &'static str {
         match self.chat_status.trim() {
             "empty-message" => "empty-message",
+            _ => "idle",
+        }
+    }
+
+    pub(super) fn requested_chat_new_session_status(&self) -> &'static str {
+        match self.new_session_status.trim() {
+            "empty-key" => "empty-key",
             _ => "idle",
         }
     }

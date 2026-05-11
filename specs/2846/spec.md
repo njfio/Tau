@@ -26,7 +26,7 @@ then the response includes deterministic graph panel marker attributes containin
 ### AC-2 Graph node row contracts
 Given selected session lineage entries,
 when `/ops/sessions/{session_key}` renders,
-then deterministic graph node row markers are present with entry-id and role attributes.
+then deterministic graph node row markers are present for every persisted lineage entry with entry-id and role attributes.
 
 ### AC-3 Graph edge row contracts
 Given selected session lineage parent links,
@@ -36,7 +36,7 @@ then deterministic graph edge row markers are present with source and target ent
 ### AC-4 Graph summary counts
 Given selected session lineage,
 when `/ops/sessions/{session_key}` renders,
-then graph list-level marker attributes expose deterministic node-count and edge-count values.
+then graph list-level marker attributes expose deterministic node-count and edge-count values for the complete persisted lineage, including assistant replies written by chat send.
 
 ### AC-5 Graph empty fallback contracts
 Given selected session with no entries,

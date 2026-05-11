@@ -3329,10 +3329,13 @@ fn functional_spec_2872_c01_chat_route_renders_new_session_form_contract_markers
     });
 
     assert!(html.contains(
-            "id=\"tau-ops-chat-new-session-form\" action=\"/ops/chat/new\" method=\"post\" data-active-session-key=\"chat-c01\""
-        ));
+        "id=\"tau-ops-chat-new-session-form\" action=\"/ops/chat/new\" method=\"post\" data-active-session-key=\"chat-c01\" data-empty-session-key-guard=\"true\""
+    ));
     assert!(html.contains(
         "id=\"tau-ops-chat-new-session-key\" type=\"text\" name=\"session_key\" value=\"\""
+    ));
+    assert!(html.contains(
+        "id=\"tau-ops-chat-new-active-session-key\" type=\"hidden\" name=\"active_session_key\" value=\"chat-c01\""
     ));
     assert!(html
         .contains("id=\"tau-ops-chat-new-theme\" type=\"hidden\" name=\"theme\" value=\"light\""));
@@ -3340,6 +3343,14 @@ fn functional_spec_2872_c01_chat_route_renders_new_session_form_contract_markers
         "id=\"tau-ops-chat-new-sidebar\" type=\"hidden\" name=\"sidebar\" value=\"collapsed\""
     ));
     assert!(html.contains("id=\"tau-ops-chat-new-session-button\" type=\"submit\""));
+    assert!(
+        html.contains("id=\"tau-ops-chat-new-session-status\" data-new-session-status=\"idle\"")
+    );
+    assert!(html.contains("id=\"tau-ops-chat-new-session-status-message\""));
+    assert!(html
+        .contains("id=\"tau-ops-chat-new-session-guard\" data-empty-session-key-guard=\"true\""));
+    assert!(html.contains("newSessionForm.addEventListener(\"submit\""));
+    assert!(html.contains("data-submit-blocked\", \"empty-session-key\""));
 }
 
 #[test]

@@ -42,6 +42,11 @@ Given existing chat contract suites,
 when `spec_2830`, `spec_2834`, `spec_2858`, `spec_2862`, `spec_2866`, and `spec_2870` rerun,
 then all suites remain green.
 
+### AC-6 Blank new-session submissions are rejected visibly without mutating session state
+Given an operator submits the new-session form with an empty or whitespace-only session key,
+when the UI submit guard or `POST /ops/chat/new` processes the request,
+then session creation is blocked or redirected back to the active session with `new_session_status=empty-key`, no session store is initialized, and `/ops/chat` renders a visible status marker explaining the rejection.
+
 ## Conformance Cases
 | Case | AC | Tier | Given | When | Then |
 |---|---|---|---|---|---|
@@ -50,6 +55,7 @@ then all suites remain green.
 | C-03 | AC-3 | Integration | created session key | render redirected `/ops/chat` | selector contains/marks created session selected |
 | C-04 | AC-4 | Integration | created session key on `/ops` + `/ops/sessions` | render route shells | chat panel hidden with created active session key |
 | C-05 | AC-5 | Regression | existing chat suites | rerun suites | no regressions |
+| C-06 | AC-6 | Functional/Integration | blank or whitespace-only new-session key | submit form or post endpoint | visible empty-key status and no session store mutation |
 
 ## Success Metrics / Signals
 - `cargo test -p tau-dashboard-ui spec_2872 -- --test-threads=1` passes.

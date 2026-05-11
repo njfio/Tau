@@ -32,7 +32,8 @@ exist and map ACs to conformance cases.
 Given an isolated gateway workspace with scripted behavior,
 when the M7 conformance test matrix runs,
 then memory write/read/update/delete, search scoping/type filters, and memory
-graph response contracts pass with deterministic assertions.
+graph response contracts for explicit durable memory relations pass with
+deterministic assertions.
 
 ### AC-3 X9 cortex bulletin/cross-session conformance is executable and deterministic
 Given cortex runtime endpoints and scripted LLM responses,

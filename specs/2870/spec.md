@@ -9,7 +9,7 @@ Tau Ops chat transcript currently renders message content as plain text rows and
 In scope:
 - Add deterministic markdown-render marker contracts for assistant chat rows.
 - Add deterministic code-block marker contracts including language and code payload attributes.
-- Preserve route-safe behavior on `/ops`, `/ops/chat`, and `/ops/sessions`.
+- Preserve route-safe behavior on `/ops`, `/ops/chat`, and `/ops/sessions` without leaking transcript payloads off the chat route.
 
 Out of scope:
 - Full client-side syntax-highlighting engine.
@@ -32,10 +32,10 @@ Given `/ops/chat` request with markdown+code content in the active session,
 when shell markup renders,
 then visible chat panel includes markdown and code marker contracts.
 
-### AC-4 Non-chat routes preserve hidden-panel markdown and code markers
+### AC-4 Non-chat routes omit hidden-panel markdown and code payloads
 Given `/ops` and `/ops/sessions` requests with markdown+code content in the active session,
 when shell markup renders,
-then chat panel remains hidden and markdown/code markers remain present.
+then chat panel remains hidden, transcript rendered-row counts are zero, and markdown/code markers are omitted.
 
 ### AC-5 Regression safety for existing chat contracts
 Given existing chat contract suites,
@@ -48,7 +48,7 @@ then all existing contracts remain green.
 | C-01 | AC-1 | Functional | assistant row contains markdown (header/list/link/table text) | render UI shell | row exposes `tau-ops-chat-markdown-*` marker |
 | C-02 | AC-2 | Functional | assistant row contains fenced code block | render UI shell | row exposes `tau-ops-chat-code-block-*` marker with `data-language` and `data-code` |
 | C-03 | AC-3 | Integration | gateway `/ops/chat` request with markdown+code message | render response | visible chat panel exposes markdown and code markers |
-| C-04 | AC-4 | Integration | gateway `/ops` and `/ops/sessions` requests with markdown+code message | render response | hidden chat panel exposes markdown and code markers |
+| C-04 | AC-4 | Integration | gateway `/ops` and `/ops/sessions` requests with markdown+code message | render response | hidden chat panel omits markdown and code markers |
 | C-05 | AC-5 | Regression | existing chat suites | rerun suites | no regression |
 
 ## Success Metrics / Signals

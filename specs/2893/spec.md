@@ -25,7 +25,7 @@ then each row includes deterministic metadata markers for entry count, usage tot
 ### AC-2 Metadata values are sourced from real session state
 Given multiple sessions with different message/usage states,
 when `/ops/sessions` renders,
-then each row’s metadata markers reflect the corresponding session file’s runtime values.
+then each row’s metadata markers reflect the corresponding session file’s runtime values, including system, user, and assistant entries persisted by completed chat turns.
 
 ### AC-3 Existing row contracts remain intact
 Given sessions list row contracts already include session key + open-chat route,

@@ -211,14 +211,30 @@ pub(super) struct OpsDashboardChatNewSessionForm {
     #[serde(default)]
     session_key: String,
     #[serde(default)]
+    active_session_key: String,
+    #[serde(default)]
     theme: String,
     #[serde(default)]
     sidebar: String,
 }
 
 impl OpsDashboardChatNewSessionForm {
+    fn requested_session_key(&self) -> &str {
+        self.session_key.trim()
+    }
+
     fn resolved_session_key(&self) -> String {
         let requested = self.session_key.trim();
+        let resolved = if requested.is_empty() {
+            DEFAULT_SESSION_KEY
+        } else {
+            requested
+        };
+        sanitize_session_key(resolved)
+    }
+
+    fn resolved_active_session_key(&self) -> String {
+        let requested = self.active_session_key.trim();
         let resolved = if requested.is_empty() {
             DEFAULT_SESSION_KEY
         } else {
@@ -588,6 +604,19 @@ fn build_ops_chat_redirect_path_with_status(
     let mut redirect_path = build_ops_chat_redirect_path(theme, sidebar_state, session_key);
     if matches!(chat_status, "empty-message") {
         redirect_path.push_str("&chat_status=empty-message");
+    }
+    redirect_path
+}
+
+fn build_ops_chat_new_session_redirect_path_with_status(
+    theme: TauOpsDashboardTheme,
+    sidebar_state: TauOpsDashboardSidebarState,
+    session_key: &str,
+    new_session_status: &str,
+) -> String {
+    let mut redirect_path = build_ops_chat_redirect_path(theme, sidebar_state, session_key);
+    if matches!(new_session_status, "empty-key") {
+        redirect_path.push_str("&new_session_status=empty-key");
     }
     redirect_path
 }
@@ -1390,6 +1419,7 @@ fn collect_tau_ops_dashboard_chat_snapshot(
         control_action: controls.requested_control_action().to_string(),
         control_action_reason: controls.requested_control_action_reason().to_string(),
         send_status: controls.requested_chat_send_status().to_string(),
+        new_session_status: controls.requested_chat_new_session_status().to_string(),
         session_options,
         message_rows,
         session_detail_visible: detail_session_key.is_some(),
@@ -5185,6 +5215,18 @@ pub(super) async fn handle_ops_dashboard_chat_new(
     State(state): State<Arc<GatewayOpenResponsesServerState>>,
     Form(form): Form<OpsDashboardChatNewSessionForm>,
 ) -> Response {
+    if form.requested_session_key().is_empty() {
+        let active_session_key = form.resolved_active_session_key();
+        let redirect_path = build_ops_chat_new_session_redirect_path_with_status(
+            form.resolved_theme(),
+            form.resolved_sidebar_state(),
+            active_session_key.as_str(),
+            "empty-key",
+        );
+        state.record_ui_telemetry_event("chat", "new-session", "chat_session_empty_key_rejected");
+        return Redirect::to(redirect_path.as_str()).into_response();
+    }
+
     let session_key = form.resolved_session_key();
     let redirect_path = build_ops_chat_redirect_path(
         form.resolved_theme(),

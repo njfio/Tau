@@ -2,7 +2,7 @@
 
 ## Approach
 1. Add additive chat transcript SSR markers in `tau-dashboard-ui` for assistant markdown rows and fenced code blocks.
-2. Add failing UI and gateway tests for `/ops`, `/ops/chat`, and `/ops/sessions` route contracts.
+2. Add failing UI and gateway tests for `/ops/chat` visible rendering and `/ops` plus `/ops/sessions` hidden-panel omission contracts.
 3. Re-run chat regression suites and contract verification gates.
 
 ## Affected Modules
@@ -14,6 +14,8 @@
   - Mitigation: keep existing row IDs/attributes and add nested additive marker elements only.
 - Risk: deterministic attribute payload could drift due whitespace handling.
   - Mitigation: normalize extracted code block text before setting marker attributes and lock with tests.
+- Risk: markdown/code transcript payload leaks through hidden off-route chat panels.
+  - Mitigation: explicit `/ops` and `/ops/sessions` assertions preserve the hidden panel shell but omit rendered transcript rows and payload markers.
 
 ## Interface / Contract Notes
 - SSR markup contract only.

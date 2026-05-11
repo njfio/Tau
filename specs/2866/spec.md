@@ -9,7 +9,7 @@ Tau Ops chat transcript includes tool-role messages as plain rows but does not e
 In scope:
 - Add deterministic inline tool-result card marker elements for tool-role transcript rows.
 - Keep non-tool row rendering behavior stable.
-- Validate route-safe behavior on `/ops`, `/ops/chat`, and `/ops/sessions`.
+- Validate route-safe behavior on `/ops`, `/ops/chat`, and `/ops/sessions` without leaking transcript payloads off the chat route.
 
 Out of scope:
 - Tool invocation pipeline changes.
@@ -32,10 +32,10 @@ Given `/ops/chat` request with a session containing tool output,
 when shell renders,
 then visible chat panel includes deterministic inline tool-card marker(s).
 
-### AC-4 Non-chat routes preserve hidden-panel inline tool-card contracts
+### AC-4 Non-chat routes omit hidden-panel inline tool-card payloads
 Given `/ops` and `/ops/sessions` requests with a session containing tool output,
 when shell renders,
-then chat panel remains hidden and deterministic inline tool-card markers remain present.
+then chat panel remains hidden, transcript rendered-row counts are zero, and deterministic inline tool-card markers are omitted.
 
 ### AC-5 Regression safety for existing chat contracts
 Given existing contract suites,
@@ -48,7 +48,7 @@ then all existing chat panel, visibility-state, and token-counter contracts rema
 | C-01 | AC-1 | Functional | transcript includes tool row | render UI shell | tool row includes `tau-ops-chat-tool-card-*` marker |
 | C-02 | AC-2 | Functional | transcript includes user/assistant rows | render UI shell | no tool-card marker for non-tool rows |
 | C-03 | AC-3 | Integration | gateway `/ops/chat` request with tool message session | render response | chat panel visible and tool-card marker present |
-| C-04 | AC-4 | Integration | gateway `/ops` and `/ops/sessions` requests with tool message session | render response | chat panel hidden and tool-card marker present |
+| C-04 | AC-4 | Integration | gateway `/ops` and `/ops/sessions` requests with tool message session | render response | chat panel hidden and tool-card marker omitted |
 | C-05 | AC-5 | Regression | existing chat suites | rerun suites | no regression in existing chat contracts |
 
 ## Success Metrics / Signals
