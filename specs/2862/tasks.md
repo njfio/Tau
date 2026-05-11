@@ -5,3 +5,4 @@
 3. [x] T3 (GREEN): implement chat token-counter marker attributes in `tau-dashboard-ui` chat panel markup.
 4. [x] T4 (REGRESSION): rerun `spec_2830`, `spec_2842`, and `spec_2858` suites; fix any regressions.
 5. [x] T5 (VERIFY): run fmt/clippy/scoped tests/mutation and fast live validation.
+6. [x] T6 (REGRESSION): add visible assistant stream aggregates and keep non-chat route aggregates zeroed.

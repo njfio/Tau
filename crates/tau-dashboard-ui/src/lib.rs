@@ -4500,6 +4500,21 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     let chat_latest_assistant_content = latest_assistant_row
         .map(|(_, row)| row.content.clone())
         .unwrap_or_default();
+    let chat_assistant_stream_count = chat_message_rows
+        .iter()
+        .filter(|row| row.role == "assistant")
+        .count();
+    let chat_assistant_stream_token_count: usize = chat_message_rows
+        .iter()
+        .filter(|row| row.role == "assistant")
+        .map(|row| extract_assistant_stream_tokens(&row.content).len())
+        .sum();
+    let chat_latest_assistant_token_count = latest_assistant_row
+        .map(|(_, row)| extract_assistant_stream_tokens(&row.content).len())
+        .unwrap_or(0);
+    let chat_assistant_stream_count_value = chat_assistant_stream_count.to_string();
+    let chat_assistant_stream_token_count_value = chat_assistant_stream_token_count.to_string();
+    let chat_latest_assistant_token_count_value = chat_latest_assistant_token_count.to_string();
     let chat_new_session_form_action = context.chat.new_session_form_action.clone();
     let chat_new_session_form_method = context.chat.new_session_form_method.clone();
     let chat_send_form_action = context.chat.send_form_action.clone();
@@ -5410,6 +5425,39 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     background: #091923;
                     color: #9bb6c2;
                     font-size: .72rem;
+                }
+                #tau-ops-chat-token-counter h3 {
+                    margin: 0 0 7px;
+                    color: #edf8fb;
+                    font-size: .78rem;
+                    letter-spacing: 0;
+                }
+                #tau-ops-chat-token-counter dl {
+                    display: grid;
+                    grid-template-columns: repeat(3, minmax(0, 1fr));
+                    gap: 6px;
+                    margin: 0;
+                }
+                #tau-ops-chat-token-counter div {
+                    min-width: 0;
+                    border: 1px solid #263f4e;
+                    border-radius: 6px;
+                    padding: 6px 7px;
+                    background: #0d2331;
+                }
+                #tau-ops-chat-token-counter dt {
+                    color: #8fa8b3;
+                    font-size: .61rem;
+                    font-weight: 800;
+                    letter-spacing: .02em;
+                    text-transform: uppercase;
+                }
+                #tau-ops-chat-token-counter dd {
+                    margin: 2px 0 0;
+                    color: #edf8fb;
+                    font-size: .78rem;
+                    font-weight: 750;
+                    overflow-wrap: anywhere;
                 }
                 #tau-ops-memory-scope-summary,
                 #tau-ops-memory-graph-scope-summary {
@@ -6510,8 +6558,37 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 data-input-tokens=session_detail_usage_input_tokens.clone()
                                 data-output-tokens=session_detail_usage_output_tokens.clone()
                                 data-total-tokens=session_detail_usage_total_tokens.clone()
+                                data-assistant-stream-count=chat_assistant_stream_count_value.clone()
+                                data-assistant-stream-tokens=chat_assistant_stream_token_count_value.clone()
+                                data-latest-assistant-token-count=chat_latest_assistant_token_count_value.clone()
                             >
-                                Token Counter
+                                <h3>Token Counter</h3>
+                                <dl>
+                                    <div>
+                                        <dt>Input Tokens</dt>
+                                        <dd>{session_detail_usage_input_tokens.clone()}</dd>
+                                    </div>
+                                    <div>
+                                        <dt>Output Tokens</dt>
+                                        <dd>{session_detail_usage_output_tokens.clone()}</dd>
+                                    </div>
+                                    <div>
+                                        <dt>Total Tokens</dt>
+                                        <dd>{session_detail_usage_total_tokens.clone()}</dd>
+                                    </div>
+                                    <div>
+                                        <dt>Assistant Streams</dt>
+                                        <dd>{chat_assistant_stream_count_value.clone()}</dd>
+                                    </div>
+                                    <div>
+                                        <dt>Stream Tokens</dt>
+                                        <dd>{chat_assistant_stream_token_count_value.clone()}</dd>
+                                    </div>
+                                    <div>
+                                        <dt>Latest Assistant Tokens</dt>
+                                        <dd>{chat_latest_assistant_token_count_value.clone()}</dd>
+                                    </div>
+                                </dl>
                             </article>
                         </section>
                         <section

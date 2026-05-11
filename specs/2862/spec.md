@@ -42,6 +42,11 @@ Given prior contract suites,
 when `spec_2830`, `spec_2842`, and `spec_2858` rerun,
 then all existing route/panel/session-detail contracts remain green.
 
+### AC-6 Token counter summarizes rendered assistant token streams
+Given `/ops/chat` renders assistant transcript rows with token streams,
+when the token counter panel renders,
+then it visibly exposes assistant stream count, total rendered stream tokens, and latest assistant token count without leaking those counts on non-chat routes.
+
 ## Conformance Cases
 | Case | AC | Tier | Given | When | Then |
 |---|---|---|---|---|---|
@@ -50,6 +55,7 @@ then all existing route/panel/session-detail contracts remain green.
 | C-03 | AC-3 | Integration | gateway `/ops/chat` request | render response | chat panel visible and token-counter marker attributes present |
 | C-04 | AC-4 | Integration | gateway `/ops` + `/ops/sessions` requests | render response | chat panel hidden and token-counter marker attributes still present |
 | C-05 | AC-5 | Regression | existing contract suites | rerun suites | no regressions in existing chat/session/detail visibility contracts |
+| C-06 | AC-6 | Functional | chat snapshot with multiple assistant messages | render `/ops/chat` | token counter exposes stream count, stream token total, and latest assistant token count |
 
 ## Success Metrics / Signals
 - `cargo test -p tau-dashboard-ui spec_2862 -- --test-threads=1` passes.

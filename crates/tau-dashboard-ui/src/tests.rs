@@ -3386,6 +3386,54 @@ fn functional_spec_2862_c01_c02_c03_chat_route_renders_token_counter_marker_cont
     assert!(html.contains(
             "id=\"tau-ops-chat-token-counter\" data-session-key=\"session-usage\" data-input-tokens=\"13\" data-output-tokens=\"21\" data-total-tokens=\"34\""
         ));
+    assert!(html.contains("data-assistant-stream-count=\"0\""));
+    assert!(html.contains("data-assistant-stream-tokens=\"0\""));
+    assert!(html.contains("data-latest-assistant-token-count=\"0\""));
+    assert!(html.contains("<dt>Input Tokens</dt>"));
+    assert!(html.contains("<dt>Total Tokens</dt>"));
+    assert!(html.contains("<dt>Assistant Streams</dt>"));
+}
+
+#[test]
+fn functional_spec_2862_c06_chat_token_counter_summarizes_assistant_token_streams() {
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        auth_mode: TauOpsDashboardAuthMode::Token,
+        active_route: TauOpsDashboardRoute::Chat,
+        theme: TauOpsDashboardTheme::Dark,
+        sidebar_state: TauOpsDashboardSidebarState::Expanded,
+        command_center: TauOpsDashboardCommandCenterSnapshot::default(),
+        chat: TauOpsDashboardChatSnapshot {
+            active_session_key: "session-streams".to_string(),
+            message_rows: vec![
+                TauOpsDashboardChatMessageRow {
+                    role: "user".to_string(),
+                    content: "request".to_string(),
+                },
+                TauOpsDashboardChatMessageRow {
+                    role: "assistant".to_string(),
+                    content: "one two".to_string(),
+                },
+                TauOpsDashboardChatMessageRow {
+                    role: "assistant".to_string(),
+                    content: "three   four\nfive".to_string(),
+                },
+            ],
+            session_detail_usage_input_tokens: 4,
+            session_detail_usage_output_tokens: 9,
+            session_detail_usage_total_tokens: 13,
+            ..TauOpsDashboardChatSnapshot::default()
+        },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
+    });
+
+    assert!(html.contains(
+        "id=\"tau-ops-chat-token-counter\" data-session-key=\"session-streams\" data-input-tokens=\"4\" data-output-tokens=\"9\" data-total-tokens=\"13\""
+    ));
+    assert!(html.contains("data-assistant-stream-count=\"2\""));
+    assert!(html.contains("data-assistant-stream-tokens=\"5\""));
+    assert!(html.contains("data-latest-assistant-token-count=\"3\""));
+    assert!(html.contains("<dt>Stream Tokens</dt>"));
+    assert!(html.contains("<dt>Latest Assistant Tokens</dt>"));
 }
 
 #[test]
@@ -3411,6 +3459,9 @@ fn regression_spec_2862_c04_non_chat_routes_keep_hidden_chat_token_counter_marke
     assert!(ops_html.contains(
             "id=\"tau-ops-chat-token-counter\" data-session-key=\"chat-c01\" data-input-tokens=\"0\" data-output-tokens=\"0\" data-total-tokens=\"0\""
         ));
+    assert!(ops_html.contains("data-assistant-stream-count=\"0\""));
+    assert!(ops_html.contains("data-assistant-stream-tokens=\"0\""));
+    assert!(ops_html.contains("data-latest-assistant-token-count=\"0\""));
 
     let sessions_html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
         auth_mode: TauOpsDashboardAuthMode::Token,
@@ -3433,6 +3484,9 @@ fn regression_spec_2862_c04_non_chat_routes_keep_hidden_chat_token_counter_marke
     assert!(sessions_html.contains(
             "id=\"tau-ops-chat-token-counter\" data-session-key=\"chat-c01\" data-input-tokens=\"0\" data-output-tokens=\"0\" data-total-tokens=\"0\""
         ));
+    assert!(sessions_html.contains("data-assistant-stream-count=\"0\""));
+    assert!(sessions_html.contains("data-assistant-stream-tokens=\"0\""));
+    assert!(sessions_html.contains("data-latest-assistant-token-count=\"0\""));
 }
 
 #[test]

@@ -1034,6 +1034,9 @@ async fn functional_spec_2862_c01_c02_c03_ops_chat_shell_exposes_token_counter_m
     assert!(body.contains(
         "id=\"tau-ops-chat-token-counter\" data-session-key=\"chat-c01\" data-input-tokens=\"0\" data-output-tokens=\"0\" data-total-tokens=\"0\""
     ));
+    assert!(body.contains("data-assistant-stream-count=\"0\""));
+    assert!(body.contains("data-assistant-stream-tokens=\"0\""));
+    assert!(body.contains("data-latest-assistant-token-count=\"0\""));
 
     handle.abort();
 }
@@ -1061,6 +1064,9 @@ async fn integration_spec_2862_c04_ops_and_sessions_routes_preserve_hidden_chat_
     assert!(ops_body.contains(
         "id=\"tau-ops-chat-token-counter\" data-session-key=\"chat-c01\" data-input-tokens=\"0\" data-output-tokens=\"0\" data-total-tokens=\"0\""
     ));
+    assert!(ops_body.contains("data-assistant-stream-count=\"0\""));
+    assert!(ops_body.contains("data-assistant-stream-tokens=\"0\""));
+    assert!(ops_body.contains("data-latest-assistant-token-count=\"0\""));
 
     let sessions_response = client
         .get(format!(
@@ -1080,6 +1086,9 @@ async fn integration_spec_2862_c04_ops_and_sessions_routes_preserve_hidden_chat_
     assert!(sessions_body.contains(
         "id=\"tau-ops-chat-token-counter\" data-session-key=\"chat-c01\" data-input-tokens=\"0\" data-output-tokens=\"0\" data-total-tokens=\"0\""
     ));
+    assert!(sessions_body.contains("data-assistant-stream-count=\"0\""));
+    assert!(sessions_body.contains("data-assistant-stream-tokens=\"0\""));
+    assert!(sessions_body.contains("data-latest-assistant-token-count=\"0\""));
 
     handle.abort();
 }
@@ -1343,6 +1352,9 @@ async fn integration_spec_2901_c01_c02_c03_ops_chat_renders_assistant_token_stre
         .contains("id=\"tau-ops-chat-token-1-1\" data-token-index=\"1\" data-token-value=\"one\""));
     assert!(body
         .contains("id=\"tau-ops-chat-token-1-2\" data-token-index=\"2\" data-token-value=\"two\""));
+    assert!(body.contains("data-assistant-stream-count=\"1\""));
+    assert!(body.contains("data-assistant-stream-tokens=\"3\""));
+    assert!(body.contains("data-latest-assistant-token-count=\"3\""));
 
     handle.abort();
 }
