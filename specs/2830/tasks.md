@@ -5,6 +5,7 @@
 2. [x] T2 (GREEN): implement gateway chat snapshot hydration + `POST /ops/chat/send` append/redirect behavior.
 3. [x] T3 (REGRESSION): run targeted ops shell regression suites.
 4. [x] T4 (VERIFY): run fmt/clippy/mutation/guardrails and set spec status to `Implemented`.
+5. [x] T5 (REGRESSION): distinguish total session entries from rendered transcript rows and hidden system entries in the chat summary.
 
 ## Tier Mapping
 - Unit: `ops_shell_controls` session query parsing unit tests.

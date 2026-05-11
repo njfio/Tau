@@ -2293,7 +2293,9 @@ fn regression_harness_route_omits_hidden_chat_and_session_detail_payload() {
     assert!(html.contains(
         "id=\"tau-ops-chat-panel\" data-route=\"/ops/chat\" aria-hidden=\"true\" data-active-session-key=\"default\" data-panel-visible=\"false\""
     ));
-    assert!(html.contains("id=\"tau-ops-chat-transcript\" data-message-count=\"0\""));
+    assert!(html.contains("id=\"tau-ops-chat-transcript\""));
+    assert!(html.contains("data-message-count=\"0\""));
+    assert!(html.contains("data-rendered-row-count=\"0\""));
     assert!(html.contains("id=\"tau-ops-session-message-timeline\" data-entry-count=\"0\""));
     assert!(html.contains("id=\"tau-ops-session-graph-nodes\" data-node-count=\"0\""));
     assert!(html.contains("id=\"tau-ops-session-graph-edges\" data-edge-count=\"0\""));
@@ -3167,7 +3169,9 @@ fn functional_spec_2830_c01_chat_route_renders_send_form_and_fallback_transcript
     assert!(html.contains(
         "id=\"tau-ops-chat-sidebar\" type=\"hidden\" name=\"sidebar\" value=\"expanded\""
     ));
-    assert!(html.contains("id=\"tau-ops-chat-transcript\" data-message-count=\"1\""));
+    assert!(html.contains(
+        "id=\"tau-ops-chat-transcript\" data-message-count=\"0\" data-rendered-row-count=\"1\""
+    ));
     assert!(html.contains("id=\"tau-ops-chat-message-row-0\" data-message-role=\"system\""));
     assert!(html.contains("No chat messages yet."));
     assert!(html.contains(
@@ -3248,6 +3252,53 @@ fn functional_spec_2830_c02_chat_route_renders_snapshot_message_rows_for_active_
     assert!(!html.contains("grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);"));
     assert!(html.contains("#tau-ops-chat-transcript [data-token-stream=\"assistant\"]"));
     assert!(html.contains("display: none;"));
+}
+
+#[test]
+fn functional_spec_2830_c05_chat_summary_distinguishes_total_entries_from_transcript_rows() {
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        auth_mode: TauOpsDashboardAuthMode::Token,
+        active_route: TauOpsDashboardRoute::Chat,
+        theme: TauOpsDashboardTheme::Dark,
+        sidebar_state: TauOpsDashboardSidebarState::Expanded,
+        command_center: TauOpsDashboardCommandCenterSnapshot::default(),
+        chat: TauOpsDashboardChatSnapshot {
+            active_session_key: "default".to_string(),
+            send_form_action: "/ops/chat/send".to_string(),
+            send_form_method: "post".to_string(),
+            session_options: vec![TauOpsDashboardChatSessionOptionRow {
+                session_key: "default".to_string(),
+                selected: true,
+                entry_count: 3,
+                usage_total_tokens: 12,
+                validation_is_valid: true,
+                updated_unix_ms: 1778358498738,
+            }],
+            message_rows: vec![
+                TauOpsDashboardChatMessageRow {
+                    role: "user".to_string(),
+                    content: "visible operator message".to_string(),
+                },
+                TauOpsDashboardChatMessageRow {
+                    role: "assistant".to_string(),
+                    content: "visible assistant response".to_string(),
+                },
+            ],
+            ..TauOpsDashboardChatSnapshot::default()
+        },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
+    });
+
+    assert!(html.contains("id=\"tau-ops-chat-session-summary\""));
+    assert!(html.contains("data-entry-count=\"3\""));
+    assert!(html.contains("data-transcript-message-count=\"2\""));
+    assert!(html.contains("data-hidden-entry-count=\"1\""));
+    assert!(html.contains("<dt>Total Entries</dt>"));
+    assert!(html.contains("<dt>Transcript Rows</dt>"));
+    assert!(html.contains("<dt>Hidden Rows</dt>"));
+    assert!(html.contains(
+        "id=\"tau-ops-chat-transcript\" data-message-count=\"2\" data-rendered-row-count=\"2\""
+    ));
 }
 
 #[test]
@@ -3442,7 +3493,9 @@ fn regression_spec_2866_c04_non_chat_routes_omit_hidden_chat_tool_card_markers()
     assert!(ops_html.contains(
             "id=\"tau-ops-chat-panel\" data-route=\"/ops/chat\" aria-hidden=\"true\" data-active-session-key=\"chat-tool-session\" data-panel-visible=\"false\""
         ));
-    assert!(ops_html.contains("id=\"tau-ops-chat-transcript\" data-message-count=\"0\""));
+    assert!(ops_html.contains("id=\"tau-ops-chat-transcript\""));
+    assert!(ops_html.contains("data-message-count=\"0\""));
+    assert!(ops_html.contains("data-rendered-row-count=\"0\""));
     assert!(!ops_html.contains(
         "id=\"tau-ops-chat-tool-card-0\" data-tool-card=\"true\" data-inline-result=\"true\""
     ));
@@ -3467,7 +3520,9 @@ fn regression_spec_2866_c04_non_chat_routes_omit_hidden_chat_tool_card_markers()
     assert!(sessions_html.contains(
             "id=\"tau-ops-chat-panel\" data-route=\"/ops/chat\" aria-hidden=\"true\" data-active-session-key=\"chat-tool-session\" data-panel-visible=\"false\""
         ));
-    assert!(sessions_html.contains("id=\"tau-ops-chat-transcript\" data-message-count=\"0\""));
+    assert!(sessions_html.contains("id=\"tau-ops-chat-transcript\""));
+    assert!(sessions_html.contains("data-message-count=\"0\""));
+    assert!(sessions_html.contains("data-rendered-row-count=\"0\""));
     assert!(!sessions_html.contains(
         "id=\"tau-ops-chat-tool-card-0\" data-tool-card=\"true\" data-inline-result=\"true\""
     ));
@@ -3536,7 +3591,9 @@ fn regression_spec_2870_c04_non_chat_routes_omit_hidden_markdown_and_code_marker
     assert!(ops_html.contains(
             "id=\"tau-ops-chat-panel\" data-route=\"/ops/chat\" aria-hidden=\"true\" data-active-session-key=\"chat-markdown-code\" data-panel-visible=\"false\""
         ));
-    assert!(ops_html.contains("id=\"tau-ops-chat-transcript\" data-message-count=\"0\""));
+    assert!(ops_html.contains("id=\"tau-ops-chat-transcript\""));
+    assert!(ops_html.contains("data-message-count=\"0\""));
+    assert!(ops_html.contains("data-rendered-row-count=\"0\""));
     assert!(!ops_html.contains("id=\"tau-ops-chat-markdown-0\" data-markdown-rendered=\"true\""));
     assert!(!ops_html.contains(
             "id=\"tau-ops-chat-code-block-0\" data-code-block=\"true\" data-language=\"rust\" data-code=\"fn main() {}\""
@@ -3562,7 +3619,9 @@ fn regression_spec_2870_c04_non_chat_routes_omit_hidden_markdown_and_code_marker
     assert!(sessions_html.contains(
             "id=\"tau-ops-chat-panel\" data-route=\"/ops/chat\" aria-hidden=\"true\" data-active-session-key=\"chat-markdown-code\" data-panel-visible=\"false\""
         ));
-    assert!(sessions_html.contains("id=\"tau-ops-chat-transcript\" data-message-count=\"0\""));
+    assert!(sessions_html.contains("id=\"tau-ops-chat-transcript\""));
+    assert!(sessions_html.contains("data-message-count=\"0\""));
+    assert!(sessions_html.contains("data-rendered-row-count=\"0\""));
     assert!(
         !sessions_html.contains("id=\"tau-ops-chat-markdown-0\" data-markdown-rendered=\"true\"")
     );

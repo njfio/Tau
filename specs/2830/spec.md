@@ -27,6 +27,11 @@ Given existing phase 1A..1L ops shell suites,
 When chat send/transcript integration lands,
 Then prior suites remain green.
 
+### AC-5 Chat summary distinguishes stored entries from rendered transcript rows
+Given an active chat session that contains hidden system entries,
+When `/ops/chat` renders the operator summary and transcript,
+Then the summary exposes total entries, rendered transcript rows, and hidden rows separately, and the transcript message count excludes empty-state placeholders.
+
 ## Scope
 
 ### In Scope
@@ -45,6 +50,7 @@ Then prior suites remain green.
 - C-02 (integration): `/ops/chat` transcript markers reflect persisted active-session messages.
 - C-03 (integration): `POST /ops/chat/send` appends user message, redirects to `/ops/chat`, and message appears in transcript markers.
 - C-04 (regression): existing ops shell suites (auth/nav/theme/control/timeline/alerts/connectors) remain green.
+- C-05 (functional): `/ops/chat` summary markers distinguish total stored entries from rendered transcript rows and hidden system entries.
 
 ## Success Metrics / Observable Signals
 - `cargo test -p tau-dashboard-ui functional_spec_2830 -- --test-threads=1` passes.

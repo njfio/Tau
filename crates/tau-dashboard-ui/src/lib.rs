@@ -3326,7 +3326,11 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     let sessions_row_options = context.chat.session_options.clone();
     let sessions_row_count_value = sessions_row_options.len().to_string();
     let chat_session_key = context.chat.active_session_key.clone();
-    let rendered_chat_entry_count = context.chat.message_rows.len();
+    let rendered_chat_entry_count = if chat_route_active {
+        context.chat.message_rows.len()
+    } else {
+        0
+    };
     let mut chat_session_options = sessions_row_options.clone();
     let mut active_session_marked = false;
     for option in &mut chat_session_options {
@@ -4416,14 +4420,20 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
         })
         .collect_view();
     let chat_session_option_count_value = chat_session_options.len().to_string();
-    let chat_message_count_value = chat_message_rows.len().to_string();
+    let chat_message_count_value = rendered_chat_entry_count.to_string();
+    let chat_rendered_row_count_value = chat_message_rows.len().to_string();
     let active_chat_session_option = chat_session_options
         .iter()
         .find(|option| option.session_key == chat_session_key);
-    let active_session_entry_count_value = active_chat_session_option
+    let active_session_entry_count = active_chat_session_option
         .map(|option| option.entry_count.max(rendered_chat_entry_count))
-        .unwrap_or(rendered_chat_entry_count)
-        .to_string();
+        .unwrap_or(rendered_chat_entry_count);
+    let active_session_transcript_count = rendered_chat_entry_count;
+    let active_session_hidden_entry_count =
+        active_session_entry_count.saturating_sub(active_session_transcript_count);
+    let active_session_entry_count_value = active_session_entry_count.to_string();
+    let active_session_transcript_count_value = active_session_transcript_count.to_string();
+    let active_session_hidden_entry_count_value = active_session_hidden_entry_count.to_string();
     let active_session_total_tokens_value = active_chat_session_option
         .map(|option| option.usage_total_tokens)
         .unwrap_or(context.chat.session_detail_usage_total_tokens)
@@ -6124,6 +6134,8 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 data-validation-state=active_session_validation_state
                                 data-updated-unix-ms=active_session_updated_unix_ms_value.clone()
                                 data-latest-message-index=chat_latest_message_index.clone()
+                                data-transcript-message-count=active_session_transcript_count_value.clone()
+                                data-hidden-entry-count=active_session_hidden_entry_count_value.clone()
                             >
                                 <h3>Session Summary</h3>
                                 <dl>
@@ -6132,8 +6144,16 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                         <dd>{chat_session_key.clone()}</dd>
                                     </div>
                                     <div>
-                                        <dt>Entries</dt>
+                                        <dt>Total Entries</dt>
                                         <dd>{active_session_entry_count_value.clone()}</dd>
+                                    </div>
+                                    <div>
+                                        <dt>Transcript Rows</dt>
+                                        <dd>{active_session_transcript_count_value.clone()}</dd>
+                                    </div>
+                                    <div>
+                                        <dt>Hidden Rows</dt>
+                                        <dd>{active_session_hidden_entry_count_value.clone()}</dd>
                                     </div>
                                     <div>
                                         <dt>Tokens</dt>
@@ -6336,7 +6356,11 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     <p>{chat_latest_assistant_content}</p>
                                 </section>
                             </article>
-                            <ul id="tau-ops-chat-transcript" data-message-count=chat_message_count_value>
+                            <ul
+                                id="tau-ops-chat-transcript"
+                                data-message-count=chat_message_count_value
+                                data-rendered-row-count=chat_rendered_row_count_value
+                            >
                                 {chat_message_rows
                                     .iter()
                                     .enumerate()

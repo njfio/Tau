@@ -566,7 +566,9 @@ async fn functional_spec_2830_c01_ops_chat_shell_exposes_send_form_and_fallback_
     assert!(body.contains(
         "id=\"tau-ops-chat-sidebar\" type=\"hidden\" name=\"sidebar\" value=\"collapsed\""
     ));
-    assert!(body.contains("id=\"tau-ops-chat-transcript\" data-message-count=\"1\""));
+    assert!(body.contains(
+        "id=\"tau-ops-chat-transcript\" data-message-count=\"0\" data-rendered-row-count=\"1\""
+    ));
     assert!(body.contains("id=\"tau-ops-chat-message-row-0\" data-message-role=\"system\""));
     assert!(body.contains("No chat messages yet."));
 

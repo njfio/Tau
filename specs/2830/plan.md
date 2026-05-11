@@ -5,7 +5,8 @@
 2. Extend `tau-dashboard-ui` shell tests to assert deterministic chat form/transcript markers.
 3. In `tau-gateway`, hydrate chat snapshot rows from active session lineage using query controls (`session`/`session_key`).
 4. Add `POST /ops/chat/send` to append user messages and redirect to `/ops/chat` with preserved `theme`/`sidebar`/`session` controls.
-5. Run targeted regressions for existing ops shell slices and validate crate gates.
+5. Distinguish total session entries from rendered transcript rows when system entries are hidden from the operator transcript.
+6. Run targeted regressions for existing ops shell slices and validate crate gates.
 
 ## Affected Modules
 - `crates/tau-dashboard-ui/src/lib.rs`
@@ -27,6 +28,7 @@
 - UI shell contracts:
   - `id="tau-ops-chat-send-form"` with deterministic `action`, `method`, and session/theme/sidebar hidden inputs.
   - `id="tau-ops-chat-transcript"` with deterministic `data-message-count` and row markers.
+  - `id="tau-ops-chat-session-summary"` with `data-entry-count`, `data-transcript-message-count`, and `data-hidden-entry-count` so hidden system entries are not mistaken for missing transcript rows.
 
 ## ADR
 No ADR required: no new dependency, protocol schema, or architecture boundary change.
