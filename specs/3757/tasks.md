@@ -13,6 +13,8 @@ Status: Implemented
 - [x] T7 (GREEN): render a dedicated `view=history` audit summary with state
   source, proof-link count, route-backed action filters, latest action, and
   audit-log anchor.
+- [x] T8 (GREEN): render route-backed selected audit row detail with inspect
+  links and proof artifact continuity inside the history view.
 
 ## Verification Evidence
 
@@ -66,6 +68,23 @@ Status: Implemented
   passed with supported and invalid `audit_action` parsing (1 test).
 - GREEN: `cargo test -p tau-gateway integration_spec_3757_c03_ops_harness_route_reflects_state_backed_proof_and_audit`
   passed with filtered `audit_action=run-benchmark` history proof (1 test).
+- REGRESSION: `cargo test -p tau-dashboard-ui harness` passed (52 tests).
+- REGRESSION: `cargo test -p tau-gateway ops_harness -- --test-threads=1`
+  passed (6 tests).
+- STATIC: `cargo clippy -p tau-dashboard-ui -p tau-gateway -- -D warnings`
+  passed.
+- STATIC: `git diff --check` passed.
+- BUILD: `cargo build -p tau-coding-agent` passed.
+- LIVE: Browser on `/ops/harness?view=history` found 4 Inspect links; clicking
+  an audit row navigated to `audit_ref=1778419581966`, selected exactly one
+  matching audit row, and rendered the selected detail panel with proof artifact
+  `ops-harness/self-improvement/PR-045/dry-run-result.json`.
+- GREEN: `cargo test -p tau-dashboard-ui functional_harness_history_view_surfaces_state_audit_summary`
+  passed with selected audit detail and inspect-link markers (1 test).
+- GREEN: `cargo test -p tau-gateway unit_requested_harness_route_action_normalizes_supported_values`
+  passed with supported `audit_ref` parsing and sanitization (1 test).
+- GREEN: `cargo test -p tau-gateway integration_spec_3757_c03_ops_harness_route_reflects_state_backed_proof_and_audit`
+  passed with route-backed selected benchmark audit detail (1 test).
 - REGRESSION: `cargo test -p tau-dashboard-ui harness` passed (52 tests).
 - REGRESSION: `cargo test -p tau-gateway ops_harness -- --test-threads=1`
   passed (6 tests).

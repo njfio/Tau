@@ -1175,6 +1175,20 @@ async fn integration_spec_3757_c03_ops_harness_route_reflects_state_backed_proof
             "benchmark run should be audited with marker `{marker}`"
         );
     }
+    let benchmark_audit_ref = benchmark_audit_log
+        .lines()
+        .find_map(|line| {
+            let record = serde_json::from_str::<serde_json::Value>(line).ok()?;
+            (record.get("action").and_then(serde_json::Value::as_str) == Some("run-benchmark"))
+                .then(|| {
+                    record
+                        .get("timestamp_unix_ms")
+                        .and_then(serde_json::Value::as_u64)
+                        .map(|timestamp| timestamp.to_string())
+                })
+                .flatten()
+        })
+        .expect("benchmark audit timestamp");
 
     let apply_response = client
         .post(format!("http://{addr}/ops/harness/proposals/PR-044/apply"))
@@ -1265,6 +1279,9 @@ async fn integration_spec_3757_c03_ops_harness_route_reflects_state_backed_proof
         "id=\"tau-ops-harness-history-view\" data-history-view=\"true\" data-history-source=\"state\" data-history-row-count=\"2\" data-history-total-count=\"2\" data-history-proof-count=\"1\" data-history-action-filter=\"all\" data-history-selected-proposal=\"PR-044\"",
         "data-history-latest-action=\"Apply PR-044 Blocked Approval Required\"",
         "data-history-filter-action=\"all\" aria-current=\"page\"",
+        "id=\"tau-ops-harness-history-detail\" data-history-selected-audit=\"true\"",
+        "data-selected-action=\"apply\" data-selected-result=\"blocked_approval_required\"",
+        "data-audit-inspect-link=\"true\"",
         "data-history-audit-anchor=\"true\"",
         "data-audit-row=\"true\"",
     ] {
@@ -1276,7 +1293,7 @@ async fn integration_spec_3757_c03_ops_harness_route_reflects_state_backed_proof
 
     let filtered_history_response = client
         .get(format!(
-            "http://{addr}/ops/harness?theme=dark&sidebar=expanded&session=default&proposal_id=PR-044&view=history&audit_action=run-benchmark"
+            "http://{addr}/ops/harness?theme=dark&sidebar=expanded&session=default&proposal_id=PR-044&view=history&audit_action=run-benchmark&audit_ref={benchmark_audit_ref}"
         ))
         .send()
         .await
@@ -1291,10 +1308,25 @@ async fn integration_spec_3757_c03_ops_harness_route_reflects_state_backed_proof
         "data-history-filter-action=\"run-benchmark\" aria-current=\"page\"",
         "data-action=\"run-benchmark\" data-result=\"passed\"",
         "data-audit-detail-label=\"Run\" data-audit-detail-value=\"gateway-harness-",
+        "data-history-selected-proof-link=\"true\" data-history-selected-proof-artifact=\"ops-harness/m334/latest.json\"",
     ] {
         assert!(
             filtered_history_body.contains(marker),
             "missing filtered state-backed history marker `{marker}`"
+        );
+    }
+    for marker in [
+        format!(
+            "data-history-selected-audit-ref=\"{benchmark_audit_ref}\" data-selected-action=\"run-benchmark\" data-selected-result=\"passed\" data-selected-proof-artifact=\"ops-harness/m334/latest.json\""
+        ),
+        format!(
+            "data-audit-ref=\"{benchmark_audit_ref}\" data-audit-selected=\"true\""
+        ),
+        format!("audit_ref={benchmark_audit_ref}"),
+    ] {
+        assert!(
+            filtered_history_body.contains(&marker),
+            "missing selected audit detail marker `{marker}`"
         );
     }
     assert!(

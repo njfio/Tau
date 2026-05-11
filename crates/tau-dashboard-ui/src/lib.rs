@@ -683,6 +683,37 @@ fn harness_ops_artifact_href(proof_artifact: &str) -> Option<String> {
     is_ops_harness_artifact.then(|| format!("/ops/harness/artifacts/view/{trimmed}"))
 }
 
+fn sanitize_harness_audit_ref(raw: &str) -> String {
+    raw.chars()
+        .filter_map(|ch| {
+            if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_') {
+                Some(ch)
+            } else if ch.is_ascii_whitespace() || matches!(ch, ':' | '/') {
+                Some('-')
+            } else {
+                None
+            }
+        })
+        .collect::<String>()
+        .trim_matches('-')
+        .to_string()
+}
+
+fn harness_audit_row_ref(row: &TauOpsDashboardHarnessAuditRow, index: usize) -> String {
+    let timestamp = row.timestamp_unix_ms.trim();
+    if !timestamp.is_empty() {
+        return sanitize_harness_audit_ref(timestamp);
+    }
+
+    let fallback = format!("{}-{}-{}-{index}", row.action_key, row.item, row.result_key);
+    let sanitized = sanitize_harness_audit_ref(&fallback);
+    if sanitized.is_empty() {
+        format!("audit-{index}")
+    } else {
+        sanitized
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// Public struct `TauOpsDashboardHarnessAuditRow` in `tau-dashboard-ui`.
 pub struct TauOpsDashboardHarnessAuditRow {
@@ -896,6 +927,7 @@ pub struct TauOpsDashboardHarnessSnapshot {
     pub audit_rows: Vec<TauOpsDashboardHarnessAuditRow>,
     pub audit_filter_action: String,
     pub audit_total_count: usize,
+    pub audit_selected_ref: String,
     pub selected_proposal_id: String,
     pub proposal_queue_source: String,
     pub proposal_queue_rows: Vec<TauOpsDashboardHarnessProposalQueueRow>,
@@ -1285,6 +1317,7 @@ impl Default for TauOpsDashboardHarnessSnapshot {
             ],
             audit_filter_action: "all".to_string(),
             audit_total_count: 4,
+            audit_selected_ref: String::new(),
             selected_proposal_id: "PR-044".to_string(),
             proposal_queue_source: "fallback".to_string(),
             proposal_queue_rows: vec![
@@ -1677,6 +1710,38 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     } else {
         "false"
     };
+    let harness_history_current_href = if harness_history_filter_action == "all" {
+        harness_history_href.clone()
+    } else {
+        format!("{harness_history_href}&audit_action={harness_history_filter_action}")
+    };
+    let requested_audit_ref = sanitize_harness_audit_ref(&context.harness.audit_selected_ref);
+    let harness_history_selected_audit_index = context
+        .harness
+        .audit_rows
+        .iter()
+        .enumerate()
+        .find(|(index, row)| {
+            !requested_audit_ref.is_empty()
+                && harness_audit_row_ref(row, *index) == requested_audit_ref
+        })
+        .map(|(index, _)| index)
+        .or({
+            if context.harness.audit_rows.is_empty() {
+                None
+            } else {
+                Some(0)
+            }
+        });
+    let harness_history_selected_audit_ref = harness_history_selected_audit_index
+        .and_then(|index| {
+            context
+                .harness
+                .audit_rows
+                .get(index)
+                .map(|row| harness_audit_row_ref(row, index))
+        })
+        .unwrap_or_else(|| "none".to_string());
     let harness_overview_href = format!(
         "/ops/harness?theme={theme_attr}&sidebar={sidebar_state_attr}&session={}&proposal_id={}",
         context.chat.active_session_key, harness_selected_proposal_id
@@ -1961,9 +2026,42 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
         .harness
         .audit_rows
         .iter()
-        .map(|row| {
-            let audit_item_cell = if row.detail_value.is_empty() && row.proof_artifact.is_empty() {
+        .enumerate()
+        .map(|(index, row)| {
+            let audit_row_ref = harness_audit_row_ref(row, index);
+            let audit_selected = if Some(index) == harness_history_selected_audit_index {
+                "true"
+            } else {
+                "false"
+            };
+            let audit_selected_current = if audit_selected == "true" {
+                "page"
+            } else {
+                "false"
+            };
+            let audit_detail_href =
+                format!("{harness_history_current_href}&audit_ref={audit_row_ref}");
+            let audit_item_cell = if !harness_history_view_active
+                && row.detail_value.is_empty()
+                && row.proof_artifact.is_empty()
+            {
                 view! { <td>{row.item.clone()}</td> }.into_any()
+            } else if row.detail_value.is_empty() && row.proof_artifact.is_empty() {
+                view! {
+                    <td data-audit-item-cell="item-proof">
+                        <span>{row.item.clone()}</span>
+                        <a
+                            href=audit_detail_href.clone()
+                            class="tau-harness-audit-inspect"
+                            data-audit-inspect-link="true"
+                            data-audit-ref=audit_row_ref.clone()
+                            aria-current=audit_selected_current
+                        >
+                            "Inspect"
+                        </a>
+                    </td>
+                }
+                .into_any()
             } else {
                 let audit_detail = if row.detail_value.is_empty() {
                     view! {
@@ -2011,14 +2109,38 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     }
                     .into_any()
                 };
-                view! {
-                    <td data-audit-item-cell="item-proof">
-                        <span>{row.item.clone()}</span>
-                        {audit_detail}
-                        {audit_proof}
-                    </td>
+                if harness_history_view_active {
+                    let audit_inspect = view! {
+                        <a
+                            href=audit_detail_href.clone()
+                            class="tau-harness-audit-inspect"
+                            data-audit-inspect-link="true"
+                            data-audit-ref=audit_row_ref.clone()
+                            aria-current=audit_selected_current
+                        >
+                            "Inspect"
+                        </a>
+                    }
+                    .into_any();
+                    view! {
+                        <td data-audit-item-cell="item-proof">
+                            <span>{row.item.clone()}</span>
+                            {audit_detail}
+                            {audit_proof}
+                            {audit_inspect}
+                        </td>
+                    }
+                    .into_any()
+                } else {
+                    view! {
+                        <td data-audit-item-cell="item-proof">
+                            <span>{row.item.clone()}</span>
+                            {audit_detail}
+                            {audit_proof}
+                        </td>
+                    }
+                    .into_any()
                 }
-                .into_any()
             };
             view! {
                 <tr
@@ -2029,6 +2151,8 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     data-audit-detail-value=row.detail_value.clone()
                     data-audit-proof-artifact=row.proof_artifact.clone()
                     data-audit-row="true"
+                    data-audit-ref=audit_row_ref
+                    data-audit-selected=audit_selected
                 >
                     <td>{row.timestamp_label.clone()}</td>
                     <td>{row.actor.clone()}</td>
@@ -2040,6 +2164,91 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
             }
         })
         .collect_view();
+    let harness_history_selected_audit_detail = if let Some(selected_index) =
+        harness_history_selected_audit_index
+    {
+        let selected_row = &context.harness.audit_rows[selected_index];
+        let selected_detail_value = if selected_row.detail_value.is_empty() {
+            "none".to_string()
+        } else {
+            format!(
+                "{} {}",
+                selected_row.detail_label.clone(),
+                selected_row.detail_value.clone()
+            )
+        };
+        let selected_proof_label = if selected_row.proof_artifact.is_empty() {
+            "none".to_string()
+        } else {
+            selected_row.proof_artifact.clone()
+        };
+        let selected_proof_link = harness_ops_artifact_href(&selected_row.proof_artifact)
+            .map(|proof_href| {
+                view! {
+                    <a
+                        href=proof_href
+                        data-history-selected-proof-link="true"
+                        data-history-selected-proof-artifact=selected_row.proof_artifact.clone()
+                    >
+                        {selected_row.proof_artifact.clone()}
+                    </a>
+                }
+                .into_any()
+            })
+            .unwrap_or_else(|| {
+                view! {
+                    <span
+                        data-history-selected-proof-link="false"
+                        data-history-selected-proof-artifact=selected_row.proof_artifact.clone()
+                    >
+                        {selected_proof_label.clone()}
+                    </span>
+                }
+                .into_any()
+            });
+        leptos::either::Either::Left(view! {
+            <section
+                id="tau-ops-harness-history-detail"
+                data-history-selected-audit="true"
+                data-history-selected-audit-ref=harness_history_selected_audit_ref.clone()
+                data-selected-action=selected_row.action_key.clone()
+                data-selected-result=selected_row.result_key.clone()
+                data-selected-proof-artifact=selected_row.proof_artifact.clone()
+            >
+                <header>
+                    <div>
+                        <h4>"Selected Audit Record"</h4>
+                        <p>{format!("{} {} {}", selected_row.action_label, selected_row.item, selected_row.result_label)}</p>
+                    </div>
+                    {selected_proof_link}
+                </header>
+                <dl>
+                    <div><dt>"Time"</dt><dd>{selected_row.timestamp_label.clone()}</dd></div>
+                    <div><dt>"Actor"</dt><dd>{selected_row.actor.clone()}</dd></div>
+                    <div><dt>"Action"</dt><dd>{selected_row.action_label.clone()}</dd></div>
+                    <div><dt>"Scope"</dt><dd>{selected_row.scope.clone()}</dd></div>
+                    <div><dt>"Item"</dt><dd>{selected_row.item.clone()}</dd></div>
+                    <div><dt>"Result"</dt><dd>{selected_row.result_label.clone()}</dd></div>
+                    <div><dt>"Detail"</dt><dd>{selected_detail_value}</dd></div>
+                    <div><dt>"Proof"</dt><dd>{selected_proof_label}</dd></div>
+                </dl>
+            </section>
+        })
+    } else {
+        leptos::either::Either::Right(view! {
+            <section
+                id="tau-ops-harness-history-detail"
+                data-history-selected-audit="false"
+                data-history-selected-audit-ref="none"
+                data-selected-action="none"
+                data-selected-result="none"
+                data-selected-proof-artifact=""
+            >
+                <h4>"Selected Audit Record"</h4>
+                <p>"No audit record is available for this history filter."</p>
+            </section>
+        })
+    };
     let harness_history_view = if harness_history_view_active {
         leptos::either::Either::Left(view! {
             <section
@@ -2127,6 +2336,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                 <p data-history-latest="true">
                     {format!("Latest: {} at {}", harness_history_latest_action, harness_history_latest_timestamp)}
                 </p>
+                {harness_history_selected_audit_detail}
                 <a href="#tau-ops-harness-audit-log" data-history-audit-anchor="true">"Open audit log"</a>
             </section>
         })
@@ -6824,6 +7034,38 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 overflow: hidden;
                                 text-overflow: ellipsis;
                             }
+                            #tau-ops-harness-history-detail {
+                                border: 1px solid var(--tau-harness-line);
+                                border-radius: 5px;
+                                background: rgba(12, 20, 28, .28);
+                                display: grid;
+                                gap: 5px;
+                                padding: 6px;
+                            }
+                            #tau-ops-harness-history-detail header {
+                                align-items: flex-start;
+                                display: flex;
+                                gap: 8px;
+                                justify-content: space-between;
+                            }
+                            #tau-ops-harness-history-detail header a,
+                            #tau-ops-harness-history-detail header span {
+                                color: var(--tau-harness-blue);
+                                font-family: var(--tau-harness-mono);
+                                font-size: .56rem;
+                                max-width: 45%;
+                                overflow-wrap: anywhere;
+                                text-align: right;
+                            }
+                            #tau-ops-harness-history-detail dl {
+                                display: grid;
+                                grid-template-columns: repeat(4, minmax(0, 1fr));
+                                gap: 5px;
+                            }
+                            #tau-ops-harness-history-detail dd {
+                                overflow-wrap: anywhere;
+                                white-space: normal;
+                            }
                             #tau-ops-harness-history-view a {
                                 color: var(--tau-harness-blue);
                                 font-size: .62rem;
@@ -7658,7 +7900,20 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 color: var(--tau-harness-blue);
                                 text-decoration: none;
                             }
+                            #tau-ops-harness-audit-log a.tau-harness-audit-inspect {
+                                color: var(--tau-harness-blue);
+                                font-size: .54rem;
+                                margin-top: 2px;
+                                text-decoration: none;
+                            }
+                            #tau-ops-harness-audit-log a.tau-harness-audit-inspect[aria-current="page"] {
+                                color: var(--tau-harness-green);
+                                font-weight: 700;
+                            }
                             #tau-ops-harness-audit-log a.tau-harness-audit-proof:hover {
+                                text-decoration: underline;
+                            }
+                            #tau-ops-harness-audit-log a.tau-harness-audit-inspect:hover {
                                 text-decoration: underline;
                             }
                             #tau-ops-harness-audit-log .tau-harness-audit-detail[data-audit-detail-visible="true"] {

@@ -2137,6 +2137,7 @@ fn functional_harness_history_view_surfaces_state_audit_summary() {
         audit_source: "state".to_string(),
         audit_filter_action: "dry-run".to_string(),
         audit_total_count: 2,
+        audit_selected_ref: "1778419944988".to_string(),
         audit_rows: vec![
             TauOpsDashboardHarnessAuditRow {
                 timestamp_label: "2026-05-10 13:32:24 UTC".to_string(),
@@ -2187,6 +2188,13 @@ fn functional_harness_history_view_surfaces_state_audit_summary() {
         "<dd>1</dd>",
         "<dd>PR-045</dd>",
         "Latest: Dry Run PR-045 Passed at 2026-05-10 13:32:24 UTC",
+        "id=\"tau-ops-harness-history-detail\" data-history-selected-audit=\"true\" data-history-selected-audit-ref=\"1778419944988\" data-selected-action=\"dry-run\" data-selected-result=\"passed\" data-selected-proof-artifact=\"ops-harness/self-improvement/PR-045/dry-run-result.json\"",
+        "data-history-selected-proof-link=\"true\" data-history-selected-proof-artifact=\"ops-harness/self-improvement/PR-045/dry-run-result.json\"",
+        "<dt>Detail</dt><dd>none</dd>",
+        "href=\"/ops/harness?theme=dark&amp;sidebar=expanded&amp;session=default&amp;proposal_id=PR-045&amp;view=history&amp;audit_action=dry-run&amp;audit_ref=1778419944988\"",
+        "class=\"tau-harness-audit-inspect\"",
+        "data-audit-inspect-link=\"true\" data-audit-ref=\"1778419944988\"",
+        "data-audit-ref=\"1778419944988\" data-audit-selected=\"true\"",
         "data-history-audit-anchor=\"true\"",
         "data-audit-row=\"true\"",
     ] {

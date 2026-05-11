@@ -80,6 +80,8 @@ pub(super) struct OpsShellControlsQuery {
     proposal_status: String,
     #[serde(default)]
     audit_action: String,
+    #[serde(default)]
+    audit_ref: String,
 }
 
 impl OpsShellControlsQuery {
@@ -192,6 +194,20 @@ impl OpsShellControlsQuery {
             "run-benchmark" => Some("run-benchmark"),
             "start-mission" => Some("start-mission"),
             _ => None,
+        }
+    }
+
+    pub(super) fn requested_harness_audit_ref(&self) -> Option<String> {
+        let sanitized = self
+            .audit_ref
+            .trim()
+            .chars()
+            .filter(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_'))
+            .collect::<String>();
+        if sanitized.is_empty() {
+            None
+        } else {
+            Some(sanitized)
         }
     }
 
@@ -769,11 +785,16 @@ mod tests {
 
         let audit = OpsShellControlsQuery {
             audit_action: "run-benchmark".to_string(),
+            audit_ref: "1778419944988".to_string(),
             ..OpsShellControlsQuery::default()
         };
         assert_eq!(
             audit.requested_harness_audit_action(),
             Some("run-benchmark")
+        );
+        assert_eq!(
+            audit.requested_harness_audit_ref(),
+            Some("1778419944988".to_string())
         );
 
         let invalid = OpsShellControlsQuery {
@@ -782,6 +803,7 @@ mod tests {
             mission_status: "unknown".to_string(),
             proposal_status: "unknown".to_string(),
             audit_action: "wipe".to_string(),
+            audit_ref: "../../wipe".to_string(),
             ..OpsShellControlsQuery::default()
         };
         assert_eq!(invalid.requested_harness_intent(), None);
@@ -789,6 +811,10 @@ mod tests {
         assert_eq!(invalid.requested_harness_mission_status(), None);
         assert_eq!(invalid.requested_harness_proposal_status(), None);
         assert_eq!(invalid.requested_harness_audit_action(), None);
+        assert_eq!(
+            invalid.requested_harness_audit_ref(),
+            Some("wipe".to_string())
+        );
     }
 
     #[test]

@@ -67,7 +67,9 @@ Given the operator opens `/ops/harness?view=history`,
 when audit rows are loaded from state or fallback data,
 then the route renders a dedicated history summary with row count, source,
 proof-link count, selected proposal, selected action filter, latest action, and
-a direct audit-log anchor.
+a direct audit-log anchor. Each rendered audit row has a route-backed inspect
+link, and the route renders an in-page selected audit detail panel for the
+chosen audit record.
 
 ## Conformance Cases
 
@@ -77,7 +79,7 @@ a direct audit-log anchor.
 | C-02 | AC-2, AC-3 | Functional | custom harness snapshot | shell renders | audit table uses custom action rows |
 | C-03 | AC-1, AC-2 | Integration | gateway state after benchmark/action POSTs | GET `/ops/harness` | page contains state-backed proof and audit markers |
 | C-04 | AC-4 | Functional, Integration | state-backed proof artifact | shell renders | tool evidence artifact cells link to `/ops/harness/artifacts/view/...` |
-| C-05 | AC-5 | Functional, Integration | history route request | GET `/ops/harness?view=history` and `audit_action=run-benchmark` | page contains dedicated history summary, route-backed audit filter state, and audit anchor |
+| C-05 | AC-5 | Functional, Integration | history route request | GET `/ops/harness?view=history`, `audit_action=run-benchmark`, and `audit_ref=<row-ref>` | page contains dedicated history summary, route-backed audit filter state, selected audit detail, and audit anchor |
 
 ## Success Metrics / Observable Signals
 
@@ -90,5 +92,7 @@ a direct audit-log anchor.
   route-action banner.
 - History view audit filters are route-backed and narrow state audit rows
   before the recent-row limit.
+- History view selected audit details are route-backed and preserve proof
+  artifact links without requiring operators to leave the harness page first.
 - Fallback dashboard tests remain green.
 - No new dependency is introduced.

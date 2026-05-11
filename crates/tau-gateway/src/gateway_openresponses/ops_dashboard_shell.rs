@@ -1391,11 +1391,17 @@ pub(super) fn render_tau_ops_dashboard_shell_for_route(
     } else {
         None
     };
+    let requested_harness_audit_ref = if controls.requested_harness_view() == Some("history") {
+        controls.requested_harness_audit_ref()
+    } else {
+        None
+    };
     let mut harness = collect_tau_ops_dashboard_harness_snapshot(
         &state.config.state_dir,
         controls.requested_harness_proposal_id(),
         requested_harness_audit_action,
     );
+    harness.audit_selected_ref = requested_harness_audit_ref.unwrap_or_default();
     harness.runtime_workspace_label = state.config.state_dir.display().to_string();
     harness.runtime_model_label = state.config.model.clone();
     harness.runtime_transport_label = "gateway".to_string();
