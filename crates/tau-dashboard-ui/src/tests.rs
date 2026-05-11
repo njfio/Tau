@@ -2629,6 +2629,25 @@ fn functional_spec_2798_c01_c02_c03_shell_exposes_responsive_and_theme_contract_
 }
 
 #[test]
+fn regression_ops_internal_contract_sections_are_hidden_from_operator_surface() {
+    let html = render_tau_ops_dashboard_shell_for_route("/ops/harness");
+
+    for marker in [
+        "id=\"tau-ops-accessibility-contract\" data-component=\"AccessibilityContract\" data-operator-visible=\"false\"",
+        "id=\"tau-ops-stream-contract\" data-component=\"RealtimeStreamContract\" data-operator-visible=\"false\"",
+        "id=\"tau-ops-performance-contract\" data-component=\"PerformanceBudgetContract\" data-operator-visible=\"false\"",
+        "data-operator-visible=\"false\" data-axe-contract=\"required\"",
+        "data-reconnect-max-ms=\"8000\" hidden",
+        "data-websocket-process-budget-ms=\"50\" hidden",
+    ] {
+        assert!(
+            html.contains(marker),
+            "internal operator contract scaffold should be hidden with marker `{marker}`"
+        );
+    }
+}
+
+#[test]
 fn functional_spec_2798_c02_shell_sidebar_collapsed_state_updates_toggle_markers() {
     let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
         auth_mode: TauOpsDashboardAuthMode::Token,

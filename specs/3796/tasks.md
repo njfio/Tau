@@ -6,3 +6,22 @@
 - [x] T4: Run targeted `tau-dashboard-ui` render tests and relevant harness regressions.
 - [x] T5: Reload the live route and verify Browser Use DOM markers.
 - [x] T6: Run final checks and commit.
+- [x] T7: Hide internal contract-marker scaffolding from the live operator
+  surface while preserving data-marker contracts.
+
+## Verification Evidence
+
+- GREEN: `cargo test -p tau-dashboard-ui regression_ops_internal_contract_sections_are_hidden_from_operator_surface -- --nocapture`
+  passed (1 test).
+- REGRESSION: `cargo test -p tau-dashboard-ui harness -- --nocapture` passed
+  (52 tests).
+- REGRESSION: `cargo test -p tau-dashboard-ui 3796 -- --nocapture` passed
+  (2 tests).
+- STATIC: `cargo fmt --check --package tau-dashboard-ui` passed.
+- STATIC: `git diff --check` passed.
+- STATIC: `cargo clippy -p tau-dashboard-ui -- -D warnings` passed.
+- BUILD: `cargo build -p tau-coding-agent` passed.
+- LIVE: Browser on `/ops/harness?view=history` found the accessibility,
+  stream, and performance contract sections still present with
+  `data-operator-visible="false"` and `hidden`, while their headings had
+  zero role matches and the sections were not visible.

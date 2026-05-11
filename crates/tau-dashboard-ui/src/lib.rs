@@ -5397,12 +5397,14 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                         <section
                             id="tau-ops-accessibility-contract"
                             data-component="AccessibilityContract"
+                            data-operator-visible="false"
                             data-axe-contract="required"
                             data-keyboard-navigation="true"
                             data-focus-visible-contract="true"
                             data-focus-ring-token="tau-focus-ring"
                             data-reduced-motion-contract="prefers-reduced-motion"
                             data-reduced-motion-behavior="suppress-nonessential-animation"
+                            hidden
                         >
                             <h2>Accessibility Contracts</h2>
                             <p id="tau-ops-live-announcer" aria-live="polite" aria-atomic="true">
@@ -5412,6 +5414,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                         <section
                             id="tau-ops-stream-contract"
                             data-component="RealtimeStreamContract"
+                            data-operator-visible="false"
                             data-stream-transport="websocket"
                             data-stream-connect-on-load="true"
                             data-heartbeat-target="tau-ops-kpi-grid"
@@ -5422,17 +5425,20 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             data-reconnect-strategy="exponential-backoff"
                             data-reconnect-base-ms="250"
                             data-reconnect-max-ms="8000"
+                            hidden
                         >
                             <h2>Real-Time Stream Contracts</h2>
                         </section>
                         <section
                             id="tau-ops-performance-contract"
                             data-component="PerformanceBudgetContract"
+                            data-operator-visible="false"
                             data-wasm-budget-gzip-kb="500"
                             data-lcp-budget-ms="1500"
                             data-layout-shift-budget="0.00"
                             data-layout-shift-mitigation="skeletons"
                             data-websocket-process-budget-ms="50"
+                            hidden
                         >
                             <h2>Performance Budgets</h2>
                         </section>

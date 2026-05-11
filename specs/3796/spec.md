@@ -17,6 +17,8 @@ In scope:
 - Add shared operator shell chrome for non-harness ops routes.
 - Keep the existing harness-specific compact rail and mission-control overrides.
 - Mark the active left-nav route so operators can tell where they are.
+- Keep internal contract-marker scaffolding out of the visible operator surface
+  while preserving its machine-readable data markers.
 - Verify the live `/ops/deploy` route in the in-app browser.
 
 Out of scope:
@@ -28,7 +30,8 @@ Out of scope:
 
 AC-1: Given a non-harness ops route renders, when the shell HTML is inspected,
 then it exposes the shared operator-route visual contract and no longer presents
-the foundation-shell subtitle as the visible route experience.
+the foundation-shell subtitle or internal contract-marker headings as the
+visible route experience.
 
 AC-2: Given an operator opens a left-nav route, when the sidebar renders, then
 exactly that route is marked as current and receives the active nav styling
@@ -41,8 +44,8 @@ console errors are zero.
 ## Conformance Cases
 
 C-01 maps to AC-1: `tau-dashboard-ui` render tests assert global operator shell
-style markers, route panel styling, and the absence of the old foundation
-subtitle on `/ops/deploy`.
+style markers, route panel styling, hidden internal contract scaffolding, and
+the absence of the old foundation subtitle on `/ops/deploy`.
 
 C-02 maps to AC-2: `tau-dashboard-ui` render tests assert `/ops/deploy` and
 `/ops/chat` each mark only their own nav link with `aria-current="page"`.
@@ -54,4 +57,5 @@ and verifies the operator-route contract marker with zero console errors.
 
 - `cargo test -p tau-dashboard-ui functional_spec_3796_c01_non_harness_routes_use_operator_shell_chrome`
 - `cargo test -p tau-dashboard-ui functional_spec_3796_c02_left_nav_marks_active_route`
+- `cargo test -p tau-dashboard-ui regression_ops_internal_contract_sections_are_hidden_from_operator_surface`
 - Browser Use DOM inspection of the live `/ops/deploy` route.
