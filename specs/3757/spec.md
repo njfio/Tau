@@ -76,7 +76,8 @@ proof-link count, selected proposal, selected action filter, latest action, and
 a direct audit-log anchor. Each rendered audit row has a route-backed inspect
 link, and the route renders an in-page selected audit detail panel for the
 chosen audit record with a capped inline preview for safe `ops-harness/...`
-proof artifacts.
+proof artifacts. The history summary is promoted ahead of the default dashboard
+content while the history route is active.
 
 ## Conformance Cases
 
@@ -86,7 +87,7 @@ proof artifacts.
 | C-02 | AC-2, AC-3 | Functional | custom harness snapshot | shell renders | audit table uses custom action rows |
 | C-03 | AC-1, AC-2 | Integration | gateway state after benchmark/action POSTs | GET `/ops/harness` | page contains state-backed proof and audit markers |
 | C-04 | AC-4 | Functional, Integration | state-backed proof artifact | shell renders and artifact route opens | tool evidence artifact cells link to `/ops/harness/artifacts/view/...`; artifact view exposes JSON metadata, proof keys, raw access, and preserved return context |
-| C-05 | AC-5 | Functional, Integration | history route request | GET `/ops/harness?view=history`, `audit_action=run-benchmark`, and `audit_ref=<row-ref>` | page contains dedicated history summary, route-backed audit filter state, selected audit detail, capped proof preview, and audit anchor |
+| C-05 | AC-5 | Functional, Integration | history route request | GET `/ops/harness?view=history`, `audit_action=run-benchmark`, and `audit_ref=<row-ref>` | page contains dedicated history summary promoted before the default dashboard, route-backed audit filter state, selected audit detail, capped proof preview, and audit anchor |
 
 ## Success Metrics / Observable Signals
 
@@ -105,5 +106,7 @@ proof artifacts.
   artifact links without requiring operators to leave the harness page first.
 - History view proof previews are capped, state-backed, and only read normalized
   `ops-harness/...` artifact paths.
+- History route promotes the audit-history surface before the default dashboard
+  instead of burying it inside the review panel.
 - Fallback dashboard tests remain green.
 - No new dependency is introduced.

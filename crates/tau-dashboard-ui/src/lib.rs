@@ -2357,6 +2357,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
             <section
                 id="tau-ops-harness-history-view"
                 data-history-view="true"
+                data-history-route-priority="primary"
                 data-history-source=context.harness.audit_source.clone()
                 data-history-row-count=harness_audit_row_count.clone()
                 data-history-total-count=harness_history_total_count.clone()
@@ -7094,6 +7095,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 background: rgba(123, 214, 232, .07);
                                 display: grid;
                                 gap: 6px;
+                                grid-column: 1 / -1;
                                 margin-bottom: 7px;
                                 padding: 8px;
                             }
@@ -8438,6 +8440,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     </a>
                                 </nav>
                             </header>
+                            {harness_history_view}
                             <section
                                 id="tau-ops-harness-dashboard-window"
                                 data-window="mission-harness-dashboard"
@@ -8724,7 +8727,6 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     </div>
                                     <span class="tau-harness-status-chip">"Approval gated"</span>
                                 </header>
-                                {harness_history_view}
                                 <section
                                     id="tau-ops-harness-learning-queue"
                                     data-queue-count=harness_proposal_queue_count

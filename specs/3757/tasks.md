@@ -20,6 +20,8 @@ Status: Implemented
 - [x] T10 (GREEN): upgrade safe harness artifact views with JSON metadata,
   top-level key proof, capped payload preview, raw artifact access, and
   context-preserving return links.
+- [x] T11 (GREEN): promote the active history-route audit summary ahead of the
+  default dashboard content.
 
 ## Verification Evidence
 
@@ -99,6 +101,23 @@ Status: Implemented
   `/ops/harness/artifacts/view/ops-harness/self-improvement/PR-045/dry-run-result.json`
   with `data-artifact-json="true"`, JSON kind `object`, 6 top-level keys,
   195 bytes, `truncated=false`, raw artifact access, and a history return link.
+- GREEN: `cargo test -p tau-dashboard-ui functional_harness_history_view_surfaces_state_audit_summary -- --nocapture`
+  passed with history-route priority before the default dashboard (1 test).
+- REGRESSION: `cargo test -p tau-dashboard-ui harness -- --nocapture` passed
+  (52 tests).
+- GREEN: `cargo test -p tau-gateway integration_spec_3757_c03_ops_harness_route_reflects_state_backed_proof_and_audit -- --nocapture`
+  passed with state and filtered history priority markers (1 test).
+- REGRESSION: `cargo test -p tau-gateway ops_harness -- --test-threads=1 --nocapture`
+  passed (6 tests).
+- STATIC: `cargo fmt --check --package tau-dashboard-ui --package tau-gateway`
+  passed.
+- STATIC: `git diff --check` passed.
+- STATIC: `cargo clippy -p tau-dashboard-ui -p tau-gateway -- -D warnings`
+  passed.
+- BUILD: `cargo build -p tau-coding-agent` passed.
+- LIVE: Browser on `/ops/harness?view=history` found one state-backed history
+  panel with `data-history-route-priority="primary"` and confirmed the history
+  section appears before the default dashboard in live HTML and visible text.
 - LIVE: Browser on `/ops/harness?view=history` found 4 Inspect links; clicking
   an audit row navigated to `audit_ref=1778419581966`, selected exactly one
   matching audit row, and rendered the selected detail panel with proof artifact

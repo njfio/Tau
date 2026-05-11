@@ -2184,7 +2184,7 @@ fn functional_harness_history_view_surfaces_state_audit_summary() {
     });
 
     for marker in [
-        "id=\"tau-ops-harness-history-view\" data-history-view=\"true\" data-history-source=\"state\" data-history-row-count=\"2\" data-history-total-count=\"2\" data-history-proof-count=\"1\" data-history-action-filter=\"dry-run\" data-history-selected-proposal=\"PR-045\" data-history-latest-action=\"Dry Run PR-045 Passed\" data-history-latest-timestamp=\"2026-05-10 13:32:24 UTC\"",
+        "id=\"tau-ops-harness-history-view\" data-history-view=\"true\" data-history-route-priority=\"primary\" data-history-source=\"state\" data-history-row-count=\"2\" data-history-total-count=\"2\" data-history-proof-count=\"1\" data-history-action-filter=\"dry-run\" data-history-selected-proposal=\"PR-045\" data-history-latest-action=\"Dry Run PR-045 Passed\" data-history-latest-timestamp=\"2026-05-10 13:32:24 UTC\"",
         "data-history-filter-count=\"5\" data-history-filter-current=\"dry-run\"",
         "data-history-filter-action=\"dry-run\" aria-current=\"page\"",
         "href=\"/ops/harness?theme=dark&amp;sidebar=expanded&amp;session=default&amp;proposal_id=PR-045&amp;view=history&amp;audit_action=apply\" data-history-filter-action=\"apply\" aria-current=\"false\"",
@@ -2213,6 +2213,17 @@ fn functional_harness_history_view_surfaces_state_audit_summary() {
             "history view should surface state audit summary marker `{marker}`"
         );
     }
+
+    let history_index = html
+        .find("id=\"tau-ops-harness-history-view\"")
+        .expect("history view should render");
+    let dashboard_index = html
+        .find("id=\"tau-ops-harness-dashboard-window\"")
+        .expect("dashboard window should render");
+    assert!(
+        history_index < dashboard_index,
+        "history route should promote audit history before the default dashboard"
+    );
 }
 
 #[test]
