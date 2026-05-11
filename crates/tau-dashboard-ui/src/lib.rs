@@ -1580,6 +1580,11 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     let active_shell_path = context.active_route.shell_path();
     let theme_attr = context.theme.as_str();
     let sidebar_state_attr = context.sidebar_state.as_str();
+    let skip_to_main_href = if matches!(context.active_route, TauOpsDashboardRoute::Login) {
+        "#tau-ops-login-shell"
+    } else {
+        "#tau-ops-protected-shell"
+    };
     let breadcrumb_current = context.active_route.breadcrumb_token();
     let breadcrumb_label = context.active_route.breadcrumb_label();
     let shell_subtitle = format!("{breadcrumb_label} operator control surface");
@@ -5610,7 +5615,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                 <p>{shell_subtitle}</p>
                 <a
                     id="tau-ops-skip-to-main"
-                    href="#tau-ops-protected-shell"
+                    href=skip_to_main_href
                     data-keyboard-navigation="true"
                 >
                     Skip to main content

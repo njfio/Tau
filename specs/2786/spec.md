@@ -47,6 +47,12 @@ When an operator opens `/ops/login`,
 Then the visible login shell uses a no-auth heading/status and hides the
 password/token input from the operator surface.
 
+### AC-8 Login skip navigation targets the visible shell
+Given an operator opens `/ops/login`,
+When keyboard navigation uses the skip-to-main link,
+Then the link targets the visible login shell rather than the hidden protected
+operations shell.
+
 ## Scope
 
 ### In Scope
@@ -56,6 +62,7 @@ password/token input from the operator surface.
 - Working no-auth Continue navigation for localhost-dev login shells.
 - Auth-mode-specific login help copy for the no-auth localhost-dev shell.
 - No-auth heading/status markers and hidden credential field rendering.
+- Route-aware skip-to-main target for the login shell.
 - Scoped regression tests for dashboard shell and auth session behavior.
 
 ### Out of Scope
@@ -75,6 +82,8 @@ password/token input from the operator surface.
   omits generic gateway-auth instructions.
 - C-08 (regression): localhost-dev `/ops/login` hides the credential input and
   renders an access-ready heading plus no-auth status marker.
+- C-09 (regression): `/ops/login` renders a skip-to-main link targeting the
+  visible login shell.
 
 ## Success Metrics / Observable Signals
 - `cargo test -p tau-dashboard-ui -- --test-threads=1` passes with new auth/route marker coverage.
@@ -86,6 +95,8 @@ password/token input from the operator surface.
   required.
 - Browser proof confirms live localhost-dev login no longer exposes a visible
   password/token input.
+- Browser proof confirms live login skip navigation points to the visible login
+  shell.
 - Existing dashboard/auth regression tests continue to pass.
 
 ## Approval Gate

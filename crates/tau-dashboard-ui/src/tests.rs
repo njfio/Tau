@@ -281,6 +281,29 @@ fn conformance_spec_2786_c03_shell_login_route_marks_login_panel_visible() {
 }
 
 #[test]
+fn regression_spec_2786_login_skip_link_targets_visible_login_shell() {
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        auth_mode: TauOpsDashboardAuthMode::None,
+        active_route: TauOpsDashboardRoute::Login,
+        theme: TauOpsDashboardTheme::Dark,
+        sidebar_state: TauOpsDashboardSidebarState::Expanded,
+        command_center: TauOpsDashboardCommandCenterSnapshot::default(),
+        chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
+    });
+
+    assert!(html.contains(
+        "id=\"tau-ops-skip-to-main\" href=\"#tau-ops-login-shell\" data-keyboard-navigation=\"true\""
+    ));
+    assert!(
+        html.contains("id=\"tau-ops-login-shell\" data-route=\"/ops/login\" aria-hidden=\"false\"")
+    );
+    assert!(
+        html.contains("id=\"tau-ops-protected-shell\" data-route=\"/ops\" aria-hidden=\"true\"")
+    );
+}
+
+#[test]
 fn regression_spec_2786_c03_shell_none_mode_marks_auth_not_required() {
     let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
         auth_mode: TauOpsDashboardAuthMode::None,
