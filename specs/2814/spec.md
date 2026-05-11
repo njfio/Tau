@@ -27,11 +27,18 @@ Given existing auth, route, shell-control, command-center live-data, and control
 When timeline range markers are integrated,
 Then those suites remain green.
 
+### AC-5 Timeline range controls preserve active session context
+Given an operator is on `/ops` with a `session` query value,
+When they choose `1h`, `6h`, or `24h` in the timeline range controls,
+Then the resulting href preserves `session` while changing only the timeline
+range.
+
 ## Scope
 
 ### In Scope
 - Query parsing extension for timeline range controls on `/ops*` shell routes.
 - Timeline chart + range selector marker rendering in `tau-dashboard-ui` shell.
+- Session-preserving hrefs for timeline range controls.
 - Gateway mapping of live queue timeline point metadata into shell context.
 - Conformance and regression tests for timeline marker behavior.
 
@@ -45,10 +52,13 @@ Then those suites remain green.
 - C-02 (integration): `/ops?range=6h` shell includes selected-range markers for 6h and non-selected markers for 1h/24h.
 - C-03 (integration): `/ops?range=<invalid>` shell defaults selected-range markers to 1h.
 - C-04 (regression): phase-1A..1H suites remain green.
+- C-05 (regression/integration): `/ops?session=<id>&range=6h` shell range
+  controls preserve the same `session` value when linking to 1h/6h/24h.
 
 ## Success Metrics / Observable Signals
 - `cargo test -p tau-gateway functional_spec_2814 -- --test-threads=1` passes.
 - `cargo test -p tau-dashboard-ui functional_spec_2814 -- --test-threads=1` passes.
+- `cargo test -p tau-dashboard-ui regression_spec_2814_timeline_range_controls_preserve_session_context -- --nocapture` passes.
 - `cargo test -p tau-gateway functional_spec_2786 -- --test-threads=1` passes.
 - `cargo test -p tau-gateway functional_spec_2794 -- --test-threads=1` passes.
 - `cargo test -p tau-gateway functional_spec_2798 -- --test-threads=1` passes.

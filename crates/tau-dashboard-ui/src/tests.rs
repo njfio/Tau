@@ -6366,9 +6366,45 @@ fn functional_spec_2814_c01_c02_c03_timeline_chart_and_range_markers_render() {
     assert!(html.contains(
         "id=\"tau-ops-timeline-range-24h\" data-range-option=\"24h\" data-range-selected=\"false\""
     ));
-    assert!(html.contains("href=\"/ops?theme=light&amp;sidebar=collapsed&amp;range=1h\""));
-    assert!(html.contains("href=\"/ops?theme=light&amp;sidebar=collapsed&amp;range=6h\""));
-    assert!(html.contains("href=\"/ops?theme=light&amp;sidebar=collapsed&amp;range=24h\""));
+    assert!(html.contains(
+        "href=\"/ops?theme=light&amp;sidebar=collapsed&amp;session=default&amp;range=1h\""
+    ));
+    assert!(html.contains(
+        "href=\"/ops?theme=light&amp;sidebar=collapsed&amp;session=default&amp;range=6h\""
+    ));
+    assert!(html.contains(
+        "href=\"/ops?theme=light&amp;sidebar=collapsed&amp;session=default&amp;range=24h\""
+    ));
+}
+
+#[test]
+fn regression_spec_2814_timeline_range_controls_preserve_session_context() {
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        auth_mode: TauOpsDashboardAuthMode::Token,
+        active_route: TauOpsDashboardRoute::Ops,
+        theme: TauOpsDashboardTheme::Dark,
+        sidebar_state: TauOpsDashboardSidebarState::Expanded,
+        command_center: TauOpsDashboardCommandCenterSnapshot {
+            timeline_range: "1h".to_string(),
+            ..TauOpsDashboardCommandCenterSnapshot::default()
+        },
+        chat: TauOpsDashboardChatSnapshot {
+            active_session_key: "ops-live-session".to_string(),
+            ..TauOpsDashboardChatSnapshot::default()
+        },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
+    });
+
+    for expected_href in [
+        "id=\"tau-ops-timeline-range-1h\" data-range-option=\"1h\" data-range-selected=\"true\" href=\"/ops?theme=dark&amp;sidebar=expanded&amp;session=ops-live-session&amp;range=1h\"",
+        "id=\"tau-ops-timeline-range-6h\" data-range-option=\"6h\" data-range-selected=\"false\" href=\"/ops?theme=dark&amp;sidebar=expanded&amp;session=ops-live-session&amp;range=6h\"",
+        "id=\"tau-ops-timeline-range-24h\" data-range-option=\"24h\" data-range-selected=\"false\" href=\"/ops?theme=dark&amp;sidebar=expanded&amp;session=ops-live-session&amp;range=24h\"",
+    ] {
+        assert!(
+            html.contains(expected_href),
+            "timeline range control should preserve session context marker `{expected_href}`"
+        );
+    }
 }
 
 #[test]

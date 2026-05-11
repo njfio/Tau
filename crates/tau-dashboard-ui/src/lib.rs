@@ -4531,12 +4531,33 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     } else {
         "false"
     };
-    let range_1h_href =
-        format!("{active_shell_path}?theme={theme_attr}&sidebar={sidebar_state_attr}&range=1h");
-    let range_6h_href =
-        format!("{active_shell_path}?theme={theme_attr}&sidebar={sidebar_state_attr}&range=6h");
-    let range_24h_href =
-        format!("{active_shell_path}?theme={theme_attr}&sidebar={sidebar_state_attr}&range=24h");
+    let range_1h_href = format!(
+        "{}&range=1h",
+        ops_shell_context_href(
+            active_shell_path,
+            context.theme,
+            context.sidebar_state,
+            shell_nav_session_key.as_str()
+        )
+    );
+    let range_6h_href = format!(
+        "{}&range=6h",
+        ops_shell_context_href(
+            active_shell_path,
+            context.theme,
+            context.sidebar_state,
+            shell_nav_session_key.as_str()
+        )
+    );
+    let range_24h_href = format!(
+        "{}&range=24h",
+        ops_shell_context_href(
+            active_shell_path,
+            context.theme,
+            context.sidebar_state,
+            shell_nav_session_key.as_str()
+        )
+    );
     let queue_depth_value = context.command_center.queue_depth.to_string();
     let failure_streak_value = context.command_center.failure_streak.to_string();
     let processed_cases_value = context.command_center.processed_case_count.to_string();

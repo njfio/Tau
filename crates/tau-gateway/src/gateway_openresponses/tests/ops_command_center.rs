@@ -433,7 +433,7 @@ async fn functional_spec_2814_c01_c02_ops_shell_timeline_chart_markers_reflect_s
 
     let response = client
         .get(format!(
-            "http://{addr}/ops?theme=light&sidebar=collapsed&range=6h"
+            "http://{addr}/ops?theme=light&sidebar=collapsed&session=ops-live-session&range=6h"
         ))
         .send()
         .await
@@ -458,9 +458,13 @@ async fn functional_spec_2814_c01_c02_ops_shell_timeline_chart_markers_reflect_s
     assert!(body.contains(
         "id=\"tau-ops-timeline-range-24h\" data-range-option=\"24h\" data-range-selected=\"false\""
     ));
-    assert!(body.contains("href=\"/ops?theme=light&amp;sidebar=collapsed&amp;range=1h\""));
-    assert!(body.contains("href=\"/ops?theme=light&amp;sidebar=collapsed&amp;range=6h\""));
-    assert!(body.contains("href=\"/ops?theme=light&amp;sidebar=collapsed&amp;range=24h\""));
+    assert!(body.contains(
+        "href=\"/ops?theme=light&amp;sidebar=collapsed&amp;session=ops-live-session&amp;range=1h\""
+    ));
+    assert!(body.contains(
+        "href=\"/ops?theme=light&amp;sidebar=collapsed&amp;session=ops-live-session&amp;range=6h\""
+    ));
+    assert!(body.contains("href=\"/ops?theme=light&amp;sidebar=collapsed&amp;session=ops-live-session&amp;range=24h\""));
 
     handle.abort();
 }
