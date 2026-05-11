@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
+use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -1402,6 +1403,9 @@ pub(super) fn render_tau_ops_dashboard_shell_for_route(
         requested_harness_audit_action,
     );
     harness.audit_selected_ref = requested_harness_audit_ref.unwrap_or_default();
+    if controls.requested_harness_view() == Some("history") {
+        apply_harness_selected_audit_artifact_preview(&mut harness, &state.config.state_dir);
+    }
     harness.runtime_workspace_label = state.config.state_dir.display().to_string();
     harness.runtime_model_label = state.config.model.clone();
     harness.runtime_transport_label = "gateway".to_string();
@@ -2182,6 +2186,94 @@ fn read_harness_state_artifact(
     let absolute_path = state.config.state_dir.join(relative_path);
     let payload = std::fs::read_to_string(&absolute_path).ok()?;
     Some((absolute_path, payload))
+}
+
+const HARNESS_AUDIT_ARTIFACT_PREVIEW_LIMIT: usize = 2048;
+
+fn sanitize_harness_audit_ref(raw: &str) -> String {
+    raw.chars()
+        .filter(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_'))
+        .collect::<String>()
+}
+
+fn harness_audit_row_ref(row: &TauOpsDashboardHarnessAuditRow, index: usize) -> String {
+    let timestamp = row.timestamp_unix_ms.trim();
+    if !timestamp.is_empty() {
+        return sanitize_harness_audit_ref(timestamp);
+    }
+
+    let fallback = format!("{}-{}-{}-{index}", row.action_key, row.item, row.result_key);
+    let sanitized = sanitize_harness_audit_ref(&fallback);
+    if sanitized.is_empty() {
+        format!("audit-{index}")
+    } else {
+        sanitized
+    }
+}
+
+fn apply_harness_selected_audit_artifact_preview(
+    snapshot: &mut TauOpsDashboardHarnessSnapshot,
+    state_dir: &Path,
+) {
+    snapshot.audit_selected_artifact_preview.clear();
+    snapshot.audit_selected_artifact_preview_status = "none".to_string();
+    snapshot.audit_selected_artifact_preview_bytes = 0;
+    snapshot.audit_selected_artifact_preview_truncated = false;
+    snapshot.audit_selected_artifact_preview_limit = HARNESS_AUDIT_ARTIFACT_PREVIEW_LIMIT;
+
+    let requested_ref = sanitize_harness_audit_ref(&snapshot.audit_selected_ref);
+    let selected_index = snapshot
+        .audit_rows
+        .iter()
+        .enumerate()
+        .find(|(index, row)| {
+            !requested_ref.is_empty() && harness_audit_row_ref(row, *index) == requested_ref
+        })
+        .map(|(index, _)| index)
+        .or({
+            if snapshot.audit_rows.is_empty() {
+                None
+            } else {
+                Some(0)
+            }
+        });
+    let Some(selected_index) = selected_index else {
+        return;
+    };
+
+    let selected_ref = harness_audit_row_ref(&snapshot.audit_rows[selected_index], selected_index);
+    let selected_proof_artifact = snapshot.audit_rows[selected_index].proof_artifact.clone();
+    snapshot.audit_selected_ref = selected_ref;
+    if selected_proof_artifact.trim().is_empty() {
+        return;
+    }
+
+    let Some(relative_path) = normalize_harness_state_artifact_path(&selected_proof_artifact)
+    else {
+        snapshot.audit_selected_artifact_preview_status = "unsafe_path".to_string();
+        return;
+    };
+    let absolute_path = state_dir.join(relative_path);
+    let Ok(file) = std::fs::File::open(&absolute_path) else {
+        snapshot.audit_selected_artifact_preview_status = "missing".to_string();
+        return;
+    };
+
+    let mut limited = file.take((HARNESS_AUDIT_ARTIFACT_PREVIEW_LIMIT + 1) as u64);
+    let mut bytes = Vec::with_capacity(HARNESS_AUDIT_ARTIFACT_PREVIEW_LIMIT + 1);
+    if limited.read_to_end(&mut bytes).is_err() {
+        snapshot.audit_selected_artifact_preview_status = "read_error".to_string();
+        return;
+    }
+    let truncated = bytes.len() > HARNESS_AUDIT_ARTIFACT_PREVIEW_LIMIT;
+    if truncated {
+        bytes.truncate(HARNESS_AUDIT_ARTIFACT_PREVIEW_LIMIT);
+    }
+
+    snapshot.audit_selected_artifact_preview = String::from_utf8_lossy(&bytes).to_string();
+    snapshot.audit_selected_artifact_preview_status = "loaded".to_string();
+    snapshot.audit_selected_artifact_preview_bytes = bytes.len();
+    snapshot.audit_selected_artifact_preview_truncated = truncated;
 }
 
 fn escape_harness_artifact_html(value: &str) -> String {

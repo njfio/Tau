@@ -1309,6 +1309,8 @@ async fn integration_spec_3757_c03_ops_harness_route_reflects_state_backed_proof
         "data-action=\"run-benchmark\" data-result=\"passed\"",
         "data-audit-detail-label=\"Run\" data-audit-detail-value=\"gateway-harness-",
         "data-history-selected-proof-link=\"true\" data-history-selected-proof-artifact=\"ops-harness/m334/latest.json\"",
+        "data-history-selected-preview=\"true\" data-history-selected-preview-status=\"loaded\"",
+        "\"benchmark_id\": \"m334-tranche-one-autonomy\"",
     ] {
         assert!(
             filtered_history_body.contains(marker),

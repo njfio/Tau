@@ -928,6 +928,11 @@ pub struct TauOpsDashboardHarnessSnapshot {
     pub audit_filter_action: String,
     pub audit_total_count: usize,
     pub audit_selected_ref: String,
+    pub audit_selected_artifact_preview: String,
+    pub audit_selected_artifact_preview_status: String,
+    pub audit_selected_artifact_preview_bytes: usize,
+    pub audit_selected_artifact_preview_truncated: bool,
+    pub audit_selected_artifact_preview_limit: usize,
     pub selected_proposal_id: String,
     pub proposal_queue_source: String,
     pub proposal_queue_rows: Vec<TauOpsDashboardHarnessProposalQueueRow>,
@@ -1318,6 +1323,11 @@ impl Default for TauOpsDashboardHarnessSnapshot {
             audit_filter_action: "all".to_string(),
             audit_total_count: 4,
             audit_selected_ref: String::new(),
+            audit_selected_artifact_preview: String::new(),
+            audit_selected_artifact_preview_status: "none".to_string(),
+            audit_selected_artifact_preview_bytes: 0,
+            audit_selected_artifact_preview_truncated: false,
+            audit_selected_artifact_preview_limit: 2048,
             selected_proposal_id: "PR-044".to_string(),
             proposal_queue_source: "fallback".to_string(),
             proposal_queue_rows: vec![
@@ -2182,6 +2192,50 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
         } else {
             selected_row.proof_artifact.clone()
         };
+        let selected_preview_visible =
+            context.harness.audit_selected_artifact_preview_status == "loaded";
+        let selected_preview_visible_attr = if selected_preview_visible {
+            "true"
+        } else {
+            "false"
+        };
+        let selected_preview_bytes = context
+            .harness
+            .audit_selected_artifact_preview_bytes
+            .to_string();
+        let selected_preview_limit = context
+            .harness
+            .audit_selected_artifact_preview_limit
+            .to_string();
+        let selected_preview_truncated =
+            if context.harness.audit_selected_artifact_preview_truncated {
+                "true"
+            } else {
+                "false"
+            };
+        let selected_preview_label = if selected_preview_visible {
+            if context.harness.audit_selected_artifact_preview_truncated {
+                format!(
+                    "{} bytes shown; capped at {} bytes",
+                    context.harness.audit_selected_artifact_preview_bytes,
+                    context.harness.audit_selected_artifact_preview_limit
+                )
+            } else {
+                format!(
+                    "{} bytes shown",
+                    context.harness.audit_selected_artifact_preview_bytes
+                )
+            }
+        } else {
+            "No preview available".to_string()
+        };
+        let selected_preview_body = if selected_preview_visible {
+            context.harness.audit_selected_artifact_preview.clone()
+        } else if selected_row.proof_artifact.is_empty() {
+            "Selected audit record has no proof artifact.".to_string()
+        } else {
+            "Proof artifact preview is unavailable for this record.".to_string()
+        };
         let selected_proof_link = harness_ops_artifact_href(&selected_row.proof_artifact)
             .map(|proof_href| {
                 view! {
@@ -2232,6 +2286,20 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     <div><dt>"Detail"</dt><dd>{selected_detail_value}</dd></div>
                     <div><dt>"Proof"</dt><dd>{selected_proof_label}</dd></div>
                 </dl>
+                <section
+                    class="tau-harness-history-preview"
+                    data-history-selected-preview=selected_preview_visible_attr
+                    data-history-selected-preview-status=context.harness.audit_selected_artifact_preview_status.clone()
+                    data-history-selected-preview-bytes=selected_preview_bytes
+                    data-history-selected-preview-limit=selected_preview_limit
+                    data-history-selected-preview-truncated=selected_preview_truncated
+                >
+                    <header>
+                        <h5>"Proof Preview"</h5>
+                        <span>{selected_preview_label}</span>
+                    </header>
+                    <pre>{selected_preview_body}</pre>
+                </section>
             </section>
         })
     } else {
@@ -7065,6 +7133,37 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             #tau-ops-harness-history-detail dd {
                                 overflow-wrap: anywhere;
                                 white-space: normal;
+                            }
+                            #tau-ops-harness-history-detail .tau-harness-history-preview {
+                                border-top: 1px solid var(--tau-harness-line-soft);
+                                display: grid;
+                                gap: 4px;
+                                padding-top: 5px;
+                            }
+                            #tau-ops-harness-history-detail .tau-harness-history-preview header {
+                                align-items: center;
+                                display: flex;
+                                justify-content: space-between;
+                            }
+                            #tau-ops-harness-history-detail .tau-harness-history-preview h5 {
+                                color: var(--tau-harness-text);
+                                font-size: .62rem;
+                                margin: 0;
+                            }
+                            #tau-ops-harness-history-detail .tau-harness-history-preview pre {
+                                background: rgba(2, 8, 13, .48);
+                                border: 1px solid var(--tau-harness-line-soft);
+                                border-radius: 4px;
+                                color: var(--tau-harness-text);
+                                font-family: var(--tau-harness-mono);
+                                font-size: .55rem;
+                                line-height: 1.22;
+                                margin: 0;
+                                max-height: 94px;
+                                overflow: auto;
+                                padding: 5px;
+                                white-space: pre-wrap;
+                                overflow-wrap: anywhere;
                             }
                             #tau-ops-harness-history-view a {
                                 color: var(--tau-harness-blue);

@@ -15,6 +15,8 @@ Status: Implemented
   audit-log anchor.
 - [x] T8 (GREEN): render route-backed selected audit row detail with inspect
   links and proof artifact continuity inside the history view.
+- [x] T9 (GREEN): render capped inline selected proof artifact previews for
+  safe `ops-harness/...` audit artifacts.
 
 ## Verification Evidence
 
@@ -79,6 +81,21 @@ Status: Implemented
   an audit row navigated to `audit_ref=1778419581966`, selected exactly one
   matching audit row, and rendered the selected detail panel with proof artifact
   `ops-harness/self-improvement/PR-045/dry-run-result.json`.
+- LIVE: Browser on `/ops/harness?view=history&audit_ref=1778419581966`
+  rendered one selected proof preview with `loaded` status, 195 bytes shown,
+  2048-byte cap, `truncated=false`, and preview text containing `proposal_id`
+  plus `PR-045`.
+- GREEN: `cargo test -p tau-dashboard-ui functional_harness_history_view_surfaces_state_audit_summary`
+  passed with selected proof preview markers (1 test).
+- GREEN: `cargo test -p tau-gateway integration_spec_3757_c03_ops_harness_route_reflects_state_backed_proof_and_audit`
+  passed with capped state-backed benchmark proof preview (1 test).
+- REGRESSION: `cargo test -p tau-dashboard-ui harness` passed (52 tests).
+- REGRESSION: `cargo test -p tau-gateway ops_harness -- --test-threads=1`
+  passed (6 tests).
+- STATIC: `cargo clippy -p tau-dashboard-ui -p tau-gateway -- -D warnings`
+  passed.
+- STATIC: `git diff --check` passed.
+- BUILD: `cargo build -p tau-coding-agent` passed.
 - GREEN: `cargo test -p tau-dashboard-ui functional_harness_history_view_surfaces_state_audit_summary`
   passed with selected audit detail and inspect-link markers (1 test).
 - GREEN: `cargo test -p tau-gateway unit_requested_harness_route_action_normalizes_supported_values`
