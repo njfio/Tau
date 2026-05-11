@@ -9856,6 +9856,61 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                         </button>
                                     </form>
                                 </section>
+                                <script
+                                    id="tau-ops-control-confirmation-guard"
+                                    data-confirm-submit-guard="browser-confirm"
+                                    data-confirm-action-scope="tau-ops-control-actions"
+                                >
+                                    r#"
+                                    (function () {
+                                        function installControlConfirmationGuard() {
+                                            var actions = document.getElementById("tau-ops-control-actions");
+                                            if (!actions || actions.getAttribute("data-confirm-submit-guard-bound") === "true") {
+                                                return;
+                                            }
+
+                                            actions.setAttribute("data-confirm-submit-guard-bound", "true");
+                                            actions.addEventListener("submit", function (event) {
+                                                var submitter = event.submitter;
+                                                if (!submitter || submitter.getAttribute("data-confirm-required") !== "true") {
+                                                    return;
+                                                }
+
+                                                if (submitter.disabled || submitter.getAttribute("aria-disabled") === "true") {
+                                                    event.preventDefault();
+                                                    submitter.setAttribute("data-confirm-result", "blocked-disabled");
+                                                    return;
+                                                }
+
+                                                if (typeof window.confirm !== "function") {
+                                                    event.preventDefault();
+                                                    submitter.setAttribute("data-confirm-result", "unavailable");
+                                                    return;
+                                                }
+
+                                                var title = submitter.getAttribute("data-confirm-title") || "Confirm action";
+                                                var body = submitter.getAttribute("data-confirm-body") || "";
+                                                var verb = submitter.getAttribute("data-confirm-verb") || "confirm";
+                                                var message = body ? title + "\n\n" + body : title;
+                                                var confirmed = window.confirm(message);
+                                                submitter.setAttribute(
+                                                    "data-confirm-result",
+                                                    confirmed ? "confirmed-" + verb : "cancelled-" + verb
+                                                );
+                                                if (!confirmed) {
+                                                    event.preventDefault();
+                                                }
+                                            });
+                                        }
+
+                                        if (document.readyState === "loading") {
+                                            document.addEventListener("DOMContentLoaded", installControlConfirmationGuard);
+                                        } else {
+                                            installControlConfirmationGuard();
+                                        }
+                                    })();
+                                    "#
+                                </script>
                                 <section
                                     id="tau-ops-control-action-status"
                                     data-control-action-status=control_action_status

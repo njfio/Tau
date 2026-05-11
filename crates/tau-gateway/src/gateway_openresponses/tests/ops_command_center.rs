@@ -177,6 +177,11 @@ async fn functional_spec_2826_c03_ops_shell_control_markers_include_confirmation
         "id=\"tau-ops-control-action-refresh\" data-action-enabled=\"true\" data-action=\"refresh\" data-confirm-required=\"true\" data-confirm-title=\"Confirm refresh action\" data-confirm-body=\"Refresh command-center state from latest runtime artifacts.\" data-confirm-verb=\"refresh\""
     ));
     assert!(body.contains("data-confirm-verb=\"refresh\" aria-disabled=\"false\" type=\"submit\""));
+    assert!(body.contains(
+        "id=\"tau-ops-control-confirmation-guard\" data-confirm-submit-guard=\"browser-confirm\" data-confirm-action-scope=\"tau-ops-control-actions\""
+    ));
+    assert!(body.contains("window.confirm"));
+    assert!(body.contains("event.preventDefault()"));
 
     handle.abort();
 }

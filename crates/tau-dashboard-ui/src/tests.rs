@@ -6269,6 +6269,33 @@ fn regression_spec_2826_disabled_control_actions_are_native_disabled() {
 }
 
 #[test]
+fn regression_spec_2826_control_actions_ship_confirmation_submit_guard() {
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        auth_mode: TauOpsDashboardAuthMode::Token,
+        active_route: TauOpsDashboardRoute::Ops,
+        theme: TauOpsDashboardTheme::Dark,
+        sidebar_state: TauOpsDashboardSidebarState::Expanded,
+        command_center: TauOpsDashboardCommandCenterSnapshot {
+            control_mode: "running".to_string(),
+            control_paused: false,
+            action_pause_enabled: true,
+            action_resume_enabled: false,
+            action_refresh_enabled: true,
+            ..TauOpsDashboardCommandCenterSnapshot::default()
+        },
+        chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
+    });
+
+    assert!(html.contains(
+        "id=\"tau-ops-control-confirmation-guard\" data-confirm-submit-guard=\"browser-confirm\" data-confirm-action-scope=\"tau-ops-control-actions\""
+    ));
+    assert!(html.contains("data-confirm-result"));
+    assert!(html.contains("window.confirm"));
+    assert!(html.contains("event.preventDefault()"));
+}
+
+#[test]
 fn functional_spec_3466_c04_control_action_status_panel_renders_marker_contracts() {
     let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
         auth_mode: TauOpsDashboardAuthMode::Token,

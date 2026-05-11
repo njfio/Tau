@@ -9,16 +9,19 @@
    native-disabled instead of clickable submit buttons.
 6. [x] T6 (REGRESSION): preserve active shell `session` and timeline `range`
    in command-center control action form submissions.
+7. [x] T7 (REGRESSION): ship a browser-native confirmation submit guard for
+   confirm-required command-center controls.
 
 ## Tier Mapping
 - Unit: N/A.
 - Property: N/A.
 - Contract/DbC: N/A.
 - Snapshot: N/A.
-- Functional: control confirmation marker assertions and disabled semantics.
-- Conformance: C-01..C-06.
+- Functional: control confirmation marker assertions, disabled semantics, and
+  submit guard marker assertions.
+- Conformance: C-01..C-07.
 - Integration: gateway `/ops` render marker assertions include disabled
-  semantics for unavailable actions.
+  semantics for unavailable actions and the confirmation guard script.
 - Fuzz: N/A.
 - Mutation: `cargo mutants --in-diff <diff-file> -p tau-dashboard-ui -p tau-gateway`.
 - Regression: phase-1A..1K contract suites.
@@ -115,3 +118,38 @@
   `/ops?theme=dark&sidebar=expanded&session=default&range=6h&control_action_status=applied&control_action=refresh&control_action_reason=control_action_applied`.
   Live HTML exposed hidden refresh fields with `session=default` and
   `range=6h`.
+
+## Confirmation Guard Follow-up Evidence
+- RED: `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo test -p tau-dashboard-ui regression_spec_2826_control_actions_ship_confirmation_submit_guard -- --nocapture`
+  failed because the command-center controls advertised
+  `data-confirm-required="true"` but the SSR shell did not ship
+  `tau-ops-control-confirmation-guard`.
+- GREEN: `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo test -p tau-dashboard-ui regression_spec_2826_control_actions_ship_confirmation_submit_guard -- --nocapture`
+  passed after the shell added a browser-native submit guard scoped to
+  `tau-ops-control-actions`.
+- INTEGRATION: `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo test -p tau-gateway functional_spec_2826_c03_ops_shell_control_markers_include_confirmation_payload -- --nocapture`
+  passed with the live `/ops` response asserting the confirmation guard script.
+- SCOPED: `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo test -p tau-dashboard-ui 2826 -- --nocapture`
+  passed 4 tests.
+- COMMAND CENTER: `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo test -p tau-gateway ops_command_center -- --nocapture`
+  passed 19 tests.
+- FULL UI: `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo test -p tau-dashboard-ui -- --nocapture`
+  passed 209 tests plus doc tests.
+- HYGIENE: `cargo fmt --check --package tau-dashboard-ui --package tau-gateway`,
+  `git diff --check`, and
+  `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo clippy -p tau-dashboard-ui -p tau-gateway -- -D warnings`
+  passed.
+- BUILD: `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo build -p tau-coding-agent`
+  passed.
+- LIVE: restarted `tau-8795` from the rebuilt binary with
+  `RUST_MIN_STACK=16777216`; `/gateway/status` reported
+  `service_status=running`, `auth_mode=localhost-dev`, model
+  `gpt-5.3-codex`, and state dir `.tau/gateway-live-demo`.
+- HTTP: live `/ops?theme=dark&sidebar=expanded&session=default` exposed
+  `id="tau-ops-control-confirmation-guard"`,
+  `data-confirm-submit-guard="browser-confirm"`,
+  `data-confirm-action-scope="tau-ops-control-actions"`, `window.confirm`,
+  `event.preventDefault()`, and `data-confirm-result`.
+- BROWSER: Browser plugin loaded the rebuilt `/ops` shell and verified
+  guard mode `browser-confirm`, guard scope `tau-ops-control-actions`,
+  `Pause` and `Refresh` enabled, and `Resume` disabled.

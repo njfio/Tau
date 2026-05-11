@@ -39,6 +39,13 @@ When the form is submitted,
 Then the payload carries the current `session` and timeline `range` values so
 the redirect returns operators to the same shell context.
 
+### AC-7 Confirm-required controls ship a submit guard
+Given command-center control action buttons expose `data-confirm-required="true"`,
+When the protected `/ops` shell renders,
+Then the shell also ships a browser-native confirmation submit guard scoped to
+`tau-ops-control-actions` so enabled actions prompt before submitting and
+disabled actions are blocked.
+
 ## Scope
 
 ### In Scope
@@ -46,11 +53,13 @@ the redirect returns operators to the same shell context.
 - Native disabled semantics for unavailable command-center control buttons.
 - Hidden `session` and `range` context fields on command-center control action
   forms.
+- Browser-native confirmation submit guard for command-center control action
+  forms.
 - Gateway `/ops` integration conformance tests for confirmation markers.
 - Regression validation for phase 1A..1K command-center suites.
 
 ### Out of Scope
-- Client-side modal runtime behavior.
+- Custom modal runtime behavior.
 - New control action endpoint semantics.
 - New dashboard websocket streams.
 
@@ -64,11 +73,15 @@ the redirect returns operators to the same shell context.
   `aria-disabled="false"` without native disabled semantics.
 - C-06 (regression/integration): control action forms include hidden
   `session` and `range` fields populated from the active shell context.
+- C-07 (regression/integration): `/ops` ships
+  `tau-ops-control-confirmation-guard` with browser-native confirm behavior for
+  confirm-required control forms.
 
 ## Success Metrics / Observable Signals
 - `cargo test -p tau-dashboard-ui functional_spec_2826 -- --test-threads=1` passes.
 - `cargo test -p tau-dashboard-ui regression_spec_2826_disabled_control_actions_are_native_disabled -- --nocapture` passes.
 - `cargo test -p tau-dashboard-ui regression_spec_2826_control_action_forms_preserve_session_and_range_context -- --nocapture` passes.
+- `cargo test -p tau-dashboard-ui regression_spec_2826_control_actions_ship_confirmation_submit_guard -- --nocapture` passes.
 - `cargo test -p tau-gateway functional_spec_2826 -- --test-threads=1` passes.
 - `cargo test -p tau-dashboard-ui functional_spec_2786 -- --test-threads=1` passes.
 - `cargo test -p tau-dashboard-ui functional_spec_2794 -- --test-threads=1` passes.
@@ -105,3 +118,8 @@ P1 multi-module slice proceeds with spec marked `Reviewed` per AGENTS.md self-ac
 - Added hidden context fields for each control action form:
   - `session`
   - `range`
+- Added browser-native confirmation guard marker and script:
+  - `tau-ops-control-confirmation-guard`
+  - `data-confirm-submit-guard="browser-confirm"`
+  - disabled actions are prevented client-side
+  - enabled confirm-required actions call `window.confirm` before submit
