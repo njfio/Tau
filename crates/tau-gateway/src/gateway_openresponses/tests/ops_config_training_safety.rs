@@ -1498,6 +1498,16 @@ async fn integration_spec_3148_c04_ops_training_route_renders_training_contract_
     assert!(body.contains(
         "id=\"tau-ops-training-actions\" data-pause-endpoint=\"/gateway/training/config\" data-reset-endpoint=\"/gateway/training/config\" data-export-endpoint=\"/gateway/training/rollouts\""
     ));
+    assert!(body.contains(
+        "id=\"tau-ops-training-action-pause\" data-action=\"pause-training\" data-action-enabled=\"false\" data-action-mode=\"endpoint-marker-only\" type=\"button\" aria-disabled=\"true\" disabled"
+    ));
+    assert!(body.contains(
+        "id=\"tau-ops-training-action-reset\" data-action=\"reset-store\" data-action-enabled=\"false\" data-action-mode=\"endpoint-marker-only\" type=\"button\" aria-disabled=\"true\" disabled"
+    ));
+    assert!(body.contains(
+        "id=\"tau-ops-training-action-export\" data-action=\"export-data\" data-action-enabled=\"false\" data-action-mode=\"endpoint-marker-only\" type=\"button\" aria-disabled=\"true\" disabled"
+    ));
+    assert!(!body.contains("href=\"/ops/training?action=pause\""));
 
     handle.abort();
 }

@@ -5639,6 +5639,21 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     color: #6f8996;
                     cursor: not-allowed;
                 }
+                #tau-ops-training-actions {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 8px;
+                }
+                #tau-ops-training-actions button[data-action] {
+                    border: 1px solid #263f4e;
+                    border-radius: 6px;
+                    padding: 6px 10px;
+                    background: #0b1d28;
+                    color: #6f8996;
+                    font-size: .76rem;
+                    font-weight: 700;
+                    cursor: not-allowed;
+                }
                 @media (max-width: 900px) {
                     #tau-ops-header {
                         grid-template-columns: 1fr;
@@ -7503,30 +7518,39 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 data-reset-endpoint="/gateway/training/config"
                                 data-export-endpoint="/gateway/training/rollouts"
                             >
-                                <a
+                                <button
                                     id="tau-ops-training-action-pause"
                                     data-action="pause-training"
-                                    data-action-enabled="true"
-                                    href="/ops/training?action=pause"
+                                    data-action-enabled="false"
+                                    data-action-mode="endpoint-marker-only"
+                                    type="button"
+                                    aria-disabled="true"
+                                    disabled=true
                                 >
                                     Pause Training
-                                </a>
-                                <a
+                                </button>
+                                <button
                                     id="tau-ops-training-action-reset"
                                     data-action="reset-store"
-                                    data-action-enabled="true"
-                                    href="/ops/training?action=reset"
+                                    data-action-enabled="false"
+                                    data-action-mode="endpoint-marker-only"
+                                    type="button"
+                                    aria-disabled="true"
+                                    disabled=true
                                 >
                                     Reset Store
-                                </a>
-                                <a
+                                </button>
+                                <button
                                     id="tau-ops-training-action-export"
                                     data-action="export-data"
-                                    data-action-enabled="true"
-                                    href="/ops/training?action=export"
+                                    data-action-enabled="false"
+                                    data-action-mode="endpoint-marker-only"
+                                    type="button"
+                                    aria-disabled="true"
+                                    disabled=true
                                 >
                                     Export Data
-                                </a>
+                                </button>
                             </section>
                         </section>
                         <section

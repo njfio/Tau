@@ -5335,14 +5335,17 @@ fn functional_spec_3148_c03_training_route_renders_action_markers() {
         "id=\"tau-ops-training-actions\" data-pause-endpoint=\"/gateway/training/config\" data-reset-endpoint=\"/gateway/training/config\" data-export-endpoint=\"/gateway/training/rollouts\""
     ));
     assert!(html.contains(
-        "id=\"tau-ops-training-action-pause\" data-action=\"pause-training\" data-action-enabled=\"true\""
+        "id=\"tau-ops-training-action-pause\" data-action=\"pause-training\" data-action-enabled=\"false\" data-action-mode=\"endpoint-marker-only\" type=\"button\" aria-disabled=\"true\" disabled"
     ));
     assert!(html.contains(
-        "id=\"tau-ops-training-action-reset\" data-action=\"reset-store\" data-action-enabled=\"true\""
+        "id=\"tau-ops-training-action-reset\" data-action=\"reset-store\" data-action-enabled=\"false\" data-action-mode=\"endpoint-marker-only\" type=\"button\" aria-disabled=\"true\" disabled"
     ));
     assert!(html.contains(
-        "id=\"tau-ops-training-action-export\" data-action=\"export-data\" data-action-enabled=\"true\""
+        "id=\"tau-ops-training-action-export\" data-action=\"export-data\" data-action-enabled=\"false\" data-action-mode=\"endpoint-marker-only\" type=\"button\" aria-disabled=\"true\" disabled"
     ));
+    assert!(!html.contains("href=\"/ops/training?action=pause\""));
+    assert!(!html.contains("href=\"/ops/training?action=reset\""));
+    assert!(!html.contains("href=\"/ops/training?action=export\""));
 }
 
 #[test]
