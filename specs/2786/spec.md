@@ -58,6 +58,13 @@ Given localhost-dev mode renders no credential challenge,
 When an operator or assistive technology reads the Continue control,
 Then Continue is exposed as a link with the `/ops` href instead of a button role.
 
+### AC-10 Login route does not ship hidden protected payload
+Given an operator opens `/ops/login`,
+When the server renders the login shell,
+Then the hidden protected shell is marked as pruned and omits protected
+route payloads such as chat, sessions, memory, harness, command center, and
+deploy panels.
+
 ## Scope
 
 ### In Scope
@@ -69,6 +76,7 @@ Then Continue is exposed as a link with the `/ops` href instead of a button role
 - No-auth heading/status markers and hidden credential field rendering.
 - Route-aware skip-to-main target for the login shell.
 - Link semantics for the no-auth Continue navigation control.
+- Protected payload pruning for the login route.
 - Scoped regression tests for dashboard shell and auth session behavior.
 
 ### Out of Scope
@@ -92,6 +100,8 @@ Then Continue is exposed as a link with the `/ops` href instead of a button role
   visible login shell.
 - C-10 (regression): localhost-dev `/ops/login` exposes Continue as a link
   with a preserved-context `/ops` href and no button role.
+- C-11 (regression): `/ops/login` keeps the hidden protected shell as a
+  pruned marker and omits hidden protected route payload panels.
 
 ## Success Metrics / Observable Signals
 - `cargo test -p tau-dashboard-ui -- --test-threads=1` passes with new auth/route marker coverage.
@@ -107,6 +117,8 @@ Then Continue is exposed as a link with the `/ops` href instead of a button role
   shell.
 - Browser proof confirms live localhost-dev Continue is exposed as a link with
   a URL in the browser tree.
+- Browser proof confirms live `/ops/login` no longer ships hidden protected
+  route panels in the document payload.
 - Existing dashboard/auth regression tests continue to pass.
 
 ## Approval Gate

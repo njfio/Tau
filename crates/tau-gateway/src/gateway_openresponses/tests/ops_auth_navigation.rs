@@ -246,6 +246,7 @@ async fn regression_ops_login_none_mode_continue_link_reaches_ops_shell() {
         "id=\"tau-ops-login-heading\" data-auth-heading-mode=\"none\">Operator Access Ready<",
         "id=\"tau-ops-login-help\" data-auth-copy-mode=\"none\">Localhost-dev mode is active. No credential is required; continue directly to protected operations views.<",
         "id=\"tau-ops-no-auth-status\" data-auth-status-mode=\"none\" aria-hidden=\"false\">Credential input is hidden because localhost-dev mode is active.<",
+        "id=\"tau-ops-protected-shell\" data-route=\"/ops\" aria-hidden=\"true\" data-protected-payload=\"pruned\"",
         "id=\"tau-ops-login-form\" data-login-continue-href=\"/ops?theme=dark&amp;sidebar=expanded&amp;session=ops-login-live\" data-login-action-enabled=\"true\"",
         "id=\"tau-ops-login-submit\" href=\"/ops?theme=dark&amp;sidebar=expanded&amp;session=ops-login-live\" data-login-action=\"continue\" data-login-action-enabled=\"true\" data-continue-href=\"/ops?theme=dark&amp;sidebar=expanded&amp;session=ops-login-live\" aria-disabled=\"false\"",
     ] {
@@ -258,6 +259,20 @@ async fn regression_ops_login_none_mode_continue_link_reaches_ops_shell() {
         !body.contains("id=\"tau-ops-login-submit\" role=\"button\""),
         "localhost-dev Continue navigates to /ops and should expose link semantics"
     );
+    for marker in [
+        "id=\"tau-ops-chat-panel\"",
+        "id=\"tau-ops-sessions-panel\"",
+        "id=\"tau-ops-memory-panel\"",
+        "id=\"tau-ops-memory-graph-panel\"",
+        "id=\"tau-ops-harness-panel\"",
+        "id=\"tau-ops-command-center\"",
+        "id=\"tau-ops-deploy-panel\"",
+    ] {
+        assert!(
+            !body.contains(marker),
+            "localhost-dev login should not ship hidden protected payload marker `{marker}`"
+        );
+    }
     handle.abort();
 }
 

@@ -1580,7 +1580,13 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     let active_shell_path = context.active_route.shell_path();
     let theme_attr = context.theme.as_str();
     let sidebar_state_attr = context.sidebar_state.as_str();
-    let skip_to_main_href = if matches!(context.active_route, TauOpsDashboardRoute::Login) {
+    let login_route_active = matches!(context.active_route, TauOpsDashboardRoute::Login);
+    let protected_shell_payload = if login_route_active {
+        "pruned"
+    } else {
+        "rendered"
+    };
+    let skip_to_main_href = if login_route_active {
         "#tau-ops-login-shell"
     } else {
         "#tau-ops-protected-shell"
@@ -1747,16 +1753,8 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     } else {
         "false"
     };
-    let login_hidden = if matches!(context.active_route, TauOpsDashboardRoute::Login) {
-        "false"
-    } else {
-        "true"
-    };
-    let protected_hidden = if matches!(context.active_route, TauOpsDashboardRoute::Login) {
-        "true"
-    } else {
-        "false"
-    };
+    let login_hidden = if login_route_active { "false" } else { "true" };
+    let protected_hidden = if login_route_active { "true" } else { "false" };
     let auth_input_enabled = if login_required { "true" } else { "false" };
     let login_continue_href = nav_command_center_href.clone();
     let login_submit_href = if login_required {
@@ -5750,7 +5748,25 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             </a>
                         </form>
                     </section>
-                    <main id="tau-ops-protected-shell" data-route="/ops" aria-hidden=protected_hidden>
+                    <main
+                        id="tau-ops-protected-shell"
+                        data-route="/ops"
+                        aria-hidden=protected_hidden
+                        data-protected-payload=protected_shell_payload
+                    >
+                        {if login_route_active {
+                            leptos::either::Either::Left(view! {
+                                <section
+                                    id="tau-ops-protected-shell-pruned"
+                                    data-route="/ops/login"
+                                    data-protected-payload="pruned"
+                                    hidden
+                                >
+                                    <h2>Protected operations payload omitted on login route.</h2>
+                                </section>
+                            })
+                        } else {
+                            leptos::either::Either::Right(view! {
                         <section
                             id="tau-ops-accessibility-contract"
                             data-component="AccessibilityContract"
@@ -9749,6 +9765,8 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 </button>
                             </div>
                         </section>
+                            })
+                        }}
                     </main>
                 </div>
             </div>

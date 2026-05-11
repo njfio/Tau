@@ -304,6 +304,38 @@ fn regression_spec_2786_login_skip_link_targets_visible_login_shell() {
 }
 
 #[test]
+fn regression_spec_2786_login_route_prunes_hidden_protected_payload() {
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        auth_mode: TauOpsDashboardAuthMode::None,
+        active_route: TauOpsDashboardRoute::Login,
+        theme: TauOpsDashboardTheme::Dark,
+        sidebar_state: TauOpsDashboardSidebarState::Expanded,
+        command_center: TauOpsDashboardCommandCenterSnapshot::default(),
+        chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
+    });
+
+    assert!(html.contains(
+        "id=\"tau-ops-protected-shell\" data-route=\"/ops\" aria-hidden=\"true\" data-protected-payload=\"pruned\""
+    ));
+    assert!(html.contains("id=\"tau-ops-protected-shell-pruned\""));
+    for marker in [
+        "id=\"tau-ops-chat-panel\"",
+        "id=\"tau-ops-sessions-panel\"",
+        "id=\"tau-ops-memory-panel\"",
+        "id=\"tau-ops-memory-graph-panel\"",
+        "id=\"tau-ops-harness-panel\"",
+        "id=\"tau-ops-command-center\"",
+        "id=\"tau-ops-deploy-panel\"",
+    ] {
+        assert!(
+            !html.contains(marker),
+            "login route should not ship hidden protected payload marker `{marker}`"
+        );
+    }
+}
+
+#[test]
 fn regression_spec_2786_c03_shell_none_mode_marks_auth_not_required() {
     let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
         auth_mode: TauOpsDashboardAuthMode::None,
