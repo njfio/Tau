@@ -14,6 +14,8 @@
    localhost-dev login surface.
 9. [x] T9 (REGRESSION): target skip-to-main at the visible login shell on
    `/ops/login`.
+10. [x] T10 (REGRESSION): expose no-auth Continue as a link instead of a
+    button-role anchor.
 
 ## Tier Mapping
 - Unit: `tau-dashboard-ui` auth marker tests.
@@ -21,7 +23,7 @@
 - Contract/DbC: N/A (no new DbC macro surfaces).
 - Snapshot: N/A.
 - Functional: auth bootstrap JSON contract tests.
-- Conformance: C-01..C-09 mapped in crate/gateway tests.
+- Conformance: C-01..C-10 mapped in crate/gateway tests.
 - Integration: `/ops` and `/ops/login` endpoint tests.
 - Fuzz: N/A (no untrusted parser added).
 - Mutation: N/A (scaffolding contract slice; no critical algorithm path).
@@ -125,3 +127,30 @@
   `service=running`; Browser verified `id=tau-ops-skip-to-main` targeting
   `#tau-ops-login-shell`, login shell `aria-hidden=false`, protected shell
   `aria-hidden=true`, and no visible credential input on `/ops/login`.
+- RED: Live Browser on
+  `/ops/login?theme=dark&sidebar=expanded&session=default` exposed
+  `Continue` as a button and the DOM showed
+  `id=tau-ops-login-submit role=button` even though the control navigates to
+  `/ops`.
+- RED: `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo test -p tau-dashboard-ui regression_spec_2786_c03_none_login_continue_links_to_ops_shell -- --nocapture`
+  failed before the button role was removed from the Continue anchor.
+- GREEN: `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo test -p tau-dashboard-ui regression_spec_2786_c03_none_login_continue_links_to_ops_shell -- --nocapture`
+  passed.
+- REGRESSION: `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo test -p tau-dashboard-ui 2786 -- --nocapture`
+  passed (7 tests).
+- REGRESSION: `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo test -p tau-gateway ops_login -- --nocapture`
+  passed (2 tests).
+- REGRESSION: `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo test -p tau-dashboard-ui -- --nocapture`
+  passed (200 tests, 0 doc tests).
+- STATIC: `cargo fmt --check --package tau-dashboard-ui --package tau-gateway`
+  and `git diff --check` passed.
+- STATIC: `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo clippy -p tau-dashboard-ui -p tau-gateway -- -D warnings`
+  passed.
+- BUILD: `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo build -p tau-coding-agent`
+  passed.
+- LIVE: Rebuilt `tau-coding-agent` running on `127.0.0.1:8795` reported
+  `auth.mode=localhost-dev`, `model=gpt-5.3-codex`, and
+  `service=running`; Browser verified Continue appears as one link and zero
+  buttons, has href `/ops?theme=dark&sidebar=expanded&session=default`, has
+  no role override, and a visible-DOM click navigates to `/ops` with the
+  protected command-center shell visible.

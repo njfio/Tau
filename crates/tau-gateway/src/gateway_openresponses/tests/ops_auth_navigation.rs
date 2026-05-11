@@ -247,13 +247,17 @@ async fn regression_ops_login_none_mode_continue_link_reaches_ops_shell() {
         "id=\"tau-ops-login-help\" data-auth-copy-mode=\"none\">Localhost-dev mode is active. No credential is required; continue directly to protected operations views.<",
         "id=\"tau-ops-no-auth-status\" data-auth-status-mode=\"none\" aria-hidden=\"false\">Credential input is hidden because localhost-dev mode is active.<",
         "id=\"tau-ops-login-form\" data-login-continue-href=\"/ops?theme=dark&amp;sidebar=expanded&amp;session=ops-login-live\" data-login-action-enabled=\"true\"",
-        "id=\"tau-ops-login-submit\" role=\"button\" href=\"/ops?theme=dark&amp;sidebar=expanded&amp;session=ops-login-live\" data-login-action=\"continue\" data-login-action-enabled=\"true\" data-continue-href=\"/ops?theme=dark&amp;sidebar=expanded&amp;session=ops-login-live\" aria-disabled=\"false\"",
+        "id=\"tau-ops-login-submit\" href=\"/ops?theme=dark&amp;sidebar=expanded&amp;session=ops-login-live\" data-login-action=\"continue\" data-login-action-enabled=\"true\" data-continue-href=\"/ops?theme=dark&amp;sidebar=expanded&amp;session=ops-login-live\" aria-disabled=\"false\"",
     ] {
         assert!(
             body.contains(marker),
             "localhost-dev login should expose working continue marker `{marker}`"
         );
     }
+    assert!(
+        !body.contains("id=\"tau-ops-login-submit\" role=\"button\""),
+        "localhost-dev Continue navigates to /ops and should expose link semantics"
+    );
     handle.abort();
 }
 

@@ -53,6 +53,11 @@ When keyboard navigation uses the skip-to-main link,
 Then the link targets the visible login shell rather than the hidden protected
 operations shell.
 
+### AC-9 No-auth Continue exposes navigation semantics
+Given localhost-dev mode renders no credential challenge,
+When an operator or assistive technology reads the Continue control,
+Then Continue is exposed as a link with the `/ops` href instead of a button role.
+
 ## Scope
 
 ### In Scope
@@ -63,6 +68,7 @@ operations shell.
 - Auth-mode-specific login help copy for the no-auth localhost-dev shell.
 - No-auth heading/status markers and hidden credential field rendering.
 - Route-aware skip-to-main target for the login shell.
+- Link semantics for the no-auth Continue navigation control.
 - Scoped regression tests for dashboard shell and auth session behavior.
 
 ### Out of Scope
@@ -84,6 +90,8 @@ operations shell.
   renders an access-ready heading plus no-auth status marker.
 - C-09 (regression): `/ops/login` renders a skip-to-main link targeting the
   visible login shell.
+- C-10 (regression): localhost-dev `/ops/login` exposes Continue as a link
+  with a preserved-context `/ops` href and no button role.
 
 ## Success Metrics / Observable Signals
 - `cargo test -p tau-dashboard-ui -- --test-threads=1` passes with new auth/route marker coverage.
@@ -97,6 +105,8 @@ operations shell.
   password/token input.
 - Browser proof confirms live login skip navigation points to the visible login
   shell.
+- Browser proof confirms live localhost-dev Continue is exposed as a link with
+  a URL in the browser tree.
 - Existing dashboard/auth regression tests continue to pass.
 
 ## Approval Gate

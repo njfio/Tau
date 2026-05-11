@@ -4905,6 +4905,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                 }
                 #tau-ops-auth-shell button,
                 #tau-ops-auth-shell a[role="button"],
+                #tau-ops-auth-shell a[data-login-action],
                 #tau-ops-protected-shell button,
                 #tau-ops-protected-shell a[role="button"] {
                     display: inline-flex;
@@ -5739,7 +5740,6 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             />
                             <a
                                 id="tau-ops-login-submit"
-                                role="button"
                                 href=login_submit_href
                                 data-login-action=login_submit_action
                                 data-login-action-enabled=login_action_enabled

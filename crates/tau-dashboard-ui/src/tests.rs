@@ -333,13 +333,17 @@ fn regression_spec_2786_c03_none_login_continue_links_to_ops_shell() {
     for marker in [
         "id=\"tau-ops-login-form\" data-login-continue-href=\"/ops?theme=dark&amp;sidebar=expanded&amp;session=default\" data-login-action-enabled=\"true\"",
         "id=\"tau-ops-auth-input\" type=\"password\" autocomplete=\"off\" placeholder=\"No authentication required in localhost-dev mode\" data-auth-input-enabled=\"false\" disabled readonly",
-        "id=\"tau-ops-login-submit\" role=\"button\" href=\"/ops?theme=dark&amp;sidebar=expanded&amp;session=default\" data-login-action=\"continue\" data-login-action-enabled=\"true\" data-continue-href=\"/ops?theme=dark&amp;sidebar=expanded&amp;session=default\" aria-disabled=\"false\"",
+        "id=\"tau-ops-login-submit\" href=\"/ops?theme=dark&amp;sidebar=expanded&amp;session=default\" data-login-action=\"continue\" data-login-action-enabled=\"true\" data-continue-href=\"/ops?theme=dark&amp;sidebar=expanded&amp;session=default\" aria-disabled=\"false\"",
     ] {
         assert!(
             html.contains(marker),
             "none-mode login should expose working continue marker `{marker}`"
         );
     }
+    assert!(
+        !html.contains("id=\"tau-ops-login-submit\" role=\"button\""),
+        "none-mode Continue navigates between pages and must expose link semantics"
+    );
 }
 
 #[test]
