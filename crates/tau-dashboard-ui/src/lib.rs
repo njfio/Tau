@@ -232,6 +232,19 @@ impl TauOpsDashboardSidebarState {
     }
 }
 
+fn ops_shell_context_href(
+    path: &str,
+    theme: TauOpsDashboardTheme,
+    sidebar_state: TauOpsDashboardSidebarState,
+    session_key: &str,
+) -> String {
+    format!(
+        "{path}?theme={}&sidebar={}&session={session_key}",
+        theme.as_str(),
+        sidebar_state.as_str()
+    )
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// Public struct `TauOpsDashboardAlertFeedRow` in `tau-dashboard-ui`.
 pub struct TauOpsDashboardAlertFeedRow {
@@ -1554,6 +1567,115 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
         format!("{active_shell_path}?theme={theme_attr}&sidebar={sidebar_toggle_target_state}");
     let dark_theme_href = format!("{active_shell_path}?theme=dark&sidebar={sidebar_state_attr}");
     let light_theme_href = format!("{active_shell_path}?theme=light&sidebar={sidebar_state_attr}");
+    let shell_nav_session_key = context.chat.active_session_key.clone();
+    let nav_command_center_href = ops_shell_context_href(
+        TauOpsDashboardRoute::Ops.shell_path(),
+        context.theme,
+        context.sidebar_state,
+        shell_nav_session_key.as_str(),
+    );
+    let nav_agent_fleet_href = ops_shell_context_href(
+        TauOpsDashboardRoute::Agents.shell_path(),
+        context.theme,
+        context.sidebar_state,
+        shell_nav_session_key.as_str(),
+    );
+    let nav_agent_detail_href = ops_shell_context_href(
+        TauOpsDashboardRoute::AgentDetail.shell_path(),
+        context.theme,
+        context.sidebar_state,
+        shell_nav_session_key.as_str(),
+    );
+    let nav_chat_href = ops_shell_context_href(
+        TauOpsDashboardRoute::Chat.shell_path(),
+        context.theme,
+        context.sidebar_state,
+        shell_nav_session_key.as_str(),
+    );
+    let nav_sessions_href = ops_shell_context_href(
+        TauOpsDashboardRoute::Sessions.shell_path(),
+        context.theme,
+        context.sidebar_state,
+        shell_nav_session_key.as_str(),
+    );
+    let nav_memory_href = ops_shell_context_href(
+        TauOpsDashboardRoute::Memory.shell_path(),
+        context.theme,
+        context.sidebar_state,
+        shell_nav_session_key.as_str(),
+    );
+    let nav_memory_graph_href = ops_shell_context_href(
+        TauOpsDashboardRoute::MemoryGraph.shell_path(),
+        context.theme,
+        context.sidebar_state,
+        shell_nav_session_key.as_str(),
+    );
+    let nav_tools_jobs_href = ops_shell_context_href(
+        TauOpsDashboardRoute::ToolsJobs.shell_path(),
+        context.theme,
+        context.sidebar_state,
+        shell_nav_session_key.as_str(),
+    );
+    let nav_channels_href = ops_shell_context_href(
+        TauOpsDashboardRoute::Channels.shell_path(),
+        context.theme,
+        context.sidebar_state,
+        shell_nav_session_key.as_str(),
+    );
+    let nav_harness_href = ops_shell_context_href(
+        TauOpsDashboardRoute::Harness.shell_path(),
+        context.theme,
+        context.sidebar_state,
+        shell_nav_session_key.as_str(),
+    );
+    let nav_config_href = ops_shell_context_href(
+        TauOpsDashboardRoute::Config.shell_path(),
+        context.theme,
+        context.sidebar_state,
+        shell_nav_session_key.as_str(),
+    );
+    let nav_training_href = ops_shell_context_href(
+        TauOpsDashboardRoute::Training.shell_path(),
+        context.theme,
+        context.sidebar_state,
+        shell_nav_session_key.as_str(),
+    );
+    let nav_safety_href = ops_shell_context_href(
+        TauOpsDashboardRoute::Safety.shell_path(),
+        context.theme,
+        context.sidebar_state,
+        shell_nav_session_key.as_str(),
+    );
+    let nav_diagnostics_href = ops_shell_context_href(
+        TauOpsDashboardRoute::Diagnostics.shell_path(),
+        context.theme,
+        context.sidebar_state,
+        shell_nav_session_key.as_str(),
+    );
+    let nav_deploy_href = ops_shell_context_href(
+        TauOpsDashboardRoute::Deploy.shell_path(),
+        context.theme,
+        context.sidebar_state,
+        shell_nav_session_key.as_str(),
+    );
+    let nav_login_href = ops_shell_context_href(
+        TauOpsDashboardRoute::Login.shell_path(),
+        context.theme,
+        context.sidebar_state,
+        shell_nav_session_key.as_str(),
+    );
+    let nav_legacy_dashboard_href = ops_shell_context_href(
+        "/dashboard",
+        context.theme,
+        context.sidebar_state,
+        shell_nav_session_key.as_str(),
+    );
+    let nav_webchat_href = ops_shell_context_href(
+        "/webchat",
+        context.theme,
+        context.sidebar_state,
+        shell_nav_session_key.as_str(),
+    );
     let dark_theme_pressed = if matches!(context.theme, TauOpsDashboardTheme::Dark) {
         "true"
     } else {
@@ -5443,7 +5565,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                 >
                     <ol>
                         <li id="tau-ops-breadcrumb-home">
-                            <a href="/ops">Home</a>
+                            <a href=nav_command_center_href.clone() data-preserves-shell-context="true">Home</a>
                         </li>
                         <li id="tau-ops-breadcrumb-current">{breadcrumb_label}</li>
                     </ol>
@@ -5453,24 +5575,24 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                 <aside id="tau-ops-sidebar" data-harness-rail="compact">
                     <nav aria-label="Tau Ops navigation">
                         <ul>
-                            <li id="tau-ops-nav-command-center"><a data-nav-item="command-center" href="/ops" data-harness-rail-label="Command" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::Ops)>Command Center</a></li>
-                            <li id="tau-ops-nav-agent-fleet"><a data-nav-item="agent-fleet" href="/ops/agents" data-harness-rail-label="Fleet" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::Agents)>Agent Fleet</a></li>
-                            <li id="tau-ops-nav-agent-detail"><a data-nav-item="agent-detail" href="/ops/agents/default" data-harness-rail-label="Agent" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::AgentDetail)>Agent Detail</a></li>
-                            <li id="tau-ops-nav-chat"><a data-nav-item="chat" href="/ops/chat" data-harness-rail-label="Chat" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::Chat)>Conversation / Chat</a></li>
-                            <li id="tau-ops-nav-sessions"><a data-nav-item="sessions" href="/ops/sessions" data-harness-rail-label="Sessions" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::Sessions)>Sessions Explorer</a></li>
-                            <li id="tau-ops-nav-memory"><a data-nav-item="memory" href="/ops/memory" data-harness-rail-label="Memory" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::Memory)>Memory Explorer</a></li>
-                            <li id="tau-ops-nav-memory-graph"><a data-nav-item="memory-graph" href="/ops/memory-graph" data-harness-rail-label="Graph" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::MemoryGraph)>Memory Graph</a></li>
-                            <li id="tau-ops-nav-tools-jobs"><a data-nav-item="tools-jobs" href="/ops/tools-jobs" data-harness-rail-label="Tools" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::ToolsJobs)>Tools & Jobs</a></li>
-                            <li id="tau-ops-nav-channels"><a data-nav-item="channels" href="/ops/channels" data-harness-rail-label="Channels" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::Channels)>Channels</a></li>
-                            <li id="tau-ops-nav-harness"><a data-nav-item="mission-harness" href="/ops/harness" data-harness-rail-label="Missions" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::Harness)>Mission Harness</a></li>
-                            <li id="tau-ops-nav-config"><a data-nav-item="config" href="/ops/config" data-harness-rail-label="Config" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::Config)>Configuration</a></li>
-                            <li id="tau-ops-nav-training"><a data-nav-item="training" href="/ops/training" data-harness-rail-label="Training" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::Training)>Training & RL</a></li>
-                            <li id="tau-ops-nav-safety"><a data-nav-item="safety" href="/ops/safety" data-harness-rail-label="Safety" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::Safety)>Safety & Security</a></li>
-                            <li id="tau-ops-nav-diagnostics"><a data-nav-item="diagnostics" href="/ops/diagnostics" data-harness-rail-label="Audit" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::Diagnostics)>Diagnostics & Audit</a></li>
-                            <li id="tau-ops-nav-deploy"><a data-nav-item="deploy" href="/ops/deploy" data-harness-rail-label="Deploy" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::Deploy)>Deploy Agent</a></li>
-                            <li id="tau-ops-nav-login"><a href="/ops/login" data-harness-rail-label="Login" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::Login)>Operator Login</a></li>
-                            <li id="tau-ops-nav-legacy-dashboard"><a href="/dashboard" data-harness-rail-label="Legacy">Legacy Dashboard</a></li>
-                            <li id="tau-ops-nav-webchat"><a href="/webchat" data-harness-rail-label="Webchat">Webchat</a></li>
+                            <li id="tau-ops-nav-command-center"><a data-nav-item="command-center" href=nav_command_center_href data-harness-rail-label="Command" data-preserves-shell-context="true" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::Ops)>Command Center</a></li>
+                            <li id="tau-ops-nav-agent-fleet"><a data-nav-item="agent-fleet" href=nav_agent_fleet_href data-harness-rail-label="Fleet" data-preserves-shell-context="true" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::Agents)>Agent Fleet</a></li>
+                            <li id="tau-ops-nav-agent-detail"><a data-nav-item="agent-detail" href=nav_agent_detail_href data-harness-rail-label="Agent" data-preserves-shell-context="true" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::AgentDetail)>Agent Detail</a></li>
+                            <li id="tau-ops-nav-chat"><a data-nav-item="chat" href=nav_chat_href data-harness-rail-label="Chat" data-preserves-shell-context="true" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::Chat)>Conversation / Chat</a></li>
+                            <li id="tau-ops-nav-sessions"><a data-nav-item="sessions" href=nav_sessions_href data-harness-rail-label="Sessions" data-preserves-shell-context="true" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::Sessions)>Sessions Explorer</a></li>
+                            <li id="tau-ops-nav-memory"><a data-nav-item="memory" href=nav_memory_href data-harness-rail-label="Memory" data-preserves-shell-context="true" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::Memory)>Memory Explorer</a></li>
+                            <li id="tau-ops-nav-memory-graph"><a data-nav-item="memory-graph" href=nav_memory_graph_href data-harness-rail-label="Graph" data-preserves-shell-context="true" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::MemoryGraph)>Memory Graph</a></li>
+                            <li id="tau-ops-nav-tools-jobs"><a data-nav-item="tools-jobs" href=nav_tools_jobs_href data-harness-rail-label="Tools" data-preserves-shell-context="true" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::ToolsJobs)>Tools & Jobs</a></li>
+                            <li id="tau-ops-nav-channels"><a data-nav-item="channels" href=nav_channels_href data-harness-rail-label="Channels" data-preserves-shell-context="true" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::Channels)>Channels</a></li>
+                            <li id="tau-ops-nav-harness"><a data-nav-item="mission-harness" href=nav_harness_href data-harness-rail-label="Missions" data-preserves-shell-context="true" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::Harness)>Mission Harness</a></li>
+                            <li id="tau-ops-nav-config"><a data-nav-item="config" href=nav_config_href data-harness-rail-label="Config" data-preserves-shell-context="true" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::Config)>Configuration</a></li>
+                            <li id="tau-ops-nav-training"><a data-nav-item="training" href=nav_training_href data-harness-rail-label="Training" data-preserves-shell-context="true" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::Training)>Training & RL</a></li>
+                            <li id="tau-ops-nav-safety"><a data-nav-item="safety" href=nav_safety_href data-harness-rail-label="Safety" data-preserves-shell-context="true" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::Safety)>Safety & Security</a></li>
+                            <li id="tau-ops-nav-diagnostics"><a data-nav-item="diagnostics" href=nav_diagnostics_href data-harness-rail-label="Audit" data-preserves-shell-context="true" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::Diagnostics)>Diagnostics & Audit</a></li>
+                            <li id="tau-ops-nav-deploy"><a data-nav-item="deploy" href=nav_deploy_href data-harness-rail-label="Deploy" data-preserves-shell-context="true" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::Deploy)>Deploy Agent</a></li>
+                            <li id="tau-ops-nav-login"><a href=nav_login_href data-harness-rail-label="Login" data-preserves-shell-context="true" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::Login)>Operator Login</a></li>
+                            <li id="tau-ops-nav-legacy-dashboard"><a href=nav_legacy_dashboard_href data-harness-rail-label="Legacy" data-preserves-shell-context="true">Legacy Dashboard</a></li>
+                            <li id="tau-ops-nav-webchat"><a href=nav_webchat_href data-harness-rail-label="Webchat" data-preserves-shell-context="true">Webchat</a></li>
                         </ul>
                     </nav>
                 </aside>

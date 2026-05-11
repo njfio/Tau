@@ -376,7 +376,9 @@ fn functional_spec_2790_c01_sidebar_includes_15_ops_route_links() {
 
     for route in expected_routes {
         assert!(
-            html.contains(&format!("href=\"{route}\"")),
+            html.contains(&format!(
+                "href=\"{route}?theme=dark&amp;sidebar=expanded&amp;session=default\""
+            )),
             "missing nav route {route}"
         );
     }
@@ -413,19 +415,19 @@ fn functional_spec_3796_c02_left_nav_marks_active_route() {
     let deploy_html = render_tau_ops_dashboard_shell_for_route("/ops/deploy");
     assert_eq!(deploy_html.matches("aria-current=\"page\">").count(), 1);
     assert!(deploy_html.contains(
-        "id=\"tau-ops-nav-deploy\"><a data-nav-item=\"deploy\" href=\"/ops/deploy\" data-harness-rail-label=\"Deploy\" aria-current=\"page\""
+        "id=\"tau-ops-nav-deploy\"><a data-nav-item=\"deploy\" href=\"/ops/deploy?theme=dark&amp;sidebar=expanded&amp;session=default\" data-harness-rail-label=\"Deploy\" data-preserves-shell-context=\"true\" aria-current=\"page\""
     ));
     assert!(deploy_html.contains(
-        "id=\"tau-ops-nav-chat\"><a data-nav-item=\"chat\" href=\"/ops/chat\" data-harness-rail-label=\"Chat\" aria-current=\"false\""
+        "id=\"tau-ops-nav-chat\"><a data-nav-item=\"chat\" href=\"/ops/chat?theme=dark&amp;sidebar=expanded&amp;session=default\" data-harness-rail-label=\"Chat\" data-preserves-shell-context=\"true\" aria-current=\"false\""
     ));
 
     let chat_html = render_tau_ops_dashboard_shell_for_route("/ops/chat");
     assert_eq!(chat_html.matches("aria-current=\"page\">").count(), 1);
     assert!(chat_html.contains(
-        "id=\"tau-ops-nav-chat\"><a data-nav-item=\"chat\" href=\"/ops/chat\" data-harness-rail-label=\"Chat\" aria-current=\"page\""
+        "id=\"tau-ops-nav-chat\"><a data-nav-item=\"chat\" href=\"/ops/chat?theme=dark&amp;sidebar=expanded&amp;session=default\" data-harness-rail-label=\"Chat\" data-preserves-shell-context=\"true\" aria-current=\"page\""
     ));
     assert!(chat_html.contains(
-        "id=\"tau-ops-nav-deploy\"><a data-nav-item=\"deploy\" href=\"/ops/deploy\" data-harness-rail-label=\"Deploy\" aria-current=\"false\""
+        "id=\"tau-ops-nav-deploy\"><a data-nav-item=\"deploy\" href=\"/ops/deploy?theme=dark&amp;sidebar=expanded&amp;session=default\" data-harness-rail-label=\"Deploy\" data-preserves-shell-context=\"true\" aria-current=\"false\""
     ));
 }
 
@@ -434,9 +436,9 @@ fn functional_spec_3760_c02_c03_static_preview_link_guard_preserves_gateway_rout
     let html = render_tau_ops_dashboard_shell();
 
     for marker in [
-        "data-nav-item=\"agent-fleet\" href=\"/ops/agents\"",
-        "data-nav-item=\"mission-harness\" href=\"/ops/harness\"",
-        "id=\"tau-ops-breadcrumb-home\"><a href=\"/ops\"",
+        "data-nav-item=\"agent-fleet\" href=\"/ops/agents?theme=dark&amp;sidebar=expanded&amp;session=default\"",
+        "data-nav-item=\"mission-harness\" href=\"/ops/harness?theme=dark&amp;sidebar=expanded&amp;session=default\"",
+        "id=\"tau-ops-breadcrumb-home\"><a href=\"/ops?theme=dark&amp;sidebar=expanded&amp;session=default\" data-preserves-shell-context=\"true\"",
         "id=\"tau-ops-static-preview-status\" data-preview-route-status=\"idle\" hidden",
         "id=\"tau-ops-static-preview-route-guard\" data-preview-link-guard=\"file-protocol-absolute-routes\"",
         "window.location.protocol !== \"file:\"",
@@ -531,7 +533,7 @@ fn functional_spec_3756_c01_harness_route_renders_template_panels() {
 
     for marker in [
         "id=\"tau-ops-nav-harness\"",
-        "data-nav-item=\"mission-harness\" href=\"/ops/harness\"",
+        "data-nav-item=\"mission-harness\" href=\"/ops/harness?theme=dark&amp;sidebar=expanded&amp;session=default\"",
         "id=\"tau-ops-dashboard-base-style\"",
         "data-active-route=\"harness\"",
         "id=\"tau-ops-breadcrumbs\"",
@@ -861,17 +863,17 @@ fn functional_spec_3766_c01_c02_c03_harness_uses_compact_navigation_rail() {
     for marker in [
         "grid-template-columns: 76px minmax(0, 1fr);",
         "data-harness-rail=\"compact\"",
-        "data-nav-item=\"command-center\" href=\"/ops\" data-harness-rail-label=\"Command\"",
-        "data-nav-item=\"agent-fleet\" href=\"/ops/agents\" data-harness-rail-label=\"Fleet\"",
-        "data-nav-item=\"agent-detail\" href=\"/ops/agents/default\" data-harness-rail-label=\"Agent\"",
-        "data-nav-item=\"chat\" href=\"/ops/chat\" data-harness-rail-label=\"Chat\"",
-        "data-nav-item=\"sessions\" href=\"/ops/sessions\" data-harness-rail-label=\"Sessions\"",
-        "data-nav-item=\"memory\" href=\"/ops/memory\" data-harness-rail-label=\"Memory\"",
-        "data-nav-item=\"memory-graph\" href=\"/ops/memory-graph\" data-harness-rail-label=\"Graph\"",
-        "data-nav-item=\"tools-jobs\" href=\"/ops/tools-jobs\" data-harness-rail-label=\"Tools\"",
-        "data-nav-item=\"channels\" href=\"/ops/channels\" data-harness-rail-label=\"Channels\"",
-        "id=\"tau-ops-nav-harness\"><a data-nav-item=\"mission-harness\" href=\"/ops/harness\" data-harness-rail-label=\"Missions\" aria-current=\"page\">Mission Harness</a>",
-        "data-nav-item=\"deploy\" href=\"/ops/deploy\" data-harness-rail-label=\"Deploy\"",
+        "data-nav-item=\"command-center\" href=\"/ops?theme=dark&amp;sidebar=expanded&amp;session=default\" data-harness-rail-label=\"Command\" data-preserves-shell-context=\"true\"",
+        "data-nav-item=\"agent-fleet\" href=\"/ops/agents?theme=dark&amp;sidebar=expanded&amp;session=default\" data-harness-rail-label=\"Fleet\" data-preserves-shell-context=\"true\"",
+        "data-nav-item=\"agent-detail\" href=\"/ops/agents/default?theme=dark&amp;sidebar=expanded&amp;session=default\" data-harness-rail-label=\"Agent\" data-preserves-shell-context=\"true\"",
+        "data-nav-item=\"chat\" href=\"/ops/chat?theme=dark&amp;sidebar=expanded&amp;session=default\" data-harness-rail-label=\"Chat\" data-preserves-shell-context=\"true\"",
+        "data-nav-item=\"sessions\" href=\"/ops/sessions?theme=dark&amp;sidebar=expanded&amp;session=default\" data-harness-rail-label=\"Sessions\" data-preserves-shell-context=\"true\"",
+        "data-nav-item=\"memory\" href=\"/ops/memory?theme=dark&amp;sidebar=expanded&amp;session=default\" data-harness-rail-label=\"Memory\" data-preserves-shell-context=\"true\"",
+        "data-nav-item=\"memory-graph\" href=\"/ops/memory-graph?theme=dark&amp;sidebar=expanded&amp;session=default\" data-harness-rail-label=\"Graph\" data-preserves-shell-context=\"true\"",
+        "data-nav-item=\"tools-jobs\" href=\"/ops/tools-jobs?theme=dark&amp;sidebar=expanded&amp;session=default\" data-harness-rail-label=\"Tools\" data-preserves-shell-context=\"true\"",
+        "data-nav-item=\"channels\" href=\"/ops/channels?theme=dark&amp;sidebar=expanded&amp;session=default\" data-harness-rail-label=\"Channels\" data-preserves-shell-context=\"true\"",
+        "id=\"tau-ops-nav-harness\"><a data-nav-item=\"mission-harness\" href=\"/ops/harness?theme=dark&amp;sidebar=expanded&amp;session=default\" data-harness-rail-label=\"Missions\" data-preserves-shell-context=\"true\" aria-current=\"page\">Mission Harness</a>",
+        "data-nav-item=\"deploy\" href=\"/ops/deploy?theme=dark&amp;sidebar=expanded&amp;session=default\" data-harness-rail-label=\"Deploy\" data-preserves-shell-context=\"true\"",
         "#tau-ops-shell[data-active-route=\"harness\"] #tau-ops-sidebar a {\n                    display: flex;",
         "font-size: 0;",
         "#tau-ops-shell[data-active-route=\"harness\"] #tau-ops-sidebar a::before {\n                    content: attr(data-harness-rail-label);",
@@ -4637,7 +4639,7 @@ fn functional_spec_3797_c01_channels_route_exposes_operator_kpi_contract() {
         "id=\"tau-ops-channels-online-card\" data-kpi=\"online\" data-count=\"1\"",
         "id=\"tau-ops-channels-offline-card\" data-kpi=\"offline\" data-count=\"1\"",
         "id=\"tau-ops-channels-degraded-card\" data-kpi=\"degraded\" data-count=\"0\"",
-        "data-nav-item=\"channels\" href=\"/ops/channels\" data-harness-rail-label=\"Channels\" aria-current=\"page\">Channels</a>",
+        "data-nav-item=\"channels\" href=\"/ops/channels?theme=dark&amp;sidebar=expanded&amp;session=default\" data-harness-rail-label=\"Channels\" data-preserves-shell-context=\"true\" aria-current=\"page\">Channels</a>",
     ] {
         assert!(
             html.contains(marker),

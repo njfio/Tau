@@ -6,6 +6,8 @@ Status: Implemented
 - [x] T2 (RED): add dashboard UI regression test for compact rail labels and width budget.
 - [x] T3 (GREEN): add short labels and harness-route rail styling.
 - [x] T4 (VERIFY): run targeted/full tests, static checks, gateway integration, and browser geometry validation.
+- [x] T5 (REGRESSION): preserve shell context through compact rail links while
+  keeping route destinations and compact labels intact.
 
 ## Verification Evidence
 
@@ -19,3 +21,17 @@ Status: Implemented
 - Static: `cargo clippy -p tau-dashboard-ui --all-targets -- -D warnings` -> passed.
 - Browser Use: attempted to attach to the in-app browser, but the Browser Use runtime returned `No active Codex browser pane available`.
 - Browser screenshot fallback: `/tmp/tau-harness-continue6-after.png`; geometry check at 1371x967 reported document `scrollWidth=1371`, `clientWidth=1371`, sidebar width `76`, harness panel width `1263`, and all compact navigation labels overflows `false`.
+- GREEN: `cargo test -p tau-dashboard-ui functional_spec_37 -- --nocapture`
+  passed with compact rail links preserving `theme`, `sidebar`, and `session`
+  while keeping active-route state intact (45 tests).
+- REGRESSION: `cargo test -p tau-dashboard-ui -- --nocapture` passed
+  (194 tests).
+- STATIC: `cargo fmt --check --package tau-dashboard-ui --package tau-gateway`
+  passed.
+- STATIC: `git diff --check` passed.
+- STATIC: `cargo clippy -p tau-dashboard-ui -p tau-gateway -- -D warnings`
+  passed.
+- BUILD: `cargo build -p tau-coding-agent` passed.
+- LIVE: Browser on
+  `/ops/harness?proposal_id=PR-045&view=history` found compact rail links
+  preserving `theme=dark`, `sidebar=expanded`, and `session=default`.
