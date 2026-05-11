@@ -6302,8 +6302,9 @@ fn regression_spec_3466_c05_control_action_status_panel_defaults_to_idle_contrac
     assert!(html.contains(
         "id=\"tau-ops-control-action-status\" data-control-action-status=\"idle\" data-control-action=\"none\" data-control-action-reason=\"none\""
     ));
-    assert!(html
-        .contains("id=\"tau-ops-control-action-status-message\">No control action submitted yet."));
+    assert!(html.contains(
+        "id=\"tau-ops-control-action-status-message\">No form result marker on this request; see Last Action for durable runtime state."
+    ));
 }
 
 #[test]

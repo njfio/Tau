@@ -15,6 +15,8 @@ Status: Implemented
 6. [x] T6 (VERIFY): update spec status/evidence and close issue with tier matrix.
 7. [x] T7 (REGRESSION): preserve supplied shell `session` and timeline `range`
    through `/ops/control-action` redirects.
+8. [x] T8 (REGRESSION): clarify idle request-marker copy so it does not
+   contradict durable `Last Action` runtime state.
 
 ## TDD Evidence
 ### RED
@@ -33,10 +35,29 @@ Status: Implemented
   - `functional_spec_3466_c04_control_action_status_panel_renders_marker_contracts`
   - `regression_spec_3466_c05_control_action_status_panel_defaults_to_idle_contract_markers`
 
+### IDLE COPY FOLLOW-UP
+- RED:
+  `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo test -p tau-dashboard-ui regression_spec_3466_c05_control_action_status_panel_defaults_to_idle_contract_markers -- --nocapture`
+  failed while the implementation still rendered `No control action submitted yet.`
+- GREEN:
+  `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo test -p tau-dashboard-ui regression_spec_3466_c05_control_action_status_panel_defaults_to_idle_contract_markers -- --nocapture`
+  passed after the idle copy described the lack of a request-scoped form result
+  marker and pointed operators to `Last Action`.
+- Live Browser proof from `/ops/login` to `/ops` confirmed the Command Center
+  renders `No form result marker on this request; see Last Action for durable
+  runtime state.` alongside the durable `Last Action` section.
+
 ### REGRESSION
 - `cargo fmt --check` passed.
 - `CARGO_TARGET_DIR=target-fast cargo clippy -p tau-gateway -p tau-dashboard-ui --tests --no-deps -- -D warnings` passed.
 - `CARGO_TARGET_DIR=target-fast cargo test -p tau-gateway requested_control_action -- --nocapture` passed.
+- `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo test -p tau-dashboard-ui 3466 -- --nocapture` passed.
+- `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo test -p tau-gateway ops_command_center -- --nocapture` passed.
+- `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo test -p tau-dashboard-ui -- --nocapture` passed.
+- `cargo fmt --check --package tau-dashboard-ui --package tau-gateway` passed.
+- `git diff --check` passed.
+- `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo clippy -p tau-dashboard-ui -p tau-gateway -- -D warnings` passed.
+- `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo build -p tau-coding-agent` passed.
 
 ### CONTEXT PRESERVATION FOLLOW-UP
 - `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo test -p tau-gateway regression_spec_3466_ops_control_action_redirect_preserves_session_and_range_context -- --nocapture`

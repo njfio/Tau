@@ -57,6 +57,12 @@ when the endpoint redirects back to `/ops`,
 then the redirect location preserves the normalized shell context before the
 control-action outcome markers.
 
+### AC-6 Idle marker copy distinguishes request results from durable runtime state
+Given `/ops` renders without control-action outcome query markers,
+when durable runtime state such as `Last Action` is also visible,
+then the idle control-action status copy explains that no form result marker is
+present on the current request and points operators to `Last Action`.
+
 ## Conformance Cases
 | Case | AC | Tier | Given | When | Then |
 | --- | --- | --- | --- | --- | --- |
@@ -66,6 +72,7 @@ control-action outcome markers.
 | C-04 | AC-3 | Functional | `/ops` query with marker params | render ops shell | control-action status panel contains normalized status/action/reason attributes |
 | C-05 | AC-4 | Unit/Functional | unsupported marker query values | resolve controls/render shell | marker contract defaults to `idle/none/none` |
 | C-06 | AC-5 | Integration/Regression | valid action payload with `session=ops-live-session` and `range=6h` | POST `/ops/control-action` | redirect preserves `session` and `range`, and redirect body renders the same form context |
+| C-07 | AC-6 | Functional/Regression | `/ops` without control-action query markers and with `Last Action` visible | render ops shell | idle copy says no form result marker exists on the current request and points to `Last Action` |
 
 ## Success Metrics / Observable Signals
 - Operator-facing control-action form workflow always returns deterministic
@@ -74,6 +81,8 @@ control-action outcome markers.
   attempt status and reason.
 - Existing control-action mutation behavior remains preserved for valid actions.
 - Control-action form redirects do not silently reset session or timeline range.
+- Idle request-marker copy does not contradict durable `Last Action` runtime
+  state.
 
 ## AC Verification
 | AC | Result | Evidence |
@@ -83,3 +92,4 @@ control-action outcome markers.
 | AC-3 | ✅ | `CARGO_TARGET_DIR=target-fast cargo test -p tau-dashboard-ui 3466 -- --nocapture` covers `functional_spec_3466_c04_*` marker panel contract and gateway integration tests assert redirect-body marker attributes. |
 | AC-4 | ✅ | `CARGO_TARGET_DIR=target-fast cargo test -p tau-gateway requested_control_action -- --nocapture` and selector `unit_requested_control_action_reason_defaults_and_normalizes_values` validate safe normalization defaults/aliases to `idle|none|none`. |
 | AC-5 | ✅ | `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo test -p tau-gateway regression_spec_3466_ops_control_action_redirect_preserves_session_and_range_context -- --nocapture` covers context-preserving redirect and body render. |
+| AC-6 | ✅ | `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo test -p tau-dashboard-ui regression_spec_3466_c05_control_action_status_panel_defaults_to_idle_contract_markers -- --nocapture` covers idle request-marker copy alongside durable `Last Action` markup. |

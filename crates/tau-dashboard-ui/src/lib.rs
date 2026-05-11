@@ -4458,7 +4458,8 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
         "applied" => format!("Applied {control_action} action."),
         "missing" => "No control action was submitted.".to_string(),
         "failed" => format!("Failed to apply {control_action} action ({control_action_reason})."),
-        _ => "No control action submitted yet.".to_string(),
+        _ => "No form result marker on this request; see Last Action for durable runtime state."
+            .to_string(),
     };
     let channel_action_status = context.command_center.channel_action_status.clone();
     let channel_action = context.command_center.channel_action.clone();
