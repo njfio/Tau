@@ -77,7 +77,9 @@ a direct audit-log anchor. Each rendered audit row has a route-backed inspect
 link, and the route renders an in-page selected audit detail panel for the
 chosen audit record with a capped inline preview for safe `ops-harness/...`
 proof artifacts. The history summary is promoted ahead of the default dashboard
-content while the history route is active.
+content while the history route is active, and the legacy topbar route-action
+banner is hidden so operators see one primary history heading rather than a
+duplicated "Applied History" banner.
 
 ## Conformance Cases
 
@@ -108,5 +110,7 @@ content while the history route is active.
   `ops-harness/...` artifact paths.
 - History route promotes the audit-history surface before the default dashboard
   instead of burying it inside the review panel.
+- History route keeps a machine-readable route-action marker but hides the
+  duplicate visible banner once the dedicated primary history panel is active.
 - Fallback dashboard tests remain green.
 - No new dependency is introduced.

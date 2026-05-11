@@ -82,6 +82,32 @@ Status: Implemented
   passed.
 - STATIC: `git diff --check` passed.
 - BUILD: `cargo build -p tau-coding-agent` passed.
+- T13: Hide the duplicate topbar route-action banner when `view=history`
+  promotes the dedicated audit-history panel, including the CSS rule that makes
+  hidden route-action markers actually non-visible in browser layout.
+- GREEN: `cargo test -p tau-dashboard-ui functional_harness_history_view_surfaces_state_audit_summary -- --nocapture`
+  passed with the history route-action marker hidden, CSS `[hidden]` selector
+  present, and the primary history panel still visible (1 test).
+- GREEN: `cargo test -p tau-gateway integration_spec_3757_c03_ops_harness_route_reflects_state_backed_proof_and_audit -- --nocapture`
+  passed with the hidden history route-action contract through the gateway
+  route (1 test).
+- REGRESSION: `cargo test -p tau-dashboard-ui harness -- --nocapture` passed
+  (52 tests).
+- REGRESSION: `cargo test -p tau-gateway ops_harness -- --test-threads=1 --nocapture`
+  passed (6 tests).
+- STATIC: `cargo fmt --check --package tau-dashboard-ui --package tau-gateway`
+  passed.
+- STATIC: `git diff --check` passed.
+- STATIC: `cargo clippy -p tau-dashboard-ui -p tau-gateway -- -D warnings`
+  passed.
+- BUILD: `cargo build -p tau-coding-agent` passed.
+- LIVE: Browser on `/ops/harness?view=history` against the restarted
+  `127.0.0.1:8795` harness found
+  `#tau-ops-harness-route-action[data-route-action-key="history"]` with
+  `data-route-action-visible="false"`, `hidden`, and `isVisible=false`; the
+  primary `#tau-ops-harness-history-view` remained visible with
+  `data-history-route-priority="primary"`, source `state`, row count `4`, and
+  exactly one visible `Applied History` mention.
 - GREEN: `cargo test -p tau-dashboard-ui functional_harness_history_view_surfaces_state_audit_summary`
   passed with context-preserving selected artifact links (1 test).
 - GREEN: `cargo test -p tau-gateway integration_spec_3757_c03_ops_harness_route_reflects_state_backed_proof_and_audit`

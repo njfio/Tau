@@ -2184,6 +2184,8 @@ fn functional_harness_history_view_surfaces_state_audit_summary() {
     });
 
     for marker in [
+        "id=\"tau-ops-harness-route-action\" data-route-action-key=\"history\" data-route-action-label=\"Applied History\" data-route-action-count=\"2\" data-route-action-visible=\"false\" hidden",
+        "#tau-ops-harness-route-action[hidden]",
         "id=\"tau-ops-harness-history-view\" data-history-view=\"true\" data-history-route-priority=\"primary\" data-history-source=\"state\" data-history-row-count=\"2\" data-history-total-count=\"2\" data-history-proof-count=\"1\" data-history-action-filter=\"dry-run\" data-history-selected-proposal=\"PR-045\" data-history-latest-action=\"Dry Run PR-045 Passed\" data-history-latest-timestamp=\"2026-05-10 13:32:24 UTC\"",
         "data-history-filter-count=\"5\" data-history-filter-current=\"dry-run\"",
         "data-history-filter-action=\"dry-run\" aria-current=\"page\"",

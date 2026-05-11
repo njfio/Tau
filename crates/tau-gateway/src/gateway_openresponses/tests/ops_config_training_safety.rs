@@ -172,7 +172,9 @@ async fn integration_spec_3756_c04_ops_harness_route_renders_benchmark_and_apply
     assert!(history_body.contains(
         "id=\"tau-ops-harness-route-action\" data-route-action-key=\"history\" data-route-action-label=\"Applied History\""
     ));
-    assert!(history_body.contains("data-route-action-visible=\"true\""));
+    assert!(history_body
+        .contains("data-route-action-count=\"4\" data-route-action-visible=\"false\" hidden"));
+    assert!(history_body.contains("#tau-ops-harness-route-action[hidden]"));
     assert!(history_body.contains(
         "id=\"tau-ops-harness-history-view\" data-history-view=\"true\" data-history-route-priority=\"primary\" data-history-source=\"fallback\" data-history-row-count=\"4\" data-history-total-count=\"4\" data-history-proof-count=\"0\" data-history-action-filter=\"all\" data-history-selected-proposal=\"PR-044\""
     ));

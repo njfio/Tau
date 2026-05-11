@@ -1617,15 +1617,17 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
         "false"
     };
     let harness_route_active = matches!(context.active_route, TauOpsDashboardRoute::Harness);
-    let harness_route_action_visible =
-        if harness_route_active && context.harness.route_action_key != "overview" {
-            "true"
-        } else {
-            "false"
-        };
-    let harness_route_action_hidden = harness_route_action_visible == "false";
     let harness_history_view_active =
         harness_route_active && context.harness.route_action_key == "history";
+    let harness_route_action_visible = if harness_route_active
+        && context.harness.route_action_key != "overview"
+        && !harness_history_view_active
+    {
+        "true"
+    } else {
+        "false"
+    };
+    let harness_route_action_hidden = harness_route_action_visible == "false";
     let harness_task_count = context.harness.task_count.to_string();
     let harness_pass_count = context.harness.pass_count.to_string();
     let harness_audit_row_count = context.harness.audit_rows.len().to_string();
@@ -7081,6 +7083,9 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 margin-top: 6px;
                                 max-width: 760px;
                                 padding-left: 8px;
+                            }
+                            #tau-ops-harness-route-action[hidden] {
+                                display: none;
                             }
                             #tau-ops-harness-route-action strong {
                                 color: var(--tau-harness-text);
