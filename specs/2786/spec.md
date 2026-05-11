@@ -27,16 +27,25 @@ Given prior dashboard and auth contracts,
 When phase 1B changes are integrated,
 Then `/dashboard` shell and `POST /gateway/auth/session` behavior stay unchanged and existing tests continue passing.
 
+### AC-5 Localhost-dev login continue is actionable
+Given the gateway maps `localhost-dev` auth to `ui_auth_mode=none`,
+When an operator opens `/ops/login`,
+Then the visible Continue control navigates to the protected `/ops` shell while
+preserving the current theme, sidebar, and session query context. The disabled
+auth input is marked as not enabled so the no-auth page does not imply a
+password/token is required.
+
 ## Scope
 
 ### In Scope
 - New gateway auth bootstrap endpoint.
 - Auth-aware shell context and markers in `tau-dashboard-ui`.
 - Gateway route wiring for `/ops/login` and context-aware `/ops` rendering.
+- Working no-auth Continue navigation for localhost-dev login shells.
 - Scoped regression tests for dashboard shell and auth session behavior.
 
 ### Out of Scope
-- Full login submission UX/hydration behavior.
+- Full token/password login submission UX/hydration behavior.
 - Token refresh scheduler and WebSocket auth re-auth UX.
 - Full 14-view dashboard navigation implementation.
 
@@ -46,10 +55,15 @@ Then `/dashboard` shell and `POST /gateway/auth/session` behavior stay unchanged
 - C-03 (functional): `tau-dashboard-ui` auth-aware SSR shell includes auth and route markers for login/protected sections.
 - C-04 (integration): `/ops` and `/ops/login` return auth-aware shell with correct active-route markers.
 - C-05 (regression): existing `/dashboard` and `POST /gateway/auth/session` tests remain green.
+- C-06 (regression): localhost-dev `/ops/login` renders a Continue control that
+  reaches `/ops` with theme/sidebar/session context preserved.
 
 ## Success Metrics / Observable Signals
 - `cargo test -p tau-dashboard-ui -- --test-threads=1` passes with new auth/route marker coverage.
 - `cargo test -p tau-gateway functional_spec_2786 -- --test-threads=1` passes.
+- Browser proof confirms the visible Continue control on a live
+  localhost-dev `/ops/login` tab navigates to `/ops` with the same shell
+  context.
 - Existing dashboard/auth regression tests continue to pass.
 
 ## Approval Gate

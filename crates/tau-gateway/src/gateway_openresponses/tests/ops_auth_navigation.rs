@@ -214,6 +214,46 @@ async fn functional_spec_2786_c04_ops_login_shell_endpoint_returns_login_route_m
 }
 
 #[tokio::test]
+async fn regression_ops_login_none_mode_continue_link_reaches_ops_shell() {
+    let temp = tempdir().expect("tempdir");
+    let state = test_state_with_auth(
+        temp.path(),
+        4_096,
+        GatewayOpenResponsesAuthMode::LocalhostDev,
+        None,
+        None,
+        60,
+        120,
+    );
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+
+    let client = Client::new();
+    let response = client
+        .get(format!(
+            "http://{addr}/ops/login?theme=dark&sidebar=expanded&session=ops-login-live"
+        ))
+        .send()
+        .await
+        .expect("ops login shell request");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response
+        .text()
+        .await
+        .expect("read ops login dashboard shell body");
+    for marker in [
+        "id=\"tau-ops-auth-shell\" data-auth-mode=\"none\" data-login-required=\"false\" data-active-route=\"login\"",
+        "id=\"tau-ops-login-form\" data-login-continue-href=\"/ops?theme=dark&amp;sidebar=expanded&amp;session=ops-login-live\" data-login-action-enabled=\"true\"",
+        "id=\"tau-ops-login-submit\" role=\"button\" href=\"/ops?theme=dark&amp;sidebar=expanded&amp;session=ops-login-live\" data-login-action=\"continue\" data-login-action-enabled=\"true\" data-continue-href=\"/ops?theme=dark&amp;sidebar=expanded&amp;session=ops-login-live\" aria-disabled=\"false\"",
+    ] {
+        assert!(
+            body.contains(marker),
+            "localhost-dev login should expose working continue marker `{marker}`"
+        );
+    }
+    handle.abort();
+}
+
+#[tokio::test]
 async fn functional_spec_2790_c05_ops_routes_include_navigation_and_breadcrumb_markers() {
     let temp = tempdir().expect("tempdir");
     let state = test_state(temp.path(), 4_096, "secret");

@@ -1717,6 +1717,20 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     } else {
         "false"
     };
+    let auth_input_enabled = if login_required { "true" } else { "false" };
+    let login_continue_href = nav_command_center_href.clone();
+    let login_submit_href = if login_required {
+        nav_login_href.clone()
+    } else {
+        login_continue_href.clone()
+    };
+    let login_action_enabled = if login_required { "false" } else { "true" };
+    let login_submit_action = if login_required {
+        "auth-submit"
+    } else {
+        "continue"
+    };
+    let login_submit_aria_disabled = if login_required { "true" } else { "false" };
     let chat_route_active = matches!(context.active_route, TauOpsDashboardRoute::Chat);
     let chat_panel_hidden = if chat_route_active { "false" } else { "true" };
     let chat_panel_visible = if chat_route_active { "true" } else { "false" };
@@ -4837,8 +4851,13 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     font: inherit;
                     font-size: .78rem;
                 }
+                #tau-ops-auth-shell button,
+                #tau-ops-auth-shell a[role="button"],
                 #tau-ops-protected-shell button,
                 #tau-ops-protected-shell a[role="button"] {
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
                     min-height: 32px;
                     border: 1px solid #31596e;
                     border-radius: 6px;
@@ -4848,6 +4867,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     font: inherit;
                     font-size: .76rem;
                     font-weight: 700;
+                    text-decoration: none;
                 }
                 #tau-ops-protected-shell table {
                     width: 100%;
@@ -5633,15 +5653,28 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                         <p>
                             Use configured gateway auth mode to continue to protected operations views.
                         </p>
-                        <form id="tau-ops-login-form">
+                        <form id="tau-ops-login-form" data-login-continue-href=login_continue_href.clone() data-login-action-enabled=login_action_enabled>
                             <label for="tau-ops-auth-input">{auth_mode.auth_input_label()}</label>
                             <input
                                 id="tau-ops-auth-input"
                                 type="password"
                                 autocomplete="off"
                                 placeholder=auth_mode.auth_input_placeholder()
+                                data-auth-input-enabled=auth_input_enabled
+                                disabled=!login_required
+                                readonly=!login_required
                             />
-                            <button id="tau-ops-login-submit" type="button">Continue</button>
+                            <a
+                                id="tau-ops-login-submit"
+                                role="button"
+                                href=login_submit_href
+                                data-login-action=login_submit_action
+                                data-login-action-enabled=login_action_enabled
+                                data-continue-href=login_continue_href.clone()
+                                aria-disabled=login_submit_aria_disabled
+                            >
+                                "Continue"
+                            </a>
                         </form>
                     </section>
                     <main id="tau-ops-protected-shell" data-route="/ops" aria-hidden=protected_hidden>

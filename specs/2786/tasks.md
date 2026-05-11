@@ -6,6 +6,8 @@
 3. [x] T3 (GREEN): implement gateway auth bootstrap endpoint and route wiring for `/ops/login` + context-aware `/ops`.
 4. [x] T4 (REGRESSION): run existing `/dashboard` and `/gateway/auth/session` regression tests.
 5. [x] T5 (VERIFY): run scoped fmt/clippy/tests and set spec status to `Implemented`.
+6. [x] T6 (REGRESSION): make localhost-dev `/ops/login` Continue route-backed
+   instead of inert, preserving theme/sidebar/session context.
 
 ## Tier Mapping
 - Unit: `tau-dashboard-ui` auth marker tests.
@@ -19,3 +21,29 @@
 - Mutation: N/A (scaffolding contract slice; no critical algorithm path).
 - Regression: existing `/dashboard` and auth session tests.
 - Performance: N/A (no hot-path runtime changes).
+
+## Verification Evidence
+
+- RED: Live Browser on
+  `/ops/login?theme=dark&sidebar=expanded&session=default` found one visible
+  `Continue` button, clicked it, and remained on `/ops/login`, proving the
+  control was inert in localhost-dev/no-auth mode.
+- GREEN: `RUST_MIN_STACK=16777216 cargo test -p tau-dashboard-ui 2786_c03 -- --nocapture`
+  passed with no-auth Continue markers and existing auth shell coverage (4
+  tests).
+- GREEN: `RUST_MIN_STACK=16777216 cargo test -p tau-gateway ops_login -- --nocapture`
+  passed with the localhost-dev `/ops/login` Continue href contract (2 tests).
+- REGRESSION: `RUST_MIN_STACK=16777216 cargo test -p tau-dashboard-ui -- --nocapture`
+  passed (196 tests, 0 doc tests).
+- REGRESSION: `RUST_MIN_STACK=16777216 cargo test -p tau-gateway ops_auth_navigation -- --test-threads=1 --nocapture`
+  passed (9 tests).
+- STATIC: `cargo fmt --check --package tau-dashboard-ui --package tau-gateway`
+  and `git diff --check` passed.
+- STATIC: `RUST_MIN_STACK=16777216 cargo clippy -p tau-dashboard-ui -p tau-gateway -- -D warnings`
+  passed.
+- BUILD: `RUST_MIN_STACK=16777216 cargo build -p tau-coding-agent` passed.
+- LIVE: Rebuilt `tau-coding-agent` running on `127.0.0.1:8795` reported
+  `auth.mode=localhost-dev`; Browser verified the visible Continue link at
+  `/ops/login?theme=dark&sidebar=expanded&session=default` navigated to
+  `/ops?theme=dark&sidebar=expanded&session=default` and exposed the command
+  center with `aria-hidden=false`.

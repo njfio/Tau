@@ -296,6 +296,30 @@ fn regression_spec_2786_c03_shell_none_mode_marks_auth_not_required() {
 }
 
 #[test]
+fn regression_spec_2786_c03_none_login_continue_links_to_ops_shell() {
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        auth_mode: TauOpsDashboardAuthMode::None,
+        active_route: TauOpsDashboardRoute::Login,
+        theme: TauOpsDashboardTheme::Dark,
+        sidebar_state: TauOpsDashboardSidebarState::Expanded,
+        command_center: TauOpsDashboardCommandCenterSnapshot::default(),
+        chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
+    });
+
+    for marker in [
+        "id=\"tau-ops-login-form\" data-login-continue-href=\"/ops?theme=dark&amp;sidebar=expanded&amp;session=default\" data-login-action-enabled=\"true\"",
+        "id=\"tau-ops-auth-input\" type=\"password\" autocomplete=\"off\" placeholder=\"No authentication required in localhost-dev mode\" data-auth-input-enabled=\"false\" disabled readonly",
+        "id=\"tau-ops-login-submit\" role=\"button\" href=\"/ops?theme=dark&amp;sidebar=expanded&amp;session=default\" data-login-action=\"continue\" data-login-action-enabled=\"true\" data-continue-href=\"/ops?theme=dark&amp;sidebar=expanded&amp;session=default\" aria-disabled=\"false\"",
+    ] {
+        assert!(
+            html.contains(marker),
+            "none-mode login should expose working continue marker `{marker}`"
+        );
+    }
+}
+
+#[test]
 fn spec_c28_regression_dashboard_and_tui_require_shared_operator_flow_markers() {
     let context = TauOpsDashboardShellContext {
         auth_mode: TauOpsDashboardAuthMode::PasswordSession,
