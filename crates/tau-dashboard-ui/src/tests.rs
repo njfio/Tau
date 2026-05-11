@@ -5110,25 +5110,54 @@ fn functional_spec_3144_c01_config_route_renders_profile_control_contracts() {
         active_route: TauOpsDashboardRoute::Config,
         theme: TauOpsDashboardTheme::Light,
         sidebar_state: TauOpsDashboardSidebarState::Collapsed,
-        command_center: TauOpsDashboardCommandCenterSnapshot::default(),
+        command_center: TauOpsDashboardCommandCenterSnapshot {
+            config_model_ref: "openai/gpt-5.3-codex".to_string(),
+            config_fallback_model_refs: vec!["openai/gpt-5.2".to_string()],
+            config_system_prompt_chars: 17,
+            config_max_turns: 32,
+            ..TauOpsDashboardCommandCenterSnapshot::default()
+        },
         chat: TauOpsDashboardChatSnapshot::default(),
         harness: TauOpsDashboardHarnessSnapshot::default(),
     });
 
     assert!(html.contains(
-        "id=\"tau-ops-config-profile-controls\" data-model-ref=\"gpt-4.1-mini\" data-fallback-model-count=\"2\" data-system-prompt-chars=\"0\" data-max-turns=\"64\""
+        "id=\"tau-ops-config-profile-controls\" data-config-source=\"gateway-runtime\" data-model-ref=\"openai/gpt-5.3-codex\" data-fallback-model-count=\"1\" data-system-prompt-chars=\"17\" data-max-turns=\"32\""
     ));
     assert!(html.contains(
         "id=\"tau-ops-config-profile-model-ref\" name=\"model_ref\" data-control=\"select\""
     ));
+    assert!(html.contains("<option value=\"openai/gpt-5.3-codex\">openai/gpt-5.3-codex</option>"));
     assert!(html
         .contains("id=\"tau-ops-config-profile-fallback-models\" data-control=\"ordered-list\""));
+    assert!(html.contains("data-model-ref=\"openai/gpt-5.2\">openai/gpt-5.2</li>"));
     assert!(html.contains(
         "id=\"tau-ops-config-profile-system-prompt\" name=\"system_prompt\" data-control=\"textarea\""
     ));
     assert!(html.contains(
         "id=\"tau-ops-config-profile-max-turns\" name=\"max_turns\" data-control=\"number\""
     ));
+}
+
+#[test]
+fn regression_spec_3144_config_route_does_not_render_stale_static_model_profile() {
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        auth_mode: TauOpsDashboardAuthMode::Token,
+        active_route: TauOpsDashboardRoute::Config,
+        theme: TauOpsDashboardTheme::Dark,
+        sidebar_state: TauOpsDashboardSidebarState::Expanded,
+        command_center: TauOpsDashboardCommandCenterSnapshot::default(),
+        chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
+    });
+
+    assert!(
+        !html.contains("id=\"tau-ops-config-profile-controls\" data-model-ref=\"gpt-4.1-mini\"")
+    );
+    assert!(html.contains(
+        "id=\"tau-ops-config-profile-controls\" data-config-source=\"gateway-runtime\" data-model-ref=\"unknown\" data-fallback-model-count=\"0\""
+    ));
+    assert!(html.contains("id=\"tau-ops-config-profile-fallback-empty\" data-empty-state=\"true\""));
 }
 
 #[test]
@@ -5172,7 +5201,9 @@ fn regression_spec_3144_c04_non_config_routes_keep_config_controls_hidden() {
     assert!(html.contains(
         "id=\"tau-ops-config-panel\" data-route=\"/ops/config\" aria-hidden=\"true\" data-panel-visible=\"false\""
     ));
-    assert!(html.contains("id=\"tau-ops-config-profile-controls\" data-model-ref=\"gpt-4.1-mini\""));
+    assert!(html.contains(
+        "id=\"tau-ops-config-profile-controls\" data-config-source=\"gateway-runtime\" data-model-ref=\"unknown\""
+    ));
     assert!(
         html.contains("id=\"tau-ops-config-policy-controls\" data-tool-policy-preset=\"balanced\"")
     );
@@ -5800,6 +5831,10 @@ fn functional_spec_2806_c01_c02_c03_command_center_snapshot_markers_render() {
             channel_action: "none".to_string(),
             channel_action_channel: "none".to_string(),
             channel_action_reason: "none".to_string(),
+            config_model_ref: "unknown".to_string(),
+            config_fallback_model_refs: Vec::new(),
+            config_system_prompt_chars: 0,
+            config_max_turns: 0,
         },
         chat: TauOpsDashboardChatSnapshot::default(),
         harness: TauOpsDashboardHarnessSnapshot::default(),
@@ -5982,6 +6017,10 @@ fn functional_spec_2810_c01_c02_c03_command_center_control_markers_render() {
             channel_action: "none".to_string(),
             channel_action_channel: "none".to_string(),
             channel_action_reason: "none".to_string(),
+            config_model_ref: "unknown".to_string(),
+            config_fallback_model_refs: Vec::new(),
+            config_system_prompt_chars: 0,
+            config_max_turns: 0,
         },
         chat: TauOpsDashboardChatSnapshot::default(),
         harness: TauOpsDashboardHarnessSnapshot::default(),
@@ -6041,6 +6080,10 @@ fn functional_spec_2826_c01_c02_control_actions_expose_confirmation_markers() {
             channel_action: "none".to_string(),
             channel_action_channel: "none".to_string(),
             channel_action_reason: "none".to_string(),
+            config_model_ref: "unknown".to_string(),
+            config_fallback_model_refs: Vec::new(),
+            config_system_prompt_chars: 0,
+            config_max_turns: 0,
         },
         chat: TauOpsDashboardChatSnapshot::default(),
         harness: TauOpsDashboardHarnessSnapshot::default(),
@@ -6242,6 +6285,10 @@ fn functional_spec_2814_c01_c02_c03_timeline_chart_and_range_markers_render() {
             channel_action: "none".to_string(),
             channel_action_channel: "none".to_string(),
             channel_action_reason: "none".to_string(),
+            config_model_ref: "unknown".to_string(),
+            config_fallback_model_refs: Vec::new(),
+            config_system_prompt_chars: 0,
+            config_max_turns: 0,
         },
         chat: TauOpsDashboardChatSnapshot::default(),
         harness: TauOpsDashboardHarnessSnapshot::default(),
@@ -6373,6 +6420,10 @@ fn functional_spec_2818_c01_c02_alert_feed_row_markers_render_for_snapshot_alert
             channel_action: "none".to_string(),
             channel_action_channel: "none".to_string(),
             channel_action_reason: "none".to_string(),
+            config_model_ref: "unknown".to_string(),
+            config_fallback_model_refs: Vec::new(),
+            config_system_prompt_chars: 0,
+            config_max_turns: 0,
         },
         chat: TauOpsDashboardChatSnapshot::default(),
         harness: TauOpsDashboardHarnessSnapshot::default(),
@@ -6432,6 +6483,10 @@ fn functional_spec_2818_c03_alert_feed_row_markers_render_nominal_fallback_alert
             channel_action: "none".to_string(),
             channel_action_channel: "none".to_string(),
             channel_action_reason: "none".to_string(),
+            config_model_ref: "unknown".to_string(),
+            config_fallback_model_refs: Vec::new(),
+            config_system_prompt_chars: 0,
+            config_max_turns: 0,
         },
         chat: TauOpsDashboardChatSnapshot::default(),
         harness: TauOpsDashboardHarnessSnapshot::default(),
@@ -6488,6 +6543,10 @@ fn functional_spec_2822_c03_connector_health_table_renders_fallback_row_markers(
             channel_action: "none".to_string(),
             channel_action_channel: "none".to_string(),
             channel_action_reason: "none".to_string(),
+            config_model_ref: "unknown".to_string(),
+            config_fallback_model_refs: Vec::new(),
+            config_system_prompt_chars: 0,
+            config_max_turns: 0,
         },
         chat: TauOpsDashboardChatSnapshot::default(),
         harness: TauOpsDashboardHarnessSnapshot::default(),
@@ -6550,6 +6609,10 @@ fn functional_spec_2822_c01_c02_connector_health_table_rows_render_for_snapshot_
             channel_action: "none".to_string(),
             channel_action_channel: "none".to_string(),
             channel_action_reason: "none".to_string(),
+            config_model_ref: "unknown".to_string(),
+            config_fallback_model_refs: Vec::new(),
+            config_system_prompt_chars: 0,
+            config_max_turns: 0,
         },
         chat: TauOpsDashboardChatSnapshot::default(),
         harness: TauOpsDashboardHarnessSnapshot::default(),

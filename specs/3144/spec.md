@@ -37,6 +37,12 @@ Given active route is not `/ops/config`,
 when shell HTML is rendered,
 then config panel remains hidden and markers are preserved for regression safety.
 
+### AC-5 `/ops/config` profile reflects active gateway runtime
+Given gateway serves `/ops/config`,
+when the active runtime model, system prompt, and max turns are known,
+then the profile controls expose those runtime values and do not render stale
+static model defaults.
+
 ## Conformance Cases
 | Case | AC | Tier | Given | When | Then |
 |---|---|---|---|---|---|
@@ -44,6 +50,7 @@ then config panel remains hidden and markers are preserved for regression safety
 | C-02 | AC-2 | Functional | active route `/ops/config` | render shell | policy control markers present/visible |
 | C-03 | AC-3 | Integration | gateway `/ops/config` request | render HTML | profile/policy markers present |
 | C-04 | AC-4 | Regression | active route `/ops` | render shell | config panel hidden marker remains stable |
+| C-05 | AC-5 | Regression/Integration | active gateway runtime config | render `/ops/config` | profile model/max-turns/prompt metadata matches runtime and stale static profile is absent |
 
 ## Success Metrics / Signals
 - `cargo test -p tau-dashboard-ui spec_3144 -- --test-threads=1`
@@ -51,3 +58,5 @@ then config panel remains hidden and markers are preserved for regression safety
 - `cargo test -p tau-dashboard-ui spec_3140 -- --test-threads=1`
 - `cargo fmt --check`
 - `cargo clippy -p tau-dashboard-ui -p tau-gateway -- -D warnings`
+- Browser inspection of live `/ops/config` shows the active gateway model rather
+  than the stale static profile model.

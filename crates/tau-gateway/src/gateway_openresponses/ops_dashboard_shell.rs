@@ -1421,6 +1421,9 @@ pub(super) fn render_tau_ops_dashboard_shell_for_route(
     command_center.channel_action = controls.requested_channel_action().to_string();
     command_center.channel_action_channel = controls.requested_channel_action_channel().to_string();
     command_center.channel_action_reason = controls.requested_channel_action_reason().to_string();
+    command_center.config_model_ref = state.config.model.clone();
+    command_center.config_system_prompt_chars = state.config.system_prompt.chars().count();
+    command_center.config_max_turns = state.config.max_turns;
     let chat = collect_tau_ops_dashboard_chat_snapshot(state, &controls, detail_session_key);
     let requested_harness_audit_action = if controls.requested_harness_view() == Some("history") {
         controls.requested_harness_audit_action()

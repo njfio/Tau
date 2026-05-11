@@ -655,6 +655,10 @@ pub(super) fn collect_tau_ops_dashboard_command_center_snapshot(
         channel_action: "none".to_string(),
         channel_action_channel: "none".to_string(),
         channel_action_reason: "none".to_string(),
+        config_model_ref: "unknown".to_string(),
+        config_fallback_model_refs: Vec::new(),
+        config_system_prompt_chars: 0,
+        config_max_turns: 0,
     }
 }
 

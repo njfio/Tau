@@ -615,6 +615,10 @@ pub struct TauOpsDashboardCommandCenterSnapshot {
     pub channel_action: String,
     pub channel_action_channel: String,
     pub channel_action_reason: String,
+    pub config_model_ref: String,
+    pub config_fallback_model_refs: Vec<String>,
+    pub config_system_prompt_chars: usize,
+    pub config_max_turns: usize,
 }
 
 impl Default for TauOpsDashboardCommandCenterSnapshot {
@@ -662,6 +666,10 @@ impl Default for TauOpsDashboardCommandCenterSnapshot {
             channel_action: "none".to_string(),
             channel_action_channel: "none".to_string(),
             channel_action_reason: "none".to_string(),
+            config_model_ref: "unknown".to_string(),
+            config_fallback_model_refs: Vec::new(),
+            config_system_prompt_chars: 0,
+            config_max_turns: 0,
         }
     }
 }
@@ -3195,6 +3203,40 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
         "true"
     } else {
         "false"
+    };
+    let config_model_ref = if context.command_center.config_model_ref.trim().is_empty() {
+        "unknown".to_string()
+    } else {
+        context.command_center.config_model_ref.clone()
+    };
+    let config_fallback_model_refs = context.command_center.config_fallback_model_refs.clone();
+    let config_fallback_model_count = config_fallback_model_refs.len().to_string();
+    let config_system_prompt_chars = context
+        .command_center
+        .config_system_prompt_chars
+        .to_string();
+    let config_max_turns = context.command_center.config_max_turns.to_string();
+    let config_fallback_models_view = if config_fallback_model_refs.is_empty() {
+        leptos::either::Either::Left(view! {
+            <li id="tau-ops-config-profile-fallback-empty" data-empty-state="true">
+                "No fallback models configured"
+            </li>
+        })
+    } else {
+        leptos::either::Either::Right(
+            config_fallback_model_refs
+                .iter()
+                .enumerate()
+                .map(|(index, model_ref)| {
+                    let fallback_id = format!("tau-ops-config-profile-fallback-model-{index}");
+                    view! {
+                        <li id=fallback_id data-model-ref=model_ref.clone()>
+                            {model_ref.clone()}
+                        </li>
+                    }
+                })
+                .collect_view(),
+        )
     };
     let training_panel_hidden = if matches!(context.active_route, TauOpsDashboardRoute::Training) {
         "false"
@@ -7220,10 +7262,11 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             </section>
                             <section
                                 id="tau-ops-config-profile-controls"
-                                data-model-ref="gpt-4.1-mini"
-                                data-fallback-model-count="2"
-                                data-system-prompt-chars="0"
-                                data-max-turns="64"
+                                data-config-source="gateway-runtime"
+                                data-model-ref=config_model_ref.clone()
+                                data-fallback-model-count=config_fallback_model_count
+                                data-system-prompt-chars=config_system_prompt_chars.clone()
+                                data-max-turns=config_max_turns.clone()
                             >
                                 <h3>Profile</h3>
                                 <label for="tau-ops-config-profile-model-ref">Model</label>
@@ -7232,8 +7275,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     name="model_ref"
                                     data-control="select"
                                 >
-                                    <option value="gpt-4.1-mini">gpt-4.1-mini</option>
-                                    <option value="gpt-4.1">gpt-4.1</option>
+                                    <option value=config_model_ref.clone()>{config_model_ref.clone()}</option>
                                 </select>
                                 <section
                                     id="tau-ops-config-profile-fallback-models"
@@ -7241,8 +7283,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 >
                                     <h4>Fallback Models</h4>
                                     <ol>
-                                        <li data-model-ref="gpt-4.1">gpt-4.1</li>
-                                        <li data-model-ref="gpt-5.2">gpt-5.2</li>
+                                        {config_fallback_models_view}
                                     </ol>
                                 </section>
                                 <label for="tau-ops-config-profile-system-prompt">System Prompt</label>
@@ -7257,7 +7298,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     name="max_turns"
                                     data-control="number"
                                     type="number"
-                                    value="64"
+                                    value=config_max_turns.clone()
                                 />
                             </section>
                             <section

@@ -1455,8 +1455,10 @@ async fn integration_spec_3144_c03_ops_config_route_renders_profile_policy_contr
     let body = response.text().await.expect("read ops config route body");
 
     assert!(body.contains(
-        "id=\"tau-ops-config-profile-controls\" data-model-ref=\"gpt-4.1-mini\" data-fallback-model-count=\"2\" data-system-prompt-chars=\"0\" data-max-turns=\"64\""
+        "id=\"tau-ops-config-profile-controls\" data-config-source=\"gateway-runtime\" data-model-ref=\"openai/gpt-5.2\" data-fallback-model-count=\"0\" data-system-prompt-chars=\"12\" data-max-turns=\"4\""
     ));
+    assert!(body.contains("<option value=\"openai/gpt-5.2\">openai/gpt-5.2</option>"));
+    assert!(body.contains("id=\"tau-ops-config-profile-fallback-empty\" data-empty-state=\"true\""));
     assert!(body.contains(
         "id=\"tau-ops-config-policy-controls\" data-tool-policy-preset=\"balanced\" data-bash-profile=\"balanced\" data-os-sandbox-mode=\"auto\""
     ));
