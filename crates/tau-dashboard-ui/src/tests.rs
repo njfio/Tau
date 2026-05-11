@@ -573,6 +573,31 @@ fn functional_spec_3796_c02_left_nav_marks_active_route() {
 }
 
 #[test]
+fn functional_spec_3796_c04_agent_routes_render_visible_operator_panels() {
+    let fleet_html = render_tau_ops_dashboard_shell_for_route("/ops/agents");
+    assert!(fleet_html.contains(
+        "id=\"tau-ops-agent-fleet-panel\" data-route=\"/ops/agents\" aria-hidden=\"false\" data-panel-visible=\"true\""
+    ));
+    assert!(fleet_html.contains(
+        "id=\"tau-ops-agent-fleet-open-default\" href=\"/ops/agents/default?theme=dark&amp;sidebar=expanded&amp;session=default\""
+    ));
+    assert!(fleet_html.contains("Agent Fleet"));
+    assert!(fleet_html.contains("Default Agent"));
+    assert!(fleet_html.contains("Open Default Agent"));
+
+    let detail_html = render_tau_ops_dashboard_shell_for_route("/ops/agents/default");
+    assert!(detail_html.contains(
+        "id=\"tau-ops-agent-detail-panel\" data-route=\"/ops/agents/default\" aria-hidden=\"false\" data-panel-visible=\"true\" data-agent-id=\"default\""
+    ));
+    assert!(detail_html.contains(
+        "id=\"tau-ops-agent-detail-open-fleet\" href=\"/ops/agents?theme=dark&amp;sidebar=expanded&amp;session=default\""
+    ));
+    assert!(detail_html.contains("Agent Detail"));
+    assert!(detail_html.contains("Default Agent"));
+    assert!(detail_html.contains("Open Agent Fleet"));
+}
+
+#[test]
 fn functional_spec_3760_c02_c03_static_preview_link_guard_preserves_gateway_routes() {
     let html = render_tau_ops_dashboard_shell();
 

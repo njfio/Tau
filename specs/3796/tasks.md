@@ -14,6 +14,8 @@
   rail item.
 - [x] T10: Remove legacy dashboard and standalone webchat adapter links from
   the Tau Ops left rail.
+- [x] T11: Render visible Agent Fleet and Default Agent Detail route panels
+  instead of leaving those first-class rail routes blank.
 
 ## Verification Evidence
 
@@ -114,3 +116,36 @@
 - LIVE: HTTP proof showed `data-nav-item` count remained 15 while
   `Legacy Dashboard`, `tau-ops-nav-legacy-dashboard`, `/dashboard?`,
   `Webchat`, `tau-ops-nav-webchat`, and `/webchat?` were absent.
+- RED: `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo test -p tau-dashboard-ui functional_spec_3796_c04_agent_routes_render_visible_operator_panels -- --nocapture`
+  failed before the Agent Fleet and Agent Detail route panels existed.
+- GREEN: `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo test -p tau-dashboard-ui functional_spec_3796_c04_agent_routes_render_visible_operator_panels -- --nocapture`
+  passed after the route-specific agent panels were added.
+- INTEGRATION: `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo test -p tau-gateway functional_spec_2794_c01_c02_c03_all_sidebar_ops_routes_return_shell_with_route_markers -- --nocapture`
+  passed with live route marker checks for `/ops/agents` and
+  `/ops/agents/default`.
+- REGRESSION: `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo test -p tau-dashboard-ui 3796 -- --nocapture`
+  passed (3 tests).
+- REGRESSION: `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo test -p tau-dashboard-ui -- --nocapture`
+  passed (202 tests, 0 doc tests).
+- STATIC: `cargo fmt --check --package tau-dashboard-ui --package tau-gateway`
+  and `git diff --check` passed.
+- STATIC: `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo clippy -p tau-dashboard-ui -p tau-gateway -- -D warnings`
+  passed.
+- BUILD: `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo build -p tau-coding-agent`
+  passed.
+- LIVE: Rebuilt `tau-coding-agent` running on `127.0.0.1:8795` reported
+  `auth.mode=localhost-dev`, `model=gpt-5.3-codex`, `service=running`, and
+  state dir `.tau/gateway-live-demo`.
+- LIVE: Browser on `/ops/agents?theme=dark&sidebar=expanded&session=default`
+  found a visible `Agent Fleet` main heading, `Default Agent` summary, healthy
+  runtime state, and `Open Default Agent` linking to
+  `/ops/agents/default?theme=dark&sidebar=expanded&session=default`; HTTP proof
+  showed `tau-ops-agent-fleet-panel` with `aria-hidden="false"` and
+  `data-panel-visible="true"`.
+- LIVE: Browser clicked through to
+  `/ops/agents/default?theme=dark&sidebar=expanded&session=default` and found a
+  visible `Agent Detail` main heading, `Default Agent` detail, active session
+  `default`, healthy runtime state, and `Open Agent Fleet` linking back to
+  `/ops/agents?theme=dark&sidebar=expanded&session=default`; HTTP proof showed
+  `tau-ops-agent-detail-panel` with `aria-hidden="false"` and
+  `data-panel-visible="true"`.

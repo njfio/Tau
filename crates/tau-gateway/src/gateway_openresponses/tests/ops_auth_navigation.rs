@@ -344,6 +344,21 @@ async fn functional_spec_2794_c01_c02_c03_all_sidebar_ops_routes_return_shell_wi
         assert!(body.contains("id=\"tau-ops-breadcrumbs\""));
         assert!(body.contains(&format!("data-breadcrumb-current=\"{breadcrumb_current}\"")));
         assert_eq!(body.matches("data-nav-item=").count(), 15);
+        match route {
+            "/ops/agents" => {
+                assert!(body.contains(
+                    "id=\"tau-ops-agent-fleet-panel\" data-route=\"/ops/agents\" aria-hidden=\"false\" data-panel-visible=\"true\""
+                ));
+                assert!(body.contains("id=\"tau-ops-agent-fleet-open-default\""));
+            }
+            "/ops/agents/default" => {
+                assert!(body.contains(
+                    "id=\"tau-ops-agent-detail-panel\" data-route=\"/ops/agents/default\" aria-hidden=\"false\" data-panel-visible=\"true\" data-agent-id=\"default\""
+                ));
+                assert!(body.contains("id=\"tau-ops-agent-detail-open-fleet\""));
+            }
+            _ => {}
+        }
     }
 
     handle.abort();

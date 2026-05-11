@@ -54,6 +54,11 @@ AC-4: Given the Tau Ops left rail renders, when an operator scans navigation,
 then the rail contains the first-class ops routes and omits legacy dashboard and
 standalone webchat adapter links.
 
+AC-5: Given an operator opens the Agent Fleet or Default Agent Detail route,
+when the main operator shell renders, then the route exposes a visible
+route-specific panel instead of an empty protected shell and preserves drill-down
+or back navigation with the active shell context.
+
 ## Conformance Cases
 
 C-01 maps to AC-1: `tau-dashboard-ui` render tests assert global operator shell
@@ -72,6 +77,11 @@ and verifies the operator-route contract marker with zero console errors.
 C-04 maps to AC-4: `tau-dashboard-ui` render tests assert the left rail contains
 the expected ops route links and omits `/dashboard` and `/webchat`.
 
+C-05 maps to AC-5: `tau-dashboard-ui` render tests and `tau-gateway` route tests
+assert `/ops/agents` renders `tau-ops-agent-fleet-panel`,
+`/ops/agents/default` renders `tau-ops-agent-detail-panel`, and both routes
+expose context-preserving navigation between the fleet and default agent detail.
+
 ## Success Signals
 
 - `cargo test -p tau-dashboard-ui functional_spec_3796_c01_non_harness_routes_use_operator_shell_chrome`
@@ -85,3 +95,5 @@ the expected ops route links and omits `/dashboard` and `/webchat`.
   `audit_ref`.
 - Browser Use DOM inspection of a live ops route shows no legacy dashboard or
   webchat links in the Tau Ops left rail.
+- Browser Use DOM inspection of live `/ops/agents` and `/ops/agents/default`
+  shows visible route-specific agent panels instead of a blank main region.

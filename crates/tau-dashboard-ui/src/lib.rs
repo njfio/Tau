@@ -1769,6 +1769,33 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     } else {
         "false"
     };
+    let agent_fleet_route_active = matches!(context.active_route, TauOpsDashboardRoute::Agents);
+    let agent_fleet_panel_hidden = if agent_fleet_route_active {
+        "false"
+    } else {
+        "true"
+    };
+    let agent_fleet_panel_visible = if agent_fleet_route_active {
+        "true"
+    } else {
+        "false"
+    };
+    let agent_detail_route_active =
+        matches!(context.active_route, TauOpsDashboardRoute::AgentDetail);
+    let agent_detail_panel_hidden = if agent_detail_route_active {
+        "false"
+    } else {
+        "true"
+    };
+    let agent_detail_panel_visible = if agent_detail_route_active {
+        "true"
+    } else {
+        "false"
+    };
+    let agent_runtime_state = context.command_center.health_state.clone();
+    let agent_runtime_reason = context.command_center.health_reason.clone();
+    let agent_queue_depth = context.command_center.queue_depth.to_string();
+    let agent_alert_count = context.command_center.alert_count.to_string();
     let chat_route_active = matches!(context.active_route, TauOpsDashboardRoute::Chat);
     let chat_panel_hidden = if chat_route_active { "false" } else { "true" };
     let chat_panel_visible = if chat_route_active { "true" } else { "false" };
@@ -5664,8 +5691,8 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     <nav aria-label="Tau Ops navigation">
                         <ul>
                             <li id="tau-ops-nav-command-center"><a data-nav-item="command-center" href=nav_command_center_href data-harness-rail-label="Command" data-preserves-shell-context="true" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::Ops)>Command Center</a></li>
-                            <li id="tau-ops-nav-agent-fleet"><a data-nav-item="agent-fleet" href=nav_agent_fleet_href data-harness-rail-label="Fleet" data-preserves-shell-context="true" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::Agents)>Agent Fleet</a></li>
-                            <li id="tau-ops-nav-agent-detail"><a data-nav-item="agent-detail" href=nav_agent_detail_href data-harness-rail-label="Agent" data-preserves-shell-context="true" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::AgentDetail)>Agent Detail</a></li>
+                            <li id="tau-ops-nav-agent-fleet"><a data-nav-item="agent-fleet" href=nav_agent_fleet_href.clone() data-harness-rail-label="Fleet" data-preserves-shell-context="true" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::Agents)>Agent Fleet</a></li>
+                            <li id="tau-ops-nav-agent-detail"><a data-nav-item="agent-detail" href=nav_agent_detail_href.clone() data-harness-rail-label="Agent" data-preserves-shell-context="true" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::AgentDetail)>Agent Detail</a></li>
                             <li id="tau-ops-nav-chat"><a data-nav-item="chat" href=nav_chat_href data-harness-rail-label="Chat" data-preserves-shell-context="true" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::Chat)>Conversation / Chat</a></li>
                             <li id="tau-ops-nav-sessions"><a data-nav-item="sessions" href=nav_sessions_href data-harness-rail-label="Sessions" data-preserves-shell-context="true" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::Sessions)>Sessions Explorer</a></li>
                             <li id="tau-ops-nav-memory"><a data-nav-item="memory" href=nav_memory_href data-harness-rail-label="Memory" data-preserves-shell-context="true" aria-current=aria_current_for(context.active_route, TauOpsDashboardRoute::Memory)>Memory Explorer</a></li>
@@ -5800,6 +5827,92 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             hidden
                         >
                             <h2>Performance Budgets</h2>
+                        </section>
+                        <section
+                            id="tau-ops-agent-fleet-panel"
+                            data-route="/ops/agents"
+                            aria-hidden=agent_fleet_panel_hidden
+                            data-panel-visible=agent_fleet_panel_visible
+                            data-agent-count="1"
+                            data-selected-agent-id="default"
+                        >
+                            <h2>Agent Fleet</h2>
+                            <article
+                                id="tau-ops-agent-fleet-summary"
+                                data-agent-id="default"
+                                data-agent-status=agent_runtime_state.clone()
+                                data-queue-depth=agent_queue_depth.clone()
+                                data-alert-count=agent_alert_count.clone()
+                            >
+                                <h3>Default Agent</h3>
+                                <dl>
+                                    <div>
+                                        <dt>Status</dt>
+                                        <dd>{agent_runtime_state.clone()}</dd>
+                                    </div>
+                                    <div>
+                                        <dt>Reason</dt>
+                                        <dd>{agent_runtime_reason.clone()}</dd>
+                                    </div>
+                                    <div>
+                                        <dt>Queue Depth</dt>
+                                        <dd>{agent_queue_depth.clone()}</dd>
+                                    </div>
+                                    <div>
+                                        <dt>Alerts</dt>
+                                        <dd>{agent_alert_count.clone()}</dd>
+                                    </div>
+                                </dl>
+                                <a
+                                    id="tau-ops-agent-fleet-open-default"
+                                    href=nav_agent_detail_href.clone()
+                                    data-agent-detail-link="default"
+                                >
+                                    Open Default Agent
+                                </a>
+                            </article>
+                        </section>
+                        <section
+                            id="tau-ops-agent-detail-panel"
+                            data-route="/ops/agents/default"
+                            aria-hidden=agent_detail_panel_hidden
+                            data-panel-visible=agent_detail_panel_visible
+                            data-agent-id="default"
+                        >
+                            <h2>Agent Detail</h2>
+                            <article
+                                id="tau-ops-agent-detail-summary"
+                                data-agent-id="default"
+                                data-agent-status=agent_runtime_state.clone()
+                                data-active-session-key=chat_session_key.clone()
+                            >
+                                <h3>Default Agent</h3>
+                                <dl>
+                                    <div>
+                                        <dt>Route</dt>
+                                        <dd>/ops/agents/default</dd>
+                                    </div>
+                                    <div>
+                                        <dt>Session</dt>
+                                        <dd>{chat_session_key.clone()}</dd>
+                                    </div>
+                                    <div>
+                                        <dt>Status</dt>
+                                        <dd>{agent_runtime_state.clone()}</dd>
+                                    </div>
+                                    <div>
+                                        <dt>Reason</dt>
+                                        <dd>{agent_runtime_reason.clone()}</dd>
+                                    </div>
+                                </dl>
+                                <a
+                                    id="tau-ops-agent-detail-open-fleet"
+                                    href=nav_agent_fleet_href.clone()
+                                    data-agent-fleet-link="true"
+                                >
+                                    Open Agent Fleet
+                                </a>
+                            </article>
                         </section>
                         <section
                             id="tau-ops-chat-panel"
