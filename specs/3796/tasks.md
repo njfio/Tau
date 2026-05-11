@@ -16,6 +16,8 @@
   the Tau Ops left rail.
 - [x] T11: Render visible Agent Fleet and Default Agent Detail route panels
   instead of leaving those first-class rail routes blank.
+- [x] T12: Prune hidden non-agent payloads from Agent Fleet and Default Agent
+  Detail routes.
 
 ## Verification Evidence
 
@@ -149,3 +151,45 @@
   `/ops/agents?theme=dark&sidebar=expanded&session=default`; HTTP proof showed
   `tau-ops-agent-detail-panel` with `aria-hidden="false"` and
   `data-panel-visible="true"`.
+- RED: Live HTTP proof on
+  `/ops/agents/default?theme=dark&sidebar=expanded&session=default` showed the
+  agent detail route still shipped hidden non-agent panels including
+  `tau-ops-chat-panel`, `tau-ops-sessions-panel`,
+  `tau-ops-harness-panel`, `tau-ops-command-center`, and
+  `tau-ops-deploy-panel`.
+- RED: `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo test -p tau-dashboard-ui regression_spec_3796_agent_routes_prune_hidden_non_agent_payloads -- --nocapture`
+  failed before the agent route emitted `tau-ops-agent-route-payload-pruned`.
+- GREEN: `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo test -p tau-dashboard-ui regression_spec_3796_agent_routes_prune_hidden_non_agent_payloads -- --nocapture`
+  passed after Agent Fleet and Default Agent Detail kept their visible agent
+  panels and pruned hidden non-agent route payloads.
+- SCOPED: `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo test -p tau-dashboard-ui 3796 -- --nocapture`
+  passed 4 tests.
+- INTEGRATION: `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo test -p tau-gateway functional_spec_2794_c01_c02_c03_all_sidebar_ops_routes_return_shell_with_route_markers -- --nocapture`
+  passed with Agent Fleet and Default Agent Detail asserting
+  `tau-ops-agent-route-payload-pruned` and no hidden chat/harness panel payload.
+- REGRESSION: `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo test -p tau-dashboard-ui -- --nocapture`
+  passed 210 tests plus doc tests.
+- STATIC: `cargo fmt --check --package tau-dashboard-ui --package tau-gateway`,
+  `git diff --check`, and
+  `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo clippy -p tau-dashboard-ui -p tau-gateway -- -D warnings`
+  passed.
+- BUILD: `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo build -p tau-coding-agent`
+  passed.
+- LIVE: restarted `tau-8795` from the rebuilt binary with
+  `RUST_MIN_STACK=16777216`; `/gateway/status` reported
+  `service_status=running`, `auth_mode=localhost-dev`, model
+  `gpt-5.3-codex`, and state dir `.tau/gateway-live-demo`.
+- HTTP: live `/ops/agents/default?theme=dark&sidebar=expanded&session=default`
+  exposed visible `tau-ops-agent-detail-panel` and
+  `tau-ops-agent-route-payload-pruned`, with no `tau-ops-chat-panel`,
+  `tau-ops-sessions-panel`, `tau-ops-harness-panel`,
+  `tau-ops-command-center`, or `tau-ops-deploy-panel` matches.
+- HTTP: live `/ops/agents?theme=dark&sidebar=expanded&session=default`
+  exposed visible `tau-ops-agent-fleet-panel` and
+  `tau-ops-agent-route-payload-pruned`, with no hidden non-agent panel matches.
+- BROWSER: Browser plugin loaded
+  `/ops/agents/default?theme=dark&sidebar=expanded&session=default` and
+  verified visible `Agent Detail`, visible `Default Agent`, one
+  `Open Agent Fleet` link, `prunedMode=agent-route-pruned`, and zero
+  `#tau-ops-chat-panel`, `#tau-ops-harness-panel`, or
+  `#tau-ops-deploy-panel` elements.

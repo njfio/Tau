@@ -353,12 +353,22 @@ async fn functional_spec_2794_c01_c02_c03_all_sidebar_ops_routes_return_shell_wi
                     "id=\"tau-ops-agent-fleet-panel\" data-route=\"/ops/agents\" aria-hidden=\"false\" data-panel-visible=\"true\""
                 ));
                 assert!(body.contains("id=\"tau-ops-agent-fleet-open-default\""));
+                assert!(body.contains(
+                    "id=\"tau-ops-agent-route-payload-pruned\" data-route=\"/ops/agents\" data-protected-payload=\"agent-route-pruned\""
+                ));
+                assert!(!body.contains("id=\"tau-ops-chat-panel\""));
+                assert!(!body.contains("id=\"tau-ops-harness-panel\""));
             }
             "/ops/agents/default" => {
                 assert!(body.contains(
                     "id=\"tau-ops-agent-detail-panel\" data-route=\"/ops/agents/default\" aria-hidden=\"false\" data-panel-visible=\"true\" data-agent-id=\"default\""
                 ));
                 assert!(body.contains("id=\"tau-ops-agent-detail-open-fleet\""));
+                assert!(body.contains(
+                    "id=\"tau-ops-agent-route-payload-pruned\" data-route=\"/ops/agents/default\" data-protected-payload=\"agent-route-pruned\""
+                ));
+                assert!(!body.contains("id=\"tau-ops-chat-panel\""));
+                assert!(!body.contains("id=\"tau-ops-harness-panel\""));
             }
             "/ops/deploy" => {
                 assert!(body.contains(

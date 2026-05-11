@@ -1812,6 +1812,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     } else {
         "false"
     };
+    let agent_route_active = agent_fleet_route_active || agent_detail_route_active;
     let agent_runtime_state = context.command_center.health_state.clone();
     let agent_runtime_reason = context.command_center.health_reason.clone();
     let agent_queue_depth = context.command_center.queue_depth.to_string();
@@ -6093,6 +6094,20 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 </a>
                             </article>
                         </section>
+                        {if agent_route_active {
+                            let agent_pruned_route = context.active_route.shell_path();
+                            leptos::either::Either::Left(view! {
+                                <section
+                                    id="tau-ops-agent-route-payload-pruned"
+                                    data-route=agent_pruned_route
+                                    data-protected-payload="agent-route-pruned"
+                                    hidden
+                                >
+                                    <h2>Non-agent route payload omitted on agent route.</h2>
+                                </section>
+                            })
+                        } else {
+                            leptos::either::Either::Right(view! {
                         <section
                             id="tau-ops-chat-panel"
                             data-route="/ops/chat"
@@ -10144,6 +10159,8 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 </button>
                             </div>
                         </section>
+                            })
+                        }}
                             })
                         }}
                     </main>

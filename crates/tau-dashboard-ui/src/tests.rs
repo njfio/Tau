@@ -665,6 +665,71 @@ fn functional_spec_3796_c04_agent_routes_render_visible_operator_panels() {
 }
 
 #[test]
+fn regression_spec_3796_agent_routes_prune_hidden_non_agent_payloads() {
+    let detail_html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        auth_mode: TauOpsDashboardAuthMode::Token,
+        active_route: TauOpsDashboardRoute::AgentDetail,
+        theme: TauOpsDashboardTheme::Dark,
+        sidebar_state: TauOpsDashboardSidebarState::Expanded,
+        command_center: TauOpsDashboardCommandCenterSnapshot::default(),
+        chat: TauOpsDashboardChatSnapshot {
+            active_session_key: "default".to_string(),
+            session_options: vec![TauOpsDashboardChatSessionOptionRow {
+                session_key: "agent-route-sensitive-session".to_string(),
+                selected: false,
+                entry_count: 7,
+                usage_total_tokens: 42,
+                validation_is_valid: true,
+                updated_unix_ms: 1234,
+            }],
+            message_rows: vec![TauOpsDashboardChatMessageRow {
+                role: "assistant".to_string(),
+                content: "agent route should not ship hidden chat transcript".to_string(),
+            }],
+            ..TauOpsDashboardChatSnapshot::default()
+        },
+        harness: TauOpsDashboardHarnessSnapshot {
+            selected_proposal_id: "PR-AGENT-HIDDEN".to_string(),
+            selected_proposal: TauOpsDashboardHarnessProposalDetail {
+                proposal_id: "PR-AGENT-HIDDEN".to_string(),
+                title: "Hidden agent-route proposal".to_string(),
+                ..TauOpsDashboardHarnessProposalDetail::default()
+            },
+            proposal_queue_rows: vec![TauOpsDashboardHarnessProposalQueueRow {
+                item_id: "PR-AGENT-HIDDEN".to_string(),
+                status_key: "needs-review".to_string(),
+                label: "Hidden agent-route proposal".to_string(),
+            }],
+            ..TauOpsDashboardHarnessSnapshot::default()
+        },
+    });
+
+    assert!(detail_html.contains(
+        "id=\"tau-ops-agent-detail-panel\" data-route=\"/ops/agents/default\" aria-hidden=\"false\" data-panel-visible=\"true\" data-agent-id=\"default\""
+    ));
+    assert!(detail_html.contains(
+        "id=\"tau-ops-agent-route-payload-pruned\" data-route=\"/ops/agents/default\" data-protected-payload=\"agent-route-pruned\""
+    ));
+
+    for stale_marker in [
+        "id=\"tau-ops-chat-panel\"",
+        "id=\"tau-ops-sessions-panel\"",
+        "id=\"tau-ops-harness-panel\"",
+        "id=\"tau-ops-command-center\"",
+        "id=\"tau-ops-deploy-panel\"",
+        "agent-route-sensitive-session",
+        "agent route should not ship hidden chat transcript",
+        "PR-AGENT-HIDDEN",
+        "Hidden agent-route proposal",
+    ] {
+        assert!(
+            !detail_html.contains(stale_marker),
+            "agent route should not render hidden non-agent payload marker `{stale_marker}`"
+        );
+    }
+}
+
+#[test]
 fn functional_spec_3760_c02_c03_static_preview_link_guard_preserves_gateway_routes() {
     let html = render_tau_ops_dashboard_shell();
 
