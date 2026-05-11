@@ -3354,6 +3354,40 @@ fn functional_spec_2872_c01_chat_route_renders_new_session_form_contract_markers
 }
 
 #[test]
+fn functional_spec_2872_c07_chat_route_renders_created_new_session_status() {
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        auth_mode: TauOpsDashboardAuthMode::Token,
+        active_route: TauOpsDashboardRoute::Chat,
+        theme: TauOpsDashboardTheme::Light,
+        sidebar_state: TauOpsDashboardSidebarState::Collapsed,
+        command_center: TauOpsDashboardCommandCenterSnapshot::default(),
+        chat: TauOpsDashboardChatSnapshot {
+            active_session_key: "chat-created-visible".to_string(),
+            new_session_status: "created".to_string(),
+            ..TauOpsDashboardChatSnapshot::default()
+        },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
+    });
+
+    assert!(
+        html.contains("id=\"tau-ops-chat-new-session-status\" data-new-session-status=\"created\"")
+    );
+    assert!(html.contains("Session created and selected."));
+
+    let form_index = html
+        .find("id=\"tau-ops-chat-new-session-form\"")
+        .expect("new-session form marker");
+    let status_index = html
+        .find("id=\"tau-ops-chat-new-session-status\"")
+        .expect("new-session status marker");
+    let selector_index = html
+        .find("id=\"tau-ops-chat-session-selector\"")
+        .expect("session selector marker");
+    assert!(form_index < selector_index);
+    assert!(status_index < selector_index);
+}
+
+#[test]
 fn functional_spec_2881_c01_chat_route_renders_multiline_compose_contract_markers() {
     let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
         auth_mode: TauOpsDashboardAuthMode::Token,

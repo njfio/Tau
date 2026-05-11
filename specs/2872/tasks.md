@@ -6,17 +6,21 @@
 4. [x] T4 (REGRESSION): rerun `spec_2830`, `spec_2834`, `spec_2858`, `spec_2862`, `spec_2866`, and `spec_2870` suites.
 5. [x] T5 (VERIFY): run fmt/clippy/scoped tests/mutation + fast live validation.
 6. [x] T6 (RED/GREEN/REGRESSION): reject blank new-session submissions visibly with `new_session_status=empty-key` and no session store mutation.
+7. [x] T7 (RED/GREEN/REGRESSION): acknowledge successful new-session submissions visibly with `new_session_status=created`.
 
 ## Verification Notes
 
 - RED: `cargo test -p tau-dashboard-ui functional_spec_2872_c01_chat_route_renders_new_session_form_contract_markers -- --test-threads=1` failed before the hidden active-session field and empty-key guard existed.
 - RED: `cargo test -p tau-gateway integration_spec_2872_c06_ops_chat_new_session_rejects_blank_key_with_visible_status -- --test-threads=1` failed before blank create preserved the active session with `new_session_status=empty-key`.
+- RED: `env RUST_MIN_STACK=16777216 cargo test -p tau-dashboard-ui functional_spec_2872_c07_chat_route_renders_created_new_session_status -- --test-threads=1` failed before the created status message existed.
+- RED: `env RUST_MIN_STACK=16777216 cargo test -p tau-gateway integration_spec_2872_c02_c03_c04_ops_chat_new_session_creates_redirect_and_preserves_hidden_panel_contracts -- --test-threads=1` failed before valid creates redirected with `new_session_status=created`.
 - GREEN: `env RUST_MIN_STACK=16777216 cargo test -p tau-dashboard-ui functional_spec_2872 -- --test-threads=1` passed.
 - GREEN: `env RUST_MIN_STACK=16777216 cargo test -p tau-gateway spec_2872 -- --test-threads=1` passed.
 - REGRESSION: `env RUST_MIN_STACK=16777216 cargo test -p tau-gateway spec_2830 -- --test-threads=1`, `spec_2834`, `spec_2858`, `spec_2862`, `spec_2866`, and `spec_2870` passed.
 - VERIFY: `env RUST_MIN_STACK=16777216 cargo clippy -p tau-dashboard-ui -p tau-gateway -- -D warnings` passed.
 - VERIFY: `env RUST_MIN_STACK=16777216 cargo clippy -p tau-gateway --tests -- -D warnings` passed.
 - VERIFY: `env RUST_MIN_STACK=16777216 cargo build -p tau-coding-agent` passed.
-- VERIFY: `env RUST_MIN_STACK=16777216 cargo test -p tau-dashboard-ui -- --test-threads=1` passed (`212` tests, plus doc-tests).
+- VERIFY: `env RUST_MIN_STACK=16777216 cargo test -p tau-dashboard-ui -- --test-threads=1` passed (`213` tests, plus doc-tests).
 - VERIFY: `env RUST_MIN_STACK=16777216 cargo test -p tau-gateway -- --test-threads=1` passed (`370` tests, `1` ignored, plus doc-tests).
 - LIVE: `POST /ops/chat/new` with a blank session key redirects to the active session with `new_session_status=empty-key` and does not create matching session state.
+- LIVE: restarted `127.0.0.1:8795`; valid `POST /ops/chat/new` redirects with `new_session_status=created`, and the in-app browser route rendered `data-new-session-status="created"` with `Session created and selected.` before the historical session selector.

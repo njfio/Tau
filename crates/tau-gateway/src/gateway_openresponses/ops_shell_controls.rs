@@ -394,6 +394,7 @@ impl OpsShellControlsQuery {
     pub(super) fn requested_chat_new_session_status(&self) -> &'static str {
         match self.new_session_status.trim() {
             "empty-key" => "empty-key",
+            "created" => "created",
             _ => "idle",
         }
     }

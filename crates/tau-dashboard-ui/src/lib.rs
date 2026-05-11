@@ -4530,6 +4530,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     let chat_new_session_status = context.chat.new_session_status.clone();
     let chat_new_session_status_message = match chat_new_session_status.as_str() {
         "empty-key" => "Session was not created because the name was empty.".to_string(),
+        "created" => "Session created and selected.".to_string(),
         _ => "No new-session result on this request.".to_string(),
     };
     let chat_send_status_message = match chat_send_status.as_str() {
@@ -5168,7 +5169,8 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                 }
                 #tau-ops-chat-session-summary,
                 #tau-ops-chat-session-selector,
-                #tau-ops-chat-new-session-form {
+                #tau-ops-chat-new-session-form,
+                #tau-ops-chat-new-session-status {
                     grid-column: 1;
                     width: 100%;
                     max-width: 420px;
@@ -5295,6 +5297,36 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     border-radius: 7px;
                     padding: 10px;
                     background: #091923;
+                }
+                #tau-ops-chat-new-session-status {
+                    display: grid;
+                    gap: 4px;
+                    border: 1px solid #203847;
+                    border-radius: 7px;
+                    padding: 9px 10px;
+                    background: #091923;
+                }
+                #tau-ops-chat-new-session-status[data-new-session-status="created"] {
+                    border-color: #2f7653;
+                    background: #0f251f;
+                }
+                #tau-ops-chat-new-session-status[data-new-session-status="empty-key"] {
+                    border-color: #7c3a3a;
+                    background: #2a1418;
+                }
+                #tau-ops-chat-new-session-status h3,
+                #tau-ops-chat-new-session-status p {
+                    margin: 0;
+                }
+                #tau-ops-chat-new-session-status h3 {
+                    color: #9bb6c2;
+                    font-size: .72rem;
+                    letter-spacing: 0;
+                }
+                #tau-ops-chat-new-session-status p {
+                    color: #edf8fb;
+                    font-size: .76rem;
+                    font-weight: 700;
                 }
                 #tau-ops-protected-shell #tau-ops-chat-send-form {
                     display: grid;
@@ -6250,45 +6282,6 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     </a>
                                 </nav>
                             </article>
-                            <section
-                                id="tau-ops-chat-session-selector"
-                                data-active-session-key=chat_session_key.clone()
-                                data-option-count=chat_session_option_count_value
-                            >
-                                <ul id="tau-ops-chat-session-options">
-                                    {chat_session_options
-                                        .iter()
-                                        .enumerate()
-                                        .map(|(index, session_option)| {
-                                            let session_option_row_id =
-                                                format!("tau-ops-chat-session-option-{index}");
-                                            let selected_attr = if session_option.selected {
-                                                "true"
-                                            } else {
-                                                "false"
-                                            };
-                                            let session_href = format!(
-                                                "/ops/chat?theme={theme_attr}&sidebar={sidebar_state_attr}&session={}",
-                                                session_option.session_key
-                                            );
-                                            view! {
-                                                <li
-                                                    id=session_option_row_id
-                                                    data-session-key=session_option.session_key.clone()
-                                                    data-selected=selected_attr
-                                                >
-                                                    <a
-                                                        data-session-link=session_option.session_key.clone()
-                                                        href=session_href
-                                                    >
-                                                        {session_option.session_key.clone()}
-                                                    </a>
-                                                </li>
-                                            }
-                                        })
-                                        .collect_view()}
-                                </ul>
-                            </section>
                             <form
                                 id="tau-ops-chat-new-session-form"
                                 action=chat_new_session_form_action
@@ -6405,6 +6398,45 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     {chat_new_session_status_message}
                                 </p>
                             </article>
+                            <section
+                                id="tau-ops-chat-session-selector"
+                                data-active-session-key=chat_session_key.clone()
+                                data-option-count=chat_session_option_count_value
+                            >
+                                <ul id="tau-ops-chat-session-options">
+                                    {chat_session_options
+                                        .iter()
+                                        .enumerate()
+                                        .map(|(index, session_option)| {
+                                            let session_option_row_id =
+                                                format!("tau-ops-chat-session-option-{index}");
+                                            let selected_attr = if session_option.selected {
+                                                "true"
+                                            } else {
+                                                "false"
+                                            };
+                                            let session_href = format!(
+                                                "/ops/chat?theme={theme_attr}&sidebar={sidebar_state_attr}&session={}",
+                                                session_option.session_key
+                                            );
+                                            view! {
+                                                <li
+                                                    id=session_option_row_id
+                                                    data-session-key=session_option.session_key.clone()
+                                                    data-selected=selected_attr
+                                                >
+                                                    <a
+                                                        data-session-link=session_option.session_key.clone()
+                                                        href=session_href
+                                                    >
+                                                        {session_option.session_key.clone()}
+                                                    </a>
+                                                </li>
+                                            }
+                                        })
+                                        .collect_view()}
+                                </ul>
+                            </section>
                             <form
                                 id="tau-ops-chat-send-form"
                                 action=chat_send_form_action

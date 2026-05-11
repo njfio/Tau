@@ -615,8 +615,9 @@ fn build_ops_chat_new_session_redirect_path_with_status(
     new_session_status: &str,
 ) -> String {
     let mut redirect_path = build_ops_chat_redirect_path(theme, sidebar_state, session_key);
-    if matches!(new_session_status, "empty-key") {
-        redirect_path.push_str("&new_session_status=empty-key");
+    if matches!(new_session_status, "empty-key" | "created") {
+        redirect_path.push_str("&new_session_status=");
+        redirect_path.push_str(new_session_status);
     }
     redirect_path
 }
@@ -5228,10 +5229,11 @@ pub(super) async fn handle_ops_dashboard_chat_new(
     }
 
     let session_key = form.resolved_session_key();
-    let redirect_path = build_ops_chat_redirect_path(
+    let redirect_path = build_ops_chat_new_session_redirect_path_with_status(
         form.resolved_theme(),
         form.resolved_sidebar_state(),
         session_key.as_str(),
+        "created",
     );
 
     let session_path = gateway_session_path(&state.config.state_dir, session_key.as_str());

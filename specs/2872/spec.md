@@ -47,6 +47,11 @@ Given an operator submits the new-session form with an empty or whitespace-only 
 when the UI submit guard or `POST /ops/chat/new` processes the request,
 then session creation is blocked or redirected back to the active session with `new_session_status=empty-key`, no session store is initialized, and `/ops/chat` renders a visible status marker explaining the rejection.
 
+### AC-7 Successful new-session submissions are visibly acknowledged
+Given an operator submits a valid new-session key,
+when the backend creates and selects that session,
+then the redirect includes `new_session_status=created` and `/ops/chat` renders a visible status marker near the new-session form explaining that the new session was created and selected.
+
 ## Conformance Cases
 | Case | AC | Tier | Given | When | Then |
 |---|---|---|---|---|---|
@@ -56,6 +61,7 @@ then session creation is blocked or redirected back to the active session with `
 | C-04 | AC-4 | Integration | created session key on `/ops` + `/ops/sessions` | render route shells | chat panel hidden with created active session key |
 | C-05 | AC-5 | Regression | existing chat suites | rerun suites | no regressions |
 | C-06 | AC-6 | Functional/Integration | blank or whitespace-only new-session key | submit form or post endpoint | visible empty-key status and no session store mutation |
+| C-07 | AC-7 | Functional/Integration | valid post payload for new-session | call `POST /ops/chat/new` and render redirected chat route | created status marker/message appears near the form before the historical session selector |
 
 ## Success Metrics / Signals
 - `cargo test -p tau-dashboard-ui spec_2872 -- --test-threads=1` passes.

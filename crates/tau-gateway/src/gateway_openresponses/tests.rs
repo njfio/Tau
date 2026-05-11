@@ -960,12 +960,14 @@ async fn integration_spec_2872_c02_c03_c04_ops_chat_new_session_creates_redirect
             .headers()
             .get("location")
             .and_then(|value| value.to_str().ok()),
-        Some("/ops/chat?theme=light&sidebar=collapsed&session=chat-created-session")
+        Some(
+            "/ops/chat?theme=light&sidebar=collapsed&session=chat-created-session&new_session_status=created"
+        )
     );
 
     let chat_response = client
         .get(format!(
-            "http://{addr}/ops/chat?theme=light&sidebar=collapsed&session=chat-created-session"
+            "http://{addr}/ops/chat?theme=light&sidebar=collapsed&session=chat-created-session&new_session_status=created"
         ))
         .send()
         .await
@@ -979,6 +981,9 @@ async fn integration_spec_2872_c02_c03_c04_ops_chat_new_session_creates_redirect
     assert!(chat_body.contains(
         "id=\"tau-ops-chat-panel\" data-route=\"/ops/chat\" aria-hidden=\"false\" data-active-session-key=\"chat-created-session\" data-panel-visible=\"true\""
     ));
+    assert!(chat_body
+        .contains("id=\"tau-ops-chat-new-session-status\" data-new-session-status=\"created\""));
+    assert!(chat_body.contains("Session created and selected."));
 
     let session_path = gateway_session_path(&state.config.state_dir, "chat-created-session");
     let store = SessionStore::load(&session_path).expect("load created chat session");
