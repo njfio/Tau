@@ -2810,7 +2810,7 @@ fn functional_spec_2798_c02_shell_sidebar_collapsed_state_updates_toggle_markers
     assert!(html.contains("data-sidebar-state=\"collapsed\""));
     assert!(html.contains("data-sidebar-target-state=\"expanded\""));
     assert!(html.contains("aria-expanded=\"false\""));
-    assert!(html.contains("href=\"/ops?theme=dark&amp;sidebar=expanded\""));
+    assert!(html.contains("href=\"/ops?theme=dark&amp;sidebar=expanded&amp;session=default\""));
 }
 
 #[test]
@@ -2831,7 +2831,31 @@ fn functional_spec_2798_c03_shell_light_theme_state_updates_theme_markers() {
     assert!(html.contains(
         "id=\"tau-ops-theme-toggle-light\" data-theme-option=\"light\" aria-pressed=\"true\""
     ));
-    assert!(html.contains("href=\"/ops/chat?theme=dark&amp;sidebar=expanded\""));
+    assert!(html.contains("href=\"/ops/chat?theme=dark&amp;sidebar=expanded&amp;session=default\""));
+}
+
+#[test]
+fn regression_spec_2798_shell_controls_preserve_active_session_context() {
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        auth_mode: TauOpsDashboardAuthMode::None,
+        active_route: TauOpsDashboardRoute::Login,
+        theme: TauOpsDashboardTheme::Dark,
+        sidebar_state: TauOpsDashboardSidebarState::Expanded,
+        command_center: TauOpsDashboardCommandCenterSnapshot::default(),
+        chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
+    });
+
+    for marker in [
+        "id=\"tau-ops-sidebar-hamburger\" data-sidebar-toggle=\"true\" data-sidebar-target-state=\"collapsed\" data-preserves-shell-context=\"true\" aria-controls=\"tau-ops-sidebar\" aria-expanded=\"true\" href=\"/ops/login?theme=dark&amp;sidebar=collapsed&amp;session=default\"",
+        "id=\"tau-ops-theme-toggle-dark\" data-theme-option=\"dark\" aria-pressed=\"true\" data-preserves-shell-context=\"true\" href=\"/ops/login?theme=dark&amp;sidebar=expanded&amp;session=default\"",
+        "id=\"tau-ops-theme-toggle-light\" data-theme-option=\"light\" aria-pressed=\"false\" data-preserves-shell-context=\"true\" href=\"/ops/login?theme=light&amp;sidebar=expanded&amp;session=default\"",
+    ] {
+        assert!(
+            html.contains(marker),
+            "shell control should preserve session context marker `{marker}`"
+        );
+    }
 }
 
 #[test]

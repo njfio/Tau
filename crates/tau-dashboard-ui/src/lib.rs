@@ -1563,11 +1563,25 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     let breadcrumb_label = context.active_route.breadcrumb_label();
     let shell_subtitle = format!("{breadcrumb_label} operator control surface");
     let sidebar_toggle_target_state = context.sidebar_state.toggled().as_str();
-    let sidebar_toggle_href =
-        format!("{active_shell_path}?theme={theme_attr}&sidebar={sidebar_toggle_target_state}");
-    let dark_theme_href = format!("{active_shell_path}?theme=dark&sidebar={sidebar_state_attr}");
-    let light_theme_href = format!("{active_shell_path}?theme=light&sidebar={sidebar_state_attr}");
     let shell_nav_session_key = context.chat.active_session_key.clone();
+    let sidebar_toggle_href = ops_shell_context_href(
+        active_shell_path,
+        context.theme,
+        context.sidebar_state.toggled(),
+        shell_nav_session_key.as_str(),
+    );
+    let dark_theme_href = ops_shell_context_href(
+        active_shell_path,
+        TauOpsDashboardTheme::Dark,
+        context.sidebar_state,
+        shell_nav_session_key.as_str(),
+    );
+    let light_theme_href = ops_shell_context_href(
+        active_shell_path,
+        TauOpsDashboardTheme::Light,
+        context.sidebar_state,
+        shell_nav_session_key.as_str(),
+    );
     let nav_command_center_href = ops_shell_context_href(
         TauOpsDashboardRoute::Ops.shell_path(),
         context.theme,
@@ -5579,6 +5593,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                         id="tau-ops-sidebar-hamburger"
                         data-sidebar-toggle="true"
                         data-sidebar-target-state=sidebar_toggle_target_state
+                        data-preserves-shell-context="true"
                         aria-controls="tau-ops-sidebar"
                         aria-expanded=context.sidebar_state.aria_expanded()
                         href=sidebar_toggle_href
@@ -5590,6 +5605,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             id="tau-ops-theme-toggle-dark"
                             data-theme-option="dark"
                             aria-pressed=dark_theme_pressed
+                            data-preserves-shell-context="true"
                             href=dark_theme_href
                         >
                             Dark
@@ -5598,6 +5614,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             id="tau-ops-theme-toggle-light"
                             data-theme-option="light"
                             aria-pressed=light_theme_pressed
+                            data-preserves-shell-context="true"
                             href=light_theme_href
                         >
                             Light

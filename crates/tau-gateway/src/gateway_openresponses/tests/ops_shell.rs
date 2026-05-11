@@ -27,6 +27,36 @@ async fn functional_spec_2798_c04_ops_shell_exposes_responsive_and_theme_contrac
 }
 
 #[tokio::test]
+async fn regression_spec_2798_c06_login_shell_controls_preserve_session_context() {
+    let temp = tempdir().expect("tempdir");
+    let state = test_state(temp.path(), 4_096, "secret");
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+    let client = Client::new();
+
+    let response = client
+        .get(format!(
+            "http://{addr}/ops/login?theme=dark&sidebar=expanded&session=ops-login-live"
+        ))
+        .send()
+        .await
+        .expect("ops login shell request");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.text().await.expect("read ops shell body");
+    for marker in [
+        "id=\"tau-ops-sidebar-hamburger\" data-sidebar-toggle=\"true\" data-sidebar-target-state=\"collapsed\" data-preserves-shell-context=\"true\" aria-controls=\"tau-ops-sidebar\" aria-expanded=\"true\" href=\"/ops/login?theme=dark&amp;sidebar=collapsed&amp;session=ops-login-live\"",
+        "id=\"tau-ops-theme-toggle-dark\" data-theme-option=\"dark\" aria-pressed=\"true\" data-preserves-shell-context=\"true\" href=\"/ops/login?theme=dark&amp;sidebar=expanded&amp;session=ops-login-live\"",
+        "id=\"tau-ops-theme-toggle-light\" data-theme-option=\"light\" aria-pressed=\"false\" data-preserves-shell-context=\"true\" href=\"/ops/login?theme=light&amp;sidebar=expanded&amp;session=ops-login-live\"",
+    ] {
+        assert!(
+            body.contains(marker),
+            "login shell controls should preserve session context marker `{marker}`"
+        );
+    }
+
+    handle.abort();
+}
+
+#[tokio::test]
 async fn functional_spec_2802_c01_c02_ops_routes_apply_query_control_state_markers() {
     let temp = tempdir().expect("tempdir");
     let state = test_state(temp.path(), 4_096, "secret");
