@@ -360,6 +360,43 @@ fn regression_spec_2786_login_route_prunes_hidden_protected_payload() {
 }
 
 #[test]
+fn regression_spec_2786_login_route_prunes_visible_protected_navigation() {
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        auth_mode: TauOpsDashboardAuthMode::None,
+        active_route: TauOpsDashboardRoute::Login,
+        theme: TauOpsDashboardTheme::Dark,
+        sidebar_state: TauOpsDashboardSidebarState::Expanded,
+        command_center: TauOpsDashboardCommandCenterSnapshot::default(),
+        chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
+    });
+
+    assert!(html
+        .contains("id=\"tau-ops-sidebar\" data-harness-rail=\"compact\" data-nav-scope=\"login\""));
+    assert!(html.contains(
+        "id=\"tau-ops-breadcrumb-home\"><a href=\"/ops/login?theme=dark&amp;sidebar=expanded&amp;session=default\" data-preserves-shell-context=\"true\""
+    ));
+    assert!(html.contains(
+        "id=\"tau-ops-nav-login\"><a href=\"/ops/login?theme=dark&amp;sidebar=expanded&amp;session=default\" data-harness-rail-label=\"Login\" data-preserves-shell-context=\"true\" aria-current=\"page\""
+    ));
+
+    for marker in [
+        "id=\"tau-ops-nav-command-center\" hidden><a",
+        "id=\"tau-ops-nav-agent-fleet\" hidden><a",
+        "id=\"tau-ops-nav-chat\" hidden><a",
+        "id=\"tau-ops-nav-sessions\" hidden><a",
+        "id=\"tau-ops-nav-memory\" hidden><a",
+        "id=\"tau-ops-nav-harness\" hidden><a",
+        "id=\"tau-ops-nav-deploy\" hidden><a",
+    ] {
+        assert!(
+            html.contains(marker),
+            "login route should hide protected navigation marker `{marker}`"
+        );
+    }
+}
+
+#[test]
 fn regression_spec_2786_c03_shell_none_mode_marks_auth_not_required() {
     let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
         auth_mode: TauOpsDashboardAuthMode::None,

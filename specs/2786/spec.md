@@ -65,6 +65,13 @@ Then the hidden protected shell is marked as pruned and omits protected
 route payloads such as chat, sessions, memory, harness, command center, and
 deploy panels.
 
+### AC-11 Login route narrows visible navigation before Continue
+Given an operator opens `/ops/login`,
+When the visible shell renders,
+Then the sidebar is scoped to login, protected navigation rows are hidden from
+the operator rail, and breadcrumb Home preserves `/ops/login` context instead
+of bypassing the Continue control.
+
 ## Scope
 
 ### In Scope
@@ -77,6 +84,7 @@ deploy panels.
 - Route-aware skip-to-main target for the login shell.
 - Link semantics for the no-auth Continue navigation control.
 - Protected payload pruning for the login route.
+- Login-scoped navigation rail and breadcrumb behavior on `/ops/login`.
 - Scoped regression tests for dashboard shell and auth session behavior.
 
 ### Out of Scope
@@ -102,6 +110,9 @@ deploy panels.
   with a preserved-context `/ops` href and no button role.
 - C-11 (regression): `/ops/login` keeps the hidden protected shell as a
   pruned marker and omits hidden protected route payload panels.
+- C-12 (regression): `/ops/login` exposes a login-scoped sidebar, hides
+  protected route rows in the visible rail, and keeps breadcrumb Home on the
+  login route.
 
 ## Success Metrics / Observable Signals
 - `cargo test -p tau-dashboard-ui -- --test-threads=1` passes with new auth/route marker coverage.
@@ -119,6 +130,8 @@ deploy panels.
   a URL in the browser tree.
 - Browser proof confirms live `/ops/login` no longer ships hidden protected
   route panels in the document payload.
+- Browser proof confirms live `/ops/login` shows only Operator Login in the
+  navigation rail before Continue, while the protected route rows are hidden.
 - Existing dashboard/auth regression tests continue to pass.
 
 ## Approval Gate

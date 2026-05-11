@@ -18,6 +18,8 @@
     button-role anchor.
 11. [x] T11 (REGRESSION): prune hidden protected route payload from
     `/ops/login`.
+12. [x] T12 (REGRESSION): narrow the visible `/ops/login` navigation rail to
+    login-only before Continue.
 
 ## Tier Mapping
 - Unit: `tau-dashboard-ui` auth marker tests.
@@ -25,7 +27,7 @@
 - Contract/DbC: N/A (no new DbC macro surfaces).
 - Snapshot: N/A.
 - Functional: auth bootstrap JSON contract tests.
-- Conformance: C-01..C-11 mapped in crate/gateway tests.
+- Conformance: C-01..C-12 mapped in crate/gateway tests.
 - Integration: `/ops` and `/ops/login` endpoint tests.
 - Fuzz: N/A (no untrusted parser added).
 - Mutation: N/A (scaffolding contract slice; no critical algorithm path).
@@ -187,3 +189,36 @@
 - LIVE: HTTP proof showed `/ops/login` response size dropped from 233430 bytes
   to 45654 bytes while retaining the login shell and omitting hidden protected
   route panel ids.
+- RED: Live Browser on
+  `/ops/login?theme=dark&sidebar=expanded&session=default` still exposed the
+  full protected navigation rail before Continue, including Command Center,
+  Agent Fleet, Chat, Sessions, Memory, Mission Harness, and Deploy.
+- RED: `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo test -p tau-dashboard-ui regression_spec_2786_login_route_prunes_visible_protected_navigation -- --nocapture`
+  failed before the login route had a login-scoped sidebar or hidden protected
+  nav rows.
+- GREEN: `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo test -p tau-dashboard-ui regression_spec_2786_login_route_prunes_visible_protected_navigation -- --nocapture`
+  passed after `/ops/login` used `data-nav-scope=login`, kept breadcrumb Home
+  on `/ops/login`, and hid protected nav rows from the visible rail.
+- REGRESSION: `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo test -p tau-dashboard-ui 2786 -- --nocapture`
+  passed 9 tests.
+- REGRESSION: `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo test -p tau-gateway ops_login -- --nocapture`
+  passed 2 tests.
+- REGRESSION: `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo test -p tau-gateway ops_auth_navigation -- --test-threads=1 --nocapture`
+  passed 9 tests.
+- REGRESSION: `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo test -p tau-dashboard-ui -- --nocapture`
+  passed 208 tests plus doc tests.
+- STATIC: `cargo fmt --check --package tau-dashboard-ui --package tau-gateway`,
+  `git diff --check`, and
+  `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo clippy -p tau-dashboard-ui -p tau-gateway -- -D warnings`
+  passed.
+- BUILD: `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo build -p tau-coding-agent`
+  passed.
+- LIVE: Rebuilt `tau-coding-agent` running on `127.0.0.1:8795` reported
+  `auth.mode=localhost-dev`, `model=gpt-5.3-codex`, and
+  `service=running`; Browser verified `/ops/login` showed only Home, Operator
+  Login, and Continue in the interactive tree, while HTTP proof showed
+  `data-nav-scope=login`, protected nav rows hidden, breadcrumb Home pointing
+  to `/ops/login`, and Continue still targeting `/ops`.
+- LIVE: Browser click on Continue navigated from `/ops/login` to
+  `/ops?theme=dark&sidebar=expanded&session=default` and restored the full
+  protected navigation rail on the ops shell.
