@@ -1622,12 +1622,33 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
         context.sidebar_state,
         shell_nav_session_key.as_str(),
     );
-    let nav_harness_href = ops_shell_context_href(
+    let mut nav_harness_href = ops_shell_context_href(
         TauOpsDashboardRoute::Harness.shell_path(),
         context.theme,
         context.sidebar_state,
         shell_nav_session_key.as_str(),
     );
+    if matches!(context.active_route, TauOpsDashboardRoute::Harness) {
+        let harness_nav_proposal_id = context.harness.selected_proposal.proposal_id.trim();
+        if !harness_nav_proposal_id.is_empty() {
+            nav_harness_href.push_str("&proposal_id=");
+            nav_harness_href.push_str(harness_nav_proposal_id);
+        }
+        if context.harness.route_action_key == "history" {
+            nav_harness_href.push_str("&view=history");
+            let harness_nav_filter_action = context.harness.audit_filter_action.trim();
+            if !harness_nav_filter_action.is_empty() && harness_nav_filter_action != "all" {
+                nav_harness_href.push_str("&audit_action=");
+                nav_harness_href.push_str(harness_nav_filter_action);
+            }
+            let harness_nav_audit_ref =
+                sanitize_harness_audit_ref(&context.harness.audit_selected_ref);
+            if !harness_nav_audit_ref.is_empty() {
+                nav_harness_href.push_str("&audit_ref=");
+                nav_harness_href.push_str(harness_nav_audit_ref.as_str());
+            }
+        }
+    }
     let nav_config_href = ops_shell_context_href(
         TauOpsDashboardRoute::Config.shell_path(),
         context.theme,

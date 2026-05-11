@@ -10,6 +10,8 @@
   surface while preserving data-marker contracts.
 - [x] T8: Preserve theme, sidebar, and session context through the shell left
   rail and breadcrumb navigation.
+- [x] T9: Preserve selected harness history context through the active harness
+  rail item.
 
 ## Verification Evidence
 
@@ -52,3 +54,27 @@
 - LIVE: Browser navigated via the Channels rail href to
   `/ops/channels?theme=dark&sidebar=expanded&session=default`, found one
   channels panel, and returned to the selected harness history URL.
+- RED: Live Browser on
+  `/ops/harness?proposal_id=PR-045&view=history` showed the active Mission
+  Harness rail item preserving only shell context, so clicking it reset the
+  selected proposal/history subroute.
+- GREEN: `cargo test -p tau-dashboard-ui functional_harness_history_view_surfaces_state_audit_summary -- --nocapture`
+  passed with the active harness rail href preserving selected proposal,
+  history filter, and audit ref (1 test).
+- REGRESSION: `cargo test -p tau-dashboard-ui functional_spec_37 -- --nocapture`
+  passed after the compact rail and route guard expectations were updated
+  (45 tests).
+- REGRESSION: `cargo test -p tau-dashboard-ui -- --nocapture` passed
+  (194 tests).
+- STATIC: `cargo fmt --check --package tau-dashboard-ui --package tau-gateway`
+  passed.
+- STATIC: `git diff --check` passed.
+- STATIC: `cargo clippy -p tau-dashboard-ui -p tau-gateway -- -D warnings`
+  passed.
+- BUILD: `cargo build -p tau-coding-agent` passed.
+- LIVE: Browser on
+  `/ops/harness?proposal_id=PR-045&view=history&audit_action=dry-run&audit_ref=1778419944988`
+  against the restarted `127.0.0.1:8795` harness found the active Mission
+  Harness rail href preserving `proposal_id=PR-045`, `view=history`,
+  `audit_action=dry-run`, and `audit_ref=1778419944988`; navigating through
+  that href kept the history view and selected audit detail open.

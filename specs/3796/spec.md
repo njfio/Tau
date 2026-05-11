@@ -19,6 +19,8 @@ In scope:
 - Mark the active left-nav route so operators can tell where they are.
 - Preserve theme, sidebar, and session context when operators use the left rail
   or shell breadcrumb to move between ops routes.
+- Preserve selected harness proposal/history context when the active harness
+  rail item is clicked from a harness history subroute.
 - Keep internal contract-marker scaffolding out of the visible operator surface
   while preserving its machine-readable data markers.
 - Verify the live `/ops/deploy` route in the in-app browser.
@@ -38,7 +40,8 @@ visible route experience.
 AC-2: Given an operator opens a left-nav route, when the sidebar renders, then
 exactly that route is marked as current, receives the active nav styling
 contract, and each shell navigation target preserves the current theme, sidebar,
-and session context.
+session context, plus active harness history context for the current harness
+route.
 
 AC-3: Given the live `/ops/deploy` route is loaded in Browser Use, when the DOM
 and console are inspected, then the route exposes the operator-route contract and
@@ -52,7 +55,9 @@ the absence of the old foundation subtitle on `/ops/deploy`.
 
 C-02 maps to AC-2: `tau-dashboard-ui` render tests assert `/ops/deploy` and
 `/ops/chat` each mark only their own nav link with `aria-current="page"` and
-that shell navigation links carry the active theme/sidebar/session query.
+that shell navigation links carry the active theme/sidebar/session query; the
+harness history render test asserts the active harness rail link also preserves
+selected proposal, history filter, and audit ref.
 
 C-03 maps to AC-3: Browser Use inspects the live localhost `/ops/deploy` route
 and verifies the operator-route contract marker with zero console errors.
@@ -65,3 +70,6 @@ and verifies the operator-route contract marker with zero console errors.
 - Browser Use DOM inspection of the live `/ops/deploy` route.
 - Browser Use DOM inspection from a live harness history route shows left rail
   links preserving `theme`, `sidebar`, and `session`.
+- Browser Use DOM inspection from a selected harness history record shows the
+  active harness rail link preserving `proposal_id`, `view`, `audit_action`, and
+  `audit_ref`.

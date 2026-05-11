@@ -533,7 +533,7 @@ fn functional_spec_3756_c01_harness_route_renders_template_panels() {
 
     for marker in [
         "id=\"tau-ops-nav-harness\"",
-        "data-nav-item=\"mission-harness\" href=\"/ops/harness?theme=dark&amp;sidebar=expanded&amp;session=default\"",
+        "data-nav-item=\"mission-harness\" href=\"/ops/harness?theme=dark&amp;sidebar=expanded&amp;session=default&amp;proposal_id=PR-044\"",
         "id=\"tau-ops-dashboard-base-style\"",
         "data-active-route=\"harness\"",
         "id=\"tau-ops-breadcrumbs\"",
@@ -872,7 +872,7 @@ fn functional_spec_3766_c01_c02_c03_harness_uses_compact_navigation_rail() {
         "data-nav-item=\"memory-graph\" href=\"/ops/memory-graph?theme=dark&amp;sidebar=expanded&amp;session=default\" data-harness-rail-label=\"Graph\" data-preserves-shell-context=\"true\"",
         "data-nav-item=\"tools-jobs\" href=\"/ops/tools-jobs?theme=dark&amp;sidebar=expanded&amp;session=default\" data-harness-rail-label=\"Tools\" data-preserves-shell-context=\"true\"",
         "data-nav-item=\"channels\" href=\"/ops/channels?theme=dark&amp;sidebar=expanded&amp;session=default\" data-harness-rail-label=\"Channels\" data-preserves-shell-context=\"true\"",
-        "id=\"tau-ops-nav-harness\"><a data-nav-item=\"mission-harness\" href=\"/ops/harness?theme=dark&amp;sidebar=expanded&amp;session=default\" data-harness-rail-label=\"Missions\" data-preserves-shell-context=\"true\" aria-current=\"page\">Mission Harness</a>",
+        "id=\"tau-ops-nav-harness\"><a data-nav-item=\"mission-harness\" href=\"/ops/harness?theme=dark&amp;sidebar=expanded&amp;session=default&amp;proposal_id=PR-044\" data-harness-rail-label=\"Missions\" data-preserves-shell-context=\"true\" aria-current=\"page\">Mission Harness</a>",
         "data-nav-item=\"deploy\" href=\"/ops/deploy?theme=dark&amp;sidebar=expanded&amp;session=default\" data-harness-rail-label=\"Deploy\" data-preserves-shell-context=\"true\"",
         "#tau-ops-shell[data-active-route=\"harness\"] #tau-ops-sidebar a {\n                    display: flex;",
         "font-size: 0;",
@@ -2237,6 +2237,7 @@ fn functional_harness_history_view_surfaces_state_audit_summary() {
         "data-history-selected-proof-link=\"true\" data-history-selected-proof-artifact=\"ops-harness/self-improvement/PR-045/dry-run-result.json\"",
         "href=\"/ops/harness/artifacts/view/ops-harness/self-improvement/PR-045/dry-run-result.json?theme=dark&amp;sidebar=expanded&amp;session=default&amp;proposal_id=PR-045&amp;view=history&amp;audit_action=dry-run&amp;audit_ref=1778419944988\"",
         "data-history-selected-preview=\"true\" data-history-selected-preview-status=\"loaded\" data-history-selected-preview-bytes=\"51\" data-history-selected-preview-limit=\"2048\" data-history-selected-preview-truncated=\"false\"",
+        "id=\"tau-ops-nav-harness\"><a data-nav-item=\"mission-harness\" href=\"/ops/harness?theme=dark&amp;sidebar=expanded&amp;session=default&amp;proposal_id=PR-045&amp;view=history&amp;audit_action=dry-run&amp;audit_ref=1778419944988\" data-harness-rail-label=\"Missions\" data-preserves-shell-context=\"true\" aria-current=\"page\">Mission Harness</a>",
         "href=\"/ops/harness?theme=dark&amp;sidebar=expanded&amp;session=default&amp;proposal_id=PR-044&amp;view=history&amp;audit_action=dry-run\" data-proposal-link=\"PR-044\" aria-current=\"false\"",
         "href=\"/ops/harness?theme=dark&amp;sidebar=expanded&amp;session=default&amp;proposal_id=PR-045&amp;view=history&amp;audit_action=dry-run\" data-proposal-link=\"PR-045\" aria-current=\"page\"",
         "id=\"tau-ops-harness-new-mission-form\" action=\"/ops/harness/missions/draft?theme=dark&amp;sidebar=expanded&amp;session=default&amp;proposal_id=PR-045&amp;view=history\" method=\"post\"",

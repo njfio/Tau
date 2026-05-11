@@ -8,6 +8,8 @@ Status: Implemented
 - [x] T4 (VERIFY): run targeted/full tests, static checks, gateway integration, and browser geometry validation.
 - [x] T5 (REGRESSION): preserve shell context through compact rail links while
   keeping route destinations and compact labels intact.
+- [x] T6 (REGRESSION): preserve selected harness history context through the
+  active compact rail item.
 
 ## Verification Evidence
 
@@ -35,3 +37,20 @@ Status: Implemented
 - LIVE: Browser on
   `/ops/harness?proposal_id=PR-045&view=history` found compact rail links
   preserving `theme=dark`, `sidebar=expanded`, and `session=default`.
+- GREEN: `cargo test -p tau-dashboard-ui functional_harness_history_view_surfaces_state_audit_summary -- --nocapture`
+  passed with the active harness rail link preserving selected history context
+  (1 test).
+- REGRESSION: `cargo test -p tau-dashboard-ui functional_spec_37 -- --nocapture`
+  passed (45 tests).
+- REGRESSION: `cargo test -p tau-dashboard-ui -- --nocapture` passed
+  (194 tests).
+- STATIC: `cargo fmt --check --package tau-dashboard-ui --package tau-gateway`
+  passed.
+- STATIC: `git diff --check` passed.
+- STATIC: `cargo clippy -p tau-dashboard-ui -p tau-gateway -- -D warnings`
+  passed.
+- BUILD: `cargo build -p tau-coding-agent` passed.
+- LIVE: Browser on
+  `/ops/harness?proposal_id=PR-045&view=history&audit_action=dry-run&audit_ref=1778419944988`
+  found the active Mission Harness compact rail link preserving the selected
+  proposal, history view, action filter, and audit ref.
