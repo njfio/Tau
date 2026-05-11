@@ -6141,6 +6141,40 @@ fn functional_spec_2826_c01_c02_control_actions_expose_confirmation_markers() {
 }
 
 #[test]
+fn regression_spec_2826_disabled_control_actions_are_native_disabled() {
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        auth_mode: TauOpsDashboardAuthMode::Token,
+        active_route: TauOpsDashboardRoute::Ops,
+        theme: TauOpsDashboardTheme::Dark,
+        sidebar_state: TauOpsDashboardSidebarState::Expanded,
+        command_center: TauOpsDashboardCommandCenterSnapshot {
+            control_mode: "running".to_string(),
+            control_paused: false,
+            action_pause_enabled: true,
+            action_resume_enabled: false,
+            action_refresh_enabled: true,
+            ..TauOpsDashboardCommandCenterSnapshot::default()
+        },
+        chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
+    });
+
+    assert!(html.contains(
+        "id=\"tau-ops-control-action-pause\" data-action-enabled=\"true\" data-action=\"pause\""
+    ));
+    assert!(html.contains("data-confirm-verb=\"pause\" aria-disabled=\"false\" type=\"submit\""));
+    assert!(html.contains(
+        "id=\"tau-ops-control-action-resume\" data-action-enabled=\"false\" data-action=\"resume\""
+    ));
+    assert!(html
+        .contains("data-confirm-verb=\"resume\" aria-disabled=\"true\" disabled type=\"submit\""));
+    assert!(html.contains(
+        "id=\"tau-ops-control-action-refresh\" data-action-enabled=\"true\" data-action=\"refresh\""
+    ));
+    assert!(html.contains("data-confirm-verb=\"refresh\" aria-disabled=\"false\" type=\"submit\""));
+}
+
+#[test]
 fn functional_spec_3466_c04_control_action_status_panel_renders_marker_contracts() {
     let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
         auth_mode: TauOpsDashboardAuthMode::Token,

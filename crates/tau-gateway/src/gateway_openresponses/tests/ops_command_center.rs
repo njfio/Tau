@@ -167,12 +167,16 @@ async fn functional_spec_2826_c03_ops_shell_control_markers_include_confirmation
     assert!(body.contains(
         "id=\"tau-ops-control-action-pause\" data-action-enabled=\"false\" data-action=\"pause\" data-confirm-required=\"true\" data-confirm-title=\"Confirm pause action\" data-confirm-body=\"Pause command-center processing until resumed.\" data-confirm-verb=\"pause\""
     ));
+    assert!(body
+        .contains("data-confirm-verb=\"pause\" aria-disabled=\"true\" disabled type=\"submit\""));
     assert!(body.contains(
         "id=\"tau-ops-control-action-resume\" data-action-enabled=\"true\" data-action=\"resume\" data-confirm-required=\"true\" data-confirm-title=\"Confirm resume action\" data-confirm-body=\"Resume command-center processing.\" data-confirm-verb=\"resume\""
     ));
+    assert!(body.contains("data-confirm-verb=\"resume\" aria-disabled=\"false\" type=\"submit\""));
     assert!(body.contains(
         "id=\"tau-ops-control-action-refresh\" data-action-enabled=\"true\" data-action=\"refresh\" data-confirm-required=\"true\" data-confirm-title=\"Confirm refresh action\" data-confirm-body=\"Refresh command-center state from latest runtime artifacts.\" data-confirm-verb=\"refresh\""
     ));
+    assert!(body.contains("data-confirm-verb=\"refresh\" aria-disabled=\"false\" type=\"submit\""));
 
     handle.abort();
 }

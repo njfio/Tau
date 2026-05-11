@@ -27,10 +27,17 @@ Given existing command-center contract suites (phase 1A..1K),
 When confirmation markers are integrated,
 Then prior suites remain green.
 
+### AC-5 Disabled control actions are not submit controls
+Given command-center control actions with `data-action-enabled="false"`,
+When the shell renders the action button,
+Then the button also exposes `aria-disabled="true"` and native `disabled`
+semantics so unavailable actions are not clickable form submits.
+
 ## Scope
 
 ### In Scope
 - `tau-dashboard-ui` command-center control button confirmation marker contracts.
+- Native disabled semantics for unavailable command-center control buttons.
 - Gateway `/ops` integration conformance tests for confirmation markers.
 - Regression validation for phase 1A..1K command-center suites.
 
@@ -44,9 +51,13 @@ Then prior suites remain green.
 - C-02 (functional): confirmation marker payload is action-specific for pause/resume/refresh.
 - C-03 (integration): gateway `/ops` response includes confirmation markers.
 - C-04 (regression): phase-1A..1K suites remain green.
+- C-05 (regression/integration): unavailable control actions render
+  `aria-disabled="true"` and native `disabled`, while enabled actions render
+  `aria-disabled="false"` without native disabled semantics.
 
 ## Success Metrics / Observable Signals
 - `cargo test -p tau-dashboard-ui functional_spec_2826 -- --test-threads=1` passes.
+- `cargo test -p tau-dashboard-ui regression_spec_2826_disabled_control_actions_are_native_disabled -- --nocapture` passes.
 - `cargo test -p tau-gateway functional_spec_2826 -- --test-threads=1` passes.
 - `cargo test -p tau-dashboard-ui functional_spec_2786 -- --test-threads=1` passes.
 - `cargo test -p tau-dashboard-ui functional_spec_2794 -- --test-threads=1` passes.

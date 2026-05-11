@@ -4474,12 +4474,30 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     } else {
         "false"
     };
+    let action_pause_disabled = !context.command_center.action_pause_enabled;
+    let action_pause_aria_disabled = if action_pause_disabled {
+        "true"
+    } else {
+        "false"
+    };
     let action_resume_enabled_value = if context.command_center.action_resume_enabled {
         "true"
     } else {
         "false"
     };
+    let action_resume_disabled = !context.command_center.action_resume_enabled;
+    let action_resume_aria_disabled = if action_resume_disabled {
+        "true"
+    } else {
+        "false"
+    };
     let action_refresh_enabled_value = if context.command_center.action_refresh_enabled {
+        "true"
+    } else {
+        "false"
+    };
+    let action_refresh_disabled = !context.command_center.action_refresh_enabled;
+    let action_refresh_aria_disabled = if action_refresh_disabled {
         "true"
     } else {
         "false"
@@ -5531,6 +5549,13 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     color: #6f8996;
                     cursor: not-allowed;
                     pointer-events: none;
+                }
+                #tau-ops-control-panel button[aria-disabled="true"],
+                #tau-ops-control-panel button:disabled {
+                    border-color: #263f4e;
+                    background: #0b1d28;
+                    color: #6f8996;
+                    cursor: not-allowed;
                 }
                 @media (max-width: 900px) {
                     #tau-ops-header {
@@ -9599,6 +9624,8 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                             data-confirm-title="Confirm pause action"
                                             data-confirm-body="Pause command-center processing until resumed."
                                             data-confirm-verb="pause"
+                                            aria-disabled=action_pause_aria_disabled
+                                            disabled=action_pause_disabled
                                             type="submit"
                                         >
                                             Pause
@@ -9642,6 +9669,8 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                             data-confirm-title="Confirm resume action"
                                             data-confirm-body="Resume command-center processing."
                                             data-confirm-verb="resume"
+                                            aria-disabled=action_resume_aria_disabled
+                                            disabled=action_resume_disabled
                                             type="submit"
                                         >
                                             Resume
@@ -9685,6 +9714,8 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                             data-confirm-title="Confirm refresh action"
                                             data-confirm-body="Refresh command-center state from latest runtime artifacts."
                                             data-confirm-verb="refresh"
+                                            aria-disabled=action_refresh_aria_disabled
+                                            disabled=action_refresh_disabled
                                             type="submit"
                                         >
                                             Refresh
