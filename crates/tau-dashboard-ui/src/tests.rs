@@ -125,6 +125,30 @@ fn spec_c02_deploy_route_renders_model_catalog_marker() {
 }
 
 #[test]
+fn regression_deploy_model_catalog_uses_gateway_runtime_model() {
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        auth_mode: TauOpsDashboardAuthMode::Token,
+        active_route: TauOpsDashboardRoute::Deploy,
+        theme: TauOpsDashboardTheme::Dark,
+        sidebar_state: TauOpsDashboardSidebarState::Expanded,
+        command_center: TauOpsDashboardCommandCenterSnapshot {
+            config_model_ref: "openai/gpt-5.3-codex".to_string(),
+            config_fallback_model_refs: vec!["openai/gpt-5.2".to_string()],
+            ..TauOpsDashboardCommandCenterSnapshot::default()
+        },
+        chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
+    });
+
+    assert!(html.contains(
+        "id=\"tau-ops-deploy-model-selection\" data-model-source=\"gateway-runtime\" data-active-model-ref=\"openai/gpt-5.3-codex\" data-model-option-count=\"2\""
+    ));
+    assert!(html.contains("<option value=\"openai/gpt-5.3-codex\">openai/gpt-5.3-codex</option>"));
+    assert!(html.contains("<option value=\"openai/gpt-5.2\">openai/gpt-5.2</option>"));
+    assert!(!html.contains("<option value=\"gpt-4.1-mini\">gpt-4.1-mini</option>"));
+}
+
+#[test]
 fn spec_c03_deploy_route_renders_validation_and_review_markers() {
     let html = render_tau_ops_dashboard_shell_for_route("/ops/deploy");
     assert!(html.contains("id=\"tau-ops-deploy-validation\""));

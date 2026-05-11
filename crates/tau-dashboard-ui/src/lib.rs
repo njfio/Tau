@@ -3238,6 +3238,21 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                 .collect_view(),
         )
     };
+    let mut deploy_model_catalog_refs = vec![config_model_ref.clone()];
+    for model_ref in &config_fallback_model_refs {
+        if model_ref != &config_model_ref {
+            deploy_model_catalog_refs.push(model_ref.clone());
+        }
+    }
+    let deploy_model_catalog_option_count = deploy_model_catalog_refs.len().to_string();
+    let deploy_model_catalog_options = deploy_model_catalog_refs
+        .iter()
+        .map(|model_ref| {
+            view! {
+                <option value=model_ref.clone()>{model_ref.clone()}</option>
+            }
+        })
+        .collect_view();
     let training_panel_hidden = if matches!(context.active_route, TauOpsDashboardRoute::Training) {
         "false"
     } else {
@@ -9872,14 +9887,18 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     </li>
                                 </ol>
                             </nav>
-                            <section id="tau-ops-deploy-model-selection">
+                            <section
+                                id="tau-ops-deploy-model-selection"
+                                data-model-source="gateway-runtime"
+                                data-active-model-ref=config_model_ref.clone()
+                                data-model-option-count=deploy_model_catalog_option_count
+                            >
                                 <label for="tau-ops-deploy-model-catalog">Model Catalog</label>
                                 <select
                                     id="tau-ops-deploy-model-catalog"
                                     data-component="ModelCatalogDropdown"
                                 >
-                                    <option value="gpt-4.1-mini">gpt-4.1-mini</option>
-                                    <option value="gpt-4.1">gpt-4.1</option>
+                                    {deploy_model_catalog_options}
                                 </select>
                             </section>
                             <section

@@ -357,6 +357,12 @@ async fn functional_spec_2794_c01_c02_c03_all_sidebar_ops_routes_return_shell_wi
                 ));
                 assert!(body.contains("id=\"tau-ops-agent-detail-open-fleet\""));
             }
+            "/ops/deploy" => {
+                assert!(body.contains(
+                    "id=\"tau-ops-deploy-model-selection\" data-model-source=\"gateway-runtime\" data-active-model-ref=\"openai/gpt-5.2\" data-model-option-count=\"1\""
+                ));
+                assert!(body.contains("<option value=\"openai/gpt-5.2\">openai/gpt-5.2</option>"));
+            }
             _ => {}
         }
     }

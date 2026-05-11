@@ -22,12 +22,19 @@ Given routes other than `/ops/deploy`,
 When the shell is rendered,
 Then deploy panel root marker and deploy-step markers are not present.
 
+### AC-4 Deploy model catalog reflects the active gateway runtime
+Given route `/ops/deploy`,
+When the gateway has an active runtime model,
+Then the model catalog is populated from that runtime model/fallback metadata
+instead of static demo defaults.
+
 ## Scope
 
 ### In Scope
 - Extend `tau-dashboard-ui` render API to accept a route and conditionally render deploy panel markers.
 - Conformance tests for PRD checklist contracts `2140-2144`.
 - Regression test for non-deploy route behavior.
+- Runtime-backed model catalog metadata on the Deploy Agent route.
 
 ### Out of Scope
 - Backend deploy execution or process lifecycle wiring.
@@ -40,10 +47,14 @@ Then deploy panel root marker and deploy-step markers are not present.
 - C-03 (conformance): `/ops/deploy` includes validation and review markers.
 - C-04 (conformance): `/ops/deploy` includes deploy action marker.
 - C-05 (regression): non-deploy route does not include deploy markers.
+- C-06 (regression/integration): `/ops/deploy` renders the active gateway model
+  in the model catalog and omits stale static model options.
 
 ## Success Metrics / Observable Signals
 - `cargo test -p tau-dashboard-ui -- --test-threads=1` passes with added conformance coverage.
-- Tests named for `spec_c01..spec_c05` map one-to-one to conformance cases.
+- Tests named for `spec_c01..spec_c06` map one-to-one to conformance cases.
+- Browser inspection of live `/ops/deploy` shows the active gateway model in the
+  model catalog.
 
 ## Approval Gate
 P1 scope with single-module implementation. Spec is agent-reviewed and implementation proceeds under the user’s explicit instruction to continue contract execution.
