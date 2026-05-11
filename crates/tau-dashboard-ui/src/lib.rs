@@ -693,6 +693,20 @@ fn harness_ops_artifact_href_with_query(
     })
 }
 
+fn harness_artifact_href_with_context(href: &str, query: Option<&str>) -> String {
+    let trimmed = href.trim();
+    match query {
+        Some(query)
+            if !query.is_empty()
+                && trimmed.starts_with("/ops/harness/artifacts/view/ops-harness/")
+                && !trimmed.contains('?') =>
+        {
+            format!("{trimmed}?{query}")
+        }
+        _ => href.to_string(),
+    }
+}
+
 fn sanitize_harness_audit_ref(raw: &str) -> String {
     raw.chars()
         .filter_map(|ch| {
@@ -1753,6 +1767,11 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
             context.chat.active_session_key, harness_selected_proposal_id
         )
     };
+    let harness_artifact_context_query = if harness_history_view_active {
+        Some(harness_history_artifact_base_query.clone())
+    } else {
+        None
+    };
     let requested_audit_ref = sanitize_harness_audit_ref(&context.harness.audit_selected_ref);
     let harness_history_selected_audit_index = context
         .harness
@@ -1943,7 +1962,9 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
         .artifact_rows
         .iter()
         .map(|row| {
-            let artifact_content = if let Some(artifact_href) = harness_ops_artifact_href(&row.label)
+            let artifact_query = harness_artifact_context_query.clone();
+            let artifact_content = if let Some(artifact_href) =
+                harness_ops_artifact_href_with_query(&row.label, artifact_query.as_deref())
             {
                 view! {
                     <a
@@ -1998,6 +2019,10 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
         .self_improvement_proof
         .artifact_count
         .to_string();
+    let harness_selected_proposal_test_evidence_href = harness_artifact_href_with_context(
+        &context.harness.selected_proposal.test_evidence_href,
+        harness_artifact_context_query.as_deref(),
+    );
     let harness_self_improvement_proof = if context.harness.self_improvement_proof.source == "state"
     {
         leptos::either::Either::Left(view! {
@@ -2487,11 +2512,15 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     </tr>
                 })
             } else {
+                let artifact_href = harness_artifact_href_with_context(
+                    &row.artifact_href,
+                    harness_artifact_context_query.as_deref(),
+                );
                 leptos::either::Either::Right(view! {
                 <tr
                     data-tool=row.tool_name.clone()
                     data-status=row.status_key.clone()
-                    data-tool-artifact-href=row.artifact_href.clone()
+                    data-tool-artifact-href=artifact_href.clone()
                 >
                     <td>{row.tool_name.clone()}</td>
                     <td>{row.call_id.clone()}</td>
@@ -2500,7 +2529,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     <td>{row.status_key.clone()}</td>
                     <td>
                         <a
-                            href=row.artifact_href.clone()
+                            href=artifact_href.clone()
                             data-tool-proof-artifact-href="true"
                         >
                             {row.artifact_label.clone()}
@@ -2556,9 +2585,13 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
         .detail_artifact_rows
         .iter()
         .map(|row| {
+            let artifact_href = harness_artifact_href_with_context(
+                &row.href,
+                harness_artifact_context_query.as_deref(),
+            );
             view! {
                 <li data-artifact-id=row.item_id.clone() data-artifact-kind=row.status_key.clone()>
-                    <a href=row.href.clone()>{row.label.clone()}</a>
+                    <a href=artifact_href>{row.label.clone()}</a>
                 </li>
             }
         })
@@ -8874,7 +8907,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                         <dt>"Patch Summary"</dt><dd data-proposal-row="patch-summary" data-summary-fit="full-text">{context.harness.selected_proposal.patch_summary.clone()}</dd>
                                         <dt>"Failure Observed"</dt><dd>{context.harness.selected_proposal.failure_observed.clone()}</dd>
                                         <dt>"Root Cause"</dt><dd>{context.harness.selected_proposal.root_cause.clone()}</dd>
-                                        <dt>"Test Evidence"</dt><dd><a href=context.harness.selected_proposal.test_evidence_href.clone()>{context.harness.selected_proposal.test_evidence_label.clone()}</a></dd>
+                                        <dt>"Test Evidence"</dt><dd><a href=harness_selected_proposal_test_evidence_href>{context.harness.selected_proposal.test_evidence_label.clone()}</a></dd>
                                     </dl>
                                 </section>
                                 {harness_self_improvement_proof}

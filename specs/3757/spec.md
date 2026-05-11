@@ -65,7 +65,10 @@ then each row's artifact cell links to the corresponding harness artifact view
 instead of rendering proof evidence as inert text. When an operator opens that
 artifact view, the page exposes the normalized artifact path, byte counts, JSON
 kind, top-level JSON keys when present, a capped preview, a raw artifact link,
-and a return link that preserves supplied harness shell/history context.
+and a return link that preserves supplied harness shell/history context. When
+the operator is already on a history route, safe `ops-harness/...` proof links
+inside tool evidence, mission artifacts, proposal evidence, and self-improvement
+proof artifacts preserve the same history query context.
 
 ### AC-5 History view exposes audit summary proof
 
@@ -102,6 +105,8 @@ proposal-specific history route cannot mix rows from a different proposal.
   route tests.
 - Artifact view route exposes JSON/top-level-key proof and preserves supplied
   harness shell/history context for return navigation.
+- Safe `ops-harness/...` artifact links rendered inside history routes preserve
+  the current history query context before opening the artifact route.
 - History view exposes state-backed audit summary counts instead of only a
   route-action banner.
 - History view audit filters are route-backed and narrow state audit rows

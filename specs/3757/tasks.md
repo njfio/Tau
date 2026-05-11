@@ -207,3 +207,34 @@ Status: Implemented
   passed.
 - STATIC: `git diff --check` passed.
 - BUILD: `cargo build -p tau-coding-agent` passed.
+- T15: Preserve selected history route context on every safe artifact link
+  rendered from the harness history page, including tool evidence, mission
+  artifact lists, proposal test evidence, and self-improvement proof artifacts.
+- RED: Live Browser on
+  `/ops/harness?proposal_id=PR-045&view=history` showed the selected audit proof
+  link already preserving history context, while lower tool, benchmark,
+  proposal-evidence, and self-improvement artifact links still opened bare
+  `/ops/harness/artifacts/view/...` routes without the selected history query.
+- GREEN: `cargo test -p tau-dashboard-ui functional_harness_history_view_surfaces_state_audit_summary -- --nocapture`
+  passed with context-preserving history-route artifact links (1 test).
+- GREEN: `cargo test -p tau-gateway integration_spec_3757_c03_ops_harness_route_reflects_state_backed_proof_and_audit -- --nocapture`
+  passed with context-preserving artifact markers through the gateway route (1
+  test).
+- REGRESSION: `cargo test -p tau-dashboard-ui harness -- --nocapture` passed
+  (52 tests).
+- REGRESSION: `cargo test -p tau-gateway ops_harness -- --test-threads=1 --nocapture`
+  passed (6 tests).
+- STATIC: `cargo fmt --check --package tau-dashboard-ui --package tau-gateway`
+  passed.
+- STATIC: `git diff --check` passed.
+- STATIC: `cargo clippy -p tau-dashboard-ui -p tau-gateway -- -D warnings`
+  passed.
+- BUILD: `cargo build -p tau-coding-agent` passed.
+- LIVE: Browser on
+  `/ops/harness?proposal_id=PR-045&view=history` against the restarted
+  `127.0.0.1:8795` harness found contextual tool proof links for
+  `.tau/gateway-live-demo/ops-harness/m334/latest.json`, contextual proposal
+  evidence links for
+  `ops-harness/self-improvement/PR-045/dry-run-result.json`, contextual
+  self-improvement proof links for PR-045 dry-run/apply artifacts, and zero bare
+  lower proof links missing `proposal_id=PR-045` plus `view=history`.
