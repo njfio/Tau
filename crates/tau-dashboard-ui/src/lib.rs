@@ -42,6 +42,13 @@ impl TauOpsDashboardAuthMode {
         }
     }
 
+    fn login_heading_text(self) -> &'static str {
+        match self {
+            Self::None => "Operator Access Ready",
+            Self::Token | Self::PasswordSession => "Operator Authentication",
+        }
+    }
+
     fn login_help_text(self) -> &'static str {
         match self {
             Self::None => {
@@ -1759,6 +1766,18 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
         "continue"
     };
     let login_submit_aria_disabled = if login_required { "true" } else { "false" };
+    let credential_field_hidden = !login_required;
+    let credential_field_aria_hidden = if credential_field_hidden {
+        "true"
+    } else {
+        "false"
+    };
+    let no_auth_status_hidden = login_required;
+    let no_auth_status_aria_hidden = if no_auth_status_hidden {
+        "true"
+    } else {
+        "false"
+    };
     let chat_route_active = matches!(context.active_route, TauOpsDashboardRoute::Chat);
     let chat_panel_hidden = if chat_route_active { "false" } else { "true" };
     let chat_panel_visible = if chat_route_active { "true" } else { "false" };
@@ -5680,12 +5699,28 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     data-active-route=active_route_attr
                 >
                     <section id="tau-ops-login-shell" data-route="/ops/login" aria-hidden=login_hidden>
-                        <h2>Operator Authentication</h2>
+                        <h2 id="tau-ops-login-heading" data-auth-heading-mode=auth_mode_attr>
+                            {auth_mode.login_heading_text()}
+                        </h2>
                         <p id="tau-ops-login-help" data-auth-copy-mode=auth_mode_attr>
                             {auth_mode.login_help_text()}
                         </p>
                         <form id="tau-ops-login-form" data-login-continue-href=login_continue_href.clone() data-login-action-enabled=login_action_enabled>
-                            <label for="tau-ops-auth-input">{auth_mode.auth_input_label()}</label>
+                            <p
+                                id="tau-ops-no-auth-status"
+                                data-auth-status-mode=auth_mode_attr
+                                hidden=no_auth_status_hidden
+                                aria-hidden=no_auth_status_aria_hidden
+                            >
+                                "Credential input is hidden because localhost-dev mode is active."
+                            </p>
+                            <label
+                                for="tau-ops-auth-input"
+                                hidden=credential_field_hidden
+                                aria-hidden=credential_field_aria_hidden
+                            >
+                                {auth_mode.auth_input_label()}
+                            </label>
                             <input
                                 id="tau-ops-auth-input"
                                 type="password"
@@ -5694,6 +5729,8 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 data-auth-input-enabled=auth_input_enabled
                                 disabled=!login_required
                                 readonly=!login_required
+                                hidden=credential_field_hidden
+                                aria-hidden=credential_field_aria_hidden
                             />
                             <a
                                 id="tau-ops-login-submit"

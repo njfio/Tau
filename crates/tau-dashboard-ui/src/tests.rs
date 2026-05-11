@@ -320,6 +320,31 @@ fn regression_spec_2786_c03_none_login_continue_links_to_ops_shell() {
 }
 
 #[test]
+fn regression_spec_2786_none_login_hides_credential_field_from_operator() {
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        auth_mode: TauOpsDashboardAuthMode::None,
+        active_route: TauOpsDashboardRoute::Login,
+        theme: TauOpsDashboardTheme::Dark,
+        sidebar_state: TauOpsDashboardSidebarState::Expanded,
+        command_center: TauOpsDashboardCommandCenterSnapshot::default(),
+        chat: TauOpsDashboardChatSnapshot::default(),
+        harness: TauOpsDashboardHarnessSnapshot::default(),
+    });
+
+    for marker in [
+        "id=\"tau-ops-login-heading\" data-auth-heading-mode=\"none\">Operator Access Ready<",
+        "id=\"tau-ops-no-auth-status\" data-auth-status-mode=\"none\" aria-hidden=\"false\">Credential input is hidden because localhost-dev mode is active.<",
+        "id=\"tau-ops-auth-input\" type=\"password\" autocomplete=\"off\" placeholder=\"No authentication required in localhost-dev mode\" data-auth-input-enabled=\"false\" disabled readonly hidden aria-hidden=\"true\"",
+    ] {
+        assert!(
+            html.contains(marker),
+            "none-mode login should hide credential field marker `{marker}`"
+        );
+    }
+    assert!(!html.contains("<h2>Operator Authentication</h2>"));
+}
+
+#[test]
 fn regression_spec_2786_none_login_copy_does_not_imply_auth_is_required() {
     let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
         auth_mode: TauOpsDashboardAuthMode::None,

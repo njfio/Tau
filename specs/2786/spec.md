@@ -41,6 +41,12 @@ When an operator opens `/ops/login`,
 Then the help copy explicitly says no credential is required and does not reuse
 generic gateway-auth wording that implies an auth action is required.
 
+### AC-7 No-auth login does not show a credential field
+Given the gateway maps `localhost-dev` auth to `ui_auth_mode=none`,
+When an operator opens `/ops/login`,
+Then the visible login shell uses a no-auth heading/status and hides the
+password/token input from the operator surface.
+
 ## Scope
 
 ### In Scope
@@ -49,6 +55,7 @@ generic gateway-auth wording that implies an auth action is required.
 - Gateway route wiring for `/ops/login` and context-aware `/ops` rendering.
 - Working no-auth Continue navigation for localhost-dev login shells.
 - Auth-mode-specific login help copy for the no-auth localhost-dev shell.
+- No-auth heading/status markers and hidden credential field rendering.
 - Scoped regression tests for dashboard shell and auth session behavior.
 
 ### Out of Scope
@@ -66,6 +73,8 @@ generic gateway-auth wording that implies an auth action is required.
   reaches `/ops` with theme/sidebar/session context preserved.
 - C-07 (regression): localhost-dev `/ops/login` renders no-auth help copy and
   omits generic gateway-auth instructions.
+- C-08 (regression): localhost-dev `/ops/login` hides the credential input and
+  renders an access-ready heading plus no-auth status marker.
 
 ## Success Metrics / Observable Signals
 - `cargo test -p tau-dashboard-ui -- --test-threads=1` passes with new auth/route marker coverage.
@@ -75,6 +84,8 @@ generic gateway-auth wording that implies an auth action is required.
   context.
 - Browser proof confirms live localhost-dev login copy says no credential is
   required.
+- Browser proof confirms live localhost-dev login no longer exposes a visible
+  password/token input.
 - Existing dashboard/auth regression tests continue to pass.
 
 ## Approval Gate

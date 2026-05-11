@@ -10,6 +10,8 @@
    instead of inert, preserving theme/sidebar/session context.
 7. [x] T7 (REGRESSION): make localhost-dev `/ops/login` help copy explicitly
    no-auth instead of generic gateway-auth wording.
+8. [x] T8 (REGRESSION): hide the credential field from the visible no-auth
+   localhost-dev login surface.
 
 ## Tier Mapping
 - Unit: `tau-dashboard-ui` auth marker tests.
@@ -17,7 +19,7 @@
 - Contract/DbC: N/A (no new DbC macro surfaces).
 - Snapshot: N/A.
 - Functional: auth bootstrap JSON contract tests.
-- Conformance: C-01..C-07 mapped in crate/gateway tests.
+- Conformance: C-01..C-08 mapped in crate/gateway tests.
 - Integration: `/ops` and `/ops/login` endpoint tests.
 - Fuzz: N/A (no untrusted parser added).
 - Mutation: N/A (scaffolding contract slice; no critical algorithm path).
@@ -74,3 +76,25 @@
   `id=tau-ops-login-help`, `data-auth-copy-mode=none`, copy text
   `Localhost-dev mode is active. No credential is required; continue directly
   to protected operations views.`, and no generic gateway-auth copy.
+- RED: Live Browser on
+  `/ops/login?theme=dark&sidebar=expanded&session=default` reported
+  `data-login-required=false` but still exposed a visible disabled
+  `type=password` credential field and the heading `Operator Authentication`.
+- RED: `RUST_MIN_STACK=16777216 cargo test -p tau-dashboard-ui regression_spec_2786_none_login_hides_credential_field_from_operator -- --nocapture`
+  failed before the no-auth heading/status and hidden input markers were added.
+- GREEN: `RUST_MIN_STACK=16777216 cargo test -p tau-dashboard-ui 2786 -- --nocapture`
+  passed (6 tests).
+- REGRESSION: `RUST_MIN_STACK=16777216 cargo test -p tau-gateway ops_login -- --nocapture`
+  passed (2 tests).
+- REGRESSION: `RUST_MIN_STACK=16777216 cargo test -p tau-dashboard-ui -- --nocapture`
+  passed (199 tests, 0 doc tests).
+- STATIC: `cargo fmt --check --package tau-dashboard-ui --package tau-gateway`
+  and `git diff --check` passed.
+- STATIC: `RUST_MIN_STACK=16777216 cargo clippy -p tau-dashboard-ui -p tau-gateway -- -D warnings`
+  passed.
+- BUILD: `RUST_MIN_STACK=16777216 cargo build -p tau-coding-agent` passed.
+- LIVE: Rebuilt `tau-coding-agent` running on `127.0.0.1:8795` reported
+  `auth.mode=localhost-dev`; Browser verified the heading
+  `Operator Access Ready`, visible no-auth status, hidden credential input
+  with `aria-hidden=true`, no visible DOM `<input>`, no `Operator Authentication`
+  text, and Continue still targeting `/ops` with `session=default`.

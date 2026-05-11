@@ -242,7 +242,9 @@ async fn regression_ops_login_none_mode_continue_link_reaches_ops_shell() {
         .expect("read ops login dashboard shell body");
     for marker in [
         "id=\"tau-ops-auth-shell\" data-auth-mode=\"none\" data-login-required=\"false\" data-active-route=\"login\"",
+        "id=\"tau-ops-login-heading\" data-auth-heading-mode=\"none\">Operator Access Ready<",
         "id=\"tau-ops-login-help\" data-auth-copy-mode=\"none\">Localhost-dev mode is active. No credential is required; continue directly to protected operations views.<",
+        "id=\"tau-ops-no-auth-status\" data-auth-status-mode=\"none\" aria-hidden=\"false\">Credential input is hidden because localhost-dev mode is active.<",
         "id=\"tau-ops-login-form\" data-login-continue-href=\"/ops?theme=dark&amp;sidebar=expanded&amp;session=ops-login-live\" data-login-action-enabled=\"true\"",
         "id=\"tau-ops-login-submit\" role=\"button\" href=\"/ops?theme=dark&amp;sidebar=expanded&amp;session=ops-login-live\" data-login-action=\"continue\" data-login-action-enabled=\"true\" data-continue-href=\"/ops?theme=dark&amp;sidebar=expanded&amp;session=ops-login-live\" aria-disabled=\"false\"",
     ] {
