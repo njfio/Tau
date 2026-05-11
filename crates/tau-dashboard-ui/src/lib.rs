@@ -1680,33 +1680,9 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
         "theme={theme_attr}&sidebar={sidebar_state_attr}&session={}",
         context.chat.active_session_key.clone()
     );
-    let harness_benchmark_action = format!(
-        "/ops/harness/run-benchmark?theme={theme_attr}&sidebar={sidebar_state_attr}&session={}&proposal_id={}",
-        context.chat.active_session_key.clone(), harness_selected_proposal_id
-    );
-    let harness_selected_approve_action = format!(
-        "/ops/harness/proposals/{}/approve?{}",
-        harness_selected_proposal_id, harness_action_query
-    );
-    let harness_selected_reject_action = format!(
-        "/ops/harness/proposals/{}/reject?{}",
-        harness_selected_proposal_id, harness_action_query
-    );
-    let harness_selected_dry_run_action = format!(
-        "/ops/harness/proposals/{}/dry-run?{}",
-        harness_selected_proposal_id, harness_action_query
-    );
-    let harness_selected_apply_action = format!(
-        "/ops/harness/proposals/{}/apply?{}",
-        harness_selected_proposal_id, harness_action_query
-    );
     let harness_queue_theme = theme_attr.to_string();
     let harness_queue_sidebar = sidebar_state_attr.to_string();
     let harness_queue_session_key = context.chat.active_session_key.clone();
-    let harness_new_mission_action = format!(
-        "/ops/harness/missions/draft?theme={theme_attr}&sidebar={sidebar_state_attr}&session={}&proposal_id={}",
-        context.chat.active_session_key, harness_selected_proposal_id
-    );
     let harness_history_href = format!(
         "/ops/harness?theme={theme_attr}&sidebar={sidebar_state_attr}&session={}&proposal_id={}&view=history",
         context.chat.active_session_key, harness_selected_proposal_id
@@ -1768,6 +1744,74 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     } else {
         None
     };
+    let harness_action_query_with_proposal =
+        format!("{harness_action_query}&proposal_id={harness_selected_proposal_id}");
+    let harness_history_action_query = |audit_action: &str| {
+        format!("{harness_action_query_with_proposal}&view=history&audit_action={audit_action}")
+    };
+    let harness_new_mission_query = if harness_history_view_active {
+        format!("{harness_action_query_with_proposal}&view=history")
+    } else {
+        harness_action_query_with_proposal.clone()
+    };
+    let harness_benchmark_action = if harness_history_view_active {
+        format!(
+            "/ops/harness/run-benchmark?{}",
+            harness_history_action_query("run-benchmark")
+        )
+    } else {
+        format!("/ops/harness/run-benchmark?{harness_action_query_with_proposal}")
+    };
+    let harness_selected_approve_action = if harness_history_view_active {
+        format!(
+            "/ops/harness/proposals/{}/approve?{}",
+            harness_selected_proposal_id,
+            harness_history_action_query("approve")
+        )
+    } else {
+        format!(
+            "/ops/harness/proposals/{}/approve?{}",
+            harness_selected_proposal_id, harness_action_query
+        )
+    };
+    let harness_selected_reject_action = if harness_history_view_active {
+        format!(
+            "/ops/harness/proposals/{}/reject?{}",
+            harness_selected_proposal_id,
+            harness_history_action_query("reject")
+        )
+    } else {
+        format!(
+            "/ops/harness/proposals/{}/reject?{}",
+            harness_selected_proposal_id, harness_action_query
+        )
+    };
+    let harness_selected_dry_run_action = if harness_history_view_active {
+        format!(
+            "/ops/harness/proposals/{}/dry-run?{}",
+            harness_selected_proposal_id,
+            harness_history_action_query("dry-run")
+        )
+    } else {
+        format!(
+            "/ops/harness/proposals/{}/dry-run?{}",
+            harness_selected_proposal_id, harness_action_query
+        )
+    };
+    let harness_selected_apply_action = if harness_history_view_active {
+        format!(
+            "/ops/harness/proposals/{}/apply?{}",
+            harness_selected_proposal_id,
+            harness_history_action_query("apply")
+        )
+    } else {
+        format!(
+            "/ops/harness/proposals/{}/apply?{}",
+            harness_selected_proposal_id, harness_action_query
+        )
+    };
+    let harness_new_mission_action =
+        format!("/ops/harness/missions/draft?{harness_new_mission_query}");
     let requested_audit_ref = sanitize_harness_audit_ref(&context.harness.audit_selected_ref);
     let mut harness_selected_diff_query =
         harness_artifact_context_query.clone().unwrap_or_else(|| {
@@ -1898,13 +1942,23 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
             let row_selected = if row_is_selected { "true" } else { "false" };
             let row_actionable = if row_is_proposal { "true" } else { "false" };
             let row_href = if row_is_proposal {
-                format!(
+                let base_href = format!(
                     "/ops/harness?theme={}&sidebar={}&session={}&proposal_id={}",
                     harness_queue_theme,
                     harness_queue_sidebar,
                     harness_queue_session_key,
                     row.item_id
-                )
+                );
+                if harness_history_view_active {
+                    let history_href = format!("{base_href}&view=history");
+                    if harness_history_filter_action == "all" {
+                        history_href
+                    } else {
+                        format!("{history_href}&audit_action={harness_history_filter_action}")
+                    }
+                } else {
+                    base_href
+                }
             } else {
                 "#tau-ops-harness-learning-queue".to_string()
             };

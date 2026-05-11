@@ -733,6 +733,27 @@ fn append_ops_harness_history_query_context(href: &mut String, controls: &OpsShe
     }
 }
 
+fn build_ops_harness_redirect_path_with_context(
+    theme: TauOpsDashboardTheme,
+    sidebar_state: TauOpsDashboardSidebarState,
+    session_key: &str,
+    proposal_id: &str,
+    status_key: &str,
+    status_param: &str,
+    controls: &OpsShellControlsQuery,
+) -> String {
+    let mut href = build_ops_harness_redirect_path(
+        theme,
+        sidebar_state,
+        session_key,
+        proposal_id,
+        status_key,
+        status_param,
+    );
+    append_ops_harness_history_query_context(&mut href, controls);
+    href
+}
+
 fn build_ops_session_detail_redirect_path(
     theme: TauOpsDashboardTheme,
     sidebar_state: TauOpsDashboardSidebarState,
@@ -3357,13 +3378,14 @@ pub(super) async fn handle_ops_dashboard_harness_run_benchmark(
                 );
                 format!(
                     "{}&benchmark_tasks={task_count}",
-                    build_ops_harness_redirect_path(
+                    build_ops_harness_redirect_path_with_context(
                         controls.theme(),
                         controls.sidebar_state(),
                         session_key.as_str(),
                         proposal_id.as_str(),
                         status,
                         "benchmark_status",
+                        &controls,
                     )
                 )
             } else {
@@ -3378,13 +3400,14 @@ pub(super) async fn handle_ops_dashboard_harness_run_benchmark(
                         ("proof_artifact", proof_artifact),
                     ],
                 );
-                build_ops_harness_redirect_path(
+                build_ops_harness_redirect_path_with_context(
                     controls.theme(),
                     controls.sidebar_state(),
                     session_key.as_str(),
                     proposal_id.as_str(),
                     "artifact_write_failed",
                     "benchmark_status",
+                    &controls,
                 )
             }
         }
@@ -3400,13 +3423,14 @@ pub(super) async fn handle_ops_dashboard_harness_run_benchmark(
                     ("proof_artifact", proof_artifact),
                 ],
             );
-            build_ops_harness_redirect_path(
+            build_ops_harness_redirect_path_with_context(
                 controls.theme(),
                 controls.sidebar_state(),
                 session_key.as_str(),
                 proposal_id.as_str(),
                 "failed",
                 "benchmark_status",
+                &controls,
             )
         }
     };
@@ -3743,13 +3767,14 @@ pub(super) async fn handle_ops_dashboard_harness_create_mission_draft(
         .unwrap_or("write_failed");
     let redirect_path = format!(
         "{}&mission_id={}",
-        build_ops_harness_redirect_path(
+        build_ops_harness_redirect_path_with_context(
             controls.theme(),
             controls.sidebar_state(),
             session_key.as_str(),
             proposal_id,
             mission_status,
             "mission_status",
+            &controls,
         ),
         sanitize_harness_token(&mission_id)
     );
@@ -3793,13 +3818,14 @@ pub(super) async fn handle_ops_dashboard_harness_start_mission(
         None => {
             let redirect_path = format!(
                 "{}&mission_id={mission_id}",
-                build_ops_harness_redirect_path(
+                build_ops_harness_redirect_path_with_context(
                     controls.theme(),
                     controls.sidebar_state(),
                     session_key.as_str(),
                     selected_proposal_id.as_str(),
                     "start_failed",
                     "mission_status",
+                    &controls,
                 )
             );
             return Redirect::to(redirect_path.as_str()).into_response();
@@ -3817,13 +3843,14 @@ pub(super) async fn handle_ops_dashboard_harness_start_mission(
             .and_then(|payload| std::fs::write(&mission_path, payload));
         let redirect_path = format!(
             "{}&mission_id={mission_id}",
-            build_ops_harness_redirect_path(
+            build_ops_harness_redirect_path_with_context(
                 controls.theme(),
                 controls.sidebar_state(),
                 session_key.as_str(),
                 selected_proposal_id.as_str(),
                 "start_failed",
                 "mission_status",
+                &controls,
             )
         );
         return Redirect::to(redirect_path.as_str()).into_response();
@@ -3887,13 +3914,14 @@ pub(super) async fn handle_ops_dashboard_harness_start_mission(
 
     let redirect_path = format!(
         "{}&mission_id={mission_id}",
-        build_ops_harness_redirect_path(
+        build_ops_harness_redirect_path_with_context(
             controls.theme(),
             controls.sidebar_state(),
             session_key.as_str(),
             proposal_id.as_str(),
             write_status,
             "mission_status",
+            &controls,
         )
     );
     Redirect::to(redirect_path.as_str()).into_response()
@@ -4063,13 +4091,14 @@ pub(super) async fn handle_ops_dashboard_harness_proposal_action(
         .requested_session_key()
         .map(sanitize_session_key)
         .unwrap_or_else(|| DEFAULT_SESSION_KEY.to_string());
-    let redirect_path = build_ops_harness_redirect_path(
+    let redirect_path = build_ops_harness_redirect_path_with_context(
         controls.theme(),
         controls.sidebar_state(),
         redirect_session_key.as_str(),
         proposal_id.as_str(),
         status,
         "proposal_status",
+        &controls,
     );
     Redirect::to(redirect_path.as_str()).into_response()
 }

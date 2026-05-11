@@ -1307,6 +1307,11 @@ async fn integration_spec_3757_c03_ops_harness_route_reflects_state_backed_proof
         "Audit records loaded for selected proposal PR-044.",
         "data-history-latest-action=\"Apply PR-044 Blocked Approval Required\"",
         "data-history-filter-action=\"all\" aria-current=\"page\"",
+        "href=\"/ops/harness?theme=dark&amp;sidebar=expanded&amp;session=default&amp;proposal_id=PR-044&amp;view=history\" data-proposal-link=\"PR-044\" aria-current=\"page\"",
+        "id=\"tau-ops-harness-new-mission-form\" action=\"/ops/harness/missions/draft?theme=dark&amp;sidebar=expanded&amp;session=default&amp;proposal_id=PR-044&amp;view=history\" method=\"post\"",
+        "id=\"tau-ops-harness-run-benchmark-form\" action=\"/ops/harness/run-benchmark?theme=dark&amp;sidebar=expanded&amp;session=default&amp;proposal_id=PR-044&amp;view=history&amp;audit_action=run-benchmark\" method=\"post\"",
+        "id=\"tau-ops-harness-dry-run-form\" action=\"/ops/harness/proposals/PR-044/dry-run?theme=dark&amp;sidebar=expanded&amp;session=default&amp;proposal_id=PR-044&amp;view=history&amp;audit_action=dry-run\" method=\"post\"",
+        "id=\"tau-ops-harness-apply-form\" action=\"/ops/harness/proposals/PR-044/apply?theme=dark&amp;sidebar=expanded&amp;session=default&amp;proposal_id=PR-044&amp;view=history&amp;audit_action=apply\" method=\"post\"",
         "data-tool-artifact-href=\"/ops/harness/artifacts/view/ops-harness/m334/latest.json?theme=dark&amp;sidebar=expanded&amp;session=default&amp;proposal_id=PR-044&amp;view=history\"",
         "<a href=\"/ops/harness/artifacts/view/ops-harness/m334/latest.json?theme=dark&amp;sidebar=expanded&amp;session=default&amp;proposal_id=PR-044&amp;view=history\" data-tool-proof-artifact-href=\"true\">proof</a>",
         "<a href=\"/ops/harness/artifacts/view/ops-harness/m334/latest.json?theme=dark&amp;sidebar=expanded&amp;session=default&amp;proposal_id=PR-044&amp;view=history\">Benchmark proof artifact</a>",
@@ -1376,6 +1381,56 @@ async fn integration_spec_3757_c03_ops_harness_route_reflects_state_backed_proof
         !filtered_history_body.contains("<tr data-action=\"apply\""),
         "filtered history should not include apply rows when audit_action=run-benchmark"
     );
+
+    let history_approve_response = client
+        .post(format!(
+            "http://{addr}/ops/harness/proposals/PR-044/approve?theme=dark&sidebar=expanded&session=default&proposal_id=PR-044&view=history&audit_action=approve"
+        ))
+        .send()
+        .await
+        .expect("approve from history route");
+    assert_eq!(history_approve_response.status(), StatusCode::SEE_OTHER);
+    let history_approve_location = history_approve_response
+        .headers()
+        .get(reqwest::header::LOCATION)
+        .and_then(|value| value.to_str().ok())
+        .expect("history approve location");
+    for marker in [
+        "proposal_status=approved",
+        "proposal_id=PR-044",
+        "view=history",
+        "audit_action=approve",
+    ] {
+        assert!(
+            history_approve_location.contains(marker),
+            "history approve redirect should preserve marker `{marker}` in `{history_approve_location}`"
+        );
+    }
+
+    let history_benchmark_response = client
+        .post(format!(
+            "http://{addr}/ops/harness/run-benchmark?theme=dark&sidebar=expanded&session=default&proposal_id=PR-044&view=history&audit_action=run-benchmark"
+        ))
+        .send()
+        .await
+        .expect("benchmark from history route");
+    assert_eq!(history_benchmark_response.status(), StatusCode::SEE_OTHER);
+    let history_benchmark_location = history_benchmark_response
+        .headers()
+        .get(reqwest::header::LOCATION)
+        .and_then(|value| value.to_str().ok())
+        .expect("history benchmark location");
+    for marker in [
+        "benchmark_status=passed",
+        "proposal_id=PR-044",
+        "view=history",
+        "audit_action=run-benchmark",
+    ] {
+        assert!(
+            history_benchmark_location.contains(marker),
+            "history benchmark redirect should preserve marker `{marker}` in `{history_benchmark_location}`"
+        );
+    }
 
     handle.abort();
 }
