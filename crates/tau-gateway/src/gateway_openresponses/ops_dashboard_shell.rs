@@ -1386,9 +1386,15 @@ pub(super) fn render_tau_ops_dashboard_shell_for_route(
     command_center.channel_action_channel = controls.requested_channel_action_channel().to_string();
     command_center.channel_action_reason = controls.requested_channel_action_reason().to_string();
     let chat = collect_tau_ops_dashboard_chat_snapshot(state, &controls, detail_session_key);
+    let requested_harness_audit_action = if controls.requested_harness_view() == Some("history") {
+        controls.requested_harness_audit_action()
+    } else {
+        None
+    };
     let mut harness = collect_tau_ops_dashboard_harness_snapshot(
         &state.config.state_dir,
         controls.requested_harness_proposal_id(),
+        requested_harness_audit_action,
     );
     harness.runtime_workspace_label = state.config.state_dir.display().to_string();
     harness.runtime_model_label = state.config.model.clone();
@@ -1529,6 +1535,7 @@ fn harness_proposal_test_evidence_link(
 fn collect_tau_ops_dashboard_harness_snapshot(
     state_dir: &Path,
     requested_proposal_id: Option<&str>,
+    requested_audit_action: Option<&str>,
 ) -> TauOpsDashboardHarnessSnapshot {
     let (proposal_queue_source, proposal_queue_rows) =
         collect_harness_proposal_queue_rows(state_dir);
@@ -1648,7 +1655,7 @@ fn collect_tau_ops_dashboard_harness_snapshot(
     let audit_mission_index = collect_harness_audit_mission_index(state_dir);
     let audit_path = state_dir.join("ops-harness").join("audit.jsonl");
     if let Ok(audit_jsonl) = std::fs::read_to_string(&audit_path) {
-        let audit_rows = audit_jsonl
+        let all_audit_rows = audit_jsonl
             .lines()
             .filter_map(|line| serde_json::from_str::<Value>(line).ok())
             .filter_map(|record| {
@@ -1755,10 +1762,17 @@ fn collect_tau_ops_dashboard_harness_snapshot(
                 })
             })
             .rev()
+            .collect::<Vec<_>>();
+        let audit_total_count = all_audit_rows.len();
+        let audit_rows = all_audit_rows
+            .into_iter()
+            .filter(|row| requested_audit_action.is_none_or(|action| row.action_key == action))
             .take(4)
             .collect::<Vec<_>>();
-        if !audit_rows.is_empty() {
+        if !audit_rows.is_empty() || audit_total_count > 0 {
             snapshot.audit_source = "state".to_string();
+            snapshot.audit_filter_action = requested_audit_action.unwrap_or("all").to_string();
+            snapshot.audit_total_count = audit_total_count;
             snapshot.audit_rows = audit_rows;
         }
     }

@@ -894,6 +894,8 @@ pub struct TauOpsDashboardHarnessSnapshot {
     pub mission_rows: Vec<TauOpsDashboardHarnessMissionRow>,
     pub audit_source: String,
     pub audit_rows: Vec<TauOpsDashboardHarnessAuditRow>,
+    pub audit_filter_action: String,
+    pub audit_total_count: usize,
     pub selected_proposal_id: String,
     pub proposal_queue_source: String,
     pub proposal_queue_rows: Vec<TauOpsDashboardHarnessProposalQueueRow>,
@@ -1281,6 +1283,8 @@ impl Default for TauOpsDashboardHarnessSnapshot {
                     result_key: "rejected".to_string(),
                 },
             ],
+            audit_filter_action: "all".to_string(),
+            audit_total_count: 4,
             selected_proposal_id: "PR-044".to_string(),
             proposal_queue_source: "fallback".to_string(),
             proposal_queue_rows: vec![
@@ -1572,6 +1576,17 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     let harness_task_count = context.harness.task_count.to_string();
     let harness_pass_count = context.harness.pass_count.to_string();
     let harness_audit_row_count = context.harness.audit_rows.len().to_string();
+    let harness_history_total_count = if context.harness.audit_total_count == 0 {
+        context.harness.audit_rows.len()
+    } else {
+        context.harness.audit_total_count
+    }
+    .to_string();
+    let harness_history_filter_action = if context.harness.audit_filter_action.trim().is_empty() {
+        "all".to_string()
+    } else {
+        context.harness.audit_filter_action.clone()
+    };
     let harness_history_proof_count = context
         .harness
         .audit_rows
@@ -1631,6 +1646,37 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
         "/ops/harness?theme={theme_attr}&sidebar={sidebar_state_attr}&session={}&proposal_id={}&view=history",
         context.chat.active_session_key, harness_selected_proposal_id
     );
+    let harness_history_dry_run_href = format!("{harness_history_href}&audit_action=dry-run");
+    let harness_history_apply_href = format!("{harness_history_href}&audit_action=apply");
+    let harness_history_benchmark_href =
+        format!("{harness_history_href}&audit_action=run-benchmark");
+    let harness_history_start_href = format!("{harness_history_href}&audit_action=start-mission");
+    let harness_history_filter_all_current = if harness_history_filter_action == "all" {
+        "page"
+    } else {
+        "false"
+    };
+    let harness_history_filter_dry_run_current = if harness_history_filter_action == "dry-run" {
+        "page"
+    } else {
+        "false"
+    };
+    let harness_history_filter_apply_current = if harness_history_filter_action == "apply" {
+        "page"
+    } else {
+        "false"
+    };
+    let harness_history_filter_benchmark_current =
+        if harness_history_filter_action == "run-benchmark" {
+            "page"
+        } else {
+            "false"
+        };
+    let harness_history_filter_start_current = if harness_history_filter_action == "start-mission" {
+        "page"
+    } else {
+        "false"
+    };
     let harness_overview_href = format!(
         "/ops/harness?theme={theme_attr}&sidebar={sidebar_state_attr}&session={}&proposal_id={}",
         context.chat.active_session_key, harness_selected_proposal_id
@@ -2001,7 +2047,9 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                 data-history-view="true"
                 data-history-source=context.harness.audit_source.clone()
                 data-history-row-count=harness_audit_row_count.clone()
+                data-history-total-count=harness_history_total_count.clone()
                 data-history-proof-count=harness_history_proof_count.clone()
+                data-history-action-filter=harness_history_filter_action.clone()
                 data-history-selected-proposal=harness_selected_proposal_id.clone()
                 data-history-latest-action=harness_history_latest_action.clone()
                 data-history-latest-timestamp=harness_history_latest_timestamp.clone()
@@ -2013,10 +2061,55 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     </div>
                     <a href=harness_overview_href.clone() data-history-overview-link="true">"Overview"</a>
                 </header>
+                <nav
+                    aria-label="History filters"
+                    data-history-filter-count="5"
+                    data-history-filter-current=harness_history_filter_action.clone()
+                >
+                    <a
+                        href=harness_history_href.clone()
+                        data-history-filter-action="all"
+                        aria-current=harness_history_filter_all_current
+                    >
+                        "All"
+                    </a>
+                    <a
+                        href=harness_history_dry_run_href
+                        data-history-filter-action="dry-run"
+                        aria-current=harness_history_filter_dry_run_current
+                    >
+                        "Dry Run"
+                    </a>
+                    <a
+                        href=harness_history_apply_href
+                        data-history-filter-action="apply"
+                        aria-current=harness_history_filter_apply_current
+                    >
+                        "Apply"
+                    </a>
+                    <a
+                        href=harness_history_benchmark_href
+                        data-history-filter-action="run-benchmark"
+                        aria-current=harness_history_filter_benchmark_current
+                    >
+                        "Benchmark"
+                    </a>
+                    <a
+                        href=harness_history_start_href
+                        data-history-filter-action="start-mission"
+                        aria-current=harness_history_filter_start_current
+                    >
+                        "Mission"
+                    </a>
+                </nav>
                 <dl>
                     <div>
-                        <dt>"Records"</dt>
+                        <dt>"Shown"</dt>
                         <dd>{harness_audit_row_count.clone()}</dd>
+                    </div>
+                    <div>
+                        <dt>"Total"</dt>
+                        <dd>{harness_history_total_count.clone()}</dd>
                     </div>
                     <div>
                         <dt>"Source"</dt>
@@ -6696,9 +6789,26 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 font-size: .62rem;
                                 line-height: 1.18;
                             }
+                            #tau-ops-harness-history-view nav {
+                                display: flex;
+                                flex-wrap: wrap;
+                                gap: 4px;
+                            }
+                            #tau-ops-harness-history-view nav a {
+                                border: 1px solid var(--tau-harness-line);
+                                border-radius: 4px;
+                                color: var(--tau-harness-muted);
+                                line-height: 1;
+                                padding: 4px 5px;
+                            }
+                            #tau-ops-harness-history-view nav a[aria-current="page"] {
+                                border-color: rgba(123, 214, 232, .76);
+                                color: var(--tau-harness-text);
+                                background: rgba(123, 214, 232, .12);
+                            }
                             #tau-ops-harness-history-view dl {
                                 display: grid;
-                                grid-template-columns: repeat(4, minmax(0, 1fr));
+                                grid-template-columns: repeat(5, minmax(0, 1fr));
                                 gap: 5px;
                             }
                             #tau-ops-harness-history-view dt {

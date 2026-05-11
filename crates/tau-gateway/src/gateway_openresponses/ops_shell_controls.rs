@@ -78,6 +78,8 @@ pub(super) struct OpsShellControlsQuery {
     mission_status: String,
     #[serde(default)]
     proposal_status: String,
+    #[serde(default)]
+    audit_action: String,
 }
 
 impl OpsShellControlsQuery {
@@ -177,6 +179,18 @@ impl OpsShellControlsQuery {
             "dry_run_failed" => Some("dry_run_failed"),
             "dry_run_passed" => Some("dry_run_passed"),
             "rejected" => Some("rejected"),
+            _ => None,
+        }
+    }
+
+    pub(super) fn requested_harness_audit_action(&self) -> Option<&'static str> {
+        match self.audit_action.trim() {
+            "apply" => Some("apply"),
+            "approve" => Some("approve"),
+            "dry-run" => Some("dry-run"),
+            "reject" => Some("reject"),
+            "run-benchmark" => Some("run-benchmark"),
+            "start-mission" => Some("start-mission"),
             _ => None,
         }
     }
@@ -753,17 +767,28 @@ mod tests {
         };
         assert_eq!(view.requested_harness_view(), Some("history"));
 
+        let audit = OpsShellControlsQuery {
+            audit_action: "run-benchmark".to_string(),
+            ..OpsShellControlsQuery::default()
+        };
+        assert_eq!(
+            audit.requested_harness_audit_action(),
+            Some("run-benchmark")
+        );
+
         let invalid = OpsShellControlsQuery {
             intent: "delete-all".to_string(),
             view: "unknown".to_string(),
             mission_status: "unknown".to_string(),
             proposal_status: "unknown".to_string(),
+            audit_action: "wipe".to_string(),
             ..OpsShellControlsQuery::default()
         };
         assert_eq!(invalid.requested_harness_intent(), None);
         assert_eq!(invalid.requested_harness_view(), None);
         assert_eq!(invalid.requested_harness_mission_status(), None);
         assert_eq!(invalid.requested_harness_proposal_status(), None);
+        assert_eq!(invalid.requested_harness_audit_action(), None);
     }
 
     #[test]

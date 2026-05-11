@@ -174,8 +174,9 @@ async fn integration_spec_3756_c04_ops_harness_route_renders_benchmark_and_apply
     ));
     assert!(history_body.contains("data-route-action-visible=\"true\""));
     assert!(history_body.contains(
-        "id=\"tau-ops-harness-history-view\" data-history-view=\"true\" data-history-source=\"fallback\" data-history-row-count=\"4\" data-history-proof-count=\"0\" data-history-selected-proposal=\"PR-044\""
+        "id=\"tau-ops-harness-history-view\" data-history-view=\"true\" data-history-source=\"fallback\" data-history-row-count=\"4\" data-history-total-count=\"4\" data-history-proof-count=\"0\" data-history-action-filter=\"all\" data-history-selected-proposal=\"PR-044\""
     ));
+    assert!(history_body.contains("data-history-filter-action=\"dry-run\""));
     assert!(history_body.contains("data-history-audit-anchor=\"true\""));
 
     let draft_response = client
@@ -1261,8 +1262,9 @@ async fn integration_spec_3757_c03_ops_harness_route_reflects_state_backed_proof
     assert_eq!(history_response.status(), StatusCode::OK);
     let history_body = history_response.text().await.expect("read history body");
     for marker in [
-        "id=\"tau-ops-harness-history-view\" data-history-view=\"true\" data-history-source=\"state\" data-history-row-count=\"2\" data-history-proof-count=\"1\" data-history-selected-proposal=\"PR-044\"",
+        "id=\"tau-ops-harness-history-view\" data-history-view=\"true\" data-history-source=\"state\" data-history-row-count=\"2\" data-history-total-count=\"2\" data-history-proof-count=\"1\" data-history-action-filter=\"all\" data-history-selected-proposal=\"PR-044\"",
         "data-history-latest-action=\"Apply PR-044 Blocked Approval Required\"",
+        "data-history-filter-action=\"all\" aria-current=\"page\"",
         "data-history-audit-anchor=\"true\"",
         "data-audit-row=\"true\"",
     ] {
@@ -1271,6 +1273,34 @@ async fn integration_spec_3757_c03_ops_harness_route_reflects_state_backed_proof
             "missing state-backed history marker `{marker}`"
         );
     }
+
+    let filtered_history_response = client
+        .get(format!(
+            "http://{addr}/ops/harness?theme=dark&sidebar=expanded&session=default&proposal_id=PR-044&view=history&audit_action=run-benchmark"
+        ))
+        .send()
+        .await
+        .expect("load filtered state-backed harness history route");
+    assert_eq!(filtered_history_response.status(), StatusCode::OK);
+    let filtered_history_body = filtered_history_response
+        .text()
+        .await
+        .expect("read filtered history body");
+    for marker in [
+        "id=\"tau-ops-harness-history-view\" data-history-view=\"true\" data-history-source=\"state\" data-history-row-count=\"1\" data-history-total-count=\"2\" data-history-proof-count=\"1\" data-history-action-filter=\"run-benchmark\" data-history-selected-proposal=\"PR-044\"",
+        "data-history-filter-action=\"run-benchmark\" aria-current=\"page\"",
+        "data-action=\"run-benchmark\" data-result=\"passed\"",
+        "data-audit-detail-label=\"Run\" data-audit-detail-value=\"gateway-harness-",
+    ] {
+        assert!(
+            filtered_history_body.contains(marker),
+            "missing filtered state-backed history marker `{marker}`"
+        );
+    }
+    assert!(
+        !filtered_history_body.contains("<tr data-action=\"apply\""),
+        "filtered history should not include apply rows when audit_action=run-benchmark"
+    );
 
     handle.abort();
 }
