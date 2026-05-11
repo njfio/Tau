@@ -242,6 +242,9 @@ async fn integration_spec_3132_c03_ops_channels_route_renders_channel_action_con
         "id=\"tau-ops-channels-login-0\" data-action=\"channel-login\" data-channel=\"telegram\" data-action-enabled=\"false\""
     ));
     assert!(body.contains(
+        "id=\"tau-ops-channels-login-0\" data-action=\"channel-login\" data-channel=\"telegram\" data-action-enabled=\"false\" type=\"submit\" name=\"action\" value=\"login\" aria-disabled=\"true\" disabled"
+    ));
+    assert!(body.contains(
         "id=\"tau-ops-channels-logout-0\" data-action=\"channel-logout\" data-channel=\"telegram\" data-action-enabled=\"true\""
     ));
     assert!(body.contains(

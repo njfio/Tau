@@ -30,9 +30,9 @@ AC-1: Given `/ops/channels` renders with connector rows, when the panel is
 inspected, then it exposes channel-operator visual markers and first-scan KPI
 cards for online, offline, and degraded connector counts.
 
-AC-2: Given channel action links render, when the row is inspected, then actions
-are grouped as bounded operator controls and disabled actions expose
-`aria-disabled="true"`.
+AC-2: Given channel action controls render, when the row is inspected, then
+actions are grouped as bounded operator controls and disabled actions expose
+both `aria-disabled="true"` and native `disabled` button semantics.
 
 AC-3: Given the live `/ops/channels` route is loaded in Browser Use, when the DOM
 and console are inspected, then the channel operator contract is present and
@@ -45,7 +45,7 @@ C-01 maps to AC-1: `tau-dashboard-ui` render tests assert
 channel panel header contract.
 
 C-02 maps to AC-2: `tau-dashboard-ui` render tests assert contained table
-overflow, grouped action controls, `role="button"`, and disabled action
+overflow, grouped action controls, native button controls, and disabled action
 semantics.
 
 C-03 maps to AC-3: Browser Use inspects the live localhost `/ops/channels` route

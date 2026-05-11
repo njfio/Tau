@@ -5000,8 +5000,8 @@ fn functional_spec_3797_c02_channels_route_groups_actions_as_controls() {
         "data-submit-contract=\"clicked-button-action\"",
         "data-column=\"actions\"",
         "grid-template-columns: repeat(3, minmax(78px, 1fr));",
-        "id=\"tau-ops-channels-login-0\" data-action=\"channel-login\" data-channel=\"telegram\" data-action-enabled=\"false\" type=\"submit\" name=\"action\" value=\"login\" aria-disabled=\"true\"",
-        "id=\"tau-ops-channels-logout-0\" data-action=\"channel-logout\" data-channel=\"telegram\" data-action-enabled=\"true\" type=\"submit\" name=\"action\" value=\"logout\" aria-disabled=\"false\"",
+        "id=\"tau-ops-channels-login-0\" data-action=\"channel-login\" data-channel=\"telegram\" data-action-enabled=\"false\" type=\"submit\" name=\"action\" value=\"login\" aria-disabled=\"true\" disabled",
+        "id=\"tau-ops-channels-logout-0\" data-action=\"channel-logout\" data-channel=\"telegram\" data-action-enabled=\"true\" type=\"submit\" name=\"action\" value=\"logout\" aria-disabled=\"false\">",
         "#tau-ops-channels-panel button[data-action^=\"channel-\"]",
         "#tau-ops-channels-panel button[data-action^=\"channel-\"][data-action-enabled=\"false\"]",
     ] {

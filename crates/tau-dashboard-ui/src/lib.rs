@@ -4719,12 +4719,15 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
             } else {
                 "true"
             };
+            let login_disabled = login_enabled != "true";
             let logout_aria_disabled = if logout_enabled == "true" {
                 "false"
             } else {
                 "true"
             };
+            let logout_disabled = logout_enabled != "true";
             let probe_aria_disabled = "false";
+            let probe_disabled = probe_enabled != "true";
             view! {
                 <tr
                     id=row_id
@@ -4774,6 +4777,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     name="action"
                                     value="login"
                                     aria-disabled=login_aria_disabled
+                                    disabled=login_disabled
                                 >
                                     Login
                                 </button>
@@ -4786,6 +4790,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     name="action"
                                     value="logout"
                                     aria-disabled=logout_aria_disabled
+                                    disabled=logout_disabled
                                 >
                                     Logout
                                 </button>
@@ -4798,6 +4803,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     name="action"
                                     value="probe"
                                     aria-disabled=probe_aria_disabled
+                                    disabled=probe_disabled
                                 >
                                     Probe
                                 </button>

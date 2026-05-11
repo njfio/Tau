@@ -1,6 +1,6 @@
 # Spec: Issue #3132 - ops channels action contracts
 
-Status: Reviewed
+Status: Implemented
 
 ## Problem Statement
 `/ops/channels` now renders deterministic channel list health contracts (PRD `2103`) but does not expose deterministic per-channel action contracts required by PRD item `2104`.
@@ -25,7 +25,9 @@ then each row contains deterministic `login`, `logout`, and `probe` action marke
 ### AC-2 action enabled/disabled state contracts are deterministic by liveness
 Given channel liveness is known (`open`/`online` vs `offline`/`unknown`),
 when shell HTML is produced,
-then login/logout/probe action enabled contracts are deterministic.
+then login/logout/probe action enabled contracts are deterministic and disabled
+actions render with both `aria-disabled="true"` and native `disabled` button
+semantics.
 
 ### AC-3 gateway route `/ops/channels` renders deterministic channel action contracts
 Given gateway renders `/ops/channels` from runtime fixture data,
@@ -44,6 +46,7 @@ then channels markers remain present and hidden and regressions remain green.
 | C-02 | AC-2 | Functional | channels rows with mixed liveness | render shell | action enabled/disabled contracts match deterministic mapping |
 | C-03 | AC-3 | Integration | gateway route `/ops/channels` with runtime fixture | HTTP render | deterministic action markers + action enabled contracts present |
 | C-04 | AC-4 | Regression | active route is not `/ops/channels` | render shell | channels panel markers remain present/hidden; nearby regressions pass |
+| C-05 | AC-2 | Functional/Regression | channel action is disabled by liveness | render shell and gateway route | disabled action has `aria-disabled=true` and native `disabled` semantics |
 
 ## Success Metrics / Signals
 - `cargo test -p tau-dashboard-ui spec_3132 -- --test-threads=1`
@@ -51,3 +54,11 @@ then channels markers remain present and hidden and regressions remain green.
 - `cargo test -p tau-gateway spec_3128 -- --test-threads=1`
 - `cargo fmt --check`
 - `cargo clippy -p tau-dashboard-ui -p tau-gateway -- -D warnings`
+
+## AC Verification
+| AC | Result | Evidence |
+| --- | --- | --- |
+| AC-1 | ✅ | `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo test -p tau-dashboard-ui functional_spec_3132_c01_c02_channels_route_renders_channel_action_markers -- --nocapture` covers per-row login/logout/probe action markers. |
+| AC-2 | ✅ | `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo test -p tau-dashboard-ui functional_spec_3797_c02_channels_route_groups_actions_as_controls -- --nocapture` covers disabled action native button semantics. |
+| AC-3 | ✅ | `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo test -p tau-gateway integration_spec_3132_c03_ops_channels_route_renders_channel_action_contracts -- --nocapture` covers server-rendered action contracts. |
+| AC-4 | ✅ | `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo test -p tau-dashboard-ui regression_spec_3132_c04_non_channels_routes_keep_hidden_channel_action_markers -- --nocapture` covers hidden non-channel markers. |
