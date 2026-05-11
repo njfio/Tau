@@ -6124,10 +6124,22 @@ fn functional_spec_2826_c01_c02_control_actions_expose_confirmation_markers() {
         "id=\"tau-ops-control-action-pause-value\" type=\"hidden\" name=\"action\" value=\"pause\""
     ));
     assert!(html.contains(
+        "id=\"tau-ops-control-action-pause-session\" type=\"hidden\" name=\"session\" value=\"default\""
+    ));
+    assert!(html.contains(
+        "id=\"tau-ops-control-action-pause-range\" type=\"hidden\" name=\"range\" value=\"1h\""
+    ));
+    assert!(html.contains(
         "id=\"tau-ops-control-action-form-resume\" action=\"/ops/control-action\" method=\"post\" data-action=\"resume\""
     ));
     assert!(html.contains(
         "id=\"tau-ops-control-action-form-refresh\" action=\"/ops/control-action\" method=\"post\" data-action=\"refresh\""
+    ));
+    assert!(html.contains(
+        "id=\"tau-ops-control-action-refresh-session\" type=\"hidden\" name=\"session\" value=\"default\""
+    ));
+    assert!(html.contains(
+        "id=\"tau-ops-control-action-refresh-range\" type=\"hidden\" name=\"range\" value=\"1h\""
     ));
     assert!(html.contains(
             "id=\"tau-ops-control-action-pause\" data-action-enabled=\"true\" data-action=\"pause\" data-confirm-required=\"true\" data-confirm-title=\"Confirm pause action\" data-confirm-body=\"Pause command-center processing until resumed.\" data-confirm-verb=\"pause\""
@@ -6138,6 +6150,39 @@ fn functional_spec_2826_c01_c02_control_actions_expose_confirmation_markers() {
     assert!(html.contains(
             "id=\"tau-ops-control-action-refresh\" data-action-enabled=\"true\" data-action=\"refresh\" data-confirm-required=\"true\" data-confirm-title=\"Confirm refresh action\" data-confirm-body=\"Refresh command-center state from latest runtime artifacts.\" data-confirm-verb=\"refresh\""
         ));
+}
+
+#[test]
+fn regression_spec_2826_control_action_forms_preserve_session_and_range_context() {
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        auth_mode: TauOpsDashboardAuthMode::Token,
+        active_route: TauOpsDashboardRoute::Ops,
+        theme: TauOpsDashboardTheme::Dark,
+        sidebar_state: TauOpsDashboardSidebarState::Expanded,
+        command_center: TauOpsDashboardCommandCenterSnapshot {
+            timeline_range: "6h".to_string(),
+            ..TauOpsDashboardCommandCenterSnapshot::default()
+        },
+        chat: TauOpsDashboardChatSnapshot {
+            active_session_key: "ops-live-session".to_string(),
+            ..TauOpsDashboardChatSnapshot::default()
+        },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
+    });
+
+    for marker in [
+        "id=\"tau-ops-control-action-pause-session\" type=\"hidden\" name=\"session\" value=\"ops-live-session\"",
+        "id=\"tau-ops-control-action-pause-range\" type=\"hidden\" name=\"range\" value=\"6h\"",
+        "id=\"tau-ops-control-action-resume-session\" type=\"hidden\" name=\"session\" value=\"ops-live-session\"",
+        "id=\"tau-ops-control-action-resume-range\" type=\"hidden\" name=\"range\" value=\"6h\"",
+        "id=\"tau-ops-control-action-refresh-session\" type=\"hidden\" name=\"session\" value=\"ops-live-session\"",
+        "id=\"tau-ops-control-action-refresh-range\" type=\"hidden\" name=\"range\" value=\"6h\"",
+    ] {
+        assert!(
+            html.contains(marker),
+            "control action form should preserve context marker `{marker}`"
+        );
+    }
 }
 
 #[test]

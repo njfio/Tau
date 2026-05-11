@@ -305,6 +305,71 @@ async fn integration_spec_3466_c03_ops_control_action_form_submits_dashboard_mut
 }
 
 #[tokio::test]
+async fn regression_spec_3466_ops_control_action_redirect_preserves_session_and_range_context() {
+    let temp = tempdir().expect("tempdir");
+    write_dashboard_runtime_fixture(temp.path());
+    write_dashboard_control_state_fixture(temp.path());
+    write_training_runtime_fixture(temp.path(), 0);
+    let state = test_state(temp.path(), 4_096, "secret");
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+
+    let client = Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .expect("client");
+
+    let response = client
+        .post(format!(
+            "http://{addr}{OPS_DASHBOARD_CONTROL_ACTION_ENDPOINT}"
+        ))
+        .form(&[
+            ("action", "refresh"),
+            ("reason", "ops-shell-control-panel"),
+            ("theme", "dark"),
+            ("sidebar", "expanded"),
+            ("session", "ops-live-session"),
+            ("range", "6h"),
+        ])
+        .send()
+        .await
+        .expect("submit ops control action with shell context");
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    let location = response
+        .headers()
+        .get(reqwest::header::LOCATION)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default()
+        .to_string();
+    assert_eq!(
+        location,
+        "/ops?theme=dark&sidebar=expanded&session=ops-live-session&range=6h&control_action_status=applied&control_action=refresh&control_action_reason=control_action_applied"
+    );
+
+    let redirect_response = client
+        .get(format!("http://{addr}{location}"))
+        .send()
+        .await
+        .expect("load context-preserving control action redirect body");
+    assert_eq!(redirect_response.status(), StatusCode::OK);
+    let redirect_body = redirect_response
+        .text()
+        .await
+        .expect("read context-preserving control action redirect body");
+    assert!(redirect_body.contains(
+        "id=\"tau-ops-control-action-status\" data-control-action-status=\"applied\" data-control-action=\"refresh\" data-control-action-reason=\"control_action_applied\""
+    ));
+    assert!(redirect_body.contains("data-timeline-range=\"6h\""));
+    assert!(redirect_body.contains(
+        "id=\"tau-ops-control-action-refresh-session\" type=\"hidden\" name=\"session\" value=\"ops-live-session\""
+    ));
+    assert!(redirect_body.contains(
+        "id=\"tau-ops-control-action-refresh-range\" type=\"hidden\" name=\"range\" value=\"6h\""
+    ));
+
+    handle.abort();
+}
+
+#[tokio::test]
 async fn integration_spec_3466_c01_ops_control_action_missing_action_redirects_with_missing_marker()
 {
     let temp = tempdir().expect("tempdir");

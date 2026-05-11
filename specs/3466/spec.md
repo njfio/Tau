@@ -50,6 +50,13 @@ Given unsupported `control_action_status`, `control_action`, or
 when shell controls are resolved,
 then marker values normalize to safe defaults (`idle`, `none`, `none`).
 
+### AC-5 Control-action redirects preserve supplied shell context
+Given `POST /ops/control-action` receives valid `session` and `range` form
+fields,
+when the endpoint redirects back to `/ops`,
+then the redirect location preserves the normalized shell context before the
+control-action outcome markers.
+
 ## Conformance Cases
 | Case | AC | Tier | Given | When | Then |
 | --- | --- | --- | --- | --- | --- |
@@ -58,6 +65,7 @@ then marker values normalize to safe defaults (`idle`, `none`, `none`).
 | C-03 | AC-1 | Integration | valid `resume` action | POST `/ops/control-action` | action applies and redirect includes `control_action_status=applied` |
 | C-04 | AC-3 | Functional | `/ops` query with marker params | render ops shell | control-action status panel contains normalized status/action/reason attributes |
 | C-05 | AC-4 | Unit/Functional | unsupported marker query values | resolve controls/render shell | marker contract defaults to `idle/none/none` |
+| C-06 | AC-5 | Integration/Regression | valid action payload with `session=ops-live-session` and `range=6h` | POST `/ops/control-action` | redirect preserves `session` and `range`, and redirect body renders the same form context |
 
 ## Success Metrics / Observable Signals
 - Operator-facing control-action form workflow always returns deterministic
@@ -65,6 +73,7 @@ then marker values normalize to safe defaults (`idle`, `none`, `none`).
 - Ops shell command-center includes explicit outcome markers for last form
   attempt status and reason.
 - Existing control-action mutation behavior remains preserved for valid actions.
+- Control-action form redirects do not silently reset session or timeline range.
 
 ## AC Verification
 | AC | Result | Evidence |
@@ -73,3 +82,4 @@ then marker values normalize to safe defaults (`idle`, `none`, `none`).
 | AC-2 | ✅ | `regression_spec_3466_c02_ops_control_action_invalid_action_fails_closed_with_redirect_marker` asserts invalid action path returns `303` redirect instead of raw error response and leaves control state unchanged. |
 | AC-3 | ✅ | `CARGO_TARGET_DIR=target-fast cargo test -p tau-dashboard-ui 3466 -- --nocapture` covers `functional_spec_3466_c04_*` marker panel contract and gateway integration tests assert redirect-body marker attributes. |
 | AC-4 | ✅ | `CARGO_TARGET_DIR=target-fast cargo test -p tau-gateway requested_control_action -- --nocapture` and selector `unit_requested_control_action_reason_defaults_and_normalizes_values` validate safe normalization defaults/aliases to `idle|none|none`. |
+| AC-5 | ✅ | `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo test -p tau-gateway regression_spec_3466_ops_control_action_redirect_preserves_session_and_range_context -- --nocapture` covers context-preserving redirect and body render. |

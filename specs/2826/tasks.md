@@ -7,6 +7,8 @@
 4. [x] T4 (VERIFY): run fmt/clippy/tests/mutation/guardrails and set spec status to `Implemented`.
 5. [x] T5 (REGRESSION): make unavailable command-center control actions
    native-disabled instead of clickable submit buttons.
+6. [x] T6 (REGRESSION): preserve active shell `session` and timeline `range`
+   in command-center control action form submissions.
 
 ## Tier Mapping
 - Unit: N/A.
@@ -14,12 +16,13 @@
 - Contract/DbC: N/A.
 - Snapshot: N/A.
 - Functional: control confirmation marker assertions and disabled semantics.
-- Conformance: C-01..C-05.
+- Conformance: C-01..C-06.
 - Integration: gateway `/ops` render marker assertions include disabled
   semantics for unavailable actions.
 - Fuzz: N/A.
 - Mutation: `cargo mutants --in-diff <diff-file> -p tau-dashboard-ui -p tau-gateway`.
 - Regression: phase-1A..1K contract suites.
+- Regression: disabled-action and context-preserving form-submit suites.
 - Performance: N/A.
 
 ## Verification Evidence
@@ -85,3 +88,30 @@
   the interactive snapshot showed `Resume` as disabled while `Pause` and
   `Refresh` remained enabled, and live HTML exposed
   `aria-disabled="true" disabled` only on the unavailable resume action.
+
+## Context Preservation Follow-up Evidence
+- RED: `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo test -p tau-dashboard-ui regression_spec_2826_control_action_forms_preserve_session_and_range_context -- --nocapture`
+  failed before implementation because control action forms did not include
+  hidden `session` or `range` context fields.
+- GREEN: `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo test -p tau-dashboard-ui regression_spec_2826_control_action_forms_preserve_session_and_range_context -- --nocapture`
+  passed after pause/resume/refresh forms carried the active session key and
+  timeline range.
+- SCOPED: `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo test -p tau-dashboard-ui 2826 -- --nocapture`
+  passed 3 tests, including the context-preservation regression.
+- FULL UI: `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo test -p tau-dashboard-ui -- --nocapture`
+  passed 207 tests plus doc tests.
+- HYGIENE: `cargo fmt --check --package tau-dashboard-ui --package tau-gateway`,
+  `git diff --check`, and
+  `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo clippy -p tau-dashboard-ui -p tau-gateway -- -D warnings`
+  passed.
+- BUILD: `RUST_MIN_STACK=16777216 CARGO_INCREMENTAL=0 cargo build -p tau-coding-agent`
+  passed.
+- LIVE: restarted `tau-8795` from the rebuilt binary and verified
+  `/gateway/status` reported `service_status: running`, auth mode
+  `localhost-dev`, and model `gpt-5.3-codex`.
+- BROWSER: `agent-browser` followed
+  `/ops/login?theme=dark&sidebar=expanded&session=default` -> Continue -> 6h
+  -> Refresh and landed on
+  `/ops?theme=dark&sidebar=expanded&session=default&range=6h&control_action_status=applied&control_action=refresh&control_action_reason=control_action_applied`.
+  Live HTML exposed hidden refresh fields with `session=default` and
+  `range=6h`.

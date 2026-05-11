@@ -124,6 +124,10 @@ pub(super) struct OpsDashboardControlActionForm {
     theme: String,
     #[serde(default)]
     sidebar: String,
+    #[serde(default)]
+    session: String,
+    #[serde(default)]
+    range: String,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -181,6 +185,24 @@ impl OpsDashboardControlActionForm {
 
     fn resolved_sidebar_state(&self) -> TauOpsDashboardSidebarState {
         resolve_chat_sidebar_state(self.sidebar.as_str())
+    }
+
+    fn resolved_session_key(&self) -> Option<String> {
+        let session = self.session.trim();
+        if session.is_empty() {
+            None
+        } else {
+            Some(sanitize_session_key(session))
+        }
+    }
+
+    fn resolved_timeline_range(&self) -> Option<&'static str> {
+        match self.range.trim() {
+            "" => None,
+            "6h" => Some("6h"),
+            "24h" => Some("24h"),
+            _ => Some("1h"),
+        }
     }
 }
 
@@ -671,6 +693,8 @@ fn parse_ops_channel_lifecycle_action(raw: &str) -> Option<MultiChannelLifecycle
 fn build_ops_root_redirect_path(
     theme: TauOpsDashboardTheme,
     sidebar_state: TauOpsDashboardSidebarState,
+    session_key: Option<&str>,
+    timeline_range: Option<&str>,
     control_action_status: &str,
     control_action: &str,
     control_action_reason: &str,
@@ -678,11 +702,32 @@ fn build_ops_root_redirect_path(
     let status = normalize_ops_control_action_status_marker(control_action_status);
     let action = normalize_ops_control_action_marker(control_action);
     let reason = normalize_ops_control_action_reason_marker(control_action_reason);
-    format!(
-        "{OPS_DASHBOARD_ENDPOINT}?theme={}&sidebar={}&control_action_status={status}&control_action={action}&control_action_reason={reason}",
+    let mut redirect_path = format!(
+        "{OPS_DASHBOARD_ENDPOINT}?theme={}&sidebar={}",
         theme.as_str(),
         sidebar_state.as_str()
-    )
+    );
+    if let Some(session_key) = session_key {
+        let session_key = sanitize_session_key(session_key);
+        redirect_path.push_str("&session=");
+        redirect_path.push_str(session_key.as_str());
+    }
+    if let Some(timeline_range) = timeline_range {
+        let timeline_range = match timeline_range {
+            "6h" => "6h",
+            "24h" => "24h",
+            _ => "1h",
+        };
+        redirect_path.push_str("&range=");
+        redirect_path.push_str(timeline_range);
+    }
+    redirect_path.push_str("&control_action_status=");
+    redirect_path.push_str(status);
+    redirect_path.push_str("&control_action=");
+    redirect_path.push_str(action);
+    redirect_path.push_str("&control_action_reason=");
+    redirect_path.push_str(reason);
+    redirect_path
 }
 
 fn build_ops_harness_redirect_path(
@@ -4955,6 +5000,8 @@ pub(super) async fn handle_ops_dashboard_control_action(
 ) -> Response {
     let redirect_theme = form.resolved_theme();
     let redirect_sidebar_state = form.resolved_sidebar_state();
+    let redirect_session_key = form.resolved_session_key();
+    let redirect_timeline_range = form.resolved_timeline_range();
     let Some(request) = form.resolved_action_request() else {
         state.record_ui_telemetry_event(
             "dashboard",
@@ -4964,6 +5011,8 @@ pub(super) async fn handle_ops_dashboard_control_action(
         let redirect_path = build_ops_root_redirect_path(
             redirect_theme,
             redirect_sidebar_state,
+            redirect_session_key.as_deref(),
+            redirect_timeline_range,
             "missing",
             "none",
             "missing_action",
@@ -4982,6 +5031,8 @@ pub(super) async fn handle_ops_dashboard_control_action(
             let redirect_path = build_ops_root_redirect_path(
                 redirect_theme,
                 redirect_sidebar_state,
+                redirect_session_key.as_deref(),
+                redirect_timeline_range,
                 "applied",
                 action_marker,
                 "control_action_applied",
@@ -4998,6 +5049,8 @@ pub(super) async fn handle_ops_dashboard_control_action(
             let redirect_path = build_ops_root_redirect_path(
                 redirect_theme,
                 redirect_sidebar_state,
+                redirect_session_key.as_deref(),
+                redirect_timeline_range,
                 "failed",
                 action_marker,
                 reason_marker,

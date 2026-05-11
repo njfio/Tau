@@ -9637,6 +9637,18 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                             name="sidebar"
                                             value=sidebar_state_attr
                                         />
+                                        <input
+                                            id="tau-ops-control-action-pause-session"
+                                            type="hidden"
+                                            name="session"
+                                            value=shell_nav_session_key.clone()
+                                        />
+                                        <input
+                                            id="tau-ops-control-action-pause-range"
+                                            type="hidden"
+                                            name="range"
+                                            value=timeline_range.clone()
+                                        />
                                         <button
                                             id="tau-ops-control-action-pause"
                                             data-action-enabled=action_pause_enabled_value
@@ -9682,6 +9694,18 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                             name="sidebar"
                                             value=sidebar_state_attr
                                         />
+                                        <input
+                                            id="tau-ops-control-action-resume-session"
+                                            type="hidden"
+                                            name="session"
+                                            value=shell_nav_session_key.clone()
+                                        />
+                                        <input
+                                            id="tau-ops-control-action-resume-range"
+                                            type="hidden"
+                                            name="range"
+                                            value=timeline_range.clone()
+                                        />
                                         <button
                                             id="tau-ops-control-action-resume"
                                             data-action-enabled=action_resume_enabled_value
@@ -9726,6 +9750,18 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                             type="hidden"
                                             name="sidebar"
                                             value=sidebar_state_attr
+                                        />
+                                        <input
+                                            id="tau-ops-control-action-refresh-session"
+                                            type="hidden"
+                                            name="session"
+                                            value=shell_nav_session_key.clone()
+                                        />
+                                        <input
+                                            id="tau-ops-control-action-refresh-range"
+                                            type="hidden"
+                                            name="range"
+                                            value=timeline_range.clone()
                                         />
                                         <button
                                             id="tau-ops-control-action-refresh"

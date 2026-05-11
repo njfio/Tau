@@ -33,11 +33,19 @@ When the shell renders the action button,
 Then the button also exposes `aria-disabled="true"` and native `disabled`
 semantics so unavailable actions are not clickable form submits.
 
+### AC-6 Control action forms preserve shell context
+Given a command-center control action form renders in an active shell context,
+When the form is submitted,
+Then the payload carries the current `session` and timeline `range` values so
+the redirect returns operators to the same shell context.
+
 ## Scope
 
 ### In Scope
 - `tau-dashboard-ui` command-center control button confirmation marker contracts.
 - Native disabled semantics for unavailable command-center control buttons.
+- Hidden `session` and `range` context fields on command-center control action
+  forms.
 - Gateway `/ops` integration conformance tests for confirmation markers.
 - Regression validation for phase 1A..1K command-center suites.
 
@@ -54,10 +62,13 @@ semantics so unavailable actions are not clickable form submits.
 - C-05 (regression/integration): unavailable control actions render
   `aria-disabled="true"` and native `disabled`, while enabled actions render
   `aria-disabled="false"` without native disabled semantics.
+- C-06 (regression/integration): control action forms include hidden
+  `session` and `range` fields populated from the active shell context.
 
 ## Success Metrics / Observable Signals
 - `cargo test -p tau-dashboard-ui functional_spec_2826 -- --test-threads=1` passes.
 - `cargo test -p tau-dashboard-ui regression_spec_2826_disabled_control_actions_are_native_disabled -- --nocapture` passes.
+- `cargo test -p tau-dashboard-ui regression_spec_2826_control_action_forms_preserve_session_and_range_context -- --nocapture` passes.
 - `cargo test -p tau-gateway functional_spec_2826 -- --test-threads=1` passes.
 - `cargo test -p tau-dashboard-ui functional_spec_2786 -- --test-threads=1` passes.
 - `cargo test -p tau-dashboard-ui functional_spec_2794 -- --test-threads=1` passes.
@@ -91,3 +102,6 @@ P1 multi-module slice proceeds with spec marked `Reviewed` per AGENTS.md self-ac
   - `tau-ops-control-action-resume`
   - `tau-ops-control-action-refresh`
 - Added UI and gateway conformance tests for confirmation marker payloads.
+- Added hidden context fields for each control action form:
+  - `session`
+  - `range`
