@@ -20,6 +20,9 @@ In scope:
 - Load recent harness proposal audit records from gateway state when present.
 - Link Tool Execution Evidence artifact cells to the state-backed proof artifact
   when a safe harness artifact route exists.
+- Render safe harness artifact views as operator proof pages with JSON metadata,
+  top-level key evidence, capped payload preview, raw artifact access, and
+  context-preserving return links.
 - Make `view=history` an explicit audit-history summary rather than only a
   topbar acknowledgement.
 - Preserve deterministic fallback values when no gateway state exists.
@@ -59,7 +62,10 @@ available for tests, demos, and offline rendering.
 Given state-backed proof has tool evidence rows,
 when an operator opens `/ops/harness`,
 then each row's artifact cell links to the corresponding harness artifact view
-instead of rendering proof evidence as inert text.
+instead of rendering proof evidence as inert text. When an operator opens that
+artifact view, the page exposes the normalized artifact path, byte counts, JSON
+kind, top-level JSON keys when present, a capped preview, a raw artifact link,
+and a return link that preserves supplied harness shell/history context.
 
 ### AC-5 History view exposes audit summary proof
 
@@ -79,7 +85,7 @@ proof artifacts.
 | C-01 | AC-1, AC-3 | Functional | custom harness snapshot | shell renders | benchmark panel uses custom counts and category rows |
 | C-02 | AC-2, AC-3 | Functional | custom harness snapshot | shell renders | audit table uses custom action rows |
 | C-03 | AC-1, AC-2 | Integration | gateway state after benchmark/action POSTs | GET `/ops/harness` | page contains state-backed proof and audit markers |
-| C-04 | AC-4 | Functional, Integration | state-backed proof artifact | shell renders | tool evidence artifact cells link to `/ops/harness/artifacts/view/...` |
+| C-04 | AC-4 | Functional, Integration | state-backed proof artifact | shell renders and artifact route opens | tool evidence artifact cells link to `/ops/harness/artifacts/view/...`; artifact view exposes JSON metadata, proof keys, raw access, and preserved return context |
 | C-05 | AC-5 | Functional, Integration | history route request | GET `/ops/harness?view=history`, `audit_action=run-benchmark`, and `audit_ref=<row-ref>` | page contains dedicated history summary, route-backed audit filter state, selected audit detail, capped proof preview, and audit anchor |
 
 ## Success Metrics / Observable Signals
@@ -89,6 +95,8 @@ proof artifacts.
   next `/ops/harness` render.
 - Tool evidence rows expose state-backed proof links in both UI and gateway
   route tests.
+- Artifact view route exposes JSON/top-level-key proof and preserves supplied
+  harness shell/history context for return navigation.
 - History view exposes state-backed audit summary counts instead of only a
   route-action banner.
 - History view audit filters are route-backed and narrow state audit rows

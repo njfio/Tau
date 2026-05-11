@@ -377,9 +377,21 @@ async fn integration_spec_3756_c05_ops_harness_actions_execute_and_persist_proof
         .text()
         .await
         .expect("read benchmark artifact view body");
-    assert!(artifact_view_body.contains("id=\"tau-ops-harness-artifact-view\""));
-    assert!(artifact_view_body.contains("data-artifact-path=\"ops-harness/m334/latest.json\""));
-    assert!(artifact_view_body.contains("m334-tranche-one-autonomy"));
+    for marker in [
+        "id=\"tau-ops-harness-artifact-view\"",
+        "data-artifact-path=\"ops-harness/m334/latest.json\"",
+        "data-artifact-json=\"true\"",
+        "data-artifact-json-kind=\"object\"",
+        "data-artifact-top-level-key-count=\"",
+        "data-artifact-json-key=\"benchmark_id\"",
+        "data-artifact-raw-link=\"true\"",
+        "m334-tranche-one-autonomy",
+    ] {
+        assert!(
+            artifact_view_body.contains(marker),
+            "missing benchmark artifact view marker `{marker}`"
+        );
+    }
 
     let harness_memory_records = gateway_memory_store(&state_dir, "ops-harness-context")
         .list_latest_records(
@@ -991,7 +1003,7 @@ async fn integration_ops_harness_proposal_registry_renders_selected_proposal() {
 
     let evidence_response = client
         .get(format!(
-            "http://{addr}/ops/harness/artifacts/view/ops-harness/self-improvement/PR-045/dry-run-result.json"
+            "http://{addr}/ops/harness/artifacts/view/ops-harness/self-improvement/PR-045/dry-run-result.json?theme=dark&sidebar=collapsed&session=ops-harness-context&proposal_id=PR-045&view=history&audit_action=dry-run&audit_ref=1778419581966"
         ))
         .send()
         .await
@@ -1000,6 +1012,12 @@ async fn integration_ops_harness_proposal_registry_renders_selected_proposal() {
     let evidence_body = evidence_response.text().await.expect("evidence body");
     for marker in [
         "id=\"tau-ops-harness-artifact-view\"",
+        "data-artifact-json=\"true\"",
+        "data-artifact-json-kind=\"object\"",
+        "data-artifact-json-key=\"proposal_id\"",
+        "data-artifact-json-key=\"summary\"",
+        "data-artifact-return-link=\"true\"",
+        "href=\"/ops/harness?theme=dark&amp;sidebar=collapsed&amp;session=ops-harness-context&amp;proposal_id=PR-045&amp;view=history&amp;audit_action=dry-run&amp;audit_ref=1778419581966\"",
         "ops-harness/self-improvement/PR-045/dry-run-result.json",
         "Dry-run passed for deterministic benchmark artifact naming.",
     ] {

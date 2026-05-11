@@ -2189,6 +2189,122 @@ fn read_harness_state_artifact(
 }
 
 const HARNESS_AUDIT_ARTIFACT_PREVIEW_LIMIT: usize = 2048;
+const HARNESS_ARTIFACT_VIEW_PREVIEW_LIMIT: usize = 8192;
+
+#[derive(Debug, Clone)]
+struct HarnessArtifactViewMetadata {
+    json_valid: bool,
+    json_kind: &'static str,
+    top_level_keys: Vec<String>,
+}
+
+fn harness_artifact_json_kind(value: &Value) -> &'static str {
+    match value {
+        Value::Array(_) => "array",
+        Value::Bool(_) => "boolean",
+        Value::Null => "null",
+        Value::Number(_) => "number",
+        Value::Object(_) => "object",
+        Value::String(_) => "string",
+    }
+}
+
+fn describe_harness_artifact_payload(payload: &str) -> HarnessArtifactViewMetadata {
+    match serde_json::from_str::<Value>(payload) {
+        Ok(value) => {
+            let top_level_keys = value
+                .as_object()
+                .map(|object| object.keys().cloned().collect::<Vec<_>>())
+                .unwrap_or_default();
+            HarnessArtifactViewMetadata {
+                json_valid: true,
+                json_kind: harness_artifact_json_kind(&value),
+                top_level_keys,
+            }
+        }
+        Err(_) => HarnessArtifactViewMetadata {
+            json_valid: false,
+            json_kind: "text",
+            top_level_keys: Vec::new(),
+        },
+    }
+}
+
+fn cap_harness_artifact_preview(payload: &str, limit: usize) -> (&str, bool) {
+    if payload.len() <= limit {
+        return (payload, false);
+    }
+
+    let mut end = limit;
+    while end > 0 && !payload.is_char_boundary(end) {
+        end -= 1;
+    }
+    (&payload[..end], true)
+}
+
+fn infer_harness_artifact_proposal_id(artifact_path: &str) -> Option<String> {
+    let normalized = normalize_harness_state_artifact_path(artifact_path)?;
+    let components = normalized
+        .components()
+        .filter_map(|component| match component {
+            Component::Normal(part) => part.to_str(),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    if components.len() >= 3
+        && components[0] == "ops-harness"
+        && components[1] == "self-improvement"
+    {
+        let proposal_id = sanitize_harness_token(components[2]);
+        if find_ops_harness_proposal(&proposal_id).is_some() {
+            return Some(proposal_id);
+        }
+    }
+
+    None
+}
+
+fn build_ops_harness_artifact_return_href(
+    controls: &OpsShellControlsQuery,
+    artifact_path: &str,
+) -> String {
+    let session_key = controls
+        .requested_session_key()
+        .map(sanitize_session_key)
+        .unwrap_or_else(|| DEFAULT_SESSION_KEY.to_string());
+    let proposal_id = controls
+        .requested_harness_proposal_id()
+        .map(sanitize_harness_token)
+        .or_else(|| infer_harness_artifact_proposal_id(artifact_path))
+        .or_else(|| {
+            list_ops_harness_proposals()
+                .first()
+                .map(|proposal| sanitize_harness_token(proposal.proposal_id))
+        })
+        .unwrap_or_else(|| "unknown".to_string());
+
+    let mut href = build_ops_harness_context_href(
+        controls.theme(),
+        controls.sidebar_state(),
+        &session_key,
+        &proposal_id,
+    );
+
+    if controls.requested_harness_view() == Some("history") {
+        href.push_str("&view=history");
+        if let Some(audit_action) = controls.requested_harness_audit_action() {
+            href.push_str("&audit_action=");
+            href.push_str(audit_action);
+        }
+        if let Some(audit_ref) = controls.requested_harness_audit_ref() {
+            href.push_str("&audit_ref=");
+            href.push_str(&audit_ref);
+        }
+    }
+
+    href
+}
 
 fn sanitize_harness_audit_ref(raw: &str) -> String {
     raw.chars()
@@ -3315,6 +3431,7 @@ pub(super) async fn handle_ops_dashboard_harness_artifact(
 
 pub(super) async fn handle_ops_dashboard_harness_artifact_view(
     State(state): State<Arc<GatewayOpenResponsesServerState>>,
+    Query(controls): Query<OpsShellControlsQuery>,
     AxumPath(artifact_path): AxumPath<String>,
 ) -> Response {
     let Some((_absolute_path, payload)) = read_harness_state_artifact(&state, &artifact_path)
@@ -3327,7 +3444,40 @@ pub(super) async fn handle_ops_dashboard_harness_artifact_view(
     };
     let escaped_path = escape_harness_artifact_html(&artifact_path);
     let raw_href = format!("/ops/harness/artifacts/{escaped_path}");
-    let escaped_payload = escape_harness_artifact_html(&payload);
+    let return_href = build_ops_harness_artifact_return_href(&controls, &artifact_path);
+    let escaped_return_href = escape_harness_artifact_html(&return_href);
+    let metadata = describe_harness_artifact_payload(&payload);
+    let (preview_payload, preview_truncated) =
+        cap_harness_artifact_preview(&payload, HARNESS_ARTIFACT_VIEW_PREVIEW_LIMIT);
+    let escaped_payload = escape_harness_artifact_html(preview_payload);
+    let byte_count = payload.len();
+    let preview_byte_count = preview_payload.len();
+    let preview_limit = HARNESS_ARTIFACT_VIEW_PREVIEW_LIMIT;
+    let preview_truncated_attr = if preview_truncated { "true" } else { "false" };
+    let json_valid_attr = if metadata.json_valid { "true" } else { "false" };
+    let key_count = metadata.top_level_keys.len();
+    let key_list = if metadata.top_level_keys.is_empty() {
+        r#"<li data-artifact-json-key="none">No top-level JSON object keys</li>"#.to_string()
+    } else {
+        metadata
+            .top_level_keys
+            .iter()
+            .map(|key| {
+                let escaped_key = escape_harness_artifact_html(key);
+                format!(r#"<li data-artifact-json-key="{escaped_key}">{escaped_key}</li>"#)
+            })
+            .collect::<Vec<_>>()
+            .join("\n          ")
+    };
+    let summary_label = if metadata.json_valid {
+        format!(
+            "{} JSON artifact, {byte_count} bytes, {key_count} top-level keys",
+            metadata.json_kind
+        )
+    } else {
+        format!("text artifact, {byte_count} bytes, JSON parse unavailable")
+    };
+    let escaped_summary_label = escape_harness_artifact_html(&summary_label);
     Html(format!(
         r#"<!doctype html>
 <html lang="en">
@@ -3335,19 +3485,84 @@ pub(super) async fn handle_ops_dashboard_harness_artifact_view(
   <meta charset="utf-8">
   <title>Tau Harness Artifact - {escaped_path}</title>
   <style>
-    body {{ margin: 0; background: #07131d; color: #d9e7ef; font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }}
-    main {{ padding: 24px; }}
+    body {{ margin: 0; background: #07131d; color: #d9e7ef; font: 14px/1.5 Inter, ui-sans-serif, system-ui, sans-serif; }}
+    main {{ max-width: 1120px; margin: 0 auto; padding: 24px; }}
+    header {{ display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 18px; }}
+    h1 {{ margin: 0 0 8px; font-size: 20px; font-weight: 650; letter-spacing: 0; }}
+    p {{ margin: 0; color: #9fb4c3; }}
     a {{ color: #74b9ff; }}
-    pre {{ white-space: pre-wrap; overflow-wrap: anywhere; background: #0d1c28; border: 1px solid #263b4b; border-radius: 6px; padding: 16px; }}
+    .actions {{ display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }}
+    .actions a {{ border: 1px solid #2f4b5e; border-radius: 6px; padding: 7px 10px; text-decoration: none; background: #0d1c28; }}
+    .grid {{ display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 360px); gap: 16px; align-items: start; }}
+    section {{ background: #0b1a25; border: 1px solid #233949; border-radius: 8px; padding: 14px; }}
+    h2 {{ margin: 0 0 10px; font-size: 13px; letter-spacing: .03em; text-transform: uppercase; color: #a7c6d8; }}
+    dl {{ display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 12px; margin: 0; }}
+    dt {{ color: #7890a0; }}
+    dd {{ margin: 0; overflow-wrap: anywhere; }}
+    ul {{ display: flex; flex-wrap: wrap; gap: 8px; list-style: none; padding: 0; margin: 0; }}
+    li {{ border: 1px solid #2d5367; border-radius: 999px; padding: 4px 8px; background: #102637; color: #c5e2ef; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }}
+    pre {{ white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; background: #07131d; border: 1px solid #263b4b; border-radius: 6px; padding: 16px; color: #d9e7ef; font: 13px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }}
+    .preview {{ margin-top: 16px; }}
+    .truncate {{ margin-top: 10px; color: #f1c40f; }}
+    @media (max-width: 820px) {{ header {{ flex-direction: column; }} .actions {{ justify-content: flex-start; }} .grid {{ grid-template-columns: 1fr; }} }}
   </style>
 </head>
 <body>
-  <main id="tau-ops-harness-artifact-view" data-artifact-path="{escaped_path}">
-    <p><a href="{raw_href}">Raw artifact</a></p>
-    <pre>{escaped_payload}</pre>
+  <main
+    id="tau-ops-harness-artifact-view"
+    data-artifact-path="{escaped_path}"
+    data-artifact-json="{json_valid_attr}"
+    data-artifact-json-kind="{json_kind}"
+    data-artifact-top-level-key-count="{key_count}"
+    data-artifact-byte-count="{byte_count}"
+    data-artifact-preview-byte-count="{preview_byte_count}"
+    data-artifact-preview-limit="{preview_limit}"
+    data-artifact-preview-truncated="{preview_truncated_attr}"
+    data-artifact-return-href="{escaped_return_href}"
+  >
+    <header>
+      <div>
+        <h1>Tau Harness Artifact</h1>
+        <p>{escaped_path}</p>
+      </div>
+      <nav class="actions" aria-label="Artifact actions">
+        <a href="{escaped_return_href}" data-artifact-return-link="true">Back to harness</a>
+        <a href="{raw_href}" data-artifact-raw-link="true">Raw artifact</a>
+      </nav>
+    </header>
+    <div class="grid">
+      <section aria-labelledby="artifact-summary-heading">
+        <h2 id="artifact-summary-heading">Artifact Summary</h2>
+        <dl>
+          <dt>Path</dt><dd>{escaped_path}</dd>
+          <dt>Kind</dt><dd>{json_kind}</dd>
+          <dt>Bytes</dt><dd>{byte_count}</dd>
+          <dt>Preview</dt><dd>{preview_byte_count} / {preview_limit} bytes</dd>
+          <dt>Summary</dt><dd>{escaped_summary_label}</dd>
+        </dl>
+      </section>
+      <section aria-labelledby="artifact-keys-heading">
+        <h2 id="artifact-keys-heading">Top-Level JSON Keys</h2>
+        <ul data-artifact-json-key-list="true">
+          {key_list}
+        </ul>
+      </section>
+    </div>
+    <section class="preview" aria-labelledby="artifact-preview-heading">
+      <h2 id="artifact-preview-heading">Payload Preview</h2>
+      <pre>{escaped_payload}</pre>
+      <p class="truncate" data-artifact-preview-truncation-note="{preview_truncated_attr}">{truncate_note}</p>
+    </section>
   </main>
 </body>
 </html>"#
+,
+        json_kind = metadata.json_kind,
+        truncate_note = if preview_truncated {
+            "Preview is capped; open the raw artifact for the complete payload."
+        } else {
+            "Complete payload shown."
+        }
     ))
     .into_response()
 }

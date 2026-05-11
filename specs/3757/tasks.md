@@ -17,6 +17,9 @@ Status: Implemented
   links and proof artifact continuity inside the history view.
 - [x] T9 (GREEN): render capped inline selected proof artifact previews for
   safe `ops-harness/...` audit artifacts.
+- [x] T10 (GREEN): upgrade safe harness artifact views with JSON metadata,
+  top-level key proof, capped payload preview, raw artifact access, and
+  context-preserving return links.
 
 ## Verification Evidence
 
@@ -77,6 +80,25 @@ Status: Implemented
   passed.
 - STATIC: `git diff --check` passed.
 - BUILD: `cargo build -p tau-coding-agent` passed.
+- GREEN: `cargo test -p tau-dashboard-ui functional_harness_history_view_surfaces_state_audit_summary`
+  passed with context-preserving selected artifact links (1 test).
+- GREEN: `cargo test -p tau-gateway integration_spec_3757_c03_ops_harness_route_reflects_state_backed_proof_and_audit`
+  passed with structured harness artifact view markers (1 test).
+- REGRESSION: `cargo test -p tau-dashboard-ui harness` passed (52 tests).
+- REGRESSION: `cargo test -p tau-gateway ops_harness -- --test-threads=1`
+  passed (6 tests).
+- STATIC: `cargo clippy -p tau-dashboard-ui -p tau-gateway -- -D warnings`
+  passed.
+- STATIC: `cargo fmt --check -p tau-dashboard-ui -p tau-gateway` passed.
+- STATIC: `git diff --check` passed.
+- BUILD: `cargo build -p tau-coding-agent` passed.
+- LIVE: Browser on `/ops/harness?view=history&audit_ref=1778419581966`
+  found one selected proof link preserving `theme`, `sidebar`, `session`,
+  `proposal_id`, `view=history`, and `audit_ref`.
+- LIVE: Browser click opened
+  `/ops/harness/artifacts/view/ops-harness/self-improvement/PR-045/dry-run-result.json`
+  with `data-artifact-json="true"`, JSON kind `object`, 6 top-level keys,
+  195 bytes, `truncated=false`, raw artifact access, and a history return link.
 - LIVE: Browser on `/ops/harness?view=history` found 4 Inspect links; clicking
   an audit row navigated to `audit_ref=1778419581966`, selected exactly one
   matching audit row, and rendered the selected detail panel with proof artifact

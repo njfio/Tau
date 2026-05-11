@@ -683,6 +683,16 @@ fn harness_ops_artifact_href(proof_artifact: &str) -> Option<String> {
     is_ops_harness_artifact.then(|| format!("/ops/harness/artifacts/view/{trimmed}"))
 }
 
+fn harness_ops_artifact_href_with_query(
+    proof_artifact: &str,
+    query: Option<&str>,
+) -> Option<String> {
+    harness_ops_artifact_href(proof_artifact).map(|href| match query {
+        Some(query) if !query.is_empty() => format!("{href}?{query}"),
+        _ => href,
+    })
+}
+
 fn sanitize_harness_audit_ref(raw: &str) -> String {
     raw.chars()
         .filter_map(|ch| {
@@ -1725,6 +1735,17 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     } else {
         format!("{harness_history_href}&audit_action={harness_history_filter_action}")
     };
+    let harness_history_artifact_base_query = if harness_history_filter_action == "all" {
+        format!(
+            "theme={theme_attr}&sidebar={sidebar_state_attr}&session={}&proposal_id={}&view=history",
+            context.chat.active_session_key, harness_selected_proposal_id
+        )
+    } else {
+        format!(
+            "theme={theme_attr}&sidebar={sidebar_state_attr}&session={}&proposal_id={}&view=history&audit_action={harness_history_filter_action}",
+            context.chat.active_session_key, harness_selected_proposal_id
+        )
+    };
     let requested_audit_ref = sanitize_harness_audit_ref(&context.harness.audit_selected_ref);
     let harness_history_selected_audit_index = context
         .harness
@@ -2105,8 +2126,14 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     }
                     .into_any()
                 } else {
-                    let proof_href = harness_ops_artifact_href(&row.proof_artifact)
-                        .unwrap_or_else(|| row.proof_artifact.clone());
+                    let artifact_query = harness_history_view_active.then(|| {
+                        format!("{harness_history_artifact_base_query}&audit_ref={audit_row_ref}")
+                    });
+                    let proof_href = harness_ops_artifact_href_with_query(
+                        &row.proof_artifact,
+                        artifact_query.as_deref(),
+                    )
+                    .unwrap_or_else(|| row.proof_artifact.clone());
                     view! {
                         <a
                             href=proof_href
@@ -2192,6 +2219,11 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
         } else {
             selected_row.proof_artifact.clone()
         };
+        let selected_artifact_query = harness_history_view_active.then(|| {
+            format!(
+                "{harness_history_artifact_base_query}&audit_ref={harness_history_selected_audit_ref}"
+            )
+        });
         let selected_preview_visible =
             context.harness.audit_selected_artifact_preview_status == "loaded";
         let selected_preview_visible_attr = if selected_preview_visible {
@@ -2236,30 +2268,33 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
         } else {
             "Proof artifact preview is unavailable for this record.".to_string()
         };
-        let selected_proof_link = harness_ops_artifact_href(&selected_row.proof_artifact)
-            .map(|proof_href| {
-                view! {
-                    <a
-                        href=proof_href
-                        data-history-selected-proof-link="true"
-                        data-history-selected-proof-artifact=selected_row.proof_artifact.clone()
-                    >
-                        {selected_row.proof_artifact.clone()}
-                    </a>
-                }
-                .into_any()
-            })
-            .unwrap_or_else(|| {
-                view! {
-                    <span
-                        data-history-selected-proof-link="false"
-                        data-history-selected-proof-artifact=selected_row.proof_artifact.clone()
-                    >
-                        {selected_proof_label.clone()}
-                    </span>
-                }
-                .into_any()
-            });
+        let selected_proof_link = harness_ops_artifact_href_with_query(
+            &selected_row.proof_artifact,
+            selected_artifact_query.as_deref(),
+        )
+        .map(|proof_href| {
+            view! {
+                <a
+                    href=proof_href
+                    data-history-selected-proof-link="true"
+                    data-history-selected-proof-artifact=selected_row.proof_artifact.clone()
+                >
+                    {selected_row.proof_artifact.clone()}
+                </a>
+            }
+            .into_any()
+        })
+        .unwrap_or_else(|| {
+            view! {
+                <span
+                    data-history-selected-proof-link="false"
+                    data-history-selected-proof-artifact=selected_row.proof_artifact.clone()
+                >
+                    {selected_proof_label.clone()}
+                </span>
+            }
+            .into_any()
+        });
         leptos::either::Either::Left(view! {
             <section
                 id="tau-ops-harness-history-detail"
