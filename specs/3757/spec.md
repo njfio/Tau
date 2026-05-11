@@ -89,7 +89,9 @@ Proposal review links opened from history, including `View Diff`, preserve the
 same selected proposal and history query context, and the diff page back link
 returns to that history context. Proposal queue links and operator action forms
 rendered inside history mode preserve the selected history context, and action
-redirects return to history with the matching action filter.
+redirects return to history with the matching action filter. The active topbar
+`History` tab preserves the selected history action filter and selected audit
+record reference, leaving the explicit `All` history filter as the reset path.
 
 ## Conformance Cases
 
@@ -124,6 +126,8 @@ redirects return to history with the matching action filter.
   proposal and history query context.
 - History view proposal queue links, operator action form targets, and operator
   action redirects preserve selected proposal plus history context.
+- Active history tab navigation preserves the selected audit action filter and
+  selected audit reference instead of clearing the current proof context.
 - History view proof previews are capped, state-backed, and only read normalized
   `ops-harness/...` artifact paths.
 - History route promotes the audit-history surface before the default dashboard

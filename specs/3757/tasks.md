@@ -307,3 +307,31 @@ Status: Implemented
   `/ops/harness?proposal_id=PR-045&view=history&audit_action=dry-run` found the
   PR-044 and PR-045 queue links and dry-run form all preserving
   `audit_action=dry-run` in addition to `view=history`.
+- T18: Preserve the selected history action filter and selected audit reference
+  on the active topbar `History` tab, while keeping the explicit history `All`
+  filter as the reset path.
+- RED: Live Browser on
+  `/ops/harness?proposal_id=PR-045&view=history&audit_action=dry-run&audit_ref=1778419944988`
+  showed the active topbar `History` href preserving `proposal_id=PR-045` and
+  `view=history`, but clearing `audit_action=dry-run` and the selected
+  `audit_ref`.
+- GREEN: `RUST_MIN_STACK=16777216 cargo test -p tau-dashboard-ui functional_harness_history_view_surfaces_state_audit_summary -- --nocapture`
+  passed with the active topbar `History` marker preserving proposal, history
+  filter, and selected audit reference (1 test).
+- REGRESSION: `RUST_MIN_STACK=16777216 cargo test -p tau-dashboard-ui functional_spec_37 -- --nocapture`
+  passed (45 tests).
+- REGRESSION: `RUST_MIN_STACK=16777216 cargo test -p tau-dashboard-ui -- --nocapture`
+  passed (194 tests, 0 doc tests).
+- STATIC: `cargo fmt --check --package tau-dashboard-ui --package tau-gateway`
+  passed.
+- STATIC: `git diff --check` passed.
+- STATIC: `RUST_MIN_STACK=16777216 cargo clippy -p tau-dashboard-ui -p tau-gateway -- -D warnings`
+  passed.
+- BUILD: `RUST_MIN_STACK=16777216 cargo build -p tau-coding-agent` passed.
+- LIVE: Browser on
+  `/ops/harness?proposal_id=PR-045&view=history&audit_action=dry-run&audit_ref=1778419944988`
+  against the restarted `127.0.0.1:8795` harness found the active topbar
+  `History` href preserving `proposal_id=PR-045`, `view=history`,
+  `audit_action=dry-run`, and `audit_ref=1778419944988`; clicking that visible
+  `History` link kept the same URL context and the selected audit detail panel
+  remained visible.

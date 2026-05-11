@@ -1861,11 +1861,16 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     } else {
         "false"
     };
-    let harness_history_current_href = if harness_history_filter_action == "all" {
+    let requested_audit_ref = sanitize_harness_audit_ref(&context.harness.audit_selected_ref);
+    let mut harness_history_current_href = if harness_history_filter_action == "all" {
         harness_history_href.clone()
     } else {
         format!("{harness_history_href}&audit_action={harness_history_filter_action}")
     };
+    if !requested_audit_ref.is_empty() {
+        harness_history_current_href.push_str("&audit_ref=");
+        harness_history_current_href.push_str(requested_audit_ref.as_str());
+    }
     let harness_history_scope_label = if harness_selected_proposal_id.trim().is_empty() {
         "current harness state".to_string()
     } else {
@@ -1955,7 +1960,6 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     };
     let harness_new_mission_action =
         format!("/ops/harness/missions/draft?{harness_new_mission_query}");
-    let requested_audit_ref = sanitize_harness_audit_ref(&context.harness.audit_selected_ref);
     let mut harness_selected_diff_query =
         harness_artifact_context_query.clone().unwrap_or_else(|| {
             format!("{harness_action_query}&proposal_id={harness_selected_proposal_id}")
@@ -8682,7 +8686,8 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                         data-action-contract="context-preserving"
                                         data-preserves-session="true"
                                         data-preserves-proposal="true"
-                                        href=harness_history_href
+                                        data-preserves-history-context="true"
+                                        href=harness_history_current_href.clone()
                                     >
                                         "History"
                                     </a>
