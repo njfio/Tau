@@ -575,6 +575,12 @@ async fn functional_spec_2830_c01_ops_chat_shell_exposes_send_form_and_fallback_
     let selector_index = body
         .find("id=\"tau-ops-chat-session-selector\"")
         .expect("session selector marker should render");
+    let new_session_form_index = body
+        .find("id=\"tau-ops-chat-new-session-form\"")
+        .expect("new-session form marker should render");
+    let new_session_status_index = body
+        .find("id=\"tau-ops-chat-new-session-status\"")
+        .expect("new-session status marker should render");
     assert!(
         send_form_index < selector_index,
         "chat composer should render before historical session selector"
@@ -582,6 +588,14 @@ async fn functional_spec_2830_c01_ops_chat_shell_exposes_send_form_and_fallback_
     assert!(
         send_status_index < selector_index,
         "send status should render before historical session selector"
+    );
+    assert!(
+        send_form_index < new_session_form_index,
+        "chat composer should render before secondary new-session creation"
+    );
+    assert!(
+        send_status_index < new_session_status_index,
+        "send status should render before secondary new-session status"
     );
     assert!(body.contains(
         "id=\"tau-ops-chat-transcript\" data-message-count=\"0\" data-rendered-row-count=\"1\""

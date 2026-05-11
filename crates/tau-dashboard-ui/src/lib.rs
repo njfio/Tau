@@ -6290,122 +6290,6 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 </nav>
                             </article>
                             <form
-                                id="tau-ops-chat-new-session-form"
-                                action=chat_new_session_form_action
-                                method=chat_new_session_form_method
-                                data-active-session-key=chat_session_key.clone()
-                                data-empty-session-key-guard="true"
-                            >
-                                <label for="tau-ops-chat-new-session-key">New Session</label>
-                                <input
-                                    id="tau-ops-chat-new-session-key"
-                                    type="text"
-                                    name="session_key"
-                                    value=""
-                                    autocomplete="off"
-                                />
-                                <input
-                                    id="tau-ops-chat-new-active-session-key"
-                                    type="hidden"
-                                    name="active_session_key"
-                                    value=chat_session_key.clone()
-                                />
-                                <input
-                                    id="tau-ops-chat-new-theme"
-                                    type="hidden"
-                                    name="theme"
-                                    value=theme_attr
-                                />
-                                <input
-                                    id="tau-ops-chat-new-sidebar"
-                                    type="hidden"
-                                    name="sidebar"
-                                    value=sidebar_state_attr
-                                />
-                                <button id="tau-ops-chat-new-session-button" type="submit">
-                                    Create Session
-                                </button>
-                            </form>
-                            <script
-                                id="tau-ops-chat-new-session-guard"
-                                data-empty-session-key-guard="true"
-                            >
-                                r#"
-                                (function () {
-                                    function installNewSessionGuard() {
-                                        var newSessionForm = document.getElementById("tau-ops-chat-new-session-form");
-                                        var newSessionInput = document.getElementById("tau-ops-chat-new-session-key");
-                                        if (!newSessionForm || !newSessionInput || newSessionForm.getAttribute("data-new-session-guard-bound") === "true") {
-                                            return;
-                                        }
-
-                                        newSessionForm.setAttribute("data-new-session-guard-bound", "true");
-
-                                        function sessionKeyIsEmpty() {
-                                            return !newSessionInput.value || !newSessionInput.value.trim();
-                                        }
-
-                                        function markEmptySessionBlocked() {
-                                            newSessionInput.setAttribute("data-submit-blocked", "empty-session-key");
-                                            newSessionForm.setAttribute("data-submit-blocked", "empty-session-key");
-                                            var status = document.getElementById("tau-ops-chat-new-session-status");
-                                            var message = document.getElementById("tau-ops-chat-new-session-status-message");
-                                            if (status) {
-                                                status.setAttribute("data-new-session-status", "empty-key");
-                                            }
-                                            if (message) {
-                                                message.textContent = "Session was not created because the name was empty.";
-                                            }
-                                        }
-
-                                        function clearEmptySessionBlocked() {
-                                            newSessionInput.removeAttribute("data-submit-blocked");
-                                            newSessionForm.removeAttribute("data-submit-blocked");
-                                            var status = document.getElementById("tau-ops-chat-new-session-status");
-                                            var message = document.getElementById("tau-ops-chat-new-session-status-message");
-                                            if (status) {
-                                                status.setAttribute("data-new-session-status", "idle");
-                                            }
-                                            if (message) {
-                                                message.textContent = "No new-session result on this request.";
-                                            }
-                                        }
-
-                                        newSessionForm.addEventListener("submit", function (event) {
-                                            if (sessionKeyIsEmpty()) {
-                                                event.preventDefault();
-                                                markEmptySessionBlocked();
-                                                return;
-                                            }
-
-                                            clearEmptySessionBlocked();
-                                        });
-
-                                        newSessionInput.addEventListener("input", function () {
-                                            if (!sessionKeyIsEmpty()) {
-                                                clearEmptySessionBlocked();
-                                            }
-                                        });
-                                    }
-
-                                    if (document.readyState === "loading") {
-                                        document.addEventListener("DOMContentLoaded", installNewSessionGuard);
-                                    } else {
-                                        installNewSessionGuard();
-                                    }
-                                })();
-                                "#
-                            </script>
-                            <article
-                                id="tau-ops-chat-new-session-status"
-                                data-new-session-status=chat_new_session_status
-                            >
-                                <h3>New Session Status</h3>
-                                <p id="tau-ops-chat-new-session-status-message">
-                                    {chat_new_session_status_message}
-                                </p>
-                            </article>
-                            <form
                                 id="tau-ops-chat-send-form"
                                 action=chat_send_form_action
                                 method=chat_send_form_method
@@ -6541,6 +6425,122 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 <h3>Send Status</h3>
                                 <p id="tau-ops-chat-send-status-message">
                                     {chat_send_status_message}
+                                </p>
+                            </article>
+                            <form
+                                id="tau-ops-chat-new-session-form"
+                                action=chat_new_session_form_action
+                                method=chat_new_session_form_method
+                                data-active-session-key=chat_session_key.clone()
+                                data-empty-session-key-guard="true"
+                            >
+                                <label for="tau-ops-chat-new-session-key">New Session</label>
+                                <input
+                                    id="tau-ops-chat-new-session-key"
+                                    type="text"
+                                    name="session_key"
+                                    value=""
+                                    autocomplete="off"
+                                />
+                                <input
+                                    id="tau-ops-chat-new-active-session-key"
+                                    type="hidden"
+                                    name="active_session_key"
+                                    value=chat_session_key.clone()
+                                />
+                                <input
+                                    id="tau-ops-chat-new-theme"
+                                    type="hidden"
+                                    name="theme"
+                                    value=theme_attr
+                                />
+                                <input
+                                    id="tau-ops-chat-new-sidebar"
+                                    type="hidden"
+                                    name="sidebar"
+                                    value=sidebar_state_attr
+                                />
+                                <button id="tau-ops-chat-new-session-button" type="submit">
+                                    Create Session
+                                </button>
+                            </form>
+                            <script
+                                id="tau-ops-chat-new-session-guard"
+                                data-empty-session-key-guard="true"
+                            >
+                                r#"
+                                (function () {
+                                    function installNewSessionGuard() {
+                                        var newSessionForm = document.getElementById("tau-ops-chat-new-session-form");
+                                        var newSessionInput = document.getElementById("tau-ops-chat-new-session-key");
+                                        if (!newSessionForm || !newSessionInput || newSessionForm.getAttribute("data-new-session-guard-bound") === "true") {
+                                            return;
+                                        }
+
+                                        newSessionForm.setAttribute("data-new-session-guard-bound", "true");
+
+                                        function sessionKeyIsEmpty() {
+                                            return !newSessionInput.value || !newSessionInput.value.trim();
+                                        }
+
+                                        function markEmptySessionBlocked() {
+                                            newSessionInput.setAttribute("data-submit-blocked", "empty-session-key");
+                                            newSessionForm.setAttribute("data-submit-blocked", "empty-session-key");
+                                            var status = document.getElementById("tau-ops-chat-new-session-status");
+                                            var message = document.getElementById("tau-ops-chat-new-session-status-message");
+                                            if (status) {
+                                                status.setAttribute("data-new-session-status", "empty-key");
+                                            }
+                                            if (message) {
+                                                message.textContent = "Session was not created because the name was empty.";
+                                            }
+                                        }
+
+                                        function clearEmptySessionBlocked() {
+                                            newSessionInput.removeAttribute("data-submit-blocked");
+                                            newSessionForm.removeAttribute("data-submit-blocked");
+                                            var status = document.getElementById("tau-ops-chat-new-session-status");
+                                            var message = document.getElementById("tau-ops-chat-new-session-status-message");
+                                            if (status) {
+                                                status.setAttribute("data-new-session-status", "idle");
+                                            }
+                                            if (message) {
+                                                message.textContent = "No new-session result on this request.";
+                                            }
+                                        }
+
+                                        newSessionForm.addEventListener("submit", function (event) {
+                                            if (sessionKeyIsEmpty()) {
+                                                event.preventDefault();
+                                                markEmptySessionBlocked();
+                                                return;
+                                            }
+
+                                            clearEmptySessionBlocked();
+                                        });
+
+                                        newSessionInput.addEventListener("input", function () {
+                                            if (!sessionKeyIsEmpty()) {
+                                                clearEmptySessionBlocked();
+                                            }
+                                        });
+                                    }
+
+                                    if (document.readyState === "loading") {
+                                        document.addEventListener("DOMContentLoaded", installNewSessionGuard);
+                                    } else {
+                                        installNewSessionGuard();
+                                    }
+                                })();
+                                "#
+                            </script>
+                            <article
+                                id="tau-ops-chat-new-session-status"
+                                data-new-session-status=chat_new_session_status
+                            >
+                                <h3>New Session Status</h3>
+                                <p id="tau-ops-chat-new-session-status-message">
+                                    {chat_new_session_status_message}
                                 </p>
                             </article>
                             <section

@@ -8,6 +8,7 @@
 5. [x] T5 (REGRESSION): distinguish total session entries from rendered transcript rows and hidden system entries in the chat summary.
 6. [x] T6 (RED/GREEN/REGRESSION): reject empty chat sends visibly via UI submit guard and backend `chat_status=empty-message` without mutating session state.
 7. [x] T7 (RED/GREEN/REGRESSION): keep active compose controls before historical session selection on `/ops/chat`.
+8. [x] T8 (RED/GREEN/REGRESSION): keep active compose controls before secondary new-session creation on `/ops/chat`.
 
 ## Tier Mapping
 - Unit: `ops_shell_controls` session query parsing unit tests.
@@ -15,7 +16,7 @@
 - Contract/DbC: N/A.
 - Snapshot: N/A.
 - Functional: UI `/ops/chat` marker assertions.
-- Conformance: C-01..C-03, C-05..C-07.
+- Conformance: C-01..C-03, C-05..C-08.
 - Integration: gateway send + redirect + transcript visibility assertions.
 - Fuzz: N/A.
 - Mutation: `cargo mutants --in-diff <diff-file> -p tau-dashboard-ui -p tau-gateway`.
@@ -42,6 +43,14 @@
   - LIVE: backend whitespace-only POST redirected with `chat_status=empty-message` and left the generated session endpoint at `404`.
   - LIVE: restarted `tau-8795` from the rebuilt binary and loaded `/ops/chat?theme=dark&sidebar=expanded&session=default`; browser visible DOM showed `textarea` + `Send` before historical session links.
   - LIVE: `POST /ops/chat/send` smoke for `ui-compose-order-curl-1778538967` returned `303 See Other` to `/ops/chat?...session=ui-compose-order-curl-1778538967`; reloaded browser route showed current compose controls before the active session link and the served HTML indexes were `send-form=57144`, `send-status=63393`, `session-selector=63572`, `transcript=69938`, submitted message=68656.
+  - RED: `cargo test -p tau-dashboard-ui functional_spec_2830_c07_chat_route_prioritizes_composer_before_session_selector -- --test-threads=1` failed on `chat composer should render before secondary new-session creation`.
+  - RED: `cargo test -p tau-gateway functional_spec_2830_c01_ops_chat_shell_exposes_send_form_and_fallback_transcript_markers -- --test-threads=1` failed on `chat composer should render before secondary new-session creation`.
+  - GREEN: `cargo test -p tau-dashboard-ui functional_spec_2830_c07_chat_route_prioritizes_composer_before_session_selector -- --test-threads=1` passed.
+  - GREEN: `cargo test -p tau-gateway functional_spec_2830_c01_ops_chat_shell_exposes_send_form_and_fallback_transcript_markers -- --test-threads=1` passed.
+  - GREEN: `cargo test -p tau-dashboard-ui functional_spec_2830 -- --test-threads=1` passed (`4 passed`).
+  - GREEN: `cargo test -p tau-gateway functional_spec_2830 -- --test-threads=1` passed.
+  - GREEN: `cargo test -p tau-gateway integration_spec_2830 -- --test-threads=1` passed (`2 passed`).
+  - LIVE: restarted `tau-8795` from the rebuilt binary and loaded `/ops/chat?theme=dark&sidebar=expanded&session=default`; browser visible DOM indexes were `textarea=2485`, `Send=2610`, `Create Session=2717`, first session link=`2827`, proving active compose before new-session and history controls.
 - Regression:
   - `cargo test -p tau-dashboard-ui functional_spec_2826 -- --test-threads=1`
   - `cargo test -p tau-gateway functional_spec_2802 -- --test-threads=1`
@@ -53,6 +62,7 @@
   - `cargo clippy -p tau-dashboard-ui -p tau-gateway -- -D warnings`
   - `cargo clippy -p tau-dashboard-ui --tests -- -D warnings`
   - `cargo clippy -p tau-gateway --tests -- -D warnings`
+  - `cargo build -p tau-coding-agent`
   - `python3 .github/scripts/oversized_file_guard.py`
   - `cargo mutants --in-diff /tmp/mutants_2830.diff -p tau-dashboard-ui -p tau-gateway` (`6/6` caught)
   - `cargo test -p tau-dashboard-ui`

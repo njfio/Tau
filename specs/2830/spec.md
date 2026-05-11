@@ -42,6 +42,11 @@ Given `/ops/chat` renders with multiple discovered sessions,
 When the operator arrives at the active chat page,
 Then the send form and send-status controls appear before the historical session selector so the primary compose action remains reachable without scanning past old sessions.
 
+### AC-8 Active chat composition stays above secondary session creation
+Given `/ops/chat` renders for an active session,
+When the operator arrives at the active chat page,
+Then the message composer appears before new-session creation controls so the primary path is replying in the current session.
+
 ## Scope
 
 ### In Scope
@@ -50,6 +55,7 @@ Then the send form and send-status controls appear before the historical session
 - `tau-gateway` `POST /ops/chat/send` append + redirect behavior.
 - Empty-message submit guard and visible backend rejection status.
 - Composer-first ordering before historical session selection.
+- Composer-first ordering before secondary new-session creation controls.
 - Targeted regression validation for existing ops shell slices.
 
 ### Out of Scope
@@ -65,6 +71,7 @@ Then the send form and send-status controls appear before the historical session
 - C-05 (functional): `/ops/chat` summary markers distinguish total stored entries from rendered transcript rows and hidden system entries.
 - C-06 (functional/integration): empty or whitespace-only chat sends are blocked by the form contract or redirected with `chat_status=empty-message` without creating or mutating a session store.
 - C-07 (functional): `/ops/chat` places the send form and send-status marker before the historical session selector.
+- C-08 (functional): `/ops/chat` places the send form and send-status marker before the new-session form and status controls.
 
 ## Success Metrics / Observable Signals
 - `cargo test -p tau-dashboard-ui functional_spec_2830 -- --test-threads=1` passes.
