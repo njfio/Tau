@@ -2268,6 +2268,10 @@ fn functional_harness_history_view_surfaces_state_audit_summary() {
             "history view should surface state audit summary marker `{marker}`"
         );
     }
+    assert!(
+        !html.contains("audit_ref=1778419944988&amp;audit_ref=1778419944988"),
+        "selected audit inspect links should not duplicate the selected audit_ref"
+    );
 
     let history_index = html
         .find("id=\"tau-ops-harness-history-view\"")
@@ -2278,6 +2282,61 @@ fn functional_harness_history_view_surfaces_state_audit_summary() {
     assert!(
         history_index < dashboard_index,
         "history route should promote audit history before the default dashboard"
+    );
+}
+
+#[test]
+fn regression_harness_history_all_route_does_not_invent_audit_ref_context() {
+    let harness = TauOpsDashboardHarnessSnapshot {
+        audit_source: "state".to_string(),
+        audit_filter_action: "all".to_string(),
+        audit_total_count: 1,
+        route_action_key: "history".to_string(),
+        route_action_label: "Applied History".to_string(),
+        route_action_count: 1,
+        selected_proposal: TauOpsDashboardHarnessProposalDetail {
+            proposal_id: "PR-045".to_string(),
+            title: "Prompt compression for research tasks".to_string(),
+            ..TauOpsDashboardHarnessProposalDetail::default()
+        },
+        audit_rows: vec![TauOpsDashboardHarnessAuditRow {
+            timestamp_label: "2026-05-10 13:32:24 UTC".to_string(),
+            timestamp_unix_ms: "1778419944988".to_string(),
+            actor: "Gateway".to_string(),
+            action_label: "Dry Run".to_string(),
+            action_key: "dry-run".to_string(),
+            scope: "Skill".to_string(),
+            item: "PR-045".to_string(),
+            detail_label: String::new(),
+            detail_value: String::new(),
+            proof_artifact: "ops-harness/self-improvement/PR-045/dry-run-result.json".to_string(),
+            result_label: "Passed".to_string(),
+            result_key: "passed".to_string(),
+        }],
+        ..TauOpsDashboardHarnessSnapshot::default()
+    };
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        active_route: TauOpsDashboardRoute::Harness,
+        harness,
+        ..TauOpsDashboardShellContext::default()
+    });
+
+    for marker in [
+        "id=\"tau-ops-harness-history\" data-action=\"history\" data-action-contract=\"context-preserving\" data-preserves-session=\"true\" data-preserves-proposal=\"true\" data-preserves-history-context=\"true\" href=\"/ops/harness?theme=dark&amp;sidebar=expanded&amp;session=default&amp;proposal_id=PR-045&amp;view=history\"",
+        "id=\"tau-ops-nav-harness\"><a data-nav-item=\"mission-harness\" href=\"/ops/harness?theme=dark&amp;sidebar=expanded&amp;session=default&amp;proposal_id=PR-045&amp;view=history\" data-harness-rail-label=\"Missions\" data-preserves-shell-context=\"true\" aria-current=\"page\">Mission Harness</a>",
+        "href=\"/ops/harness?theme=dark&amp;sidebar=expanded&amp;session=default&amp;proposal_id=PR-045&amp;view=history&amp;audit_ref=1778419944988\"",
+        "class=\"tau-harness-audit-inspect\"",
+        "data-audit-inspect-link=\"true\" data-audit-ref=\"1778419944988\"",
+        "id=\"tau-ops-harness-history-detail\" data-history-selected-audit=\"true\" data-history-selected-audit-ref=\"1778419944988\" data-selected-action=\"dry-run\" data-selected-result=\"passed\" data-selected-proof-artifact=\"ops-harness/self-improvement/PR-045/dry-run-result.json\"",
+    ] {
+        assert!(
+            html.contains(marker),
+            "history all-route should keep audit ref out of shell context while preserving inspect marker `{marker}`"
+        );
+    }
+    assert!(
+        !html.contains("audit_ref=1778419944988&amp;audit_ref=1778419944988"),
+        "history all-route inspect links should not duplicate audit_ref"
     );
 }
 

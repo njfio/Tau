@@ -2367,6 +2367,7 @@ fn apply_harness_selected_audit_artifact_preview(
     snapshot.audit_selected_artifact_preview_limit = HARNESS_AUDIT_ARTIFACT_PREVIEW_LIMIT;
 
     let requested_ref = sanitize_harness_audit_ref(&snapshot.audit_selected_ref);
+    let has_requested_ref = !requested_ref.is_empty();
     let selected_index = snapshot
         .audit_rows
         .iter()
@@ -2388,7 +2389,9 @@ fn apply_harness_selected_audit_artifact_preview(
 
     let selected_ref = harness_audit_row_ref(&snapshot.audit_rows[selected_index], selected_index);
     let selected_proof_artifact = snapshot.audit_rows[selected_index].proof_artifact.clone();
-    snapshot.audit_selected_ref = selected_ref;
+    if has_requested_ref {
+        snapshot.audit_selected_ref = selected_ref;
+    }
     if selected_proof_artifact.trim().is_empty() {
         return;
     }

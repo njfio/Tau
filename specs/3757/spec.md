@@ -92,6 +92,9 @@ rendered inside history mode preserve the selected history context, and action
 redirects return to history with the matching action filter. The active topbar
 `History` tab preserves the selected history action filter and selected audit
 record reference, leaving the explicit `All` history filter as the reset path.
+When the history route is opened without an explicit `audit_ref`, the shell
+navigation and topbar history action must preserve only the route filter
+context and must not promote the fallback latest-row preview into URL state.
 
 ## Conformance Cases
 
@@ -128,6 +131,9 @@ record reference, leaving the explicit `All` history filter as the reset path.
   action redirects preserve selected proposal plus history context.
 - Active history tab navigation preserves the selected audit action filter and
   selected audit reference instead of clearing the current proof context.
+- History routes opened without an explicit `audit_ref` do not inject a
+  fallback selected audit ref into shell navigation, topbar history links, or
+  audit inspect links.
 - History view proof previews are capped, state-backed, and only read normalized
   `ops-harness/...` artifact paths.
 - History route promotes the audit-history surface before the default dashboard

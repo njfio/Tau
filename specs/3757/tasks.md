@@ -335,3 +335,40 @@ Status: Implemented
   `audit_action=dry-run`, and `audit_ref=1778419944988`; clicking that visible
   `History` link kept the same URL context and the selected audit detail panel
   remained visible.
+- T19: Keep fallback latest-row previews from becoming route-selected
+  `audit_ref` state on plain history routes, and prevent Inspect links from
+  appending duplicate/conflicting `audit_ref` parameters.
+- RED: Live Browser on
+  `/ops/harness?proposal_id=PR-045&view=history` showed no `audit_ref` in the
+  current URL, but the topbar `History` action and left-rail Mission Harness
+  link included `audit_ref=1778419944988`; the first audit row `Inspect` link
+  duplicated `audit_ref=1778419944988` twice.
+- GREEN: `RUST_MIN_STACK=16777216 cargo test -p tau-dashboard-ui harness_history -- --nocapture`
+  passed with the selected audit summary test and the no-invented-ref
+  regression (2 tests).
+- GREEN: `RUST_MIN_STACK=16777216 cargo test -p tau-gateway integration_spec_3757_c03_ops_harness_route_reflects_state_backed_proof_and_audit -- --nocapture`
+  passed with the gateway base history route preserving shell/topbar context
+  without an invented `audit_ref` (1 test).
+- REGRESSION: `RUST_MIN_STACK=16777216 cargo test -p tau-dashboard-ui functional_spec_37 -- --nocapture`
+  passed (45 tests).
+- REGRESSION: `RUST_MIN_STACK=16777216 cargo test -p tau-gateway ops_harness -- --test-threads=1 --nocapture`
+  passed (6 tests).
+- REGRESSION: `RUST_MIN_STACK=16777216 cargo test -p tau-dashboard-ui -- --nocapture`
+  passed (195 tests, 0 doc tests).
+- STATIC: `cargo fmt --check --package tau-dashboard-ui --package tau-gateway`
+  passed.
+- STATIC: `git diff --check` passed.
+- STATIC: `RUST_MIN_STACK=16777216 cargo clippy -p tau-dashboard-ui -p tau-gateway -- -D warnings`
+  passed.
+- BUILD: `RUST_MIN_STACK=16777216 cargo build -p tau-coding-agent` passed.
+- LIVE: Browser on
+  `/ops/harness?proposal_id=PR-045&view=history` against the restarted
+  `127.0.0.1:8795` harness showed topbar `History` and left-rail Mission
+  Harness hrefs without `audit_ref`, one visible selected audit detail panel,
+  four Inspect links each carrying exactly one row-specific `audit_ref`, and
+  no duplicate Inspect `audit_ref` parameters.
+- LIVE: Browser on
+  `/ops/harness?proposal_id=PR-045&view=history&audit_action=dry-run&audit_ref=1778419944988`
+  confirmed the selected-audit route still preserves `audit_action=dry-run`
+  and `audit_ref=1778419944988` on the topbar `History` href while every
+  Inspect link carries exactly one `audit_ref`.

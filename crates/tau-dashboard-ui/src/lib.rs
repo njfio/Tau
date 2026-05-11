@@ -1862,11 +1862,12 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
         "false"
     };
     let requested_audit_ref = sanitize_harness_audit_ref(&context.harness.audit_selected_ref);
-    let mut harness_history_current_href = if harness_history_filter_action == "all" {
+    let harness_history_filter_href = if harness_history_filter_action == "all" {
         harness_history_href.clone()
     } else {
         format!("{harness_history_href}&audit_action={harness_history_filter_action}")
     };
+    let mut harness_history_current_href = harness_history_filter_href.clone();
     if !requested_audit_ref.is_empty() {
         harness_history_current_href.push_str("&audit_ref=");
         harness_history_current_href.push_str(requested_audit_ref.as_str());
@@ -2312,7 +2313,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                 "false"
             };
             let audit_detail_href =
-                format!("{harness_history_current_href}&audit_ref={audit_row_ref}");
+                format!("{harness_history_filter_href}&audit_ref={audit_row_ref}");
             let audit_item_cell = if !harness_history_view_active
                 && row.detail_value.is_empty()
                 && row.proof_artifact.is_empty()
