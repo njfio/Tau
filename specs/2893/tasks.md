@@ -5,3 +5,4 @@
 3. [x] T3 (GREEN): implement sessions row metadata snapshot fields, derivation, and SSR marker rendering.
 4. [x] T4 (REGRESSION): rerun `spec_2830`, `spec_2834`, `spec_2838`, `spec_2842`, `spec_2846`, and `spec_2885` suites.
 5. [x] T5 (VERIFY): run fmt/clippy/scoped tests/mutation + fast live validation.
+6. [x] T6 (RED/GREEN/REGRESSION): render sessions-row metadata visibly and tighten metadata tests to row-local detail links instead of broad hidden chat href matches.

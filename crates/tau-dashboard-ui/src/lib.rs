@@ -3964,6 +3964,20 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     let updated_unix_ms_attr = session_option.updated_unix_ms.to_string();
                     let open_session_detail_link_id =
                         format!("tau-ops-sessions-detail-link-{index}");
+                    let row_metadata_id = format!("tau-ops-sessions-metadata-{index}");
+                    let row_entry_count_id = format!("tau-ops-sessions-entry-count-{index}");
+                    let row_total_tokens_id = format!("tau-ops-sessions-total-tokens-{index}");
+                    let row_validity_id = format!("tau-ops-sessions-validity-{index}");
+                    let row_updated_id = format!("tau-ops-sessions-updated-{index}");
+                    let row_updated_label = format_chat_session_updated_label_at(
+                        session_option.updated_unix_ms,
+                        current_unix_ms(),
+                    );
+                    let row_validity_label = if session_option.validation_is_valid {
+                        "Valid"
+                    } else {
+                        "Invalid"
+                    };
                     let open_session_detail_href = format!(
                         "/ops/sessions/{}?theme={theme_attr}&sidebar={sidebar_state_attr}&session={}",
                         session_option.session_key,
@@ -3974,10 +3988,10 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             id=row_id
                             data-session-key=session_option.session_key.clone()
                             data-selected=selected_attr
-                            data-entry-count=entry_count_attr
-                            data-total-tokens=total_tokens_attr
+                            data-entry-count=entry_count_attr.clone()
+                            data-total-tokens=total_tokens_attr.clone()
                             data-is-valid=is_valid_attr
-                            data-updated-unix-ms=updated_unix_ms_attr
+                            data-updated-unix-ms=updated_unix_ms_attr.clone()
                         >
                             <a
                                 id=open_session_detail_link_id
@@ -3986,6 +4000,40 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             >
                                 {session_option.session_key.clone()}
                             </a>
+                            <dl
+                                id=row_metadata_id
+                                data-session-row-metadata="true"
+                                data-session-key=session_option.session_key.clone()
+                            >
+                                <div>
+                                    <dt>Entries</dt>
+                                    <dd id=row_entry_count_id data-entry-count=entry_count_attr.clone()>
+                                        {entry_count_attr.clone()}
+                                    </dd>
+                                </div>
+                                <div>
+                                    <dt>Tokens</dt>
+                                    <dd id=row_total_tokens_id data-total-tokens=total_tokens_attr.clone()>
+                                        {total_tokens_attr.clone()}
+                                    </dd>
+                                </div>
+                                <div>
+                                    <dt>Valid</dt>
+                                    <dd id=row_validity_id data-is-valid=is_valid_attr>
+                                        {row_validity_label}
+                                    </dd>
+                                </div>
+                                <div>
+                                    <dt>Updated</dt>
+                                    <dd
+                                        id=row_updated_id
+                                        data-updated-unix-ms=updated_unix_ms_attr.clone()
+                                        data-updated-label=row_updated_label.clone()
+                                    >
+                                        {row_updated_label.clone()}
+                                    </dd>
+                                </div>
+                            </dl>
                         </li>
                     }
                 })
@@ -6020,6 +6068,60 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     border-color: #3d8fff;
                     background: #123b61;
                     color: #fff;
+                }
+                #tau-ops-sessions-list {
+                    display: grid;
+                    gap: 8px;
+                    margin: 0;
+                    padding: 0;
+                    list-style: none;
+                }
+                #tau-ops-sessions-list > li {
+                    display: grid;
+                    gap: 7px;
+                    min-width: 0;
+                    border: 1px solid #263f4e;
+                    border-radius: 7px;
+                    padding: 9px 10px;
+                    background: #0d2331;
+                }
+                #tau-ops-sessions-list > li[data-selected="true"] {
+                    border-color: #3d8fff;
+                    background: #123b61;
+                }
+                #tau-ops-sessions-list a {
+                    color: #edf8fb;
+                    font-size: .78rem;
+                    font-weight: 800;
+                    text-decoration: none;
+                    overflow-wrap: anywhere;
+                }
+                #tau-ops-sessions-list dl {
+                    display: grid;
+                    grid-template-columns: repeat(4, minmax(0, 1fr));
+                    gap: 6px;
+                    margin: 0;
+                }
+                #tau-ops-sessions-list dl div {
+                    min-width: 0;
+                    border: 1px solid rgba(143, 168, 179, .18);
+                    border-radius: 6px;
+                    padding: 6px 7px;
+                    background: rgba(7, 21, 29, .72);
+                }
+                #tau-ops-sessions-list dt {
+                    color: #8fa8b3;
+                    font-size: .62rem;
+                    font-weight: 850;
+                    letter-spacing: 0;
+                    text-transform: uppercase;
+                }
+                #tau-ops-sessions-list dd {
+                    margin: 2px 0 0;
+                    color: #edf8fb;
+                    font-size: .74rem;
+                    font-weight: 800;
+                    overflow-wrap: anywhere;
                 }
                 #tau-ops-protected-shell #tau-ops-chat-new-session-form {
                     display: grid;

@@ -6099,6 +6099,23 @@ fn functional_spec_2893_c01_sessions_route_renders_row_metadata_markers() {
     assert!(html.contains(
             "id=\"tau-ops-sessions-row-1\" data-session-key=\"session-beta\" data-selected=\"true\" data-entry-count=\"0\" data-total-tokens=\"0\" data-is-valid=\"true\" data-updated-unix-ms=\"0\""
         ));
+    assert!(html.contains(
+        "id=\"tau-ops-sessions-detail-link-0\" data-open-session-detail=\"session-alpha\" href=\"/ops/sessions/session-alpha?theme=light&amp;sidebar=collapsed&amp;session=session-alpha\""
+    ));
+    assert!(html.contains(
+        "id=\"tau-ops-sessions-metadata-0\" data-session-row-metadata=\"true\" data-session-key=\"session-alpha\""
+    ));
+    assert!(html.contains("id=\"tau-ops-sessions-entry-count-0\" data-entry-count=\"0\""));
+    assert!(html.contains("id=\"tau-ops-sessions-total-tokens-0\" data-total-tokens=\"0\""));
+    assert!(html.contains("id=\"tau-ops-sessions-validity-0\" data-is-valid=\"true\""));
+    assert!(html.contains(
+        "id=\"tau-ops-sessions-updated-0\" data-updated-unix-ms=\"0\" data-updated-label=\"never\""
+    ));
+    assert!(html.contains("<dt>Entries</dt>"));
+    assert!(html.contains("<dt>Tokens</dt>"));
+    assert!(html.contains("<dt>Valid</dt>"));
+    assert!(html.contains("<dt>Updated</dt>"));
+    assert!(html.contains("#tau-ops-sessions-list dl"));
 }
 
 #[test]

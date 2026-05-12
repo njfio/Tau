@@ -1956,8 +1956,14 @@ async fn functional_spec_2893_c01_ops_sessions_shell_exposes_row_metadata_marker
         "id=\"tau-ops-sessions-row-0\" data-session-key=\"session-alpha\" data-selected=\"true\" data-entry-count=\"3\" data-total-tokens=\"0\" data-is-valid=\"true\" data-updated-unix-ms=\""
     ));
     assert!(body.contains(
-        "href=\"/ops/chat?theme=light&amp;sidebar=collapsed&amp;session=session-alpha\""
+        "id=\"tau-ops-sessions-detail-link-0\" data-open-session-detail=\"session-alpha\" href=\"/ops/sessions/session-alpha?theme=light&amp;sidebar=collapsed&amp;session=session-alpha\""
     ));
+    assert!(body.contains(
+        "id=\"tau-ops-sessions-metadata-0\" data-session-row-metadata=\"true\" data-session-key=\"session-alpha\""
+    ));
+    assert!(body.contains("id=\"tau-ops-sessions-entry-count-0\" data-entry-count=\"3\""));
+    assert!(body.contains("id=\"tau-ops-sessions-validity-0\" data-is-valid=\"true\""));
+    assert!(body.contains("id=\"tau-ops-sessions-updated-0\" data-updated-unix-ms=\""));
 
     handle.abort();
 }
@@ -2009,10 +2015,13 @@ async fn integration_spec_2893_c02_c03_c04_ops_sessions_shell_metadata_matches_s
         "id=\"tau-ops-sessions-row-1\" data-session-key=\"session-beta\" data-selected=\"true\" data-entry-count=\"5\" data-total-tokens=\"0\" data-is-valid=\"true\" data-updated-unix-ms=\""
     ));
     assert!(body.contains(
-        "href=\"/ops/chat?theme=light&amp;sidebar=collapsed&amp;session=session-alpha\""
+        "id=\"tau-ops-sessions-detail-link-0\" data-open-session-detail=\"session-alpha\" href=\"/ops/sessions/session-alpha?theme=light&amp;sidebar=collapsed&amp;session=session-alpha\""
     ));
-    assert!(body
-        .contains("href=\"/ops/chat?theme=light&amp;sidebar=collapsed&amp;session=session-beta\""));
+    assert!(body.contains(
+        "id=\"tau-ops-sessions-detail-link-1\" data-open-session-detail=\"session-beta\" href=\"/ops/sessions/session-beta?theme=light&amp;sidebar=collapsed&amp;session=session-beta\""
+    ));
+    assert!(body.contains("id=\"tau-ops-sessions-entry-count-0\" data-entry-count=\"3\""));
+    assert!(body.contains("id=\"tau-ops-sessions-entry-count-1\" data-entry-count=\"5\""));
 
     handle.abort();
 }
