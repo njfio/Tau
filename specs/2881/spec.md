@@ -3,11 +3,12 @@
 Status: Implemented
 
 ## Problem Statement
-Tau Ops chat supports message send and session workflows, but does not expose deterministic multiline compose contracts nor explicit newline-preservation validation for submitted chat content. This leaves the PRD checklist item “Multi-line input works (Shift+Enter)” unverifiable.
+Tau Ops chat supports message send and session workflows, but does not expose deterministic multiline compose contracts nor explicit newline-preservation validation for submitted chat content. This leaves the PRD checklist item “Multi-line input works (Shift+Enter)” unverifiable. The shortcut contract should not require visible instructional copy on the operator surface.
 
 ## Scope
 In scope:
 - Add deterministic multiline compose contract markers in the chat form on `/ops/chat`.
+- Keep shortcut metadata non-visible so the composer remains operational rather than instructional.
 - Validate gateway send flow preserves embedded newlines in submitted message content.
 - Validate non-chat routes preserve hidden chat panel contracts after multiline send.
 
@@ -20,7 +21,7 @@ Out of scope:
 ### AC-1 Chat route exposes deterministic multiline compose form contracts
 Given the `/ops/chat` shell,
 when UI markup renders,
-then chat compose textarea exposes deterministic multiline markers including Shift+Enter hint contract tokens.
+then chat compose textarea exposes deterministic multiline markers including non-visible Shift+Enter contract tokens.
 
 ### AC-2 Gateway send preserves multiline content contract
 Given multiline chat input content containing embedded `\n`,
@@ -45,7 +46,7 @@ then all suites remain green.
 ## Conformance Cases
 | Case | AC | Tier | Given | When | Then |
 |---|---|---|---|---|---|
-| C-01 | AC-1 | Functional | `/ops/chat` shell render | inspect compose markup | multiline compose markers + Shift+Enter tokens present |
+| C-01 | AC-1 | Functional | `/ops/chat` shell render | inspect compose markup | multiline compose markers + non-visible Shift+Enter tokens present |
 | C-02 | AC-2 | Integration | multiline payload with embedded newline | `POST /ops/chat/send` | session store contains preserved newline content |
 | C-03 | AC-3 | Functional | session with multiline message | render `/ops/chat` | transcript row includes multiline content payload |
 | C-04 | AC-4 | Integration | session updated by multiline send | render `/ops` + `/ops/sessions` | hidden chat panel markers preserved with active session |

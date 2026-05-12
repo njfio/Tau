@@ -1177,6 +1177,9 @@ async fn functional_spec_2881_c01_ops_chat_shell_exposes_multiline_compose_marke
     assert!(body.contains(
         "id=\"tau-ops-chat-input-shortcut-hint\" data-shortcut-contract=\"shift-enter\""
     ));
+    assert!(body.contains(
+        "id=\"tau-ops-chat-input-shortcut-hint\" data-shortcut-contract=\"shift-enter\" data-operator-visible=\"false\" aria-hidden=\"true\" hidden"
+    ));
 
     handle.abort();
 }

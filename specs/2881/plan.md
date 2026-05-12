@@ -1,7 +1,7 @@
 # Plan: Issue #2881 - chat multi-line input contracts
 
 ## Approach
-1. Add additive multiline compose contract markers (Shift+Enter hint/attributes) to Tau Ops chat textarea in `tau-dashboard-ui`.
+1. Add additive multiline compose contract markers (non-visible Shift+Enter metadata/attributes) to Tau Ops chat textarea in `tau-dashboard-ui`.
 2. Ensure gateway chat send path preserves embedded newline payloads (while still failing closed for blank/whitespace-only sends).
 3. Add UI and gateway conformance tests for multiline markers, newline preservation, and hidden-panel route behavior.
 4. Re-run required prior chat regression suites and verification gates.
@@ -16,6 +16,8 @@
   - Mitigation: retain trim-based emptiness guard while preserving full payload for non-empty messages.
 - Risk: fragile HTML assertions.
   - Mitigation: assert deterministic markers/IDs and focused payload markers only.
+- Risk: visible shortcut help distracts from live operator state.
+  - Mitigation: keep the shortcut marker in SSR metadata with `hidden` and `aria-hidden`, while retaining textarea and script shortcut attributes.
 
 ## Interface / Contract Notes
 - No new routes.

@@ -6018,10 +6018,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     grid-column: 1 / -1;
                 }
                 #tau-ops-chat-input-shortcut-hint {
-                    grid-column: 1 / -1;
-                    margin: 0;
-                    color: #8fa8b3;
-                    font-size: .72rem;
+                    display: none;
                 }
                 #tau-ops-chat-input {
                     min-height: 92px;
@@ -7008,12 +7005,15 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     value=sidebar_state_attr
                                 />
                                 <label for="tau-ops-chat-input">Message</label>
-                                <p
+                                <span
                                     id="tau-ops-chat-input-shortcut-hint"
                                     data-shortcut-contract="shift-enter"
+                                    data-operator-visible="false"
+                                    aria-hidden="true"
+                                    hidden
                                 >
                                     Shift+Enter inserts a newline in the message editor.
-                                </p>
+                                </span>
                                 <textarea
                                     id="tau-ops-chat-input"
                                     name="message"
