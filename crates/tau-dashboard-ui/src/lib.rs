@@ -5021,6 +5021,13 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     let active_session_entry_count_value = active_session_entry_count.to_string();
     let active_session_transcript_count_value = active_session_transcript_count.to_string();
     let active_session_hidden_entry_count_value = active_session_hidden_entry_count.to_string();
+    let active_session_details_summary_label = format!(
+        "Session: {} ({} shown / {} hidden / {} total)",
+        chat_session_key.clone(),
+        active_session_transcript_count_value.clone(),
+        active_session_hidden_entry_count_value.clone(),
+        active_session_entry_count_value.clone()
+    );
     let active_session_total_tokens_value = active_chat_session_option
         .map(|option| option.usage_total_tokens)
         .unwrap_or(context.chat.session_detail_usage_total_tokens)
@@ -7222,13 +7229,11 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 data-collapsed-by-default="true"
                                 data-active-session-key=chat_session_key.clone()
                                 data-entry-count=active_session_entry_count_value.clone()
+                                data-transcript-message-count=active_session_transcript_count_value.clone()
+                                data-hidden-entry-count=active_session_hidden_entry_count_value.clone()
                             >
                                 <summary id="tau-ops-chat-session-details-summary">
-                                    {format!(
-                                        "Session: {} ({} entries)",
-                                        chat_session_key.clone(),
-                                        active_session_entry_count_value.clone()
-                                    )}
+                                    {active_session_details_summary_label}
                                 </summary>
                             <article
                                 id="tau-ops-chat-session-summary"

@@ -17,6 +17,7 @@
 14. [x] T14 (RED/GREEN/REGRESSION): keep current-session open-detail and jump-latest actions visible before collapsed metadata.
 15. [x] T15 (RED/GREEN/REGRESSION): redirect successful sends to the latest rendered assistant row anchor.
 16. [x] T16 (RED/GREEN/REGRESSION): show a deterministic submitting state during non-empty provider-backed sends.
+17. [x] T17 (RED/GREEN/REGRESSION): make collapsed session-details summary show transcript, hidden, and total entry counts.
 
 ## Tier Mapping
 - Unit: `ops_shell_controls` session query parsing unit tests.
@@ -24,7 +25,7 @@
 - Contract/DbC: N/A.
 - Snapshot: N/A.
 - Functional: UI `/ops/chat` marker assertions.
-- Conformance: C-01..C-03, C-05..C-15.
+- Conformance: C-01..C-03, C-05..C-16.
 - Integration: gateway send + redirect + transcript visibility assertions.
 - Fuzz: N/A.
 - Mutation: `cargo mutants --in-diff <diff-file> -p tau-dashboard-ui -p tau-gateway`.
@@ -97,6 +98,14 @@
   - GREEN: `env RUST_MIN_STACK=16777216 cargo test -p tau-gateway functional_spec_2830 -- --test-threads=1` passed.
   - GREEN: `env RUST_MIN_STACK=16777216 cargo test -p tau-gateway integration_spec_2830 -- --test-threads=1` passed (`2 passed`).
   - LIVE: restarted `tau-8795` from the rebuilt binary and loaded `/ops/chat?theme=dark&sidebar=expanded&session=default`; Browser proof showed `sendStatusVisible=false`, `data-chat-send-status="idle"`, `data-chat-send-status-visible="false"`, and `transcriptVisible=true`. Loading the same page with `chat_status=empty-message` showed `sendStatusVisible=true`, `data-chat-send-status-visible="true"`, and `Message was not sent because it was empty.`
+  - RED: live Browser proof showed the collapsed session-details summary as `Session: default (40 entries)` while `data-transcript-message-count="39"` and `data-hidden-entry-count="1"` existed only inside hidden metadata.
+  - GREEN: `env RUST_MIN_STACK=16777216 cargo test -p tau-dashboard-ui functional_spec_2830 -- --test-threads=1` passed (`5 passed`), including collapsed session-details shown/hidden/total assertions.
+  - GREEN: `env RUST_MIN_STACK=16777216 cargo test -p tau-gateway functional_spec_2830 -- --test-threads=1` passed.
+  - GREEN: `env RUST_MIN_STACK=16777216 cargo test -p tau-gateway integration_spec_2830 -- --test-threads=1` passed (`2 passed`).
+  - GREEN: `env RUST_MIN_STACK=16777216 cargo clippy -p tau-dashboard-ui -p tau-gateway -- -D warnings` passed.
+  - GREEN: `env RUST_MIN_STACK=16777216 cargo clippy -p tau-dashboard-ui -p tau-gateway --tests -- -D warnings` passed.
+  - GREEN: `env RUST_MIN_STACK=16777216 cargo build -p tau-coding-agent` passed.
+  - LIVE: restarted `tau-8795` from the rebuilt binary and loaded `/ops/chat?theme=dark&sidebar=expanded&session=default`; Browser proof showed `Session: default (39 shown / 1 hidden / 40 total)`, matching `data-entry-count="40"`, `data-transcript-message-count="39"`, `data-hidden-entry-count="1"`, with the session-details manager still collapsed by default and no browser console errors.
 - Regression:
   - `cargo test -p tau-dashboard-ui functional_spec_2826 -- --test-threads=1`
   - `cargo test -p tau-gateway functional_spec_2802 -- --test-threads=1`

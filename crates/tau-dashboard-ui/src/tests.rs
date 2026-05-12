@@ -3156,6 +3156,10 @@ fn functional_spec_2830_c01_chat_route_renders_send_form_and_fallback_transcript
     assert!(html.contains(
         "id=\"tau-ops-chat-session-summary\" data-active-session-key=\"default\" data-entry-count=\"0\" data-total-tokens=\"0\" data-validation-state=\"valid\" data-updated-unix-ms=\"0\""
     ));
+    assert!(html.contains(
+        "id=\"tau-ops-chat-session-details\" data-secondary-session-metadata=\"true\" data-collapsed-by-default=\"true\" data-active-session-key=\"default\" data-entry-count=\"0\" data-transcript-message-count=\"0\" data-hidden-entry-count=\"0\""
+    ));
+    assert!(html.contains("Session: default (0 shown / 0 hidden / 0 total)"));
     assert!(html.contains("data-latest-message-index=\"none\""));
     assert!(html.contains(
         "id=\"tau-ops-chat-session-actions\" aria-label=\"Current chat session actions\" data-primary-session-actions=\"true\" data-latest-message-href=\"#tau-ops-chat-transcript\""
@@ -3351,8 +3355,9 @@ fn functional_spec_2830_c07_chat_route_prioritizes_composer_before_session_selec
         "chat composer should render before jump-to-latest navigation"
     );
     assert!(html.contains(
-        "id=\"tau-ops-chat-session-details\" data-secondary-session-metadata=\"true\" data-collapsed-by-default=\"true\" data-active-session-key=\"default\" data-entry-count=\"30\""
+        "id=\"tau-ops-chat-session-details\" data-secondary-session-metadata=\"true\" data-collapsed-by-default=\"true\" data-active-session-key=\"default\" data-entry-count=\"30\" data-transcript-message-count=\"0\" data-hidden-entry-count=\"30\""
     ));
+    assert!(html.contains("Session: default (0 shown / 30 hidden / 30 total)"));
     assert!(html.contains(
         "id=\"tau-ops-chat-session-actions\" aria-label=\"Current chat session actions\" data-primary-session-actions=\"true\" data-latest-message-href=\"#tau-ops-chat-transcript\""
     ));
@@ -3408,6 +3413,10 @@ fn functional_spec_2830_c02_chat_route_renders_snapshot_message_rows_for_active_
     assert!(html.contains(
         "id=\"tau-ops-chat-session-summary\" data-active-session-key=\"session-42\" data-entry-count=\"2\" data-total-tokens=\"0\" data-validation-state=\"valid\" data-updated-unix-ms=\"0\""
     ));
+    assert!(html.contains(
+        "id=\"tau-ops-chat-session-details\" data-secondary-session-metadata=\"true\" data-collapsed-by-default=\"true\" data-active-session-key=\"session-42\" data-entry-count=\"2\" data-transcript-message-count=\"2\" data-hidden-entry-count=\"0\""
+    ));
+    assert!(html.contains("Session: session-42 (2 shown / 0 hidden / 2 total)"));
     assert!(html.contains("data-latest-message-index=\"1\""));
     assert!(html.contains("id=\"tau-ops-chat-open-session-detail\" href=\"/ops/sessions/session-42?theme=light&amp;sidebar=collapsed&amp;session=session-42\""));
     assert!(html.contains("id=\"tau-ops-chat-jump-latest\" href=\"#tau-ops-chat-message-row-1\""));

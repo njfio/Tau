@@ -82,6 +82,11 @@ Given an operator submits a non-empty `/ops/chat` message,
 When the browser waits for the provider-backed response and redirect,
 Then the form exposes a deterministic submitting state, disables the send button, keeps the message payload submitted, and announces that Tau is sending the message.
 
+### AC-16 Collapsed session metadata summarizes hidden transcript rows honestly
+Given `/ops/chat` renders an active session with stored entries that do not all appear in the transcript,
+When the collapsed session-details summary renders,
+Then the summary identifies shown transcript rows, hidden rows, and total stored entries without requiring the operator to expand the metadata panel.
+
 ## Scope
 
 ### In Scope
@@ -98,6 +103,7 @@ Then the form exposes a deterministic submitting state, disables the send button
 - Compact latest-turn proof grouping around the verbose user/assistant latest-turn preview.
 - Hidden idle send-status marker with visible non-idle send-result states.
 - Visible submitting-state markers for non-empty chat sends while provider work is pending.
+- Honest collapsed session-details summary counts for shown transcript rows, hidden rows, and total entries.
 - Targeted regression validation for existing ops shell slices.
 
 ### Out of Scope
@@ -121,6 +127,7 @@ Then the form exposes a deterministic submitting state, disables the send button
 - C-13 (functional): `/ops/chat` hides idle send-status copy while rendering non-idle send-result states visibly.
 - C-14 (functional): `/ops/chat` renders open-session-detail and jump-to-latest actions before collapsed secondary metadata.
 - C-15 (functional): `/ops/chat` compose script marks non-empty sends as submitting with visible status copy and a disabled pending send button without disabling the message textarea.
+- C-16 (functional): `/ops/chat` collapsed session-details summary renders shown/hidden/total entry counts and exposes those counts on deterministic manager attributes.
 
 ## Success Metrics / Observable Signals
 - `cargo test -p tau-dashboard-ui functional_spec_2830 -- --test-threads=1` passes.
