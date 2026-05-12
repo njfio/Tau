@@ -16,6 +16,7 @@
 13. [x] T13 (RED/GREEN/REGRESSION): hide idle send-status copy while keeping non-idle send results visible.
 14. [x] T14 (RED/GREEN/REGRESSION): keep current-session open-detail and jump-latest actions visible before collapsed metadata.
 15. [x] T15 (RED/GREEN/REGRESSION): redirect successful sends to the latest rendered assistant row anchor.
+16. [x] T16 (RED/GREEN/REGRESSION): show a deterministic submitting state during non-empty provider-backed sends.
 
 ## Tier Mapping
 - Unit: `ops_shell_controls` session query parsing unit tests.
@@ -23,7 +24,7 @@
 - Contract/DbC: N/A.
 - Snapshot: N/A.
 - Functional: UI `/ops/chat` marker assertions.
-- Conformance: C-01..C-03, C-05..C-14.
+- Conformance: C-01..C-03, C-05..C-15.
 - Integration: gateway send + redirect + transcript visibility assertions.
 - Fuzz: N/A.
 - Mutation: `cargo mutants --in-diff <diff-file> -p tau-dashboard-ui -p tau-gateway`.

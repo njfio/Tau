@@ -15,7 +15,8 @@
 12. Hide idle send-status copy from the visible operator surface while preserving visible non-idle result states.
 13. Keep open-session-detail and jump-to-latest actions visible before collapsed secondary metadata.
 14. Redirect successful sends directly to the latest assistant row so the operator lands on the response after submit.
-15. Run targeted regressions for existing ops shell slices and validate crate gates.
+15. Mark non-empty sends as submitting in the browser before provider wait, with visible status copy and a disabled pending send button.
+16. Run targeted regressions for existing ops shell slices and validate crate gates.
 
 ## Affected Modules
 - `crates/tau-dashboard-ui/src/lib.rs`
@@ -48,6 +49,8 @@
   - Mitigation: keep the send-status contract in HTML but hide the idle state with deterministic visibility markers; show non-idle states such as `empty-message`.
 - Risk: successful sends return to the top of `/ops/chat`, hiding the answer below collapsed context and off-screen transcript rows.
   - Mitigation: append a latest rendered `tau-ops-chat-message-row-*` fragment to success redirects while leaving rejection/status redirects query-based.
+- Risk: non-empty sends appear inert while waiting on Codex/OAuth/provider work.
+  - Mitigation: set a deterministic submitting form state, keep the textarea readonly rather than disabled so the message still posts, disable the send button, and show live send-status copy.
 - Risk: control query expansion (`session`/`session_key`) regresses existing route behavior.
   - Mitigation: add unit coverage for control parsing + keep existing default behavior unchanged.
 
@@ -57,6 +60,7 @@
 - UI shell contracts:
   - `id="tau-ops-chat-send-form"` with deterministic `action`, `method`, and session/theme/sidebar hidden inputs.
   - `data-empty-message-submit-guard="true"` plus submit-event JavaScript that prevents whitespace-only form submissions.
+  - `data-submit-pending-state="idle|submitting"` plus submit-event JavaScript that shows "Sending message to Tau..." for non-empty sends before navigation.
   - `id="tau-ops-chat-send-status"` with `data-chat-send-status` and `data-chat-send-status-visible`; idle is hidden, including `empty-message` after backend rejection is visible.
   - `tau-ops-chat-send-form` and `tau-ops-chat-send-status` appear before `tau-ops-chat-session-selector`.
   - `tau-ops-chat-send-form` and `tau-ops-chat-send-status` appear before `tau-ops-chat-new-session-form`.

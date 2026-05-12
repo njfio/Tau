@@ -77,6 +77,11 @@ Given `/ops/chat` renders active session metadata and a long transcript,
 When the operator lands on the active chat page,
 Then the open-session-detail and jump-to-latest actions are visible before collapsed secondary metadata so the current transcript and detail view are reachable without expanding a panel.
 
+### AC-15 Non-empty send shows pending state while provider work runs
+Given an operator submits a non-empty `/ops/chat` message,
+When the browser waits for the provider-backed response and redirect,
+Then the form exposes a deterministic submitting state, disables the send button, keeps the message payload submitted, and announces that Tau is sending the message.
+
 ## Scope
 
 ### In Scope
@@ -92,6 +97,7 @@ Then the open-session-detail and jump-to-latest actions are visible before colla
 - Visible current-session navigation actions for open-session-detail and jump-to-latest.
 - Compact latest-turn proof grouping around the verbose user/assistant latest-turn preview.
 - Hidden idle send-status marker with visible non-idle send-result states.
+- Visible submitting-state markers for non-empty chat sends while provider work is pending.
 - Targeted regression validation for existing ops shell slices.
 
 ### Out of Scope
@@ -114,6 +120,7 @@ Then the open-session-detail and jump-to-latest actions are visible before colla
 - C-12 (functional): `/ops/chat` groups verbose latest-turn proof content inside a collapsed secondary latest-turn manager while preserving latest-turn markers and indexes.
 - C-13 (functional): `/ops/chat` hides idle send-status copy while rendering non-idle send-result states visibly.
 - C-14 (functional): `/ops/chat` renders open-session-detail and jump-to-latest actions before collapsed secondary metadata.
+- C-15 (functional): `/ops/chat` compose script marks non-empty sends as submitting with visible status copy and a disabled pending send button without disabling the message textarea.
 
 ## Success Metrics / Observable Signals
 - `cargo test -p tau-dashboard-ui functional_spec_2830 -- --test-threads=1` passes.

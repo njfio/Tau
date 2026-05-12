@@ -555,8 +555,12 @@ async fn functional_spec_2830_c01_ops_chat_shell_exposes_send_form_and_fallback_
         "id=\"tau-ops-chat-panel\" data-route=\"/ops/chat\" aria-hidden=\"false\" data-active-session-key=\"chat-c01\""
     ));
     assert!(body.contains(
-        "id=\"tau-ops-chat-send-form\" action=\"/ops/chat/send\" method=\"post\" data-session-key=\"chat-c01\""
+        "id=\"tau-ops-chat-send-form\" action=\"/ops/chat/send\" method=\"post\" data-session-key=\"chat-c01\" data-empty-message-submit-guard=\"true\" data-submit-pending-state=\"idle\""
     ));
+    assert!(body.contains("data-pending-submit-state=\"true\""));
+    assert!(body.contains("function markSubmitPending()"));
+    assert!(body.contains("sendButton.textContent = \"Sending...\""));
+    assert!(body.contains("Sending message to Tau..."));
     assert!(body.contains(
         "id=\"tau-ops-chat-session-key\" type=\"hidden\" name=\"session_key\" value=\"chat-c01\""
     ));
@@ -573,7 +577,7 @@ async fn functional_spec_2830_c01_ops_chat_shell_exposes_send_form_and_fallback_
         .find("id=\"tau-ops-chat-send-status\"")
         .expect("send status marker should render");
     assert!(body.contains(
-        "id=\"tau-ops-chat-send-status\" data-chat-send-status=\"idle\" data-chat-send-status-visible=\"false\" aria-hidden=\"true\" hidden"
+        "id=\"tau-ops-chat-send-status\" data-chat-send-status=\"idle\" data-chat-send-status-visible=\"false\" aria-hidden=\"true\" aria-live=\"polite\" hidden"
     ));
     let session_details_index = body
         .find("id=\"tau-ops-chat-session-details\"")
@@ -823,10 +827,10 @@ async fn integration_spec_2830_c06_ops_chat_send_rejects_empty_message_with_visi
     assert_eq!(chat_response.status(), StatusCode::OK);
     let chat_body = chat_response.text().await.expect("read ops chat body");
     assert!(chat_body.contains(
-        "id=\"tau-ops-chat-send-status\" data-chat-send-status=\"empty-message\" data-chat-send-status-visible=\"true\" aria-hidden=\"false\""
+        "id=\"tau-ops-chat-send-status\" data-chat-send-status=\"empty-message\" data-chat-send-status-visible=\"true\" aria-hidden=\"false\" aria-live=\"polite\""
     ));
     assert!(!chat_body.contains(
-        "id=\"tau-ops-chat-send-status\" data-chat-send-status=\"empty-message\" data-chat-send-status-visible=\"true\" aria-hidden=\"false\" hidden"
+        "id=\"tau-ops-chat-send-status\" data-chat-send-status=\"empty-message\" data-chat-send-status-visible=\"true\" aria-hidden=\"false\" aria-live=\"polite\" hidden"
     ));
     assert!(chat_body.contains("Message was not sent because it was empty."));
 

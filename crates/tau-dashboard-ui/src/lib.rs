@@ -6992,6 +6992,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 method=chat_send_form_method
                                 data-session-key=chat_session_key.clone()
                                 data-empty-message-submit-guard="true"
+                                data-submit-pending-state="idle"
                             >
                                 <input
                                     id="tau-ops-chat-session-key"
@@ -7031,24 +7032,40 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 data-submit-shortcut="enter"
                                 data-newline-shortcut="shift-enter"
                                 data-empty-submit-guard="true"
+                                data-pending-submit-state="true"
                             >
                                 r#"
                                 (function () {
                                     function installChatComposeShortcuts() {
                                         var input = document.getElementById("tau-ops-chat-input");
                                         var form = document.getElementById("tau-ops-chat-send-form");
+                                        var sendButton = document.getElementById("tau-ops-chat-send-button");
                                         if (!input || !form || input.getAttribute("data-compose-shortcuts-bound") === "true") {
                                             return;
                                         }
 
                                         input.setAttribute("data-compose-shortcuts-bound", "true");
                                         form.setAttribute("data-empty-message-submit-guard", "true");
+                                        form.setAttribute("data-submit-pending-state", "idle");
 
                                         function messageIsEmpty() {
                                             return !input.value || !input.value.trim();
                                         }
 
+                                        function resetPendingState() {
+                                            form.setAttribute("data-submit-pending-state", "idle");
+                                            input.removeAttribute("readonly");
+                                            input.removeAttribute("aria-busy");
+                                            if (sendButton) {
+                                                sendButton.disabled = false;
+                                                sendButton.removeAttribute("aria-disabled");
+                                                sendButton.setAttribute("data-submit-pending", "false");
+                                                sendButton.textContent = "Send";
+                                            }
+                                        }
+
                                         function markEmptySubmitBlocked() {
+                                            resetPendingState();
                                             input.setAttribute("data-submit-blocked", "empty-message");
                                             form.setAttribute("data-submit-blocked", "empty-message");
                                             var status = document.getElementById("tau-ops-chat-send-status");
@@ -7064,7 +7081,33 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                             }
                                         }
 
+                                        function markSubmitPending() {
+                                            input.removeAttribute("data-submit-blocked");
+                                            form.removeAttribute("data-submit-blocked");
+                                            form.setAttribute("data-submit-pending-state", "submitting");
+                                            input.setAttribute("readonly", "readonly");
+                                            input.setAttribute("aria-busy", "true");
+                                            if (sendButton) {
+                                                sendButton.disabled = true;
+                                                sendButton.setAttribute("aria-disabled", "true");
+                                                sendButton.setAttribute("data-submit-pending", "true");
+                                                sendButton.textContent = "Sending...";
+                                            }
+                                            var status = document.getElementById("tau-ops-chat-send-status");
+                                            var message = document.getElementById("tau-ops-chat-send-status-message");
+                                            if (status) {
+                                                status.setAttribute("data-chat-send-status", "submitting");
+                                                status.setAttribute("data-chat-send-status-visible", "true");
+                                                status.setAttribute("aria-hidden", "false");
+                                                status.hidden = false;
+                                            }
+                                            if (message) {
+                                                message.textContent = "Sending message to Tau...";
+                                            }
+                                        }
+
                                         function clearEmptySubmitBlocked() {
+                                            resetPendingState();
                                             input.removeAttribute("data-submit-blocked");
                                             form.removeAttribute("data-submit-blocked");
                                             var status = document.getElementById("tau-ops-chat-send-status");
@@ -7087,7 +7130,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                                 return;
                                             }
 
-                                            clearEmptySubmitBlocked();
+                                            markSubmitPending();
                                         });
 
                                         input.addEventListener("input", function () {
@@ -7107,7 +7150,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                                 return;
                                             }
 
-                                            clearEmptySubmitBlocked();
+                                            markSubmitPending();
                                             if (typeof form.requestSubmit === "function") {
                                                 form.requestSubmit();
                                             } else {
@@ -7129,6 +7172,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 data-chat-send-status=chat_send_status
                                 data-chat-send-status-visible=chat_send_status_visible
                                 aria-hidden=chat_send_status_hidden
+                                aria-live="polite"
                                 hidden=!chat_send_status_visible_bool
                             >
                                 <h3>Send Status</h3>
