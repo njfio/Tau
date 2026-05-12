@@ -3705,6 +3705,13 @@ fn functional_spec_2862_c01_c02_c03_chat_route_renders_token_counter_marker_cont
     assert!(html.contains("data-assistant-stream-count=\"0\""));
     assert!(html.contains("data-assistant-stream-tokens=\"0\""));
     assert!(html.contains("data-latest-assistant-token-count=\"0\""));
+    assert!(html.contains("aria-hidden=\"true\" data-token-counter-details-open=\"false\""));
+    assert!(html.contains("id=\"tau-ops-chat-token-counter-visibility-sync\""));
+    assert!(html.contains("data-sync-target=\"tau-ops-chat-token-counter\""));
+    assert!(html.contains("details.addEventListener(\"toggle\", syncTokenCounterVisibility)"));
+    assert!(html.contains(
+        "article.setAttribute(\"aria-hidden\", detailsOpen && tokenCounterVisible ? \"false\" : \"true\")"
+    ));
     assert!(html.contains("<dt>Input Tokens</dt>"));
     assert!(html.contains("<dt>Total Tokens</dt>"));
     assert!(html.contains("<dt>Assistant Streams</dt>"));

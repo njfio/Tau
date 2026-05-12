@@ -58,6 +58,11 @@ Given `/ops/chat` renders assistant transcript rows with token streams and persi
 when the collapsed token-counter summary renders,
 then the summary uses rendered assistant stream-token totals and labels the source as stream tokens instead of displaying a contradictory zero usage total.
 
+### AC-9 Collapsed token-counter detail has truthful accessibility state
+Given `/ops/chat` renders the token-counter detail inside a collapsed secondary manager,
+when the operator lands on the chat page,
+then the token-counter detail starts with `aria-hidden="true"` and only flips visible when the token-counter manager is open.
+
 ## Conformance Cases
 | Case | AC | Tier | Given | When | Then |
 |---|---|---|---|---|---|
@@ -69,6 +74,7 @@ then the summary uses rendered assistant stream-token totals and labels the sour
 | C-06 | AC-6 | Functional | chat snapshot with multiple assistant messages | render `/ops/chat` | token counter exposes stream count, stream token total, and latest assistant token count |
 | C-07 | AC-7 | Functional | `/ops/chat` token counter | render response | token-counter details manager is collapsed by default and contains the deterministic token-counter marker |
 | C-08 | AC-8 | Functional | usage total is zero but assistant stream tokens exist | render `/ops/chat` | token-counter summary uses stream-token count and `data-summary-token-source="assistant-stream"` |
+| C-09 | AC-9 | Functional | `/ops/chat` collapsed token-counter detail | render response and toggle manager | token-counter article starts `aria-hidden="true"` with `data-token-counter-details-open="false"` and syncs on disclosure toggle |
 
 ## Success Metrics / Signals
 - `cargo test -p tau-dashboard-ui spec_2862 -- --test-threads=1` passes.

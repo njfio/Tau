@@ -1361,6 +1361,13 @@ async fn functional_spec_2862_c01_c02_c03_ops_chat_shell_exposes_token_counter_m
     assert!(body.contains("data-assistant-stream-count=\"0\""));
     assert!(body.contains("data-assistant-stream-tokens=\"0\""));
     assert!(body.contains("data-latest-assistant-token-count=\"0\""));
+    assert!(body.contains("aria-hidden=\"true\" data-token-counter-details-open=\"false\""));
+    assert!(body.contains("id=\"tau-ops-chat-token-counter-visibility-sync\""));
+    assert!(body.contains("data-sync-target=\"tau-ops-chat-token-counter\""));
+    assert!(body.contains("details.addEventListener(\"toggle\", syncTokenCounterVisibility)"));
+    assert!(body.contains(
+        "article.setAttribute(\"aria-hidden\", detailsOpen && tokenCounterVisible ? \"false\" : \"true\")"
+    ));
 
     handle.abort();
 }

@@ -7695,6 +7695,8 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     data-assistant-stream-count=chat_assistant_stream_count_value.clone()
                                     data-assistant-stream-tokens=chat_assistant_stream_token_count_value.clone()
                                     data-latest-assistant-token-count=chat_latest_assistant_token_count_value.clone()
+                                    aria-hidden="true"
+                                    data-token-counter-details-open="false"
                                 >
                                     <h3>Token Counter</h3>
                                     <dl>
@@ -7725,6 +7727,40 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     </dl>
                                 </article>
                             </details>
+                            <script
+                                id="tau-ops-chat-token-counter-visibility-sync"
+                                data-sync-target="tau-ops-chat-token-counter"
+                            >
+                                r#"
+                                (function () {
+                                    function installTokenCounterVisibilitySync() {
+                                        var details = document.getElementById("tau-ops-chat-token-counter-details");
+                                        var article = document.getElementById("tau-ops-chat-token-counter");
+                                        if (!details || !article || details.getAttribute("data-visibility-sync-bound") === "true") {
+                                            return;
+                                        }
+
+                                        details.setAttribute("data-visibility-sync-bound", "true");
+
+                                        function syncTokenCounterVisibility() {
+                                            var detailsOpen = details.hasAttribute("open");
+                                            var tokenCounterVisible = details.getAttribute("data-token-counter-visible") === "true";
+                                            article.setAttribute("data-token-counter-details-open", detailsOpen ? "true" : "false");
+                                            article.setAttribute("aria-hidden", detailsOpen && tokenCounterVisible ? "false" : "true");
+                                        }
+
+                                        details.addEventListener("toggle", syncTokenCounterVisibility);
+                                        syncTokenCounterVisibility();
+                                    }
+
+                                    if (document.readyState === "loading") {
+                                        document.addEventListener("DOMContentLoaded", installTokenCounterVisibilitySync);
+                                    } else {
+                                        installTokenCounterVisibilitySync();
+                                    }
+                                })();
+                                "#
+                            </script>
                         </section>
                         <section
                             id="tau-ops-sessions-panel"

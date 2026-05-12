@@ -6,7 +6,8 @@
 3. Add visible aggregate rows for rendered assistant token streams while keeping stream aggregates zeroed on hidden non-chat routes.
 4. Wrap token accounting details in a collapsed-by-default secondary manager so the transcript remains the default chat surface.
 5. Make the collapsed token-counter summary identify the source of its headline count: persisted usage tokens when available, rendered assistant stream tokens when usage totals are unavailable.
-6. Re-run chat/session/detail regression suites and full verification gates.
+6. Sync token-counter detail accessibility state with the collapsed `<details>` manager so hidden accounting details are not exposed as open content.
+7. Re-run chat/session/detail regression suites and full verification gates.
 
 ## Affected Modules
 - `crates/tau-dashboard-ui/src/lib.rs`
@@ -23,10 +24,13 @@
   - Mitigation: preserve the token-counter article and markers inside a collapsed `<details>` manager with a concise total/stream summary.
 - Risk: the collapsed summary says `0 total` while assistant stream-token rows prove non-zero rendered tokens.
   - Mitigation: add summary-specific markers and use rendered stream-token totals with an `assistant-stream` source label whenever persisted provider usage totals are zero.
+- Risk: collapsed token accounting details remain absent visually but ambiguous to assistive tooling.
+  - Mitigation: start the token-counter article with `aria-hidden="true"` and update it from the token-counter manager's toggle state.
 
 ## Interface / Contract Notes
 - Additive SSR marker only.
 - Token counter exposes `data-assistant-stream-count`, `data-assistant-stream-tokens`, and `data-latest-assistant-token-count` from rendered assistant transcript rows.
 - Token counter is wrapped by `id="tau-ops-chat-token-counter-details"` with `data-collapsed-by-default="true"` and deterministic session/total markers.
 - Token counter summary exposes `data-summary-tokens` and `data-summary-token-source` on both the collapsed manager and detail article; source is `usage` when usage totals exist and `assistant-stream` otherwise.
+- Token counter detail exposes `data-token-counter-details-open` and `aria-hidden`, synced by `tau-ops-chat-token-counter-visibility-sync`.
 - No endpoint or payload schema changes.
