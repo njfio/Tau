@@ -53,6 +53,11 @@ Given `/ops/chat` renders token accounting details,
 when the operator lands on the active chat page,
 then the token counter marker remains present inside a collapsed-by-default token-counter manager with a concise summary.
 
+### AC-8 Token counter summary is honest when provider usage is unavailable
+Given `/ops/chat` renders assistant transcript rows with token streams and persisted provider usage total is zero,
+when the collapsed token-counter summary renders,
+then the summary uses rendered assistant stream-token totals and labels the source as stream tokens instead of displaying a contradictory zero usage total.
+
 ## Conformance Cases
 | Case | AC | Tier | Given | When | Then |
 |---|---|---|---|---|---|
@@ -63,6 +68,7 @@ then the token counter marker remains present inside a collapsed-by-default toke
 | C-05 | AC-5 | Regression | existing contract suites | rerun suites | no regressions in existing chat/session/detail visibility contracts |
 | C-06 | AC-6 | Functional | chat snapshot with multiple assistant messages | render `/ops/chat` | token counter exposes stream count, stream token total, and latest assistant token count |
 | C-07 | AC-7 | Functional | `/ops/chat` token counter | render response | token-counter details manager is collapsed by default and contains the deterministic token-counter marker |
+| C-08 | AC-8 | Functional | usage total is zero but assistant stream tokens exist | render `/ops/chat` | token-counter summary uses stream-token count and `data-summary-token-source="assistant-stream"` |
 
 ## Success Metrics / Signals
 - `cargo test -p tau-dashboard-ui spec_2862 -- --test-threads=1` passes.

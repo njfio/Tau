@@ -1328,6 +1328,10 @@ async fn functional_spec_2862_c01_c02_c03_ops_chat_shell_exposes_token_counter_m
         "id=\"tau-ops-chat-token-counter-details\" data-secondary-token-counter=\"true\" data-collapsed-by-default=\"true\" data-token-counter-visible=\"true\" data-session-key=\"chat-c01\" data-total-tokens=\"0\""
     ));
     assert!(
+        body.contains("data-summary-tokens=\"0\" data-summary-token-source=\"assistant-stream\"")
+    );
+    assert!(body.contains("Token counter: 0 stream tokens / 0 streams"));
+    assert!(
         token_counter_details_index < token_counter_index,
         "token-counter manager should contain token accounting details"
     );
@@ -1672,6 +1676,11 @@ async fn integration_spec_2901_c01_c02_c03_ops_chat_renders_assistant_token_stre
     assert!(body.contains("data-assistant-stream-count=\"1\""));
     assert!(body.contains("data-assistant-stream-tokens=\"3\""));
     assert!(body.contains("data-latest-assistant-token-count=\"3\""));
+    assert!(
+        body.contains("data-summary-tokens=\"3\" data-summary-token-source=\"assistant-stream\"")
+    );
+    assert!(body.contains("Token counter: 3 stream tokens / 1 streams"));
+    assert!(!body.contains("Token counter: 0 total / 1 streams"));
 
     handle.abort();
 }

@@ -4860,12 +4860,12 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     } else {
         "false"
     };
+    let session_detail_usage_total_token_count = context.chat.session_detail_usage_total_tokens;
     let session_detail_usage_input_tokens =
         context.chat.session_detail_usage_input_tokens.to_string();
     let session_detail_usage_output_tokens =
         context.chat.session_detail_usage_output_tokens.to_string();
-    let session_detail_usage_total_tokens =
-        context.chat.session_detail_usage_total_tokens.to_string();
+    let session_detail_usage_total_tokens = session_detail_usage_total_token_count.to_string();
     let session_detail_usage_estimated_cost_usd =
         context.chat.session_detail_usage_estimated_cost_usd.clone();
     let session_detail_timeline_rows = if session_detail_panel_active {
@@ -5115,9 +5115,29 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     let chat_assistant_stream_count_value = chat_assistant_stream_count.to_string();
     let chat_assistant_stream_token_count_value = chat_assistant_stream_token_count.to_string();
     let chat_latest_assistant_token_count_value = chat_latest_assistant_token_count.to_string();
+    let (
+        chat_token_counter_summary_token_count,
+        chat_token_counter_summary_token_source,
+        chat_token_counter_summary_token_label,
+    ) = if session_detail_usage_total_token_count > 0 {
+        (
+            session_detail_usage_total_token_count,
+            "usage",
+            "usage tokens",
+        )
+    } else {
+        (
+            chat_assistant_stream_token_count as u64,
+            "assistant-stream",
+            "stream tokens",
+        )
+    };
+    let chat_token_counter_summary_token_count_value =
+        chat_token_counter_summary_token_count.to_string();
     let chat_token_counter_summary_label = format!(
-        "Token counter: {} total / {} streams",
-        session_detail_usage_total_tokens.clone(),
+        "Token counter: {} {} / {} streams",
+        chat_token_counter_summary_token_count_value.clone(),
+        chat_token_counter_summary_token_label,
         chat_assistant_stream_count_value.clone()
     );
     let chat_new_session_form_action = context.chat.new_session_form_action.clone();
@@ -7604,6 +7624,8 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 data-token-counter-visible=chat_panel_visible
                                 data-session-key=chat_session_key.clone()
                                 data-total-tokens=session_detail_usage_total_tokens.clone()
+                                data-summary-tokens=chat_token_counter_summary_token_count_value.clone()
+                                data-summary-token-source=chat_token_counter_summary_token_source
                             >
                                 <summary id="tau-ops-chat-token-counter-details-summary">
                                     {chat_token_counter_summary_label}
@@ -7614,6 +7636,8 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     data-input-tokens=session_detail_usage_input_tokens.clone()
                                     data-output-tokens=session_detail_usage_output_tokens.clone()
                                     data-total-tokens=session_detail_usage_total_tokens.clone()
+                                    data-summary-tokens=chat_token_counter_summary_token_count_value.clone()
+                                    data-summary-token-source=chat_token_counter_summary_token_source
                                     data-assistant-stream-count=chat_assistant_stream_count_value.clone()
                                     data-assistant-stream-tokens=chat_assistant_stream_token_count_value.clone()
                                     data-latest-assistant-token-count=chat_latest_assistant_token_count_value.clone()

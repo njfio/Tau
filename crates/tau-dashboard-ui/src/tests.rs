@@ -3666,6 +3666,8 @@ fn functional_spec_2862_c01_c02_c03_chat_route_renders_token_counter_marker_cont
     assert!(html.contains(
         "id=\"tau-ops-chat-token-counter-details\" data-secondary-token-counter=\"true\" data-collapsed-by-default=\"true\" data-token-counter-visible=\"true\" data-session-key=\"session-usage\" data-total-tokens=\"34\""
     ));
+    assert!(html.contains("data-summary-tokens=\"34\" data-summary-token-source=\"usage\""));
+    assert!(html.contains("Token counter: 34 usage tokens / 0 streams"));
     assert!(
         token_counter_details_index < token_counter_index,
         "token-counter manager should contain token accounting details"
@@ -3717,11 +3719,43 @@ fn functional_spec_2862_c06_chat_token_counter_summarizes_assistant_token_stream
     assert!(html.contains(
         "id=\"tau-ops-chat-token-counter\" data-session-key=\"session-streams\" data-input-tokens=\"4\" data-output-tokens=\"9\" data-total-tokens=\"13\""
     ));
+    assert!(html.contains("data-summary-tokens=\"13\" data-summary-token-source=\"usage\""));
+    assert!(html.contains("Token counter: 13 usage tokens / 2 streams"));
     assert!(html.contains("data-assistant-stream-count=\"2\""));
     assert!(html.contains("data-assistant-stream-tokens=\"5\""));
     assert!(html.contains("data-latest-assistant-token-count=\"3\""));
     assert!(html.contains("<dt>Stream Tokens</dt>"));
     assert!(html.contains("<dt>Latest Assistant Tokens</dt>"));
+}
+
+#[test]
+fn functional_spec_2862_c08_chat_token_counter_summary_uses_stream_tokens_when_usage_missing() {
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        auth_mode: TauOpsDashboardAuthMode::Token,
+        active_route: TauOpsDashboardRoute::Chat,
+        theme: TauOpsDashboardTheme::Dark,
+        sidebar_state: TauOpsDashboardSidebarState::Expanded,
+        command_center: TauOpsDashboardCommandCenterSnapshot::default(),
+        chat: TauOpsDashboardChatSnapshot {
+            active_session_key: "session-stream-summary".to_string(),
+            message_rows: vec![TauOpsDashboardChatMessageRow {
+                role: "assistant".to_string(),
+                content: "rendered stream tokens".to_string(),
+            }],
+            session_detail_usage_total_tokens: 0,
+            ..TauOpsDashboardChatSnapshot::default()
+        },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
+    });
+
+    assert!(html.contains("data-total-tokens=\"0\""));
+    assert!(html.contains("data-assistant-stream-count=\"1\""));
+    assert!(html.contains("data-assistant-stream-tokens=\"3\""));
+    assert!(
+        html.contains("data-summary-tokens=\"3\" data-summary-token-source=\"assistant-stream\"")
+    );
+    assert!(html.contains("Token counter: 3 stream tokens / 1 streams"));
+    assert!(!html.contains("Token counter: 0 total / 1 streams"));
 }
 
 #[test]
