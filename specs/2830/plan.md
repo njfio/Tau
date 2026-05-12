@@ -4,7 +4,7 @@
 1. Add/extend RED conformance tests for `/ops/chat` send-form markers and message visibility contracts in both UI and gateway layers.
 2. Extend `tau-dashboard-ui` shell tests to assert deterministic chat form/transcript markers.
 3. In `tau-gateway`, hydrate chat snapshot rows from active session lineage using query controls (`session`/`session_key`).
-4. Add `POST /ops/chat/send` to append user messages and redirect to `/ops/chat` with preserved `theme`/`sidebar`/`session` controls.
+4. Add `POST /ops/chat/send` to append user/assistant messages and redirect to `/ops/chat` with preserved `theme`/`sidebar`/`session` controls plus the latest rendered message anchor.
 5. Distinguish total session entries from rendered transcript rows when system entries are hidden from the operator transcript.
 6. Add a form submit-event guard and backend `chat_status=empty-message` rejection path so blank sends are visibly rejected without creating or mutating session state.
 7. Keep active compose controls above new-session creation and historical session selection so secondary navigation cannot bury the current chat action.
@@ -14,7 +14,8 @@
 11. Group verbose latest-turn proof content in a compact collapsed-by-default latest-turn manager while preserving the underlying latest-turn article markers.
 12. Hide idle send-status copy from the visible operator surface while preserving visible non-idle result states.
 13. Keep open-session-detail and jump-to-latest actions visible before collapsed secondary metadata.
-14. Run targeted regressions for existing ops shell slices and validate crate gates.
+14. Redirect successful sends directly to the latest assistant row so the operator lands on the response after submit.
+15. Run targeted regressions for existing ops shell slices and validate crate gates.
 
 ## Affected Modules
 - `crates/tau-dashboard-ui/src/lib.rs`
@@ -45,11 +46,13 @@
   - Mitigation: place the latest-turn article inside a secondary `<details>` manager with deterministic visibility and latest-row index markers.
 - Risk: idle status text reads like an active result and adds noise immediately after the composer.
   - Mitigation: keep the send-status contract in HTML but hide the idle state with deterministic visibility markers; show non-idle states such as `empty-message`.
+- Risk: successful sends return to the top of `/ops/chat`, hiding the answer below collapsed context and off-screen transcript rows.
+  - Mitigation: append a latest rendered `tau-ops-chat-message-row-*` fragment to success redirects while leaving rejection/status redirects query-based.
 - Risk: control query expansion (`session`/`session_key`) regresses existing route behavior.
   - Mitigation: add unit coverage for control parsing + keep existing default behavior unchanged.
 
 ## Interfaces / Contracts
-- New gateway route: `POST /ops/chat/send` (form payload: `session_key`, `message`, `theme`, `sidebar`).
+- New gateway route: `POST /ops/chat/send` (form payload: `session_key`, `message`, `theme`, `sidebar`); success redirects include `#tau-ops-chat-message-row-{latest}`.
 - Existing route update: `GET /ops/chat` reads `session`/`session_key` query token and maps active session transcript rows.
 - UI shell contracts:
   - `id="tau-ops-chat-send-form"` with deterministic `action`, `method`, and session/theme/sidebar hidden inputs.

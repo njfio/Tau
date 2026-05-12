@@ -20,7 +20,7 @@ Then transcript markers map role/content rows from persisted session lineage for
 ### AC-3 `POST /ops/chat/send` appends user messages and redirects back to chat
 Given a valid message submission to `/ops/chat/send`,
 When the request is processed,
-Then the message is appended to the session store and the response redirects to `/ops/chat` preserving theme/sidebar/session controls.
+Then the user message and assistant reply are appended to the session store and the response redirects to `/ops/chat` preserving theme/sidebar/session controls plus the latest rendered message-row anchor.
 
 ### AC-4 Existing Tau Ops shell contracts remain stable
 Given existing phase 1A..1L ops shell suites,
@@ -102,7 +102,7 @@ Then the open-session-detail and jump-to-latest actions are visible before colla
 ## Conformance Cases
 - C-01 (functional): `/ops/chat` SSR includes send-form and transcript marker contracts.
 - C-02 (integration): `/ops/chat` transcript markers reflect persisted active-session messages.
-- C-03 (integration): `POST /ops/chat/send` appends user message, redirects to `/ops/chat`, and message appears in transcript markers.
+- C-03 (integration): `POST /ops/chat/send` appends user and assistant messages, redirects to `/ops/chat` with the latest message-row anchor, and the messages appear in transcript markers.
 - C-04 (regression): existing ops shell suites (auth/nav/theme/control/timeline/alerts/connectors) remain green.
 - C-05 (functional): `/ops/chat` summary markers distinguish total stored entries from rendered transcript rows and hidden system entries.
 - C-06 (functional/integration): empty or whitespace-only chat sends are blocked by the form contract or redirected with `chat_status=empty-message` without creating or mutating a session store.

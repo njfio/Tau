@@ -595,6 +595,20 @@ fn build_ops_chat_redirect_path(
     )
 }
 
+fn build_ops_chat_redirect_path_with_anchor(
+    theme: TauOpsDashboardTheme,
+    sidebar_state: TauOpsDashboardSidebarState,
+    session_key: &str,
+    anchor: Option<&str>,
+) -> String {
+    let mut redirect_path = build_ops_chat_redirect_path(theme, sidebar_state, session_key);
+    if let Some(anchor) = anchor.filter(|anchor| !anchor.trim().is_empty()) {
+        redirect_path.push('#');
+        redirect_path.push_str(anchor.trim());
+    }
+    redirect_path
+}
+
 fn build_ops_chat_redirect_path_with_status(
     theme: TauOpsDashboardTheme,
     sidebar_state: TauOpsDashboardSidebarState,
@@ -606,6 +620,24 @@ fn build_ops_chat_redirect_path_with_status(
         redirect_path.push_str("&chat_status=empty-message");
     }
     redirect_path
+}
+
+fn latest_ops_chat_message_anchor(
+    store: &SessionStore,
+    assistant_head: Option<u64>,
+) -> Option<String> {
+    let rendered_count = store
+        .lineage_entries(assistant_head)
+        .ok()?
+        .iter()
+        .filter(|entry| {
+            !matches!(entry.message.role, MessageRole::System)
+                && !entry.message.text_content().trim().is_empty()
+        })
+        .count();
+    rendered_count
+        .checked_sub(1)
+        .map(|index| format!("tau-ops-chat-message-row-{index}"))
 }
 
 fn build_ops_chat_new_session_redirect_path_with_status(
@@ -5270,11 +5302,6 @@ pub(super) async fn handle_ops_dashboard_chat_send(
     Form(form): Form<OpsDashboardChatSendForm>,
 ) -> Response {
     let session_key = form.resolved_session_key();
-    let redirect_path = build_ops_chat_redirect_path(
-        form.resolved_theme(),
-        form.resolved_sidebar_state(),
-        session_key.as_str(),
-    );
     let content = form.message.as_str();
     if content.trim().is_empty() {
         let redirect_path = build_ops_chat_redirect_path_with_status(
@@ -5372,6 +5399,13 @@ pub(super) async fn handle_ops_dashboard_chat_send(
         session_key.as_str(),
         assistant_head,
         store.entries().len(),
+    );
+    let latest_anchor = latest_ops_chat_message_anchor(&store, assistant_head);
+    let redirect_path = build_ops_chat_redirect_path_with_anchor(
+        form.resolved_theme(),
+        form.resolved_sidebar_state(),
+        session_key.as_str(),
+        latest_anchor.as_deref(),
     );
     Redirect::to(redirect_path.as_str()).into_response()
 }

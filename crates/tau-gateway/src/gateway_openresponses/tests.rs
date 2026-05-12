@@ -718,7 +718,9 @@ async fn integration_spec_2830_c02_c03_ops_chat_send_appends_message_and_renders
             .headers()
             .get("location")
             .and_then(|value| value.to_str().ok()),
-        Some("/ops/chat?theme=light&sidebar=collapsed&session=chat-send-session")
+        Some(
+            "/ops/chat?theme=light&sidebar=collapsed&session=chat-send-session#tau-ops-chat-message-row-1"
+        )
     );
 
     let chat_response = client
@@ -865,6 +867,15 @@ async fn integration_spec_3799_c01_ops_chat_send_appends_assistant_reply() {
         .await
         .expect("ops chat send request");
     assert_eq!(send_response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        send_response
+            .headers()
+            .get("location")
+            .and_then(|value| value.to_str().ok()),
+        Some(
+            "/ops/chat?theme=dark&sidebar=expanded&session=chat-reply-session#tau-ops-chat-message-row-1"
+        )
+    );
 
     let chat_response = client
         .get(format!(
@@ -1222,7 +1233,7 @@ async fn integration_spec_2881_c02_c03_c04_ops_chat_send_preserves_multiline_pay
             .headers()
             .get("location")
             .and_then(|value| value.to_str().ok()),
-        Some("/ops/chat?theme=light&sidebar=collapsed&session=chat-multiline")
+        Some("/ops/chat?theme=light&sidebar=collapsed&session=chat-multiline#tau-ops-chat-message-row-1")
     );
 
     let session_path = gateway_session_path(&state.config.state_dir, "chat-multiline");

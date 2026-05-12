@@ -15,6 +15,7 @@
 12. [x] T12 (RED/GREEN/REGRESSION): group verbose latest-turn proof in a compact collapsed latest-turn manager.
 13. [x] T13 (RED/GREEN/REGRESSION): hide idle send-status copy while keeping non-idle send results visible.
 14. [x] T14 (RED/GREEN/REGRESSION): keep current-session open-detail and jump-latest actions visible before collapsed metadata.
+15. [x] T15 (RED/GREEN/REGRESSION): redirect successful sends to the latest rendered assistant row anchor.
 
 ## Tier Mapping
 - Unit: `ops_shell_controls` session query parsing unit tests.
