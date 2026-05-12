@@ -3189,6 +3189,10 @@ fn functional_spec_2830_c01_chat_route_renders_send_form_and_fallback_transcript
     assert!(html.contains(
         "id=\"tau-ops-chat-latest-turn\" data-latest-turn-visible=\"false\" aria-hidden=\"true\""
     ));
+    assert!(html.contains(
+        "id=\"tau-ops-chat-latest-turn-details\" data-secondary-latest-turn=\"true\" data-collapsed-by-default=\"true\" data-latest-turn-visible=\"false\""
+    ));
+    assert!(html.contains("id=\"tau-ops-chat-latest-turn-details-summary\""));
 }
 
 #[test]
@@ -3378,6 +3382,27 @@ fn functional_spec_2830_c02_chat_route_renders_snapshot_message_rows_for_active_
     assert!(html.contains(
         "id=\"tau-ops-chat-latest-turn\" data-latest-turn-visible=\"true\" aria-hidden=\"false\""
     ));
+    let latest_turn_details_index = html
+        .find("id=\"tau-ops-chat-latest-turn-details\"")
+        .expect("latest-turn details manager should render");
+    let latest_turn_details_summary_index = html
+        .find("id=\"tau-ops-chat-latest-turn-details-summary\"")
+        .expect("latest-turn details summary should render");
+    let latest_turn_index = html
+        .find("id=\"tau-ops-chat-latest-turn\"")
+        .expect("latest-turn article should render");
+    assert!(html.contains(
+        "id=\"tau-ops-chat-latest-turn-details\" data-secondary-latest-turn=\"true\" data-collapsed-by-default=\"true\" data-latest-turn-visible=\"true\""
+    ));
+    assert!(html.contains("id=\"tau-ops-chat-latest-turn-details-summary\""));
+    assert!(
+        latest_turn_details_index < latest_turn_index,
+        "latest-turn manager should contain the verbose latest turn"
+    );
+    assert!(
+        latest_turn_details_summary_index < latest_turn_index,
+        "latest-turn summary should precede hidden latest-turn content"
+    );
     assert!(html.contains("data-latest-user-index=\"0\""));
     assert!(html.contains("data-latest-assistant-index=\"1\""));
     assert!(html.contains("id=\"tau-ops-chat-latest-user\" data-message-role=\"user\""));

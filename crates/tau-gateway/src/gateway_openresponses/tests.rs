@@ -669,6 +669,10 @@ async fn functional_spec_2830_c01_ops_chat_shell_exposes_send_form_and_fallback_
     assert!(body.contains(
         "id=\"tau-ops-chat-transcript\" data-message-count=\"0\" data-rendered-row-count=\"1\""
     ));
+    assert!(body.contains(
+        "id=\"tau-ops-chat-latest-turn-details\" data-secondary-latest-turn=\"true\" data-collapsed-by-default=\"true\" data-latest-turn-visible=\"false\""
+    ));
+    assert!(body.contains("id=\"tau-ops-chat-latest-turn-details-summary\""));
     assert!(body.contains("id=\"tau-ops-chat-message-row-0\" data-message-role=\"system\""));
     assert!(body.contains("No chat messages yet."));
 
@@ -717,6 +721,26 @@ async fn integration_spec_2830_c02_c03_ops_chat_send_appends_message_and_renders
     assert_eq!(chat_response.status(), StatusCode::OK);
     let chat_body = chat_response.text().await.expect("read ops chat body");
     assert!(chat_body.contains("id=\"tau-ops-chat-transcript\" data-message-count=\"2\""));
+    let latest_turn_details_index = chat_body
+        .find("id=\"tau-ops-chat-latest-turn-details\"")
+        .expect("latest-turn details manager should render");
+    let latest_turn_details_summary_index = chat_body
+        .find("id=\"tau-ops-chat-latest-turn-details-summary\"")
+        .expect("latest-turn details summary should render");
+    let latest_turn_index = chat_body
+        .find("id=\"tau-ops-chat-latest-turn\"")
+        .expect("latest-turn article should render");
+    assert!(chat_body.contains(
+        "id=\"tau-ops-chat-latest-turn-details\" data-secondary-latest-turn=\"true\" data-collapsed-by-default=\"true\" data-latest-turn-visible=\"true\""
+    ));
+    assert!(
+        latest_turn_details_index < latest_turn_index,
+        "latest-turn manager should contain the verbose latest turn"
+    );
+    assert!(
+        latest_turn_details_summary_index < latest_turn_index,
+        "latest-turn summary should precede hidden latest-turn content"
+    );
     assert!(chat_body.contains("id=\"tau-ops-chat-message-row-0\" data-message-role=\"user\""));
     assert!(chat_body.contains("hello ops chat"));
     assert!(chat_body.contains("id=\"tau-ops-chat-message-row-1\" data-message-role=\"assistant\""));

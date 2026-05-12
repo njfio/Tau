@@ -11,7 +11,8 @@
 8. Group new-session creation and session history in a compact collapsed-by-default session manager while preserving the underlying contracts.
 9. Move session summary and session navigation after the active compose/status controls so the primary chat action is first.
 10. Group session summary and session navigation in a compact collapsed-by-default session-details manager while preserving the underlying links.
-11. Run targeted regressions for existing ops shell slices and validate crate gates.
+11. Group verbose latest-turn proof content in a compact collapsed-by-default latest-turn manager while preserving the underlying latest-turn article markers.
+12. Run targeted regressions for existing ops shell slices and validate crate gates.
 
 ## Affected Modules
 - `crates/tau-dashboard-ui/src/lib.rs`
@@ -36,6 +37,8 @@
   - Mitigation: assert and render the send form/status before the session summary and session action links.
 - Risk: session metadata still competes visually with the current compose path after reordering.
   - Mitigation: place the summary/actions inside a secondary `<details>` manager with deterministic active-session and entry-count markers.
+- Risk: a long assistant turn in the latest-turn proof panel floods the first chat view even when the transcript is usable.
+  - Mitigation: place the latest-turn article inside a secondary `<details>` manager with deterministic visibility and latest-row index markers.
 - Risk: control query expansion (`session`/`session_key`) regresses existing route behavior.
   - Mitigation: add unit coverage for control parsing + keep existing default behavior unchanged.
 
@@ -51,6 +54,7 @@
   - `tau-ops-chat-send-form` and `tau-ops-chat-send-status` appear before `tau-ops-chat-session-summary` and `tau-ops-chat-session-actions`.
   - `id="tau-ops-chat-session-details"` wraps session summary/actions with `data-collapsed-by-default="true"`, `data-active-session-key`, and `data-entry-count`.
   - `id="tau-ops-chat-session-manager"` wraps new-session and selector controls with `data-collapsed-by-default="true"` and `data-session-option-count`.
+  - `id="tau-ops-chat-latest-turn-details"` wraps the verbose latest-turn article with `data-collapsed-by-default="true"`, `data-latest-turn-visible`, and latest user/assistant index markers.
   - `id="tau-ops-chat-transcript"` with deterministic `data-message-count` and row markers.
   - `id="tau-ops-chat-session-summary"` with `data-entry-count`, `data-transcript-message-count`, and `data-hidden-entry-count` so hidden system entries are not mistaken for missing transcript rows.
 

@@ -12,6 +12,7 @@
 9. [x] T9 (RED/GREEN/REGRESSION): group secondary new-session and session-history controls in a compact collapsed session manager.
 10. [x] T10 (RED/GREEN/REGRESSION): keep active compose controls before session metadata and navigation links on `/ops/chat`.
 11. [x] T11 (RED/GREEN/REGRESSION): group secondary session metadata and navigation links in a compact collapsed session-details manager.
+12. [x] T12 (RED/GREEN/REGRESSION): group verbose latest-turn proof in a compact collapsed latest-turn manager.
 
 ## Tier Mapping
 - Unit: `ops_shell_controls` session query parsing unit tests.
@@ -19,7 +20,7 @@
 - Contract/DbC: N/A.
 - Snapshot: N/A.
 - Functional: UI `/ops/chat` marker assertions.
-- Conformance: C-01..C-03, C-05..C-11.
+- Conformance: C-01..C-03, C-05..C-12.
 - Integration: gateway send + redirect + transcript visibility assertions.
 - Fuzz: N/A.
 - Mutation: `cargo mutants --in-diff <diff-file> -p tau-dashboard-ui -p tau-gateway`.
@@ -76,6 +77,14 @@
   - GREEN: `env RUST_MIN_STACK=16777216 cargo test -p tau-gateway functional_spec_2830 -- --test-threads=1` passed.
   - GREEN: `env RUST_MIN_STACK=16777216 cargo test -p tau-gateway integration_spec_2830 -- --test-threads=1` passed (`2 passed`).
   - LIVE: restarted `tau-8795` from the rebuilt binary and loaded `/ops/chat?theme=dark&sidebar=expanded&session=default`; Browser proof showed `Session: default (30 entries)` collapsed with `sessionSummaryVisible=false` and `sessionActionsVisible=false`, expanding it made both visible, and collapsing it hid both again while `Sessions (16)` stayed collapsed.
+  - RED: `env RUST_MIN_STACK=16777216 cargo test -p tau-dashboard-ui functional_spec_2830_c02_chat_route_renders_snapshot_message_rows_for_active_session -- --test-threads=1` failed on `latest-turn details manager should render`.
+  - RED: `env RUST_MIN_STACK=16777216 cargo test -p tau-gateway functional_spec_2830_c01_ops_chat_shell_exposes_send_form_and_fallback_transcript_markers -- --test-threads=1` failed on missing `tau-ops-chat-latest-turn-details`.
+  - GREEN: `env RUST_MIN_STACK=16777216 cargo test -p tau-dashboard-ui functional_spec_2830_c02_chat_route_renders_snapshot_message_rows_for_active_session -- --test-threads=1` passed.
+  - GREEN: `env RUST_MIN_STACK=16777216 cargo test -p tau-gateway functional_spec_2830_c01_ops_chat_shell_exposes_send_form_and_fallback_transcript_markers -- --test-threads=1` passed.
+  - GREEN: `env RUST_MIN_STACK=16777216 cargo test -p tau-dashboard-ui functional_spec_2830 -- --test-threads=1` passed (`4 passed`).
+  - GREEN: `env RUST_MIN_STACK=16777216 cargo test -p tau-gateway functional_spec_2830 -- --test-threads=1` passed.
+  - GREEN: `env RUST_MIN_STACK=16777216 cargo test -p tau-gateway integration_spec_2830 -- --test-threads=1` passed (`2 passed`).
+  - LIVE: restarted `tau-8795` from the rebuilt binary and loaded `/ops/chat?theme=dark&sidebar=expanded&session=default`; Browser proof showed `Latest turn: user 27 / assistant 28` collapsed by default with `latestArticleVisibleBeforeOpen=false` and `transcriptVisible=true`, expanding it made the latest-turn article visible while the transcript stayed visible, and collapsing it hid the article again.
 - Regression:
   - `cargo test -p tau-dashboard-ui functional_spec_2826 -- --test-threads=1`
   - `cargo test -p tau-gateway functional_spec_2802 -- --test-threads=1`
@@ -93,6 +102,7 @@
   - `env RUST_MIN_STACK=16777216 cargo clippy -p tau-dashboard-ui -p tau-gateway -- -D warnings`
   - `env RUST_MIN_STACK=16777216 cargo clippy -p tau-dashboard-ui --tests -- -D warnings`
   - `env RUST_MIN_STACK=16777216 cargo clippy -p tau-gateway --tests -- -D warnings`
+  - `env RUST_MIN_STACK=16777216 cargo build -p tau-coding-agent`
   - `python3 .github/scripts/oversized_file_guard.py`
   - `cargo mutants --in-diff /tmp/mutants_2830.diff -p tau-dashboard-ui -p tau-gateway` (`6/6` caught)
   - `cargo test -p tau-dashboard-ui`

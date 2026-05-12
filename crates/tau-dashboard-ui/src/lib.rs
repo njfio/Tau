@@ -4490,6 +4490,15 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     let chat_latest_assistant_index = latest_assistant_row
         .map(|(index, _)| index.to_string())
         .unwrap_or_else(|| "none".to_string());
+    let chat_latest_turn_summary_label = if chat_latest_turn_visible_bool {
+        format!(
+            "Latest turn: user {} / assistant {}",
+            chat_latest_user_index.clone(),
+            chat_latest_assistant_index.clone()
+        )
+    } else {
+        "Latest turn: none".to_string()
+    };
     let chat_latest_message_index = match (latest_user_row, latest_assistant_row) {
         (Some((user_index, _)), Some((assistant_index, _))) => {
             user_index.max(assistant_index).to_string()
@@ -5185,6 +5194,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     max-width: 420px;
                 }
                 #tau-ops-chat-send-form,
+                #tau-ops-chat-latest-turn-details,
                 #tau-ops-chat-latest-turn,
                 #tau-ops-chat-transcript,
                 #tau-ops-chat-token-counter {
@@ -5263,13 +5273,20 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     width: 100%;
                     max-width: 420px;
                 }
+                #tau-ops-chat-latest-turn-details {
+                    display: block;
+                    width: 100%;
+                    max-width: 720px;
+                }
                 #tau-ops-chat-session-details[open],
-                #tau-ops-chat-session-manager[open] {
+                #tau-ops-chat-session-manager[open],
+                #tau-ops-chat-latest-turn-details[open] {
                     display: grid;
                     gap: 8px;
                 }
                 #tau-ops-chat-session-details > summary,
-                #tau-ops-chat-session-manager > summary {
+                #tau-ops-chat-session-manager > summary,
+                #tau-ops-chat-latest-turn-details > summary {
                     display: flex;
                     min-height: 34px;
                     align-items: center;
@@ -5285,11 +5302,13 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     list-style: none;
                 }
                 #tau-ops-chat-session-details > summary::-webkit-details-marker,
-                #tau-ops-chat-session-manager > summary::-webkit-details-marker {
+                #tau-ops-chat-session-manager > summary::-webkit-details-marker,
+                #tau-ops-chat-latest-turn-details > summary::-webkit-details-marker {
                     display: none;
                 }
                 #tau-ops-chat-session-details > summary::after,
-                #tau-ops-chat-session-manager > summary::after {
+                #tau-ops-chat-session-manager > summary::after,
+                #tau-ops-chat-latest-turn-details > summary::after {
                     color: #7fb4ff;
                     content: "Open";
                     font-size: .66rem;
@@ -5297,7 +5316,8 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     text-transform: uppercase;
                 }
                 #tau-ops-chat-session-details[open] > summary::after,
-                #tau-ops-chat-session-manager[open] > summary::after {
+                #tau-ops-chat-session-manager[open] > summary::after,
+                #tau-ops-chat-latest-turn-details[open] > summary::after {
                     content: "Close";
                 }
                 #tau-ops-chat-session-selector {
@@ -6652,26 +6672,38 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 </ul>
                             </section>
                             </details>
-                            <article
-                                id="tau-ops-chat-latest-turn"
+                            <details
+                                id="tau-ops-chat-latest-turn-details"
+                                data-secondary-latest-turn="true"
+                                data-collapsed-by-default="true"
                                 data-latest-turn-visible=chat_latest_turn_visible
-                                aria-hidden=chat_latest_turn_hidden
-                                data-latest-user-index=chat_latest_user_index
-                                data-latest-assistant-index=chat_latest_assistant_index
+                                data-latest-user-index=chat_latest_user_index.clone()
+                                data-latest-assistant-index=chat_latest_assistant_index.clone()
                             >
-                                <h3>Latest Turn</h3>
-                                <section id="tau-ops-chat-latest-user" data-message-role="user">
-                                    <h4>User</h4>
-                                    <p>{chat_latest_user_content}</p>
-                                </section>
-                                <section
-                                    id="tau-ops-chat-latest-assistant"
-                                    data-message-role="assistant"
+                                <summary id="tau-ops-chat-latest-turn-details-summary">
+                                    {chat_latest_turn_summary_label}
+                                </summary>
+                                <article
+                                    id="tau-ops-chat-latest-turn"
+                                    data-latest-turn-visible=chat_latest_turn_visible
+                                    aria-hidden=chat_latest_turn_hidden
+                                    data-latest-user-index=chat_latest_user_index.clone()
+                                    data-latest-assistant-index=chat_latest_assistant_index.clone()
                                 >
-                                    <h4>Assistant</h4>
-                                    <p>{chat_latest_assistant_content}</p>
-                                </section>
-                            </article>
+                                    <h3>Latest Turn</h3>
+                                    <section id="tau-ops-chat-latest-user" data-message-role="user">
+                                        <h4>User</h4>
+                                        <p>{chat_latest_user_content}</p>
+                                    </section>
+                                    <section
+                                        id="tau-ops-chat-latest-assistant"
+                                        data-message-role="assistant"
+                                    >
+                                        <h4>Assistant</h4>
+                                        <p>{chat_latest_assistant_content}</p>
+                                    </section>
+                                </article>
+                            </details>
                             <ul
                                 id="tau-ops-chat-transcript"
                                 data-message-count=chat_message_count_value
