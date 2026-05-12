@@ -10,10 +10,11 @@
 7. Keep active compose controls above new-session creation and historical session selection so secondary navigation cannot bury the current chat action.
 8. Group new-session creation and session history in a compact collapsed-by-default session manager while preserving the underlying contracts.
 9. Move session summary and session navigation after the active compose/status controls so the primary chat action is first.
-10. Group session summary and session navigation in a compact collapsed-by-default session-details manager while preserving the underlying links.
+10. Group verbose session summary in a compact collapsed-by-default session-details manager while preserving first-screen current-session navigation links.
 11. Group verbose latest-turn proof content in a compact collapsed-by-default latest-turn manager while preserving the underlying latest-turn article markers.
 12. Hide idle send-status copy from the visible operator surface while preserving visible non-idle result states.
-13. Run targeted regressions for existing ops shell slices and validate crate gates.
+13. Keep open-session-detail and jump-to-latest actions visible before collapsed secondary metadata.
+14. Run targeted regressions for existing ops shell slices and validate crate gates.
 
 ## Affected Modules
 - `crates/tau-dashboard-ui/src/lib.rs`
@@ -37,7 +38,9 @@
 - Risk: session metadata and navigation links still make the first chat control secondary.
   - Mitigation: assert and render the send form/status before the session summary and session action links.
 - Risk: session metadata still competes visually with the current compose path after reordering.
-  - Mitigation: place the summary/actions inside a secondary `<details>` manager with deterministic active-session and entry-count markers.
+  - Mitigation: place the verbose summary inside a secondary `<details>` manager with deterministic active-session and entry-count markers.
+- Risk: hiding session actions inside collapsed metadata makes long transcripts hard to operate.
+  - Mitigation: keep the open-session-detail and jump-to-latest actions in a visible compact action row before secondary metadata.
 - Risk: a long assistant turn in the latest-turn proof panel floods the first chat view even when the transcript is usable.
   - Mitigation: place the latest-turn article inside a secondary `<details>` manager with deterministic visibility and latest-row index markers.
 - Risk: idle status text reads like an active result and adds noise immediately after the composer.
@@ -55,7 +58,8 @@
   - `tau-ops-chat-send-form` and `tau-ops-chat-send-status` appear before `tau-ops-chat-session-selector`.
   - `tau-ops-chat-send-form` and `tau-ops-chat-send-status` appear before `tau-ops-chat-new-session-form`.
   - `tau-ops-chat-send-form` and `tau-ops-chat-send-status` appear before `tau-ops-chat-session-summary` and `tau-ops-chat-session-actions`.
-  - `id="tau-ops-chat-session-details"` wraps session summary/actions with `data-collapsed-by-default="true"`, `data-active-session-key`, and `data-entry-count`.
+  - `id="tau-ops-chat-session-actions"` is a visible current-session action row with `data-primary-session-actions="true"` and `data-latest-message-href`.
+  - `id="tau-ops-chat-session-details"` wraps verbose session summary with `data-collapsed-by-default="true"`, `data-active-session-key`, and `data-entry-count`.
   - `id="tau-ops-chat-session-manager"` wraps new-session and selector controls with `data-collapsed-by-default="true"` and `data-session-option-count`.
   - `id="tau-ops-chat-latest-turn-details"` wraps the verbose latest-turn article with `data-collapsed-by-default="true"`, `data-latest-turn-visible`, and latest user/assistant index markers.
   - `id="tau-ops-chat-transcript"` with deterministic `data-message-count` and row markers.

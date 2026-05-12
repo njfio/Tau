@@ -60,7 +60,7 @@ Then the send form and send status appear before the session summary, open-sessi
 ### AC-11 Secondary session metadata is grouped behind a compact session-details manager
 Given `/ops/chat` renders active session metadata and session navigation links,
 When the operator lands on the active chat page,
-Then the session summary, open-session-detail link, and jump-to-latest link are grouped inside a collapsed-by-default session-details manager so they remain available without competing with the active composer.
+Then the verbose session summary is grouped inside a collapsed-by-default session-details manager so it remains available without competing with the active composer.
 
 ### AC-12 Verbose latest-turn proof is grouped behind a compact latest-turn manager
 Given `/ops/chat` renders latest user/assistant proof content,
@@ -71,6 +71,11 @@ Then the verbose latest-turn proof remains available inside a collapsed-by-defau
 Given `/ops/chat` renders without a send result,
 When the operator lands on the active chat page,
 Then the idle send-status marker remains present for contracts but is hidden from the visible operator surface, while real send results such as `empty-message` render visibly.
+
+### AC-14 Current session navigation stays visible
+Given `/ops/chat` renders active session metadata and a long transcript,
+When the operator lands on the active chat page,
+Then the open-session-detail and jump-to-latest actions are visible before collapsed secondary metadata so the current transcript and detail view are reachable without expanding a panel.
 
 ## Scope
 
@@ -83,7 +88,8 @@ Then the idle send-status marker remains present for contracts but is hidden fro
 - Composer-first ordering before secondary new-session creation controls.
 - Compact secondary session manager grouping around new-session and session-history controls.
 - Composer-first ordering before session metadata and navigation actions.
-- Compact secondary session-details grouping around session metadata and navigation actions.
+- Compact secondary session-details grouping around verbose session metadata.
+- Visible current-session navigation actions for open-session-detail and jump-to-latest.
 - Compact latest-turn proof grouping around the verbose user/assistant latest-turn preview.
 - Hidden idle send-status marker with visible non-idle send-result states.
 - Targeted regression validation for existing ops shell slices.
@@ -104,9 +110,10 @@ Then the idle send-status marker remains present for contracts but is hidden fro
 - C-08 (functional): `/ops/chat` places the send form and send-status marker before the new-session form and status controls.
 - C-09 (functional): `/ops/chat` groups new-session and session selector controls inside a collapsed secondary session manager with a summary count.
 - C-10 (functional): `/ops/chat` places the send form and send-status marker before the session summary and session navigation links.
-- C-11 (functional): `/ops/chat` groups the session summary and session navigation links inside a collapsed secondary session-details manager with an active-session summary.
+- C-11 (functional): `/ops/chat` groups the verbose session summary inside a collapsed secondary session-details manager with an active-session summary.
 - C-12 (functional): `/ops/chat` groups verbose latest-turn proof content inside a collapsed secondary latest-turn manager while preserving latest-turn markers and indexes.
 - C-13 (functional): `/ops/chat` hides idle send-status copy while rendering non-idle send-result states visibly.
+- C-14 (functional): `/ops/chat` renders open-session-detail and jump-to-latest actions before collapsed secondary metadata.
 
 ## Success Metrics / Observable Signals
 - `cargo test -p tau-dashboard-ui functional_spec_2830 -- --test-threads=1` passes.

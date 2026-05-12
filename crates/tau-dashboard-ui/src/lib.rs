@@ -5846,6 +5846,8 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     grid-template-columns: repeat(2, minmax(0, 1fr));
                     gap: 6px;
                     margin-top: 2px;
+                    width: 100%;
+                    max-width: 420px;
                 }
                 #tau-ops-chat-session-actions a {
                     display: flex;
@@ -7134,6 +7136,22 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     {chat_send_status_message}
                                 </p>
                             </article>
+                            <nav
+                                id="tau-ops-chat-session-actions"
+                                aria-label="Current chat session actions"
+                                data-primary-session-actions="true"
+                                data-latest-message-href=chat_latest_message_href.clone()
+                            >
+                                <a
+                                    id="tau-ops-chat-open-session-detail"
+                                    href=chat_session_detail_href.clone()
+                                >
+                                    Open Session Detail
+                                </a>
+                                <a id="tau-ops-chat-jump-latest" href=chat_latest_message_href.clone()>
+                                    Jump To Latest
+                                </a>
+                            </nav>
                             <details
                                 id="tau-ops-chat-session-details"
                                 data-secondary-session-metadata="true"
@@ -7195,20 +7213,6 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                         </dd>
                                     </div>
                                 </dl>
-                                <nav
-                                    id="tau-ops-chat-session-actions"
-                                    aria-label="Chat session actions"
-                                >
-                                    <a
-                                        id="tau-ops-chat-open-session-detail"
-                                        href=chat_session_detail_href
-                                    >
-                                        Open Session Detail
-                                    </a>
-                                    <a id="tau-ops-chat-jump-latest" href=chat_latest_message_href>
-                                        Jump To Latest
-                                    </a>
-                                </nav>
                             </article>
                             </details>
                             <details

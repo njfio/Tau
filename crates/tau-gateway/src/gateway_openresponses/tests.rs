@@ -642,6 +642,10 @@ async fn functional_spec_2830_c01_ops_chat_shell_exposes_send_form_and_fallback_
         "chat composer should render before secondary session navigation"
     );
     assert!(
+        session_actions_index < session_details_index,
+        "current-session navigation should stay visible before collapsed session metadata"
+    );
+    assert!(
         send_form_index < open_session_detail_index,
         "chat composer should render before open-session-detail navigation"
     );
@@ -651,6 +655,9 @@ async fn functional_spec_2830_c01_ops_chat_shell_exposes_send_form_and_fallback_
     );
     assert!(body.contains(
         "id=\"tau-ops-chat-session-details\" data-secondary-session-metadata=\"true\" data-collapsed-by-default=\"true\""
+    ));
+    assert!(body.contains(
+        "id=\"tau-ops-chat-session-actions\" aria-label=\"Current chat session actions\" data-primary-session-actions=\"true\" data-latest-message-href=\"#tau-ops-chat-transcript\""
     ));
     assert!(body.contains("id=\"tau-ops-chat-session-details-summary\""));
     assert!(body.contains(

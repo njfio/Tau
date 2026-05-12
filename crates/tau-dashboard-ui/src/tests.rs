@@ -3157,9 +3157,9 @@ fn functional_spec_2830_c01_chat_route_renders_send_form_and_fallback_transcript
         "id=\"tau-ops-chat-session-summary\" data-active-session-key=\"default\" data-entry-count=\"0\" data-total-tokens=\"0\" data-validation-state=\"valid\" data-updated-unix-ms=\"0\""
     ));
     assert!(html.contains("data-latest-message-index=\"none\""));
-    assert!(
-        html.contains("id=\"tau-ops-chat-session-actions\" aria-label=\"Chat session actions\"")
-    );
+    assert!(html.contains(
+        "id=\"tau-ops-chat-session-actions\" aria-label=\"Current chat session actions\" data-primary-session-actions=\"true\" data-latest-message-href=\"#tau-ops-chat-transcript\""
+    ));
     assert!(html.contains("id=\"tau-ops-chat-open-session-detail\" href=\"/ops/sessions/default?theme=dark&amp;sidebar=expanded&amp;session=default\""));
     assert!(html.contains("id=\"tau-ops-chat-jump-latest\" href=\"#tau-ops-chat-transcript\""));
     assert!(html
@@ -3334,6 +3334,10 @@ fn functional_spec_2830_c07_chat_route_prioritizes_composer_before_session_selec
         "chat composer should render before secondary session navigation"
     );
     assert!(
+        session_actions_index < session_details_index,
+        "current-session navigation should stay visible before collapsed session metadata"
+    );
+    assert!(
         send_form_index < open_session_detail_index,
         "chat composer should render before open-session-detail navigation"
     );
@@ -3343,6 +3347,9 @@ fn functional_spec_2830_c07_chat_route_prioritizes_composer_before_session_selec
     );
     assert!(html.contains(
         "id=\"tau-ops-chat-session-details\" data-secondary-session-metadata=\"true\" data-collapsed-by-default=\"true\" data-active-session-key=\"default\" data-entry-count=\"30\""
+    ));
+    assert!(html.contains(
+        "id=\"tau-ops-chat-session-actions\" aria-label=\"Current chat session actions\" data-primary-session-actions=\"true\" data-latest-message-href=\"#tau-ops-chat-transcript\""
     ));
     assert!(html.contains("id=\"tau-ops-chat-session-details-summary\""));
     assert!(html.contains(
@@ -3399,6 +3406,9 @@ fn functional_spec_2830_c02_chat_route_renders_snapshot_message_rows_for_active_
     assert!(html.contains("data-latest-message-index=\"1\""));
     assert!(html.contains("id=\"tau-ops-chat-open-session-detail\" href=\"/ops/sessions/session-42?theme=light&amp;sidebar=collapsed&amp;session=session-42\""));
     assert!(html.contains("id=\"tau-ops-chat-jump-latest\" href=\"#tau-ops-chat-message-row-1\""));
+    assert!(html.contains(
+        "id=\"tau-ops-chat-session-actions\" aria-label=\"Current chat session actions\" data-primary-session-actions=\"true\" data-latest-message-href=\"#tau-ops-chat-message-row-1\""
+    ));
     assert!(html.contains("id=\"tau-ops-chat-send-form\" action=\"/ops/chat/send\" method=\"post\" data-session-key=\"session-42\""));
     assert!(
         html.contains("id=\"tau-ops-chat-theme\" type=\"hidden\" name=\"theme\" value=\"light\"")

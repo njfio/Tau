@@ -11,9 +11,10 @@
 8. [x] T8 (RED/GREEN/REGRESSION): keep active compose controls before secondary new-session creation on `/ops/chat`.
 9. [x] T9 (RED/GREEN/REGRESSION): group secondary new-session and session-history controls in a compact collapsed session manager.
 10. [x] T10 (RED/GREEN/REGRESSION): keep active compose controls before session metadata and navigation links on `/ops/chat`.
-11. [x] T11 (RED/GREEN/REGRESSION): group secondary session metadata and navigation links in a compact collapsed session-details manager.
+11. [x] T11 (RED/GREEN/REGRESSION): group verbose secondary session metadata in a compact collapsed session-details manager.
 12. [x] T12 (RED/GREEN/REGRESSION): group verbose latest-turn proof in a compact collapsed latest-turn manager.
 13. [x] T13 (RED/GREEN/REGRESSION): hide idle send-status copy while keeping non-idle send results visible.
+14. [x] T14 (RED/GREEN/REGRESSION): keep current-session open-detail and jump-latest actions visible before collapsed metadata.
 
 ## Tier Mapping
 - Unit: `ops_shell_controls` session query parsing unit tests.
@@ -21,7 +22,7 @@
 - Contract/DbC: N/A.
 - Snapshot: N/A.
 - Functional: UI `/ops/chat` marker assertions.
-- Conformance: C-01..C-03, C-05..C-13.
+- Conformance: C-01..C-03, C-05..C-14.
 - Integration: gateway send + redirect + transcript visibility assertions.
 - Fuzz: N/A.
 - Mutation: `cargo mutants --in-diff <diff-file> -p tau-dashboard-ui -p tau-gateway`.
