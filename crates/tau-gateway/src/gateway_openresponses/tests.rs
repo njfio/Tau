@@ -688,6 +688,10 @@ async fn functional_spec_2830_c01_ops_chat_shell_exposes_send_form_and_fallback_
         "id=\"tau-ops-chat-latest-turn-details\" data-secondary-latest-turn=\"true\" data-collapsed-by-default=\"true\" data-latest-turn-visible=\"false\""
     ));
     assert!(body.contains("id=\"tau-ops-chat-latest-turn-details-summary\""));
+    assert!(body.contains(
+        "data-latest-turn-state=\"none\" data-latest-message-role=\"none\" data-latest-message-index=\"none\""
+    ));
+    assert!(body.contains("Latest turn: none"));
     assert!(body.contains("id=\"tau-ops-chat-message-row-0\" data-message-role=\"system\""));
     assert!(body.contains("No chat messages yet."));
 
@@ -750,6 +754,11 @@ async fn integration_spec_2830_c02_c03_ops_chat_send_appends_message_and_renders
     assert!(chat_body.contains(
         "id=\"tau-ops-chat-latest-turn-details\" data-secondary-latest-turn=\"true\" data-collapsed-by-default=\"true\" data-latest-turn-visible=\"true\""
     ));
+    assert!(chat_body.contains(
+        "data-latest-turn-state=\"assistant-replied\" data-latest-message-role=\"assistant\" data-latest-message-index=\"1\""
+    ));
+    assert!(chat_body.contains("Latest turn: assistant reply shown"));
+    assert!(!chat_body.contains("Latest turn: user 0 / assistant 1"));
     assert!(
         latest_turn_details_index < latest_turn_index,
         "latest-turn manager should contain the verbose latest turn"

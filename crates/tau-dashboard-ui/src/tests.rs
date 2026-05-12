@@ -3210,6 +3210,10 @@ fn functional_spec_2830_c01_chat_route_renders_send_form_and_fallback_transcript
         "id=\"tau-ops-chat-latest-turn-details\" data-secondary-latest-turn=\"true\" data-collapsed-by-default=\"true\" data-latest-turn-visible=\"false\""
     ));
     assert!(html.contains("id=\"tau-ops-chat-latest-turn-details-summary\""));
+    assert!(html.contains(
+        "data-latest-turn-state=\"none\" data-latest-message-role=\"none\" data-latest-message-index=\"none\""
+    ));
+    assert!(html.contains("Latest turn: none"));
 }
 
 #[test]
@@ -3451,6 +3455,11 @@ fn functional_spec_2830_c02_chat_route_renders_snapshot_message_rows_for_active_
         "id=\"tau-ops-chat-latest-turn-details\" data-secondary-latest-turn=\"true\" data-collapsed-by-default=\"true\" data-latest-turn-visible=\"true\""
     ));
     assert!(html.contains("id=\"tau-ops-chat-latest-turn-details-summary\""));
+    assert!(html.contains(
+        "data-latest-turn-state=\"assistant-replied\" data-latest-message-role=\"assistant\" data-latest-message-index=\"1\""
+    ));
+    assert!(html.contains("Latest turn: assistant reply shown"));
+    assert!(!html.contains("Latest turn: user 0 / assistant 1"));
     assert!(
         latest_turn_details_index < latest_turn_index,
         "latest-turn manager should contain the verbose latest turn"

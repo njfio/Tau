@@ -5073,21 +5073,34 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     let chat_latest_assistant_index = latest_assistant_row
         .map(|(index, _)| index.to_string())
         .unwrap_or_else(|| "none".to_string());
-    let chat_latest_turn_summary_label = if chat_latest_turn_visible_bool {
-        format!(
-            "Latest turn: user {} / assistant {}",
-            chat_latest_user_index.clone(),
-            chat_latest_assistant_index.clone()
-        )
-    } else {
-        "Latest turn: none".to_string()
-    };
     let chat_latest_message_index = match (latest_user_row, latest_assistant_row) {
         (Some((user_index, _)), Some((assistant_index, _))) => {
             user_index.max(assistant_index).to_string()
         }
         (Some((index, _)), None) | (None, Some((index, _))) => index.to_string(),
         (None, None) => "none".to_string(),
+    };
+    let chat_latest_message_role = match (latest_user_row, latest_assistant_row) {
+        (Some((user_index, _)), Some((assistant_index, _))) if assistant_index >= user_index => {
+            "assistant"
+        }
+        (Some(_), _) => "user",
+        (None, Some(_)) => "assistant",
+        (None, None) => "none",
+    };
+    let chat_latest_turn_state = match (latest_user_row, latest_assistant_row) {
+        (Some((user_index, _)), Some((assistant_index, _))) if assistant_index >= user_index => {
+            "assistant-replied"
+        }
+        (Some(_), _) => "awaiting-assistant",
+        (None, Some(_)) => "assistant-only",
+        (None, None) => "none",
+    };
+    let chat_latest_turn_summary_label = match chat_latest_turn_state {
+        "assistant-replied" => "Latest turn: assistant reply shown",
+        "awaiting-assistant" => "Latest turn: waiting for assistant reply",
+        "assistant-only" => "Latest turn: assistant reply shown",
+        _ => "Latest turn: none",
     };
     let chat_latest_message_href = if chat_latest_message_index == "none" {
         "#tau-ops-chat-transcript".to_string()
@@ -7456,6 +7469,9 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 data-latest-turn-visible=chat_latest_turn_visible
                                 data-latest-user-index=chat_latest_user_index.clone()
                                 data-latest-assistant-index=chat_latest_assistant_index.clone()
+                                data-latest-turn-state=chat_latest_turn_state
+                                data-latest-message-role=chat_latest_message_role
+                                data-latest-message-index=chat_latest_message_index.clone()
                             >
                                 <summary id="tau-ops-chat-latest-turn-details-summary">
                                     {chat_latest_turn_summary_label}
@@ -7466,6 +7482,9 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     aria-hidden=chat_latest_turn_hidden
                                     data-latest-user-index=chat_latest_user_index.clone()
                                     data-latest-assistant-index=chat_latest_assistant_index.clone()
+                                    data-latest-turn-state=chat_latest_turn_state
+                                    data-latest-message-role=chat_latest_message_role
+                                    data-latest-message-index=chat_latest_message_index.clone()
                                 >
                                     <h3>Latest Turn</h3>
                                     <section id="tau-ops-chat-latest-user" data-message-role="user">
