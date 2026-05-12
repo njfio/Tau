@@ -3204,7 +3204,7 @@ fn functional_spec_2830_c01_chat_route_renders_send_form_and_fallback_transcript
     assert!(html.contains("id=\"tau-ops-chat-message-row-0\" data-message-role=\"system\""));
     assert!(html.contains("No chat messages yet."));
     assert!(html.contains(
-        "id=\"tau-ops-chat-latest-turn\" data-latest-turn-visible=\"false\" aria-hidden=\"true\""
+        "id=\"tau-ops-chat-latest-turn\" data-latest-turn-visible=\"false\" aria-hidden=\"true\" data-latest-turn-details-open=\"false\""
     ));
     assert!(html.contains(
         "id=\"tau-ops-chat-latest-turn-details\" data-secondary-latest-turn=\"true\" data-collapsed-by-default=\"true\" data-latest-turn-visible=\"false\""
@@ -3214,6 +3214,9 @@ fn functional_spec_2830_c01_chat_route_renders_send_form_and_fallback_transcript
         "data-latest-turn-state=\"none\" data-latest-message-role=\"none\" data-latest-message-index=\"none\""
     ));
     assert!(html.contains("Latest turn: none"));
+    assert!(html.contains("id=\"tau-ops-chat-latest-turn-visibility-sync\""));
+    assert!(html.contains("data-sync-target=\"tau-ops-chat-latest-turn\""));
+    assert!(html.contains("details.addEventListener(\"toggle\", syncLatestTurnVisibility)"));
 }
 
 #[test]
@@ -3440,7 +3443,7 @@ fn functional_spec_2830_c02_chat_route_renders_snapshot_message_rows_for_active_
     assert!(html.contains("first message"));
     assert!(html.contains("second message"));
     assert!(html.contains(
-        "id=\"tau-ops-chat-latest-turn\" data-latest-turn-visible=\"true\" aria-hidden=\"false\""
+        "id=\"tau-ops-chat-latest-turn\" data-latest-turn-visible=\"true\" aria-hidden=\"true\" data-latest-turn-details-open=\"false\""
     ));
     let latest_turn_details_index = html
         .find("id=\"tau-ops-chat-latest-turn-details\"")
@@ -3460,6 +3463,11 @@ fn functional_spec_2830_c02_chat_route_renders_snapshot_message_rows_for_active_
     ));
     assert!(html.contains("Latest turn: assistant reply shown"));
     assert!(!html.contains("Latest turn: user 0 / assistant 1"));
+    assert!(html.contains("id=\"tau-ops-chat-latest-turn-visibility-sync\""));
+    assert!(html.contains("syncLatestTurnVisibility()"));
+    assert!(html.contains(
+        "article.setAttribute(\"aria-hidden\", detailsOpen && latestTurnVisible ? \"false\" : \"true\")"
+    ));
     assert!(
         latest_turn_details_index < latest_turn_index,
         "latest-turn manager should contain the verbose latest turn"

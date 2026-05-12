@@ -92,6 +92,11 @@ Given `/ops/chat` renders latest user/assistant proof content,
 When the collapsed latest-turn summary renders,
 Then the visible summary describes the latest turn state in operator terms while preserving deterministic indexes and latest-message role markers as data attributes.
 
+### AC-18 Collapsed latest-turn proof has truthful accessibility state
+Given `/ops/chat` renders the latest-turn proof article inside a collapsed details manager,
+When the page loads or the operator toggles the latest-turn manager,
+Then the proof article is `aria-hidden` while collapsed and becomes exposed only when the manager is open and latest-turn content exists.
+
 ## Scope
 
 ### In Scope
@@ -110,6 +115,7 @@ Then the visible summary describes the latest turn state in operator terms while
 - Visible submitting-state markers for non-empty chat sends while provider work is pending.
 - Honest collapsed session-details summary counts for shown transcript rows, hidden rows, and total entries.
 - Operator-readable collapsed latest-turn state with deterministic latest row indexes retained as attributes.
+- Synchronized latest-turn proof accessibility state for collapsed and expanded details states.
 - Targeted regression validation for existing ops shell slices.
 
 ### Out of Scope
@@ -135,6 +141,7 @@ Then the visible summary describes the latest turn state in operator terms while
 - C-15 (functional): `/ops/chat` compose script marks non-empty sends as submitting with visible status copy and a disabled pending send button without disabling the message textarea.
 - C-16 (functional): `/ops/chat` collapsed session-details summary renders shown/hidden/total entry counts and exposes those counts on deterministic manager attributes.
 - C-17 (functional): `/ops/chat` collapsed latest-turn summary renders operator-readable state such as assistant reply shown or waiting for assistant reply while exposing latest indexes and role on deterministic attributes.
+- C-18 (functional/browser): `/ops/chat` latest-turn proof article starts `aria-hidden` while its details manager is collapsed, and the details-toggle sync script exposes it only when opened.
 
 ## Success Metrics / Observable Signals
 - `cargo test -p tau-dashboard-ui functional_spec_2830 -- --test-threads=1` passes.

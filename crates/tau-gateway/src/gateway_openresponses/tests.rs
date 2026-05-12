@@ -692,6 +692,11 @@ async fn functional_spec_2830_c01_ops_chat_shell_exposes_send_form_and_fallback_
         "data-latest-turn-state=\"none\" data-latest-message-role=\"none\" data-latest-message-index=\"none\""
     ));
     assert!(body.contains("Latest turn: none"));
+    assert!(body.contains(
+        "id=\"tau-ops-chat-latest-turn\" data-latest-turn-visible=\"false\" aria-hidden=\"true\" data-latest-turn-details-open=\"false\""
+    ));
+    assert!(body.contains("id=\"tau-ops-chat-latest-turn-visibility-sync\""));
+    assert!(body.contains("details.addEventListener(\"toggle\", syncLatestTurnVisibility)"));
     assert!(body.contains("id=\"tau-ops-chat-message-row-0\" data-message-role=\"system\""));
     assert!(body.contains("No chat messages yet."));
 
@@ -759,6 +764,10 @@ async fn integration_spec_2830_c02_c03_ops_chat_send_appends_message_and_renders
     ));
     assert!(chat_body.contains("Latest turn: assistant reply shown"));
     assert!(!chat_body.contains("Latest turn: user 0 / assistant 1"));
+    assert!(chat_body.contains(
+        "id=\"tau-ops-chat-latest-turn\" data-latest-turn-visible=\"true\" aria-hidden=\"true\" data-latest-turn-details-open=\"false\""
+    ));
+    assert!(chat_body.contains("id=\"tau-ops-chat-latest-turn-visibility-sync\""));
     assert!(
         latest_turn_details_index < latest_turn_index,
         "latest-turn manager should contain the verbose latest turn"

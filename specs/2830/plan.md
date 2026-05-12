@@ -68,7 +68,7 @@
   - `id="tau-ops-chat-session-actions"` is a visible current-session action row with `data-primary-session-actions="true"` and `data-latest-message-href`.
   - `id="tau-ops-chat-session-details"` wraps verbose session summary with `data-collapsed-by-default="true"`, `data-active-session-key`, `data-entry-count`, `data-transcript-message-count`, and `data-hidden-entry-count`; its collapsed summary identifies shown, hidden, and total rows.
   - `id="tau-ops-chat-session-manager"` wraps new-session and selector controls with `data-collapsed-by-default="true"` and `data-session-option-count`.
-  - `id="tau-ops-chat-latest-turn-details"` wraps the verbose latest-turn article with `data-collapsed-by-default="true"`, `data-latest-turn-visible`, `data-latest-turn-state`, latest-message role/index, and latest user/assistant index markers; its collapsed summary uses operator-readable state instead of raw row numbers.
+  - `id="tau-ops-chat-latest-turn-details"` wraps the verbose latest-turn article with `data-collapsed-by-default="true"`, `data-latest-turn-visible`, `data-latest-turn-state`, latest-message role/index, and latest user/assistant index markers; its collapsed summary uses operator-readable state instead of raw row numbers, and a small toggle sync keeps the hidden article's `aria-hidden` state aligned with the details open state.
   - `id="tau-ops-chat-transcript"` with deterministic `data-message-count` and row markers.
   - `id="tau-ops-chat-session-summary"` with `data-entry-count`, `data-transcript-message-count`, and `data-hidden-entry-count` so hidden system entries are not mistaken for missing transcript rows.
 

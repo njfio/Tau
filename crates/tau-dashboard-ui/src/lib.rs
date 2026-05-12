@@ -5062,11 +5062,6 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     } else {
         "false"
     };
-    let chat_latest_turn_hidden = if chat_latest_turn_visible_bool {
-        "false"
-    } else {
-        "true"
-    };
     let chat_latest_user_index = latest_user_row
         .map(|(index, _)| index.to_string())
         .unwrap_or_else(|| "none".to_string());
@@ -7479,7 +7474,8 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 <article
                                     id="tau-ops-chat-latest-turn"
                                     data-latest-turn-visible=chat_latest_turn_visible
-                                    aria-hidden=chat_latest_turn_hidden
+                                    aria-hidden="true"
+                                    data-latest-turn-details-open="false"
                                     data-latest-user-index=chat_latest_user_index.clone()
                                     data-latest-assistant-index=chat_latest_assistant_index.clone()
                                     data-latest-turn-state=chat_latest_turn_state
@@ -7509,6 +7505,40 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     </section>
                                 </article>
                             </details>
+                            <script
+                                id="tau-ops-chat-latest-turn-visibility-sync"
+                                data-sync-target="tau-ops-chat-latest-turn"
+                            >
+                                r#"
+                                (function () {
+                                    function installLatestTurnVisibilitySync() {
+                                        var details = document.getElementById("tau-ops-chat-latest-turn-details");
+                                        var article = document.getElementById("tau-ops-chat-latest-turn");
+                                        if (!details || !article || details.getAttribute("data-visibility-sync-bound") === "true") {
+                                            return;
+                                        }
+
+                                        details.setAttribute("data-visibility-sync-bound", "true");
+
+                                        function syncLatestTurnVisibility() {
+                                            var detailsOpen = details.hasAttribute("open");
+                                            var latestTurnVisible = details.getAttribute("data-latest-turn-visible") === "true";
+                                            article.setAttribute("data-latest-turn-details-open", detailsOpen ? "true" : "false");
+                                            article.setAttribute("aria-hidden", detailsOpen && latestTurnVisible ? "false" : "true");
+                                        }
+
+                                        details.addEventListener("toggle", syncLatestTurnVisibility);
+                                        syncLatestTurnVisibility();
+                                    }
+
+                                    if (document.readyState === "loading") {
+                                        document.addEventListener("DOMContentLoaded", installLatestTurnVisibilitySync);
+                                    } else {
+                                        installLatestTurnVisibilitySync();
+                                    }
+                                })();
+                                "#
+                            </script>
                             <ul
                                 id="tau-ops-chat-transcript"
                                 data-message-count=chat_message_count_value

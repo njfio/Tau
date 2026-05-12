@@ -19,6 +19,7 @@
 16. [x] T16 (RED/GREEN/REGRESSION): show a deterministic submitting state during non-empty provider-backed sends.
 17. [x] T17 (RED/GREEN/REGRESSION): make collapsed session-details summary show transcript, hidden, and total entry counts.
 18. [x] T18 (RED/GREEN/REGRESSION): make collapsed latest-turn summary operator-readable while retaining row indexes as attributes.
+19. [x] T19 (RED/GREEN/REGRESSION): synchronize latest-turn proof `aria-hidden` state with collapsed/open details state.
 
 ## Tier Mapping
 - Unit: `ops_shell_controls` session query parsing unit tests.
@@ -26,7 +27,7 @@
 - Contract/DbC: N/A.
 - Snapshot: N/A.
 - Functional: UI `/ops/chat` marker assertions.
-- Conformance: C-01..C-03, C-05..C-17.
+- Conformance: C-01..C-03, C-05..C-18.
 - Integration: gateway send + redirect + transcript visibility assertions.
 - Fuzz: N/A.
 - Mutation: `cargo mutants --in-diff <diff-file> -p tau-dashboard-ui -p tau-gateway`.
@@ -115,6 +116,14 @@
   - GREEN: `env RUST_MIN_STACK=16777216 cargo clippy -p tau-dashboard-ui -p tau-gateway --tests -- -D warnings` passed.
   - GREEN: `env RUST_MIN_STACK=16777216 cargo build -p tau-coding-agent` passed.
   - LIVE: restarted `tau-8795` from the rebuilt binary and loaded `/ops/chat?theme=dark&sidebar=expanded&session=default`; Browser proof showed `Latest turn: assistant reply shown`, `data-latest-turn-state="assistant-replied"`, `data-latest-message-role="assistant"`, `data-latest-message-index="38"`, preserved user/assistant row indexes `37`/`38`, and no browser console errors.
+  - RED: live Browser proof showed `#tau-ops-chat-latest-turn-details` collapsed while its child proof article still reported `aria-hidden="false"`.
+  - GREEN: `env RUST_MIN_STACK=16777216 cargo test -p tau-dashboard-ui functional_spec_2830 -- --test-threads=1` passed (`5 passed`), including collapsed latest-turn proof `aria-hidden` and toggle-sync script assertions.
+  - GREEN: `env RUST_MIN_STACK=16777216 cargo test -p tau-gateway functional_spec_2830 -- --test-threads=1` passed.
+  - GREEN: `env RUST_MIN_STACK=16777216 cargo test -p tau-gateway integration_spec_2830 -- --test-threads=1` passed (`2 passed`).
+  - GREEN: `env RUST_MIN_STACK=16777216 cargo clippy -p tau-dashboard-ui -p tau-gateway -- -D warnings` passed.
+  - GREEN: `env RUST_MIN_STACK=16777216 cargo clippy -p tau-dashboard-ui -p tau-gateway --tests -- -D warnings` passed.
+  - GREEN: `env RUST_MIN_STACK=16777216 cargo build -p tau-coding-agent` passed.
+  - LIVE: restarted `tau-8795` from the rebuilt binary and loaded `/ops/chat?theme=dark&sidebar=expanded&session=default`; Browser proof showed the latest-turn proof starts collapsed with `aria-hidden="true"` and `data-latest-turn-details-open="false"`, opens to `aria-hidden="false"` / `data-latest-turn-details-open="true"`, closes back to hidden, and emitted no console errors.
 - Regression:
   - `cargo test -p tau-dashboard-ui functional_spec_2826 -- --test-threads=1`
   - `cargo test -p tau-gateway functional_spec_2802 -- --test-threads=1`
