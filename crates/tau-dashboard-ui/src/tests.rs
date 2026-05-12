@@ -4721,6 +4721,50 @@ fn regression_spec_3068_c03_non_memory_graph_routes_keep_hidden_graph_markers() 
 }
 
 #[test]
+fn functional_spec_3068_c02_memory_graph_route_renders_readable_node_and_edge_rows() {
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        auth_mode: TauOpsDashboardAuthMode::Token,
+        active_route: TauOpsDashboardRoute::MemoryGraph,
+        theme: TauOpsDashboardTheme::Light,
+        sidebar_state: TauOpsDashboardSidebarState::Collapsed,
+        command_center: TauOpsDashboardCommandCenterSnapshot::default(),
+        chat: TauOpsDashboardChatSnapshot {
+            memory_graph_node_rows: vec![
+                TauOpsDashboardMemoryGraphNodeRow {
+                    memory_id: "mem-readable-source".to_string(),
+                    memory_type: "goal".to_string(),
+                    importance: "0.8000".to_string(),
+                },
+                TauOpsDashboardMemoryGraphNodeRow {
+                    memory_id: "mem-readable-target".to_string(),
+                    memory_type: "fact".to_string(),
+                    importance: "0.3000".to_string(),
+                },
+            ],
+            memory_graph_edge_rows: vec![TauOpsDashboardMemoryGraphEdgeRow {
+                source_memory_id: "mem-readable-source".to_string(),
+                target_memory_id: "mem-readable-target".to_string(),
+                relation_type: "related_to".to_string(),
+                effective_weight: "0.4200".to_string(),
+            }],
+            ..TauOpsDashboardChatSnapshot::default()
+        },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
+    });
+
+    assert!(html.contains("id=\"tau-ops-memory-graph-nodes\" data-node-count=\"2\""));
+    assert!(html.contains("id=\"tau-ops-memory-graph-edges\" data-edge-count=\"1\""));
+    assert!(html.contains("data-memory-graph-node-link=\"mem-readable-source\""));
+    assert!(html
+        .contains("mem-readable-source | type goal | importance 0.8000 | size large | color goal"));
+    assert!(html
+        .contains("mem-readable-target | type fact | importance 0.3000 | size small | color fact"));
+    assert!(html.contains(
+        "mem-readable-source -&gt; mem-readable-target | relation related_to | weight 0.4200"
+    ));
+}
+
+#[test]
 fn functional_spec_3070_c01_c02_memory_graph_route_renders_node_size_markers_from_importance() {
     let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
         auth_mode: TauOpsDashboardAuthMode::Token,

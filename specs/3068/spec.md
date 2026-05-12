@@ -11,7 +11,7 @@ node and edge rows. PRD checklist contract `2087` remains unverified.
 In scope:
 - Add deterministic `/ops/memory-graph` panel markers.
 - Hydrate memory graph node and edge rows from gateway memory records.
-- Expose deterministic node/edge row IDs and count attributes.
+- Expose deterministic node/edge row IDs, count attributes, and readable row text/detail links.
 
 Out of scope:
 - Node-size and color semantics.
@@ -27,7 +27,7 @@ then deterministic panel, node-list, edge-list, and empty-state markers are pres
 ### AC-2 Memory graph node and edge rows render from gateway memory records
 Given session memory records with relations exist,
 when `/ops/memory-graph` is rendered,
-then deterministic node and edge row markers reflect those records.
+then deterministic node and edge row markers and readable row text reflect those records.
 
 ### AC-3 Non-memory-graph routes preserve hidden graph contracts
 Given any other ops route renders,
@@ -43,7 +43,7 @@ then selected memory conformance/regression suites remain green.
 | Case | AC | Tier | Given | When | Then |
 |---|---|---|---|---|---|
 | C-01 | AC-1 | Functional | `/ops/memory-graph` without records | render route | graph panel + list markers exist with zero-count defaults |
-| C-02 | AC-2 | Integration | session contains related memory records | render `/ops/memory-graph` | deterministic node rows + edge rows render with expected IDs/data attrs |
+| C-02 | AC-2 | Integration | session contains related memory records | render `/ops/memory-graph` | deterministic node rows + edge rows render with expected IDs/data attrs and readable labels |
 | C-03 | AC-3 | Regression | route is not `/ops/memory-graph` | render route | graph panel markers remain present with hidden state |
 | C-04 | AC-4 | Regression | existing memory specs | rerun selected suites | existing contracts remain green |
 

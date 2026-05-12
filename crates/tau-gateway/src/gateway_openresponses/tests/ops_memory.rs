@@ -1084,9 +1084,14 @@ async fn integration_spec_3068_c02_ops_memory_graph_route_renders_node_and_edge_
     assert!(body.contains("id=\"tau-ops-memory-graph-edges\" data-edge-count=\"1\""));
     assert!(body.contains("data-memory-id=\"mem-graph-source\""));
     assert!(body.contains("data-memory-id=\"mem-graph-target\""));
+    assert!(body.contains("data-memory-graph-node-link=\"mem-graph-source\""));
+    assert!(body.contains("mem-graph-source | type goal | importance"));
+    assert!(body.contains("mem-graph-target | type fact | importance"));
     assert!(body.contains(
         "id=\"tau-ops-memory-graph-edge-0\" data-source-memory-id=\"mem-graph-source\" data-target-memory-id=\"mem-graph-target\""
     ));
+    assert!(body
+        .contains("mem-graph-source -&gt; mem-graph-target | relation related_to | weight 0.4200"));
 
     handle.abort();
 }

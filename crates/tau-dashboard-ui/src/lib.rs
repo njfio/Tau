@@ -4530,6 +4530,16 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     };
                     let node_detail_href =
                         format!("{memory_graph_node_detail_href_prefix}{}", row.memory_id);
+                    let node_detail_href_attr = node_detail_href.clone();
+                    let node_detail_href_link = node_detail_href;
+                    let node_summary = format!(
+                        "{} | type {} | importance {} | size {} | color {}",
+                        row.memory_id,
+                        row.memory_type,
+                        row.importance,
+                        node_size_bucket,
+                        node_color_token
+                    );
                     view! {
                         <li
                             id=row_id
@@ -4543,8 +4553,15 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             data-node-selected=node_selected
                             data-node-hover-neighbor=node_hover_neighbor
                             data-node-detail-target="tau-ops-memory-graph-detail-panel"
-                            data-node-detail-href=node_detail_href
-                        ></li>
+                            data-node-detail-href=node_detail_href_attr
+                        >
+                            <a
+                                data-memory-graph-node-link=row.memory_id.clone()
+                                href=node_detail_href_link
+                            >
+                                {node_summary}
+                            </a>
+                        </li>
                     }
                 })
                 .collect_view(),
@@ -4569,6 +4586,10 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                 } else {
                     "false"
                 };
+            let edge_summary = format!(
+                "{} -> {} | relation {} | weight {}",
+                row.source_memory_id, row.target_memory_id, row.relation_type, row.effective_weight
+            );
             view! {
                 <li
                     id=row_id
@@ -4579,7 +4600,9 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     data-edge-style-token=edge_style_token
                     data-edge-stroke-dasharray=edge_stroke_dasharray
                     data-edge-hover-highlighted=edge_hover_highlighted
-                ></li>
+                >
+                    {edge_summary}
+                </li>
             }
         })
         .collect_view();
@@ -6621,6 +6644,37 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                 #tau-ops-memory-delete-manager > summary {
                     border-color: #5a2d2d;
                     background: #2b1416;
+                }
+                #tau-ops-memory-graph-nodes,
+                #tau-ops-memory-graph-edges {
+                    display: grid;
+                    gap: 6px;
+                    width: min(720px, 100%);
+                    margin: 0 0 10px;
+                    padding: 0;
+                    list-style: none;
+                }
+                #tau-ops-memory-graph-nodes li,
+                #tau-ops-memory-graph-edges li {
+                    min-width: 0;
+                    border: 1px solid #203847;
+                    border-radius: 6px;
+                    padding: 7px 9px;
+                    background: #091923;
+                    color: #dbe8ef;
+                    font-size: .72rem;
+                    font-weight: 740;
+                    overflow-wrap: anywhere;
+                }
+                #tau-ops-memory-graph-nodes a {
+                    color: #dbe8ef;
+                    text-decoration: none;
+                }
+                #tau-ops-memory-graph-nodes li[data-node-selected="true"],
+                #tau-ops-memory-graph-nodes li[data-node-hover-neighbor="true"],
+                #tau-ops-memory-graph-edges li[data-edge-hover-highlighted="true"] {
+                    border-color: #7fb4ff;
+                    background: #102b3a;
                 }
                 #tau-ops-kpi-grid {
                     display: grid;
