@@ -6404,8 +6404,11 @@ fn functional_spec_2885_c01_sessions_route_renders_timeline_row_branch_form_cont
             "id=\"tau-ops-session-branch-sidebar-0\" type=\"hidden\" name=\"sidebar\" value=\"expanded\""
         ));
     assert!(html.contains(
-            "id=\"tau-ops-session-branch-submit-0\" type=\"submit\" data-confirmation-required=\"true\""
+            "id=\"tau-ops-session-branch-submit-0\" type=\"submit\" data-confirmation-required=\"true\" data-confirm-title=\"Confirm session branch\""
         ));
+    assert!(html
+        .contains("data-confirm-body=\"Create a new branch session from this timeline entry.\""));
+    assert!(html.contains("data-confirm-verb=\"branch\""));
 }
 
 #[test]
@@ -6446,8 +6449,17 @@ fn functional_spec_2889_c01_sessions_route_renders_reset_confirmation_form_contr
             "id=\"tau-ops-session-reset-confirm\" type=\"hidden\" name=\"confirm_reset\" value=\"true\""
         ));
     assert!(html.contains(
-        "id=\"tau-ops-session-reset-submit\" type=\"submit\" data-confirmation-required=\"true\""
+        "id=\"tau-ops-session-reset-submit\" type=\"submit\" data-confirmation-required=\"true\" data-confirm-title=\"Confirm session reset\""
     ));
+    assert!(html.contains(
+        "data-confirm-body=\"Reset clears the selected session transcript and graph state.\""
+    ));
+    assert!(html.contains("data-confirm-verb=\"reset\""));
+    assert!(html.contains(
+        "id=\"tau-ops-session-confirmation-guard\" data-confirm-submit-guard=\"browser-confirm\" data-confirm-action-scope=\"tau-ops-session-detail-panel\""
+    ));
+    assert!(html.contains("installSessionConfirmationGuard"));
+    assert!(html.contains("window.confirm"));
 }
 
 #[test]

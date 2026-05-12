@@ -2,6 +2,7 @@
 
 1. [x] T1 (RED): add failing `functional_spec_2889_*` UI tests for session detail reset-confirmation form contract markers.
 2. [x] T2 (RED): add failing `functional_spec_2889_*` + `integration_spec_2889_*` gateway tests for reset action, redirect contracts, cleared detail view, and non-target isolation.
-3. [x] T3 (GREEN): implement reset form SSR markers and ops reset POST handler on session detail route.
-4. [x] T4 (REGRESSION): rerun `spec_2830`, `spec_2834`, `spec_2838`, `spec_2842`, `spec_2846`, `spec_2872`, `spec_2881`, and `spec_2885` suites.
-5. [x] T5 (VERIFY): run fmt/clippy/scoped tests/mutation + fast live validation.
+3. [x] T3 (RED): add failing UI/gateway assertions for the missing browser-native session confirmation guard.
+4. [x] T4 (GREEN): implement reset form SSR markers, scoped browser confirmation guard, and ops reset POST handler on session detail route.
+5. [x] T5 (REGRESSION): rerun `spec_2889` and adjacent session/action confirmation suites.
+6. [x] T6 (VERIFY): run fmt/clippy/scoped tests + live browser validation.

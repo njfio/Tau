@@ -4951,6 +4951,9 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     id=branch_submit_id
                                     type="submit"
                                     data-confirmation-required="true"
+                                    data-confirm-title="Confirm session branch"
+                                    data-confirm-body="Create a new branch session from this timeline entry."
+                                    data-confirm-verb="branch"
                                 >
                                     Branch Session
                                 </button>
@@ -7908,10 +7911,83 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     id="tau-ops-session-reset-submit"
                                     type="submit"
                                     data-confirmation-required="true"
+                                    data-confirm-title="Confirm session reset"
+                                    data-confirm-body="Reset clears the selected session transcript and graph state."
+                                    data-confirm-verb="reset"
                                 >
                                     Reset Session
                                 </button>
                             </form>
+                            <script
+                                id="tau-ops-session-confirmation-guard"
+                                data-confirm-submit-guard="browser-confirm"
+                                data-confirm-action-scope="tau-ops-session-detail-panel"
+                            >
+                                r#"
+                                (function () {
+                                    function installSessionConfirmationGuard() {
+                                        var panel = document.getElementById("tau-ops-session-detail-panel");
+                                        if (!panel || panel.getAttribute("data-confirm-submit-guard-bound") === "true") {
+                                            return;
+                                        }
+
+                                        panel.setAttribute("data-confirm-submit-guard-bound", "true");
+                                        panel.addEventListener("submit", function (event) {
+                                            var form = event.target;
+                                            if (!(form instanceof HTMLFormElement) || !panel.contains(form)) {
+                                                return;
+                                            }
+
+                                            var submitter = event.submitter;
+                                            var formRequiresConfirmation =
+                                                form.getAttribute("data-confirmation-required") === "true";
+                                            var submitterRequiresConfirmation =
+                                                submitter && submitter.getAttribute("data-confirmation-required") === "true";
+                                            if (!formRequiresConfirmation && !submitterRequiresConfirmation) {
+                                                return;
+                                            }
+
+                                            if (!submitter) {
+                                                event.preventDefault();
+                                                form.setAttribute("data-confirmation-result", "blocked-missing-submitter");
+                                                return;
+                                            }
+
+                                            if (submitter.disabled || submitter.getAttribute("aria-disabled") === "true") {
+                                                event.preventDefault();
+                                                submitter.setAttribute("data-confirmation-result", "blocked-disabled");
+                                                return;
+                                            }
+
+                                            if (typeof window.confirm !== "function") {
+                                                event.preventDefault();
+                                                submitter.setAttribute("data-confirmation-result", "unavailable");
+                                                return;
+                                            }
+
+                                            var title = submitter.getAttribute("data-confirm-title") || "Confirm session action";
+                                            var body = submitter.getAttribute("data-confirm-body") || "";
+                                            var verb = submitter.getAttribute("data-confirm-verb") || "action";
+                                            var message = body ? title + "\n\n" + body : title;
+                                            var confirmed = window.confirm(message);
+                                            submitter.setAttribute(
+                                                "data-confirmation-result",
+                                                confirmed ? "confirmed-" + verb : "cancelled-" + verb
+                                            );
+                                            if (!confirmed) {
+                                                event.preventDefault();
+                                            }
+                                        });
+                                    }
+
+                                    if (document.readyState === "loading") {
+                                        document.addEventListener("DOMContentLoaded", installSessionConfirmationGuard);
+                                    } else {
+                                        installSessionConfirmationGuard();
+                                    }
+                                })();
+                                "#
+                            </script>
                             <article
                                 id="tau-ops-session-validation-report"
                                 data-entries=session_detail_validation_entries

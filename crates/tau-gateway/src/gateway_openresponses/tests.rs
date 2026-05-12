@@ -2495,8 +2495,12 @@ async fn functional_spec_2889_c01_ops_session_detail_shell_exposes_reset_confirm
         "id=\"tau-ops-session-reset-confirm\" type=\"hidden\" name=\"confirm_reset\" value=\"true\""
     ));
     assert!(body.contains(
-        "id=\"tau-ops-session-reset-submit\" type=\"submit\" data-confirmation-required=\"true\""
+        "id=\"tau-ops-session-reset-submit\" type=\"submit\" data-confirmation-required=\"true\" data-confirm-title=\"Confirm session reset\""
     ));
+    assert!(body.contains(
+        "id=\"tau-ops-session-confirmation-guard\" data-confirm-submit-guard=\"browser-confirm\" data-confirm-action-scope=\"tau-ops-session-detail-panel\""
+    ));
+    assert!(body.contains("window.confirm"));
 
     handle.abort();
 }

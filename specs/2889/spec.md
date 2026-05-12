@@ -4,10 +4,12 @@ Status: Implemented
 
 ## Problem Statement
 Tau Ops sessions surfaces provide session detail, lineage, and branch contracts, but they do not expose deterministic reset-confirmation form contracts tied to an ops reset action. This leaves the PRD checklist item “Reset clears session with confirmation” unverifiable.
+Follow-up live review found the form markers existed, but the browser-native confirmation guard was missing for session reset/branch submits.
 
 ## Scope
 In scope:
 - Add deterministic session reset confirmation form markers in sessions detail view.
+- Add browser-native confirmation guard script scoped to session detail reset/branch submit actions.
 - Add gateway ops reset action handling on session detail route contracts.
 - Validate reset clears only the target session and preserves route state contracts.
 - Validate post-reset session detail renders deterministic empty-state contracts.
@@ -22,6 +24,11 @@ Out of scope:
 Given `/ops/sessions/{session_key}` renders a session detail panel,
 when SSR markup is inspected,
 then it contains a deterministic reset form contract with confirmation markers, session key markers, and theme/sidebar hidden-state markers.
+
+### AC-1b Sessions detail confirmation markers are enforced in-browser
+Given reset and branch controls declare confirmation-required markers,
+when the session detail shell renders,
+then it ships a browser-native submit guard scoped to session detail actions and action-specific confirmation copy.
 
 ### AC-2 Reset action clears selected session and redirects deterministically
 Given an existing session with timeline entries,
@@ -47,6 +54,7 @@ then all suites remain green.
 | Case | AC | Tier | Given | When | Then |
 |---|---|---|---|---|---|
 | C-01 | AC-1 | Functional | sessions detail render | inspect SSR markup | reset form + confirmation + hidden state markers present |
+| C-01b | AC-1b | Functional/Integration | sessions detail render | inspect SSR and gateway markup | session confirmation guard script + action-specific confirmation copy present |
 | C-02 | AC-2 | Integration | existing session with messages | post reset form | target session cleared + `303` redirect preserves theme/sidebar/session |
 | C-03 | AC-3 | Functional | reset session detail route | render detail | empty timeline + clean validation contracts render |
 | C-04 | AC-4 | Integration | target + non-target sessions | reset target | non-target session content remains present |
