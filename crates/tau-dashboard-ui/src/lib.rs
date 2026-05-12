@@ -6265,68 +6265,6 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             data-panel-visible=chat_panel_visible
                         >
                             <h2>Conversation / Chat</h2>
-                            <article
-                                id="tau-ops-chat-session-summary"
-                                data-active-session-key=chat_session_key.clone()
-                                data-entry-count=active_session_entry_count_value.clone()
-                                data-total-tokens=active_session_total_tokens_value.clone()
-                                data-validation-state=active_session_validation_state
-                                data-updated-unix-ms=active_session_updated_unix_ms_value.clone()
-                                data-latest-message-index=chat_latest_message_index.clone()
-                                data-transcript-message-count=active_session_transcript_count_value.clone()
-                                data-hidden-entry-count=active_session_hidden_entry_count_value.clone()
-                            >
-                                <h3>Session Summary</h3>
-                                <dl>
-                                    <div>
-                                        <dt>Session</dt>
-                                        <dd>{chat_session_key.clone()}</dd>
-                                    </div>
-                                    <div>
-                                        <dt>Total Entries</dt>
-                                        <dd>{active_session_entry_count_value.clone()}</dd>
-                                    </div>
-                                    <div>
-                                        <dt>Transcript Rows</dt>
-                                        <dd>{active_session_transcript_count_value.clone()}</dd>
-                                    </div>
-                                    <div>
-                                        <dt>Hidden Rows</dt>
-                                        <dd>{active_session_hidden_entry_count_value.clone()}</dd>
-                                    </div>
-                                    <div>
-                                        <dt>Tokens</dt>
-                                        <dd>{active_session_total_tokens_value.clone()}</dd>
-                                    </div>
-                                    <div>
-                                        <dt>Validation</dt>
-                                        <dd>{active_session_validation_state}</dd>
-                                    </div>
-                                    <div>
-                                        <dt>Last Updated</dt>
-                                        <dd
-                                            id="tau-ops-chat-session-updated-label"
-                                            data-updated-unix-ms=active_session_updated_unix_ms_value.clone()
-                                        >
-                                            {active_session_updated_label}
-                                        </dd>
-                                    </div>
-                                </dl>
-                                <nav
-                                    id="tau-ops-chat-session-actions"
-                                    aria-label="Chat session actions"
-                                >
-                                    <a
-                                        id="tau-ops-chat-open-session-detail"
-                                        href=chat_session_detail_href
-                                    >
-                                        Open Session Detail
-                                    </a>
-                                    <a id="tau-ops-chat-jump-latest" href=chat_latest_message_href>
-                                        Jump To Latest
-                                    </a>
-                                </nav>
-                            </article>
                             <form
                                 id="tau-ops-chat-send-form"
                                 action=chat_send_form_action
@@ -6464,6 +6402,68 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 <p id="tau-ops-chat-send-status-message">
                                     {chat_send_status_message}
                                 </p>
+                            </article>
+                            <article
+                                id="tau-ops-chat-session-summary"
+                                data-active-session-key=chat_session_key.clone()
+                                data-entry-count=active_session_entry_count_value.clone()
+                                data-total-tokens=active_session_total_tokens_value.clone()
+                                data-validation-state=active_session_validation_state
+                                data-updated-unix-ms=active_session_updated_unix_ms_value.clone()
+                                data-latest-message-index=chat_latest_message_index.clone()
+                                data-transcript-message-count=active_session_transcript_count_value.clone()
+                                data-hidden-entry-count=active_session_hidden_entry_count_value.clone()
+                            >
+                                <h3>Session Summary</h3>
+                                <dl>
+                                    <div>
+                                        <dt>Session</dt>
+                                        <dd>{chat_session_key.clone()}</dd>
+                                    </div>
+                                    <div>
+                                        <dt>Total Entries</dt>
+                                        <dd>{active_session_entry_count_value.clone()}</dd>
+                                    </div>
+                                    <div>
+                                        <dt>Transcript Rows</dt>
+                                        <dd>{active_session_transcript_count_value.clone()}</dd>
+                                    </div>
+                                    <div>
+                                        <dt>Hidden Rows</dt>
+                                        <dd>{active_session_hidden_entry_count_value.clone()}</dd>
+                                    </div>
+                                    <div>
+                                        <dt>Tokens</dt>
+                                        <dd>{active_session_total_tokens_value.clone()}</dd>
+                                    </div>
+                                    <div>
+                                        <dt>Validation</dt>
+                                        <dd>{active_session_validation_state}</dd>
+                                    </div>
+                                    <div>
+                                        <dt>Last Updated</dt>
+                                        <dd
+                                            id="tau-ops-chat-session-updated-label"
+                                            data-updated-unix-ms=active_session_updated_unix_ms_value.clone()
+                                        >
+                                            {active_session_updated_label}
+                                        </dd>
+                                    </div>
+                                </dl>
+                                <nav
+                                    id="tau-ops-chat-session-actions"
+                                    aria-label="Chat session actions"
+                                >
+                                    <a
+                                        id="tau-ops-chat-open-session-detail"
+                                        href=chat_session_detail_href
+                                    >
+                                        Open Session Detail
+                                    </a>
+                                    <a id="tau-ops-chat-jump-latest" href=chat_latest_message_href>
+                                        Jump To Latest
+                                    </a>
+                                </nav>
                             </article>
                             <details
                                 id="tau-ops-chat-session-manager"

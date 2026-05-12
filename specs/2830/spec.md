@@ -52,6 +52,11 @@ Given `/ops/chat` renders session creation and session history controls,
 When the operator lands on the active chat page,
 Then the new-session form and session selector are grouped inside a collapsed-by-default session manager summary so they do not flood the first view.
 
+### AC-10 Active chat composition appears before session metadata navigation
+Given `/ops/chat` renders active session metadata and session navigation links,
+When the operator lands on the active chat page,
+Then the send form and send status appear before the session summary, open-session-detail link, and jump-to-latest link so the primary task remains composing in the current session.
+
 ## Scope
 
 ### In Scope
@@ -62,6 +67,7 @@ Then the new-session form and session selector are grouped inside a collapsed-by
 - Composer-first ordering before historical session selection.
 - Composer-first ordering before secondary new-session creation controls.
 - Compact secondary session manager grouping around new-session and session-history controls.
+- Composer-first ordering before session metadata and navigation actions.
 - Targeted regression validation for existing ops shell slices.
 
 ### Out of Scope
@@ -79,6 +85,7 @@ Then the new-session form and session selector are grouped inside a collapsed-by
 - C-07 (functional): `/ops/chat` places the send form and send-status marker before the historical session selector.
 - C-08 (functional): `/ops/chat` places the send form and send-status marker before the new-session form and status controls.
 - C-09 (functional): `/ops/chat` groups new-session and session selector controls inside a collapsed secondary session manager with a summary count.
+- C-10 (functional): `/ops/chat` places the send form and send-status marker before the session summary and session navigation links.
 
 ## Success Metrics / Observable Signals
 - `cargo test -p tau-dashboard-ui functional_spec_2830 -- --test-threads=1` passes.

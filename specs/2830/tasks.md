@@ -10,6 +10,7 @@
 7. [x] T7 (RED/GREEN/REGRESSION): keep active compose controls before historical session selection on `/ops/chat`.
 8. [x] T8 (RED/GREEN/REGRESSION): keep active compose controls before secondary new-session creation on `/ops/chat`.
 9. [x] T9 (RED/GREEN/REGRESSION): group secondary new-session and session-history controls in a compact collapsed session manager.
+10. [x] T10 (RED/GREEN/REGRESSION): keep active compose controls before session metadata and navigation links on `/ops/chat`.
 
 ## Tier Mapping
 - Unit: `ops_shell_controls` session query parsing unit tests.
@@ -17,7 +18,7 @@
 - Contract/DbC: N/A.
 - Snapshot: N/A.
 - Functional: UI `/ops/chat` marker assertions.
-- Conformance: C-01..C-03, C-05..C-09.
+- Conformance: C-01..C-03, C-05..C-10.
 - Integration: gateway send + redirect + transcript visibility assertions.
 - Fuzz: N/A.
 - Mutation: `cargo mutants --in-diff <diff-file> -p tau-dashboard-ui -p tau-gateway`.
@@ -60,6 +61,13 @@
   - GREEN: `env RUST_MIN_STACK=16777216 cargo test -p tau-gateway functional_spec_2830 -- --test-threads=1` passed.
   - GREEN: `env RUST_MIN_STACK=16777216 cargo test -p tau-gateway integration_spec_2830 -- --test-threads=1` passed (`2 passed`).
   - LIVE: restarted `tau-8795` from the rebuilt binary with OAuth-backed launch flags and loaded `/ops/chat?theme=dark&sidebar=expanded&session=default`; Browser proof showed collapsed default state `summaryText="Sessions (16)"`, `formVisible=false`, `selectorVisible=false`, `visibleLinks=0`, then after clicking the manager `formVisible=true`, `selectorVisible=true`, `visibleLinks=16`.
+  - RED: `env RUST_MIN_STACK=16777216 cargo test -p tau-dashboard-ui functional_spec_2830_c07_chat_route_prioritizes_composer_before_session_selector -- --test-threads=1` failed on `chat composer should be the first active chat control before session metadata`.
+  - GREEN: `env RUST_MIN_STACK=16777216 cargo test -p tau-dashboard-ui functional_spec_2830_c07_chat_route_prioritizes_composer_before_session_selector -- --test-threads=1` passed.
+  - GREEN: `env RUST_MIN_STACK=16777216 cargo test -p tau-gateway functional_spec_2830_c01_ops_chat_shell_exposes_send_form_and_fallback_transcript_markers -- --test-threads=1` passed.
+  - GREEN: `env RUST_MIN_STACK=16777216 cargo test -p tau-dashboard-ui functional_spec_2830 -- --test-threads=1` passed (`4 passed`).
+  - GREEN: `env RUST_MIN_STACK=16777216 cargo test -p tau-gateway functional_spec_2830 -- --test-threads=1` passed.
+  - GREEN: `env RUST_MIN_STACK=16777216 cargo test -p tau-gateway integration_spec_2830 -- --test-threads=1` passed (`2 passed`).
+  - LIVE: restarted `tau-8795` from the rebuilt binary and loaded `/ops/chat?theme=dark&sidebar=expanded&session=default`; Browser proof showed `textarea=1763`, `Send=1940`, `Open Session Detail=2054`, `Jump To Latest=2132`, and `Sessions (16)=2175`, with the session manager still collapsed (`newSessionFormVisible=false`, `selectorVisible=false`).
 - Regression:
   - `cargo test -p tau-dashboard-ui functional_spec_2826 -- --test-threads=1`
   - `cargo test -p tau-gateway functional_spec_2802 -- --test-threads=1`
@@ -71,7 +79,7 @@
   - `cargo clippy -p tau-dashboard-ui -p tau-gateway -- -D warnings`
   - `cargo clippy -p tau-dashboard-ui --tests -- -D warnings`
   - `cargo clippy -p tau-gateway --tests -- -D warnings`
-  - `cargo build -p tau-coding-agent`
+  - `env RUST_MIN_STACK=16777216 cargo build -p tau-coding-agent`
   - `env RUST_MIN_STACK=16777216 cargo test -p tau-dashboard-ui -- --test-threads=1` (`214 passed`)
   - `env RUST_MIN_STACK=16777216 cargo test -p tau-gateway -- --test-threads=1` (`370 passed`, `1 ignored`)
   - `python3 .github/scripts/oversized_file_guard.py`
