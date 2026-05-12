@@ -1524,6 +1524,97 @@ async fn integration_spec_3086_c02_ops_memory_graph_selected_node_shows_detail_p
 }
 
 #[tokio::test]
+async fn integration_spec_3086_c02_ops_memory_graph_harness_lineage_node_shows_detail_panel_contracts(
+) {
+    let temp = tempdir().expect("tempdir");
+    let state = test_state(temp.path(), 10_000, "secret");
+    let mission_dir = state
+        .config
+        .state_dir
+        .clone()
+        .join("ops-harness")
+        .join("self-improvement")
+        .join("PR-045");
+    std::fs::create_dir_all(&mission_dir).expect("create harness mission dir");
+    std::fs::write(
+        mission_dir.join("mission.json"),
+        serde_json::to_vec_pretty(&json!({
+            "mission_id": "ops-harness-self-improve-pr-045",
+            "goal": "Standardize benchmark artifact names through a skill update",
+            "learning_records": [{
+                "record_id": "LR-045",
+                "summary": "Benchmark artifacts were hard to correlate with missions."
+            }],
+            "improvement_proposals": [{
+                "proposal_id": "PR-045",
+                "source_learning_record_id": "LR-045",
+                "target_path": "skills/benchmark_artifacts/SKILL.md",
+                "dry_run": {
+                    "passed": true
+                },
+                "applied_unix_ms": 1_700
+            }]
+        }))
+        .expect("serialize harness mission"),
+    )
+    .expect("write harness mission");
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+    let client = Client::new();
+
+    let graph_response = client
+        .get(format!(
+            "http://{addr}/ops/memory-graph?theme=light&sidebar=collapsed&session=default&detail_memory_id=ops-harness-self-improve-pr-045"
+        ))
+        .send()
+        .await
+        .expect("load ops memory graph route with selected harness node");
+    assert_eq!(graph_response.status(), StatusCode::OK);
+    let graph_body = graph_response
+        .text()
+        .await
+        .expect("read ops memory graph harness detail body");
+
+    assert!(graph_body.contains("data-memory-id=\"ops-harness-self-improve-pr-045\""));
+    assert!(graph_body.contains("data-node-selected=\"true\""));
+    assert!(graph_body.contains(
+        "id=\"tau-ops-memory-graph-detail-panel\" data-detail-visible=\"true\" data-memory-id=\"ops-harness-self-improve-pr-045\" data-memory-type=\"goal\" data-relation-count=\"1\""
+    ));
+    assert!(graph_body.contains(
+        "id=\"tau-ops-memory-graph-detail-summary\" data-memory-id=\"ops-harness-self-improve-pr-045\">Standardize benchmark artifact names through a skill update"
+    ));
+    assert!(graph_body.contains("data-detail-memory-id=\"ops-harness-self-improve-pr-045\""));
+
+    let explorer_response = client
+        .get(format!(
+            "http://{addr}/ops/memory?theme=light&sidebar=collapsed&session=default&detail_memory_id=ops-harness-self-improve-pr-045"
+        ))
+        .send()
+        .await
+        .expect("load ops memory route with selected harness node");
+    assert_eq!(explorer_response.status(), StatusCode::OK);
+    let explorer_body = explorer_response
+        .text()
+        .await
+        .expect("read ops memory harness detail body");
+
+    assert!(explorer_body.contains(
+        "id=\"tau-ops-memory-detail-panel\" data-detail-visible=\"true\" data-memory-id=\"ops-harness-self-improve-pr-045\" data-memory-type=\"goal\" data-embedding-source=\"ops-harness-lineage\""
+    ));
+    assert!(explorer_body.contains(
+        "id=\"tau-ops-memory-detail-embedding\" data-embedding-source=\"ops-harness-lineage\""
+    ));
+    assert!(
+        explorer_body.contains("data-embedding-reason-code=\"ops_harness_memory_graph_lineage\"")
+    );
+    assert!(explorer_body.contains("id=\"tau-ops-memory-relations\" data-relation-count=\"1\""));
+    assert!(explorer_body.contains(
+        "id=\"tau-ops-memory-relation-row-0\" data-target-id=\"LR-045\" data-relation-type=\"contains\""
+    ));
+
+    handle.abort();
+}
+
+#[tokio::test]
 async fn integration_spec_3090_c02_ops_memory_graph_focus_marks_connected_edges_and_neighbors() {
     let temp = tempdir().expect("tempdir");
     let state = test_state(temp.path(), 10_000, "secret");

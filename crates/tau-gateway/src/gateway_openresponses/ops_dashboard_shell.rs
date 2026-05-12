@@ -1002,6 +1002,40 @@ fn tau_ops_dashboard_memory_graph_edge_row_from_gateway(
     }
 }
 
+struct OpsHarnessMemoryGraphDetail {
+    summary: String,
+    memory_type: String,
+    relation_rows: Vec<TauOpsDashboardMemoryRelationRow>,
+}
+
+fn resolve_ops_harness_memory_graph_detail(
+    selected_memory_id: &str,
+    nodes: &[GatewayMemoryGraphNode],
+    edges: &[GatewayMemoryGraphEdge],
+) -> Option<OpsHarnessMemoryGraphDetail> {
+    let selected_memory_id = selected_memory_id.trim();
+    if selected_memory_id.is_empty() {
+        return None;
+    }
+
+    let node = nodes.iter().find(|node| node.id == selected_memory_id)?;
+    let relation_rows = edges
+        .iter()
+        .filter(|edge| edge.source == selected_memory_id)
+        .map(|edge| TauOpsDashboardMemoryRelationRow {
+            target_id: edge.target.clone(),
+            relation_type: edge.relation_type.clone(),
+            effective_weight: format!("{:.4}", edge.weight),
+        })
+        .collect();
+
+    Some(OpsHarnessMemoryGraphDetail {
+        summary: node.label.clone(),
+        memory_type: node.category.clone(),
+        relation_rows,
+    })
+}
+
 fn collect_ops_tools_inventory_rows(
     state: &Arc<GatewayOpenResponsesServerState>,
 ) -> Vec<TauOpsDashboardToolInventoryRow> {
@@ -1286,6 +1320,8 @@ fn collect_tau_ops_dashboard_chat_snapshot(
         actor_id: (!memory_search_actor_id.is_empty()).then_some(memory_search_actor_id.clone()),
     };
     let store = gateway_memory_store(&state.config.state_dir, active_session_key.as_str());
+    let (harness_lineage_nodes, harness_lineage_edges) =
+        collect_ops_harness_memory_graph_lineage(&state.config.state_dir, None, 0.0);
 
     if !memory_search_query.trim().is_empty() {
         let search_options = MemorySearchOptions {
@@ -1333,7 +1369,23 @@ fn collect_tau_ops_dashboard_chat_snapshot(
                     .collect();
             }
             Ok(None) | Err(_) => {
-                memory_detail_selected_entry_id.clear();
+                if let Some(detail) = resolve_ops_harness_memory_graph_detail(
+                    memory_detail_selected_entry_id.as_str(),
+                    harness_lineage_nodes.as_slice(),
+                    harness_lineage_edges.as_slice(),
+                ) {
+                    memory_detail_visible = true;
+                    memory_detail_summary = detail.summary;
+                    memory_detail_memory_type = detail.memory_type;
+                    memory_detail_embedding_source = "ops-harness-lineage".to_string();
+                    memory_detail_embedding_model.clear();
+                    memory_detail_embedding_reason_code =
+                        "ops_harness_memory_graph_lineage".to_string();
+                    memory_detail_embedding_dimensions = 0;
+                    memory_detail_relation_rows = detail.relation_rows;
+                } else {
+                    memory_detail_selected_entry_id.clear();
+                }
             }
         }
     }
@@ -1382,8 +1434,6 @@ fn collect_tau_ops_dashboard_chat_snapshot(
         });
     }
 
-    let (harness_lineage_nodes, harness_lineage_edges) =
-        collect_ops_harness_memory_graph_lineage(&state.config.state_dir, None, 0.0);
     append_memory_graph_rows(
         &mut memory_graph_node_rows,
         &mut memory_graph_edge_rows,

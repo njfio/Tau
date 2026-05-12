@@ -11,6 +11,7 @@ visibility. PRD checklist contract `2091` remains unverified.
 In scope:
 - Add deterministic node-selection and detail-href markers for memory graph nodes.
 - Add deterministic graph-route detail panel markers bound to selected memory entry.
+- Resolve ops-harness lineage overlay nodes into detail panels when those nodes are selected.
 - Validate node selection/detail contracts via UI and gateway conformance tests.
 
 Out of scope:
@@ -28,6 +29,11 @@ Given a selected memory entry ID is provided on `/ops/memory-graph`,
 when shell HTML is rendered,
 then node rows expose deterministic selection/detail-href markers and graph detail panel markers reflect the selected entry.
 
+### AC-2b Harness lineage nodes expose detail-panel behavior
+Given a selected ops-harness lineage node ID is provided on `/ops/memory-graph`,
+when the node exists only in the harness self-improvement overlay,
+then graph and memory detail panels render the lineage label, category, and outgoing relations instead of clearing the selection.
+
 ### AC-3 Non-memory-graph routes preserve hidden graph contracts
 Given any non-memory-graph route renders,
 when shell HTML is produced,
@@ -43,6 +49,7 @@ then selected conformance/regression suites remain green.
 |---|---|---|---|---|---|
 | C-01 | AC-1 | Functional | `/ops/memory-graph` without selected node | render route | detail panel markers remain present with hidden/default values |
 | C-02 | AC-2 | Integration | selected detail memory ID on graph route | render route | selected node row exposes detail markers and graph detail panel mirrors selected entry |
+| C-02b | AC-2b | Integration | selected harness lineage node ID on graph route | render graph and memory routes | selected synthetic node exposes detail markers and memory explorer drilldown stays truthful |
 | C-03 | AC-3 | Regression | route is not `/ops/memory-graph` | render route | graph panel markers remain present and hidden |
 | C-04 | AC-4 | Regression | existing memory specs | rerun selected suites | prior contracts remain green |
 
