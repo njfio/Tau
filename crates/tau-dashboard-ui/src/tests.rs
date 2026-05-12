@@ -5143,7 +5143,9 @@ fn functional_spec_3106_c01_c03_tools_route_renders_inventory_panel_markers() {
         "id=\"tau-ops-tools-panel\" data-route=\"/ops/tools-jobs\" aria-hidden=\"false\" data-panel-visible=\"true\" data-total-tools=\"0\""
     ));
     assert!(html.contains("id=\"tau-ops-tools-inventory-summary\" data-total-tools=\"0\""));
-    assert!(html.contains("id=\"tau-ops-tools-inventory-table\" data-row-count=\"0\""));
+    assert!(html.contains(
+        "id=\"tau-ops-tools-inventory-table\" data-row-count=\"0\" data-column-count=\"8\""
+    ));
     assert!(html.contains("id=\"tau-ops-tools-inventory-empty-state\" data-empty-state=\"true\""));
 }
 
@@ -5184,12 +5186,20 @@ fn functional_spec_3106_c02_tools_route_renders_deterministic_inventory_rows() {
     assert!(html.contains(
         "id=\"tau-ops-tools-panel\" data-route=\"/ops/tools-jobs\" aria-hidden=\"false\" data-panel-visible=\"true\" data-total-tools=\"2\""
     ));
-    assert!(html.contains("id=\"tau-ops-tools-inventory-table\" data-row-count=\"2\""));
+    assert!(html.contains(
+        "id=\"tau-ops-tools-inventory-table\" data-row-count=\"2\" data-column-count=\"8\""
+    ));
     assert!(html.contains(
         "id=\"tau-ops-tools-inventory-row-0\" data-tool-name=\"bash\" data-tool-category=\"Code\" data-tool-policy=\"allowed\" data-usage-count=\"6\" data-error-rate=\"0.00\" data-avg-latency-ms=\"12.00\" data-last-used-unix-ms=\"1003\""
     ));
     assert!(html.contains(
+        "id=\"tau-ops-tools-open-detail-0\" data-action=\"view-tool-detail\" data-tool-name=\"bash\" href=\"/ops/tools-jobs?theme=light&amp;sidebar=collapsed&amp;session=default&amp;tool=bash\""
+    ));
+    assert!(html.contains(
         "id=\"tau-ops-tools-inventory-row-1\" data-tool-name=\"memory_search\" data-tool-category=\"Memory\" data-tool-policy=\"allowed\" data-usage-count=\"4\" data-error-rate=\"0.25\" data-avg-latency-ms=\"18.40\" data-last-used-unix-ms=\"1002\""
+    ));
+    assert!(html.contains(
+        "id=\"tau-ops-tools-open-detail-1\" data-action=\"view-tool-detail\" data-tool-name=\"memory_search\" href=\"/ops/tools-jobs?theme=light&amp;sidebar=collapsed&amp;session=default&amp;tool=memory_search\""
     ));
     assert!(!html.contains("id=\"tau-ops-tools-inventory-empty-state\""));
 }
@@ -5210,7 +5220,9 @@ fn regression_spec_3106_c04_non_tools_routes_keep_hidden_tools_panel_markers() {
         "id=\"tau-ops-tools-panel\" data-route=\"/ops/tools-jobs\" aria-hidden=\"true\" data-panel-visible=\"false\" data-total-tools=\"0\""
     ));
     assert!(html.contains("id=\"tau-ops-tools-inventory-summary\" data-total-tools=\"0\""));
-    assert!(html.contains("id=\"tau-ops-tools-inventory-table\" data-row-count=\"0\""));
+    assert!(html.contains(
+        "id=\"tau-ops-tools-inventory-table\" data-row-count=\"0\" data-column-count=\"8\""
+    ));
 }
 
 #[test]

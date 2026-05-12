@@ -4617,7 +4617,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     let tools_inventory_rows_view = if tools_inventory_rows.is_empty() {
         leptos::either::Either::Left(view! {
             <tr id="tau-ops-tools-inventory-empty-state" data-empty-state="true">
-                <td colspan="7">No tools registered.</td>
+                <td colspan="8">No tools registered.</td>
             </tr>
         })
     } else {
@@ -4627,10 +4627,15 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                 .enumerate()
                 .map(|(index, row)| {
                     let row_id = format!("tau-ops-tools-inventory-row-{index}");
+                    let detail_id = format!("tau-ops-tools-open-detail-{index}");
+                    let tool_name = row.tool_name.clone();
                     let usage_count = row.usage_count.to_string();
                     let last_used_unix_ms = row.last_used_unix_ms.to_string();
                     let usage_count_attr = usage_count.clone();
                     let last_used_unix_ms_attr = last_used_unix_ms.clone();
+                    let detail_href = format!(
+                        "{active_shell_path}?theme={theme_attr}&sidebar={sidebar_state_attr}&session={chat_session_key}&tool={tool_name}"
+                    );
                     view! {
                         <tr
                             id=row_id
@@ -4649,6 +4654,16 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             <td>{row.error_rate.clone()}</td>
                             <td>{row.avg_latency_ms.clone()}</td>
                             <td>{last_used_unix_ms}</td>
+                            <td>
+                                <a
+                                    id=detail_id
+                                    data-action="view-tool-detail"
+                                    data-tool-name=row.tool_name.clone()
+                                    href=detail_href
+                                >
+                                    View Detail
+                                </a>
+                            </td>
                         </tr>
                     }
                 })
@@ -9026,7 +9041,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             <table
                                 id="tau-ops-tools-inventory-table"
                                 data-row-count=tools_row_count_table_attr
-                                data-column-count="7"
+                                data-column-count="8"
                             >
                                 <thead>
                                     <tr>
@@ -9037,6 +9052,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                         <th scope="col">Error Rate</th>
                                         <th scope="col">Avg Latency (ms)</th>
                                         <th scope="col">Last Used (unix ms)</th>
+                                        <th scope="col">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody

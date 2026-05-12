@@ -6,7 +6,8 @@
 3. Extend dashboard snapshot with tool detail contract rows and defaults.
 4. Render deterministic tool detail panel + sub-sections in UI shell.
 5. Populate tool detail snapshot from gateway tool registry and deterministic fixture stats defaults.
-6. Run regression suites and verify fmt/clippy gates.
+6. Render deterministic per-row tool detail action links so the inventory table can select a tool without relying on hidden/default state.
+7. Run regression suites and verify fmt/clippy gates.
 
 ## Affected Modules
 - `crates/tau-dashboard-ui/src/lib.rs`
@@ -42,4 +43,5 @@
   - `#tau-ops-tool-detail-usage-bucket-<index>`
   - `#tau-ops-tool-detail-invocations`
   - `#tau-ops-tool-detail-invocation-row-<index>`
+- Tool inventory rows include a final Actions column with `view-tool-detail` links that preserve `theme`, `sidebar`, and `session`, and add `tool=<tool_name>`.
 - P1 process rule: spec marked Reviewed; human review requested in PR.

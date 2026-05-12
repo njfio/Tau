@@ -21,9 +21,17 @@ async fn integration_spec_3106_c02_ops_tools_route_lists_registered_inventory_ro
         "id=\"tau-ops-tools-panel\" data-route=\"/ops/tools-jobs\" aria-hidden=\"false\" data-panel-visible=\"true\" data-total-tools=\"2\""
     ));
     assert!(body.contains("id=\"tau-ops-tools-inventory-summary\" data-total-tools=\"2\""));
-    assert!(body.contains("id=\"tau-ops-tools-inventory-table\" data-row-count=\"2\""));
+    assert!(body.contains(
+        "id=\"tau-ops-tools-inventory-table\" data-row-count=\"2\" data-column-count=\"8\""
+    ));
     assert!(body.contains("id=\"tau-ops-tools-inventory-row-0\" data-tool-name=\"bash\""));
+    assert!(body.contains(
+        "id=\"tau-ops-tools-open-detail-0\" data-action=\"view-tool-detail\" data-tool-name=\"bash\" href=\"/ops/tools-jobs?theme=light&amp;sidebar=collapsed&amp;session=ops-tools&amp;tool=bash\""
+    ));
     assert!(body.contains("id=\"tau-ops-tools-inventory-row-1\" data-tool-name=\"memory_search\""));
+    assert!(body.contains(
+        "id=\"tau-ops-tools-open-detail-1\" data-action=\"view-tool-detail\" data-tool-name=\"memory_search\" href=\"/ops/tools-jobs?theme=light&amp;sidebar=collapsed&amp;session=ops-tools&amp;tool=memory_search\""
+    ));
 
     handle.abort();
 }

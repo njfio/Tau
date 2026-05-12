@@ -13,6 +13,7 @@ In scope:
 - Add deterministic detail contracts for description, schema, and policy configuration.
 - Add deterministic usage histogram markers (24h buckets contract surface).
 - Add deterministic recent invocation row contracts (timestamp/args/result/duration/status).
+- Add deterministic per-row tool detail action links so operators can select a tool from the inventory table.
 - Populate detail snapshot data from gateway runtime inputs.
 - Validate contracts via UI and gateway conformance tests.
 
@@ -37,6 +38,11 @@ Given selected tool usage data is present,
 when shell HTML is produced,
 then histogram bucket markers and recent invocation row markers render deterministic values.
 
+### AC-3a tool inventory rows expose detail-selection links
+Given `/ops/tools-jobs` renders tool inventory rows,
+when shell HTML is produced,
+then each row exposes a deterministic action link that preserves theme/sidebar/session context and selects that row's tool detail.
+
 ### AC-4 non-tools routes preserve hidden tool detail contracts and prior suites remain green
 Given any non-`/ops/tools-jobs` route renders,
 when shell HTML is produced,
@@ -48,6 +54,7 @@ then tool detail markers remain present and hidden, and selected regression suit
 | C-01 | AC-1 | Functional | active route is `/ops/tools-jobs` | render shell | tool detail panel markers are visible with deterministic selected-tool contract |
 | C-02 | AC-2 | Functional | selected tool detail data exists | render shell | description/schema/policy markers render deterministic values |
 | C-03 | AC-3 | Integration | gateway provides usage histogram + recent invocation rows | render `/ops/tools-jobs` | histogram and invocation markers render deterministic values |
+| C-03a | AC-3a | Functional/Integration | gateway provides tool inventory rows | render `/ops/tools-jobs` | each tool row has a `view-tool-detail` link with preserved route context and `tool=<name>` |
 | C-04 | AC-4 | Regression | active route is not `/ops/tools-jobs` | render shell | detail markers stay present/hidden; regression suites remain green |
 
 ## Success Metrics / Signals
