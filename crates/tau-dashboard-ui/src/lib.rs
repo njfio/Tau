@@ -5175,6 +5175,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     margin-bottom: 0;
                 }
                 #tau-ops-chat-session-summary,
+                #tau-ops-chat-session-details,
                 #tau-ops-chat-session-manager,
                 #tau-ops-chat-session-selector,
                 #tau-ops-chat-new-session-form,
@@ -5256,15 +5257,18 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     text-decoration: none;
                     overflow-wrap: anywhere;
                 }
+                #tau-ops-chat-session-details,
                 #tau-ops-chat-session-manager {
                     display: block;
                     width: 100%;
                     max-width: 420px;
                 }
+                #tau-ops-chat-session-details[open],
                 #tau-ops-chat-session-manager[open] {
                     display: grid;
                     gap: 8px;
                 }
+                #tau-ops-chat-session-details > summary,
                 #tau-ops-chat-session-manager > summary {
                     display: flex;
                     min-height: 34px;
@@ -5280,9 +5284,11 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     font-weight: 800;
                     list-style: none;
                 }
+                #tau-ops-chat-session-details > summary::-webkit-details-marker,
                 #tau-ops-chat-session-manager > summary::-webkit-details-marker {
                     display: none;
                 }
+                #tau-ops-chat-session-details > summary::after,
                 #tau-ops-chat-session-manager > summary::after {
                     color: #7fb4ff;
                     content: "Open";
@@ -5290,6 +5296,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     font-weight: 850;
                     text-transform: uppercase;
                 }
+                #tau-ops-chat-session-details[open] > summary::after,
                 #tau-ops-chat-session-manager[open] > summary::after {
                     content: "Close";
                 }
@@ -6403,6 +6410,20 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     {chat_send_status_message}
                                 </p>
                             </article>
+                            <details
+                                id="tau-ops-chat-session-details"
+                                data-secondary-session-metadata="true"
+                                data-collapsed-by-default="true"
+                                data-active-session-key=chat_session_key.clone()
+                                data-entry-count=active_session_entry_count_value.clone()
+                            >
+                                <summary id="tau-ops-chat-session-details-summary">
+                                    {format!(
+                                        "Session: {} ({} entries)",
+                                        chat_session_key.clone(),
+                                        active_session_entry_count_value.clone()
+                                    )}
+                                </summary>
                             <article
                                 id="tau-ops-chat-session-summary"
                                 data-active-session-key=chat_session_key.clone()
@@ -6465,6 +6486,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     </a>
                                 </nav>
                             </article>
+                            </details>
                             <details
                                 id="tau-ops-chat-session-manager"
                                 data-secondary-session-management="true"

@@ -57,6 +57,11 @@ Given `/ops/chat` renders active session metadata and session navigation links,
 When the operator lands on the active chat page,
 Then the send form and send status appear before the session summary, open-session-detail link, and jump-to-latest link so the primary task remains composing in the current session.
 
+### AC-11 Secondary session metadata is grouped behind a compact session-details manager
+Given `/ops/chat` renders active session metadata and session navigation links,
+When the operator lands on the active chat page,
+Then the session summary, open-session-detail link, and jump-to-latest link are grouped inside a collapsed-by-default session-details manager so they remain available without competing with the active composer.
+
 ## Scope
 
 ### In Scope
@@ -68,6 +73,7 @@ Then the send form and send status appear before the session summary, open-sessi
 - Composer-first ordering before secondary new-session creation controls.
 - Compact secondary session manager grouping around new-session and session-history controls.
 - Composer-first ordering before session metadata and navigation actions.
+- Compact secondary session-details grouping around session metadata and navigation actions.
 - Targeted regression validation for existing ops shell slices.
 
 ### Out of Scope
@@ -86,6 +92,7 @@ Then the send form and send status appear before the session summary, open-sessi
 - C-08 (functional): `/ops/chat` places the send form and send-status marker before the new-session form and status controls.
 - C-09 (functional): `/ops/chat` groups new-session and session selector controls inside a collapsed secondary session manager with a summary count.
 - C-10 (functional): `/ops/chat` places the send form and send-status marker before the session summary and session navigation links.
+- C-11 (functional): `/ops/chat` groups the session summary and session navigation links inside a collapsed secondary session-details manager with an active-session summary.
 
 ## Success Metrics / Observable Signals
 - `cargo test -p tau-dashboard-ui functional_spec_2830 -- --test-threads=1` passes.

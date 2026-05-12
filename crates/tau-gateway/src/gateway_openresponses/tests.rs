@@ -572,6 +572,12 @@ async fn functional_spec_2830_c01_ops_chat_shell_exposes_send_form_and_fallback_
     let send_status_index = body
         .find("id=\"tau-ops-chat-send-status\"")
         .expect("send status marker should render");
+    let session_details_index = body
+        .find("id=\"tau-ops-chat-session-details\"")
+        .expect("session details manager should render");
+    let session_details_summary_index = body
+        .find("id=\"tau-ops-chat-session-details-summary\"")
+        .expect("session details manager summary should render");
     let session_summary_index = body
         .find("id=\"tau-ops-chat-session-summary\"")
         .expect("session summary marker should render");
@@ -617,8 +623,16 @@ async fn functional_spec_2830_c01_ops_chat_shell_exposes_send_form_and_fallback_
         "chat composer should be the first active chat control before session metadata"
     );
     assert!(
-        send_status_index < session_summary_index,
-        "send status should stay with the composer before session metadata"
+        send_status_index < session_details_index,
+        "send status should stay with the composer before secondary session metadata"
+    );
+    assert!(
+        session_details_index < session_summary_index,
+        "session details manager should contain session metadata"
+    );
+    assert!(
+        session_details_summary_index < session_summary_index,
+        "session details summary should precede hidden metadata content"
     );
     assert!(
         send_form_index < session_actions_index,
@@ -632,6 +646,10 @@ async fn functional_spec_2830_c01_ops_chat_shell_exposes_send_form_and_fallback_
         send_form_index < jump_latest_index,
         "chat composer should render before jump-to-latest navigation"
     );
+    assert!(body.contains(
+        "id=\"tau-ops-chat-session-details\" data-secondary-session-metadata=\"true\" data-collapsed-by-default=\"true\""
+    ));
+    assert!(body.contains("id=\"tau-ops-chat-session-details-summary\""));
     assert!(body.contains(
         "id=\"tau-ops-chat-session-manager\" data-secondary-session-management=\"true\" data-collapsed-by-default=\"true\""
     ));
