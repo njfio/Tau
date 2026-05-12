@@ -8,6 +8,7 @@ The PRD requires creating new memory entries with all fields from the ops dashbo
 ## Scope
 In scope:
 - Add deterministic create-entry form controls on `/ops/memory` for required memory fields.
+- Keep create-entry controls in a compact, collapsed-by-default action manager that preserves deterministic status/form markers.
 - Implement gateway submission handling for the create form using full-field input mapping.
 - Add deterministic success contracts (redirect or confirmation markers).
 
@@ -20,7 +21,7 @@ Out of scope:
 ### AC-1 Memory route exposes deterministic create-entry form contracts
 Given `/ops/memory` renders,
 when an operator opens the page,
-then a deterministic create form exists with required fields and stable marker IDs.
+then a deterministic create form exists inside a collapsed-by-default action manager with required fields and stable marker IDs.
 
 ### AC-2 Create submission persists memory entry with full-field mapping
 Given valid form values for required fields,
@@ -40,7 +41,7 @@ then existing regression suites remain green.
 ## Conformance Cases
 | Case | AC | Tier | Given | When | Then |
 |---|---|---|---|---|---|
-| C-01 | AC-1 | Functional | `/ops/memory` | render memory route | create form markers/fields are present with deterministic IDs |
+| C-01 | AC-1 | Functional | `/ops/memory` | render memory route | create manager is collapsed by default and create form markers/fields are present with deterministic IDs |
 | C-02 | AC-2 | Integration | valid create-form payload with all fields | submit create form | entry is persisted and discoverable via memory route contracts |
 | C-03 | AC-3 | Functional | successful create submission | render redirected/returned memory view | success markers/state are deterministic |
 | C-04 | AC-4 | Regression | existing memory/search/scope/type contracts | rerun selected suites | prior contracts remain green |

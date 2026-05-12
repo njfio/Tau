@@ -359,6 +359,9 @@ async fn integration_spec_2917_c02_c03_ops_memory_create_submission_persists_ent
     assert!(redirect_body.contains(
         "id=\"tau-ops-memory-create-status\" data-create-status=\"created\" data-created-memory-id=\"mem-create-1\""
     ));
+    assert!(redirect_body.contains(
+        "id=\"tau-ops-memory-create-manager\" data-memory-action-manager=\"create\" data-collapsed-by-default=\"true\" data-memory-action-initial-open=\"true\""
+    ));
 
     let read_created_response = client
         .get(format!(
@@ -619,6 +622,9 @@ async fn integration_spec_2921_c02_c03_ops_memory_edit_submission_updates_existi
     assert!(redirect_body.contains(
         "id=\"tau-ops-memory-edit-status\" data-edit-status=\"updated\" data-edited-memory-id=\"mem-edit-target\""
     ));
+    assert!(redirect_body.contains(
+        "id=\"tau-ops-memory-edit-manager\" data-memory-action-manager=\"edit\" data-collapsed-by-default=\"true\" data-memory-action-initial-open=\"true\""
+    ));
 
     let read_updated_response = client
         .get(format!(
@@ -827,6 +833,9 @@ async fn integration_spec_3060_c02_c03_ops_memory_delete_submission_requires_con
         .expect("read ops memory delete redirect body");
     assert!(redirect_body.contains(
         "id=\"tau-ops-memory-delete-status\" data-delete-status=\"deleted\" data-deleted-memory-id=\"mem-delete-target\""
+    ));
+    assert!(redirect_body.contains(
+        "id=\"tau-ops-memory-delete-manager\" data-memory-action-manager=\"delete\" data-collapsed-by-default=\"true\" data-memory-action-initial-open=\"true\""
     ));
 
     let deleted_entry = client

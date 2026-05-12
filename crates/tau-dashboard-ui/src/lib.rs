@@ -4087,6 +4087,22 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
         "updated" => "Memory entry updated.".to_string(),
         _ => "Create a memory entry.".to_string(),
     };
+    let memory_create_manager_open_bool = memory_create_status != "idle";
+    let memory_create_manager_open = if memory_create_manager_open_bool {
+        "true"
+    } else {
+        "false"
+    };
+    let memory_create_manager_hidden = if memory_create_manager_open_bool {
+        "false"
+    } else {
+        "true"
+    };
+    let memory_create_manager_summary = if memory_create_manager_open_bool {
+        format!("Create Entry: {}", memory_create_status)
+    } else {
+        "Create Entry".to_string()
+    };
     let memory_edit_form_action = memory_create_form_action.clone();
     let memory_edit_form_method = memory_create_form_method.clone();
     let memory_edit_status_panel_attr = memory_create_status.clone();
@@ -4110,6 +4126,22 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
         "updated" => "Memory entry updated.".to_string(),
         _ => "Edit an existing memory entry.".to_string(),
     };
+    let memory_edit_manager_open_bool = memory_create_status == "updated";
+    let memory_edit_manager_open = if memory_edit_manager_open_bool {
+        "true"
+    } else {
+        "false"
+    };
+    let memory_edit_manager_hidden = if memory_edit_manager_open_bool {
+        "false"
+    } else {
+        "true"
+    };
+    let memory_edit_manager_summary = if memory_edit_manager_open_bool {
+        "Edit Entry: updated".to_string()
+    } else {
+        "Edit Entry".to_string()
+    };
     let memory_delete_form_action = memory_edit_form_action.clone();
     let memory_delete_form_method = memory_edit_form_method.clone();
     let memory_delete_status = context.chat.memory_delete_status.clone();
@@ -4122,6 +4154,22 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     let memory_delete_status_message = match memory_delete_status.as_str() {
         "deleted" => "Memory entry deleted.".to_string(),
         _ => "Delete a memory entry.".to_string(),
+    };
+    let memory_delete_manager_open_bool = memory_delete_status != "idle";
+    let memory_delete_manager_open = if memory_delete_manager_open_bool {
+        "true"
+    } else {
+        "false"
+    };
+    let memory_delete_manager_hidden = if memory_delete_manager_open_bool {
+        "false"
+    } else {
+        "true"
+    };
+    let memory_delete_manager_summary = if memory_delete_manager_open_bool {
+        format!("Delete Entry: {}", memory_delete_status)
+    } else {
+        "Delete Entry".to_string()
     };
     let memory_detail_visible = if context.chat.memory_detail_visible {
         "true"
@@ -6499,6 +6547,81 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     text-decoration: none;
                     overflow-wrap: anywhere;
                 }
+                #tau-ops-memory-action-controls {
+                    display: grid;
+                    grid-template-columns: repeat(3, minmax(0, 1fr));
+                    gap: 8px;
+                    width: min(720px, 100%);
+                    margin: 0 0 12px;
+                }
+                #tau-ops-memory-create-manager,
+                #tau-ops-memory-edit-manager,
+                #tau-ops-memory-delete-manager {
+                    display: block;
+                    min-width: 0;
+                    width: 100%;
+                }
+                #tau-ops-memory-create-manager[open],
+                #tau-ops-memory-edit-manager[open],
+                #tau-ops-memory-delete-manager[open] {
+                    display: grid;
+                    grid-column: 1 / -1;
+                    gap: 8px;
+                }
+                #tau-ops-memory-create-manager > summary,
+                #tau-ops-memory-edit-manager > summary,
+                #tau-ops-memory-delete-manager > summary {
+                    display: flex;
+                    min-height: 34px;
+                    align-items: center;
+                    justify-content: space-between;
+                    border: 1px solid #2f5368;
+                    border-radius: 6px;
+                    padding: 7px 9px;
+                    background: #102b3a;
+                    color: #dbe8ef;
+                    cursor: pointer;
+                    font-size: .74rem;
+                    font-weight: 800;
+                    list-style: none;
+                    overflow-wrap: anywhere;
+                }
+                #tau-ops-memory-create-manager > summary::-webkit-details-marker,
+                #tau-ops-memory-edit-manager > summary::-webkit-details-marker,
+                #tau-ops-memory-delete-manager > summary::-webkit-details-marker {
+                    display: none;
+                }
+                #tau-ops-memory-create-manager > summary::after,
+                #tau-ops-memory-edit-manager > summary::after,
+                #tau-ops-memory-delete-manager > summary::after {
+                    color: #7fb4ff;
+                    content: "Open";
+                    font-size: .66rem;
+                    font-weight: 850;
+                    margin-left: 8px;
+                    text-transform: uppercase;
+                }
+                #tau-ops-memory-create-manager[open] > summary::after,
+                #tau-ops-memory-edit-manager[open] > summary::after,
+                #tau-ops-memory-delete-manager[open] > summary::after {
+                    content: "Close";
+                }
+                #tau-ops-memory-create-status,
+                #tau-ops-memory-edit-status,
+                #tau-ops-memory-delete-status {
+                    margin: 0;
+                    border: 1px solid #203847;
+                    border-radius: 6px;
+                    padding: 8px 9px;
+                    background: #091923;
+                    color: #dbe8ef;
+                    font-size: .72rem;
+                    font-weight: 750;
+                }
+                #tau-ops-memory-delete-manager > summary {
+                    border-color: #5a2d2d;
+                    background: #2b1416;
+                }
                 #tau-ops-kpi-grid {
                     display: grid;
                     grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -8257,18 +8380,42 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     Search
                                 </button>
                             </form>
-                            <p
-                                id="tau-ops-memory-create-status"
-                                data-create-status=memory_create_status_marker_attr
-                                data-created-memory-id=memory_create_created_entry_id_marker_attr
+                            <section
+                                id="tau-ops-memory-action-controls"
+                                aria-label="Memory entry action controls"
+                                data-memory-action-controls="true"
+                                data-create-open=memory_create_manager_open
+                                data-edit-open=memory_edit_manager_open
+                                data-delete-open=memory_delete_manager_open
                             >
-                                {memory_create_status_message}
-                            </p>
-                            <form
-                                id="tau-ops-memory-create-form"
-                                action=memory_create_form_action
-                                method=memory_create_form_method
+                            <details
+                                id="tau-ops-memory-create-manager"
+                                data-memory-action-manager="create"
+                                data-collapsed-by-default="true"
+                                data-memory-action-initial-open=memory_create_manager_open
+                                data-create-status=memory_create_status_marker_attr.clone()
+                                data-created-memory-id=memory_create_created_entry_id_marker_attr.clone()
+                                open=memory_create_manager_open_bool
                             >
+                                <summary id="tau-ops-memory-create-manager-summary">
+                                    {memory_create_manager_summary}
+                                </summary>
+                                <p
+                                    id="tau-ops-memory-create-status"
+                                    data-create-status=memory_create_status_marker_attr.clone()
+                                    data-created-memory-id=memory_create_created_entry_id_marker_attr.clone()
+                                    data-memory-action-open=memory_create_manager_open
+                                    aria-hidden=memory_create_manager_hidden
+                                >
+                                    {memory_create_status_message}
+                                </p>
+                                <form
+                                    id="tau-ops-memory-create-form"
+                                    action=memory_create_form_action
+                                    method=memory_create_form_method
+                                    data-memory-action-open=memory_create_manager_open
+                                    aria-hidden=memory_create_manager_hidden
+                                >
                                 <input id="tau-ops-memory-create-theme" type="hidden" name="theme" value=theme_attr />
                                 <input
                                     id="tau-ops-memory-create-sidebar"
@@ -8384,19 +8531,36 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 <button id="tau-ops-memory-create-button" type="submit">
                                     Create Entry
                                 </button>
-                            </form>
-                            <p
-                                id="tau-ops-memory-edit-status"
-                                data-edit-status=memory_edit_status_marker_attr
-                                data-edited-memory-id=memory_edit_edited_memory_id_marker_attr
+                                </form>
+                            </details>
+                            <details
+                                id="tau-ops-memory-edit-manager"
+                                data-memory-action-manager="edit"
+                                data-collapsed-by-default="true"
+                                data-memory-action-initial-open=memory_edit_manager_open
+                                data-edit-status=memory_edit_status_marker_attr.clone()
+                                data-edited-memory-id=memory_edit_edited_memory_id_marker_attr.clone()
+                                open=memory_edit_manager_open_bool
                             >
-                                {memory_edit_status_message}
-                            </p>
-                            <form
-                                id="tau-ops-memory-edit-form"
-                                action=memory_edit_form_action
-                                method=memory_edit_form_method
-                            >
+                                <summary id="tau-ops-memory-edit-manager-summary">
+                                    {memory_edit_manager_summary}
+                                </summary>
+                                <p
+                                    id="tau-ops-memory-edit-status"
+                                    data-edit-status=memory_edit_status_marker_attr.clone()
+                                    data-edited-memory-id=memory_edit_edited_memory_id_marker_attr.clone()
+                                    data-memory-action-open=memory_edit_manager_open
+                                    aria-hidden=memory_edit_manager_hidden
+                                >
+                                    {memory_edit_status_message}
+                                </p>
+                                <form
+                                    id="tau-ops-memory-edit-form"
+                                    action=memory_edit_form_action
+                                    method=memory_edit_form_method
+                                    data-memory-action-open=memory_edit_manager_open
+                                    aria-hidden=memory_edit_manager_hidden
+                                >
                                 <input id="tau-ops-memory-edit-theme" type="hidden" name="theme" value=theme_attr />
                                 <input
                                     id="tau-ops-memory-edit-sidebar"
@@ -8512,19 +8676,36 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 <button id="tau-ops-memory-edit-button" type="submit">
                                     Update Entry
                                 </button>
-                            </form>
-                            <p
-                                id="tau-ops-memory-delete-status"
-                                data-delete-status=memory_delete_status_marker_attr
-                                data-deleted-memory-id=memory_delete_deleted_entry_id_marker_attr
+                                </form>
+                            </details>
+                            <details
+                                id="tau-ops-memory-delete-manager"
+                                data-memory-action-manager="delete"
+                                data-collapsed-by-default="true"
+                                data-memory-action-initial-open=memory_delete_manager_open
+                                data-delete-status=memory_delete_status_marker_attr.clone()
+                                data-deleted-memory-id=memory_delete_deleted_entry_id_marker_attr.clone()
+                                open=memory_delete_manager_open_bool
                             >
-                                {memory_delete_status_message}
-                            </p>
-                            <form
-                                id="tau-ops-memory-delete-form"
-                                action=memory_delete_form_action
-                                method=memory_delete_form_method
-                            >
+                                <summary id="tau-ops-memory-delete-manager-summary">
+                                    {memory_delete_manager_summary}
+                                </summary>
+                                <p
+                                    id="tau-ops-memory-delete-status"
+                                    data-delete-status=memory_delete_status_marker_attr.clone()
+                                    data-deleted-memory-id=memory_delete_deleted_entry_id_marker_attr.clone()
+                                    data-memory-action-open=memory_delete_manager_open
+                                    aria-hidden=memory_delete_manager_hidden
+                                >
+                                    {memory_delete_status_message}
+                                </p>
+                                <form
+                                    id="tau-ops-memory-delete-form"
+                                    action=memory_delete_form_action
+                                    method=memory_delete_form_method
+                                    data-memory-action-open=memory_delete_manager_open
+                                    aria-hidden=memory_delete_manager_hidden
+                                >
                                 <input id="tau-ops-memory-delete-theme" type="hidden" name="theme" value=theme_attr />
                                 <input
                                     id="tau-ops-memory-delete-sidebar"
@@ -8561,7 +8742,62 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 <button id="tau-ops-memory-delete-button" type="submit">
                                     Delete Entry
                                 </button>
-                            </form>
+                                </form>
+                            </details>
+                            </section>
+                            <script
+                                id="tau-ops-memory-action-controls-visibility-sync"
+                                data-sync-target="tau-ops-memory-action-controls"
+                            >
+                                r#"
+                                (function () {
+                                    function syncMemoryActionManager(detailsId, childIds) {
+                                        var details = document.getElementById(detailsId);
+                                        var children = childIds.map(function (childId) {
+                                            return document.getElementById(childId);
+                                        }).filter(Boolean);
+                                        if (!details || children.length === 0 || details.getAttribute("data-visibility-sync-bound") === "true") {
+                                            return;
+                                        }
+
+                                        details.setAttribute("data-visibility-sync-bound", "true");
+
+                                        function syncVisibility() {
+                                            var detailsOpen = details.hasAttribute("open");
+                                            details.setAttribute("data-memory-action-current-open", detailsOpen ? "true" : "false");
+                                            children.forEach(function (child) {
+                                                child.setAttribute("data-memory-action-open", detailsOpen ? "true" : "false");
+                                                child.setAttribute("aria-hidden", detailsOpen ? "false" : "true");
+                                            });
+                                        }
+
+                                        details.addEventListener("toggle", syncVisibility);
+                                        syncVisibility();
+                                    }
+
+                                    function installMemoryActionVisibilitySync() {
+                                        syncMemoryActionManager("tau-ops-memory-create-manager", [
+                                            "tau-ops-memory-create-status",
+                                            "tau-ops-memory-create-form"
+                                        ]);
+                                        syncMemoryActionManager("tau-ops-memory-edit-manager", [
+                                            "tau-ops-memory-edit-status",
+                                            "tau-ops-memory-edit-form"
+                                        ]);
+                                        syncMemoryActionManager("tau-ops-memory-delete-manager", [
+                                            "tau-ops-memory-delete-status",
+                                            "tau-ops-memory-delete-form"
+                                        ]);
+                                    }
+
+                                    if (document.readyState === "loading") {
+                                        document.addEventListener("DOMContentLoaded", installMemoryActionVisibilitySync);
+                                    } else {
+                                        installMemoryActionVisibilitySync();
+                                    }
+                                })();
+                                "#
+                            </script>
                             <section
                                 id="tau-ops-memory-detail-panel"
                                 data-detail-visible=memory_detail_visible

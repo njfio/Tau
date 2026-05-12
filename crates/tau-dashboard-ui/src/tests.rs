@@ -19,6 +19,16 @@ use super::{
 };
 use tau_tui::{render_operator_shell_frame, OperatorShellFrame};
 
+fn html_start_tag<'a>(html: &'a str, marker: &str) -> &'a str {
+    let start = html.find(marker).expect("html marker should be present");
+    let tag_start = html[..start].rfind('<').expect("marker should be in a tag");
+    let tag_end = html[start..]
+        .find('>')
+        .map(|offset| start + offset + 1)
+        .expect("tag should be closed");
+    &html[tag_start..tag_end]
+}
+
 #[test]
 fn unit_contains_markdown_contract_syntax_rejects_plain_text() {
     assert!(!contains_markdown_contract_syntax("plain response"));
@@ -4334,6 +4344,23 @@ fn functional_spec_2917_c01_c03_memory_route_renders_create_form_and_status_mark
     assert!(html.contains(
             "id=\"tau-ops-memory-panel\" data-route=\"/ops/memory\" aria-hidden=\"false\" data-panel-visible=\"true\" data-query=\"\" data-result-count=\"0\" data-workspace-id=\"\" data-channel-id=\"\" data-actor-id=\"\" data-memory-type=\"\" data-create-status=\"idle\" data-created-memory-id=\"\""
         ));
+    assert!(html.contains(
+        "id=\"tau-ops-memory-action-controls\" aria-label=\"Memory entry action controls\" data-memory-action-controls=\"true\" data-create-open=\"false\" data-edit-open=\"false\" data-delete-open=\"false\""
+    ));
+    assert!(html.contains("id=\"tau-ops-memory-action-controls-visibility-sync\""));
+    assert!(html.contains("data-sync-target=\"tau-ops-memory-action-controls\""));
+    let create_manager_tag = html_start_tag(&html, "id=\"tau-ops-memory-create-manager\"");
+    assert!(create_manager_tag.contains("data-memory-action-manager=\"create\""));
+    assert!(create_manager_tag.contains("data-collapsed-by-default=\"true\""));
+    assert!(create_manager_tag.contains("data-memory-action-initial-open=\"false\""));
+    assert!(!create_manager_tag.contains(" open"));
+    assert!(
+        html.find("id=\"tau-ops-memory-create-manager-summary\"")
+            .expect("create manager summary should render")
+            < html
+                .find("id=\"tau-ops-memory-create-form\"")
+                .expect("create form should render")
+    );
     assert!(
             html.contains("id=\"tau-ops-memory-create-status\" data-create-status=\"idle\" data-created-memory-id=\"\"")
         );
@@ -4396,6 +4423,18 @@ fn functional_spec_2921_c01_c03_memory_route_renders_edit_form_and_status_marker
     assert!(html.contains(
         "id=\"tau-ops-memory-edit-status\" data-edit-status=\"idle\" data-edited-memory-id=\"\""
     ));
+    let edit_manager_tag = html_start_tag(&html, "id=\"tau-ops-memory-edit-manager\"");
+    assert!(edit_manager_tag.contains("data-memory-action-manager=\"edit\""));
+    assert!(edit_manager_tag.contains("data-collapsed-by-default=\"true\""));
+    assert!(edit_manager_tag.contains("data-memory-action-initial-open=\"false\""));
+    assert!(!edit_manager_tag.contains(" open"));
+    assert!(
+        html.find("id=\"tau-ops-memory-edit-manager-summary\"")
+            .expect("edit manager summary should render")
+            < html
+                .find("id=\"tau-ops-memory-edit-form\"")
+                .expect("edit form should render")
+    );
     assert!(html.contains("id=\"tau-ops-memory-edit-form\" action=\"/ops/memory\" method=\"post\""));
     assert!(html.contains(
         "id=\"tau-ops-memory-edit-operation\" type=\"hidden\" name=\"operation\" value=\"edit\""
@@ -4431,6 +4470,12 @@ fn regression_spec_2921_memory_edit_status_updated_renders_updated_message_marke
 
     let edit_status_marker = "id=\"tau-ops-memory-edit-status\" data-edit-status=\"updated\" data-edited-memory-id=\"mem-edit-1\"";
     assert!(html.contains(edit_status_marker));
+    let edit_manager_tag = html_start_tag(&html, "id=\"tau-ops-memory-edit-manager\"");
+    assert!(edit_manager_tag.contains("data-memory-action-initial-open=\"true\""));
+    assert!(edit_manager_tag.contains(" open"));
+    let edit_status_tag = html_start_tag(&html, edit_status_marker);
+    assert!(edit_status_tag.contains("data-memory-action-open=\"true\""));
+    assert!(edit_status_tag.contains("aria-hidden=\"false\""));
     let edit_section = &html[html
         .find(edit_status_marker)
         .expect("edit status marker should be rendered when status is updated")..];
@@ -4456,6 +4501,15 @@ fn regression_spec_2917_memory_create_status_created_renders_created_message_mar
     assert!(html.contains(
             "id=\"tau-ops-memory-create-status\" data-create-status=\"created\" data-created-memory-id=\"mem-create-1\""
         ));
+    let create_manager_tag = html_start_tag(&html, "id=\"tau-ops-memory-create-manager\"");
+    assert!(create_manager_tag.contains("data-memory-action-initial-open=\"true\""));
+    assert!(create_manager_tag.contains(" open"));
+    let create_status_tag = html_start_tag(
+        &html,
+        "id=\"tau-ops-memory-create-status\" data-create-status=\"created\"",
+    );
+    assert!(create_status_tag.contains("data-memory-action-open=\"true\""));
+    assert!(create_status_tag.contains("aria-hidden=\"false\""));
     assert!(html.contains("Memory entry created."));
 }
 
@@ -4478,6 +4532,9 @@ fn regression_spec_2917_memory_create_status_updated_renders_updated_message_mar
     assert!(html.contains(
             "id=\"tau-ops-memory-create-status\" data-create-status=\"updated\" data-created-memory-id=\"mem-create-1\""
         ));
+    let create_manager_tag = html_start_tag(&html, "id=\"tau-ops-memory-create-manager\"");
+    assert!(create_manager_tag.contains("data-memory-action-initial-open=\"true\""));
+    assert!(create_manager_tag.contains(" open"));
     assert!(html.contains("Memory entry updated."));
 }
 
@@ -4499,6 +4556,18 @@ fn functional_spec_3060_c01_memory_route_renders_delete_form_and_confirmation_ma
     assert!(html.contains(
         "id=\"tau-ops-memory-delete-status\" data-delete-status=\"idle\" data-deleted-memory-id=\"\""
     ));
+    let delete_manager_tag = html_start_tag(&html, "id=\"tau-ops-memory-delete-manager\"");
+    assert!(delete_manager_tag.contains("data-memory-action-manager=\"delete\""));
+    assert!(delete_manager_tag.contains("data-collapsed-by-default=\"true\""));
+    assert!(delete_manager_tag.contains("data-memory-action-initial-open=\"false\""));
+    assert!(!delete_manager_tag.contains(" open"));
+    assert!(
+        html.find("id=\"tau-ops-memory-delete-manager-summary\"")
+            .expect("delete manager summary should render")
+            < html
+                .find("id=\"tau-ops-memory-delete-form\"")
+                .expect("delete form should render")
+    );
     assert!(
         html.contains("id=\"tau-ops-memory-delete-form\" action=\"/ops/memory\" method=\"post\"")
     );
@@ -4511,6 +4580,32 @@ fn functional_spec_3060_c01_memory_route_renders_delete_form_and_confirmation_ma
     assert!(html.contains(
         "id=\"tau-ops-memory-delete-confirm\" type=\"checkbox\" name=\"confirm_delete\" value=\"true\""
     ));
+}
+
+#[test]
+fn regression_spec_3060_memory_delete_status_deleted_opens_delete_manager() {
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        auth_mode: TauOpsDashboardAuthMode::Token,
+        active_route: TauOpsDashboardRoute::Memory,
+        theme: TauOpsDashboardTheme::Light,
+        sidebar_state: TauOpsDashboardSidebarState::Collapsed,
+        command_center: TauOpsDashboardCommandCenterSnapshot::default(),
+        chat: TauOpsDashboardChatSnapshot {
+            memory_delete_status: "deleted".to_string(),
+            memory_delete_deleted_entry_id: "mem-delete-1".to_string(),
+            ..TauOpsDashboardChatSnapshot::default()
+        },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
+    });
+
+    let delete_manager_tag = html_start_tag(&html, "id=\"tau-ops-memory-delete-manager\"");
+    assert!(delete_manager_tag.contains("data-memory-action-initial-open=\"true\""));
+    assert!(delete_manager_tag.contains(" open"));
+    let delete_status_marker = "id=\"tau-ops-memory-delete-status\" data-delete-status=\"deleted\" data-deleted-memory-id=\"mem-delete-1\"";
+    let delete_status_tag = html_start_tag(&html, delete_status_marker);
+    assert!(delete_status_tag.contains("data-memory-action-open=\"true\""));
+    assert!(delete_status_tag.contains("aria-hidden=\"false\""));
+    assert!(html.contains("Memory entry deleted."));
 }
 
 #[test]

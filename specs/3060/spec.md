@@ -10,6 +10,7 @@ not expose deterministic delete-confirmation contracts. PRD checklist item
 ## Scope
 In scope:
 - Add deterministic delete-entry form markers on `/ops/memory`.
+- Keep delete-entry controls in a compact, collapsed-by-default action manager that preserves deterministic status/form markers.
 - Enforce explicit confirmation semantics for delete submissions.
 - Persist delete behavior through existing gateway memory runtime.
 - Surface deterministic delete status/result markers after redirect.
@@ -23,7 +24,7 @@ Out of scope:
 ### AC-1 Memory route exposes deterministic delete confirmation form contracts
 Given `/ops/memory` renders,
 when an operator opens the route,
-then deterministic delete form controls and confirmation markers exist.
+then deterministic delete form controls and confirmation markers exist inside a collapsed-by-default action manager.
 
 ### AC-2 Delete submission requires explicit confirmation and target entry
 Given a delete form submission,
@@ -43,7 +44,7 @@ then prior behavior and conformance suites remain green.
 ## Conformance Cases
 | Case | AC | Tier | Given | When | Then |
 |---|---|---|---|---|---|
-| C-01 | AC-1 | Functional | `/ops/memory` route render | inspect SSR output | delete form + confirmation markers are present |
+| C-01 | AC-1 | Functional | `/ops/memory` route render | inspect SSR output | delete manager is collapsed by default and delete form + confirmation markers are present |
 | C-02 | AC-2 | Integration | missing confirm or missing entry | submit delete form | redirect shows idle/error status and entry remains unchanged |
 | C-03 | AC-3 | Integration | existing entry + confirm delete | submit delete form | entry is deleted and status markers show deleted target |
 | C-04 | AC-4 | Regression | existing memory suites | rerun selected specs | prior contracts remain green |
