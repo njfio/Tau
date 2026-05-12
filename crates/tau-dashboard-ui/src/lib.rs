@@ -6105,16 +6105,20 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                 #tau-ops-chat-latest-turn-details > summary::after,
                 #tau-ops-chat-token-counter-details > summary::after {
                     color: #7fb4ff;
-                    content: "Open";
-                    font-size: .66rem;
-                    font-weight: 850;
-                    text-transform: uppercase;
+                    content: "";
+                    width: 7px;
+                    height: 7px;
+                    margin-left: 8px;
+                    border-right: 2px solid currentColor;
+                    border-bottom: 2px solid currentColor;
+                    transform: rotate(45deg);
+                    transform-origin: center;
                 }
                 #tau-ops-chat-session-details[open] > summary::after,
                 #tau-ops-chat-session-manager[open] > summary::after,
                 #tau-ops-chat-latest-turn-details[open] > summary::after,
                 #tau-ops-chat-token-counter-details[open] > summary::after {
-                    content: "Close";
+                    transform: rotate(225deg);
                 }
                 #tau-ops-chat-session-selector {
                     border: 1px solid #203847;
@@ -6633,16 +6637,19 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                 #tau-ops-memory-edit-manager > summary::after,
                 #tau-ops-memory-delete-manager > summary::after {
                     color: #7fb4ff;
-                    content: "Open";
-                    font-size: .66rem;
-                    font-weight: 850;
+                    content: "";
+                    width: 7px;
+                    height: 7px;
                     margin-left: 8px;
-                    text-transform: uppercase;
+                    border-right: 2px solid currentColor;
+                    border-bottom: 2px solid currentColor;
+                    transform: rotate(45deg);
+                    transform-origin: center;
                 }
                 #tau-ops-memory-create-manager[open] > summary::after,
                 #tau-ops-memory-edit-manager[open] > summary::after,
                 #tau-ops-memory-delete-manager[open] > summary::after {
-                    content: "Close";
+                    transform: rotate(225deg);
                 }
                 #tau-ops-memory-create-status,
                 #tau-ops-memory-edit-status,

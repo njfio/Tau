@@ -32,11 +32,17 @@ Given user motion preferences,
 When motion behavior contracts are inspected,
 Then output declares reduced-motion compliance markers.
 
+### AC-6 Disclosure indicators do not emit textual pseudo-content
+Given collapsed chat and memory disclosure controls render,
+When accessibility tree text is inspected,
+Then decorative disclosure indicators do not contribute `Open`/`Close` pseudo-text to the readable page content.
+
 ## Scope
 
 ### In Scope
 - Add deterministic accessibility contract markers in `tau-dashboard-ui` SSR shell.
 - Add conformance tests for PRD items `2155-2159`.
+- Keep disclosure toggle state indicators decorative so they do not pollute screen-reader/browser snapshots with repeated `Open`/`Close` text.
 - Preserve existing route/panel behaviors.
 
 ### Out of Scope
@@ -50,6 +56,7 @@ Then output declares reduced-motion compliance markers.
 - C-03: live-region markers exist for dynamic announcements.
 - C-04: focus indicator contract markers exist.
 - C-05: reduced-motion contract markers exist.
+- C-06: disclosure indicator CSS does not emit literal `Open` or `Close` pseudo-content.
 
 ## Success Metrics / Observable Signals
 - `cargo test -p tau-dashboard-ui -- --test-threads=1` passes with new accessibility conformance tests.

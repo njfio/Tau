@@ -3,8 +3,9 @@
 ## Approach
 1. Add RED conformance tests for C-01..C-05 in `crates/tau-dashboard-ui/src/tests.rs`.
 2. Add an accessibility contract marker section and related attributes in `crates/tau-dashboard-ui/src/lib.rs`.
-3. Keep all existing route and widget contracts untouched.
-4. Run scoped verify gates and finalize spec status.
+3. Add a regression for disclosure indicators so collapsed controls keep decorative visual state without emitting repeated `Open`/`Close` text.
+4. Keep all existing route and widget contracts untouched.
+5. Run scoped verify gates and finalize spec status.
 
 ## Affected Modules
 - `crates/tau-dashboard-ui/src/lib.rs`
@@ -27,6 +28,7 @@
   - live-region announcer markers
   - focus contract marker
   - reduced-motion marker
+  - decorative disclosure indicators without textual CSS pseudo-content
 
 ## ADR
 No ADR required: no dependency/protocol/architecture boundary changes.

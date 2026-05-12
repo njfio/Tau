@@ -267,6 +267,13 @@ fn spec_c05_accessibility_reduced_motion_marker_exists() {
 }
 
 #[test]
+fn spec_c06_accessibility_disclosure_indicators_do_not_emit_text_content() {
+    let html = render_tau_ops_dashboard_shell();
+    assert!(!html.contains("content: \"Open\""));
+    assert!(!html.contains("content: \"Close\""));
+}
+
+#[test]
 fn spec_c01_performance_contract_declares_wasm_budget_marker() {
     let html = render_tau_ops_dashboard_shell();
     assert!(html.contains("id=\"tau-ops-performance-contract\""));
