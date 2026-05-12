@@ -6003,10 +6003,14 @@ fn functional_spec_2838_c01_c02_c03_sessions_route_renders_sessions_panel_list_r
         "id=\"tau-ops-sessions-row-1\" data-session-key=\"session-beta\" data-selected=\"true\""
     ));
     assert!(html.contains(
-        "href=\"/ops/chat?theme=light&amp;sidebar=collapsed&amp;session=session-alpha\""
+        "id=\"tau-ops-sessions-detail-link-0\" data-open-session-detail=\"session-alpha\" href=\"/ops/sessions/session-alpha?theme=light&amp;sidebar=collapsed&amp;session=session-alpha\""
     ));
-    assert!(html
-        .contains("href=\"/ops/chat?theme=light&amp;sidebar=collapsed&amp;session=session-beta\""));
+    assert!(html.contains(
+        "id=\"tau-ops-sessions-detail-link-1\" data-open-session-detail=\"session-beta\" href=\"/ops/sessions/session-beta?theme=light&amp;sidebar=collapsed&amp;session=session-beta\""
+    ));
+    assert!(!html.contains(
+        "data-open-chat-session=\"session-alpha\" href=\"/ops/chat?theme=light&amp;sidebar=collapsed&amp;session=session-alpha\""
+    ));
 }
 
 #[test]

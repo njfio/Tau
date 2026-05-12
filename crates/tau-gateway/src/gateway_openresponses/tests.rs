@@ -1886,10 +1886,14 @@ async fn integration_spec_2838_c02_c03_ops_sessions_shell_renders_discovered_row
         "id=\"tau-ops-sessions-row-1\" data-session-key=\"session-beta\" data-selected=\"true\""
     ));
     assert!(body.contains(
-        "href=\"/ops/chat?theme=light&amp;sidebar=collapsed&amp;session=session-alpha\""
+        "id=\"tau-ops-sessions-detail-link-0\" data-open-session-detail=\"session-alpha\" href=\"/ops/sessions/session-alpha?theme=light&amp;sidebar=collapsed&amp;session=session-alpha\""
     ));
-    assert!(body
-        .contains("href=\"/ops/chat?theme=light&amp;sidebar=collapsed&amp;session=session-beta\""));
+    assert!(body.contains(
+        "id=\"tau-ops-sessions-detail-link-1\" data-open-session-detail=\"session-beta\" href=\"/ops/sessions/session-beta?theme=light&amp;sidebar=collapsed&amp;session=session-beta\""
+    ));
+    assert!(!body.contains(
+        "data-open-chat-session=\"session-alpha\" href=\"/ops/chat?theme=light&amp;sidebar=collapsed&amp;session=session-alpha\""
+    ));
 
     handle.abort();
 }

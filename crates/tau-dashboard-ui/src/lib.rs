@@ -3962,8 +3962,11 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                         "false"
                     };
                     let updated_unix_ms_attr = session_option.updated_unix_ms.to_string();
-                    let open_chat_href = format!(
-                        "/ops/chat?theme={theme_attr}&sidebar={sidebar_state_attr}&session={}",
+                    let open_session_detail_link_id =
+                        format!("tau-ops-sessions-detail-link-{index}");
+                    let open_session_detail_href = format!(
+                        "/ops/sessions/{}?theme={theme_attr}&sidebar={sidebar_state_attr}&session={}",
+                        session_option.session_key,
                         session_option.session_key
                     );
                     view! {
@@ -3977,8 +3980,9 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             data-updated-unix-ms=updated_unix_ms_attr
                         >
                             <a
-                                data-open-chat-session=session_option.session_key.clone()
-                                href=open_chat_href
+                                id=open_session_detail_link_id
+                                data-open-session-detail=session_option.session_key.clone()
+                                href=open_session_detail_href
                             >
                                 {session_option.session_key.clone()}
                             </a>

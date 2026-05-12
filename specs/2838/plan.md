@@ -2,7 +2,7 @@
 
 ## Approach
 1. Add RED conformance tests for `/ops/sessions` panel/list/row markers in `tau-dashboard-ui` and `tau-gateway`.
-2. Add RED integration tests that seed multiple session files and validate deterministic row ordering and `/ops/chat` row links.
+2. Add RED integration tests that seed multiple session files and validate deterministic row ordering and `/ops/sessions/{session_key}` detail row links.
 3. Extend UI shell render with dedicated `/ops/sessions` panel markers and explicit empty-state marker path.
 4. Extend gateway shell snapshot collection to map discovered session keys for the sessions explorer route.
 5. Run targeted regressions for existing `/ops/chat` phase 1N contracts and ops route suites.
@@ -17,6 +17,8 @@
   - Mitigation: sanitize, deduplicate, and sort keys before rendering.
 - Risk: sessions explorer integration regresses chat selector contracts from phase 1N.
   - Mitigation: keep chat selectors intact and run `spec_2834` regression suites.
+- Risk: sessions explorer rows behave like chat-session switches after detail routes exist.
+  - Mitigation: make `/ops/sessions` row links open deterministic session-detail routes; keep chat session switching isolated to `/ops/chat`.
 - Risk: empty-state contracts never trigger due implicit default session insertion.
   - Mitigation: add route-specific empty-state mapping based on actual discovered session files.
 
@@ -25,6 +27,7 @@
   - `id="tau-ops-sessions-panel"` with deterministic route/hidden markers.
   - `id="tau-ops-sessions-list"` with `data-session-count`.
   - `id="tau-ops-sessions-row-<index>"` rows with `data-session-key`.
+  - `id="tau-ops-sessions-detail-link-<index>"` links with `data-open-session-detail` and `/ops/sessions/{session_key}` hrefs.
   - `id="tau-ops-sessions-empty-state"` marker for empty-state path.
 - Gateway shell mapping:
   - discover session keys from `state_dir/openresponses/sessions/*.jsonl`,

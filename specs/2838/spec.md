@@ -3,7 +3,7 @@
 Status: Implemented
 
 ## Problem Statement
-Tau Ops already exposes `/ops/sessions` as a route token, but there is no dedicated sessions explorer surface with deterministic row-level SSR markers for discovered gateway sessions. Phase 1O requires explicit contracts so operators can inspect available sessions and navigate to chat with preserved shell controls.
+Tau Ops already exposes `/ops/sessions` as a route token, but there is no dedicated sessions explorer surface with deterministic row-level SSR markers for discovered gateway sessions. Phase 1O requires explicit contracts so operators can inspect available sessions and navigate to session detail with preserved shell controls.
 
 ## Acceptance Criteria
 
@@ -17,10 +17,10 @@ Given one or more session files in gateway openresponses storage,
 When `/ops/sessions` renders,
 Then deterministic row markers include sanitized session keys and stable ordering.
 
-### AC-3 Session rows expose deterministic chat-route links with preserved controls
+### AC-3 Session rows expose deterministic detail-route links with preserved controls
 Given theme/sidebar/session controls in `/ops/sessions`,
 When row links render,
-Then each row contains deterministic `/ops/chat` href markers preserving `theme`, `sidebar`, and `session` query state.
+Then each row contains deterministic `/ops/sessions/{session_key}` href markers preserving `theme`, `sidebar`, and row-specific `session` query state.
 
 ### AC-4 Empty-state marker renders when no session files exist
 Given no session files in gateway storage,
@@ -47,7 +47,7 @@ Then prior suites remain green.
 ## Conformance Cases
 - C-01 (functional): `/ops/sessions` exposes deterministic panel/list markers.
 - C-02 (integration): session rows map discovered session files with stable markers.
-- C-03 (integration): row href markers preserve `theme`/`sidebar`/`session` controls for `/ops/chat`.
+- C-03 (integration): row href markers preserve `theme`/`sidebar`/`session` controls for `/ops/sessions/{session_key}` detail routes.
 - C-04 (functional): empty-state marker renders when no session files exist.
 - C-05 (regression): existing ops-shell and chat suites remain green.
 
