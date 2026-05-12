@@ -1518,9 +1518,17 @@ async fn functional_spec_2870_c01_c03_ops_chat_shell_exposes_markdown_and_code_m
         "id=\"tau-ops-chat-panel\" data-route=\"/ops/chat\" aria-hidden=\"false\" data-active-session-key=\"chat-markdown-code\" data-panel-visible=\"true\""
     ));
     assert!(body.contains("id=\"tau-ops-chat-message-row-0\" data-message-role=\"assistant\""));
-    assert!(body.contains("id=\"tau-ops-chat-markdown-0\" data-markdown-rendered=\"true\""));
     assert!(body.contains(
-        "id=\"tau-ops-chat-code-block-0\" data-code-block=\"true\" data-language=\"rust\" data-code=\"fn main() {}\""
+        "id=\"tau-ops-chat-markdown-0\" data-markdown-rendered=\"true\" data-markdown-block-count=\"5\""
+    ));
+    assert!(body.contains("<h4 data-markdown-block=\"heading\" data-markdown-heading-level=\"2\""));
+    assert!(body.contains("<ul data-markdown-block=\"list\" data-markdown-list=\"unordered\""));
+    assert!(body.contains(
+        "<a data-markdown-link=\"true\" href=\"https://example.com\" rel=\"noreferrer\">docs</a>"
+    ));
+    assert!(body.contains("<table data-markdown-block=\"table\" data-markdown-table=\"true\""));
+    assert!(body.contains(
+        "id=\"tau-ops-chat-code-block-0\" data-markdown-block=\"code\" data-code-block=\"true\" data-language=\"rust\" data-code=\"fn main() {}\""
     ));
 
     handle.abort();
@@ -1562,10 +1570,8 @@ async fn integration_spec_2870_c04_ops_and_sessions_routes_omit_hidden_markdown_
     assert!(ops_body.contains("id=\"tau-ops-chat-transcript\""));
     assert!(ops_body.contains("data-message-count=\"0\""));
     assert!(ops_body.contains("data-rendered-row-count=\"0\""));
-    assert!(!ops_body.contains("id=\"tau-ops-chat-markdown-0\" data-markdown-rendered=\"true\""));
-    assert!(!ops_body.contains(
-        "id=\"tau-ops-chat-code-block-0\" data-code-block=\"true\" data-language=\"rust\" data-code=\"fn main() {}\""
-    ));
+    assert!(!ops_body.contains("id=\"tau-ops-chat-markdown-0\""));
+    assert!(!ops_body.contains("id=\"tau-ops-chat-code-block-0\""));
     assert!(!ops_body.contains("Build report"));
 
     let sessions_response = client
@@ -1586,12 +1592,8 @@ async fn integration_spec_2870_c04_ops_and_sessions_routes_omit_hidden_markdown_
     assert!(sessions_body.contains("id=\"tau-ops-chat-transcript\""));
     assert!(sessions_body.contains("data-message-count=\"0\""));
     assert!(sessions_body.contains("data-rendered-row-count=\"0\""));
-    assert!(
-        !sessions_body.contains("id=\"tau-ops-chat-markdown-0\" data-markdown-rendered=\"true\"")
-    );
-    assert!(!sessions_body.contains(
-        "id=\"tau-ops-chat-code-block-0\" data-code-block=\"true\" data-language=\"rust\" data-code=\"fn main() {}\""
-    ));
+    assert!(!sessions_body.contains("id=\"tau-ops-chat-markdown-0\""));
+    assert!(!sessions_body.contains("id=\"tau-ops-chat-code-block-0\""));
     assert!(!sessions_body.contains("Build report"));
 
     handle.abort();

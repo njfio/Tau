@@ -43,6 +43,12 @@ fn unit_contains_markdown_contract_syntax_accepts_each_non_table_marker_path() {
     assert!(contains_markdown_contract_syntax("- item"));
     assert!(contains_markdown_contract_syntax("intro\n- item"));
     assert!(contains_markdown_contract_syntax(
+        "Live proof is **pass** with `invalid_events=0`"
+    ));
+    assert!(contains_markdown_contract_syntax(
+        "Immediate next checks: 1. Verify evidence. 2. Run tests."
+    ));
+    assert!(contains_markdown_contract_syntax(
         "[docs](https://example.com)"
     ));
 }
@@ -3878,13 +3884,60 @@ fn functional_spec_2870_c01_c02_chat_route_renders_markdown_and_code_markers() {
     });
 
     assert!(html.contains("id=\"tau-ops-chat-message-row-1\" data-message-role=\"assistant\""));
-    assert!(html.contains("id=\"tau-ops-chat-markdown-1\" data-markdown-rendered=\"true\""));
     assert!(html.contains(
-            "id=\"tau-ops-chat-code-block-1\" data-code-block=\"true\" data-language=\"rust\" data-code=\"fn main() {}\""
+        "id=\"tau-ops-chat-markdown-1\" data-markdown-rendered=\"true\" data-markdown-block-count=\"5\""
+    ));
+    assert!(html.contains("<h4 data-markdown-block=\"heading\" data-markdown-heading-level=\"2\""));
+    assert!(html.contains("<ul data-markdown-block=\"list\" data-markdown-list=\"unordered\""));
+    assert!(html.contains(
+        "<a data-markdown-link=\"true\" href=\"https://example.com\" rel=\"noreferrer\">docs</a>"
+    ));
+    assert!(html.contains("<table data-markdown-block=\"table\" data-markdown-table=\"true\""));
+    assert!(html.contains(
+            "id=\"tau-ops-chat-code-block-1\" data-markdown-block=\"code\" data-code-block=\"true\" data-language=\"rust\" data-code=\"fn main() {}\""
         ));
     assert!(!html.contains("id=\"tau-ops-chat-markdown-0\""));
     assert!(!html.contains("id=\"tau-ops-chat-code-block-0\""));
     assert!(!html.contains("id=\"tau-ops-chat-code-block-2\""));
+}
+
+#[test]
+fn functional_spec_2870_c05_chat_route_formats_operator_response_markdown() {
+    let operator_message = "Live proof is currently **pass** but thin: runtime is healthy, `invalid_events=0`. Immediate next checks: 1. Send one new `/ops/chat` message. 2. Confirm `memory.entry_write` increments. Explicit risks: - Evidence scope is narrow. - Bulletin snapshot is empty.";
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        auth_mode: TauOpsDashboardAuthMode::Token,
+        active_route: TauOpsDashboardRoute::Chat,
+        theme: TauOpsDashboardTheme::Dark,
+        sidebar_state: TauOpsDashboardSidebarState::Expanded,
+        command_center: TauOpsDashboardCommandCenterSnapshot::default(),
+        chat: TauOpsDashboardChatSnapshot {
+            active_session_key: "chat-operator-response".to_string(),
+            message_rows: vec![
+                TauOpsDashboardChatMessageRow {
+                    role: "user".to_string(),
+                    content: "what else?".to_string(),
+                },
+                TauOpsDashboardChatMessageRow {
+                    role: "assistant".to_string(),
+                    content: operator_message.to_string(),
+                },
+            ],
+            ..TauOpsDashboardChatSnapshot::default()
+        },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
+    });
+
+    assert!(html.contains(
+        "id=\"tau-ops-chat-markdown-1\" data-markdown-rendered=\"true\" data-markdown-block-count=\"5\""
+    ));
+    assert!(html.contains("<strong>pass</strong>"));
+    assert!(html.contains("<code data-markdown-inline-code=\"true\">invalid_events=0</code>"));
+    assert!(html.contains("data-markdown-list=\"ordered\""));
+    assert!(html.contains("data-markdown-list-item=\"ordered\""));
+    assert!(html.contains("data-markdown-list=\"unordered\""));
+    assert!(html.contains("data-markdown-list-item=\"unordered\""));
+    assert!(html.contains("id=\"tau-ops-chat-latest-assistant-content\" data-markdown-rendered=\"true\" data-markdown-block-count=\"5\""));
+    assert!(html.contains("id=\"tau-ops-chat-token-stream-1\" data-token-stream=\"assistant\""));
 }
 
 #[test]
@@ -3912,10 +3965,8 @@ fn regression_spec_2870_c04_non_chat_routes_omit_hidden_markdown_and_code_marker
     assert!(ops_html.contains("id=\"tau-ops-chat-transcript\""));
     assert!(ops_html.contains("data-message-count=\"0\""));
     assert!(ops_html.contains("data-rendered-row-count=\"0\""));
-    assert!(!ops_html.contains("id=\"tau-ops-chat-markdown-0\" data-markdown-rendered=\"true\""));
-    assert!(!ops_html.contains(
-            "id=\"tau-ops-chat-code-block-0\" data-code-block=\"true\" data-language=\"rust\" data-code=\"fn main() {}\""
-        ));
+    assert!(!ops_html.contains("id=\"tau-ops-chat-markdown-0\""));
+    assert!(!ops_html.contains("id=\"tau-ops-chat-code-block-0\""));
     assert!(!ops_html.contains("Build report"));
 
     let sessions_html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
@@ -3940,12 +3991,8 @@ fn regression_spec_2870_c04_non_chat_routes_omit_hidden_markdown_and_code_marker
     assert!(sessions_html.contains("id=\"tau-ops-chat-transcript\""));
     assert!(sessions_html.contains("data-message-count=\"0\""));
     assert!(sessions_html.contains("data-rendered-row-count=\"0\""));
-    assert!(
-        !sessions_html.contains("id=\"tau-ops-chat-markdown-0\" data-markdown-rendered=\"true\"")
-    );
-    assert!(!sessions_html.contains(
-            "id=\"tau-ops-chat-code-block-0\" data-code-block=\"true\" data-language=\"rust\" data-code=\"fn main() {}\""
-        ));
+    assert!(!sessions_html.contains("id=\"tau-ops-chat-markdown-0\""));
+    assert!(!sessions_html.contains("id=\"tau-ops-chat-code-block-0\""));
     assert!(!sessions_html.contains("Build report"));
 }
 

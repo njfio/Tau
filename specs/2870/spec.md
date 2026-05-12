@@ -3,12 +3,13 @@
 Status: Implemented
 
 ## Problem Statement
-Tau Ops chat transcript currently renders message content as plain text rows and lacks deterministic SSR markers for markdown and code-block rendering contracts. This prevents conformance validation for PRD chat expectations around markdown and code presentation.
+Tau Ops chat transcript currently renders message content as plain text rows and lacks deterministic SSR markers for markdown and code-block rendering contracts. This prevents conformance validation for PRD chat expectations around markdown and code presentation, and it leaves live assistant responses hard to scan when they contain bold status, inline code, numbered checks, risk bullets, links, tables, or fenced code.
 
 ## Scope
 In scope:
 - Add deterministic markdown-render marker contracts for assistant chat rows.
 - Add deterministic code-block marker contracts including language and code payload attributes.
+- Render common assistant markdown/operator-response structure into readable SSR elements without adding dependencies.
 - Preserve route-safe behavior on `/ops`, `/ops/chat`, and `/ops/sessions` without leaking transcript payloads off the chat route.
 
 Out of scope:
@@ -42,6 +43,11 @@ Given existing chat contract suites,
 when `spec_2830`, `spec_2858`, `spec_2862`, and `spec_2866` rerun,
 then all existing contracts remain green.
 
+### AC-6 Operator responses render as readable structured content
+Given assistant content using bold status, inline code, `Immediate next checks:` numbered items, and `Explicit risks:` bullet items,
+when `/ops/chat` renders the transcript and latest-turn preview,
+then the visible content uses semantic bold, inline-code, ordered-list, and unordered-list SSR elements instead of one raw markdown paragraph.
+
 ## Conformance Cases
 | Case | AC | Tier | Given | When | Then |
 |---|---|---|---|---|---|
@@ -50,6 +56,7 @@ then all existing contracts remain green.
 | C-03 | AC-3 | Integration | gateway `/ops/chat` request with markdown+code message | render response | visible chat panel exposes markdown and code markers |
 | C-04 | AC-4 | Integration | gateway `/ops` and `/ops/sessions` requests with markdown+code message | render response | hidden chat panel omits markdown and code markers |
 | C-05 | AC-5 | Regression | existing chat suites | rerun suites | no regression |
+| C-06 | AC-6 | Functional | assistant operator response contains bold, inline code, numbered checks, and risk bullets | render UI shell | transcript and latest-turn preview expose semantic markdown blocks |
 
 ## Success Metrics / Signals
 - `cargo test -p tau-dashboard-ui spec_2870 -- --test-threads=1` passes.
