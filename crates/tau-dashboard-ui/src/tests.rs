@@ -3630,6 +3630,26 @@ fn functional_spec_2862_c01_c02_c03_chat_route_renders_token_counter_marker_cont
     assert!(html.contains(
             "id=\"tau-ops-chat-token-counter\" data-session-key=\"session-usage\" data-input-tokens=\"13\" data-output-tokens=\"21\" data-total-tokens=\"34\""
         ));
+    let token_counter_details_index = html
+        .find("id=\"tau-ops-chat-token-counter-details\"")
+        .expect("token-counter details manager should render");
+    let token_counter_summary_index = html
+        .find("id=\"tau-ops-chat-token-counter-details-summary\"")
+        .expect("token-counter details summary should render");
+    let token_counter_index = html
+        .find("id=\"tau-ops-chat-token-counter\"")
+        .expect("token-counter article should render");
+    assert!(html.contains(
+        "id=\"tau-ops-chat-token-counter-details\" data-secondary-token-counter=\"true\" data-collapsed-by-default=\"true\" data-token-counter-visible=\"true\" data-session-key=\"session-usage\" data-total-tokens=\"34\""
+    ));
+    assert!(
+        token_counter_details_index < token_counter_index,
+        "token-counter manager should contain token accounting details"
+    );
+    assert!(
+        token_counter_summary_index < token_counter_index,
+        "token-counter summary should precede hidden token accounting details"
+    );
     assert!(html.contains("data-assistant-stream-count=\"0\""));
     assert!(html.contains("data-assistant-stream-tokens=\"0\""));
     assert!(html.contains("data-latest-assistant-token-count=\"0\""));

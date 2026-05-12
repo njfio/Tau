@@ -10,6 +10,7 @@ In scope:
 - Add deterministic chat token-counter marker attributes to the chat panel output.
 - Bind marker values to active-session usage snapshot fields (`input`, `output`, `total` tokens).
 - Validate route-safe behavior on `/ops`, `/ops/chat`, and `/ops/sessions`.
+- Keep token accounting available behind a collapsed secondary manager so the chat transcript remains the primary visible surface.
 
 Out of scope:
 - Streaming token transport changes.
@@ -47,6 +48,11 @@ Given `/ops/chat` renders assistant transcript rows with token streams,
 when the token counter panel renders,
 then it visibly exposes assistant stream count, total rendered stream tokens, and latest assistant token count without leaking those counts on non-chat routes.
 
+### AC-7 Token counter detail is secondary by default
+Given `/ops/chat` renders token accounting details,
+when the operator lands on the active chat page,
+then the token counter marker remains present inside a collapsed-by-default token-counter manager with a concise summary.
+
 ## Conformance Cases
 | Case | AC | Tier | Given | When | Then |
 |---|---|---|---|---|---|
@@ -56,6 +62,7 @@ then it visibly exposes assistant stream count, total rendered stream tokens, an
 | C-04 | AC-4 | Integration | gateway `/ops` + `/ops/sessions` requests | render response | chat panel hidden and token-counter marker attributes still present |
 | C-05 | AC-5 | Regression | existing contract suites | rerun suites | no regressions in existing chat/session/detail visibility contracts |
 | C-06 | AC-6 | Functional | chat snapshot with multiple assistant messages | render `/ops/chat` | token counter exposes stream count, stream token total, and latest assistant token count |
+| C-07 | AC-7 | Functional | `/ops/chat` token counter | render response | token-counter details manager is collapsed by default and contains the deterministic token-counter marker |
 
 ## Success Metrics / Signals
 - `cargo test -p tau-dashboard-ui spec_2862 -- --test-threads=1` passes.
