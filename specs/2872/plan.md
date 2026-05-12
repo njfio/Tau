@@ -22,10 +22,13 @@
   - Mitigation: submit guard plus backend status marker preserves active session context and explains the rejection.
 - Risk: valid new-session submission creates an empty selected session that looks like an inert control, especially when a long session list pushes the result out of the first viewport.
   - Mitigation: integration/UI tests for `new_session_status=created`, visible success copy, and create/status placement before the historical session selector.
+- Risk: created or rejected new-session status is present in markup but hidden behind the collapsed session manager.
+  - Mitigation: open/expose the session manager on first render for non-idle new-session status while preserving collapsed-by-default behavior for idle chat loads.
 
 ## Interface / Contract Notes
 - Additive route `POST /ops/chat/new` (internal ops shell endpoint).
 - Blank new-session submissions redirect to `/ops/chat?...&session=<active>&new_session_status=empty-key`.
 - Valid new-session submissions redirect to `/ops/chat?...&session=<created>&new_session_status=created`.
 - `/ops/chat` renders visible new-session status near the create form for both rejected and successful create outcomes.
+- `id="tau-ops-chat-session-manager"` exposes `data-session-manager-initial-open="true"` for non-idle new-session results so status content is not hidden after redirect.
 - No schema/protocol changes outside ops shell route handling.

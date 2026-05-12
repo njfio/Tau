@@ -1041,6 +1041,12 @@ async fn functional_spec_2872_c01_ops_chat_shell_exposes_new_session_form_contra
         "id=\"tau-ops-chat-new-session-form\" action=\"/ops/chat/new\" method=\"post\" data-active-session-key=\"chat-c01\" data-empty-session-key-guard=\"true\""
     ));
     assert!(body.contains(
+        "id=\"tau-ops-chat-session-manager\" data-secondary-session-management=\"true\" data-collapsed-by-default=\"true\" data-session-manager-initial-open=\"false\""
+    ));
+    assert!(body.contains(
+        "data-empty-session-key-guard=\"true\" aria-hidden=\"true\" data-session-manager-open=\"false\""
+    ));
+    assert!(body.contains(
         "id=\"tau-ops-chat-new-session-key\" type=\"text\" name=\"session_key\" value=\"\""
     ));
     assert!(body.contains(
@@ -1053,7 +1059,7 @@ async fn functional_spec_2872_c01_ops_chat_shell_exposes_new_session_form_contra
     ));
     assert!(body.contains("id=\"tau-ops-chat-new-session-button\" type=\"submit\""));
     assert!(
-        body.contains("id=\"tau-ops-chat-new-session-status\" data-new-session-status=\"idle\"")
+        body.contains("id=\"tau-ops-chat-new-session-status\" data-new-session-status=\"idle\" data-new-session-status-visible=\"false\" aria-hidden=\"true\" data-session-manager-open=\"false\"")
     );
     assert!(body
         .contains("id=\"tau-ops-chat-new-session-guard\" data-empty-session-key-guard=\"true\""));
@@ -1112,6 +1118,12 @@ async fn integration_spec_2872_c06_ops_chat_new_session_rejects_blank_key_with_v
     let chat_body = chat_response.text().await.expect("read ops chat body");
     assert!(chat_body
         .contains("id=\"tau-ops-chat-new-session-status\" data-new-session-status=\"empty-key\""));
+    assert!(chat_body.contains(
+        "id=\"tau-ops-chat-session-manager\" data-secondary-session-management=\"true\" data-collapsed-by-default=\"true\" data-session-manager-initial-open=\"true\""
+    ));
+    assert!(chat_body.contains(
+        "id=\"tau-ops-chat-new-session-status\" data-new-session-status=\"empty-key\" data-new-session-status-visible=\"true\" aria-hidden=\"false\" data-session-manager-open=\"true\""
+    ));
     assert!(chat_body.contains("Session was not created because the name was empty."));
 
     handle.abort();
@@ -1169,6 +1181,15 @@ async fn integration_spec_2872_c02_c03_c04_ops_chat_new_session_creates_redirect
     ));
     assert!(chat_body
         .contains("id=\"tau-ops-chat-new-session-status\" data-new-session-status=\"created\""));
+    assert!(chat_body.contains(
+        "id=\"tau-ops-chat-session-manager\" data-secondary-session-management=\"true\" data-collapsed-by-default=\"true\" data-session-manager-initial-open=\"true\""
+    ));
+    assert!(chat_body.contains(
+        "id=\"tau-ops-chat-new-session-status\" data-new-session-status=\"created\" data-new-session-status-visible=\"true\" aria-hidden=\"false\" data-session-manager-open=\"true\""
+    ));
+    assert!(chat_body.contains(
+        "id=\"tau-ops-chat-session-selector\" data-active-session-key=\"chat-created-session\""
+    ));
     assert!(chat_body.contains("Session created and selected."));
 
     let session_path = gateway_session_path(&state.config.state_dir, "chat-created-session");

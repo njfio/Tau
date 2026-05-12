@@ -3377,7 +3377,7 @@ fn functional_spec_2830_c07_chat_route_prioritizes_composer_before_session_selec
     ));
     assert!(html.contains("id=\"tau-ops-chat-session-details-summary\""));
     assert!(html.contains(
-        "id=\"tau-ops-chat-session-manager\" data-secondary-session-management=\"true\" data-collapsed-by-default=\"true\" data-session-option-count=\"2\""
+        "id=\"tau-ops-chat-session-manager\" data-secondary-session-management=\"true\" data-collapsed-by-default=\"true\" data-session-manager-initial-open=\"false\" data-session-option-count=\"2\""
     ));
     assert!(html.contains("id=\"tau-ops-chat-session-manager-summary\""));
     assert!(html.contains("data-session-manager-open=\"false\""));
@@ -3580,6 +3580,12 @@ fn functional_spec_2872_c01_chat_route_renders_new_session_form_contract_markers
         "id=\"tau-ops-chat-new-session-form\" action=\"/ops/chat/new\" method=\"post\" data-active-session-key=\"chat-c01\" data-empty-session-key-guard=\"true\""
     ));
     assert!(html.contains(
+        "id=\"tau-ops-chat-session-manager\" data-secondary-session-management=\"true\" data-collapsed-by-default=\"true\" data-session-manager-initial-open=\"false\""
+    ));
+    assert!(html.contains(
+        "data-empty-session-key-guard=\"true\" aria-hidden=\"true\" data-session-manager-open=\"false\""
+    ));
+    assert!(html.contains(
         "id=\"tau-ops-chat-new-session-key\" type=\"text\" name=\"session_key\" value=\"\""
     ));
     assert!(html.contains(
@@ -3592,7 +3598,7 @@ fn functional_spec_2872_c01_chat_route_renders_new_session_form_contract_markers
     ));
     assert!(html.contains("id=\"tau-ops-chat-new-session-button\" type=\"submit\""));
     assert!(
-        html.contains("id=\"tau-ops-chat-new-session-status\" data-new-session-status=\"idle\"")
+        html.contains("id=\"tau-ops-chat-new-session-status\" data-new-session-status=\"idle\" data-new-session-status-visible=\"false\" aria-hidden=\"true\" data-session-manager-open=\"false\"")
     );
     assert!(html.contains("id=\"tau-ops-chat-new-session-status-message\""));
     assert!(html
@@ -3620,6 +3626,16 @@ fn functional_spec_2872_c07_chat_route_renders_created_new_session_status() {
     assert!(
         html.contains("id=\"tau-ops-chat-new-session-status\" data-new-session-status=\"created\"")
     );
+    assert!(html.contains(
+        "id=\"tau-ops-chat-session-manager\" data-secondary-session-management=\"true\" data-collapsed-by-default=\"true\" data-session-manager-initial-open=\"true\""
+    ));
+    assert!(html.contains(
+        "id=\"tau-ops-chat-new-session-status\" data-new-session-status=\"created\" data-new-session-status-visible=\"true\" aria-hidden=\"false\" data-session-manager-open=\"true\""
+    ));
+    assert!(html.contains(
+        "id=\"tau-ops-chat-session-selector\" data-active-session-key=\"chat-created-visible\""
+    ));
+    assert!(html.contains("aria-hidden=\"false\" data-session-manager-open=\"true\""));
     assert!(html.contains("Session created and selected."));
 
     let form_index = html

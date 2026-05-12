@@ -5179,6 +5179,17 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
         "true"
     };
     let chat_new_session_status = context.chat.new_session_status.clone();
+    let chat_new_session_status_visible_bool = chat_new_session_status != "idle";
+    let chat_new_session_status_visible = if chat_new_session_status_visible_bool {
+        "true"
+    } else {
+        "false"
+    };
+    let chat_new_session_status_hidden = if chat_new_session_status_visible_bool {
+        "false"
+    } else {
+        "true"
+    };
     let chat_new_session_status_message = match chat_new_session_status.as_str() {
         "empty-key" => "Session was not created because the name was empty.".to_string(),
         "created" => "Session created and selected.".to_string(),
@@ -7335,7 +7346,9 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 id="tau-ops-chat-session-manager"
                                 data-secondary-session-management="true"
                                 data-collapsed-by-default="true"
+                                data-session-manager-initial-open=chat_new_session_status_visible
                                 data-session-option-count=chat_session_option_count_value.clone()
+                                open=chat_new_session_status_visible_bool
                             >
                                 <summary id="tau-ops-chat-session-manager-summary">
                                     {format!("Sessions ({})", chat_session_option_count_value.clone())}
@@ -7346,8 +7359,8 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 method=chat_new_session_form_method
                                 data-active-session-key=chat_session_key.clone()
                                 data-empty-session-key-guard="true"
-                                aria-hidden="true"
-                                data-session-manager-open="false"
+                                aria-hidden=chat_new_session_status_hidden
+                                data-session-manager-open=chat_new_session_status_visible
                             >
                                 <label for="tau-ops-chat-new-session-key">New Session</label>
                                 <input
@@ -7452,8 +7465,9 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             <article
                                 id="tau-ops-chat-new-session-status"
                                 data-new-session-status=chat_new_session_status
-                                aria-hidden="true"
-                                data-session-manager-open="false"
+                                data-new-session-status-visible=chat_new_session_status_visible
+                                aria-hidden=chat_new_session_status_hidden
+                                data-session-manager-open=chat_new_session_status_visible
                             >
                                 <h3>New Session Status</h3>
                                 <p id="tau-ops-chat-new-session-status-message">
@@ -7464,8 +7478,8 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 id="tau-ops-chat-session-selector"
                                 data-active-session-key=chat_session_key.clone()
                                 data-option-count=chat_session_option_count_value.clone()
-                                aria-hidden="true"
-                                data-session-manager-open="false"
+                                aria-hidden=chat_new_session_status_hidden
+                                data-session-manager-open=chat_new_session_status_visible
                             >
                                 <ul id="tau-ops-chat-session-options">
                                     {chat_session_options

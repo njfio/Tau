@@ -50,7 +50,7 @@ then session creation is blocked or redirected back to the active session with `
 ### AC-7 Successful new-session submissions are visibly acknowledged
 Given an operator submits a valid new-session key,
 when the backend creates and selects that session,
-then the redirect includes `new_session_status=created` and `/ops/chat` renders a visible status marker near the new-session form explaining that the new session was created and selected.
+then the redirect includes `new_session_status=created` and `/ops/chat` renders a visible status marker near the new-session form explaining that the new session was created and selected, with the session manager exposed instead of hiding the result behind its collapsed idle state.
 
 ## Conformance Cases
 | Case | AC | Tier | Given | When | Then |
