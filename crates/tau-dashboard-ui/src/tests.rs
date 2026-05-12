@@ -3365,6 +3365,13 @@ fn functional_spec_2830_c07_chat_route_prioritizes_composer_before_session_selec
         "id=\"tau-ops-chat-session-details\" data-secondary-session-metadata=\"true\" data-collapsed-by-default=\"true\" data-active-session-key=\"default\" data-entry-count=\"30\" data-transcript-message-count=\"0\" data-hidden-entry-count=\"30\""
     ));
     assert!(html.contains("Session: default (0 shown / 30 hidden / 30 total)"));
+    assert!(html.contains("aria-hidden=\"true\" data-session-details-open=\"false\""));
+    assert!(html.contains("id=\"tau-ops-chat-session-details-visibility-sync\""));
+    assert!(html.contains("data-sync-target=\"tau-ops-chat-session-summary\""));
+    assert!(html.contains("details.addEventListener(\"toggle\", syncSessionDetailsVisibility)"));
+    assert!(
+        html.contains("summary.setAttribute(\"aria-hidden\", detailsOpen ? \"false\" : \"true\")")
+    );
     assert!(html.contains(
         "id=\"tau-ops-chat-session-actions\" aria-label=\"Current chat session actions\" data-primary-session-actions=\"true\" data-latest-message-href=\"#tau-ops-chat-transcript\""
     ));
@@ -3373,6 +3380,13 @@ fn functional_spec_2830_c07_chat_route_prioritizes_composer_before_session_selec
         "id=\"tau-ops-chat-session-manager\" data-secondary-session-management=\"true\" data-collapsed-by-default=\"true\" data-session-option-count=\"2\""
     ));
     assert!(html.contains("id=\"tau-ops-chat-session-manager-summary\""));
+    assert!(html.contains("data-session-manager-open=\"false\""));
+    assert!(html.contains("id=\"tau-ops-chat-session-manager-visibility-sync\""));
+    assert!(html.contains("data-sync-target=\"tau-ops-chat-session-manager-children\""));
+    assert!(html.contains("details.addEventListener(\"toggle\", syncSessionManagerVisibility)"));
+    assert!(
+        html.contains("child.setAttribute(\"aria-hidden\", detailsOpen ? \"false\" : \"true\")")
+    );
     assert!(
         session_manager_index < new_session_form_index,
         "session manager should contain new-session creation controls"

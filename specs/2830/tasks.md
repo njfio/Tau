@@ -20,6 +20,7 @@
 17. [x] T17 (RED/GREEN/REGRESSION): make collapsed session-details summary show transcript, hidden, and total entry counts.
 18. [x] T18 (RED/GREEN/REGRESSION): make collapsed latest-turn summary operator-readable while retaining row indexes as attributes.
 19. [x] T19 (RED/GREEN/REGRESSION): synchronize latest-turn proof `aria-hidden` state with collapsed/open details state.
+20. [x] T20 (RED/GREEN/REGRESSION): synchronize session-details and session-manager child `aria-hidden` state with collapsed/open details state.
 
 ## Tier Mapping
 - Unit: `ops_shell_controls` session query parsing unit tests.
@@ -118,6 +119,19 @@
   - LIVE: restarted `tau-8795` from the rebuilt binary and loaded `/ops/chat?theme=dark&sidebar=expanded&session=default`; Browser proof showed `Latest turn: assistant reply shown`, `data-latest-turn-state="assistant-replied"`, `data-latest-message-role="assistant"`, `data-latest-message-index="38"`, preserved user/assistant row indexes `37`/`38`, and no browser console errors.
   - RED: live Browser proof showed `#tau-ops-chat-latest-turn-details` collapsed while its child proof article still reported `aria-hidden="false"`.
   - GREEN: `env RUST_MIN_STACK=16777216 cargo test -p tau-dashboard-ui functional_spec_2830 -- --test-threads=1` passed (`5 passed`), including collapsed latest-turn proof `aria-hidden` and toggle-sync script assertions.
+  - RED: live Browser proof showed `#tau-ops-chat-session-details` and `#tau-ops-chat-session-manager` collapsed while their hidden child content had no explicit `aria-hidden` or open-state markers.
+  - RED: `env RUST_MIN_STACK=16777216 cargo test -p tau-dashboard-ui functional_spec_2830_c07_chat_route_prioritizes_composer_before_session_selector -- --test-threads=1` failed on missing `aria-hidden="true" data-session-details-open="false"`.
+  - RED: `env RUST_MIN_STACK=16777216 cargo test -p tau-gateway functional_spec_2830_c01_ops_chat_shell_exposes_send_form_and_fallback_transcript_markers -- --test-threads=1` failed on missing `aria-hidden="true" data-session-details-open="false"`.
+  - GREEN: `env RUST_MIN_STACK=16777216 cargo test -p tau-dashboard-ui functional_spec_2830_c07_chat_route_prioritizes_composer_before_session_selector -- --test-threads=1` passed.
+  - GREEN: `env RUST_MIN_STACK=16777216 cargo test -p tau-gateway functional_spec_2830_c01_ops_chat_shell_exposes_send_form_and_fallback_transcript_markers -- --test-threads=1` passed.
+  - GREEN: `env RUST_MIN_STACK=16777216 cargo test -p tau-dashboard-ui functional_spec_2830 -- --test-threads=1` passed (`5 passed`).
+  - GREEN: `env RUST_MIN_STACK=16777216 cargo test -p tau-gateway functional_spec_2830 -- --test-threads=1` passed.
+  - GREEN: `env RUST_MIN_STACK=16777216 cargo test -p tau-gateway integration_spec_2830 -- --test-threads=1` passed (`2 passed`).
+  - GREEN: `cargo fmt --package tau-dashboard-ui --package tau-gateway --check` passed.
+  - GREEN: `env RUST_MIN_STACK=16777216 cargo clippy -p tau-dashboard-ui -p tau-gateway -- -D warnings` passed.
+  - GREEN: `env RUST_MIN_STACK=16777216 cargo clippy -p tau-dashboard-ui -p tau-gateway --tests -- -D warnings` passed.
+  - GREEN: `env RUST_MIN_STACK=16777216 cargo build -p tau-coding-agent` passed.
+  - LIVE: restarted `tau-8795` from the rebuilt binary and loaded `/ops/chat?theme=dark&sidebar=expanded&session=default`; Browser proof showed session summary hidden/open/hidden states sync `aria-hidden=true/false/true` with `data-session-details-open=false/true/false`, session manager children sync `aria-hidden=true/false/true` with `data-session-manager-open=false/true/false`, summaries remain `Session: default (39 shown / 1 hidden / 40 total)` and `Sessions (16)`, and no browser console errors.
   - GREEN: `env RUST_MIN_STACK=16777216 cargo test -p tau-gateway functional_spec_2830 -- --test-threads=1` passed.
   - GREEN: `env RUST_MIN_STACK=16777216 cargo test -p tau-gateway integration_spec_2830 -- --test-threads=1` passed (`2 passed`).
   - GREEN: `env RUST_MIN_STACK=16777216 cargo clippy -p tau-dashboard-ui -p tau-gateway -- -D warnings` passed.

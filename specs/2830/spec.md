@@ -97,6 +97,11 @@ Given `/ops/chat` renders the latest-turn proof article inside a collapsed detai
 When the page loads or the operator toggles the latest-turn manager,
 Then the proof article is `aria-hidden` while collapsed and becomes exposed only when the manager is open and latest-turn content exists.
 
+### AC-19 Collapsed session panels have truthful accessibility state
+Given `/ops/chat` renders session metadata and session management controls inside collapsed details managers,
+When the page loads or the operator toggles those managers,
+Then the hidden session-summary, new-session form, new-session status, and session selector are `aria-hidden` while collapsed and become exposed only when their manager is open.
+
 ## Scope
 
 ### In Scope
@@ -116,6 +121,7 @@ Then the proof article is `aria-hidden` while collapsed and becomes exposed only
 - Honest collapsed session-details summary counts for shown transcript rows, hidden rows, and total entries.
 - Operator-readable collapsed latest-turn state with deterministic latest row indexes retained as attributes.
 - Synchronized latest-turn proof accessibility state for collapsed and expanded details states.
+- Synchronized session-details and session-manager accessibility state for collapsed and expanded details states.
 - Targeted regression validation for existing ops shell slices.
 
 ### Out of Scope
@@ -138,6 +144,7 @@ Then the proof article is `aria-hidden` while collapsed and becomes exposed only
 - C-12 (functional): `/ops/chat` groups verbose latest-turn proof content inside a collapsed secondary latest-turn manager while preserving latest-turn markers and indexes.
 - C-13 (functional): `/ops/chat` hides idle send-status copy while rendering non-idle send-result states visibly.
 - C-14 (functional): `/ops/chat` renders open-session-detail and jump-to-latest actions before collapsed secondary metadata.
+- C-19 (functional): `/ops/chat` marks hidden session-summary/session-manager children as `aria-hidden` while collapsed and syncs them when toggled open.
 - C-15 (functional): `/ops/chat` compose script marks non-empty sends as submitting with visible status copy and a disabled pending send button without disabling the message textarea.
 - C-16 (functional): `/ops/chat` collapsed session-details summary renders shown/hidden/total entry counts and exposes those counts on deterministic manager attributes.
 - C-17 (functional): `/ops/chat` collapsed latest-turn summary renders operator-readable state such as assistant reply shown or waiting for assistant reply while exposing latest indexes and role on deterministic attributes.

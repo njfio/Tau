@@ -7253,6 +7253,8 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 data-latest-message-index=chat_latest_message_index.clone()
                                 data-transcript-message-count=active_session_transcript_count_value.clone()
                                 data-hidden-entry-count=active_session_hidden_entry_count_value.clone()
+                                aria-hidden="true"
+                                data-session-details-open="false"
                             >
                                 <h3>Session Summary</h3>
                                 <dl>
@@ -7292,6 +7294,39 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 </dl>
                             </article>
                             </details>
+                            <script
+                                id="tau-ops-chat-session-details-visibility-sync"
+                                data-sync-target="tau-ops-chat-session-summary"
+                            >
+                                r#"
+                                (function () {
+                                    function installSessionDetailsVisibilitySync() {
+                                        var details = document.getElementById("tau-ops-chat-session-details");
+                                        var summary = document.getElementById("tau-ops-chat-session-summary");
+                                        if (!details || !summary || details.getAttribute("data-visibility-sync-bound") === "true") {
+                                            return;
+                                        }
+
+                                        details.setAttribute("data-visibility-sync-bound", "true");
+
+                                        function syncSessionDetailsVisibility() {
+                                            var detailsOpen = details.hasAttribute("open");
+                                            summary.setAttribute("data-session-details-open", detailsOpen ? "true" : "false");
+                                            summary.setAttribute("aria-hidden", detailsOpen ? "false" : "true");
+                                        }
+
+                                        details.addEventListener("toggle", syncSessionDetailsVisibility);
+                                        syncSessionDetailsVisibility();
+                                    }
+
+                                    if (document.readyState === "loading") {
+                                        document.addEventListener("DOMContentLoaded", installSessionDetailsVisibilitySync);
+                                    } else {
+                                        installSessionDetailsVisibilitySync();
+                                    }
+                                })();
+                                "#
+                            </script>
                             <details
                                 id="tau-ops-chat-session-manager"
                                 data-secondary-session-management="true"
@@ -7307,6 +7342,8 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 method=chat_new_session_form_method
                                 data-active-session-key=chat_session_key.clone()
                                 data-empty-session-key-guard="true"
+                                aria-hidden="true"
+                                data-session-manager-open="false"
                             >
                                 <label for="tau-ops-chat-new-session-key">New Session</label>
                                 <input
@@ -7411,6 +7448,8 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             <article
                                 id="tau-ops-chat-new-session-status"
                                 data-new-session-status=chat_new_session_status
+                                aria-hidden="true"
+                                data-session-manager-open="false"
                             >
                                 <h3>New Session Status</h3>
                                 <p id="tau-ops-chat-new-session-status-message">
@@ -7421,6 +7460,8 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 id="tau-ops-chat-session-selector"
                                 data-active-session-key=chat_session_key.clone()
                                 data-option-count=chat_session_option_count_value.clone()
+                                aria-hidden="true"
+                                data-session-manager-open="false"
                             >
                                 <ul id="tau-ops-chat-session-options">
                                     {chat_session_options
@@ -7457,6 +7498,45 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 </ul>
                             </section>
                             </details>
+                            <script
+                                id="tau-ops-chat-session-manager-visibility-sync"
+                                data-sync-target="tau-ops-chat-session-manager-children"
+                            >
+                                r#"
+                                (function () {
+                                    function installSessionManagerVisibilitySync() {
+                                        var details = document.getElementById("tau-ops-chat-session-manager");
+                                        var children = [
+                                            document.getElementById("tau-ops-chat-new-session-form"),
+                                            document.getElementById("tau-ops-chat-new-session-status"),
+                                            document.getElementById("tau-ops-chat-session-selector")
+                                        ].filter(Boolean);
+                                        if (!details || children.length === 0 || details.getAttribute("data-visibility-sync-bound") === "true") {
+                                            return;
+                                        }
+
+                                        details.setAttribute("data-visibility-sync-bound", "true");
+
+                                        function syncSessionManagerVisibility() {
+                                            var detailsOpen = details.hasAttribute("open");
+                                            children.forEach(function (child) {
+                                                child.setAttribute("data-session-manager-open", detailsOpen ? "true" : "false");
+                                                child.setAttribute("aria-hidden", detailsOpen ? "false" : "true");
+                                            });
+                                        }
+
+                                        details.addEventListener("toggle", syncSessionManagerVisibility);
+                                        syncSessionManagerVisibility();
+                                    }
+
+                                    if (document.readyState === "loading") {
+                                        document.addEventListener("DOMContentLoaded", installSessionManagerVisibilitySync);
+                                    } else {
+                                        installSessionManagerVisibilitySync();
+                                    }
+                                })();
+                                "#
+                            </script>
                             <details
                                 id="tau-ops-chat-latest-turn-details"
                                 data-secondary-latest-turn="true"

@@ -16,7 +16,8 @@
 13. Keep open-session-detail and jump-to-latest actions visible before collapsed secondary metadata.
 14. Redirect successful sends directly to the latest assistant row so the operator lands on the response after submit.
 15. Mark non-empty sends as submitting in the browser before provider wait, with visible status copy and a disabled pending send button.
-16. Run targeted regressions for existing ops shell slices and validate crate gates.
+16. Sync session-details and session-manager child accessibility state with their collapsed/open details state.
+17. Run targeted regressions for existing ops shell slices and validate crate gates.
 
 ## Affected Modules
 - `crates/tau-dashboard-ui/src/lib.rs`
@@ -51,6 +52,8 @@
   - Mitigation: append a latest rendered `tau-ops-chat-message-row-*` fragment to success redirects while leaving rejection/status redirects query-based.
 - Risk: non-empty sends appear inert while waiting on Codex/OAuth/provider work.
   - Mitigation: set a deterministic submitting form state, keep the textarea readonly rather than disabled so the message still posts, disable the send button, and show live send-status copy.
+- Risk: collapsed session metadata and manager controls remain absent visually but ambiguous to assistive tooling.
+  - Mitigation: start hidden children with `aria-hidden="true"` and update them from their owning details manager toggle state.
 - Risk: control query expansion (`session`/`session_key`) regresses existing route behavior.
   - Mitigation: add unit coverage for control parsing + keep existing default behavior unchanged.
 
@@ -67,7 +70,9 @@
   - `tau-ops-chat-send-form` and `tau-ops-chat-send-status` appear before `tau-ops-chat-session-summary` and `tau-ops-chat-session-actions`.
   - `id="tau-ops-chat-session-actions"` is a visible current-session action row with `data-primary-session-actions="true"` and `data-latest-message-href`.
   - `id="tau-ops-chat-session-details"` wraps verbose session summary with `data-collapsed-by-default="true"`, `data-active-session-key`, `data-entry-count`, `data-transcript-message-count`, and `data-hidden-entry-count`; its collapsed summary identifies shown, hidden, and total rows.
+  - `id="tau-ops-chat-session-details-visibility-sync"` keeps `tau-ops-chat-session-summary` `aria-hidden` and `data-session-details-open` synchronized with the session-details manager.
   - `id="tau-ops-chat-session-manager"` wraps new-session and selector controls with `data-collapsed-by-default="true"` and `data-session-option-count`.
+  - `id="tau-ops-chat-session-manager-visibility-sync"` keeps `tau-ops-chat-new-session-form`, `tau-ops-chat-new-session-status`, and `tau-ops-chat-session-selector` `aria-hidden` and `data-session-manager-open` synchronized with the session-manager state.
   - `id="tau-ops-chat-latest-turn-details"` wraps the verbose latest-turn article with `data-collapsed-by-default="true"`, `data-latest-turn-visible`, `data-latest-turn-state`, latest-message role/index, and latest user/assistant index markers; its collapsed summary uses operator-readable state instead of raw row numbers, and a small toggle sync keeps the hidden article's `aria-hidden` state aligned with the details open state.
   - `id="tau-ops-chat-transcript"` with deterministic `data-message-count` and row markers.
   - `id="tau-ops-chat-session-summary"` with `data-entry-count`, `data-transcript-message-count`, and `data-hidden-entry-count` so hidden system entries are not mistaken for missing transcript rows.

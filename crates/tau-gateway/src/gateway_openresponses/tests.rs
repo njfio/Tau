@@ -661,6 +661,13 @@ async fn functional_spec_2830_c01_ops_chat_shell_exposes_send_form_and_fallback_
         "id=\"tau-ops-chat-session-details\" data-secondary-session-metadata=\"true\" data-collapsed-by-default=\"true\" data-active-session-key=\"chat-c01\" data-entry-count=\"0\" data-transcript-message-count=\"0\" data-hidden-entry-count=\"0\""
     ));
     assert!(body.contains("Session: chat-c01 (0 shown / 0 hidden / 0 total)"));
+    assert!(body.contains("aria-hidden=\"true\" data-session-details-open=\"false\""));
+    assert!(body.contains("id=\"tau-ops-chat-session-details-visibility-sync\""));
+    assert!(body.contains("data-sync-target=\"tau-ops-chat-session-summary\""));
+    assert!(body.contains("details.addEventListener(\"toggle\", syncSessionDetailsVisibility)"));
+    assert!(
+        body.contains("summary.setAttribute(\"aria-hidden\", detailsOpen ? \"false\" : \"true\")")
+    );
     assert!(body.contains(
         "id=\"tau-ops-chat-session-actions\" aria-label=\"Current chat session actions\" data-primary-session-actions=\"true\" data-latest-message-href=\"#tau-ops-chat-transcript\""
     ));
@@ -669,6 +676,13 @@ async fn functional_spec_2830_c01_ops_chat_shell_exposes_send_form_and_fallback_
         "id=\"tau-ops-chat-session-manager\" data-secondary-session-management=\"true\" data-collapsed-by-default=\"true\""
     ));
     assert!(body.contains("id=\"tau-ops-chat-session-manager-summary\""));
+    assert!(body.contains("data-session-manager-open=\"false\""));
+    assert!(body.contains("id=\"tau-ops-chat-session-manager-visibility-sync\""));
+    assert!(body.contains("data-sync-target=\"tau-ops-chat-session-manager-children\""));
+    assert!(body.contains("details.addEventListener(\"toggle\", syncSessionManagerVisibility)"));
+    assert!(
+        body.contains("child.setAttribute(\"aria-hidden\", detailsOpen ? \"false\" : \"true\")")
+    );
     assert!(
         session_manager_index < new_session_form_index,
         "session manager should contain new-session creation controls"
