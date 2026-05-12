@@ -67,6 +67,11 @@ Given `/ops/chat` renders latest user/assistant proof content,
 When the operator lands on the active chat page,
 Then the verbose latest-turn proof remains available inside a collapsed-by-default latest-turn manager so the transcript and active compose flow are not flooded by a long assistant turn.
 
+### AC-13 Idle send status does not consume operator attention
+Given `/ops/chat` renders without a send result,
+When the operator lands on the active chat page,
+Then the idle send-status marker remains present for contracts but is hidden from the visible operator surface, while real send results such as `empty-message` render visibly.
+
 ## Scope
 
 ### In Scope
@@ -80,6 +85,7 @@ Then the verbose latest-turn proof remains available inside a collapsed-by-defau
 - Composer-first ordering before session metadata and navigation actions.
 - Compact secondary session-details grouping around session metadata and navigation actions.
 - Compact latest-turn proof grouping around the verbose user/assistant latest-turn preview.
+- Hidden idle send-status marker with visible non-idle send-result states.
 - Targeted regression validation for existing ops shell slices.
 
 ### Out of Scope
@@ -100,6 +106,7 @@ Then the verbose latest-turn proof remains available inside a collapsed-by-defau
 - C-10 (functional): `/ops/chat` places the send form and send-status marker before the session summary and session navigation links.
 - C-11 (functional): `/ops/chat` groups the session summary and session navigation links inside a collapsed secondary session-details manager with an active-session summary.
 - C-12 (functional): `/ops/chat` groups verbose latest-turn proof content inside a collapsed secondary latest-turn manager while preserving latest-turn markers and indexes.
+- C-13 (functional): `/ops/chat` hides idle send-status copy while rendering non-idle send-result states visibly.
 
 ## Success Metrics / Observable Signals
 - `cargo test -p tau-dashboard-ui functional_spec_2830 -- --test-threads=1` passes.

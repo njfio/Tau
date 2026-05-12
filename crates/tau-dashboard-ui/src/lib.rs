@@ -4543,6 +4543,17 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     let control_action = context.chat.control_action.clone();
     let control_action_reason = context.chat.control_action_reason.clone();
     let chat_send_status = context.chat.send_status.clone();
+    let chat_send_status_visible_bool = chat_send_status != "idle";
+    let chat_send_status_visible = if chat_send_status_visible_bool {
+        "true"
+    } else {
+        "false"
+    };
+    let chat_send_status_hidden = if chat_send_status_visible_bool {
+        "false"
+    } else {
+        "true"
+    };
     let chat_new_session_status = context.chat.new_session_status.clone();
     let chat_new_session_status_message = match chat_new_session_status.as_str() {
         "empty-key" => "Session was not created because the name was empty.".to_string(),
@@ -6358,6 +6369,9 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                             var message = document.getElementById("tau-ops-chat-send-status-message");
                                             if (status) {
                                                 status.setAttribute("data-chat-send-status", "empty-message");
+                                                status.setAttribute("data-chat-send-status-visible", "true");
+                                                status.setAttribute("aria-hidden", "false");
+                                                status.hidden = false;
                                             }
                                             if (message) {
                                                 message.textContent = "Message was not sent because it was empty.";
@@ -6371,6 +6385,9 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                             var message = document.getElementById("tau-ops-chat-send-status-message");
                                             if (status) {
                                                 status.setAttribute("data-chat-send-status", "idle");
+                                                status.setAttribute("data-chat-send-status-visible", "false");
+                                                status.setAttribute("aria-hidden", "true");
+                                                status.hidden = true;
                                             }
                                             if (message) {
                                                 message.textContent = "No chat send result on this request.";
@@ -6424,6 +6441,9 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             <article
                                 id="tau-ops-chat-send-status"
                                 data-chat-send-status=chat_send_status
+                                data-chat-send-status-visible=chat_send_status_visible
+                                aria-hidden=chat_send_status_hidden
+                                hidden=!chat_send_status_visible_bool
                             >
                                 <h3>Send Status</h3>
                                 <p id="tau-ops-chat-send-status-message">

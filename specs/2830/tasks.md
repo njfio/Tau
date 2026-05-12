@@ -13,6 +13,7 @@
 10. [x] T10 (RED/GREEN/REGRESSION): keep active compose controls before session metadata and navigation links on `/ops/chat`.
 11. [x] T11 (RED/GREEN/REGRESSION): group secondary session metadata and navigation links in a compact collapsed session-details manager.
 12. [x] T12 (RED/GREEN/REGRESSION): group verbose latest-turn proof in a compact collapsed latest-turn manager.
+13. [x] T13 (RED/GREEN/REGRESSION): hide idle send-status copy while keeping non-idle send results visible.
 
 ## Tier Mapping
 - Unit: `ops_shell_controls` session query parsing unit tests.
@@ -20,7 +21,7 @@
 - Contract/DbC: N/A.
 - Snapshot: N/A.
 - Functional: UI `/ops/chat` marker assertions.
-- Conformance: C-01..C-03, C-05..C-12.
+- Conformance: C-01..C-03, C-05..C-13.
 - Integration: gateway send + redirect + transcript visibility assertions.
 - Fuzz: N/A.
 - Mutation: `cargo mutants --in-diff <diff-file> -p tau-dashboard-ui -p tau-gateway`.
@@ -85,6 +86,14 @@
   - GREEN: `env RUST_MIN_STACK=16777216 cargo test -p tau-gateway functional_spec_2830 -- --test-threads=1` passed.
   - GREEN: `env RUST_MIN_STACK=16777216 cargo test -p tau-gateway integration_spec_2830 -- --test-threads=1` passed (`2 passed`).
   - LIVE: restarted `tau-8795` from the rebuilt binary and loaded `/ops/chat?theme=dark&sidebar=expanded&session=default`; Browser proof showed `Latest turn: user 27 / assistant 28` collapsed by default with `latestArticleVisibleBeforeOpen=false` and `transcriptVisible=true`, expanding it made the latest-turn article visible while the transcript stayed visible, and collapsing it hid the article again.
+  - RED: `env RUST_MIN_STACK=16777216 cargo test -p tau-dashboard-ui functional_spec_2830_c13_chat_route_only_shows_send_status_after_result -- --test-threads=1` failed on missing visible `empty-message` send-status marker.
+  - RED: `env RUST_MIN_STACK=16777216 cargo test -p tau-gateway integration_spec_2830_c06_ops_chat_send_rejects_empty_message_with_visible_status -- --test-threads=1` failed on missing visible `empty-message` send-status marker.
+  - GREEN: `env RUST_MIN_STACK=16777216 cargo test -p tau-dashboard-ui functional_spec_2830_c13_chat_route_only_shows_send_status_after_result -- --test-threads=1` passed.
+  - GREEN: `env RUST_MIN_STACK=16777216 cargo test -p tau-gateway integration_spec_2830_c06_ops_chat_send_rejects_empty_message_with_visible_status -- --test-threads=1` passed.
+  - GREEN: `env RUST_MIN_STACK=16777216 cargo test -p tau-dashboard-ui functional_spec_2830 -- --test-threads=1` passed (`5 passed`).
+  - GREEN: `env RUST_MIN_STACK=16777216 cargo test -p tau-gateway functional_spec_2830 -- --test-threads=1` passed.
+  - GREEN: `env RUST_MIN_STACK=16777216 cargo test -p tau-gateway integration_spec_2830 -- --test-threads=1` passed (`2 passed`).
+  - LIVE: restarted `tau-8795` from the rebuilt binary and loaded `/ops/chat?theme=dark&sidebar=expanded&session=default`; Browser proof showed `sendStatusVisible=false`, `data-chat-send-status="idle"`, `data-chat-send-status-visible="false"`, and `transcriptVisible=true`. Loading the same page with `chat_status=empty-message` showed `sendStatusVisible=true`, `data-chat-send-status-visible="true"`, and `Message was not sent because it was empty.`
 - Regression:
   - `cargo test -p tau-dashboard-ui functional_spec_2826 -- --test-threads=1`
   - `cargo test -p tau-gateway functional_spec_2802 -- --test-threads=1`

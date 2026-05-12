@@ -572,6 +572,9 @@ async fn functional_spec_2830_c01_ops_chat_shell_exposes_send_form_and_fallback_
     let send_status_index = body
         .find("id=\"tau-ops-chat-send-status\"")
         .expect("send status marker should render");
+    assert!(body.contains(
+        "id=\"tau-ops-chat-send-status\" data-chat-send-status=\"idle\" data-chat-send-status-visible=\"false\" aria-hidden=\"true\" hidden"
+    ));
     let session_details_index = body
         .find("id=\"tau-ops-chat-session-details\"")
         .expect("session details manager should render");
@@ -810,8 +813,12 @@ async fn integration_spec_2830_c06_ops_chat_send_rejects_empty_message_with_visi
         .expect("ops chat render blank status");
     assert_eq!(chat_response.status(), StatusCode::OK);
     let chat_body = chat_response.text().await.expect("read ops chat body");
-    assert!(chat_body
-        .contains("id=\"tau-ops-chat-send-status\" data-chat-send-status=\"empty-message\""));
+    assert!(chat_body.contains(
+        "id=\"tau-ops-chat-send-status\" data-chat-send-status=\"empty-message\" data-chat-send-status-visible=\"true\" aria-hidden=\"false\""
+    ));
+    assert!(!chat_body.contains(
+        "id=\"tau-ops-chat-send-status\" data-chat-send-status=\"empty-message\" data-chat-send-status-visible=\"true\" aria-hidden=\"false\" hidden"
+    ));
     assert!(chat_body.contains("Message was not sent because it was empty."));
 
     handle.abort();

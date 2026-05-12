@@ -3169,7 +3169,9 @@ fn functional_spec_2830_c01_chat_route_renders_send_form_and_fallback_transcript
     assert!(html.contains(
         "id=\"tau-ops-chat-sidebar\" type=\"hidden\" name=\"sidebar\" value=\"expanded\""
     ));
-    assert!(html.contains("id=\"tau-ops-chat-send-status\" data-chat-send-status=\"idle\""));
+    assert!(html.contains(
+        "id=\"tau-ops-chat-send-status\" data-chat-send-status=\"idle\" data-chat-send-status-visible=\"false\" aria-hidden=\"true\" hidden"
+    ));
     assert!(html.contains("id=\"tau-ops-chat-send-status-message\""));
     assert!(html.contains(
         "id=\"tau-ops-chat-send-form\" action=\"/ops/chat/send\" method=\"post\" data-session-key=\"default\" data-empty-message-submit-guard=\"true\""
@@ -3193,6 +3195,30 @@ fn functional_spec_2830_c01_chat_route_renders_send_form_and_fallback_transcript
         "id=\"tau-ops-chat-latest-turn-details\" data-secondary-latest-turn=\"true\" data-collapsed-by-default=\"true\" data-latest-turn-visible=\"false\""
     ));
     assert!(html.contains("id=\"tau-ops-chat-latest-turn-details-summary\""));
+}
+
+#[test]
+fn functional_spec_2830_c13_chat_route_only_shows_send_status_after_result() {
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        auth_mode: TauOpsDashboardAuthMode::Token,
+        active_route: TauOpsDashboardRoute::Chat,
+        theme: TauOpsDashboardTheme::Dark,
+        sidebar_state: TauOpsDashboardSidebarState::Expanded,
+        command_center: TauOpsDashboardCommandCenterSnapshot::default(),
+        chat: TauOpsDashboardChatSnapshot {
+            send_status: "empty-message".to_string(),
+            ..TauOpsDashboardChatSnapshot::default()
+        },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
+    });
+
+    assert!(html.contains(
+        "id=\"tau-ops-chat-send-status\" data-chat-send-status=\"empty-message\" data-chat-send-status-visible=\"true\" aria-hidden=\"false\""
+    ));
+    assert!(!html.contains(
+        "id=\"tau-ops-chat-send-status\" data-chat-send-status=\"empty-message\" data-chat-send-status-visible=\"true\" aria-hidden=\"false\" hidden"
+    ));
+    assert!(html.contains("Message was not sent because it was empty."));
 }
 
 #[test]
