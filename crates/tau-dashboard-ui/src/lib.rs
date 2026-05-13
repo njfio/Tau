@@ -4615,9 +4615,23 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     let memory_graph_detail_memory_type = memory_detail_memory_type.clone();
     let memory_graph_detail_relation_count_panel_attr =
         memory_detail_relation_count_panel_attr.clone();
-    let memory_graph_detail_open_memory_href = format!(
-        "/ops/memory?theme={theme_attr}&sidebar={sidebar_state_attr}&session={chat_session_key}&workspace_id={memory_search_workspace_id}&channel_id={memory_search_channel_id}&actor_id={memory_search_actor_id}&memory_type={memory_search_memory_type}&detail_memory_id={memory_graph_detail_selected_entry_id}"
-    );
+    let memory_graph_detail_preview_return_anchor = filtered_memory_graph_node_rows
+        .iter()
+        .take(memory_graph_preview_limit_value)
+        .position(|row| row.memory_id.as_str() == memory_graph_detail_selected_entry_id.as_str())
+        .map(|index| format!("tau-ops-memory-graph-preview-row-{index}"))
+        .unwrap_or_else(|| "tau-ops-memory-graph-preview".to_string());
+    let memory_graph_detail_preview_return_memory_id =
+        memory_graph_detail_selected_entry_id.clone();
+    let memory_graph_detail_open_memory_href = if memory_graph_detail_selected_entry_id.is_empty() {
+        format!(
+            "/ops/memory?theme={theme_attr}&sidebar={sidebar_state_attr}&session={chat_session_key}&workspace_id={memory_search_workspace_id}&channel_id={memory_search_channel_id}&actor_id={memory_search_actor_id}&memory_type={memory_search_memory_type}&detail_memory_id="
+        )
+    } else {
+        format!(
+            "/ops/memory?theme={theme_attr}&sidebar={sidebar_state_attr}&session={chat_session_key}&workspace_id={memory_search_workspace_id}&channel_id={memory_search_channel_id}&actor_id={memory_search_actor_id}&memory_type={memory_search_memory_type}&detail_memory_id={memory_graph_detail_selected_entry_id}&preview_memory_id={memory_graph_detail_preview_return_memory_id}#{memory_graph_detail_preview_return_anchor}"
+        )
+    };
     let memory_graph_scope_summary_view = if matches!(
         context.active_route,
         TauOpsDashboardRoute::MemoryGraph
@@ -9220,6 +9234,8 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     id="tau-ops-memory-graph-detail-open-memory"
                                     href=memory_graph_detail_open_memory_href
                                     data-detail-memory-id=memory_graph_detail_selected_entry_id.clone()
+                                    data-preview-return-memory-id=memory_graph_detail_preview_return_memory_id.clone()
+                                    data-preview-return-anchor=memory_graph_detail_preview_return_anchor.clone()
                                 >
                                     Open in Memory Explorer
                                 </a>

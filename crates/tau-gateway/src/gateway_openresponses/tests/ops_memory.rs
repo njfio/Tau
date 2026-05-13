@@ -117,6 +117,26 @@ async fn integration_spec_2905_c01_c02_c03_ops_memory_route_renders_relevant_sea
     assert!(empty_body.contains("data-memory-graph-preview-relation-empty="));
     assert!(empty_body.contains("no connected relations"));
 
+    let graph_detail_response = client
+        .get(format!(
+            "http://{addr}/ops/memory-graph?theme=light&sidebar=collapsed&session={session_key}&detail_memory_id=mem-match-1"
+        ))
+        .send()
+        .await
+        .expect("ops memory graph detail request");
+    assert_eq!(graph_detail_response.status(), StatusCode::OK);
+    let graph_detail_body = graph_detail_response
+        .text()
+        .await
+        .expect("read ops memory graph detail body");
+    assert!(graph_detail_body.contains("id=\"tau-ops-memory-graph-detail-open-memory\""));
+    assert!(graph_detail_body.contains(
+        "detail_memory_id=mem-match-1&amp;preview_memory_id=mem-match-1#tau-ops-memory-graph-preview-row-"
+    ));
+    assert!(graph_detail_body.contains("data-preview-return-memory-id=\"mem-match-1\""));
+    assert!(graph_detail_body
+        .contains("data-preview-return-anchor=\"tau-ops-memory-graph-preview-row-"));
+
     handle.abort();
 }
 
@@ -1555,6 +1575,12 @@ async fn integration_spec_3086_c02_ops_memory_graph_selected_node_shows_detail_p
     assert!(body
         .contains("id=\"tau-ops-memory-graph-detail-open-memory\" href=\"/ops/memory?theme=light"));
     assert!(body.contains("data-detail-memory-id=\"mem-detail-graph\""));
+    assert!(body.contains(
+        "detail_memory_id=mem-detail-graph&amp;preview_memory_id=mem-detail-graph#tau-ops-memory-graph-preview-row-0"
+    ));
+    assert!(body.contains(
+        "data-preview-return-memory-id=\"mem-detail-graph\" data-preview-return-anchor=\"tau-ops-memory-graph-preview-row-0\""
+    ));
 
     handle.abort();
 }
