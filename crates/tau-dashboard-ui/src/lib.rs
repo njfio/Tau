@@ -312,6 +312,7 @@ pub struct TauOpsDashboardMemoryRelationRow {
 /// Public struct `TauOpsDashboardMemoryGraphNodeRow` in `tau-dashboard-ui`.
 pub struct TauOpsDashboardMemoryGraphNodeRow {
     pub memory_id: String,
+    pub summary: String,
     pub memory_type: String,
     pub importance: String,
 }
@@ -4440,9 +4441,14 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 );
                                 let node_detail_href_attr = node_detail_href.clone();
                                 let node_detail_href_link = node_detail_href;
+                                let preview_title = if row.summary.trim().is_empty() {
+                                    row.memory_id.clone()
+                                } else {
+                                    row.summary.clone()
+                                };
                                 let preview_summary = format!(
-                                    "{} | type {} | importance {}",
-                                    row.memory_id, row.memory_type, row.importance
+                                    "{} | id {} | type {} | importance {}",
+                                    preview_title, row.memory_id, row.memory_type, row.importance
                                 );
                                 view! {
                                     <li
@@ -4451,6 +4457,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                         data-memory-type=row.memory_type.clone()
                                         data-importance=row.importance.clone()
                                         data-node-detail-href=node_detail_href_attr
+                                        data-summary=preview_title
                                     >
                                         <a
                                             data-memory-graph-preview-link=row.memory_id.clone()
@@ -4646,6 +4653,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             data-node-hover-neighbor=node_hover_neighbor
                             data-node-detail-target="tau-ops-memory-graph-detail-panel"
                             data-node-detail-href=node_detail_href_attr
+                            data-summary=row.summary.clone()
                         >
                             <a
                                 data-memory-graph-node-link=row.memory_id.clone()

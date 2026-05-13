@@ -986,6 +986,7 @@ fn tau_ops_dashboard_memory_graph_node_row_from_gateway(
 ) -> TauOpsDashboardMemoryGraphNodeRow {
     TauOpsDashboardMemoryGraphNodeRow {
         memory_id: node.id.clone(),
+        summary: node.label.clone(),
         memory_type: node.category.clone(),
         importance: format!("{:.4}", node.weight.clamp(0.0, 1.0)),
     }
@@ -1409,6 +1410,7 @@ fn collect_tau_ops_dashboard_chat_snapshot(
             .iter()
             .map(|record| TauOpsDashboardMemoryGraphNodeRow {
                 memory_id: record.entry.memory_id.clone(),
+                summary: record.entry.summary.clone(),
                 memory_type: record.memory_type.as_str().to_string(),
                 importance: format!("{:.4}", record.importance.clamp(0.0, 1.0)),
             })

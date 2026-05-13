@@ -4313,11 +4313,13 @@ fn functional_spec_2905_c04_memory_route_reports_graph_counts_when_results_are_e
             memory_graph_node_rows: vec![
                 TauOpsDashboardMemoryGraphNodeRow {
                     memory_id: "mem-a".to_string(),
+                    summary: "Keep plugin registry hot reload safe".to_string(),
                     memory_type: "goal".to_string(),
                     importance: "0.8000".to_string(),
                 },
                 TauOpsDashboardMemoryGraphNodeRow {
                     memory_id: "mem-b".to_string(),
+                    summary: "Registry loader uses ArcSwap".to_string(),
                     memory_type: "fact".to_string(),
                     importance: "0.6000".to_string(),
                 },
@@ -4344,7 +4346,10 @@ fn functional_spec_2905_c04_memory_route_reports_graph_counts_when_results_are_e
     assert!(html.contains("id=\"tau-ops-memory-graph-preview\" data-preview-count=\"2\" data-preview-limit=\"5\" data-node-count=\"2\" data-edge-count=\"1\" data-graph-state=\"graph available\""));
     assert!(html.contains("id=\"tau-ops-memory-graph-preview-list\""));
     assert!(html.contains("id=\"tau-ops-memory-graph-preview-row-0\" data-memory-id=\"mem-a\" data-memory-type=\"goal\" data-importance=\"0.8000\""));
-    assert!(html.contains("mem-a | type goal | importance 0.8000"));
+    assert!(html.contains("data-summary=\"Keep plugin registry hot reload safe\""));
+    assert!(html.contains(
+        "Keep plugin registry hot reload safe | id mem-a | type goal | importance 0.8000"
+    ));
     assert!(html.contains("href=\"/ops/memory-graph?theme=light&amp;sidebar=collapsed&amp;session=default&amp;workspace_id=&amp;channel_id=&amp;actor_id=&amp;memory_type=&amp;detail_memory_id=mem-a\""));
 }
 
@@ -4790,11 +4795,13 @@ fn functional_spec_3068_c02_memory_graph_route_renders_readable_node_and_edge_ro
             memory_graph_node_rows: vec![
                 TauOpsDashboardMemoryGraphNodeRow {
                     memory_id: "mem-readable-source".to_string(),
+                    summary: "Readable source summary".to_string(),
                     memory_type: "goal".to_string(),
                     importance: "0.8000".to_string(),
                 },
                 TauOpsDashboardMemoryGraphNodeRow {
                     memory_id: "mem-readable-target".to_string(),
+                    summary: "Readable target summary".to_string(),
                     memory_type: "fact".to_string(),
                     importance: "0.3000".to_string(),
                 },
@@ -4834,11 +4841,13 @@ fn functional_spec_3070_c01_c02_memory_graph_route_renders_node_size_markers_fro
             memory_graph_node_rows: vec![
                 TauOpsDashboardMemoryGraphNodeRow {
                     memory_id: "mem-size-low".to_string(),
+                    summary: "Low importance memory".to_string(),
                     memory_type: "fact".to_string(),
                     importance: "0.1000".to_string(),
                 },
                 TauOpsDashboardMemoryGraphNodeRow {
                     memory_id: "mem-size-high".to_string(),
+                    summary: "High importance memory".to_string(),
                     memory_type: "goal".to_string(),
                     importance: "0.9000".to_string(),
                 },
@@ -4868,11 +4877,13 @@ fn functional_spec_3078_c02_memory_graph_route_renders_node_color_markers_from_m
             memory_graph_node_rows: vec![
                 TauOpsDashboardMemoryGraphNodeRow {
                     memory_id: "mem-color-fact".to_string(),
+                    summary: "Fact color memory".to_string(),
                     memory_type: "fact".to_string(),
                     importance: "0.5000".to_string(),
                 },
                 TauOpsDashboardMemoryGraphNodeRow {
                     memory_id: "mem-color-event".to_string(),
+                    summary: "Event color memory".to_string(),
                     memory_type: "event".to_string(),
                     importance: "0.5000".to_string(),
                 },
@@ -4965,11 +4976,13 @@ fn functional_spec_3086_c02_memory_graph_route_renders_selected_node_detail_pane
             memory_graph_node_rows: vec![
                 TauOpsDashboardMemoryGraphNodeRow {
                     memory_id: "mem-detail-graph".to_string(),
+                    summary: "Selected graph detail memory".to_string(),
                     memory_type: "goal".to_string(),
                     importance: "0.7000".to_string(),
                 },
                 TauOpsDashboardMemoryGraphNodeRow {
                     memory_id: "mem-other-graph".to_string(),
+                    summary: "Other graph detail memory".to_string(),
                     memory_type: "goal".to_string(),
                     importance: "0.4000".to_string(),
                 },
@@ -5012,16 +5025,19 @@ fn functional_spec_3090_c02_memory_graph_route_marks_connected_edges_and_neighbo
             memory_graph_node_rows: vec![
                 TauOpsDashboardMemoryGraphNodeRow {
                     memory_id: "mem-focus".to_string(),
+                    summary: "Focused memory".to_string(),
                     memory_type: "goal".to_string(),
                     importance: "0.7000".to_string(),
                 },
                 TauOpsDashboardMemoryGraphNodeRow {
                     memory_id: "mem-neighbor".to_string(),
+                    summary: "Neighbor memory".to_string(),
                     memory_type: "fact".to_string(),
                     importance: "0.5000".to_string(),
                 },
                 TauOpsDashboardMemoryGraphNodeRow {
                     memory_id: "mem-unrelated".to_string(),
+                    summary: "Unrelated memory".to_string(),
                     memory_type: "event".to_string(),
                     importance: "0.5000".to_string(),
                 },
@@ -5141,16 +5157,19 @@ fn functional_spec_3103_c01_c02_memory_graph_route_renders_filter_controls_and_c
             memory_graph_node_rows: vec![
                 TauOpsDashboardMemoryGraphNodeRow {
                     memory_id: "goal-1".to_string(),
+                    summary: "First filtered goal".to_string(),
                     memory_type: "goal".to_string(),
                     importance: "0.9000".to_string(),
                 },
                 TauOpsDashboardMemoryGraphNodeRow {
                     memory_id: "goal-2".to_string(),
+                    summary: "Second filtered goal".to_string(),
                     memory_type: "goal".to_string(),
                     importance: "0.7000".to_string(),
                 },
                 TauOpsDashboardMemoryGraphNodeRow {
                     memory_id: "fact-1".to_string(),
+                    summary: "Filtered fact".to_string(),
                     memory_type: "fact".to_string(),
                     importance: "0.5000".to_string(),
                 },
