@@ -97,7 +97,9 @@ async fn integration_spec_2905_c01_c02_c03_ops_memory_route_renders_relevant_sea
     assert!(empty_body.contains("<dt>Graph Nodes</dt><dd>7</dd>"));
     assert!(empty_body.contains("<dt>Graph Edges</dt><dd>0</dd>"));
     assert!(empty_body.contains("id=\"tau-ops-memory-results\" data-result-count=\"0\""));
-    assert!(empty_body.contains("id=\"tau-ops-memory-empty-state\" data-empty-state=\"true\""));
+    assert!(empty_body.contains("id=\"tau-ops-memory-empty-state\" data-empty-state=\"true\" data-graph-node-count=\"7\" data-graph-edge-count=\"0\" data-graph-state=\"graph available\""));
+    assert!(empty_body
+        .contains("No search rows match this scope. Memory graph still has 7 nodes and 0 edges."));
 
     handle.abort();
 }

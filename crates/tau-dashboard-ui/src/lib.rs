@@ -4224,34 +4224,6 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                 .collect_view(),
         )
     };
-    let memory_results_view = if memory_search_rows.is_empty() {
-        leptos::either::Either::Left(view! {
-            <li id="tau-ops-memory-empty-state" data-empty-state="true">
-                No memory matches found.
-            </li>
-        })
-    } else {
-        leptos::either::Either::Right(
-            memory_search_rows
-                .iter()
-                .enumerate()
-                .map(|(index, row)| {
-                    let row_id = format!("tau-ops-memory-result-row-{index}");
-                    view! {
-                        <li
-                            id=row_id
-                            data-memory-id=row.memory_id.clone()
-                            data-memory-type=row.memory_type.clone()
-                            data-score=row.score.clone()
-                            data-detail-memory-id=row.memory_id.clone()
-                        >
-                            {row.summary.clone()}
-                        </li>
-                    }
-                })
-                .collect_view(),
-        )
-    };
     let memory_graph_node_rows = context.chat.memory_graph_node_rows.clone();
     let memory_graph_edge_rows = context.chat.memory_graph_edge_rows.clone();
     let memory_graph_zoom_level_value = context
@@ -4400,8 +4372,10 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     let memory_graph_filter_relation_type_related_to_href = format!(
         "{memory_graph_route_href_base}&graph_zoom={memory_graph_zoom_level}&graph_pan_x={memory_graph_pan_x_level}&graph_pan_y={memory_graph_pan_y_level}&graph_filter_memory_type={memory_graph_filter_memory_type}&graph_filter_relation_type=related_to"
     );
-    let memory_graph_node_count = filtered_memory_graph_node_rows.len().to_string();
-    let memory_graph_edge_count = filtered_memory_graph_edge_rows.len().to_string();
+    let memory_graph_node_count_value = filtered_memory_graph_node_rows.len();
+    let memory_graph_edge_count_value = filtered_memory_graph_edge_rows.len();
+    let memory_graph_node_count = memory_graph_node_count_value.to_string();
+    let memory_graph_edge_count = memory_graph_edge_count_value.to_string();
     let memory_graph_node_count_panel_attr = memory_graph_node_count.clone();
     let memory_graph_edge_count_panel_attr = memory_graph_edge_count.clone();
     let memory_graph_scope_state_label = if filtered_memory_graph_node_rows.is_empty()
@@ -4410,6 +4384,57 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
         "empty graph"
     } else {
         "graph available"
+    };
+    let memory_empty_state_message = if memory_graph_scope_state_label == "graph available" {
+        let memory_graph_node_label = if memory_graph_node_count_value == 1 {
+            "node"
+        } else {
+            "nodes"
+        };
+        let memory_graph_edge_label = if memory_graph_edge_count_value == 1 {
+            "edge"
+        } else {
+            "edges"
+        };
+        format!(
+            "No search rows match this scope. Memory graph still has {memory_graph_node_count} {memory_graph_node_label} and {memory_graph_edge_count} {memory_graph_edge_label}."
+        )
+    } else {
+        "No memory matches found.".to_string()
+    };
+    let memory_results_view = if memory_search_rows.is_empty() {
+        leptos::either::Either::Left(view! {
+            <li
+                id="tau-ops-memory-empty-state"
+                data-empty-state="true"
+                data-graph-node-count=memory_graph_node_count.clone()
+                data-graph-edge-count=memory_graph_edge_count.clone()
+                data-graph-state=memory_graph_scope_state_label
+            >
+                {memory_empty_state_message}
+            </li>
+        })
+    } else {
+        leptos::either::Either::Right(
+            memory_search_rows
+                .iter()
+                .enumerate()
+                .map(|(index, row)| {
+                    let row_id = format!("tau-ops-memory-result-row-{index}");
+                    view! {
+                        <li
+                            id=row_id
+                            data-memory-id=row.memory_id.clone()
+                            data-memory-type=row.memory_type.clone()
+                            data-score=row.score.clone()
+                            data-detail-memory-id=row.memory_id.clone()
+                        >
+                            {row.summary.clone()}
+                        </li>
+                    }
+                })
+                .collect_view(),
+        )
     };
     let memory_graph_scope_memory_href = format!(
         "/ops/memory?theme={theme_attr}&sidebar={sidebar_state_attr}&session={chat_session_key}&workspace_id={memory_search_workspace_id}&channel_id={memory_search_channel_id}&actor_id={memory_search_actor_id}&memory_type={memory_search_memory_type}"
