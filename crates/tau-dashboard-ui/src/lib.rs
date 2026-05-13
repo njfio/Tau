@@ -8359,6 +8359,9 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 data-memory-type=memory_type_panel_attr.clone()
                                 data-create-status=memory_create_status_panel_attr.clone()
                                 data-created-memory-id=memory_create_created_entry_id_panel_attr.clone()
+                                data-graph-node-count=memory_graph_node_count.clone()
+                                data-graph-edge-count=memory_graph_edge_count.clone()
+                                data-graph-state=memory_graph_scope_state_label
                             >
                                 <h3>Memory Scope</h3>
                                 <dl>
@@ -8369,6 +8372,14 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     <div>
                                         <dt>Results</dt>
                                         <dd>{memory_result_count_value.clone()}</dd>
+                                    </div>
+                                    <div>
+                                        <dt>Graph Nodes</dt>
+                                        <dd>{memory_graph_node_count.clone()}</dd>
+                                    </div>
+                                    <div>
+                                        <dt>Graph Edges</dt>
+                                        <dd>{memory_graph_edge_count.clone()}</dd>
                                     </div>
                                     <div>
                                         <dt>Query</dt>

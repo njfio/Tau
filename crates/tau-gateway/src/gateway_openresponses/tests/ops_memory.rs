@@ -92,6 +92,10 @@ async fn integration_spec_2905_c01_c02_c03_ops_memory_route_renders_relevant_sea
     assert!(empty_body.contains(
         "id=\"tau-ops-memory-panel\" data-route=\"/ops/memory\" aria-hidden=\"false\" data-panel-visible=\"true\" data-query=\"NoHitTerm\" data-result-count=\"0\""
     ));
+    assert!(empty_body.contains("data-graph-node-count=\"7\""));
+    assert!(empty_body.contains("data-graph-edge-count=\"0\""));
+    assert!(empty_body.contains("<dt>Graph Nodes</dt><dd>7</dd>"));
+    assert!(empty_body.contains("<dt>Graph Edges</dt><dd>0</dd>"));
     assert!(empty_body.contains("id=\"tau-ops-memory-results\" data-result-count=\"0\""));
     assert!(empty_body.contains("id=\"tau-ops-memory-empty-state\" data-empty-state=\"true\""));
 

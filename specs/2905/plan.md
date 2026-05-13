@@ -4,7 +4,8 @@
 1. Add RED UI tests for memory search panel/form markers, query preservation, and empty-state/result counters.
 2. Add RED gateway integration tests that seed persisted memory entries and assert relevant `/ops/memory` result rows.
 3. Implement minimal memory snapshot plumbing in ops shell and memory panel rendering contracts in `tau-dashboard-ui`.
-4. Run regression + verify gates (fmt/clippy/spec slices/mutation/live validation).
+4. Expose graph node/edge availability in the Memory Scope summary so empty search rows are not confused with an empty memory graph.
+5. Run regression + verify gates (fmt/clippy/spec slices/mutation/live validation).
 
 ## Affected Modules
 - `crates/tau-dashboard-ui/src/lib.rs`
@@ -24,3 +25,4 @@
 - No new HTTP endpoints.
 - No protocol/schema changes.
 - Additive SSR marker contracts on existing `/ops/memory` route.
+- Memory Scope includes additive `data-graph-node-count`, `data-graph-edge-count`, and `data-graph-state` markers plus visible Graph Nodes/Graph Edges rows.

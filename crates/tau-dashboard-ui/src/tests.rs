@@ -4283,10 +4283,12 @@ fn functional_spec_2905_c01_c03_memory_route_renders_search_panel_and_empty_stat
             "id=\"tau-ops-memory-panel\" data-route=\"/ops/memory\" aria-hidden=\"false\" data-panel-visible=\"true\" data-query=\"\" data-result-count=\"0\""
         ));
     assert!(html.contains(
-        "id=\"tau-ops-memory-scope-summary\" data-session-key=\"default\" data-result-count=\"0\" data-query=\"\" data-workspace-id=\"\" data-channel-id=\"\" data-actor-id=\"\" data-memory-type=\"\" data-create-status=\"idle\""
+        "id=\"tau-ops-memory-scope-summary\" data-session-key=\"default\" data-result-count=\"0\" data-query=\"\" data-workspace-id=\"\" data-channel-id=\"\" data-actor-id=\"\" data-memory-type=\"\" data-create-status=\"idle\" data-created-memory-id=\"\" data-graph-node-count=\"0\" data-graph-edge-count=\"0\" data-graph-state=\"empty graph\""
     ));
     assert!(html.contains("Memory Scope"));
     assert!(html.contains("all entries"));
+    assert!(html.contains("Graph Nodes"));
+    assert!(html.contains("Graph Edges"));
     assert!(html.contains("id=\"tau-ops-memory-open-graph\" href=\"/ops/memory-graph?theme=light&amp;sidebar=collapsed&amp;session=default&amp;workspace_id=&amp;channel_id=&amp;actor_id=&amp;memory_type=\""));
     assert!(html.contains("id=\"tau-ops-memory-open-session\" href=\"/ops/sessions/default?theme=light&amp;sidebar=collapsed&amp;session=default\""));
     assert!(
@@ -4294,6 +4296,46 @@ fn functional_spec_2905_c01_c03_memory_route_renders_search_panel_and_empty_stat
     );
     assert!(html.contains("id=\"tau-ops-memory-query\" type=\"search\" name=\"query\" value=\"\""));
     assert!(html.contains("id=\"tau-ops-memory-results\" data-result-count=\"0\""));
+    assert!(html.contains("id=\"tau-ops-memory-empty-state\" data-empty-state=\"true\""));
+}
+
+#[test]
+fn functional_spec_2905_c04_memory_route_reports_graph_counts_when_results_are_empty() {
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        auth_mode: TauOpsDashboardAuthMode::Token,
+        active_route: TauOpsDashboardRoute::Memory,
+        theme: TauOpsDashboardTheme::Light,
+        sidebar_state: TauOpsDashboardSidebarState::Collapsed,
+        command_center: TauOpsDashboardCommandCenterSnapshot::default(),
+        chat: TauOpsDashboardChatSnapshot {
+            memory_graph_node_rows: vec![
+                TauOpsDashboardMemoryGraphNodeRow {
+                    memory_id: "mem-a".to_string(),
+                    memory_type: "goal".to_string(),
+                    importance: "0.8000".to_string(),
+                },
+                TauOpsDashboardMemoryGraphNodeRow {
+                    memory_id: "mem-b".to_string(),
+                    memory_type: "fact".to_string(),
+                    importance: "0.6000".to_string(),
+                },
+            ],
+            memory_graph_edge_rows: vec![TauOpsDashboardMemoryGraphEdgeRow {
+                source_memory_id: "mem-a".to_string(),
+                target_memory_id: "mem-b".to_string(),
+                relation_type: "supports".to_string(),
+                effective_weight: "0.9000".to_string(),
+            }],
+            ..TauOpsDashboardChatSnapshot::default()
+        },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
+    });
+
+    assert!(html.contains(
+        "id=\"tau-ops-memory-scope-summary\" data-session-key=\"default\" data-result-count=\"0\" data-query=\"\" data-workspace-id=\"\" data-channel-id=\"\" data-actor-id=\"\" data-memory-type=\"\" data-create-status=\"idle\" data-created-memory-id=\"\" data-graph-node-count=\"2\" data-graph-edge-count=\"1\" data-graph-state=\"graph available\""
+    ));
+    assert!(html.contains("<dt>Graph Nodes</dt><dd>2</dd>"));
+    assert!(html.contains("<dt>Graph Edges</dt><dd>1</dd>"));
     assert!(html.contains("id=\"tau-ops-memory-empty-state\" data-empty-state=\"true\""));
 }
 
