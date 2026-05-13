@@ -106,8 +106,11 @@ async fn integration_spec_2905_c01_c02_c03_ops_memory_route_renders_relevant_sea
     assert!(empty_body.contains("data-memory-id=\"mem-match-"));
     assert!(empty_body.contains("data-summary=\"ArcSwap\""));
     assert!(empty_body.contains("data-memory-type=\"fact\""));
+    assert!(empty_body
+        .contains("data-relation-count=\"0\" data-relation-sample=\"no connected relations\""));
     assert!(empty_body.contains("ArcSwap | id mem-match-"));
     assert!(empty_body.contains("| type fact | importance"));
+    assert!(empty_body.contains("relations 0 | no connected relations"));
 
     handle.abort();
 }

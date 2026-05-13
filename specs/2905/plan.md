@@ -5,7 +5,7 @@
 2. Add RED gateway integration tests that seed persisted memory entries and assert relevant `/ops/memory` result rows.
 3. Implement minimal memory snapshot plumbing in ops shell and memory panel rendering contracts in `tau-dashboard-ui`.
 4. Expose graph node/edge availability in the Memory Scope summary and empty-state row so empty search rows are not confused with an empty memory graph.
-5. Render a bounded graph-backed node preview on zero-result pages so operators can inspect memory summaries and node metadata before jumping to Memory Graph.
+5. Render a bounded graph-backed node preview on zero-result pages so operators can inspect memory summaries plus node/relation metadata before jumping to Memory Graph.
 6. Run regression + verify gates (fmt/clippy/spec slices/mutation/live validation).
 
 ## Affected Modules
@@ -27,4 +27,4 @@
 - No protocol/schema changes.
 - Additive SSR marker contracts on existing `/ops/memory` route.
 - Memory Scope and the empty-state row include additive `data-graph-node-count`, `data-graph-edge-count`, and `data-graph-state` markers plus visible/copy evidence that graph-backed memory is still available.
-- Zero-result Memory Explorer pages render a bounded graph-backed preview with memory summaries, node ids, types, importance, and graph detail links.
+- Zero-result Memory Explorer pages render a bounded graph-backed preview with memory summaries, node ids, types, importance, connected relation counts/samples, and graph detail links.

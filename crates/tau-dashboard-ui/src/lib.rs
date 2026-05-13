@@ -4446,9 +4446,47 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 } else {
                                     row.summary.clone()
                                 };
+                                let connected_relation_count_value = filtered_memory_graph_edge_rows
+                                    .iter()
+                                    .filter(|edge| {
+                                        edge.source_memory_id.as_str() == row.memory_id.as_str()
+                                            || edge.target_memory_id.as_str() == row.memory_id.as_str()
+                                    })
+                                    .count();
+                                let connected_relation_count =
+                                    connected_relation_count_value.to_string();
+                                let relation_sample = filtered_memory_graph_edge_rows
+                                    .iter()
+                                    .find(|edge| {
+                                        edge.source_memory_id.as_str() == row.memory_id.as_str()
+                                            || edge.target_memory_id.as_str() == row.memory_id.as_str()
+                                    })
+                                    .map(|edge| {
+                                        if edge.source_memory_id.as_str() == row.memory_id.as_str() {
+                                            format!(
+                                                "{} -> {} {}",
+                                                edge.source_memory_id,
+                                                edge.target_memory_id,
+                                                edge.relation_type
+                                            )
+                                        } else {
+                                            format!(
+                                                "{} <- {} {}",
+                                                edge.target_memory_id,
+                                                edge.source_memory_id,
+                                                edge.relation_type
+                                            )
+                                        }
+                                    })
+                                    .unwrap_or_else(|| "no connected relations".to_string());
                                 let preview_summary = format!(
-                                    "{} | id {} | type {} | importance {}",
-                                    preview_title, row.memory_id, row.memory_type, row.importance
+                                    "{} | id {} | type {} | importance {} | relations {} | {}",
+                                    preview_title,
+                                    row.memory_id,
+                                    row.memory_type,
+                                    row.importance,
+                                    connected_relation_count,
+                                    relation_sample
                                 );
                                 view! {
                                     <li
@@ -4458,6 +4496,8 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                         data-importance=row.importance.clone()
                                         data-node-detail-href=node_detail_href_attr
                                         data-summary=preview_title
+                                        data-relation-count=connected_relation_count
+                                        data-relation-sample=relation_sample
                                     >
                                         <a
                                             data-memory-graph-preview-link=row.memory_id.clone()
