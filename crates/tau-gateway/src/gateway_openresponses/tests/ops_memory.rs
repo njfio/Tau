@@ -138,6 +138,31 @@ async fn integration_spec_2905_c01_c02_c03_ops_memory_route_renders_relevant_sea
     assert!(selected_empty_body.contains("data-memory-graph-preview-return-badge=\"mem-match-1\""));
     assert!(selected_empty_body.contains("Returned from graph detail"));
 
+    let out_of_preview_response = client
+        .get(format!(
+            "http://{addr}/ops/memory?theme=light&sidebar=collapsed&session={session_key}&query=NoHitTerm&preview_memory_id=mem-match-6"
+        ))
+        .send()
+        .await
+        .expect("ops memory no-hit request with out-of-preview selected memory");
+    assert_eq!(out_of_preview_response.status(), StatusCode::OK);
+    let out_of_preview_body = out_of_preview_response
+        .text()
+        .await
+        .expect("read out-of-preview ops memory empty body");
+    assert!(out_of_preview_body.contains(
+        "id=\"tau-ops-memory-graph-preview\" data-preview-count=\"5\" data-preview-limit=\"5\" data-node-count=\"7\" data-edge-count=\"0\" data-graph-state=\"graph available\" data-preview-selected-memory-id=\"mem-match-6\" data-preview-selected-state=\"out-of-preview\""
+    ));
+    assert!(out_of_preview_body.contains(
+        "id=\"tau-ops-memory-graph-preview-out-of-preview\" data-preview-selected-memory-id=\"mem-match-6\" data-preview-selected-state=\"out-of-preview\" data-preview-limit=\"5\""
+    ));
+    assert!(
+        out_of_preview_body.contains("Returned memory mem-match-6 is outside this 5 item preview.")
+    );
+    assert!(out_of_preview_body.contains(
+        "id=\"tau-ops-memory-graph-preview-out-of-preview-link\" href=\"/ops/memory-graph?theme=light&amp;sidebar=collapsed&amp;session=ops-memory-search&amp;workspace_id=&amp;channel_id=&amp;actor_id=&amp;memory_type=&amp;detail_memory_id=mem-match-6\""
+    ));
+
     let graph_detail_response = client
         .get(format!(
             "http://{addr}/ops/memory-graph?theme=light&sidebar=collapsed&session={session_key}&detail_memory_id=mem-match-1"

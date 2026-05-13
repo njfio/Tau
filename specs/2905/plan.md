@@ -5,7 +5,7 @@
 2. Add RED gateway integration tests that seed persisted memory entries and assert relevant `/ops/memory` result rows.
 3. Implement minimal memory snapshot plumbing in ops shell and memory panel rendering contracts in `tau-dashboard-ui`.
 4. Expose graph node/edge availability in the Memory Scope summary and empty-state row so empty search rows are not confused with an empty memory graph.
-5. Render a bounded graph-backed node preview on zero-result pages so operators can inspect memory summaries plus node/relation metadata, follow sample relations into Memory Graph, return to the originating preview row context, and see the returned row marked as selected.
+5. Render a bounded graph-backed node preview on zero-result pages so operators can inspect memory summaries plus node/relation metadata, follow sample relations into Memory Graph, return to the originating preview row context, see the returned row marked as selected, and recover when the returned memory is outside the bounded preview.
 6. Run regression + verify gates (fmt/clippy/spec slices/mutation/live validation).
 
 ## Affected Modules
@@ -30,3 +30,4 @@
 - Zero-result Memory Explorer pages render a bounded graph-backed preview with memory summaries, node ids, types, importance, connected relation counts, sample relation links, and graph detail links.
 - Memory Graph detail links back to Memory Explorer carry additive `preview_memory_id` and preview-row anchor contracts when the selected node is present in the bounded preview.
 - Memory Explorer consumes additive `preview_memory_id` query state and marks the matching bounded preview row with selected DOM markers and visible returned-from-graph copy.
+- If `preview_memory_id` is outside the bounded preview, Memory Explorer renders additive out-of-preview markers, a visible explanation, and a Memory Graph recovery link for the selected memory.

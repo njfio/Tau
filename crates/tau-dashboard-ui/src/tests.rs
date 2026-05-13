@@ -4453,6 +4453,52 @@ fn functional_spec_2905_c03a_memory_preview_marks_returned_graph_detail_row() {
 }
 
 #[test]
+fn functional_spec_2905_c03a_memory_preview_explains_out_of_preview_return() {
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        auth_mode: TauOpsDashboardAuthMode::Token,
+        active_route: TauOpsDashboardRoute::Memory,
+        theme: TauOpsDashboardTheme::Light,
+        sidebar_state: TauOpsDashboardSidebarState::Collapsed,
+        command_center: TauOpsDashboardCommandCenterSnapshot::default(),
+        chat: TauOpsDashboardChatSnapshot {
+            memory_preview_selected_entry_id: "mem-z".to_string(),
+            memory_graph_node_rows: vec![
+                TauOpsDashboardMemoryGraphNodeRow {
+                    memory_id: "mem-a".to_string(),
+                    summary: "Keep plugin registry hot reload safe".to_string(),
+                    memory_type: "goal".to_string(),
+                    importance: "0.8000".to_string(),
+                },
+                TauOpsDashboardMemoryGraphNodeRow {
+                    memory_id: "mem-b".to_string(),
+                    summary: "Registry loader uses ArcSwap".to_string(),
+                    memory_type: "fact".to_string(),
+                    importance: "0.6000".to_string(),
+                },
+            ],
+            ..TauOpsDashboardChatSnapshot::default()
+        },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
+    });
+
+    assert!(html.contains(
+        "id=\"tau-ops-memory-graph-preview\" data-preview-count=\"2\" data-preview-limit=\"5\" data-node-count=\"2\" data-edge-count=\"0\" data-graph-state=\"graph available\" data-preview-selected-memory-id=\"mem-z\" data-preview-selected-state=\"out-of-preview\""
+    ));
+    assert!(html.contains(
+        "id=\"tau-ops-memory-graph-preview-out-of-preview\" data-preview-selected-memory-id=\"mem-z\" data-preview-selected-state=\"out-of-preview\" data-preview-limit=\"5\" data-preview-recovery-href=\"/ops/memory-graph?theme=light&amp;sidebar=collapsed&amp;session=default&amp;workspace_id=&amp;channel_id=&amp;actor_id=&amp;memory_type=&amp;detail_memory_id=mem-z\""
+    ));
+    assert!(html.contains("Returned memory mem-z is outside this 5 item preview."));
+    assert!(html.contains(
+        "id=\"tau-ops-memory-graph-preview-out-of-preview-link\" href=\"/ops/memory-graph?theme=light&amp;sidebar=collapsed&amp;session=default&amp;workspace_id=&amp;channel_id=&amp;actor_id=&amp;memory_type=&amp;detail_memory_id=mem-z\""
+    ));
+    assert!(html.contains("Open selected in Memory Graph"));
+    assert!(html.contains(
+        "data-relation-detail-href=\"\" data-preview-selected=\"false\" data-preview-selected-memory-id=\"mem-z\" aria-current=\"false\""
+    ));
+    assert!(html.contains("#tau-ops-memory-graph-preview-out-of-preview"));
+}
+
+#[test]
 fn functional_spec_2909_c01_c03_memory_route_renders_scope_filter_controls() {
     let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
         auth_mode: TauOpsDashboardAuthMode::Token,
