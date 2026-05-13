@@ -4417,54 +4417,85 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
         };
     let memory_graph_preview_limit = memory_graph_preview_limit_value.to_string();
     let memory_graph_preview_count = memory_graph_preview_count_value.to_string();
-    let memory_graph_preview_selected_state = if memory_preview_selected_entry_id.trim().is_empty()
+    let memory_graph_preview_selected_index = if memory_preview_selected_entry_id.trim().is_empty()
     {
-        "none"
-    } else if filtered_memory_graph_node_rows
-        .iter()
-        .take(memory_graph_preview_limit_value)
-        .any(|row| row.memory_id.as_str() == memory_preview_selected_entry_id.as_str())
-    {
-        "matched"
+        None
     } else {
-        "out-of-preview"
+        filtered_memory_graph_node_rows
+            .iter()
+            .position(|row| row.memory_id.as_str() == memory_preview_selected_entry_id.as_str())
+    };
+    let memory_graph_preview_selected_state = match memory_graph_preview_selected_index {
+        _ if memory_preview_selected_entry_id.trim().is_empty() => "none",
+        Some(index) if index < memory_graph_preview_limit_value => "matched",
+        Some(_) => "out-of-preview",
+        None => "not-in-scope",
     };
     let memory_graph_preview_selected_memory_id = memory_preview_selected_entry_id.clone();
-    let memory_graph_preview_selected_detail_href = if memory_graph_preview_selected_memory_id
-        .is_empty()
-    {
-        String::new()
-    } else {
-        format!(
+    let memory_graph_preview_scoped_selected_detail_href =
+        if memory_graph_preview_selected_memory_id.is_empty() {
+            String::new()
+        } else {
+            format!(
                 "{memory_graph_route_href_base}&detail_memory_id={memory_graph_preview_selected_memory_id}"
             )
-    };
-    let memory_graph_preview_out_of_preview_notice =
-        if memory_graph_preview_selected_state == "out-of-preview" {
-            leptos::either::Either::Left(view! {
-                <p
-                    id="tau-ops-memory-graph-preview-out-of-preview"
-                    data-preview-selected-memory-id=memory_graph_preview_selected_memory_id.clone()
-                    data-preview-selected-state="out-of-preview"
-                    data-preview-limit=memory_graph_preview_limit.clone()
-                    data-preview-recovery-href=memory_graph_preview_selected_detail_href.clone()
-                >
-                    {format!(
-                        "Returned memory {} is outside this {} item preview.",
-                        memory_graph_preview_selected_memory_id,
-                        memory_graph_preview_limit
-                    )}
-                    <a
-                        id="tau-ops-memory-graph-preview-out-of-preview-link"
-                        href=memory_graph_preview_selected_detail_href.clone()
-                    >
-                        Open selected in Memory Graph
-                    </a>
-                </p>
-            })
-        } else {
-            leptos::either::Either::Right(())
         };
+    let memory_graph_preview_unscoped_selected_detail_href =
+        if memory_graph_preview_selected_memory_id.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "/ops/memory-graph?theme={theme_attr}&sidebar={sidebar_state_attr}&session={chat_session_key}&workspace_id=&channel_id=&actor_id=&memory_type=&detail_memory_id={memory_graph_preview_selected_memory_id}"
+            )
+        };
+    let memory_graph_preview_selection_notice = if memory_graph_preview_selected_state
+        == "out-of-preview"
+    {
+        leptos::either::Either::Left(view! {
+            <p
+                id="tau-ops-memory-graph-preview-out-of-preview"
+                data-preview-selected-memory-id=memory_graph_preview_selected_memory_id.clone()
+                data-preview-selected-state=memory_graph_preview_selected_state
+                data-preview-limit=memory_graph_preview_limit.clone()
+                data-preview-recovery-href=memory_graph_preview_scoped_selected_detail_href.clone()
+            >
+                {format!(
+                    "Returned memory {} is outside this {} item preview.",
+                    memory_graph_preview_selected_memory_id,
+                    memory_graph_preview_limit
+                )}
+                <a
+                    id="tau-ops-memory-graph-preview-out-of-preview-link"
+                    href=memory_graph_preview_scoped_selected_detail_href.clone()
+                >
+                    Open selected in Memory Graph
+                </a>
+            </p>
+        })
+    } else if memory_graph_preview_selected_state == "not-in-scope" {
+        leptos::either::Either::Left(view! {
+            <p
+                id="tau-ops-memory-graph-preview-not-in-scope"
+                data-preview-selected-memory-id=memory_graph_preview_selected_memory_id.clone()
+                data-preview-selected-state=memory_graph_preview_selected_state
+                data-preview-limit=memory_graph_preview_limit.clone()
+                data-preview-recovery-href=memory_graph_preview_unscoped_selected_detail_href.clone()
+            >
+                {format!(
+                    "Returned memory {} is not present in this graph scope.",
+                    memory_graph_preview_selected_memory_id
+                )}
+                <a
+                    id="tau-ops-memory-graph-preview-not-in-scope-link"
+                    href=memory_graph_preview_unscoped_selected_detail_href.clone()
+                >
+                    Try unfiltered Memory Graph
+                </a>
+            </p>
+        })
+    } else {
+        leptos::either::Either::Right(())
+    };
     let memory_graph_preview_view = if memory_search_rows.is_empty()
         && !filtered_memory_graph_node_rows.is_empty()
     {
@@ -4480,7 +4511,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                 data-preview-selected-state=memory_graph_preview_selected_state
             >
                 <h3>Graph-backed entries</h3>
-                {memory_graph_preview_out_of_preview_notice}
+                {memory_graph_preview_selection_notice}
                 <ul id="tau-ops-memory-graph-preview-list">
                     {
                         filtered_memory_graph_node_rows
@@ -6976,7 +7007,8 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     background: #102b3a;
                     box-shadow: inset 3px 0 0 #7fb4ff;
                 }
-                #tau-ops-memory-graph-preview-out-of-preview {
+                #tau-ops-memory-graph-preview-out-of-preview,
+                #tau-ops-memory-graph-preview-not-in-scope {
                     display: flex;
                     flex-wrap: wrap;
                     gap: 8px;
@@ -6990,7 +7022,8 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     font-size: .72rem;
                     font-weight: 760;
                 }
-                #tau-ops-memory-graph-preview-out-of-preview a {
+                #tau-ops-memory-graph-preview-out-of-preview a,
+                #tau-ops-memory-graph-preview-not-in-scope a {
                     color: #9cc8ff;
                     font-weight: 820;
                 }

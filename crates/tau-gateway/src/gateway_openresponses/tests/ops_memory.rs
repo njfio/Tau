@@ -163,6 +163,31 @@ async fn integration_spec_2905_c01_c02_c03_ops_memory_route_renders_relevant_sea
         "id=\"tau-ops-memory-graph-preview-out-of-preview-link\" href=\"/ops/memory-graph?theme=light&amp;sidebar=collapsed&amp;session=ops-memory-search&amp;workspace_id=&amp;channel_id=&amp;actor_id=&amp;memory_type=&amp;detail_memory_id=mem-match-6\""
     ));
 
+    let not_in_scope_response = client
+        .get(format!(
+            "http://{addr}/ops/memory?theme=light&sidebar=collapsed&session={session_key}&query=NoHitTerm&preview_memory_id=mem-not-present"
+        ))
+        .send()
+        .await
+        .expect("ops memory no-hit request with not-in-scope selected memory");
+    assert_eq!(not_in_scope_response.status(), StatusCode::OK);
+    let not_in_scope_body = not_in_scope_response
+        .text()
+        .await
+        .expect("read not-in-scope ops memory empty body");
+    assert!(not_in_scope_body.contains(
+        "id=\"tau-ops-memory-graph-preview\" data-preview-count=\"5\" data-preview-limit=\"5\" data-node-count=\"7\" data-edge-count=\"0\" data-graph-state=\"graph available\" data-preview-selected-memory-id=\"mem-not-present\" data-preview-selected-state=\"not-in-scope\""
+    ));
+    assert!(not_in_scope_body.contains(
+        "id=\"tau-ops-memory-graph-preview-not-in-scope\" data-preview-selected-memory-id=\"mem-not-present\" data-preview-selected-state=\"not-in-scope\" data-preview-limit=\"5\""
+    ));
+    assert!(not_in_scope_body
+        .contains("Returned memory mem-not-present is not present in this graph scope."));
+    assert!(not_in_scope_body.contains(
+        "id=\"tau-ops-memory-graph-preview-not-in-scope-link\" href=\"/ops/memory-graph?theme=light&amp;sidebar=collapsed&amp;session=ops-memory-search&amp;workspace_id=&amp;channel_id=&amp;actor_id=&amp;memory_type=&amp;detail_memory_id=mem-not-present\""
+    ));
+    assert!(not_in_scope_body.contains("Try unfiltered Memory Graph"));
+
     let graph_detail_response = client
         .get(format!(
             "http://{addr}/ops/memory-graph?theme=light&sidebar=collapsed&session={session_key}&detail_memory_id=mem-match-1"

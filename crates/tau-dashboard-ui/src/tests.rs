@@ -4462,6 +4462,47 @@ fn functional_spec_2905_c03a_memory_preview_explains_out_of_preview_return() {
         command_center: TauOpsDashboardCommandCenterSnapshot::default(),
         chat: TauOpsDashboardChatSnapshot {
             memory_preview_selected_entry_id: "mem-z".to_string(),
+            memory_graph_node_rows: ["a", "b", "c", "d", "e", "z"]
+                .iter()
+                .map(|suffix| TauOpsDashboardMemoryGraphNodeRow {
+                    memory_id: format!("mem-{suffix}"),
+                    summary: format!("Memory {suffix} summary"),
+                    memory_type: "goal".to_string(),
+                    importance: "0.6000".to_string(),
+                })
+                .collect(),
+            ..TauOpsDashboardChatSnapshot::default()
+        },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
+    });
+
+    assert!(html.contains(
+        "id=\"tau-ops-memory-graph-preview\" data-preview-count=\"5\" data-preview-limit=\"5\" data-node-count=\"6\" data-edge-count=\"0\" data-graph-state=\"graph available\" data-preview-selected-memory-id=\"mem-z\" data-preview-selected-state=\"out-of-preview\""
+    ));
+    assert!(html.contains(
+        "id=\"tau-ops-memory-graph-preview-out-of-preview\" data-preview-selected-memory-id=\"mem-z\" data-preview-selected-state=\"out-of-preview\" data-preview-limit=\"5\" data-preview-recovery-href=\"/ops/memory-graph?theme=light&amp;sidebar=collapsed&amp;session=default&amp;workspace_id=&amp;channel_id=&amp;actor_id=&amp;memory_type=&amp;detail_memory_id=mem-z\""
+    ));
+    assert!(html.contains("Returned memory mem-z is outside this 5 item preview."));
+    assert!(html.contains(
+        "id=\"tau-ops-memory-graph-preview-out-of-preview-link\" href=\"/ops/memory-graph?theme=light&amp;sidebar=collapsed&amp;session=default&amp;workspace_id=&amp;channel_id=&amp;actor_id=&amp;memory_type=&amp;detail_memory_id=mem-z\""
+    ));
+    assert!(html.contains("Open selected in Memory Graph"));
+    assert!(html.contains(
+        "data-relation-detail-href=\"\" data-preview-selected=\"false\" data-preview-selected-memory-id=\"mem-z\" aria-current=\"false\""
+    ));
+    assert!(html.contains("#tau-ops-memory-graph-preview-out-of-preview"));
+}
+
+#[test]
+fn functional_spec_2905_c03a_memory_preview_explains_not_in_scope_return() {
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        auth_mode: TauOpsDashboardAuthMode::Token,
+        active_route: TauOpsDashboardRoute::Memory,
+        theme: TauOpsDashboardTheme::Light,
+        sidebar_state: TauOpsDashboardSidebarState::Collapsed,
+        command_center: TauOpsDashboardCommandCenterSnapshot::default(),
+        chat: TauOpsDashboardChatSnapshot {
+            memory_preview_selected_entry_id: "mem-z".to_string(),
             memory_graph_node_rows: vec![
                 TauOpsDashboardMemoryGraphNodeRow {
                     memory_id: "mem-a".to_string(),
@@ -4482,20 +4523,20 @@ fn functional_spec_2905_c03a_memory_preview_explains_out_of_preview_return() {
     });
 
     assert!(html.contains(
-        "id=\"tau-ops-memory-graph-preview\" data-preview-count=\"2\" data-preview-limit=\"5\" data-node-count=\"2\" data-edge-count=\"0\" data-graph-state=\"graph available\" data-preview-selected-memory-id=\"mem-z\" data-preview-selected-state=\"out-of-preview\""
+        "id=\"tau-ops-memory-graph-preview\" data-preview-count=\"2\" data-preview-limit=\"5\" data-node-count=\"2\" data-edge-count=\"0\" data-graph-state=\"graph available\" data-preview-selected-memory-id=\"mem-z\" data-preview-selected-state=\"not-in-scope\""
     ));
     assert!(html.contains(
-        "id=\"tau-ops-memory-graph-preview-out-of-preview\" data-preview-selected-memory-id=\"mem-z\" data-preview-selected-state=\"out-of-preview\" data-preview-limit=\"5\" data-preview-recovery-href=\"/ops/memory-graph?theme=light&amp;sidebar=collapsed&amp;session=default&amp;workspace_id=&amp;channel_id=&amp;actor_id=&amp;memory_type=&amp;detail_memory_id=mem-z\""
+        "id=\"tau-ops-memory-graph-preview-not-in-scope\" data-preview-selected-memory-id=\"mem-z\" data-preview-selected-state=\"not-in-scope\" data-preview-limit=\"5\" data-preview-recovery-href=\"/ops/memory-graph?theme=light&amp;sidebar=collapsed&amp;session=default&amp;workspace_id=&amp;channel_id=&amp;actor_id=&amp;memory_type=&amp;detail_memory_id=mem-z\""
     ));
-    assert!(html.contains("Returned memory mem-z is outside this 5 item preview."));
+    assert!(html.contains("Returned memory mem-z is not present in this graph scope."));
     assert!(html.contains(
-        "id=\"tau-ops-memory-graph-preview-out-of-preview-link\" href=\"/ops/memory-graph?theme=light&amp;sidebar=collapsed&amp;session=default&amp;workspace_id=&amp;channel_id=&amp;actor_id=&amp;memory_type=&amp;detail_memory_id=mem-z\""
+        "id=\"tau-ops-memory-graph-preview-not-in-scope-link\" href=\"/ops/memory-graph?theme=light&amp;sidebar=collapsed&amp;session=default&amp;workspace_id=&amp;channel_id=&amp;actor_id=&amp;memory_type=&amp;detail_memory_id=mem-z\""
     ));
-    assert!(html.contains("Open selected in Memory Graph"));
+    assert!(html.contains("Try unfiltered Memory Graph"));
     assert!(html.contains(
         "data-relation-detail-href=\"\" data-preview-selected=\"false\" data-preview-selected-memory-id=\"mem-z\" aria-current=\"false\""
     ));
-    assert!(html.contains("#tau-ops-memory-graph-preview-out-of-preview"));
+    assert!(html.contains("#tau-ops-memory-graph-preview-not-in-scope"));
 }
 
 #[test]
