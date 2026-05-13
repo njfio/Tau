@@ -4455,7 +4455,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     .count();
                                 let connected_relation_count =
                                     connected_relation_count_value.to_string();
-                                let relation_sample = filtered_memory_graph_edge_rows
+                                let (relation_sample, relation_sample_target_memory_id) = filtered_memory_graph_edge_rows
                                     .iter()
                                     .find(|edge| {
                                         edge.source_memory_id.as_str() == row.memory_id.as_str()
@@ -4463,30 +4463,69 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     })
                                     .map(|edge| {
                                         if edge.source_memory_id.as_str() == row.memory_id.as_str() {
-                                            format!(
-                                                "{} -> {} {}",
-                                                edge.source_memory_id,
-                                                edge.target_memory_id,
-                                                edge.relation_type
+                                            (
+                                                format!(
+                                                    "{} -> {} {}",
+                                                    edge.source_memory_id,
+                                                    edge.target_memory_id,
+                                                    edge.relation_type
+                                                ),
+                                                edge.target_memory_id.clone(),
                                             )
                                         } else {
-                                            format!(
-                                                "{} <- {} {}",
-                                                edge.target_memory_id,
-                                                edge.source_memory_id,
-                                                edge.relation_type
+                                            (
+                                                format!(
+                                                    "{} <- {} {}",
+                                                    edge.target_memory_id,
+                                                    edge.source_memory_id,
+                                                    edge.relation_type
+                                                ),
+                                                edge.source_memory_id.clone(),
                                             )
                                         }
                                     })
-                                    .unwrap_or_else(|| "no connected relations".to_string());
+                                    .unwrap_or_else(|| {
+                                        ("no connected relations".to_string(), String::new())
+                                    });
+                                let relation_sample_detail_href =
+                                    if relation_sample_target_memory_id.is_empty() {
+                                        String::new()
+                                    } else {
+                                        format!(
+                                            "{memory_graph_route_href_base}&detail_memory_id={relation_sample_target_memory_id}"
+                                        )
+                                    };
+                                let relation_sample_detail_href_attr =
+                                    relation_sample_detail_href.clone();
+                                let relation_sample_target_memory_id_attr =
+                                    relation_sample_target_memory_id.clone();
+                                let relation_sample_view =
+                                    if relation_sample_target_memory_id.is_empty() {
+                                        leptos::either::Either::Left(view! {
+                                            <span
+                                                data-memory-graph-preview-relation-empty=row.memory_id.clone()
+                                            >
+                                                {relation_sample.clone()}
+                                            </span>
+                                        })
+                                    } else {
+                                        leptos::either::Either::Right(view! {
+                                            <a
+                                                data-memory-graph-preview-relation-link=row.memory_id.clone()
+                                                data-relation-target-memory-id=relation_sample_target_memory_id.clone()
+                                                href=relation_sample_detail_href.clone()
+                                            >
+                                                {relation_sample.clone()}
+                                            </a>
+                                        })
+                                    };
                                 let preview_summary = format!(
-                                    "{} | id {} | type {} | importance {} | relations {} | {}",
+                                    "{} | id {} | type {} | importance {} | relations {}",
                                     preview_title,
                                     row.memory_id,
                                     row.memory_type,
                                     row.importance,
-                                    connected_relation_count,
-                                    relation_sample
+                                    connected_relation_count
                                 );
                                 view! {
                                     <li
@@ -4498,6 +4537,8 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                         data-summary=preview_title
                                         data-relation-count=connected_relation_count
                                         data-relation-sample=relation_sample
+                                        data-relation-target-memory-id=relation_sample_target_memory_id_attr
+                                        data-relation-detail-href=relation_sample_detail_href_attr
                                     >
                                         <a
                                             data-memory-graph-preview-link=row.memory_id.clone()
@@ -4505,6 +4546,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                         >
                                             {preview_summary}
                                         </a>
+                                        {relation_sample_view}
                                     </li>
                                 }
                             })

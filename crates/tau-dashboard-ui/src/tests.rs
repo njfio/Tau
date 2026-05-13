@@ -4349,10 +4349,14 @@ fn functional_spec_2905_c04_memory_route_reports_graph_counts_when_results_are_e
     assert!(html.contains("data-summary=\"Keep plugin registry hot reload safe\""));
     assert!(html
         .contains("data-relation-count=\"1\" data-relation-sample=\"mem-a -&gt; mem-b supports\""));
+    assert!(html.contains("data-relation-target-memory-id=\"mem-b\" data-relation-detail-href=\"/ops/memory-graph?theme=light&amp;sidebar=collapsed&amp;session=default&amp;workspace_id=&amp;channel_id=&amp;actor_id=&amp;memory_type=&amp;detail_memory_id=mem-b\""));
     assert!(html.contains(
         "Keep plugin registry hot reload safe | id mem-a | type goal | importance 0.8000"
     ));
-    assert!(html.contains("relations 1 | mem-a -&gt; mem-b supports"));
+    assert!(html.contains("relations 1"));
+    assert!(html.contains("data-memory-graph-preview-relation-link=\"mem-a\""));
+    assert!(html.contains("href=\"/ops/memory-graph?theme=light&amp;sidebar=collapsed&amp;session=default&amp;workspace_id=&amp;channel_id=&amp;actor_id=&amp;memory_type=&amp;detail_memory_id=mem-b\""));
+    assert!(html.contains("mem-a -&gt; mem-b supports"));
     assert!(html.contains("href=\"/ops/memory-graph?theme=light&amp;sidebar=collapsed&amp;session=default&amp;workspace_id=&amp;channel_id=&amp;actor_id=&amp;memory_type=&amp;detail_memory_id=mem-a\""));
 }
 
