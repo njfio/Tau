@@ -454,6 +454,7 @@ pub struct TauOpsDashboardChatSnapshot {
     pub memory_create_relation_weight: String,
     pub memory_delete_status: String,
     pub memory_delete_deleted_entry_id: String,
+    pub memory_preview_selected_entry_id: String,
     pub memory_detail_visible: bool,
     pub memory_detail_selected_entry_id: String,
     pub memory_detail_summary: String,
@@ -550,6 +551,7 @@ impl Default for TauOpsDashboardChatSnapshot {
             memory_create_relation_weight: String::new(),
             memory_delete_status: "idle".to_string(),
             memory_delete_deleted_entry_id: String::new(),
+            memory_preview_selected_entry_id: String::new(),
             memory_detail_visible: false,
             memory_detail_selected_entry_id: String::new(),
             memory_detail_summary: String::new(),
@@ -4177,6 +4179,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     } else {
         "false"
     };
+    let memory_preview_selected_entry_id = context.chat.memory_preview_selected_entry_id.clone();
     let memory_detail_selected_entry_id = context.chat.memory_detail_selected_entry_id.clone();
     let memory_detail_memory_type = context.chat.memory_detail_memory_type.clone();
     let memory_detail_embedding_source = context.chat.memory_detail_embedding_source.clone();
@@ -4414,6 +4417,19 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
         };
     let memory_graph_preview_limit = memory_graph_preview_limit_value.to_string();
     let memory_graph_preview_count = memory_graph_preview_count_value.to_string();
+    let memory_graph_preview_selected_state = if memory_preview_selected_entry_id.trim().is_empty()
+    {
+        "none"
+    } else if filtered_memory_graph_node_rows
+        .iter()
+        .take(memory_graph_preview_limit_value)
+        .any(|row| row.memory_id.as_str() == memory_preview_selected_entry_id.as_str())
+    {
+        "matched"
+    } else {
+        "out-of-preview"
+    };
+    let memory_graph_preview_selected_memory_id = memory_preview_selected_entry_id.clone();
     let memory_graph_preview_view = if memory_search_rows.is_empty()
         && !filtered_memory_graph_node_rows.is_empty()
     {
@@ -4425,6 +4441,8 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                 data-node-count=memory_graph_node_count.clone()
                 data-edge-count=memory_graph_edge_count.clone()
                 data-graph-state=memory_graph_scope_state_label
+                data-preview-selected-memory-id=memory_graph_preview_selected_memory_id.clone()
+                data-preview-selected-state=memory_graph_preview_selected_state
             >
                 <h3>Graph-backed entries</h3>
                 <ul id="tau-ops-memory-graph-preview-list">
@@ -4435,6 +4453,25 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             .enumerate()
                             .map(|(index, row)| {
                                 let row_id = format!("tau-ops-memory-graph-preview-row-{index}");
+                                let preview_selected = !memory_preview_selected_entry_id.is_empty()
+                                    && row.memory_id.as_str() == memory_preview_selected_entry_id.as_str();
+                                let preview_selected_attr = if preview_selected {
+                                    "true"
+                                } else {
+                                    "false"
+                                };
+                                let preview_return_badge = if preview_selected {
+                                    leptos::either::Either::Left(view! {
+                                        <span
+                                            id=format!("tau-ops-memory-graph-preview-return-badge-{index}")
+                                            data-memory-graph-preview-return-badge=row.memory_id.clone()
+                                        >
+                                            Returned from graph detail
+                                        </span>
+                                    })
+                                } else {
+                                    leptos::either::Either::Right(())
+                                };
                                 let node_detail_href = format!(
                                     "{memory_graph_route_href_base}&detail_memory_id={}",
                                     row.memory_id
@@ -4539,6 +4576,9 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                         data-relation-sample=relation_sample
                                         data-relation-target-memory-id=relation_sample_target_memory_id_attr
                                         data-relation-detail-href=relation_sample_detail_href_attr
+                                        data-preview-selected=preview_selected_attr
+                                        data-preview-selected-memory-id=memory_graph_preview_selected_memory_id.clone()
+                                        aria-current=preview_selected_attr
                                     >
                                         <a
                                             data-memory-graph-preview-link=row.memory_id.clone()
@@ -4547,6 +4587,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                             {preview_summary}
                                         </a>
                                         {relation_sample_view}
+                                        {preview_return_badge}
                                     </li>
                                 }
                             })
@@ -6893,6 +6934,24 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                 #tau-ops-memory-graph-edges li[data-edge-hover-highlighted="true"] {
                     border-color: #7fb4ff;
                     background: #102b3a;
+                }
+                #tau-ops-memory-graph-preview-list li[data-preview-selected="true"] {
+                    border-color: #7fb4ff;
+                    background: #102b3a;
+                    box-shadow: inset 3px 0 0 #7fb4ff;
+                }
+                #tau-ops-memory-graph-preview-list [data-memory-graph-preview-return-badge] {
+                    display: inline-flex;
+                    width: max-content;
+                    margin-left: 8px;
+                    border: 1px solid #315f7a;
+                    border-radius: 999px;
+                    padding: 2px 7px;
+                    background: #0d2230;
+                    color: #b8ddff;
+                    font-size: .66rem;
+                    font-weight: 820;
+                    text-transform: uppercase;
                 }
                 #tau-ops-kpi-grid {
                     display: grid;

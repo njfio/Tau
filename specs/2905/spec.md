@@ -13,6 +13,7 @@ In scope:
 - Add graph availability counts to the Memory Scope summary so zero search results do not imply the graph store is empty.
 - Add a compact graph-backed preview on zero-result pages so operators can inspect available memory nodes without leaving Memory Explorer.
 - Preserve the graph-backed preview return context when operators follow a preview node or relation into Memory Graph detail and then return to Memory Explorer.
+- Mark the returned graph-backed preview row as selected when Memory Explorer receives a `preview_memory_id`.
 
 Out of scope:
 - Memory graph route behavior beyond displaying its counts in the Memory Scope summary.
@@ -38,7 +39,7 @@ then a deterministic empty-state marker is shown and result row count is zero.
 ### AC-3a Memory Scope distinguishes search rows from graph availability
 Given `/ops/memory` has zero search result rows but graph rows are available,
 when `/ops/memory` renders,
-then the Memory Scope summary and empty-state row expose deterministic graph node/edge counts and graph state markers, the empty-state copy states that only search rows are empty, a bounded graph-backed node preview renders memory summaries with node metadata plus navigable relation samples, and Memory Graph detail return links preserve the originating preview memory and row anchor when available.
+then the Memory Scope summary and empty-state row expose deterministic graph node/edge counts and graph state markers, the empty-state copy states that only search rows are empty, a bounded graph-backed node preview renders memory summaries with node metadata plus navigable relation samples, Memory Graph detail return links preserve the originating preview memory and row anchor when available, and the returned preview row is visibly and deterministically marked as selected.
 
 ### AC-4 Existing route contracts remain intact
 Given existing ops/chat/sessions/detail contracts,
@@ -51,7 +52,7 @@ then existing suites remain green.
 | C-01 | AC-1 | Functional | `/ops/memory?query=<q>` | render memory route | form/action/query markers are present and query preserved |
 | C-02 | AC-2 | Integration | persisted memory entries containing query terms | render `/ops/memory?query=<q>` | deterministic result rows include relevant entries |
 | C-03 | AC-3 | Functional | query with no matches | render memory route | empty-state marker present and result count zero |
-| C-03a | AC-3a | Functional/Integration | zero search rows with graph rows available | render memory route and follow a preview node/relation into graph detail | scope summary and empty row show graph node/edge counts, graph state, graph-aware copy, bounded graph-backed node preview with summaries plus relation sample links, and graph detail return links include `preview_memory_id` plus the preview row anchor |
+| C-03a | AC-3a | Functional/Integration | zero search rows with graph rows available | render memory route and follow a preview node/relation into graph detail, then return with `preview_memory_id` | scope summary and empty row show graph node/edge counts, graph state, graph-aware copy, bounded graph-backed node preview with summaries plus relation sample links, graph detail return links include `preview_memory_id` plus the preview row anchor, and the returned preview row carries selected markers plus visible selected copy |
 | C-04 | AC-4 | Regression | existing contracts | rerun selected suites | chat/session/dashboard contracts remain green |
 
 ## Success Metrics / Signals

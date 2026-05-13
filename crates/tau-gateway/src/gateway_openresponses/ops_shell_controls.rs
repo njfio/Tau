@@ -37,6 +37,8 @@ pub(super) struct OpsShellControlsQuery {
     #[serde(default)]
     detail_memory_id: String,
     #[serde(default)]
+    preview_memory_id: String,
+    #[serde(default)]
     graph_zoom: String,
     #[serde(default)]
     graph_pan_x: String,
@@ -294,6 +296,15 @@ impl OpsShellControlsQuery {
 
     pub(super) fn requested_memory_detail_entry_id(&self) -> Option<String> {
         let value = self.detail_memory_id.trim();
+        if value.is_empty() {
+            None
+        } else {
+            Some(value.to_string())
+        }
+    }
+
+    pub(super) fn requested_memory_preview_entry_id(&self) -> Option<String> {
+        let value = self.preview_memory_id.trim();
         if value.is_empty() {
             None
         } else {
@@ -685,6 +696,21 @@ mod tests {
 
         let empty = OpsShellControlsQuery::default();
         assert_eq!(empty.requested_memory_detail_entry_id(), None);
+    }
+
+    #[test]
+    fn unit_requested_memory_preview_entry_id_trims_and_normalizes_empty_values() {
+        let valid = OpsShellControlsQuery {
+            preview_memory_id: " mem-preview-1 ".to_string(),
+            ..OpsShellControlsQuery::default()
+        };
+        assert_eq!(
+            valid.requested_memory_preview_entry_id().as_deref(),
+            Some("mem-preview-1")
+        );
+
+        let empty = OpsShellControlsQuery::default();
+        assert_eq!(empty.requested_memory_preview_entry_id(), None);
     }
 
     #[test]

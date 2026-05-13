@@ -1268,6 +1268,9 @@ fn collect_tau_ops_dashboard_chat_snapshot(
     let memory_delete_deleted_entry_id = controls
         .requested_memory_deleted_entry_id()
         .unwrap_or_default();
+    let memory_preview_selected_entry_id = controls
+        .requested_memory_preview_entry_id()
+        .unwrap_or_default();
     let mut memory_search_rows = Vec::new();
     let mut memory_detail_visible = false;
     let mut memory_detail_selected_entry_id = controls
@@ -1548,6 +1551,7 @@ fn collect_tau_ops_dashboard_chat_snapshot(
         memory_create_relation_weight: String::new(),
         memory_delete_status,
         memory_delete_deleted_entry_id,
+        memory_preview_selected_entry_id,
         memory_detail_visible,
         memory_detail_selected_entry_id,
         memory_detail_summary,
