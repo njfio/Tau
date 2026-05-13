@@ -11,6 +11,7 @@ In scope:
 - Add gateway integration tests proving persisted memory entries surface as relevant search rows.
 - Add empty-state contracts for no-match searches.
 - Add graph availability counts to the Memory Scope summary so zero search results do not imply the graph store is empty.
+- Add a compact graph-backed preview on zero-result pages so operators can inspect available memory nodes without leaving Memory Explorer.
 
 Out of scope:
 - Memory graph route behavior beyond displaying its counts in the Memory Scope summary.
@@ -36,7 +37,7 @@ then a deterministic empty-state marker is shown and result row count is zero.
 ### AC-3a Memory Scope distinguishes search rows from graph availability
 Given `/ops/memory` has zero search result rows but graph rows are available,
 when `/ops/memory` renders,
-then the Memory Scope summary and empty-state row expose deterministic graph node/edge counts and graph state markers, and the empty-state copy states that only search rows are empty.
+then the Memory Scope summary and empty-state row expose deterministic graph node/edge counts and graph state markers, the empty-state copy states that only search rows are empty, and a bounded graph-backed node preview is rendered.
 
 ### AC-4 Existing route contracts remain intact
 Given existing ops/chat/sessions/detail contracts,
@@ -49,7 +50,7 @@ then existing suites remain green.
 | C-01 | AC-1 | Functional | `/ops/memory?query=<q>` | render memory route | form/action/query markers are present and query preserved |
 | C-02 | AC-2 | Integration | persisted memory entries containing query terms | render `/ops/memory?query=<q>` | deterministic result rows include relevant entries |
 | C-03 | AC-3 | Functional | query with no matches | render memory route | empty-state marker present and result count zero |
-| C-03a | AC-3a | Functional/Integration | zero search rows with graph rows available | render memory route | scope summary and empty row show graph node/edge counts, graph state, and graph-aware copy |
+| C-03a | AC-3a | Functional/Integration | zero search rows with graph rows available | render memory route | scope summary and empty row show graph node/edge counts, graph state, graph-aware copy, and bounded graph-backed node preview |
 | C-04 | AC-4 | Regression | existing contracts | rerun selected suites | chat/session/dashboard contracts remain green |
 
 ## Success Metrics / Signals

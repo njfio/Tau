@@ -4298,6 +4298,7 @@ fn functional_spec_2905_c01_c03_memory_route_renders_search_panel_and_empty_stat
     assert!(html.contains("id=\"tau-ops-memory-results\" data-result-count=\"0\""));
     assert!(html.contains("id=\"tau-ops-memory-empty-state\" data-empty-state=\"true\" data-graph-node-count=\"0\" data-graph-edge-count=\"0\" data-graph-state=\"empty graph\""));
     assert!(html.contains("No memory matches found."));
+    assert!(!html.contains("id=\"tau-ops-memory-graph-preview\""));
 }
 
 #[test]
@@ -4340,6 +4341,11 @@ fn functional_spec_2905_c04_memory_route_reports_graph_counts_when_results_are_e
     assert!(html.contains("id=\"tau-ops-memory-empty-state\" data-empty-state=\"true\" data-graph-node-count=\"2\" data-graph-edge-count=\"1\" data-graph-state=\"graph available\""));
     assert!(html
         .contains("No search rows match this scope. Memory graph still has 2 nodes and 1 edge."));
+    assert!(html.contains("id=\"tau-ops-memory-graph-preview\" data-preview-count=\"2\" data-preview-limit=\"5\" data-node-count=\"2\" data-edge-count=\"1\" data-graph-state=\"graph available\""));
+    assert!(html.contains("id=\"tau-ops-memory-graph-preview-list\""));
+    assert!(html.contains("id=\"tau-ops-memory-graph-preview-row-0\" data-memory-id=\"mem-a\" data-memory-type=\"goal\" data-importance=\"0.8000\""));
+    assert!(html.contains("mem-a | type goal | importance 0.8000"));
+    assert!(html.contains("href=\"/ops/memory-graph?theme=light&amp;sidebar=collapsed&amp;session=default&amp;workspace_id=&amp;channel_id=&amp;actor_id=&amp;memory_type=&amp;detail_memory_id=mem-a\""));
 }
 
 #[test]

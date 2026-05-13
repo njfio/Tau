@@ -4402,6 +4402,73 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     } else {
         "No memory matches found.".to_string()
     };
+    let memory_graph_preview_limit_value = 5usize;
+    let memory_graph_preview_count_value =
+        if memory_search_rows.is_empty() && !filtered_memory_graph_node_rows.is_empty() {
+            filtered_memory_graph_node_rows
+                .len()
+                .min(memory_graph_preview_limit_value)
+        } else {
+            0
+        };
+    let memory_graph_preview_limit = memory_graph_preview_limit_value.to_string();
+    let memory_graph_preview_count = memory_graph_preview_count_value.to_string();
+    let memory_graph_preview_view = if memory_search_rows.is_empty()
+        && !filtered_memory_graph_node_rows.is_empty()
+    {
+        leptos::either::Either::Left(view! {
+            <section
+                id="tau-ops-memory-graph-preview"
+                data-preview-count=memory_graph_preview_count.clone()
+                data-preview-limit=memory_graph_preview_limit.clone()
+                data-node-count=memory_graph_node_count.clone()
+                data-edge-count=memory_graph_edge_count.clone()
+                data-graph-state=memory_graph_scope_state_label
+            >
+                <h3>Graph-backed entries</h3>
+                <ul id="tau-ops-memory-graph-preview-list">
+                    {
+                        filtered_memory_graph_node_rows
+                            .iter()
+                            .take(memory_graph_preview_limit_value)
+                            .enumerate()
+                            .map(|(index, row)| {
+                                let row_id = format!("tau-ops-memory-graph-preview-row-{index}");
+                                let node_detail_href = format!(
+                                    "{memory_graph_route_href_base}&detail_memory_id={}",
+                                    row.memory_id
+                                );
+                                let node_detail_href_attr = node_detail_href.clone();
+                                let node_detail_href_link = node_detail_href;
+                                let preview_summary = format!(
+                                    "{} | type {} | importance {}",
+                                    row.memory_id, row.memory_type, row.importance
+                                );
+                                view! {
+                                    <li
+                                        id=row_id
+                                        data-memory-id=row.memory_id.clone()
+                                        data-memory-type=row.memory_type.clone()
+                                        data-importance=row.importance.clone()
+                                        data-node-detail-href=node_detail_href_attr
+                                    >
+                                        <a
+                                            data-memory-graph-preview-link=row.memory_id.clone()
+                                            href=node_detail_href_link
+                                        >
+                                            {preview_summary}
+                                        </a>
+                                    </li>
+                                }
+                            })
+                            .collect_view()
+                    }
+                </ul>
+            </section>
+        })
+    } else {
+        leptos::either::Either::Right(())
+    };
     let memory_results_view = if memory_search_rows.is_empty() {
         leptos::either::Either::Left(view! {
             <li
@@ -8937,6 +9004,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             <ul id="tau-ops-memory-results" data-result-count=memory_result_count_list_attr>
                                 {memory_results_view}
                             </ul>
+                            {memory_graph_preview_view}
                         </section>
                         <section
                             id="tau-ops-memory-graph-panel"
