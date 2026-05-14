@@ -5,7 +5,8 @@
 2. Add RED gateway integration tests for selected-memory embedding metadata and
    relation row rendering.
 3. Implement minimal selected-memory detail flow and deterministic SSR markers.
-4. Run regression and verification gates for existing memory slices.
+4. Add detail-panel proof that stored outgoing relations and graph-connected incoming/outgoing relations are separate counts with deterministic graph-relation links.
+5. Run regression and verification gates for existing memory slices.
 
 ## Affected Modules
 - `crates/tau-dashboard-ui/src/lib.rs`
@@ -25,3 +26,4 @@
 ## Interface / Contract Notes
 - `/ops/memory` query controls gain selected-detail key marker support.
 - No external API additions; behavior remains within ops-shell route rendering.
+- Detail panels keep `data-relation-count` as the stored-detail relation count and add `data-graph-relation-count`, `#tau-ops-memory-detail-relation-scope`, and `#tau-ops-memory-graph-relations` for graph-connected relation proof.

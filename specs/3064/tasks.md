@@ -11,3 +11,5 @@
 5. [x] T5 (VERIFY): run `cargo fmt --check`,
    `cargo clippy -p tau-dashboard-ui -p tau-gateway -- -D warnings`, and
    scoped spec suites.
+6. [x] T6 (GREEN): add separate stored-detail and graph-connected relation
+   counts plus graph relation links on selected memory detail panels.

@@ -1095,9 +1095,31 @@ async fn integration_spec_3064_c02_c03_ops_memory_detail_panel_renders_embedding
         .expect("create detail target entry");
     assert_eq!(detail_target_create.status(), StatusCode::OK);
 
+    let incoming_detail_create = client
+        .post(format!("http://{addr}/ops/memory"))
+        .form(&[
+            ("theme", "light"),
+            ("sidebar", "collapsed"),
+            ("session", session_key),
+            ("operation", "create"),
+            ("entry_id", "mem-detail-incoming"),
+            ("summary", "DetailToken incoming relation"),
+            ("workspace_id", "workspace-detail"),
+            ("channel_id", "channel-detail"),
+            ("actor_id", "operator"),
+            ("memory_type", "fact"),
+            ("relation_target_id", "mem-detail-target"),
+            ("relation_type", "related_to"),
+            ("relation_weight", "0.75"),
+        ])
+        .send()
+        .await
+        .expect("create incoming detail relation entry");
+    assert_eq!(incoming_detail_create.status(), StatusCode::OK);
+
     let detail_response = client
         .get(format!(
-            "http://{addr}/ops/memory?theme=light&sidebar=collapsed&session={session_key}&query=DetailToken&workspace_id=workspace-detail&channel_id=channel-detail&actor_id=operator&memory_type=goal&detail_memory_id=mem-detail-target"
+            "http://{addr}/ops/memory?theme=light&sidebar=collapsed&session={session_key}&query=DetailToken&workspace_id=workspace-detail&channel_id=channel-detail&actor_id=operator&detail_memory_id=mem-detail-target"
         ))
         .send()
         .await
@@ -1111,13 +1133,29 @@ async fn integration_spec_3064_c02_c03_ops_memory_detail_panel_renders_embedding
     assert!(detail_body.contains(
         "id=\"tau-ops-memory-detail-panel\" data-detail-visible=\"true\" data-memory-id=\"mem-detail-target\" data-memory-type=\"goal\""
     ));
+    assert!(detail_body.contains("data-relation-count=\"1\" data-graph-relation-count=\"2\""));
     assert!(detail_body
         .contains("id=\"tau-ops-memory-detail-embedding\" data-embedding-source=\"hash-fnv1a\""));
     assert!(detail_body.contains("data-embedding-reason-code=\"memory_embedding_hash_only\""));
+    assert!(detail_body.contains(
+        "id=\"tau-ops-memory-detail-relation-scope\" data-stored-relation-count=\"1\" data-graph-relation-count=\"2\""
+    ));
+    assert!(detail_body.contains("Stored detail relations: 1; graph connections in this scope: 2"));
     assert!(detail_body.contains("id=\"tau-ops-memory-relations\" data-relation-count=\"1\""));
     assert!(detail_body.contains(
         "id=\"tau-ops-memory-relation-row-0\" data-target-id=\"mem-detail-relation-target\" data-relation-type=\"related_to\""
     ));
+    assert!(detail_body.contains(
+        "id=\"tau-ops-memory-graph-relations\" data-selected-memory-id=\"mem-detail-target\" data-graph-relation-count=\"2\""
+    ));
+    assert!(detail_body.contains(
+        "data-source-memory-id=\"mem-detail-incoming\" data-target-memory-id=\"mem-detail-target\" data-connected-memory-id=\"mem-detail-incoming\""
+    ));
+    assert!(detail_body.contains("data-relation-direction=\"incoming\""));
+    assert!(detail_body.contains(
+        "data-source-memory-id=\"mem-detail-target\" data-target-memory-id=\"mem-detail-relation-target\" data-connected-memory-id=\"mem-detail-relation-target\""
+    ));
+    assert!(detail_body.contains("data-relation-direction=\"outgoing\""));
 
     handle.abort();
 }

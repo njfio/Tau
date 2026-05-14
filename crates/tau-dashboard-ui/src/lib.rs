@@ -4330,6 +4330,76 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     let memory_graph_route_href_base = format!(
         "/ops/memory-graph?theme={theme_attr}&sidebar={sidebar_state_attr}&session={chat_session_key}&workspace_id={memory_search_workspace_id}&channel_id={memory_search_channel_id}&actor_id={memory_search_actor_id}&memory_type={memory_search_memory_type}"
     );
+    let memory_detail_graph_relation_edges = if memory_detail_selected_entry_id.trim().is_empty() {
+        vec![]
+    } else {
+        filtered_memory_graph_edge_rows
+            .iter()
+            .filter(|edge| {
+                edge.source_memory_id.as_str() == memory_detail_selected_entry_id.as_str()
+                    || edge.target_memory_id.as_str() == memory_detail_selected_entry_id.as_str()
+            })
+            .cloned()
+            .collect::<Vec<_>>()
+    };
+    let memory_detail_graph_relation_count = memory_detail_graph_relation_edges.len().to_string();
+    let memory_detail_graph_relation_count_panel_attr = memory_detail_graph_relation_count.clone();
+    let memory_detail_relation_scope_summary = format!(
+        "Stored detail relations: {memory_detail_relation_count}; graph connections in this scope: {memory_detail_graph_relation_count}"
+    );
+    let memory_detail_graph_relations_view = if memory_detail_graph_relation_edges.is_empty() {
+        leptos::either::Either::Left(view! {
+            <li id="tau-ops-memory-graph-relations-empty-state" data-empty-state="true">
+                No graph connections in this scope.
+            </li>
+        })
+    } else {
+        leptos::either::Either::Right(
+            memory_detail_graph_relation_edges
+                .iter()
+                .enumerate()
+                .map(|(index, edge)| {
+                    let row_id = format!("tau-ops-memory-graph-relation-row-{index}");
+                    let is_outgoing =
+                        edge.source_memory_id.as_str() == memory_detail_selected_entry_id.as_str();
+                    let direction = if is_outgoing { "outgoing" } else { "incoming" };
+                    let connected_memory_id = if is_outgoing {
+                        edge.target_memory_id.clone()
+                    } else {
+                        edge.source_memory_id.clone()
+                    };
+                    let relation_label = if is_outgoing {
+                        format!(
+                            "{} -> {} {}",
+                            edge.source_memory_id, edge.target_memory_id, edge.relation_type
+                        )
+                    } else {
+                        format!(
+                            "{} <- {} {}",
+                            edge.target_memory_id, edge.source_memory_id, edge.relation_type
+                        )
+                    };
+                    let relation_detail_href = format!(
+                        "{memory_graph_route_href_base}&detail_memory_id={connected_memory_id}"
+                    );
+                    view! {
+                        <li
+                            id=row_id
+                            data-source-memory-id=edge.source_memory_id.clone()
+                            data-target-memory-id=edge.target_memory_id.clone()
+                            data-connected-memory-id=connected_memory_id.clone()
+                            data-relation-type=edge.relation_type.clone()
+                            data-relation-weight=edge.effective_weight.clone()
+                            data-relation-direction=direction
+                            data-relation-detail-href=relation_detail_href.clone()
+                        >
+                            <a href=relation_detail_href.clone()>{relation_label}</a>
+                        </li>
+                    }
+                })
+                .collect_view(),
+        )
+    };
     let memory_scope_graph_href = memory_graph_route_href_base.clone();
     let memory_scope_session_href = format!(
         "/ops/sessions/{chat_session_key}?theme={theme_attr}&sidebar={sidebar_state_attr}&session={chat_session_key}"
@@ -9271,6 +9341,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 data-embedding-reason-code=memory_detail_embedding_reason_code_panel_attr
                                 data-embedding-dimensions=memory_detail_embedding_dimensions_panel_attr
                                 data-relation-count=memory_detail_relation_count_panel_attr
+                                data-graph-relation-count=memory_detail_graph_relation_count_panel_attr
                             >
                                 <p
                                     id="tau-ops-memory-detail-embedding"
@@ -9281,8 +9352,22 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 >
                                     {memory_detail_summary.clone()}
                                 </p>
+                                <p
+                                    id="tau-ops-memory-detail-relation-scope"
+                                    data-stored-relation-count=memory_detail_relation_count.clone()
+                                    data-graph-relation-count=memory_detail_graph_relation_count.clone()
+                                >
+                                    {memory_detail_relation_scope_summary}
+                                </p>
                                 <ul id="tau-ops-memory-relations" data-relation-count=memory_detail_relation_count>
                                     {memory_detail_relations_view}
+                                </ul>
+                                <ul
+                                    id="tau-ops-memory-graph-relations"
+                                    data-selected-memory-id=memory_detail_selected_entry_id.clone()
+                                    data-graph-relation-count=memory_detail_graph_relation_count
+                                >
+                                    {memory_detail_graph_relations_view}
                                 </ul>
                             </section>
                             <ul id="tau-ops-memory-results" data-result-count=memory_result_count_list_attr>

@@ -11,10 +11,11 @@ use super::{
     TauOpsDashboardHarnessProposalDetail, TauOpsDashboardHarnessProposalQueueRow,
     TauOpsDashboardHarnessSelfImprovementProof, TauOpsDashboardHarnessSnapshot,
     TauOpsDashboardHarnessToolEvidenceRow, TauOpsDashboardJobRow,
-    TauOpsDashboardMemoryGraphEdgeRow, TauOpsDashboardMemoryGraphNodeRow, TauOpsDashboardRoute,
-    TauOpsDashboardSessionGraphEdgeRow, TauOpsDashboardSessionGraphNodeRow,
-    TauOpsDashboardSessionTimelineRow, TauOpsDashboardShellContext, TauOpsDashboardSidebarState,
-    TauOpsDashboardTheme, TauOpsDashboardToolInventoryRow, TauOpsDashboardToolInvocationRow,
+    TauOpsDashboardMemoryGraphEdgeRow, TauOpsDashboardMemoryGraphNodeRow,
+    TauOpsDashboardMemoryRelationRow, TauOpsDashboardRoute, TauOpsDashboardSessionGraphEdgeRow,
+    TauOpsDashboardSessionGraphNodeRow, TauOpsDashboardSessionTimelineRow,
+    TauOpsDashboardShellContext, TauOpsDashboardSidebarState, TauOpsDashboardTheme,
+    TauOpsDashboardToolInventoryRow, TauOpsDashboardToolInvocationRow,
     TauOpsDashboardToolUsageHistogramRow,
 };
 use tau_tui::{render_operator_shell_frame, OperatorShellFrame};
@@ -4943,6 +4944,69 @@ fn functional_spec_3064_c01_memory_route_renders_detail_panel_default_markers() 
     ));
     assert!(html.contains("id=\"tau-ops-memory-relations\" data-relation-count=\"0\""));
     assert!(html.contains("id=\"tau-ops-memory-relations-empty-state\" data-empty-state=\"true\""));
+    assert!(html.contains(
+        "id=\"tau-ops-memory-graph-relations\" data-selected-memory-id=\"\" data-graph-relation-count=\"0\""
+    ));
+    assert!(html
+        .contains("id=\"tau-ops-memory-graph-relations-empty-state\" data-empty-state=\"true\""));
+}
+
+#[test]
+fn functional_spec_3064_c03_memory_detail_distinguishes_stored_and_graph_relations() {
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        auth_mode: TauOpsDashboardAuthMode::Token,
+        active_route: TauOpsDashboardRoute::Memory,
+        theme: TauOpsDashboardTheme::Light,
+        sidebar_state: TauOpsDashboardSidebarState::Collapsed,
+        command_center: TauOpsDashboardCommandCenterSnapshot::default(),
+        chat: TauOpsDashboardChatSnapshot {
+            memory_detail_visible: true,
+            memory_detail_selected_entry_id: "mem-detail".to_string(),
+            memory_detail_summary: "Detail summary".to_string(),
+            memory_detail_memory_type: "goal".to_string(),
+            memory_detail_relation_rows: vec![TauOpsDashboardMemoryRelationRow {
+                target_id: "mem-outgoing".to_string(),
+                relation_type: "supports".to_string(),
+                effective_weight: "0.6600".to_string(),
+            }],
+            memory_graph_edge_rows: vec![
+                TauOpsDashboardMemoryGraphEdgeRow {
+                    source_memory_id: "mem-detail".to_string(),
+                    target_memory_id: "mem-outgoing".to_string(),
+                    relation_type: "supports".to_string(),
+                    effective_weight: "0.6600".to_string(),
+                },
+                TauOpsDashboardMemoryGraphEdgeRow {
+                    source_memory_id: "mem-incoming".to_string(),
+                    target_memory_id: "mem-detail".to_string(),
+                    relation_type: "supports".to_string(),
+                    effective_weight: "0.7500".to_string(),
+                },
+            ],
+            ..TauOpsDashboardChatSnapshot::default()
+        },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
+    });
+
+    assert!(html.contains(
+        "id=\"tau-ops-memory-detail-panel\" data-detail-visible=\"true\" data-memory-id=\"mem-detail\" data-memory-type=\"goal\""
+    ));
+    assert!(html.contains("data-relation-count=\"1\" data-graph-relation-count=\"2\""));
+    assert!(html.contains(
+        "id=\"tau-ops-memory-detail-relation-scope\" data-stored-relation-count=\"1\" data-graph-relation-count=\"2\""
+    ));
+    assert!(html.contains("Stored detail relations: 1; graph connections in this scope: 2"));
+    assert!(html.contains(
+        "id=\"tau-ops-memory-graph-relations\" data-selected-memory-id=\"mem-detail\" data-graph-relation-count=\"2\""
+    ));
+    assert!(html.contains(
+        "id=\"tau-ops-memory-graph-relation-row-0\" data-source-memory-id=\"mem-detail\" data-target-memory-id=\"mem-outgoing\" data-connected-memory-id=\"mem-outgoing\" data-relation-type=\"supports\" data-relation-weight=\"0.6600\" data-relation-direction=\"outgoing\""
+    ));
+    assert!(html.contains(
+        "id=\"tau-ops-memory-graph-relation-row-1\" data-source-memory-id=\"mem-incoming\" data-target-memory-id=\"mem-detail\" data-connected-memory-id=\"mem-incoming\" data-relation-type=\"supports\" data-relation-weight=\"0.7500\" data-relation-direction=\"incoming\""
+    ));
+    assert!(html.contains("mem-detail -&gt; mem-outgoing supports"));
+    assert!(html.contains("mem-detail &lt;- mem-incoming supports"));
 }
 
 #[test]
