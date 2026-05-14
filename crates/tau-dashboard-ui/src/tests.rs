@@ -4504,6 +4504,59 @@ fn functional_spec_2905_c03a_memory_preview_marks_returned_graph_detail_row() {
 }
 
 #[test]
+fn functional_spec_2905_c03a_memory_preview_marks_selected_detail_row() {
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        auth_mode: TauOpsDashboardAuthMode::Token,
+        active_route: TauOpsDashboardRoute::Memory,
+        theme: TauOpsDashboardTheme::Light,
+        sidebar_state: TauOpsDashboardSidebarState::Collapsed,
+        command_center: TauOpsDashboardCommandCenterSnapshot::default(),
+        chat: TauOpsDashboardChatSnapshot {
+            memory_detail_visible: true,
+            memory_detail_selected_entry_id: "mem-b".to_string(),
+            memory_detail_summary: "Registry loader uses ArcSwap".to_string(),
+            memory_detail_memory_type: "fact".to_string(),
+            memory_graph_node_rows: vec![
+                TauOpsDashboardMemoryGraphNodeRow {
+                    memory_id: "mem-a".to_string(),
+                    summary: "Keep plugin registry hot reload safe".to_string(),
+                    memory_type: "goal".to_string(),
+                    importance: "0.8000".to_string(),
+                },
+                TauOpsDashboardMemoryGraphNodeRow {
+                    memory_id: "mem-b".to_string(),
+                    summary: "Registry loader uses ArcSwap".to_string(),
+                    memory_type: "fact".to_string(),
+                    importance: "0.6000".to_string(),
+                },
+            ],
+            ..TauOpsDashboardChatSnapshot::default()
+        },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
+    });
+
+    assert!(html.contains(
+        "id=\"tau-ops-memory-graph-preview\" data-preview-count=\"2\" data-preview-limit=\"5\" data-node-count=\"2\" data-edge-count=\"0\" data-graph-state=\"graph available\" data-preview-selected-memory-id=\"\" data-preview-selected-state=\"none\""
+    ));
+    assert!(html.contains(
+        "id=\"tau-ops-memory-graph-preview-row-0\" data-memory-id=\"mem-a\" data-memory-type=\"goal\" data-importance=\"0.8000\""
+    ));
+    assert!(html.contains(
+        "data-preview-selected=\"false\" data-preview-selected-memory-id=\"\" aria-current=\"false\" data-detail-selected=\"false\" data-detail-selected-memory-id=\"mem-b\""
+    ));
+    assert!(html.contains(
+        "id=\"tau-ops-memory-graph-preview-row-1\" data-memory-id=\"mem-b\" data-memory-type=\"fact\" data-importance=\"0.6000\""
+    ));
+    assert!(html.contains(
+        "data-preview-selected=\"false\" data-preview-selected-memory-id=\"\" aria-current=\"true\" data-detail-selected=\"true\" data-detail-selected-memory-id=\"mem-b\""
+    ));
+    assert!(html.contains(
+        "id=\"tau-ops-memory-graph-preview-detail-badge-1\" data-memory-graph-preview-detail-badge=\"mem-b\""
+    ));
+    assert!(html.contains("Selected detail"));
+}
+
+#[test]
 fn functional_spec_2905_c03a_memory_preview_explains_out_of_preview_return() {
     let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
         auth_mode: TauOpsDashboardAuthMode::Token,

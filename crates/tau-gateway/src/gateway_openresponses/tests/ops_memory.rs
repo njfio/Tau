@@ -164,6 +164,27 @@ async fn integration_spec_2905_c01_c02_c03_ops_memory_route_renders_relevant_sea
     assert!(selected_empty_body.contains("data-memory-graph-preview-return-badge=\"mem-match-1\""));
     assert!(selected_empty_body.contains("Returned from graph detail"));
 
+    let detail_empty_response = client
+        .get(format!(
+            "http://{addr}/ops/memory?theme=light&sidebar=collapsed&session={session_key}&query=NoHitTerm&detail_memory_id=mem-match-1"
+        ))
+        .send()
+        .await
+        .expect("ops memory no-hit request with selected detail memory");
+    assert_eq!(detail_empty_response.status(), StatusCode::OK);
+    let detail_empty_body = detail_empty_response
+        .text()
+        .await
+        .expect("read selected detail ops memory empty body");
+    assert!(detail_empty_body.contains(
+        "id=\"tau-ops-memory-graph-preview\" data-preview-count=\"5\" data-preview-limit=\"5\" data-node-count=\"7\" data-edge-count=\"0\" data-graph-state=\"graph available\" data-preview-selected-memory-id=\"\" data-preview-selected-state=\"none\""
+    ));
+    assert!(detail_empty_body.contains(
+        "data-preview-selected=\"false\" data-preview-selected-memory-id=\"\" aria-current=\"true\" data-detail-selected=\"true\" data-detail-selected-memory-id=\"mem-match-1\""
+    ));
+    assert!(detail_empty_body.contains("data-memory-graph-preview-detail-badge=\"mem-match-1\""));
+    assert!(detail_empty_body.contains("Selected detail"));
+
     let out_of_preview_response = client
         .get(format!(
             "http://{addr}/ops/memory?theme=light&sidebar=collapsed&session={session_key}&query=NoHitTerm&preview_memory_id=mem-match-6"

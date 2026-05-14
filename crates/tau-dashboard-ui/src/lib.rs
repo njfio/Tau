@@ -4678,6 +4678,30 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 } else {
                                     leptos::either::Either::Right(())
                                 };
+                                let detail_selected = !memory_detail_selected_entry_id.trim().is_empty()
+                                    && row.memory_id.as_str() == memory_detail_selected_entry_id.as_str();
+                                let detail_selected_attr = if detail_selected {
+                                    "true"
+                                } else {
+                                    "false"
+                                };
+                                let row_current_attr = if preview_selected || detail_selected {
+                                    "true"
+                                } else {
+                                    "false"
+                                };
+                                let detail_selected_badge = if detail_selected {
+                                    leptos::either::Either::Left(view! {
+                                        <span
+                                            id=format!("tau-ops-memory-graph-preview-detail-badge-{index}")
+                                            data-memory-graph-preview-detail-badge=row.memory_id.clone()
+                                        >
+                                            Selected detail
+                                        </span>
+                                    })
+                                } else {
+                                    leptos::either::Either::Right(())
+                                };
                                 let node_detail_href = format!(
                                     "{memory_graph_route_href_base}&detail_memory_id={}",
                                     row.memory_id
@@ -4784,7 +4808,9 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                         data-relation-detail-href=relation_sample_detail_href_attr
                                         data-preview-selected=preview_selected_attr
                                         data-preview-selected-memory-id=memory_graph_preview_selected_memory_id.clone()
-                                        aria-current=preview_selected_attr
+                                        aria-current=row_current_attr
+                                        data-detail-selected=detail_selected_attr
+                                        data-detail-selected-memory-id=memory_detail_selected_entry_id.clone()
                                     >
                                         <a
                                             data-memory-graph-preview-link=row.memory_id.clone()
@@ -4794,6 +4820,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                         </a>
                                         {relation_sample_view}
                                         {preview_return_badge}
+                                        {detail_selected_badge}
                                     </li>
                                 }
                             })

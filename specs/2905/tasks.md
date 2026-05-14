@@ -12,3 +12,4 @@
 10. [x] T10 (GREEN): label Memory Scope result count as search results and expose graph-preview count/limit separately.
 11. [x] T11 (GREEN): distinguish filtered-out preview recovery from unfiltered graph-store misses.
 12. [x] T12 (GREEN): show bounded graph-preview count/limit proof inside the preview section.
+13. [x] T13 (GREEN): mark the resolved Memory Explorer detail row in the graph-backed preview independently from preview-return recovery.
