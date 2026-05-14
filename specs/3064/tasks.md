@@ -13,3 +13,5 @@
    scoped spec suites.
 6. [x] T6 (GREEN): add separate stored-detail and graph-connected relation
    counts plus graph relation links on selected memory detail panels.
+7. [x] T7 (GREEN): add visible selected-memory id/type/count proof to the
+   detail panel before the embedding and relation body.

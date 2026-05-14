@@ -4942,6 +4942,13 @@ fn functional_spec_3064_c01_memory_route_renders_detail_panel_default_markers() 
     assert!(html.contains(
         "id=\"tau-ops-memory-detail-panel\" data-detail-visible=\"false\" data-memory-id=\"\" data-memory-type=\"\" data-embedding-source=\"\" data-embedding-model=\"\" data-embedding-reason-code=\"\" data-embedding-dimensions=\"0\" data-relation-count=\"0\""
     ));
+    assert!(html.contains("id=\"tau-ops-memory-detail-heading\""));
+    assert!(html.contains("Selected Memory Detail: none"));
+    assert!(html.contains(
+        "id=\"tau-ops-memory-detail-proof\" data-selected-memory-id=\"\" data-memory-type=\"\" data-stored-relation-count=\"0\" data-graph-relation-count=\"0\""
+    ));
+    assert!(html.contains("<dt>Selected ID</dt><dd>none</dd>"));
+    assert!(html.contains("<dt>Type</dt><dd>unknown</dd>"));
     assert!(html.contains(
         "id=\"tau-ops-memory-detail-embedding\" data-embedding-source=\"\" data-embedding-model=\"\" data-embedding-reason-code=\"\" data-embedding-dimensions=\"0\""
     ));
@@ -4994,6 +5001,14 @@ fn functional_spec_3064_c03_memory_detail_distinguishes_stored_and_graph_relatio
     assert!(html.contains(
         "id=\"tau-ops-memory-detail-panel\" data-detail-visible=\"true\" data-memory-id=\"mem-detail\" data-memory-type=\"goal\""
     ));
+    assert!(html.contains("Selected Memory Detail: mem-detail"));
+    assert!(html.contains(
+        "id=\"tau-ops-memory-detail-proof\" data-selected-memory-id=\"mem-detail\" data-memory-type=\"goal\" data-stored-relation-count=\"1\" data-graph-relation-count=\"2\""
+    ));
+    assert!(html.contains("<dt>Selected ID</dt><dd>mem-detail</dd>"));
+    assert!(html.contains("<dt>Type</dt><dd>goal</dd>"));
+    assert!(html.contains("<dt>Stored Relations</dt><dd>1</dd>"));
+    assert!(html.contains("<dt>Graph Relations</dt><dd>2</dd>"));
     assert!(html.contains("data-relation-count=\"1\" data-graph-relation-count=\"2\""));
     assert!(html.contains(
         "id=\"tau-ops-memory-detail-relation-scope\" data-stored-relation-count=\"1\" data-graph-relation-count=\"2\""

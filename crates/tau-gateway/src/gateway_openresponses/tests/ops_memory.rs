@@ -1156,6 +1156,14 @@ async fn integration_spec_3064_c02_c03_ops_memory_detail_panel_renders_embedding
         "id=\"tau-ops-memory-detail-panel\" data-detail-visible=\"true\" data-memory-id=\"mem-detail-target\" data-memory-type=\"goal\""
     ));
     assert!(detail_body.contains("data-relation-count=\"1\" data-graph-relation-count=\"2\""));
+    assert!(detail_body.contains("Selected Memory Detail: mem-detail-target"));
+    assert!(detail_body.contains(
+        "id=\"tau-ops-memory-detail-proof\" data-selected-memory-id=\"mem-detail-target\" data-memory-type=\"goal\" data-stored-relation-count=\"1\" data-graph-relation-count=\"2\""
+    ));
+    assert!(detail_body.contains("<dt>Selected ID</dt><dd>mem-detail-target</dd>"));
+    assert!(detail_body.contains("<dt>Type</dt><dd>goal</dd>"));
+    assert!(detail_body.contains("<dt>Stored Relations</dt><dd>1</dd>"));
+    assert!(detail_body.contains("<dt>Graph Relations</dt><dd>2</dd>"));
     assert!(detail_body
         .contains("id=\"tau-ops-memory-detail-embedding\" data-embedding-source=\"hash-fnv1a\""));
     assert!(detail_body.contains("data-embedding-reason-code=\"memory_embedding_hash_only\""));

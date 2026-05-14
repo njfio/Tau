@@ -4204,6 +4204,18 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     } else {
         context.chat.memory_detail_summary.clone()
     };
+    let memory_detail_selected_entry_label = if memory_detail_selected_entry_id.trim().is_empty() {
+        "none".to_string()
+    } else {
+        memory_detail_selected_entry_id.clone()
+    };
+    let memory_detail_memory_type_label = if memory_detail_memory_type.trim().is_empty() {
+        "unknown".to_string()
+    } else {
+        memory_detail_memory_type.clone()
+    };
+    let memory_detail_heading =
+        format!("Selected Memory Detail: {memory_detail_selected_entry_label}");
     let memory_detail_relations_view = if memory_detail_relation_rows.is_empty() {
         leptos::either::Either::Left(view! {
             <li id="tau-ops-memory-relations-empty-state" data-empty-state="true">
@@ -9368,6 +9380,33 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 data-relation-count=memory_detail_relation_count_panel_attr
                                 data-graph-relation-count=memory_detail_graph_relation_count_panel_attr
                             >
+                                <h3 id="tau-ops-memory-detail-heading">
+                                    {memory_detail_heading}
+                                </h3>
+                                <dl
+                                    id="tau-ops-memory-detail-proof"
+                                    data-selected-memory-id=memory_detail_selected_entry_id.clone()
+                                    data-memory-type=memory_detail_memory_type.clone()
+                                    data-stored-relation-count=memory_detail_relation_count.clone()
+                                    data-graph-relation-count=memory_detail_graph_relation_count.clone()
+                                >
+                                    <div>
+                                        <dt>Selected ID</dt>
+                                        <dd>{memory_detail_selected_entry_label}</dd>
+                                    </div>
+                                    <div>
+                                        <dt>Type</dt>
+                                        <dd>{memory_detail_memory_type_label}</dd>
+                                    </div>
+                                    <div>
+                                        <dt>Stored Relations</dt>
+                                        <dd>{memory_detail_relation_count.clone()}</dd>
+                                    </div>
+                                    <div>
+                                        <dt>Graph Relations</dt>
+                                        <dd>{memory_detail_graph_relation_count.clone()}</dd>
+                                    </div>
+                                </dl>
                                 <p
                                     id="tau-ops-memory-detail-embedding"
                                     data-embedding-source=memory_detail_embedding_source
