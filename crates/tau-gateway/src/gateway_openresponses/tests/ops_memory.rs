@@ -176,7 +176,7 @@ async fn integration_spec_2905_c01_c02_c03_ops_memory_route_renders_relevant_sea
         "id=\"tau-ops-memory-graph-preview\" data-preview-count=\"5\" data-preview-limit=\"5\" data-node-count=\"7\" data-edge-count=\"0\" data-graph-state=\"graph available\" data-preview-selected-memory-id=\"mem-match-6\" data-preview-selected-state=\"out-of-preview\""
     ));
     assert!(out_of_preview_body.contains(
-        "id=\"tau-ops-memory-graph-preview-out-of-preview\" data-preview-selected-memory-id=\"mem-match-6\" data-preview-selected-state=\"out-of-preview\" data-preview-limit=\"5\""
+        "id=\"tau-ops-memory-graph-preview-out-of-preview\" data-preview-selected-memory-id=\"mem-match-6\" data-preview-selected-state=\"out-of-preview\" data-preview-recovery-state=\"out-of-preview\" data-preview-limit=\"5\""
     ));
     assert!(
         out_of_preview_body.contains("Returned memory mem-match-6 is outside this 5 item preview.")
@@ -201,14 +201,36 @@ async fn integration_spec_2905_c01_c02_c03_ops_memory_route_renders_relevant_sea
         "id=\"tau-ops-memory-graph-preview\" data-preview-count=\"5\" data-preview-limit=\"5\" data-node-count=\"7\" data-edge-count=\"0\" data-graph-state=\"graph available\" data-preview-selected-memory-id=\"mem-not-present\" data-preview-selected-state=\"not-in-scope\""
     ));
     assert!(not_in_scope_body.contains(
-        "id=\"tau-ops-memory-graph-preview-not-in-scope\" data-preview-selected-memory-id=\"mem-not-present\" data-preview-selected-state=\"not-in-scope\" data-preview-limit=\"5\""
+        "id=\"tau-ops-memory-graph-preview-not-in-scope\" data-preview-selected-memory-id=\"mem-not-present\" data-preview-selected-state=\"not-in-scope\" data-preview-recovery-state=\"not-found\" data-preview-limit=\"5\""
     ));
     assert!(not_in_scope_body
-        .contains("Returned memory mem-not-present is not present in this graph scope."));
+        .contains("Returned memory mem-not-present was not found in the graph store."));
     assert!(not_in_scope_body.contains(
         "id=\"tau-ops-memory-graph-preview-not-in-scope-link\" href=\"/ops/memory-graph?theme=light&amp;sidebar=collapsed&amp;session=ops-memory-search&amp;workspace_id=&amp;channel_id=&amp;actor_id=&amp;memory_type=&amp;detail_memory_id=mem-not-present\""
     ));
-    assert!(not_in_scope_body.contains("Try unfiltered Memory Graph"));
+    assert!(not_in_scope_body.contains("Open not-found detail in Memory Graph"));
+
+    let filtered_out_response = client
+        .get(format!(
+            "http://{addr}/ops/memory?theme=light&sidebar=collapsed&session={session_key}&query=NoHitTerm&workspace_id=workspace-a&preview_memory_id=mem-cross-workspace"
+        ))
+        .send()
+        .await
+        .expect("ops memory no-hit request with filtered-out selected memory");
+    assert_eq!(filtered_out_response.status(), StatusCode::OK);
+    let filtered_out_body = filtered_out_response
+        .text()
+        .await
+        .expect("read filtered-out ops memory empty body");
+    assert!(filtered_out_body.contains(
+        "id=\"tau-ops-memory-graph-preview-not-in-scope\" data-preview-selected-memory-id=\"mem-cross-workspace\" data-preview-selected-state=\"not-in-scope\" data-preview-recovery-state=\"filtered-out\" data-preview-limit=\"5\""
+    ));
+    assert!(filtered_out_body
+        .contains("Returned memory mem-cross-workspace is not present in this graph scope."));
+    assert!(filtered_out_body.contains(
+        "id=\"tau-ops-memory-graph-preview-not-in-scope-link\" href=\"/ops/memory-graph?theme=light&amp;sidebar=collapsed&amp;session=ops-memory-search&amp;workspace_id=&amp;channel_id=&amp;actor_id=&amp;memory_type=&amp;detail_memory_id=mem-cross-workspace\""
+    ));
+    assert!(filtered_out_body.contains("Try unfiltered Memory Graph"));
 
     let graph_detail_response = client
         .get(format!(

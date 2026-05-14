@@ -10,3 +10,4 @@
 8. [x] T8 (GREEN): preserve unresolved Memory Graph `detail_memory_id` requests as explicit not-found detail state instead of rendering a generic empty detail panel.
 9. [x] T9 (GREEN): distinguish no active search query from no matching search rows in Memory Explorer empty-state copy and markers.
 10. [x] T10 (GREEN): label Memory Scope result count as search results and expose graph-preview count/limit separately.
+11. [x] T11 (GREEN): distinguish filtered-out preview recovery from unfiltered graph-store misses.

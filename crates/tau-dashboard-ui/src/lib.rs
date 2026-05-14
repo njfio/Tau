@@ -4534,6 +4534,32 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
         Some(_) => "out-of-preview",
         None => "not-in-scope",
     };
+    let memory_graph_preview_has_scope_filters = !memory_search_workspace_id.trim().is_empty()
+        || !memory_search_channel_id.trim().is_empty()
+        || !memory_search_actor_id.trim().is_empty()
+        || !memory_search_memory_type.trim().is_empty();
+    let memory_graph_preview_not_in_scope_recovery_state = if memory_graph_preview_has_scope_filters
+    {
+        "filtered-out"
+    } else {
+        "not-found"
+    };
+    let memory_graph_preview_not_in_scope_copy = if memory_graph_preview_has_scope_filters {
+        format!(
+            "Returned memory {} is not present in this graph scope.",
+            memory_preview_selected_entry_id
+        )
+    } else {
+        format!(
+            "Returned memory {} was not found in the graph store.",
+            memory_preview_selected_entry_id
+        )
+    };
+    let memory_graph_preview_not_in_scope_link_label = if memory_graph_preview_has_scope_filters {
+        "Try unfiltered Memory Graph"
+    } else {
+        "Open not-found detail in Memory Graph"
+    };
     let memory_graph_preview_selected_memory_id = memory_preview_selected_entry_id.clone();
     let memory_graph_preview_scoped_selected_detail_href =
         if memory_graph_preview_selected_memory_id.is_empty() {
@@ -4559,6 +4585,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                 id="tau-ops-memory-graph-preview-out-of-preview"
                 data-preview-selected-memory-id=memory_graph_preview_selected_memory_id.clone()
                 data-preview-selected-state=memory_graph_preview_selected_state
+                data-preview-recovery-state="out-of-preview"
                 data-preview-limit=memory_graph_preview_limit.clone()
                 data-preview-recovery-href=memory_graph_preview_scoped_selected_detail_href.clone()
             >
@@ -4581,18 +4608,16 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                 id="tau-ops-memory-graph-preview-not-in-scope"
                 data-preview-selected-memory-id=memory_graph_preview_selected_memory_id.clone()
                 data-preview-selected-state=memory_graph_preview_selected_state
+                data-preview-recovery-state=memory_graph_preview_not_in_scope_recovery_state
                 data-preview-limit=memory_graph_preview_limit.clone()
                 data-preview-recovery-href=memory_graph_preview_unscoped_selected_detail_href.clone()
             >
-                {format!(
-                    "Returned memory {} is not present in this graph scope.",
-                    memory_graph_preview_selected_memory_id
-                )}
+                {memory_graph_preview_not_in_scope_copy}
                 <a
                     id="tau-ops-memory-graph-preview-not-in-scope-link"
                     href=memory_graph_preview_unscoped_selected_detail_href.clone()
                 >
-                    Try unfiltered Memory Graph
+                    {memory_graph_preview_not_in_scope_link_label}
                 </a>
             </p>
         })
