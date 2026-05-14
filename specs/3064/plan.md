@@ -6,7 +6,8 @@
    relation row rendering.
 3. Implement minimal selected-memory detail flow and deterministic SSR markers.
 4. Add detail-panel proof that the selected memory id/type is visible and stored outgoing relations and graph-connected incoming/outgoing relations are separate counts with deterministic graph-relation links.
-5. Run regression and verification gates for existing memory slices.
+5. Add a direct selected-memory Memory Graph detail action on the Memory Explorer detail panel so operators do not need to infer navigation from relation links or preview rows.
+6. Run regression and verification gates for existing memory slices.
 
 ## Affected Modules
 - `crates/tau-dashboard-ui/src/lib.rs`
@@ -27,3 +28,4 @@
 - `/ops/memory` query controls gain selected-detail key marker support.
 - No external API additions; behavior remains within ops-shell route rendering.
 - Detail panels keep `data-relation-count` as the stored-detail relation count and add `data-graph-relation-count`, `#tau-ops-memory-detail-proof`, `#tau-ops-memory-detail-relation-scope`, and `#tau-ops-memory-graph-relations` for selected-memory and graph-connected relation proof.
+- Detail panels with a selected memory render `#tau-ops-memory-detail-open-graph`, `data-memory-detail-open-graph`, `data-selected-memory-id`, and a scope-preserving `/ops/memory-graph?...&detail_memory_id=<selected>` href.

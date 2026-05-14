@@ -5109,6 +5109,13 @@ fn functional_spec_3064_c03_memory_detail_distinguishes_stored_and_graph_relatio
     ));
     assert!(html.contains("Stored detail relations: 1; graph connections in this scope: 2"));
     assert!(html.contains(
+        "id=\"tau-ops-memory-detail-open-graph\" href=\"/ops/memory-graph?theme=light&amp;sidebar=collapsed&amp;session=default&amp;workspace_id=&amp;channel_id=&amp;actor_id=&amp;memory_type=&amp;detail_memory_id=mem-detail\""
+    ));
+    assert!(html.contains(
+        "data-memory-detail-open-graph=\"mem-detail\" data-selected-memory-id=\"mem-detail\" data-detail-route=\"/ops/memory-graph\""
+    ));
+    assert!(html.contains("Open selected in Memory Graph"));
+    assert!(html.contains(
         "id=\"tau-ops-memory-graph-relations\" data-selected-memory-id=\"mem-detail\" data-graph-relation-count=\"2\""
     ));
     assert!(html.contains(

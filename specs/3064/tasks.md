@@ -15,3 +15,5 @@
    counts plus graph relation links on selected memory detail panels.
 7. [x] T7 (GREEN): add visible selected-memory id/type/count proof to the
    detail panel before the embedding and relation body.
+8. [x] T8 (GREEN): add a direct selected-memory Memory Graph detail link to the
+   Memory Explorer detail panel.

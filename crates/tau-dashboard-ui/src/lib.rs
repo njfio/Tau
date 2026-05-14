@@ -4342,6 +4342,26 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     let memory_graph_route_href_base = format!(
         "/ops/memory-graph?theme={theme_attr}&sidebar={sidebar_state_attr}&session={chat_session_key}&workspace_id={memory_search_workspace_id}&channel_id={memory_search_channel_id}&actor_id={memory_search_actor_id}&memory_type={memory_search_memory_type}"
     );
+    let memory_detail_open_graph_href = if memory_detail_selected_entry_id.trim().is_empty() {
+        String::new()
+    } else {
+        format!("{memory_graph_route_href_base}&detail_memory_id={memory_detail_selected_entry_id}")
+    };
+    let memory_detail_open_graph_link = if memory_detail_selected_entry_id.trim().is_empty() {
+        leptos::either::Either::Left(())
+    } else {
+        leptos::either::Either::Right(view! {
+            <a
+                id="tau-ops-memory-detail-open-graph"
+                href=memory_detail_open_graph_href.clone()
+                data-memory-detail-open-graph=memory_detail_selected_entry_id.clone()
+                data-selected-memory-id=memory_detail_selected_entry_id.clone()
+                data-detail-route="/ops/memory-graph"
+            >
+                Open selected in Memory Graph
+            </a>
+        })
+    };
     let memory_detail_graph_relation_edges = if memory_detail_selected_entry_id.trim().is_empty() {
         vec![]
     } else {
@@ -9486,6 +9506,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 >
                                     {memory_detail_relation_scope_summary}
                                 </p>
+                                {memory_detail_open_graph_link}
                                 <ul id="tau-ops-memory-relations" data-relation-count=memory_detail_relation_count>
                                     {memory_detail_relations_view}
                                 </ul>

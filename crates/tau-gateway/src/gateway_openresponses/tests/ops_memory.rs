@@ -1218,6 +1218,13 @@ async fn integration_spec_3064_c02_c03_ops_memory_detail_panel_renders_embedding
         "id=\"tau-ops-memory-detail-relation-scope\" data-stored-relation-count=\"1\" data-graph-relation-count=\"2\""
     ));
     assert!(detail_body.contains("Stored detail relations: 1; graph connections in this scope: 2"));
+    assert!(detail_body.contains(
+        "id=\"tau-ops-memory-detail-open-graph\" href=\"/ops/memory-graph?theme=light&amp;sidebar=collapsed&amp;session=ops-memory-detail&amp;workspace_id=workspace-detail&amp;channel_id=channel-detail&amp;actor_id=operator&amp;memory_type=&amp;detail_memory_id=mem-detail-target\""
+    ));
+    assert!(detail_body.contains(
+        "data-memory-detail-open-graph=\"mem-detail-target\" data-selected-memory-id=\"mem-detail-target\" data-detail-route=\"/ops/memory-graph\""
+    ));
+    assert!(detail_body.contains("Open selected in Memory Graph"));
     assert!(detail_body.contains("id=\"tau-ops-memory-relations\" data-relation-count=\"1\""));
     assert!(detail_body.contains(
         "id=\"tau-ops-memory-relation-row-0\" data-target-id=\"mem-detail-relation-target\" data-relation-type=\"related_to\""
