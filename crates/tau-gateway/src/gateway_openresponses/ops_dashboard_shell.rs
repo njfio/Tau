@@ -1276,6 +1276,7 @@ fn collect_tau_ops_dashboard_chat_snapshot(
     let mut memory_detail_selected_entry_id = controls
         .requested_memory_detail_entry_id()
         .unwrap_or_default();
+    let memory_detail_requested_entry_id = memory_detail_selected_entry_id.clone();
     let mut memory_detail_summary = String::new();
     let mut memory_detail_memory_type = String::new();
     let mut memory_detail_embedding_source = String::new();
@@ -1553,6 +1554,7 @@ fn collect_tau_ops_dashboard_chat_snapshot(
         memory_delete_deleted_entry_id,
         memory_preview_selected_entry_id,
         memory_detail_visible,
+        memory_detail_requested_entry_id,
         memory_detail_selected_entry_id,
         memory_detail_summary,
         memory_detail_memory_type,

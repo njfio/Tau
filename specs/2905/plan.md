@@ -5,7 +5,7 @@
 2. Add RED gateway integration tests that seed persisted memory entries and assert relevant `/ops/memory` result rows.
 3. Implement minimal memory snapshot plumbing in ops shell and memory panel rendering contracts in `tau-dashboard-ui`.
 4. Expose graph node/edge availability in the Memory Scope summary and empty-state row so empty search rows are not confused with an empty memory graph.
-5. Render a bounded graph-backed node preview on zero-result pages so operators can inspect memory summaries plus node/relation metadata, follow sample relations into Memory Graph, return to the originating preview row context, see the returned row marked as selected, recover when the returned memory is outside the bounded preview, and distinguish missing or filtered-out return ids.
+5. Render a bounded graph-backed node preview on zero-result pages so operators can inspect memory summaries plus node/relation metadata, follow sample relations into Memory Graph, return to the originating preview row context, see the returned row marked as selected, recover when the returned memory is outside the bounded preview, distinguish missing or filtered-out return ids, and see an explicit Memory Graph not-found detail state when a recovery `detail_memory_id` cannot be resolved.
 6. Run regression + verify gates (fmt/clippy/spec slices/mutation/live validation).
 
 ## Affected Modules
@@ -32,3 +32,4 @@
 - Memory Explorer consumes additive `preview_memory_id` query state and marks the matching bounded preview row with selected DOM markers and visible returned-from-graph copy.
 - If `preview_memory_id` is outside the bounded preview, Memory Explorer renders additive out-of-preview markers, a visible explanation, and a Memory Graph recovery link for the selected memory.
 - If `preview_memory_id` is missing or filtered out of the current graph scope, Memory Explorer renders distinct not-in-scope markers and copy instead of claiming the memory exists outside the preview.
+- If Memory Graph receives a `detail_memory_id` that cannot be found in memory store or harness lineage, it keeps the selected detail hidden while exposing additive `data-detail-requested`, `data-detail-state="not-found"`, and `data-requested-memory-id` markers plus visible not-found copy.

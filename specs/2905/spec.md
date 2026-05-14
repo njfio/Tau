@@ -16,9 +16,10 @@ In scope:
 - Mark the returned graph-backed preview row as selected when Memory Explorer receives a `preview_memory_id`.
 - Explain and recover from out-of-preview return state when `preview_memory_id` exists in the graph scope but is not present in the bounded preview.
 - Distinguish missing or filtered-out `preview_memory_id` values from real out-of-preview nodes.
+- When a preview recovery link opens Memory Graph with a missing `detail_memory_id`, render an explicit not-found detail state that preserves the requested memory id.
 
 Out of scope:
-- Memory graph route behavior beyond displaying its counts in the Memory Scope summary.
+- Memory graph route behavior beyond displaying its counts in the Memory Scope summary and the bounded preview recovery detail state.
 - Memory entry create/edit/delete UI workflows.
 - New dependencies.
 
@@ -41,7 +42,7 @@ then a deterministic empty-state marker is shown and result row count is zero.
 ### AC-3a Memory Scope distinguishes search rows from graph availability
 Given `/ops/memory` has zero search result rows but graph rows are available,
 when `/ops/memory` renders,
-then the Memory Scope summary and empty-state row expose deterministic graph node/edge counts and graph state markers, the empty-state copy states that only search rows are empty, a bounded graph-backed node preview renders memory summaries with node metadata plus navigable relation samples, Memory Graph detail return links preserve the originating preview memory and row anchor when available, the returned preview row is visibly and deterministically marked as selected, a real out-of-preview `preview_memory_id` renders a visible explanation plus recovery link, and a missing or filtered-out `preview_memory_id` renders a distinct not-in-scope explanation without implying the memory exists.
+then the Memory Scope summary and empty-state row expose deterministic graph node/edge counts and graph state markers, the empty-state copy states that only search rows are empty, a bounded graph-backed node preview renders memory summaries with node metadata plus navigable relation samples, Memory Graph detail return links preserve the originating preview memory and row anchor when available, the returned preview row is visibly and deterministically marked as selected, a real out-of-preview `preview_memory_id` renders a visible explanation plus recovery link, a missing or filtered-out `preview_memory_id` renders a distinct not-in-scope explanation without implying the memory exists, and the Memory Graph recovery route renders an explicit not-found detail state when the requested `detail_memory_id` cannot be resolved.
 
 ### AC-4 Existing route contracts remain intact
 Given existing ops/chat/sessions/detail contracts,
@@ -54,7 +55,7 @@ then existing suites remain green.
 | C-01 | AC-1 | Functional | `/ops/memory?query=<q>` | render memory route | form/action/query markers are present and query preserved |
 | C-02 | AC-2 | Integration | persisted memory entries containing query terms | render `/ops/memory?query=<q>` | deterministic result rows include relevant entries |
 | C-03 | AC-3 | Functional | query with no matches | render memory route | empty-state marker present and result count zero |
-| C-03a | AC-3a | Functional/Integration | zero search rows with graph rows available | render memory route and follow a preview node/relation into graph detail, then return with `preview_memory_id` | scope summary and empty row show graph node/edge counts, graph state, graph-aware copy, bounded graph-backed node preview with summaries plus relation sample links, graph detail return links include `preview_memory_id` plus the preview row anchor, the returned preview row carries selected markers plus visible selected copy, real out-of-preview return state includes an explanation plus Memory Graph recovery link, and missing or filtered-out return state uses distinct not-in-scope markers/copy |
+| C-03a | AC-3a | Functional/Integration | zero search rows with graph rows available | render memory route and follow a preview node/relation into graph detail, then return with `preview_memory_id` or recover through Memory Graph with a missing `detail_memory_id` | scope summary and empty row show graph node/edge counts, graph state, graph-aware copy, bounded graph-backed node preview with summaries plus relation sample links, graph detail return links include `preview_memory_id` plus the preview row anchor, the returned preview row carries selected markers plus visible selected copy, real out-of-preview return state includes an explanation plus Memory Graph recovery link, missing or filtered-out return state uses distinct not-in-scope markers/copy, and the Memory Graph recovery route preserves the requested id in a not-found detail state |
 | C-04 | AC-4 | Regression | existing contracts | rerun selected suites | chat/session/dashboard contracts remain green |
 
 ## Success Metrics / Signals

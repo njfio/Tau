@@ -456,6 +456,7 @@ pub struct TauOpsDashboardChatSnapshot {
     pub memory_delete_deleted_entry_id: String,
     pub memory_preview_selected_entry_id: String,
     pub memory_detail_visible: bool,
+    pub memory_detail_requested_entry_id: String,
     pub memory_detail_selected_entry_id: String,
     pub memory_detail_summary: String,
     pub memory_detail_memory_type: String,
@@ -553,6 +554,7 @@ impl Default for TauOpsDashboardChatSnapshot {
             memory_delete_deleted_entry_id: String::new(),
             memory_preview_selected_entry_id: String::new(),
             memory_detail_visible: false,
+            memory_detail_requested_entry_id: String::new(),
             memory_detail_selected_entry_id: String::new(),
             memory_detail_summary: String::new(),
             memory_detail_memory_type: String::new(),
@@ -4180,6 +4182,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
         "false"
     };
     let memory_preview_selected_entry_id = context.chat.memory_preview_selected_entry_id.clone();
+    let memory_detail_requested_entry_id = context.chat.memory_detail_requested_entry_id.clone();
     let memory_detail_selected_entry_id = context.chat.memory_detail_selected_entry_id.clone();
     let memory_detail_memory_type = context.chat.memory_detail_memory_type.clone();
     let memory_detail_embedding_source = context.chat.memory_detail_embedding_source.clone();
@@ -4710,34 +4713,65 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     let memory_graph_node_detail_href_prefix = format!(
         "/ops/memory-graph?theme={theme_attr}&sidebar={sidebar_state_attr}&session={chat_session_key}&workspace_id={memory_search_workspace_id}&channel_id={memory_search_channel_id}&actor_id={memory_search_actor_id}&memory_type={memory_search_memory_type}&detail_memory_id="
     );
-    let memory_graph_detail_visible =
-        if matches!(context.active_route, TauOpsDashboardRoute::MemoryGraph)
-            && context.chat.memory_detail_visible
-        {
-            "true"
-        } else {
-            "false"
-        };
-    let memory_graph_detail_summary = memory_detail_summary.clone();
+    let memory_graph_detail_visible_bool =
+        matches!(context.active_route, TauOpsDashboardRoute::MemoryGraph)
+            && context.chat.memory_detail_visible;
+    let memory_graph_detail_visible = if memory_graph_detail_visible_bool {
+        "true"
+    } else {
+        "false"
+    };
+    let memory_graph_detail_requested_bool =
+        matches!(context.active_route, TauOpsDashboardRoute::MemoryGraph)
+            && !memory_detail_requested_entry_id.trim().is_empty();
+    let memory_graph_detail_requested = if memory_graph_detail_requested_bool {
+        "true"
+    } else {
+        "false"
+    };
+    let memory_graph_detail_state = if memory_graph_detail_visible_bool {
+        "found"
+    } else if memory_graph_detail_requested_bool {
+        "not-found"
+    } else {
+        "none"
+    };
+    let memory_graph_detail_summary = if memory_graph_detail_state == "not-found" {
+        format!(
+            "Requested memory {} was not found in this graph scope.",
+            memory_detail_requested_entry_id
+        )
+    } else {
+        memory_detail_summary.clone()
+    };
     let memory_graph_detail_selected_entry_id = memory_detail_selected_entry_id.clone();
+    let memory_graph_detail_requested_entry_id = memory_detail_requested_entry_id.clone();
     let memory_graph_detail_memory_type = memory_detail_memory_type.clone();
     let memory_graph_detail_relation_count_panel_attr =
         memory_detail_relation_count_panel_attr.clone();
+    let memory_graph_detail_navigation_memory_id =
+        if memory_graph_detail_selected_entry_id.is_empty() {
+            memory_graph_detail_requested_entry_id.clone()
+        } else {
+            memory_graph_detail_selected_entry_id.clone()
+        };
     let memory_graph_detail_preview_return_anchor = filtered_memory_graph_node_rows
         .iter()
         .take(memory_graph_preview_limit_value)
-        .position(|row| row.memory_id.as_str() == memory_graph_detail_selected_entry_id.as_str())
+        .position(|row| row.memory_id.as_str() == memory_graph_detail_navigation_memory_id.as_str())
         .map(|index| format!("tau-ops-memory-graph-preview-row-{index}"))
         .unwrap_or_else(|| "tau-ops-memory-graph-preview".to_string());
     let memory_graph_detail_preview_return_memory_id =
-        memory_graph_detail_selected_entry_id.clone();
-    let memory_graph_detail_open_memory_href = if memory_graph_detail_selected_entry_id.is_empty() {
+        memory_graph_detail_navigation_memory_id.clone();
+    let memory_graph_detail_open_memory_href = if memory_graph_detail_navigation_memory_id
+        .is_empty()
+    {
         format!(
             "/ops/memory?theme={theme_attr}&sidebar={sidebar_state_attr}&session={chat_session_key}&workspace_id={memory_search_workspace_id}&channel_id={memory_search_channel_id}&actor_id={memory_search_actor_id}&memory_type={memory_search_memory_type}&detail_memory_id="
         )
     } else {
         format!(
-            "/ops/memory?theme={theme_attr}&sidebar={sidebar_state_attr}&session={chat_session_key}&workspace_id={memory_search_workspace_id}&channel_id={memory_search_channel_id}&actor_id={memory_search_actor_id}&memory_type={memory_search_memory_type}&detail_memory_id={memory_graph_detail_selected_entry_id}&preview_memory_id={memory_graph_detail_preview_return_memory_id}#{memory_graph_detail_preview_return_anchor}"
+            "/ops/memory?theme={theme_attr}&sidebar={sidebar_state_attr}&session={chat_session_key}&workspace_id={memory_search_workspace_id}&channel_id={memory_search_channel_id}&actor_id={memory_search_actor_id}&memory_type={memory_search_memory_type}&detail_memory_id={memory_graph_detail_navigation_memory_id}&preview_memory_id={memory_graph_detail_preview_return_memory_id}#{memory_graph_detail_preview_return_anchor}"
         )
     };
     let memory_graph_scope_summary_view = if matches!(
@@ -9366,7 +9400,10 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             <section
                                 id="tau-ops-memory-graph-detail-panel"
                                 data-detail-visible=memory_graph_detail_visible
+                                data-detail-requested=memory_graph_detail_requested
+                                data-detail-state=memory_graph_detail_state
                                 data-memory-id=memory_graph_detail_selected_entry_id.clone()
+                                data-requested-memory-id=memory_graph_detail_requested_entry_id.clone()
                                 data-memory-type=memory_graph_detail_memory_type
                                 data-relation-count=memory_graph_detail_relation_count_panel_attr
                             >
@@ -9379,7 +9416,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 <a
                                     id="tau-ops-memory-graph-detail-open-memory"
                                     href=memory_graph_detail_open_memory_href
-                                    data-detail-memory-id=memory_graph_detail_selected_entry_id.clone()
+                                    data-detail-memory-id=memory_graph_detail_navigation_memory_id.clone()
                                     data-preview-return-memory-id=memory_graph_detail_preview_return_memory_id.clone()
                                     data-preview-return-anchor=memory_graph_detail_preview_return_anchor.clone()
                                 >

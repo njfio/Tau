@@ -208,6 +208,27 @@ async fn integration_spec_2905_c01_c02_c03_ops_memory_route_renders_relevant_sea
     assert!(graph_detail_body
         .contains("data-preview-return-anchor=\"tau-ops-memory-graph-preview-row-"));
 
+    let missing_graph_detail_response = client
+        .get(format!(
+            "http://{addr}/ops/memory-graph?theme=light&sidebar=collapsed&session={session_key}&detail_memory_id=mem-not-present"
+        ))
+        .send()
+        .await
+        .expect("ops memory graph missing detail request");
+    assert_eq!(missing_graph_detail_response.status(), StatusCode::OK);
+    let missing_graph_detail_body = missing_graph_detail_response
+        .text()
+        .await
+        .expect("read ops memory graph missing detail body");
+    assert!(missing_graph_detail_body.contains(
+        "id=\"tau-ops-memory-graph-detail-panel\" data-detail-visible=\"false\" data-detail-requested=\"true\" data-detail-state=\"not-found\" data-memory-id=\"\" data-requested-memory-id=\"mem-not-present\""
+    ));
+    assert!(missing_graph_detail_body
+        .contains("Requested memory mem-not-present was not found in this graph scope."));
+    assert!(missing_graph_detail_body.contains(
+        "detail_memory_id=mem-not-present&amp;preview_memory_id=mem-not-present#tau-ops-memory-graph-preview"
+    ));
+
     handle.abort();
 }
 
@@ -1638,7 +1659,7 @@ async fn integration_spec_3086_c02_ops_memory_graph_selected_node_shows_detail_p
     assert!(body.contains("detail_memory_id=mem-detail-graph"));
     assert!(body.contains("detail_memory_id=mem-other-graph"));
     assert!(body.contains(
-        "id=\"tau-ops-memory-graph-detail-panel\" data-detail-visible=\"true\" data-memory-id=\"mem-detail-graph\" data-memory-type=\"goal\" data-relation-count=\"0\""
+        "id=\"tau-ops-memory-graph-detail-panel\" data-detail-visible=\"true\" data-detail-requested=\"true\" data-detail-state=\"found\" data-memory-id=\"mem-detail-graph\" data-requested-memory-id=\"mem-detail-graph\" data-memory-type=\"goal\" data-relation-count=\"0\""
     ));
     assert!(body.contains(
         "id=\"tau-ops-memory-graph-detail-summary\" data-memory-id=\"mem-detail-graph\">Graph detail selected summary"
@@ -1710,7 +1731,7 @@ async fn integration_spec_3086_c02_ops_memory_graph_harness_lineage_node_shows_d
     assert!(graph_body.contains("data-memory-id=\"ops-harness-self-improve-pr-045\""));
     assert!(graph_body.contains("data-node-selected=\"true\""));
     assert!(graph_body.contains(
-        "id=\"tau-ops-memory-graph-detail-panel\" data-detail-visible=\"true\" data-memory-id=\"ops-harness-self-improve-pr-045\" data-memory-type=\"goal\" data-relation-count=\"1\""
+        "id=\"tau-ops-memory-graph-detail-panel\" data-detail-visible=\"true\" data-detail-requested=\"true\" data-detail-state=\"found\" data-memory-id=\"ops-harness-self-improve-pr-045\" data-requested-memory-id=\"ops-harness-self-improve-pr-045\" data-memory-type=\"goal\" data-relation-count=\"1\""
     ));
     assert!(graph_body.contains(
         "id=\"tau-ops-memory-graph-detail-summary\" data-memory-id=\"ops-harness-self-improve-pr-045\">Standardize benchmark artifact names through a skill update"
