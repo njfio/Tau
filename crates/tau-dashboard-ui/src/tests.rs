@@ -4297,8 +4297,8 @@ fn functional_spec_2905_c01_c03_memory_route_renders_search_panel_and_empty_stat
     );
     assert!(html.contains("id=\"tau-ops-memory-query\" type=\"search\" name=\"query\" value=\"\""));
     assert!(html.contains("id=\"tau-ops-memory-results\" data-result-count=\"0\""));
-    assert!(html.contains("id=\"tau-ops-memory-empty-state\" data-empty-state=\"true\" data-graph-node-count=\"0\" data-graph-edge-count=\"0\" data-graph-state=\"empty graph\""));
-    assert!(html.contains("No memory matches found."));
+    assert!(html.contains("id=\"tau-ops-memory-empty-state\" data-empty-state=\"true\" data-graph-node-count=\"0\" data-graph-edge-count=\"0\" data-graph-state=\"empty graph\" data-search-state=\"not-run\""));
+    assert!(html.contains("No search query is active and no graph-backed entries are available."));
     assert!(!html.contains("id=\"tau-ops-memory-graph-preview\""));
 }
 
@@ -4341,9 +4341,8 @@ fn functional_spec_2905_c04_memory_route_reports_graph_counts_when_results_are_e
     ));
     assert!(html.contains("<dt>Graph Nodes</dt><dd>2</dd>"));
     assert!(html.contains("<dt>Graph Edges</dt><dd>1</dd>"));
-    assert!(html.contains("id=\"tau-ops-memory-empty-state\" data-empty-state=\"true\" data-graph-node-count=\"2\" data-graph-edge-count=\"1\" data-graph-state=\"graph available\""));
-    assert!(html
-        .contains("No search rows match this scope. Memory graph still has 2 nodes and 1 edge."));
+    assert!(html.contains("id=\"tau-ops-memory-empty-state\" data-empty-state=\"true\" data-graph-node-count=\"2\" data-graph-edge-count=\"1\" data-graph-state=\"graph available\" data-search-state=\"not-run\""));
+    assert!(html.contains("No search query is active. Memory graph still has 2 nodes and 1 edge."));
     assert!(html.contains("id=\"tau-ops-memory-graph-preview\" data-preview-count=\"2\" data-preview-limit=\"5\" data-node-count=\"2\" data-edge-count=\"1\" data-graph-state=\"graph available\""));
     assert!(html.contains("id=\"tau-ops-memory-graph-preview-list\""));
     assert!(html.contains("id=\"tau-ops-memory-graph-preview-row-0\" data-memory-id=\"mem-a\" data-memory-type=\"goal\" data-importance=\"0.8000\""));

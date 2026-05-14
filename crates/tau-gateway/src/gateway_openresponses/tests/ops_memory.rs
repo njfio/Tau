@@ -77,6 +77,24 @@ async fn integration_spec_2905_c01_c02_c03_ops_memory_route_renders_relevant_sea
     assert!(query_body.contains("ArcSwap"));
     assert!(!query_body.contains("mem-cross-workspace"));
 
+    let no_query_response = client
+        .get(format!(
+            "http://{addr}/ops/memory?theme=light&sidebar=collapsed&session={session_key}"
+        ))
+        .send()
+        .await
+        .expect("ops memory no-query request");
+    assert_eq!(no_query_response.status(), StatusCode::OK);
+    let no_query_body = no_query_response
+        .text()
+        .await
+        .expect("read ops memory no-query body");
+    assert!(no_query_body.contains(
+        "id=\"tau-ops-memory-empty-state\" data-empty-state=\"true\" data-graph-node-count=\"7\" data-graph-edge-count=\"0\" data-graph-state=\"graph available\" data-search-state=\"not-run\""
+    ));
+    assert!(no_query_body
+        .contains("No search query is active. Memory graph still has 7 nodes and 0 edges."));
+
     let empty_response = client
         .get(format!(
             "http://{addr}/ops/memory?theme=light&sidebar=collapsed&session={session_key}&query=NoHitTerm"

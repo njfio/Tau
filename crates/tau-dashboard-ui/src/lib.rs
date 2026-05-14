@@ -4462,6 +4462,14 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     } else {
         "graph available"
     };
+    let memory_search_has_query = !memory_search_query.trim().is_empty();
+    let memory_empty_state_reason = if !memory_search_has_query {
+        "not-run"
+    } else if memory_graph_scope_state_label == "graph available" {
+        "no-match-with-graph"
+    } else {
+        "no-match-empty-graph"
+    };
     let memory_empty_state_message = if memory_graph_scope_state_label == "graph available" {
         let memory_graph_node_label = if memory_graph_node_count_value == 1 {
             "node"
@@ -4473,11 +4481,19 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
         } else {
             "edges"
         };
-        format!(
-            "No search rows match this scope. Memory graph still has {memory_graph_node_count} {memory_graph_node_label} and {memory_graph_edge_count} {memory_graph_edge_label}."
-        )
-    } else {
+        if memory_search_has_query {
+            format!(
+                "No search rows match this scope. Memory graph still has {memory_graph_node_count} {memory_graph_node_label} and {memory_graph_edge_count} {memory_graph_edge_label}."
+            )
+        } else {
+            format!(
+                "No search query is active. Memory graph still has {memory_graph_node_count} {memory_graph_node_label} and {memory_graph_edge_count} {memory_graph_edge_label}."
+            )
+        }
+    } else if memory_search_has_query {
         "No memory matches found.".to_string()
+    } else {
+        "No search query is active and no graph-backed entries are available.".to_string()
     };
     let memory_graph_preview_limit_value = 5usize;
     let memory_graph_preview_count_value =
@@ -4747,6 +4763,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                 data-graph-node-count=memory_graph_node_count.clone()
                 data-graph-edge-count=memory_graph_edge_count.clone()
                 data-graph-state=memory_graph_scope_state_label
+                data-search-state=memory_empty_state_reason
             >
                 {memory_empty_state_message}
             </li>
