@@ -4520,6 +4520,9 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     let memory_graph_preview_count = memory_graph_preview_count_value.to_string();
     let memory_graph_preview_summary_label =
         format!("{memory_graph_preview_count} of {memory_graph_node_count}");
+    let memory_graph_preview_summary_copy = format!(
+        "Showing {memory_graph_preview_count} of {memory_graph_node_count} graph-backed entries in this bounded preview."
+    );
     let memory_graph_preview_selected_index = if memory_preview_selected_entry_id.trim().is_empty()
     {
         None
@@ -4639,6 +4642,14 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                 data-preview-selected-state=memory_graph_preview_selected_state
             >
                 <h3>Graph-backed entries</h3>
+                <p
+                    id="tau-ops-memory-graph-preview-summary"
+                    data-preview-count=memory_graph_preview_count.clone()
+                    data-preview-limit=memory_graph_preview_limit.clone()
+                    data-node-count=memory_graph_node_count.clone()
+                >
+                    {memory_graph_preview_summary_copy}
+                </p>
                 {memory_graph_preview_selection_notice}
                 <ul id="tau-ops-memory-graph-preview-list">
                     {

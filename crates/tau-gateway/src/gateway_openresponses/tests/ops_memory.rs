@@ -123,6 +123,10 @@ async fn integration_spec_2905_c01_c02_c03_ops_memory_route_renders_relevant_sea
     assert!(empty_body
         .contains("No search rows match this scope. Memory graph still has 7 nodes and 0 edges."));
     assert!(empty_body.contains("id=\"tau-ops-memory-graph-preview\" data-preview-count=\"5\" data-preview-limit=\"5\" data-node-count=\"7\" data-edge-count=\"0\" data-graph-state=\"graph available\""));
+    assert!(empty_body.contains(
+        "id=\"tau-ops-memory-graph-preview-summary\" data-preview-count=\"5\" data-preview-limit=\"5\" data-node-count=\"7\""
+    ));
+    assert!(empty_body.contains("Showing 5 of 7 graph-backed entries in this bounded preview."));
     assert!(empty_body.contains("id=\"tau-ops-memory-graph-preview-list\""));
     assert!(empty_body.contains("id=\"tau-ops-memory-graph-preview-row-0\""));
     assert!(empty_body.contains("data-memory-id=\"mem-match-"));

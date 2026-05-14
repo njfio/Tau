@@ -4348,6 +4348,10 @@ fn functional_spec_2905_c04_memory_route_reports_graph_counts_when_results_are_e
     assert!(html.contains("id=\"tau-ops-memory-empty-state\" data-empty-state=\"true\" data-graph-node-count=\"2\" data-graph-edge-count=\"1\" data-graph-state=\"graph available\" data-search-state=\"not-run\""));
     assert!(html.contains("No search query is active. Memory graph still has 2 nodes and 1 edge."));
     assert!(html.contains("id=\"tau-ops-memory-graph-preview\" data-preview-count=\"2\" data-preview-limit=\"5\" data-node-count=\"2\" data-edge-count=\"1\" data-graph-state=\"graph available\""));
+    assert!(html.contains(
+        "id=\"tau-ops-memory-graph-preview-summary\" data-preview-count=\"2\" data-preview-limit=\"5\" data-node-count=\"2\""
+    ));
+    assert!(html.contains("Showing 2 of 2 graph-backed entries in this bounded preview."));
     assert!(html.contains("id=\"tau-ops-memory-graph-preview-list\""));
     assert!(html.contains("id=\"tau-ops-memory-graph-preview-row-0\" data-memory-id=\"mem-a\" data-memory-type=\"goal\" data-importance=\"0.8000\""));
     assert!(html.contains("data-summary=\"Keep plugin registry hot reload safe\""));
