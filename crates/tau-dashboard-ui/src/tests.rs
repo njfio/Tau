@@ -4284,9 +4284,11 @@ fn functional_spec_2905_c01_c03_memory_route_renders_search_panel_and_empty_stat
             "id=\"tau-ops-memory-panel\" data-route=\"/ops/memory\" aria-hidden=\"false\" data-panel-visible=\"true\" data-query=\"\" data-result-count=\"0\""
         ));
     assert!(html.contains(
-        "id=\"tau-ops-memory-scope-summary\" data-session-key=\"default\" data-result-count=\"0\" data-query=\"\" data-workspace-id=\"\" data-channel-id=\"\" data-actor-id=\"\" data-memory-type=\"\" data-create-status=\"idle\" data-created-memory-id=\"\" data-graph-node-count=\"0\" data-graph-edge-count=\"0\" data-graph-state=\"empty graph\""
+        "id=\"tau-ops-memory-scope-summary\" data-session-key=\"default\" data-result-count=\"0\" data-query=\"\" data-workspace-id=\"\" data-channel-id=\"\" data-actor-id=\"\" data-memory-type=\"\" data-create-status=\"idle\" data-created-memory-id=\"\" data-graph-node-count=\"0\" data-graph-edge-count=\"0\" data-graph-state=\"empty graph\" data-graph-preview-count=\"0\" data-graph-preview-limit=\"5\""
     ));
     assert!(html.contains("Memory Scope"));
+    assert!(html.contains("<dt>Search Results</dt><dd>0</dd>"));
+    assert!(html.contains("<dt>Graph Preview</dt><dd>0 of 0</dd>"));
     assert!(html.contains("all entries"));
     assert!(html.contains("Graph Nodes"));
     assert!(html.contains("Graph Edges"));
@@ -4337,8 +4339,10 @@ fn functional_spec_2905_c04_memory_route_reports_graph_counts_when_results_are_e
     });
 
     assert!(html.contains(
-        "id=\"tau-ops-memory-scope-summary\" data-session-key=\"default\" data-result-count=\"0\" data-query=\"\" data-workspace-id=\"\" data-channel-id=\"\" data-actor-id=\"\" data-memory-type=\"\" data-create-status=\"idle\" data-created-memory-id=\"\" data-graph-node-count=\"2\" data-graph-edge-count=\"1\" data-graph-state=\"graph available\""
+        "id=\"tau-ops-memory-scope-summary\" data-session-key=\"default\" data-result-count=\"0\" data-query=\"\" data-workspace-id=\"\" data-channel-id=\"\" data-actor-id=\"\" data-memory-type=\"\" data-create-status=\"idle\" data-created-memory-id=\"\" data-graph-node-count=\"2\" data-graph-edge-count=\"1\" data-graph-state=\"graph available\" data-graph-preview-count=\"2\" data-graph-preview-limit=\"5\""
     ));
+    assert!(html.contains("<dt>Search Results</dt><dd>0</dd>"));
+    assert!(html.contains("<dt>Graph Preview</dt><dd>2 of 2</dd>"));
     assert!(html.contains("<dt>Graph Nodes</dt><dd>2</dd>"));
     assert!(html.contains("<dt>Graph Edges</dt><dd>1</dd>"));
     assert!(html.contains("id=\"tau-ops-memory-empty-state\" data-empty-state=\"true\" data-graph-node-count=\"2\" data-graph-edge-count=\"1\" data-graph-state=\"graph available\" data-search-state=\"not-run\""));

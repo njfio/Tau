@@ -4506,6 +4506,8 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
         };
     let memory_graph_preview_limit = memory_graph_preview_limit_value.to_string();
     let memory_graph_preview_count = memory_graph_preview_count_value.to_string();
+    let memory_graph_preview_summary_label =
+        format!("{memory_graph_preview_count} of {memory_graph_node_count}");
     let memory_graph_preview_selected_index = if memory_preview_selected_entry_id.trim().is_empty()
     {
         None
@@ -8825,6 +8827,8 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 data-graph-node-count=memory_graph_node_count.clone()
                                 data-graph-edge-count=memory_graph_edge_count.clone()
                                 data-graph-state=memory_graph_scope_state_label
+                                data-graph-preview-count=memory_graph_preview_count.clone()
+                                data-graph-preview-limit=memory_graph_preview_limit.clone()
                             >
                                 <h3>Memory Scope</h3>
                                 <dl>
@@ -8833,8 +8837,12 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                         <dd>{chat_session_key.clone()}</dd>
                                     </div>
                                     <div>
-                                        <dt>Results</dt>
+                                        <dt>Search Results</dt>
                                         <dd>{memory_result_count_value.clone()}</dd>
+                                    </div>
+                                    <div>
+                                        <dt>Graph Preview</dt>
+                                        <dd>{memory_graph_preview_summary_label}</dd>
                                     </div>
                                     <div>
                                         <dt>Graph Nodes</dt>

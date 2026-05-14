@@ -112,6 +112,10 @@ async fn integration_spec_2905_c01_c02_c03_ops_memory_route_renders_relevant_sea
     ));
     assert!(empty_body.contains("data-graph-node-count=\"7\""));
     assert!(empty_body.contains("data-graph-edge-count=\"0\""));
+    assert!(empty_body.contains("data-graph-preview-count=\"5\""));
+    assert!(empty_body.contains("data-graph-preview-limit=\"5\""));
+    assert!(empty_body.contains("<dt>Search Results</dt><dd>0</dd>"));
+    assert!(empty_body.contains("<dt>Graph Preview</dt><dd>5 of 7</dd>"));
     assert!(empty_body.contains("<dt>Graph Nodes</dt><dd>7</dd>"));
     assert!(empty_body.contains("<dt>Graph Edges</dt><dd>0</dd>"));
     assert!(empty_body.contains("id=\"tau-ops-memory-results\" data-result-count=\"0\""));
