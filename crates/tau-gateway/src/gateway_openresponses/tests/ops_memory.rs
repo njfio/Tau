@@ -2108,10 +2108,69 @@ async fn integration_spec_3103_c02_ops_memory_graph_filter_query_updates_filter_
     let state = test_state(temp.path(), 10_000, "secret");
     let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
     let client = Client::new();
+    let session_key = "ops-filter";
+
+    let entries = [
+        ("goal-1", "First filtered goal", "goal", "0.90"),
+        ("goal-2", "Second filtered goal", "goal", "0.70"),
+        ("fact-1", "Filtered fact", "fact", "0.50"),
+    ];
+    for (entry_id, summary, memory_type, importance) in entries {
+        let create_response = client
+            .post(format!("http://{addr}/ops/memory"))
+            .form(&[
+                ("theme", "light"),
+                ("sidebar", "collapsed"),
+                ("session", session_key),
+                ("operation", "create"),
+                ("entry_id", entry_id),
+                ("summary", summary),
+                ("workspace_id", "workspace-filter"),
+                ("channel_id", "channel-filter"),
+                ("actor_id", "operator"),
+                ("memory_type", memory_type),
+                ("importance", importance),
+            ])
+            .send()
+            .await
+            .expect("create filter test memory entry");
+        assert_eq!(create_response.status(), StatusCode::OK);
+    }
+
+    let relations = [
+        ("goal-1", "goal-2", "goal", "0.90", "related_to", "0.80"),
+        ("fact-1", "goal-2", "fact", "0.50", "contradicts", "0.60"),
+    ];
+    for (entry_id, relation_target_id, memory_type, importance, relation_type, relation_weight) in
+        relations
+    {
+        let relation_response = client
+            .post(format!("http://{addr}/ops/memory"))
+            .form(&[
+                ("theme", "light"),
+                ("sidebar", "collapsed"),
+                ("session", session_key),
+                ("operation", "edit"),
+                ("entry_id", entry_id),
+                ("summary", "Link relation"),
+                ("workspace_id", "workspace-filter"),
+                ("channel_id", "channel-filter"),
+                ("actor_id", "operator"),
+                ("memory_type", memory_type),
+                ("importance", importance),
+                ("relation_target_id", relation_target_id),
+                ("relation_type", relation_type),
+                ("relation_weight", relation_weight),
+            ])
+            .send()
+            .await
+            .expect("add filter test relation");
+        assert_eq!(relation_response.status(), StatusCode::OK);
+    }
 
     let response = client
         .get(format!(
-            "http://{addr}/ops/memory-graph?theme=light&sidebar=collapsed&session=ops-filter&workspace_id=workspace-filter&channel_id=channel-filter&actor_id=operator&memory_type=goal&graph_zoom=1.25&graph_pan_x=25&graph_pan_y=-25&graph_filter_memory_type=goal&graph_filter_relation_type=related_to"
+            "http://{addr}/ops/memory-graph?theme=light&sidebar=collapsed&session={session_key}&workspace_id=workspace-filter&channel_id=channel-filter&actor_id=operator&memory_type=&graph_zoom=1.25&graph_pan_x=25&graph_pan_y=-25&graph_filter_memory_type=goal&graph_filter_relation_type=related_to"
         ))
         .send()
         .await
@@ -2123,15 +2182,19 @@ async fn integration_spec_3103_c02_ops_memory_graph_filter_query_updates_filter_
         .expect("read ops memory graph filter body");
 
     assert!(body.contains(
-        "id=\"tau-ops-memory-graph-filter-controls\" data-filter-memory-type=\"goal\" data-filter-relation-type=\"related_to\""
+        "id=\"tau-ops-memory-graph-filter-controls\" data-filter-memory-type=\"goal\" data-filter-relation-type=\"related_to\" data-filter-memory-type-count=\"3\" data-filter-relation-type-count=\"3\""
     ));
     assert!(body.contains("id=\"tau-ops-memory-graph-filter-memory-type-all\""));
+    assert!(body.contains("id=\"tau-ops-memory-graph-filter-memory-type-fact\""));
     assert!(body.contains("id=\"tau-ops-memory-graph-filter-memory-type-goal\""));
     assert!(body.contains("id=\"tau-ops-memory-graph-filter-relation-type-all\""));
+    assert!(body.contains("id=\"tau-ops-memory-graph-filter-relation-type-contradicts\""));
     assert!(body.contains("id=\"tau-ops-memory-graph-filter-relation-type-related-to\""));
     assert!(body.contains("graph_filter_memory_type=all"));
+    assert!(body.contains("graph_filter_memory_type=fact"));
     assert!(body.contains("graph_filter_memory_type=goal"));
     assert!(body.contains("graph_filter_relation_type=all"));
+    assert!(body.contains("graph_filter_relation_type=contradicts"));
     assert!(body.contains("graph_filter_relation_type=related_to"));
 
     handle.abort();

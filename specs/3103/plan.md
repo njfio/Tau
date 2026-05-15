@@ -5,7 +5,8 @@
 2. Add RED gateway integration tests for query-driven filter contract rendering.
 3. Implement filter query normalization and deterministic filter marker/action rendering.
 4. Apply filters to graph node/edge contract views.
-5. Run regression suites and verification gates.
+5. Replace hard-coded example filter chips with state-derived memory/relation filter options.
+6. Run regression suites and verification gates.
 
 ## Affected Modules
 - `crates/tau-dashboard-ui/src/lib.rs`
@@ -19,6 +20,8 @@
   - Mitigation: derive links from shared route base and assert query fragments in tests.
 - Risk: filtering edges without filtering node scope can produce inconsistent graph contracts.
   - Mitigation: derive allowed node ids first and filter edges against both selected relation type and node scope.
+- Risk: state-derived relation values may include lineage relation names outside the canonical memory enum.
+  - Mitigation: keep relation filter values URL/attribute-safe and compare them against rendered graph row state.
 
 ## Interface / Contract Notes
 - Extend controls query with:
@@ -30,7 +33,6 @@
 - Add filter markers/links:
   - `#tau-ops-memory-graph-filter-controls`
   - `#tau-ops-memory-graph-filter-memory-type-all`
-  - `#tau-ops-memory-graph-filter-memory-type-goal`
   - `#tau-ops-memory-graph-filter-relation-type-all`
-  - `#tau-ops-memory-graph-filter-relation-type-related-to`
+- Add state-derived filter markers/links for each safe graph memory type and relation type.
 - P1 process rule: spec marked Reviewed; human review requested in PR.

@@ -64,6 +64,51 @@ impl TauOpsDashboardAuthMode {
     }
 }
 
+fn tau_ops_filter_token_id(value: &str) -> String {
+    let token = value
+        .trim()
+        .to_ascii_lowercase()
+        .chars()
+        .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { '-' })
+        .collect::<String>()
+        .trim_matches('-')
+        .to_string();
+    if token.is_empty() {
+        "unknown".to_string()
+    } else {
+        token
+    }
+}
+
+fn tau_ops_filter_label(value: &str) -> String {
+    value
+        .trim()
+        .split(['_', '-'])
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            let mut chars = part.chars();
+            match chars.next() {
+                Some(first) => format!("{}{}", first.to_ascii_uppercase(), chars.as_str()),
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn tau_ops_safe_graph_filter_value(value: &str) -> Option<String> {
+    let normalized = value.trim().to_ascii_lowercase();
+    if normalized.is_empty()
+        || !normalized
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
+    {
+        None
+    } else {
+        Some(normalized)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// Public enum `TauOpsDashboardRoute` in `tau-dashboard-ui`.
 pub enum TauOpsDashboardRoute {
@@ -4310,6 +4355,24 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
             value.to_string()
         }
     };
+    let memory_graph_filter_memory_type_options = {
+        let mut values = std::collections::BTreeSet::from(["all".to_string()]);
+        values.extend(
+            memory_graph_node_rows
+                .iter()
+                .filter_map(|row| tau_ops_safe_graph_filter_value(row.memory_type.as_str())),
+        );
+        values.into_iter().collect::<Vec<_>>()
+    };
+    let memory_graph_filter_relation_type_options = {
+        let mut values = std::collections::BTreeSet::from(["all".to_string()]);
+        values.extend(
+            memory_graph_edge_rows
+                .iter()
+                .filter_map(|row| tau_ops_safe_graph_filter_value(row.relation_type.as_str())),
+        );
+        values.into_iter().collect::<Vec<_>>()
+    };
     let filtered_memory_graph_node_rows = if memory_graph_filter_memory_type == "all" {
         memory_graph_node_rows.clone()
     } else {
@@ -4472,15 +4535,61 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     let memory_graph_filter_memory_type_all_href = format!(
         "{memory_graph_route_href_base}&graph_zoom={memory_graph_zoom_level}&graph_pan_x={memory_graph_pan_x_level}&graph_pan_y={memory_graph_pan_y_level}&graph_filter_memory_type=all&graph_filter_relation_type={memory_graph_filter_relation_type}"
     );
-    let memory_graph_filter_memory_type_goal_href = format!(
-        "{memory_graph_route_href_base}&graph_zoom={memory_graph_zoom_level}&graph_pan_x={memory_graph_pan_x_level}&graph_pan_y={memory_graph_pan_y_level}&graph_filter_memory_type=goal&graph_filter_relation_type={memory_graph_filter_relation_type}"
-    );
     let memory_graph_filter_relation_type_all_href = format!(
         "{memory_graph_route_href_base}&graph_zoom={memory_graph_zoom_level}&graph_pan_x={memory_graph_pan_x_level}&graph_pan_y={memory_graph_pan_y_level}&graph_filter_memory_type={memory_graph_filter_memory_type}&graph_filter_relation_type=all"
     );
-    let memory_graph_filter_relation_type_related_to_href = format!(
-        "{memory_graph_route_href_base}&graph_zoom={memory_graph_zoom_level}&graph_pan_x={memory_graph_pan_x_level}&graph_pan_y={memory_graph_pan_y_level}&graph_filter_memory_type={memory_graph_filter_memory_type}&graph_filter_relation_type=related_to"
-    );
+    let memory_graph_filter_memory_type_links_view = memory_graph_filter_memory_type_options
+        .iter()
+        .filter(|value| value.as_str() != "all")
+        .map(|value| {
+            let option_id = format!(
+                "tau-ops-memory-graph-filter-memory-type-{}",
+                tau_ops_filter_token_id(value)
+            );
+            let option_href = format!(
+                "{memory_graph_route_href_base}&graph_zoom={memory_graph_zoom_level}&graph_pan_x={memory_graph_pan_x_level}&graph_pan_y={memory_graph_pan_y_level}&graph_filter_memory_type={value}&graph_filter_relation_type={memory_graph_filter_relation_type}"
+            );
+            let option_label = format!("Memory Type: {}", tau_ops_filter_label(value));
+            view! {
+                <a
+                    id=option_id
+                    data-filter-target="memory-type"
+                    data-filter-value=value.clone()
+                    href=option_href
+                >
+                    {option_label}
+                </a>
+            }
+        })
+        .collect_view();
+    let memory_graph_filter_relation_type_links_view = memory_graph_filter_relation_type_options
+        .iter()
+        .filter(|value| value.as_str() != "all")
+        .map(|value| {
+            let option_id = format!(
+                "tau-ops-memory-graph-filter-relation-type-{}",
+                tau_ops_filter_token_id(value)
+            );
+            let option_href = format!(
+                "{memory_graph_route_href_base}&graph_zoom={memory_graph_zoom_level}&graph_pan_x={memory_graph_pan_x_level}&graph_pan_y={memory_graph_pan_y_level}&graph_filter_memory_type={memory_graph_filter_memory_type}&graph_filter_relation_type={value}"
+            );
+            let option_label = format!("Relation: {value}");
+            view! {
+                <a
+                    id=option_id
+                    data-filter-target="relation-type"
+                    data-filter-value=value.clone()
+                    href=option_href
+                >
+                    {option_label}
+                </a>
+            }
+        })
+        .collect_view();
+    let memory_graph_filter_memory_type_option_count =
+        memory_graph_filter_memory_type_options.len().to_string();
+    let memory_graph_filter_relation_type_option_count =
+        memory_graph_filter_relation_type_options.len().to_string();
     let memory_graph_node_count_value = filtered_memory_graph_node_rows.len();
     let memory_graph_edge_count_value = filtered_memory_graph_edge_rows.len();
     let memory_graph_node_count = memory_graph_node_count_value.to_string();
@@ -9715,35 +9824,27 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 id="tau-ops-memory-graph-filter-controls"
                                 data-filter-memory-type=memory_graph_filter_memory_type
                                 data-filter-relation-type=memory_graph_filter_relation_type
+                                data-filter-memory-type-count=memory_graph_filter_memory_type_option_count
+                                data-filter-relation-type-count=memory_graph_filter_relation_type_option_count
                             >
                                 <a
                                     id="tau-ops-memory-graph-filter-memory-type-all"
                                     data-filter-target="memory-type"
+                                    data-filter-value="all"
                                     href=memory_graph_filter_memory_type_all_href
                                 >
                                     Memory Type: All
                                 </a>
-                                <a
-                                    id="tau-ops-memory-graph-filter-memory-type-goal"
-                                    data-filter-target="memory-type"
-                                    href=memory_graph_filter_memory_type_goal_href
-                                >
-                                    Memory Type: Goal
-                                </a>
+                                {memory_graph_filter_memory_type_links_view}
                                 <a
                                     id="tau-ops-memory-graph-filter-relation-type-all"
                                     data-filter-target="relation-type"
+                                    data-filter-value="all"
                                     href=memory_graph_filter_relation_type_all_href
                                 >
                                     Relation: All
                                 </a>
-                                <a
-                                    id="tau-ops-memory-graph-filter-relation-type-related-to"
-                                    data-filter-target="relation-type"
-                                    href=memory_graph_filter_relation_type_related_to_href
-                                >
-                                    Relation: related_to
-                                </a>
+                                {memory_graph_filter_relation_type_links_view}
                             </div>
                             <section
                                 id="tau-ops-memory-graph-detail-panel"

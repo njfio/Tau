@@ -6,3 +6,4 @@
 4. [x] T4 (GREEN): apply filter state to memory graph node/edge contract views.
 5. [x] T5 (REGRESSION): rerun selected suites (`spec_3099`, `spec_3094`, `spec_3090`, `spec_3086`, `spec_3082`, `spec_3078`, `spec_3070`, `spec_3068`, `spec_3064`, `spec_3060`, `spec_2921`, `spec_2917`, `spec_2913`, `spec_2909`, `spec_2905`).
 6. [x] T6 (VERIFY): run `cargo fmt --check`, `cargo clippy -p tau-dashboard-ui -p tau-gateway -- -D warnings`, and scoped spec suites.
+7. [x] T7 (FOLLOW-UP): derive memory type and relation filter links from live graph rows instead of hard-coded example values.

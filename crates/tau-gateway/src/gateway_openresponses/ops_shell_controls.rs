@@ -1,6 +1,19 @@
 use serde::Deserialize;
 use tau_dashboard_ui::{TauOpsDashboardSidebarState, TauOpsDashboardTheme};
-use tau_memory::runtime::{MemoryRelationType, MemoryType};
+use tau_memory::runtime::MemoryType;
+
+fn normalize_memory_graph_relation_filter(value: &str) -> String {
+    let normalized = value.trim().to_ascii_lowercase();
+    if normalized.is_empty()
+        || !normalized
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
+    {
+        "all".to_string()
+    } else {
+        normalized
+    }
+}
 
 #[derive(Debug, Clone, Deserialize, Default)]
 pub(super) struct OpsShellControlsQuery {
@@ -350,13 +363,7 @@ impl OpsShellControlsQuery {
     }
 
     pub(super) fn requested_memory_graph_filter_relation_type(&self) -> String {
-        let value = self.graph_filter_relation_type.trim();
-        if value.is_empty() {
-            return "all".to_string();
-        }
-        MemoryRelationType::parse(value)
-            .map(|relation_type| relation_type.as_str().to_string())
-            .unwrap_or_else(|| "all".to_string())
+        normalize_memory_graph_relation_filter(self.graph_filter_relation_type.as_str())
     }
 
     pub(super) fn requested_tool_name(&self) -> Option<String> {
@@ -804,11 +811,20 @@ mod tests {
         };
         assert_eq!(
             alias.requested_memory_graph_filter_relation_type(),
-            "related_to"
+            "supports"
+        );
+
+        let raw_lineage = OpsShellControlsQuery {
+            graph_filter_relation_type: "contains".to_string(),
+            ..OpsShellControlsQuery::default()
+        };
+        assert_eq!(
+            raw_lineage.requested_memory_graph_filter_relation_type(),
+            "contains"
         );
 
         let invalid = OpsShellControlsQuery {
-            graph_filter_relation_type: "unknown".to_string(),
+            graph_filter_relation_type: "<unknown>".to_string(),
             ..OpsShellControlsQuery::default()
         };
         assert_eq!(invalid.requested_memory_graph_filter_relation_type(), "all");

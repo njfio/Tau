@@ -5650,13 +5650,20 @@ fn functional_spec_3103_c01_c02_memory_graph_route_renders_filter_controls_and_c
     });
 
     assert!(html.contains(
-        "id=\"tau-ops-memory-graph-filter-controls\" data-filter-memory-type=\"all\" data-filter-relation-type=\"all\""
+        "id=\"tau-ops-memory-graph-filter-controls\" data-filter-memory-type=\"all\" data-filter-relation-type=\"all\" data-filter-memory-type-count=\"3\" data-filter-relation-type-count=\"3\""
     ));
     assert!(html.contains("id=\"tau-ops-memory-graph-filter-memory-type-all\""));
+    assert!(html.contains("data-filter-value=\"all\""));
+    assert!(html.contains("id=\"tau-ops-memory-graph-filter-memory-type-fact\""));
     assert!(html.contains("id=\"tau-ops-memory-graph-filter-memory-type-goal\""));
     assert!(html.contains("id=\"tau-ops-memory-graph-filter-relation-type-all\""));
+    assert!(html.contains("id=\"tau-ops-memory-graph-filter-relation-type-contradicts\""));
     assert!(html.contains("id=\"tau-ops-memory-graph-filter-relation-type-related-to\""));
+    assert!(html.contains("data-filter-value=\"fact\""));
+    assert!(html.contains("data-filter-value=\"contradicts\""));
+    assert!(html.contains("graph_filter_memory_type=fact"));
     assert!(html.contains("graph_filter_memory_type=goal"));
+    assert!(html.contains("graph_filter_relation_type=contradicts"));
     assert!(html.contains("graph_filter_relation_type=related_to"));
 }
 
