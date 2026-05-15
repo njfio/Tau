@@ -4514,29 +4514,40 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     } else {
         memory_search_memory_type.clone()
     };
+    let memory_graph_control_detail_memory_id = if memory_detail_selected_entry_id.trim().is_empty()
+    {
+        memory_detail_requested_entry_id.trim()
+    } else {
+        memory_detail_selected_entry_id.trim()
+    };
+    let memory_graph_control_detail_query = if memory_graph_control_detail_memory_id.is_empty() {
+        String::new()
+    } else {
+        format!("&detail_memory_id={memory_graph_control_detail_memory_id}")
+    };
     let memory_graph_zoom_in_href = format!(
-        "{memory_graph_route_href_base}&graph_zoom={memory_graph_zoom_in_level}&graph_pan_x={memory_graph_pan_x_level}&graph_pan_y={memory_graph_pan_y_level}&graph_filter_memory_type={memory_graph_filter_memory_type}&graph_filter_relation_type={memory_graph_filter_relation_type}"
+        "{memory_graph_route_href_base}&graph_zoom={memory_graph_zoom_in_level}&graph_pan_x={memory_graph_pan_x_level}&graph_pan_y={memory_graph_pan_y_level}&graph_filter_memory_type={memory_graph_filter_memory_type}&graph_filter_relation_type={memory_graph_filter_relation_type}{memory_graph_control_detail_query}"
     );
     let memory_graph_zoom_out_href = format!(
-        "{memory_graph_route_href_base}&graph_zoom={memory_graph_zoom_out_level}&graph_pan_x={memory_graph_pan_x_level}&graph_pan_y={memory_graph_pan_y_level}&graph_filter_memory_type={memory_graph_filter_memory_type}&graph_filter_relation_type={memory_graph_filter_relation_type}"
+        "{memory_graph_route_href_base}&graph_zoom={memory_graph_zoom_out_level}&graph_pan_x={memory_graph_pan_x_level}&graph_pan_y={memory_graph_pan_y_level}&graph_filter_memory_type={memory_graph_filter_memory_type}&graph_filter_relation_type={memory_graph_filter_relation_type}{memory_graph_control_detail_query}"
     );
     let memory_graph_pan_left_href = format!(
-        "{memory_graph_route_href_base}&graph_zoom={memory_graph_zoom_level}&graph_pan_x={memory_graph_pan_left_x_level}&graph_pan_y={memory_graph_pan_y_level}&graph_filter_memory_type={memory_graph_filter_memory_type}&graph_filter_relation_type={memory_graph_filter_relation_type}"
+        "{memory_graph_route_href_base}&graph_zoom={memory_graph_zoom_level}&graph_pan_x={memory_graph_pan_left_x_level}&graph_pan_y={memory_graph_pan_y_level}&graph_filter_memory_type={memory_graph_filter_memory_type}&graph_filter_relation_type={memory_graph_filter_relation_type}{memory_graph_control_detail_query}"
     );
     let memory_graph_pan_right_href = format!(
-        "{memory_graph_route_href_base}&graph_zoom={memory_graph_zoom_level}&graph_pan_x={memory_graph_pan_right_x_level}&graph_pan_y={memory_graph_pan_y_level}&graph_filter_memory_type={memory_graph_filter_memory_type}&graph_filter_relation_type={memory_graph_filter_relation_type}"
+        "{memory_graph_route_href_base}&graph_zoom={memory_graph_zoom_level}&graph_pan_x={memory_graph_pan_right_x_level}&graph_pan_y={memory_graph_pan_y_level}&graph_filter_memory_type={memory_graph_filter_memory_type}&graph_filter_relation_type={memory_graph_filter_relation_type}{memory_graph_control_detail_query}"
     );
     let memory_graph_pan_up_href = format!(
-        "{memory_graph_route_href_base}&graph_zoom={memory_graph_zoom_level}&graph_pan_x={memory_graph_pan_x_level}&graph_pan_y={memory_graph_pan_up_y_level}&graph_filter_memory_type={memory_graph_filter_memory_type}&graph_filter_relation_type={memory_graph_filter_relation_type}"
+        "{memory_graph_route_href_base}&graph_zoom={memory_graph_zoom_level}&graph_pan_x={memory_graph_pan_x_level}&graph_pan_y={memory_graph_pan_up_y_level}&graph_filter_memory_type={memory_graph_filter_memory_type}&graph_filter_relation_type={memory_graph_filter_relation_type}{memory_graph_control_detail_query}"
     );
     let memory_graph_pan_down_href = format!(
-        "{memory_graph_route_href_base}&graph_zoom={memory_graph_zoom_level}&graph_pan_x={memory_graph_pan_x_level}&graph_pan_y={memory_graph_pan_down_y_level}&graph_filter_memory_type={memory_graph_filter_memory_type}&graph_filter_relation_type={memory_graph_filter_relation_type}"
+        "{memory_graph_route_href_base}&graph_zoom={memory_graph_zoom_level}&graph_pan_x={memory_graph_pan_x_level}&graph_pan_y={memory_graph_pan_down_y_level}&graph_filter_memory_type={memory_graph_filter_memory_type}&graph_filter_relation_type={memory_graph_filter_relation_type}{memory_graph_control_detail_query}"
     );
     let memory_graph_filter_memory_type_all_href = format!(
-        "{memory_graph_route_href_base}&graph_zoom={memory_graph_zoom_level}&graph_pan_x={memory_graph_pan_x_level}&graph_pan_y={memory_graph_pan_y_level}&graph_filter_memory_type=all&graph_filter_relation_type={memory_graph_filter_relation_type}"
+        "{memory_graph_route_href_base}&graph_zoom={memory_graph_zoom_level}&graph_pan_x={memory_graph_pan_x_level}&graph_pan_y={memory_graph_pan_y_level}&graph_filter_memory_type=all&graph_filter_relation_type={memory_graph_filter_relation_type}{memory_graph_control_detail_query}"
     );
     let memory_graph_filter_relation_type_all_href = format!(
-        "{memory_graph_route_href_base}&graph_zoom={memory_graph_zoom_level}&graph_pan_x={memory_graph_pan_x_level}&graph_pan_y={memory_graph_pan_y_level}&graph_filter_memory_type={memory_graph_filter_memory_type}&graph_filter_relation_type=all"
+        "{memory_graph_route_href_base}&graph_zoom={memory_graph_zoom_level}&graph_pan_x={memory_graph_pan_x_level}&graph_pan_y={memory_graph_pan_y_level}&graph_filter_memory_type={memory_graph_filter_memory_type}&graph_filter_relation_type=all{memory_graph_control_detail_query}"
     );
     let memory_graph_filter_memory_type_links_view = memory_graph_filter_memory_type_options
         .iter()
@@ -4547,7 +4558,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                 tau_ops_filter_token_id(value)
             );
             let option_href = format!(
-                "{memory_graph_route_href_base}&graph_zoom={memory_graph_zoom_level}&graph_pan_x={memory_graph_pan_x_level}&graph_pan_y={memory_graph_pan_y_level}&graph_filter_memory_type={value}&graph_filter_relation_type={memory_graph_filter_relation_type}"
+                "{memory_graph_route_href_base}&graph_zoom={memory_graph_zoom_level}&graph_pan_x={memory_graph_pan_x_level}&graph_pan_y={memory_graph_pan_y_level}&graph_filter_memory_type={value}&graph_filter_relation_type={memory_graph_filter_relation_type}{memory_graph_control_detail_query}"
             );
             let option_label = format!("Memory Type: {}", tau_ops_filter_label(value));
             view! {
@@ -4571,7 +4582,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                 tau_ops_filter_token_id(value)
             );
             let option_href = format!(
-                "{memory_graph_route_href_base}&graph_zoom={memory_graph_zoom_level}&graph_pan_x={memory_graph_pan_x_level}&graph_pan_y={memory_graph_pan_y_level}&graph_filter_memory_type={memory_graph_filter_memory_type}&graph_filter_relation_type={value}"
+                "{memory_graph_route_href_base}&graph_zoom={memory_graph_zoom_level}&graph_pan_x={memory_graph_pan_x_level}&graph_pan_y={memory_graph_pan_y_level}&graph_filter_memory_type={memory_graph_filter_memory_type}&graph_filter_relation_type={value}{memory_graph_control_detail_query}"
             );
             let option_label = format!("Relation: {value}");
             view! {

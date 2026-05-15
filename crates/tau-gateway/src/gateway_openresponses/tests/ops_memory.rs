@@ -2039,7 +2039,7 @@ async fn integration_spec_3094_c02_ops_memory_graph_zoom_query_clamps_and_update
 
     let response = client
         .get(format!(
-            "http://{addr}/ops/memory-graph?theme=light&sidebar=collapsed&session=ops-zoom&workspace_id=workspace-zoom&channel_id=channel-zoom&actor_id=operator&memory_type=goal&graph_zoom=1.95"
+            "http://{addr}/ops/memory-graph?theme=light&sidebar=collapsed&session=ops-zoom&workspace_id=workspace-zoom&channel_id=channel-zoom&actor_id=operator&memory_type=goal&graph_zoom=1.95&detail_memory_id=zoom-detail"
         ))
         .send()
         .await
@@ -2056,9 +2056,15 @@ async fn integration_spec_3094_c02_ops_memory_graph_zoom_query_clamps_and_update
     assert!(body.contains("id=\"tau-ops-memory-graph-zoom-in\""));
     assert!(body.contains("data-zoom-action=\"in\""));
     assert!(body.contains("graph_zoom=2.00"));
+    assert!(body.contains(
+        "graph_zoom=2.00&amp;graph_pan_x=0.00&amp;graph_pan_y=0.00&amp;graph_filter_memory_type=all&amp;graph_filter_relation_type=all&amp;detail_memory_id=zoom-detail"
+    ));
     assert!(body.contains("id=\"tau-ops-memory-graph-zoom-out\""));
     assert!(body.contains("data-zoom-action=\"out\""));
     assert!(body.contains("graph_zoom=1.85"));
+    assert!(body.contains(
+        "graph_zoom=1.85&amp;graph_pan_x=0.00&amp;graph_pan_y=0.00&amp;graph_filter_memory_type=all&amp;graph_filter_relation_type=all&amp;detail_memory_id=zoom-detail"
+    ));
 
     handle.abort();
 }
@@ -2072,7 +2078,7 @@ async fn integration_spec_3099_c02_ops_memory_graph_pan_query_clamps_and_updates
 
     let response = client
         .get(format!(
-            "http://{addr}/ops/memory-graph?theme=light&sidebar=collapsed&session=ops-pan&workspace_id=workspace-pan&channel_id=channel-pan&actor_id=operator&memory_type=goal&graph_zoom=1.95&graph_pan_x=490&graph_pan_y=-495"
+            "http://{addr}/ops/memory-graph?theme=light&sidebar=collapsed&session=ops-pan&workspace_id=workspace-pan&channel_id=channel-pan&actor_id=operator&memory_type=goal&graph_zoom=1.95&graph_pan_x=490&graph_pan_y=-495&detail_memory_id=pan-detail"
         ))
         .send()
         .await
@@ -2089,15 +2095,27 @@ async fn integration_spec_3099_c02_ops_memory_graph_pan_query_clamps_and_updates
     assert!(body.contains("id=\"tau-ops-memory-graph-pan-left\""));
     assert!(body.contains("data-pan-action=\"left\""));
     assert!(body.contains("graph_pan_x=465.00"));
+    assert!(body.contains(
+        "graph_zoom=1.95&amp;graph_pan_x=465.00&amp;graph_pan_y=-495.00&amp;graph_filter_memory_type=all&amp;graph_filter_relation_type=all&amp;detail_memory_id=pan-detail"
+    ));
     assert!(body.contains("id=\"tau-ops-memory-graph-pan-right\""));
     assert!(body.contains("data-pan-action=\"right\""));
     assert!(body.contains("graph_pan_x=500.00"));
+    assert!(body.contains(
+        "graph_zoom=1.95&amp;graph_pan_x=500.00&amp;graph_pan_y=-495.00&amp;graph_filter_memory_type=all&amp;graph_filter_relation_type=all&amp;detail_memory_id=pan-detail"
+    ));
     assert!(body.contains("id=\"tau-ops-memory-graph-pan-up\""));
     assert!(body.contains("data-pan-action=\"up\""));
     assert!(body.contains("graph_pan_y=-500.00"));
+    assert!(body.contains(
+        "graph_zoom=1.95&amp;graph_pan_x=490.00&amp;graph_pan_y=-500.00&amp;graph_filter_memory_type=all&amp;graph_filter_relation_type=all&amp;detail_memory_id=pan-detail"
+    ));
     assert!(body.contains("id=\"tau-ops-memory-graph-pan-down\""));
     assert!(body.contains("data-pan-action=\"down\""));
     assert!(body.contains("graph_pan_y=-470.00"));
+    assert!(body.contains(
+        "graph_zoom=1.95&amp;graph_pan_x=490.00&amp;graph_pan_y=-470.00&amp;graph_filter_memory_type=all&amp;graph_filter_relation_type=all&amp;detail_memory_id=pan-detail"
+    ));
 
     handle.abort();
 }
@@ -2170,7 +2188,7 @@ async fn integration_spec_3103_c02_ops_memory_graph_filter_query_updates_filter_
 
     let response = client
         .get(format!(
-            "http://{addr}/ops/memory-graph?theme=light&sidebar=collapsed&session={session_key}&workspace_id=workspace-filter&channel_id=channel-filter&actor_id=operator&memory_type=&graph_zoom=1.25&graph_pan_x=25&graph_pan_y=-25&graph_filter_memory_type=goal&graph_filter_relation_type=related_to"
+            "http://{addr}/ops/memory-graph?theme=light&sidebar=collapsed&session={session_key}&workspace_id=workspace-filter&channel_id=channel-filter&actor_id=operator&memory_type=&graph_zoom=1.25&graph_pan_x=25&graph_pan_y=-25&graph_filter_memory_type=goal&graph_filter_relation_type=related_to&detail_memory_id=goal-1"
         ))
         .send()
         .await
@@ -2191,10 +2209,22 @@ async fn integration_spec_3103_c02_ops_memory_graph_filter_query_updates_filter_
     assert!(body.contains("id=\"tau-ops-memory-graph-filter-relation-type-contradicts\""));
     assert!(body.contains("id=\"tau-ops-memory-graph-filter-relation-type-related-to\""));
     assert!(body.contains("graph_filter_memory_type=all"));
+    assert!(body.contains(
+        "graph_filter_memory_type=all&amp;graph_filter_relation_type=related_to&amp;detail_memory_id=goal-1"
+    ));
     assert!(body.contains("graph_filter_memory_type=fact"));
+    assert!(body.contains(
+        "graph_filter_memory_type=fact&amp;graph_filter_relation_type=related_to&amp;detail_memory_id=goal-1"
+    ));
     assert!(body.contains("graph_filter_memory_type=goal"));
     assert!(body.contains("graph_filter_relation_type=all"));
+    assert!(body.contains(
+        "graph_filter_memory_type=goal&amp;graph_filter_relation_type=all&amp;detail_memory_id=goal-1"
+    ));
     assert!(body.contains("graph_filter_relation_type=contradicts"));
+    assert!(body.contains(
+        "graph_filter_memory_type=goal&amp;graph_filter_relation_type=contradicts&amp;detail_memory_id=goal-1"
+    ));
     assert!(body.contains("graph_filter_relation_type=related_to"));
 
     handle.abort();

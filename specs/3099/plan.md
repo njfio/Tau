@@ -16,6 +16,8 @@
 ## Risks and Mitigations
 - Risk: pan links may drop existing route/session selector state.
   - Mitigation: derive links from existing route context and assert full `href` fragments in tests.
+- Risk: pan controls could clear an already selected memory detail panel.
+  - Mitigation: carry the selected/requested `detail_memory_id` into directional action hrefs and assert it in UI and gateway tests.
 - Risk: clamp math or directional mapping may regress expected behavior.
   - Mitigation: centralize pan parsing/clamping in controls query and assert deterministic next states.
 

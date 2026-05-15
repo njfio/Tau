@@ -18,6 +18,8 @@
   - Mitigation: centralize zoom normalization in controls query and keep defaults deterministic.
 - Risk: zoom links could drop existing session/scope selectors.
   - Mitigation: derive links from existing route context markers and assert full hrefs in tests.
+- Risk: zoom controls could clear an already selected memory detail panel.
+  - Mitigation: carry the selected/requested `detail_memory_id` into zoom action hrefs and assert it in UI and gateway tests.
 
 ## Interface / Contract Notes
 - Extend controls query with `graph_zoom` parsing (clamped to `[0.25, 2.00]`).

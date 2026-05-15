@@ -18,6 +18,8 @@
 ## Risks and Mitigations
 - Risk: filter links may drop session/search/zoom/pan state.
   - Mitigation: derive links from shared route base and assert query fragments in tests.
+- Risk: filter controls could clear an already selected memory detail panel.
+  - Mitigation: carry the selected/requested `detail_memory_id` into filter action hrefs and assert it in UI and gateway tests.
 - Risk: filtering edges without filtering node scope can produce inconsistent graph contracts.
   - Mitigation: derive allowed node ids first and filter edges against both selected relation type and node scope.
 - Risk: state-derived relation values may include lineage relation names outside the canonical memory enum.
@@ -27,6 +29,7 @@
 - Extend controls query with:
   - `graph_filter_memory_type`
   - `graph_filter_relation_type`
+  - existing `detail_memory_id` passthrough on filter action links
 - Extend dashboard snapshot with:
   - `memory_graph_filter_memory_type`
   - `memory_graph_filter_relation_type`

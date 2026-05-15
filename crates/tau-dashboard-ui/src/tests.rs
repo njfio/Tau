@@ -5544,6 +5544,9 @@ fn functional_spec_3094_c01_c02_memory_graph_route_renders_default_zoom_markers_
             memory_search_channel_id: "channel-zoom".to_string(),
             memory_search_actor_id: "operator".to_string(),
             memory_search_memory_type: "goal".to_string(),
+            memory_detail_visible: true,
+            memory_detail_requested_entry_id: "zoom-detail".to_string(),
+            memory_detail_selected_entry_id: "zoom-detail".to_string(),
             ..TauOpsDashboardChatSnapshot::default()
         },
         harness: TauOpsDashboardHarnessSnapshot::default(),
@@ -5555,9 +5558,15 @@ fn functional_spec_3094_c01_c02_memory_graph_route_renders_default_zoom_markers_
     assert!(html.contains("id=\"tau-ops-memory-graph-zoom-in\""));
     assert!(html.contains("data-zoom-action=\"in\""));
     assert!(html.contains("graph_zoom=1.10"));
+    assert!(html.contains(
+        "graph_zoom=1.10&amp;graph_pan_x=0.00&amp;graph_pan_y=0.00&amp;graph_filter_memory_type=all&amp;graph_filter_relation_type=all&amp;detail_memory_id=zoom-detail"
+    ));
     assert!(html.contains("id=\"tau-ops-memory-graph-zoom-out\""));
     assert!(html.contains("data-zoom-action=\"out\""));
     assert!(html.contains("graph_zoom=0.90"));
+    assert!(html.contains(
+        "graph_zoom=0.90&amp;graph_pan_x=0.00&amp;graph_pan_y=0.00&amp;graph_filter_memory_type=all&amp;graph_filter_relation_type=all&amp;detail_memory_id=zoom-detail"
+    ));
 }
 
 #[test]
@@ -5574,6 +5583,9 @@ fn functional_spec_3099_c01_c02_memory_graph_route_renders_default_pan_markers_a
             memory_search_channel_id: "channel-pan".to_string(),
             memory_search_actor_id: "operator".to_string(),
             memory_search_memory_type: "goal".to_string(),
+            memory_detail_visible: true,
+            memory_detail_requested_entry_id: "pan-detail".to_string(),
+            memory_detail_selected_entry_id: "pan-detail".to_string(),
             ..TauOpsDashboardChatSnapshot::default()
         },
         harness: TauOpsDashboardHarnessSnapshot::default(),
@@ -5585,15 +5597,27 @@ fn functional_spec_3099_c01_c02_memory_graph_route_renders_default_pan_markers_a
     assert!(html.contains("id=\"tau-ops-memory-graph-pan-left\""));
     assert!(html.contains("data-pan-action=\"left\""));
     assert!(html.contains("graph_pan_x=-25.00"));
+    assert!(html.contains(
+        "graph_zoom=1.00&amp;graph_pan_x=-25.00&amp;graph_pan_y=0.00&amp;graph_filter_memory_type=all&amp;graph_filter_relation_type=all&amp;detail_memory_id=pan-detail"
+    ));
     assert!(html.contains("id=\"tau-ops-memory-graph-pan-right\""));
     assert!(html.contains("data-pan-action=\"right\""));
     assert!(html.contains("graph_pan_x=25.00"));
+    assert!(html.contains(
+        "graph_zoom=1.00&amp;graph_pan_x=25.00&amp;graph_pan_y=0.00&amp;graph_filter_memory_type=all&amp;graph_filter_relation_type=all&amp;detail_memory_id=pan-detail"
+    ));
     assert!(html.contains("id=\"tau-ops-memory-graph-pan-up\""));
     assert!(html.contains("data-pan-action=\"up\""));
     assert!(html.contains("graph_pan_y=-25.00"));
+    assert!(html.contains(
+        "graph_zoom=1.00&amp;graph_pan_x=0.00&amp;graph_pan_y=-25.00&amp;graph_filter_memory_type=all&amp;graph_filter_relation_type=all&amp;detail_memory_id=pan-detail"
+    ));
     assert!(html.contains("id=\"tau-ops-memory-graph-pan-down\""));
     assert!(html.contains("data-pan-action=\"down\""));
     assert!(html.contains("graph_pan_y=25.00"));
+    assert!(html.contains(
+        "graph_zoom=1.00&amp;graph_pan_x=0.00&amp;graph_pan_y=25.00&amp;graph_filter_memory_type=all&amp;graph_filter_relation_type=all&amp;detail_memory_id=pan-detail"
+    ));
 }
 
 #[test]
@@ -5610,6 +5634,9 @@ fn functional_spec_3103_c01_c02_memory_graph_route_renders_filter_controls_and_c
             memory_search_channel_id: "channel-filter".to_string(),
             memory_search_actor_id: "operator".to_string(),
             memory_search_memory_type: "goal".to_string(),
+            memory_detail_visible: true,
+            memory_detail_requested_entry_id: "goal-1".to_string(),
+            memory_detail_selected_entry_id: "goal-1".to_string(),
             memory_graph_node_rows: vec![
                 TauOpsDashboardMemoryGraphNodeRow {
                     memory_id: "goal-1".to_string(),
@@ -5662,8 +5689,14 @@ fn functional_spec_3103_c01_c02_memory_graph_route_renders_filter_controls_and_c
     assert!(html.contains("data-filter-value=\"fact\""));
     assert!(html.contains("data-filter-value=\"contradicts\""));
     assert!(html.contains("graph_filter_memory_type=fact"));
+    assert!(html.contains(
+        "graph_filter_memory_type=fact&amp;graph_filter_relation_type=all&amp;detail_memory_id=goal-1"
+    ));
     assert!(html.contains("graph_filter_memory_type=goal"));
     assert!(html.contains("graph_filter_relation_type=contradicts"));
+    assert!(html.contains(
+        "graph_filter_memory_type=all&amp;graph_filter_relation_type=contradicts&amp;detail_memory_id=goal-1"
+    ));
     assert!(html.contains("graph_filter_relation_type=related_to"));
 }
 
