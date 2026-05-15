@@ -311,6 +311,47 @@ fn ops_shell_context_href(
     )
 }
 
+fn append_memory_graph_shell_context(
+    mut href: String,
+    context: &TauOpsDashboardShellContext,
+) -> String {
+    if !matches!(context.active_route, TauOpsDashboardRoute::MemoryGraph) {
+        return href;
+    }
+
+    let chat = &context.chat;
+    href.push_str("&workspace_id=");
+    href.push_str(chat.memory_search_workspace_id.trim());
+    href.push_str("&channel_id=");
+    href.push_str(chat.memory_search_channel_id.trim());
+    href.push_str("&actor_id=");
+    href.push_str(chat.memory_search_actor_id.trim());
+    href.push_str("&memory_type=");
+    href.push_str(chat.memory_search_memory_type.trim());
+    href.push_str("&graph_zoom=");
+    href.push_str(chat.memory_graph_zoom_level.trim());
+    href.push_str("&graph_pan_x=");
+    href.push_str(chat.memory_graph_pan_x_level.trim());
+    href.push_str("&graph_pan_y=");
+    href.push_str(chat.memory_graph_pan_y_level.trim());
+    href.push_str("&graph_filter_memory_type=");
+    href.push_str(chat.memory_graph_filter_memory_type.trim());
+    href.push_str("&graph_filter_relation_type=");
+    href.push_str(chat.memory_graph_filter_relation_type.trim());
+
+    let detail_memory_id = if chat.memory_detail_selected_entry_id.trim().is_empty() {
+        chat.memory_detail_requested_entry_id.trim()
+    } else {
+        chat.memory_detail_selected_entry_id.trim()
+    };
+    if !detail_memory_id.is_empty() {
+        href.push_str("&detail_memory_id=");
+        href.push_str(detail_memory_id);
+    }
+
+    href
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// Public struct `TauOpsDashboardAlertFeedRow` in `tau-dashboard-ui`.
 pub struct TauOpsDashboardAlertFeedRow {
@@ -2234,23 +2275,32 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     let shell_subtitle = format!("{breadcrumb_label} operator control surface");
     let sidebar_toggle_target_state = context.sidebar_state.toggled().as_str();
     let shell_nav_session_key = context.chat.active_session_key.clone();
-    let sidebar_toggle_href = ops_shell_context_href(
-        active_shell_path,
-        context.theme,
-        context.sidebar_state.toggled(),
-        shell_nav_session_key.as_str(),
+    let sidebar_toggle_href = append_memory_graph_shell_context(
+        ops_shell_context_href(
+            active_shell_path,
+            context.theme,
+            context.sidebar_state.toggled(),
+            shell_nav_session_key.as_str(),
+        ),
+        &context,
     );
-    let dark_theme_href = ops_shell_context_href(
-        active_shell_path,
-        TauOpsDashboardTheme::Dark,
-        context.sidebar_state,
-        shell_nav_session_key.as_str(),
+    let dark_theme_href = append_memory_graph_shell_context(
+        ops_shell_context_href(
+            active_shell_path,
+            TauOpsDashboardTheme::Dark,
+            context.sidebar_state,
+            shell_nav_session_key.as_str(),
+        ),
+        &context,
     );
-    let light_theme_href = ops_shell_context_href(
-        active_shell_path,
-        TauOpsDashboardTheme::Light,
-        context.sidebar_state,
-        shell_nav_session_key.as_str(),
+    let light_theme_href = append_memory_graph_shell_context(
+        ops_shell_context_href(
+            active_shell_path,
+            TauOpsDashboardTheme::Light,
+            context.sidebar_state,
+            shell_nav_session_key.as_str(),
+        ),
+        &context,
     );
     let nav_command_center_href = ops_shell_context_href(
         TauOpsDashboardRoute::Ops.shell_path(),
@@ -2288,11 +2338,14 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
         context.sidebar_state,
         shell_nav_session_key.as_str(),
     );
-    let nav_memory_graph_href = ops_shell_context_href(
-        TauOpsDashboardRoute::MemoryGraph.shell_path(),
-        context.theme,
-        context.sidebar_state,
-        shell_nav_session_key.as_str(),
+    let nav_memory_graph_href = append_memory_graph_shell_context(
+        ops_shell_context_href(
+            TauOpsDashboardRoute::MemoryGraph.shell_path(),
+            context.theme,
+            context.sidebar_state,
+            shell_nav_session_key.as_str(),
+        ),
+        &context,
     );
     let nav_tools_jobs_href = ops_shell_context_href(
         TauOpsDashboardRoute::ToolsJobs.shell_path(),

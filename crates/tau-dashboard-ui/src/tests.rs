@@ -5701,6 +5701,46 @@ fn functional_spec_3103_c01_c02_memory_graph_route_renders_filter_controls_and_c
 }
 
 #[test]
+fn regression_spec_3103_c02_memory_graph_shell_controls_preserve_graph_context() {
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        auth_mode: TauOpsDashboardAuthMode::Token,
+        active_route: TauOpsDashboardRoute::MemoryGraph,
+        theme: TauOpsDashboardTheme::Dark,
+        sidebar_state: TauOpsDashboardSidebarState::Expanded,
+        command_center: TauOpsDashboardCommandCenterSnapshot::default(),
+        chat: TauOpsDashboardChatSnapshot {
+            active_session_key: "ops-shell-context".to_string(),
+            memory_search_workspace_id: "workspace-shell".to_string(),
+            memory_search_channel_id: "channel-shell".to_string(),
+            memory_search_actor_id: "operator".to_string(),
+            memory_search_memory_type: "goal".to_string(),
+            memory_graph_zoom_level: "1.25".to_string(),
+            memory_graph_pan_x_level: "25.00".to_string(),
+            memory_graph_pan_y_level: "-25.00".to_string(),
+            memory_graph_filter_memory_type: "goal".to_string(),
+            memory_graph_filter_relation_type: "related_to".to_string(),
+            memory_detail_visible: true,
+            memory_detail_requested_entry_id: "goal-1".to_string(),
+            memory_detail_selected_entry_id: "goal-1".to_string(),
+            ..TauOpsDashboardChatSnapshot::default()
+        },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
+    });
+
+    assert!(html.contains("id=\"tau-ops-sidebar-hamburger\""));
+    assert!(html.contains(
+        "href=\"/ops/memory-graph?theme=dark&amp;sidebar=collapsed&amp;session=ops-shell-context&amp;workspace_id=workspace-shell&amp;channel_id=channel-shell&amp;actor_id=operator&amp;memory_type=goal&amp;graph_zoom=1.25&amp;graph_pan_x=25.00&amp;graph_pan_y=-25.00&amp;graph_filter_memory_type=goal&amp;graph_filter_relation_type=related_to&amp;detail_memory_id=goal-1\""
+    ));
+    assert!(html.contains("id=\"tau-ops-theme-toggle-light\""));
+    assert!(html.contains(
+        "href=\"/ops/memory-graph?theme=light&amp;sidebar=expanded&amp;session=ops-shell-context&amp;workspace_id=workspace-shell&amp;channel_id=channel-shell&amp;actor_id=operator&amp;memory_type=goal&amp;graph_zoom=1.25&amp;graph_pan_x=25.00&amp;graph_pan_y=-25.00&amp;graph_filter_memory_type=goal&amp;graph_filter_relation_type=related_to&amp;detail_memory_id=goal-1\""
+    ));
+    assert!(html.contains(
+        "data-nav-item=\"memory-graph\" href=\"/ops/memory-graph?theme=dark&amp;sidebar=expanded&amp;session=ops-shell-context&amp;workspace_id=workspace-shell&amp;channel_id=channel-shell&amp;actor_id=operator&amp;memory_type=goal&amp;graph_zoom=1.25&amp;graph_pan_x=25.00&amp;graph_pan_y=-25.00&amp;graph_filter_memory_type=goal&amp;graph_filter_relation_type=related_to&amp;detail_memory_id=goal-1\""
+    ));
+}
+
+#[test]
 fn functional_spec_3106_c01_c03_tools_route_renders_inventory_panel_markers() {
     let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
         auth_mode: TauOpsDashboardAuthMode::Token,

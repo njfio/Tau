@@ -16,6 +16,7 @@ In scope:
 - Parse and normalize filter query state for graph route shell rendering.
 - Apply filters to graph node/edge contract views.
 - Preserve selected/requested `detail_memory_id` context when filter actions update graph state.
+- Preserve graph route context through active shell controls such as theme, sidebar, and current-route navigation.
 - Validate filter contracts via UI and gateway conformance tests.
 
 Out of scope:
@@ -33,7 +34,8 @@ and filter action links include the graph's available memory and relation types.
 Given `/ops/memory-graph` renders with explicit filter query,
 when shell HTML is produced,
 then filter state is normalized and graph node/edge contract outputs reflect selected filters,
-and state-derived filter action links preserve route state and selected/requested memory detail context while updating target filter values.
+state-derived filter action links preserve route state and selected/requested memory detail context while updating target filter values,
+and active shell controls preserve the same graph context when they update shell state.
 
 ### AC-3 Non-memory-graph routes preserve hidden graph contracts
 Given any non-memory-graph route renders,
@@ -50,6 +52,7 @@ then selected conformance/regression suites remain green.
 |---|---|---|---|---|---|
 | C-01 | AC-1 | Functional | graph route without filter query and mixed graph state | render route | filter markers expose default contracts and state-derived memory/relation options |
 | C-02 | AC-2 | Integration | graph route with filter and `detail_memory_id` query | render route | state and filter action links reflect normalized filter values plus available graph values, preserve detail context, and graph contracts reflect filters |
+| C-05 | AC-2 | Regression | graph route with filter, pan/zoom, scope, and `detail_memory_id` query | render route | active shell controls preserve graph context while changing shell state |
 | C-03 | AC-3 | Regression | route is not `/ops/memory-graph` | render route | graph panel markers remain present and hidden |
 | C-04 | AC-4 | Regression | existing memory specs | rerun selected suites | prior contracts remain green |
 

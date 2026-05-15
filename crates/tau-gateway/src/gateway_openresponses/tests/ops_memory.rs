@@ -2229,3 +2229,39 @@ async fn integration_spec_3103_c02_ops_memory_graph_filter_query_updates_filter_
 
     handle.abort();
 }
+
+#[tokio::test]
+async fn integration_spec_3103_c05_ops_memory_graph_shell_controls_preserve_graph_context() {
+    let temp = tempdir().expect("tempdir");
+    let state = test_state(temp.path(), 10_000, "secret");
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+    let client = Client::new();
+    let session_key = "ops-shell-context";
+
+    let response = client
+        .get(format!(
+            "http://{addr}/ops/memory-graph?theme=dark&sidebar=expanded&session={session_key}&workspace_id=workspace-shell&channel_id=channel-shell&actor_id=operator&memory_type=goal&graph_zoom=1.25&graph_pan_x=25&graph_pan_y=-25&graph_filter_memory_type=goal&graph_filter_relation_type=related_to&detail_memory_id=goal-1"
+        ))
+        .send()
+        .await
+        .expect("load ops memory graph shell context route");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response
+        .text()
+        .await
+        .expect("read ops memory graph shell context body");
+
+    assert!(body.contains("id=\"tau-ops-sidebar-hamburger\""));
+    assert!(body.contains(
+        "href=\"/ops/memory-graph?theme=dark&amp;sidebar=collapsed&amp;session=ops-shell-context&amp;workspace_id=workspace-shell&amp;channel_id=channel-shell&amp;actor_id=operator&amp;memory_type=goal&amp;graph_zoom=1.25&amp;graph_pan_x=25.00&amp;graph_pan_y=-25.00&amp;graph_filter_memory_type=goal&amp;graph_filter_relation_type=related_to&amp;detail_memory_id=goal-1\""
+    ));
+    assert!(body.contains("id=\"tau-ops-theme-toggle-light\""));
+    assert!(body.contains(
+        "href=\"/ops/memory-graph?theme=light&amp;sidebar=expanded&amp;session=ops-shell-context&amp;workspace_id=workspace-shell&amp;channel_id=channel-shell&amp;actor_id=operator&amp;memory_type=goal&amp;graph_zoom=1.25&amp;graph_pan_x=25.00&amp;graph_pan_y=-25.00&amp;graph_filter_memory_type=goal&amp;graph_filter_relation_type=related_to&amp;detail_memory_id=goal-1\""
+    ));
+    assert!(body.contains(
+        "data-nav-item=\"memory-graph\" href=\"/ops/memory-graph?theme=dark&amp;sidebar=expanded&amp;session=ops-shell-context&amp;workspace_id=workspace-shell&amp;channel_id=channel-shell&amp;actor_id=operator&amp;memory_type=goal&amp;graph_zoom=1.25&amp;graph_pan_x=25.00&amp;graph_pan_y=-25.00&amp;graph_filter_memory_type=goal&amp;graph_filter_relation_type=related_to&amp;detail_memory_id=goal-1\""
+    ));
+
+    handle.abort();
+}

@@ -8,3 +8,4 @@
 6. [x] T6 (VERIFY): run `cargo fmt --check`, `cargo clippy -p tau-dashboard-ui -p tau-gateway -- -D warnings`, and scoped spec suites.
 7. [x] T7 (FOLLOW-UP): derive memory type and relation filter links from live graph rows instead of hard-coded example values.
 8. [x] T8 (FOLLOW-UP): preserve selected/requested memory detail context through filter control links.
+9. [x] T9 (FOLLOW-UP): preserve graph route context through active Memory Graph shell controls.
