@@ -1346,8 +1346,9 @@ async fn integration_spec_3068_c02_ops_memory_graph_route_renders_node_and_edge_
     assert!(body.contains(
         "id=\"tau-ops-memory-graph-edge-0\" data-source-memory-id=\"mem-graph-source\" data-target-memory-id=\"mem-graph-target\""
     ));
-    assert!(body
-        .contains("mem-graph-source -&gt; mem-graph-target | relation related_to | weight 0.4200"));
+    assert!(body.contains(
+        "data-edge-summary-text=\"mem-graph-source -&gt; mem-graph-target | relation related_to | weight 0.4200\""
+    ));
 
     handle.abort();
 }
@@ -2014,9 +2015,17 @@ async fn integration_spec_3090_c02_ops_memory_graph_focus_marks_connected_edges_
     assert!(body.contains(
         "data-source-memory-id=\"mem-focus\" data-target-memory-id=\"mem-neighbor\" data-relation-type=\"related_to\" data-relation-weight=\"0.4200\" data-edge-style-token=\"solid\" data-edge-stroke-dasharray=\"none\" data-edge-hover-highlighted=\"true\""
     ));
+    assert!(body.contains("data-edge-focus=\"connected\""));
+    assert!(body.contains("data-source-detail-href=\"/ops/memory-graph?theme=light"));
+    assert!(body.contains("data-target-detail-href=\"/ops/memory-graph?theme=light"));
+    assert!(body.contains("detail_memory_id=mem-focus"));
+    assert!(body.contains("detail_memory_id=mem-neighbor"));
+    assert!(body.contains("data-memory-graph-edge-source=\"mem-focus\""));
+    assert!(body.contains("data-memory-graph-edge-target=\"mem-neighbor\""));
     assert!(body.contains(
         "data-source-memory-id=\"mem-neighbor\" data-target-memory-id=\"mem-unrelated\" data-relation-type=\"updates\" data-relation-weight=\"0.2000\" data-edge-style-token=\"dashed\" data-edge-stroke-dasharray=\"6 4\" data-edge-hover-highlighted=\"false\""
     ));
+    assert!(body.contains("data-edge-focus=\"none\""));
 
     handle.abort();
 }

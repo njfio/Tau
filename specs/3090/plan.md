@@ -20,5 +20,6 @@
 ## Interface / Contract Notes
 - Extend node rows with `data-node-hover-neighbor` markers.
 - Extend edge rows with `data-edge-hover-highlighted` markers.
+- Extend edge rows with `data-edge-focus`, source/target detail href markers, and endpoint links so a focused edge can be inspected without relying on prose text.
 - No external API changes; SSR marker-level contracts only.
 - P1 process rule: spec marked Reviewed; human review requested in PR.

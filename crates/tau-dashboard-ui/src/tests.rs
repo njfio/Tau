@@ -5237,7 +5237,7 @@ fn functional_spec_3068_c02_memory_graph_route_renders_readable_node_and_edge_ro
     assert!(html
         .contains("mem-readable-target | type fact | importance 0.3000 | size small | color fact"));
     assert!(html.contains(
-        "mem-readable-source -&gt; mem-readable-target | relation related_to | weight 0.4200"
+        "data-edge-summary-text=\"mem-readable-source -&gt; mem-readable-target | relation related_to | weight 0.4200\""
     ));
 }
 
@@ -5517,9 +5517,17 @@ fn functional_spec_3090_c02_memory_graph_route_marks_connected_edges_and_neighbo
     assert!(html.contains(
         "data-source-memory-id=\"mem-focus\" data-target-memory-id=\"mem-neighbor\" data-relation-type=\"related_to\" data-relation-weight=\"0.4200\" data-edge-style-token=\"solid\" data-edge-stroke-dasharray=\"none\" data-edge-hover-highlighted=\"true\""
     ));
+    assert!(html.contains("data-edge-focus=\"connected\""));
+    assert!(html.contains("data-source-detail-href=\"/ops/memory-graph?theme=light"));
+    assert!(html.contains("data-target-detail-href=\"/ops/memory-graph?theme=light"));
+    assert!(html.contains("detail_memory_id=mem-focus"));
+    assert!(html.contains("detail_memory_id=mem-neighbor"));
+    assert!(html.contains("data-memory-graph-edge-source=\"mem-focus\""));
+    assert!(html.contains("data-memory-graph-edge-target=\"mem-neighbor\""));
     assert!(html.contains(
         "data-source-memory-id=\"mem-neighbor\" data-target-memory-id=\"mem-unrelated\" data-relation-type=\"updates\" data-relation-weight=\"0.2000\" data-edge-style-token=\"dashed\" data-edge-stroke-dasharray=\"6 4\" data-edge-hover-highlighted=\"false\""
     ));
+    assert!(html.contains("data-edge-focus=\"none\""));
 }
 
 #[test]

@@ -27,7 +27,7 @@ then highlight markers remain present with default non-highlighted values.
 ### AC-2 Focused memory context highlights connected edges and neighbor nodes
 Given `/ops/memory-graph` renders with an active detail memory ID,
 when graph nodes/edges are rendered,
-then edges connected to the focused memory are marked highlighted and connected nodes are marked neighbor-highlighted.
+then edges connected to the focused memory are marked highlighted, connected nodes are marked neighbor-highlighted, and edge rows expose navigable source/target detail links.
 
 ### AC-3 Non-memory-graph routes preserve hidden graph contracts
 Given any non-memory-graph route renders,
@@ -43,7 +43,7 @@ then selected conformance/regression suites remain green.
 | Case | AC | Tier | Given | When | Then |
 |---|---|---|---|---|---|
 | C-01 | AC-1 | Functional | `/ops/memory-graph` without active detail focus | render route | edge/node highlight markers remain deterministic with `false` defaults |
-| C-02 | AC-2 | Integration | graph route includes active detail memory ID | render route | connected edges expose `data-edge-hover-highlighted="true"` and connected nodes expose `data-node-hover-neighbor="true"` |
+| C-02 | AC-2 | Integration | graph route includes active detail memory ID | render route | connected edges expose `data-edge-hover-highlighted="true"`, `data-edge-focus="connected"`, source/target detail links, and connected nodes expose `data-node-hover-neighbor="true"` |
 | C-03 | AC-3 | Regression | route is not `/ops/memory-graph` | render route | graph panel markers remain present and hidden |
 | C-04 | AC-4 | Regression | existing memory specs | rerun selected suites | prior contracts remain green |
 

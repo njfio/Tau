@@ -5,3 +5,4 @@
 3. [x] T3 (GREEN): implement deterministic edge/node highlight marker rendering.
 4. [x] T4 (REGRESSION): rerun selected suites (`spec_3086`, `spec_3082`, `spec_3078`, `spec_3070`, `spec_3068`, `spec_3064`, `spec_3060`, `spec_2921`, `spec_2917`, `spec_2913`, `spec_2909`, `spec_2905`).
 5. [x] T5 (VERIFY): run `cargo fmt --check`, `cargo clippy -p tau-dashboard-ui -p tau-gateway -- -D warnings`, and scoped spec suites.
+6. [x] T6 (FOLLOW-UP): make focused graph edge rows navigable with source/target detail links and route-level proof markers.

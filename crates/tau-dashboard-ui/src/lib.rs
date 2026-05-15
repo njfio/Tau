@@ -5180,9 +5180,26 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                 } else {
                     "false"
                 };
+            let edge_focus_state = if edge_hover_highlighted == "true" {
+                "connected"
+            } else {
+                "none"
+            };
+            let source_detail_href = format!(
+                "{memory_graph_route_href_base}&detail_memory_id={}",
+                row.source_memory_id
+            );
+            let target_detail_href = format!(
+                "{memory_graph_route_href_base}&detail_memory_id={}",
+                row.target_memory_id
+            );
             let edge_summary = format!(
                 "{} -> {} | relation {} | weight {}",
                 row.source_memory_id, row.target_memory_id, row.relation_type, row.effective_weight
+            );
+            let edge_relation_summary = format!(
+                "relation {} | weight {}",
+                row.relation_type, row.effective_weight
             );
             view! {
                 <li
@@ -5194,8 +5211,30 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     data-edge-style-token=edge_style_token
                     data-edge-stroke-dasharray=edge_stroke_dasharray
                     data-edge-hover-highlighted=edge_hover_highlighted
+                    data-edge-focus=edge_focus_state
+                    data-source-detail-href=source_detail_href.clone()
+                    data-target-detail-href=target_detail_href.clone()
+                    data-edge-detail-target="tau-ops-memory-graph-detail-panel"
+                    data-edge-summary-text=edge_summary.clone()
+                    aria-label=edge_summary
                 >
-                    {edge_summary}
+                    <a
+                        data-memory-graph-edge-source=row.source_memory_id.clone()
+                        href=source_detail_href.clone()
+                    >
+                        {row.source_memory_id.clone()}
+                    </a>
+                    <span>{" -> "}</span>
+                    <a
+                        data-memory-graph-edge-target=row.target_memory_id.clone()
+                        href=target_detail_href.clone()
+                    >
+                        {row.target_memory_id.clone()}
+                    </a>
+                    <span data-memory-graph-edge-summary=row_id.clone()>
+                        {" | "}
+                        {edge_relation_summary}
+                    </span>
                 </li>
             }
         })
@@ -7282,9 +7321,13 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     font-weight: 740;
                     overflow-wrap: anywhere;
                 }
-                #tau-ops-memory-graph-nodes a {
+                #tau-ops-memory-graph-nodes a,
+                #tau-ops-memory-graph-edges a {
                     color: #dbe8ef;
                     text-decoration: none;
+                }
+                #tau-ops-memory-graph-edges a {
+                    color: #9cc8ff;
                 }
                 #tau-ops-memory-graph-nodes li[data-node-selected="true"],
                 #tau-ops-memory-graph-nodes li[data-node-hover-neighbor="true"],
