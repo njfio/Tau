@@ -1,8 +1,8 @@
 # Plan: Issue #3086 - ops memory-graph node detail panel contracts
 
 ## Approach
-1. Add RED UI tests for graph node selection/detail-href and graph detail panel markers.
-2. Add RED gateway integration tests for graph-route selected-node detail marker behavior.
+1. Add RED UI tests for graph node selection/detail-href, graph detail panel markers, selected proof, and connected-relation row markers.
+2. Add RED gateway integration tests for graph-route selected-node detail marker behavior, including relation proof.
 3. Add gateway regression coverage for selected ops-harness lineage nodes that are not persisted memory records.
 4. Implement deterministic node selection + detail-href + graph/detail-panel rendering contracts for persisted and lineage nodes.
 5. Run regression suites for memory graph/explorer contracts and verification gates.
@@ -24,6 +24,7 @@
 - Extend memory graph node rows with deterministic selection/detail markers.
 - Add a dedicated graph-route detail panel marker surface:
   - `#tau-ops-memory-graph-detail-panel`
+- Graph-route detail panels expose `#tau-ops-memory-graph-detail-proof`, `#tau-ops-memory-graph-detail-relation-scope`, and `#tau-ops-memory-graph-detail-relations` so selected id/type and stored-vs-graph relation counts are visible without leaving the graph page.
 - If selected ID is not in `tau-memory`, fall back to the ops-harness lineage overlay before clearing the selection.
 - No external API additions; contracts are SSR marker-level only.
 - P1 process rule: spec marked Reviewed; human review requested in PR.

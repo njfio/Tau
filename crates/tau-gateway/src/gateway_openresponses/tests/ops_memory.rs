@@ -1760,6 +1760,29 @@ async fn integration_spec_3086_c02_ops_memory_graph_selected_node_shows_detail_p
         .expect("create unselected graph memory entry");
     assert_eq!(other_create.status(), StatusCode::OK);
 
+    let selected_relation_update = client
+        .post(format!("http://{addr}/ops/memory"))
+        .form(&[
+            ("theme", "light"),
+            ("sidebar", "collapsed"),
+            ("session", session_key),
+            ("operation", "edit"),
+            ("entry_id", "mem-detail-graph"),
+            ("summary", "Graph detail selected summary"),
+            ("workspace_id", "workspace-detail-graph"),
+            ("channel_id", "channel-detail-graph"),
+            ("actor_id", "operator"),
+            ("memory_type", "goal"),
+            ("importance", "0.70"),
+            ("relation_target_id", "mem-other-graph"),
+            ("relation_type", "supports"),
+            ("relation_weight", "0.70"),
+        ])
+        .send()
+        .await
+        .expect("update selected graph memory relation");
+    assert_eq!(selected_relation_update.status(), StatusCode::OK);
+
     let response = client
         .get(format!(
             "http://{addr}/ops/memory-graph?theme=light&sidebar=collapsed&session={session_key}&workspace_id=workspace-detail-graph&channel_id=channel-detail-graph&actor_id=operator&memory_type=goal&detail_memory_id=mem-detail-graph"
@@ -1781,8 +1804,15 @@ async fn integration_spec_3086_c02_ops_memory_graph_selected_node_shows_detail_p
     assert!(body.contains("detail_memory_id=mem-detail-graph"));
     assert!(body.contains("detail_memory_id=mem-other-graph"));
     assert!(body.contains(
-        "id=\"tau-ops-memory-graph-detail-panel\" data-detail-visible=\"true\" data-detail-requested=\"true\" data-detail-state=\"found\" data-memory-id=\"mem-detail-graph\" data-requested-memory-id=\"mem-detail-graph\" data-memory-type=\"goal\" data-relation-count=\"0\""
+        "id=\"tau-ops-memory-graph-detail-panel\" data-detail-visible=\"true\" data-detail-requested=\"true\" data-detail-state=\"found\" data-memory-id=\"mem-detail-graph\" data-requested-memory-id=\"mem-detail-graph\" data-memory-type=\"goal\" data-relation-count=\"1\" data-graph-relation-count=\"1\""
     ));
+    assert!(body.contains(
+        "id=\"tau-ops-memory-graph-detail-proof\" data-selected-memory-id=\"mem-detail-graph\" data-memory-type=\"goal\" data-stored-relation-count=\"1\" data-graph-relation-count=\"1\""
+    ));
+    assert!(body.contains("<dt>Selected ID</dt><dd>mem-detail-graph</dd>"));
+    assert!(body.contains("<dt>Type</dt><dd>goal</dd>"));
+    assert!(body.contains("<dt>Stored Relations</dt><dd>1</dd>"));
+    assert!(body.contains("<dt>Graph Relations</dt><dd>1</dd>"));
     assert!(body.contains(
         "id=\"tau-ops-memory-graph-detail-summary\" data-memory-id=\"mem-detail-graph\">Graph detail selected summary"
     ));
@@ -1795,6 +1825,18 @@ async fn integration_spec_3086_c02_ops_memory_graph_selected_node_shows_detail_p
     assert!(body.contains(
         "data-preview-return-memory-id=\"mem-detail-graph\" data-preview-return-anchor=\"tau-ops-memory-graph-preview-row-0\""
     ));
+    assert!(body.contains(
+        "id=\"tau-ops-memory-graph-detail-relation-scope\" data-stored-relation-count=\"1\" data-graph-relation-count=\"1\""
+    ));
+    assert!(body.contains("Stored detail relations: 1; graph connections in this scope: 1"));
+    assert!(body.contains(
+        "id=\"tau-ops-memory-graph-detail-relations\" data-selected-memory-id=\"mem-detail-graph\" data-graph-relation-count=\"1\""
+    ));
+    assert!(body.contains(
+        "id=\"tau-ops-memory-graph-detail-relation-row-0\" data-source-memory-id=\"mem-detail-graph\" data-target-memory-id=\"mem-other-graph\" data-connected-memory-id=\"mem-other-graph\""
+    ));
+    assert!(body.contains("data-relation-direction=\"outgoing\""));
+    assert!(body.contains("mem-detail-graph -&gt; mem-other-graph"));
 
     handle.abort();
 }

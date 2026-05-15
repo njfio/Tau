@@ -5386,6 +5386,11 @@ fn functional_spec_3086_c02_memory_graph_route_renders_selected_node_detail_pane
             memory_detail_selected_entry_id: "mem-detail-graph".to_string(),
             memory_detail_summary: "Graph detail summary".to_string(),
             memory_detail_memory_type: "goal".to_string(),
+            memory_detail_relation_rows: vec![TauOpsDashboardMemoryRelationRow {
+                target_id: "mem-other-graph".to_string(),
+                relation_type: "supports".to_string(),
+                effective_weight: "0.7000".to_string(),
+            }],
             memory_graph_node_rows: vec![
                 TauOpsDashboardMemoryGraphNodeRow {
                     memory_id: "mem-detail-graph".to_string(),
@@ -5400,6 +5405,12 @@ fn functional_spec_3086_c02_memory_graph_route_renders_selected_node_detail_pane
                     importance: "0.4000".to_string(),
                 },
             ],
+            memory_graph_edge_rows: vec![TauOpsDashboardMemoryGraphEdgeRow {
+                source_memory_id: "mem-detail-graph".to_string(),
+                target_memory_id: "mem-other-graph".to_string(),
+                relation_type: "supports".to_string(),
+                effective_weight: "0.7000".to_string(),
+            }],
             ..TauOpsDashboardChatSnapshot::default()
         },
         harness: TauOpsDashboardHarnessSnapshot::default(),
@@ -5413,8 +5424,15 @@ fn functional_spec_3086_c02_memory_graph_route_renders_selected_node_detail_pane
     assert!(html.contains("detail_memory_id=mem-detail-graph"));
     assert!(html.contains("detail_memory_id=mem-other-graph"));
     assert!(html.contains(
-        "id=\"tau-ops-memory-graph-detail-panel\" data-detail-visible=\"true\" data-detail-requested=\"true\" data-detail-state=\"found\" data-memory-id=\"mem-detail-graph\" data-requested-memory-id=\"mem-detail-graph\" data-memory-type=\"goal\" data-relation-count=\"0\""
+        "id=\"tau-ops-memory-graph-detail-panel\" data-detail-visible=\"true\" data-detail-requested=\"true\" data-detail-state=\"found\" data-memory-id=\"mem-detail-graph\" data-requested-memory-id=\"mem-detail-graph\" data-memory-type=\"goal\" data-relation-count=\"1\" data-graph-relation-count=\"1\""
     ));
+    assert!(html.contains(
+        "id=\"tau-ops-memory-graph-detail-proof\" data-selected-memory-id=\"mem-detail-graph\" data-memory-type=\"goal\" data-stored-relation-count=\"1\" data-graph-relation-count=\"1\""
+    ));
+    assert!(html.contains("<dt>Selected ID</dt><dd>mem-detail-graph</dd>"));
+    assert!(html.contains("<dt>Type</dt><dd>goal</dd>"));
+    assert!(html.contains("<dt>Stored Relations</dt><dd>1</dd>"));
+    assert!(html.contains("<dt>Graph Relations</dt><dd>1</dd>"));
     assert!(html.contains(
         "id=\"tau-ops-memory-graph-detail-summary\" data-memory-id=\"mem-detail-graph\">Graph detail summary"
     ));
@@ -5428,6 +5446,17 @@ fn functional_spec_3086_c02_memory_graph_route_renders_selected_node_detail_pane
     assert!(html.contains(
         "data-preview-return-memory-id=\"mem-detail-graph\" data-preview-return-anchor=\"tau-ops-memory-graph-preview-row-0\""
     ));
+    assert!(html.contains(
+        "id=\"tau-ops-memory-graph-detail-relation-scope\" data-stored-relation-count=\"1\" data-graph-relation-count=\"1\""
+    ));
+    assert!(html.contains("Stored detail relations: 1; graph connections in this scope: 1"));
+    assert!(html.contains(
+        "id=\"tau-ops-memory-graph-detail-relations\" data-selected-memory-id=\"mem-detail-graph\" data-graph-relation-count=\"1\""
+    ));
+    assert!(html.contains(
+        "id=\"tau-ops-memory-graph-detail-relation-row-0\" data-source-memory-id=\"mem-detail-graph\" data-target-memory-id=\"mem-other-graph\" data-connected-memory-id=\"mem-other-graph\" data-relation-type=\"supports\" data-relation-weight=\"0.7000\" data-relation-direction=\"outgoing\""
+    ));
+    assert!(html.contains("mem-detail-graph -&gt; mem-other-graph supports"));
 }
 
 #[test]

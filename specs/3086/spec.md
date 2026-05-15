@@ -11,6 +11,8 @@ visibility. PRD checklist contract `2091` remains unverified.
 In scope:
 - Add deterministic node-selection and detail-href markers for memory graph nodes.
 - Add deterministic graph-route detail panel markers bound to selected memory entry.
+- Add selected graph-route detail proof for selected id, type, stored relation count, and graph-connected relation count.
+- Add selected graph-route relation rows so connected graph context is visible inside the detail panel.
 - Resolve ops-harness lineage overlay nodes into detail panels when those nodes are selected.
 - Validate node selection/detail contracts via UI and gateway conformance tests.
 
@@ -27,7 +29,7 @@ then graph panel contracts remain deterministic and detail panel markers are hid
 ### AC-2 Selected node contracts expose detail-panel behavior
 Given a selected memory entry ID is provided on `/ops/memory-graph`,
 when shell HTML is rendered,
-then node rows expose deterministic selection/detail-href markers and graph detail panel markers reflect the selected entry.
+then node rows expose deterministic selection/detail-href markers and graph detail panel markers reflect the selected entry with visible selected-id/type/count proof and deterministic connected-relation rows.
 
 ### AC-2b Harness lineage nodes expose detail-panel behavior
 Given a selected ops-harness lineage node ID is provided on `/ops/memory-graph`,
@@ -48,7 +50,7 @@ then selected conformance/regression suites remain green.
 | Case | AC | Tier | Given | When | Then |
 |---|---|---|---|---|---|
 | C-01 | AC-1 | Functional | `/ops/memory-graph` without selected node | render route | detail panel markers remain present with hidden/default values |
-| C-02 | AC-2 | Integration | selected detail memory ID on graph route | render route | selected node row exposes detail markers and graph detail panel mirrors selected entry |
+| C-02 | AC-2 | Integration | selected detail memory ID on graph route | render route | selected node row exposes detail markers and graph detail panel mirrors selected entry with selected proof and connected-relation row/link markers |
 | C-02b | AC-2b | Integration | selected harness lineage node ID on graph route | render graph and memory routes | selected synthetic node exposes detail markers and memory explorer drilldown stays truthful |
 | C-03 | AC-3 | Regression | route is not `/ops/memory-graph` | render route | graph panel markers remain present and hidden |
 | C-04 | AC-4 | Regression | existing memory specs | rerun selected suites | prior contracts remain green |
