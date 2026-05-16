@@ -5741,6 +5741,67 @@ fn regression_spec_3103_c02_memory_graph_shell_controls_preserve_graph_context()
 }
 
 #[test]
+fn regression_spec_3103_c06_memory_graph_detail_navigation_preserves_graph_context() {
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        auth_mode: TauOpsDashboardAuthMode::Token,
+        active_route: TauOpsDashboardRoute::MemoryGraph,
+        theme: TauOpsDashboardTheme::Dark,
+        sidebar_state: TauOpsDashboardSidebarState::Expanded,
+        command_center: TauOpsDashboardCommandCenterSnapshot::default(),
+        chat: TauOpsDashboardChatSnapshot {
+            active_session_key: "ops-graph-nav".to_string(),
+            memory_search_workspace_id: "workspace-nav".to_string(),
+            memory_search_channel_id: "channel-nav".to_string(),
+            memory_search_actor_id: "operator".to_string(),
+            memory_search_memory_type: "goal".to_string(),
+            memory_graph_zoom_level: "1.25".to_string(),
+            memory_graph_pan_x_level: "25.00".to_string(),
+            memory_graph_pan_y_level: "-25.00".to_string(),
+            memory_graph_filter_memory_type: "all".to_string(),
+            memory_graph_filter_relation_type: "supports".to_string(),
+            memory_detail_visible: true,
+            memory_detail_requested_entry_id: "PR-044".to_string(),
+            memory_detail_selected_entry_id: "PR-044".to_string(),
+            memory_graph_node_rows: vec![
+                TauOpsDashboardMemoryGraphNodeRow {
+                    memory_id: "LR-044".to_string(),
+                    summary: "Learning record".to_string(),
+                    memory_type: "observation".to_string(),
+                    importance: "0.8500".to_string(),
+                },
+                TauOpsDashboardMemoryGraphNodeRow {
+                    memory_id: "PR-044".to_string(),
+                    summary: "Proposal record".to_string(),
+                    memory_type: "goal".to_string(),
+                    importance: "0.9500".to_string(),
+                },
+            ],
+            memory_graph_edge_rows: vec![TauOpsDashboardMemoryGraphEdgeRow {
+                source_memory_id: "LR-044".to_string(),
+                target_memory_id: "PR-044".to_string(),
+                relation_type: "supports".to_string(),
+                effective_weight: "1.0000".to_string(),
+            }],
+            ..TauOpsDashboardChatSnapshot::default()
+        },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
+    });
+
+    assert!(html.contains(
+        "data-node-detail-href=\"/ops/memory-graph?theme=dark&amp;sidebar=expanded&amp;session=ops-graph-nav&amp;workspace_id=workspace-nav&amp;channel_id=channel-nav&amp;actor_id=operator&amp;memory_type=goal&amp;graph_zoom=1.25&amp;graph_pan_x=25.00&amp;graph_pan_y=-25.00&amp;graph_filter_memory_type=all&amp;graph_filter_relation_type=supports&amp;detail_memory_id=LR-044\""
+    ));
+    assert!(html.contains(
+        "data-source-detail-href=\"/ops/memory-graph?theme=dark&amp;sidebar=expanded&amp;session=ops-graph-nav&amp;workspace_id=workspace-nav&amp;channel_id=channel-nav&amp;actor_id=operator&amp;memory_type=goal&amp;graph_zoom=1.25&amp;graph_pan_x=25.00&amp;graph_pan_y=-25.00&amp;graph_filter_memory_type=all&amp;graph_filter_relation_type=supports&amp;detail_memory_id=LR-044\""
+    ));
+    assert!(html.contains(
+        "data-target-detail-href=\"/ops/memory-graph?theme=dark&amp;sidebar=expanded&amp;session=ops-graph-nav&amp;workspace_id=workspace-nav&amp;channel_id=channel-nav&amp;actor_id=operator&amp;memory_type=goal&amp;graph_zoom=1.25&amp;graph_pan_x=25.00&amp;graph_pan_y=-25.00&amp;graph_filter_memory_type=all&amp;graph_filter_relation_type=supports&amp;detail_memory_id=PR-044\""
+    ));
+    assert!(html.contains(
+        "data-relation-detail-href=\"/ops/memory-graph?theme=dark&amp;sidebar=expanded&amp;session=ops-graph-nav&amp;workspace_id=workspace-nav&amp;channel_id=channel-nav&amp;actor_id=operator&amp;memory_type=goal&amp;graph_zoom=1.25&amp;graph_pan_x=25.00&amp;graph_pan_y=-25.00&amp;graph_filter_memory_type=all&amp;graph_filter_relation_type=supports&amp;detail_memory_id=LR-044\""
+    ));
+}
+
+#[test]
 fn functional_spec_3106_c01_c03_tools_route_renders_inventory_panel_markers() {
     let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
         auth_mode: TauOpsDashboardAuthMode::Token,

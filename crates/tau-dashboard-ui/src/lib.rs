@@ -4458,10 +4458,21 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     let memory_graph_route_href_base = format!(
         "/ops/memory-graph?theme={theme_attr}&sidebar={sidebar_state_attr}&session={chat_session_key}&workspace_id={memory_search_workspace_id}&channel_id={memory_search_channel_id}&actor_id={memory_search_actor_id}&memory_type={memory_search_memory_type}"
     );
+    let memory_graph_route_state_query = format!(
+        "&graph_zoom={memory_graph_zoom_level}&graph_pan_x={memory_graph_pan_x_level}&graph_pan_y={memory_graph_pan_y_level}&graph_filter_memory_type={memory_graph_filter_memory_type}&graph_filter_relation_type={memory_graph_filter_relation_type}"
+    );
+    let memory_graph_detail_href_prefix =
+        if matches!(context.active_route, TauOpsDashboardRoute::MemoryGraph) {
+            format!(
+                "{memory_graph_route_href_base}{memory_graph_route_state_query}&detail_memory_id="
+            )
+        } else {
+            format!("{memory_graph_route_href_base}&detail_memory_id=")
+        };
     let memory_detail_open_graph_href = if memory_detail_selected_entry_id.trim().is_empty() {
         String::new()
     } else {
-        format!("{memory_graph_route_href_base}&detail_memory_id={memory_detail_selected_entry_id}")
+        format!("{memory_graph_detail_href_prefix}{memory_detail_selected_entry_id}")
     };
     let memory_detail_open_graph_link = if memory_detail_selected_entry_id.trim().is_empty() {
         leptos::either::Either::Left(())
@@ -4527,9 +4538,8 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             edge.target_memory_id, edge.source_memory_id, edge.relation_type
                         )
                     };
-                    let relation_detail_href = format!(
-                        "{memory_graph_route_href_base}&detail_memory_id={connected_memory_id}"
-                    );
+                    let relation_detail_href =
+                        format!("{memory_graph_detail_href_prefix}{connected_memory_id}");
                     view! {
                         <li
                             id=row_id
@@ -4761,9 +4771,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
         if memory_graph_preview_selected_memory_id.is_empty() {
             String::new()
         } else {
-            format!(
-                "{memory_graph_route_href_base}&detail_memory_id={memory_graph_preview_selected_memory_id}"
-            )
+            format!("{memory_graph_detail_href_prefix}{memory_graph_preview_selected_memory_id}")
         };
     let memory_graph_preview_unscoped_selected_detail_href =
         if memory_graph_preview_selected_memory_id.is_empty() {
@@ -4895,10 +4903,8 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 } else {
                                     leptos::either::Either::Right(())
                                 };
-                                let node_detail_href = format!(
-                                    "{memory_graph_route_href_base}&detail_memory_id={}",
-                                    row.memory_id
-                                );
+                                let node_detail_href =
+                                    format!("{memory_graph_detail_href_prefix}{}", row.memory_id);
                                 let node_detail_href_attr = node_detail_href.clone();
                                 let node_detail_href_link = node_detail_href;
                                 let preview_title = if row.summary.trim().is_empty() {
@@ -4952,7 +4958,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                         String::new()
                                     } else {
                                         format!(
-                                            "{memory_graph_route_href_base}&detail_memory_id={relation_sample_target_memory_id}"
+                                            "{memory_graph_detail_href_prefix}{relation_sample_target_memory_id}"
                                         )
                                     };
                                 let relation_sample_detail_href_attr =
@@ -5067,9 +5073,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
         "/ops/sessions/{chat_session_key}?theme={theme_attr}&sidebar={sidebar_state_attr}&session={chat_session_key}"
     );
     let selected_memory_graph_detail_id = memory_detail_selected_entry_id.clone();
-    let memory_graph_node_detail_href_prefix = format!(
-        "/ops/memory-graph?theme={theme_attr}&sidebar={sidebar_state_attr}&session={chat_session_key}&workspace_id={memory_search_workspace_id}&channel_id={memory_search_channel_id}&actor_id={memory_search_actor_id}&memory_type={memory_search_memory_type}&detail_memory_id="
-    );
+    let memory_graph_node_detail_href_prefix = memory_graph_detail_href_prefix.clone();
     let memory_graph_detail_visible_bool =
         matches!(context.active_route, TauOpsDashboardRoute::MemoryGraph)
             && context.chat.memory_detail_visible;
@@ -5182,9 +5186,8 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                             edge.target_memory_id, edge.source_memory_id, edge.relation_type
                         )
                     };
-                    let relation_detail_href = format!(
-                        "{memory_graph_route_href_base}&detail_memory_id={connected_memory_id}"
-                    );
+                    let relation_detail_href =
+                        format!("{memory_graph_detail_href_prefix}{connected_memory_id}");
                     view! {
                         <li
                             id=row_id
@@ -5358,14 +5361,10 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
             } else {
                 "none"
             };
-            let source_detail_href = format!(
-                "{memory_graph_route_href_base}&detail_memory_id={}",
-                row.source_memory_id
-            );
-            let target_detail_href = format!(
-                "{memory_graph_route_href_base}&detail_memory_id={}",
-                row.target_memory_id
-            );
+            let source_detail_href =
+                format!("{memory_graph_detail_href_prefix}{}", row.source_memory_id);
+            let target_detail_href =
+                format!("{memory_graph_detail_href_prefix}{}", row.target_memory_id);
             let edge_summary = format!(
                 "{} -> {} | relation {} | weight {}",
                 row.source_memory_id, row.target_memory_id, row.relation_type, row.effective_weight

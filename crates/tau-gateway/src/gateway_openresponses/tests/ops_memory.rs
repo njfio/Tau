@@ -2226,6 +2226,15 @@ async fn integration_spec_3103_c02_ops_memory_graph_filter_query_updates_filter_
         "graph_filter_memory_type=goal&amp;graph_filter_relation_type=contradicts&amp;detail_memory_id=goal-1"
     ));
     assert!(body.contains("graph_filter_relation_type=related_to"));
+    assert!(body.contains(
+        "data-node-detail-href=\"/ops/memory-graph?theme=light&amp;sidebar=collapsed&amp;session=ops-filter&amp;workspace_id=workspace-filter&amp;channel_id=channel-filter&amp;actor_id=operator&amp;memory_type=&amp;graph_zoom=1.25&amp;graph_pan_x=25.00&amp;graph_pan_y=-25.00&amp;graph_filter_memory_type=goal&amp;graph_filter_relation_type=related_to&amp;detail_memory_id=goal-1\""
+    ));
+    assert!(body.contains(
+        "data-source-detail-href=\"/ops/memory-graph?theme=light&amp;sidebar=collapsed&amp;session=ops-filter&amp;workspace_id=workspace-filter&amp;channel_id=channel-filter&amp;actor_id=operator&amp;memory_type=&amp;graph_zoom=1.25&amp;graph_pan_x=25.00&amp;graph_pan_y=-25.00&amp;graph_filter_memory_type=goal&amp;graph_filter_relation_type=related_to&amp;detail_memory_id=goal-1\""
+    ));
+    assert!(body.contains(
+        "data-target-detail-href=\"/ops/memory-graph?theme=light&amp;sidebar=collapsed&amp;session=ops-filter&amp;workspace_id=workspace-filter&amp;channel_id=channel-filter&amp;actor_id=operator&amp;memory_type=&amp;graph_zoom=1.25&amp;graph_pan_x=25.00&amp;graph_pan_y=-25.00&amp;graph_filter_memory_type=goal&amp;graph_filter_relation_type=related_to&amp;detail_memory_id=goal-2\""
+    ));
 
     handle.abort();
 }

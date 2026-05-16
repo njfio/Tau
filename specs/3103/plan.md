@@ -22,6 +22,8 @@
   - Mitigation: carry the selected/requested `detail_memory_id` into filter action hrefs and assert it in UI and gateway tests.
 - Risk: active shell controls may look context-preserving while resetting graph state.
   - Mitigation: append graph scope, pan/zoom, filter, and detail query state to same-route shell hrefs and assert those hrefs in UI and gateway tests.
+- Risk: node or edge clicks may reset a tuned graph view while changing selected detail.
+  - Mitigation: share a graph-state detail href prefix across node, edge endpoint, preview, and detail relation links.
 - Risk: filtering edges without filtering node scope can produce inconsistent graph contracts.
   - Mitigation: derive allowed node ids first and filter edges against both selected relation type and node scope.
 - Risk: state-derived relation values may include lineage relation names outside the canonical memory enum.
@@ -45,4 +47,9 @@
   - `#tau-ops-theme-toggle-dark`
   - `#tau-ops-theme-toggle-light`
   - `#tau-ops-nav-memory-graph`
+- Preserve graph context for graph-internal detail links:
+  - `data-node-detail-href`
+  - `data-source-detail-href`
+  - `data-target-detail-href`
+  - `data-relation-detail-href`
 - P1 process rule: spec marked Reviewed; human review requested in PR.
