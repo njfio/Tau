@@ -485,6 +485,47 @@ pub struct TauOpsDashboardJobRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Public struct `TauOpsDashboardDeployAgentRow` in `tau-dashboard-ui`.
+pub struct TauOpsDashboardDeployAgentRow {
+    pub agent_id: String,
+    pub status: String,
+    pub profile: String,
+    pub model: String,
+    pub updated_unix_ms: u64,
+    pub process_id: String,
+    pub process_status: String,
+    pub process_pid: String,
+    pub process_started_unix_ms: u64,
+    pub process_stopped_unix_ms: u64,
+    pub process_stop_reason: String,
+    pub process_exit_status: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// Public struct `TauOpsDashboardDeploySnapshot` in `tau-dashboard-ui`.
+pub struct TauOpsDashboardDeploySnapshot {
+    pub state_source: String,
+    pub state_status: String,
+    pub agent_count: usize,
+    pub running_count: usize,
+    pub stopped_count: usize,
+    pub rows: Vec<TauOpsDashboardDeployAgentRow>,
+}
+
+impl Default for TauOpsDashboardDeploySnapshot {
+    fn default() -> Self {
+        Self {
+            state_source: "unloaded".to_string(),
+            state_status: "idle".to_string(),
+            agent_count: 0,
+            running_count: 0,
+            stopped_count: 0,
+            rows: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 /// Public struct `TauOpsDashboardChatSnapshot` in `tau-dashboard-ui`.
 pub struct TauOpsDashboardChatSnapshot {
     pub active_session_key: String,
@@ -714,6 +755,7 @@ pub struct TauOpsDashboardCommandCenterSnapshot {
     pub config_fallback_model_refs: Vec<String>,
     pub config_system_prompt_chars: usize,
     pub config_max_turns: usize,
+    pub deploy: TauOpsDashboardDeploySnapshot,
 }
 
 impl Default for TauOpsDashboardCommandCenterSnapshot {
@@ -765,6 +807,7 @@ impl Default for TauOpsDashboardCommandCenterSnapshot {
             config_fallback_model_refs: Vec::new(),
             config_system_prompt_chars: 0,
             config_max_turns: 0,
+            deploy: TauOpsDashboardDeploySnapshot::default(),
         }
     }
 }
@@ -2248,6 +2291,92 @@ pub fn render_tau_ops_dashboard_shell_for_route(route: &str) -> String {
         ..TauOpsDashboardShellContext::default()
     };
     render_tau_ops_dashboard_shell_with_context(context)
+}
+
+fn render_tau_ops_deploy_process_lifecycle(
+    snapshot: TauOpsDashboardDeploySnapshot,
+) -> impl IntoView {
+    let deploy_state_source = snapshot.state_source;
+    let deploy_state_status = snapshot.state_status;
+    let deploy_agent_count = snapshot.agent_count.to_string();
+    let deploy_running_count = snapshot.running_count.to_string();
+    let deploy_stopped_count = snapshot.stopped_count.to_string();
+    let deploy_agent_row_count = snapshot.rows.len().to_string();
+    let deploy_empty_row = if snapshot.rows.is_empty() {
+        Some(view! {
+            <tr id="tau-ops-deploy-process-empty-row" data-empty-state="true">
+                <td colspan="7">No deployed agent process records yet.</td>
+            </tr>
+        })
+    } else {
+        None
+    };
+    let deploy_agent_rows_view = snapshot
+        .rows
+        .iter()
+        .enumerate()
+        .map(|(index, row)| {
+            let row_id = format!("tau-ops-deploy-process-row-{index}");
+            let process_started = row.process_started_unix_ms.to_string();
+            let process_stopped = row.process_stopped_unix_ms.to_string();
+            let updated_unix_ms = row.updated_unix_ms.to_string();
+            view! {
+                <tr
+                    id=row_id
+                    data-agent-id=row.agent_id.clone()
+                    data-agent-status=row.status.clone()
+                    data-process-id=row.process_id.clone()
+                    data-process-status=row.process_status.clone()
+                    data-process-pid=row.process_pid.clone()
+                    data-process-started-unix-ms=process_started
+                    data-process-stopped-unix-ms=process_stopped
+                    data-process-stop-reason=row.process_stop_reason.clone()
+                    data-process-exit-status=row.process_exit_status.clone()
+                    data-updated-unix-ms=updated_unix_ms
+                >
+                    <td>{row.agent_id.clone()}</td>
+                    <td>{row.status.clone()}</td>
+                    <td>{row.profile.clone()}</td>
+                    <td>{row.model.clone()}</td>
+                    <td>{row.process_status.clone()}</td>
+                    <td>{row.process_pid.clone()}</td>
+                    <td>{row.process_stop_reason.clone()}</td>
+                </tr>
+            }
+        })
+        .collect_view();
+
+    view! {
+        <section
+            id="tau-ops-deploy-processes"
+            data-component="DeployProcessLifecycle"
+            data-state-source=deploy_state_source
+            data-state-status=deploy_state_status
+            data-agent-count=deploy_agent_count
+            data-running-count=deploy_running_count
+            data-stopped-count=deploy_stopped_count
+            data-row-count=deploy_agent_row_count
+        >
+            <h3>Process Lifecycle</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th scope="col">Agent</th>
+                        <th scope="col">Agent Status</th>
+                        <th scope="col">Profile</th>
+                        <th scope="col">Model</th>
+                        <th scope="col">Process Status</th>
+                        <th scope="col">PID</th>
+                        <th scope="col">Stop Reason</th>
+                    </tr>
+                </thead>
+                <tbody id="tau-ops-deploy-processes-body">
+                    {deploy_agent_rows_view}
+                    {deploy_empty_row}
+                </tbody>
+            </table>
+        </section>
+    }
 }
 
 /// Public `fn` `render_tau_ops_dashboard_shell_with_context` in `tau-dashboard-ui`.
@@ -3996,6 +4125,8 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     } else {
         "false"
     };
+    let deploy_process_lifecycle_view =
+        render_tau_ops_deploy_process_lifecycle(context.command_center.deploy.clone());
     let chat_message_rows = if !chat_route_active {
         Vec::new()
     } else if context.chat.message_rows.is_empty() {
@@ -12953,6 +13084,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 <h3>Review</h3>
                                 <p data-field="summary">Pending full configuration summary.</p>
                             </section>
+                            {deploy_process_lifecycle_view}
                             <div id="tau-ops-deploy-actions">
                                 <button
                                     id="tau-ops-deploy-submit"

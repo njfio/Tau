@@ -15,7 +15,9 @@ use axum::Json;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tau_core::{current_unix_timestamp_ms, write_text_atomic};
+use tau_dashboard_ui::{TauOpsDashboardDeployAgentRow, TauOpsDashboardDeploySnapshot};
 
+use super::deploy_process_supervisor::GatewayDeployProcessStartRequest;
 use super::{
     authorize_dashboard_request, parse_gateway_json_body, GatewayOpenResponsesServerState,
     OpenResponsesApiError,
@@ -45,6 +47,20 @@ struct GatewayDeployAgentRecord {
     model: String,
     created_unix_ms: u64,
     updated_unix_ms: u64,
+    #[serde(default)]
+    process_id: String,
+    #[serde(default)]
+    process_status: String,
+    #[serde(default)]
+    process_pid: Option<u32>,
+    #[serde(default)]
+    process_started_unix_ms: Option<u64>,
+    #[serde(default)]
+    process_stopped_unix_ms: Option<u64>,
+    #[serde(default)]
+    process_stop_reason: Option<String>,
+    #[serde(default)]
+    process_exit_status: Option<i32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -103,6 +119,35 @@ pub(super) async fn handle_gateway_deploy(
         .get(normalized_agent_id)
         .map(|existing| existing.created_unix_ms)
         .unwrap_or(now_unix_ms);
+    let process_start =
+        match state
+            .deploy_process_supervisor
+            .start(GatewayDeployProcessStartRequest {
+                agent_id: normalized_agent_id.to_string(),
+                profile: profile.clone(),
+                model: model.clone(),
+                state_dir: state.config.state_dir.clone(),
+            }) {
+            Ok(result) => result,
+            Err(error) => {
+                return OpenResponsesApiError::new(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    error.code(),
+                    format!("failed to start deploy process for '{normalized_agent_id}': {error}"),
+                )
+                .into_response();
+            }
+        };
+    if let Err(error) = crate::gateway_runtime::start_gateway_service_mode(&state.config.state_dir)
+    {
+        let _ = state
+            .deploy_process_supervisor
+            .stop(normalized_agent_id, "gateway_service_state_start_failed");
+        return OpenResponsesApiError::internal(format!(
+            "failed to transition gateway service state for deploy request: {error}"
+        ))
+        .into_response();
+    }
     deploy_state.agents.insert(
         normalized_agent_id.to_string(),
         GatewayDeployAgentRecord {
@@ -112,18 +157,20 @@ pub(super) async fn handle_gateway_deploy(
             model: model.clone(),
             created_unix_ms,
             updated_unix_ms: now_unix_ms,
+            process_id: process_start.process_id.clone(),
+            process_status: process_start.status.clone(),
+            process_pid: process_start.pid,
+            process_started_unix_ms: Some(process_start.started_unix_ms),
+            process_stopped_unix_ms: None,
+            process_stop_reason: None,
+            process_exit_status: None,
         },
     );
     if let Err(error) = save_gateway_deploy_state(&state_path, &deploy_state) {
+        let _ = state
+            .deploy_process_supervisor
+            .stop(normalized_agent_id, "deploy_state_persist_failed");
         return error.into_response();
-    }
-
-    if let Err(error) = crate::gateway_runtime::start_gateway_service_mode(&state.config.state_dir)
-    {
-        return OpenResponsesApiError::internal(format!(
-            "failed to transition gateway service state for deploy request: {error}"
-        ))
-        .into_response();
     }
 
     (
@@ -135,6 +182,10 @@ pub(super) async fn handle_gateway_deploy(
             "profile": profile,
             "model": model,
             "accepted_unix_ms": now_unix_ms,
+            "process_id": process_start.process_id,
+            "process_status": process_start.status,
+            "process_pid": process_start.pid,
+            "process_started_unix_ms": process_start.started_unix_ms,
         })),
     )
         .into_response()
@@ -163,6 +214,27 @@ pub(super) async fn handle_gateway_agent_stop(
         Err(error) => return error.into_response(),
     };
     let now_unix_ms = current_unix_timestamp_ms();
+    if !deploy_state.agents.contains_key(normalized_agent_id) {
+        return OpenResponsesApiError::not_found(
+            "agent_not_found",
+            format!("agent '{normalized_agent_id}' was not found"),
+        )
+        .into_response();
+    };
+    let process_stop = match state
+        .deploy_process_supervisor
+        .stop(normalized_agent_id, STOP_REASON_OPERATOR_REQUEST)
+    {
+        Ok(result) => result,
+        Err(error) => {
+            return OpenResponsesApiError::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                error.code(),
+                format!("failed to stop deploy process for '{normalized_agent_id}': {error}"),
+            )
+            .into_response();
+        }
+    };
     let Some(record) = deploy_state.agents.get_mut(normalized_agent_id) else {
         return OpenResponsesApiError::not_found(
             "agent_not_found",
@@ -172,6 +244,12 @@ pub(super) async fn handle_gateway_agent_stop(
     };
     record.status = DEPLOY_STATUS_STOPPED.to_string();
     record.updated_unix_ms = now_unix_ms;
+    record.process_id = process_stop.process_id.clone();
+    record.process_status = process_stop.status.clone();
+    record.process_pid = process_stop.pid;
+    record.process_stopped_unix_ms = Some(process_stop.stopped_unix_ms);
+    record.process_stop_reason = Some(process_stop.stop_reason.clone());
+    record.process_exit_status = process_stop.exit_status;
     if let Err(error) = save_gateway_deploy_state(&state_path, &deploy_state) {
         return error.into_response();
     }
@@ -193,6 +271,12 @@ pub(super) async fn handle_gateway_agent_stop(
             "agent_id": normalized_agent_id,
             "status": DEPLOY_STATUS_STOPPED,
             "stopped_unix_ms": now_unix_ms,
+            "process_id": process_stop.process_id,
+            "process_status": process_stop.status,
+            "process_pid": process_stop.pid,
+            "process_stopped_unix_ms": process_stop.stopped_unix_ms,
+            "process_stop_reason": process_stop.stop_reason,
+            "process_exit_status": process_stop.exit_status,
         })),
     )
         .into_response()
@@ -245,6 +329,78 @@ fn gateway_deploy_state_path(state_dir: &Path) -> PathBuf {
     state_dir.join(DEPLOY_STATE_FILE)
 }
 
+pub(super) fn collect_tau_ops_dashboard_deploy_snapshot(
+    state_dir: &Path,
+) -> TauOpsDashboardDeploySnapshot {
+    let state_path = gateway_deploy_state_path(state_dir);
+    let state_source = state_path.display().to_string();
+    if !state_path.exists() {
+        return TauOpsDashboardDeploySnapshot {
+            state_source,
+            state_status: "missing".to_string(),
+            ..TauOpsDashboardDeploySnapshot::default()
+        };
+    }
+
+    let deploy_state = match load_gateway_deploy_state(&state_path) {
+        Ok(state) => state,
+        Err(error) => {
+            return TauOpsDashboardDeploySnapshot {
+                state_source,
+                state_status: format!("error:{}", error.code),
+                ..TauOpsDashboardDeploySnapshot::default()
+            };
+        }
+    };
+    let rows = deploy_state
+        .agents
+        .values()
+        .map(|record| TauOpsDashboardDeployAgentRow {
+            agent_id: record.agent_id.clone(),
+            status: record.status.clone(),
+            profile: record.profile.clone(),
+            model: record.model.clone(),
+            updated_unix_ms: record.updated_unix_ms,
+            process_id: record.process_id.clone(),
+            process_status: normalize_non_empty(record.process_status.as_str(), "unknown"),
+            process_pid: record
+                .process_pid
+                .map(|pid| pid.to_string())
+                .unwrap_or_else(|| "none".to_string()),
+            process_started_unix_ms: record.process_started_unix_ms.unwrap_or(0),
+            process_stopped_unix_ms: record.process_stopped_unix_ms.unwrap_or(0),
+            process_stop_reason: record
+                .process_stop_reason
+                .clone()
+                .unwrap_or_else(|| "none".to_string()),
+            process_exit_status: record
+                .process_exit_status
+                .map(|status| status.to_string())
+                .unwrap_or_else(|| "none".to_string()),
+        })
+        .collect::<Vec<_>>();
+    let running_count = rows
+        .iter()
+        .filter(|row| row.process_status == "running")
+        .count();
+    let stopped_count = rows
+        .iter()
+        .filter(|row| row.process_status == "stopped")
+        .count();
+    TauOpsDashboardDeploySnapshot {
+        state_source,
+        state_status: if rows.is_empty() {
+            "empty".to_string()
+        } else {
+            "loaded".to_string()
+        },
+        agent_count: rows.len(),
+        running_count,
+        stopped_count,
+        rows,
+    }
+}
+
 fn normalize_non_empty(raw: &str, fallback: &str) -> String {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
@@ -269,5 +425,42 @@ mod tests {
         let state_dir = PathBuf::from("/tmp/tau-gateway-tests");
         let path = gateway_deploy_state_path(&state_dir);
         assert!(path.ends_with(DEPLOY_STATE_FILE));
+    }
+
+    #[test]
+    fn unit_collect_tau_ops_dashboard_deploy_snapshot_maps_process_rows() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let state_path = gateway_deploy_state_path(temp.path());
+        let mut state = GatewayDeployStateFile::default();
+        state.agents.insert(
+            "agent-process".to_string(),
+            GatewayDeployAgentRecord {
+                agent_id: "agent-process".to_string(),
+                status: DEPLOY_STATUS_DEPLOYING.to_string(),
+                profile: "default".to_string(),
+                model: "openai/gpt-5.3-codex".to_string(),
+                created_unix_ms: 100,
+                updated_unix_ms: 200,
+                process_id: "gateway-deploy:agent-process:4242".to_string(),
+                process_status: "running".to_string(),
+                process_pid: Some(4242),
+                process_started_unix_ms: Some(150),
+                process_stopped_unix_ms: None,
+                process_stop_reason: None,
+                process_exit_status: None,
+            },
+        );
+        save_gateway_deploy_state(&state_path, &state).expect("save deploy state");
+
+        let snapshot = collect_tau_ops_dashboard_deploy_snapshot(temp.path());
+
+        assert_eq!(snapshot.state_status, "loaded");
+        assert_eq!(snapshot.agent_count, 1);
+        assert_eq!(snapshot.running_count, 1);
+        assert_eq!(snapshot.stopped_count, 0);
+        assert_eq!(snapshot.rows[0].agent_id, "agent-process");
+        assert_eq!(snapshot.rows[0].process_status, "running");
+        assert_eq!(snapshot.rows[0].process_pid, "4242");
+        assert_eq!(snapshot.rows[0].process_stop_reason, "none");
     }
 }

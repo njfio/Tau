@@ -659,6 +659,7 @@ pub(super) fn collect_tau_ops_dashboard_command_center_snapshot(
         config_fallback_model_refs: Vec::new(),
         config_system_prompt_chars: 0,
         config_max_turns: 0,
+        deploy: Default::default(),
     }
 }
 

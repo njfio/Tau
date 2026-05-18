@@ -1178,7 +1178,8 @@ mod tests {
                 transient_error_backoff_initial: Duration::from_millis(5),
                 transient_error_backoff_max: Duration::from_millis(20),
             },
-        ).expect("valid runner config");
+        )
+        .expect("valid runner config");
 
         let (tx, rx) = watch::channel(false);
         let handle = tokio::spawn(async move { runner.run(rx).await });
@@ -1292,7 +1293,8 @@ mod tests {
                 transient_error_backoff_initial: Duration::from_millis(5),
                 transient_error_backoff_max: Duration::from_millis(20),
             },
-        ).expect("valid runner config");
+        )
+        .expect("valid runner config");
 
         let (tx, rx) = watch::channel(false);
         let handle = tokio::spawn(async move { runner.run(rx).await });
@@ -1342,7 +1344,8 @@ mod tests {
                 transient_error_backoff_initial: Duration::from_millis(5),
                 transient_error_backoff_max: Duration::from_millis(20),
             },
-        ).expect("valid runner config");
+        )
+        .expect("valid runner config");
 
         let (tx, rx) = watch::channel(false);
         let handle = tokio::spawn(async move { runner.run(rx).await });
@@ -1392,7 +1395,8 @@ mod tests {
                 transient_error_backoff_initial: Duration::from_millis(5),
                 transient_error_backoff_max: Duration::from_millis(20),
             },
-        ).expect("valid runner config");
+        )
+        .expect("valid runner config");
 
         let (tx, rx) = watch::channel(false);
         let handle = tokio::spawn(async move { runner.run(rx).await });
@@ -1440,7 +1444,8 @@ mod tests {
                 transient_error_backoff_initial: Duration::from_millis(5),
                 transient_error_backoff_max: Duration::from_millis(20),
             },
-        ).expect("valid runner config");
+        )
+        .expect("valid runner config");
 
         let (tx, rx) = watch::channel(false);
         let handle = tokio::spawn(async move { runner.run(rx).await });
@@ -1487,7 +1492,8 @@ mod tests {
                 transient_error_backoff_initial: Duration::from_millis(5),
                 transient_error_backoff_max: Duration::from_millis(20),
             },
-        ).expect("valid runner config");
+        )
+        .expect("valid runner config");
         let fast_runner = TrainingRunner::new(
             store.clone(),
             Arc::new(FastExecutor),
@@ -1500,7 +1506,8 @@ mod tests {
                 transient_error_backoff_initial: Duration::from_millis(5),
                 transient_error_backoff_max: Duration::from_millis(20),
             },
-        ).expect("valid runner config");
+        )
+        .expect("valid runner config");
 
         let (slow_tx, slow_rx) = watch::channel(false);
         let slow_handle = tokio::spawn(async move { slow_runner.run(slow_rx).await });
@@ -1556,7 +1563,8 @@ mod tests {
                 transient_error_backoff_initial: Duration::from_millis(5),
                 transient_error_backoff_max: Duration::from_millis(20),
             },
-        ).expect("valid runner config");
+        )
+        .expect("valid runner config");
 
         let (tx, rx) = watch::channel(false);
         let handle = tokio::spawn(async move { runner.run(rx).await });
@@ -1612,7 +1620,8 @@ mod tests {
                 transient_error_backoff_initial: Duration::from_millis(5),
                 transient_error_backoff_max: Duration::from_millis(20),
             },
-        ).expect("valid runner config");
+        )
+        .expect("valid runner config");
 
         let (tx, rx) = watch::channel(false);
         let handle = tokio::spawn(async move { runner.run(rx).await });
@@ -1657,7 +1666,8 @@ mod tests {
                 transient_error_backoff_initial: Duration::from_millis(5),
                 transient_error_backoff_max: Duration::from_millis(20),
             },
-        ).expect("valid runner config");
+        )
+        .expect("valid runner config");
         let fast_runner = TrainingRunner::new(
             store.clone(),
             Arc::new(FastExecutor),
@@ -1670,7 +1680,8 @@ mod tests {
                 transient_error_backoff_initial: Duration::from_millis(5),
                 transient_error_backoff_max: Duration::from_millis(20),
             },
-        ).expect("valid runner config");
+        )
+        .expect("valid runner config");
 
         let (slow_tx, slow_rx) = watch::channel(false);
         let slow_handle = tokio::spawn(async move { slow_runner.run(slow_rx).await });
@@ -1724,7 +1735,8 @@ mod tests {
                 transient_error_backoff_initial: Duration::from_millis(5),
                 transient_error_backoff_max: Duration::from_millis(20),
             },
-        ).expect("valid runner config");
+        )
+        .expect("valid runner config");
 
         let (tx, rx) = watch::channel(false);
         let handle = tokio::spawn(async move { runner.run(rx).await });
@@ -1770,7 +1782,8 @@ mod tests {
                 transient_error_backoff_initial: Duration::from_millis(5),
                 transient_error_backoff_max: Duration::from_millis(20),
             },
-        ).expect("valid runner config");
+        )
+        .expect("valid runner config");
 
         let (tx, rx) = watch::channel(false);
         let handle = tokio::spawn(async move { runner.run(rx).await });
@@ -1815,7 +1828,8 @@ mod tests {
                 transient_error_backoff_initial: Duration::from_millis(5),
                 transient_error_backoff_max: Duration::from_millis(20),
             },
-        ).expect("valid runner config");
+        )
+        .expect("valid runner config");
         let fast_runner = TrainingRunner::new(
             store.clone(),
             Arc::new(FastExecutor),
@@ -1828,7 +1842,8 @@ mod tests {
                 transient_error_backoff_initial: Duration::from_millis(5),
                 transient_error_backoff_max: Duration::from_millis(20),
             },
-        ).expect("valid runner config");
+        )
+        .expect("valid runner config");
 
         let (slow_tx, slow_rx) = watch::channel(false);
         let slow_handle = tokio::spawn(async move { slow_runner.run(slow_rx).await });
@@ -1898,7 +1913,8 @@ mod tests {
                 transient_error_backoff_initial: Duration::from_millis(5),
                 transient_error_backoff_max: Duration::from_millis(20),
             },
-        ).expect("valid runner config");
+        )
+        .expect("valid runner config");
         let fast_runner = TrainingRunner::new(
             store.clone(),
             Arc::new(FastExecutor),
@@ -1911,7 +1927,8 @@ mod tests {
                 transient_error_backoff_initial: Duration::from_millis(5),
                 transient_error_backoff_max: Duration::from_millis(20),
             },
-        ).expect("valid runner config");
+        )
+        .expect("valid runner config");
 
         let (slow_tx, slow_rx) = watch::channel(false);
         let slow_handle = tokio::spawn(async move { slow_runner.run(slow_rx).await });
@@ -2261,7 +2278,8 @@ mod tests {
                     transient_error_backoff_initial: Duration::from_millis(5),
                     transient_error_backoff_max: Duration::from_millis(20),
                 },
-            ).expect("valid runner config");
+            )
+            .expect("valid runner config");
             let (tx, rx) = watch::channel(false);
             shutdown_txs.push(tx);
             handles.push(tokio::spawn(async move { runner.run(rx).await }));

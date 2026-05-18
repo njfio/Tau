@@ -53,6 +53,7 @@ mod cortex_runtime;
 mod dashboard_runtime;
 mod dashboard_shell_page;
 mod dashboard_status;
+mod deploy_process_supervisor;
 mod deploy_runtime;
 mod endpoints;
 mod entry_handlers;
@@ -128,7 +129,9 @@ use dashboard_status::{
     apply_gateway_dashboard_action, collect_gateway_dashboard_snapshot,
     collect_tau_ops_dashboard_command_center_snapshot, GatewayDashboardActionRequest,
 };
-use deploy_runtime::{handle_gateway_agent_stop, handle_gateway_deploy};
+use deploy_runtime::{
+    collect_tau_ops_dashboard_deploy_snapshot, handle_gateway_agent_stop, handle_gateway_deploy,
+};
 use endpoints::*;
 use entry_handlers::{
     handle_dashboard_shell_page, handle_gateway_auth_bootstrap, handle_webchat_page,

@@ -12,7 +12,6 @@ use super::super::{
 use crate::memory_contract::{MemoryEntry, MemoryScope};
 use tempfile::tempdir;
 
-
 pub(super) fn lifecycle_scope() -> MemoryScope {
     MemoryScope {
         workspace_id: "workspace-lifecycle".to_string(),
@@ -618,4 +617,3 @@ fn regression_2460_c03_lifecycle_duplicate_cleanup_skips_identity_records() {
         "non-identity memory should remain when only duplicate peer is identity"
     );
 }
-

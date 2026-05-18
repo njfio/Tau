@@ -1,3 +1,6 @@
+use super::super::deploy_process_supervisor::{
+    GatewayDeployProcessSupervisor, NoopGatewayDeployProcessSupervisor,
+};
 use super::*;
 
 #[allow(clippy::too_many_arguments)]
@@ -39,41 +42,95 @@ pub(super) fn test_state_with_client_auth_and_harness_runner(
     rate_limit_max_requests: usize,
     ops_harness_self_improvement: Arc<dyn GatewayOpsHarnessSelfImprovementRunner>,
 ) -> Arc<GatewayOpenResponsesServerState> {
-    Arc::new(GatewayOpenResponsesServerState::new(
-        GatewayOpenResponsesServerConfig {
-            client,
-            model: "openai/gpt-5.2".to_string(),
-            model_input_cost_per_million: Some(10.0),
-            model_cached_input_cost_per_million: None,
-            model_output_cost_per_million: Some(20.0),
-            system_prompt: "You are Tau.".to_string(),
-            available_skills: Vec::new(),
-            explicit_skill_names: Vec::new(),
-            max_turns: 4,
-            tool_registrar,
-            turn_timeout_ms: 0,
-            session_lock_wait_ms: 500,
-            session_lock_stale_ms: 10_000,
-            state_dir: root.join(".tau/gateway"),
-            bind: "127.0.0.1:0".to_string(),
-            auth_mode,
-            auth_token: token.map(str::to_string),
-            auth_password: password.map(str::to_string),
-            session_ttl_seconds: 3_600,
-            rate_limit_window_seconds,
-            rate_limit_max_requests,
-            max_input_chars,
-            runtime_heartbeat: RuntimeHeartbeatSchedulerConfig {
-                enabled: false,
-                interval: std::time::Duration::from_secs(5),
-                state_path: root.join(".tau/runtime-heartbeat/state.json"),
-                ..RuntimeHeartbeatSchedulerConfig::default()
+    test_state_with_client_auth_harness_runner_and_deploy_process_supervisor(
+        root,
+        max_input_chars,
+        client,
+        tool_registrar,
+        auth_mode,
+        token,
+        password,
+        rate_limit_window_seconds,
+        rate_limit_max_requests,
+        ops_harness_self_improvement,
+        Arc::new(NoopGatewayDeployProcessSupervisor),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn test_state_with_client_auth_harness_runner_and_deploy_process_supervisor(
+    root: &Path,
+    max_input_chars: usize,
+    client: Arc<dyn LlmClient>,
+    tool_registrar: Arc<dyn GatewayToolRegistrar>,
+    auth_mode: GatewayOpenResponsesAuthMode,
+    token: Option<&str>,
+    password: Option<&str>,
+    rate_limit_window_seconds: u64,
+    rate_limit_max_requests: usize,
+    ops_harness_self_improvement: Arc<dyn GatewayOpsHarnessSelfImprovementRunner>,
+    deploy_process_supervisor: Arc<dyn GatewayDeployProcessSupervisor>,
+) -> Arc<GatewayOpenResponsesServerState> {
+    Arc::new(
+        GatewayOpenResponsesServerState::new_for_test_with_deploy_process_supervisor(
+            GatewayOpenResponsesServerConfig {
+                client,
+                model: "openai/gpt-5.2".to_string(),
+                model_input_cost_per_million: Some(10.0),
+                model_cached_input_cost_per_million: None,
+                model_output_cost_per_million: Some(20.0),
+                system_prompt: "You are Tau.".to_string(),
+                available_skills: Vec::new(),
+                explicit_skill_names: Vec::new(),
+                max_turns: 4,
+                tool_registrar,
+                turn_timeout_ms: 0,
+                session_lock_wait_ms: 500,
+                session_lock_stale_ms: 10_000,
+                state_dir: root.join(".tau/gateway"),
+                bind: "127.0.0.1:0".to_string(),
+                auth_mode,
+                auth_token: token.map(str::to_string),
+                auth_password: password.map(str::to_string),
+                session_ttl_seconds: 3_600,
+                rate_limit_window_seconds,
+                rate_limit_max_requests,
+                max_input_chars,
+                runtime_heartbeat: RuntimeHeartbeatSchedulerConfig {
+                    enabled: false,
+                    interval: std::time::Duration::from_secs(5),
+                    state_path: root.join(".tau/runtime-heartbeat/state.json"),
+                    ..RuntimeHeartbeatSchedulerConfig::default()
+                },
+                external_coding_agent_bridge: tau_runtime::ExternalCodingAgentBridgeConfig::default(
+                ),
+                ops_harness_self_improvement,
+                delegated_tool_execution: false,
             },
-            external_coding_agent_bridge: tau_runtime::ExternalCodingAgentBridgeConfig::default(),
-            ops_harness_self_improvement,
-            delegated_tool_execution: false,
-        },
-    ))
+            deploy_process_supervisor,
+        ),
+    )
+}
+
+pub(super) fn test_state_with_deploy_process_supervisor(
+    root: &Path,
+    max_input_chars: usize,
+    token: &str,
+    deploy_process_supervisor: Arc<dyn GatewayDeployProcessSupervisor>,
+) -> Arc<GatewayOpenResponsesServerState> {
+    test_state_with_client_auth_harness_runner_and_deploy_process_supervisor(
+        root,
+        max_input_chars,
+        Arc::new(MockGatewayLlmClient::default()),
+        Arc::new(NoopGatewayToolRegistrar),
+        GatewayOpenResponsesAuthMode::Token,
+        Some(token),
+        None,
+        60,
+        120,
+        Arc::new(NoopGatewayOpsHarnessSelfImprovementRunner),
+        deploy_process_supervisor,
+    )
 }
 
 pub(super) fn test_state_with_auth(

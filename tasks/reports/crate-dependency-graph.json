@@ -1,12 +1,12 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-02-21T00:00:00Z",
+  "generated_at": "2026-05-17T00:00:00Z",
   "inputs": {
     "metadata_source": "cargo metadata --no-deps --format-version 1"
   },
   "summary": {
     "workspace_crates": 45,
-    "workspace_edges": 198
+    "workspace_edges": 202
   },
   "crates": [
     {
@@ -414,6 +414,10 @@
     {
       "from": "tau-dashboard",
       "to": "tau-runtime"
+    },
+    {
+      "from": "tau-dashboard-ui",
+      "to": "tau-tui"
     },
     {
       "from": "tau-deployment",
@@ -913,6 +917,10 @@
     },
     {
       "from": "tau-trainer",
+      "to": "tau-algorithm"
+    },
+    {
+      "from": "tau-trainer",
       "to": "tau-training-runner"
     },
     {
@@ -970,6 +978,14 @@
     {
       "from": "tau-training-tracer",
       "to": "tau-training-types"
+    },
+    {
+      "from": "tau-tui",
+      "to": "tau-contract"
+    },
+    {
+      "from": "tau-tui",
+      "to": "tau-skills"
     },
     {
       "from": "tau-voice",

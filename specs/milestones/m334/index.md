@@ -65,6 +65,8 @@ Tau should not behave like a one-shot assistant that stops when the model emits
   validator for the tranche-one autonomy benchmark contract
 - Task: [#3754](https://github.com/njfio/Tau/issues/3754) Close Tau autonomous
   harness integration gaps
+- Task: [#3758](https://github.com/njfio/Tau/issues/3758) Upgrade deploy/stop
+  to supervised process lifecycle control
 
 ## Scope
 - Define an explicit outer supervisor/mission loop above current prompt turns

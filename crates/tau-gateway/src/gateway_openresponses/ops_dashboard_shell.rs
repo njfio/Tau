@@ -44,17 +44,17 @@ use super::channel_telemetry_runtime::build_gateway_multi_channel_lifecycle_comm
 use super::types::GatewayChannelLifecycleRequest;
 use super::{
     apply_gateway_dashboard_action, collect_ops_harness_memory_graph_lineage,
-    collect_tau_ops_dashboard_command_center_snapshot, complete_cortex_chat,
-    find_ops_harness_proposal, gateway_memory_store, gateway_memory_store_root,
-    gateway_session_path, list_ops_harness_proposals, record_cortex_memory_entry_delete_event,
-    record_cortex_memory_entry_write_event, record_cortex_observer_event,
-    record_cortex_session_append_event, record_cortex_session_reset_event, sanitize_session_key,
-    GatewayDashboardActionRequest, GatewayMemoryGraphEdge, GatewayMemoryGraphNode,
-    GatewayOpenResponsesServerState, GatewayOpsHarnessProposalDefinition,
-    GatewayOpsHarnessSelfImprovementRequest, GatewayOpsHarnessSelfImprovementResult,
-    OpenResponsesApiError, OpsShellControlsQuery, DEFAULT_SESSION_KEY,
-    OPS_DASHBOARD_CHANNELS_ENDPOINT, OPS_DASHBOARD_CHAT_ENDPOINT, OPS_DASHBOARD_CHAT_NEW_ENDPOINT,
-    OPS_DASHBOARD_CHAT_SEND_ENDPOINT, OPS_DASHBOARD_ENDPOINT,
+    collect_tau_ops_dashboard_command_center_snapshot, collect_tau_ops_dashboard_deploy_snapshot,
+    complete_cortex_chat, find_ops_harness_proposal, gateway_memory_store,
+    gateway_memory_store_root, gateway_session_path, list_ops_harness_proposals,
+    record_cortex_memory_entry_delete_event, record_cortex_memory_entry_write_event,
+    record_cortex_observer_event, record_cortex_session_append_event,
+    record_cortex_session_reset_event, sanitize_session_key, GatewayDashboardActionRequest,
+    GatewayMemoryGraphEdge, GatewayMemoryGraphNode, GatewayOpenResponsesServerState,
+    GatewayOpsHarnessProposalDefinition, GatewayOpsHarnessSelfImprovementRequest,
+    GatewayOpsHarnessSelfImprovementResult, OpenResponsesApiError, OpsShellControlsQuery,
+    DEFAULT_SESSION_KEY, OPS_DASHBOARD_CHANNELS_ENDPOINT, OPS_DASHBOARD_CHAT_ENDPOINT,
+    OPS_DASHBOARD_CHAT_NEW_ENDPOINT, OPS_DASHBOARD_CHAT_SEND_ENDPOINT, OPS_DASHBOARD_ENDPOINT,
 };
 use crate::remote_profile::GatewayOpenResponsesAuthMode;
 
@@ -1604,6 +1604,7 @@ pub(super) fn render_tau_ops_dashboard_shell_for_route(
     command_center.config_model_ref = state.config.model.clone();
     command_center.config_system_prompt_chars = state.config.system_prompt.chars().count();
     command_center.config_max_turns = state.config.max_turns;
+    command_center.deploy = collect_tau_ops_dashboard_deploy_snapshot(&state.config.state_dir);
     let chat = collect_tau_ops_dashboard_chat_snapshot(state, &controls, detail_session_key);
     let requested_harness_audit_action = if controls.requested_harness_view() == Some("history") {
         controls.requested_harness_audit_action()
