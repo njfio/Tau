@@ -948,6 +948,123 @@ async fn integration_spec_3799_c01_ops_chat_send_appends_assistant_reply() {
 }
 
 #[tokio::test]
+async fn integration_spec_3799_c04_ops_chat_send_executes_registered_tools_for_action_requests() {
+    let temp = tempdir().expect("tempdir");
+    let scripted = Arc::new(ScriptedGatewayLlmClient::new(vec![
+        ChatResponse {
+            message: Message::assistant_blocks(vec![ContentBlock::ToolCall {
+                id: "call-ops-chat-write".to_string(),
+                name: "write".to_string(),
+                arguments: json!({
+                    "path": "ops-chat-proof.txt",
+                    "content": "created through ops chat tools"
+                }),
+            }]),
+            finish_reason: Some("tool_calls".to_string()),
+            usage: ChatUsage::default(),
+        },
+        scripted_gateway_response("created ops-chat-proof.txt through the registered write tool"),
+    ]));
+    let tool_root = temp.path().join("workspace");
+    std::fs::create_dir_all(&tool_root).expect("create tool workspace");
+    let state = test_state_with_client_and_auth(
+        temp.path(),
+        10_000,
+        scripted.clone(),
+        Arc::new(FixturePipelineToolRegistrar::new(
+            tool_root.clone(),
+            temp.path().join(".tau/gateway"),
+        )),
+        GatewayOpenResponsesAuthMode::Token,
+        Some("secret"),
+        None,
+        60,
+        120,
+    );
+    let (addr, handle) = spawn_test_server(state.clone())
+        .await
+        .expect("spawn server");
+    let client = Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .expect("build client");
+
+    let send_response = client
+        .post(format!("http://{addr}/ops/chat/send"))
+        .form(&[
+            ("session_key", "chat-tool-session"),
+            (
+                "message",
+                "create a file named ops-chat-proof.txt with tool evidence",
+            ),
+            ("theme", "dark"),
+            ("sidebar", "expanded"),
+        ])
+        .send()
+        .await
+        .expect("ops chat tool send request");
+    assert_eq!(send_response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        send_response
+            .headers()
+            .get("location")
+            .and_then(|value| value.to_str().ok()),
+        Some(
+            "/ops/chat?theme=dark&sidebar=expanded&session=chat-tool-session#tau-ops-chat-message-row-2"
+        )
+    );
+
+    assert_eq!(
+        std::fs::read_to_string(tool_root.join("ops-chat-proof.txt"))
+            .expect("read tool-created file"),
+        "created through ops chat tools"
+    );
+
+    let chat_response = client
+        .get(format!(
+            "http://{addr}/ops/chat?theme=dark&sidebar=expanded&session=chat-tool-session"
+        ))
+        .send()
+        .await
+        .expect("ops chat render request");
+    assert_eq!(chat_response.status(), StatusCode::OK);
+    let chat_body = chat_response.text().await.expect("read ops chat body");
+    assert!(chat_body.contains("id=\"tau-ops-chat-transcript\" data-message-count=\"3\""));
+    assert!(chat_body.contains("id=\"tau-ops-chat-message-row-0\" data-message-role=\"user\""));
+    assert!(chat_body.contains("id=\"tau-ops-chat-message-row-1\" data-message-role=\"tool\""));
+    assert!(chat_body.contains(
+        "id=\"tau-ops-chat-tool-card-1\" data-tool-card=\"true\" data-inline-result=\"true\""
+    ));
+    assert!(chat_body.contains("created ops-chat-proof.txt through the registered write tool"));
+
+    let session_path = gateway_session_path(&state.config.state_dir, "chat-tool-session");
+    let store = SessionStore::load(&session_path).expect("load ops chat session");
+    let lineage = store
+        .lineage_messages(store.head_id())
+        .expect("lineage messages");
+    assert!(lineage
+        .iter()
+        .any(|message| message.role == MessageRole::Tool
+            && message.text_content().contains("bytes_written")));
+
+    let observer_path = state
+        .config
+        .state_dir
+        .join("openresponses")
+        .join("cortex-observer-events.jsonl");
+    let observer = std::fs::read_to_string(observer_path).expect("read observer events");
+    assert!(observer.contains("\"event_type\":\"ops.chat.request\""));
+    assert!(observer.contains("\"reason_code\":\"ops_chat_tools_completed\""));
+    assert!(observer.contains("\"tool_execution_count\":1"));
+    assert!(observer.contains("\"tools_used\":[\"write\"]"));
+
+    let captured_requests = scripted.captured_requests().await;
+    assert_eq!(captured_requests.len(), 2);
+
+    handle.abort();
+}
+
+#[tokio::test]
 async fn regression_ops_chat_send_writes_durable_memory_records_for_completed_turns() {
     let temp = tempdir().expect("tempdir");
     let state = test_state_with_client_and_auth(

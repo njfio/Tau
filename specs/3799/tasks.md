@@ -7,3 +7,6 @@
 - [x] T5: Restart live harness and validate `/ops/chat` with Browser Use.
 - [x] T6: Run touched crate format, tests, and clippy.
 - [x] T7: Commit and push.
+- [x] T8: Replace advisory Cortex send path with tool-capable agent execution.
+- [x] T9: Add regression coverage proving action requests execute registered tools and render tool rows.
+- [x] T10: Re-run live UI proof that `/ops/chat` can create a file through tools.

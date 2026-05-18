@@ -1,8 +1,10 @@
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
+use std::collections::HashMap;
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use axum::extract::{Form, Path as AxumPath, Query, State};
@@ -12,9 +14,9 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use tau_agent_core::{
     load_autonomy_benchmark_fixture, run_autonomy_benchmark_fixture, Agent, AgentConfig,
-    MissionHarnessConfig,
+    AgentEvent, MissionHarnessConfig,
 };
-use tau_ai::{Message, MessageRole};
+use tau_ai::{MessageRole, ToolChoice};
 use tau_dashboard_ui::{
     render_tau_ops_dashboard_shell_with_context, TauOpsDashboardAuthMode,
     TauOpsDashboardChatMessageRow, TauOpsDashboardChatSessionOptionRow,
@@ -43,17 +45,19 @@ use tau_session::SessionStore;
 use super::channel_telemetry_runtime::build_gateway_multi_channel_lifecycle_command_config;
 use super::types::GatewayChannelLifecycleRequest;
 use super::{
-    apply_gateway_dashboard_action, collect_ops_harness_memory_graph_lineage,
-    collect_tau_ops_dashboard_command_center_snapshot, collect_tau_ops_dashboard_deploy_snapshot,
-    complete_cortex_chat, deploy_gateway_agent, find_ops_harness_proposal, gateway_memory_store,
-    gateway_memory_store_root, gateway_session_path, list_ops_harness_proposals,
-    record_cortex_memory_entry_delete_event, record_cortex_memory_entry_write_event,
-    record_cortex_observer_event, record_cortex_session_append_event,
-    record_cortex_session_reset_event, sanitize_session_key, stop_gateway_deploy_agent,
-    GatewayDashboardActionRequest, GatewayDeployAgentInput, GatewayMemoryGraphEdge,
-    GatewayMemoryGraphNode, GatewayOpenResponsesServerState, GatewayOpsHarnessProposalDefinition,
-    GatewayOpsHarnessSelfImprovementRequest, GatewayOpsHarnessSelfImprovementResult,
-    OpenResponsesApiError, OpsShellControlsQuery, DEFAULT_SESSION_KEY,
+    apply_gateway_dashboard_action, collect_assistant_reply,
+    collect_ops_harness_memory_graph_lineage, collect_tau_ops_dashboard_command_center_snapshot,
+    collect_tau_ops_dashboard_deploy_snapshot, deploy_gateway_agent, find_ops_harness_proposal,
+    gateway_memory_store, gateway_memory_store_root, gateway_session_path,
+    initialize_gateway_session_runtime, list_ops_harness_proposals, persist_messages,
+    persist_session_usage_delta, record_cortex_memory_entry_delete_event,
+    record_cortex_memory_entry_write_event, record_cortex_observer_event,
+    record_cortex_session_append_event, record_cortex_session_reset_event, sanitize_session_key,
+    stop_gateway_deploy_agent, GatewayDashboardActionRequest, GatewayDeployAgentInput,
+    GatewayMemoryGraphEdge, GatewayMemoryGraphNode, GatewayOpenResponsesServerState,
+    GatewayOpsHarnessProposalDefinition, GatewayOpsHarnessSelfImprovementRequest,
+    GatewayOpsHarnessSelfImprovementResult, OpenResponsesApiError,
+    OpenResponsesObservedToolExecution, OpsShellControlsQuery, DEFAULT_SESSION_KEY,
     OPS_DASHBOARD_CHANNELS_ENDPOINT, OPS_DASHBOARD_CHAT_ENDPOINT, OPS_DASHBOARD_CHAT_NEW_ENDPOINT,
     OPS_DASHBOARD_CHAT_SEND_ENDPOINT, OPS_DASHBOARD_DEPLOY_ENDPOINT, OPS_DASHBOARD_ENDPOINT,
 };
@@ -5592,79 +5596,43 @@ pub(super) async fn handle_ops_dashboard_chat_send(
         return Redirect::to(redirect_path.as_str()).into_response();
     }
 
-    let session_path = gateway_session_path(&state.config.state_dir, session_key.as_str());
-    let mut store = match SessionStore::load(&session_path) {
-        Ok(store) => store,
-        Err(error) => {
-            return OpenResponsesApiError::internal(format!(
-                "failed to load session '{}': {error}",
-                session_path.display()
-            ))
-            .into_response();
-        }
-    };
-    store.set_lock_policy(
-        state.config.session_lock_wait_ms,
-        state.config.session_lock_stale_ms,
-    );
-
-    let resolved_system_prompt = state.resolved_system_prompt();
-    if let Err(error) = store.ensure_initialized(&resolved_system_prompt) {
-        return OpenResponsesApiError::internal(format!(
-            "failed to initialize session '{}': {error}",
-            session_path.display()
-        ))
-        .into_response();
-    }
-
-    let parent_id = store.head_id();
-    let message = Message::user(content);
-    let new_head = match store.append_messages(parent_id, &[message]) {
-        Ok(head) => head,
-        Err(error) => {
-            return OpenResponsesApiError::internal(format!(
-                "failed to append session message '{}': {error}",
-                session_path.display()
-            ))
-            .into_response();
-        }
-    };
-
-    let assistant_output = complete_cortex_chat(&state, content.trim()).await;
-    let assistant_message = Message::assistant_text(assistant_output.output_text.clone());
-    let assistant_head = match store.append_messages(new_head, &[assistant_message]) {
-        Ok(head) => head,
-        Err(error) => {
-            return OpenResponsesApiError::internal(format!(
-                "failed to append assistant session message '{}': {error}",
-                session_path.display()
-            ))
-            .into_response();
-        }
-    };
+    let execution =
+        match execute_ops_chat_tool_turn(state.clone(), session_key.as_str(), content).await {
+            Ok(execution) => execution,
+            Err(error) => return error.into_response(),
+        };
 
     let _ = record_cortex_observer_event(
         &state.config.state_dir,
-        "cortex.chat.request",
+        "ops.chat.request",
         json!({
             "surface": "ops.chat",
             "session_key": session_key.as_str(),
-            "input_chars": content.trim().chars().count(),
-            "output_chars": assistant_output.output_text.chars().count(),
-            "reason_code": assistant_output.reason_code,
-            "fallback": assistant_output.fallback,
+            "input_chars": content.chars().count(),
+            "output_chars": execution.assistant_output.chars().count(),
+            "reason_code": execution.reason_code,
+            "fallback": false,
+            "tool_execution_count": execution.tool_executions.len(),
+            "tools_used": execution
+                .tool_executions
+                .iter()
+                .map(|tool| tool.tool_name.as_str())
+                .collect::<Vec<_>>(),
         }),
     );
     state.record_ui_telemetry_event("chat", "send", "chat_message_appended");
     state.record_ui_telemetry_event("chat", "send", "chat_assistant_message_appended");
+    if !execution.tool_executions.is_empty() {
+        state.record_ui_telemetry_event("chat", "send", "chat_tool_messages_appended");
+    }
     if write_ops_chat_turn_memory(
         &state,
         session_key.as_str(),
-        assistant_head,
-        content.trim(),
-        assistant_output.output_text.as_str(),
-        assistant_output.reason_code,
-        assistant_output.fallback,
+        execution.assistant_head,
+        content,
+        execution.assistant_output.as_str(),
+        execution.reason_code,
+        false,
     )
     .is_ok()
     {
@@ -5675,17 +5643,258 @@ pub(super) async fn handle_ops_dashboard_chat_send(
     record_cortex_session_append_event(
         &state.config.state_dir,
         session_key.as_str(),
-        assistant_head,
-        store.entries().len(),
+        execution.assistant_head,
+        execution.message_count,
     );
-    let latest_anchor = latest_ops_chat_message_anchor(&store, assistant_head);
     let redirect_path = build_ops_chat_redirect_path_with_anchor(
         form.resolved_theme(),
         form.resolved_sidebar_state(),
         session_key.as_str(),
-        latest_anchor.as_deref(),
+        execution.latest_anchor.as_deref(),
     );
     Redirect::to(redirect_path.as_str()).into_response()
+}
+
+struct OpsChatPendingToolExecution {
+    tool_name: String,
+    started_unix_ms: u64,
+}
+
+struct OpsChatToolTurnResult {
+    assistant_output: String,
+    assistant_head: Option<u64>,
+    latest_anchor: Option<String>,
+    message_count: usize,
+    reason_code: &'static str,
+    tool_executions: Vec<OpenResponsesObservedToolExecution>,
+}
+
+async fn execute_ops_chat_tool_turn(
+    state: Arc<GatewayOpenResponsesServerState>,
+    session_key: &str,
+    content: &str,
+) -> Result<OpsChatToolTurnResult, OpenResponsesApiError> {
+    if content.chars().count() > state.config.max_input_chars {
+        return Err(OpenResponsesApiError::payload_too_large(format!(
+            "ops chat message exceeds max {} characters",
+            state.config.max_input_chars
+        )));
+    }
+
+    let resolved_system_prompt = format!(
+        "{}\n\n## Ops dashboard chat\nUse registered tools when the operator asks you to create, edit, inspect, validate, run, or otherwise change local files or runtime state. Answer directly only for informational questions.",
+        state.resolved_system_prompt()
+    );
+    let mut agent = Agent::new(
+        state.config.client.clone(),
+        AgentConfig {
+            model: state.config.model.clone(),
+            model_input_cost_per_million: state.config.model_input_cost_per_million,
+            model_cached_input_cost_per_million: state.config.model_cached_input_cost_per_million,
+            model_output_cost_per_million: state.config.model_output_cost_per_million,
+            system_prompt: resolved_system_prompt.clone(),
+            max_turns: state.config.max_turns,
+            max_estimated_input_tokens: None,
+            max_estimated_total_tokens: None,
+            ..AgentConfig::default()
+        },
+    );
+    state.config.tool_registrar.register(&mut agent);
+
+    let pending_tools = Arc::new(Mutex::new(
+        HashMap::<String, OpsChatPendingToolExecution>::new(),
+    ));
+    let tool_executions = Arc::new(Mutex::new(Vec::<OpenResponsesObservedToolExecution>::new()));
+    agent.subscribe({
+        let pending_tools = pending_tools.clone();
+        let tool_executions = tool_executions.clone();
+        move |event| match event {
+            AgentEvent::ToolExecutionStart {
+                tool_call_id,
+                tool_name,
+                ..
+            } => {
+                if let Ok(mut guard) = pending_tools.lock() {
+                    guard.insert(
+                        tool_call_id.clone(),
+                        OpsChatPendingToolExecution {
+                            tool_name: tool_name.clone(),
+                            started_unix_ms: now_unix_ms(),
+                        },
+                    );
+                }
+            }
+            AgentEvent::ToolExecutionEnd {
+                tool_call_id,
+                tool_name,
+                result,
+            } => {
+                let finished_unix_ms = now_unix_ms();
+                let pending = pending_tools
+                    .lock()
+                    .ok()
+                    .and_then(|mut guard| guard.remove(tool_call_id.as_str()));
+                let started_unix_ms = pending
+                    .as_ref()
+                    .map(|entry| entry.started_unix_ms)
+                    .unwrap_or(finished_unix_ms);
+                let resolved_tool_name = pending
+                    .as_ref()
+                    .map(|entry| entry.tool_name.clone())
+                    .unwrap_or(tool_name.clone());
+                let output_text = result.as_text();
+                if let Ok(mut guard) = tool_executions.lock() {
+                    guard.push(OpenResponsesObservedToolExecution {
+                        tool_call_id: tool_call_id.clone(),
+                        tool_name: resolved_tool_name,
+                        output_summary: summarize_ops_chat_tool_text(output_text.as_str()),
+                        success: !result.is_error,
+                        latency_ms: finished_unix_ms.saturating_sub(started_unix_ms),
+                        timestamp_ms: finished_unix_ms,
+                    });
+                }
+            }
+            _ => {}
+        }
+    });
+
+    let session_path = gateway_session_path(&state.config.state_dir, session_key);
+    let mut session_runtime = Some(
+        initialize_gateway_session_runtime(
+            &session_path,
+            resolved_system_prompt.as_str(),
+            state.config.session_lock_wait_ms,
+            state.config.session_lock_stale_ms,
+            &mut agent,
+        )
+        .map_err(|error| {
+            OpenResponsesApiError::internal(format!(
+                "failed to initialize ops chat session runtime: {error}"
+            ))
+        })?,
+    );
+
+    let start_index = agent.messages().len();
+    let pre_prompt_cost = agent.cost_snapshot();
+    let tool_names = agent.registered_tool_names();
+    if ops_chat_prompt_requests_tool(content)
+        && tool_names
+            .iter()
+            .any(|tool_name| ops_chat_tool_can_act(tool_name.as_str()))
+    {
+        agent.set_next_tool_choice(Some(ToolChoice::Required));
+    }
+
+    let prompt_result = if state.config.turn_timeout_ms == 0 {
+        agent.prompt_with_stream(content, None).await
+    } else {
+        match tokio::time::timeout(
+            std::time::Duration::from_millis(state.config.turn_timeout_ms),
+            agent.prompt_with_stream(content, None),
+        )
+        .await
+        {
+            Ok(result) => result,
+            Err(_) => {
+                return Err(OpenResponsesApiError::timeout(format!(
+                    "ops chat turn exceeded {} ms",
+                    state.config.turn_timeout_ms
+                )));
+            }
+        }
+    };
+    prompt_result.map_err(|error| {
+        OpenResponsesApiError::gateway_failure(format!("ops chat tool runtime failed: {error}"))
+    })?;
+
+    let post_prompt_cost = agent.cost_snapshot();
+    persist_session_usage_delta(&mut session_runtime, &pre_prompt_cost, &post_prompt_cost)
+        .map_err(|error| {
+            OpenResponsesApiError::internal(format!(
+                "failed to persist ops chat usage summary: {error}"
+            ))
+        })?;
+
+    let new_messages = agent.messages()[start_index..].to_vec();
+    persist_messages(&mut session_runtime, &new_messages).map_err(|error| {
+        OpenResponsesApiError::internal(format!("failed to persist ops chat messages: {error}"))
+    })?;
+
+    let assistant_output = collect_assistant_reply(&new_messages);
+    let runtime = session_runtime.as_ref().ok_or_else(|| {
+        OpenResponsesApiError::internal("ops chat session runtime unexpectedly missing")
+    })?;
+    let assistant_head = runtime.active_head;
+    let latest_anchor = latest_ops_chat_message_anchor(&runtime.store, assistant_head);
+    let tool_executions = tool_executions
+        .lock()
+        .map_err(|_| OpenResponsesApiError::internal("ops chat tool trace lock is poisoned"))?
+        .clone();
+    let reason_code = if tool_executions.is_empty() {
+        "ops_chat_llm_completed"
+    } else {
+        "ops_chat_tools_completed"
+    };
+
+    Ok(OpsChatToolTurnResult {
+        assistant_output,
+        assistant_head,
+        latest_anchor,
+        message_count: runtime.store.entries().len(),
+        reason_code,
+        tool_executions,
+    })
+}
+
+fn ops_chat_prompt_requests_tool(content: &str) -> bool {
+    content
+        .split(|character: char| !character.is_ascii_alphanumeric())
+        .filter(|token| !token.is_empty())
+        .map(str::to_ascii_lowercase)
+        .any(|token| {
+            matches!(
+                token.as_str(),
+                "build"
+                    | "create"
+                    | "edit"
+                    | "fix"
+                    | "implement"
+                    | "make"
+                    | "modify"
+                    | "patch"
+                    | "run"
+                    | "save"
+                    | "test"
+                    | "update"
+                    | "validate"
+                    | "write"
+            )
+        })
+}
+
+fn ops_chat_tool_can_act(tool_name: &str) -> bool {
+    matches!(
+        tool_name,
+        "bash"
+            | "edit"
+            | "http"
+            | "jobs_create"
+            | "memory_write"
+            | "read"
+            | "write"
+            | "branch"
+            | "undo"
+            | "redo"
+    )
+}
+
+fn summarize_ops_chat_tool_text(raw: &str) -> String {
+    raw.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .take(240)
+        .collect()
 }
 
 fn write_ops_chat_turn_memory(
