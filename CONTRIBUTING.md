@@ -31,6 +31,22 @@ cargo check -q
 
 For docs/scripts-only slices, run the relevant conformance scripts under `scripts/dev/`.
 
+Use `docs/guides/test-coverage-targets.md` for crate-specific coverage and
+conformance expectations. P0/P1 changes should name the spec id in at least one
+targeted test command.
+
+## Release Freshness Review
+
+Before each release branch or release candidate:
+
+- Re-read this guide against `.github/pull_request_template.md` and
+  `AGENTS.md`; update any stale commands, branch names, or spec requirements.
+- Regenerate crate dependency graph artifacts if workspace crate edges changed.
+- Sample changed specs and confirm AC -> conformance case -> test command
+  mapping is complete.
+- Confirm docs-only exceptions have explicit `N/A` tier reasons.
+- Record the review in the release checklist or PR description.
+
 ## Pull Request Checklist
 
 - [ ] Summary explains what changed and why.

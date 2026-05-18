@@ -22,10 +22,10 @@ use super::normalize::{
 };
 use super::ranking::record_search_text_for_entry;
 use super::{
-    MemoryEmbeddingProviderConfig, MemoryRelation, MemoryRelationInput, MemoryScopeFilter, MemoryStorageBackend, MemoryType, MemoryTypeImportanceProfile, MemoryWriteResult,
-    RuntimeMemoryRecord,
-    MEMORY_RUNTIME_ENTRIES_FILE_NAME,
-    MEMORY_RUNTIME_SCHEMA_VERSION, MEMORY_STORAGE_REASON_INIT_IMPORT_FAILED,
+    MemoryEmbeddingProviderConfig, MemoryRelation, MemoryRelationInput, MemoryScopeFilter,
+    MemoryStorageBackend, MemoryType, MemoryTypeImportanceProfile, MemoryWriteResult,
+    RuntimeMemoryRecord, MEMORY_RUNTIME_ENTRIES_FILE_NAME, MEMORY_RUNTIME_SCHEMA_VERSION,
+    MEMORY_STORAGE_REASON_INIT_IMPORT_FAILED,
 };
 
 /// Public struct `FileMemoryStore` used across Tau components.

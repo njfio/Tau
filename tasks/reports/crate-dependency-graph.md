@@ -1,6 +1,6 @@
 # Workspace Crate Dependency Graph
 
-- generated_at: `2026-02-21T00:00:00Z`
+- generated_at: `2026-05-17T00:00:00Z`
 - metadata_source: `cargo metadata --no-deps --format-version 1`
 
 ## Summary
@@ -8,7 +8,7 @@
 | Metric | Value |
 |---|---:|
 | workspace_crates | 45 |
-| workspace_edges | 198 |
+| workspace_edges | 202 |
 
 ## Mermaid
 
@@ -115,6 +115,7 @@ graph TD
   tau_dashboard --> tau_contract
   tau_dashboard --> tau_core
   tau_dashboard --> tau_runtime
+  tau_dashboard_ui --> tau_tui
   tau_deployment --> kamn_sdk
   tau_deployment --> tau_cli
   tau_deployment --> tau_contract
@@ -239,6 +240,7 @@ graph TD
   tau_tools --> tau_provider
   tau_tools --> tau_runtime
   tau_tools --> tau_session
+  tau_trainer --> tau_algorithm
   tau_trainer --> tau_training_runner
   tau_trainer --> tau_training_store
   tau_trainer --> tau_training_tracer
@@ -254,6 +256,8 @@ graph TD
   tau_training_tracer --> tau_ai
   tau_training_tracer --> tau_training_store
   tau_training_tracer --> tau_training_types
+  tau_tui --> tau_contract
+  tau_tui --> tau_skills
   tau_voice --> tau_contract
   tau_voice --> tau_core
   tau_voice --> tau_runtime
@@ -369,6 +373,7 @@ graph TD
 | tau-dashboard | tau-contract |
 | tau-dashboard | tau-core |
 | tau-dashboard | tau-runtime |
+| tau-dashboard-ui | tau-tui |
 | tau-deployment | kamn-sdk |
 | tau-deployment | tau-cli |
 | tau-deployment | tau-contract |
@@ -493,6 +498,7 @@ graph TD
 | tau-tools | tau-provider |
 | tau-tools | tau-runtime |
 | tau-tools | tau-session |
+| tau-trainer | tau-algorithm |
 | tau-trainer | tau-training-runner |
 | tau-trainer | tau-training-store |
 | tau-trainer | tau-training-tracer |
@@ -508,6 +514,8 @@ graph TD
 | tau-training-tracer | tau-ai |
 | tau-training-tracer | tau-training-store |
 | tau-training-tracer | tau-training-types |
+| tau-tui | tau-contract |
+| tau-tui | tau-skills |
 | tau-voice | tau-contract |
 | tau-voice | tau-core |
 | tau-voice | tau-runtime |

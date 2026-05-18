@@ -1,5 +1,8 @@
 //! Gateway server config/state types and core state helpers.
 
+use super::deploy_process_supervisor::{
+    gateway_deploy_process_supervisor_from_env, GatewayDeployProcessSupervisor,
+};
 use super::*;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -113,10 +116,29 @@ pub(super) struct GatewayOpenResponsesServerState {
     pub(super) ui_telemetry_runtime: Arc<Mutex<GatewayUiTelemetryRuntimeState>>,
     pub(super) external_coding_agent_bridge: Arc<ExternalCodingAgentBridge>,
     pub(super) cortex: Arc<Cortex>,
+    pub(super) deploy_process_supervisor: Arc<dyn GatewayDeployProcessSupervisor>,
 }
 
 impl GatewayOpenResponsesServerState {
     pub(super) fn new(config: GatewayOpenResponsesServerConfig) -> Self {
+        Self::new_with_deploy_process_supervisor(
+            config,
+            gateway_deploy_process_supervisor_from_env(),
+        )
+    }
+
+    #[cfg(test)]
+    pub(super) fn new_for_test_with_deploy_process_supervisor(
+        config: GatewayOpenResponsesServerConfig,
+        deploy_process_supervisor: Arc<dyn GatewayDeployProcessSupervisor>,
+    ) -> Self {
+        Self::new_with_deploy_process_supervisor(config, deploy_process_supervisor)
+    }
+
+    fn new_with_deploy_process_supervisor(
+        config: GatewayOpenResponsesServerConfig,
+        deploy_process_supervisor: Arc<dyn GatewayDeployProcessSupervisor>,
+    ) -> Self {
         let external_coding_agent_bridge = Arc::new(ExternalCodingAgentBridge::new(
             config.external_coding_agent_bridge.clone(),
         ));
@@ -131,6 +153,7 @@ impl GatewayOpenResponsesServerState {
             ui_telemetry_runtime: Arc::new(Mutex::new(GatewayUiTelemetryRuntimeState::default())),
             external_coding_agent_bridge,
             cortex,
+            deploy_process_supervisor,
         }
     }
 

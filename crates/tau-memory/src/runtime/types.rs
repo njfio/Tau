@@ -23,7 +23,6 @@ use super::defaults::{
 use super::MEMORY_GRAPH_SIGNAL_WEIGHT_DEFAULT;
 use crate::memory_contract::{MemoryEntry, MemoryScope};
 
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 /// Enumerates supported `MemoryStorageBackend` values.
 pub enum MemoryStorageBackend {

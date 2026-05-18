@@ -36,3 +36,17 @@ When a fix is ready:
 - Patch PR/release is prepared.
 - Advisory/changelog notes describe affected versions and upgrade path.
 - Reporter credit is provided on request.
+
+## Release Freshness Review
+
+Before each release branch or release candidate, security reviewers should:
+
+- Confirm supported-version wording matches the actual release target.
+- Review dependency advisories and record any accepted risk with an owner.
+- Re-run credential lifecycle verification when auth, provider, or credential
+  store code changed.
+- Confirm key-rotation guidance in
+  `docs/guides/key-rotation-operator-runbook.md` still matches current
+  credential store behavior.
+- Verify PRs and release notes do not expose secret values, key material, or
+  private vulnerability details.

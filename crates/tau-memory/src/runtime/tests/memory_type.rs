@@ -170,4 +170,3 @@ fn spec_2589_c02_file_memory_store_applies_configured_type_default_importance() 
     assert_eq!(observation.record.memory_type, MemoryType::Observation);
     assert!((observation.record.importance - 0.18).abs() <= 0.000_001);
 }
-

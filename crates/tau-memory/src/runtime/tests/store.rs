@@ -193,8 +193,8 @@ fn functional_memory_store_persists_provider_embedding_metadata() {
 }
 
 #[test]
-fn integration_spec_2553_c02_memory_write_local_provider_success_records_local_embedding_metadata(
-) {
+fn integration_spec_2553_c02_memory_write_local_provider_success_records_local_embedding_metadata()
+{
     let temp = tempdir().expect("tempdir");
     let store = FileMemoryStore::new_with_embedding_provider(
         temp.path(),
@@ -218,8 +218,7 @@ fn integration_spec_2553_c02_memory_write_local_provider_success_records_local_e
                 &scope,
                 MemoryEntry {
                     memory_id: "memory-local-provider-success".to_string(),
-                    summary: "local provider should emit non-hash embedding metadata"
-                        .to_string(),
+                    summary: "local provider should emit non-hash embedding metadata".to_string(),
                     tags: vec!["local".to_string()],
                     facts: vec!["provider=local".to_string()],
                     source_event_key: "evt-local-success".to_string(),
@@ -436,4 +435,3 @@ fn regression_memory_store_falls_back_to_hash_embeddings_on_provider_failure() {
     );
     assert_eq!(result.record.embedding_vector.len(), 16);
 }
-

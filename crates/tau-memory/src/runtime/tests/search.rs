@@ -724,4 +724,3 @@ fn regression_memory_tree_counts_latest_entry_versions_once() {
     assert_eq!(tree.workspaces[0].children[0].entry_count, 1);
     assert_eq!(tree.workspaces[0].children[0].children[0].entry_count, 1);
 }
-

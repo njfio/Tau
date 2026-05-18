@@ -94,6 +94,49 @@ Auth column values:
 | POST | `/cortex/chat` | Protected | - | Cortex chat |
 | GET | `/cortex/status` | Protected | - | Cortex status |
 
+#### Deploy process supervision
+
+`POST /gateway/deploy` accepts the existing body shape:
+
+```json
+{"agent_id":"agent-ops","profile":"default","model":"openai/gpt-5.2"}
+```
+
+The request body does not accept command strings. A gateway process supervisor
+is configured by operator environment instead:
+
+- `TAU_GATEWAY_DEPLOY_PROCESS_PROGRAM`: executable to spawn for deploy requests.
+- `TAU_GATEWAY_DEPLOY_PROCESS_ARGS`: optional whitespace-separated static args.
+- `TAU_GATEWAY_DEPLOY_PROCESS_ARGS_JSON`: optional JSON string array static
+  args. Prefer this when an argument contains spaces or shell-significant
+  characters. When set and valid, it takes precedence over the whitespace args.
+
+When configured, deploy responses and persisted
+`.tau/gateway/deploy-agent-state.json` records include process evidence:
+
+- `process_id`
+- `process_status`
+- `process_pid`
+- `process_started_unix_ms`
+
+`POST /gateway/agents/{agent_id}/stop` terminates the supervised process when
+the gateway owns one and adds:
+
+- `process_stopped_unix_ms`
+- `process_stop_reason`
+- `process_exit_status`
+
+The command-backed supervisor stops owned processes by sending a graceful
+termination request first, waiting briefly, and falling back to a hard kill only
+when the child does not exit. The `/ops/deploy` operator page renders the
+persisted process rows so process status and pid are inspectable without opening
+the state file directly.
+- `process_stop_reason`
+- `process_exit_status`
+
+Without a configured supervisor, the endpoint remains backward compatible and
+returns `process_status=not_configured`.
+
 ### External coding-agent bridge APIs
 
 | Method | Path | Auth | Policy Gate | Notes |

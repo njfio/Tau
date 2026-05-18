@@ -1,5 +1,3 @@
-
-
 use crate::memory_contract::MemoryEntry;
 
 mod backend;
@@ -19,10 +17,7 @@ use normalize::{normalize_relations, sqlite_i64_from_u64, sqlite_u64_from_i64};
 pub use ranking::{
     cosine_similarity, embed_text_vector, rank_text_candidates, rank_text_candidates_bm25,
 };
-use ranking::{
-    reciprocal_rank_fuse, record_search_text,
-    resize_and_normalize_embedding,
-};
+use ranking::{reciprocal_rank_fuse, record_search_text, resize_and_normalize_embedding};
 
 const MEMORY_RUNTIME_SCHEMA_VERSION: u32 = 1;
 const MEMORY_RUNTIME_ENTRIES_FILE_NAME: &str = "entries.jsonl";
@@ -65,7 +60,6 @@ pub const MEMORY_INVALID_RELATION_REASON_CODE: &str = "memory_invalid_relation";
 mod types;
 pub use types::*;
 use types::{ComputedEmbedding, ResolvedMemoryBackend};
-
 
 #[cfg(test)]
 mod tests;
