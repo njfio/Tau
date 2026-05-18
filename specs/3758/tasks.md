@@ -10,6 +10,7 @@
 6. [x] T6 (VERIFY): run scoped fmt/check/clippy/test commands and record evidence.
 7. [x] T7 (GREEN): render persisted deploy process evidence in `/ops/deploy`.
 8. [x] T8 (HARDEN): add JSON static args and graceful terminate-then-kill stop behavior for command supervisor.
+9. [x] T9 (GREEN): wire `/ops/deploy` browser form posts to deploy/stop lifecycle handlers and validate through the shell.
 
 ## Tier Mapping
 
@@ -19,8 +20,8 @@
 | Property | N/A | | no randomized invariant introduced in this process-lifecycle slice |
 | Contract/DbC | N/A | | no `contracts` macro boundary added |
 | Snapshot | N/A | | explicit JSON field assertions cover the payload |
-| Functional | ✅ | `integration_spec_3758_c01_c02_c05_deploy_and_stop_spawn_and_terminate_configured_process`; `spec_3758_c09_deploy_route_renders_process_lifecycle_evidence` | |
-| Conformance | ✅ | C-01..C-10 covered by tests/docs and verification commands below | |
+| Functional | ✅ | `integration_spec_3758_c01_c02_c05_deploy_and_stop_spawn_and_terminate_configured_process`; `integration_spec_3758_c11_ops_deploy_form_spawns_and_stop_form_terminates_process`; `spec_3758_c09_deploy_route_renders_process_lifecycle_evidence` | |
+| Conformance | ✅ | C-01..C-11 covered by tests/docs and verification commands below | |
 | Integration | ✅ | HTTP deploy/stop with command supervisor | |
 | Fuzz | N/A | | no parser/codec fuzz boundary changed |
 | Mutation | N/A | | bounded endpoint/runtime slice; mutation gate deferred unless critical-path policy requires it |
@@ -36,6 +37,12 @@
 - FUNCTIONAL: `cargo test -p tau-dashboard-ui spec_3758_c09 -- --nocapture`
   passed (`1 passed`) for the deploy process lifecycle renderer without
   requiring the full shell stack.
+- FUNCTIONAL/UI: `RUST_MIN_STACK=16777216 cargo test -p tau-dashboard-ui
+  deploy_route -- --nocapture` passed (`6 passed`) for deploy route shell
+  form, stop control, process table, and contrast CSS markers.
+- FUNCTIONAL/UI: `RUST_MIN_STACK=16777216 cargo test -p tau-dashboard-ui
+  spec_3758 -- --nocapture` passed (`4 passed`) for process lifecycle
+  rendering and encoded row stop-form path segments.
 - UNIT: `cargo test -p tau-gateway deploy_process -- --nocapture` passed
   (`3 passed`) for legacy whitespace args and JSON args preserving quoted
   argument boundaries.
@@ -43,7 +50,15 @@
   unit_collect_tau_ops_dashboard_deploy_snapshot_maps_process_rows --
   --nocapture` passed (`1 passed`) for operator-shell deploy row projection.
 - CONFORMANCE: `RUST_MIN_STACK=16777216 cargo test -p tau-gateway spec_3758 --
-  --nocapture` passed (`2 passed`) after wiring `/ops/deploy` process evidence.
+  --nocapture` passed (`3 passed`) after wiring `/ops/deploy` process evidence
+  and browser form lifecycle handlers.
+- LIVE UI: local runtime launched with `TAU_GATEWAY_DEPLOY_PROCESS_PROGRAM=/bin/sh`
+  and static loop args on `127.0.0.1:8797`; Playwright submitted the
+  `/ops/deploy` form for `agent-ui-live-2`, observed `process_status=running`
+  with pid `50573`, submitted the row stop form, and observed
+  `process_status=stopped`, `process_stop_reason=operator_stop_request`, and a
+  disabled stop button. Computed row colors were `rgb(219, 232, 239)` while
+  running and `rgb(184, 203, 213)` after stop.
 - REGRESSION: `RUST_MIN_STACK=16777216 cargo test -p tau-gateway --
   --nocapture` passed (`379 passed`, `1 ignored`). The same command without
   `RUST_MIN_STACK` overflowed in an existing ops chat shell render test before
@@ -51,7 +66,8 @@
 - STATIC: `cargo fmt --check -p tau-gateway`, `cargo fmt --check -p
   tau-dashboard-ui`, `cargo fmt --check`, and `git diff --check` passed.
 - STATIC: `cargo clippy -j1 -p tau-gateway -p tau-dashboard-ui --tests --
-  -D warnings` passed.
+  -D warnings` passed after replacing deploy-runtime match/return blocks with
+  `?`.
 - STATIC: `cargo fmt --check` initially failed on pre-existing formatting drift
   in `tau-memory` and `tau-training-runner`; `cargo fmt -p tau-memory -p
   tau-training-runner` was applied, then `cargo fmt --check` passed.

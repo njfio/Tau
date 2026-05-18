@@ -130,7 +130,8 @@ use dashboard_status::{
     collect_tau_ops_dashboard_command_center_snapshot, GatewayDashboardActionRequest,
 };
 use deploy_runtime::{
-    collect_tau_ops_dashboard_deploy_snapshot, handle_gateway_agent_stop, handle_gateway_deploy,
+    collect_tau_ops_dashboard_deploy_snapshot, deploy_gateway_agent, handle_gateway_agent_stop,
+    handle_gateway_deploy, stop_gateway_deploy_agent, GatewayDeployAgentInput,
 };
 use endpoints::*;
 use entry_handlers::{
@@ -182,6 +183,7 @@ use openresponses_execution_handler::execute_openresponses_request;
 use ops_dashboard_shell::{
     handle_ops_dashboard_channel_action, handle_ops_dashboard_chat_new,
     handle_ops_dashboard_chat_send, handle_ops_dashboard_control_action,
+    handle_ops_dashboard_deploy_stop, handle_ops_dashboard_deploy_submit,
     handle_ops_dashboard_harness_artifact, handle_ops_dashboard_harness_artifact_view,
     handle_ops_dashboard_harness_create_mission_draft,
     handle_ops_dashboard_harness_proposal_action, handle_ops_dashboard_harness_proposal_diff,

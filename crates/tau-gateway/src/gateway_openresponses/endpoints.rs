@@ -37,6 +37,8 @@ pub(super) const OPS_DASHBOARD_TRAINING_ENDPOINT: &str = "/ops/training";
 pub(super) const OPS_DASHBOARD_SAFETY_ENDPOINT: &str = "/ops/safety";
 pub(super) const OPS_DASHBOARD_DIAGNOSTICS_ENDPOINT: &str = "/ops/diagnostics";
 pub(super) const OPS_DASHBOARD_DEPLOY_ENDPOINT: &str = "/ops/deploy";
+pub(super) const OPS_DASHBOARD_DEPLOY_AGENT_STOP_ENDPOINT: &str =
+    "/ops/deploy/agents/{agent_id}/stop";
 pub(super) const OPS_DASHBOARD_LOGIN_ENDPOINT: &str = "/ops/login";
 pub(super) const DASHBOARD_SHELL_ENDPOINT: &str = "/dashboard";
 pub(super) const WEBCHAT_ENDPOINT: &str = "/webchat";
