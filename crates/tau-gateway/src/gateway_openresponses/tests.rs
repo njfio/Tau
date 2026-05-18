@@ -5097,6 +5097,12 @@ async fn integration_spec_2953_c01_c02_c04_cortex_chat_uses_llm_output_with_cont
     assert!(user_prompt.contains("[cortex_bulletin]"));
     assert!(user_prompt.contains("[memory_graph]"));
     assert!(user_prompt.contains("prioritize release stabilization"));
+    assert!(user_prompt.contains("Answer the operator's request directly first"));
+    assert!(user_prompt
+        .contains("Do not turn ordinary creative, coding, or build requests into diagnostics"));
+    assert!(!user_prompt.contains(
+        "Return concise operator guidance with immediate next checks and explicit risks"
+    ));
 
     handle.abort();
 }

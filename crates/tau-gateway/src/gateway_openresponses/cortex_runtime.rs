@@ -41,8 +41,9 @@ const CORTEX_CHAT_MAX_OBSERVER_DIAGNOSTICS: usize = 3;
 const CORTEX_CHAT_MAX_MEMORY_DIAGNOSTICS: usize = 3;
 const CORTEX_CHAT_MEMORY_MAX_SESSIONS: usize = 8;
 const CORTEX_CHAT_MEMORY_MAX_RECORDS_PER_SESSION: usize = 8;
-const CORTEX_CHAT_SYSTEM_PROMPT: &str = "You are Tau Cortex admin copilot. Provide concise,\
- actionable operator guidance grounded in supplied runtime context. Respond with plain text only.";
+const CORTEX_CHAT_SYSTEM_PROMPT: &str = "You are Tau Ops chat assistant. Answer the operator's\
+ request directly, using supplied runtime context only when it is relevant. Respond with plain text\
+ only.";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct CortexChatOutput {
@@ -639,7 +640,7 @@ fn render_cortex_chat_user_prompt(
     memory_graph_summary: &str,
 ) -> String {
     format!(
-        "[operator_query]\n{}\n\n[observer_status]\n{}\n\n[cortex_bulletin]\n{}\n\n[memory_graph]\n{}\n\n[response_style]\nReturn concise operator guidance with immediate next checks and explicit risks.",
+        "[operator_query]\n{}\n\n[observer_status]\n{}\n\n[cortex_bulletin]\n{}\n\n[memory_graph]\n{}\n\n[response_style]\nAnswer the operator's request directly first. Use observer, bulletin, and memory graph diagnostics only when the request is about runtime health, failures, memory, or operations. Do not turn ordinary creative, coding, or build requests into diagnostics.",
         input.trim(),
         observer_summary.trim(),
         bulletin_summary.trim(),
