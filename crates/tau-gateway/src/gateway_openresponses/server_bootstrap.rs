@@ -331,7 +331,11 @@ pub(super) fn build_gateway_openresponses_router(
         )
         .route(
             OPS_DASHBOARD_DEPLOY_ENDPOINT,
-            get(handle_ops_dashboard_deploy_shell_page),
+            get(handle_ops_dashboard_deploy_shell_page).post(handle_ops_dashboard_deploy_submit),
+        )
+        .route(
+            OPS_DASHBOARD_DEPLOY_AGENT_STOP_ENDPOINT,
+            post(handle_ops_dashboard_deploy_stop),
         )
         .route(
             OPS_DASHBOARD_LOGIN_ENDPOINT,

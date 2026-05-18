@@ -45,16 +45,17 @@ use super::types::GatewayChannelLifecycleRequest;
 use super::{
     apply_gateway_dashboard_action, collect_ops_harness_memory_graph_lineage,
     collect_tau_ops_dashboard_command_center_snapshot, collect_tau_ops_dashboard_deploy_snapshot,
-    complete_cortex_chat, find_ops_harness_proposal, gateway_memory_store,
+    complete_cortex_chat, deploy_gateway_agent, find_ops_harness_proposal, gateway_memory_store,
     gateway_memory_store_root, gateway_session_path, list_ops_harness_proposals,
     record_cortex_memory_entry_delete_event, record_cortex_memory_entry_write_event,
     record_cortex_observer_event, record_cortex_session_append_event,
-    record_cortex_session_reset_event, sanitize_session_key, GatewayDashboardActionRequest,
-    GatewayMemoryGraphEdge, GatewayMemoryGraphNode, GatewayOpenResponsesServerState,
-    GatewayOpsHarnessProposalDefinition, GatewayOpsHarnessSelfImprovementRequest,
-    GatewayOpsHarnessSelfImprovementResult, OpenResponsesApiError, OpsShellControlsQuery,
-    DEFAULT_SESSION_KEY, OPS_DASHBOARD_CHANNELS_ENDPOINT, OPS_DASHBOARD_CHAT_ENDPOINT,
-    OPS_DASHBOARD_CHAT_NEW_ENDPOINT, OPS_DASHBOARD_CHAT_SEND_ENDPOINT, OPS_DASHBOARD_ENDPOINT,
+    record_cortex_session_reset_event, sanitize_session_key, stop_gateway_deploy_agent,
+    GatewayDashboardActionRequest, GatewayDeployAgentInput, GatewayMemoryGraphEdge,
+    GatewayMemoryGraphNode, GatewayOpenResponsesServerState, GatewayOpsHarnessProposalDefinition,
+    GatewayOpsHarnessSelfImprovementRequest, GatewayOpsHarnessSelfImprovementResult,
+    OpenResponsesApiError, OpsShellControlsQuery, DEFAULT_SESSION_KEY,
+    OPS_DASHBOARD_CHANNELS_ENDPOINT, OPS_DASHBOARD_CHAT_ENDPOINT, OPS_DASHBOARD_CHAT_NEW_ENDPOINT,
+    OPS_DASHBOARD_CHAT_SEND_ENDPOINT, OPS_DASHBOARD_DEPLOY_ENDPOINT, OPS_DASHBOARD_ENDPOINT,
 };
 use crate::remote_profile::GatewayOpenResponsesAuthMode;
 
@@ -111,6 +112,70 @@ impl OpsDashboardChatSendForm {
 
     fn resolved_sidebar_state(&self) -> TauOpsDashboardSidebarState {
         resolve_chat_sidebar_state(self.sidebar.as_str())
+    }
+}
+
+#[derive(Debug, Deserialize, Default)]
+pub(super) struct OpsDashboardDeployForm {
+    #[serde(default)]
+    agent_id: String,
+    #[serde(default)]
+    profile: String,
+    #[serde(default)]
+    model: String,
+    #[serde(default)]
+    theme: String,
+    #[serde(default)]
+    sidebar: String,
+    #[serde(default)]
+    session: String,
+}
+
+#[derive(Debug, Deserialize, Default)]
+pub(super) struct OpsDashboardDeployStopForm {
+    #[serde(default)]
+    theme: String,
+    #[serde(default)]
+    sidebar: String,
+    #[serde(default)]
+    session: String,
+}
+
+impl OpsDashboardDeployForm {
+    fn resolved_theme(&self) -> TauOpsDashboardTheme {
+        resolve_chat_theme(self.theme.as_str())
+    }
+
+    fn resolved_sidebar_state(&self) -> TauOpsDashboardSidebarState {
+        resolve_chat_sidebar_state(self.sidebar.as_str())
+    }
+
+    fn resolved_session_key(&self) -> String {
+        let session = self.session.trim();
+        if session.is_empty() {
+            DEFAULT_SESSION_KEY.to_string()
+        } else {
+            sanitize_session_key(session)
+        }
+    }
+}
+
+impl OpsDashboardDeployStopForm {
+    fn resolved_theme(&self) -> TauOpsDashboardTheme {
+        resolve_chat_theme(self.theme.as_str())
+    }
+
+    fn resolved_sidebar_state(&self) -> TauOpsDashboardSidebarState {
+        resolve_chat_sidebar_state(self.sidebar.as_str())
+    }
+
+    fn resolved_session_key(&self) -> String {
+        let session = self.session.trim();
+        if session.is_empty() {
+            DEFAULT_SESSION_KEY.to_string()
+        } else {
+            sanitize_session_key(session)
+        }
     }
 }
 
@@ -652,6 +717,54 @@ fn build_ops_chat_new_session_redirect_path_with_status(
         redirect_path.push_str(new_session_status);
     }
     redirect_path
+}
+
+fn normalize_ops_deploy_action_status_marker(status: &str) -> &'static str {
+    match status {
+        "deployed" => "deployed",
+        "stopped" => "stopped",
+        "missing" => "missing",
+        "failed" => "failed",
+        _ => "idle",
+    }
+}
+
+fn sanitize_ops_deploy_marker(raw: &str) -> String {
+    let sanitized = raw
+        .trim()
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.') {
+                ch
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>();
+    if sanitized.is_empty() {
+        "none".to_string()
+    } else {
+        sanitized
+    }
+}
+
+fn build_ops_deploy_redirect_path(
+    theme: TauOpsDashboardTheme,
+    sidebar_state: TauOpsDashboardSidebarState,
+    session_key: &str,
+    deploy_action_status: &str,
+    deploy_agent_id: &str,
+    deploy_action_reason: &str,
+) -> String {
+    let session_key = sanitize_session_key(session_key);
+    let status = normalize_ops_deploy_action_status_marker(deploy_action_status);
+    let agent_id = sanitize_ops_deploy_marker(deploy_agent_id);
+    let reason = sanitize_ops_deploy_marker(deploy_action_reason);
+    format!(
+        "{OPS_DASHBOARD_DEPLOY_ENDPOINT}?theme={}&sidebar={}&session={session_key}&deploy_action_status={status}&deploy_agent_id={agent_id}&deploy_action_reason={reason}",
+        theme.as_str(),
+        sidebar_state.as_str()
+    )
 }
 
 fn normalize_ops_control_action_status_marker(status: &str) -> &'static str {
@@ -5128,6 +5241,112 @@ fn now_unix_ms() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_millis().min(u128::from(u64::MAX)) as u64)
         .unwrap_or_default()
+}
+
+pub(super) async fn handle_ops_dashboard_deploy_submit(
+    State(state): State<Arc<GatewayOpenResponsesServerState>>,
+    Form(form): Form<OpsDashboardDeployForm>,
+) -> Response {
+    let redirect_theme = form.resolved_theme();
+    let redirect_sidebar_state = form.resolved_sidebar_state();
+    let redirect_session_key = form.resolved_session_key();
+    let requested_agent_id = form.agent_id.trim().to_string();
+    if requested_agent_id.is_empty() {
+        state.record_ui_telemetry_event("deploy", "submit", "deploy_form_missing_agent_id");
+        let redirect_path = build_ops_deploy_redirect_path(
+            redirect_theme,
+            redirect_sidebar_state,
+            redirect_session_key.as_str(),
+            "missing",
+            "none",
+            "invalid_agent_id",
+        );
+        return Redirect::to(redirect_path.as_str()).into_response();
+    }
+
+    match deploy_gateway_agent(
+        &state,
+        GatewayDeployAgentInput {
+            agent_id: form.agent_id,
+            profile: form.profile,
+            model: form.model,
+        },
+    ) {
+        Ok(result) => {
+            state.record_ui_telemetry_event("deploy", "submit", "deploy_process_started");
+            let redirect_path = build_ops_deploy_redirect_path(
+                redirect_theme,
+                redirect_sidebar_state,
+                redirect_session_key.as_str(),
+                "deployed",
+                result.agent_id.as_str(),
+                "process_started",
+            );
+            Redirect::to(redirect_path.as_str()).into_response()
+        }
+        Err(error) => {
+            state.record_ui_telemetry_event("deploy", "submit", "deploy_process_start_failed");
+            let redirect_path = build_ops_deploy_redirect_path(
+                redirect_theme,
+                redirect_sidebar_state,
+                redirect_session_key.as_str(),
+                "failed",
+                requested_agent_id.as_str(),
+                error.code,
+            );
+            Redirect::to(redirect_path.as_str()).into_response()
+        }
+    }
+}
+
+pub(super) async fn handle_ops_dashboard_deploy_stop(
+    State(state): State<Arc<GatewayOpenResponsesServerState>>,
+    AxumPath(agent_id): AxumPath<String>,
+    Form(form): Form<OpsDashboardDeployStopForm>,
+) -> Response {
+    let redirect_theme = form.resolved_theme();
+    let redirect_sidebar_state = form.resolved_sidebar_state();
+    let redirect_session_key = form.resolved_session_key();
+    let requested_agent_id = agent_id.trim().to_string();
+    if requested_agent_id.is_empty() {
+        state.record_ui_telemetry_event("deploy", "stop", "deploy_stop_form_missing_agent_id");
+        let redirect_path = build_ops_deploy_redirect_path(
+            redirect_theme,
+            redirect_sidebar_state,
+            redirect_session_key.as_str(),
+            "missing",
+            "none",
+            "invalid_agent_id",
+        );
+        return Redirect::to(redirect_path.as_str()).into_response();
+    }
+
+    match stop_gateway_deploy_agent(&state, requested_agent_id.as_str(), "operator_stop_request") {
+        Ok(result) => {
+            state.record_ui_telemetry_event("deploy", "stop", "deploy_process_stopped");
+            let redirect_path = build_ops_deploy_redirect_path(
+                redirect_theme,
+                redirect_sidebar_state,
+                redirect_session_key.as_str(),
+                "stopped",
+                result.agent_id.as_str(),
+                result.process_stop_reason.as_str(),
+            );
+            Redirect::to(redirect_path.as_str()).into_response()
+        }
+        Err(error) => {
+            state.record_ui_telemetry_event("deploy", "stop", "deploy_process_stop_failed");
+            let redirect_path = build_ops_deploy_redirect_path(
+                redirect_theme,
+                redirect_sidebar_state,
+                redirect_session_key.as_str(),
+                "failed",
+                requested_agent_id.as_str(),
+                error.code,
+            );
+            Redirect::to(redirect_path.as_str()).into_response()
+        }
+    }
 }
 
 pub(super) async fn handle_ops_dashboard_control_action(

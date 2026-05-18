@@ -78,6 +78,13 @@ When it receives static args and stop requests,
 Then JSON args preserve quoted argument boundaries and stop attempts graceful
 termination before falling back to a hard kill.
 
+### AC-11 Operator shell deploy/stop controls execute lifecycle operations
+Given an operator opens `/ops/deploy` in the browser,
+When they submit the deploy form and then submit the row-level stop form,
+Then the shell posts to gateway-owned handlers, starts the configured process,
+renders running process evidence, terminates the process, and renders stopped
+process evidence.
+
 ## Scope
 
 ### In Scope
@@ -86,6 +93,8 @@ termination before falling back to a hard kill.
 - Persisted deploy process fields: process id, pid when available, lifecycle
   status, started/stopped timestamps, stop reason, and exit status.
 - Operator-shell deploy process evidence table.
+- Operator-shell deploy and stop form handlers backed by the same lifecycle
+  operations as the JSON gateway API.
 - Environment-driven command args via legacy whitespace args or JSON array args.
 - Graceful terminate-then-kill fallback for command-backed stop.
 - Backward-compatible deploy/stop response fields.
@@ -115,6 +124,7 @@ termination before falling back to a hard kill.
 | C-08 | AC-8 | Docs/Governance | P1/P2 closure docs | docs and generated dependency graph artifacts exist |
 | C-09 | AC-9 | Functional | `/ops/deploy` after deployment | process lifecycle table renders persisted process status and pid |
 | C-10 | AC-10 | Unit | configured supervisor args/stop | JSON args preserve spaces; stop attempts graceful termination before kill fallback |
+| C-11 | AC-11 | Functional/Integration | submit `/ops/deploy` form then row stop form | redirects preserve shell context; table moves from running process pid to stopped stop reason |
 
 ## Success Metrics / Observable Signals
 
@@ -124,6 +134,8 @@ termination before falling back to a hard kill.
   the HTTP response.
 - Operators can inspect deploy process evidence in `/ops/deploy` without
   reading the state file directly.
+- Operators can start and stop the supervised deploy process from `/ops/deploy`
+  without leaving the shell.
 - Existing deploy/stop clients remain compatible.
 - Remaining listed action items are either closed with durable artifacts or
   explicitly deferred behind future specs.

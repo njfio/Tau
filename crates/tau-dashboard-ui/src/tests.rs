@@ -169,27 +169,32 @@ fn regression_deploy_model_catalog_uses_gateway_runtime_model() {
 
 #[test]
 fn spec_3758_c09_deploy_route_renders_process_lifecycle_evidence() {
-    let html = render_tau_ops_deploy_process_lifecycle(TauOpsDashboardDeploySnapshot {
-        state_source: "/tmp/tau/deploy-agent-state.json".to_string(),
-        state_status: "loaded".to_string(),
-        agent_count: 1,
-        running_count: 1,
-        stopped_count: 0,
-        rows: vec![TauOpsDashboardDeployAgentRow {
-            agent_id: "agent-process".to_string(),
-            status: "deploying".to_string(),
-            profile: "default".to_string(),
-            model: "openai/gpt-5.3-codex".to_string(),
-            updated_unix_ms: 200,
-            process_id: "gateway-deploy:agent-process:4242".to_string(),
-            process_status: "running".to_string(),
-            process_pid: "4242".to_string(),
-            process_started_unix_ms: 150,
-            process_stopped_unix_ms: 0,
-            process_stop_reason: "none".to_string(),
-            process_exit_status: "none".to_string(),
-        }],
-    })
+    let html = render_tau_ops_deploy_process_lifecycle(
+        TauOpsDashboardDeploySnapshot {
+            state_source: "/tmp/tau/deploy-agent-state.json".to_string(),
+            state_status: "loaded".to_string(),
+            agent_count: 1,
+            running_count: 1,
+            stopped_count: 0,
+            rows: vec![TauOpsDashboardDeployAgentRow {
+                agent_id: "agent-process".to_string(),
+                status: "deploying".to_string(),
+                profile: "default".to_string(),
+                model: "openai/gpt-5.3-codex".to_string(),
+                updated_unix_ms: 200,
+                process_id: "gateway-deploy:agent-process:4242".to_string(),
+                process_status: "running".to_string(),
+                process_pid: "4242".to_string(),
+                process_started_unix_ms: 150,
+                process_stopped_unix_ms: 0,
+                process_stop_reason: "none".to_string(),
+                process_exit_status: "none".to_string(),
+            }],
+        },
+        "dark",
+        "expanded",
+        "default",
+    )
     .to_html();
 
     assert!(html.contains(
@@ -200,6 +205,43 @@ fn spec_3758_c09_deploy_route_renders_process_lifecycle_evidence() {
     ));
     assert!(html.contains("<td>agent-process</td>"));
     assert!(html.contains("<td>running</td>"));
+    assert!(html.contains("id=\"tau-ops-deploy-stop-form-0\""));
+    assert!(html.contains("action=\"/ops/deploy/agents/agent-process/stop\""));
+    assert!(html.contains("data-action=\"stop-agent\""));
+}
+
+#[test]
+fn spec_3758_c11_deploy_stop_form_encodes_agent_path_segment() {
+    let html = render_tau_ops_deploy_process_lifecycle(
+        TauOpsDashboardDeploySnapshot {
+            state_source: "/tmp/tau/deploy-agent-state.json".to_string(),
+            state_status: "loaded".to_string(),
+            agent_count: 1,
+            running_count: 1,
+            stopped_count: 0,
+            rows: vec![TauOpsDashboardDeployAgentRow {
+                agent_id: "agent/process 1".to_string(),
+                status: "deploying".to_string(),
+                profile: "default".to_string(),
+                model: "openai/gpt-5.3-codex".to_string(),
+                updated_unix_ms: 200,
+                process_id: "gateway-deploy:agent/process 1:4242".to_string(),
+                process_status: "running".to_string(),
+                process_pid: "4242".to_string(),
+                process_started_unix_ms: 150,
+                process_stopped_unix_ms: 0,
+                process_stop_reason: "none".to_string(),
+                process_exit_status: "none".to_string(),
+            }],
+        },
+        "dark",
+        "expanded",
+        "default",
+    )
+    .to_html();
+
+    assert!(html.contains("action=\"/ops/deploy/agents/agent%2Fprocess%201/stop\""));
+    assert!(html.contains("data-agent-id=\"agent/process 1\""));
 }
 
 #[test]
@@ -214,9 +256,20 @@ fn spec_c03_deploy_route_renders_validation_and_review_markers() {
 #[test]
 fn spec_c04_deploy_route_renders_deploy_action_marker() {
     let html = render_tau_ops_dashboard_shell_for_route("/ops/deploy");
+    assert!(html.contains("id=\"tau-ops-deploy-form\""));
+    assert!(html.contains("action=\"/ops/deploy\""));
+    assert!(html.contains("method=\"post\""));
+    assert!(html.contains("id=\"tau-ops-deploy-agent-id\""));
+    assert!(html.contains("name=\"agent_id\""));
+    assert!(html.contains("id=\"tau-ops-deploy-profile\""));
+    assert!(html.contains("name=\"profile\""));
+    assert!(html.contains("id=\"tau-ops-deploy-model-catalog\" name=\"model\""));
     assert!(html.contains("id=\"tau-ops-deploy-submit\""));
     assert!(html.contains("data-action=\"deploy-agent\""));
-    assert!(html.contains("data-success-redirect-template=\"/ops/agents/{agent_id}\""));
+    assert!(html.contains("type=\"submit\""));
+    assert!(html.contains("data-success-redirect-template=\"/ops/deploy\""));
+    assert!(html.contains("#tau-ops-deploy-processes td"));
+    assert!(html.contains("color: #dbe8ef"));
 }
 
 #[test]

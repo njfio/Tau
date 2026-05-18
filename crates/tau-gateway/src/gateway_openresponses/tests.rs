@@ -4645,6 +4645,155 @@ async fn integration_spec_3758_c01_c02_c05_deploy_and_stop_spawn_and_terminate_c
 }
 
 #[tokio::test]
+async fn integration_spec_3758_c11_ops_deploy_form_spawns_and_stop_form_terminates_process() {
+    let temp = tempdir().expect("tempdir");
+    let state = test_state_with_deploy_process_supervisor(
+        temp.path(),
+        10_000,
+        "secret",
+        Arc::new(CommandGatewayDeployProcessSupervisor::new(
+            "/bin/sh",
+            ["-c", "while true; do sleep 1; done"],
+        )),
+    );
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+    let client = Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .expect("build reqwest client");
+
+    let deploy_page = client
+        .get(format!(
+            "http://{addr}/ops/deploy?theme=dark&sidebar=expanded&session=ui-3758"
+        ))
+        .bearer_auth("secret")
+        .send()
+        .await
+        .expect("deploy ops page response");
+    assert_eq!(deploy_page.status(), StatusCode::OK);
+    let deploy_page_html = deploy_page.text().await.expect("deploy ops html");
+    assert!(deploy_page_html.contains("id=\"tau-ops-deploy-form\""));
+    assert!(deploy_page_html.contains("action=\"/ops/deploy\""));
+    assert!(deploy_page_html.contains("method=\"post\""));
+    assert!(deploy_page_html.contains("id=\"tau-ops-deploy-submit\""));
+    assert!(deploy_page_html.contains("type=\"submit\""));
+
+    let deploy_form = client
+        .post(format!("http://{addr}/ops/deploy"))
+        .form(&[
+            ("agent_id", "agent-ui"),
+            ("profile", "ops"),
+            ("model", "openai/gpt-5.3-codex"),
+            ("theme", "dark"),
+            ("sidebar", "expanded"),
+            ("session", "ui-3758"),
+        ])
+        .send()
+        .await
+        .expect("deploy form response");
+    assert_eq!(deploy_form.status(), StatusCode::SEE_OTHER);
+    let deploy_location = deploy_form
+        .headers()
+        .get(reqwest::header::LOCATION)
+        .expect("deploy redirect location")
+        .to_str()
+        .expect("deploy redirect location str");
+    assert_eq!(
+        deploy_location,
+        "/ops/deploy?theme=dark&sidebar=expanded&session=ui-3758&deploy_action_status=deployed&deploy_agent_id=agent-ui&deploy_action_reason=process_started"
+    );
+
+    let state_file = temp.path().join(".tau/gateway/deploy-agent-state.json");
+    let persisted = std::fs::read_to_string(&state_file).expect("read deploy state");
+    let persisted_payload =
+        serde_json::from_str::<Value>(persisted.as_str()).expect("parse deploy state");
+    assert_eq!(
+        persisted_payload["agents"]["agent-ui"]["process_status"].as_str(),
+        Some("running")
+    );
+    let process_pid = persisted_payload["agents"]["agent-ui"]["process_pid"]
+        .as_u64()
+        .expect("deploy form persisted process pid");
+    assert!(process_pid > 0);
+
+    let deployed_page = client
+        .get(format!("http://{addr}{deploy_location}"))
+        .bearer_auth("secret")
+        .send()
+        .await
+        .expect("deployed page response");
+    assert_eq!(deployed_page.status(), StatusCode::OK);
+    let deployed_html = deployed_page.text().await.expect("deployed page html");
+    assert!(deployed_html.contains(
+        "id=\"tau-ops-deploy-process-row-0\" data-agent-id=\"agent-ui\" data-agent-status=\"deploying\""
+    ));
+    assert!(deployed_html.contains("data-process-status=\"running\""));
+    assert!(deployed_html.contains("id=\"tau-ops-deploy-stop-form-0\""));
+    assert!(deployed_html.contains("action=\"/ops/deploy/agents/agent-ui/stop\""));
+
+    let stop_form = client
+        .post(format!("http://{addr}/ops/deploy/agents/agent-ui/stop"))
+        .form(&[
+            ("theme", "dark"),
+            ("sidebar", "expanded"),
+            ("session", "ui-3758"),
+        ])
+        .send()
+        .await
+        .expect("stop form response");
+    assert_eq!(stop_form.status(), StatusCode::SEE_OTHER);
+    let stop_location = stop_form
+        .headers()
+        .get(reqwest::header::LOCATION)
+        .expect("stop redirect location")
+        .to_str()
+        .expect("stop redirect location str");
+    assert_eq!(
+        stop_location,
+        "/ops/deploy?theme=dark&sidebar=expanded&session=ui-3758&deploy_action_status=stopped&deploy_agent_id=agent-ui&deploy_action_reason=operator_stop_request"
+    );
+
+    let stopped_page = client
+        .get(format!("http://{addr}{stop_location}"))
+        .bearer_auth("secret")
+        .send()
+        .await
+        .expect("stopped page response");
+    assert_eq!(stopped_page.status(), StatusCode::OK);
+    let stopped_html = stopped_page.text().await.expect("stopped page html");
+    assert!(stopped_html.contains("data-agent-id=\"agent-ui\""));
+    assert!(stopped_html.contains("data-process-status=\"stopped\""));
+    assert!(stopped_html.contains("data-process-stop-reason=\"operator_stop_request\""));
+
+    #[cfg(unix)]
+    {
+        fn process_exists(pid: u64) -> bool {
+            std::process::Command::new("kill")
+                .arg("-0")
+                .arg(pid.to_string())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .map(|status| status.success())
+                .unwrap_or(false)
+        }
+
+        for _ in 0..10 {
+            if !process_exists(process_pid) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert!(
+            !process_exists(process_pid),
+            "process {process_pid} should be terminated after UI stop"
+        );
+    }
+
+    handle.abort();
+}
+
+#[tokio::test]
 async fn regression_spec_3758_c03_spawn_failure_returns_error_without_deploying_state() {
     let temp = tempdir().expect("tempdir");
     let state = test_state_with_deploy_process_supervisor(

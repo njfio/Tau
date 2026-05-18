@@ -22,10 +22,13 @@
 
 - `crates/tau-gateway/src/gateway_openresponses/deploy_runtime.rs`
 - `crates/tau-gateway/src/gateway_openresponses/deploy_process_supervisor.rs`
+- `crates/tau-gateway/src/gateway_openresponses/ops_dashboard_shell.rs`
 - `crates/tau-gateway/src/gateway_openresponses/server_state.rs`
 - `crates/tau-gateway/src/gateway_openresponses.rs`
 - `crates/tau-gateway/src/gateway_openresponses/tests.rs`
 - `crates/tau-gateway/src/gateway_openresponses/tests/state_helpers.rs`
+- `crates/tau-dashboard-ui/src/lib.rs`
+- `crates/tau-dashboard-ui/src/tests.rs`
 - `CONTRIBUTING.md`
 - `SECURITY.md`
 - `docs/architecture/adr-006-dashboard-ui-stack.md`
@@ -74,6 +77,9 @@
   - `process_stopped_unix_ms`
   - `process_stop_reason`
   - `process_exit_status`
+- `/ops/deploy` accepts browser form POSTs for deploy.
+- `/ops/deploy/agents/{agent_id}/stop` accepts browser form POSTs for stop
+  and redirects back to `/ops/deploy` with shell context preserved.
 
 Documentation contracts:
 
