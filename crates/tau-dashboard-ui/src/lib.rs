@@ -540,6 +540,10 @@ pub struct TauOpsDashboardChatSnapshot {
     pub new_session_status: String,
     pub session_options: Vec<TauOpsDashboardChatSessionOptionRow>,
     pub message_rows: Vec<TauOpsDashboardChatMessageRow>,
+    pub agent_canvas_status: String,
+    pub agent_canvas_artifact_path: String,
+    pub agent_canvas_srcdoc: String,
+    pub agent_canvas_srcdoc_bytes: usize,
     pub session_detail_visible: bool,
     pub session_detail_route: String,
     pub session_detail_validation_entries: usize,
@@ -638,6 +642,10 @@ impl Default for TauOpsDashboardChatSnapshot {
                 updated_unix_ms: 0,
             }],
             message_rows: vec![],
+            agent_canvas_status: "empty".to_string(),
+            agent_canvas_artifact_path: String::new(),
+            agent_canvas_srcdoc: String::new(),
+            agent_canvas_srcdoc_bytes: 0,
             session_detail_visible: false,
             session_detail_route: "/ops/sessions/default".to_string(),
             session_detail_validation_entries: 0,
@@ -6257,6 +6265,22 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
         parse_chat_markdown_blocks(&chat_latest_assistant_content);
     let chat_latest_assistant_markdown_block_count =
         chat_latest_assistant_markdown_blocks.len().to_string();
+    let chat_agent_canvas_status = context.chat.agent_canvas_status.clone();
+    let chat_agent_canvas_artifact_path = context.chat.agent_canvas_artifact_path.clone();
+    let chat_agent_canvas_srcdoc = context.chat.agent_canvas_srcdoc.clone();
+    let chat_agent_canvas_srcdoc_bytes = context.chat.agent_canvas_srcdoc_bytes.to_string();
+    let chat_agent_canvas_loaded_bool =
+        chat_agent_canvas_status == "loaded" && !chat_agent_canvas_srcdoc.trim().is_empty();
+    let chat_agent_canvas_loaded = if chat_agent_canvas_loaded_bool {
+        "true"
+    } else {
+        "false"
+    };
+    let chat_agent_canvas_placeholder_hidden = if chat_agent_canvas_loaded_bool {
+        "true"
+    } else {
+        "false"
+    };
     let chat_assistant_stream_count = chat_message_rows
         .iter()
         .filter(|row| row.role == "assistant")
@@ -6978,6 +7002,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     max-width: 420px;
                 }
                 #tau-ops-chat-send-form,
+                #tau-ops-chat-agent-canvas,
                 #tau-ops-chat-latest-turn-details,
                 #tau-ops-chat-token-counter-details,
                 #tau-ops-chat-latest-turn,
@@ -7414,6 +7439,39 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                 #tau-ops-chat-latest-assistant-content a,
                 #tau-ops-chat-transcript [data-markdown-rendered="true"] a {
                     color: #8ecbff;
+                }
+                #tau-ops-chat-agent-canvas {
+                    display: grid;
+                    gap: 8px;
+                    border: 1px solid #203847;
+                    border-radius: 7px;
+                    padding: 10px;
+                    background: #07151d;
+                }
+                #tau-ops-chat-agent-canvas h3 {
+                    margin: 0;
+                    color: #edf8fb;
+                    font-size: .82rem;
+                    letter-spacing: 0;
+                }
+                #tau-ops-chat-agent-canvas-surface,
+                #tau-ops-chat-agent-preview-frame {
+                    display: block;
+                    width: 100%;
+                    min-height: 240px;
+                    aspect-ratio: 16 / 9;
+                    border: 1px solid #254c5c;
+                    border-radius: 6px;
+                    background: #02090d;
+                }
+                #tau-ops-chat-agent-preview-frame {
+                    overflow: hidden;
+                }
+                #tau-ops-chat-agent-canvas[data-preview-loaded="true"] #tau-ops-chat-agent-canvas-surface {
+                    min-height: 0;
+                    height: 0;
+                    opacity: 0;
+                    pointer-events: none;
                 }
                 #tau-ops-chat-transcript {
                     display: grid;
@@ -9021,6 +9079,42 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 })();
                                 "#
                             </script>
+                            <section
+                                id="tau-ops-chat-agent-canvas"
+                                data-agent-canvas="true"
+                                data-preview-status=chat_agent_canvas_status
+                                data-preview-loaded=chat_agent_canvas_loaded
+                                data-artifact-path=chat_agent_canvas_artifact_path
+                                data-srcdoc-bytes=chat_agent_canvas_srcdoc_bytes
+                            >
+                                <h3>Agent Canvas</h3>
+                                <canvas
+                                    id="tau-ops-chat-agent-canvas-surface"
+                                    data-agent-canvas-surface="true"
+                                    width="720"
+                                    height="405"
+                                    aria-hidden=chat_agent_canvas_placeholder_hidden
+                                ></canvas>
+                                {if chat_agent_canvas_loaded_bool {
+                                    leptos::either::Either::Left(view! {
+                                        <iframe
+                                            id="tau-ops-chat-agent-preview-frame"
+                                            data-agent-html-preview="true"
+                                            sandbox="allow-scripts"
+                                            title="Agent HTML preview"
+                                            srcdoc=chat_agent_canvas_srcdoc
+                                        ></iframe>
+                                    })
+                                } else {
+                                    leptos::either::Either::Right(view! {
+                                        <span
+                                            id="tau-ops-chat-agent-preview-empty"
+                                            data-agent-html-preview="false"
+                                            hidden
+                                        ></span>
+                                    })
+                                }}
+                            </section>
                             <ul
                                 id="tau-ops-chat-transcript"
                                 data-message-count=chat_message_count_value

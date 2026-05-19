@@ -4020,6 +4020,36 @@ fn functional_spec_2866_c01_c02_chat_route_renders_inline_tool_card_for_tool_row
 }
 
 #[test]
+fn functional_spec_3799_c05_chat_route_renders_agent_canvas_preview_for_html_artifacts() {
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        auth_mode: TauOpsDashboardAuthMode::Token,
+        active_route: TauOpsDashboardRoute::Chat,
+        theme: TauOpsDashboardTheme::Dark,
+        sidebar_state: TauOpsDashboardSidebarState::Expanded,
+        command_center: TauOpsDashboardCommandCenterSnapshot::default(),
+        chat: TauOpsDashboardChatSnapshot {
+            active_session_key: "chat-canvas-session".to_string(),
+            agent_canvas_status: "loaded".to_string(),
+            agent_canvas_artifact_path: "/workspace/game.html".to_string(),
+            agent_canvas_srcdoc: "<!doctype html><canvas id=\"game\"></canvas>".to_string(),
+            agent_canvas_srcdoc_bytes: 41,
+            ..TauOpsDashboardChatSnapshot::default()
+        },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
+    });
+
+    assert!(html.contains(
+        "id=\"tau-ops-chat-agent-canvas\" data-agent-canvas=\"true\" data-preview-status=\"loaded\" data-preview-loaded=\"true\" data-artifact-path=\"/workspace/game.html\" data-srcdoc-bytes=\"41\""
+    ));
+    assert!(html
+        .contains("id=\"tau-ops-chat-agent-canvas-surface\" data-agent-canvas-surface=\"true\""));
+    assert!(html.contains(
+        "id=\"tau-ops-chat-agent-preview-frame\" data-agent-html-preview=\"true\" sandbox=\"allow-scripts\""
+    ));
+    assert!(html.contains("&lt;canvas id=&quot;game&quot;&gt;&lt;/canvas&gt;"));
+}
+
+#[test]
 fn regression_spec_2866_c04_non_chat_routes_omit_hidden_chat_tool_card_markers() {
     let ops_html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
         auth_mode: TauOpsDashboardAuthMode::Token,
