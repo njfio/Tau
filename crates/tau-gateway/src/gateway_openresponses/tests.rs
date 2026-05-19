@@ -1623,6 +1623,73 @@ async fn functional_spec_2866_c01_c03_ops_chat_shell_exposes_inline_tool_card_ma
 }
 
 #[tokio::test]
+async fn functional_spec_3799_c05_ops_chat_shell_embeds_latest_html_tool_artifact_preview() {
+    let temp = tempdir().expect("tempdir");
+    let state = test_state(temp.path(), 4_096, "secret");
+    let repo_target = std::env::current_dir().expect("current dir").join("target");
+    std::fs::create_dir_all(&repo_target).expect("create target dir");
+    let artifact_dir = tempfile::tempdir_in(repo_target).expect("create repo target tempdir");
+    let artifact_path = artifact_dir.path().join("ops-chat-canvas-proof.html");
+    std::fs::write(
+        &artifact_path,
+        r#"<!doctype html><canvas id="game"></canvas>"#,
+    )
+    .expect("write html artifact");
+
+    let session_path = gateway_session_path(&state.config.state_dir, "chat-canvas-artifact");
+    let mut store = SessionStore::load(&session_path).expect("load chat canvas session");
+    let root = store
+        .append_messages(None, &[Message::system("canvas-root")])
+        .expect("append root");
+    let user_head = store
+        .append_messages(root, &[Message::user("create html canvas")])
+        .expect("append user");
+    store
+        .append_messages(
+            user_head,
+            &[
+                Message::tool_result(
+                    "tool-call-html",
+                    "write",
+                    serde_json::to_string(&json!({
+                        "path": artifact_path.display().to_string(),
+                        "bytes_written": 41
+                    }))
+                    .expect("serialize tool result")
+                    .as_str(),
+                    false,
+                ),
+                Message::assistant_text("created html canvas"),
+            ],
+        )
+        .expect("append tool+assistant");
+
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+    let client = Client::new();
+    let response = client
+        .get(format!(
+            "http://{addr}/ops/chat?theme=dark&sidebar=expanded&session=chat-canvas-artifact"
+        ))
+        .send()
+        .await
+        .expect("ops chat canvas artifact request");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.text().await.expect("read ops chat body");
+
+    assert!(body.contains(
+        "id=\"tau-ops-chat-agent-canvas\" data-agent-canvas=\"true\" data-preview-status=\"loaded\" data-preview-loaded=\"true\""
+    ));
+    assert!(body
+        .contains("id=\"tau-ops-chat-agent-canvas-surface\" data-agent-canvas-surface=\"true\""));
+    assert!(body.contains(
+        "id=\"tau-ops-chat-agent-preview-frame\" data-agent-html-preview=\"true\" sandbox=\"allow-scripts\""
+    ));
+    assert!(body.contains("&lt;canvas id=&quot;game&quot;&gt;&lt;/canvas&gt;"));
+
+    handle.abort();
+}
+
+#[tokio::test]
 async fn integration_spec_2866_c04_ops_and_sessions_routes_omit_hidden_inline_tool_card_markers() {
     let temp = tempdir().expect("tempdir");
     let state = test_state(temp.path(), 4_096, "secret");

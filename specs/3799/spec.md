@@ -21,6 +21,8 @@ In scope:
 - Persist user, tool, and assistant messages into the selected session lineage.
 - Record observer metadata that distinguishes direct assistant replies from
   tool-backed turns.
+- Render a sandboxed agent canvas preview when the latest tool output points to
+  a local HTML artifact.
 - Verify the live browser route submits and displays both turns.
 
 Out of scope:
@@ -46,6 +48,10 @@ AC-4: Given the live localhost route is tested in the in-app browser, when a
 tool-backed message is submitted, then the transcript shows the operator
 message, a tool result row, and the final assistant reply.
 
+AC-5: Given the latest tool result references a local `.html` artifact under the
+workspace, when `/ops/chat` renders, then the chat panel exposes an agent canvas
+surface and embeds the HTML artifact in a sandboxed preview frame.
+
 ## Conformance Cases
 
 C-01 maps to AC-1 and AC-2: gateway integration test posts
@@ -60,10 +66,15 @@ C-03 maps to AC-4: Browser Use live validation submits the ops chat form and
 asserts the transcript includes the user message, rendered tool result, and
 assistant response, with the requested file present on disk.
 
+C-04 maps to AC-5: dashboard/gateway render tests seed an HTML tool artifact
+and assert the agent canvas markers plus sandboxed preview frame are present.
+
 ## Success Signals
 
 - `cargo test -p tau-gateway integration_spec_3799_c01_ops_chat_send_appends_assistant_reply`
 - `cargo test -p tau-gateway integration_spec_3799_c04_ops_chat_send_executes_registered_tools_for_action_requests`
+- `cargo test -p tau-gateway functional_spec_3799_c05_ops_chat_shell_embeds_latest_html_tool_artifact_preview`
+- `cargo test -p tau-dashboard-ui functional_spec_3799_c05_chat_route_renders_agent_canvas_preview_for_html_artifacts`
 - `cargo test -p tau-gateway gateway_openresponses::tests::integration_spec_2830_c02_c03_ops_chat_send_appends_message_and_renders_transcript_row`
 - Browser Use confirms `/ops/chat` appends user, tool, and assistant rows and
   creates the requested file on disk.

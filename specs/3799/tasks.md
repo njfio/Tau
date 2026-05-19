@@ -10,3 +10,4 @@
 - [x] T8: Replace advisory Cortex send path with tool-capable agent execution.
 - [x] T9: Add regression coverage proving action requests execute registered tools and render tool rows.
 - [x] T10: Re-run live UI proof that `/ops/chat` can create a file through tools.
+- [x] T11: Add chat agent canvas and sandboxed HTML artifact preview coverage.
