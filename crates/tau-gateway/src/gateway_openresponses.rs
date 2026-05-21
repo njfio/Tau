@@ -70,6 +70,7 @@ mod openai_compat;
 mod openai_compat_runtime;
 mod openresponses_entry_handler;
 mod openresponses_execution_handler;
+mod ops_chat_canvas;
 mod ops_dashboard_shell;
 mod ops_harness_memory_graph;
 mod ops_harness_proposals;

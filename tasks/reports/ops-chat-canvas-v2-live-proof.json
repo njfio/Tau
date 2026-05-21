@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "proof": "ops_chat_canvas_v2",
+  "base_url": "http://127.0.0.1:8797",
+  "session_key": "ui-canvas-v2-proof-live",
+  "artifact_path": "target/ops-chat-canvas-v2-live.html",
+  "post_status": "303",
+  "file_check": "passed",
+  "result": "passed"
+}
