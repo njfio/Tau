@@ -1,10 +1,12 @@
 # Tau: Gaps, Issues & Improvements (Review #31)
 
-**Date:** 2026-02-21
-**HEAD:** `0a99c010` (181 milestones, 44 crates)
-**Roadmap closure:** 22/23 done, 1 partial, 0 open
+**Date:** 2026-05-21
+**HEAD:** `e2c3f686` plus current Agent Canvas v2 working-tree follow-up (44+ workspace crates)
+**Roadmap closure:** foundational roadmap closed; active follow-through is now UI/runtime proof depth, under-tested QA surfaces, and render-shell modularity
 
-This document supersedes Review #30 and refreshes closure status/evidence against the current repository and GitHub issue state.
+This document supersedes the older Review #31 snapshot and refreshes closure
+status/evidence against current repository artifacts, ADRs, runbooks, and the
+ops-chat Agent Canvas v2 follow-up.
 
 ---
 
@@ -62,8 +64,16 @@ This document supersedes Review #30 and refreshes closure status/evidence agains
 1. **Under-tested crate wave follow-through**
    The original expansion issue closed and recent waves raised direct crate-local depth in `tau-training-proxy` and `kamn-core`; remaining lower-depth target is `kamn-sdk` plus adjacent QA surfaces.
 
-2. **Cortex decision automation (optional roadmap extension)**
-   `/cortex/chat` is now LLM-backed, but automated supervisor actuation/routing overrides are still a separate design decision beyond the delivered observer/chat baseline.
+2. **Agent Canvas v2 product proof**
+   `/ops/chat` can execute tools and preview generated HTML artifacts. The
+   active follow-up is making that preview operationally useful: artifact
+   history, frame diagnostics, console/error visibility, pixel samples, and
+   controlled click/type/probe commands.
+
+3. **Under-tested crate wave follow-through**
+   `docs/guides/test-coverage-targets.md` now defines target thresholds and
+   conformance mapping. Remaining work is execution against `kamn-sdk` and
+   adjacent QA surfaces, not policy definition.
 
 ### 2.2 M104 Follow-up Issues (Current State)
 
@@ -86,8 +96,8 @@ This document supersedes Review #30 and refreshes closure status/evidence agains
 
 | Component | Location | Current State | Remaining Stub Surface |
 |-----------|----------|---------------|------------------------|
-| Deploy endpoint | `crates/tau-gateway/src/gateway_openresponses/deploy_runtime.rs` | Request/stop state is persisted deterministically | Does not spawn/terminate OS processes |
-| Stop endpoint | `crates/tau-gateway/src/gateway_openresponses/deploy_runtime.rs` | Agent state transitions to stopped and persists | No process-kill orchestration layer |
+| Deploy endpoint | `crates/tau-gateway/src/gateway_openresponses/deploy_runtime.rs` + `deploy_process_supervisor.rs` | Request/stop state is persisted and process supervisor can spawn configured child processes | Needs release-grade live drill coverage across configured process profiles |
+| Stop endpoint | `crates/tau-gateway/src/gateway_openresponses/deploy_runtime.rs` + `deploy_process_supervisor.rs` | Agent stop routes through process termination and records stop evidence | Needs broader concurrency/race regression coverage |
 | RL weight updates | `crates/tau-coding-agent/src/live_rl_runtime.rs` | Captures rollouts and emits optimization reports | Does not write updated model weights (by design) |
 
 ---
@@ -98,7 +108,7 @@ This document supersedes Review #30 and refreshes closure status/evidence agains
 
 | Area | Current Signal | Recommendation |
 |------|----------------|----------------|
-| Integration breadth | `tests/integration/` contains one file with 4 tests | Expand scenario count for channel routing/compaction/delegation |
+| Integration breadth | `tests/integration/` contains one file with 4 tests plus extensive crate-local gateway/dashboard route coverage | Expand scenario count for channel routing/compaction/delegation |
 | tau-diagnostics | 11 direct test markers | Continue edge-case coverage for audit aggregation and telemetry compatibility |
 | tau-training-proxy | 14 direct test markers | Continue transport/read failure and persistence boundary coverage |
 | kamn-core | 12 direct test markers | Continue identity/auth malformed-input and boundary hardening coverage |
@@ -110,7 +120,8 @@ This document supersedes Review #30 and refreshes closure status/evidence agains
 |----------|---------------|----------------|
 | Property-based tests | Minimal usage in core roadmap surfaces | Add `proptest` for ranking/decay/token-limit math |
 | Concurrency stress | Targeted coverage exists but thin for some paths | Add race-oriented tests around memory writes and process supervision |
-| Deploy runtime integration | Deterministic state tests only | Add process-lifecycle integration when deploy runtime is upgraded |
+| Deploy runtime integration | Process supervisor tests and shell/browser route evidence exist | Add repeatable release drill for spawn/terminate/restart races |
+| Ops chat canvas | Live manual proof existed before this update | Keep `scripts/dev/ops-chat-canvas-proof.sh` green as the repeatable product proof |
 
 ---
 
@@ -118,15 +129,25 @@ This document supersedes Review #30 and refreshes closure status/evidence agains
 
 ### 5.1 Gateway Module Size (Improved, Still a Hotspot)
 
-`crates/tau-gateway/src/gateway_openresponses.rs` is now 1,973 lines (down from earlier >4k snapshots), but remains a concentration point. Continued domain extraction should keep this file trending downward.
+`crates/tau-gateway/src/gateway_openresponses.rs` is now 267 lines after route/runtime extraction. The pressure point has moved to render surfaces:
+
+- `crates/tau-gateway/src/gateway_openresponses/ops_dashboard_shell.rs`: ~6.3k lines
+- `crates/tau-dashboard-ui/src/lib.rs`: ~13.3k lines
+
+Continued modularization should now split chat/canvas, deploy, harness, and
+memory UI/render contracts into focused modules rather than growing the central
+shell files.
 
 ### 5.2 Single-Binary Runtime Limits
 
 The current process model supports branch/worker process semantics in one runtime, but crash/resource isolation remains bounded by a single process model.
 
-### 5.3 Dashboard Stack vs PRD
+### 5.3 Dashboard Stack Direction
 
-The Leptos PRD exists at `specs/tau-ops-dashboard-prd.md`, while the shipped dashboard shell remains HTML/JS served from gateway runtime modules. This is a roadmap decision point, not a current defect.
+Dashboard stack direction is decided in `docs/architecture/adr-006-dashboard-ui-stack.md`:
+new operator dashboard route work standardizes on Leptos SSR in
+`tau-dashboard-ui`, while older gateway-owned HTML/JS surfaces remain
+compatibility bridges.
 
 ---
 
@@ -164,6 +185,10 @@ The Leptos PRD exists at `specs/tau-ops-dashboard-prd.md`, while the shipped das
 | Runbook ownership map | **Done** | `docs/guides/runbook-ownership-map.md` |
 | Architecture ADR trail | **Done** | `docs/architecture/adr-00*.md` set |
 | High-level dependency graph doc | **Done** | `docs/architecture/crate-dependency-diagram.md` published |
+| Cortex automation scope | **Done** | `docs/architecture/cortex-automation-scope.md` keeps Cortex advisory-only until typed action-envelope gates exist |
+| Coverage target policy | **Done** | `docs/guides/test-coverage-targets.md` defines crate/path thresholds and AC-to-conformance mapping |
+| Dashboard stack ADR | **Done** | `docs/architecture/adr-006-dashboard-ui-stack.md` selects Leptos SSR for new operator route work |
+| Key rotation runbook | **Done** | `docs/guides/key-rotation-operator-runbook.md` covers encrypted credential store rotation, verification, rollback, and release evidence |
 
 ---
 
@@ -171,7 +196,7 @@ The Leptos PRD exists at `specs/tau-ops-dashboard-prd.md`, while the shipped das
 
 | Concern | Current State | Recommendation |
 |---------|---------------|----------------|
-| Gateway runtime hotspot | Reduced to 1,973-line core module | Continue split-by-domain extraction |
+| Gateway runtime hotspot | Root module reduced to ~267 lines; render shell files are now the hotspot | Extract chat/canvas and deploy render/runtime contracts |
 | FileMemoryStore query cost | SQLite backend exists; file-backed mode still linear scans | Prefer SQLite for larger deployments |
 | Memory graph rendering scale | Works for current dashboard shell usage | Add heavier-load profiling if node count targets increase |
 | Provider burst control | Provider-layer token bucket shipped | Add operational dashboards for saturation visibility |
@@ -182,24 +207,38 @@ The Leptos PRD exists at `specs/tau-ops-dashboard-prd.md`, while the shipped das
 
 ### P0 - Next High-Impact Closures
 
-1. **Upgrade deploy/stop from state transitions to process lifecycle control** (spawn/terminate with supervision).
-2. **Decide cortex automation scope** (keep advisory-only vs add supervisor-routing actions).
+1. **Ship Agent Canvas v2 proof**: artifact history, diagnostics bridge,
+   controlled preview interactions, pixel/console signals, and repeatable
+   `/ops/chat` proof automation.
+2. **Run full release-grade validation** for the branch, including full
+   `cargo test` after targeted checks and live proof.
 
 ### P1 - Quality and Maintainability
 
-3. **Expand under-tested crate coverage** with explicit target thresholds and conformance mapping.
-4. **Continue gateway runtime modularization** until hotspot pressure is reduced further.
-5. **Publish crate dependency architecture diagram** for onboarding and ops.
+3. **Extract chat/canvas and deploy render modules** from
+   `tau-dashboard-ui/src/lib.rs` and
+   `gateway_openresponses/ops_dashboard_shell.rs`.
+4. **Expand under-tested crate coverage** against
+   `docs/guides/test-coverage-targets.md`, starting with `kamn-sdk` and adjacent
+   QA surfaces.
+5. **Grow property/concurrency testing** for ranking, compaction, memory writes,
+   and process supervision.
 6. **Sustain contributor/security doc freshness** with release-aligned review cadence.
 
 ### P2 - Medium-Term Enhancements
 
-7. **Extend key-rotation operator runbook coverage** for encrypted credential store operations.
-8. **Grow property/concurrency testing** for ranking/compaction/process paths.
-9. **Finalize dashboard stack direction** (maintain HTML/JS shell vs Leptos migration).
+7. **Run key-rotation drills** against the encrypted credential store runbook
+   and record sanitized release evidence.
+8. **Reconsider Cortex supervisor routing only behind the typed action-envelope
+   escalation gate** in `docs/architecture/cortex-automation-scope.md`.
+9. **Add heavier-load dashboard profiling** once memory graph and canvas usage
+   targets increase.
 
 ---
 
 ## Summary
 
-This refresh keeps M104 follow-up issue closure status current and updates stale hygiene/testing claims to match current repository evidence. The main remaining gap is quality depth follow-through in `kamn-sdk` and adjacent QA surfaces rather than missing foundational docs or controls.
+This refresh removes stale action items that are now covered by ADRs, runbooks,
+or published docs. The main remaining gaps are product-proof depth for Agent
+Canvas, full branch validation, UI/render modularization, and targeted QA depth
+in lower-covered crates.

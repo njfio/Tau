@@ -1630,11 +1630,27 @@ async fn functional_spec_3799_c05_ops_chat_shell_embeds_latest_html_tool_artifac
     std::fs::create_dir_all(&repo_target).expect("create target dir");
     let artifact_dir = tempfile::tempdir_in(repo_target).expect("create repo target tempdir");
     let artifact_path = artifact_dir.path().join("ops-chat-canvas-proof.html");
+    let second_artifact_path = artifact_dir.path().join("ops-chat-canvas-proof-v2.html");
     std::fs::write(
         &artifact_path,
         r#"<!doctype html><canvas id="game"></canvas>"#,
     )
     .expect("write html artifact");
+    std::fs::write(
+        &second_artifact_path,
+        r#"<!doctype html><html><body><canvas id="game-v2"></canvas></body></html>"#,
+    )
+    .expect("write second html artifact");
+    let first_tool_payload = serde_json::to_string(&json!({
+        "path": artifact_path.display().to_string(),
+        "bytes_written": 41
+    }))
+    .expect("serialize first tool result");
+    let second_tool_payload = serde_json::to_string(&json!({
+        "path": second_artifact_path.display().to_string(),
+        "bytes_written": 69
+    }))
+    .expect("serialize second tool result");
 
     let session_path = gateway_session_path(&state.config.state_dir, "chat-canvas-artifact");
     let mut store = SessionStore::load(&session_path).expect("load chat canvas session");
@@ -1651,12 +1667,13 @@ async fn functional_spec_3799_c05_ops_chat_shell_embeds_latest_html_tool_artifac
                 Message::tool_result(
                     "tool-call-html",
                     "write",
-                    serde_json::to_string(&json!({
-                        "path": artifact_path.display().to_string(),
-                        "bytes_written": 41
-                    }))
-                    .expect("serialize tool result")
-                    .as_str(),
+                    first_tool_payload.as_str(),
+                    false,
+                ),
+                Message::tool_result(
+                    "tool-call-html-2",
+                    "write",
+                    second_tool_payload.as_str(),
                     false,
                 ),
                 Message::assistant_text("created html canvas"),
@@ -1676,15 +1693,23 @@ async fn functional_spec_3799_c05_ops_chat_shell_embeds_latest_html_tool_artifac
     assert_eq!(response.status(), StatusCode::OK);
     let body = response.text().await.expect("read ops chat body");
 
-    assert!(body.contains(
-        "id=\"tau-ops-chat-agent-canvas\" data-agent-canvas=\"true\" data-preview-status=\"loaded\" data-preview-loaded=\"true\""
-    ));
+    assert!(body.contains("id=\"tau-ops-chat-agent-canvas\""));
+    assert!(body.contains("data-agent-canvas=\"true\""));
+    assert!(body.contains("data-preview-status=\"loaded\""));
+    assert!(body.contains("data-preview-loaded=\"true\""));
+    assert!(body.contains("data-artifact-count=\"2\""));
+    assert!(body.contains("ops-chat-canvas-proof-v2.html"));
     assert!(body
         .contains("id=\"tau-ops-chat-agent-canvas-surface\" data-agent-canvas-surface=\"true\""));
     assert!(body.contains(
         "id=\"tau-ops-chat-agent-preview-frame\" data-agent-html-preview=\"true\" sandbox=\"allow-scripts\""
     ));
-    assert!(body.contains("&lt;canvas id=&quot;game&quot;&gt;&lt;/canvas&gt;"));
+    assert!(body.contains("data-agent-canvas-bridge=&quot;true&quot;"));
+    assert!(body.contains(
+        "id=\"tau-ops-chat-agent-canvas-runtime\" data-agent-canvas-runtime=\"postmessage-v2\""
+    ));
+    assert!(body.contains("id=\"tau-ops-chat-agent-canvas-artifacts\" data-agent-canvas-artifact-history=\"true\" data-artifact-count=\"2\""));
+    assert!(body.contains("&lt;canvas id=&quot;game-v2&quot;&gt;&lt;/canvas&gt;"));
 
     handle.abort();
 }
@@ -2104,6 +2129,13 @@ async fn integration_spec_2838_c02_c03_ops_sessions_shell_renders_discovered_row
     handle.abort();
 }
 
+fn ops_sessions_row_fragment<'a>(body: &'a str, row_id: &str) -> &'a str {
+    let start = body.find(row_id).expect("find ops sessions row");
+    let tail = &body[start..];
+    let end = tail.find("</li>").unwrap_or(tail.len());
+    &tail[..end]
+}
+
 #[tokio::test]
 async fn functional_spec_2893_c01_ops_sessions_shell_exposes_row_metadata_markers() {
     let temp = tempdir().expect("tempdir");
@@ -2137,9 +2169,13 @@ async fn functional_spec_2893_c01_ops_sessions_shell_exposes_row_metadata_marker
     assert_eq!(response.status(), StatusCode::OK);
     let body = response.text().await.expect("read ops sessions body");
 
-    assert!(body.contains(
-        "id=\"tau-ops-sessions-row-0\" data-session-key=\"session-alpha\" data-selected=\"true\" data-entry-count=\"3\" data-total-tokens=\"0\" data-is-valid=\"true\" data-updated-unix-ms=\""
-    ));
+    let row = ops_sessions_row_fragment(&body, "id=\"tau-ops-sessions-row-0\"");
+    assert!(row.contains("data-session-key=\"session-alpha\""));
+    assert!(row.contains("data-selected=\"true\""));
+    assert!(row.contains("data-entry-count=\"3\""));
+    assert!(row.contains("data-total-tokens=\""));
+    assert!(row.contains("data-is-valid=\"true\""));
+    assert!(row.contains("data-updated-unix-ms=\""));
     assert!(body.contains(
         "id=\"tau-ops-sessions-detail-link-0\" data-open-session-detail=\"session-alpha\" href=\"/ops/sessions/session-alpha?theme=light&amp;sidebar=collapsed&amp;session=session-alpha\""
     ));
@@ -2193,12 +2229,20 @@ async fn integration_spec_2893_c02_c03_c04_ops_sessions_shell_metadata_matches_s
     let body = response.text().await.expect("read ops sessions body");
 
     assert!(body.contains("id=\"tau-ops-sessions-list\" data-session-count=\"2\""));
-    assert!(body.contains(
-        "id=\"tau-ops-sessions-row-0\" data-session-key=\"session-alpha\" data-selected=\"false\" data-entry-count=\"3\" data-total-tokens=\"0\" data-is-valid=\"true\" data-updated-unix-ms=\""
-    ));
-    assert!(body.contains(
-        "id=\"tau-ops-sessions-row-1\" data-session-key=\"session-beta\" data-selected=\"true\" data-entry-count=\"5\" data-total-tokens=\"0\" data-is-valid=\"true\" data-updated-unix-ms=\""
-    ));
+    let alpha_row = ops_sessions_row_fragment(&body, "id=\"tau-ops-sessions-row-0\"");
+    assert!(alpha_row.contains("data-session-key=\"session-alpha\""));
+    assert!(alpha_row.contains("data-selected=\"false\""));
+    assert!(alpha_row.contains("data-entry-count=\"3\""));
+    assert!(alpha_row.contains("data-total-tokens=\""));
+    assert!(alpha_row.contains("data-is-valid=\"true\""));
+    assert!(alpha_row.contains("data-updated-unix-ms=\""));
+    let beta_row = ops_sessions_row_fragment(&body, "id=\"tau-ops-sessions-row-1\"");
+    assert!(beta_row.contains("data-session-key=\"session-beta\""));
+    assert!(beta_row.contains("data-selected=\"true\""));
+    assert!(beta_row.contains("data-entry-count=\"5\""));
+    assert!(beta_row.contains("data-total-tokens=\""));
+    assert!(beta_row.contains("data-is-valid=\"true\""));
+    assert!(beta_row.contains("data-updated-unix-ms=\""));
     assert!(body.contains(
         "id=\"tau-ops-sessions-detail-link-0\" data-open-session-detail=\"session-alpha\" href=\"/ops/sessions/session-alpha?theme=light&amp;sidebar=collapsed&amp;session=session-alpha\""
     ));

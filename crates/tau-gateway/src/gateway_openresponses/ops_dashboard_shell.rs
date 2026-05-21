@@ -43,6 +43,10 @@ use tau_multi_channel::multi_channel_lifecycle::{
 use tau_session::SessionStore;
 
 use super::channel_telemetry_runtime::build_gateway_multi_channel_lifecycle_command_config;
+use super::ops_chat_canvas::{
+    push_ops_chat_agent_canvas_preview, upgrade_ops_chat_agent_canvas_html,
+    OpsChatAgentCanvasPreview,
+};
 use super::types::GatewayChannelLifecycleRequest;
 use super::{
     apply_gateway_dashboard_action, collect_assistant_reply,
@@ -1043,117 +1047,6 @@ fn tau_ops_chat_message_role_label(role: MessageRole) -> &'static str {
     }
 }
 
-const OPS_CHAT_AGENT_CANVAS_PREVIEW_MAX_BYTES: u64 = 512 * 1024;
-
-#[derive(Debug, Clone)]
-struct OpsChatAgentCanvasPreview {
-    status: String,
-    artifact_path: String,
-    srcdoc: String,
-    srcdoc_bytes: usize,
-}
-
-impl Default for OpsChatAgentCanvasPreview {
-    fn default() -> Self {
-        Self {
-            status: "empty".to_string(),
-            artifact_path: String::new(),
-            srcdoc: String::new(),
-            srcdoc_bytes: 0,
-        }
-    }
-}
-
-fn update_ops_chat_agent_canvas_preview(preview: &mut OpsChatAgentCanvasPreview, content: &str) {
-    let Some(path) = extract_ops_chat_html_artifact_path(content) else {
-        return;
-    };
-    *preview = load_ops_chat_agent_canvas_preview(path.as_str());
-}
-
-fn extract_ops_chat_html_artifact_path(content: &str) -> Option<String> {
-    let value = serde_json::from_str::<Value>(content).ok()?;
-    find_ops_chat_html_path_in_value(&value).map(str::to_string)
-}
-
-fn find_ops_chat_html_path_in_value(value: &Value) -> Option<&str> {
-    match value {
-        Value::Object(map) => {
-            for key in ["path", "file", "artifact_path", "href"] {
-                if let Some(path) = map.get(key).and_then(Value::as_str) {
-                    if is_ops_chat_html_path(path) {
-                        return Some(path);
-                    }
-                }
-            }
-            map.values().find_map(find_ops_chat_html_path_in_value)
-        }
-        Value::Array(values) => values.iter().find_map(find_ops_chat_html_path_in_value),
-        Value::String(path) if is_ops_chat_html_path(path) => Some(path.as_str()),
-        _ => None,
-    }
-}
-
-fn is_ops_chat_html_path(path: &str) -> bool {
-    let normalized = path.trim().to_ascii_lowercase();
-    normalized.ends_with(".html") || normalized.ends_with(".htm")
-}
-
-fn load_ops_chat_agent_canvas_preview(path: &str) -> OpsChatAgentCanvasPreview {
-    let trimmed = path.trim();
-    if trimmed.is_empty() {
-        return OpsChatAgentCanvasPreview::default();
-    }
-
-    let mut preview = OpsChatAgentCanvasPreview {
-        status: "missing".to_string(),
-        artifact_path: trimmed.to_string(),
-        srcdoc: String::new(),
-        srcdoc_bytes: 0,
-    };
-    let Some(resolved) = resolve_ops_chat_agent_canvas_artifact_path(trimmed) else {
-        preview.status = "unsafe_path".to_string();
-        return preview;
-    };
-    let Ok(metadata) = std::fs::metadata(&resolved) else {
-        preview.status = "missing".to_string();
-        return preview;
-    };
-    if metadata.len() > OPS_CHAT_AGENT_CANVAS_PREVIEW_MAX_BYTES {
-        preview.status = "too_large".to_string();
-        return preview;
-    }
-    match std::fs::read_to_string(&resolved) {
-        Ok(srcdoc) => {
-            preview.status = "loaded".to_string();
-            preview.artifact_path = resolved.display().to_string();
-            preview.srcdoc_bytes = srcdoc.len();
-            preview.srcdoc = srcdoc;
-            preview
-        }
-        Err(_) => {
-            preview.status = "read_error".to_string();
-            preview
-        }
-    }
-}
-
-fn resolve_ops_chat_agent_canvas_artifact_path(path: &str) -> Option<PathBuf> {
-    let cwd = std::env::current_dir().ok()?.canonicalize().ok()?;
-    let raw = PathBuf::from(path);
-    let candidate = if raw.is_absolute() {
-        raw
-    } else {
-        cwd.join(raw)
-    };
-    let canonical = candidate.canonicalize().ok()?;
-    if canonical.starts_with(&cwd) && is_ops_chat_html_path(canonical.to_string_lossy().as_ref()) {
-        Some(canonical)
-    } else {
-        None
-    }
-}
-
 fn derive_ops_tool_category(tool_name: &str) -> &'static str {
     match tool_name {
         "read" | "write" => "File I/O",
@@ -1459,12 +1352,12 @@ fn collect_tau_ops_dashboard_chat_snapshot(
     state: &Arc<GatewayOpenResponsesServerState>,
     controls: &OpsShellControlsQuery,
     detail_session_key: Option<&str>,
-) -> TauOpsDashboardChatSnapshot {
+) -> (TauOpsDashboardChatSnapshot, Vec<OpsChatAgentCanvasPreview>) {
     let active_session_key = resolve_ops_chat_session_key(controls, detail_session_key);
     let session_options = collect_ops_chat_session_option_rows(state, active_session_key.as_str());
     let session_path = gateway_session_path(&state.config.state_dir, active_session_key.as_str());
     let mut message_rows = Vec::new();
-    let mut agent_canvas_preview = OpsChatAgentCanvasPreview::default();
+    let mut agent_canvas_previews = Vec::new();
     let mut session_detail_validation_entries: usize = 0;
     let mut session_detail_validation_duplicates: usize = 0;
     let mut session_detail_validation_invalid_parent: usize = 0;
@@ -1715,7 +1608,7 @@ fn collect_tau_ops_dashboard_chat_snapshot(
                     continue;
                 }
                 if matches!(entry.message.role, MessageRole::Tool) {
-                    update_ops_chat_agent_canvas_preview(&mut agent_canvas_preview, &content);
+                    push_ops_chat_agent_canvas_preview(&mut agent_canvas_previews, &content);
                 }
                 session_detail_timeline_rows.push(TauOpsDashboardSessionTimelineRow {
                     entry_id: entry.id,
@@ -1730,7 +1623,11 @@ fn collect_tau_ops_dashboard_chat_snapshot(
         }
     }
 
-    TauOpsDashboardChatSnapshot {
+    let agent_canvas_preview = agent_canvas_previews
+        .last()
+        .cloned()
+        .unwrap_or_else(OpsChatAgentCanvasPreview::default);
+    let snapshot = TauOpsDashboardChatSnapshot {
         active_session_key: active_session_key.clone(),
         new_session_form_action: OPS_DASHBOARD_CHAT_NEW_ENDPOINT.to_string(),
         new_session_form_method: "post".to_string(),
@@ -1821,7 +1718,9 @@ fn collect_tau_ops_dashboard_chat_snapshot(
         job_detail_duration_ms,
         job_detail_stdout,
         job_detail_stderr,
-    }
+    };
+
+    (snapshot, agent_canvas_previews)
 }
 
 pub(super) fn render_tau_ops_dashboard_shell_for_route(
@@ -1841,7 +1740,8 @@ pub(super) fn render_tau_ops_dashboard_shell_for_route(
     command_center.config_system_prompt_chars = state.config.system_prompt.chars().count();
     command_center.config_max_turns = state.config.max_turns;
     command_center.deploy = collect_tau_ops_dashboard_deploy_snapshot(&state.config.state_dir);
-    let chat = collect_tau_ops_dashboard_chat_snapshot(state, &controls, detail_session_key);
+    let (chat, agent_canvas_previews) =
+        collect_tau_ops_dashboard_chat_snapshot(state, &controls, detail_session_key);
     let requested_harness_audit_action = if controls.requested_harness_view() == Some("history") {
         controls.requested_harness_audit_action()
     } else {
@@ -1926,17 +1826,21 @@ pub(super) fn render_tau_ops_dashboard_shell_for_route(
         }
     }
 
-    Html(render_tau_ops_dashboard_shell_with_context(
-        TauOpsDashboardShellContext {
-            auth_mode: resolve_tau_ops_dashboard_auth_mode(state.config.auth_mode),
-            active_route: route,
-            theme: controls.theme(),
-            sidebar_state: controls.sidebar_state(),
-            command_center,
-            chat,
-            harness,
-        },
-    ))
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        auth_mode: resolve_tau_ops_dashboard_auth_mode(state.config.auth_mode),
+        active_route: route,
+        theme: controls.theme(),
+        sidebar_state: controls.sidebar_state(),
+        command_center,
+        chat,
+        harness,
+    });
+    let html = if matches!(route, TauOpsDashboardRoute::Chat) {
+        upgrade_ops_chat_agent_canvas_html(html, agent_canvas_previews.as_slice())
+    } else {
+        html
+    };
+    Html(html)
 }
 
 fn harness_proposal_status_route_action(proposal_status: &str) -> (&'static str, &'static str) {

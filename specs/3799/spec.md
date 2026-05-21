@@ -23,6 +23,8 @@ In scope:
   tool-backed turns.
 - Render a sandboxed agent canvas preview when the latest tool output points to
   a local HTML artifact.
+- Expose Agent Canvas v2 diagnostics, controlled postMessage interactions, and
+  artifact history for HTML artifacts.
 - Verify the live browser route submits and displays both turns.
 
 Out of scope:
@@ -52,6 +54,15 @@ AC-5: Given the latest tool result references a local `.html` artifact under the
 workspace, when `/ops/chat` renders, then the chat panel exposes an agent canvas
 surface and embeds the HTML artifact in a sandboxed preview frame.
 
+AC-6: Given one or more HTML artifacts have been produced by chat tools, when
+`/ops/chat` renders, then the Agent Canvas exposes artifact history, frame
+diagnostics, console/error counters, canvas pixel sample markers, and controlled
+click/type/probe commands routed through a sandbox-safe postMessage bridge.
+
+AC-7: Given a live gateway is running, when the ops chat canvas proof script is
+run, then it submits a tool-backed chat request, verifies the generated HTML
+artifact, and emits a deterministic JSON proof artifact.
+
 ## Conformance Cases
 
 C-01 maps to AC-1 and AC-2: gateway integration test posts
@@ -69,12 +80,22 @@ assistant response, with the requested file present on disk.
 C-04 maps to AC-5: dashboard/gateway render tests seed an HTML tool artifact
 and assert the agent canvas markers plus sandboxed preview frame are present.
 
+C-05 maps to AC-6: dashboard/gateway render tests seed multiple HTML artifacts
+and assert artifact history, diagnostics, controlled interaction markers, and
+the injected frame bridge are present.
+
+C-06 maps to AC-7: proof-script tests fake the live gateway calls and assert the
+script validates `/ops/chat/send`, the rendered canvas route, and JSON proof
+output.
+
 ## Success Signals
 
 - `cargo test -p tau-gateway integration_spec_3799_c01_ops_chat_send_appends_assistant_reply`
 - `cargo test -p tau-gateway integration_spec_3799_c04_ops_chat_send_executes_registered_tools_for_action_requests`
 - `cargo test -p tau-gateway functional_spec_3799_c05_ops_chat_shell_embeds_latest_html_tool_artifact_preview`
 - `cargo test -p tau-dashboard-ui functional_spec_3799_c05_chat_route_renders_agent_canvas_preview_for_html_artifacts`
+- `scripts/dev/test-ops-chat-canvas-proof.sh`
+- `scripts/dev/ops-chat-canvas-proof.sh --base-url http://127.0.0.1:8797 --session ui-canvas-proof-live --artifact-path target/ops-chat-canvas-live.html`
 - `cargo test -p tau-gateway gateway_openresponses::tests::integration_spec_2830_c02_c03_ops_chat_send_appends_message_and_renders_transcript_row`
 - Browser Use confirms `/ops/chat` appends user, tool, and assistant rows and
   creates the requested file on disk.

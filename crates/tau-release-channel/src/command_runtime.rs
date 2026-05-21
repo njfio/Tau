@@ -1444,15 +1444,27 @@ mod tests {
         let temp = tempfile::tempdir().expect("tempdir");
         let path = temp.path().join(".tau/release-channel.json");
         save_release_channel_store(&path, ReleaseChannel::Beta).expect("save release channel");
+        let current_segments =
+            parse_version_segments(env!("CARGO_PKG_VERSION")).expect("parse current version");
+        let target_version = format!(
+            "v{}.{}.0-beta.1",
+            current_segments.first().copied().unwrap_or(0),
+            current_segments
+                .get(1)
+                .copied()
+                .unwrap_or(0)
+                .saturating_add(1)
+        );
+        let releases_payload = format!(
+            r#"[{{"tag_name":"{target_version}","prerelease":true,"draft":false}},{{"tag_name":"v0.1.0","prerelease":false,"draft":false}}]"#
+        );
 
         let server = MockServer::start();
         let mock = server.mock(|when, then| {
             when.method(GET).path("/releases");
             then.status(200)
                 .header("content-type", "application/json")
-                .body(
-                    r#"[{"tag_name":"v0.2.0-beta.1","prerelease":true,"draft":false},{"tag_name":"v0.1.0","prerelease":false,"draft":false}]"#,
-                );
+                .body(releases_payload.clone());
         });
         let url = format!("{}/releases", server.base_url());
 
@@ -1489,7 +1501,7 @@ mod tests {
             .expect("load update state")
             .expect("update state should exist");
         assert_eq!(state.channel, ReleaseChannel::Beta);
-        assert_eq!(state.target_version, "v0.2.0-beta.1");
+        assert_eq!(state.target_version, target_version);
         assert_eq!(state.action, "upgrade");
         assert_eq!(state.apply_attempts, 1);
         assert_eq!(state.last_apply_status.as_deref(), Some("applied_metadata"));
