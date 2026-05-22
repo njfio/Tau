@@ -183,10 +183,10 @@ use openresponses_entry_handler::handle_openresponses;
 use openresponses_execution_handler::execute_openresponses_request;
 use ops_dashboard_shell::{
     handle_ops_dashboard_channel_action, handle_ops_dashboard_chat_new,
-    handle_ops_dashboard_chat_send, handle_ops_dashboard_control_action,
-    handle_ops_dashboard_deploy_stop, handle_ops_dashboard_deploy_submit,
-    handle_ops_dashboard_harness_artifact, handle_ops_dashboard_harness_artifact_view,
-    handle_ops_dashboard_harness_create_mission_draft,
+    handle_ops_dashboard_chat_send, handle_ops_dashboard_chat_send_get,
+    handle_ops_dashboard_control_action, handle_ops_dashboard_deploy_stop,
+    handle_ops_dashboard_deploy_submit, handle_ops_dashboard_harness_artifact,
+    handle_ops_dashboard_harness_artifact_view, handle_ops_dashboard_harness_create_mission_draft,
     handle_ops_dashboard_harness_proposal_action, handle_ops_dashboard_harness_proposal_diff,
     handle_ops_dashboard_harness_run_benchmark, handle_ops_dashboard_harness_start_mission,
     handle_ops_dashboard_memory_create, handle_ops_dashboard_session_detail_reset,

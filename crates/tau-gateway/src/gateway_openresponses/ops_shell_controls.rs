@@ -405,6 +405,9 @@ impl OpsShellControlsQuery {
     pub(super) fn requested_chat_send_status(&self) -> &'static str {
         match self.chat_status.trim() {
             "empty-message" => "empty-message",
+            "send-timeout" => "send-timeout",
+            "input-too-large" => "input-too-large",
+            "send-error" => "send-error",
             _ => "idle",
         }
     }
