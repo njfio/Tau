@@ -2,15 +2,16 @@ use super::{
     contains_markdown_contract_syntax, extract_assistant_stream_tokens,
     extract_first_fenced_code_block, format_chat_session_updated_label_at,
     render_tau_ops_dashboard_shell, render_tau_ops_dashboard_shell_for_route,
-    render_tau_ops_dashboard_shell_with_context, TauOpsDashboardAlertFeedRow,
-    TauOpsDashboardAuthMode, TauOpsDashboardChatMessageRow, TauOpsDashboardChatSessionOptionRow,
-    TauOpsDashboardChatSnapshot, TauOpsDashboardCommandCenterSnapshot,
-    TauOpsDashboardConnectorHealthRow, TauOpsDashboardHarnessArtifactRow,
-    TauOpsDashboardHarnessAuditRow, TauOpsDashboardHarnessBenchmarkCategoryRow,
-    TauOpsDashboardHarnessMissionRow, TauOpsDashboardHarnessProofRow,
-    TauOpsDashboardHarnessProposalDetail, TauOpsDashboardHarnessProposalQueueRow,
-    TauOpsDashboardHarnessSelfImprovementProof, TauOpsDashboardHarnessSnapshot,
-    TauOpsDashboardHarnessToolEvidenceRow, TauOpsDashboardJobRow,
+    render_tau_ops_dashboard_shell_with_context, render_tau_ops_deploy_process_lifecycle,
+    TauOpsDashboardAlertFeedRow, TauOpsDashboardAuthMode, TauOpsDashboardChatMessageRow,
+    TauOpsDashboardChatSessionOptionRow, TauOpsDashboardChatSnapshot,
+    TauOpsDashboardCommandCenterSnapshot, TauOpsDashboardConnectorHealthRow,
+    TauOpsDashboardDeployAgentRow, TauOpsDashboardDeploySnapshot,
+    TauOpsDashboardHarnessArtifactRow, TauOpsDashboardHarnessAuditRow,
+    TauOpsDashboardHarnessBenchmarkCategoryRow, TauOpsDashboardHarnessMissionRow,
+    TauOpsDashboardHarnessProofRow, TauOpsDashboardHarnessProposalDetail,
+    TauOpsDashboardHarnessProposalQueueRow, TauOpsDashboardHarnessSelfImprovementProof,
+    TauOpsDashboardHarnessSnapshot, TauOpsDashboardHarnessToolEvidenceRow, TauOpsDashboardJobRow,
     TauOpsDashboardMemoryGraphEdgeRow, TauOpsDashboardMemoryGraphNodeRow,
     TauOpsDashboardMemoryRelationRow, TauOpsDashboardRoute, TauOpsDashboardSessionGraphEdgeRow,
     TauOpsDashboardSessionGraphNodeRow, TauOpsDashboardSessionTimelineRow,
@@ -18,6 +19,7 @@ use super::{
     TauOpsDashboardToolInventoryRow, TauOpsDashboardToolInvocationRow,
     TauOpsDashboardToolUsageHistogramRow,
 };
+use leptos::prelude::RenderHtml;
 use tau_tui::{render_operator_shell_frame, OperatorShellFrame};
 
 fn html_start_tag<'a>(html: &'a str, marker: &str) -> &'a str {
@@ -166,6 +168,83 @@ fn regression_deploy_model_catalog_uses_gateway_runtime_model() {
 }
 
 #[test]
+fn spec_3758_c09_deploy_route_renders_process_lifecycle_evidence() {
+    let html = render_tau_ops_deploy_process_lifecycle(
+        TauOpsDashboardDeploySnapshot {
+            state_source: "/tmp/tau/deploy-agent-state.json".to_string(),
+            state_status: "loaded".to_string(),
+            agent_count: 1,
+            running_count: 1,
+            stopped_count: 0,
+            rows: vec![TauOpsDashboardDeployAgentRow {
+                agent_id: "agent-process".to_string(),
+                status: "deploying".to_string(),
+                profile: "default".to_string(),
+                model: "openai/gpt-5.3-codex".to_string(),
+                updated_unix_ms: 200,
+                process_id: "gateway-deploy:agent-process:4242".to_string(),
+                process_status: "running".to_string(),
+                process_pid: "4242".to_string(),
+                process_started_unix_ms: 150,
+                process_stopped_unix_ms: 0,
+                process_stop_reason: "none".to_string(),
+                process_exit_status: "none".to_string(),
+            }],
+        },
+        "dark",
+        "expanded",
+        "default",
+    )
+    .to_html();
+
+    assert!(html.contains(
+        "id=\"tau-ops-deploy-processes\" data-component=\"DeployProcessLifecycle\" data-state-source=\"/tmp/tau/deploy-agent-state.json\" data-state-status=\"loaded\" data-agent-count=\"1\" data-running-count=\"1\" data-stopped-count=\"0\" data-row-count=\"1\""
+    ));
+    assert!(html.contains(
+        "id=\"tau-ops-deploy-process-row-0\" data-agent-id=\"agent-process\" data-agent-status=\"deploying\" data-process-id=\"gateway-deploy:agent-process:4242\" data-process-status=\"running\" data-process-pid=\"4242\""
+    ));
+    assert!(html.contains("<td>agent-process</td>"));
+    assert!(html.contains("<td>running</td>"));
+    assert!(html.contains("id=\"tau-ops-deploy-stop-form-0\""));
+    assert!(html.contains("action=\"/ops/deploy/agents/agent-process/stop\""));
+    assert!(html.contains("data-action=\"stop-agent\""));
+}
+
+#[test]
+fn spec_3758_c11_deploy_stop_form_encodes_agent_path_segment() {
+    let html = render_tau_ops_deploy_process_lifecycle(
+        TauOpsDashboardDeploySnapshot {
+            state_source: "/tmp/tau/deploy-agent-state.json".to_string(),
+            state_status: "loaded".to_string(),
+            agent_count: 1,
+            running_count: 1,
+            stopped_count: 0,
+            rows: vec![TauOpsDashboardDeployAgentRow {
+                agent_id: "agent/process 1".to_string(),
+                status: "deploying".to_string(),
+                profile: "default".to_string(),
+                model: "openai/gpt-5.3-codex".to_string(),
+                updated_unix_ms: 200,
+                process_id: "gateway-deploy:agent/process 1:4242".to_string(),
+                process_status: "running".to_string(),
+                process_pid: "4242".to_string(),
+                process_started_unix_ms: 150,
+                process_stopped_unix_ms: 0,
+                process_stop_reason: "none".to_string(),
+                process_exit_status: "none".to_string(),
+            }],
+        },
+        "dark",
+        "expanded",
+        "default",
+    )
+    .to_html();
+
+    assert!(html.contains("action=\"/ops/deploy/agents/agent%2Fprocess%201/stop\""));
+    assert!(html.contains("data-agent-id=\"agent/process 1\""));
+}
+
+#[test]
 fn spec_c03_deploy_route_renders_validation_and_review_markers() {
     let html = render_tau_ops_dashboard_shell_for_route("/ops/deploy");
     assert!(html.contains("id=\"tau-ops-deploy-validation\""));
@@ -177,9 +256,20 @@ fn spec_c03_deploy_route_renders_validation_and_review_markers() {
 #[test]
 fn spec_c04_deploy_route_renders_deploy_action_marker() {
     let html = render_tau_ops_dashboard_shell_for_route("/ops/deploy");
+    assert!(html.contains("id=\"tau-ops-deploy-form\""));
+    assert!(html.contains("action=\"/ops/deploy\""));
+    assert!(html.contains("method=\"post\""));
+    assert!(html.contains("id=\"tau-ops-deploy-agent-id\""));
+    assert!(html.contains("name=\"agent_id\""));
+    assert!(html.contains("id=\"tau-ops-deploy-profile\""));
+    assert!(html.contains("name=\"profile\""));
+    assert!(html.contains("id=\"tau-ops-deploy-model-catalog\" name=\"model\""));
     assert!(html.contains("id=\"tau-ops-deploy-submit\""));
     assert!(html.contains("data-action=\"deploy-agent\""));
-    assert!(html.contains("data-success-redirect-template=\"/ops/agents/{agent_id}\""));
+    assert!(html.contains("type=\"submit\""));
+    assert!(html.contains("data-success-redirect-template=\"/ops/deploy\""));
+    assert!(html.contains("#tau-ops-deploy-processes td"));
+    assert!(html.contains("color: #dbe8ef"));
 }
 
 #[test]
@@ -3930,6 +4020,36 @@ fn functional_spec_2866_c01_c02_chat_route_renders_inline_tool_card_for_tool_row
 }
 
 #[test]
+fn functional_spec_3799_c05_chat_route_renders_agent_canvas_preview_for_html_artifacts() {
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        auth_mode: TauOpsDashboardAuthMode::Token,
+        active_route: TauOpsDashboardRoute::Chat,
+        theme: TauOpsDashboardTheme::Dark,
+        sidebar_state: TauOpsDashboardSidebarState::Expanded,
+        command_center: TauOpsDashboardCommandCenterSnapshot::default(),
+        chat: TauOpsDashboardChatSnapshot {
+            active_session_key: "chat-canvas-session".to_string(),
+            agent_canvas_status: "loaded".to_string(),
+            agent_canvas_artifact_path: "/workspace/game.html".to_string(),
+            agent_canvas_srcdoc: "<!doctype html><canvas id=\"game\"></canvas>".to_string(),
+            agent_canvas_srcdoc_bytes: 41,
+            ..TauOpsDashboardChatSnapshot::default()
+        },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
+    });
+
+    assert!(html.contains(
+        "id=\"tau-ops-chat-agent-canvas\" data-agent-canvas=\"true\" data-preview-status=\"loaded\" data-preview-loaded=\"true\" data-artifact-path=\"/workspace/game.html\" data-srcdoc-bytes=\"41\""
+    ));
+    assert!(html
+        .contains("id=\"tau-ops-chat-agent-canvas-surface\" data-agent-canvas-surface=\"true\""));
+    assert!(html.contains(
+        "id=\"tau-ops-chat-agent-preview-frame\" data-agent-html-preview=\"true\" sandbox=\"allow-scripts\""
+    ));
+    assert!(html.contains("&lt;canvas id=&quot;game&quot;&gt;&lt;/canvas&gt;"));
+}
+
+#[test]
 fn regression_spec_2866_c04_non_chat_routes_omit_hidden_chat_tool_card_markers() {
     let ops_html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
         auth_mode: TauOpsDashboardAuthMode::Token,
@@ -7370,6 +7490,7 @@ fn functional_spec_2806_c01_c02_c03_command_center_snapshot_markers_render() {
             config_fallback_model_refs: Vec::new(),
             config_system_prompt_chars: 0,
             config_max_turns: 0,
+            deploy: TauOpsDashboardDeploySnapshot::default(),
         },
         chat: TauOpsDashboardChatSnapshot::default(),
         harness: TauOpsDashboardHarnessSnapshot::default(),
@@ -7556,6 +7677,7 @@ fn functional_spec_2810_c01_c02_c03_command_center_control_markers_render() {
             config_fallback_model_refs: Vec::new(),
             config_system_prompt_chars: 0,
             config_max_turns: 0,
+            deploy: TauOpsDashboardDeploySnapshot::default(),
         },
         chat: TauOpsDashboardChatSnapshot::default(),
         harness: TauOpsDashboardHarnessSnapshot::default(),
@@ -7619,6 +7741,7 @@ fn functional_spec_2826_c01_c02_control_actions_expose_confirmation_markers() {
             config_fallback_model_refs: Vec::new(),
             config_system_prompt_chars: 0,
             config_max_turns: 0,
+            deploy: TauOpsDashboardDeploySnapshot::default(),
         },
         chat: TauOpsDashboardChatSnapshot::default(),
         harness: TauOpsDashboardHarnessSnapshot::default(),
@@ -7931,6 +8054,7 @@ fn functional_spec_2814_c01_c02_c03_timeline_chart_and_range_markers_render() {
             config_fallback_model_refs: Vec::new(),
             config_system_prompt_chars: 0,
             config_max_turns: 0,
+            deploy: TauOpsDashboardDeploySnapshot::default(),
         },
         chat: TauOpsDashboardChatSnapshot::default(),
         harness: TauOpsDashboardHarnessSnapshot::default(),
@@ -8102,6 +8226,7 @@ fn functional_spec_2818_c01_c02_alert_feed_row_markers_render_for_snapshot_alert
             config_fallback_model_refs: Vec::new(),
             config_system_prompt_chars: 0,
             config_max_turns: 0,
+            deploy: TauOpsDashboardDeploySnapshot::default(),
         },
         chat: TauOpsDashboardChatSnapshot::default(),
         harness: TauOpsDashboardHarnessSnapshot::default(),
@@ -8165,6 +8290,7 @@ fn functional_spec_2818_c03_alert_feed_row_markers_render_nominal_fallback_alert
             config_fallback_model_refs: Vec::new(),
             config_system_prompt_chars: 0,
             config_max_turns: 0,
+            deploy: TauOpsDashboardDeploySnapshot::default(),
         },
         chat: TauOpsDashboardChatSnapshot::default(),
         harness: TauOpsDashboardHarnessSnapshot::default(),
@@ -8225,6 +8351,7 @@ fn functional_spec_2822_c03_connector_health_table_renders_fallback_row_markers(
             config_fallback_model_refs: Vec::new(),
             config_system_prompt_chars: 0,
             config_max_turns: 0,
+            deploy: TauOpsDashboardDeploySnapshot::default(),
         },
         chat: TauOpsDashboardChatSnapshot::default(),
         harness: TauOpsDashboardHarnessSnapshot::default(),
@@ -8291,6 +8418,7 @@ fn functional_spec_2822_c01_c02_connector_health_table_rows_render_for_snapshot_
             config_fallback_model_refs: Vec::new(),
             config_system_prompt_chars: 0,
             config_max_turns: 0,
+            deploy: TauOpsDashboardDeploySnapshot::default(),
         },
         chat: TauOpsDashboardChatSnapshot::default(),
         harness: TauOpsDashboardHarnessSnapshot::default(),

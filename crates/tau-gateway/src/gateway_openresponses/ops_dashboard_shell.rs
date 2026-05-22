@@ -1,8 +1,10 @@
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
+use std::collections::HashMap;
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use axum::extract::{Form, Path as AxumPath, Query, State};
@@ -12,9 +14,9 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use tau_agent_core::{
     load_autonomy_benchmark_fixture, run_autonomy_benchmark_fixture, Agent, AgentConfig,
-    MissionHarnessConfig,
+    AgentEvent, MissionHarnessConfig,
 };
-use tau_ai::{Message, MessageRole};
+use tau_ai::{MessageRole, ToolChoice};
 use tau_dashboard_ui::{
     render_tau_ops_dashboard_shell_with_context, TauOpsDashboardAuthMode,
     TauOpsDashboardChatMessageRow, TauOpsDashboardChatSessionOptionRow,
@@ -41,20 +43,27 @@ use tau_multi_channel::multi_channel_lifecycle::{
 use tau_session::SessionStore;
 
 use super::channel_telemetry_runtime::build_gateway_multi_channel_lifecycle_command_config;
+use super::ops_chat_canvas::{
+    push_ops_chat_agent_canvas_preview, upgrade_ops_chat_agent_canvas_html,
+    OpsChatAgentCanvasPreview,
+};
 use super::types::GatewayChannelLifecycleRequest;
 use super::{
-    apply_gateway_dashboard_action, collect_ops_harness_memory_graph_lineage,
-    collect_tau_ops_dashboard_command_center_snapshot, complete_cortex_chat,
-    find_ops_harness_proposal, gateway_memory_store, gateway_memory_store_root,
-    gateway_session_path, list_ops_harness_proposals, record_cortex_memory_entry_delete_event,
+    apply_gateway_dashboard_action, collect_assistant_reply,
+    collect_ops_harness_memory_graph_lineage, collect_tau_ops_dashboard_command_center_snapshot,
+    collect_tau_ops_dashboard_deploy_snapshot, deploy_gateway_agent, find_ops_harness_proposal,
+    gateway_memory_store, gateway_memory_store_root, gateway_session_path,
+    initialize_gateway_session_runtime, list_ops_harness_proposals, persist_messages,
+    persist_session_usage_delta, record_cortex_memory_entry_delete_event,
     record_cortex_memory_entry_write_event, record_cortex_observer_event,
     record_cortex_session_append_event, record_cortex_session_reset_event, sanitize_session_key,
-    GatewayDashboardActionRequest, GatewayMemoryGraphEdge, GatewayMemoryGraphNode,
-    GatewayOpenResponsesServerState, GatewayOpsHarnessProposalDefinition,
-    GatewayOpsHarnessSelfImprovementRequest, GatewayOpsHarnessSelfImprovementResult,
-    OpenResponsesApiError, OpsShellControlsQuery, DEFAULT_SESSION_KEY,
+    stop_gateway_deploy_agent, GatewayDashboardActionRequest, GatewayDeployAgentInput,
+    GatewayMemoryGraphEdge, GatewayMemoryGraphNode, GatewayOpenResponsesServerState,
+    GatewayOpsHarnessProposalDefinition, GatewayOpsHarnessSelfImprovementRequest,
+    GatewayOpsHarnessSelfImprovementResult, OpenResponsesApiError,
+    OpenResponsesObservedToolExecution, OpsShellControlsQuery, DEFAULT_SESSION_KEY,
     OPS_DASHBOARD_CHANNELS_ENDPOINT, OPS_DASHBOARD_CHAT_ENDPOINT, OPS_DASHBOARD_CHAT_NEW_ENDPOINT,
-    OPS_DASHBOARD_CHAT_SEND_ENDPOINT, OPS_DASHBOARD_ENDPOINT,
+    OPS_DASHBOARD_CHAT_SEND_ENDPOINT, OPS_DASHBOARD_DEPLOY_ENDPOINT, OPS_DASHBOARD_ENDPOINT,
 };
 use crate::remote_profile::GatewayOpenResponsesAuthMode;
 
@@ -111,6 +120,70 @@ impl OpsDashboardChatSendForm {
 
     fn resolved_sidebar_state(&self) -> TauOpsDashboardSidebarState {
         resolve_chat_sidebar_state(self.sidebar.as_str())
+    }
+}
+
+#[derive(Debug, Deserialize, Default)]
+pub(super) struct OpsDashboardDeployForm {
+    #[serde(default)]
+    agent_id: String,
+    #[serde(default)]
+    profile: String,
+    #[serde(default)]
+    model: String,
+    #[serde(default)]
+    theme: String,
+    #[serde(default)]
+    sidebar: String,
+    #[serde(default)]
+    session: String,
+}
+
+#[derive(Debug, Deserialize, Default)]
+pub(super) struct OpsDashboardDeployStopForm {
+    #[serde(default)]
+    theme: String,
+    #[serde(default)]
+    sidebar: String,
+    #[serde(default)]
+    session: String,
+}
+
+impl OpsDashboardDeployForm {
+    fn resolved_theme(&self) -> TauOpsDashboardTheme {
+        resolve_chat_theme(self.theme.as_str())
+    }
+
+    fn resolved_sidebar_state(&self) -> TauOpsDashboardSidebarState {
+        resolve_chat_sidebar_state(self.sidebar.as_str())
+    }
+
+    fn resolved_session_key(&self) -> String {
+        let session = self.session.trim();
+        if session.is_empty() {
+            DEFAULT_SESSION_KEY.to_string()
+        } else {
+            sanitize_session_key(session)
+        }
+    }
+}
+
+impl OpsDashboardDeployStopForm {
+    fn resolved_theme(&self) -> TauOpsDashboardTheme {
+        resolve_chat_theme(self.theme.as_str())
+    }
+
+    fn resolved_sidebar_state(&self) -> TauOpsDashboardSidebarState {
+        resolve_chat_sidebar_state(self.sidebar.as_str())
+    }
+
+    fn resolved_session_key(&self) -> String {
+        let session = self.session.trim();
+        if session.is_empty() {
+            DEFAULT_SESSION_KEY.to_string()
+        } else {
+            sanitize_session_key(session)
+        }
     }
 }
 
@@ -652,6 +725,54 @@ fn build_ops_chat_new_session_redirect_path_with_status(
         redirect_path.push_str(new_session_status);
     }
     redirect_path
+}
+
+fn normalize_ops_deploy_action_status_marker(status: &str) -> &'static str {
+    match status {
+        "deployed" => "deployed",
+        "stopped" => "stopped",
+        "missing" => "missing",
+        "failed" => "failed",
+        _ => "idle",
+    }
+}
+
+fn sanitize_ops_deploy_marker(raw: &str) -> String {
+    let sanitized = raw
+        .trim()
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.') {
+                ch
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>();
+    if sanitized.is_empty() {
+        "none".to_string()
+    } else {
+        sanitized
+    }
+}
+
+fn build_ops_deploy_redirect_path(
+    theme: TauOpsDashboardTheme,
+    sidebar_state: TauOpsDashboardSidebarState,
+    session_key: &str,
+    deploy_action_status: &str,
+    deploy_agent_id: &str,
+    deploy_action_reason: &str,
+) -> String {
+    let session_key = sanitize_session_key(session_key);
+    let status = normalize_ops_deploy_action_status_marker(deploy_action_status);
+    let agent_id = sanitize_ops_deploy_marker(deploy_agent_id);
+    let reason = sanitize_ops_deploy_marker(deploy_action_reason);
+    format!(
+        "{OPS_DASHBOARD_DEPLOY_ENDPOINT}?theme={}&sidebar={}&session={session_key}&deploy_action_status={status}&deploy_agent_id={agent_id}&deploy_action_reason={reason}",
+        theme.as_str(),
+        sidebar_state.as_str()
+    )
 }
 
 fn normalize_ops_control_action_status_marker(status: &str) -> &'static str {
@@ -1231,11 +1352,12 @@ fn collect_tau_ops_dashboard_chat_snapshot(
     state: &Arc<GatewayOpenResponsesServerState>,
     controls: &OpsShellControlsQuery,
     detail_session_key: Option<&str>,
-) -> TauOpsDashboardChatSnapshot {
+) -> (TauOpsDashboardChatSnapshot, Vec<OpsChatAgentCanvasPreview>) {
     let active_session_key = resolve_ops_chat_session_key(controls, detail_session_key);
     let session_options = collect_ops_chat_session_option_rows(state, active_session_key.as_str());
     let session_path = gateway_session_path(&state.config.state_dir, active_session_key.as_str());
     let mut message_rows = Vec::new();
+    let mut agent_canvas_previews = Vec::new();
     let mut session_detail_validation_entries: usize = 0;
     let mut session_detail_validation_duplicates: usize = 0;
     let mut session_detail_validation_invalid_parent: usize = 0;
@@ -1485,6 +1607,9 @@ fn collect_tau_ops_dashboard_chat_snapshot(
                 if content.trim().is_empty() {
                     continue;
                 }
+                if matches!(entry.message.role, MessageRole::Tool) {
+                    push_ops_chat_agent_canvas_preview(&mut agent_canvas_previews, &content);
+                }
                 session_detail_timeline_rows.push(TauOpsDashboardSessionTimelineRow {
                     entry_id: entry.id,
                     role: role.clone(),
@@ -1498,7 +1623,11 @@ fn collect_tau_ops_dashboard_chat_snapshot(
         }
     }
 
-    TauOpsDashboardChatSnapshot {
+    let agent_canvas_preview = agent_canvas_previews
+        .last()
+        .cloned()
+        .unwrap_or_else(OpsChatAgentCanvasPreview::default);
+    let snapshot = TauOpsDashboardChatSnapshot {
         active_session_key: active_session_key.clone(),
         new_session_form_action: OPS_DASHBOARD_CHAT_NEW_ENDPOINT.to_string(),
         new_session_form_method: "post".to_string(),
@@ -1511,6 +1640,10 @@ fn collect_tau_ops_dashboard_chat_snapshot(
         new_session_status: controls.requested_chat_new_session_status().to_string(),
         session_options,
         message_rows,
+        agent_canvas_status: agent_canvas_preview.status,
+        agent_canvas_artifact_path: agent_canvas_preview.artifact_path,
+        agent_canvas_srcdoc: agent_canvas_preview.srcdoc,
+        agent_canvas_srcdoc_bytes: agent_canvas_preview.srcdoc_bytes,
         session_detail_visible: detail_session_key.is_some(),
         session_detail_route: format!("/ops/sessions/{active_session_key}"),
         session_detail_validation_entries,
@@ -1585,7 +1718,9 @@ fn collect_tau_ops_dashboard_chat_snapshot(
         job_detail_duration_ms,
         job_detail_stdout,
         job_detail_stderr,
-    }
+    };
+
+    (snapshot, agent_canvas_previews)
 }
 
 pub(super) fn render_tau_ops_dashboard_shell_for_route(
@@ -1604,7 +1739,9 @@ pub(super) fn render_tau_ops_dashboard_shell_for_route(
     command_center.config_model_ref = state.config.model.clone();
     command_center.config_system_prompt_chars = state.config.system_prompt.chars().count();
     command_center.config_max_turns = state.config.max_turns;
-    let chat = collect_tau_ops_dashboard_chat_snapshot(state, &controls, detail_session_key);
+    command_center.deploy = collect_tau_ops_dashboard_deploy_snapshot(&state.config.state_dir);
+    let (chat, agent_canvas_previews) =
+        collect_tau_ops_dashboard_chat_snapshot(state, &controls, detail_session_key);
     let requested_harness_audit_action = if controls.requested_harness_view() == Some("history") {
         controls.requested_harness_audit_action()
     } else {
@@ -1689,17 +1826,21 @@ pub(super) fn render_tau_ops_dashboard_shell_for_route(
         }
     }
 
-    Html(render_tau_ops_dashboard_shell_with_context(
-        TauOpsDashboardShellContext {
-            auth_mode: resolve_tau_ops_dashboard_auth_mode(state.config.auth_mode),
-            active_route: route,
-            theme: controls.theme(),
-            sidebar_state: controls.sidebar_state(),
-            command_center,
-            chat,
-            harness,
-        },
-    ))
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        auth_mode: resolve_tau_ops_dashboard_auth_mode(state.config.auth_mode),
+        active_route: route,
+        theme: controls.theme(),
+        sidebar_state: controls.sidebar_state(),
+        command_center,
+        chat,
+        harness,
+    });
+    let html = if matches!(route, TauOpsDashboardRoute::Chat) {
+        upgrade_ops_chat_agent_canvas_html(html, agent_canvas_previews.as_slice())
+    } else {
+        html
+    };
+    Html(html)
 }
 
 fn harness_proposal_status_route_action(proposal_status: &str) -> (&'static str, &'static str) {
@@ -5129,6 +5270,112 @@ fn now_unix_ms() -> u64 {
         .unwrap_or_default()
 }
 
+pub(super) async fn handle_ops_dashboard_deploy_submit(
+    State(state): State<Arc<GatewayOpenResponsesServerState>>,
+    Form(form): Form<OpsDashboardDeployForm>,
+) -> Response {
+    let redirect_theme = form.resolved_theme();
+    let redirect_sidebar_state = form.resolved_sidebar_state();
+    let redirect_session_key = form.resolved_session_key();
+    let requested_agent_id = form.agent_id.trim().to_string();
+    if requested_agent_id.is_empty() {
+        state.record_ui_telemetry_event("deploy", "submit", "deploy_form_missing_agent_id");
+        let redirect_path = build_ops_deploy_redirect_path(
+            redirect_theme,
+            redirect_sidebar_state,
+            redirect_session_key.as_str(),
+            "missing",
+            "none",
+            "invalid_agent_id",
+        );
+        return Redirect::to(redirect_path.as_str()).into_response();
+    }
+
+    match deploy_gateway_agent(
+        &state,
+        GatewayDeployAgentInput {
+            agent_id: form.agent_id,
+            profile: form.profile,
+            model: form.model,
+        },
+    ) {
+        Ok(result) => {
+            state.record_ui_telemetry_event("deploy", "submit", "deploy_process_started");
+            let redirect_path = build_ops_deploy_redirect_path(
+                redirect_theme,
+                redirect_sidebar_state,
+                redirect_session_key.as_str(),
+                "deployed",
+                result.agent_id.as_str(),
+                "process_started",
+            );
+            Redirect::to(redirect_path.as_str()).into_response()
+        }
+        Err(error) => {
+            state.record_ui_telemetry_event("deploy", "submit", "deploy_process_start_failed");
+            let redirect_path = build_ops_deploy_redirect_path(
+                redirect_theme,
+                redirect_sidebar_state,
+                redirect_session_key.as_str(),
+                "failed",
+                requested_agent_id.as_str(),
+                error.code,
+            );
+            Redirect::to(redirect_path.as_str()).into_response()
+        }
+    }
+}
+
+pub(super) async fn handle_ops_dashboard_deploy_stop(
+    State(state): State<Arc<GatewayOpenResponsesServerState>>,
+    AxumPath(agent_id): AxumPath<String>,
+    Form(form): Form<OpsDashboardDeployStopForm>,
+) -> Response {
+    let redirect_theme = form.resolved_theme();
+    let redirect_sidebar_state = form.resolved_sidebar_state();
+    let redirect_session_key = form.resolved_session_key();
+    let requested_agent_id = agent_id.trim().to_string();
+    if requested_agent_id.is_empty() {
+        state.record_ui_telemetry_event("deploy", "stop", "deploy_stop_form_missing_agent_id");
+        let redirect_path = build_ops_deploy_redirect_path(
+            redirect_theme,
+            redirect_sidebar_state,
+            redirect_session_key.as_str(),
+            "missing",
+            "none",
+            "invalid_agent_id",
+        );
+        return Redirect::to(redirect_path.as_str()).into_response();
+    }
+
+    match stop_gateway_deploy_agent(&state, requested_agent_id.as_str(), "operator_stop_request") {
+        Ok(result) => {
+            state.record_ui_telemetry_event("deploy", "stop", "deploy_process_stopped");
+            let redirect_path = build_ops_deploy_redirect_path(
+                redirect_theme,
+                redirect_sidebar_state,
+                redirect_session_key.as_str(),
+                "stopped",
+                result.agent_id.as_str(),
+                result.process_stop_reason.as_str(),
+            );
+            Redirect::to(redirect_path.as_str()).into_response()
+        }
+        Err(error) => {
+            state.record_ui_telemetry_event("deploy", "stop", "deploy_process_stop_failed");
+            let redirect_path = build_ops_deploy_redirect_path(
+                redirect_theme,
+                redirect_sidebar_state,
+                redirect_session_key.as_str(),
+                "failed",
+                requested_agent_id.as_str(),
+                error.code,
+            );
+            Redirect::to(redirect_path.as_str()).into_response()
+        }
+    }
+}
+
 pub(super) async fn handle_ops_dashboard_control_action(
     State(state): State<Arc<GatewayOpenResponsesServerState>>,
     Form(form): Form<OpsDashboardControlActionForm>,
@@ -5372,79 +5619,43 @@ pub(super) async fn handle_ops_dashboard_chat_send(
         return Redirect::to(redirect_path.as_str()).into_response();
     }
 
-    let session_path = gateway_session_path(&state.config.state_dir, session_key.as_str());
-    let mut store = match SessionStore::load(&session_path) {
-        Ok(store) => store,
-        Err(error) => {
-            return OpenResponsesApiError::internal(format!(
-                "failed to load session '{}': {error}",
-                session_path.display()
-            ))
-            .into_response();
-        }
-    };
-    store.set_lock_policy(
-        state.config.session_lock_wait_ms,
-        state.config.session_lock_stale_ms,
-    );
-
-    let resolved_system_prompt = state.resolved_system_prompt();
-    if let Err(error) = store.ensure_initialized(&resolved_system_prompt) {
-        return OpenResponsesApiError::internal(format!(
-            "failed to initialize session '{}': {error}",
-            session_path.display()
-        ))
-        .into_response();
-    }
-
-    let parent_id = store.head_id();
-    let message = Message::user(content);
-    let new_head = match store.append_messages(parent_id, &[message]) {
-        Ok(head) => head,
-        Err(error) => {
-            return OpenResponsesApiError::internal(format!(
-                "failed to append session message '{}': {error}",
-                session_path.display()
-            ))
-            .into_response();
-        }
-    };
-
-    let assistant_output = complete_cortex_chat(&state, content.trim()).await;
-    let assistant_message = Message::assistant_text(assistant_output.output_text.clone());
-    let assistant_head = match store.append_messages(new_head, &[assistant_message]) {
-        Ok(head) => head,
-        Err(error) => {
-            return OpenResponsesApiError::internal(format!(
-                "failed to append assistant session message '{}': {error}",
-                session_path.display()
-            ))
-            .into_response();
-        }
-    };
+    let execution =
+        match execute_ops_chat_tool_turn(state.clone(), session_key.as_str(), content).await {
+            Ok(execution) => execution,
+            Err(error) => return error.into_response(),
+        };
 
     let _ = record_cortex_observer_event(
         &state.config.state_dir,
-        "cortex.chat.request",
+        "ops.chat.request",
         json!({
             "surface": "ops.chat",
             "session_key": session_key.as_str(),
-            "input_chars": content.trim().chars().count(),
-            "output_chars": assistant_output.output_text.chars().count(),
-            "reason_code": assistant_output.reason_code,
-            "fallback": assistant_output.fallback,
+            "input_chars": content.chars().count(),
+            "output_chars": execution.assistant_output.chars().count(),
+            "reason_code": execution.reason_code,
+            "fallback": false,
+            "tool_execution_count": execution.tool_executions.len(),
+            "tools_used": execution
+                .tool_executions
+                .iter()
+                .map(|tool| tool.tool_name.as_str())
+                .collect::<Vec<_>>(),
         }),
     );
     state.record_ui_telemetry_event("chat", "send", "chat_message_appended");
     state.record_ui_telemetry_event("chat", "send", "chat_assistant_message_appended");
+    if !execution.tool_executions.is_empty() {
+        state.record_ui_telemetry_event("chat", "send", "chat_tool_messages_appended");
+    }
     if write_ops_chat_turn_memory(
         &state,
         session_key.as_str(),
-        assistant_head,
-        content.trim(),
-        assistant_output.output_text.as_str(),
-        assistant_output.reason_code,
-        assistant_output.fallback,
+        execution.assistant_head,
+        content,
+        execution.assistant_output.as_str(),
+        execution.reason_code,
+        false,
     )
     .is_ok()
     {
@@ -5455,17 +5666,258 @@ pub(super) async fn handle_ops_dashboard_chat_send(
     record_cortex_session_append_event(
         &state.config.state_dir,
         session_key.as_str(),
-        assistant_head,
-        store.entries().len(),
+        execution.assistant_head,
+        execution.message_count,
     );
-    let latest_anchor = latest_ops_chat_message_anchor(&store, assistant_head);
     let redirect_path = build_ops_chat_redirect_path_with_anchor(
         form.resolved_theme(),
         form.resolved_sidebar_state(),
         session_key.as_str(),
-        latest_anchor.as_deref(),
+        execution.latest_anchor.as_deref(),
     );
     Redirect::to(redirect_path.as_str()).into_response()
+}
+
+struct OpsChatPendingToolExecution {
+    tool_name: String,
+    started_unix_ms: u64,
+}
+
+struct OpsChatToolTurnResult {
+    assistant_output: String,
+    assistant_head: Option<u64>,
+    latest_anchor: Option<String>,
+    message_count: usize,
+    reason_code: &'static str,
+    tool_executions: Vec<OpenResponsesObservedToolExecution>,
+}
+
+async fn execute_ops_chat_tool_turn(
+    state: Arc<GatewayOpenResponsesServerState>,
+    session_key: &str,
+    content: &str,
+) -> Result<OpsChatToolTurnResult, OpenResponsesApiError> {
+    if content.chars().count() > state.config.max_input_chars {
+        return Err(OpenResponsesApiError::payload_too_large(format!(
+            "ops chat message exceeds max {} characters",
+            state.config.max_input_chars
+        )));
+    }
+
+    let resolved_system_prompt = format!(
+        "{}\n\n## Ops dashboard chat\nUse registered tools when the operator asks you to create, edit, inspect, validate, run, or otherwise change local files or runtime state. Answer directly only for informational questions.",
+        state.resolved_system_prompt()
+    );
+    let mut agent = Agent::new(
+        state.config.client.clone(),
+        AgentConfig {
+            model: state.config.model.clone(),
+            model_input_cost_per_million: state.config.model_input_cost_per_million,
+            model_cached_input_cost_per_million: state.config.model_cached_input_cost_per_million,
+            model_output_cost_per_million: state.config.model_output_cost_per_million,
+            system_prompt: resolved_system_prompt.clone(),
+            max_turns: state.config.max_turns,
+            max_estimated_input_tokens: None,
+            max_estimated_total_tokens: None,
+            ..AgentConfig::default()
+        },
+    );
+    state.config.tool_registrar.register(&mut agent);
+
+    let pending_tools = Arc::new(Mutex::new(
+        HashMap::<String, OpsChatPendingToolExecution>::new(),
+    ));
+    let tool_executions = Arc::new(Mutex::new(Vec::<OpenResponsesObservedToolExecution>::new()));
+    agent.subscribe({
+        let pending_tools = pending_tools.clone();
+        let tool_executions = tool_executions.clone();
+        move |event| match event {
+            AgentEvent::ToolExecutionStart {
+                tool_call_id,
+                tool_name,
+                ..
+            } => {
+                if let Ok(mut guard) = pending_tools.lock() {
+                    guard.insert(
+                        tool_call_id.clone(),
+                        OpsChatPendingToolExecution {
+                            tool_name: tool_name.clone(),
+                            started_unix_ms: now_unix_ms(),
+                        },
+                    );
+                }
+            }
+            AgentEvent::ToolExecutionEnd {
+                tool_call_id,
+                tool_name,
+                result,
+            } => {
+                let finished_unix_ms = now_unix_ms();
+                let pending = pending_tools
+                    .lock()
+                    .ok()
+                    .and_then(|mut guard| guard.remove(tool_call_id.as_str()));
+                let started_unix_ms = pending
+                    .as_ref()
+                    .map(|entry| entry.started_unix_ms)
+                    .unwrap_or(finished_unix_ms);
+                let resolved_tool_name = pending
+                    .as_ref()
+                    .map(|entry| entry.tool_name.clone())
+                    .unwrap_or(tool_name.clone());
+                let output_text = result.as_text();
+                if let Ok(mut guard) = tool_executions.lock() {
+                    guard.push(OpenResponsesObservedToolExecution {
+                        tool_call_id: tool_call_id.clone(),
+                        tool_name: resolved_tool_name,
+                        output_summary: summarize_ops_chat_tool_text(output_text.as_str()),
+                        success: !result.is_error,
+                        latency_ms: finished_unix_ms.saturating_sub(started_unix_ms),
+                        timestamp_ms: finished_unix_ms,
+                    });
+                }
+            }
+            _ => {}
+        }
+    });
+
+    let session_path = gateway_session_path(&state.config.state_dir, session_key);
+    let mut session_runtime = Some(
+        initialize_gateway_session_runtime(
+            &session_path,
+            resolved_system_prompt.as_str(),
+            state.config.session_lock_wait_ms,
+            state.config.session_lock_stale_ms,
+            &mut agent,
+        )
+        .map_err(|error| {
+            OpenResponsesApiError::internal(format!(
+                "failed to initialize ops chat session runtime: {error}"
+            ))
+        })?,
+    );
+
+    let start_index = agent.messages().len();
+    let pre_prompt_cost = agent.cost_snapshot();
+    let tool_names = agent.registered_tool_names();
+    if ops_chat_prompt_requests_tool(content)
+        && tool_names
+            .iter()
+            .any(|tool_name| ops_chat_tool_can_act(tool_name.as_str()))
+    {
+        agent.set_next_tool_choice(Some(ToolChoice::Required));
+    }
+
+    let prompt_result = if state.config.turn_timeout_ms == 0 {
+        agent.prompt_with_stream(content, None).await
+    } else {
+        match tokio::time::timeout(
+            std::time::Duration::from_millis(state.config.turn_timeout_ms),
+            agent.prompt_with_stream(content, None),
+        )
+        .await
+        {
+            Ok(result) => result,
+            Err(_) => {
+                return Err(OpenResponsesApiError::timeout(format!(
+                    "ops chat turn exceeded {} ms",
+                    state.config.turn_timeout_ms
+                )));
+            }
+        }
+    };
+    prompt_result.map_err(|error| {
+        OpenResponsesApiError::gateway_failure(format!("ops chat tool runtime failed: {error}"))
+    })?;
+
+    let post_prompt_cost = agent.cost_snapshot();
+    persist_session_usage_delta(&mut session_runtime, &pre_prompt_cost, &post_prompt_cost)
+        .map_err(|error| {
+            OpenResponsesApiError::internal(format!(
+                "failed to persist ops chat usage summary: {error}"
+            ))
+        })?;
+
+    let new_messages = agent.messages()[start_index..].to_vec();
+    persist_messages(&mut session_runtime, &new_messages).map_err(|error| {
+        OpenResponsesApiError::internal(format!("failed to persist ops chat messages: {error}"))
+    })?;
+
+    let assistant_output = collect_assistant_reply(&new_messages);
+    let runtime = session_runtime.as_ref().ok_or_else(|| {
+        OpenResponsesApiError::internal("ops chat session runtime unexpectedly missing")
+    })?;
+    let assistant_head = runtime.active_head;
+    let latest_anchor = latest_ops_chat_message_anchor(&runtime.store, assistant_head);
+    let tool_executions = tool_executions
+        .lock()
+        .map_err(|_| OpenResponsesApiError::internal("ops chat tool trace lock is poisoned"))?
+        .clone();
+    let reason_code = if tool_executions.is_empty() {
+        "ops_chat_llm_completed"
+    } else {
+        "ops_chat_tools_completed"
+    };
+
+    Ok(OpsChatToolTurnResult {
+        assistant_output,
+        assistant_head,
+        latest_anchor,
+        message_count: runtime.store.entries().len(),
+        reason_code,
+        tool_executions,
+    })
+}
+
+fn ops_chat_prompt_requests_tool(content: &str) -> bool {
+    content
+        .split(|character: char| !character.is_ascii_alphanumeric())
+        .filter(|token| !token.is_empty())
+        .map(str::to_ascii_lowercase)
+        .any(|token| {
+            matches!(
+                token.as_str(),
+                "build"
+                    | "create"
+                    | "edit"
+                    | "fix"
+                    | "implement"
+                    | "make"
+                    | "modify"
+                    | "patch"
+                    | "run"
+                    | "save"
+                    | "test"
+                    | "update"
+                    | "validate"
+                    | "write"
+            )
+        })
+}
+
+fn ops_chat_tool_can_act(tool_name: &str) -> bool {
+    matches!(
+        tool_name,
+        "bash"
+            | "edit"
+            | "http"
+            | "jobs_create"
+            | "memory_write"
+            | "read"
+            | "write"
+            | "branch"
+            | "undo"
+            | "redo"
+    )
+}
+
+fn summarize_ops_chat_tool_text(raw: &str) -> String {
+    raw.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .take(240)
+        .collect()
 }
 
 fn write_ops_chat_turn_memory(

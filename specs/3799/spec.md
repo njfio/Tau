@@ -7,17 +7,24 @@ Milestone: Tau Agent Harness UI hardening
 ## Problem
 
 The `/ops/chat` route renders a functional-looking chat composer, but submitting
-the form only appends the operator message to session history. No assistant turn
-is produced, so the surface behaves like a note log while presenting itself as a
-chat interface.
+the form must be truthful to the operator's intent. It cannot stop at appending
+messages or returning advisory Cortex fallback text when the request asks Tau to
+create, edit, validate, or run work. Action-oriented sends need to execute the
+registered gateway tools and persist that evidence back into the transcript.
 
 ## Scope
 
 In scope:
 - Make `/ops/chat/send` append a real assistant response after the user message.
-- Reuse the existing Cortex chat completion/fallback path so local-dev works
-  even when provider credentials are unavailable.
-- Persist both user and assistant messages into the selected session lineage.
+- Route accepted sends through the tool-capable agent runtime with the existing
+  gateway tool registrar.
+- Persist user, tool, and assistant messages into the selected session lineage.
+- Record observer metadata that distinguishes direct assistant replies from
+  tool-backed turns.
+- Render a sandboxed agent canvas preview when the latest tool output points to
+  a local HTML artifact.
+- Expose Agent Canvas v2 diagnostics, controlled postMessage interactions, and
+  artifact history for HTML artifacts.
 - Verify the live browser route submits and displays both turns.
 
 Out of scope:
@@ -34,13 +41,27 @@ AC-2: Given provider completion succeeds, when `/ops/chat/send` renders the
 redirected `/ops/chat` page, then the transcript shows the assistant response
 from the configured LLM client.
 
-AC-3: Given provider completion fails in local-dev, when `/ops/chat/send` runs,
-then the transcript shows the deterministic Cortex fallback response instead of
-silently stopping after the user message.
+AC-3: Given an operator asks `/ops/chat/send` to create, edit, validate, or run
+work, when registered gateway tools are available, then the handler requires a
+tool-capable model turn, executes the tool call, and persists the tool result in
+the transcript before the assistant reply.
 
 AC-4: Given the live localhost route is tested in the in-app browser, when a
-message is submitted, then the transcript count increases by two turns and
-browser console errors are zero.
+tool-backed message is submitted, then the transcript shows the operator
+message, a tool result row, and the final assistant reply.
+
+AC-5: Given the latest tool result references a local `.html` artifact under the
+workspace, when `/ops/chat` renders, then the chat panel exposes an agent canvas
+surface and embeds the HTML artifact in a sandboxed preview frame.
+
+AC-6: Given one or more HTML artifacts have been produced by chat tools, when
+`/ops/chat` renders, then the Agent Canvas exposes artifact history, frame
+diagnostics, console/error counters, canvas pixel sample markers, and controlled
+click/type/probe commands routed through a sandbox-safe postMessage bridge.
+
+AC-7: Given a live gateway is running, when the ops chat canvas proof script is
+run, then it submits a tool-backed chat request, verifies the generated HTML
+artifact, and emits a deterministic JSON proof artifact.
 
 ## Conformance Cases
 
@@ -48,15 +69,33 @@ C-01 maps to AC-1 and AC-2: gateway integration test posts
 `/ops/chat/send` with a scripted LLM response and asserts user plus assistant
 rows are rendered and persisted.
 
-C-02 maps to AC-3: existing Cortex fallback behavior is reused by the ops chat
-handler so local-dev provider errors still produce an assistant row.
+C-02 maps to AC-3: gateway integration test posts an action-oriented chat
+message with a scripted `write` tool call and asserts the file is created, the
+tool row is rendered, and observer metadata reports tool execution.
 
 C-03 maps to AC-4: Browser Use live validation submits the ops chat form and
-asserts the transcript includes the user message and an assistant response.
+asserts the transcript includes the user message, rendered tool result, and
+assistant response, with the requested file present on disk.
+
+C-04 maps to AC-5: dashboard/gateway render tests seed an HTML tool artifact
+and assert the agent canvas markers plus sandboxed preview frame are present.
+
+C-05 maps to AC-6: dashboard/gateway render tests seed multiple HTML artifacts
+and assert artifact history, diagnostics, controlled interaction markers, and
+the injected frame bridge are present.
+
+C-06 maps to AC-7: proof-script tests fake the live gateway calls and assert the
+script validates `/ops/chat/send`, the rendered canvas route, and JSON proof
+output.
 
 ## Success Signals
 
 - `cargo test -p tau-gateway integration_spec_3799_c01_ops_chat_send_appends_assistant_reply`
+- `cargo test -p tau-gateway integration_spec_3799_c04_ops_chat_send_executes_registered_tools_for_action_requests`
+- `cargo test -p tau-gateway functional_spec_3799_c05_ops_chat_shell_embeds_latest_html_tool_artifact_preview`
+- `cargo test -p tau-dashboard-ui functional_spec_3799_c05_chat_route_renders_agent_canvas_preview_for_html_artifacts`
+- `scripts/dev/test-ops-chat-canvas-proof.sh`
+- `scripts/dev/ops-chat-canvas-proof.sh --base-url http://127.0.0.1:8797 --session ui-canvas-proof-live --artifact-path target/ops-chat-canvas-live.html`
 - `cargo test -p tau-gateway gateway_openresponses::tests::integration_spec_2830_c02_c03_ops_chat_send_appends_message_and_renders_transcript_row`
-- Browser Use confirms `/ops/chat` appends two turns and reports zero console
-  errors.
+- Browser Use confirms `/ops/chat` appends user, tool, and assistant rows and
+  creates the requested file on disk.

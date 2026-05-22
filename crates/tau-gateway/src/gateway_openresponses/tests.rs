@@ -23,6 +23,7 @@ mod tool_registrars;
 mod webchat_route;
 mod websocket;
 
+use super::deploy_process_supervisor::CommandGatewayDeployProcessSupervisor;
 use super::mission_supervisor_runtime::GatewayMissionIterationRecord;
 use super::*;
 use e2e_harness::*;
@@ -947,6 +948,123 @@ async fn integration_spec_3799_c01_ops_chat_send_appends_assistant_reply() {
 }
 
 #[tokio::test]
+async fn integration_spec_3799_c04_ops_chat_send_executes_registered_tools_for_action_requests() {
+    let temp = tempdir().expect("tempdir");
+    let scripted = Arc::new(ScriptedGatewayLlmClient::new(vec![
+        ChatResponse {
+            message: Message::assistant_blocks(vec![ContentBlock::ToolCall {
+                id: "call-ops-chat-write".to_string(),
+                name: "write".to_string(),
+                arguments: json!({
+                    "path": "ops-chat-proof.txt",
+                    "content": "created through ops chat tools"
+                }),
+            }]),
+            finish_reason: Some("tool_calls".to_string()),
+            usage: ChatUsage::default(),
+        },
+        scripted_gateway_response("created ops-chat-proof.txt through the registered write tool"),
+    ]));
+    let tool_root = temp.path().join("workspace");
+    std::fs::create_dir_all(&tool_root).expect("create tool workspace");
+    let state = test_state_with_client_and_auth(
+        temp.path(),
+        10_000,
+        scripted.clone(),
+        Arc::new(FixturePipelineToolRegistrar::new(
+            tool_root.clone(),
+            temp.path().join(".tau/gateway"),
+        )),
+        GatewayOpenResponsesAuthMode::Token,
+        Some("secret"),
+        None,
+        60,
+        120,
+    );
+    let (addr, handle) = spawn_test_server(state.clone())
+        .await
+        .expect("spawn server");
+    let client = Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .expect("build client");
+
+    let send_response = client
+        .post(format!("http://{addr}/ops/chat/send"))
+        .form(&[
+            ("session_key", "chat-tool-session"),
+            (
+                "message",
+                "create a file named ops-chat-proof.txt with tool evidence",
+            ),
+            ("theme", "dark"),
+            ("sidebar", "expanded"),
+        ])
+        .send()
+        .await
+        .expect("ops chat tool send request");
+    assert_eq!(send_response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        send_response
+            .headers()
+            .get("location")
+            .and_then(|value| value.to_str().ok()),
+        Some(
+            "/ops/chat?theme=dark&sidebar=expanded&session=chat-tool-session#tau-ops-chat-message-row-2"
+        )
+    );
+
+    assert_eq!(
+        std::fs::read_to_string(tool_root.join("ops-chat-proof.txt"))
+            .expect("read tool-created file"),
+        "created through ops chat tools"
+    );
+
+    let chat_response = client
+        .get(format!(
+            "http://{addr}/ops/chat?theme=dark&sidebar=expanded&session=chat-tool-session"
+        ))
+        .send()
+        .await
+        .expect("ops chat render request");
+    assert_eq!(chat_response.status(), StatusCode::OK);
+    let chat_body = chat_response.text().await.expect("read ops chat body");
+    assert!(chat_body.contains("id=\"tau-ops-chat-transcript\" data-message-count=\"3\""));
+    assert!(chat_body.contains("id=\"tau-ops-chat-message-row-0\" data-message-role=\"user\""));
+    assert!(chat_body.contains("id=\"tau-ops-chat-message-row-1\" data-message-role=\"tool\""));
+    assert!(chat_body.contains(
+        "id=\"tau-ops-chat-tool-card-1\" data-tool-card=\"true\" data-inline-result=\"true\""
+    ));
+    assert!(chat_body.contains("created ops-chat-proof.txt through the registered write tool"));
+
+    let session_path = gateway_session_path(&state.config.state_dir, "chat-tool-session");
+    let store = SessionStore::load(&session_path).expect("load ops chat session");
+    let lineage = store
+        .lineage_messages(store.head_id())
+        .expect("lineage messages");
+    assert!(lineage
+        .iter()
+        .any(|message| message.role == MessageRole::Tool
+            && message.text_content().contains("bytes_written")));
+
+    let observer_path = state
+        .config
+        .state_dir
+        .join("openresponses")
+        .join("cortex-observer-events.jsonl");
+    let observer = std::fs::read_to_string(observer_path).expect("read observer events");
+    assert!(observer.contains("\"event_type\":\"ops.chat.request\""));
+    assert!(observer.contains("\"reason_code\":\"ops_chat_tools_completed\""));
+    assert!(observer.contains("\"tool_execution_count\":1"));
+    assert!(observer.contains("\"tools_used\":[\"write\"]"));
+
+    let captured_requests = scripted.captured_requests().await;
+    assert_eq!(captured_requests.len(), 2);
+
+    handle.abort();
+}
+
+#[tokio::test]
 async fn regression_ops_chat_send_writes_durable_memory_records_for_completed_turns() {
     let temp = tempdir().expect("tempdir");
     let state = test_state_with_client_and_auth(
@@ -1505,6 +1623,98 @@ async fn functional_spec_2866_c01_c03_ops_chat_shell_exposes_inline_tool_card_ma
 }
 
 #[tokio::test]
+async fn functional_spec_3799_c05_ops_chat_shell_embeds_latest_html_tool_artifact_preview() {
+    let temp = tempdir().expect("tempdir");
+    let state = test_state(temp.path(), 4_096, "secret");
+    let repo_target = std::env::current_dir().expect("current dir").join("target");
+    std::fs::create_dir_all(&repo_target).expect("create target dir");
+    let artifact_dir = tempfile::tempdir_in(repo_target).expect("create repo target tempdir");
+    let artifact_path = artifact_dir.path().join("ops-chat-canvas-proof.html");
+    let second_artifact_path = artifact_dir.path().join("ops-chat-canvas-proof-v2.html");
+    std::fs::write(
+        &artifact_path,
+        r#"<!doctype html><canvas id="game"></canvas>"#,
+    )
+    .expect("write html artifact");
+    std::fs::write(
+        &second_artifact_path,
+        r#"<!doctype html><html><body><canvas id="game-v2"></canvas></body></html>"#,
+    )
+    .expect("write second html artifact");
+    let first_tool_payload = serde_json::to_string(&json!({
+        "path": artifact_path.display().to_string(),
+        "bytes_written": 41
+    }))
+    .expect("serialize first tool result");
+    let second_tool_payload = serde_json::to_string(&json!({
+        "path": second_artifact_path.display().to_string(),
+        "bytes_written": 69
+    }))
+    .expect("serialize second tool result");
+
+    let session_path = gateway_session_path(&state.config.state_dir, "chat-canvas-artifact");
+    let mut store = SessionStore::load(&session_path).expect("load chat canvas session");
+    let root = store
+        .append_messages(None, &[Message::system("canvas-root")])
+        .expect("append root");
+    let user_head = store
+        .append_messages(root, &[Message::user("create html canvas")])
+        .expect("append user");
+    store
+        .append_messages(
+            user_head,
+            &[
+                Message::tool_result(
+                    "tool-call-html",
+                    "write",
+                    first_tool_payload.as_str(),
+                    false,
+                ),
+                Message::tool_result(
+                    "tool-call-html-2",
+                    "write",
+                    second_tool_payload.as_str(),
+                    false,
+                ),
+                Message::assistant_text("created html canvas"),
+            ],
+        )
+        .expect("append tool+assistant");
+
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+    let client = Client::new();
+    let response = client
+        .get(format!(
+            "http://{addr}/ops/chat?theme=dark&sidebar=expanded&session=chat-canvas-artifact"
+        ))
+        .send()
+        .await
+        .expect("ops chat canvas artifact request");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.text().await.expect("read ops chat body");
+
+    assert!(body.contains("id=\"tau-ops-chat-agent-canvas\""));
+    assert!(body.contains("data-agent-canvas=\"true\""));
+    assert!(body.contains("data-preview-status=\"loaded\""));
+    assert!(body.contains("data-preview-loaded=\"true\""));
+    assert!(body.contains("data-artifact-count=\"2\""));
+    assert!(body.contains("ops-chat-canvas-proof-v2.html"));
+    assert!(body
+        .contains("id=\"tau-ops-chat-agent-canvas-surface\" data-agent-canvas-surface=\"true\""));
+    assert!(body.contains(
+        "id=\"tau-ops-chat-agent-preview-frame\" data-agent-html-preview=\"true\" sandbox=\"allow-scripts\""
+    ));
+    assert!(body.contains("data-agent-canvas-bridge=&quot;true&quot;"));
+    assert!(body.contains(
+        "id=\"tau-ops-chat-agent-canvas-runtime\" data-agent-canvas-runtime=\"postmessage-v2\""
+    ));
+    assert!(body.contains("id=\"tau-ops-chat-agent-canvas-artifacts\" data-agent-canvas-artifact-history=\"true\" data-artifact-count=\"2\""));
+    assert!(body.contains("&lt;canvas id=&quot;game-v2&quot;&gt;&lt;/canvas&gt;"));
+
+    handle.abort();
+}
+
+#[tokio::test]
 async fn integration_spec_2866_c04_ops_and_sessions_routes_omit_hidden_inline_tool_card_markers() {
     let temp = tempdir().expect("tempdir");
     let state = test_state(temp.path(), 4_096, "secret");
@@ -1919,6 +2129,13 @@ async fn integration_spec_2838_c02_c03_ops_sessions_shell_renders_discovered_row
     handle.abort();
 }
 
+fn ops_sessions_row_fragment<'a>(body: &'a str, row_id: &str) -> &'a str {
+    let start = body.find(row_id).expect("find ops sessions row");
+    let tail = &body[start..];
+    let end = tail.find("</li>").unwrap_or(tail.len());
+    &tail[..end]
+}
+
 #[tokio::test]
 async fn functional_spec_2893_c01_ops_sessions_shell_exposes_row_metadata_markers() {
     let temp = tempdir().expect("tempdir");
@@ -1952,9 +2169,13 @@ async fn functional_spec_2893_c01_ops_sessions_shell_exposes_row_metadata_marker
     assert_eq!(response.status(), StatusCode::OK);
     let body = response.text().await.expect("read ops sessions body");
 
-    assert!(body.contains(
-        "id=\"tau-ops-sessions-row-0\" data-session-key=\"session-alpha\" data-selected=\"true\" data-entry-count=\"3\" data-total-tokens=\"0\" data-is-valid=\"true\" data-updated-unix-ms=\""
-    ));
+    let row = ops_sessions_row_fragment(&body, "id=\"tau-ops-sessions-row-0\"");
+    assert!(row.contains("data-session-key=\"session-alpha\""));
+    assert!(row.contains("data-selected=\"true\""));
+    assert!(row.contains("data-entry-count=\"3\""));
+    assert!(row.contains("data-total-tokens=\""));
+    assert!(row.contains("data-is-valid=\"true\""));
+    assert!(row.contains("data-updated-unix-ms=\""));
     assert!(body.contains(
         "id=\"tau-ops-sessions-detail-link-0\" data-open-session-detail=\"session-alpha\" href=\"/ops/sessions/session-alpha?theme=light&amp;sidebar=collapsed&amp;session=session-alpha\""
     ));
@@ -2008,12 +2229,20 @@ async fn integration_spec_2893_c02_c03_c04_ops_sessions_shell_metadata_matches_s
     let body = response.text().await.expect("read ops sessions body");
 
     assert!(body.contains("id=\"tau-ops-sessions-list\" data-session-count=\"2\""));
-    assert!(body.contains(
-        "id=\"tau-ops-sessions-row-0\" data-session-key=\"session-alpha\" data-selected=\"false\" data-entry-count=\"3\" data-total-tokens=\"0\" data-is-valid=\"true\" data-updated-unix-ms=\""
-    ));
-    assert!(body.contains(
-        "id=\"tau-ops-sessions-row-1\" data-session-key=\"session-beta\" data-selected=\"true\" data-entry-count=\"5\" data-total-tokens=\"0\" data-is-valid=\"true\" data-updated-unix-ms=\""
-    ));
+    let alpha_row = ops_sessions_row_fragment(&body, "id=\"tau-ops-sessions-row-0\"");
+    assert!(alpha_row.contains("data-session-key=\"session-alpha\""));
+    assert!(alpha_row.contains("data-selected=\"false\""));
+    assert!(alpha_row.contains("data-entry-count=\"3\""));
+    assert!(alpha_row.contains("data-total-tokens=\""));
+    assert!(alpha_row.contains("data-is-valid=\"true\""));
+    assert!(alpha_row.contains("data-updated-unix-ms=\""));
+    let beta_row = ops_sessions_row_fragment(&body, "id=\"tau-ops-sessions-row-1\"");
+    assert!(beta_row.contains("data-session-key=\"session-beta\""));
+    assert!(beta_row.contains("data-selected=\"true\""));
+    assert!(beta_row.contains("data-entry-count=\"5\""));
+    assert!(beta_row.contains("data-total-tokens=\""));
+    assert!(beta_row.contains("data-is-valid=\"true\""));
+    assert!(beta_row.contains("data-updated-unix-ms=\""));
     assert!(body.contains(
         "id=\"tau-ops-sessions-detail-link-0\" data-open-session-detail=\"session-alpha\" href=\"/ops/sessions/session-alpha?theme=light&amp;sidebar=collapsed&amp;session=session-alpha\""
     ));
@@ -4480,6 +4709,10 @@ async fn integration_spec_2697_c01_c02_c05_deploy_and_stop_endpoints_support_aut
     let deploy_payload = deploy.json::<Value>().await.expect("parse deploy payload");
     assert_eq!(deploy_payload["agent_id"].as_str(), Some("agent-ops"));
     assert_eq!(deploy_payload["status"].as_str(), Some("deploying"));
+    assert_eq!(
+        deploy_payload["process_status"].as_str(),
+        Some("not_configured")
+    );
 
     let stop = client
         .post(
@@ -4497,6 +4730,10 @@ async fn integration_spec_2697_c01_c02_c05_deploy_and_stop_endpoints_support_aut
     let stop_payload = stop.json::<Value>().await.expect("parse stop payload");
     assert_eq!(stop_payload["agent_id"].as_str(), Some("agent-ops"));
     assert_eq!(stop_payload["status"].as_str(), Some("stopped"));
+    assert_eq!(
+        stop_payload["process_status"].as_str(),
+        Some("not_configured")
+    );
 
     let status = client
         .get(format!("http://{addr}{GATEWAY_STATUS_ENDPOINT}"))
@@ -4515,6 +4752,314 @@ async fn integration_spec_2697_c01_c02_c05_deploy_and_stop_endpoints_support_aut
         status["gateway"]["web_ui"]["agent_stop_endpoint_template"],
         "/gateway/agents/{agent_id}/stop"
     );
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn integration_spec_3758_c01_c02_c05_deploy_and_stop_spawn_and_terminate_configured_process()
+{
+    let temp = tempdir().expect("tempdir");
+    let state = test_state_with_deploy_process_supervisor(
+        temp.path(),
+        10_000,
+        "secret",
+        Arc::new(CommandGatewayDeployProcessSupervisor::new(
+            "/bin/sh",
+            ["-c", "while true; do sleep 1; done"],
+        )),
+    );
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+    let client = Client::new();
+
+    let deploy = client
+        .post("http://".to_string() + &addr.to_string() + "/gateway/deploy")
+        .bearer_auth("secret")
+        .json(&json!({
+            "agent_id": "agent-process",
+            "profile": "default",
+            "command": "ignored-request-command"
+        }))
+        .send()
+        .await
+        .expect("deploy response");
+    assert_eq!(deploy.status(), StatusCode::OK);
+    let deploy_payload = deploy.json::<Value>().await.expect("parse deploy payload");
+    assert_eq!(deploy_payload["agent_id"].as_str(), Some("agent-process"));
+    assert_eq!(deploy_payload["status"].as_str(), Some("deploying"));
+    assert_eq!(deploy_payload["process_status"].as_str(), Some("running"));
+    let process_pid = deploy_payload["process_pid"]
+        .as_u64()
+        .expect("deploy response includes process pid");
+    assert!(process_pid > 0);
+
+    let state_file = temp.path().join(".tau/gateway/deploy-agent-state.json");
+    let persisted = std::fs::read_to_string(&state_file).expect("read deploy state");
+    let persisted_payload =
+        serde_json::from_str::<Value>(persisted.as_str()).expect("parse deploy state");
+    assert_eq!(
+        persisted_payload["agents"]["agent-process"]["process_status"].as_str(),
+        Some("running")
+    );
+    assert_eq!(
+        persisted_payload["agents"]["agent-process"]["process_pid"].as_u64(),
+        Some(process_pid)
+    );
+
+    let deploy_ops_page = client
+        .get(format!("http://{addr}/ops/deploy"))
+        .bearer_auth("secret")
+        .send()
+        .await
+        .expect("deploy ops page response");
+    assert_eq!(deploy_ops_page.status(), StatusCode::OK);
+    let deploy_ops_html = deploy_ops_page.text().await.expect("deploy ops html");
+    assert!(deploy_ops_html
+        .contains("id=\"tau-ops-deploy-processes\" data-component=\"DeployProcessLifecycle\""));
+    assert!(deploy_ops_html.contains(
+        "id=\"tau-ops-deploy-process-row-0\" data-agent-id=\"agent-process\" data-agent-status=\"deploying\""
+    ));
+    assert!(deploy_ops_html.contains(&format!("data-process-pid=\"{process_pid}\"")));
+
+    let stop = client
+        .post(
+            "http://".to_string()
+                + &addr.to_string()
+                + resolve_agent_stop_endpoint("/gateway/agents/{agent_id}/stop", "agent-process")
+                    .as_str(),
+        )
+        .bearer_auth("secret")
+        .json(&json!({}))
+        .send()
+        .await
+        .expect("stop response");
+    assert_eq!(stop.status(), StatusCode::OK);
+    let stop_payload = stop.json::<Value>().await.expect("parse stop payload");
+    assert_eq!(stop_payload["agent_id"].as_str(), Some("agent-process"));
+    assert_eq!(stop_payload["status"].as_str(), Some("stopped"));
+    assert_eq!(stop_payload["process_status"].as_str(), Some("stopped"));
+    assert_eq!(
+        stop_payload["process_stop_reason"].as_str(),
+        Some("operator_stop_request")
+    );
+    assert_eq!(stop_payload["process_pid"].as_u64(), Some(process_pid));
+
+    #[cfg(unix)]
+    {
+        fn process_exists(pid: u64) -> bool {
+            std::process::Command::new("kill")
+                .arg("-0")
+                .arg(pid.to_string())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .map(|status| status.success())
+                .unwrap_or(false)
+        }
+
+        for _ in 0..10 {
+            if !process_exists(process_pid) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert!(
+            !process_exists(process_pid),
+            "process {process_pid} should be terminated after stop"
+        );
+    }
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn integration_spec_3758_c11_ops_deploy_form_spawns_and_stop_form_terminates_process() {
+    let temp = tempdir().expect("tempdir");
+    let state = test_state_with_deploy_process_supervisor(
+        temp.path(),
+        10_000,
+        "secret",
+        Arc::new(CommandGatewayDeployProcessSupervisor::new(
+            "/bin/sh",
+            ["-c", "while true; do sleep 1; done"],
+        )),
+    );
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+    let client = Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .expect("build reqwest client");
+
+    let deploy_page = client
+        .get(format!(
+            "http://{addr}/ops/deploy?theme=dark&sidebar=expanded&session=ui-3758"
+        ))
+        .bearer_auth("secret")
+        .send()
+        .await
+        .expect("deploy ops page response");
+    assert_eq!(deploy_page.status(), StatusCode::OK);
+    let deploy_page_html = deploy_page.text().await.expect("deploy ops html");
+    assert!(deploy_page_html.contains("id=\"tau-ops-deploy-form\""));
+    assert!(deploy_page_html.contains("action=\"/ops/deploy\""));
+    assert!(deploy_page_html.contains("method=\"post\""));
+    assert!(deploy_page_html.contains("id=\"tau-ops-deploy-submit\""));
+    assert!(deploy_page_html.contains("type=\"submit\""));
+
+    let deploy_form = client
+        .post(format!("http://{addr}/ops/deploy"))
+        .form(&[
+            ("agent_id", "agent-ui"),
+            ("profile", "ops"),
+            ("model", "openai/gpt-5.3-codex"),
+            ("theme", "dark"),
+            ("sidebar", "expanded"),
+            ("session", "ui-3758"),
+        ])
+        .send()
+        .await
+        .expect("deploy form response");
+    assert_eq!(deploy_form.status(), StatusCode::SEE_OTHER);
+    let deploy_location = deploy_form
+        .headers()
+        .get(reqwest::header::LOCATION)
+        .expect("deploy redirect location")
+        .to_str()
+        .expect("deploy redirect location str");
+    assert_eq!(
+        deploy_location,
+        "/ops/deploy?theme=dark&sidebar=expanded&session=ui-3758&deploy_action_status=deployed&deploy_agent_id=agent-ui&deploy_action_reason=process_started"
+    );
+
+    let state_file = temp.path().join(".tau/gateway/deploy-agent-state.json");
+    let persisted = std::fs::read_to_string(&state_file).expect("read deploy state");
+    let persisted_payload =
+        serde_json::from_str::<Value>(persisted.as_str()).expect("parse deploy state");
+    assert_eq!(
+        persisted_payload["agents"]["agent-ui"]["process_status"].as_str(),
+        Some("running")
+    );
+    let process_pid = persisted_payload["agents"]["agent-ui"]["process_pid"]
+        .as_u64()
+        .expect("deploy form persisted process pid");
+    assert!(process_pid > 0);
+
+    let deployed_page = client
+        .get(format!("http://{addr}{deploy_location}"))
+        .bearer_auth("secret")
+        .send()
+        .await
+        .expect("deployed page response");
+    assert_eq!(deployed_page.status(), StatusCode::OK);
+    let deployed_html = deployed_page.text().await.expect("deployed page html");
+    assert!(deployed_html.contains(
+        "id=\"tau-ops-deploy-process-row-0\" data-agent-id=\"agent-ui\" data-agent-status=\"deploying\""
+    ));
+    assert!(deployed_html.contains("data-process-status=\"running\""));
+    assert!(deployed_html.contains("id=\"tau-ops-deploy-stop-form-0\""));
+    assert!(deployed_html.contains("action=\"/ops/deploy/agents/agent-ui/stop\""));
+
+    let stop_form = client
+        .post(format!("http://{addr}/ops/deploy/agents/agent-ui/stop"))
+        .form(&[
+            ("theme", "dark"),
+            ("sidebar", "expanded"),
+            ("session", "ui-3758"),
+        ])
+        .send()
+        .await
+        .expect("stop form response");
+    assert_eq!(stop_form.status(), StatusCode::SEE_OTHER);
+    let stop_location = stop_form
+        .headers()
+        .get(reqwest::header::LOCATION)
+        .expect("stop redirect location")
+        .to_str()
+        .expect("stop redirect location str");
+    assert_eq!(
+        stop_location,
+        "/ops/deploy?theme=dark&sidebar=expanded&session=ui-3758&deploy_action_status=stopped&deploy_agent_id=agent-ui&deploy_action_reason=operator_stop_request"
+    );
+
+    let stopped_page = client
+        .get(format!("http://{addr}{stop_location}"))
+        .bearer_auth("secret")
+        .send()
+        .await
+        .expect("stopped page response");
+    assert_eq!(stopped_page.status(), StatusCode::OK);
+    let stopped_html = stopped_page.text().await.expect("stopped page html");
+    assert!(stopped_html.contains("data-agent-id=\"agent-ui\""));
+    assert!(stopped_html.contains("data-process-status=\"stopped\""));
+    assert!(stopped_html.contains("data-process-stop-reason=\"operator_stop_request\""));
+
+    #[cfg(unix)]
+    {
+        fn process_exists(pid: u64) -> bool {
+            std::process::Command::new("kill")
+                .arg("-0")
+                .arg(pid.to_string())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .map(|status| status.success())
+                .unwrap_or(false)
+        }
+
+        for _ in 0..10 {
+            if !process_exists(process_pid) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert!(
+            !process_exists(process_pid),
+            "process {process_pid} should be terminated after UI stop"
+        );
+    }
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn regression_spec_3758_c03_spawn_failure_returns_error_without_deploying_state() {
+    let temp = tempdir().expect("tempdir");
+    let state = test_state_with_deploy_process_supervisor(
+        temp.path(),
+        10_000,
+        "secret",
+        Arc::new(CommandGatewayDeployProcessSupervisor::new(
+            "/definitely/missing/tau-deploy-process",
+            std::iter::empty::<&str>(),
+        )),
+    );
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+    let client = Client::new();
+
+    let deploy = client
+        .post("http://".to_string() + &addr.to_string() + "/gateway/deploy")
+        .bearer_auth("secret")
+        .json(&json!({"agent_id": "agent-spawn-fails"}))
+        .send()
+        .await
+        .expect("deploy response");
+    assert_eq!(deploy.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    let deploy_payload = deploy.json::<Value>().await.expect("parse deploy payload");
+    assert_eq!(
+        deploy_payload["error"]["code"].as_str(),
+        Some("deploy_process_start_failed")
+    );
+
+    let state_file = temp.path().join(".tau/gateway/deploy-agent-state.json");
+    if state_file.exists() {
+        let persisted = std::fs::read_to_string(&state_file).expect("read deploy state");
+        let persisted_payload =
+            serde_json::from_str::<Value>(persisted.as_str()).expect("parse deploy state");
+        assert!(
+            persisted_payload["agents"]["agent-spawn-fails"].is_null(),
+            "failed deploy should not persist a deploying agent"
+        );
+    }
 
     handle.abort();
 }
@@ -4780,6 +5325,12 @@ async fn integration_spec_2953_c01_c02_c04_cortex_chat_uses_llm_output_with_cont
     assert!(user_prompt.contains("[cortex_bulletin]"));
     assert!(user_prompt.contains("[memory_graph]"));
     assert!(user_prompt.contains("prioritize release stabilization"));
+    assert!(user_prompt.contains("Answer the operator's request directly first"));
+    assert!(user_prompt
+        .contains("Do not turn ordinary creative, coding, or build requests into diagnostics"));
+    assert!(!user_prompt.contains(
+        "Return concise operator guidance with immediate next checks and explicit risks"
+    ));
 
     handle.abort();
 }

@@ -7,3 +7,12 @@
 - [x] T5: Restart live harness and validate `/ops/chat` with Browser Use.
 - [x] T6: Run touched crate format, tests, and clippy.
 - [x] T7: Commit and push.
+- [x] T8: Replace advisory Cortex send path with tool-capable agent execution.
+- [x] T9: Add regression coverage proving action requests execute registered tools and render tool rows.
+- [x] T10: Re-run live UI proof that `/ops/chat` can create a file through tools.
+- [x] T11: Add chat agent canvas and sandboxed HTML artifact preview coverage.
+- [x] T12: Add Agent Canvas v2 artifact history, diagnostics, and controlled interaction markers.
+- [x] T13: Extract gateway chat-canvas artifact parsing and frame instrumentation into a focused module.
+- [x] T14: Add repeatable ops-chat canvas product-proof automation.
+- [x] T15: Refresh stale roadmap action items against current docs and ADRs.
+- [x] T16: Run focused tests, touched crate checks, live proof, and full workspace gate.

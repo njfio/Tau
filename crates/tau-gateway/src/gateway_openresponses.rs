@@ -53,6 +53,7 @@ mod cortex_runtime;
 mod dashboard_runtime;
 mod dashboard_shell_page;
 mod dashboard_status;
+mod deploy_process_supervisor;
 mod deploy_runtime;
 mod endpoints;
 mod entry_handlers;
@@ -69,6 +70,7 @@ mod openai_compat;
 mod openai_compat_runtime;
 mod openresponses_entry_handler;
 mod openresponses_execution_handler;
+mod ops_chat_canvas;
 mod ops_dashboard_shell;
 mod ops_harness_memory_graph;
 mod ops_harness_proposals;
@@ -110,12 +112,12 @@ use compat_state_runtime::{
 use config_runtime::{handle_gateway_config_get, handle_gateway_config_patch};
 use cortex_bulletin_runtime::start_cortex_bulletin_runtime;
 use cortex_runtime::{
-    complete_cortex_chat, handle_cortex_chat, handle_cortex_status,
-    record_cortex_external_followup_event, record_cortex_external_progress_event,
-    record_cortex_external_session_closed, record_cortex_external_session_opened,
-    record_cortex_memory_entry_delete_event, record_cortex_memory_entry_write_event,
-    record_cortex_memory_write_event, record_cortex_observer_event,
-    record_cortex_session_append_event, record_cortex_session_reset_event,
+    handle_cortex_chat, handle_cortex_status, record_cortex_external_followup_event,
+    record_cortex_external_progress_event, record_cortex_external_session_closed,
+    record_cortex_external_session_opened, record_cortex_memory_entry_delete_event,
+    record_cortex_memory_entry_write_event, record_cortex_memory_write_event,
+    record_cortex_observer_event, record_cortex_session_append_event,
+    record_cortex_session_reset_event,
 };
 use dashboard_runtime::{
     authorize_dashboard_request, handle_dashboard_action, handle_dashboard_alerts,
@@ -128,7 +130,10 @@ use dashboard_status::{
     apply_gateway_dashboard_action, collect_gateway_dashboard_snapshot,
     collect_tau_ops_dashboard_command_center_snapshot, GatewayDashboardActionRequest,
 };
-use deploy_runtime::{handle_gateway_agent_stop, handle_gateway_deploy};
+use deploy_runtime::{
+    collect_tau_ops_dashboard_deploy_snapshot, deploy_gateway_agent, handle_gateway_agent_stop,
+    handle_gateway_deploy, stop_gateway_deploy_agent, GatewayDeployAgentInput,
+};
 use endpoints::*;
 use entry_handlers::{
     handle_dashboard_shell_page, handle_gateway_auth_bootstrap, handle_webchat_page,
@@ -179,6 +184,7 @@ use openresponses_execution_handler::execute_openresponses_request;
 use ops_dashboard_shell::{
     handle_ops_dashboard_channel_action, handle_ops_dashboard_chat_new,
     handle_ops_dashboard_chat_send, handle_ops_dashboard_control_action,
+    handle_ops_dashboard_deploy_stop, handle_ops_dashboard_deploy_submit,
     handle_ops_dashboard_harness_artifact, handle_ops_dashboard_harness_artifact_view,
     handle_ops_dashboard_harness_create_mission_draft,
     handle_ops_dashboard_harness_proposal_action, handle_ops_dashboard_harness_proposal_diff,

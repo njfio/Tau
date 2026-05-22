@@ -485,6 +485,47 @@ pub struct TauOpsDashboardJobRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Public struct `TauOpsDashboardDeployAgentRow` in `tau-dashboard-ui`.
+pub struct TauOpsDashboardDeployAgentRow {
+    pub agent_id: String,
+    pub status: String,
+    pub profile: String,
+    pub model: String,
+    pub updated_unix_ms: u64,
+    pub process_id: String,
+    pub process_status: String,
+    pub process_pid: String,
+    pub process_started_unix_ms: u64,
+    pub process_stopped_unix_ms: u64,
+    pub process_stop_reason: String,
+    pub process_exit_status: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// Public struct `TauOpsDashboardDeploySnapshot` in `tau-dashboard-ui`.
+pub struct TauOpsDashboardDeploySnapshot {
+    pub state_source: String,
+    pub state_status: String,
+    pub agent_count: usize,
+    pub running_count: usize,
+    pub stopped_count: usize,
+    pub rows: Vec<TauOpsDashboardDeployAgentRow>,
+}
+
+impl Default for TauOpsDashboardDeploySnapshot {
+    fn default() -> Self {
+        Self {
+            state_source: "unloaded".to_string(),
+            state_status: "idle".to_string(),
+            agent_count: 0,
+            running_count: 0,
+            stopped_count: 0,
+            rows: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 /// Public struct `TauOpsDashboardChatSnapshot` in `tau-dashboard-ui`.
 pub struct TauOpsDashboardChatSnapshot {
     pub active_session_key: String,
@@ -499,6 +540,10 @@ pub struct TauOpsDashboardChatSnapshot {
     pub new_session_status: String,
     pub session_options: Vec<TauOpsDashboardChatSessionOptionRow>,
     pub message_rows: Vec<TauOpsDashboardChatMessageRow>,
+    pub agent_canvas_status: String,
+    pub agent_canvas_artifact_path: String,
+    pub agent_canvas_srcdoc: String,
+    pub agent_canvas_srcdoc_bytes: usize,
     pub session_detail_visible: bool,
     pub session_detail_route: String,
     pub session_detail_validation_entries: usize,
@@ -597,6 +642,10 @@ impl Default for TauOpsDashboardChatSnapshot {
                 updated_unix_ms: 0,
             }],
             message_rows: vec![],
+            agent_canvas_status: "empty".to_string(),
+            agent_canvas_artifact_path: String::new(),
+            agent_canvas_srcdoc: String::new(),
+            agent_canvas_srcdoc_bytes: 0,
             session_detail_visible: false,
             session_detail_route: "/ops/sessions/default".to_string(),
             session_detail_validation_entries: 0,
@@ -714,6 +763,7 @@ pub struct TauOpsDashboardCommandCenterSnapshot {
     pub config_fallback_model_refs: Vec<String>,
     pub config_system_prompt_chars: usize,
     pub config_max_turns: usize,
+    pub deploy: TauOpsDashboardDeploySnapshot,
 }
 
 impl Default for TauOpsDashboardCommandCenterSnapshot {
@@ -765,6 +815,7 @@ impl Default for TauOpsDashboardCommandCenterSnapshot {
             config_fallback_model_refs: Vec::new(),
             config_system_prompt_chars: 0,
             config_max_turns: 0,
+            deploy: TauOpsDashboardDeploySnapshot::default(),
         }
     }
 }
@@ -2235,6 +2286,24 @@ fn derive_memory_graph_edge_style_contracts(relation_type: &str) -> (&'static st
     }
 }
 
+fn encode_ops_path_segment(raw: &str) -> String {
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+    let mut encoded = String::new();
+    for byte in raw.as_bytes().iter().copied() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                encoded.push(byte as char)
+            }
+            _ => {
+                encoded.push('%');
+                encoded.push(HEX[(byte >> 4) as usize] as char);
+                encoded.push(HEX[(byte & 0x0f) as usize] as char);
+            }
+        }
+    }
+    encoded
+}
+
 /// Public `fn` `render_tau_ops_dashboard_shell` in `tau-dashboard-ui`.
 pub fn render_tau_ops_dashboard_shell() -> String {
     render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext::default())
@@ -2248,6 +2317,135 @@ pub fn render_tau_ops_dashboard_shell_for_route(route: &str) -> String {
         ..TauOpsDashboardShellContext::default()
     };
     render_tau_ops_dashboard_shell_with_context(context)
+}
+
+fn render_tau_ops_deploy_process_lifecycle(
+    snapshot: TauOpsDashboardDeploySnapshot,
+    theme: &str,
+    sidebar: &str,
+    session_key: &str,
+) -> impl IntoView {
+    let deploy_state_source = snapshot.state_source;
+    let deploy_state_status = snapshot.state_status;
+    let deploy_agent_count = snapshot.agent_count.to_string();
+    let deploy_running_count = snapshot.running_count.to_string();
+    let deploy_stopped_count = snapshot.stopped_count.to_string();
+    let deploy_agent_row_count = snapshot.rows.len().to_string();
+    let deploy_empty_row = if snapshot.rows.is_empty() {
+        Some(view! {
+            <tr id="tau-ops-deploy-process-empty-row" data-empty-state="true">
+                <td colspan="8">No deployed agent process records yet.</td>
+            </tr>
+        })
+    } else {
+        None
+    };
+    let deploy_agent_rows_view = snapshot
+        .rows
+        .iter()
+        .enumerate()
+        .map(|(index, row)| {
+            let row_id = format!("tau-ops-deploy-process-row-{index}");
+            let stop_form_id = format!("tau-ops-deploy-stop-form-{index}");
+            let stop_button_id = format!("tau-ops-deploy-stop-button-{index}");
+            let stop_theme_input_id = format!("tau-ops-deploy-stop-theme-{index}");
+            let stop_sidebar_input_id = format!("tau-ops-deploy-stop-sidebar-{index}");
+            let stop_session_input_id = format!("tau-ops-deploy-stop-session-{index}");
+            let stop_agent_path_segment = encode_ops_path_segment(row.agent_id.as_str());
+            let stop_action = format!("/ops/deploy/agents/{stop_agent_path_segment}/stop");
+            let stop_disabled = row.process_status != "running";
+            let stop_aria_disabled = if stop_disabled { "true" } else { "false" };
+            let stop_theme = theme.to_string();
+            let stop_sidebar = sidebar.to_string();
+            let stop_session_key = session_key.to_string();
+            let process_started = row.process_started_unix_ms.to_string();
+            let process_stopped = row.process_stopped_unix_ms.to_string();
+            let updated_unix_ms = row.updated_unix_ms.to_string();
+            view! {
+                <tr
+                    id=row_id
+                    data-agent-id=row.agent_id.clone()
+                    data-agent-status=row.status.clone()
+                    data-process-id=row.process_id.clone()
+                    data-process-status=row.process_status.clone()
+                    data-process-pid=row.process_pid.clone()
+                    data-process-started-unix-ms=process_started
+                    data-process-stopped-unix-ms=process_stopped
+                    data-process-stop-reason=row.process_stop_reason.clone()
+                    data-process-exit-status=row.process_exit_status.clone()
+                    data-updated-unix-ms=updated_unix_ms
+                >
+                    <td>{row.agent_id.clone()}</td>
+                    <td>{row.status.clone()}</td>
+                    <td>{row.profile.clone()}</td>
+                    <td>{row.model.clone()}</td>
+                    <td>{row.process_status.clone()}</td>
+                    <td>{row.process_pid.clone()}</td>
+                    <td>{row.process_stop_reason.clone()}</td>
+                    <td>
+                        <form
+                            id=stop_form_id
+                            action=stop_action
+                            method="post"
+                            data-action="stop-agent"
+                            data-agent-id=row.agent_id.clone()
+                            data-process-id=row.process_id.clone()
+                            data-process-status=row.process_status.clone()
+                            data-preserves-shell-context="true"
+                        >
+                            <input id=stop_theme_input_id type="hidden" name="theme" value=stop_theme />
+                            <input id=stop_sidebar_input_id type="hidden" name="sidebar" value=stop_sidebar />
+                            <input id=stop_session_input_id type="hidden" name="session" value=stop_session_key />
+                            <button
+                                id=stop_button_id
+                                type="submit"
+                                data-action="stop-agent"
+                                data-agent-id=row.agent_id.clone()
+                                data-process-status=row.process_status.clone()
+                                aria-disabled=stop_aria_disabled
+                                disabled=stop_disabled
+                            >
+                                Stop
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+            }
+        })
+        .collect_view();
+
+    view! {
+        <section
+            id="tau-ops-deploy-processes"
+            data-component="DeployProcessLifecycle"
+            data-state-source=deploy_state_source
+            data-state-status=deploy_state_status
+            data-agent-count=deploy_agent_count
+            data-running-count=deploy_running_count
+            data-stopped-count=deploy_stopped_count
+            data-row-count=deploy_agent_row_count
+        >
+            <h3>Process Lifecycle</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th scope="col">Agent</th>
+                        <th scope="col">Agent Status</th>
+                        <th scope="col">Profile</th>
+                        <th scope="col">Model</th>
+                        <th scope="col">Process Status</th>
+                        <th scope="col">PID</th>
+                        <th scope="col">Stop Reason</th>
+                        <th scope="col">Action</th>
+                    </tr>
+                </thead>
+                <tbody id="tau-ops-deploy-processes-body">
+                    {deploy_agent_rows_view}
+                    {deploy_empty_row}
+                </tbody>
+            </table>
+        </section>
+    }
 }
 
 /// Public `fn` `render_tau_ops_dashboard_shell_with_context` in `tau-dashboard-ui`.
@@ -3996,6 +4194,12 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     } else {
         "false"
     };
+    let deploy_process_lifecycle_view = render_tau_ops_deploy_process_lifecycle(
+        context.command_center.deploy.clone(),
+        theme_attr,
+        sidebar_state_attr,
+        shell_nav_session_key.as_str(),
+    );
     let chat_message_rows = if !chat_route_active {
         Vec::new()
     } else if context.chat.message_rows.is_empty() {
@@ -6061,6 +6265,22 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
         parse_chat_markdown_blocks(&chat_latest_assistant_content);
     let chat_latest_assistant_markdown_block_count =
         chat_latest_assistant_markdown_blocks.len().to_string();
+    let chat_agent_canvas_status = context.chat.agent_canvas_status.clone();
+    let chat_agent_canvas_artifact_path = context.chat.agent_canvas_artifact_path.clone();
+    let chat_agent_canvas_srcdoc = context.chat.agent_canvas_srcdoc.clone();
+    let chat_agent_canvas_srcdoc_bytes = context.chat.agent_canvas_srcdoc_bytes.to_string();
+    let chat_agent_canvas_loaded_bool =
+        chat_agent_canvas_status == "loaded" && !chat_agent_canvas_srcdoc.trim().is_empty();
+    let chat_agent_canvas_loaded = if chat_agent_canvas_loaded_bool {
+        "true"
+    } else {
+        "false"
+    };
+    let chat_agent_canvas_placeholder_hidden = if chat_agent_canvas_loaded_bool {
+        "true"
+    } else {
+        "false"
+    };
     let chat_assistant_stream_count = chat_message_rows
         .iter()
         .filter(|row| row.role == "assistant")
@@ -6782,6 +7002,7 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                     max-width: 420px;
                 }
                 #tau-ops-chat-send-form,
+                #tau-ops-chat-agent-canvas,
                 #tau-ops-chat-latest-turn-details,
                 #tau-ops-chat-token-counter-details,
                 #tau-ops-chat-latest-turn,
@@ -7219,6 +7440,39 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                 #tau-ops-chat-transcript [data-markdown-rendered="true"] a {
                     color: #8ecbff;
                 }
+                #tau-ops-chat-agent-canvas {
+                    display: grid;
+                    gap: 8px;
+                    border: 1px solid #203847;
+                    border-radius: 7px;
+                    padding: 10px;
+                    background: #07151d;
+                }
+                #tau-ops-chat-agent-canvas h3 {
+                    margin: 0;
+                    color: #edf8fb;
+                    font-size: .82rem;
+                    letter-spacing: 0;
+                }
+                #tau-ops-chat-agent-canvas-surface,
+                #tau-ops-chat-agent-preview-frame {
+                    display: block;
+                    width: 100%;
+                    min-height: 240px;
+                    aspect-ratio: 16 / 9;
+                    border: 1px solid #254c5c;
+                    border-radius: 6px;
+                    background: #02090d;
+                }
+                #tau-ops-chat-agent-preview-frame {
+                    overflow: hidden;
+                }
+                #tau-ops-chat-agent-canvas[data-preview-loaded="true"] #tau-ops-chat-agent-canvas-surface {
+                    min-height: 0;
+                    height: 0;
+                    opacity: 0;
+                    pointer-events: none;
+                }
                 #tau-ops-chat-transcript {
                     display: grid;
                     grid-template-columns: minmax(0, 1fr);
@@ -7579,6 +7833,43 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                 }
                 #tau-ops-deploy-model-selection select {
                     max-width: 100%;
+                }
+                #tau-ops-deploy-processes {
+                    margin-top: 14px;
+                }
+                #tau-ops-deploy-processes table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    color: #dbe8ef;
+                    table-layout: fixed;
+                }
+                #tau-ops-deploy-processes th,
+                #tau-ops-deploy-processes td {
+                    border-bottom: 1px solid #203847;
+                    padding: 8px 9px;
+                    color: #dbe8ef;
+                    font-size: .72rem;
+                    text-align: left;
+                    overflow-wrap: anywhere;
+                }
+                #tau-ops-deploy-processes th {
+                    color: #a9c1cf;
+                    font-weight: 800;
+                }
+                #tau-ops-deploy-processes tr[data-process-status="stopped"] td {
+                    color: #b8cbd5;
+                }
+                #tau-ops-deploy-processes form {
+                    margin: 0;
+                }
+                #tau-ops-deploy-processes button[data-action="stop-agent"] {
+                    width: 100%;
+                }
+                #tau-ops-deploy-processes button[data-action="stop-agent"]:disabled {
+                    border-color: #263f4e;
+                    background: #0b1d28;
+                    color: #6f8996;
+                    cursor: not-allowed;
                 }
                 #tau-ops-channels-panel {
                     display: grid;
@@ -8788,6 +9079,42 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                 })();
                                 "#
                             </script>
+                            <section
+                                id="tau-ops-chat-agent-canvas"
+                                data-agent-canvas="true"
+                                data-preview-status=chat_agent_canvas_status
+                                data-preview-loaded=chat_agent_canvas_loaded
+                                data-artifact-path=chat_agent_canvas_artifact_path
+                                data-srcdoc-bytes=chat_agent_canvas_srcdoc_bytes
+                            >
+                                <h3>Agent Canvas</h3>
+                                <canvas
+                                    id="tau-ops-chat-agent-canvas-surface"
+                                    data-agent-canvas-surface="true"
+                                    width="720"
+                                    height="405"
+                                    aria-hidden=chat_agent_canvas_placeholder_hidden
+                                ></canvas>
+                                {if chat_agent_canvas_loaded_bool {
+                                    leptos::either::Either::Left(view! {
+                                        <iframe
+                                            id="tau-ops-chat-agent-preview-frame"
+                                            data-agent-html-preview="true"
+                                            sandbox="allow-scripts"
+                                            title="Agent HTML preview"
+                                            srcdoc=chat_agent_canvas_srcdoc
+                                        ></iframe>
+                                    })
+                                } else {
+                                    leptos::either::Either::Right(view! {
+                                        <span
+                                            id="tau-ops-chat-agent-preview-empty"
+                                            data-agent-html-preview="false"
+                                            hidden
+                                        ></span>
+                                    })
+                                }}
+                            </section>
                             <ul
                                 id="tau-ops-chat-transcript"
                                 data-message-count=chat_message_count_value
@@ -12927,42 +13254,78 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
                                     </li>
                                 </ol>
                             </nav>
-                            <section
-                                id="tau-ops-deploy-model-selection"
-                                data-model-source="gateway-runtime"
-                                data-active-model-ref=config_model_ref.clone()
-                                data-model-option-count=deploy_model_catalog_option_count
+                            <form
+                                id="tau-ops-deploy-form"
+                                action="/ops/deploy"
+                                method="post"
+                                data-action="deploy-agent"
+                                data-preserves-shell-context="true"
                             >
-                                <label for="tau-ops-deploy-model-catalog">Model Catalog</label>
-                                <select
-                                    id="tau-ops-deploy-model-catalog"
-                                    data-component="ModelCatalogDropdown"
+                                <input id="tau-ops-deploy-theme" type="hidden" name="theme" value=theme_attr />
+                                <input id="tau-ops-deploy-sidebar" type="hidden" name="sidebar" value=sidebar_state_attr />
+                                <input id="tau-ops-deploy-session" type="hidden" name="session" value=shell_nav_session_key.clone() />
+                                <section
+                                    id="tau-ops-deploy-configuration"
+                                    data-component="DeployConfiguration"
+                                    data-required-fields="agent_id,profile,model"
                                 >
-                                    {deploy_model_catalog_options}
-                                </select>
-                            </section>
-                            <section
-                                id="tau-ops-deploy-validation"
-                                data-component="StepValidation"
-                                data-validation-state="pending"
-                            >
-                                <h3>Validation</h3>
-                                <p>Configuration validates on each wizard step.</p>
-                            </section>
-                            <section id="tau-ops-deploy-review" data-component="DeployReviewSummary">
-                                <h3>Review</h3>
-                                <p data-field="summary">Pending full configuration summary.</p>
-                            </section>
-                            <div id="tau-ops-deploy-actions">
-                                <button
-                                    id="tau-ops-deploy-submit"
-                                    type="button"
-                                    data-action="deploy-agent"
-                                    data-success-redirect-template="/ops/agents/{agent_id}"
+                                    <label for="tau-ops-deploy-agent-id">Agent ID</label>
+                                    <input
+                                        id="tau-ops-deploy-agent-id"
+                                        name="agent_id"
+                                        type="text"
+                                        value="agent-ops"
+                                        required=true
+                                        autocomplete="off"
+                                    />
+                                    <label for="tau-ops-deploy-profile">Profile</label>
+                                    <input
+                                        id="tau-ops-deploy-profile"
+                                        name="profile"
+                                        type="text"
+                                        value="default"
+                                        autocomplete="off"
+                                    />
+                                </section>
+                                <section
+                                    id="tau-ops-deploy-model-selection"
+                                    data-model-source="gateway-runtime"
+                                    data-active-model-ref=config_model_ref.clone()
+                                    data-model-option-count=deploy_model_catalog_option_count
                                 >
-                                    Deploy Agent
-                                </button>
-                            </div>
+                                    <label for="tau-ops-deploy-model-catalog">Model Catalog</label>
+                                    <select
+                                        id="tau-ops-deploy-model-catalog"
+                                        name="model"
+                                        data-component="ModelCatalogDropdown"
+                                    >
+                                        {deploy_model_catalog_options}
+                                    </select>
+                                </section>
+                                <section
+                                    id="tau-ops-deploy-validation"
+                                    data-component="StepValidation"
+                                    data-validation-state="form-post-ready"
+                                >
+                                    <h3>Validation</h3>
+                                    <p>Configuration validates on submit.</p>
+                                </section>
+                                <section id="tau-ops-deploy-review" data-component="DeployReviewSummary">
+                                    <h3>Review</h3>
+                                    <p data-field="summary">Deploy request posts to the gateway process supervisor.</p>
+                                </section>
+                                <div id="tau-ops-deploy-actions">
+                                    <button
+                                        id="tau-ops-deploy-submit"
+                                        type="submit"
+                                        data-action="deploy-agent"
+                                        data-success-redirect-template="/ops/deploy"
+                                    >
+                                        Deploy Agent
+                                    </button>
+                                </div>
+                            </form>
+                            {deploy_process_lifecycle_view}
                         </section>
                             })
                         }}

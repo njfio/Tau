@@ -106,7 +106,10 @@ fn unit_normalize_relations_validates_target_type_and_weight() {
     .expect("valid relation normalization");
     assert_eq!(valid.len(), 1);
     assert_eq!(valid[0].target_id, "target-memory");
-    assert_eq!(valid[0].relation_type, super::super::MemoryRelationType::CausedBy);
+    assert_eq!(
+        valid[0].relation_type,
+        super::super::MemoryRelationType::CausedBy
+    );
     assert!((valid[0].weight - 0.75).abs() <= 0.000_001);
     assert!((valid[0].effective_weight - 0.75).abs() <= 0.000_001);
 
@@ -244,8 +247,8 @@ fn integration_read_entry_hydrates_relations_from_sqlite_relation_table() {
     let temp = tempdir().expect("tempdir");
     let store = FileMemoryStore::new(temp.path());
     let sqlite_path = store.storage_path().expect("sqlite path").to_path_buf();
-    let connection =
-        super::super::open_memory_sqlite_connection(&sqlite_path).expect("open sqlite memory store");
+    let connection = super::super::open_memory_sqlite_connection(&sqlite_path)
+        .expect("open sqlite memory store");
     super::super::initialize_memory_sqlite_schema(&connection).expect("initialize schema");
 
     let source_json = json!({
@@ -354,4 +357,3 @@ fn integration_read_entry_hydrates_relations_from_sqlite_relation_table() {
     );
     assert!((read.relations[0].effective_weight - 0.7).abs() <= 0.000_001);
 }
-
