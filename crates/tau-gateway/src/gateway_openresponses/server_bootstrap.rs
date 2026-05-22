@@ -242,7 +242,7 @@ pub(super) fn build_gateway_openresponses_router(
         )
         .route(
             OPS_DASHBOARD_CHAT_SEND_ENDPOINT,
-            post(handle_ops_dashboard_chat_send),
+            get(handle_ops_dashboard_chat_send_get).post(handle_ops_dashboard_chat_send),
         )
         .route(
             OPS_DASHBOARD_CONTROL_ACTION_ENDPOINT,

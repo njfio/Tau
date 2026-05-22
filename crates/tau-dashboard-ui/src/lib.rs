@@ -6359,6 +6359,14 @@ pub fn render_tau_ops_dashboard_shell_with_context(context: TauOpsDashboardShell
     };
     let chat_send_status_message = match chat_send_status.as_str() {
         "empty-message" => "Message was not sent because it was empty.".to_string(),
+        "send-timeout" => "Message send timed out. The chat shell recovered; review the transcript and try a narrower request.".to_string(),
+        "input-too-large" => {
+            "Message was not sent because it exceeded the input limit.".to_string()
+        }
+        "send-error" => {
+            "Message send failed. The chat shell recovered instead of leaving the send endpoint."
+                .to_string()
+        }
         _ => "No chat send result on this request.".to_string(),
     };
     let control_action_status_message = match control_action_status.as_str() {

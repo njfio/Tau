@@ -719,6 +719,48 @@ async fn functional_spec_2830_c01_ops_chat_shell_exposes_send_form_and_fallback_
 }
 
 #[tokio::test]
+async fn regression_ops_chat_send_get_redirects_to_chat_shell_instead_of_blank_405() {
+    let temp = tempdir().expect("tempdir");
+    let state = test_state(temp.path(), 4_096, "secret");
+    let (addr, handle) = spawn_test_server(state.clone())
+        .await
+        .expect("spawn server");
+    let client = Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .expect("build client");
+
+    let response = client
+        .get(format!(
+            "http://{addr}/ops/chat/send?theme=light&sidebar=collapsed&session=blank-recovery"
+        ))
+        .send()
+        .await
+        .expect("ops chat send GET request");
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        response
+            .headers()
+            .get("location")
+            .and_then(|value| value.to_str().ok()),
+        Some("/ops/chat?theme=light&sidebar=collapsed&session=blank-recovery")
+    );
+
+    let redirected = reqwest::get(format!(
+        "http://{addr}/ops/chat?theme=light&sidebar=collapsed&session=blank-recovery"
+    ))
+    .await
+    .expect("load redirected chat shell");
+    assert_eq!(redirected.status(), StatusCode::OK);
+    let body = redirected.text().await.expect("read redirected chat shell");
+    assert!(body.contains(
+        "id=\"tau-ops-chat-panel\" data-route=\"/ops/chat\" aria-hidden=\"false\" data-active-session-key=\"blank-recovery\""
+    ));
+
+    handle.abort();
+}
+
+#[tokio::test]
 async fn integration_spec_2830_c02_c03_ops_chat_send_appends_message_and_renders_transcript_row() {
     let temp = tempdir().expect("tempdir");
     let state = test_state(temp.path(), 4_096, "secret");
@@ -867,6 +909,98 @@ async fn integration_spec_2830_c06_ops_chat_send_rejects_empty_message_with_visi
         "id=\"tau-ops-chat-send-status\" data-chat-send-status=\"empty-message\" data-chat-send-status-visible=\"true\" aria-hidden=\"false\" aria-live=\"polite\" hidden"
     ));
     assert!(chat_body.contains("Message was not sent because it was empty."));
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn regression_ops_chat_send_timeout_redirects_to_chat_shell_status_instead_of_raw_json() {
+    let temp = tempdir().expect("tempdir");
+    let state = Arc::new(GatewayOpenResponsesServerState::new(
+        GatewayOpenResponsesServerConfig {
+            client: Arc::new(SlowGatewayLlmClient { delay_ms: 200 }),
+            model: "openai/gpt-5.2".to_string(),
+            model_input_cost_per_million: Some(10.0),
+            model_cached_input_cost_per_million: None,
+            model_output_cost_per_million: Some(20.0),
+            system_prompt: "You are Tau.".to_string(),
+            available_skills: Vec::new(),
+            explicit_skill_names: Vec::new(),
+            max_turns: 4,
+            tool_registrar: Arc::new(NoopGatewayToolRegistrar),
+            turn_timeout_ms: 20,
+            session_lock_wait_ms: 500,
+            session_lock_stale_ms: 10_000,
+            state_dir: temp.path().join(".tau/gateway-chat-timeout"),
+            bind: "127.0.0.1:0".to_string(),
+            auth_mode: GatewayOpenResponsesAuthMode::Token,
+            auth_token: Some("secret".to_string()),
+            auth_password: None,
+            session_ttl_seconds: 3_600,
+            rate_limit_window_seconds: 60,
+            rate_limit_max_requests: 120,
+            max_input_chars: 10_000,
+            runtime_heartbeat: RuntimeHeartbeatSchedulerConfig {
+                enabled: false,
+                interval: std::time::Duration::from_secs(5),
+                state_path: temp
+                    .path()
+                    .join(".tau/runtime-heartbeat-chat-timeout/state.json"),
+                ..RuntimeHeartbeatSchedulerConfig::default()
+            },
+            external_coding_agent_bridge: tau_runtime::ExternalCodingAgentBridgeConfig::default(),
+            ops_harness_self_improvement: Arc::new(NoopGatewayOpsHarnessSelfImprovementRunner),
+            delegated_tool_execution: false,
+        },
+    ));
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+    let client = Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .expect("build client");
+
+    let send_response = client
+        .post(format!("http://{addr}/ops/chat/send"))
+        .form(&[
+            ("session_key", "chat-timeout-session"),
+            ("message", "please inspect the workspace"),
+            ("theme", "dark"),
+            ("sidebar", "expanded"),
+        ])
+        .send()
+        .await
+        .expect("ops chat timeout send request");
+    assert_eq!(send_response.status(), StatusCode::SEE_OTHER);
+    let location = send_response
+        .headers()
+        .get("location")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default()
+        .to_string();
+    assert_eq!(
+        location,
+        "/ops/chat?theme=dark&sidebar=expanded&session=chat-timeout-session&chat_status=send-timeout"
+    );
+
+    let chat_response = client
+        .get(format!("http://{addr}{location}"))
+        .send()
+        .await
+        .expect("ops chat render timeout status");
+    assert_eq!(chat_response.status(), StatusCode::OK);
+    let chat_body = chat_response.text().await.expect("read ops chat body");
+    assert!(chat_body.contains(
+        "id=\"tau-ops-chat-panel\" data-route=\"/ops/chat\" aria-hidden=\"false\" data-active-session-key=\"chat-timeout-session\""
+    ));
+    assert!(chat_body.contains(
+        "id=\"tau-ops-chat-send-status\" data-chat-send-status=\"send-timeout\" data-chat-send-status-visible=\"true\" aria-hidden=\"false\" aria-live=\"polite\""
+    ));
+    assert!(chat_body.contains(
+        "Message send timed out. The chat shell recovered; review the transcript and try a narrower request."
+    ));
+    assert!(chat_body.contains(
+        "id=\"tau-ops-chat-send-form\" action=\"/ops/chat/send\" method=\"post\" data-session-key=\"chat-timeout-session\""
+    ));
 
     handle.abort();
 }

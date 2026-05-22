@@ -3352,6 +3352,32 @@ fn functional_spec_2830_c13_chat_route_only_shows_send_status_after_result() {
 }
 
 #[test]
+fn regression_chat_route_renders_send_timeout_recovery_status() {
+    let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
+        auth_mode: TauOpsDashboardAuthMode::Token,
+        active_route: TauOpsDashboardRoute::Chat,
+        theme: TauOpsDashboardTheme::Dark,
+        sidebar_state: TauOpsDashboardSidebarState::Expanded,
+        command_center: TauOpsDashboardCommandCenterSnapshot::default(),
+        chat: TauOpsDashboardChatSnapshot {
+            send_status: "send-timeout".to_string(),
+            ..TauOpsDashboardChatSnapshot::default()
+        },
+        harness: TauOpsDashboardHarnessSnapshot::default(),
+    });
+
+    assert!(html.contains(
+        "id=\"tau-ops-chat-send-status\" data-chat-send-status=\"send-timeout\" data-chat-send-status-visible=\"true\" aria-hidden=\"false\" aria-live=\"polite\""
+    ));
+    assert!(!html.contains(
+        "id=\"tau-ops-chat-send-status\" data-chat-send-status=\"send-timeout\" data-chat-send-status-visible=\"true\" aria-hidden=\"false\" aria-live=\"polite\" hidden"
+    ));
+    assert!(html.contains(
+        "Message send timed out. The chat shell recovered; review the transcript and try a narrower request."
+    ));
+}
+
+#[test]
 fn functional_spec_2830_c07_chat_route_prioritizes_composer_before_session_selector() {
     let html = render_tau_ops_dashboard_shell_with_context(TauOpsDashboardShellContext {
         auth_mode: TauOpsDashboardAuthMode::Token,

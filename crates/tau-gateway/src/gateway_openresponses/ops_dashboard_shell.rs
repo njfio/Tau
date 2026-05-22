@@ -689,8 +689,12 @@ fn build_ops_chat_redirect_path_with_status(
     chat_status: &str,
 ) -> String {
     let mut redirect_path = build_ops_chat_redirect_path(theme, sidebar_state, session_key);
-    if matches!(chat_status, "empty-message") {
-        redirect_path.push_str("&chat_status=empty-message");
+    if matches!(
+        chat_status,
+        "empty-message" | "send-timeout" | "input-too-large" | "send-error"
+    ) {
+        redirect_path.push_str("&chat_status=");
+        redirect_path.push_str(chat_status);
     }
     redirect_path
 }
@@ -5622,7 +5626,21 @@ pub(super) async fn handle_ops_dashboard_chat_send(
     let execution =
         match execute_ops_chat_tool_turn(state.clone(), session_key.as_str(), content).await {
             Ok(execution) => execution,
-            Err(error) => return error.into_response(),
+            Err(error) => {
+                let chat_status = match error.code {
+                    "request_timeout" => "send-timeout",
+                    "input_too_large" => "input-too-large",
+                    _ => "send-error",
+                };
+                let redirect_path = build_ops_chat_redirect_path_with_status(
+                    form.resolved_theme(),
+                    form.resolved_sidebar_state(),
+                    session_key.as_str(),
+                    chat_status,
+                );
+                state.record_ui_telemetry_event("chat", "send", error.code);
+                return Redirect::to(redirect_path.as_str()).into_response();
+            }
         };
 
     let _ = record_cortex_observer_event(
@@ -5675,6 +5693,15 @@ pub(super) async fn handle_ops_dashboard_chat_send(
         session_key.as_str(),
         execution.latest_anchor.as_deref(),
     );
+    Redirect::to(redirect_path.as_str()).into_response()
+}
+
+pub(super) async fn handle_ops_dashboard_chat_send_get(
+    Query(controls): Query<OpsShellControlsQuery>,
+) -> Response {
+    let session_key = controls.requested_session_key().unwrap_or("default");
+    let redirect_path =
+        build_ops_chat_redirect_path(controls.theme(), controls.sidebar_state(), session_key);
     Redirect::to(redirect_path.as_str()).into_response()
 }
 
