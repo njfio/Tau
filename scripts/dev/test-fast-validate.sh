@@ -235,6 +235,68 @@ fmt_changed_base_sha="$(cat "${tmp_root}/fmt_changed_base_sha")"
   assert_not_contains "${output}" "crates/other/src/lib.rs" "fmt failure should stay scoped to changed Rust file"
 )
 
+full_env_repo="${tmp_root}/full-env-repo"
+full_env_stub_bin="${tmp_root}/full-env-bin"
+full_env_capture="${tmp_root}/full-env-cargo.log"
+
+init_minimal_workspace_repo "${full_env_repo}"
+cat > "${full_env_repo}/crates/app/src/lib.rs" <<'EOF'
+pub fn app() -> u32 {
+    1
+}
+EOF
+cat > "${full_env_repo}/crates/other/src/lib.rs" <<'EOF'
+pub fn other() -> u32 {
+    1
+}
+EOF
+
+(
+  cd "${full_env_repo}"
+  git init -q
+  git config user.name test
+  git config user.email test@example.com
+  git add .
+  git commit -q -m "base"
+)
+
+mkdir -p "${full_env_stub_bin}"
+cat > "${full_env_stub_bin}/cargo" <<'EOF'
+#!/usr/bin/env bash
+{
+  printf 'CARGO_TARGET_DIR=%s\n' "${CARGO_TARGET_DIR:-}"
+  printf 'CARGO_INCREMENTAL=%s\n' "${CARGO_INCREMENTAL:-}"
+  printf 'ARGS=%s\n' "$*"
+} >> "${FAST_VALIDATE_CAPTURE}"
+EOF
+chmod +x "${full_env_stub_bin}/cargo"
+
+(
+  cd "${full_env_repo}"
+  : > "${full_env_capture}"
+  output="$(FAST_VALIDATE_CAPTURE="${full_env_capture}" PATH="${full_env_stub_bin}:${PATH}" ./scripts/dev/fast-validate.sh --full --skip-fmt 2>&1)"
+  capture="$(cat "${full_env_capture}")"
+  assert_contains "${output}" "full validation target: CARGO_TARGET_DIR=/tmp/" "full validation should select an isolated target when unset"
+  assert_contains "${output}" "fast-validate-full-target" "isolated target should be deterministic and recognizable"
+  assert_contains "${output}" "full validation incremental: CARGO_INCREMENTAL=0" "full validation should disable incremental compilation when unset"
+  assert_contains "${capture}" "CARGO_TARGET_DIR=/tmp/" "cargo should receive the isolated target"
+  assert_contains "${capture}" "fast-validate-full-target" "cargo target should include the release-validation suffix"
+  assert_contains "${capture}" "CARGO_INCREMENTAL=0" "cargo should receive incremental disabled"
+  assert_contains "${capture}" "ARGS=clippy --workspace --all-targets --all-features -- -D warnings" "full validation should still run workspace clippy"
+  assert_contains "${capture}" "ARGS=test --workspace" "full validation should still run workspace tests"
+)
+
+(
+  cd "${full_env_repo}"
+  : > "${full_env_capture}"
+  output="$(FAST_VALIDATE_CAPTURE="${full_env_capture}" PATH="${full_env_stub_bin}:${PATH}" CARGO_TARGET_DIR="/tmp/custom-fast-validate-target" CARGO_INCREMENTAL=1 ./scripts/dev/fast-validate.sh --full --skip-fmt 2>&1)"
+  capture="$(cat "${full_env_capture}")"
+  assert_contains "${output}" "full validation target: using caller CARGO_TARGET_DIR=/tmp/custom-fast-validate-target" "full validation should preserve caller target"
+  assert_contains "${output}" "full validation incremental: using caller CARGO_INCREMENTAL=1" "full validation should preserve caller incremental setting"
+  assert_contains "${capture}" "CARGO_TARGET_DIR=/tmp/custom-fast-validate-target" "cargo should receive caller target"
+  assert_contains "${capture}" "CARGO_INCREMENTAL=1" "cargo should receive caller incremental setting"
+)
+
 help_output="$("${FAST_VALIDATE}" --help)"
 assert_contains "${help_output}" "--skip-fmt" "help output should document skip-fmt option"
 

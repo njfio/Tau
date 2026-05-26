@@ -235,6 +235,45 @@ for package in sorted(visited):
 PY
 }
 
+slugify_target_component() {
+  local value="$1"
+  value="${value//\//-}"
+  value="$(printf '%s' "${value}" | tr -c '[:alnum:]_.-' '-' | sed -E 's/-+/-/g; s/^-//; s/-$//')"
+  if [[ -z "${value}" ]]; then
+    echo "unknown"
+  else
+    echo "${value}"
+  fi
+}
+
+default_full_validation_target_dir() {
+  local repo_name branch_name
+  repo_name="$(slugify_target_component "$(basename "${REPO_ROOT}")")"
+  branch_name="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo detached)"
+  if [[ -z "${branch_name}" || "${branch_name}" == "HEAD" ]]; then
+    branch_name="detached"
+  fi
+  branch_name="$(slugify_target_component "${branch_name}")"
+  echo "/tmp/${repo_name}-${branch_name}-fast-validate-full-target"
+}
+
+configure_full_validation_environment() {
+  if [[ -z "${CARGO_TARGET_DIR:-}" ]]; then
+    export CARGO_TARGET_DIR
+    CARGO_TARGET_DIR="$(default_full_validation_target_dir)"
+    echo "full validation target: CARGO_TARGET_DIR=${CARGO_TARGET_DIR}"
+  else
+    echo "full validation target: using caller CARGO_TARGET_DIR=${CARGO_TARGET_DIR}"
+  fi
+
+  if [[ -z "${CARGO_INCREMENTAL:-}" ]]; then
+    export CARGO_INCREMENTAL=0
+    echo "full validation incremental: CARGO_INCREMENTAL=0"
+  else
+    echo "full validation incremental: using caller CARGO_INCREMENTAL=${CARGO_INCREMENTAL}"
+  fi
+}
+
 print_scope() {
   local full_workspace="$1"
   shift
@@ -276,6 +315,10 @@ FULL_WORKSPACE_FROM_SCOPE="${SCOPE[0]:-0}"
 PACKAGES=("${SCOPE[@]:1}")
 if [[ "${DIRECT_PACKAGES_ONLY}" != "true" && "${FULL_MODE}" != "true" && "${FULL_WORKSPACE_FROM_SCOPE}" != "1" && ${#PACKAGES[@]} -gt 0 ]]; then
   mapfile -t PACKAGES < <(expand_impacted_packages "${PACKAGES[@]}")
+fi
+
+if [[ "${FULL_MODE}" == "true" || "${FULL_WORKSPACE_FROM_SCOPE}" == "1" ]]; then
+  configure_full_validation_environment
 fi
 
 echo "fast-validate base=${BASE} changed_files=${#CHANGED_FILES[@]} changed_rust_files=${#CHANGED_RUST_FILES[@]} impacted_packages=${#PACKAGES[@]} check_only=${CHECK_ONLY} direct_packages_only=${DIRECT_PACKAGES_ONLY} skip_fmt=${SKIP_FMT}"
