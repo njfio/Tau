@@ -23,8 +23,9 @@ In scope:
   tool-backed turns.
 - Render a sandboxed agent canvas preview when the latest tool output points to
   a local HTML artifact.
-- Expose Agent Canvas v2 diagnostics, controlled postMessage interactions, and
-  artifact history for HTML artifacts.
+- Expose Agent Canvas v2 DOM snapshots, console diagnostics, canvas pixel and
+  screenshot samples, controlled postMessage interactions, and artifact history
+  for HTML artifacts.
 - Verify the live browser route submits and displays both turns.
 
 Out of scope:
@@ -55,13 +56,15 @@ workspace, when `/ops/chat` renders, then the chat panel exposes an agent canvas
 surface and embeds the HTML artifact in a sandboxed preview frame.
 
 AC-6: Given one or more HTML artifacts have been produced by chat tools, when
-`/ops/chat` renders, then the Agent Canvas exposes artifact history, frame
-diagnostics, console/error counters, canvas pixel sample markers, and controlled
-click/type/probe commands routed through a sandbox-safe postMessage bridge.
+`/ops/chat` renders, then the Agent Canvas exposes artifact history, DOM
+snapshot counters, frame diagnostics, console/error counters, canvas pixel and
+screenshot sample markers, and controlled click/type/probe commands routed
+through a sandbox-safe postMessage bridge.
 
 AC-7: Given a live gateway is running, when the ops chat canvas proof script is
-run, then it submits a tool-backed chat request, verifies the generated HTML
-artifact, and emits a deterministic JSON proof artifact.
+run, then it verifies `/ops/chat/send` GET recovery, POST failure recovery, a
+tool-backed chat request, the generated HTML artifact, the canvas runtime
+contract markers, and emits a deterministic JSON proof artifact.
 
 ## Conformance Cases
 
@@ -81,12 +84,12 @@ C-04 maps to AC-5: dashboard/gateway render tests seed an HTML tool artifact
 and assert the agent canvas markers plus sandboxed preview frame are present.
 
 C-05 maps to AC-6: dashboard/gateway render tests seed multiple HTML artifacts
-and assert artifact history, diagnostics, controlled interaction markers, and
-the injected frame bridge are present.
+and assert artifact history, DOM snapshot, screenshot, diagnostics, controlled
+interaction markers, and the injected frame bridge are present.
 
 C-06 maps to AC-7: proof-script tests fake the live gateway calls and assert the
-script validates `/ops/chat/send`, the rendered canvas route, and JSON proof
-output.
+script validates `/ops/chat/send` recovery redirects, the rendered canvas route,
+runtime contract markers, and JSON proof output.
 
 ## Success Signals
 

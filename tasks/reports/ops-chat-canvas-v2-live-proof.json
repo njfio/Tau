@@ -1,10 +1,22 @@
 {
   "schema_version": 1,
   "proof": "ops_chat_canvas_v2",
-  "base_url": "http://127.0.0.1:8797",
+  "base_url": "http://127.0.0.1:8798",
   "session_key": "ui-canvas-v2-proof-live",
   "artifact_path": "target/ops-chat-canvas-v2-live.html",
+  "send_get_recovery": "passed",
+  "send_failure_recovery": "passed",
   "post_status": "303",
   "file_check": "passed",
+  "runtime_contract_check": "passed",
+  "runtime_contract": {
+    "dom_snapshot": true,
+    "screenshot_capture": true,
+    "console_errors": true,
+    "canvas_pixels": true,
+    "controlled_click": true,
+    "controlled_type": true,
+    "artifact_history": true
+  },
   "result": "passed"
 }

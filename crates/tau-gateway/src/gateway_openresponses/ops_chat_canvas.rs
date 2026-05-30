@@ -59,7 +59,9 @@ const OPS_CHAT_AGENT_CANVAS_FRAME_SCRIPT: &str = r#"<script data-agent-canvas-br
             width: width,
             height: height,
             status: "empty",
-            pixels: []
+            pixels: [],
+            screenshot_status: "empty",
+            screenshot_data_url_prefix: ""
         };
         if (!width || !height) {
             return sample;
@@ -80,11 +82,30 @@ const OPS_CHAT_AGENT_CANVAS_FRAME_SCRIPT: &str = r#"<script data-agent-canvas-br
                 };
             });
             sample.status = "sampled";
+            try {
+                sample.screenshot_data_url_prefix = canvas.toDataURL("image/png").slice(0, 96);
+                sample.screenshot_status = "captured";
+            } catch (screenshotError) {
+                sample.screenshot_status = "blocked";
+                sample.screenshot_error = safeString(screenshotError && screenshotError.message ? screenshotError.message : screenshotError);
+            }
         } catch (error) {
             sample.status = "blocked";
             sample.error = safeString(error && error.message ? error.message : error);
         }
         return sample;
+    }
+
+    function domSnapshot() {
+        return Array.prototype.slice.call(document.querySelectorAll("*"))
+            .slice(0, 20)
+            .map(function (element) {
+                return {
+                    tag: String(element.tagName || "").toLowerCase(),
+                    id: element.id || "",
+                    classes: element.className || ""
+                };
+            });
     }
 
     function postDiagnostics(reason) {
@@ -96,6 +117,7 @@ const OPS_CHAT_AGENT_CANVAS_FRAME_SCRIPT: &str = r#"<script data-agent-canvas-br
             type: "diagnostics",
             reason: reason,
             dom_node_count: document.querySelectorAll("*").length,
+            dom_snapshot: domSnapshot(),
             canvas_count: canvases.length,
             console_events: consoleEvents.slice(-12),
             canvas_samples: canvases
@@ -211,8 +233,10 @@ const OPS_CHAT_AGENT_CANVAS_PARENT_STYLE: &str = r#"<style id="tau-ops-chat-agen
 #tau-ops-chat-agent-canvas-artifacts li {
     overflow-wrap: anywhere;
 }
+#tau-ops-chat-agent-canvas-dom-snapshot,
 #tau-ops-chat-agent-canvas-console,
-#tau-ops-chat-agent-canvas-pixels {
+#tau-ops-chat-agent-canvas-pixels,
+#tau-ops-chat-agent-canvas-screenshots {
     display: grid;
     gap: 4px;
     margin: 0;
@@ -221,7 +245,7 @@ const OPS_CHAT_AGENT_CANVAS_PARENT_STYLE: &str = r#"<style id="tau-ops-chat-agen
 }
 </style>"#;
 
-const OPS_CHAT_AGENT_CANVAS_PARENT_SCRIPT: &str = r#"<script id="tau-ops-chat-agent-canvas-runtime" data-agent-canvas-runtime="postmessage-v2">
+const OPS_CHAT_AGENT_CANVAS_PARENT_SCRIPT: &str = r##"<script id="tau-ops-chat-agent-canvas-runtime" data-agent-canvas-runtime="postmessage-v2">
 (function () {
     var section = document.getElementById("tau-ops-chat-agent-canvas");
     var frame = document.getElementById("tau-ops-chat-agent-preview-frame");
@@ -237,6 +261,8 @@ const OPS_CHAT_AGENT_CANVAS_PARENT_SCRIPT: &str = r#"<script id="tau-ops-chat-ag
     var consoleCount = document.getElementById("tau-ops-chat-agent-canvas-console-count");
     var consoleList = document.getElementById("tau-ops-chat-agent-canvas-console");
     var pixelList = document.getElementById("tau-ops-chat-agent-canvas-pixels");
+    var domList = document.getElementById("tau-ops-chat-agent-canvas-dom-snapshot");
+    var screenshotList = document.getElementById("tau-ops-chat-agent-canvas-screenshots");
 
     function setText(element, value) {
         if (element) {
@@ -282,23 +308,35 @@ const OPS_CHAT_AGENT_CANVAS_PARENT_SCRIPT: &str = r#"<script id="tau-ops-chat-ag
         }
         var consoleEvents = Array.isArray(data.console_events) ? data.console_events : [];
         var pixelSamples = Array.isArray(data.canvas_samples) ? data.canvas_samples : [];
+        var domSnapshot = Array.isArray(data.dom_snapshot) ? data.dom_snapshot : [];
+        var screenshotSamples = pixelSamples.filter(function (sample) {
+            return sample && sample.screenshot_status === "captured";
+        });
         var errorCount = consoleEvents.filter(function (event) {
             return event && event.level === "error";
         }).length;
         section.setAttribute("data-preview-runtime-status", "connected");
         section.setAttribute("data-dom-node-count", String(data.dom_node_count || 0));
+        section.setAttribute("data-dom-snapshot-count", String(domSnapshot.length));
         section.setAttribute("data-canvas-count", String(data.canvas_count || 0));
         section.setAttribute("data-console-error-count", String(errorCount));
         section.setAttribute("data-pixel-sample-count", String(pixelSamples.length));
+        section.setAttribute("data-screenshot-sample-count", String(screenshotSamples.length));
         setText(runtimeStatus, "connected");
         setText(domCount, data.dom_node_count || 0);
         setText(canvasCount, data.canvas_count || 0);
         setText(consoleCount, errorCount);
+        renderList(domList, domSnapshot, function (node) {
+            return String(node.tag || "node") + (node.id ? "#" + String(node.id) : "");
+        });
         renderList(consoleList, consoleEvents, function (event) {
             return String(event.level || "log") + ": " + String(event.message || "");
         });
         renderList(pixelList, pixelSamples, function (sample) {
             return "canvas " + String(sample.id || "(anonymous)") + " " + String(sample.status || "unknown") + " " + String(sample.width || 0) + "x" + String(sample.height || 0);
+        });
+        renderList(screenshotList, screenshotSamples, function (sample) {
+            return "canvas " + String(sample.id || "(anonymous)") + " screenshot " + String(sample.screenshot_status || "unknown");
         });
     });
 
@@ -318,7 +356,7 @@ const OPS_CHAT_AGENT_CANVAS_PARENT_SCRIPT: &str = r#"<script id="tau-ops-chat-ag
         setTimeout(function () { sendCommand("snapshot"); }, 50);
     }
 })();
-</script>"#;
+</script>"##;
 
 #[derive(Debug, Clone)]
 pub(super) struct OpsChatAgentCanvasPreview {
@@ -368,7 +406,7 @@ pub(super) fn upgrade_ops_chat_agent_canvas_html(
 fn add_agent_canvas_runtime_attrs(html: String, artifact_count: usize) -> String {
     let marker = r#"id="tau-ops-chat-agent-canvas" data-agent-canvas="true""#;
     let replacement = format!(
-        r#"{marker} data-artifact-count="{artifact_count}" data-preview-runtime-status="pending" data-dom-node-count="0" data-canvas-count="0" data-console-error-count="0" data-pixel-sample-count="0" data-interaction-mode="postmessage""#
+        r#"{marker} data-artifact-count="{artifact_count}" data-preview-runtime-status="pending" data-dom-node-count="0" data-dom-snapshot-count="0" data-canvas-count="0" data-console-error-count="0" data-pixel-sample-count="0" data-screenshot-sample-count="0" data-interaction-mode="postmessage""#
     );
     html.replacen(marker, replacement.as_str(), 1)
 }
@@ -399,7 +437,7 @@ fn render_agent_canvas_runtime_panel(previews: &[OpsChatAgentCanvasPreview]) -> 
     let mut html = String::new();
     html.push_str(OPS_CHAT_AGENT_CANVAS_PARENT_STYLE);
     html.push_str(
-        r#"<form id="tau-ops-chat-agent-canvas-controls" data-agent-canvas-controls="postmessage"><label for="tau-ops-chat-agent-canvas-click-x">X<input id="tau-ops-chat-agent-canvas-click-x" type="number" value="40" min="0"/></label><label for="tau-ops-chat-agent-canvas-click-y">Y<input id="tau-ops-chat-agent-canvas-click-y" type="number" value="40" min="0"/></label><label for="tau-ops-chat-agent-canvas-type-text">Text<input id="tau-ops-chat-agent-canvas-type-text" type="text" value="" autocomplete="off"/></label><button id="tau-ops-chat-agent-canvas-probe" type="button" data-agent-canvas-tool="snapshot">Probe</button><button id="tau-ops-chat-agent-canvas-click" type="button" data-agent-canvas-tool="click">Click</button><button id="tau-ops-chat-agent-canvas-type" type="button" data-agent-canvas-tool="type">Type</button></form><section id="tau-ops-chat-agent-canvas-diagnostics" data-agent-canvas-diagnostics="true"><dl><div><dt>Runtime</dt><dd id="tau-ops-chat-agent-canvas-runtime-status">pending</dd></div><div><dt>DOM</dt><dd id="tau-ops-chat-agent-canvas-dom-count">0</dd></div><div><dt>Canvas</dt><dd id="tau-ops-chat-agent-canvas-count">0</dd></div><div><dt>Console</dt><dd id="tau-ops-chat-agent-canvas-console-count">0</dd></div></dl><ul id="tau-ops-chat-agent-canvas-console" data-agent-canvas-console-events="true"></ul><ul id="tau-ops-chat-agent-canvas-pixels" data-agent-canvas-pixel-samples="true"></ul></section>"#,
+        r#"<form id="tau-ops-chat-agent-canvas-controls" data-agent-canvas-controls="postmessage"><label for="tau-ops-chat-agent-canvas-click-x">X<input id="tau-ops-chat-agent-canvas-click-x" type="number" value="40" min="0"/></label><label for="tau-ops-chat-agent-canvas-click-y">Y<input id="tau-ops-chat-agent-canvas-click-y" type="number" value="40" min="0"/></label><label for="tau-ops-chat-agent-canvas-type-text">Text<input id="tau-ops-chat-agent-canvas-type-text" type="text" value="" autocomplete="off"/></label><button id="tau-ops-chat-agent-canvas-probe" type="button" data-agent-canvas-tool="snapshot">Probe</button><button id="tau-ops-chat-agent-canvas-click" type="button" data-agent-canvas-tool="click">Click</button><button id="tau-ops-chat-agent-canvas-type" type="button" data-agent-canvas-tool="type">Type</button></form><section id="tau-ops-chat-agent-canvas-diagnostics" data-agent-canvas-diagnostics="true"><dl><div><dt>Runtime</dt><dd id="tau-ops-chat-agent-canvas-runtime-status">pending</dd></div><div><dt>DOM</dt><dd id="tau-ops-chat-agent-canvas-dom-count">0</dd></div><div><dt>Canvas</dt><dd id="tau-ops-chat-agent-canvas-count">0</dd></div><div><dt>Console</dt><dd id="tau-ops-chat-agent-canvas-console-count">0</dd></div></dl><ul id="tau-ops-chat-agent-canvas-dom-snapshot" data-agent-canvas-dom-snapshot="true"></ul><ul id="tau-ops-chat-agent-canvas-console" data-agent-canvas-console-events="true"></ul><ul id="tau-ops-chat-agent-canvas-pixels" data-agent-canvas-pixel-samples="true"></ul><ul id="tau-ops-chat-agent-canvas-screenshots" data-agent-canvas-screenshot-samples="true"></ul></section>"#,
     );
     html.push_str(
         format!(

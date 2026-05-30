@@ -1,12 +1,12 @@
 # Tau: Gaps, Issues & Improvements (Review #31)
 
-**Date:** 2026-05-21
-**HEAD:** `e2c3f686` plus current Agent Canvas v2 working-tree follow-up (44+ workspace crates)
-**Roadmap closure:** foundational roadmap closed; active follow-through is now UI/runtime proof depth, under-tested QA surfaces, and render-shell modularity
+**Date:** 2026-05-30
+**HEAD:** `c1413933` plus current Agent Canvas v2/module-split working-tree follow-up (44+ workspace crates)
+**Roadmap closure:** foundational roadmap closed; active follow-through is now under-tested QA surfaces, deploy/process race drills, and continued render-shell modularity
 
 This document supersedes the older Review #31 snapshot and refreshes closure
-status/evidence against current repository artifacts, ADRs, runbooks, and the
-ops-chat Agent Canvas v2 follow-up.
+status/evidence against current repository artifacts, ADRs, runbooks, release
+validation evidence, and the ops-chat Agent Canvas v2 follow-up.
 
 ---
 
@@ -64,18 +64,32 @@ ops-chat Agent Canvas v2 follow-up.
 1. **Under-tested crate wave follow-through**
    The original expansion issue closed and recent waves raised direct crate-local depth in `tau-training-proxy` and `kamn-core`; remaining lower-depth target is `kamn-sdk` plus adjacent QA surfaces.
 
-2. **Agent Canvas v2 product proof**
-   `/ops/chat` can execute tools and preview generated HTML artifacts. The
-   active follow-up is making that preview operationally useful: artifact
-   history, frame diagnostics, console/error visibility, pixel samples, and
-   controlled click/type/probe commands.
+2. **Deploy process race-drill coverage**
+   Deploy/stop process lifecycle control is implemented and branch release
+   validation is clean, but the next runtime-hardening slice should add a
+   repeatable drill for spawn/terminate/restart races across configured process
+   profiles.
 
-3. **Under-tested crate wave follow-through**
+### 2.2 Recently Closed Follow-through
+
+1. **Agent Canvas v2 product proof**
+   `/ops/chat` can execute tools and preview generated HTML artifacts. The
+   current branch makes that preview operationally useful: artifact history,
+   DOM snapshot markers, frame diagnostics, console/error visibility, pixel and
+   screenshot samples, controlled click/type/probe commands, and repeatable
+   proof automation are covered.
+
+2. **Release-grade validation**
+   The branch has a clean full release-grade validation path through
+   `scripts/dev/fast-validate.sh --full`, which isolates full-validation target
+   state and preserves `tau-agent-core` doctest coverage.
+
+3. **Coverage target policy**
    `docs/guides/test-coverage-targets.md` now defines target thresholds and
    conformance mapping. Remaining work is execution against `kamn-sdk` and
    adjacent QA surfaces, not policy definition.
 
-### 2.2 M104 Follow-up Issues (Current State)
+### 2.3 M104 Follow-up Issues (Current State)
 
 | Item | Issue | State |
 |------|-------|-------|
@@ -96,7 +110,7 @@ ops-chat Agent Canvas v2 follow-up.
 
 | Component | Location | Current State | Remaining Stub Surface |
 |-----------|----------|---------------|------------------------|
-| Deploy endpoint | `crates/tau-gateway/src/gateway_openresponses/deploy_runtime.rs` + `deploy_process_supervisor.rs` | Request/stop state is persisted and process supervisor can spawn configured child processes | Needs release-grade live drill coverage across configured process profiles |
+| Deploy endpoint | `crates/tau-gateway/src/gateway_openresponses/deploy_runtime.rs` + `deploy_process_supervisor.rs` | Request/stop state is persisted and process supervisor can spawn configured child processes | Needs repeatable race-drill coverage across configured process profiles |
 | Stop endpoint | `crates/tau-gateway/src/gateway_openresponses/deploy_runtime.rs` + `deploy_process_supervisor.rs` | Agent stop routes through process termination and records stop evidence | Needs broader concurrency/race regression coverage |
 | RL weight updates | `crates/tau-coding-agent/src/live_rl_runtime.rs` | Captures rollouts and emits optimization reports | Does not write updated model weights (by design) |
 
@@ -121,7 +135,7 @@ ops-chat Agent Canvas v2 follow-up.
 | Property-based tests | Minimal usage in core roadmap surfaces | Add `proptest` for ranking/decay/token-limit math |
 | Concurrency stress | Targeted coverage exists but thin for some paths | Add race-oriented tests around memory writes and process supervision |
 | Deploy runtime integration | Process supervisor tests and shell/browser route evidence exist | Add repeatable release drill for spawn/terminate/restart races |
-| Ops chat canvas | Live manual proof existed before this update | Keep `scripts/dev/ops-chat-canvas-proof.sh` green as the repeatable product proof |
+| Ops chat canvas | Repeatable proof covers send recovery, generated artifact, runtime contract markers, and JSON evidence | Keep `scripts/dev/ops-chat-canvas-proof.sh` green as the product proof |
 
 ---
 
@@ -129,10 +143,10 @@ ops-chat Agent Canvas v2 follow-up.
 
 ### 5.1 Gateway Module Size (Improved, Still a Hotspot)
 
-`crates/tau-gateway/src/gateway_openresponses.rs` is now 267 lines after route/runtime extraction. The pressure point has moved to render surfaces:
+`crates/tau-gateway/src/gateway_openresponses.rs` is now 269 lines after route/runtime extraction. The pressure point has moved to render surfaces:
 
-- `crates/tau-gateway/src/gateway_openresponses/ops_dashboard_shell.rs`: ~6.3k lines
-- `crates/tau-dashboard-ui/src/lib.rs`: ~13.3k lines
+- `crates/tau-gateway/src/gateway_openresponses/ops_dashboard_shell.rs`: ~6.1k lines after the deploy-panel handler split
+- `crates/tau-dashboard-ui/src/lib.rs`: ~12.6k lines after chat markdown, deploy panel, and agent canvas panel extraction
 
 Continued modularization should now split chat/canvas, deploy, harness, and
 memory UI/render contracts into focused modules rather than growing the central
@@ -207,31 +221,30 @@ compatibility bridges.
 
 ### P0 - Next High-Impact Closures
 
-1. **Ship Agent Canvas v2 proof**: artifact history, diagnostics bridge,
-   controlled preview interactions, pixel/console signals, and repeatable
-   `/ops/chat` proof automation.
-2. **Run full release-grade validation** for the branch, including full
-   `cargo test` after targeted checks and live proof.
+1. **Run deploy process race drills**: add repeatable spawn/terminate/restart
+   coverage for configured process profiles, including fast stop-after-start
+   and repeated stop idempotency cases.
+2. **Expand under-tested crate coverage** against
+   `docs/guides/test-coverage-targets.md`, starting with `kamn-sdk` and adjacent
+   QA surfaces.
 
 ### P1 - Quality and Maintainability
 
-3. **Extract chat/canvas and deploy render modules** from
+3. **Continue render-shell extraction** from
    `tau-dashboard-ui/src/lib.rs` and
-   `gateway_openresponses/ops_dashboard_shell.rs`.
-4. **Expand under-tested crate coverage** against
-   `docs/guides/test-coverage-targets.md`, starting with `kamn-sdk` and adjacent
-   QA surfaces.
-5. **Grow property/concurrency testing** for ranking, compaction, memory writes,
+   `gateway_openresponses/ops_dashboard_shell.rs`, with harness and memory UI
+   surfaces as the next candidates.
+4. **Grow property/concurrency testing** for ranking, compaction, memory writes,
    and process supervision.
-6. **Sustain contributor/security doc freshness** with release-aligned review cadence.
+5. **Sustain contributor/security doc freshness** with release-aligned review cadence.
 
 ### P2 - Medium-Term Enhancements
 
-7. **Run key-rotation drills** against the encrypted credential store runbook
+6. **Run key-rotation drills** against the encrypted credential store runbook
    and record sanitized release evidence.
-8. **Reconsider Cortex supervisor routing only behind the typed action-envelope
+7. **Reconsider Cortex supervisor routing only behind the typed action-envelope
    escalation gate** in `docs/architecture/cortex-automation-scope.md`.
-9. **Add heavier-load dashboard profiling** once memory graph and canvas usage
+8. **Add heavier-load dashboard profiling** once memory graph and canvas usage
    targets increase.
 
 ---
@@ -239,6 +252,6 @@ compatibility bridges.
 ## Summary
 
 This refresh removes stale action items that are now covered by ADRs, runbooks,
-or published docs. The main remaining gaps are product-proof depth for Agent
-Canvas, full branch validation, UI/render modularization, and targeted QA depth
-in lower-covered crates.
+published docs, repeatable Agent Canvas proof automation, or full branch
+validation evidence. The main remaining gaps are deploy/process race drills,
+UI/render modularization, and targeted QA depth in lower-covered crates.

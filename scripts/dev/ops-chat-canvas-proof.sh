@@ -9,6 +9,7 @@ TIMEOUT_SECONDS="${TAU_OPS_CHAT_CANVAS_PROOF_TIMEOUT_SECONDS:-240}"
 AUTH_MODE="${TAU_OPS_CHAT_CANVAS_PROOF_AUTH_MODE:-none}"
 AUTH_TOKEN="${TAU_OPS_CHAT_CANVAS_PROOF_AUTH_TOKEN:-}"
 SKIP_FILE_CHECK="${TAU_OPS_CHAT_CANVAS_PROOF_SKIP_FILE_CHECK:-false}"
+RECOVERY_MESSAGE_CHARS="${TAU_OPS_CHAT_CANVAS_PROOF_RECOVERY_MESSAGE_CHARS:-40000}"
 
 usage() {
   cat <<'USAGE'
@@ -103,6 +104,8 @@ while [[ $# -gt 0 ]]; do
 done
 
 require_cmd curl
+require_cmd dd
+require_cmd tr
 
 if [[ "${AUTH_MODE}" != "none" && "${AUTH_MODE}" != "token" ]]; then
   echo "error: --auth-mode must be none or token" >&2
@@ -119,10 +122,55 @@ if [[ "${AUTH_MODE}" == "token" ]]; then
   auth_args=("-H" "Authorization: Bearer ${AUTH_TOKEN}")
 fi
 
-message="Create an HTML canvas demo at ${ARTIFACT_PATH} with a canvas id \"game\" and a short script that draws a green rectangle. Use the write tool."
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "${tmp_dir}"' EXIT
 
+read_header_location() {
+  awk 'tolower($1) == "location:" { sub(/^[^:]*:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit }' "$1"
+}
+
+require_redirect_location_contains() {
+  local status="$1"
+  local location="$2"
+  local expected="$3"
+  local label="$4"
+  if [[ "${status}" != "302" && "${status}" != "303" ]]; then
+    echo "error: ${label} expected redirect status, got HTTP ${status}" >&2
+    exit 1
+  fi
+  require_contains "${location}" "${expected}" "${label}"
+}
+
+get_recovery_headers="${tmp_dir}/send-get.headers"
+get_recovery_body="${tmp_dir}/send-get.body"
+get_recovery_status="$(curl -sS -o "${get_recovery_body}" -D "${get_recovery_headers}" -w '%{http_code}' --max-time "${TIMEOUT_SECONDS}" \
+  "${auth_args[@]}" \
+  "${BASE_URL%/}/ops/chat/send?theme=dark&sidebar=expanded&session=${SESSION_KEY}")"
+get_recovery_location="$(read_header_location "${get_recovery_headers}")"
+require_redirect_location_contains \
+  "${get_recovery_status}" \
+  "${get_recovery_location}" \
+  "/ops/chat?theme=dark&sidebar=expanded&session=${SESSION_KEY}" \
+  "send GET recovery redirect"
+
+oversized_message="$(dd if=/dev/zero bs="${RECOVERY_MESSAGE_CHARS}" count=1 2>/dev/null | tr '\0' 'x')"
+failure_recovery_headers="${tmp_dir}/send-failure.headers"
+failure_recovery_body="${tmp_dir}/send-failure.body"
+failure_recovery_status="$(curl -sS -o "${failure_recovery_body}" -D "${failure_recovery_headers}" -w '%{http_code}' --max-time "${TIMEOUT_SECONDS}" \
+  "${auth_args[@]}" \
+  -X POST "${BASE_URL%/}/ops/chat/send" \
+  --data-urlencode "session_key=${SESSION_KEY}" \
+  --data-urlencode "theme=dark" \
+  --data-urlencode "sidebar=expanded" \
+  --data-urlencode "message=${oversized_message}")"
+failure_recovery_location="$(read_header_location "${failure_recovery_headers}")"
+require_redirect_location_contains \
+  "${failure_recovery_status}" \
+  "${failure_recovery_location}" \
+  "chat_status=input-too-large" \
+  "send failure recovery redirect"
+
+message="Create an HTML canvas demo at ${ARTIFACT_PATH} with a canvas id \"game\" and a short script that draws a green rectangle. Use the write tool."
 post_body="${tmp_dir}/post.html"
 post_status="$(curl -sS -o "${post_body}" -w '%{http_code}' --max-time "${TIMEOUT_SECONDS}" \
   "${auth_args[@]}" \
@@ -162,6 +210,21 @@ require_contains "${chat_html}" 'data-agent-canvas-runtime="postmessage-v2"' "ca
 require_contains "${chat_html}" 'data-agent-canvas-artifact-history="true"' "artifact history"
 require_contains "${chat_html}" 'data-agent-canvas-controls="postmessage"' "controlled interaction surface"
 require_contains "${chat_html}" 'data-agent-canvas-diagnostics="true"' "diagnostics surface"
+require_contains "${chat_html}" 'data-preview-runtime-status="pending"' "runtime status marker"
+require_contains "${chat_html}" 'data-dom-node-count="0"' "DOM snapshot counter marker"
+require_contains "${chat_html}" 'data-dom-snapshot-count="0"' "DOM snapshot list counter marker"
+require_contains "${chat_html}" 'data-canvas-count="0"' "canvas counter marker"
+require_contains "${chat_html}" 'data-console-error-count="0"' "console error counter marker"
+require_contains "${chat_html}" 'data-pixel-sample-count="0"' "pixel sample counter marker"
+require_contains "${chat_html}" 'data-screenshot-sample-count="0"' "screenshot sample counter marker"
+require_contains "${chat_html}" 'data-interaction-mode="postmessage"' "interaction mode marker"
+require_contains "${chat_html}" 'data-agent-canvas-tool="snapshot"' "snapshot tool control"
+require_contains "${chat_html}" 'data-agent-canvas-tool="click"' "click tool control"
+require_contains "${chat_html}" 'data-agent-canvas-tool="type"' "type tool control"
+require_contains "${chat_html}" 'data-agent-canvas-dom-snapshot="true"' "DOM snapshot diagnostics list"
+require_contains "${chat_html}" 'data-agent-canvas-console-events="true"' "console diagnostics list"
+require_contains "${chat_html}" 'data-agent-canvas-pixel-samples="true"' "pixel diagnostics list"
+require_contains "${chat_html}" 'data-agent-canvas-screenshot-samples="true"' "screenshot diagnostics list"
 
 mkdir -p "$(dirname "${OUTPUT_JSON}")"
 cat >"${OUTPUT_JSON}" <<JSON
@@ -171,8 +234,20 @@ cat >"${OUTPUT_JSON}" <<JSON
   "base_url": "$(json_escape "${BASE_URL}")",
   "session_key": "$(json_escape "${SESSION_KEY}")",
   "artifact_path": "$(json_escape "${ARTIFACT_PATH}")",
+  "send_get_recovery": "passed",
+  "send_failure_recovery": "passed",
   "post_status": "$(json_escape "${post_status}")",
   "file_check": "$(json_escape "${file_check}")",
+  "runtime_contract_check": "passed",
+  "runtime_contract": {
+    "dom_snapshot": true,
+    "screenshot_capture": true,
+    "console_errors": true,
+    "canvas_pixels": true,
+    "controlled_click": true,
+    "controlled_type": true,
+    "artifact_history": true
+  },
   "result": "passed"
 }
 JSON
