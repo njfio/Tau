@@ -15,4 +15,12 @@
 - [x] T13: Extract gateway chat-canvas artifact parsing and frame instrumentation into a focused module.
 - [x] T14: Add repeatable ops-chat canvas product-proof automation.
 - [x] T15: Refresh stale roadmap action items against current docs and ADRs.
-- [x] T16: Run focused tests, touched crate checks, live proof, and full workspace gate.
+- [x] T16: Run focused tests, touched crate checks, and live proof.
+- [x] T17: Classify the full-workspace gate overrun as a reproducible
+  `tau-agent-core` doc-test compile-time overrun rather than a chat/canvas
+  functional failure.
+- [x] T18: Extend the ops-chat canvas proof to cover `/ops/chat/send` GET
+  recovery, POST failure recovery, DOM/screenshot/pixel/console runtime
+  contract markers, and controlled click/type/probe controls.
+- [x] T19: Split first chat/canvas and deploy-panel hotspot modules out of the
+  dashboard UI and gateway ops shell roots.
