@@ -36,6 +36,10 @@ cargo mutants --in-diff             # critical paths gate
 cargo insta test                    # if snapshots used
 ```
 
+### Code retrieval tools
+
+Prefer the configured `rts` MCP server for repo navigation when its tools are available: start with `outline_workspace` for orientation, use `find_symbol` / `read_symbol` / `read_symbol_at` / `read_range` for targeted reads, and use `find_callers` / `impact_of` before refactors. Use `grep` from `rts` for indexed content search when symbol-aware context is useful; fall back to `rg` or `rts-bench query` only when the native MCP tools are not loaded in the current session.
+
 ---
 
 ## 2) Boundaries
