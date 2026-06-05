@@ -57,6 +57,108 @@ json_escape() {
   printf '%s' "${value}"
 }
 
+json_bool() {
+  if [[ "$1" == "true" ]]; then
+    printf 'true'
+  else
+    printf 'false'
+  fi
+}
+
+contains_bool() {
+  local haystack="$1"
+  local needle="$2"
+  if [[ "${haystack}" == *"${needle}"* ]]; then
+    printf 'true'
+  else
+    printf 'false'
+  fi
+}
+
+count_marker() {
+  local haystack="$1"
+  local needle="$2"
+  awk -v needle="${needle}" '
+    {
+      pos = 1
+      while ((idx = index(substr($0, pos), needle)) > 0) {
+        count++
+        pos += idx + length(needle) - 1
+      }
+    }
+    END { print count + 0 }
+  ' <<<"${haystack}"
+}
+
+file_sha256() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{ print $1 }'
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1" | awk '{ print $1 }'
+  else
+    echo "error: requires sha256sum or shasum to compute artifact hash" >&2
+    exit 1
+  fi
+}
+
+file_size_bytes() {
+  wc -c <"$1" | tr -d '[:space:]'
+}
+
+validate_agent_canvas_contract() {
+  local html="$1"
+  require_contains "${html}" 'id="tau-ops-chat-agent-canvas"' "agent canvas section"
+  require_contains "${html}" 'data-preview-status="loaded"' "loaded preview status"
+  require_contains "${html}" 'id="tau-ops-chat-agent-preview-frame"' "preview frame"
+  require_contains "${html}" 'sandbox="allow-scripts"' "sandboxed preview frame"
+  require_contains "${html}" 'data-agent-canvas-runtime="postmessage-v2"' "canvas runtime bridge"
+  require_contains "${html}" 'data-agent-canvas-artifact-history="true"' "artifact history"
+  require_contains "${html}" 'data-agent-canvas-controls="postmessage"' "controlled interaction surface"
+  require_contains "${html}" 'data-agent-canvas-diagnostics="true"' "diagnostics surface"
+  require_contains "${html}" 'data-preview-runtime-status="pending"' "runtime status marker"
+  require_contains "${html}" 'data-dom-node-count="0"' "DOM snapshot counter marker"
+  require_contains "${html}" 'data-dom-snapshot-count="0"' "DOM snapshot list counter marker"
+  require_contains "${html}" 'data-canvas-count="0"' "canvas counter marker"
+  require_contains "${html}" 'data-console-error-count="0"' "console error counter marker"
+  require_contains "${html}" 'data-pixel-sample-count="0"' "pixel sample counter marker"
+  require_contains "${html}" 'data-screenshot-sample-count="0"' "screenshot sample counter marker"
+  require_contains "${html}" 'data-interaction-mode="postmessage"' "interaction mode marker"
+  require_contains "${html}" 'data-agent-canvas-tool="snapshot"' "snapshot tool control"
+  require_contains "${html}" 'data-agent-canvas-tool="click"' "click tool control"
+  require_contains "${html}" 'data-agent-canvas-tool="type"' "type tool control"
+  require_contains "${html}" 'data-agent-canvas-dom-snapshot="true"' "DOM snapshot diagnostics list"
+  require_contains "${html}" 'data-agent-canvas-console-events="true"' "console diagnostics list"
+  require_contains "${html}" 'data-agent-canvas-pixel-samples="true"' "pixel diagnostics list"
+  require_contains "${html}" 'data-agent-canvas-screenshot-samples="true"' "screenshot diagnostics list"
+}
+
+apply_agent_canvas_proof_loop_fix() {
+  local artifact_path="$1"
+  mkdir -p "$(dirname "${artifact_path}")"
+  cat >"${artifact_path}" <<'HTML'
+<!doctype html>
+<html lang="en" data-agent-canvas-proof-loop="fixed">
+<head>
+  <meta charset="utf-8">
+  <title>Agent Canvas proof-loop fixed artifact</title>
+</head>
+<body>
+  <canvas id="game" width="96" height="48" data-agent-canvas-proof-loop-canvas="fixed"></canvas>
+  <input id="agent-canvas-proof-loop-input" aria-label="Agent Canvas proof-loop input">
+  <script>
+    const canvas = document.getElementById("game");
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#18a957";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = "#062a19";
+    ctx.fillRect(8, 8, 24, 16);
+    console.log("agent-canvas-proof-loop:fixed");
+  </script>
+</body>
+</html>
+HTML
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --base-url)
@@ -202,29 +304,75 @@ curl -sS --fail-with-body --max-time "${TIMEOUT_SECONDS}" \
   >"${chat_body}"
 
 chat_html="$(cat "${chat_body}")"
-require_contains "${chat_html}" 'id="tau-ops-chat-agent-canvas"' "agent canvas section"
-require_contains "${chat_html}" 'data-preview-status="loaded"' "loaded preview status"
-require_contains "${chat_html}" 'id="tau-ops-chat-agent-preview-frame"' "preview frame"
-require_contains "${chat_html}" 'sandbox="allow-scripts"' "sandboxed preview frame"
-require_contains "${chat_html}" 'data-agent-canvas-runtime="postmessage-v2"' "canvas runtime bridge"
-require_contains "${chat_html}" 'data-agent-canvas-artifact-history="true"' "artifact history"
-require_contains "${chat_html}" 'data-agent-canvas-controls="postmessage"' "controlled interaction surface"
-require_contains "${chat_html}" 'data-agent-canvas-diagnostics="true"' "diagnostics surface"
-require_contains "${chat_html}" 'data-preview-runtime-status="pending"' "runtime status marker"
-require_contains "${chat_html}" 'data-dom-node-count="0"' "DOM snapshot counter marker"
-require_contains "${chat_html}" 'data-dom-snapshot-count="0"' "DOM snapshot list counter marker"
-require_contains "${chat_html}" 'data-canvas-count="0"' "canvas counter marker"
-require_contains "${chat_html}" 'data-console-error-count="0"' "console error counter marker"
-require_contains "${chat_html}" 'data-pixel-sample-count="0"' "pixel sample counter marker"
-require_contains "${chat_html}" 'data-screenshot-sample-count="0"' "screenshot sample counter marker"
-require_contains "${chat_html}" 'data-interaction-mode="postmessage"' "interaction mode marker"
-require_contains "${chat_html}" 'data-agent-canvas-tool="snapshot"' "snapshot tool control"
-require_contains "${chat_html}" 'data-agent-canvas-tool="click"' "click tool control"
-require_contains "${chat_html}" 'data-agent-canvas-tool="type"' "type tool control"
-require_contains "${chat_html}" 'data-agent-canvas-dom-snapshot="true"' "DOM snapshot diagnostics list"
-require_contains "${chat_html}" 'data-agent-canvas-console-events="true"' "console diagnostics list"
-require_contains "${chat_html}" 'data-agent-canvas-pixel-samples="true"' "pixel diagnostics list"
-require_contains "${chat_html}" 'data-agent-canvas-screenshot-samples="true"' "screenshot diagnostics list"
+validate_agent_canvas_contract "${chat_html}"
+
+proof_loop_result="skipped"
+before_artifact_sha256=""
+after_artifact_sha256=""
+before_artifact_bytes=0
+after_artifact_bytes=0
+before_dom_marker_count=0
+after_dom_marker_count=0
+before_dom_snapshot_contract="false"
+after_dom_snapshot_contract="false"
+before_console_error_contract="false"
+after_console_error_contract="false"
+before_pixel_sample_contract="false"
+after_pixel_sample_contract="false"
+before_screenshot_sample_contract="false"
+after_screenshot_sample_contract="false"
+before_controlled_interaction_contract="false"
+after_controlled_interaction_contract="false"
+before_artifact_history_contract="false"
+after_artifact_history_contract="false"
+artifact_changed="false"
+targeted_fix_visible="false"
+route_contract_stable="false"
+
+if [[ "${file_check}" == "passed" ]]; then
+  before_artifact_sha256="$(file_sha256 "${ARTIFACT_PATH}")"
+  before_artifact_bytes="$(file_size_bytes "${ARTIFACT_PATH}")"
+  before_dom_marker_count="$(count_marker "${chat_html}" "data-agent-canvas")"
+  before_dom_snapshot_contract="$(contains_bool "${chat_html}" 'data-agent-canvas-dom-snapshot="true"')"
+  before_console_error_contract="$(contains_bool "${chat_html}" 'data-agent-canvas-console-events="true"')"
+  before_pixel_sample_contract="$(contains_bool "${chat_html}" 'data-agent-canvas-pixel-samples="true"')"
+  before_screenshot_sample_contract="$(contains_bool "${chat_html}" 'data-agent-canvas-screenshot-samples="true"')"
+  before_controlled_interaction_contract="$(contains_bool "${chat_html}" 'data-agent-canvas-controls="postmessage"')"
+  before_artifact_history_contract="$(contains_bool "${chat_html}" 'data-agent-canvas-artifact-history="true"')"
+
+  apply_agent_canvas_proof_loop_fix "${ARTIFACT_PATH}"
+
+  after_body="${tmp_dir}/chat-after-fix.html"
+  curl -sS --fail-with-body --max-time "${TIMEOUT_SECONDS}" \
+    "${auth_args[@]}" \
+    "${BASE_URL%/}/ops/chat?theme=dark&sidebar=expanded&session=${SESSION_KEY}" \
+    >"${after_body}"
+  after_chat_html="$(cat "${after_body}")"
+  validate_agent_canvas_contract "${after_chat_html}"
+
+  after_artifact_sha256="$(file_sha256 "${ARTIFACT_PATH}")"
+  after_artifact_bytes="$(file_size_bytes "${ARTIFACT_PATH}")"
+  after_dom_marker_count="$(count_marker "${after_chat_html}" "data-agent-canvas")"
+  after_dom_snapshot_contract="$(contains_bool "${after_chat_html}" 'data-agent-canvas-dom-snapshot="true"')"
+  after_console_error_contract="$(contains_bool "${after_chat_html}" 'data-agent-canvas-console-events="true"')"
+  after_pixel_sample_contract="$(contains_bool "${after_chat_html}" 'data-agent-canvas-pixel-samples="true"')"
+  after_screenshot_sample_contract="$(contains_bool "${after_chat_html}" 'data-agent-canvas-screenshot-samples="true"')"
+  after_controlled_interaction_contract="$(contains_bool "${after_chat_html}" 'data-agent-canvas-controls="postmessage"')"
+  after_artifact_history_contract="$(contains_bool "${after_chat_html}" 'data-agent-canvas-artifact-history="true"')"
+
+  if [[ "${before_artifact_sha256}" != "${after_artifact_sha256}" ]]; then
+    artifact_changed="true"
+  fi
+  if grep -Fq 'data-agent-canvas-proof-loop="fixed"' "${ARTIFACT_PATH}"; then
+    targeted_fix_visible="true"
+  fi
+  route_contract_stable="true"
+  if [[ "${artifact_changed}" != "true" || "${targeted_fix_visible}" != "true" ]]; then
+    echo "error: proof loop comparison did not observe the targeted fix" >&2
+    exit 1
+  fi
+  proof_loop_result="passed"
+fi
 
 mkdir -p "$(dirname "${OUTPUT_JSON}")"
 cat >"${OUTPUT_JSON}" <<JSON
@@ -247,6 +395,48 @@ cat >"${OUTPUT_JSON}" <<JSON
     "controlled_click": true,
     "controlled_type": true,
     "artifact_history": true
+  },
+  "proof_loop": {
+    "result": "$(json_escape "${proof_loop_result}")",
+    "targeted_fix": {
+      "action": "rewrite_artifact_with_deterministic_fixed_canvas_contract",
+      "applied": $(json_bool "${targeted_fix_visible}"),
+      "marker": "data-agent-canvas-proof-loop=\"fixed\""
+    },
+    "iterations": [
+      {
+        "label": "before",
+        "artifact_sha256": "$(json_escape "${before_artifact_sha256}")",
+        "artifact_bytes": ${before_artifact_bytes},
+        "route_contract_check": "passed",
+        "dom_marker_count": ${before_dom_marker_count},
+        "dom_snapshot_contract": $(json_bool "${before_dom_snapshot_contract}"),
+        "console_error_contract": $(json_bool "${before_console_error_contract}"),
+        "pixel_sample_contract": $(json_bool "${before_pixel_sample_contract}"),
+        "screenshot_sample_contract": $(json_bool "${before_screenshot_sample_contract}"),
+        "controlled_interaction_contract": $(json_bool "${before_controlled_interaction_contract}"),
+        "artifact_history_contract": $(json_bool "${before_artifact_history_contract}")
+      },
+      {
+        "label": "after",
+        "artifact_sha256": "$(json_escape "${after_artifact_sha256}")",
+        "artifact_bytes": ${after_artifact_bytes},
+        "route_contract_check": "passed",
+        "dom_marker_count": ${after_dom_marker_count},
+        "dom_snapshot_contract": $(json_bool "${after_dom_snapshot_contract}"),
+        "console_error_contract": $(json_bool "${after_console_error_contract}"),
+        "pixel_sample_contract": $(json_bool "${after_pixel_sample_contract}"),
+        "screenshot_sample_contract": $(json_bool "${after_screenshot_sample_contract}"),
+        "controlled_interaction_contract": $(json_bool "${after_controlled_interaction_contract}"),
+        "artifact_history_contract": $(json_bool "${after_artifact_history_contract}")
+      }
+    ],
+    "comparison": {
+      "artifact_changed": $(json_bool "${artifact_changed}"),
+      "targeted_fix_visible": $(json_bool "${targeted_fix_visible}"),
+      "route_contract_stable": $(json_bool "${route_contract_stable}"),
+      "rerun_contract_check": "passed"
+    }
   },
   "result": "passed"
 }

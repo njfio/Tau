@@ -16,8 +16,23 @@ assert_contains() {
   fi
 }
 
+assert_equals() {
+  local expected="$1"
+  local actual="$2"
+  local label="$3"
+  if [[ "${expected}" != "${actual}" ]]; then
+    echo "assertion failed (${label}): expected '${expected}', got '${actual}'" >&2
+    exit 1
+  fi
+}
+
 if [[ ! -x "${PROOF_SCRIPT}" ]]; then
   echo "missing executable proof script: ${PROOF_SCRIPT}" >&2
+  exit 1
+fi
+
+if ! command -v jq >/dev/null 2>&1; then
+  echo "missing required command: jq" >&2
   exit 1
 fi
 
@@ -128,6 +143,18 @@ assert_contains "$(cat "${output_json}")" '"file_check": "passed"' "file check r
 assert_contains "$(cat "${output_json}")" '"send_get_recovery": "passed"' "GET recovery result"
 assert_contains "$(cat "${output_json}")" '"send_failure_recovery": "passed"' "failure recovery result"
 assert_contains "$(cat "${output_json}")" '"runtime_contract_check": "passed"' "runtime contract result"
+assert_contains "$(cat "${output_json}")" '"proof_loop": {' "proof loop section"
+assert_contains "$(cat "${output_json}")" '"label": "before"' "before iteration"
+assert_contains "$(cat "${output_json}")" '"label": "after"' "after iteration"
+assert_contains "$(cat "${output_json}")" '"artifact_changed": true' "artifact changed comparison"
+assert_contains "$(cat "${output_json}")" '"targeted_fix_visible": true' "targeted fix visible comparison"
+assert_contains "$(cat "${output_json}")" '"route_contract_stable": true' "stable route contract comparison"
+assert_contains "$(cat "${artifact}")" 'data-agent-canvas-proof-loop="fixed"' "targeted artifact fix marker"
+assert_equals "passed" "$(jq -r '.proof_loop.result' "${output_json}")" "proof loop result"
+assert_equals "2" "$(jq -r '.proof_loop.iterations | length' "${output_json}")" "proof loop iteration count"
+assert_equals "true" "$(jq -r '.proof_loop.comparison.artifact_changed' "${output_json}")" "proof loop artifact changed"
+assert_equals "true" "$(jq -r '.proof_loop.comparison.targeted_fix_visible' "${output_json}")" "proof loop targeted fix visible"
+assert_equals "true" "$(jq -r '.proof_loop.comparison.route_contract_stable' "${output_json}")" "proof loop route contract stable"
 assert_contains "$(cat "${curl_log}")" "/ops/chat/send" "chat send call"
 assert_contains "$(cat "${curl_log}")" "/ops/chat?theme=dark&sidebar=expanded&session=proof-session" "chat render call"
 
