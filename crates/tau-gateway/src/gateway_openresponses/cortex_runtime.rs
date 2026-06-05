@@ -85,6 +85,8 @@ struct GatewayCortexStatusReport {
     event_type_counts: BTreeMap<String, u64>,
     recent_events: Vec<GatewayCortexObserverEventRecord>,
     diagnostics: Vec<String>,
+    #[serde(skip)]
+    latest_cortex_chat_event: Option<GatewayCortexObserverEventRecord>,
 }
 
 impl Default for GatewayCortexStatusReport {
@@ -104,6 +106,7 @@ impl Default for GatewayCortexStatusReport {
             event_type_counts: BTreeMap::new(),
             recent_events: Vec::new(),
             diagnostics: Vec::new(),
+            latest_cortex_chat_event: None,
         }
     }
 }
@@ -426,10 +429,20 @@ fn load_cortex_status_report(
                 .unwrap_or(parsed.timestamp_unix_ms),
         );
 
-        report.recent_events.push(GatewayCortexObserverEventRecord {
+        let normalized_event = GatewayCortexObserverEventRecord {
             event_type: normalized_event_type.to_string(),
             ..parsed
-        });
+        };
+        if normalized_event.event_type == CORTEX_REQUIRED_CHAT_EVENT_TYPE
+            && report
+                .latest_cortex_chat_event
+                .as_ref()
+                .map(|latest| normalized_event.timestamp_unix_ms >= latest.timestamp_unix_ms)
+                .unwrap_or(true)
+        {
+            report.latest_cortex_chat_event = Some(normalized_event.clone());
+        }
+        report.recent_events.push(normalized_event);
         if report.recent_events.len() > CORTEX_OBSERVER_RECENT_EVENTS_LIMIT {
             let drop_count = report
                 .recent_events
@@ -525,6 +538,37 @@ fn apply_cortex_readiness_classification(
         return;
     }
 
+    let Some(latest_chat_event) = report.latest_cortex_chat_event.as_ref() else {
+        report.health_state = "degraded".to_string();
+        report.reason_code = "cortex_chat_activity_not_recent".to_string();
+        report.health_reason =
+            "cortex chat activity exists but no retained chat event can prove readiness"
+                .to_string();
+        return;
+    };
+
+    if cortex_chat_event_used_fallback(latest_chat_event) {
+        report.health_state = "degraded".to_string();
+        report.reason_code = "cortex_chat_fallback_observed".to_string();
+        report.health_reason =
+            "latest cortex chat readiness event used deterministic fallback output".to_string();
+        return;
+    }
+
+    let latest_chat_age_seconds = report
+        .generated_unix_ms
+        .saturating_sub(latest_chat_event.timestamp_unix_ms)
+        .saturating_div(1000);
+    if latest_chat_age_seconds > CORTEX_READINESS_STALE_MAX_AGE_SECONDS {
+        report.health_state = "degraded".to_string();
+        report.reason_code = "cortex_observer_events_stale".to_string();
+        report.health_reason = format!(
+            "latest cortex chat readiness event is stale (age={}s max={}s)",
+            latest_chat_age_seconds, CORTEX_READINESS_STALE_MAX_AGE_SECONDS
+        );
+        return;
+    }
+
     let Some(last_event_age_seconds) = report.last_event_age_seconds else {
         report.health_state = "degraded".to_string();
         report.reason_code = "cortex_observer_last_event_unknown".to_string();
@@ -547,6 +591,19 @@ fn apply_cortex_readiness_classification(
     report.reason_code = "cortex_ready".to_string();
     report.health_reason =
         "cortex observer history is fresh and includes validated cortex chat activity".to_string();
+}
+
+fn cortex_chat_event_used_fallback(event: &GatewayCortexObserverEventRecord) -> bool {
+    let metadata = &event.metadata;
+    metadata
+        .get("fallback")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+        || metadata
+            .get("reason_code")
+            .and_then(Value::as_str)
+            .map(|reason_code| reason_code.ends_with("_fallback"))
+            .unwrap_or(false)
 }
 
 fn gateway_cortex_observer_events_path(state_dir: &Path) -> PathBuf {
@@ -951,6 +1008,54 @@ mod tests {
             .last_event_age_seconds
             .map(|value| value <= CORTEX_READINESS_STALE_MAX_AGE_SECONDS)
             .unwrap_or(false));
+    }
+
+    #[test]
+    fn unit_load_cortex_status_report_holds_gate_for_latest_fallback_chat_activity() {
+        let temp = tempdir().expect("tempdir");
+        let events_path = gateway_cortex_observer_events_path(temp.path());
+        std::fs::create_dir_all(events_path.parent().expect("events parent"))
+            .expect("create events directory");
+        let now = current_unix_timestamp_ms();
+        std::fs::write(
+            &events_path,
+            format!(
+                "{{\"schema_version\":1,\"timestamp_unix_ms\":{now},\"event_type\":\"cortex.chat.request\",\"metadata\":{{\"response_id\":\"r1\",\"fallback\":true,\"reason_code\":\"cortex_chat_llm_error_fallback\"}}}}\n"
+            ),
+        )
+        .expect("write events file");
+
+        let report = load_cortex_status_report(temp.path()).expect("load status report");
+        assert_eq!(report.health_state, "degraded");
+        assert_eq!(report.rollout_gate, "hold");
+        assert_eq!(report.reason_code, "cortex_chat_fallback_observed");
+        assert_eq!(
+            report.event_type_counts.get("cortex.chat.request").copied(),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn unit_load_cortex_status_report_uses_latest_chat_timestamp_for_fallback_gate() {
+        let temp = tempdir().expect("tempdir");
+        let events_path = gateway_cortex_observer_events_path(temp.path());
+        std::fs::create_dir_all(events_path.parent().expect("events parent"))
+            .expect("create events directory");
+        let now = current_unix_timestamp_ms();
+        let older = now.saturating_sub(1_000);
+        std::fs::write(
+            &events_path,
+            format!(
+                "{{\"schema_version\":1,\"timestamp_unix_ms\":{now},\"event_type\":\"cortex.chat.request\",\"metadata\":{{\"response_id\":\"r-fallback\",\"fallback\":true,\"reason_code\":\"cortex_chat_llm_error_fallback\"}}}}\n\
+                 {{\"schema_version\":1,\"timestamp_unix_ms\":{older},\"event_type\":\"cortex.chat.request\",\"metadata\":{{\"response_id\":\"r-older\",\"fallback\":false}}}}\n"
+            ),
+        )
+        .expect("write events file");
+
+        let report = load_cortex_status_report(temp.path()).expect("load status report");
+        assert_eq!(report.health_state, "degraded");
+        assert_eq!(report.rollout_gate, "hold");
+        assert_eq!(report.reason_code, "cortex_chat_fallback_observed");
     }
 
     #[test]

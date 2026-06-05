@@ -48,6 +48,27 @@ use tokio_tungstenite::{
 use tool_registrars::*;
 use websocket::*;
 
+const GATEWAY_OPENRESPONSES_HEAVY_RENDER_TEST_STACK_BYTES: usize = 16 * 1024 * 1024;
+
+fn run_gateway_openresponses_heavy_render_test<F>(future: F)
+where
+    F: std::future::Future<Output = ()> + Send + 'static,
+{
+    std::thread::Builder::new()
+        .name("gateway-openresponses-heavy-render-test".to_string())
+        .stack_size(GATEWAY_OPENRESPONSES_HEAVY_RENDER_TEST_STACK_BYTES)
+        .spawn(move || {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("build high-stack test runtime")
+                .block_on(future);
+        })
+        .expect("spawn high-stack test thread")
+        .join()
+        .expect("high-stack test thread panicked");
+}
+
 #[test]
 fn unit_gateway_openresponses_server_state_sequence_is_monotonic() {
     let temp = tempdir().expect("tempdir");
@@ -4890,8 +4911,128 @@ async fn integration_spec_2697_c01_c02_c05_deploy_and_stop_endpoints_support_aut
     handle.abort();
 }
 
+#[test]
+fn integration_spec_3758_c01_c02_c05_deploy_and_stop_spawn_and_terminate_configured_process() {
+    run_gateway_openresponses_heavy_render_test(async move {
+        let temp = tempdir().expect("tempdir");
+        let state = test_state_with_deploy_process_supervisor(
+            temp.path(),
+            10_000,
+            "secret",
+            Arc::new(CommandGatewayDeployProcessSupervisor::new(
+                "/bin/sh",
+                ["-c", "while true; do sleep 1; done"],
+            )),
+        );
+        let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+        let client = Client::new();
+
+        let deploy = client
+            .post("http://".to_string() + &addr.to_string() + "/gateway/deploy")
+            .bearer_auth("secret")
+            .json(&json!({
+                "agent_id": "agent-process",
+                "profile": "default",
+                "command": "ignored-request-command"
+            }))
+            .send()
+            .await
+            .expect("deploy response");
+        assert_eq!(deploy.status(), StatusCode::OK);
+        let deploy_payload = deploy.json::<Value>().await.expect("parse deploy payload");
+        assert_eq!(deploy_payload["agent_id"].as_str(), Some("agent-process"));
+        assert_eq!(deploy_payload["status"].as_str(), Some("deploying"));
+        assert_eq!(deploy_payload["process_status"].as_str(), Some("running"));
+        let process_pid = deploy_payload["process_pid"]
+            .as_u64()
+            .expect("deploy response includes process pid");
+        assert!(process_pid > 0);
+
+        let state_file = temp.path().join(".tau/gateway/deploy-agent-state.json");
+        let persisted = std::fs::read_to_string(&state_file).expect("read deploy state");
+        let persisted_payload =
+            serde_json::from_str::<Value>(persisted.as_str()).expect("parse deploy state");
+        assert_eq!(
+            persisted_payload["agents"]["agent-process"]["process_status"].as_str(),
+            Some("running")
+        );
+        assert_eq!(
+            persisted_payload["agents"]["agent-process"]["process_pid"].as_u64(),
+            Some(process_pid)
+        );
+
+        let deploy_ops_page = client
+            .get(format!("http://{addr}/ops/deploy"))
+            .bearer_auth("secret")
+            .send()
+            .await
+            .expect("deploy ops page response");
+        assert_eq!(deploy_ops_page.status(), StatusCode::OK);
+        let deploy_ops_html = deploy_ops_page.text().await.expect("deploy ops html");
+        assert!(deploy_ops_html
+            .contains("id=\"tau-ops-deploy-processes\" data-component=\"DeployProcessLifecycle\""));
+        assert!(deploy_ops_html.contains(
+            "id=\"tau-ops-deploy-process-row-0\" data-agent-id=\"agent-process\" data-agent-status=\"deploying\""
+        ));
+        assert!(deploy_ops_html.contains(&format!("data-process-pid=\"{process_pid}\"")));
+
+        let stop = client
+            .post(
+                "http://".to_string()
+                    + &addr.to_string()
+                    + resolve_agent_stop_endpoint(
+                        "/gateway/agents/{agent_id}/stop",
+                        "agent-process",
+                    )
+                    .as_str(),
+            )
+            .bearer_auth("secret")
+            .json(&json!({}))
+            .send()
+            .await
+            .expect("stop response");
+        assert_eq!(stop.status(), StatusCode::OK);
+        let stop_payload = stop.json::<Value>().await.expect("parse stop payload");
+        assert_eq!(stop_payload["agent_id"].as_str(), Some("agent-process"));
+        assert_eq!(stop_payload["status"].as_str(), Some("stopped"));
+        assert_eq!(stop_payload["process_status"].as_str(), Some("stopped"));
+        assert_eq!(
+            stop_payload["process_stop_reason"].as_str(),
+            Some("operator_stop_request")
+        );
+        assert_eq!(stop_payload["process_pid"].as_u64(), Some(process_pid));
+
+        #[cfg(unix)]
+        {
+            fn process_exists(pid: u64) -> bool {
+                std::process::Command::new("kill")
+                    .arg("-0")
+                    .arg(pid.to_string())
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .status()
+                    .map(|status| status.success())
+                    .unwrap_or(false)
+            }
+
+            for _ in 0..10 {
+                if !process_exists(process_pid) {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+            assert!(
+                !process_exists(process_pid),
+                "process {process_pid} should be terminated after stop"
+            );
+        }
+
+        handle.abort();
+    });
+}
+
 #[tokio::test]
-async fn integration_spec_3758_c01_c02_c05_deploy_and_stop_spawn_and_terminate_configured_process()
+async fn regression_spec_3758_c12_deploy_race_drill_replaces_running_child_and_idempotently_stops()
 {
     let temp = tempdir().expect("tempdir");
     let state = test_state_with_deploy_process_supervisor(
@@ -4906,61 +5047,80 @@ async fn integration_spec_3758_c01_c02_c05_deploy_and_stop_spawn_and_terminate_c
     let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
     let client = Client::new();
 
-    let deploy = client
+    let first_deploy = client
         .post("http://".to_string() + &addr.to_string() + "/gateway/deploy")
         .bearer_auth("secret")
         .json(&json!({
-            "agent_id": "agent-process",
-            "profile": "default",
-            "command": "ignored-request-command"
+            "agent_id": "agent-process-race",
+            "profile": "default"
         }))
         .send()
         .await
-        .expect("deploy response");
-    assert_eq!(deploy.status(), StatusCode::OK);
-    let deploy_payload = deploy.json::<Value>().await.expect("parse deploy payload");
-    assert_eq!(deploy_payload["agent_id"].as_str(), Some("agent-process"));
-    assert_eq!(deploy_payload["status"].as_str(), Some("deploying"));
-    assert_eq!(deploy_payload["process_status"].as_str(), Some("running"));
-    let process_pid = deploy_payload["process_pid"]
+        .expect("first deploy response");
+    assert_eq!(first_deploy.status(), StatusCode::OK);
+    let first_payload = first_deploy
+        .json::<Value>()
+        .await
+        .expect("parse first deploy payload");
+    let first_pid = first_payload["process_pid"]
         .as_u64()
-        .expect("deploy response includes process pid");
-    assert!(process_pid > 0);
+        .expect("first deploy response includes process pid");
 
-    let state_file = temp.path().join(".tau/gateway/deploy-agent-state.json");
-    let persisted = std::fs::read_to_string(&state_file).expect("read deploy state");
-    let persisted_payload =
-        serde_json::from_str::<Value>(persisted.as_str()).expect("parse deploy state");
-    assert_eq!(
-        persisted_payload["agents"]["agent-process"]["process_status"].as_str(),
-        Some("running")
-    );
-    assert_eq!(
-        persisted_payload["agents"]["agent-process"]["process_pid"].as_u64(),
-        Some(process_pid)
-    );
-
-    let deploy_ops_page = client
-        .get(format!("http://{addr}/ops/deploy"))
+    let second_deploy = client
+        .post("http://".to_string() + &addr.to_string() + "/gateway/deploy")
         .bearer_auth("secret")
+        .json(&json!({
+            "agent_id": "agent-process-race",
+            "profile": "default"
+        }))
         .send()
         .await
-        .expect("deploy ops page response");
-    assert_eq!(deploy_ops_page.status(), StatusCode::OK);
-    let deploy_ops_html = deploy_ops_page.text().await.expect("deploy ops html");
-    assert!(deploy_ops_html
-        .contains("id=\"tau-ops-deploy-processes\" data-component=\"DeployProcessLifecycle\""));
-    assert!(deploy_ops_html.contains(
-        "id=\"tau-ops-deploy-process-row-0\" data-agent-id=\"agent-process\" data-agent-status=\"deploying\""
-    ));
-    assert!(deploy_ops_html.contains(&format!("data-process-pid=\"{process_pid}\"")));
+        .expect("second deploy response");
+    assert_eq!(second_deploy.status(), StatusCode::OK);
+    let second_payload = second_deploy
+        .json::<Value>()
+        .await
+        .expect("parse second deploy payload");
+    assert_eq!(second_payload["process_status"].as_str(), Some("running"));
+    let second_pid = second_payload["process_pid"]
+        .as_u64()
+        .expect("second deploy response includes process pid");
+    assert_ne!(first_pid, second_pid);
+
+    #[cfg(unix)]
+    {
+        fn process_exists(pid: u64) -> bool {
+            std::process::Command::new("kill")
+                .arg("-0")
+                .arg(pid.to_string())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .map(|status| status.success())
+                .unwrap_or(false)
+        }
+
+        for _ in 0..10 {
+            if !process_exists(first_pid) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert!(
+            !process_exists(first_pid),
+            "re-deploy should terminate replaced process {first_pid}"
+        );
+    }
 
     let stop = client
         .post(
             "http://".to_string()
                 + &addr.to_string()
-                + resolve_agent_stop_endpoint("/gateway/agents/{agent_id}/stop", "agent-process")
-                    .as_str(),
+                + resolve_agent_stop_endpoint(
+                    "/gateway/agents/{agent_id}/stop",
+                    "agent-process-race",
+                )
+                .as_str(),
         )
         .bearer_auth("secret")
         .json(&json!({}))
@@ -4969,190 +5129,187 @@ async fn integration_spec_3758_c01_c02_c05_deploy_and_stop_spawn_and_terminate_c
         .expect("stop response");
     assert_eq!(stop.status(), StatusCode::OK);
     let stop_payload = stop.json::<Value>().await.expect("parse stop payload");
-    assert_eq!(stop_payload["agent_id"].as_str(), Some("agent-process"));
-    assert_eq!(stop_payload["status"].as_str(), Some("stopped"));
     assert_eq!(stop_payload["process_status"].as_str(), Some("stopped"));
+    assert_eq!(stop_payload["process_pid"].as_u64(), Some(second_pid));
+
+    let repeated_stop = client
+        .post(
+            "http://".to_string()
+                + &addr.to_string()
+                + resolve_agent_stop_endpoint(
+                    "/gateway/agents/{agent_id}/stop",
+                    "agent-process-race",
+                )
+                .as_str(),
+        )
+        .bearer_auth("secret")
+        .json(&json!({}))
+        .send()
+        .await
+        .expect("repeated stop response");
+    assert_eq!(repeated_stop.status(), StatusCode::OK);
+    let repeated_stop_payload = repeated_stop
+        .json::<Value>()
+        .await
+        .expect("parse repeated stop payload");
     assert_eq!(
-        stop_payload["process_stop_reason"].as_str(),
-        Some("operator_stop_request")
+        repeated_stop_payload["process_status"].as_str(),
+        Some("not_running")
     );
-    assert_eq!(stop_payload["process_pid"].as_u64(), Some(process_pid));
-
-    #[cfg(unix)]
-    {
-        fn process_exists(pid: u64) -> bool {
-            std::process::Command::new("kill")
-                .arg("-0")
-                .arg(pid.to_string())
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .status()
-                .map(|status| status.success())
-                .unwrap_or(false)
-        }
-
-        for _ in 0..10 {
-            if !process_exists(process_pid) {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
-        assert!(
-            !process_exists(process_pid),
-            "process {process_pid} should be terminated after stop"
-        );
-    }
+    assert!(repeated_stop_payload["process_pid"].is_null());
 
     handle.abort();
 }
 
-#[tokio::test]
-async fn integration_spec_3758_c11_ops_deploy_form_spawns_and_stop_form_terminates_process() {
-    let temp = tempdir().expect("tempdir");
-    let state = test_state_with_deploy_process_supervisor(
-        temp.path(),
-        10_000,
-        "secret",
-        Arc::new(CommandGatewayDeployProcessSupervisor::new(
-            "/bin/sh",
-            ["-c", "while true; do sleep 1; done"],
-        )),
-    );
-    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
-    let client = Client::builder()
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .expect("build reqwest client");
-
-    let deploy_page = client
-        .get(format!(
-            "http://{addr}/ops/deploy?theme=dark&sidebar=expanded&session=ui-3758"
-        ))
-        .bearer_auth("secret")
-        .send()
-        .await
-        .expect("deploy ops page response");
-    assert_eq!(deploy_page.status(), StatusCode::OK);
-    let deploy_page_html = deploy_page.text().await.expect("deploy ops html");
-    assert!(deploy_page_html.contains("id=\"tau-ops-deploy-form\""));
-    assert!(deploy_page_html.contains("action=\"/ops/deploy\""));
-    assert!(deploy_page_html.contains("method=\"post\""));
-    assert!(deploy_page_html.contains("id=\"tau-ops-deploy-submit\""));
-    assert!(deploy_page_html.contains("type=\"submit\""));
-
-    let deploy_form = client
-        .post(format!("http://{addr}/ops/deploy"))
-        .form(&[
-            ("agent_id", "agent-ui"),
-            ("profile", "ops"),
-            ("model", "openai/gpt-5.3-codex"),
-            ("theme", "dark"),
-            ("sidebar", "expanded"),
-            ("session", "ui-3758"),
-        ])
-        .send()
-        .await
-        .expect("deploy form response");
-    assert_eq!(deploy_form.status(), StatusCode::SEE_OTHER);
-    let deploy_location = deploy_form
-        .headers()
-        .get(reqwest::header::LOCATION)
-        .expect("deploy redirect location")
-        .to_str()
-        .expect("deploy redirect location str");
-    assert_eq!(
-        deploy_location,
-        "/ops/deploy?theme=dark&sidebar=expanded&session=ui-3758&deploy_action_status=deployed&deploy_agent_id=agent-ui&deploy_action_reason=process_started"
-    );
-
-    let state_file = temp.path().join(".tau/gateway/deploy-agent-state.json");
-    let persisted = std::fs::read_to_string(&state_file).expect("read deploy state");
-    let persisted_payload =
-        serde_json::from_str::<Value>(persisted.as_str()).expect("parse deploy state");
-    assert_eq!(
-        persisted_payload["agents"]["agent-ui"]["process_status"].as_str(),
-        Some("running")
-    );
-    let process_pid = persisted_payload["agents"]["agent-ui"]["process_pid"]
-        .as_u64()
-        .expect("deploy form persisted process pid");
-    assert!(process_pid > 0);
-
-    let deployed_page = client
-        .get(format!("http://{addr}{deploy_location}"))
-        .bearer_auth("secret")
-        .send()
-        .await
-        .expect("deployed page response");
-    assert_eq!(deployed_page.status(), StatusCode::OK);
-    let deployed_html = deployed_page.text().await.expect("deployed page html");
-    assert!(deployed_html.contains(
-        "id=\"tau-ops-deploy-process-row-0\" data-agent-id=\"agent-ui\" data-agent-status=\"deploying\""
-    ));
-    assert!(deployed_html.contains("data-process-status=\"running\""));
-    assert!(deployed_html.contains("id=\"tau-ops-deploy-stop-form-0\""));
-    assert!(deployed_html.contains("action=\"/ops/deploy/agents/agent-ui/stop\""));
-
-    let stop_form = client
-        .post(format!("http://{addr}/ops/deploy/agents/agent-ui/stop"))
-        .form(&[
-            ("theme", "dark"),
-            ("sidebar", "expanded"),
-            ("session", "ui-3758"),
-        ])
-        .send()
-        .await
-        .expect("stop form response");
-    assert_eq!(stop_form.status(), StatusCode::SEE_OTHER);
-    let stop_location = stop_form
-        .headers()
-        .get(reqwest::header::LOCATION)
-        .expect("stop redirect location")
-        .to_str()
-        .expect("stop redirect location str");
-    assert_eq!(
-        stop_location,
-        "/ops/deploy?theme=dark&sidebar=expanded&session=ui-3758&deploy_action_status=stopped&deploy_agent_id=agent-ui&deploy_action_reason=operator_stop_request"
-    );
-
-    let stopped_page = client
-        .get(format!("http://{addr}{stop_location}"))
-        .bearer_auth("secret")
-        .send()
-        .await
-        .expect("stopped page response");
-    assert_eq!(stopped_page.status(), StatusCode::OK);
-    let stopped_html = stopped_page.text().await.expect("stopped page html");
-    assert!(stopped_html.contains("data-agent-id=\"agent-ui\""));
-    assert!(stopped_html.contains("data-process-status=\"stopped\""));
-    assert!(stopped_html.contains("data-process-stop-reason=\"operator_stop_request\""));
-
-    #[cfg(unix)]
-    {
-        fn process_exists(pid: u64) -> bool {
-            std::process::Command::new("kill")
-                .arg("-0")
-                .arg(pid.to_string())
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .status()
-                .map(|status| status.success())
-                .unwrap_or(false)
-        }
-
-        for _ in 0..10 {
-            if !process_exists(process_pid) {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
-        assert!(
-            !process_exists(process_pid),
-            "process {process_pid} should be terminated after UI stop"
+#[test]
+fn integration_spec_3758_c11_ops_deploy_form_spawns_and_stop_form_terminates_process() {
+    run_gateway_openresponses_heavy_render_test(async move {
+        let temp = tempdir().expect("tempdir");
+        let state = test_state_with_deploy_process_supervisor(
+            temp.path(),
+            10_000,
+            "secret",
+            Arc::new(CommandGatewayDeployProcessSupervisor::new(
+                "/bin/sh",
+                ["-c", "while true; do sleep 1; done"],
+            )),
         );
-    }
+        let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+        let client = Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .expect("build reqwest client");
 
-    handle.abort();
+        let deploy_page = client
+            .get(format!(
+                "http://{addr}/ops/deploy?theme=dark&sidebar=expanded&session=ui-3758"
+            ))
+            .bearer_auth("secret")
+            .send()
+            .await
+            .expect("deploy ops page response");
+        assert_eq!(deploy_page.status(), StatusCode::OK);
+        let deploy_page_html = deploy_page.text().await.expect("deploy ops html");
+        assert!(deploy_page_html.contains("id=\"tau-ops-deploy-form\""));
+        assert!(deploy_page_html.contains("action=\"/ops/deploy\""));
+        assert!(deploy_page_html.contains("method=\"post\""));
+        assert!(deploy_page_html.contains("id=\"tau-ops-deploy-submit\""));
+        assert!(deploy_page_html.contains("type=\"submit\""));
+
+        let deploy_form = client
+            .post(format!("http://{addr}/ops/deploy"))
+            .form(&[
+                ("agent_id", "agent-ui"),
+                ("profile", "ops"),
+                ("model", "openai/gpt-5.3-codex"),
+                ("theme", "dark"),
+                ("sidebar", "expanded"),
+                ("session", "ui-3758"),
+            ])
+            .send()
+            .await
+            .expect("deploy form response");
+        assert_eq!(deploy_form.status(), StatusCode::SEE_OTHER);
+        let deploy_location = deploy_form
+            .headers()
+            .get(reqwest::header::LOCATION)
+            .expect("deploy redirect location")
+            .to_str()
+            .expect("deploy redirect location str");
+        assert_eq!(
+            deploy_location,
+            "/ops/deploy?theme=dark&sidebar=expanded&session=ui-3758&deploy_action_status=deployed&deploy_agent_id=agent-ui&deploy_action_reason=process_started"
+        );
+
+        let state_file = temp.path().join(".tau/gateway/deploy-agent-state.json");
+        let persisted = std::fs::read_to_string(&state_file).expect("read deploy state");
+        let persisted_payload =
+            serde_json::from_str::<Value>(persisted.as_str()).expect("parse deploy state");
+        assert_eq!(
+            persisted_payload["agents"]["agent-ui"]["process_status"].as_str(),
+            Some("running")
+        );
+        let process_pid = persisted_payload["agents"]["agent-ui"]["process_pid"]
+            .as_u64()
+            .expect("deploy form persisted process pid");
+        assert!(process_pid > 0);
+
+        let deployed_page = client
+            .get(format!("http://{addr}{deploy_location}"))
+            .bearer_auth("secret")
+            .send()
+            .await
+            .expect("deployed page response");
+        assert_eq!(deployed_page.status(), StatusCode::OK);
+        let deployed_html = deployed_page.text().await.expect("deployed page html");
+        assert!(deployed_html.contains(
+            "id=\"tau-ops-deploy-process-row-0\" data-agent-id=\"agent-ui\" data-agent-status=\"deploying\""
+        ));
+        assert!(deployed_html.contains("data-process-status=\"running\""));
+        assert!(deployed_html.contains("id=\"tau-ops-deploy-stop-form-0\""));
+        assert!(deployed_html.contains("action=\"/ops/deploy/agents/agent-ui/stop\""));
+
+        let stop_form = client
+            .post(format!("http://{addr}/ops/deploy/agents/agent-ui/stop"))
+            .form(&[
+                ("theme", "dark"),
+                ("sidebar", "expanded"),
+                ("session", "ui-3758"),
+            ])
+            .send()
+            .await
+            .expect("stop form response");
+        assert_eq!(stop_form.status(), StatusCode::SEE_OTHER);
+        let stop_location = stop_form
+            .headers()
+            .get(reqwest::header::LOCATION)
+            .expect("stop redirect location")
+            .to_str()
+            .expect("stop redirect location str");
+        assert_eq!(
+            stop_location,
+            "/ops/deploy?theme=dark&sidebar=expanded&session=ui-3758&deploy_action_status=stopped&deploy_agent_id=agent-ui&deploy_action_reason=operator_stop_request"
+        );
+
+        let stopped_page = client
+            .get(format!("http://{addr}{stop_location}"))
+            .bearer_auth("secret")
+            .send()
+            .await
+            .expect("stopped page response");
+        assert_eq!(stopped_page.status(), StatusCode::OK);
+        let stopped_html = stopped_page.text().await.expect("stopped page html");
+        assert!(stopped_html.contains("data-agent-id=\"agent-ui\""));
+        assert!(stopped_html.contains("data-process-status=\"stopped\""));
+        assert!(stopped_html.contains("data-process-stop-reason=\"operator_stop_request\""));
+
+        #[cfg(unix)]
+        {
+            fn process_exists(pid: u64) -> bool {
+                std::process::Command::new("kill")
+                    .arg("-0")
+                    .arg(pid.to_string())
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .status()
+                    .map(|status| status.success())
+                    .unwrap_or(false)
+            }
+
+            for _ in 0..10 {
+                if !process_exists(process_pid) {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+            assert!(
+                !process_exists(process_pid),
+                "process {process_pid} should be terminated after UI stop"
+            );
+        }
+
+        handle.abort();
+    });
 }
 
 #[tokio::test]
@@ -5519,6 +5676,30 @@ async fn regression_spec_2953_c03_c04_cortex_chat_provider_failure_uses_determin
     assert!(buffer.contains("\"reason_code\":\"cortex_chat_llm_error_fallback\""));
     assert!(buffer.contains("\"fallback\":true"));
     assert!(buffer.contains("Cortex fallback response engaged"));
+
+    let cortex_status = client
+        .get("http://".to_string() + &addr.to_string() + "/cortex/status")
+        .bearer_auth("secret")
+        .send()
+        .await
+        .expect("cortex status response");
+    assert_eq!(cortex_status.status(), StatusCode::OK);
+    let cortex_status_payload = cortex_status
+        .json::<Value>()
+        .await
+        .expect("parse cortex status payload");
+    assert_eq!(
+        cortex_status_payload["health_state"],
+        Value::String("degraded".to_string())
+    );
+    assert_eq!(
+        cortex_status_payload["rollout_gate"],
+        Value::String("hold".to_string())
+    );
+    assert_eq!(
+        cortex_status_payload["reason_code"],
+        Value::String("cortex_chat_fallback_observed".to_string())
+    );
 
     let created_idx = buffer
         .find("event: cortex.response.created")

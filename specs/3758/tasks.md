@@ -11,6 +11,11 @@
 7. [x] T7 (GREEN): render persisted deploy process evidence in `/ops/deploy`.
 8. [x] T8 (HARDEN): add JSON static args and graceful terminate-then-kill stop behavior for command supervisor.
 9. [x] T9 (GREEN): wire `/ops/deploy` browser form posts to deploy/stop lifecycle handlers and validate through the shell.
+10. [x] T10 (REGRESSION): add rapid same-agent redeploy/stop drill for C-12.
+11. [x] T11 (REGRESSION): add Cortex fallback-readiness gate coverage for C-13.
+12. [x] T12 (VERIFY): rerun release blocker checks (`cargo audit`; `cargo deny check advisories bans sources`) and focused gateway regressions.
+13. [x] T13 (HARDEN): make heavy `/ops/deploy` render regressions carry their own stack budget so grouped `spec_3758` tests do not require `RUST_MIN_STACK`.
+14. [x] T14 (REGRESSION): prove Cortex fallback readiness follows the latest chat event timestamp, not log-file order.
 
 ## Tier Mapping
 
@@ -21,15 +26,44 @@
 | Contract/DbC | N/A | | no `contracts` macro boundary added |
 | Snapshot | N/A | | explicit JSON field assertions cover the payload |
 | Functional | ✅ | `integration_spec_3758_c01_c02_c05_deploy_and_stop_spawn_and_terminate_configured_process`; `integration_spec_3758_c11_ops_deploy_form_spawns_and_stop_form_terminates_process`; `spec_3758_c09_deploy_route_renders_process_lifecycle_evidence` | |
-| Conformance | ✅ | C-01..C-11 covered by tests/docs and verification commands below | |
+| Conformance | ✅ | C-01..C-13 covered by tests/docs and verification commands below | |
 | Integration | ✅ | HTTP deploy/stop with command supervisor | |
 | Fuzz | N/A | | no parser/codec fuzz boundary changed |
 | Mutation | N/A | | bounded endpoint/runtime slice; mutation gate deferred unless critical-path policy requires it |
-| Regression | ✅ | `regression_spec_3758_c03_spawn_failure_returns_error_without_deploying_state`; `spec_2697` suite | |
+| Regression | ✅ | `regression_spec_3758_c03_spawn_failure_returns_error_without_deploying_state`; `regression_spec_3758_c12_deploy_race_drill_replaces_running_child_and_idempotently_stops`; `regression_spec_2953_c03_c04_cortex_chat_provider_failure_uses_deterministic_fallback_and_reason_code`; `unit_load_cortex_status_report_uses_latest_chat_timestamp_for_fallback_gate`; `spec_2697` suite | |
 | Performance | N/A | | no throughput/hot-path budget changed |
 
 ## Verification Evidence
 
+- RELEASE BLOCKER: `cargo audit` passed after updating Wasmtime to `36.0.8`.
+- RELEASE BLOCKER: `cargo deny check advisories bans sources` passed after
+  updating `deny.toml` to the current cargo-deny advisory lint syntax. Duplicate
+  crate findings remain warn-level under the existing bans policy.
+- REGRESSION: `CARGO_INCREMENTAL=0
+  CARGO_TARGET_DIR=/tmp/rust_pi-codex-issue-3758-verify-target cargo test -p
+  tau-gateway cortex_status_report -- --nocapture` passed (`6 passed`) for
+  missing-artifact, healthy, fallback, stale, missing-chat, and timestamp-order
+  Cortex readiness gates.
+- REGRESSION: `cargo test -p tau-gateway
+  regression_spec_2953_c03_c04_cortex_chat_provider_failure_uses_deterministic_fallback_and_reason_code
+  -- --nocapture` passed (`1 passed`) and confirmed `/cortex/status` stays
+  `degraded`/`hold` after fallback output.
+- REGRESSION: `cargo test -p tau-gateway
+  regression_spec_3758_c12_deploy_race_drill_replaces_running_child_and_idempotently_stops
+  -- --nocapture` passed (`1 passed`) for rapid same-agent redeploy and repeated
+  stop behavior.
+- CONFORMANCE: `CARGO_INCREMENTAL=0
+  CARGO_TARGET_DIR=/tmp/rust_pi-codex-issue-3758-deploy-stop-process-lifecycle-fast-validate-full-target
+  cargo test -p tau-gateway spec_3758 -- --nocapture` passed (`4 passed`)
+  without `RUST_MIN_STACK` after moving heavy `/ops/deploy` render regressions
+  onto a high-stack test runtime.
+- STATIC: `cargo fmt --check`, `git diff --check`, and
+  `CARGO_INCREMENTAL=0
+  CARGO_TARGET_DIR=/tmp/rust_pi-codex-issue-3758-deploy-stop-process-lifecycle-fast-validate-full-target
+  cargo clippy -p tau-gateway --tests -- -D warnings` passed.
+- RELEASE-GRADE: `RUST_MIN_STACK=16777216 scripts/dev/fast-validate.sh --full`
+  passed, including `cargo fmt --all -- --check`, workspace clippy, workspace
+  tests, and doc-tests in an isolated target directory.
 - RED/GREEN: `cargo test -p tau-gateway spec_3758 -- --nocapture` passed
   (`2 passed`) after adding process lifecycle tests and implementation.
 - REGRESSION: `cargo test -p tau-gateway spec_2697 -- --nocapture` passed

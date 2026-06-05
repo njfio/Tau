@@ -85,6 +85,19 @@ Then the shell posts to gateway-owned handlers, starts the configured process,
 renders running process evidence, terminates the process, and renders stopped
 process evidence.
 
+### AC-12 Deploy race drill preserves one live process per agent
+Given an operator rapidly redeploys the same agent before stopping it,
+When the second deploy is accepted and the stop endpoint is called repeatedly,
+Then the first supervised child is terminated, the replacement process is the
+one stopped, and repeated stop calls remain deterministic.
+
+### AC-13 Cortex fallback output does not prove readiness
+Given a Cortex chat request falls back to deterministic output after provider
+failure,
+When `/cortex/status` evaluates rollout readiness,
+Then the status remains `degraded`, the rollout gate remains `hold`, and the
+reason code identifies the fallback readiness blocker.
+
 ## Scope
 
 ### In Scope
@@ -95,6 +108,10 @@ process evidence.
 - Operator-shell deploy process evidence table.
 - Operator-shell deploy and stop form handlers backed by the same lifecycle
   operations as the JSON gateway API.
+- Rapid redeploy/stop regression coverage for same-agent process replacement
+  and idempotent repeated stop behavior.
+- Cortex readiness classification that rejects deterministic fallback chat
+  output as rollout-ready proof.
 - Environment-driven command args via legacy whitespace args or JSON array args.
 - Graceful terminate-then-kill fallback for command-backed stop.
 - Backward-compatible deploy/stop response fields.
@@ -125,6 +142,8 @@ process evidence.
 | C-09 | AC-9 | Functional | `/ops/deploy` after deployment | process lifecycle table renders persisted process status and pid |
 | C-10 | AC-10 | Unit | configured supervisor args/stop | JSON args preserve spaces; stop attempts graceful termination before kill fallback |
 | C-11 | AC-11 | Functional/Integration | submit `/ops/deploy` form then row stop form | redirects preserve shell context; table moves from running process pid to stopped stop reason |
+| C-12 | AC-12 | Regression | redeploy same agent then stop twice | first pid exits, second pid is stopped, repeated stop reports `not_running` |
+| C-13 | AC-13 | Regression | Cortex chat uses fallback after provider failure | `/cortex/status` reports `degraded`, `hold`, and `cortex_chat_fallback_observed` |
 
 ## Success Metrics / Observable Signals
 
@@ -136,6 +155,9 @@ process evidence.
   reading the state file directly.
 - Operators can start and stop the supervised deploy process from `/ops/deploy`
   without leaving the shell.
+- Rapid redeploys do not leave replaced same-agent processes alive.
+- Cortex fallback chat output cannot accidentally advance the readiness rollout
+  gate.
 - Existing deploy/stop clients remain compatible.
 - Remaining listed action items are either closed with durable artifacts or
   explicitly deferred behind future specs.
