@@ -1866,11 +1866,10 @@ fn collect_tau_ops_dashboard_harness_snapshot(
                 snapshot.benchmark_rows = category_totals
                     .into_iter()
                     .map(|(category, (total_count, pass_count))| {
-                        let pass_rate = if total_count == 0 {
-                            0
-                        } else {
-                            (pass_count * 100) / total_count
-                        };
+                        let pass_rate = pass_count
+                            .saturating_mul(100)
+                            .checked_div(total_count)
+                            .unwrap_or(0);
                         TauOpsDashboardHarnessBenchmarkCategoryRow {
                             category,
                             task_count: total_count,
@@ -2112,7 +2111,7 @@ fn collect_harness_durable_mission_rows(state_dir: &Path) -> Vec<TauOpsDashboard
             Some((proposal_key, updated_unix_ms, row))
         })
         .collect::<Vec<_>>();
-    rows.sort_by(|left, right| right.1.cmp(&left.1));
+    rows.sort_by_key(|row| std::cmp::Reverse(row.1));
 
     let mut seen_proposals = BTreeSet::new();
     rows.into_iter()
