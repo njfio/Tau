@@ -10,6 +10,7 @@ PID_FILE="${RUNTIME_DIR}/tau-unified.pid"
 LOG_FILE="${RUNTIME_DIR}/tau-unified.log"
 CMD_FILE="${RUNTIME_DIR}/tau-unified.last-cmd"
 FINGERPRINT_FILE="${RUNTIME_DIR}/tau-unified.runtime-fingerprint"
+CONTROL_SNAPSHOT_FILE="${RUNTIME_DIR}/tau-unified.control-plane.env"
 
 MODEL_DEFAULT="${TAU_UNIFIED_MODEL:-gpt-5.3-codex}"
 BIND_DEFAULT="${TAU_UNIFIED_BIND:-127.0.0.1:8791}"
@@ -133,7 +134,86 @@ cleanup_stale_pid() {
   if [[ -z "${pid}" ]] || ! pid_is_alive "${pid}"; then
     rm -f "${PID_FILE}"
     rm -f "${FINGERPRINT_FILE}"
+    rm -f "${CONTROL_SNAPSHOT_FILE}"
   fi
+}
+
+write_control_plane_snapshot() {
+  local profile="$1"
+  local bind="$2"
+  local gateway_state_dir="$3"
+  local dashboard_state_dir="$4"
+
+  {
+    printf 'profile=%s\n' "${profile}"
+    printf 'bind=%s\n' "${bind}"
+    printf 'webchat_url=http://%s/webchat\n' "${bind}"
+    printf 'ops_url=http://%s/ops\n' "${bind}"
+    printf 'dashboard_url=http://%s/dashboard\n' "${bind}"
+    printf 'gateway_status_url=http://%s/gateway/status\n' "${bind}"
+    printf 'sessions_endpoint=http://%s/gateway/sessions\n' "${bind}"
+    printf 'memory_endpoint=http://%s/gateway/memory/default\n' "${bind}"
+    printf 'memory_graph_endpoint=http://%s/gateway/memory-graph/default\n' "${bind}"
+    printf 'jobs_endpoint=http://%s/gateway/jobs\n' "${bind}"
+    printf 'routines_surface=http://%s/webchat#routines\n' "${bind}"
+    printf 'deploy_endpoint=http://%s/ops/deploy\n' "${bind}"
+    printf 'gateway_deploy_endpoint=http://%s/gateway/deploy\n' "${bind}"
+    printf 'gateway_state_dir=%s\n' "${gateway_state_dir}"
+    printf 'dashboard_state_dir=%s\n' "${dashboard_state_dir}"
+    printf 'deploy_state_file=%s/deploy-agent-state.json\n' "${gateway_state_dir}"
+    printf 'jobs_state=available_via_gateway_jobs_endpoint\n'
+    printf 'routines_state=visible_via_webchat_routines_panel\n'
+    printf 'autonomy_boundary=durable_jobs_replay_crash_resume_not_claimed\n'
+  } >"${CONTROL_SNAPSHOT_FILE}"
+}
+
+control_plane_snapshot_value() {
+  local key="$1"
+  local default_value="$2"
+  if [[ -f "${CONTROL_SNAPSHOT_FILE}" ]]; then
+    local line
+    line="$(grep -m 1 "^${key}=" "${CONTROL_SNAPSHOT_FILE}" || true)"
+    if [[ -n "${line}" ]]; then
+      printf '%s' "${line#*=}"
+      return 0
+    fi
+  fi
+  printf '%s' "${default_value}"
+}
+
+log_control_plane_snapshot() {
+  log "tau-unified: control_plane.health=running"
+  log "tau-unified: control_plane.runtime_state_dir=${RUNTIME_DIR}"
+  log "tau-unified: control_plane.pid_file=${PID_FILE}"
+  log "tau-unified: control_plane.log_file=${LOG_FILE}"
+  log "tau-unified: control_plane.command_file=${CMD_FILE}"
+  log "tau-unified: control_plane.fingerprint_file=${FINGERPRINT_FILE}"
+
+  if [[ ! -f "${CONTROL_SNAPSHOT_FILE}" ]]; then
+    log "tau-unified: control_plane.snapshot=missing"
+    log "tau-unified: control_plane.autonomy_boundary=durable_jobs_replay_crash_resume_not_claimed"
+    return 0
+  fi
+
+  log "tau-unified: control_plane.snapshot_file=${CONTROL_SNAPSHOT_FILE}"
+  log "tau-unified: control_plane.profile=$(control_plane_snapshot_value profile unknown)"
+  log "tau-unified: control_plane.webchat_url=$(control_plane_snapshot_value webchat_url unknown)"
+  log "tau-unified: control_plane.ops_url=$(control_plane_snapshot_value ops_url unknown)"
+  log "tau-unified: control_plane.dashboard_url=$(control_plane_snapshot_value dashboard_url unknown)"
+  log "tau-unified: control_plane.gateway_status_url=$(control_plane_snapshot_value gateway_status_url unknown)"
+  log "tau-unified: control_plane.sessions_endpoint=$(control_plane_snapshot_value sessions_endpoint unknown)"
+  log "tau-unified: control_plane.memory_endpoint=$(control_plane_snapshot_value memory_endpoint unknown)"
+  log "tau-unified: control_plane.memory_graph_endpoint=$(control_plane_snapshot_value memory_graph_endpoint unknown)"
+  log "tau-unified: control_plane.jobs_endpoint=$(control_plane_snapshot_value jobs_endpoint unknown)"
+  log "tau-unified: control_plane.jobs_state=$(control_plane_snapshot_value jobs_state unknown)"
+  log "tau-unified: control_plane.routines_surface=$(control_plane_snapshot_value routines_surface unknown)"
+  log "tau-unified: control_plane.routines_state=$(control_plane_snapshot_value routines_state unknown)"
+  log "tau-unified: control_plane.deploy_endpoint=$(control_plane_snapshot_value deploy_endpoint unknown)"
+  log "tau-unified: control_plane.gateway_deploy_endpoint=$(control_plane_snapshot_value gateway_deploy_endpoint unknown)"
+  log "tau-unified: control_plane.gateway_state_dir=$(control_plane_snapshot_value gateway_state_dir unknown)"
+  log "tau-unified: control_plane.dashboard_state_dir=$(control_plane_snapshot_value dashboard_state_dir unknown)"
+  log "tau-unified: control_plane.deploy_state_file=$(control_plane_snapshot_value deploy_state_file unknown)"
+  log "tau-unified: control_plane.autonomy_boundary=$(control_plane_snapshot_value autonomy_boundary durable_jobs_replay_crash_resume_not_claimed)"
 }
 
 compute_runtime_fingerprint_checksum() {
@@ -387,9 +467,11 @@ cmd_up() {
   pid="$(cat "${PID_FILE}")"
   if ! pid_is_alive "${pid}"; then
     rm -f "${PID_FILE}"
+    rm -f "${CONTROL_SNAPSHOT_FILE}"
     die "tau-unified: failed to start runtime process"
   fi
 
+  write_control_plane_snapshot "${profile}" "${bind}" "${gateway_state_dir}" "${dashboard_state_dir}"
   printf '%s\n' "${runtime_fingerprint}" > "${FINGERPRINT_FILE}"
 
   log "tau-unified: started (pid=${pid}) profile=${profile}"
@@ -423,6 +505,7 @@ cmd_status() {
   log "tau-unified: log_file=${LOG_FILE}"
   log "tau-unified: command_file=${CMD_FILE}"
   log "tau-unified: fingerprint_file=${FINGERPRINT_FILE}"
+  log_control_plane_snapshot
 }
 
 cmd_down() {
@@ -452,6 +535,7 @@ cmd_down() {
 
   rm -f "${PID_FILE}"
   rm -f "${FINGERPRINT_FILE}"
+  rm -f "${CONTROL_SNAPSHOT_FILE}"
   log "tau-unified: stopped"
 }
 

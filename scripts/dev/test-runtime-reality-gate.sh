@@ -100,8 +100,9 @@ TAU_RUNTIME_REALITY_GATEWAY_OPENRESPONSES_TESTS_BUDGET=2 \
 "${GATE_SCRIPT}" --output-json "${pass_json}" --output-md "${pass_md}"
 
 assert_equals "passed" "$(jq -r '.result' "${pass_json}")" "pass result"
-assert_equals "4" "$(jq -r '.fast_checks | length' "${pass_json}")" "fast check count"
+assert_equals "5" "$(jq -r '.fast_checks | length' "${pass_json}")" "fast check count"
 assert_equals "true" "$(jq -r '[.fast_checks[].status] | all(. == "passed")' "${pass_json}")" "fast checks passed"
+assert_equals "passed" "$(jq -r '.fast_checks[] | select(.id == "tau_unified_status_control_plane_test") | .status' "${pass_json}")" "status control-plane check passed"
 assert_equals "partial" "$(jq -r '.surfaces[] | select(.id == "dashboard_operator_ux") | .classification' "${pass_json}")" "dashboard partial"
 assert_equals "opt_in_heavy" "$(jq -r '.surfaces[] | select(.id == "true_rl_productionization") | .classification' "${pass_json}")" "rl opt-in"
 assert_equals "live_env_required" "$(jq -r '.surfaces[] | select(.id == "auth_transports_live_validation") | .classification' "${pass_json}")" "auth live env"
