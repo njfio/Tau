@@ -91,6 +91,12 @@ The runtime reality gate is the fast default check for Tau product claims. It
 runs deterministic proof surfaces, records heavyweight/live validation as
 explicit opt-in evidence, and keeps unsupported claims such as autonomous-forever
 operation or shell-only browser-pixel proof from being represented as complete.
+`tau-unified status` contributes the control-plane visibility part of that
+evidence: it emits stable `control_plane.*` markers for health, logs, runtime
+artifacts, sessions, memory, jobs/routines, and deploy/process state. Those
+markers are status visibility proof, not a claim that durable stuck-job
+recovery, replay, crash-resume, production RL policy operations, live provider
+validation, or headed-browser pixel proof are complete.
 
 ## Maturity Matrix
 
@@ -101,6 +107,7 @@ operation or shell-only browser-pixel proof from being represented as complete.
 | Auth workflow conformance | Integrated | Provider matrix + gateway session lifecycle validated by dedicated suites | [`crates/tau-provider/tests/auth_workflow_conformance.rs`](crates/tau-provider/tests/auth_workflow_conformance.rs), [`scripts/verify/m295-operator-maturity-wave.sh`](scripts/verify/m295-operator-maturity-wave.sh) |
 | Multi-channel and bridge transports | Operational | Runnable with connector-specific maturity differences | [`docs/guides/transports.md`](docs/guides/transports.md) |
 | Dashboard operator UX | Partial | Ops routes and diagnostics available; broader UX still expanding | [`docs/guides/dashboard-ops.md`](docs/guides/dashboard-ops.md) |
+| Unified runtime control-plane status | Partial | `tau-unified status` exposes health/logs/sessions/memory/jobs/routines/deploy visibility; polished command-center UX and durable proactive recovery remain expanding | [`scripts/run/tau-unified.sh`](scripts/run/tau-unified.sh), [`scripts/dev/runtime-reality-gate.sh`](scripts/dev/runtime-reality-gate.sh) |
 | Prompt optimization training | Integrated | Canonical training path today | [`docs/guides/training-ops.md`](docs/guides/training-ops.md) |
 | True RL | Integrated | Deterministic end-to-end harness emits rollout + GAE/PPO artifact evidence | [`crates/tau-trainer/src/rl_e2e.rs`](crates/tau-trainer/src/rl_e2e.rs), [`crates/tau-trainer/src/bin/rl_e2e_harness.rs`](crates/tau-trainer/src/bin/rl_e2e_harness.rs) |
 | TUI | Integrated | Operator-shell + interactive `agent` mode + state-backed `shell-live` diagnostics | [`crates/tau-tui/src/main.rs`](crates/tau-tui/src/main.rs), [`crates/tau-tui/src/lib.rs`](crates/tau-tui/src/lib.rs), [`scripts/verify/m295-operator-maturity-wave.sh`](scripts/verify/m295-operator-maturity-wave.sh) |
@@ -194,6 +201,13 @@ Unified one-command runtime entrypoint:
 ./scripts/run/tau-unified.sh tui --live-shell --iterations 3 --interval-ms 1000 --no-color
 ./scripts/run/tau-unified.sh down
 ```
+
+`./scripts/run/tau-unified.sh status` emits grep-safe `control_plane.*`
+markers for the active runtime. Treat these as operator visibility markers:
+they show available endpoints and state files for health/logs/sessions/memory/
+jobs/routines/deploy, while explicitly preserving the boundary that durable
+replay, stuck-job recovery, crash-resume, and production policy operations are
+not complete claims.
 
 `tau-unified.sh tui` defaults to fast-fail interactive policy:
 - `--request-timeout-ms 45000`

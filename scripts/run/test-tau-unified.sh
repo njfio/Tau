@@ -186,6 +186,65 @@ EOF
   assert_runner_mode_absent "tui" "${test_runner_log}" "tui launch skipped after failed bootstrap"
 }
 
+test_status_control_plane_snapshot() {
+  local test_runtime_dir="${tmp_dir}/status-runtime"
+  local test_runner_log="${tmp_dir}/status-runner.log"
+  local test_runner_pid="${tmp_dir}/status-runner.pid"
+  local test_gateway_state_dir="${tmp_dir}/status-gateway"
+  local test_dashboard_state_dir="${tmp_dir}/status-dashboard"
+  local status_bind="127.0.0.1:8911"
+
+  local up_status_output
+  up_status_output="$(
+    TAU_UNIFIED_RUNNER="${runner}" \
+    TAU_UNIFIED_RUNNER_LOG="${test_runner_log}" \
+    TAU_UNIFIED_RUNNER_PID="${test_runner_pid}" \
+    TAU_UNIFIED_RUNTIME_DIR="${test_runtime_dir}" \
+    "${LAUNCHER_SCRIPT}" up \
+      --profile status-profile \
+      --bind "${status_bind}" \
+      --gateway-state-dir "${test_gateway_state_dir}" \
+      --dashboard-state-dir "${test_dashboard_state_dir}" 2>&1
+  )"
+  assert_contains "${up_status_output}" "tau-unified: started" "status contract up marker"
+
+  local status_output
+  status_output="$(
+    TAU_UNIFIED_RUNNER="${runner}" \
+    TAU_UNIFIED_RUNNER_LOG="${test_runner_log}" \
+    TAU_UNIFIED_RUNNER_PID="${test_runner_pid}" \
+    TAU_UNIFIED_RUNTIME_DIR="${test_runtime_dir}" \
+    "${LAUNCHER_SCRIPT}" status 2>&1
+  )"
+
+  assert_contains "${status_output}" "tau-unified: control_plane.health=running" "status control-plane health"
+  assert_contains "${status_output}" "tau-unified: control_plane.runtime_state_dir=${test_runtime_dir}" "status runtime dir"
+  assert_contains "${status_output}" "tau-unified: control_plane.log_file=${test_runtime_dir}/tau-unified.log" "status log path"
+  assert_contains "${status_output}" "tau-unified: control_plane.command_file=${test_runtime_dir}/tau-unified.last-cmd" "status command path"
+  assert_contains "${status_output}" "tau-unified: control_plane.fingerprint_file=${test_runtime_dir}/tau-unified.runtime-fingerprint" "status fingerprint path"
+  assert_contains "${status_output}" "tau-unified: control_plane.profile=status-profile" "status profile marker"
+  assert_contains "${status_output}" "tau-unified: control_plane.webchat_url=http://${status_bind}/webchat" "status webchat endpoint"
+  assert_contains "${status_output}" "tau-unified: control_plane.ops_url=http://${status_bind}/ops" "status ops endpoint"
+  assert_contains "${status_output}" "tau-unified: control_plane.dashboard_url=http://${status_bind}/dashboard" "status dashboard endpoint"
+  assert_contains "${status_output}" "tau-unified: control_plane.sessions_endpoint=http://${status_bind}/gateway/sessions" "status sessions endpoint"
+  assert_contains "${status_output}" "tau-unified: control_plane.memory_endpoint=http://${status_bind}/gateway/memory/default" "status memory endpoint"
+  assert_contains "${status_output}" "tau-unified: control_plane.memory_graph_endpoint=http://${status_bind}/gateway/memory-graph/default" "status memory graph endpoint"
+  assert_contains "${status_output}" "tau-unified: control_plane.jobs_endpoint=http://${status_bind}/gateway/jobs" "status jobs endpoint"
+  assert_contains "${status_output}" "tau-unified: control_plane.routines_surface=http://${status_bind}/webchat#routines" "status routines surface"
+  assert_contains "${status_output}" "tau-unified: control_plane.deploy_endpoint=http://${status_bind}/ops/deploy" "status ops deploy endpoint"
+  assert_contains "${status_output}" "tau-unified: control_plane.gateway_deploy_endpoint=http://${status_bind}/gateway/deploy" "status gateway deploy endpoint"
+  assert_contains "${status_output}" "tau-unified: control_plane.gateway_state_dir=${test_gateway_state_dir}" "status gateway state dir"
+  assert_contains "${status_output}" "tau-unified: control_plane.dashboard_state_dir=${test_dashboard_state_dir}" "status dashboard state dir"
+  assert_contains "${status_output}" "tau-unified: control_plane.deploy_state_file=${test_gateway_state_dir}/deploy-agent-state.json" "status deploy state file"
+  assert_contains "${status_output}" "tau-unified: control_plane.autonomy_boundary=durable_jobs_replay_crash_resume_not_claimed" "status autonomy boundary"
+
+  TAU_UNIFIED_RUNNER="${runner}" \
+  TAU_UNIFIED_RUNNER_LOG="${test_runner_log}" \
+  TAU_UNIFIED_RUNNER_PID="${test_runner_pid}" \
+  TAU_UNIFIED_RUNTIME_DIR="${test_runtime_dir}" \
+  "${LAUNCHER_SCRIPT}" down >/dev/null 2>&1 || true
+}
+
 case "${1:-all}" in
   all)
     ;;
@@ -193,6 +252,11 @@ case "${1:-all}" in
     test_tui_bootstrap_readiness_fails_closed_without_artifacts
     test_tui_bootstrap_readiness_failed_bootstrap_does_not_launch_tui
     echo "tau-unified tui bootstrap readiness tests passed"
+    exit 0
+    ;;
+  status_contract)
+    test_status_control_plane_snapshot
+    echo "tau-unified status control-plane tests passed"
     exit 0
     ;;
   *)
@@ -305,6 +369,12 @@ status_output="$(
 )"
 assert_contains "${status_output}" "tau-unified: running" "status running marker"
 assert_contains "${status_output}" "pid=" "status pid marker"
+assert_contains "${status_output}" "tau-unified: control_plane.health=running" "status control-plane running marker"
+assert_contains "${status_output}" "tau-unified: control_plane.sessions_endpoint=http://127.0.0.1:8899/gateway/sessions" "status sessions marker"
+assert_contains "${status_output}" "tau-unified: control_plane.memory_endpoint=http://127.0.0.1:8899/gateway/memory/default" "status memory marker"
+assert_contains "${status_output}" "tau-unified: control_plane.jobs_endpoint=http://127.0.0.1:8899/gateway/jobs" "status jobs marker"
+assert_contains "${status_output}" "tau-unified: control_plane.deploy_endpoint=http://127.0.0.1:8899/ops/deploy" "status deploy marker"
+assert_contains "${status_output}" "tau-unified: control_plane.autonomy_boundary=durable_jobs_replay_crash_resume_not_claimed" "status autonomy boundary marker"
 
 down_output="$(
   TAU_UNIFIED_RUNNER="${runner}" \

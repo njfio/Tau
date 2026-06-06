@@ -299,6 +299,7 @@ if [[ "${RUN_FAST_CHECKS}" == "true" ]]; then
   fi
   if require_executable "${TAU_UNIFIED_TEST}" "tau-unified launcher test"; then
     run_check "tau_unified_launcher_test" "tau-unified launcher regression" "${TAU_UNIFIED_TEST}"
+    run_check "tau_unified_status_control_plane_test" "tau-unified status control-plane snapshot" "${TAU_UNIFIED_TEST}" status_contract
   else
     gate_failed="true"
   fi
@@ -315,6 +316,7 @@ if [[ "${RUN_FAST_CHECKS}" == "true" ]]; then
 else
   skip_check "tau_product_proof_check" "Tau product proof check" "${PRODUCT_PROOF} --check"
   skip_check "tau_unified_launcher_test" "tau-unified launcher regression" "${TAU_UNIFIED_TEST}"
+  skip_check "tau_unified_status_control_plane_test" "tau-unified status control-plane snapshot" "${TAU_UNIFIED_TEST} status_contract"
   skip_check "agent_canvas_proof_loop_test" "Agent Canvas proof-loop regression" "${AGENT_CANVAS_TEST}"
   skip_check "roadmap_status_sync_check" "Roadmap status sync check" "${ROADMAP_SYNC} --check --quiet"
 fi
@@ -324,9 +326,9 @@ run_string_opt_in_check "isolated_full_fast_validate" "Isolated full release val
 run_string_opt_in_check "live_provider_validation" "Live third-party provider validation" "${LIVE_PROVIDER_COMMAND}" "${RUN_LIVE_CHECKS}"
 
 append_json_item surface_items "$(surface_json "tau_core_runtime" "Core Tau runtime path" "deterministic_integrated" "CLI/session/tool/safety/gateway path has runnable deterministic proof." "scripts/dev/prove-tau-product.sh --check")"
-append_json_item surface_items "$(surface_json "tau_unified_launcher" "tau-unified launcher" "deterministic_integrated" "up/status/down/tui launcher contract is covered by shell regression." "scripts/run/test-tau-unified.sh")"
+append_json_item surface_items "$(surface_json "tau_unified_launcher" "tau-unified launcher" "deterministic_integrated" "up/status/down/tui launcher contract is covered by shell regression, including the status control-plane snapshot." "scripts/run/test-tau-unified.sh")"
 append_json_item surface_items "$(surface_json "dashboard_operator_ux" "Dashboard/operator UX" "partial" "Routes and diagnostics exist, but polished command-center workflow remains expanding." "scripts/verify/m318-dashboard-command-center-depth.sh plus product UX review")"
-append_json_item surface_items "$(surface_json "unified_runtime_control_plane" "One obvious runtime experience" "partial" "tau-unified is real, but health/logs/jobs/sessions/memory/deploy are not yet one complete operator pane." "Dedicated control-plane UX and end-to-end operator workflow proof")"
+append_json_item surface_items "$(surface_json "unified_runtime_control_plane" "One obvious runtime experience" "partial" "tau-unified status exposes health/logs/sessions/memory/jobs/routines/deploy visibility, but a polished command center and durable proactive recovery loop remain incomplete." "scripts/run/test-tau-unified.sh status_contract plus dedicated control-plane UX proof")"
 append_json_item surface_items "$(surface_json "agent_canvas_shell_proof" "Agent Canvas shell proof-loop" "deterministic_integrated" "Shell proof records route contract, artifact hashes, and targeted fix comparison." "scripts/dev/test-ops-chat-canvas-proof.sh")"
 append_json_item surface_items "$(surface_json "live_browser_pixel_proof" "Live browser pixel proof" "not_claimable" "Shell Agent Canvas proof does not claim headed-browser pixel truth." "Headed browser proof with screenshot/canvas pixel capture")"
 append_json_item surface_items "$(surface_json "headed_browser_canvas_pixel_live" "Headed browser canvas-pixel validation" "opt_in_heavy" "Possible future proof path, not part of default shell evidence." "Browser automation run that stores screenshot and canvas-pixel artifacts")"
@@ -422,6 +424,7 @@ JSON
   done
   printf '\n## Works With Caveats\n\n'
   printf -- '- Dashboard/operator UX is `partial`: routes and diagnostics exist; polished command-center workflow remains expanding.\n'
+  printf -- '- Unified runtime control-plane UX is `partial`: `tau-unified status` exposes deterministic visibility markers, but this is not yet one polished operator command center.\n'
   printf -- '- Production RL policy operations are `opt_in_heavy`: deterministic RL exists, but production-scale operations need long-horizon proof.\n'
   printf -- '- Auth/transports live validation is `live_env_required`: deterministic suites exist; third-party credentials are environment-bound.\n'
   printf -- '- Release validation is credible through isolated validation, not shared-target compiler state.\n'
