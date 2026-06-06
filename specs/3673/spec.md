@@ -1,6 +1,6 @@
 # Spec: Force Tool-Required Retry Turns In Ralph-Loop Recovery
 
-Status: Reviewed
+Status: Implemented
 
 ## Problem
 
