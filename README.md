@@ -79,6 +79,19 @@ Some surfaces are intentionally diagnostics-first or staged:
   - scenario-expansion depth (demo mode behavior + parser/shell-live edge paths + workflow-depth chaining) is aggregated in `scripts/verify/m317-tui-scenario-expansion-depth.sh`,
   - remains complementary to (not a replacement for) web dashboard workflows.
 
+Executable claim boundary:
+
+```bash
+./scripts/dev/runtime-reality-gate.sh \
+  --output-json /tmp/tau-runtime-reality.json \
+  --output-md /tmp/tau-runtime-reality.md
+```
+
+The runtime reality gate is the fast default check for Tau product claims. It
+runs deterministic proof surfaces, records heavyweight/live validation as
+explicit opt-in evidence, and keeps unsupported claims such as autonomous-forever
+operation or shell-only browser-pixel proof from being represented as complete.
+
 ## Maturity Matrix
 
 | Capability Area | Status | Meaning | Primary Reference |
