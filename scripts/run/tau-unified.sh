@@ -20,6 +20,7 @@ AUTH_PASSWORD_DEFAULT="${TAU_UNIFIED_AUTH_PASSWORD:-local-dev-password}"
 PROFILE_DEFAULT="${TAU_UNIFIED_PROFILE:-local-dev}"
 GATEWAY_STATE_DIR_DEFAULT="${TAU_UNIFIED_GATEWAY_STATE_DIR:-.tau/gateway}"
 DASHBOARD_STATE_DIR_DEFAULT="${TAU_UNIFIED_DASHBOARD_STATE_DIR:-.tau/dashboard}"
+JOBS_STATE_DIR_DEFAULT="${TAU_UNIFIED_JOBS_STATE_DIR:-.tau/jobs}"
 REQUEST_TIMEOUT_MS_DEFAULT="${TAU_UNIFIED_REQUEST_TIMEOUT_MS:-180000}"
 AGENT_REQUEST_MAX_RETRIES_DEFAULT="${TAU_UNIFIED_AGENT_REQUEST_MAX_RETRIES:-0}"
 PROVIDER_MAX_RETRIES_DEFAULT="${TAU_UNIFIED_PROVIDER_MAX_RETRIES:-0}"
@@ -49,6 +50,7 @@ Options for `up`:
   --profile <name>                Profile marker for output (default: local-dev)
   --gateway-state-dir <path>      Gateway state dir (default: .tau/gateway)
   --dashboard-state-dir <path>    Dashboard state dir (default: .tau/dashboard)
+  --jobs-state-dir <path>         Background jobs state dir (default: .tau/jobs)
   --request-timeout-ms <n>        Runtime request timeout ms (default: 180000)
   --agent-request-max-retries <n> Runtime agent request retries (default: 0)
   --provider-max-retries <n>      Runtime provider retries (default: 0)
@@ -62,6 +64,7 @@ Options for `tui`:
   --state-dir <path>              Dashboard state dir alias (default: .tau/dashboard)
   --dashboard-state-dir <path>    Dashboard state dir (default: .tau/dashboard)
   --gateway-state-dir <path>      Gateway state dir (default: .tau/gateway)
+  --jobs-state-dir <path>         Background jobs state dir (default: .tau/jobs)
   --model <id>                    Agent model id (default: gpt-5.3-codex)
   --request-timeout-ms <n>        Agent request timeout ms (default: 180000)
   --agent-request-max-retries <n> Agent max request retries (default: 0)
@@ -143,6 +146,7 @@ write_control_plane_snapshot() {
   local bind="$2"
   local gateway_state_dir="$3"
   local dashboard_state_dir="$4"
+  local jobs_state_dir="$5"
 
   {
     printf 'profile=%s\n' "${profile}"
@@ -160,8 +164,15 @@ write_control_plane_snapshot() {
     printf 'gateway_deploy_endpoint=http://%s/gateway/deploy\n' "${bind}"
     printf 'gateway_state_dir=%s\n' "${gateway_state_dir}"
     printf 'dashboard_state_dir=%s\n' "${dashboard_state_dir}"
+    printf 'jobs_state_dir=%s\n' "${jobs_state_dir}"
     printf 'deploy_state_file=%s/deploy-agent-state.json\n' "${gateway_state_dir}"
     printf 'jobs_state=available_via_gateway_jobs_endpoint\n'
+    printf 'background_jobs_state_dir=%s\n' "${jobs_state_dir}"
+    printf 'background_jobs_manifest_dir=%s/jobs\n' "${jobs_state_dir}"
+    printf 'background_jobs_events_file=%s/events.jsonl\n' "${jobs_state_dir}"
+    printf 'background_jobs_health_file=%s/state.json\n' "${jobs_state_dir}"
+    printf 'background_jobs_restart_recovery=running_manifests_requeued_after_restart\n'
+    printf 'background_jobs_ops_guide=docs/guides/background-jobs-ops.md\n'
     printf 'routines_state=visible_via_webchat_routines_panel\n'
     printf 'autonomy_boundary=durable_jobs_replay_crash_resume_not_claimed\n'
   } >"${CONTROL_SNAPSHOT_FILE}"
@@ -206,12 +217,19 @@ log_control_plane_snapshot() {
   log "tau-unified: control_plane.memory_graph_endpoint=$(control_plane_snapshot_value memory_graph_endpoint unknown)"
   log "tau-unified: control_plane.jobs_endpoint=$(control_plane_snapshot_value jobs_endpoint unknown)"
   log "tau-unified: control_plane.jobs_state=$(control_plane_snapshot_value jobs_state unknown)"
+  log "tau-unified: control_plane.background_jobs.state_dir=$(control_plane_snapshot_value background_jobs_state_dir unknown)"
+  log "tau-unified: control_plane.background_jobs.manifest_dir=$(control_plane_snapshot_value background_jobs_manifest_dir unknown)"
+  log "tau-unified: control_plane.background_jobs.events_file=$(control_plane_snapshot_value background_jobs_events_file unknown)"
+  log "tau-unified: control_plane.background_jobs.health_file=$(control_plane_snapshot_value background_jobs_health_file unknown)"
+  log "tau-unified: control_plane.background_jobs.restart_recovery=$(control_plane_snapshot_value background_jobs_restart_recovery running_manifests_requeued_after_restart)"
+  log "tau-unified: control_plane.background_jobs.ops_guide=$(control_plane_snapshot_value background_jobs_ops_guide docs/guides/background-jobs-ops.md)"
   log "tau-unified: control_plane.routines_surface=$(control_plane_snapshot_value routines_surface unknown)"
   log "tau-unified: control_plane.routines_state=$(control_plane_snapshot_value routines_state unknown)"
   log "tau-unified: control_plane.deploy_endpoint=$(control_plane_snapshot_value deploy_endpoint unknown)"
   log "tau-unified: control_plane.gateway_deploy_endpoint=$(control_plane_snapshot_value gateway_deploy_endpoint unknown)"
   log "tau-unified: control_plane.gateway_state_dir=$(control_plane_snapshot_value gateway_state_dir unknown)"
   log "tau-unified: control_plane.dashboard_state_dir=$(control_plane_snapshot_value dashboard_state_dir unknown)"
+  log "tau-unified: control_plane.jobs_state_dir=$(control_plane_snapshot_value jobs_state_dir unknown)"
   log "tau-unified: control_plane.deploy_state_file=$(control_plane_snapshot_value deploy_state_file unknown)"
   log "tau-unified: control_plane.autonomy_boundary=$(control_plane_snapshot_value autonomy_boundary durable_jobs_replay_crash_resume_not_claimed)"
 }
@@ -316,9 +334,10 @@ build_up_command() {
   local auth_password="$5"
   local gateway_state_dir="$6"
   local dashboard_state_dir="$7"
-  local request_timeout_ms="$8"
-  local agent_request_max_retries="$9"
-  local provider_max_retries="${10}"
+  local jobs_state_dir="$8"
+  local request_timeout_ms="$9"
+  local agent_request_max_retries="${10}"
+  local provider_max_retries="${11}"
 
   local cmd=(
     env "RUST_MIN_STACK=${RUST_MIN_STACK_DEFAULT}"
@@ -326,6 +345,7 @@ build_up_command() {
     --model "${model}"
     --gateway-state-dir "${gateway_state_dir}"
     --dashboard-state-dir "${dashboard_state_dir}"
+    --jobs-state-dir "${jobs_state_dir}"
     --gateway-openresponses-server
     --gateway-openresponses-bind "${bind}"
     --gateway-openresponses-auth-mode "${auth_mode}"
@@ -355,6 +375,7 @@ cmd_up() {
   local profile="${PROFILE_DEFAULT}"
   local gateway_state_dir="${GATEWAY_STATE_DIR_DEFAULT}"
   local dashboard_state_dir="${DASHBOARD_STATE_DIR_DEFAULT}"
+  local jobs_state_dir="${JOBS_STATE_DIR_DEFAULT}"
   local request_timeout_ms="${REQUEST_TIMEOUT_MS_DEFAULT}"
   local agent_request_max_retries="${AGENT_REQUEST_MAX_RETRIES_DEFAULT}"
   local provider_max_retries="${PROVIDER_MAX_RETRIES_DEFAULT}"
@@ -391,6 +412,10 @@ cmd_up() {
         ;;
       --dashboard-state-dir)
         dashboard_state_dir="$2"
+        shift 2
+        ;;
+      --jobs-state-dir)
+        jobs_state_dir="$2"
         shift 2
         ;;
       --request-timeout-ms)
@@ -430,7 +455,7 @@ cmd_up() {
   cleanup_stale_pid
 
   local command
-  command="$(build_up_command "${model}" "${bind}" "${auth_mode}" "${auth_token}" "${auth_password}" "${gateway_state_dir}" "${dashboard_state_dir}" "${request_timeout_ms}" "${agent_request_max_retries}" "${provider_max_retries}")"
+  command="$(build_up_command "${model}" "${bind}" "${auth_mode}" "${auth_token}" "${auth_password}" "${gateway_state_dir}" "${dashboard_state_dir}" "${jobs_state_dir}" "${request_timeout_ms}" "${agent_request_max_retries}" "${provider_max_retries}")"
   local runtime_fingerprint
   runtime_fingerprint="$(build_runtime_fingerprint "${command}")"
 
@@ -471,7 +496,7 @@ cmd_up() {
     die "tau-unified: failed to start runtime process"
   fi
 
-  write_control_plane_snapshot "${profile}" "${bind}" "${gateway_state_dir}" "${dashboard_state_dir}"
+  write_control_plane_snapshot "${profile}" "${bind}" "${gateway_state_dir}" "${dashboard_state_dir}" "${jobs_state_dir}"
   printf '%s\n' "${runtime_fingerprint}" > "${FINGERPRINT_FILE}"
 
   log "tau-unified: started (pid=${pid}) profile=${profile}"
@@ -565,8 +590,9 @@ bootstrap_runtime_for_tui() {
   local profile="$6"
   local gateway_state_dir="$7"
   local dashboard_state_dir="$8"
-  local request_timeout_ms="$9"
-  local agent_request_max_retries="${10}"
+  local jobs_state_dir="$9"
+  local request_timeout_ms="${10}"
+  local agent_request_max_retries="${11}"
   local readiness_timeout_ms="${TUI_READINESS_TIMEOUT_MS_DEFAULT}"
 
   require_positive_integer "${readiness_timeout_ms}" "TAU_UNIFIED_TUI_READINESS_TIMEOUT_MS"
@@ -581,6 +607,7 @@ bootstrap_runtime_for_tui() {
     --profile "${profile}" \
     --gateway-state-dir "${gateway_state_dir}" \
     --dashboard-state-dir "${dashboard_state_dir}" \
+    --jobs-state-dir "${jobs_state_dir}" \
     --request-timeout-ms "${request_timeout_ms}" \
     --agent-request-max-retries "${agent_request_max_retries}"
 
@@ -594,6 +621,7 @@ bootstrap_runtime_for_tui() {
 cmd_tui() {
   local dashboard_state_dir="${DASHBOARD_STATE_DIR_DEFAULT}"
   local gateway_state_dir="${GATEWAY_STATE_DIR_DEFAULT}"
+  local jobs_state_dir="${JOBS_STATE_DIR_DEFAULT}"
   local model="${MODEL_DEFAULT}"
   local bind="${BIND_DEFAULT}"
   local auth_mode="${AUTH_MODE_DEFAULT}"
@@ -645,6 +673,10 @@ cmd_tui() {
         ;;
       --gateway-state-dir)
         gateway_state_dir="$2"
+        shift 2
+        ;;
+      --jobs-state-dir)
+        jobs_state_dir="$2"
         shift 2
         ;;
       --model)
@@ -736,6 +768,7 @@ cmd_tui() {
       "${profile}" \
       "${gateway_state_dir}" \
       "${dashboard_state_dir}" \
+      "${jobs_state_dir}" \
       "${request_timeout_ms}" \
       "${agent_request_max_retries}"
   fi
