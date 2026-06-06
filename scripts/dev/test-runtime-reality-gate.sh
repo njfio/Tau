@@ -104,6 +104,7 @@ assert_equals "5" "$(jq -r '.fast_checks | length' "${pass_json}")" "fast check 
 assert_equals "true" "$(jq -r '[.fast_checks[].status] | all(. == "passed")' "${pass_json}")" "fast checks passed"
 assert_equals "passed" "$(jq -r '.fast_checks[] | select(.id == "tau_unified_status_control_plane_test") | .status' "${pass_json}")" "status control-plane check passed"
 assert_equals "partial" "$(jq -r '.surfaces[] | select(.id == "dashboard_operator_ux") | .classification' "${pass_json}")" "dashboard partial"
+assert_contains "$(jq -r '.surfaces[] | select(.id == "unified_runtime_control_plane") | .boundary' "${pass_json}")" "background-job state and restart-recovery evidence" "unified control-plane recovery evidence wording"
 assert_equals "opt_in_heavy" "$(jq -r '.surfaces[] | select(.id == "true_rl_productionization") | .classification' "${pass_json}")" "rl opt-in"
 assert_equals "live_env_required" "$(jq -r '.surfaces[] | select(.id == "auth_transports_live_validation") | .classification' "${pass_json}")" "auth live env"
 assert_equals "not_claimable" "$(jq -r '.surfaces[] | select(.id == "autonomy_forever") | .classification' "${pass_json}")" "autonomy not claimable"

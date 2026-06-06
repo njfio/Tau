@@ -192,6 +192,7 @@ test_status_control_plane_snapshot() {
   local test_runner_pid="${tmp_dir}/status-runner.pid"
   local test_gateway_state_dir="${tmp_dir}/status-gateway"
   local test_dashboard_state_dir="${tmp_dir}/status-dashboard"
+  local test_jobs_state_dir="${tmp_dir}/status-jobs"
   local status_bind="127.0.0.1:8911"
 
   local up_status_output
@@ -204,9 +205,11 @@ test_status_control_plane_snapshot() {
       --profile status-profile \
       --bind "${status_bind}" \
       --gateway-state-dir "${test_gateway_state_dir}" \
-      --dashboard-state-dir "${test_dashboard_state_dir}" 2>&1
+      --dashboard-state-dir "${test_dashboard_state_dir}" \
+      --jobs-state-dir "${test_jobs_state_dir}" 2>&1
   )"
   assert_contains "${up_status_output}" "tau-unified: started" "status contract up marker"
+  assert_contains "$(cat "${test_runtime_dir}/tau-unified.last-cmd")" "--jobs-state-dir ${test_jobs_state_dir}" "status jobs state command propagation"
 
   local status_output
   status_output="$(
@@ -230,6 +233,12 @@ test_status_control_plane_snapshot() {
   assert_contains "${status_output}" "tau-unified: control_plane.memory_endpoint=http://${status_bind}/gateway/memory/default" "status memory endpoint"
   assert_contains "${status_output}" "tau-unified: control_plane.memory_graph_endpoint=http://${status_bind}/gateway/memory-graph/default" "status memory graph endpoint"
   assert_contains "${status_output}" "tau-unified: control_plane.jobs_endpoint=http://${status_bind}/gateway/jobs" "status jobs endpoint"
+  assert_contains "${status_output}" "tau-unified: control_plane.background_jobs.state_dir=${test_jobs_state_dir}" "status background jobs state dir"
+  assert_contains "${status_output}" "tau-unified: control_plane.background_jobs.manifest_dir=${test_jobs_state_dir}/jobs" "status background jobs manifest dir"
+  assert_contains "${status_output}" "tau-unified: control_plane.background_jobs.events_file=${test_jobs_state_dir}/events.jsonl" "status background jobs events file"
+  assert_contains "${status_output}" "tau-unified: control_plane.background_jobs.health_file=${test_jobs_state_dir}/state.json" "status background jobs health file"
+  assert_contains "${status_output}" "tau-unified: control_plane.background_jobs.restart_recovery=running_manifests_requeued_after_restart" "status background jobs restart recovery"
+  assert_contains "${status_output}" "tau-unified: control_plane.background_jobs.ops_guide=docs/guides/background-jobs-ops.md" "status background jobs ops guide"
   assert_contains "${status_output}" "tau-unified: control_plane.routines_surface=http://${status_bind}/webchat#routines" "status routines surface"
   assert_contains "${status_output}" "tau-unified: control_plane.deploy_endpoint=http://${status_bind}/ops/deploy" "status ops deploy endpoint"
   assert_contains "${status_output}" "tau-unified: control_plane.gateway_deploy_endpoint=http://${status_bind}/gateway/deploy" "status gateway deploy endpoint"
@@ -315,6 +324,7 @@ assert_contains "$(cat "${cmd_file}")" "--request-timeout-ms 180000" "up default
 assert_contains "$(cat "${cmd_file}")" "--turn-timeout-ms 180000" "up default turn timeout flag"
 assert_contains "$(cat "${cmd_file}")" "--agent-request-max-retries 0" "up default agent retries flag"
 assert_contains "$(cat "${cmd_file}")" "--provider-max-retries 0" "up default provider retries flag"
+assert_contains "$(cat "${cmd_file}")" "--jobs-state-dir .tau/jobs" "up default jobs state dir flag"
 if [[ -z "$(cat "${fingerprint_file}")" ]]; then
   echo "expected fingerprint file to contain a non-empty fingerprint" >&2
   exit 1
@@ -373,6 +383,8 @@ assert_contains "${status_output}" "tau-unified: control_plane.health=running" "
 assert_contains "${status_output}" "tau-unified: control_plane.sessions_endpoint=http://127.0.0.1:8899/gateway/sessions" "status sessions marker"
 assert_contains "${status_output}" "tau-unified: control_plane.memory_endpoint=http://127.0.0.1:8899/gateway/memory/default" "status memory marker"
 assert_contains "${status_output}" "tau-unified: control_plane.jobs_endpoint=http://127.0.0.1:8899/gateway/jobs" "status jobs marker"
+assert_contains "${status_output}" "tau-unified: control_plane.background_jobs.state_dir=.tau/jobs" "status background jobs default state marker"
+assert_contains "${status_output}" "tau-unified: control_plane.background_jobs.restart_recovery=running_manifests_requeued_after_restart" "status background jobs recovery marker"
 assert_contains "${status_output}" "tau-unified: control_plane.deploy_endpoint=http://127.0.0.1:8899/ops/deploy" "status deploy marker"
 assert_contains "${status_output}" "tau-unified: control_plane.autonomy_boundary=durable_jobs_replay_crash_resume_not_claimed" "status autonomy boundary marker"
 
