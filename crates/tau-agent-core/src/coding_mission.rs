@@ -238,6 +238,51 @@ pub struct CodingMissionResumeOutcome {
     pub restored_branch: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CodingMissionPrPublicationStatus {
+    ManualReady,
+    DraftCreated,
+    DraftFailed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CodingMissionPrReadyRequest {
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub risk_notes: Vec<String>,
+    #[serde(default)]
+    pub rollback_notes: Vec<String>,
+    pub allow_draft_pr: bool,
+    #[serde(default)]
+    pub github_env: BTreeMap<String, String>,
+    #[serde(default)]
+    pub gh_binary: Option<PathBuf>,
+    pub started_unix_ms: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CodingMissionPrReadyBundle {
+    pub status: CodingMissionPrPublicationStatus,
+    pub branch_name: String,
+    #[serde(default)]
+    pub commit_hash: Option<String>,
+    pub title: String,
+    pub body: String,
+    pub body_path: PathBuf,
+    pub manual_gh_pr_create_command: String,
+    pub changed_files: Vec<String>,
+    pub verifier_evidence_ids: Vec<String>,
+    pub risk_notes: Vec<String>,
+    pub rollback_notes: Vec<String>,
+    #[serde(default)]
+    pub pr_url: Option<String>,
+    #[serde(default)]
+    pub error_summary: Option<String>,
+    pub created_unix_ms: u64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CodingMissionState {
     pub schema_version: u32,
@@ -265,6 +310,8 @@ pub struct CodingMissionState {
     pub git_evidence: Vec<CodingGitLifecycleEvidence>,
     #[serde(default)]
     pub resume_checkpoint: Option<CodingMissionResumeCheckpoint>,
+    #[serde(default)]
+    pub pr_ready_bundle: Option<CodingMissionPrReadyBundle>,
 }
 
 impl CodingMissionState {
@@ -370,6 +417,7 @@ impl CodingMissionState {
             command_evidence: Vec::new(),
             git_evidence: Vec::new(),
             resume_checkpoint: None,
+            pr_ready_bundle: None,
         };
         state.events.push(CodingMissionEvent {
             phase: CodingMissionPhase::Intake,
@@ -633,6 +681,247 @@ impl CodingMissionState {
         save_coding_mission_state(self)?;
         Ok(evidence)
     }
+
+    pub fn prepare_pr_ready_bundle(
+        &mut self,
+        request: CodingMissionPrReadyRequest,
+    ) -> Result<CodingMissionPrReadyBundle, CodingMissionError> {
+        if self.phase != CodingMissionPhase::PrReady {
+            return Err(CodingMissionError::GitLifecycle {
+                reason_code: "mission_not_pr_ready",
+                message: format!("mission phase is {:?}", self.phase),
+            });
+        }
+        let commit = latest_commit_evidence(self)?;
+        let title = request.title.clone().unwrap_or_else(|| {
+            format!(
+                "Coding mission {}: {}",
+                self.mission_id,
+                first_non_empty_line(&self.goal)
+            )
+        });
+        let verifier_evidence_ids = self
+            .command_evidence
+            .iter()
+            .filter(|evidence| evidence.reason_code.starts_with("coding_verifier"))
+            .map(|evidence| evidence.command_id.clone())
+            .collect::<Vec<_>>();
+        let body = render_pr_ready_body(self, &commit, &request, &verifier_evidence_ids);
+        let body_path = coding_mission_pr_body_path(&self.state_root, &self.mission_id);
+        write_text_atomic(&body_path, &body).map_err(|source| CodingMissionError::StateWrite {
+            path: body_path.clone(),
+            source,
+        })?;
+        let manual_command = render_manual_gh_pr_create_command(
+            commit.branch_name.as_str(),
+            title.as_str(),
+            body_path.as_path(),
+        );
+        let mut bundle = CodingMissionPrReadyBundle {
+            status: CodingMissionPrPublicationStatus::ManualReady,
+            branch_name: commit.branch_name.clone(),
+            commit_hash: commit.commit_hash.clone(),
+            title,
+            body,
+            body_path: body_path.clone(),
+            manual_gh_pr_create_command: manual_command,
+            changed_files: commit.changed_files.clone(),
+            verifier_evidence_ids,
+            risk_notes: request.risk_notes.clone(),
+            rollback_notes: request.rollback_notes.clone(),
+            pr_url: None,
+            error_summary: None,
+            created_unix_ms: request.started_unix_ms,
+        };
+        self.mission.artifacts.push(MissionArtifactRef {
+            artifact_id: "pr-ready-body".to_string(),
+            kind: "coding_mission_pr_body".to_string(),
+            path: Some(body_path.display().to_string()),
+            summary: Some("PR-ready bundle body".to_string()),
+        });
+
+        if request.allow_draft_pr && github_auth_present(&request.github_env) {
+            publish_draft_pr(self, &request, &mut bundle)?;
+        }
+
+        self.pr_ready_bundle = Some(bundle.clone());
+        self.updated_unix_ms = request.started_unix_ms;
+        self.mission.latest_output_summary = match bundle.status {
+            CodingMissionPrPublicationStatus::DraftCreated => {
+                format!(
+                    "draft PR created: {}",
+                    bundle.pr_url.as_deref().unwrap_or("url_missing")
+                )
+            }
+            CodingMissionPrPublicationStatus::DraftFailed => {
+                format!(
+                    "draft PR creation failed: {}",
+                    bundle.error_summary.as_deref().unwrap_or("unknown")
+                )
+            }
+            CodingMissionPrPublicationStatus::ManualReady => {
+                "PR-ready bundle prepared for manual gh pr create".to_string()
+            }
+        };
+        self.events.push(CodingMissionEvent {
+            phase: self.phase,
+            reason_code: "pr_ready_bundle_prepared".to_string(),
+            message: self.mission.latest_output_summary.clone(),
+            created_unix_ms: request.started_unix_ms,
+        });
+        save_coding_mission_state(self)?;
+        Ok(bundle)
+    }
+}
+
+fn latest_commit_evidence(
+    state: &CodingMissionState,
+) -> Result<CodingGitLifecycleEvidence, CodingMissionError> {
+    state
+        .git_evidence
+        .iter()
+        .rev()
+        .find(|evidence| evidence.kind == CodingGitLifecycleEvidenceKind::CommitCreated)
+        .cloned()
+        .ok_or_else(|| CodingMissionError::GitLifecycle {
+            reason_code: "missing_commit_evidence",
+            message: "PR-ready bundle requires commit evidence".to_string(),
+        })
+}
+
+fn render_pr_ready_body(
+    state: &CodingMissionState,
+    commit: &CodingGitLifecycleEvidence,
+    request: &CodingMissionPrReadyRequest,
+    verifier_evidence_ids: &[String],
+) -> String {
+    let changed_files = if commit.changed_files.is_empty() {
+        "- none recorded".to_string()
+    } else {
+        commit
+            .changed_files
+            .iter()
+            .map(|file| format!("- {file}"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let verifier_evidence = if verifier_evidence_ids.is_empty() {
+        "- none recorded".to_string()
+    } else {
+        verifier_evidence_ids
+            .iter()
+            .map(|id| format!("- {id}"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let risk_notes = render_note_lines(&request.risk_notes, "None");
+    let rollback_notes = render_note_lines(&request.rollback_notes, "Revert the mission commit");
+    format!(
+        "Summary:\nCoding mission is ready for PR publication.\n\nMission: {}\nSession: {}\nGoal: {}\n\nBranch: {}\nCommit: {}\n\nChanged files:\n{}\n\nVerifier evidence:\n{}\n\nRisks:\n{}\n\nRollback:\n{}\n",
+        state.mission_id,
+        state.session_key,
+        state.goal,
+        commit.branch_name,
+        commit.commit_hash.as_deref().unwrap_or("missing"),
+        changed_files,
+        verifier_evidence,
+        risk_notes,
+        rollback_notes
+    )
+}
+
+fn render_note_lines(notes: &[String], empty: &str) -> String {
+    if notes.is_empty() {
+        format!("- {empty}")
+    } else {
+        notes
+            .iter()
+            .map(|note| format!("- {note}"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+}
+
+fn first_non_empty_line(value: &str) -> String {
+    value
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .unwrap_or("coding mission")
+        .to_string()
+}
+
+fn render_manual_gh_pr_create_command(branch_name: &str, title: &str, body_path: &Path) -> String {
+    format!(
+        "gh pr create --draft --head {} --title {} --body-file {}",
+        shell_quote(branch_name),
+        shell_quote(title),
+        shell_quote(body_path.display().to_string().as_str())
+    )
+}
+
+fn shell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\"'\"'"))
+}
+
+fn coding_mission_pr_body_path(state_root: &Path, mission_id: &str) -> PathBuf {
+    state_root
+        .join("coding-missions")
+        .join(mission_id)
+        .join("pr-ready-body.md")
+}
+
+fn github_auth_present(env: &BTreeMap<String, String>) -> bool {
+    env.get("GH_TOKEN")
+        .or_else(|| env.get("GITHUB_TOKEN"))
+        .is_some_and(|value| !value.trim().is_empty())
+        || std::env::var("GH_TOKEN").is_ok_and(|value| !value.trim().is_empty())
+        || std::env::var("GITHUB_TOKEN").is_ok_and(|value| !value.trim().is_empty())
+}
+
+fn publish_draft_pr(
+    state: &mut CodingMissionState,
+    request: &CodingMissionPrReadyRequest,
+    bundle: &mut CodingMissionPrReadyBundle,
+) -> Result<(), CodingMissionError> {
+    let gh_binary = request
+        .gh_binary
+        .as_ref()
+        .map(|path| path.display().to_string())
+        .unwrap_or_else(|| "gh".to_string());
+    let body_path = bundle.body_path.display().to_string();
+    let evidence = execute_workspace_command(
+        state,
+        vec![
+            gh_binary,
+            "pr".to_string(),
+            "create".to_string(),
+            "--draft".to_string(),
+            "--head".to_string(),
+            bundle.branch_name.clone(),
+            "--title".to_string(),
+            bundle.title.clone(),
+            "--body-file".to_string(),
+            body_path,
+        ],
+        "gh_pr_create_draft".to_string(),
+        request.started_unix_ms.saturating_add(1),
+        false,
+        true,
+    )?;
+    if evidence.status == CodingWorkspaceCommandStatus::Succeeded {
+        let stdout = command_stdout(&evidence)?;
+        bundle.pr_url = stdout
+            .lines()
+            .map(str::trim)
+            .find(|line| !line.is_empty())
+            .map(str::to_string);
+        bundle.status = CodingMissionPrPublicationStatus::DraftCreated;
+    } else {
+        bundle.status = CodingMissionPrPublicationStatus::DraftFailed;
+        bundle.error_summary = Some(command_evidence_summary(&evidence));
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Default)]
@@ -3126,5 +3415,119 @@ mod tests {
             .git_evidence
             .iter()
             .any(|evidence| evidence.kind == CodingGitLifecycleEvidenceKind::CommitCreated));
+    }
+
+    fn pr_ready_state_for(root: &Path) -> (CodingMissionState, CodingGitLifecycleEvidence) {
+        let config = verifier_config_for(root, "fail\n", "grep -q pass status.txt");
+        let mut state = CodingMissionState::create(config).expect("create state");
+        let runner = CodingMissionRunner::new();
+        let outcome = runner
+            .run(
+                &mut state,
+                CodingMissionRunRequest {
+                    controlled_edit: Some(CodingMissionControlledEdit {
+                        relative_path: PathBuf::from("status.txt"),
+                        contents: "pass\n".to_string(),
+                        reason_code: "controlled_fix_for_pr_ready".to_string(),
+                    }),
+                    commit_message: "Make verifier green".to_string(),
+                    started_unix_ms: 1_800_000_007_500,
+                },
+            )
+            .expect("run mission to pr_ready");
+        assert_eq!(outcome.phase, CodingMissionPhase::PrReady);
+        (state, outcome.committed.expect("commit evidence"))
+    }
+
+    #[test]
+    fn spec_c10_pr_ready_bundle_without_auth_records_manual_gh_command() {
+        let temp = tempdir().expect("tempdir");
+        let (mut state, commit) = pr_ready_state_for(temp.path());
+
+        let bundle = state
+            .prepare_pr_ready_bundle(CodingMissionPrReadyRequest {
+                title: Some("Make verifier green".to_string()),
+                risk_notes: vec!["Risk: verifier scope is local".to_string()],
+                rollback_notes: vec!["Rollback: revert the mission commit".to_string()],
+                allow_draft_pr: true,
+                github_env: BTreeMap::new(),
+                gh_binary: None,
+                started_unix_ms: 1_800_000_008_000,
+            })
+            .expect("prepare pr-ready bundle");
+
+        assert_eq!(bundle.status, CodingMissionPrPublicationStatus::ManualReady);
+        assert_eq!(bundle.branch_name, "codex/coding-mission-alpha");
+        assert_eq!(bundle.commit_hash.as_deref(), commit.commit_hash.as_deref());
+        assert_eq!(bundle.title, "Make verifier green");
+        assert!(bundle.body.contains("Mission: coding-mission-alpha"));
+        assert!(bundle.body.contains("Changed files:\n- status.txt"));
+        assert!(bundle.body.contains("Verifier evidence:"));
+        assert!(bundle.body.contains("Risk: verifier scope is local"));
+        assert!(bundle.body.contains("Rollback: revert the mission commit"));
+        assert_eq!(bundle.pr_url, None);
+        assert!(bundle.manual_gh_pr_create_command.contains(
+            "gh pr create --draft --head 'codex/coding-mission-alpha' --title 'Make verifier green'"
+        ));
+        assert_eq!(
+            state
+                .pr_ready_bundle
+                .as_ref()
+                .map(|persisted| persisted.manual_gh_pr_create_command.as_str()),
+            Some(bundle.manual_gh_pr_create_command.as_str())
+        );
+    }
+
+    #[test]
+    fn spec_c11_pr_ready_bundle_creates_draft_when_auth_env_present() {
+        let temp = tempdir().expect("tempdir");
+        let (mut state, _commit) = pr_ready_state_for(temp.path());
+        let fake_gh = temp.path().join("fake-gh");
+        std::fs::write(
+            &fake_gh,
+            "#!/bin/sh\nprintf 'https://github.com/njfio/Tau/pull/999\\n'\n",
+        )
+        .expect("write fake gh");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = std::fs::metadata(&fake_gh)
+                .expect("fake gh metadata")
+                .permissions();
+            perms.set_mode(0o755);
+            std::fs::set_permissions(&fake_gh, perms).expect("chmod fake gh");
+        }
+
+        let bundle = state
+            .prepare_pr_ready_bundle(CodingMissionPrReadyRequest {
+                title: Some("Make verifier green".to_string()),
+                risk_notes: vec!["Risk: draft PR uses fake gh in test".to_string()],
+                rollback_notes: vec!["Rollback: close the draft PR".to_string()],
+                allow_draft_pr: true,
+                github_env: BTreeMap::from([("GH_TOKEN".to_string(), "test-token".to_string())]),
+                gh_binary: Some(fake_gh),
+                started_unix_ms: 1_800_000_008_500,
+            })
+            .expect("prepare draft pr");
+
+        assert_eq!(
+            bundle.status,
+            CodingMissionPrPublicationStatus::DraftCreated
+        );
+        assert_eq!(
+            bundle.pr_url.as_deref(),
+            Some("https://github.com/njfio/Tau/pull/999")
+        );
+        assert_eq!(
+            state
+                .pr_ready_bundle
+                .as_ref()
+                .and_then(|persisted| persisted.pr_url.as_deref()),
+            Some("https://github.com/njfio/Tau/pull/999")
+        );
+        assert!(state.command_evidence.iter().any(|evidence| {
+            evidence.reason_code == "gh_pr_create_draft"
+                && evidence.status == CodingWorkspaceCommandStatus::Succeeded
+        }));
     }
 }
