@@ -1,6 +1,8 @@
 use std::{
     collections::BTreeMap,
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
+    process::Command,
+    time::Instant,
 };
 
 use serde::{Deserialize, Serialize};
@@ -9,7 +11,8 @@ use thiserror::Error;
 
 use crate::{
     MissionArtifactRef, MissionCuratorReviewStatus, MissionLearningRecord,
-    MissionLearningRecordKind, MissionLifecycleStatus, MissionSnapshot, MissionTransitionError,
+    MissionLearningRecordKind, MissionLifecycleStatus, MissionSnapshot, MissionToolCallEvidence,
+    MissionToolCallStatus, MissionToolEvidenceError, MissionTransitionError,
     MissionVerificationGate, MissionVerifierRecord, MissionVerifierStatus,
 };
 
@@ -75,6 +78,44 @@ pub struct CodingMissionEvent {
     pub created_unix_ms: u64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CodingWorkspaceCommandPolicy {
+    pub allowed_roots: Vec<PathBuf>,
+    pub allow_network: bool,
+    pub allow_mutation: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CodingWorkspaceCommand {
+    pub cwd: PathBuf,
+    pub argv: Vec<String>,
+    pub reason_code: String,
+    pub started_unix_ms: u64,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CodingWorkspaceCommandStatus {
+    Succeeded,
+    Failed,
+    Denied,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CodingWorkspaceCommandEvidence {
+    pub command_id: String,
+    pub cwd: PathBuf,
+    pub argv: Vec<String>,
+    pub stdout_path: PathBuf,
+    pub stderr_path: PathBuf,
+    pub exit_status: Option<i32>,
+    pub elapsed_ms: u64,
+    pub reason_code: String,
+    pub status: CodingWorkspaceCommandStatus,
+    #[serde(default)]
+    pub denied_reason: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CodingMissionState {
     pub schema_version: u32,
@@ -96,6 +137,8 @@ pub struct CodingMissionState {
     pub mission: MissionSnapshot,
     #[serde(default)]
     pub events: Vec<CodingMissionEvent>,
+    #[serde(default)]
+    pub command_evidence: Vec<CodingWorkspaceCommandEvidence>,
 }
 
 impl CodingMissionState {
@@ -198,6 +241,7 @@ impl CodingMissionState {
             updated_unix_ms: config.created_unix_ms,
             mission,
             events: Vec::new(),
+            command_evidence: Vec::new(),
         };
         state.events.push(CodingMissionEvent {
             phase: CodingMissionPhase::Intake,
@@ -241,6 +285,375 @@ impl CodingMissionState {
 
     pub fn to_mission_snapshot(&self) -> MissionSnapshot {
         self.mission.clone()
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct CodingWorkspaceExecutor {
+    policy: CodingWorkspaceCommandPolicy,
+}
+
+impl CodingWorkspaceExecutor {
+    pub fn new(policy: CodingWorkspaceCommandPolicy) -> Self {
+        Self { policy }
+    }
+
+    pub fn execute(
+        &self,
+        state: &mut CodingMissionState,
+        command: CodingWorkspaceCommand,
+    ) -> Result<CodingWorkspaceCommandEvidence, CodingMissionError> {
+        let command_id = format!("cmd-{:04}", state.command_evidence.len().saturating_add(1));
+        let stdout_path = coding_mission_command_artifact_path(
+            &state.state_root,
+            &state.mission_id,
+            &command_id,
+            "stdout",
+        );
+        let stderr_path = coding_mission_command_artifact_path(
+            &state.state_root,
+            &state.mission_id,
+            &command_id,
+            "stderr",
+        );
+
+        let cwd = match self.evaluate_policy(state, &command) {
+            Ok(cwd) => cwd,
+            Err(denied_reason) => {
+                return record_workspace_command_evidence(
+                    state,
+                    WorkspaceCommandRecord {
+                        command,
+                        command_id,
+                        stdout_path,
+                        stderr_path,
+                        status: CodingWorkspaceCommandStatus::Denied,
+                        exit_status: None,
+                        elapsed_ms: 0,
+                        denied_reason: Some(denied_reason),
+                        stdout: Vec::new(),
+                        stderr: format!("{denied_reason}\n").into_bytes(),
+                    },
+                );
+            }
+        };
+
+        record_workspace_command_start(state, &command_id, &command)?;
+        let started = Instant::now();
+        let output = Command::new(&command.argv[0])
+            .args(command.argv.iter().skip(1))
+            .current_dir(&cwd)
+            .output();
+        let elapsed_ms = elapsed_ms_saturating(started);
+
+        match output {
+            Ok(output) => {
+                let status = if output.status.success() {
+                    CodingWorkspaceCommandStatus::Succeeded
+                } else {
+                    CodingWorkspaceCommandStatus::Failed
+                };
+                record_workspace_command_evidence(
+                    state,
+                    WorkspaceCommandRecord {
+                        command,
+                        command_id,
+                        stdout_path,
+                        stderr_path,
+                        status,
+                        exit_status: output.status.code(),
+                        elapsed_ms,
+                        denied_reason: None,
+                        stdout: output.stdout,
+                        stderr: output.stderr,
+                    },
+                )
+            }
+            Err(error) => record_workspace_command_evidence(
+                state,
+                WorkspaceCommandRecord {
+                    command,
+                    command_id,
+                    stdout_path,
+                    stderr_path,
+                    status: CodingWorkspaceCommandStatus::Failed,
+                    exit_status: None,
+                    elapsed_ms,
+                    denied_reason: None,
+                    stdout: Vec::new(),
+                    stderr: format!("command_spawn_failed: {error}\n").into_bytes(),
+                },
+            ),
+        }
+    }
+
+    fn evaluate_policy(
+        &self,
+        state: &CodingMissionState,
+        command: &CodingWorkspaceCommand,
+    ) -> Result<PathBuf, &'static str> {
+        if command.argv.is_empty() {
+            return Err("empty_argv");
+        }
+        if !command.cwd.exists() {
+            return Err("cwd_missing");
+        }
+        let cwd = match std::fs::canonicalize(&command.cwd) {
+            Ok(cwd) if cwd.is_dir() => cwd,
+            Ok(_) => return Err("cwd_not_directory"),
+            Err(_) => return Err("cwd_invalid"),
+        };
+        if !path_is_allowed_by_roots(&cwd, &self.policy.allowed_roots)
+            || !path_is_allowed_by_roots(&cwd, &state.allowed_roots)
+        {
+            return Err("cwd_outside_allowed_roots");
+        }
+        if command_is_force_push(&command.argv) {
+            return Err("denied_force_push");
+        }
+        if command_is_destructive(&command.argv) {
+            return Err("denied_destructive_command");
+        }
+        if !self.policy.allow_network && command_uses_network(&command.argv) {
+            return Err("network_denied");
+        }
+        if !self.policy.allow_mutation && command_requires_mutation(&command.argv) {
+            return Err("mutation_phase_required");
+        }
+        if command_has_out_of_root_write(&cwd, &command.argv, &self.policy.allowed_roots)
+            || command_has_out_of_root_write(&cwd, &command.argv, &state.allowed_roots)
+        {
+            return Err("out_of_root_write");
+        }
+        Ok(cwd)
+    }
+}
+
+fn record_workspace_command_start(
+    state: &mut CodingMissionState,
+    command_id: &str,
+    command: &CodingWorkspaceCommand,
+) -> Result<(), CodingMissionError> {
+    let started_path = coding_mission_command_artifact_path(
+        &state.state_root,
+        &state.mission_id,
+        command_id,
+        "started.json",
+    );
+    let payload = serde_json::to_string_pretty(&json!({
+        "command_id": command_id,
+        "cwd": command.cwd.display().to_string(),
+        "argv": command.argv,
+        "reason_code": command.reason_code,
+        "started_unix_ms": command.started_unix_ms,
+    }))
+    .map_err(|source| CodingMissionError::StateSerialize { source })?;
+    write_text_atomic(&started_path, &payload).map_err(|source| {
+        CodingMissionError::StateWrite {
+            path: started_path.clone(),
+            source,
+        }
+    })?;
+    state.mission.artifacts.push(MissionArtifactRef {
+        artifact_id: format!("{command_id}:started"),
+        kind: "workspace_command_started".to_string(),
+        path: Some(started_path.display().to_string()),
+        summary: Some(format!("started marker for {}", command.reason_code)),
+    });
+    state.updated_unix_ms = command.started_unix_ms;
+    state.mission.latest_output_summary = format!("command {command_id} started");
+    state.events.push(CodingMissionEvent {
+        phase: state.phase,
+        reason_code: "workspace_command_started".to_string(),
+        message: format!("command {command_id} started: {}", command.reason_code),
+        created_unix_ms: command.started_unix_ms,
+    });
+    save_coding_mission_state(state)
+}
+
+struct WorkspaceCommandRecord {
+    command: CodingWorkspaceCommand,
+    command_id: String,
+    stdout_path: PathBuf,
+    stderr_path: PathBuf,
+    status: CodingWorkspaceCommandStatus,
+    exit_status: Option<i32>,
+    elapsed_ms: u64,
+    denied_reason: Option<&'static str>,
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
+}
+
+fn record_workspace_command_evidence(
+    state: &mut CodingMissionState,
+    record: WorkspaceCommandRecord,
+) -> Result<CodingWorkspaceCommandEvidence, CodingMissionError> {
+    write_bytes_atomic(&record.stdout_path, &record.stdout).map_err(|source| {
+        CodingMissionError::StateWrite {
+            path: record.stdout_path.clone(),
+            source,
+        }
+    })?;
+    write_bytes_atomic(&record.stderr_path, &record.stderr).map_err(|source| {
+        CodingMissionError::StateWrite {
+            path: record.stderr_path.clone(),
+            source,
+        }
+    })?;
+
+    let evidence = CodingWorkspaceCommandEvidence {
+        command_id: record.command_id.clone(),
+        cwd: record.command.cwd,
+        argv: record.command.argv,
+        stdout_path: record.stdout_path.clone(),
+        stderr_path: record.stderr_path.clone(),
+        exit_status: record.exit_status,
+        elapsed_ms: record.elapsed_ms,
+        reason_code: record.command.reason_code,
+        status: record.status,
+        denied_reason: record.denied_reason.map(str::to_string),
+    };
+    let stdout_artifact_id = format!("{}:stdout", record.command_id);
+    let stderr_artifact_id = format!("{}:stderr", record.command_id);
+    state.mission.artifacts.push(MissionArtifactRef {
+        artifact_id: stdout_artifact_id.clone(),
+        kind: "workspace_command_stdout".to_string(),
+        path: Some(record.stdout_path.display().to_string()),
+        summary: Some(format!("stdout for {}", evidence.reason_code)),
+    });
+    state.mission.artifacts.push(MissionArtifactRef {
+        artifact_id: stderr_artifact_id.clone(),
+        kind: "workspace_command_stderr".to_string(),
+        path: Some(record.stderr_path.display().to_string()),
+        summary: Some(format!("stderr for {}", evidence.reason_code)),
+    });
+
+    let mission_status = match record.status {
+        CodingWorkspaceCommandStatus::Succeeded => MissionToolCallStatus::Succeeded,
+        CodingWorkspaceCommandStatus::Failed => MissionToolCallStatus::Failed,
+        CodingWorkspaceCommandStatus::Denied => MissionToolCallStatus::Blocked,
+    };
+    let completed_unix_ms = record
+        .command
+        .started_unix_ms
+        .saturating_add(evidence.elapsed_ms);
+    let verification_gate_ids = matching_verification_gate_ids(state, &evidence.argv);
+    state
+        .mission
+        .record_tool_call_evidence(MissionToolCallEvidence {
+            tool_call_id: evidence.command_id.clone(),
+            mission_id: state.mission_id.clone(),
+            plan_node_id: None,
+            tool_name: "coding_workspace_command".to_string(),
+            status: mission_status,
+            started_unix_ms: record.command.started_unix_ms,
+            completed_unix_ms: Some(completed_unix_ms),
+            runtime_ms: Some(evidence.elapsed_ms),
+            cost_usd: None,
+            summary: Some(command_evidence_summary(&evidence)),
+            artifact_ids: vec![stdout_artifact_id, stderr_artifact_id],
+            verification_gate_ids,
+            metadata: BTreeMap::from([
+                ("argv".to_string(), json!(evidence.argv)),
+                ("cwd".to_string(), json!(evidence.cwd.display().to_string())),
+                (
+                    "stdout_path".to_string(),
+                    json!(evidence.stdout_path.display().to_string()),
+                ),
+                (
+                    "stderr_path".to_string(),
+                    json!(evidence.stderr_path.display().to_string()),
+                ),
+                ("exit_status".to_string(), json!(evidence.exit_status)),
+                ("reason_code".to_string(), json!(evidence.reason_code)),
+                ("denied_reason".to_string(), json!(evidence.denied_reason)),
+            ]),
+        })
+        .map_err(CodingMissionError::MissionToolEvidence)?;
+
+    state.updated_unix_ms = completed_unix_ms;
+    state.mission.latest_output_summary = command_evidence_summary(&evidence);
+    state.mission.latest_verifier = Some(MissionVerifierRecord {
+        kind: "coding_workspace_command".to_string(),
+        status: match evidence.status {
+            CodingWorkspaceCommandStatus::Succeeded => MissionVerifierStatus::Continue,
+            CodingWorkspaceCommandStatus::Failed | CodingWorkspaceCommandStatus::Denied => {
+                MissionVerifierStatus::Failed
+            }
+        },
+        reason_code: evidence.reason_code.clone(),
+        message: command_evidence_summary(&evidence),
+        details: BTreeMap::from([
+            ("command_id".to_string(), json!(evidence.command_id)),
+            ("status".to_string(), json!(evidence.status)),
+            ("denied_reason".to_string(), json!(evidence.denied_reason)),
+        ]),
+    });
+    state.events.push(CodingMissionEvent {
+        phase: state.phase,
+        reason_code: evidence.reason_code.clone(),
+        message: command_evidence_summary(&evidence),
+        created_unix_ms: completed_unix_ms,
+    });
+    state.command_evidence.push(evidence.clone());
+    save_coding_mission_state(state)?;
+    Ok(evidence)
+}
+
+fn coding_mission_command_artifact_path(
+    state_root: &Path,
+    mission_id: &str,
+    command_id: &str,
+    stream: &str,
+) -> PathBuf {
+    state_root
+        .join("coding-missions")
+        .join(mission_id)
+        .join("commands")
+        .join(format!("{command_id}.{stream}"))
+}
+
+fn command_evidence_summary(evidence: &CodingWorkspaceCommandEvidence) -> String {
+    match evidence.status {
+        CodingWorkspaceCommandStatus::Succeeded => {
+            format!("command {} succeeded", evidence.command_id)
+        }
+        CodingWorkspaceCommandStatus::Failed => format!(
+            "command {} failed with status {:?}",
+            evidence.command_id, evidence.exit_status
+        ),
+        CodingWorkspaceCommandStatus::Denied => format!(
+            "command {} denied: {}",
+            evidence.command_id,
+            evidence.denied_reason.as_deref().unwrap_or("policy_denied")
+        ),
+    }
+}
+
+fn matching_verification_gate_ids(state: &CodingMissionState, argv: &[String]) -> Vec<String> {
+    let command = argv.join(" ");
+    state
+        .mission
+        .verification_gates
+        .iter()
+        .filter(|gate| {
+            gate.id == format!("verifier:{command}")
+                || gate
+                    .evidence
+                    .get("command")
+                    .and_then(|value| value.as_str())
+                    .is_some_and(|candidate| candidate == command)
+        })
+        .map(|gate| gate.id.clone())
+        .collect()
+}
+
+fn elapsed_ms_saturating(started: Instant) -> u64 {
+    let millis = started.elapsed().as_millis();
+    if millis > u128::from(u64::MAX) {
+        u64::MAX
+    } else {
+        millis as u64
     }
 }
 
@@ -298,6 +711,8 @@ pub enum CodingMissionError {
         path: PathBuf,
         source: std::io::Error,
     },
+    #[error("failed to record coding mission tool evidence: {0}")]
+    MissionToolEvidence(#[from] MissionToolEvidenceError),
     #[error("invalid coding mission transition: {0}")]
     MissionTransition(#[from] MissionTransitionError),
 }
@@ -396,6 +811,154 @@ fn canonicalize_allowed_roots(roots: &[PathBuf]) -> Result<Vec<PathBuf>, CodingM
         .collect()
 }
 
+fn path_is_allowed_by_roots(path: &Path, roots: &[PathBuf]) -> bool {
+    roots.iter().any(|root| path.starts_with(root))
+}
+
+fn command_program(argv: &[String]) -> String {
+    Path::new(&argv[0])
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(argv[0].as_str())
+        .to_ascii_lowercase()
+}
+
+fn command_is_force_push(argv: &[String]) -> bool {
+    if command_program(argv) != "git" {
+        return false;
+    }
+    argv.get(1).is_some_and(|subcommand| subcommand == "push")
+        && argv
+            .iter()
+            .skip(2)
+            .any(|arg| arg == "--force" || arg == "-f" || arg == "--force-with-lease")
+}
+
+fn command_is_destructive(argv: &[String]) -> bool {
+    let program = command_program(argv);
+    if program == "rm" && rm_args_are_recursive_force(argv) {
+        return true;
+    }
+    if program == "git" {
+        return argv.get(1).is_some_and(|subcommand| {
+            (subcommand == "reset" && argv.iter().skip(2).any(|arg| arg == "--hard"))
+                || (subcommand == "clean"
+                    && argv
+                        .iter()
+                        .skip(2)
+                        .any(|arg| arg.starts_with('-') && arg.contains('f')))
+        });
+    }
+    false
+}
+
+fn rm_args_are_recursive_force(argv: &[String]) -> bool {
+    let has_recursive = argv
+        .iter()
+        .skip(1)
+        .any(|arg| arg == "-r" || arg == "-R" || arg == "--recursive" || flag_contains(arg, 'r'));
+    let has_force = argv
+        .iter()
+        .skip(1)
+        .any(|arg| arg == "-f" || arg == "--force" || flag_contains(arg, 'f'));
+    has_recursive && has_force
+}
+
+fn flag_contains(arg: &str, needle: char) -> bool {
+    arg.starts_with('-')
+        && !arg.starts_with("--")
+        && arg.chars().any(|candidate| candidate == needle)
+}
+
+fn command_uses_network(argv: &[String]) -> bool {
+    let program = command_program(argv);
+    if matches!(
+        program.as_str(),
+        "curl" | "wget" | "ssh" | "scp" | "rsync" | "nc" | "ncat"
+    ) {
+        return true;
+    }
+    program == "git"
+        && argv.get(1).is_some_and(|subcommand| {
+            matches!(
+                subcommand.as_str(),
+                "clone" | "fetch" | "pull" | "push" | "ls-remote" | "submodule"
+            )
+        })
+}
+
+fn command_requires_mutation(argv: &[String]) -> bool {
+    let program = command_program(argv);
+    if matches!(
+        program.as_str(),
+        "touch" | "mkdir" | "rmdir" | "rm" | "mv" | "cp" | "install" | "tee"
+    ) {
+        return true;
+    }
+    program == "git"
+        && argv.get(1).is_some_and(|subcommand| {
+            matches!(
+                subcommand.as_str(),
+                "add"
+                    | "am"
+                    | "apply"
+                    | "checkout"
+                    | "clean"
+                    | "commit"
+                    | "merge"
+                    | "rebase"
+                    | "reset"
+                    | "restore"
+                    | "stash"
+                    | "switch"
+            )
+        })
+}
+
+fn command_has_out_of_root_write(cwd: &Path, argv: &[String], roots: &[PathBuf]) -> bool {
+    if !command_requires_mutation(argv) {
+        return false;
+    }
+    let program = command_program(argv);
+    if program == "git" {
+        return false;
+    }
+    argv.iter()
+        .skip(1)
+        .filter(|arg| !arg.starts_with('-'))
+        .filter_map(|arg| lexical_command_path(cwd, arg))
+        .any(|candidate| !path_is_allowed_by_roots(&candidate, roots))
+}
+
+fn lexical_command_path(cwd: &Path, arg: &str) -> Option<PathBuf> {
+    if arg.trim().is_empty() {
+        return None;
+    }
+    let raw = Path::new(arg);
+    let absolute = if raw.is_absolute() {
+        raw.to_path_buf()
+    } else {
+        cwd.join(raw)
+    };
+    Some(normalize_path_lexically(&absolute))
+}
+
+fn normalize_path_lexically(path: &Path) -> PathBuf {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::Prefix(prefix) => normalized.push(prefix.as_os_str()),
+            Component::RootDir => normalized.push(Path::new("/")),
+            Component::CurDir => {}
+            Component::ParentDir => {
+                normalized.pop();
+            }
+            Component::Normal(segment) => normalized.push(segment),
+        }
+    }
+    normalized
+}
+
 fn write_text_atomic(path: &Path, payload: &str) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -409,6 +972,19 @@ fn write_text_atomic(path: &Path, payload: &str) -> std::io::Result<()> {
     std::fs::rename(tmp_path, path)
 }
 
+fn write_bytes_atomic(path: &Path, payload: &[u8]) -> std::io::Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("coding-mission-artifact");
+    let tmp_path = path.with_file_name(format!("{file_name}.tmp.{}", std::process::id()));
+    std::fs::write(&tmp_path, payload)?;
+    std::fs::rename(tmp_path, path)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -417,6 +993,13 @@ mod tests {
     fn config_for(root: &std::path::Path) -> CodingMissionConfig {
         let repo = root.join("repo");
         std::fs::create_dir_all(&repo).expect("repo dir");
+        let init = std::process::Command::new("git")
+            .arg("init")
+            .arg("--quiet")
+            .current_dir(&repo)
+            .status()
+            .expect("git init");
+        assert!(init.success());
         CodingMissionConfig {
             state_root: root.join("state"),
             mission_id: "coding-mission-alpha".to_string(),
@@ -552,5 +1135,216 @@ mod tests {
             error,
             CodingMissionError::UnsupportedSchema { .. }
         ));
+    }
+
+    #[test]
+    fn spec_c03_workspace_executor_records_durable_command_evidence() {
+        let temp = tempdir().expect("tempdir");
+        let mut state = CodingMissionState::create(config_for(temp.path())).expect("create state");
+        let repo_path = state.repo_path.clone();
+        let executor = CodingWorkspaceExecutor::new(CodingWorkspaceCommandPolicy {
+            allowed_roots: state.allowed_roots.clone(),
+            allow_network: false,
+            allow_mutation: false,
+        });
+
+        let status = executor
+            .execute(
+                &mut state,
+                CodingWorkspaceCommand {
+                    cwd: repo_path.clone(),
+                    argv: vec![
+                        "git".to_string(),
+                        "status".to_string(),
+                        "--short".to_string(),
+                    ],
+                    reason_code: "git_status".to_string(),
+                    started_unix_ms: 1_800_000_000_200,
+                },
+            )
+            .expect("git status evidence");
+        let diff = executor
+            .execute(
+                &mut state,
+                CodingWorkspaceCommand {
+                    cwd: repo_path.clone(),
+                    argv: vec!["git".to_string(), "diff".to_string(), "--stat".to_string()],
+                    reason_code: "git_diff".to_string(),
+                    started_unix_ms: 1_800_000_000_300,
+                },
+            )
+            .expect("git diff evidence");
+        let verifier = executor
+            .execute(
+                &mut state,
+                CodingWorkspaceCommand {
+                    cwd: repo_path.clone(),
+                    argv: vec!["git".to_string(), "--version".to_string()],
+                    reason_code: "verifier_git_version".to_string(),
+                    started_unix_ms: 1_800_000_000_400,
+                },
+            )
+            .expect("verifier evidence");
+
+        assert_eq!(status.status, CodingWorkspaceCommandStatus::Succeeded);
+        assert_eq!(diff.status, CodingWorkspaceCommandStatus::Succeeded);
+        assert_eq!(verifier.status, CodingWorkspaceCommandStatus::Succeeded);
+        assert_eq!(state.command_evidence.len(), 3);
+        assert_eq!(state.mission.tool_evidence.len(), 3);
+        assert_eq!(state.command_evidence[0].reason_code, "git_status");
+        assert_eq!(
+            state.command_evidence[0].argv,
+            vec!["git", "status", "--short"]
+        );
+        assert!(state.command_evidence[0].stdout_path.is_file());
+        assert!(state.command_evidence[0].stderr_path.is_file());
+        assert_eq!(state.command_evidence[0].exit_status, Some(0));
+        assert!(std::fs::read_to_string(&verifier.stdout_path)
+            .expect("verifier stdout")
+            .contains("git version"));
+
+        let loaded =
+            load_coding_mission_state(state.state_root.as_path(), state.mission_id.as_str())
+                .expect("load persisted state");
+        assert_eq!(loaded.command_evidence, state.command_evidence);
+        assert_eq!(loaded.mission.tool_evidence.len(), 3);
+        assert!(loaded
+            .events
+            .iter()
+            .any(|event| event.reason_code == "workspace_command_started"));
+        assert!(loaded
+            .mission
+            .artifacts
+            .iter()
+            .any(|artifact| artifact.kind == "workspace_command_started"));
+    }
+
+    #[test]
+    fn regression_workspace_executor_denies_destructive_command_without_mutation() {
+        let temp = tempdir().expect("tempdir");
+        let mut state = CodingMissionState::create(config_for(temp.path())).expect("create state");
+        let repo_path = state.repo_path.clone();
+        let keep = repo_path.join("keep.txt");
+        std::fs::write(&keep, "do not delete").expect("seed file");
+        let executor = CodingWorkspaceExecutor::new(CodingWorkspaceCommandPolicy {
+            allowed_roots: state.allowed_roots.clone(),
+            allow_network: false,
+            allow_mutation: true,
+        });
+
+        let denied = executor
+            .execute(
+                &mut state,
+                CodingWorkspaceCommand {
+                    cwd: repo_path,
+                    argv: vec!["rm".to_string(), "-rf".to_string(), "keep.txt".to_string()],
+                    reason_code: "rm_rf".to_string(),
+                    started_unix_ms: 1_800_000_000_500,
+                },
+            )
+            .expect("denied evidence");
+
+        assert_eq!(denied.status, CodingWorkspaceCommandStatus::Denied);
+        assert_eq!(
+            denied.denied_reason.as_deref(),
+            Some("denied_destructive_command")
+        );
+        assert!(keep.is_file());
+        assert!(denied.stdout_path.is_file());
+        assert!(denied.stderr_path.is_file());
+    }
+
+    #[test]
+    fn regression_workspace_executor_denies_force_push_network_and_missing_cwd() {
+        let temp = tempdir().expect("tempdir");
+        let mut state = CodingMissionState::create(config_for(temp.path())).expect("create state");
+        let repo_path = state.repo_path.clone();
+        let executor = CodingWorkspaceExecutor::new(CodingWorkspaceCommandPolicy {
+            allowed_roots: state.allowed_roots.clone(),
+            allow_network: false,
+            allow_mutation: true,
+        });
+
+        let force_push = executor
+            .execute(
+                &mut state,
+                CodingWorkspaceCommand {
+                    cwd: repo_path.clone(),
+                    argv: vec![
+                        "git".to_string(),
+                        "push".to_string(),
+                        "--force".to_string(),
+                        "origin".to_string(),
+                        "main".to_string(),
+                    ],
+                    reason_code: "force_push".to_string(),
+                    started_unix_ms: 1_800_000_000_600,
+                },
+            )
+            .expect("force push denial");
+        let network = executor
+            .execute(
+                &mut state,
+                CodingWorkspaceCommand {
+                    cwd: repo_path,
+                    argv: vec!["curl".to_string(), "https://example.com".to_string()],
+                    reason_code: "network_probe".to_string(),
+                    started_unix_ms: 1_800_000_000_700,
+                },
+            )
+            .expect("network denial");
+        let missing = executor
+            .execute(
+                &mut state,
+                CodingWorkspaceCommand {
+                    cwd: temp.path().join("missing"),
+                    argv: vec!["git".to_string(), "status".to_string()],
+                    reason_code: "missing_cwd".to_string(),
+                    started_unix_ms: 1_800_000_000_800,
+                },
+            )
+            .expect("missing cwd denial");
+
+        assert_eq!(
+            force_push.denied_reason.as_deref(),
+            Some("denied_force_push")
+        );
+        assert_eq!(network.denied_reason.as_deref(), Some("network_denied"));
+        assert_eq!(missing.denied_reason.as_deref(), Some("cwd_missing"));
+        assert_eq!(state.command_evidence.len(), 3);
+        assert!(state
+            .command_evidence
+            .iter()
+            .all(|evidence| evidence.status == CodingWorkspaceCommandStatus::Denied));
+    }
+
+    #[test]
+    fn regression_workspace_executor_denies_out_of_root_write() {
+        let temp = tempdir().expect("tempdir");
+        let outside = tempdir().expect("outside");
+        let outside_file = outside.path().join("outside.txt");
+        let mut state = CodingMissionState::create(config_for(temp.path())).expect("create state");
+        let repo_path = state.repo_path.clone();
+        let executor = CodingWorkspaceExecutor::new(CodingWorkspaceCommandPolicy {
+            allowed_roots: state.allowed_roots.clone(),
+            allow_network: false,
+            allow_mutation: true,
+        });
+
+        let denied = executor
+            .execute(
+                &mut state,
+                CodingWorkspaceCommand {
+                    cwd: repo_path,
+                    argv: vec!["touch".to_string(), outside_file.display().to_string()],
+                    reason_code: "out_of_root_touch".to_string(),
+                    started_unix_ms: 1_800_000_000_900,
+                },
+            )
+            .expect("out of root denial");
+
+        assert_eq!(denied.status, CodingWorkspaceCommandStatus::Denied);
+        assert_eq!(denied.denied_reason.as_deref(), Some("out_of_root_write"));
+        assert!(!outside_file.exists());
     }
 }
