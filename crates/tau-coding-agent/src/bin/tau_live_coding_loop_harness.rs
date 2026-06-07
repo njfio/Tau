@@ -210,6 +210,28 @@ enum ProviderEditOutcome {
     Failed(ProviderProofReport),
 }
 
+struct ProviderFailureReportInput<'a> {
+    mode: &'static str,
+    model_ref: &'a ModelRef,
+    dispatched: bool,
+    reason_code: &'a str,
+    error: Option<String>,
+    response_text_bytes: Option<usize>,
+    response_text_sha256: Option<String>,
+    usage: Option<ProviderUsageReport>,
+}
+
+struct LiveLoopReportInput<'a> {
+    benchmark_id: &'a str,
+    task_id: &'a str,
+    mode: HarnessMode,
+    state: &'a CodingMissionState,
+    outcome: &'a CodingMissionRunOutcome,
+    resume: Option<ResumeReport>,
+    pr_ready: Option<&'a CodingMissionPrReadyBundle>,
+    provider: Option<ProviderProofReport>,
+}
+
 fn main() -> ExitCode {
     let mut args = Args::parse();
     let fixture_path = args.fixture.take().unwrap_or_else(default_fixture_path);
@@ -303,16 +325,16 @@ fn run(args: Args, fixture_path: PathBuf, started_unix_ms: u64) -> anyhow::Resul
     } else {
         None
     };
-    let report = build_report(
-        &fixture.benchmark_id,
-        &task.id,
-        args.mode,
-        &state,
-        &outcome,
-        resume_report,
-        pr_ready.as_ref(),
-        provider_report,
-    );
+    let report = build_report(LiveLoopReportInput {
+        benchmark_id: &fixture.benchmark_id,
+        task_id: &task.id,
+        mode: args.mode,
+        state: &state,
+        outcome: &outcome,
+        resume: resume_report,
+        pr_ready: pr_ready.as_ref(),
+        provider: provider_report,
+    });
     let passed = report.passed;
     write_report(&args.output, &report)?;
     println!("{}", serde_json::to_string_pretty(&report)?);
@@ -491,14 +513,16 @@ fn resolve_provider_edit(
         Ok(client) => client,
         Err(error) => {
             return Ok(ProviderEditOutcome::Failed(provider_failure_report(
-                "live",
-                &model_ref,
-                false,
-                "provider_client_setup_failed",
-                Some(short_error(&error)),
-                None,
-                None,
-                None,
+                ProviderFailureReportInput {
+                    mode: "live",
+                    model_ref: &model_ref,
+                    dispatched: false,
+                    reason_code: "provider_client_setup_failed",
+                    error: Some(short_error(&error)),
+                    response_text_bytes: None,
+                    response_text_sha256: None,
+                    usage: None,
+                },
             )));
         }
     };
@@ -537,14 +561,16 @@ fn resolve_provider_edit(
             ))
         }
         Err(error) => Ok(ProviderEditOutcome::Failed(provider_failure_report(
-            "live",
-            &model_ref,
-            true,
-            "provider_request_failed",
-            Some(short_error(&error)),
-            None,
-            None,
-            None,
+            ProviderFailureReportInput {
+                mode: "live",
+                model_ref: &model_ref,
+                dispatched: true,
+                reason_code: "provider_request_failed",
+                error: Some(short_error(&error)),
+                response_text_bytes: None,
+                response_text_sha256: None,
+                usage: None,
+            },
         ))),
     }
 }
@@ -682,27 +708,31 @@ fn provider_edit_from_response(
                 };
                 ProviderEditOutcome::Ready(ProviderEditResolution { edit, report })
             }
-            Err(error) => ProviderEditOutcome::Failed(provider_failure_report(
+            Err(error) => {
+                ProviderEditOutcome::Failed(provider_failure_report(ProviderFailureReportInput {
+                    mode,
+                    model_ref,
+                    dispatched,
+                    reason_code: "provider_edit_invalid",
+                    error: Some(error),
+                    response_text_bytes: Some(response_text_bytes),
+                    response_text_sha256: Some(response_text_sha256),
+                    usage: usage_report,
+                }))
+            }
+        },
+        Err(error) => {
+            ProviderEditOutcome::Failed(provider_failure_report(ProviderFailureReportInput {
                 mode,
                 model_ref,
                 dispatched,
-                "provider_edit_invalid",
-                Some(error),
-                Some(response_text_bytes),
-                Some(response_text_sha256),
-                usage_report,
-            )),
-        },
-        Err(error) => ProviderEditOutcome::Failed(provider_failure_report(
-            mode,
-            model_ref,
-            dispatched,
-            "provider_output_malformed",
-            Some(format!("provider response was not valid JSON: {error}")),
-            Some(response_text_bytes),
-            Some(response_text_sha256),
-            usage_report,
-        )),
+                reason_code: "provider_output_malformed",
+                error: Some(format!("provider response was not valid JSON: {error}")),
+                response_text_bytes: Some(response_text_bytes),
+                response_text_sha256: Some(response_text_sha256),
+                usage: usage_report,
+            }))
+        }
     }
 }
 
@@ -710,7 +740,7 @@ fn provider_payload_to_edit(
     payload: ProviderEditPayload,
 ) -> Result<CodingMissionControlledEdit, String> {
     let relative_path = PathBuf::from(payload.relative_path.trim());
-    if relative_path != PathBuf::from("status.txt") {
+    if relative_path.as_path() != Path::new("status.txt") {
         return Err(format!(
             "provider edit must target status.txt, got {}",
             relative_path.display()
@@ -747,36 +777,27 @@ fn provider_payload_to_edit(
     })
 }
 
-fn provider_failure_report(
-    mode: &'static str,
-    model_ref: &ModelRef,
-    dispatched: bool,
-    reason_code: &str,
-    error: Option<String>,
-    response_text_bytes: Option<usize>,
-    response_text_sha256: Option<String>,
-    usage: Option<ProviderUsageReport>,
-) -> ProviderProofReport {
+fn provider_failure_report(input: ProviderFailureReportInput<'_>) -> ProviderProofReport {
     ProviderProofReport {
-        mode,
-        provider: model_ref.provider.as_str().to_string(),
-        model: model_ref.model.clone(),
-        dispatched,
-        parse_status: if reason_code == "provider_output_malformed" {
+        mode: input.mode,
+        provider: input.model_ref.provider.as_str().to_string(),
+        model: input.model_ref.model.clone(),
+        dispatched: input.dispatched,
+        parse_status: if input.reason_code == "provider_output_malformed" {
             "malformed"
-        } else if reason_code == "provider_edit_invalid" {
+        } else if input.reason_code == "provider_edit_invalid" {
             "invalid_edit"
         } else {
             "not_parsed"
         },
-        reason_code: reason_code.to_string(),
+        reason_code: input.reason_code.to_string(),
         finish_reason: None,
-        usage,
-        response_text_bytes,
-        response_text_sha256,
+        usage: input.usage,
+        response_text_bytes: input.response_text_bytes,
+        response_text_sha256: input.response_text_sha256,
         edit_relative_path: None,
         edit_reason_code: None,
-        error,
+        error: input.error,
     }
 }
 
@@ -821,39 +842,34 @@ fn redact_secret_like_tokens(text: &str) -> String {
         .join(" ")
 }
 
-fn build_report(
-    benchmark_id: &str,
-    task_id: &str,
-    mode: HarnessMode,
-    state: &CodingMissionState,
-    outcome: &CodingMissionRunOutcome,
-    resume: Option<ResumeReport>,
-    pr_ready: Option<&CodingMissionPrReadyBundle>,
-    provider: Option<ProviderProofReport>,
-) -> LiveLoopReport {
-    let commit = state
+fn build_report(input: LiveLoopReportInput<'_>) -> LiveLoopReport {
+    let commit = input
+        .state
         .git_evidence
         .iter()
         .rev()
         .find(|evidence| evidence.kind == CodingGitLifecycleEvidenceKind::CommitCreated);
-    let changed_files = pr_ready
+    let changed_files = input
+        .pr_ready
         .map(|bundle| bundle.changed_files.clone())
         .or_else(|| commit.map(|evidence| evidence.changed_files.clone()))
         .unwrap_or_default();
-    let branch = state
+    let branch = input
+        .state
         .resume_checkpoint
         .as_ref()
         .and_then(|checkpoint| checkpoint.branch_name.clone())
-        .or_else(|| pr_ready.map(|bundle| bundle.branch_name.clone()))
+        .or_else(|| input.pr_ready.map(|bundle| bundle.branch_name.clone()))
         .or_else(|| commit.map(|evidence| evidence.branch_name.clone()))
-        .unwrap_or_else(|| current_branch(&state.repo_path).unwrap_or_default());
-    let verifier_transcript = state
+        .unwrap_or_else(|| current_branch(&input.state.repo_path).unwrap_or_default());
+    let verifier_transcript = input
+        .state
         .command_evidence
         .iter()
         .filter(|evidence| evidence.reason_code.starts_with("coding_verifier"))
         .map(verifier_report)
         .collect::<Vec<_>>();
-    let pr_ready_report = pr_ready.map(|bundle| PrReadyReport {
+    let pr_ready_report = input.pr_ready.map(|bundle| PrReadyReport {
         status: pr_status_label(bundle.status),
         branch_name: bundle.branch_name.clone(),
         commit_hash: bundle.commit_hash.clone(),
@@ -862,9 +878,9 @@ fn build_report(
         pr_url: bundle.pr_url.clone(),
     });
     let mut failure_reasons = Vec::new();
-    let passed = match mode {
+    let passed = match input.mode {
         HarnessMode::Success | HarnessMode::Resume | HarnessMode::ProviderSuccess => {
-            let ok = state.phase == CodingMissionPhase::PrReady
+            let ok = input.state.phase == CodingMissionPhase::PrReady
                 && pr_ready_report.is_some()
                 && commit
                     .and_then(|evidence| evidence.commit_hash.as_ref())
@@ -875,8 +891,9 @@ fn build_report(
                 && verifier_transcript
                     .iter()
                     .any(|evidence| evidence.status == "succeeded")
-                && (mode != HarnessMode::ProviderSuccess
-                    || provider
+                && (input.mode != HarnessMode::ProviderSuccess
+                    || input
+                        .provider
                         .as_ref()
                         .map(|report| {
                             report.dispatched
@@ -885,7 +902,7 @@ fn build_report(
                         })
                         .unwrap_or(false));
             if !ok {
-                failure_reasons.push(match mode {
+                failure_reasons.push(match input.mode {
                     HarnessMode::ProviderSuccess => {
                         "provider_success_case_missing_required_evidence".to_string()
                     }
@@ -898,8 +915,9 @@ fn build_report(
             ok
         }
         HarnessMode::Blocked => {
-            let ok = state.phase == CodingMissionPhase::Blocked
-                && outcome.blocked_reason.as_deref() == Some("verifier_command_failed_to_start")
+            let ok = input.state.phase == CodingMissionPhase::Blocked
+                && input.outcome.blocked_reason.as_deref()
+                    == Some("verifier_command_failed_to_start")
                 && commit.is_none()
                 && pr_ready_report.is_none();
             if !ok {
@@ -911,25 +929,25 @@ fn build_report(
 
     LiveLoopReport {
         schema_version: 1,
-        benchmark_id: benchmark_id.to_string(),
-        task_id: task_id.to_string(),
-        task_goal: state.goal.clone(),
-        mode: mode.as_str().to_string(),
+        benchmark_id: input.benchmark_id.to_string(),
+        task_id: input.task_id.to_string(),
+        task_goal: input.state.goal.clone(),
+        mode: input.mode.as_str().to_string(),
         passed,
         failure_reasons,
-        mission_id: state.mission_id.clone(),
-        session_key: state.session_key.clone(),
-        phase: phase_label(state.phase),
-        repo_path: state.repo_path.display().to_string(),
-        state_root: state.state_root.display().to_string(),
+        mission_id: input.state.mission_id.clone(),
+        session_key: input.state.session_key.clone(),
+        phase: phase_label(input.state.phase),
+        repo_path: input.state.repo_path.display().to_string(),
+        state_root: input.state.state_root.display().to_string(),
         branch,
         commit_hash: commit.and_then(|evidence| evidence.commit_hash.clone()),
         changed_files,
         verifier_transcript,
-        resume,
-        blocked_reason: outcome.blocked_reason.clone(),
+        resume: input.resume,
+        blocked_reason: input.outcome.blocked_reason.clone(),
         pr_ready: pr_ready_report,
-        provider,
+        provider: input.provider,
         operator_interventions_used: Vec::new(),
         no_routine_human_steering_used: true,
     }
