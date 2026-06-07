@@ -206,22 +206,28 @@ Evidence:
 
 ### Slice C: Git lifecycle
 
-- [ ] T26 RED: add failing tests for branch creation, branch reuse, dirty-tree
+- [x] T26 RED: add failing tests for branch creation, branch reuse, dirty-tree
       detection, and base-branch mismatch handling.
-- [ ] T27 GREEN: implement `prepare_branch` for checkout/fetch-free local
+- [x] T27 GREEN: implement `prepare_branch` for checkout/fetch-free local
       operation first, with explicit remote fetch support only as an opt-in.
-- [ ] T28 RED: add failing tests requiring completion to include a non-empty
+- [x] T28 RED: add failing tests requiring completion to include a non-empty
       git diff or commit linked to the mission id.
-- [ ] T29 GREEN: implement commit packaging with the repo Lore trailer contract
+- [x] T29 GREEN: implement commit packaging with the repo Lore trailer contract
       when the target repo requires it, and a generic mission-linked commit
       message otherwise.
-- [ ] T30 VERIFY: run the git lifecycle against a disposable fixture repo.
+- [x] T30 VERIFY: run the git lifecycle against a disposable fixture repo.
 
 Done when:
 - Tau can create a branch, make a mission-linked commit, and report exact commit
   hash and changed files.
 - Dirty pre-existing user changes are detected and either preserved or block the
   mission before mutation.
+
+Evidence:
+- RED: `CARGO_TARGET_DIR=/tmp/rust_pi-3654-git-lifecycle-target cargo test -p tau-agent-core coding_mission -- --test-threads=1` failed before implementation because `CodingGitPrepareBranchRequest`, `CodingGitCommitRequest`, `CodingGitLifecycleEvidenceKind`, `CodingMissionState.git_evidence`, `prepare_branch`, `commit_changes`, and `CodingMissionError::GitLifecycle` did not exist.
+- GREEN/VERIFY: `CARGO_TARGET_DIR=/tmp/rust_pi-3654-git-lifecycle-target cargo test -p tau-agent-core coding_mission -- --test-threads=1` passed 14 tests covering local branch creation/reuse, dirty-tree preservation before checkout, base-branch mismatch fail-closed behavior, mission-linked commit packaging, exact commit hash and changed-files evidence, and empty-diff rejection in disposable git fixture repos.
+- REGRESSION: `CARGO_TARGET_DIR=/tmp/rust_pi-3654-git-lifecycle-target cargo test -p tau-agent-core` passed 237 unit tests, 2 mission harness tests, and 9 doc tests.
+- QUALITY: `cargo fmt --check`, `git diff --check`, `scripts/dev/roadmap-status-sync.sh --check --quiet`, and `CARGO_TARGET_DIR=/tmp/rust_pi-3654-git-lifecycle-target cargo clippy -p tau-agent-core -- -D warnings` passed.
 
 ### Slice D: Real outer loop
 

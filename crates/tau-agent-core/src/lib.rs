@@ -47,8 +47,9 @@ pub use agent_channel::{AgentMessage, AgentMessageBus, AgentMessageType};
 pub use circuit_breaker::{CircuitBreaker, CircuitState};
 pub use coding_mission::{
     coding_mission_state_path, load_coding_mission_state, save_coding_mission_state,
-    CodingMissionConfig, CodingMissionError, CodingMissionEvent, CodingMissionPhase,
-    CodingMissionPrMode, CodingMissionState, CodingWorkspaceCommand,
+    CodingGitCommitRequest, CodingGitLifecycleEvidence, CodingGitLifecycleEvidenceKind,
+    CodingGitPrepareBranchRequest, CodingMissionConfig, CodingMissionError, CodingMissionEvent,
+    CodingMissionPhase, CodingMissionPrMode, CodingMissionState, CodingWorkspaceCommand,
     CodingWorkspaceCommandEvidence, CodingWorkspaceCommandPolicy, CodingWorkspaceCommandStatus,
     CodingWorkspaceExecutor, CODING_MISSION_SCHEMA_VERSION,
 };
