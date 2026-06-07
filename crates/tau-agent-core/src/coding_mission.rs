@@ -178,6 +178,66 @@ pub struct CodingMissionRunOutcome {
     pub iterations: usize,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CodingMissionResumeAction {
+    RunVerifier,
+    ApplyEdit,
+    VerifyAfterEdit,
+    Commit,
+    Blocked,
+    PrReady,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CodingMissionResumeStopAfter {
+    ControlledEdit,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CodingMissionMutationFingerprint {
+    pub changed_files: Vec<String>,
+    pub diff_hash: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CodingMissionResumeCheckpoint {
+    pub next_action: CodingMissionResumeAction,
+    #[serde(default)]
+    pub branch_name: Option<String>,
+    #[serde(default)]
+    pub pending_verifier_command: Option<String>,
+    #[serde(default)]
+    pub latest_verifier_command_id: Option<String>,
+    #[serde(default)]
+    pub mutation_fingerprint: Option<CodingMissionMutationFingerprint>,
+    pub latest_learning_summary: String,
+    pub operator_resume_command: String,
+    pub updated_unix_ms: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CodingMissionResumeRequest {
+    pub state_root: PathBuf,
+    pub mission_id: String,
+    #[serde(default)]
+    pub controlled_edit: Option<CodingMissionControlledEdit>,
+    pub commit_message: String,
+    pub started_unix_ms: u64,
+    #[serde(default)]
+    pub stop_after: Option<CodingMissionResumeStopAfter>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CodingMissionResumeOutcome {
+    pub state: CodingMissionState,
+    pub run: CodingMissionRunOutcome,
+    pub resume_action: CodingMissionResumeAction,
+    #[serde(default)]
+    pub restored_branch: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CodingMissionState {
     pub schema_version: u32,
@@ -203,6 +263,8 @@ pub struct CodingMissionState {
     pub command_evidence: Vec<CodingWorkspaceCommandEvidence>,
     #[serde(default)]
     pub git_evidence: Vec<CodingGitLifecycleEvidence>,
+    #[serde(default)]
+    pub resume_checkpoint: Option<CodingMissionResumeCheckpoint>,
 }
 
 impl CodingMissionState {
@@ -307,6 +369,7 @@ impl CodingMissionState {
             events: Vec::new(),
             command_evidence: Vec::new(),
             git_evidence: Vec::new(),
+            resume_checkpoint: None,
         };
         state.events.push(CodingMissionEvent {
             phase: CodingMissionPhase::Intake,
@@ -595,7 +658,7 @@ impl CodingMissionRunner {
             save_coding_mission_state(state)?;
         }
 
-        state.prepare_branch(CodingGitPrepareBranchRequest {
+        let branch = state.prepare_branch(CodingGitPrepareBranchRequest {
             branch_name: None,
             allow_fetch: false,
             started_unix_ms: request.started_unix_ms.saturating_add(10),
@@ -607,6 +670,14 @@ impl CodingMissionRunner {
             request.started_unix_ms.saturating_add(20),
         )?;
         save_coding_mission_state(state)?;
+        record_resume_checkpoint(
+            state,
+            CodingMissionResumeAction::RunVerifier,
+            Some(branch.branch_name.clone()),
+            None,
+            "resume_run_verifier",
+            request.started_unix_ms.saturating_add(30),
+        )?;
 
         let mut iterations = 1;
         let first =
@@ -623,7 +694,12 @@ impl CodingMissionRunner {
         let mut verifier_passed = first.verifier_passed;
         if !verifier_passed {
             if let Some(edit) = request.controlled_edit {
-                apply_controlled_edit(state, &edit, request.started_unix_ms.saturating_add(200))?;
+                apply_controlled_edit_and_checkpoint(
+                    state,
+                    &edit,
+                    branch.branch_name.as_str(),
+                    request.started_unix_ms.saturating_add(200),
+                )?;
                 iterations = iterations.saturating_add(1);
                 let second = run_coding_mission_verifiers(
                     state,
@@ -640,6 +716,14 @@ impl CodingMissionRunner {
                 }
                 verifier_passed = second.verifier_passed;
             } else {
+                record_resume_checkpoint(
+                    state,
+                    CodingMissionResumeAction::ApplyEdit,
+                    Some(branch.branch_name),
+                    None,
+                    "resume_apply_edit",
+                    request.started_unix_ms.saturating_add(200),
+                )?;
                 return Ok(CodingMissionRunOutcome {
                     phase: state.phase,
                     verifier_passed: false,
@@ -660,39 +744,499 @@ impl CodingMissionRunner {
             });
         }
 
-        match state.commit_changes(CodingGitCommitRequest {
-            message: request.commit_message,
-            started_unix_ms: request.started_unix_ms.saturating_add(400),
-        }) {
-            Ok(commit) => {
-                state.transition_phase(
-                    CodingMissionPhase::PrReady,
-                    "coding_mission_pr_ready",
-                    "verifier passed and mission-linked commit evidence is ready",
-                    request.started_unix_ms.saturating_add(500),
+        let commit_branch_name = latest_prepared_branch_name(state);
+        let commit_fingerprint =
+            current_mutation_fingerprint(state, request.started_unix_ms.saturating_add(390)).ok();
+        record_resume_checkpoint(
+            state,
+            CodingMissionResumeAction::Commit,
+            commit_branch_name,
+            commit_fingerprint,
+            "resume_commit",
+            request.started_unix_ms.saturating_add(399),
+        )?;
+        commit_verified_coding_mission(
+            state,
+            request.commit_message,
+            iterations,
+            request.started_unix_ms.saturating_add(400),
+        )
+    }
+
+    pub fn resume(
+        &self,
+        request: CodingMissionResumeRequest,
+    ) -> Result<CodingMissionResumeOutcome, CodingMissionError> {
+        let mut state = load_coding_mission_state(&request.state_root, &request.mission_id)?;
+        let checkpoint = match state.resume_checkpoint.clone() {
+            Some(checkpoint) => checkpoint,
+            None => {
+                let run = block_coding_mission_run(
+                    &mut state,
+                    "missing_resume_checkpoint",
+                    false,
+                    0,
+                    request.started_unix_ms,
                 )?;
-                save_coding_mission_state(state)?;
-                Ok(CodingMissionRunOutcome {
-                    phase: state.phase,
-                    verifier_passed: true,
-                    committed: Some(commit),
-                    blocked_reason: None,
-                    iterations,
-                })
+                return Ok(CodingMissionResumeOutcome {
+                    state,
+                    run,
+                    resume_action: CodingMissionResumeAction::Blocked,
+                    restored_branch: None,
+                });
             }
-            Err(CodingMissionError::GitLifecycle {
-                reason_code,
-                message: _,
-            }) => block_coding_mission_run(
+        };
+        let restored_branch =
+            restore_resume_branch(&mut state, &checkpoint, request.started_unix_ms)?;
+        let resume_action = checkpoint.next_action;
+        let run = match resume_action {
+            CodingMissionResumeAction::ApplyEdit => {
+                resume_from_apply_edit(&mut state, &checkpoint, request)?
+            }
+            CodingMissionResumeAction::VerifyAfterEdit => {
+                resume_from_verify_after_edit(&mut state, &checkpoint, request)?
+            }
+            CodingMissionResumeAction::Commit => {
+                resume_from_commit(&mut state, &checkpoint, request)?
+            }
+            CodingMissionResumeAction::RunVerifier => {
+                resume_from_run_verifier(&mut state, &checkpoint, request)?
+            }
+            CodingMissionResumeAction::Blocked => CodingMissionRunOutcome {
+                phase: state.phase,
+                verifier_passed: false,
+                committed: None,
+                blocked_reason: Some("mission_blocked".to_string()),
+                iterations: 0,
+            },
+            CodingMissionResumeAction::PrReady => CodingMissionRunOutcome {
+                phase: state.phase,
+                verifier_passed: true,
+                committed: state
+                    .git_evidence
+                    .iter()
+                    .rev()
+                    .find(|evidence| evidence.kind == CodingGitLifecycleEvidenceKind::CommitCreated)
+                    .cloned(),
+                blocked_reason: None,
+                iterations: 0,
+            },
+        };
+        Ok(CodingMissionResumeOutcome {
+            state,
+            run,
+            resume_action,
+            restored_branch,
+        })
+    }
+}
+
+fn resume_from_run_verifier(
+    state: &mut CodingMissionState,
+    checkpoint: &CodingMissionResumeCheckpoint,
+    request: CodingMissionResumeRequest,
+) -> Result<CodingMissionRunOutcome, CodingMissionError> {
+    let branch_name = checkpoint
+        .branch_name
+        .clone()
+        .or_else(|| latest_prepared_branch_name(state));
+    let first = run_coding_mission_verifiers(state, request.started_unix_ms.saturating_add(100))?;
+    if let Some(reason) = first.blocked_reason {
+        return block_coding_mission_run(
+            state,
+            reason,
+            first.verifier_passed,
+            1,
+            request.started_unix_ms.saturating_add(199),
+        );
+    }
+    if first.verifier_passed {
+        let mutation_fingerprint =
+            current_mutation_fingerprint(state, request.started_unix_ms.saturating_add(190)).ok();
+        record_resume_checkpoint(
+            state,
+            CodingMissionResumeAction::Commit,
+            branch_name,
+            mutation_fingerprint,
+            "resume_commit",
+            request.started_unix_ms.saturating_add(199),
+        )?;
+        return commit_verified_coding_mission(
+            state,
+            request.commit_message,
+            1,
+            request.started_unix_ms.saturating_add(200),
+        );
+    }
+    record_resume_checkpoint(
+        state,
+        CodingMissionResumeAction::ApplyEdit,
+        branch_name,
+        None,
+        "resume_apply_edit",
+        request.started_unix_ms.saturating_add(200),
+    )?;
+    Ok(CodingMissionRunOutcome {
+        phase: state.phase,
+        verifier_passed: false,
+        committed: None,
+        blocked_reason: None,
+        iterations: 1,
+    })
+}
+
+fn resume_from_apply_edit(
+    state: &mut CodingMissionState,
+    checkpoint: &CodingMissionResumeCheckpoint,
+    request: CodingMissionResumeRequest,
+) -> Result<CodingMissionRunOutcome, CodingMissionError> {
+    let edit = match request.controlled_edit.clone() {
+        Some(edit) => edit,
+        None => {
+            return Ok(CodingMissionRunOutcome {
+                phase: state.phase,
+                verifier_passed: false,
+                committed: None,
+                blocked_reason: None,
+                iterations: 0,
+            });
+        }
+    };
+    let branch_name = checkpoint
+        .branch_name
+        .clone()
+        .or_else(|| latest_prepared_branch_name(state))
+        .unwrap_or_else(|| default_coding_git_branch_name(state));
+    apply_controlled_edit_and_checkpoint(
+        state,
+        &edit,
+        branch_name.as_str(),
+        request.started_unix_ms.saturating_add(100),
+    )?;
+    if request.stop_after == Some(CodingMissionResumeStopAfter::ControlledEdit) {
+        return Ok(CodingMissionRunOutcome {
+            phase: state.phase,
+            verifier_passed: false,
+            committed: None,
+            blocked_reason: None,
+            iterations: 1,
+        });
+    }
+    let checkpoint = state
+        .resume_checkpoint
+        .clone()
+        .expect("controlled edit checkpoint");
+    resume_from_verify_after_edit(state, &checkpoint, request)
+}
+
+fn resume_from_verify_after_edit(
+    state: &mut CodingMissionState,
+    checkpoint: &CodingMissionResumeCheckpoint,
+    request: CodingMissionResumeRequest,
+) -> Result<CodingMissionRunOutcome, CodingMissionError> {
+    if let Some(expected) = checkpoint.mutation_fingerprint.as_ref() {
+        let current =
+            current_mutation_fingerprint(state, request.started_unix_ms.saturating_add(150))?;
+        if &current != expected {
+            return block_coding_mission_run(
                 state,
-                reason_code,
-                true,
-                iterations,
-                request.started_unix_ms.saturating_add(500),
-            ),
-            Err(error) => Err(error),
+                "mutation_fingerprint_mismatch",
+                false,
+                1,
+                request.started_unix_ms.saturating_add(199),
+            );
         }
     }
+    let second = run_coding_mission_verifiers(state, request.started_unix_ms.saturating_add(200))?;
+    if let Some(reason) = second.blocked_reason {
+        return block_coding_mission_run(
+            state,
+            reason,
+            second.verifier_passed,
+            2,
+            request.started_unix_ms.saturating_add(299),
+        );
+    }
+    if !second.verifier_passed {
+        record_resume_checkpoint(
+            state,
+            CodingMissionResumeAction::ApplyEdit,
+            checkpoint
+                .branch_name
+                .clone()
+                .or_else(|| latest_prepared_branch_name(state)),
+            None,
+            "resume_apply_edit_after_failed_verify",
+            request.started_unix_ms.saturating_add(300),
+        )?;
+        return Ok(CodingMissionRunOutcome {
+            phase: state.phase,
+            verifier_passed: false,
+            committed: None,
+            blocked_reason: None,
+            iterations: 2,
+        });
+    }
+    let commit_branch_name = checkpoint
+        .branch_name
+        .clone()
+        .or_else(|| latest_prepared_branch_name(state));
+    let commit_fingerprint =
+        current_mutation_fingerprint(state, request.started_unix_ms.saturating_add(300)).ok();
+    record_resume_checkpoint(
+        state,
+        CodingMissionResumeAction::Commit,
+        commit_branch_name,
+        commit_fingerprint,
+        "resume_commit",
+        request.started_unix_ms.saturating_add(301),
+    )?;
+    commit_verified_coding_mission(
+        state,
+        request.commit_message,
+        2,
+        request.started_unix_ms.saturating_add(400),
+    )
+}
+
+fn resume_from_commit(
+    state: &mut CodingMissionState,
+    checkpoint: &CodingMissionResumeCheckpoint,
+    request: CodingMissionResumeRequest,
+) -> Result<CodingMissionRunOutcome, CodingMissionError> {
+    if let Some(expected) = checkpoint.mutation_fingerprint.as_ref() {
+        let current =
+            current_mutation_fingerprint(state, request.started_unix_ms.saturating_add(100))?;
+        if &current != expected {
+            return block_coding_mission_run(
+                state,
+                "mutation_fingerprint_mismatch",
+                true,
+                1,
+                request.started_unix_ms.saturating_add(199),
+            );
+        }
+    }
+    commit_verified_coding_mission(
+        state,
+        request.commit_message,
+        1,
+        request.started_unix_ms.saturating_add(200),
+    )
+}
+
+fn commit_verified_coding_mission(
+    state: &mut CodingMissionState,
+    commit_message: String,
+    iterations: usize,
+    started_unix_ms: u64,
+) -> Result<CodingMissionRunOutcome, CodingMissionError> {
+    match state.commit_changes(CodingGitCommitRequest {
+        message: commit_message,
+        started_unix_ms,
+    }) {
+        Ok(commit) => {
+            state.transition_phase(
+                CodingMissionPhase::PrReady,
+                "coding_mission_pr_ready",
+                "verifier passed and mission-linked commit evidence is ready",
+                started_unix_ms.saturating_add(100),
+            )?;
+            record_resume_checkpoint(
+                state,
+                CodingMissionResumeAction::PrReady,
+                Some(commit.branch_name.clone()),
+                None,
+                "resume_pr_ready",
+                started_unix_ms.saturating_add(101),
+            )?;
+            save_coding_mission_state(state)?;
+            Ok(CodingMissionRunOutcome {
+                phase: state.phase,
+                verifier_passed: true,
+                committed: Some(commit),
+                blocked_reason: None,
+                iterations,
+            })
+        }
+        Err(CodingMissionError::GitLifecycle {
+            reason_code,
+            message: _,
+        }) => block_coding_mission_run(
+            state,
+            reason_code,
+            true,
+            iterations,
+            started_unix_ms.saturating_add(100),
+        ),
+        Err(error) => Err(error),
+    }
+}
+
+fn restore_resume_branch(
+    state: &mut CodingMissionState,
+    checkpoint: &CodingMissionResumeCheckpoint,
+    started_unix_ms: u64,
+) -> Result<Option<String>, CodingMissionError> {
+    let Some(branch_name) = checkpoint
+        .branch_name
+        .clone()
+        .or_else(|| latest_prepared_branch_name(state))
+    else {
+        return Ok(None);
+    };
+    let current = execute_git_command(
+        state,
+        vec!["git", "branch", "--show-current"],
+        "resume_current_branch",
+        started_unix_ms,
+        false,
+        false,
+    )?;
+    let current_branch = command_stdout(&current)?.trim().to_string();
+    if current_branch == branch_name {
+        return Ok(Some(branch_name));
+    }
+    let switched = execute_git_command(
+        state,
+        vec!["git", "switch", branch_name.as_str()],
+        "resume_switch_branch",
+        started_unix_ms.saturating_add(1),
+        true,
+        false,
+    )?;
+    if switched.status != CodingWorkspaceCommandStatus::Succeeded {
+        return Err(CodingMissionError::GitLifecycle {
+            reason_code: "resume_branch_restore_failed",
+            message: command_evidence_summary(&switched),
+        });
+    }
+    Ok(Some(branch_name))
+}
+
+fn apply_controlled_edit_and_checkpoint(
+    state: &mut CodingMissionState,
+    edit: &CodingMissionControlledEdit,
+    branch_name: &str,
+    started_unix_ms: u64,
+) -> Result<(), CodingMissionError> {
+    apply_controlled_edit(state, edit, started_unix_ms)?;
+    let fingerprint = current_mutation_fingerprint(state, started_unix_ms.saturating_add(1))?;
+    record_resume_checkpoint(
+        state,
+        CodingMissionResumeAction::VerifyAfterEdit,
+        Some(branch_name.to_string()),
+        Some(fingerprint),
+        "resume_verify_after_edit",
+        started_unix_ms.saturating_add(2),
+    )
+}
+
+fn record_resume_checkpoint(
+    state: &mut CodingMissionState,
+    next_action: CodingMissionResumeAction,
+    branch_name: Option<String>,
+    mutation_fingerprint: Option<CodingMissionMutationFingerprint>,
+    reason_code: &'static str,
+    updated_unix_ms: u64,
+) -> Result<(), CodingMissionError> {
+    let latest_verifier_command_id = state
+        .command_evidence
+        .iter()
+        .rev()
+        .find(|evidence| evidence.reason_code.starts_with("coding_verifier"))
+        .map(|evidence| evidence.command_id.clone());
+    let pending_verifier_command = state.verifier_commands.first().cloned();
+    let latest_learning_summary = state.mission.latest_output_summary.clone();
+    let operator_resume_command = format!("mission resume {}", state.mission_id);
+    state.resume_checkpoint = Some(CodingMissionResumeCheckpoint {
+        next_action,
+        branch_name,
+        pending_verifier_command,
+        latest_verifier_command_id,
+        mutation_fingerprint,
+        latest_learning_summary,
+        operator_resume_command,
+        updated_unix_ms,
+    });
+    state.updated_unix_ms = updated_unix_ms;
+    let message = format!("resume checkpoint saved for {:?}", next_action);
+    if next_action != CodingMissionResumeAction::PrReady {
+        state.mission.latest_output_summary = message.clone();
+    }
+    state.mission.latest_verifier = Some(coding_mission_verifier_record(
+        state.phase,
+        reason_code,
+        message.as_str(),
+        BTreeMap::from([
+            ("next_action".to_string(), json!(next_action)),
+            (
+                "operator_resume_command".to_string(),
+                json!(format!("mission resume {}", state.mission_id)),
+            ),
+        ]),
+    ));
+    state.events.push(CodingMissionEvent {
+        phase: state.phase,
+        reason_code: reason_code.to_string(),
+        message,
+        created_unix_ms: updated_unix_ms,
+    });
+    save_coding_mission_state(state)
+}
+
+fn latest_prepared_branch_name(state: &CodingMissionState) -> Option<String> {
+    state
+        .git_evidence
+        .iter()
+        .rev()
+        .find(|evidence| evidence.kind == CodingGitLifecycleEvidenceKind::BranchPrepared)
+        .map(|evidence| evidence.branch_name.clone())
+}
+
+fn current_mutation_fingerprint(
+    state: &mut CodingMissionState,
+    started_unix_ms: u64,
+) -> Result<CodingMissionMutationFingerprint, CodingMissionError> {
+    let status = execute_git_command(
+        state,
+        vec!["git", "status", "--porcelain"],
+        "git_mutation_fingerprint_status",
+        started_unix_ms,
+        false,
+        false,
+    )?;
+    let raw_status = command_stdout(&status)?;
+    let changed_files = parse_git_status_changed_files(&raw_status);
+    let mut payload = Vec::new();
+    payload.extend_from_slice(raw_status.as_bytes());
+    for file in &changed_files {
+        payload.push(0);
+        payload.extend_from_slice(file.as_bytes());
+        let path = normalize_path_lexically(&state.repo_path.join(file));
+        if path.starts_with(&state.repo_path) && path.is_file() {
+            let contents =
+                std::fs::read(&path).map_err(|source| CodingMissionError::StateRead {
+                    path: path.clone(),
+                    source,
+                })?;
+            payload.push(0);
+            payload.extend_from_slice(&contents);
+        }
+    }
+    Ok(CodingMissionMutationFingerprint {
+        changed_files,
+        diff_hash: stable_fingerprint_hex(&payload),
+    })
+}
+
+fn stable_fingerprint_hex(bytes: &[u8]) -> String {
+    let mut hash = 0xcbf2_9ce4_8422_2325_u64;
+    for byte in bytes {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    format!("{hash:016x}")
 }
 
 struct CodingVerifierRun {
@@ -2402,6 +2946,183 @@ mod tests {
             Some("missing_verifier_commands")
         );
         assert!(!state
+            .git_evidence
+            .iter()
+            .any(|evidence| evidence.kind == CodingGitLifecycleEvidenceKind::CommitCreated));
+    }
+
+    #[test]
+    fn spec_c08_resume_after_red_checkpoint_restores_branch_and_completes() {
+        let temp = tempdir().expect("tempdir");
+        let config = verifier_config_for(temp.path(), "fail\n", "grep -q pass status.txt");
+        let state_root = config.state_root.clone();
+        let mission_id = config.mission_id.clone();
+        let repo_path = config.repo_path.clone();
+        let mut state = CodingMissionState::create(config).expect("create state");
+        let runner = CodingMissionRunner::new();
+
+        let first = runner
+            .run(
+                &mut state,
+                CodingMissionRunRequest {
+                    controlled_edit: None,
+                    commit_message: "Make verifier green".to_string(),
+                    started_unix_ms: 1_800_000_005_000,
+                },
+            )
+            .expect("run red mission");
+
+        assert_eq!(first.phase, CodingMissionPhase::Executing);
+        assert_eq!(
+            state
+                .resume_checkpoint
+                .as_ref()
+                .map(|checkpoint| checkpoint.next_action),
+            Some(CodingMissionResumeAction::ApplyEdit)
+        );
+        assert_eq!(
+            state
+                .resume_checkpoint
+                .as_ref()
+                .and_then(|checkpoint| checkpoint.branch_name.as_deref()),
+            Some("codex/coding-mission-alpha")
+        );
+        assert!(state.command_evidence.iter().any(|evidence| evidence.status
+            == CodingWorkspaceCommandStatus::Failed
+            && evidence.reason_code.starts_with("coding_verifier")));
+
+        drop(state);
+        git(&repo_path, &["switch", "master"]);
+
+        let resumed = runner
+            .resume(CodingMissionResumeRequest {
+                state_root: state_root.clone(),
+                mission_id: mission_id.clone(),
+                controlled_edit: Some(CodingMissionControlledEdit {
+                    relative_path: PathBuf::from("status.txt"),
+                    contents: "pass\n".to_string(),
+                    reason_code: "controlled_fix_after_red_resume".to_string(),
+                }),
+                commit_message: "Make verifier green after resume".to_string(),
+                started_unix_ms: 1_800_000_005_500,
+                stop_after: None,
+            })
+            .expect("resume mission");
+
+        assert_eq!(resumed.resume_action, CodingMissionResumeAction::ApplyEdit);
+        assert_eq!(
+            resumed.restored_branch.as_deref(),
+            Some("codex/coding-mission-alpha")
+        );
+        assert_eq!(resumed.run.phase, CodingMissionPhase::PrReady);
+        assert_eq!(resumed.state.phase, CodingMissionPhase::PrReady);
+        assert_eq!(
+            git(&resumed.state.repo_path, &["branch", "--show-current"]),
+            "codex/coding-mission-alpha"
+        );
+        assert!(resumed
+            .state
+            .command_evidence
+            .iter()
+            .any(
+                |evidence| evidence.status == CodingWorkspaceCommandStatus::Failed
+                    && evidence.reason_code.starts_with("coding_verifier")
+            ));
+        assert!(resumed
+            .state
+            .command_evidence
+            .iter()
+            .any(
+                |evidence| evidence.status == CodingWorkspaceCommandStatus::Succeeded
+                    && evidence.reason_code.starts_with("coding_verifier")
+            ));
+        assert!(resumed
+            .state
+            .mission
+            .latest_output_summary
+            .contains("verifier passed"));
+    }
+
+    #[test]
+    fn spec_c09_resume_after_edit_blocks_on_mutation_fingerprint_drift() {
+        let temp = tempdir().expect("tempdir");
+        let config = verifier_config_for(temp.path(), "fail\n", "grep -q pass status.txt");
+        let state_root = config.state_root.clone();
+        let mission_id = config.mission_id.clone();
+        let mut state = CodingMissionState::create(config).expect("create state");
+        let runner = CodingMissionRunner::new();
+
+        runner
+            .run(
+                &mut state,
+                CodingMissionRunRequest {
+                    controlled_edit: None,
+                    commit_message: "Make verifier green".to_string(),
+                    started_unix_ms: 1_800_000_006_000,
+                },
+            )
+            .expect("run red mission");
+
+        let paused = runner
+            .resume(CodingMissionResumeRequest {
+                state_root: state_root.clone(),
+                mission_id: mission_id.clone(),
+                controlled_edit: Some(CodingMissionControlledEdit {
+                    relative_path: PathBuf::from("status.txt"),
+                    contents: "pass\n".to_string(),
+                    reason_code: "controlled_fix_before_crash".to_string(),
+                }),
+                commit_message: "Make verifier green after edit".to_string(),
+                started_unix_ms: 1_800_000_006_500,
+                stop_after: Some(CodingMissionResumeStopAfter::ControlledEdit),
+            })
+            .expect("resume to edit checkpoint");
+
+        assert_eq!(paused.run.phase, CodingMissionPhase::Executing);
+        assert_eq!(
+            paused
+                .state
+                .resume_checkpoint
+                .as_ref()
+                .map(|checkpoint| checkpoint.next_action),
+            Some(CodingMissionResumeAction::VerifyAfterEdit)
+        );
+        assert!(paused
+            .state
+            .resume_checkpoint
+            .as_ref()
+            .and_then(|checkpoint| checkpoint.mutation_fingerprint.as_ref())
+            .is_some());
+
+        std::fs::write(
+            paused.state.repo_path.join("status.txt"),
+            "pass\nuser drift\n",
+        )
+        .expect("drift status");
+
+        let blocked = runner
+            .resume(CodingMissionResumeRequest {
+                state_root,
+                mission_id,
+                controlled_edit: None,
+                commit_message: "Commit resumed edit".to_string(),
+                started_unix_ms: 1_800_000_007_000,
+                stop_after: None,
+            })
+            .expect("resume after drift");
+
+        assert_eq!(blocked.run.phase, CodingMissionPhase::Blocked);
+        assert_eq!(
+            blocked.run.blocked_reason.as_deref(),
+            Some("mutation_fingerprint_mismatch")
+        );
+        assert!(
+            std::fs::read_to_string(blocked.state.repo_path.join("status.txt"))
+                .expect("read status")
+                .contains("user drift")
+        );
+        assert!(!blocked
+            .state
             .git_evidence
             .iter()
             .any(|evidence| evidence.kind == CodingGitLifecycleEvidenceKind::CommitCreated));
