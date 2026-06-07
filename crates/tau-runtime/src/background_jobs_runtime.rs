@@ -37,6 +37,7 @@ const BACKGROUND_JOB_REASON_TIMEOUT: &str = "job_timeout";
 const BACKGROUND_JOB_REASON_CANCELLED_BEFORE_START: &str = "job_cancelled_before_start";
 const BACKGROUND_JOB_REASON_CANCELLED_DURING_RUN: &str = "job_cancelled_during_run";
 const BACKGROUND_JOB_REASON_RECOVERED_RUNNING: &str = "job_recovered_after_restart";
+const BACKGROUND_JOB_REASON_RECOVERED_STUCK: &str = "job_recovered_after_stuck_timeout";
 const BACKGROUND_JOB_REASON_RUNTIME_ERROR: &str = "job_runtime_error";
 const BACKGROUND_JOB_REASON_TRACE_WRITE_FAILED: &str = "job_trace_write_failed";
 const BACKGROUND_JOB_RECENT_REASON_CODE_CAP: usize = 16;
@@ -202,6 +203,8 @@ pub struct BackgroundJobHealthSnapshot {
     #[serde(default)]
     pub cancelled_total: u64,
     #[serde(default)]
+    pub recovered_stuck_total: u64,
+    #[serde(default)]
     pub last_job_id: String,
     #[serde(default)]
     pub last_reason_code: String,
@@ -223,12 +226,23 @@ impl Default for BackgroundJobHealthSnapshot {
             succeeded_total: 0,
             failed_total: 0,
             cancelled_total: 0,
+            recovered_stuck_total: 0,
             last_job_id: String::new(),
             last_reason_code: String::new(),
             reason_codes: Vec::new(),
             diagnostics: Vec::new(),
         }
     }
+}
+
+/// Summary returned after a stuck background-job recovery sweep.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct BackgroundJobRecoveryReport {
+    pub scanned_running: usize,
+    pub recovered: usize,
+    pub skipped_fresh: usize,
+    pub skipped_cancelled: usize,
+    pub recovered_job_ids: Vec<String>,
 }
 
 /// Input payload used to enqueue a new background job.
@@ -435,6 +449,15 @@ impl BackgroundJobRuntime {
         lock_unpoisoned(&self.inner.health).clone()
     }
 
+    /// Requeues persisted running jobs that have exceeded their effective timeout.
+    pub async fn recover_stuck_jobs(&self) -> Result<BackgroundJobRecoveryReport> {
+        let report = self.recover_stuck_jobs_at(current_unix_timestamp_ms())?;
+        if report.recovered > 0 {
+            self.schedule_worker();
+        }
+        Ok(report)
+    }
+
     /// Requests cancellation for a queued or running job.
     pub async fn cancel_job(&self, job_id: &str) -> Result<Option<BackgroundJobRecord>> {
         let mut record = match load_background_job_record(self.state_dir(), job_id)? {
@@ -587,6 +610,111 @@ impl BackgroundJobRuntime {
         }
 
         Ok(())
+    }
+
+    fn recover_stuck_jobs_at(&self, now_unix_ms: u64) -> Result<BackgroundJobRecoveryReport> {
+        let mut report = BackgroundJobRecoveryReport::default();
+        let mut diagnostics = Vec::new();
+
+        for mut record in load_background_job_records(self.state_dir())? {
+            if record.status != BackgroundJobStatus::Running {
+                continue;
+            }
+
+            report.scanned_running = report.scanned_running.saturating_add(1);
+            if record.cancellation_requested {
+                report.skipped_cancelled = report.skipped_cancelled.saturating_add(1);
+                continue;
+            }
+
+            let last_activity_unix_ms = record
+                .updated_unix_ms
+                .max(record.started_unix_ms.unwrap_or_default());
+            let elapsed_ms = if last_activity_unix_ms == 0 {
+                0
+            } else {
+                now_unix_ms.saturating_sub(last_activity_unix_ms)
+            };
+            let timeout_ms = record.effective_timeout_ms.max(1);
+            if elapsed_ms < timeout_ms {
+                report.skipped_fresh = report.skipped_fresh.saturating_add(1);
+                continue;
+            }
+
+            record.status = BackgroundJobStatus::Queued;
+            record.reason_code = BACKGROUND_JOB_REASON_RECOVERED_STUCK.to_string();
+            record.updated_unix_ms = now_unix_ms;
+            record.started_unix_ms = None;
+            record.finished_unix_ms = None;
+            record.exit_code = None;
+            record.error = None;
+            persist_background_job_record(self.state_dir(), &record)?;
+            self.append_event(
+                &record,
+                "recovered",
+                BACKGROUND_JOB_REASON_RECOVERED_STUCK,
+                "requeued stuck running job after timeout",
+            )?;
+            let _ = self.emit_traces(
+                &record,
+                "recovered",
+                BACKGROUND_JOB_REASON_RECOVERED_STUCK,
+                "requeued stuck running job after timeout",
+            );
+            diagnostics.push(format!(
+                "background_job_recovered_stuck_job: id={} elapsed_ms={} timeout_ms={} path={}",
+                record.job_id,
+                elapsed_ms,
+                timeout_ms,
+                background_job_manifest_path(self.state_dir(), record.job_id.as_str()).display()
+            ));
+            report.recovered = report.recovered.saturating_add(1);
+            report.recovered_job_ids.push(record.job_id.clone());
+        }
+
+        if report.recovered == 0 {
+            return Ok(report);
+        }
+
+        let queue_depth = {
+            let mut queue = lock_unpoisoned(&self.inner.queue);
+            for job_id in &report.recovered_job_ids {
+                if !queue.iter().any(|queued| queued == job_id) {
+                    queue.push_back(job_id.clone());
+                }
+            }
+            queue.len()
+        };
+        let running_jobs = load_background_job_records(self.state_dir())?
+            .into_iter()
+            .filter(|record| record.status == BackgroundJobStatus::Running)
+            .count();
+
+        let mut health = lock_unpoisoned(&self.inner.health);
+        apply_health_base(
+            &mut health,
+            report.recovered_job_ids.last().map(String::as_str),
+            BACKGROUND_JOB_REASON_RECOVERED_STUCK,
+            Some(format!(
+                "background_job_runtime_recovered_stuck_jobs: recovered={} queue_depth={queue_depth}",
+                report.recovered
+            )),
+        );
+        for line in diagnostics {
+            push_recent_line(
+                &mut health.diagnostics,
+                line,
+                BACKGROUND_JOB_RECENT_DIAGNOSTICS_CAP,
+            );
+        }
+        health.recovered_stuck_total = health
+            .recovered_stuck_total
+            .saturating_add(report.recovered as u64);
+        health.queue_depth = queue_depth;
+        health.running_jobs = running_jobs;
+        persist_background_job_health_snapshot(self.state_dir(), &health)?;
+
+        Ok(report)
     }
 
     fn schedule_worker(&self) {
@@ -1591,5 +1719,126 @@ mod tests {
             .expect("read events for recovered job");
         assert!(events_raw.contains("\"event\":\"recovered\""));
         assert!(events_raw.contains("\"reason_code\":\"job_recovered_after_restart\""));
+    }
+
+    #[tokio::test]
+    async fn regression_background_job_runtime_requeues_stuck_running_manifest() {
+        let temp = tempdir().expect("tempdir");
+        let state_dir = temp.path().join("jobs");
+        let runtime = BackgroundJobRuntime::new(BackgroundJobRuntimeConfig {
+            state_dir: state_dir.clone(),
+            default_timeout_ms: 50,
+            max_timeout_ms: 1_000,
+            worker_poll_ms: 20,
+        })
+        .expect("runtime");
+
+        let job_id = "job-stuck-running-1".to_string();
+        let (command, args) = shell_command("echo recovered-stuck-job");
+        let record = BackgroundJobRecord {
+            schema_version: 1,
+            job_id: job_id.clone(),
+            command,
+            args,
+            env: BTreeMap::new(),
+            cwd: None,
+            requested_timeout_ms: 50,
+            effective_timeout_ms: 50,
+            status: BackgroundJobStatus::Running,
+            reason_code: "job_started".to_string(),
+            created_unix_ms: 1_700_000_000_000,
+            updated_unix_ms: 1_700_000_000_000,
+            started_unix_ms: Some(1_700_000_000_000),
+            finished_unix_ms: None,
+            exit_code: None,
+            error: None,
+            cancellation_requested: false,
+            stdout_path: state_dir.join("jobs").join(format!("{job_id}.stdout.log")),
+            stderr_path: state_dir.join("jobs").join(format!("{job_id}.stderr.log")),
+            trace: BackgroundJobTraceContext::default(),
+        };
+        let payload = serde_json::to_string_pretty(&record).expect("serialize stuck manifest");
+        std::fs::write(background_job_manifest_path(&state_dir, &job_id), payload)
+            .expect("write stuck manifest");
+
+        let report = runtime
+            .recover_stuck_jobs()
+            .await
+            .expect("recover stuck jobs");
+        assert_eq!(report.recovered, 1);
+        assert_eq!(report.recovered_job_ids, vec![job_id.clone()]);
+
+        let status = wait_for_terminal_status(&runtime, &job_id, Duration::from_secs(5)).await;
+        assert_eq!(status, BackgroundJobStatus::Succeeded);
+
+        let health = runtime.inspect_health().await;
+        assert_eq!(health.recovered_stuck_total, 1);
+        assert!(health
+            .reason_codes
+            .iter()
+            .any(|code| code == "job_recovered_after_stuck_timeout"));
+
+        let events_raw =
+            std::fs::read_to_string(runtime.events_path()).expect("read recovery events");
+        assert!(events_raw.contains("\"event\":\"recovered\""));
+        assert!(events_raw.contains("\"reason_code\":\"job_recovered_after_stuck_timeout\""));
+    }
+
+    #[tokio::test]
+    async fn regression_background_job_runtime_does_not_requeue_fresh_running_manifest() {
+        let temp = tempdir().expect("tempdir");
+        let state_dir = temp.path().join("jobs");
+        let runtime = BackgroundJobRuntime::new(BackgroundJobRuntimeConfig {
+            state_dir: state_dir.clone(),
+            default_timeout_ms: 60_000,
+            max_timeout_ms: 60_000,
+            worker_poll_ms: 20,
+        })
+        .expect("runtime");
+
+        let now = tau_core::current_unix_timestamp_ms();
+        let job_id = "job-fresh-running-1".to_string();
+        let (command, args) = shell_command("echo should-not-recover-yet");
+        let record = BackgroundJobRecord {
+            schema_version: 1,
+            job_id: job_id.clone(),
+            command,
+            args,
+            env: BTreeMap::new(),
+            cwd: None,
+            requested_timeout_ms: 60_000,
+            effective_timeout_ms: 60_000,
+            status: BackgroundJobStatus::Running,
+            reason_code: "job_started".to_string(),
+            created_unix_ms: now,
+            updated_unix_ms: now,
+            started_unix_ms: Some(now),
+            finished_unix_ms: None,
+            exit_code: None,
+            error: None,
+            cancellation_requested: false,
+            stdout_path: state_dir.join("jobs").join(format!("{job_id}.stdout.log")),
+            stderr_path: state_dir.join("jobs").join(format!("{job_id}.stderr.log")),
+            trace: BackgroundJobTraceContext::default(),
+        };
+        let payload = serde_json::to_string_pretty(&record).expect("serialize fresh manifest");
+        std::fs::write(background_job_manifest_path(&state_dir, &job_id), payload)
+            .expect("write fresh manifest");
+
+        let report = runtime
+            .recover_stuck_jobs()
+            .await
+            .expect("recover stuck jobs");
+        assert_eq!(report.recovered, 0);
+        assert_eq!(report.skipped_fresh, 1);
+
+        let refreshed = runtime
+            .get_job(&job_id)
+            .await
+            .expect("get fresh job")
+            .expect("fresh job exists");
+        assert_eq!(refreshed.status, BackgroundJobStatus::Running);
+        assert_eq!(refreshed.reason_code, "job_started");
+        assert_eq!(runtime.inspect_health().await.recovered_stuck_total, 0);
     }
 }
