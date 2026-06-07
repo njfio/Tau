@@ -231,17 +231,17 @@ Evidence:
 
 ### Slice D: Real outer loop
 
-- [ ] T31 RED: add failing coverage where the first verifier run fails, the
+- [x] T31 RED: add failing coverage where the first verifier run fails, the
       runner records RED evidence, and the mission remains `executing` rather
       than `completed`.
-- [ ] T32 GREEN: implement the outer loop:
+- [x] T32 GREEN: implement the outer loop:
       `intake -> plan -> prepare_branch -> act -> verify -> replan/continue ->
       commit/pr_ready/block/complete`.
-- [ ] T33 GREEN: require verifier pass plus mutation evidence before completion;
+- [x] T33 GREEN: require verifier pass plus mutation evidence before completion;
       assistant text alone cannot complete a coding mission.
-- [ ] T34 RED: add failing coverage for impossible verifier commands and policy
+- [x] T34 RED: add failing coverage for impossible verifier commands and policy
       denials producing `blocked` missions with exact evidence.
-- [ ] T35 VERIFY: run the loop against a fixture repo with one intentionally
+- [x] T35 VERIFY: run the loop against a fixture repo with one intentionally
       failing test that becomes green after a controlled edit.
 
 Done when:
@@ -249,6 +249,12 @@ Done when:
 - Failing verifiers become the next iteration input.
 - Completion is impossible without command evidence, verifier pass, and git
   mutation/commit evidence.
+
+Evidence:
+- RED: `CARGO_TARGET_DIR=/tmp/rust_pi-3654-outer-loop-target cargo test -p tau-agent-core coding_mission -- --test-threads=1` failed before implementation because `CodingMissionRunner`, `CodingMissionRunRequest`, and `CodingMissionControlledEdit` did not exist.
+- GREEN/VERIFY: `CARGO_TARGET_DIR=/tmp/rust_pi-3654-outer-loop-target cargo test -p tau-agent-core coding_mission -- --test-threads=1` passed 20 tests covering RED verifier evidence that keeps the mission executing, controlled edit rerun to GREEN, mission-linked commit packaging, PR-ready phase, completion blocking without mutation evidence, impossible verifier blocking, policy-denied verifier blocking, and missing verifier command blocking.
+- REGRESSION: `CARGO_TARGET_DIR=/tmp/rust_pi-3654-outer-loop-target cargo test -p tau-agent-core` passed 243 unit tests, 2 mission harness tests, and 9 doctests.
+- QUALITY: `CARGO_TARGET_DIR=/tmp/rust_pi-3654-outer-loop-target cargo clippy -p tau-agent-core -- -D warnings`, `cargo fmt --check`, `git diff --check`, and `scripts/dev/roadmap-status-sync.sh --check --quiet` passed.
 
 ### Slice E: Crash/resume
 
