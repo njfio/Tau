@@ -181,15 +181,15 @@ Evidence:
 
 ### Slice B: Workspace executor and safety policy
 
-- [ ] T22 RED: add failing coverage for a workspace executor that records cwd,
+- [x] T22 RED: add failing coverage for a workspace executor that records cwd,
       argv, stdout/stderr paths, exit status, elapsed time, and reason code for
       every command.
-- [ ] T23 GREEN: implement the executor on top of existing Tau tool/background
+- [x] T23 GREEN: implement the executor on top of existing Tau tool/background
       job primitives so long-running verifier commands are supervised and
       recoverable.
-- [ ] T24 GREEN: enforce command policy for allowed roots, denied destructive
+- [x] T24 GREEN: enforce command policy for allowed roots, denied destructive
       commands, optional network use, and explicit mutation phases.
-- [ ] T25 VERIFY: prove denied commands leave no repo mutation and successful
+- [x] T25 VERIFY: prove denied commands leave no repo mutation and successful
       commands produce durable command evidence.
 
 Done when:
@@ -197,6 +197,12 @@ Done when:
   a target repo with durable artifacts.
 - `rm -rf`, force push, out-of-root writes, and missing cwd fail closed with
   operator-visible reason codes.
+
+Evidence:
+- RED: `CARGO_TARGET_DIR=/tmp/rust_pi-3654-workspace-executor-target cargo test -p tau-agent-core coding_mission -- --test-threads=1` failed before implementation because `CodingWorkspaceExecutor`, command policy/evidence/status types, and `CodingMissionState.command_evidence` did not exist.
+- GREEN/VERIFY: `CARGO_TARGET_DIR=/tmp/rust_pi-3654-workspace-executor-target cargo test -p tau-agent-core coding_mission -- --test-threads=1` passed 9 tests covering `git status`, `git diff`, a verifier command, durable stdout/stderr artifacts, pre-spawn started markers, persisted `MissionToolCallEvidence`, `rm -rf` denial without mutation, force-push denial, network denial, missing-cwd denial, and out-of-root write denial.
+- REGRESSION: `CARGO_TARGET_DIR=/tmp/rust_pi-3654-workspace-executor-target cargo test -p tau-agent-core` passed 232 unit tests, 2 mission harness tests, and 9 doc tests.
+- QUALITY: `cargo fmt --check`, `git diff --check`, `scripts/dev/roadmap-status-sync.sh --check --quiet`, and `CARGO_TARGET_DIR=/tmp/rust_pi-3654-workspace-executor-target cargo clippy -p tau-agent-core -- -D warnings` passed.
 
 ### Slice C: Git lifecycle
 

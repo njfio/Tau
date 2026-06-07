@@ -48,7 +48,9 @@ pub use circuit_breaker::{CircuitBreaker, CircuitState};
 pub use coding_mission::{
     coding_mission_state_path, load_coding_mission_state, save_coding_mission_state,
     CodingMissionConfig, CodingMissionError, CodingMissionEvent, CodingMissionPhase,
-    CodingMissionPrMode, CodingMissionState, CODING_MISSION_SCHEMA_VERSION,
+    CodingMissionPrMode, CodingMissionState, CodingWorkspaceCommand,
+    CodingWorkspaceCommandEvidence, CodingWorkspaceCommandPolicy, CodingWorkspaceCommandStatus,
+    CodingWorkspaceExecutor, CODING_MISSION_SCHEMA_VERSION,
 };
 pub use context_ranking::{
     rank_messages_by_importance, score_message_importance, ImportanceReason, MessageImportance,
