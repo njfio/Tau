@@ -152,6 +152,32 @@ pub struct CodingGitCommitRequest {
     pub started_unix_ms: u64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CodingMissionControlledEdit {
+    pub relative_path: PathBuf,
+    pub contents: String,
+    pub reason_code: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CodingMissionRunRequest {
+    #[serde(default)]
+    pub controlled_edit: Option<CodingMissionControlledEdit>,
+    pub commit_message: String,
+    pub started_unix_ms: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CodingMissionRunOutcome {
+    pub phase: CodingMissionPhase,
+    pub verifier_passed: bool,
+    #[serde(default)]
+    pub committed: Option<CodingGitLifecycleEvidence>,
+    #[serde(default)]
+    pub blocked_reason: Option<String>,
+    pub iterations: usize,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CodingMissionState {
     pub schema_version: u32,
@@ -546,6 +572,269 @@ impl CodingMissionState {
     }
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct CodingMissionRunner;
+
+impl CodingMissionRunner {
+    pub fn new() -> Self {
+        Self
+    }
+
+    pub fn run(
+        &self,
+        state: &mut CodingMissionState,
+        request: CodingMissionRunRequest,
+    ) -> Result<CodingMissionRunOutcome, CodingMissionError> {
+        if state.phase == CodingMissionPhase::Intake {
+            state.transition_phase(
+                CodingMissionPhase::Planned,
+                "coding_mission_planned",
+                "coding mission runner planned branch and verifier work",
+                request.started_unix_ms,
+            )?;
+            save_coding_mission_state(state)?;
+        }
+
+        state.prepare_branch(CodingGitPrepareBranchRequest {
+            branch_name: None,
+            allow_fetch: false,
+            started_unix_ms: request.started_unix_ms.saturating_add(10),
+        })?;
+        state.transition_phase(
+            CodingMissionPhase::Executing,
+            "coding_mission_executing",
+            "coding mission runner executing verifier loop",
+            request.started_unix_ms.saturating_add(20),
+        )?;
+        save_coding_mission_state(state)?;
+
+        let mut iterations = 1;
+        let first =
+            run_coding_mission_verifiers(state, request.started_unix_ms.saturating_add(100))?;
+        if let Some(reason) = first.blocked_reason {
+            return block_coding_mission_run(
+                state,
+                reason,
+                first.verifier_passed,
+                iterations,
+                request.started_unix_ms.saturating_add(199),
+            );
+        }
+        let mut verifier_passed = first.verifier_passed;
+        if !verifier_passed {
+            if let Some(edit) = request.controlled_edit {
+                apply_controlled_edit(state, &edit, request.started_unix_ms.saturating_add(200))?;
+                iterations = iterations.saturating_add(1);
+                let second = run_coding_mission_verifiers(
+                    state,
+                    request.started_unix_ms.saturating_add(300),
+                )?;
+                if let Some(reason) = second.blocked_reason {
+                    return block_coding_mission_run(
+                        state,
+                        reason,
+                        second.verifier_passed,
+                        iterations,
+                        request.started_unix_ms.saturating_add(399),
+                    );
+                }
+                verifier_passed = second.verifier_passed;
+            } else {
+                return Ok(CodingMissionRunOutcome {
+                    phase: state.phase,
+                    verifier_passed: false,
+                    committed: None,
+                    blocked_reason: None,
+                    iterations,
+                });
+            }
+        }
+
+        if !verifier_passed {
+            return Ok(CodingMissionRunOutcome {
+                phase: state.phase,
+                verifier_passed,
+                committed: None,
+                blocked_reason: None,
+                iterations,
+            });
+        }
+
+        match state.commit_changes(CodingGitCommitRequest {
+            message: request.commit_message,
+            started_unix_ms: request.started_unix_ms.saturating_add(400),
+        }) {
+            Ok(commit) => {
+                state.transition_phase(
+                    CodingMissionPhase::PrReady,
+                    "coding_mission_pr_ready",
+                    "verifier passed and mission-linked commit evidence is ready",
+                    request.started_unix_ms.saturating_add(500),
+                )?;
+                save_coding_mission_state(state)?;
+                Ok(CodingMissionRunOutcome {
+                    phase: state.phase,
+                    verifier_passed: true,
+                    committed: Some(commit),
+                    blocked_reason: None,
+                    iterations,
+                })
+            }
+            Err(CodingMissionError::GitLifecycle {
+                reason_code,
+                message: _,
+            }) => block_coding_mission_run(
+                state,
+                reason_code,
+                true,
+                iterations,
+                request.started_unix_ms.saturating_add(500),
+            ),
+            Err(error) => Err(error),
+        }
+    }
+}
+
+struct CodingVerifierRun {
+    verifier_passed: bool,
+    blocked_reason: Option<&'static str>,
+}
+
+fn run_coding_mission_verifiers(
+    state: &mut CodingMissionState,
+    started_unix_ms: u64,
+) -> Result<CodingVerifierRun, CodingMissionError> {
+    let verifier_commands = state.verifier_commands.clone();
+    if verifier_commands.is_empty() {
+        return Ok(CodingVerifierRun {
+            verifier_passed: false,
+            blocked_reason: Some("missing_verifier_commands"),
+        });
+    }
+
+    let mut all_passed = true;
+    for (index, command) in verifier_commands.iter().enumerate() {
+        let argv = split_command_argv(command);
+        if argv.is_empty() {
+            return Ok(CodingVerifierRun {
+                verifier_passed: false,
+                blocked_reason: Some("empty_verifier_command"),
+            });
+        }
+        let evidence = execute_workspace_command(
+            state,
+            argv,
+            format!("coding_verifier_{:04}", index.saturating_add(1)),
+            started_unix_ms.saturating_add(index as u64),
+            false,
+            false,
+        )?;
+        match evidence.status {
+            CodingWorkspaceCommandStatus::Succeeded => {}
+            CodingWorkspaceCommandStatus::Denied => {
+                return Ok(CodingVerifierRun {
+                    verifier_passed: false,
+                    blocked_reason: Some("verifier_command_denied"),
+                });
+            }
+            CodingWorkspaceCommandStatus::Failed if evidence.exit_status.is_none() => {
+                return Ok(CodingVerifierRun {
+                    verifier_passed: false,
+                    blocked_reason: Some("verifier_command_failed_to_start"),
+                });
+            }
+            CodingWorkspaceCommandStatus::Failed => {
+                all_passed = false;
+            }
+        }
+    }
+    Ok(CodingVerifierRun {
+        verifier_passed: all_passed,
+        blocked_reason: None,
+    })
+}
+
+fn apply_controlled_edit(
+    state: &mut CodingMissionState,
+    edit: &CodingMissionControlledEdit,
+    created_unix_ms: u64,
+) -> Result<(), CodingMissionError> {
+    if edit.relative_path.is_absolute()
+        || edit.relative_path.components().any(|component| {
+            matches!(
+                component,
+                Component::ParentDir | Component::Prefix(_) | Component::RootDir
+            )
+        })
+    {
+        return Err(CodingMissionError::GitLifecycle {
+            reason_code: "controlled_edit_outside_repo",
+            message: edit.relative_path.display().to_string(),
+        });
+    }
+    let target = normalize_path_lexically(&state.repo_path.join(&edit.relative_path));
+    if !target.starts_with(&state.repo_path) {
+        return Err(CodingMissionError::GitLifecycle {
+            reason_code: "controlled_edit_outside_repo",
+            message: target.display().to_string(),
+        });
+    }
+    write_text_atomic(&target, &edit.contents).map_err(|source| {
+        CodingMissionError::StateWrite {
+            path: target.clone(),
+            source,
+        }
+    })?;
+    let artifact_id = format!("controlled_edit:{}", edit.relative_path.display());
+    state.mission.artifacts.push(MissionArtifactRef {
+        artifact_id,
+        kind: "coding_mission_controlled_edit".to_string(),
+        path: Some(target.display().to_string()),
+        summary: Some(edit.reason_code.clone()),
+    });
+    state.events.push(CodingMissionEvent {
+        phase: state.phase,
+        reason_code: edit.reason_code.clone(),
+        message: format!("controlled edit wrote {}", edit.relative_path.display()),
+        created_unix_ms,
+    });
+    state.updated_unix_ms = created_unix_ms;
+    state.mission.latest_output_summary =
+        format!("controlled edit wrote {}", edit.relative_path.display());
+    save_coding_mission_state(state)
+}
+
+fn block_coding_mission_run(
+    state: &mut CodingMissionState,
+    reason: &'static str,
+    verifier_passed: bool,
+    iterations: usize,
+    updated_unix_ms: u64,
+) -> Result<CodingMissionRunOutcome, CodingMissionError> {
+    state.transition_phase(
+        CodingMissionPhase::Blocked,
+        reason,
+        format!("coding mission blocked: {reason}"),
+        updated_unix_ms,
+    )?;
+    save_coding_mission_state(state)?;
+    Ok(CodingMissionRunOutcome {
+        phase: state.phase,
+        verifier_passed,
+        committed: None,
+        blocked_reason: Some(reason.to_string()),
+        iterations,
+    })
+}
+
+fn split_command_argv(command: &str) -> Vec<String> {
+    command
+        .split_whitespace()
+        .filter(|part| !part.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
 #[derive(Debug, Clone)]
 pub struct CodingWorkspaceExecutor {
     policy: CodingWorkspaceCommandPolicy,
@@ -699,6 +988,28 @@ where
     I: IntoIterator<Item = S>,
     S: Into<String>,
 {
+    execute_workspace_command(
+        state,
+        argv,
+        reason_code.to_string(),
+        started_unix_ms,
+        allow_mutation,
+        allow_network,
+    )
+}
+
+fn execute_workspace_command<I, S>(
+    state: &mut CodingMissionState,
+    argv: I,
+    reason_code: String,
+    started_unix_ms: u64,
+    allow_mutation: bool,
+    allow_network: bool,
+) -> Result<CodingWorkspaceCommandEvidence, CodingMissionError>
+where
+    I: IntoIterator<Item = S>,
+    S: Into<String>,
+{
     let executor = CodingWorkspaceExecutor::new(CodingWorkspaceCommandPolicy {
         allowed_roots: state.allowed_roots.clone(),
         allow_network,
@@ -710,7 +1021,7 @@ where
         CodingWorkspaceCommand {
             cwd,
             argv: argv.into_iter().map(Into::into).collect(),
-            reason_code: reason_code.to_string(),
+            reason_code,
             started_unix_ms,
         },
     )
@@ -1891,5 +2202,208 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    fn verifier_config_for(
+        root: &Path,
+        initial_status: &str,
+        verifier: &str,
+    ) -> CodingMissionConfig {
+        let mut config = committed_config_for(root);
+        std::fs::write(config.repo_path.join("status.txt"), initial_status).expect("status file");
+        git(&config.repo_path, &["add", "status.txt"]);
+        git(&config.repo_path, &["commit", "-m", "add status fixture"]);
+        config.verifier_commands = vec![verifier.to_string()];
+        config
+    }
+
+    #[test]
+    fn spec_c06_outer_loop_records_red_and_stays_executing() {
+        let temp = tempdir().expect("tempdir");
+        let config = verifier_config_for(temp.path(), "fail\n", "grep -q pass status.txt");
+        let mut state = CodingMissionState::create(config).expect("create state");
+        let runner = CodingMissionRunner::new();
+
+        let outcome = runner
+            .run(
+                &mut state,
+                CodingMissionRunRequest {
+                    controlled_edit: None,
+                    commit_message: "Make verifier green".to_string(),
+                    started_unix_ms: 1_800_000_002_000,
+                },
+            )
+            .expect("run mission");
+
+        assert_eq!(outcome.phase, CodingMissionPhase::Executing);
+        assert!(!outcome.verifier_passed);
+        assert!(outcome.committed.is_none());
+        assert!(outcome.blocked_reason.is_none());
+        assert_eq!(state.phase, CodingMissionPhase::Executing);
+        assert!(state.command_evidence.iter().any(|evidence| evidence.status
+            == CodingWorkspaceCommandStatus::Failed
+            && evidence.reason_code.starts_with("coding_verifier")));
+        assert!(!state
+            .git_evidence
+            .iter()
+            .any(|evidence| evidence.kind == CodingGitLifecycleEvidenceKind::CommitCreated));
+    }
+
+    #[test]
+    fn spec_c07_outer_loop_edits_verifies_commits_and_becomes_pr_ready() {
+        let temp = tempdir().expect("tempdir");
+        let config = verifier_config_for(temp.path(), "fail\n", "grep -q pass status.txt");
+        let mut state = CodingMissionState::create(config).expect("create state");
+        let runner = CodingMissionRunner::new();
+
+        let outcome = runner
+            .run(
+                &mut state,
+                CodingMissionRunRequest {
+                    controlled_edit: Some(CodingMissionControlledEdit {
+                        relative_path: PathBuf::from("status.txt"),
+                        contents: "pass\n".to_string(),
+                        reason_code: "controlled_fix".to_string(),
+                    }),
+                    commit_message: "Make verifier green".to_string(),
+                    started_unix_ms: 1_800_000_002_500,
+                },
+            )
+            .expect("run mission");
+
+        assert_eq!(outcome.phase, CodingMissionPhase::PrReady);
+        assert!(outcome.verifier_passed);
+        assert_eq!(
+            outcome
+                .committed
+                .as_ref()
+                .and_then(|e| e.commit_hash.as_ref())
+                .map(String::len),
+            Some(40)
+        );
+        assert_eq!(state.phase, CodingMissionPhase::PrReady);
+        assert!(state.command_evidence.iter().any(|evidence| evidence.status
+            == CodingWorkspaceCommandStatus::Failed
+            && evidence.reason_code.starts_with("coding_verifier")));
+        assert!(state.command_evidence.iter().any(|evidence| evidence.status
+            == CodingWorkspaceCommandStatus::Succeeded
+            && evidence.reason_code.starts_with("coding_verifier")));
+        assert!(git(&state.repo_path, &["log", "-1", "--format=%B"])
+            .contains("Mission: coding-mission-alpha"));
+    }
+
+    #[test]
+    fn regression_outer_loop_blocks_completion_without_mutation_evidence() {
+        let temp = tempdir().expect("tempdir");
+        let config = verifier_config_for(temp.path(), "pass\n", "grep -q pass status.txt");
+        let mut state = CodingMissionState::create(config).expect("create state");
+        let runner = CodingMissionRunner::new();
+
+        let outcome = runner
+            .run(
+                &mut state,
+                CodingMissionRunRequest {
+                    controlled_edit: None,
+                    commit_message: "No mutation".to_string(),
+                    started_unix_ms: 1_800_000_003_000,
+                },
+            )
+            .expect("run mission");
+
+        assert_eq!(outcome.phase, CodingMissionPhase::Blocked);
+        assert!(outcome.verifier_passed);
+        assert_eq!(outcome.blocked_reason.as_deref(), Some("missing_git_diff"));
+        assert_eq!(state.phase, CodingMissionPhase::Blocked);
+    }
+
+    #[test]
+    fn regression_outer_loop_blocks_impossible_verifier_command() {
+        let temp = tempdir().expect("tempdir");
+        let config = verifier_config_for(temp.path(), "fail\n", "definitely-not-a-tau-command");
+        let mut state = CodingMissionState::create(config).expect("create state");
+        let runner = CodingMissionRunner::new();
+
+        let outcome = runner
+            .run(
+                &mut state,
+                CodingMissionRunRequest {
+                    controlled_edit: None,
+                    commit_message: "Impossible verifier".to_string(),
+                    started_unix_ms: 1_800_000_003_500,
+                },
+            )
+            .expect("run mission");
+
+        assert_eq!(outcome.phase, CodingMissionPhase::Blocked);
+        assert_eq!(
+            outcome.blocked_reason.as_deref(),
+            Some("verifier_command_failed_to_start")
+        );
+        assert!(state
+            .command_evidence
+            .iter()
+            .any(|evidence| evidence.exit_status.is_none()
+                && evidence.status == CodingWorkspaceCommandStatus::Failed));
+    }
+
+    #[test]
+    fn regression_outer_loop_blocks_policy_denied_verifier_command() {
+        let temp = tempdir().expect("tempdir");
+        let config = verifier_config_for(temp.path(), "fail\n", "rm -rf status.txt");
+        let mut state = CodingMissionState::create(config).expect("create state");
+        let runner = CodingMissionRunner::new();
+
+        let outcome = runner
+            .run(
+                &mut state,
+                CodingMissionRunRequest {
+                    controlled_edit: None,
+                    commit_message: "Denied verifier".to_string(),
+                    started_unix_ms: 1_800_000_004_000,
+                },
+            )
+            .expect("run mission");
+
+        assert_eq!(outcome.phase, CodingMissionPhase::Blocked);
+        assert_eq!(
+            outcome.blocked_reason.as_deref(),
+            Some("verifier_command_denied")
+        );
+        assert!(state.repo_path.join("status.txt").is_file());
+    }
+
+    #[test]
+    fn regression_outer_loop_blocks_missing_verifier_commands() {
+        let temp = tempdir().expect("tempdir");
+        let config = verifier_config_for(temp.path(), "pass\n", "grep -q pass status.txt");
+        let mut state = CodingMissionState::create(config).expect("create state");
+        state.verifier_commands.clear();
+        let runner = CodingMissionRunner::new();
+
+        let outcome = runner
+            .run(
+                &mut state,
+                CodingMissionRunRequest {
+                    controlled_edit: Some(CodingMissionControlledEdit {
+                        relative_path: PathBuf::from("status.txt"),
+                        contents: "pass again\n".to_string(),
+                        reason_code: "controlled_fix".to_string(),
+                    }),
+                    commit_message: "No verifier".to_string(),
+                    started_unix_ms: 1_800_000_004_500,
+                },
+            )
+            .expect("run mission");
+
+        assert_eq!(outcome.phase, CodingMissionPhase::Blocked);
+        assert!(!outcome.verifier_passed);
+        assert_eq!(
+            outcome.blocked_reason.as_deref(),
+            Some("missing_verifier_commands")
+        );
+        assert!(!state
+            .git_evidence
+            .iter()
+            .any(|evidence| evidence.kind == CodingGitLifecycleEvidenceKind::CommitCreated));
     }
 }
