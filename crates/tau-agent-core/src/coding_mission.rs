@@ -116,6 +116,42 @@ pub struct CodingWorkspaceCommandEvidence {
     pub denied_reason: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CodingGitLifecycleEvidenceKind {
+    BranchPrepared,
+    CommitCreated,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CodingGitLifecycleEvidence {
+    pub kind: CodingGitLifecycleEvidenceKind,
+    pub branch_name: String,
+    pub base_branch: String,
+    pub created_branch: bool,
+    pub reused_branch: bool,
+    #[serde(default)]
+    pub commit_hash: Option<String>,
+    #[serde(default)]
+    pub changed_files: Vec<String>,
+    pub reason_code: String,
+    pub created_unix_ms: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CodingGitPrepareBranchRequest {
+    #[serde(default)]
+    pub branch_name: Option<String>,
+    pub allow_fetch: bool,
+    pub started_unix_ms: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CodingGitCommitRequest {
+    pub message: String,
+    pub started_unix_ms: u64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CodingMissionState {
     pub schema_version: u32,
@@ -139,6 +175,8 @@ pub struct CodingMissionState {
     pub events: Vec<CodingMissionEvent>,
     #[serde(default)]
     pub command_evidence: Vec<CodingWorkspaceCommandEvidence>,
+    #[serde(default)]
+    pub git_evidence: Vec<CodingGitLifecycleEvidence>,
 }
 
 impl CodingMissionState {
@@ -242,6 +280,7 @@ impl CodingMissionState {
             mission,
             events: Vec::new(),
             command_evidence: Vec::new(),
+            git_evidence: Vec::new(),
         };
         state.events.push(CodingMissionEvent {
             phase: CodingMissionPhase::Intake,
@@ -285,6 +324,225 @@ impl CodingMissionState {
 
     pub fn to_mission_snapshot(&self) -> MissionSnapshot {
         self.mission.clone()
+    }
+
+    pub fn prepare_branch(
+        &mut self,
+        request: CodingGitPrepareBranchRequest,
+    ) -> Result<CodingGitLifecycleEvidence, CodingMissionError> {
+        let branch_name = request
+            .branch_name
+            .unwrap_or_else(|| default_coding_git_branch_name(self));
+        if request.allow_fetch {
+            let fetch = execute_git_command(
+                self,
+                vec!["git", "fetch", "--all", "--prune"],
+                "git_fetch_opt_in",
+                request.started_unix_ms,
+                false,
+                true,
+            )?;
+            if fetch.status != CodingWorkspaceCommandStatus::Succeeded {
+                return Err(CodingMissionError::GitLifecycle {
+                    reason_code: "fetch_failed",
+                    message: command_evidence_summary(&fetch),
+                });
+            }
+        }
+
+        let status = execute_git_command(
+            self,
+            vec!["git", "status", "--porcelain"],
+            "git_status_dirty_check",
+            request.started_unix_ms.saturating_add(1),
+            false,
+            false,
+        )?;
+        let dirty_status = command_stdout(&status)?;
+        if !dirty_status.trim().is_empty() {
+            return Err(CodingMissionError::GitLifecycle {
+                reason_code: "dirty_tree",
+                message: dirty_status,
+            });
+        }
+
+        let current = execute_git_command(
+            self,
+            vec!["git", "branch", "--show-current"],
+            "git_current_branch",
+            request.started_unix_ms.saturating_add(2),
+            false,
+            false,
+        )?;
+        let current_branch = command_stdout(&current)?.trim().to_string();
+        let exists = execute_git_command(
+            self,
+            vec![
+                "git".to_string(),
+                "show-ref".to_string(),
+                "--verify".to_string(),
+                "--quiet".to_string(),
+                format!("refs/heads/{branch_name}"),
+            ],
+            "git_branch_exists",
+            request.started_unix_ms.saturating_add(3),
+            false,
+            false,
+        )?;
+        let branch_exists = exists.status == CodingWorkspaceCommandStatus::Succeeded;
+
+        let (created_branch, reused_branch) = if current_branch == branch_name {
+            (false, true)
+        } else {
+            if current_branch != self.base_branch {
+                return Err(CodingMissionError::GitLifecycle {
+                    reason_code: "base_branch_mismatch",
+                    message: format!(
+                        "current branch {current_branch} does not match base {}",
+                        self.base_branch
+                    ),
+                });
+            }
+            if branch_exists {
+                let switched = execute_git_command(
+                    self,
+                    vec!["git", "switch", branch_name.as_str()],
+                    "git_switch_existing_branch",
+                    request.started_unix_ms.saturating_add(4),
+                    true,
+                    false,
+                )?;
+                if switched.status != CodingWorkspaceCommandStatus::Succeeded {
+                    return Err(CodingMissionError::GitLifecycle {
+                        reason_code: "branch_switch_failed",
+                        message: command_evidence_summary(&switched),
+                    });
+                }
+                (false, true)
+            } else {
+                let created = execute_git_command(
+                    self,
+                    vec!["git", "switch", "-c", branch_name.as_str()],
+                    "git_switch_create_branch",
+                    request.started_unix_ms.saturating_add(4),
+                    true,
+                    false,
+                )?;
+                if created.status != CodingWorkspaceCommandStatus::Succeeded {
+                    return Err(CodingMissionError::GitLifecycle {
+                        reason_code: "branch_create_failed",
+                        message: command_evidence_summary(&created),
+                    });
+                }
+                (true, false)
+            }
+        };
+
+        let head = execute_git_command(
+            self,
+            vec!["git", "rev-parse", "HEAD"],
+            "git_branch_head",
+            request.started_unix_ms.saturating_add(5),
+            false,
+            false,
+        )?;
+        let evidence = CodingGitLifecycleEvidence {
+            kind: CodingGitLifecycleEvidenceKind::BranchPrepared,
+            branch_name,
+            base_branch: self.base_branch.clone(),
+            created_branch,
+            reused_branch,
+            commit_hash: Some(command_stdout(&head)?.trim().to_string()),
+            changed_files: Vec::new(),
+            reason_code: "branch_prepared".to_string(),
+            created_unix_ms: request.started_unix_ms.saturating_add(5),
+        };
+        self.git_evidence.push(evidence.clone());
+        save_coding_mission_state(self)?;
+        Ok(evidence)
+    }
+
+    pub fn commit_changes(
+        &mut self,
+        request: CodingGitCommitRequest,
+    ) -> Result<CodingGitLifecycleEvidence, CodingMissionError> {
+        let current = execute_git_command(
+            self,
+            vec!["git", "branch", "--show-current"],
+            "git_commit_current_branch",
+            request.started_unix_ms,
+            false,
+            false,
+        )?;
+        let branch_name = command_stdout(&current)?.trim().to_string();
+        let status = execute_git_command(
+            self,
+            vec!["git", "status", "--porcelain"],
+            "git_commit_status",
+            request.started_unix_ms.saturating_add(1),
+            false,
+            false,
+        )?;
+        let changed_files = parse_git_status_changed_files(&command_stdout(&status)?);
+        if changed_files.is_empty() {
+            return Err(CodingMissionError::GitLifecycle {
+                reason_code: "missing_git_diff",
+                message: "no changed files available to commit".to_string(),
+            });
+        }
+
+        let add = execute_git_command(
+            self,
+            vec!["git", "add", "-A"],
+            "git_add_all",
+            request.started_unix_ms.saturating_add(2),
+            true,
+            false,
+        )?;
+        if add.status != CodingWorkspaceCommandStatus::Succeeded {
+            return Err(CodingMissionError::GitLifecycle {
+                reason_code: "git_add_failed",
+                message: command_evidence_summary(&add),
+            });
+        }
+
+        let (subject, body) = coding_git_commit_message(self, &request.message);
+        let commit = execute_git_command(
+            self,
+            vec!["git", "commit", "-m", subject.as_str(), "-m", body.as_str()],
+            "git_commit",
+            request.started_unix_ms.saturating_add(3),
+            true,
+            false,
+        )?;
+        if commit.status != CodingWorkspaceCommandStatus::Succeeded {
+            return Err(CodingMissionError::GitLifecycle {
+                reason_code: "git_commit_failed",
+                message: command_evidence_summary(&commit),
+            });
+        }
+        let hash = execute_git_command(
+            self,
+            vec!["git", "rev-parse", "HEAD"],
+            "git_commit_hash",
+            request.started_unix_ms.saturating_add(4),
+            false,
+            false,
+        )?;
+        let evidence = CodingGitLifecycleEvidence {
+            kind: CodingGitLifecycleEvidenceKind::CommitCreated,
+            branch_name,
+            base_branch: self.base_branch.clone(),
+            created_branch: false,
+            reused_branch: true,
+            commit_hash: Some(command_stdout(&hash)?.trim().to_string()),
+            changed_files,
+            reason_code: "commit_created".to_string(),
+            created_unix_ms: request.started_unix_ms.saturating_add(4),
+        };
+        self.git_evidence.push(evidence.clone());
+        save_coding_mission_state(self)?;
+        Ok(evidence)
     }
 }
 
@@ -427,6 +685,98 @@ impl CodingWorkspaceExecutor {
         }
         Ok(cwd)
     }
+}
+
+fn execute_git_command<I, S>(
+    state: &mut CodingMissionState,
+    argv: I,
+    reason_code: &str,
+    started_unix_ms: u64,
+    allow_mutation: bool,
+    allow_network: bool,
+) -> Result<CodingWorkspaceCommandEvidence, CodingMissionError>
+where
+    I: IntoIterator<Item = S>,
+    S: Into<String>,
+{
+    let executor = CodingWorkspaceExecutor::new(CodingWorkspaceCommandPolicy {
+        allowed_roots: state.allowed_roots.clone(),
+        allow_network,
+        allow_mutation,
+    });
+    let cwd = state.repo_path.clone();
+    executor.execute(
+        state,
+        CodingWorkspaceCommand {
+            cwd,
+            argv: argv.into_iter().map(Into::into).collect(),
+            reason_code: reason_code.to_string(),
+            started_unix_ms,
+        },
+    )
+}
+
+fn command_stdout(evidence: &CodingWorkspaceCommandEvidence) -> Result<String, CodingMissionError> {
+    std::fs::read_to_string(&evidence.stdout_path).map_err(|source| CodingMissionError::StateRead {
+        path: evidence.stdout_path.clone(),
+        source,
+    })
+}
+
+fn default_coding_git_branch_name(state: &CodingMissionState) -> String {
+    format!("{}{}", state.branch_prefix, state.mission_id)
+}
+
+fn parse_git_status_changed_files(raw: &str) -> Vec<String> {
+    let mut files = raw
+        .lines()
+        .filter_map(|line| line.get(3..))
+        .map(str::trim)
+        .filter(|path| !path.is_empty())
+        .map(|path| {
+            path.rsplit_once(" -> ")
+                .map(|(_, renamed)| renamed)
+                .unwrap_or(path)
+                .trim_matches('"')
+                .to_string()
+        })
+        .collect::<Vec<_>>();
+    files.sort();
+    files.dedup();
+    files
+}
+
+fn coding_git_commit_message(state: &CodingMissionState, message: &str) -> (String, String) {
+    let subject = message
+        .lines()
+        .next()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .unwrap_or("Apply coding mission changes")
+        .to_string();
+    if repo_requires_lore_commit(&state.repo_path) {
+        (
+            subject,
+            format!(
+                "Mission: {}\nSession: {}\n\nConstraint: Coding mission commit must be linked to durable mission evidence\nConfidence: medium\nScope-risk: narrow\nDirective: Keep this commit linked to CodingMissionState evidence\nTested: verifier commands recorded in mission state\nNot-tested: PR publication in this lifecycle step",
+                state.mission_id, state.session_key
+            ),
+        )
+    } else {
+        (
+            subject,
+            format!(
+                "Mission: {}\nSession: {}",
+                state.mission_id, state.session_key
+            ),
+        )
+    }
+}
+
+fn repo_requires_lore_commit(repo_path: &Path) -> bool {
+    std::fs::read_to_string(repo_path.join("AGENTS.md"))
+        .map(|contents| contents.contains("Lore Commit Protocol"))
+        .unwrap_or(false)
 }
 
 fn record_workspace_command_start(
@@ -713,6 +1063,11 @@ pub enum CodingMissionError {
     },
     #[error("failed to record coding mission tool evidence: {0}")]
     MissionToolEvidence(#[from] MissionToolEvidenceError),
+    #[error("coding mission git lifecycle blocked ({reason_code}): {message}")]
+    GitLifecycle {
+        reason_code: &'static str,
+        message: String,
+    },
     #[error("invalid coding mission transition: {0}")]
     MissionTransition(#[from] MissionTransitionError),
 }
@@ -1346,5 +1701,195 @@ mod tests {
         assert_eq!(denied.status, CodingWorkspaceCommandStatus::Denied);
         assert_eq!(denied.denied_reason.as_deref(), Some("out_of_root_write"));
         assert!(!outside_file.exists());
+    }
+
+    fn git(repo: &Path, args: &[&str]) -> String {
+        let output = std::process::Command::new("git")
+            .args(args)
+            .current_dir(repo)
+            .output()
+            .expect("git command");
+        assert!(
+            output.status.success(),
+            "git {:?} failed: {}",
+            args,
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8_lossy(&output.stdout).trim().to_string()
+    }
+
+    fn committed_config_for(root: &Path) -> CodingMissionConfig {
+        let mut config = config_for(root);
+        git(
+            &config.repo_path,
+            &["config", "user.email", "tau@example.test"],
+        );
+        git(&config.repo_path, &["config", "user.name", "Tau Test"]);
+        std::fs::write(config.repo_path.join("README.md"), "initial\n").expect("seed readme");
+        git(&config.repo_path, &["add", "README.md"]);
+        git(&config.repo_path, &["commit", "-m", "initial"]);
+        config.base_branch = git(&config.repo_path, &["branch", "--show-current"]);
+        config.branch_prefix = "codex/".to_string();
+        config
+    }
+
+    #[test]
+    fn spec_c04_prepare_branch_creates_and_reuses_local_branch() {
+        let temp = tempdir().expect("tempdir");
+        let config = committed_config_for(temp.path());
+        let mut state = CodingMissionState::create(config).expect("create state");
+
+        let created = state
+            .prepare_branch(CodingGitPrepareBranchRequest {
+                branch_name: None,
+                allow_fetch: false,
+                started_unix_ms: 1_800_000_001_000,
+            })
+            .expect("create branch");
+        let reused = state
+            .prepare_branch(CodingGitPrepareBranchRequest {
+                branch_name: None,
+                allow_fetch: false,
+                started_unix_ms: 1_800_000_001_100,
+            })
+            .expect("reuse branch");
+
+        assert_eq!(created.kind, CodingGitLifecycleEvidenceKind::BranchPrepared);
+        assert_eq!(created.branch_name, "codex/coding-mission-alpha");
+        assert!(created.created_branch);
+        assert!(!created.reused_branch);
+        assert_eq!(reused.branch_name, created.branch_name);
+        assert!(!reused.created_branch);
+        assert!(reused.reused_branch);
+        assert_eq!(
+            git(&state.repo_path, &["branch", "--show-current"]),
+            "codex/coding-mission-alpha"
+        );
+        assert_eq!(state.git_evidence.len(), 2);
+        assert!(state
+            .command_evidence
+            .iter()
+            .any(|evidence| evidence.reason_code == "git_switch_create_branch"));
+    }
+
+    #[test]
+    fn regression_prepare_branch_blocks_dirty_tree_before_checkout() {
+        let temp = tempdir().expect("tempdir");
+        let config = committed_config_for(temp.path());
+        let mut state = CodingMissionState::create(config).expect("create state");
+        std::fs::write(state.repo_path.join("dirty.txt"), "user work\n").expect("dirty file");
+
+        let error = state
+            .prepare_branch(CodingGitPrepareBranchRequest {
+                branch_name: None,
+                allow_fetch: false,
+                started_unix_ms: 1_800_000_001_200,
+            })
+            .expect_err("dirty tree should block");
+
+        assert!(matches!(
+            error,
+            CodingMissionError::GitLifecycle {
+                reason_code: "dirty_tree",
+                ..
+            }
+        ));
+        assert_eq!(
+            git(&state.repo_path, &["branch", "--show-current"]),
+            state.base_branch
+        );
+        assert!(state.repo_path.join("dirty.txt").is_file());
+        assert!(state.git_evidence.is_empty());
+    }
+
+    #[test]
+    fn regression_prepare_branch_blocks_base_branch_mismatch() {
+        let temp = tempdir().expect("tempdir");
+        let config = committed_config_for(temp.path());
+        let mut state = CodingMissionState::create(config).expect("create state");
+        git(&state.repo_path, &["switch", "-c", "other-work"]);
+
+        let error = state
+            .prepare_branch(CodingGitPrepareBranchRequest {
+                branch_name: None,
+                allow_fetch: false,
+                started_unix_ms: 1_800_000_001_300,
+            })
+            .expect_err("wrong base should block");
+
+        assert!(matches!(
+            error,
+            CodingMissionError::GitLifecycle {
+                reason_code: "base_branch_mismatch",
+                ..
+            }
+        ));
+        assert_eq!(
+            git(&state.repo_path, &["branch", "--show-current"]),
+            "other-work"
+        );
+    }
+
+    #[test]
+    fn spec_c05_commit_changes_requires_diff_and_records_hash() {
+        let temp = tempdir().expect("tempdir");
+        let config = committed_config_for(temp.path());
+        let mut state = CodingMissionState::create(config).expect("create state");
+        state
+            .prepare_branch(CodingGitPrepareBranchRequest {
+                branch_name: None,
+                allow_fetch: false,
+                started_unix_ms: 1_800_000_001_400,
+            })
+            .expect("prepare branch");
+        std::fs::write(state.repo_path.join("mission.txt"), "mission change\n")
+            .expect("mission file");
+
+        let commit = state
+            .commit_changes(CodingGitCommitRequest {
+                message: "Implement mission change".to_string(),
+                started_unix_ms: 1_800_000_001_500,
+            })
+            .expect("commit changes");
+
+        assert_eq!(commit.kind, CodingGitLifecycleEvidenceKind::CommitCreated);
+        assert_eq!(commit.branch_name, "codex/coding-mission-alpha");
+        assert_eq!(commit.changed_files, vec!["mission.txt"]);
+        assert_eq!(commit.commit_hash.as_deref().map(str::len), Some(40));
+        assert!(git(&state.repo_path, &["log", "-1", "--format=%B"])
+            .contains("Mission: coding-mission-alpha"));
+        assert!(state
+            .git_evidence
+            .iter()
+            .any(|evidence| evidence.kind == CodingGitLifecycleEvidenceKind::CommitCreated));
+    }
+
+    #[test]
+    fn regression_commit_changes_requires_non_empty_diff() {
+        let temp = tempdir().expect("tempdir");
+        let config = committed_config_for(temp.path());
+        let mut state = CodingMissionState::create(config).expect("create state");
+        state
+            .prepare_branch(CodingGitPrepareBranchRequest {
+                branch_name: None,
+                allow_fetch: false,
+                started_unix_ms: 1_800_000_001_600,
+            })
+            .expect("prepare branch");
+
+        let error = state
+            .commit_changes(CodingGitCommitRequest {
+                message: "No diff".to_string(),
+                started_unix_ms: 1_800_000_001_700,
+            })
+            .expect_err("empty diff should block");
+
+        assert!(matches!(
+            error,
+            CodingMissionError::GitLifecycle {
+                reason_code: "missing_git_diff",
+                ..
+            }
+        ));
     }
 }
