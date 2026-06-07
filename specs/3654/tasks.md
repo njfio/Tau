@@ -258,22 +258,28 @@ Evidence:
 
 ### Slice E: Crash/resume
 
-- [ ] T36 RED: add a crash fixture that kills the runner after RED evidence is
+- [x] T36 RED: add a crash fixture that kills the runner after RED evidence is
       persisted and before the edit phase finishes.
-- [ ] T37 GREEN: implement `mission resume <mission-id>` for coding missions,
+- [x] T37 GREEN: implement `mission resume <mission-id>` for coding missions,
       restoring repo, branch, phase, pending verifier, and latest learning
       context from durable state.
-- [ ] T38 RED: add a crash fixture that kills the runner after edits but before
+- [x] T38 RED: add a crash fixture that kills the runner after edits but before
       commit.
-- [ ] T39 GREEN: resume from edited working tree without discarding user or
+- [x] T39 GREEN: resume from edited working tree without discarding user or
       runner changes; block if the diff no longer matches the saved mutation
       fingerprint.
-- [ ] T40 VERIFY: run both crash/resume fixtures against the disposable repo.
+- [x] T40 VERIFY: run both crash/resume fixtures against the disposable repo.
 
 Done when:
 - Killing the Tau process mid-mission does not lose phase state, command
   evidence, verifier output, branch name, or pending next action.
 - Resume never starts over silently.
+
+Evidence:
+- RED: `CARGO_TARGET_DIR=/tmp/rust_pi-3654-crash-resume-target cargo test -p tau-agent-core coding_mission -- --test-threads=1` failed before implementation because `CodingMissionResumeRequest`, `resume_checkpoint`, `CodingMissionResumeAction`, `CodingMissionResumeStopAfter`, and `CodingMissionRunner::resume` did not exist.
+- GREEN/VERIFY: `CARGO_TARGET_DIR=/tmp/rust_pi-3654-crash-resume-target cargo test -p tau-agent-core coding_mission -- --test-threads=1` passed 22 tests, including resume after persisted RED evidence with branch restoration and resume after controlled edit with mutation-fingerprint drift blocking.
+- REGRESSION: `CARGO_TARGET_DIR=/tmp/rust_pi-3654-crash-resume-target cargo test -p tau-agent-core` passed 245 unit tests, 2 mission harness tests, and 9 doctests.
+- QUALITY: `CARGO_TARGET_DIR=/tmp/rust_pi-3654-crash-resume-target cargo clippy -p tau-agent-core -- -D warnings`, `cargo fmt --check`, `git diff --check`, and `scripts/dev/roadmap-status-sync.sh --check --quiet` passed.
 
 ### Slice F: PR-ready and GitHub path
 
