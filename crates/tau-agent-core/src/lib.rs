@@ -29,6 +29,7 @@ use thiserror::Error;
 
 pub mod agent_channel;
 pub mod circuit_breaker;
+pub mod coding_mission;
 pub mod context_ranking;
 mod cortex_runtime;
 pub mod failure_detector;
@@ -44,6 +45,11 @@ mod runtime_turn_loop;
 
 pub use agent_channel::{AgentMessage, AgentMessageBus, AgentMessageType};
 pub use circuit_breaker::{CircuitBreaker, CircuitState};
+pub use coding_mission::{
+    coding_mission_state_path, load_coding_mission_state, save_coding_mission_state,
+    CodingMissionConfig, CodingMissionError, CodingMissionEvent, CodingMissionPhase,
+    CodingMissionPrMode, CodingMissionState, CODING_MISSION_SCHEMA_VERSION,
+};
 pub use context_ranking::{
     rank_messages_by_importance, score_message_importance, ImportanceReason, MessageImportance,
 };

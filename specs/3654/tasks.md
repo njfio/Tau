@@ -155,16 +155,16 @@ resume after interruption, and stop honestly when blocked.
 
 ### Slice A: Coding mission contract and state
 
-- [ ] T18 RED: add failing `tau-agent-core` coverage for a
+- [x] T18 RED: add failing `tau-agent-core` coverage for a
       `CodingMissionRunner` contract that accepts repo path, issue or goal,
       base branch, branch prefix, verifier commands, PR mode, and allowed roots.
-- [ ] T19 GREEN: add `CodingMissionConfig`, `CodingMissionPhase`,
+- [x] T19 GREEN: add `CodingMissionConfig`, `CodingMissionPhase`,
       `CodingMissionState`, and `CodingMissionEvent` with atomic JSON
       persistence under the existing mission state root.
-- [ ] T20 GREEN: link coding mission state to `MissionSnapshot` by mission id,
+- [x] T20 GREEN: link coding mission state to `MissionSnapshot` by mission id,
       session key, verifier records, artifact refs, and learning records rather
       than creating a disconnected harness state file.
-- [ ] T21 VERIFY: run focused state serialization, schema-version, and
+- [x] T21 VERIFY: run focused state serialization, schema-version, and
       corrupted-state fail-closed tests.
 
 Done when:
@@ -172,6 +172,12 @@ Done when:
 - Persisted state shows `intake`, `planned`, `blocked`, and `completed` phases
   as typed states, not only text summaries.
 - Invalid or out-of-root repo paths fail before any mutation.
+
+Evidence:
+- RED: `CARGO_TARGET_DIR=/tmp/rust_pi-3654-coding-mission-target cargo test -p tau-agent-core coding_mission -- --test-threads=1` failed before implementation because `CodingMissionConfig`, `CodingMissionState`, `CodingMissionPhase`, persistence helpers, and `CodingMissionError` did not exist.
+- GREEN/VERIFY: `CARGO_TARGET_DIR=/tmp/rust_pi-3654-coding-mission-target cargo test -p tau-agent-core coding_mission -- --test-threads=1` passed 5 tests covering typed state persistence/load, `MissionSnapshot` projection with artifact, verifier, and learning-record linkage, out-of-root rejection, corrupt JSON fail-closed behavior, and unsupported schema-version rejection.
+- REGRESSION: `CARGO_TARGET_DIR=/tmp/rust_pi-3654-coding-mission-target cargo test -p tau-agent-core` passed 228 unit tests, 2 mission harness tests, and 9 doc tests.
+- QUALITY: `cargo fmt --check`, `git diff --check`, `scripts/dev/roadmap-status-sync.sh --check --quiet`, and `CARGO_TARGET_DIR=/tmp/rust_pi-3654-coding-mission-target cargo clippy -p tau-agent-core -- -D warnings` passed.
 
 ### Slice B: Workspace executor and safety policy
 
