@@ -43,6 +43,7 @@ const BACKGROUND_JOB_REASON_TRACE_WRITE_FAILED: &str = "job_trace_write_failed";
 const BACKGROUND_JOB_RECENT_REASON_CODE_CAP: usize = 16;
 const BACKGROUND_JOB_RECENT_DIAGNOSTICS_CAP: usize = 24;
 const BACKGROUND_JOB_WORKER_POLL_MS: u64 = 100;
+const BACKGROUND_JOB_STUCK_RECOVERY_POLL_MS: u64 = 1_000;
 const BACKGROUND_JOB_ID_PREFIX: &str = "job";
 
 static BACKGROUND_JOB_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
@@ -263,6 +264,7 @@ pub struct BackgroundJobRuntimeConfig {
     pub default_timeout_ms: u64,
     pub max_timeout_ms: u64,
     pub worker_poll_ms: u64,
+    pub stuck_recovery_poll_ms: u64,
 }
 
 impl Default for BackgroundJobRuntimeConfig {
@@ -272,6 +274,7 @@ impl Default for BackgroundJobRuntimeConfig {
             default_timeout_ms: 30_000,
             max_timeout_ms: 900_000,
             worker_poll_ms: BACKGROUND_JOB_WORKER_POLL_MS,
+            stuck_recovery_poll_ms: BACKGROUND_JOB_STUCK_RECOVERY_POLL_MS,
         }
     }
 }
@@ -293,6 +296,7 @@ struct BackgroundJobRuntimeInner {
     cancellation_requests: Mutex<BTreeSet<String>>,
     health: Mutex<BackgroundJobHealthSnapshot>,
     worker_running: AtomicBool,
+    recovery_watchdog_running: AtomicBool,
 }
 
 /// Persistent queue/runtime abstraction for background job execution.
@@ -314,6 +318,7 @@ impl BackgroundJobRuntime {
                 cancellation_requests: Mutex::new(BTreeSet::new()),
                 health: Mutex::new(health),
                 worker_running: AtomicBool::new(false),
+                recovery_watchdog_running: AtomicBool::new(false),
             }),
         };
         runtime.recover_queue_from_disk()?;
@@ -415,6 +420,7 @@ impl BackgroundJobRuntime {
         );
 
         self.schedule_worker();
+        self.schedule_recovery_watchdog();
         Ok(record)
     }
 
@@ -454,6 +460,7 @@ impl BackgroundJobRuntime {
         let report = self.recover_stuck_jobs_at(current_unix_timestamp_ms())?;
         if report.recovered > 0 {
             self.schedule_worker();
+            self.schedule_recovery_watchdog();
         }
         Ok(report)
     }
@@ -602,6 +609,7 @@ impl BackgroundJobRuntime {
                 persist_background_job_health_snapshot(self.state_dir(), &health)?;
             }
             self.schedule_worker();
+            self.schedule_recovery_watchdog();
         } else {
             let mut health = lock_unpoisoned(&self.inner.health);
             health.queue_depth = 0;
@@ -715,6 +723,77 @@ impl BackgroundJobRuntime {
         persist_background_job_health_snapshot(self.state_dir(), &health)?;
 
         Ok(report)
+    }
+
+    fn schedule_recovery_watchdog(&self) {
+        let poll_ms = self.inner.config.stuck_recovery_poll_ms;
+        if poll_ms == 0 {
+            return;
+        }
+        if self
+            .inner
+            .recovery_watchdog_running
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
+        {
+            return;
+        }
+
+        let runtime = self.clone();
+        spawn_background_future(async move {
+            runtime.recovery_watchdog_loop().await;
+        });
+    }
+
+    async fn recovery_watchdog_loop(self) {
+        let poll_interval = Duration::from_millis(self.inner.config.stuck_recovery_poll_ms.max(10));
+        loop {
+            tokio::time::sleep(poll_interval).await;
+            if let Err(error) = self.recovery_watchdog_tick().await {
+                let _ = self.record_recovery_watchdog_error(error).await;
+            }
+
+            match self.has_nonterminal_jobs() {
+                Ok(true) => continue,
+                Ok(false) => break,
+                Err(error) => {
+                    let _ = self.record_recovery_watchdog_error(error).await;
+                    break;
+                }
+            }
+        }
+
+        self.inner
+            .recovery_watchdog_running
+            .store(false, Ordering::SeqCst);
+        if self.has_nonterminal_jobs().unwrap_or(false) {
+            self.schedule_recovery_watchdog();
+        }
+    }
+
+    async fn recovery_watchdog_tick(&self) -> Result<Option<BackgroundJobRecoveryReport>> {
+        if self.inner.worker_running.load(Ordering::SeqCst) {
+            return Ok(None);
+        }
+        self.recover_stuck_jobs().await.map(Some)
+    }
+
+    async fn record_recovery_watchdog_error(&self, error: anyhow::Error) -> Result<()> {
+        self.update_health_mutation(
+            None,
+            BACKGROUND_JOB_REASON_RUNTIME_ERROR,
+            Some(format!("background_job_recovery_watchdog_error: {error}")),
+            |snapshot| {
+                snapshot.failed_total = snapshot.failed_total.saturating_add(1);
+            },
+        )
+        .await
+    }
+
+    fn has_nonterminal_jobs(&self) -> Result<bool> {
+        Ok(load_background_job_records(self.state_dir())?
+            .into_iter()
+            .any(|record| !record.status.is_terminal()))
     }
 
     fn schedule_worker(&self) {
@@ -1453,6 +1532,7 @@ mod tests {
         BackgroundJobStatusFilter, BackgroundJobTraceContext,
     };
     use std::collections::BTreeMap;
+    use std::sync::atomic::Ordering;
     use std::time::Duration;
     use tempfile::tempdir;
 
@@ -1520,6 +1600,7 @@ mod tests {
             default_timeout_ms: 5_000,
             max_timeout_ms: 10_000,
             worker_poll_ms: 20,
+            stuck_recovery_poll_ms: 0,
         })
         .expect("runtime");
 
@@ -1558,6 +1639,7 @@ mod tests {
             default_timeout_ms: 5_000,
             max_timeout_ms: 10_000,
             worker_poll_ms: 20,
+            stuck_recovery_poll_ms: 0,
         })
         .expect("runtime");
 
@@ -1606,6 +1688,7 @@ mod tests {
             default_timeout_ms: 15_000,
             max_timeout_ms: 15_000,
             worker_poll_ms: 20,
+            stuck_recovery_poll_ms: 0,
         })
         .expect("runtime");
 
@@ -1662,6 +1745,7 @@ mod tests {
             default_timeout_ms: 5_000,
             max_timeout_ms: 10_000,
             worker_poll_ms: 20,
+            stuck_recovery_poll_ms: 0,
         };
         let bootstrap = BackgroundJobRuntime::new(config.clone()).expect("bootstrap runtime");
         drop(bootstrap);
@@ -1730,6 +1814,7 @@ mod tests {
             default_timeout_ms: 50,
             max_timeout_ms: 1_000,
             worker_poll_ms: 20,
+            stuck_recovery_poll_ms: 0,
         })
         .expect("runtime");
 
@@ -1785,6 +1870,118 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn regression_background_job_runtime_watchdog_requeues_stuck_running_manifest() {
+        let temp = tempdir().expect("tempdir");
+        let state_dir = temp.path().join("jobs");
+        let runtime = BackgroundJobRuntime::new(BackgroundJobRuntimeConfig {
+            state_dir: state_dir.clone(),
+            default_timeout_ms: 50,
+            max_timeout_ms: 1_000,
+            worker_poll_ms: 20,
+            stuck_recovery_poll_ms: 20,
+        })
+        .expect("runtime");
+
+        let job_id = "job-watchdog-stuck-running-1".to_string();
+        let (command, args) = shell_command("echo watchdog-recovered-stuck-job");
+        let record = BackgroundJobRecord {
+            schema_version: 1,
+            job_id: job_id.clone(),
+            command,
+            args,
+            env: BTreeMap::new(),
+            cwd: None,
+            requested_timeout_ms: 50,
+            effective_timeout_ms: 50,
+            status: BackgroundJobStatus::Running,
+            reason_code: "job_started".to_string(),
+            created_unix_ms: 1_700_000_000_000,
+            updated_unix_ms: 1_700_000_000_000,
+            started_unix_ms: Some(1_700_000_000_000),
+            finished_unix_ms: None,
+            exit_code: None,
+            error: None,
+            cancellation_requested: false,
+            stdout_path: state_dir.join("jobs").join(format!("{job_id}.stdout.log")),
+            stderr_path: state_dir.join("jobs").join(format!("{job_id}.stderr.log")),
+            trace: BackgroundJobTraceContext::default(),
+        };
+        let payload = serde_json::to_string_pretty(&record).expect("serialize stuck manifest");
+        std::fs::write(background_job_manifest_path(&state_dir, &job_id), payload)
+            .expect("write stuck manifest");
+
+        runtime.schedule_recovery_watchdog();
+
+        let status = wait_for_terminal_status(&runtime, &job_id, Duration::from_secs(5)).await;
+        assert_eq!(status, BackgroundJobStatus::Succeeded);
+
+        let health = runtime.inspect_health().await;
+        assert_eq!(health.recovered_stuck_total, 1);
+        assert!(health
+            .reason_codes
+            .iter()
+            .any(|code| code == "job_recovered_after_stuck_timeout"));
+    }
+
+    #[tokio::test]
+    async fn regression_background_job_runtime_watchdog_skips_active_worker_manifest() {
+        let temp = tempdir().expect("tempdir");
+        let state_dir = temp.path().join("jobs");
+        let runtime = BackgroundJobRuntime::new(BackgroundJobRuntimeConfig {
+            state_dir: state_dir.clone(),
+            default_timeout_ms: 50,
+            max_timeout_ms: 1_000,
+            worker_poll_ms: 20,
+            stuck_recovery_poll_ms: 20,
+        })
+        .expect("runtime");
+
+        let job_id = "job-watchdog-active-worker-1".to_string();
+        let (command, args) = shell_command("echo should-not-duplicate-active-worker");
+        let record = BackgroundJobRecord {
+            schema_version: 1,
+            job_id: job_id.clone(),
+            command,
+            args,
+            env: BTreeMap::new(),
+            cwd: None,
+            requested_timeout_ms: 50,
+            effective_timeout_ms: 50,
+            status: BackgroundJobStatus::Running,
+            reason_code: "job_started".to_string(),
+            created_unix_ms: 1_700_000_000_000,
+            updated_unix_ms: 1_700_000_000_000,
+            started_unix_ms: Some(1_700_000_000_000),
+            finished_unix_ms: None,
+            exit_code: None,
+            error: None,
+            cancellation_requested: false,
+            stdout_path: state_dir.join("jobs").join(format!("{job_id}.stdout.log")),
+            stderr_path: state_dir.join("jobs").join(format!("{job_id}.stderr.log")),
+            trace: BackgroundJobTraceContext::default(),
+        };
+        let payload = serde_json::to_string_pretty(&record).expect("serialize active manifest");
+        std::fs::write(background_job_manifest_path(&state_dir, &job_id), payload)
+            .expect("write active manifest");
+
+        runtime.inner.worker_running.store(true, Ordering::SeqCst);
+        let report = runtime
+            .recovery_watchdog_tick()
+            .await
+            .expect("watchdog tick");
+        runtime.inner.worker_running.store(false, Ordering::SeqCst);
+
+        assert!(report.is_none(), "active worker should suppress recovery");
+        let refreshed = runtime
+            .get_job(&job_id)
+            .await
+            .expect("get active job")
+            .expect("active job exists");
+        assert_eq!(refreshed.status, BackgroundJobStatus::Running);
+        assert_eq!(runtime.inspect_health().await.recovered_stuck_total, 0);
+    }
+
+    #[tokio::test]
     async fn regression_background_job_runtime_does_not_requeue_fresh_running_manifest() {
         let temp = tempdir().expect("tempdir");
         let state_dir = temp.path().join("jobs");
@@ -1793,6 +1990,7 @@ mod tests {
             default_timeout_ms: 60_000,
             max_timeout_ms: 60_000,
             worker_poll_ms: 20,
+            stuck_recovery_poll_ms: 0,
         })
         .expect("runtime");
 
