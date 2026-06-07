@@ -955,7 +955,7 @@ fn red_spec_3618_non_matching_prompt_omits_active_skill_label() {
 fn red_spec_3659_command_missions_lists_persisted_mission_summaries() {
     let (bind, _) = spawn_scripted_gateway_server(vec![(
         "200 OK",
-        r#"{"missions":[{"mission_id":"checkpoint-alpha","session_key":"session-alpha","status":"checkpointed","goal_summary":"build the game scaffold","latest_output_summary":"scaffolded the first gameplay slice","iteration_count":1,"updated_unix_ms":220,"latest_verifier":{"status":"passed","reason_code":"mutation_evidence_observed","message":"observed workspace mutation"},"latest_completion":{"status":"partial","summary":"scaffolded the first gameplay slice","next_step":"run validation"}}],"limit":20}"#,
+        r#"{"missions":[{"mission_id":"checkpoint-alpha","session_key":"session-alpha","status":"checkpointed","goal_summary":"build the game scaffold","latest_output_summary":"scaffolded the first gameplay slice","iteration_count":1,"updated_unix_ms":220,"latest_verifier":{"status":"passed","reason_code":"mutation_evidence_observed","message":"observed workspace mutation"},"latest_completion":{"status":"partial","summary":"scaffolded the first gameplay slice","next_step":"run validation"},"coding_mission":{"mission_id":"checkpoint-alpha","phase":"pr_ready","repo_path":"/tmp/tau-fixture-repo","branch_name":"codex/issue-3654-operator","verifier_status":"succeeded:verification_passed","verifier_command":"cargo test -p tau-agent-core coding_mission","last_failure":"none","changed_files":["crates/tau-agent-core/src/coding_mission.rs"],"resume_command":"tau coding resume checkpoint-alpha","pr_state":"manual_ready","pr_url":"https://github.com/example/tau/pull/3654"}}],"limit":20}"#,
     )]);
     let mut app = build_app(bind);
     set_input(&mut app, "/missions");
@@ -966,13 +966,16 @@ fn red_spec_3659_command_missions_lists_persisted_mission_summaries() {
     assert!(system.contains("Recent missions:"));
     assert!(system.contains("checkpoint-alpha [checkpointed]"));
     assert!(system.contains("session=session-alpha"));
+    assert!(system.contains("coding_phase=pr_ready"));
+    assert!(system.contains("branch=codex/issue-3654-operator"));
+    assert!(system.contains("pr=manual_ready"));
 }
 
 #[test]
 fn red_spec_3659_resume_command_binds_active_mission_and_surfaces_status() {
     let (bind, _) = spawn_scripted_gateway_server(vec![(
         "200 OK",
-        r#"{"mission":{"mission_id":"checkpoint-alpha","session_key":"session-alpha","status":"checkpointed","goal_summary":"build the game scaffold","latest_output_summary":"scaffolded the first gameplay slice","iteration_count":1,"updated_unix_ms":220,"latest_verifier":{"status":"passed","reason_code":"mutation_evidence_observed","message":"observed workspace mutation"},"latest_completion":{"status":"partial","summary":"scaffolded the first gameplay slice","next_step":"run validation"}}}"#,
+        r#"{"mission":{"mission_id":"checkpoint-alpha","session_key":"session-alpha","status":"checkpointed","goal_summary":"build the game scaffold","latest_output_summary":"scaffolded the first gameplay slice","iteration_count":1,"updated_unix_ms":220,"latest_verifier":{"status":"passed","reason_code":"mutation_evidence_observed","message":"observed workspace mutation"},"latest_completion":{"status":"partial","summary":"scaffolded the first gameplay slice","next_step":"run validation"},"coding_mission":{"mission_id":"checkpoint-alpha","phase":"pr_ready","repo_path":"/tmp/tau-fixture-repo","branch_name":"codex/issue-3654-operator","verifier_status":"succeeded:verification_passed","verifier_command":"cargo test -p tau-agent-core coding_mission","last_failure":"none","changed_files":["crates/tau-agent-core/src/coding_mission.rs"],"resume_command":"tau coding resume checkpoint-alpha","pr_state":"manual_ready","pr_url":"https://github.com/example/tau/pull/3654"}}}"#,
     )]);
     let mut app = build_app(bind);
     set_input(&mut app, "/resume checkpoint-alpha");
@@ -991,6 +994,13 @@ fn red_spec_3659_resume_command_binds_active_mission_and_surfaces_status() {
     let system = last_message(&app, MessageRole::System).unwrap_or_default();
     assert!(system.contains("Resumed mission checkpoint-alpha"));
     assert!(system.contains("next step: run validation"));
+    assert!(system.contains("coding phase: pr_ready"));
+    assert!(system.contains("coding repo: /tmp/tau-fixture-repo"));
+    assert!(system.contains("coding branch: codex/issue-3654-operator"));
+    assert!(system.contains("coding verifier: succeeded:verification_passed"));
+    assert!(system.contains("coding changed files: crates/tau-agent-core/src/coding_mission.rs"));
+    assert!(system.contains("coding resume: tau coding resume checkpoint-alpha"));
+    assert!(system.contains("coding pr: https://github.com/example/tau/pull/3654"));
 
     let backend = ratatui::backend::TestBackend::new(120, 24);
     let mut terminal = ratatui::Terminal::new(backend).expect("terminal");

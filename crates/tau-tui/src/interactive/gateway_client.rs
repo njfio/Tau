@@ -84,6 +84,29 @@ pub struct GatewayMissionCompletionSummary {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct GatewayCodingMissionSummary {
+    pub mission_id: String,
+    pub phase: String,
+    pub repo_path: String,
+    #[serde(default)]
+    pub branch_name: Option<String>,
+    #[serde(default)]
+    pub verifier_status: Option<String>,
+    #[serde(default)]
+    pub verifier_command: Option<String>,
+    #[serde(default)]
+    pub last_failure: Option<String>,
+    #[serde(default)]
+    pub changed_files: Vec<String>,
+    #[serde(default)]
+    pub resume_command: Option<String>,
+    #[serde(default)]
+    pub pr_state: Option<String>,
+    #[serde(default)]
+    pub pr_url: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct GatewayMissionSnapshot {
     pub mission_id: String,
     pub session_key: String,
@@ -95,6 +118,8 @@ pub struct GatewayMissionSnapshot {
     pub latest_verifier: GatewayMissionVerifierSummary,
     #[serde(default)]
     pub latest_completion: Option<GatewayMissionCompletionSummary>,
+    #[serde(default)]
+    pub coding_mission: Option<GatewayCodingMissionSummary>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
