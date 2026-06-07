@@ -283,21 +283,27 @@ Evidence:
 
 ### Slice F: PR-ready and GitHub path
 
-- [ ] T41 RED: add failing coverage for `pr_ready` output when GitHub auth is
+- [x] T41 RED: add failing coverage for `pr_ready` output when GitHub auth is
       absent: exact branch, commit, title, body, and manual `gh pr create`
       command are recorded.
-- [ ] T42 GREEN: implement PR-ready bundle generation from mission state,
+- [x] T42 GREEN: implement PR-ready bundle generation from mission state,
       verifier evidence, changed files, and risk/rollback notes.
-- [ ] T43 RED: add failing coverage for optional `gh pr create --draft` when
+- [x] T43 RED: add failing coverage for optional `gh pr create --draft` when
       GitHub auth is present in the environment.
-- [ ] T44 GREEN: implement opt-in draft PR creation with URL capture and
+- [x] T44 GREEN: implement opt-in draft PR creation with URL capture and
       mission-state update.
-- [ ] T45 VERIFY: test missing-auth, dry-run, and live-credential-gated paths
+- [x] T45 VERIFY: test missing-auth, dry-run, and live-credential-gated paths
       separately.
 
 Done when:
 - Missing credentials block only the PR creation step, not the coding mission.
 - With credentials, Tau can create a draft PR and persist the PR URL.
+
+Evidence:
+- RED: `CARGO_TARGET_DIR=/tmp/rust_pi-3654-pr-ready-target cargo test -p tau-agent-core coding_mission -- --test-threads=1` failed before implementation because `CodingMissionPrReadyRequest`, `CodingMissionPrPublicationStatus`, `pr_ready_bundle`, and `prepare_pr_ready_bundle` did not exist.
+- GREEN/VERIFY: `CARGO_TARGET_DIR=/tmp/rust_pi-3654-pr-ready-target cargo test -p tau-agent-core coding_mission -- --test-threads=1` passed 24 tests, including missing-auth manual PR-ready bundle generation and auth-gated fake-`gh` draft PR URL capture.
+- REGRESSION: `CARGO_TARGET_DIR=/tmp/rust_pi-3654-pr-ready-target cargo test -p tau-agent-core` passed 247 unit tests, 2 mission harness tests, and 9 doctests.
+- QUALITY: `CARGO_TARGET_DIR=/tmp/rust_pi-3654-pr-ready-target cargo clippy -p tau-agent-core -- -D warnings`, `cargo fmt --check`, `git diff --check`, and `scripts/dev/roadmap-status-sync.sh --check --quiet` passed.
 
 ### Slice G: Operator command center integration
 
