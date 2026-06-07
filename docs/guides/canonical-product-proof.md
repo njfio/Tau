@@ -85,6 +85,31 @@ Boundary: this is live local `CodingMissionRunner` lifecycle proof. It does not
 call a provider model and must not be represented as a fully provider-backed
 autonomous coding agent benchmark.
 
+Run the provider-backed proof when the question is whether a configured model
+provider can supply the edit for the same disposable task:
+
+```bash
+TAU_LIVE_PROVIDER_PROOF=1 ./scripts/dev/test-provider-backed-autonomous-coding-loop.sh
+```
+
+By default the script uses `openai/gpt-4.1-mini` with API-key auth; override
+with `TAU_PROVIDER_PROOF_MODEL=provider/model`. Use
+`TAU_PROVIDER_PROOF_AUTH_MODE=codex-cli` with a Codex CLI-supported model such
+as `openai/gpt-5.5` when validating the local subscription-backed provider
+path. The
+report records sanitized provider/model metadata, response length/hash, parse
+status, token usage when available, RED/GREEN verifier evidence, commit hash,
+and the manual PR-ready bundle. The deterministic malformed-output check can run
+without live credentials:
+
+```bash
+./scripts/dev/test-provider-backed-autonomous-coding-loop.sh --mock-malformed
+```
+
+Boundary: this is a provider-backed disposable fixture for the M334 task. It is
+stronger than the controlled-edit lifecycle proof, but it is still not evidence
+that Tau can autonomously solve arbitrary repository issues without supervision.
+
 To also verify the Gateway sessions API readiness surface, add `--sessions-smoke`. This fetches `/gateway/sessions`, validates the JSON response shape, and records the sessions endpoint in the report:
 
 ```bash
