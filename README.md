@@ -30,6 +30,7 @@ These are the paths that operate as connected flows today.
 | Local operator loop | `cargo run -p tau-coding-agent -- --onboard --onboard-non-interactive` then prompt mode | CLI runtime, agent core loop, sessions, tools, safety policies | [`docs/guides/quickstart.md`](docs/guides/quickstart.md), [`docs/guides/operator-control-summary.md`](docs/guides/operator-control-summary.md) |
 | Gateway auth/session loop | `./scripts/demo/gateway-auth-session.sh` | Gateway auth/session handling, API route contracts, runtime policies | [`docs/guides/gateway-auth-session-smoke.md`](docs/guides/gateway-auth-session-smoke.md), [`docs/guides/gateway-api-reference.md`](docs/guides/gateway-api-reference.md) |
 | Unified runtime lifecycle loop | `./scripts/dev/prove-tau-product.sh --check --report /tmp/tau-product-proof-check.json` for static proof evidence, then `./scripts/dev/prove-tau-product.sh --run --webchat-smoke --report /tmp/tau-product-proof-webchat.json` for opt-in live product-surface evidence | One-command runtime bring-up (`up/status/down`) for gateway/dashboard + interactive TUI agent (`tui`) with explicit live-shell fallback, optional webchat readiness smoke, and optional JSON evidence | [`scripts/dev/prove-tau-product.sh`](scripts/dev/prove-tau-product.sh), [`scripts/run/tau-unified.sh`](scripts/run/tau-unified.sh), [`docs/guides/canonical-product-proof.md`](docs/guides/canonical-product-proof.md) |
+| Live coding mission loop | `./scripts/dev/test-full-autonomous-coding-loop.sh` | Disposable-repo M334 `repo_spec_to_pr_feature_delivery` harness through `CodingMissionRunner`: RED verifier, controlled edit, GREEN verifier, commit, PR-ready bundle, crash/resume, and blocked-task fail-closed evidence | [`scripts/dev/test-full-autonomous-coding-loop.sh`](scripts/dev/test-full-autonomous-coding-loop.sh), [`crates/tau-coding-agent/src/bin/tau_live_coding_loop_harness.rs`](crates/tau-coding-agent/src/bin/tau_live_coding_loop_harness.rs), [`specs/3654/tasks.md`](specs/3654/tasks.md) |
 | Multi-channel ingress loop | `./scripts/demo/multi-channel.sh` | Multi-channel runtime, transport normalization, routing pipeline | [`docs/guides/multi-channel-event-pipeline.md`](docs/guides/multi-channel-event-pipeline.md), [`docs/guides/transports.md`](docs/guides/transports.md) |
 | Prompt optimization loop | [`docs/guides/training-ops.md`](docs/guides/training-ops.md) runbook flow | Training runner/store/tracer/proxy + rollout controls | [`docs/guides/training-ops.md`](docs/guides/training-ops.md), [`docs/guides/training-proxy-ops.md`](docs/guides/training-proxy-ops.md) |
 | Connected operator GA loop | `./scripts/verify/m296-ga-readiness-gate.sh` | RL maturity wave + auth/readiness checks + rollback trigger validation + closeout signoff criteria | [`docs/guides/m296-ga-readiness-gate.md`](docs/guides/m296-ga-readiness-gate.md), `artifacts/operator-ga-readiness/verification-report.json` |
@@ -44,6 +45,10 @@ These are the paths that operate as connected flows today.
 - Run channel and bridge runtimes (GitHub Issues, Slack, Discord, Telegram/WhatsApp paths).
 - Operate prompt-optimization workflows with SQLite-backed rollout state and optional proxy attribution.
 - Execute deterministic demo suites and validation scripts in local/CI loops.
+- Run a local autonomous-coding lifecycle harness that proves Tau's coding
+  mission state can branch, retry from RED verifier evidence, apply a controlled
+  fix, verify GREEN, commit, package PR-ready output, resume after interruption,
+  and stop honestly on a blocked verifier.
 
 ## Capability Boundaries
 
@@ -78,6 +83,14 @@ Some surfaces are intentionally diagnostics-first or staged:
   - operator workflow depth (shell, shell-live watch, and artifact diagnostics) is aggregated in `scripts/verify/m311-tui-operator-workflow-depth.sh`,
   - scenario-expansion depth (demo mode behavior + parser/shell-live edge paths + workflow-depth chaining) is aggregated in `scripts/verify/m317-tui-scenario-expansion-depth.sh`,
   - remains complementary to (not a replacement for) web dashboard workflows.
+- Autonomous coding:
+  - `scripts/dev/test-full-autonomous-coding-loop.sh` is live local lifecycle
+    proof for `CodingMissionRunner`, not a provider-backed model benchmark,
+  - the harness uses controlled disposable-repo edits so lifecycle evidence is
+    reproducible: branch, RED/GREEN verifier transcript, commit hash, resume
+    evidence, blocked reason, and PR-ready bundle,
+  - provider-backed spec-to-PR autonomy still requires a separate live run with
+    credentials and model/tool policy enabled.
 
 Executable claim boundary:
 
@@ -110,6 +123,7 @@ validation, or headed-browser pixel proof are complete.
 | Unified runtime control-plane status | Partial | `tau-unified status` exposes health/logs/sessions/memory/jobs/routines/deploy visibility; polished command-center UX and durable proactive recovery remain expanding | [`scripts/run/tau-unified.sh`](scripts/run/tau-unified.sh), [`scripts/dev/runtime-reality-gate.sh`](scripts/dev/runtime-reality-gate.sh) |
 | Prompt optimization training | Integrated | Canonical training path today | [`docs/guides/training-ops.md`](docs/guides/training-ops.md) |
 | True RL | Integrated | Deterministic end-to-end harness emits rollout + GAE/PPO artifact evidence | [`crates/tau-trainer/src/rl_e2e.rs`](crates/tau-trainer/src/rl_e2e.rs), [`crates/tau-trainer/src/bin/rl_e2e_harness.rs`](crates/tau-trainer/src/bin/rl_e2e_harness.rs) |
+| Autonomous coding lifecycle | Partial | Live local `CodingMissionRunner` harness proves the lifecycle mechanics; provider-backed low-intervention spec-to-PR operation remains the next maturity step | [`scripts/dev/test-full-autonomous-coding-loop.sh`](scripts/dev/test-full-autonomous-coding-loop.sh), [`crates/tau-coding-agent/src/bin/tau_live_coding_loop_harness.rs`](crates/tau-coding-agent/src/bin/tau_live_coding_loop_harness.rs) |
 | TUI | Integrated | Operator-shell + interactive `agent` mode + state-backed `shell-live` diagnostics | [`crates/tau-tui/src/main.rs`](crates/tau-tui/src/main.rs), [`crates/tau-tui/src/lib.rs`](crates/tau-tui/src/lib.rs), [`scripts/verify/m295-operator-maturity-wave.sh`](scripts/verify/m295-operator-maturity-wave.sh) |
 
 ## Current Gaps and Execution Plan
