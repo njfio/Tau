@@ -462,6 +462,7 @@ pub(super) fn background_job_health_payload(
         "succeeded_total": health.succeeded_total,
         "failed_total": health.failed_total,
         "cancelled_total": health.cancelled_total,
+        "recovered_stuck_total": health.recovered_stuck_total,
         "last_job_id": health.last_job_id,
         "last_reason_code": health.last_reason_code,
         "reason_codes": health.reason_codes,

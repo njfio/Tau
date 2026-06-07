@@ -396,6 +396,13 @@ impl AgentTool for JobsListTool {
                 }))
             }
         };
+        if let Err(error) = runtime.recover_stuck_jobs().await {
+            return ToolExecutionResult::error(json!({
+                "tool": "jobs_list",
+                "reason_code": "jobs_runtime_error",
+                "error": error.to_string(),
+            }));
+        }
         let jobs = match runtime.list_jobs(limit, status_filter).await {
             Ok(jobs) => jobs,
             Err(error) => {

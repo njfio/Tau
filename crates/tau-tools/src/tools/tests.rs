@@ -34,6 +34,7 @@ use tau_agent_core::{Agent, AgentConfig};
 use tau_ai::Message;
 #[allow(deprecated)]
 use tau_extensions::{discover_extension_runtime_registrations, execute_extension_registered_tool};
+use tau_runtime::{BackgroundJobRecord, BackgroundJobStatus, BackgroundJobTraceContext};
 use tau_session::{
     navigate_session_head, session_message_preview, session_message_role, SessionRuntime,
     SessionStore,
@@ -2802,6 +2803,78 @@ async fn integration_jobs_cancel_and_list_tools_report_persisted_state() {
         .expect("first id")
         .to_string();
     let _ = wait_for_job_terminal_status(&status_tool, &first_id).await;
+}
+
+#[tokio::test]
+async fn regression_jobs_list_tool_recovers_stuck_running_manifest() {
+    let temp = tempdir().expect("tempdir");
+    let policy = test_policy_with_jobs(temp.path());
+    let state_dir = policy.jobs_state_dir.clone();
+    let jobs_dir = state_dir.join("jobs");
+    fs::create_dir_all(&jobs_dir).expect("create jobs dir");
+
+    let job_id = "job-tool-recovers-stuck-1".to_string();
+    let list_tool = JobsListTool::new(policy.clone());
+    let initialized = list_tool
+        .execute(serde_json::json!({
+            "limit": 10,
+        }))
+        .await;
+    assert!(
+        !initialized.is_error,
+        "initial jobs_list failed: {}",
+        initialized.content
+    );
+
+    let (command, args) = jobs_shell_command("echo recovered-through-jobs-list");
+    let record = BackgroundJobRecord {
+        schema_version: 1,
+        job_id: job_id.clone(),
+        command,
+        args,
+        env: Default::default(),
+        cwd: None,
+        requested_timeout_ms: 1_000,
+        effective_timeout_ms: 1_000,
+        status: BackgroundJobStatus::Running,
+        reason_code: "job_started".to_string(),
+        created_unix_ms: 1_700_000_000_000,
+        updated_unix_ms: 1_700_000_000_000,
+        started_unix_ms: Some(1_700_000_000_000),
+        finished_unix_ms: None,
+        exit_code: None,
+        error: None,
+        cancellation_requested: false,
+        stdout_path: jobs_dir.join(format!("{job_id}.stdout.log")),
+        stderr_path: jobs_dir.join(format!("{job_id}.stderr.log")),
+        trace: BackgroundJobTraceContext::default(),
+    };
+    fs::write(
+        jobs_dir.join(format!("{job_id}.json")),
+        serde_json::to_string_pretty(&record).expect("serialize stuck job"),
+    )
+    .expect("write stuck job manifest");
+
+    let status_tool = JobsStatusTool::new(policy);
+    let listed = list_tool
+        .execute(serde_json::json!({
+            "limit": 10,
+        }))
+        .await;
+    assert!(!listed.is_error, "jobs_list failed: {}", listed.content);
+    assert_eq!(listed.content["health"]["recovered_stuck_total"], 1);
+    assert!(listed.content["health"]["reason_codes"]
+        .as_array()
+        .expect("reason codes")
+        .iter()
+        .any(|code| code == "job_recovered_after_stuck_timeout"));
+
+    let status = wait_for_job_terminal_status(&status_tool, &job_id).await;
+    assert_eq!(status["job"]["status"], "succeeded");
+    assert!(status["stdout_preview"]
+        .as_str()
+        .unwrap_or_default()
+        .contains("recovered-through-jobs-list"));
 }
 
 #[tokio::test]

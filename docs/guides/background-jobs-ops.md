@@ -34,7 +34,7 @@ Related trace sinks:
 Under `--jobs-state-dir`:
 
 - `state.json`  
-  Aggregated counters (`created_total`, `started_total`, `succeeded_total`, `failed_total`, `cancelled_total`), queue depth, running jobs, recent reason-codes, and diagnostics.
+  Aggregated counters (`created_total`, `started_total`, `succeeded_total`, `failed_total`, `cancelled_total`, `recovered_stuck_total`), queue depth, running jobs, recent reason-codes, and diagnostics.
 - `events.jsonl`  
   Append-only lifecycle events (`created`, `started`, `succeeded`, `failed`, `cancelled`, `trace_error`).
 - `jobs/<job_id>.json`  
@@ -55,6 +55,7 @@ Primary lifecycle reason-codes:
 - `job_cancelled_before_start`
 - `job_cancelled_during_run`
 - `job_recovered_after_restart`
+- `job_recovered_after_stuck_timeout`
 - `job_runtime_error`
 - `job_trace_write_failed`
 
@@ -84,3 +85,4 @@ This allows operators to correlate asynchronous execution with transport/session
 - Cancelling a queued job transitions it directly to `cancelled`.
 - Cancelling a running job sets a cancellation signal and the worker terminates the process.
 - Running jobs recovered after process restart are re-queued with `job_recovered_after_restart`.
+- `jobs_list` runs a stuck-job recovery sweep before returning jobs and health. A persisted `running` manifest whose last activity exceeds its effective timeout is re-queued with `job_recovered_after_stuck_timeout`, increments `recovered_stuck_total`, and is scheduled for worker execution.
