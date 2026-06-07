@@ -271,6 +271,18 @@ The vertical slice should align CLI/gateway/TUI around the same mission semantic
 4. Run the chosen autopilot slice end-to-end and verify generated artifacts plus mission state stay consistent.
 5. Resume an interrupted benchmark mission from TUI and verify session, mission, and verifier context are preserved.
 
+Current implementation note:
+
+- `scripts/dev/test-full-autonomous-coding-loop.sh` now covers scenario 1, a
+  crash/resume variant of scenario 5, and the blocked-state branch of scenario
+  3 for the M334 `repo_spec_to_pr_feature_delivery` task.
+- The script drives the live `CodingMissionRunner` over disposable git
+  repositories and records mission id, branch, verifier transcript, commit hash,
+  changed files, resume evidence, blocked reason, and PR-ready bundle state.
+- This is not yet a provider-backed autonomy benchmark. It proves the durable
+  coding mission lifecycle and report contract that a provider-backed
+  low-intervention spec-to-PR run must use next.
+
 ## Acceptance Criteria
 
 - [ ] A durable tranche-one autonomy benchmark exists for `3-5` complex tasks with explicit pass/fail criteria and checkpoint rules.

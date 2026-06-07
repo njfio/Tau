@@ -59,6 +59,32 @@ To opt into a stronger local product-surface check, add `--webchat-smoke`. This 
 ./scripts/dev/prove-tau-product.sh --run --webchat-smoke --report /tmp/tau-product-proof-webchat.json
 ```
 
+## Live Coding Loop Proof
+
+Use the full autonomous coding loop script when the question is whether Tau's
+coding mission lifecycle can actually drive a repository task through branch,
+verifier retry, edit, commit, PR-ready packaging, crash/resume, and honest
+blocked-state handling:
+
+```bash
+./scripts/dev/test-full-autonomous-coding-loop.sh
+```
+
+This script creates disposable git repositories and runs
+`tau_live_coding_loop_harness` against the M334
+`repo_spec_to_pr_feature_delivery` task. It validates three JSON reports:
+
+- `success`: RED verifier -> controlled edit -> GREEN verifier -> commit ->
+  manual PR-ready bundle.
+- `resume`: RED checkpoint -> simulated interruption -> branch restore ->
+  controlled edit -> GREEN verifier -> commit -> PR-ready bundle.
+- `blocked`: failing verifier startup -> blocked mission with no commit and no
+  PR-ready bundle.
+
+Boundary: this is live local `CodingMissionRunner` lifecycle proof. It does not
+call a provider model and must not be represented as a fully provider-backed
+autonomous coding agent benchmark.
+
 To also verify the Gateway sessions API readiness surface, add `--sessions-smoke`. This fetches `/gateway/sessions`, validates the JSON response shape, and records the sessions endpoint in the report:
 
 ```bash

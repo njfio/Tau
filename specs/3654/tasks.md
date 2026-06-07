@@ -351,19 +351,33 @@ Done when:
 
 ### Slice H: Live end-to-end benchmark
 
-- [ ] T51 RED: add `scripts/dev/test-full-autonomous-coding-loop.sh` with a
+- [x] T51 RED: add `scripts/dev/test-full-autonomous-coding-loop.sh` with a
       disposable repo fixture and fail-closed assertions for all required
       artifacts.
-- [ ] T52 GREEN: wire the M334
+- [x] T52 GREEN: wire the M334
       `repo_spec_to_pr_feature_delivery` benchmark task to the live coding
       mission runner.
-- [ ] T53 VERIFY: run the full local loop without PR creation:
+- [x] T53 VERIFY: run the full local loop without PR creation:
       branch, RED verifier, edit, GREEN verifier, commit, pr-ready bundle.
-- [ ] T54 VERIFY: run the full loop with one forced crash/resume injection.
-- [ ] T55 VERIFY: run the blocked-task fixture and prove Tau stops honestly.
-- [ ] T56 CLOSEOUT: update `README.md`, `docs/guides/canonical-product-proof.md`,
+- [x] T54 VERIFY: run the full loop with one forced crash/resume injection.
+- [x] T55 VERIFY: run the blocked-task fixture and prove Tau stops honestly.
+- [x] T56 CLOSEOUT: update `README.md`, `docs/guides/canonical-product-proof.md`,
       and M334 docs to distinguish the live harness from older deterministic
       proof simulation.
+
+- RED: `cargo run -p tau-coding-agent --quiet --bin
+  tau_live_coding_loop_harness -- --help` failed before implementation with
+  `no bin target named tau_live_coding_loop_harness`.
+- GREEN: `CARGO_TARGET_DIR=/tmp/rust_pi-3654-live-loop-target cargo check -p
+  tau-coding-agent --bin tau_live_coding_loop_harness` passed.
+- VERIFY: `CARGO_TARGET_DIR=/tmp/rust_pi-3654-live-loop-target
+  scripts/dev/test-full-autonomous-coding-loop.sh` passed all three disposable
+  repo cases:
+  success, resume, and blocked.
+- CLOSEOUT: README, canonical product proof, and the M334 tranche-one autonomy
+  plan now describe the live `CodingMissionRunner` lifecycle harness and state
+  that provider-backed low-intervention spec-to-PR autonomy remains the next
+  maturity step.
 
 Done when:
 - Tau, not Codex, completes the fixture repo task end-to-end.
