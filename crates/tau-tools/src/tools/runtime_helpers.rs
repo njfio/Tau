@@ -394,6 +394,7 @@ pub(super) fn resolve_background_job_runtime(
             .jobs_max_timeout_ms
             .max(policy.jobs_default_timeout_ms.max(1)),
         worker_poll_ms: 100,
+        stuck_recovery_poll_ms: 1_000,
     })
     .map_err(|error| format!("failed to initialize background job runtime: {error}"))?;
     let runtime = Arc::new(runtime);

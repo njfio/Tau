@@ -85,4 +85,5 @@ This allows operators to correlate asynchronous execution with transport/session
 - Cancelling a queued job transitions it directly to `cancelled`.
 - Cancelling a running job sets a cancellation signal and the worker terminates the process.
 - Running jobs recovered after process restart are re-queued with `job_recovered_after_restart`.
-- `jobs_list` runs a stuck-job recovery sweep before returning jobs and health. A persisted `running` manifest whose last activity exceeds its effective timeout is re-queued with `job_recovered_after_stuck_timeout`, increments `recovered_stuck_total`, and is scheduled for worker execution.
+- Active jobs runtimes run a watchdog while non-terminal jobs exist. The watchdog skips recovery while the worker loop is active, then reuses the stuck-job recovery sweep when the worker is idle.
+- `jobs_list` also runs a stuck-job recovery sweep before returning jobs and health. A persisted `running` manifest whose last activity exceeds its effective timeout is re-queued with `job_recovered_after_stuck_timeout`, increments `recovered_stuck_total`, and is scheduled for worker execution.
