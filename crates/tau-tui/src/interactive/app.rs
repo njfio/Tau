@@ -160,6 +160,12 @@ impl App {
                         content.push_str(&format!("\nnext step: {next_step}"));
                     }
                 }
+                let mut coding_lines = Vec::new();
+                append_coding_mission_detail(&mut coding_lines, &mission);
+                if !coding_lines.is_empty() {
+                    content.push('\n');
+                    content.push_str(coding_lines.join("\n").as_str());
+                }
                 self.push_timestamped_message(MessageRole::System, content);
             }
             Err(error) => {
@@ -493,13 +499,27 @@ fn render_mission_list(missions: &[GatewayMissionSnapshot]) -> String {
 
     let mut lines = vec!["Recent missions:".to_string()];
     for mission in missions {
+        let coding = mission
+            .coding_mission
+            .as_ref()
+            .map(|coding| {
+                format!(
+                    " coding_phase={} branch={} verifier={} pr={}",
+                    coding.phase,
+                    coding.branch_name.as_deref().unwrap_or("none"),
+                    coding.verifier_status.as_deref().unwrap_or("none"),
+                    coding.pr_state.as_deref().unwrap_or("none")
+                )
+            })
+            .unwrap_or_default();
         lines.push(format!(
-            "- {} [{}] session={} attempts={} verifier={} goal={}",
+            "- {} [{}] session={} attempts={} verifier={}{} goal={}",
             mission.mission_id,
             mission.status,
             mission.session_key,
             mission.iteration_count,
             mission.latest_verifier.reason_code,
+            coding,
             mission.goal_summary
         ));
     }
@@ -530,5 +550,43 @@ fn render_mission_detail(mission: &GatewayMissionSnapshot) -> String {
             lines.push(format!("next step: {next_step}"));
         }
     }
+    append_coding_mission_detail(&mut lines, mission);
     lines.join("\n")
+}
+
+fn append_coding_mission_detail(lines: &mut Vec<String>, mission: &GatewayMissionSnapshot) {
+    if let Some(coding) = mission.coding_mission.as_ref() {
+        lines.push(format!("coding phase: {}", coding.phase));
+        lines.push(format!("coding repo: {}", coding.repo_path));
+        lines.push(format!(
+            "coding branch: {}",
+            coding.branch_name.as_deref().unwrap_or("none")
+        ));
+        lines.push(format!(
+            "coding verifier: {}",
+            coding.verifier_status.as_deref().unwrap_or("none")
+        ));
+        if let Some(command) = coding.verifier_command.as_deref() {
+            lines.push(format!("coding verifier command: {command}"));
+        }
+        lines.push(format!(
+            "coding last failure: {}",
+            coding.last_failure.as_deref().unwrap_or("none")
+        ));
+        if !coding.changed_files.is_empty() {
+            lines.push(format!(
+                "coding changed files: {}",
+                coding.changed_files.join(", ")
+            ));
+        }
+        if let Some(resume_command) = coding.resume_command.as_deref() {
+            lines.push(format!("coding resume: {resume_command}"));
+        }
+        let pr_status = coding
+            .pr_url
+            .as_deref()
+            .or(coding.pr_state.as_deref())
+            .unwrap_or("none");
+        lines.push(format!("coding pr: {pr_status}"));
+    }
 }

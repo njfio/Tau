@@ -307,17 +307,42 @@ Evidence:
 
 ### Slice G: Operator command center integration
 
-- [ ] T46 RED: extend `tau-unified status` tests to require active coding
+- [x] T46 RED: extend `tau-unified status` tests to require active coding
       mission id, phase, repo, branch, verifier, last failure, and PR-ready or
       PR URL state.
-- [ ] T47 GREEN: surface coding mission state through the existing
+- [x] T47 GREEN: surface coding mission state through the existing
       control-plane snapshot and gateway mission endpoints.
-- [ ] T48 RED: extend TUI mission commands to show coding mission phase,
+- [x] T48 RED: extend TUI mission commands to show coding mission phase,
       verifier result, changed files, and resume command.
-- [ ] T49 GREEN: wire `/missions`, `/mission <id>`, and `/resume <id>` to the
+- [x] T49 GREEN: wire `/missions`, `/mission <id>`, and `/resume <id>` to the
       real coding mission runner state.
-- [ ] T50 VERIFY: run `scripts/run/test-tau-unified.sh status_contract` plus
+- [x] T50 VERIFY: run `scripts/run/test-tau-unified.sh status_contract` plus
       focused TUI mission tests.
+
+- RED: `scripts/run/test-tau-unified.sh status_contract` failed before
+  implementation because `tau-unified status` did not emit
+  `control_plane.coding_mission.*` fields from saved coding mission state.
+- RED: `CARGO_TARGET_DIR=/tmp/rust_pi-3654-operator-target cargo test -p
+  tau-gateway regression_gateway_mission_detail_falls_back_to_coding_mission_state
+  -- --test-threads=1` failed before implementation with
+  `mission_not_found` for a coding-only durable mission.
+- RED: `CARGO_TARGET_DIR=/tmp/rust_pi-3654-operator-target cargo test -p
+  tau-tui red_spec_3659 -- --test-threads=1` failed before the resume renderer
+  shared the coding detail block because `/resume` did not include
+  `coding phase: pr_ready`.
+- GREEN: `scripts/run/test-tau-unified.sh status_contract` passed with a saved
+  coding mission exposing id, phase, repo, branch, verifier, last failure,
+  changed files, resume command, PR state, and PR URL.
+- GREEN: `CARGO_TARGET_DIR=/tmp/rust_pi-3654-operator-target cargo test -p
+  tau-gateway regression_gateway_mission -- --test-threads=1` passed 3 gateway
+  mission list/detail tests, including coding-only fallback.
+- GREEN: `CARGO_TARGET_DIR=/tmp/rust_pi-3654-operator-target cargo test -p
+  tau-tui red_spec_3659 -- --test-threads=1` passed 3 TUI mission/resume tests.
+- VERIFY: `cargo fmt --check` passed.
+- VERIFY: `CARGO_TARGET_DIR=/tmp/rust_pi-3654-operator-target cargo test -p
+  tau-tui app_gateway_tests -- --test-threads=1` passed 18 TUI gateway tests.
+- VERIFY: `CARGO_TARGET_DIR=/tmp/rust_pi-3654-operator-target cargo clippy -p
+  tau-tui -p tau-gateway -- -D warnings` passed.
 
 Done when:
 - Operators can see what Tau is doing without opening raw state files.

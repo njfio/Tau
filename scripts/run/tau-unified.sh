@@ -174,6 +174,8 @@ write_control_plane_snapshot() {
     printf 'background_jobs_restart_recovery=running_manifests_requeued_after_restart\n'
     printf 'background_jobs_ops_guide=docs/guides/background-jobs-ops.md\n'
     printf 'routines_state=visible_via_webchat_routines_panel\n'
+    printf 'coding_missions_endpoint=http://%s/gateway/missions\n' "${bind}"
+    write_coding_mission_snapshot_fields "${gateway_state_dir}"
     printf 'autonomy_boundary=durable_jobs_replay_crash_resume_not_claimed\n'
   } >"${CONTROL_SNAPSHOT_FILE}"
 }
@@ -192,6 +194,119 @@ control_plane_snapshot_value() {
   printf '%s' "${default_value}"
 }
 
+write_default_coding_mission_snapshot_fields() {
+  local gateway_state_dir="$1"
+  printf 'coding_mission_state_dir=%s/coding-missions\n' "${gateway_state_dir}"
+  printf 'coding_mission_id=none\n'
+  printf 'coding_mission_phase=none\n'
+  printf 'coding_mission_repo=unknown\n'
+  printf 'coding_mission_branch=none\n'
+  printf 'coding_mission_verifier=none\n'
+  printf 'coding_mission_last_failure=none\n'
+  printf 'coding_mission_changed_files=none\n'
+  printf 'coding_mission_resume_command=none\n'
+  printf 'coding_mission_pr_state=none\n'
+  printf 'coding_mission_pr_url=none\n'
+}
+
+write_coding_mission_snapshot_fields() {
+  local gateway_state_dir="$1"
+  local missions_dir="${gateway_state_dir}/coding-missions"
+  if [[ ! -d "${missions_dir}" ]] || ! command -v python3 >/dev/null 2>&1; then
+    write_default_coding_mission_snapshot_fields "${gateway_state_dir}"
+    return 0
+  fi
+
+  local snapshot
+  snapshot="$(python3 - "${missions_dir}" <<'PY' 2>/dev/null || true
+import glob
+import json
+import os
+import sys
+
+missions_dir = sys.argv[1]
+
+def clean(value, default="none"):
+    if value is None:
+        value = default
+    value = str(value).replace("\n", " ").replace("\r", " ").replace("\t", " ").strip()
+    return value if value else default
+
+states = []
+for path in glob.glob(os.path.join(missions_dir, "*.json")):
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except Exception:
+        continue
+    if payload.get("mission_id"):
+        payload["_path"] = path
+        states.append(payload)
+
+if not states:
+    sys.exit(0)
+
+state = max(states, key=lambda item: int(item.get("updated_unix_ms") or 0))
+commands = list(state.get("command_evidence") or [])
+git_evidence = list(state.get("git_evidence") or [])
+checkpoint = state.get("resume_checkpoint") or {}
+pr_bundle = state.get("pr_ready_bundle") or {}
+
+latest_command = commands[-1] if commands else {}
+failed_command = next(
+    (
+        command
+        for command in reversed(commands)
+        if clean(command.get("status"), "unknown") != "succeeded"
+    ),
+    {},
+)
+latest_git = git_evidence[-1] if git_evidence else {}
+
+def command_summary(command):
+    if not command:
+        return "none"
+    return f"{clean(command.get('status'), 'unknown')}:{clean(command.get('reason_code'), 'unknown')}"
+
+changed_files = (
+    pr_bundle.get("changed_files")
+    or latest_git.get("changed_files")
+    or (checkpoint.get("mutation_fingerprint") or {}).get("changed_files")
+    or []
+)
+branch = (
+    checkpoint.get("branch_name")
+    or pr_bundle.get("branch_name")
+    or latest_git.get("branch_name")
+)
+pr_state = pr_bundle.get("status") or ("pr_ready" if state.get("phase") == "pr_ready" else "none")
+
+fields = {
+    "coding_mission_state_dir": missions_dir,
+    "coding_mission_id": state.get("mission_id"),
+    "coding_mission_phase": state.get("phase"),
+    "coding_mission_repo": state.get("repo_path"),
+    "coding_mission_branch": branch,
+    "coding_mission_verifier": command_summary(latest_command),
+    "coding_mission_last_failure": command_summary(failed_command),
+    "coding_mission_changed_files": ",".join(map(clean, changed_files)) if changed_files else "none",
+    "coding_mission_resume_command": checkpoint.get("operator_resume_command"),
+    "coding_mission_pr_state": pr_state,
+    "coding_mission_pr_url": pr_bundle.get("pr_url"),
+}
+
+for key, value in fields.items():
+    print(f"{key}={clean(value)}")
+PY
+)"
+
+  if [[ -z "${snapshot}" ]]; then
+    write_default_coding_mission_snapshot_fields "${gateway_state_dir}"
+    return 0
+  fi
+  printf '%s\n' "${snapshot}"
+}
+
 log_control_plane_snapshot() {
   log "tau-unified: control_plane.health=running"
   log "tau-unified: control_plane.runtime_state_dir=${RUNTIME_DIR}"
@@ -202,6 +317,16 @@ log_control_plane_snapshot() {
 
   if [[ ! -f "${CONTROL_SNAPSHOT_FILE}" ]]; then
     log "tau-unified: control_plane.snapshot=missing"
+    log "tau-unified: control_plane.coding_mission.id=none"
+    log "tau-unified: control_plane.coding_mission.phase=none"
+    log "tau-unified: control_plane.coding_mission.repo=unknown"
+    log "tau-unified: control_plane.coding_mission.branch=none"
+    log "tau-unified: control_plane.coding_mission.verifier=none"
+    log "tau-unified: control_plane.coding_mission.last_failure=none"
+    log "tau-unified: control_plane.coding_mission.changed_files=none"
+    log "tau-unified: control_plane.coding_mission.resume_command=none"
+    log "tau-unified: control_plane.coding_mission.pr_state=none"
+    log "tau-unified: control_plane.coding_mission.pr_url=none"
     log "tau-unified: control_plane.autonomy_boundary=durable_jobs_replay_crash_resume_not_claimed"
     return 0
   fi
@@ -231,6 +356,18 @@ log_control_plane_snapshot() {
   log "tau-unified: control_plane.dashboard_state_dir=$(control_plane_snapshot_value dashboard_state_dir unknown)"
   log "tau-unified: control_plane.jobs_state_dir=$(control_plane_snapshot_value jobs_state_dir unknown)"
   log "tau-unified: control_plane.deploy_state_file=$(control_plane_snapshot_value deploy_state_file unknown)"
+  log "tau-unified: control_plane.coding_missions_endpoint=$(control_plane_snapshot_value coding_missions_endpoint unknown)"
+  log "tau-unified: control_plane.coding_mission.state_dir=$(control_plane_snapshot_value coding_mission_state_dir unknown)"
+  log "tau-unified: control_plane.coding_mission.id=$(control_plane_snapshot_value coding_mission_id none)"
+  log "tau-unified: control_plane.coding_mission.phase=$(control_plane_snapshot_value coding_mission_phase none)"
+  log "tau-unified: control_plane.coding_mission.repo=$(control_plane_snapshot_value coding_mission_repo unknown)"
+  log "tau-unified: control_plane.coding_mission.branch=$(control_plane_snapshot_value coding_mission_branch none)"
+  log "tau-unified: control_plane.coding_mission.verifier=$(control_plane_snapshot_value coding_mission_verifier none)"
+  log "tau-unified: control_plane.coding_mission.last_failure=$(control_plane_snapshot_value coding_mission_last_failure none)"
+  log "tau-unified: control_plane.coding_mission.changed_files=$(control_plane_snapshot_value coding_mission_changed_files none)"
+  log "tau-unified: control_plane.coding_mission.resume_command=$(control_plane_snapshot_value coding_mission_resume_command none)"
+  log "tau-unified: control_plane.coding_mission.pr_state=$(control_plane_snapshot_value coding_mission_pr_state none)"
+  log "tau-unified: control_plane.coding_mission.pr_url=$(control_plane_snapshot_value coding_mission_pr_url none)"
   log "tau-unified: control_plane.autonomy_boundary=$(control_plane_snapshot_value autonomy_boundary durable_jobs_replay_crash_resume_not_claimed)"
 }
 

@@ -35,6 +35,13 @@ use reqwest::Client;
 use safety_rules::*;
 use serde_json::Value;
 use state_helpers::*;
+use tau_agent_core::{
+    save_coding_mission_state, CodingGitLifecycleEvidence, CodingGitLifecycleEvidenceKind,
+    CodingMissionConfig, CodingMissionMutationFingerprint, CodingMissionPhase, CodingMissionPrMode,
+    CodingMissionPrPublicationStatus, CodingMissionPrReadyBundle, CodingMissionResumeAction,
+    CodingMissionResumeCheckpoint, CodingMissionState, CodingWorkspaceCommandEvidence,
+    CodingWorkspaceCommandStatus,
+};
 use tau_ai::{ChatResponse, ChatUsage, ContentBlock, Message, MessageRole, ToolChoice};
 use tau_memory::action_history::{
     ActionFilter, ActionHistoryConfig, ActionHistoryStore, ActionRecord, ActionType,
@@ -67,6 +74,120 @@ where
         .expect("spawn high-stack test thread")
         .join()
         .expect("high-stack test thread panicked");
+}
+
+fn save_operator_coding_mission_state(
+    state_root: &std::path::Path,
+    mission_id: &str,
+    session_key: &str,
+    phase: CodingMissionPhase,
+    latest_status: CodingWorkspaceCommandStatus,
+    latest_reason_code: &str,
+) -> CodingMissionState {
+    let repo_path = state_root.join("fixture-repo");
+    std::fs::create_dir_all(&repo_path).expect("create coding fixture repo");
+    let branch_name = "codex/issue-3654-operator".to_string();
+    let mut state = CodingMissionState::create(CodingMissionConfig {
+        state_root: state_root.to_path_buf(),
+        mission_id: mission_id.to_string(),
+        session_key: session_key.to_string(),
+        repo_path: repo_path.clone(),
+        issue_url: Some("https://github.com/example/tau/issues/3654".to_string()),
+        goal: "surface coding mission operator state".to_string(),
+        base_branch: "master".to_string(),
+        branch_prefix: "codex/issue-3654".to_string(),
+        verifier_commands: vec!["cargo test -p tau-agent-core coding_mission".to_string()],
+        pr_mode: CodingMissionPrMode::PrReady,
+        allowed_roots: vec![state_root.to_path_buf()],
+        created_unix_ms: 100,
+    })
+    .expect("create coding mission state");
+    state.phase = phase;
+    state.updated_unix_ms = 260;
+    state.command_evidence.push(CodingWorkspaceCommandEvidence {
+        command_id: "verifier-red".to_string(),
+        cwd: repo_path.clone(),
+        argv: vec![
+            "cargo".to_string(),
+            "test".to_string(),
+            "-p".to_string(),
+            "tau-agent-core".to_string(),
+            "coding_mission".to_string(),
+        ],
+        stdout_path: state_root.join("verifier-red.stdout"),
+        stderr_path: state_root.join("verifier-red.stderr"),
+        exit_status: Some(101),
+        elapsed_ms: 23,
+        reason_code: "red_verifier_failed".to_string(),
+        status: CodingWorkspaceCommandStatus::Failed,
+        denied_reason: None,
+    });
+    state.command_evidence.push(CodingWorkspaceCommandEvidence {
+        command_id: "verifier-latest".to_string(),
+        cwd: repo_path.clone(),
+        argv: vec![
+            "cargo".to_string(),
+            "test".to_string(),
+            "-p".to_string(),
+            "tau-agent-core".to_string(),
+            "coding_mission".to_string(),
+        ],
+        stdout_path: state_root.join("verifier-latest.stdout"),
+        stderr_path: state_root.join("verifier-latest.stderr"),
+        exit_status: if latest_status == CodingWorkspaceCommandStatus::Succeeded {
+            Some(0)
+        } else {
+            Some(101)
+        },
+        elapsed_ms: 42,
+        reason_code: latest_reason_code.to_string(),
+        status: latest_status,
+        denied_reason: None,
+    });
+    state.git_evidence.push(CodingGitLifecycleEvidence {
+        kind: CodingGitLifecycleEvidenceKind::BranchPrepared,
+        branch_name: branch_name.clone(),
+        base_branch: "master".to_string(),
+        created_branch: true,
+        reused_branch: false,
+        commit_hash: Some("abc1234".to_string()),
+        changed_files: vec!["crates/tau-agent-core/src/coding_mission.rs".to_string()],
+        reason_code: "branch_prepared".to_string(),
+        created_unix_ms: 200,
+    });
+    state.resume_checkpoint = Some(CodingMissionResumeCheckpoint {
+        next_action: CodingMissionResumeAction::RunVerifier,
+        branch_name: Some(branch_name.clone()),
+        pending_verifier_command: Some("cargo test -p tau-agent-core coding_mission".to_string()),
+        latest_verifier_command_id: Some("verifier-latest".to_string()),
+        mutation_fingerprint: Some(CodingMissionMutationFingerprint {
+            changed_files: vec!["crates/tau-agent-core/src/coding_mission.rs".to_string()],
+            diff_hash: "diffhash".to_string(),
+        }),
+        latest_learning_summary: "operator checkpoint is resumable".to_string(),
+        operator_resume_command: format!("tau coding resume {mission_id}"),
+        updated_unix_ms: 260,
+    });
+    if phase == CodingMissionPhase::PrReady {
+        state.pr_ready_bundle = Some(CodingMissionPrReadyBundle {
+            status: CodingMissionPrPublicationStatus::ManualReady,
+            branch_name: branch_name.clone(),
+            commit_hash: Some("abc1234".to_string()),
+            title: "Surface coding operator state".to_string(),
+            body: "ready".to_string(),
+            body_path: state_root.join("pr-body.md"),
+            manual_gh_pr_create_command: "gh pr create --draft".to_string(),
+            changed_files: vec!["crates/tau-agent-core/src/coding_mission.rs".to_string()],
+            verifier_evidence_ids: vec!["verifier-latest".to_string()],
+            risk_notes: Vec::new(),
+            rollback_notes: Vec::new(),
+            pr_url: Some("https://github.com/example/tau/pull/3654".to_string()),
+            error_summary: None,
+            created_unix_ms: 270,
+        });
+    }
+    save_coding_mission_state(&state).expect("save coding mission state");
+    state
 }
 
 #[test]
@@ -11889,6 +12010,14 @@ async fn regression_gateway_missions_list_exposes_persisted_checkpointed_and_blo
         },
     )
     .expect("save blocked mission");
+    let coding_state = save_operator_coding_mission_state(
+        &state.config.state_dir,
+        "checkpoint-alpha",
+        "session-alpha",
+        CodingMissionPhase::PrReady,
+        CodingWorkspaceCommandStatus::Succeeded,
+        "verification_passed",
+    );
 
     let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
     let client = Client::new();
@@ -11911,6 +12040,32 @@ async fn regression_gateway_missions_list_exposes_persisted_checkpointed_and_blo
     assert_eq!(
         missions[0]["latest_completion"]["summary"],
         "scaffolded the first gameplay slice"
+    );
+    assert_eq!(missions[0]["coding_mission"]["phase"], "pr_ready");
+    assert_eq!(
+        missions[0]["coding_mission"]["repo_path"],
+        coding_state.repo_path.display().to_string()
+    );
+    assert_eq!(
+        missions[0]["coding_mission"]["branch_name"],
+        "codex/issue-3654-operator"
+    );
+    assert_eq!(
+        missions[0]["coding_mission"]["verifier_status"],
+        "succeeded:verification_passed"
+    );
+    assert_eq!(
+        missions[0]["coding_mission"]["last_failure"],
+        "failed:red_verifier_failed"
+    );
+    assert_eq!(
+        missions[0]["coding_mission"]["resume_command"],
+        "tau coding resume checkpoint-alpha"
+    );
+    assert_eq!(missions[0]["coding_mission"]["pr_state"], "manual_ready");
+    assert_eq!(
+        missions[0]["coding_mission"]["pr_url"],
+        "https://github.com/example/tau/pull/3654"
     );
     assert_eq!(missions[1]["mission_id"], "blocked-beta");
     assert_eq!(missions[1]["status"], "blocked");
@@ -11992,6 +12147,14 @@ async fn regression_gateway_mission_detail_exposes_verifier_and_completion_state
         },
     )
     .expect("save checkpoint mission");
+    save_operator_coding_mission_state(
+        &state.config.state_dir,
+        "checkpoint-alpha",
+        "session-alpha",
+        CodingMissionPhase::PrReady,
+        CodingWorkspaceCommandStatus::Succeeded,
+        "verification_passed",
+    );
 
     let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
     let client = Client::new();
@@ -12019,6 +12182,15 @@ async fn regression_gateway_mission_detail_exposes_verifier_and_completion_state
         payload["mission"]["latest_completion"]["next_step"],
         "run validation"
     );
+    assert_eq!(payload["mission"]["coding_mission"]["phase"], "pr_ready");
+    assert_eq!(
+        payload["mission"]["coding_mission"]["changed_files"][0],
+        "crates/tau-agent-core/src/coding_mission.rs"
+    );
+    assert_eq!(
+        payload["mission"]["coding_mission"]["resume_command"],
+        "tau coding resume checkpoint-alpha"
+    );
     assert_eq!(payload["mission"]["iterations"][0]["attempt"], 1);
     assert_eq!(
         payload["mission"]["iterations"][0]["tool_execution_count"],
@@ -12040,6 +12212,50 @@ async fn regression_gateway_mission_detail_exposes_verifier_and_completion_state
     assert_eq!(
         payload["harness_mission"]["checkpoints"][0]["pending_plan_node_ids"][0],
         "run validation"
+    );
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn regression_gateway_mission_detail_falls_back_to_coding_mission_state() {
+    let temp = tempdir().expect("tempdir");
+    let state = test_state(temp.path(), 10_000, "secret");
+    save_operator_coding_mission_state(
+        &state.config.state_dir,
+        "coding-only-alpha",
+        "coding-session-alpha",
+        CodingMissionPhase::Blocked,
+        CodingWorkspaceCommandStatus::Failed,
+        "verification_failed",
+    );
+
+    let (addr, handle) = spawn_test_server(state).await.expect("spawn server");
+    let client = Client::new();
+    let endpoint = expand_mission_template(GATEWAY_MISSION_DETAIL_ENDPOINT, "coding-only-alpha");
+    let response = client
+        .get(format!("http://{addr}{endpoint}"))
+        .bearer_auth("secret")
+        .send()
+        .await
+        .expect("coding mission detail");
+    let status = response.status();
+    let payload = response
+        .json::<Value>()
+        .await
+        .expect("parse coding mission detail payload");
+    assert_eq!(status, StatusCode::OK, "unexpected payload: {payload}");
+    assert_eq!(payload["mission"]["mission_id"], "coding-only-alpha");
+    assert_eq!(payload["mission"]["session_key"], "coding-session-alpha");
+    assert_eq!(payload["mission"]["status"], "blocked");
+    assert_eq!(payload["mission"]["coding_mission"]["phase"], "blocked");
+    assert_eq!(
+        payload["mission"]["coding_mission"]["verifier_status"],
+        "failed:verification_failed"
+    );
+    assert_eq!(
+        payload["mission"]["latest_completion"]["next_step"],
+        "tau coding resume coding-only-alpha"
     );
 
     handle.abort();

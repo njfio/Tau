@@ -194,6 +194,105 @@ test_status_control_plane_snapshot() {
   local test_dashboard_state_dir="${tmp_dir}/status-dashboard"
   local test_jobs_state_dir="${tmp_dir}/status-jobs"
   local status_bind="127.0.0.1:8911"
+  mkdir -p "${test_gateway_state_dir}/coding-missions"
+  cat >"${test_gateway_state_dir}/coding-missions/status-coding-alpha.json" <<JSON
+{
+  "schema_version": 1,
+  "state_root": "${test_gateway_state_dir}",
+  "mission_id": "status-coding-alpha",
+  "session_key": "session-status-alpha",
+  "repo_path": "${tmp_dir}/fixture-repo",
+  "goal": "surface coding mission status",
+  "base_branch": "master",
+  "branch_prefix": "codex/issue-3654",
+  "verifier_commands": ["cargo test -p tau-agent-core coding_mission"],
+  "pr_mode": "pr_ready",
+  "allowed_roots": ["${tmp_dir}"],
+  "phase": "pr_ready",
+  "created_unix_ms": 10,
+  "updated_unix_ms": 99,
+  "mission": {
+    "schema_version": 1,
+    "mission_id": "status-coding-alpha",
+    "title": "surface coding mission status",
+    "status": "checkpointed",
+    "created_unix_ms": 10,
+    "updated_unix_ms": 99,
+    "tool_budget": {"max_tool_calls": 0, "consumed_tool_calls": 0},
+    "checkpoints": [],
+    "artifacts": [],
+    "learning_records": [],
+    "verification_gates": [],
+    "recovery_state": null
+  },
+  "events": [],
+  "command_evidence": [
+    {
+      "command_id": "verifier-0",
+      "cwd": "${tmp_dir}/fixture-repo",
+      "argv": ["cargo", "test", "-p", "tau-agent-core", "coding_mission"],
+      "stdout_path": "${tmp_dir}/stdout-old.txt",
+      "stderr_path": "${tmp_dir}/stderr-old.txt",
+      "exit_status": 101,
+      "elapsed_ms": 24,
+      "reason_code": "red_verifier_failed",
+      "status": "failed"
+    },
+    {
+      "command_id": "verifier-1",
+      "cwd": "${tmp_dir}/fixture-repo",
+      "argv": ["cargo", "test", "-p", "tau-agent-core", "coding_mission"],
+      "stdout_path": "${tmp_dir}/stdout.txt",
+      "stderr_path": "${tmp_dir}/stderr.txt",
+      "exit_status": 0,
+      "elapsed_ms": 42,
+      "reason_code": "verification_passed",
+      "status": "succeeded"
+    }
+  ],
+  "git_evidence": [
+    {
+      "kind": "branch_prepared",
+      "branch_name": "codex/issue-3654-operator",
+      "base_branch": "master",
+      "created_branch": true,
+      "reused_branch": false,
+      "commit_hash": "abc1234",
+      "changed_files": ["crates/tau-agent-core/src/coding_mission.rs"],
+      "reason_code": "branch_prepared",
+      "created_unix_ms": 40
+    }
+  ],
+  "resume_checkpoint": {
+    "next_action": "run_verifier",
+    "branch_name": "codex/issue-3654-operator",
+    "pending_verifier_command": "cargo test -p tau-agent-core coding_mission",
+    "latest_verifier_command_id": "verifier-1",
+    "mutation_fingerprint": {
+      "changed_files": ["crates/tau-agent-core/src/coding_mission.rs"],
+      "diff_hash": "diffhash"
+    },
+    "latest_learning_summary": "operator status checkpoint",
+    "operator_resume_command": "tau coding resume status-coding-alpha",
+    "updated_unix_ms": 99
+  },
+  "pr_ready_bundle": {
+    "status": "manual_ready",
+    "branch_name": "codex/issue-3654-operator",
+    "commit_hash": "abc1234",
+    "title": "Surface coding operator state",
+    "body": "ready",
+    "body_path": "${tmp_dir}/pr-body.md",
+    "manual_gh_pr_create_command": "gh pr create --draft",
+    "changed_files": ["crates/tau-agent-core/src/coding_mission.rs"],
+    "verifier_evidence_ids": ["verifier-1"],
+    "risk_notes": [],
+    "rollback_notes": [],
+    "pr_url": "https://github.com/example/tau/pull/3654",
+    "created_unix_ms": 100
+  }
+}
+JSON
 
   local up_status_output
   up_status_output="$(
@@ -245,6 +344,16 @@ test_status_control_plane_snapshot() {
   assert_contains "${status_output}" "tau-unified: control_plane.gateway_state_dir=${test_gateway_state_dir}" "status gateway state dir"
   assert_contains "${status_output}" "tau-unified: control_plane.dashboard_state_dir=${test_dashboard_state_dir}" "status dashboard state dir"
   assert_contains "${status_output}" "tau-unified: control_plane.deploy_state_file=${test_gateway_state_dir}/deploy-agent-state.json" "status deploy state file"
+  assert_contains "${status_output}" "tau-unified: control_plane.coding_mission.id=status-coding-alpha" "status coding mission id"
+  assert_contains "${status_output}" "tau-unified: control_plane.coding_mission.phase=pr_ready" "status coding mission phase"
+  assert_contains "${status_output}" "tau-unified: control_plane.coding_mission.repo=${tmp_dir}/fixture-repo" "status coding mission repo"
+  assert_contains "${status_output}" "tau-unified: control_plane.coding_mission.branch=codex/issue-3654-operator" "status coding mission branch"
+  assert_contains "${status_output}" "tau-unified: control_plane.coding_mission.verifier=succeeded:verification_passed" "status coding mission verifier"
+  assert_contains "${status_output}" "tau-unified: control_plane.coding_mission.last_failure=failed:red_verifier_failed" "status coding mission last failure"
+  assert_contains "${status_output}" "tau-unified: control_plane.coding_mission.changed_files=crates/tau-agent-core/src/coding_mission.rs" "status coding mission changed files"
+  assert_contains "${status_output}" "tau-unified: control_plane.coding_mission.resume_command=tau coding resume status-coding-alpha" "status coding mission resume command"
+  assert_contains "${status_output}" "tau-unified: control_plane.coding_mission.pr_state=manual_ready" "status coding mission pr state"
+  assert_contains "${status_output}" "tau-unified: control_plane.coding_mission.pr_url=https://github.com/example/tau/pull/3654" "status coding mission pr url"
   assert_contains "${status_output}" "tau-unified: control_plane.autonomy_boundary=durable_jobs_replay_crash_resume_not_claimed" "status autonomy boundary"
 
   TAU_UNIFIED_RUNNER="${runner}" \
