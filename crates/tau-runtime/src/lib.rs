@@ -4,6 +4,7 @@
 //! runtime output, observability, and transport health modules reused across
 //! runtimes.
 
+pub mod autonomous_coding_jobs_runtime;
 pub mod background_jobs_runtime;
 pub mod channel_store;
 pub mod external_coding_agent_bridge_runtime;
@@ -19,6 +20,7 @@ pub mod transport_conformance_runtime;
 pub mod transport_health;
 pub mod wasm_sandbox_runtime;
 
+pub use autonomous_coding_jobs_runtime::*;
 pub use background_jobs_runtime::*;
 pub use channel_store::*;
 pub use external_coding_agent_bridge_runtime::*;
