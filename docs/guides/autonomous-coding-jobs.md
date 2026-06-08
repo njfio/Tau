@@ -69,9 +69,41 @@ cargo run -p tau-coding-agent --bin tau_autonomous_coding_job -- recover \
   --jobs-state-dir .tau/jobs
 ```
 
+Request protected-branch-safe GitHub auto-merge for a PR-ready job:
+
+```bash
+GH_TOKEN=... cargo run -p tau-coding-agent --bin tau_autonomous_coding_job -- auto-merge \
+  --state-dir .tau/autonomous-coding \
+  --jobs-state-dir .tau/jobs \
+  --job-id <job-id> \
+  --allow-auto-merge \
+  --merge-method squash \
+  --delete-branch
+```
+
+This invokes normal GitHub auto-merge behavior. It honors branch protections and
+required checks; it does not use admin bypass flags.
+
+Ingest an arbitrary issue without verifier/edit authority:
+
+```bash
+cargo run -p tau-coding-agent --bin tau_autonomous_coding_job -- intake-issue \
+  --state-dir .tau/autonomous-coding \
+  --jobs-state-dir .tau/jobs \
+  --intake-id issue-123 \
+  --issue-url https://github.com/owner/repo/issues/123 \
+  --issue-title "Issue title" \
+  --issue-body "Issue body" \
+  --repo-path /path/to/repo
+```
+
+This creates a blocked authority plan that lists the verifier and edit authority
+needed before Tau can mutate the repository.
+
 ## Boundaries
 
-This loop prepares PR-ready evidence and can create a draft PR when the mission
-state is configured for draft PR mode and GitHub auth exists in the environment.
-It does not automatically merge protected branches, and it does not claim
-arbitrary issue solving without verifier commands and bounded edit authority.
+This loop prepares PR-ready evidence, can create a draft PR when the mission
+state is configured for draft PR mode and GitHub auth exists in the environment,
+and can request GitHub auto-merge when explicit policy/auth/PR URL gates pass.
+It does not bypass protected branches, and it does not claim arbitrary issue
+solving without verifier commands and bounded edit authority.
