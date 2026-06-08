@@ -32,6 +32,7 @@ These are the paths that operate as connected flows today.
 | Unified runtime lifecycle loop | `./scripts/dev/prove-tau-product.sh --check --report /tmp/tau-product-proof-check.json` for static proof evidence, then `./scripts/dev/prove-tau-product.sh --run --webchat-smoke --report /tmp/tau-product-proof-webchat.json` for opt-in live product-surface evidence | One-command runtime bring-up (`up/status/down`) for gateway/dashboard + interactive TUI agent (`tui`) with explicit live-shell fallback, optional webchat readiness smoke, and optional JSON evidence | [`scripts/dev/prove-tau-product.sh`](scripts/dev/prove-tau-product.sh), [`scripts/run/tau-unified.sh`](scripts/run/tau-unified.sh), [`docs/guides/canonical-product-proof.md`](docs/guides/canonical-product-proof.md) |
 | Live coding mission loop | `./scripts/dev/test-full-autonomous-coding-loop.sh` | Disposable-repo M334 `repo_spec_to_pr_feature_delivery` harness through `CodingMissionRunner`: RED verifier, controlled edit, GREEN verifier, commit, PR-ready bundle, crash/resume, and blocked-task fail-closed evidence | [`scripts/dev/test-full-autonomous-coding-loop.sh`](scripts/dev/test-full-autonomous-coding-loop.sh), [`crates/tau-coding-agent/src/bin/tau_live_coding_loop_harness.rs`](crates/tau-coding-agent/src/bin/tau_live_coding_loop_harness.rs), [`specs/3654/tasks.md`](specs/3654/tasks.md) |
 | Provider-backed coding loop | `TAU_LIVE_PROVIDER_PROOF=1 ./scripts/dev/test-provider-backed-autonomous-coding-loop.sh` | Opt-in disposable-repo proof that calls a configured provider using API-key or subscription auth, parses JSON edit instructions into `CodingMissionRunner`, records RED/GREEN verifier, commit, and PR-ready evidence, and fail-closes malformed provider output | [`scripts/dev/test-provider-backed-autonomous-coding-loop.sh`](scripts/dev/test-provider-backed-autonomous-coding-loop.sh), [`crates/tau-coding-agent/src/bin/tau_live_coding_loop_harness.rs`](crates/tau-coding-agent/src/bin/tau_live_coding_loop_harness.rs), [`specs/3788-provider-backed-coding-loop-proof/tasks.md`](specs/3788-provider-backed-coding-loop-proof/tasks.md) |
+| Provider verifier repair loop | `TAU_LIVE_PROVIDER_REPAIR_PROOF=1 ./scripts/dev/test-provider-verifier-repair-loop.sh` | Real-repo harness path that reruns provider attempts after verifier failure: captures failed verifier stdout/stderr and git diff, asks the next provider attempt for a targeted JSON patch, reruns verifiers, commits PR-ready output, and fail-closes exhausted repair budgets | [`scripts/dev/test-provider-verifier-repair-loop.sh`](scripts/dev/test-provider-verifier-repair-loop.sh), [`crates/tau-coding-agent/src/bin/tau_live_coding_loop_harness.rs`](crates/tau-coding-agent/src/bin/tau_live_coding_loop_harness.rs), [`specs/3798-provider-verifier-repair-loop/spec.md`](specs/3798-provider-verifier-repair-loop/spec.md) |
 | Real-repo coding harness | `./scripts/dev/test-real-repo-autonomous-coding-harness.sh` | Temporary worktree of this repository through `CodingMissionRunner`: provider-compatible multi-file edit array, real git branch/commit, RED/GREEN verifier evidence, and manual PR-ready bundle | [`scripts/dev/test-real-repo-autonomous-coding-harness.sh`](scripts/dev/test-real-repo-autonomous-coding-harness.sh), [`crates/tau-agent-core/src/coding_mission.rs`](crates/tau-agent-core/src/coding_mission.rs), [`specs/3792-real-repo-autonomous-coding-harness/spec.md`](specs/3792-real-repo-autonomous-coding-harness/spec.md) |
 | Multi-channel ingress loop | `./scripts/demo/multi-channel.sh` | Multi-channel runtime, transport normalization, routing pipeline | [`docs/guides/multi-channel-event-pipeline.md`](docs/guides/multi-channel-event-pipeline.md), [`docs/guides/transports.md`](docs/guides/transports.md) |
 | Prompt optimization loop | [`docs/guides/training-ops.md`](docs/guides/training-ops.md) runbook flow | Training runner/store/tracer/proxy + rollout controls | [`docs/guides/training-ops.md`](docs/guides/training-ops.md), [`docs/guides/training-proxy-ops.md`](docs/guides/training-proxy-ops.md) |
@@ -54,6 +55,9 @@ These are the paths that operate as connected flows today.
 - Run a deterministic real-repo coding harness against a temporary worktree of
   this repository with provider-compatible multi-file edits, RED/GREEN verifier
   transcript, commit hash, and PR-ready bundle evidence.
+- Run a bounded provider verifier repair loop that converts verifier failure
+  evidence plus git diff into a follow-up provider patch attempt, then either
+  reruns to PR-ready or records an exhausted-repair blocked state.
 
 ## Capability Boundaries
 
@@ -104,6 +108,13 @@ Some surfaces are intentionally diagnostics-first or staged:
     `TAU_PROVIDER_PROOF_AUTH_MODE=codex-cli` with a
     Codex CLI-supported model such as `openai/gpt-5.5` to validate the
     local subscription-backed provider path.
+  - `TAU_LIVE_PROVIDER_REPAIR_PROOF=1 ./scripts/dev/test-provider-verifier-repair-loop.sh`
+    adds the repair-loop proof: the first provider-shaped edit can fail a
+    verifier, Tau captures failed verifier evidence plus git diff, sends that
+    context to the next configured provider attempt, reruns verification, and
+    commits only when the repaired worktree reaches PR-ready. Without
+    `TAU_LIVE_PROVIDER_REPAIR_PROOF=1`, the same script still runs deterministic
+    mock repair and exhausted-budget fail-closed checks.
   - `./scripts/dev/test-real-repo-autonomous-coding-harness.sh` runs the same
     lifecycle against a temporary worktree of this repository and validates a
     provider-compatible multi-file edit array. This is real git/worktree/commit

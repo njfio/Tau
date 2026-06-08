@@ -94,9 +94,13 @@ struct Args {
     #[arg(long, default_value_t = 1_024)]
     provider_max_tokens: u32,
 
-    /// Mock provider response used for deterministic provider parsing tests.
-    #[arg(long)]
-    mock_provider_response: Option<String>,
+    /// Additional provider repair attempts after the initial provider edit.
+    #[arg(long, default_value_t = 2)]
+    provider_repair_attempts: usize,
+
+    /// Mock provider response for a specific provider attempt. Omitted attempts call the configured provider.
+    #[arg(long = "mock-provider-response")]
+    mock_provider_responses: Vec<String>,
 
     /// Verifier command(s) for real-repo mode. Repeat once per command.
     #[arg(long = "verifier-command")]
@@ -146,6 +150,7 @@ struct LiveLoopReport {
     blocked_reason: Option<String>,
     pr_ready: Option<PrReadyReport>,
     provider: Option<ProviderProofReport>,
+    provider_attempts: Vec<ProviderProofReport>,
     operator_interventions_used: Vec<String>,
     no_routine_human_steering_used: bool,
 }
@@ -180,8 +185,9 @@ struct PrReadyReport {
     pr_url: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 struct ProviderProofReport {
+    attempt_index: usize,
     mode: &'static str,
     provider: String,
     model: String,
@@ -194,10 +200,13 @@ struct ProviderProofReport {
     response_text_sha256: Option<String>,
     edit_relative_path: Option<String>,
     edit_reason_code: Option<String>,
+    repair_context_included: bool,
+    failed_verifier_count: usize,
+    diff_context_bytes: Option<usize>,
     error: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 struct ProviderUsageReport {
     input_tokens: u64,
     output_tokens: u64,
@@ -232,7 +241,28 @@ enum ProviderEditOutcome {
     Failed(ProviderProofReport),
 }
 
+#[derive(Debug, Clone, Default)]
+struct ProviderRepairContext {
+    failed_verifiers: Vec<ProviderVerifierFailureContext>,
+    changed_files: Vec<String>,
+    git_diff: String,
+}
+
+#[derive(Debug, Clone)]
+struct ProviderVerifierFailureContext {
+    argv: Vec<String>,
+    exit_status: Option<i32>,
+    stdout: String,
+    stderr: String,
+}
+
+struct ProviderAttemptContext {
+    attempt_index: usize,
+    repair: Option<ProviderRepairContext>,
+}
+
 struct ProviderFailureReportInput<'a> {
+    attempt_index: usize,
     mode: &'static str,
     model_ref: &'a ModelRef,
     dispatched: bool,
@@ -241,6 +271,18 @@ struct ProviderFailureReportInput<'a> {
     response_text_bytes: Option<usize>,
     response_text_sha256: Option<String>,
     usage: Option<ProviderUsageReport>,
+    repair: Option<&'a ProviderRepairContext>,
+}
+
+struct ProviderEditResponseInput<'a> {
+    attempt_index: usize,
+    mode: &'static str,
+    model_ref: &'a ModelRef,
+    repair: Option<&'a ProviderRepairContext>,
+    dispatched: bool,
+    finish_reason: Option<String>,
+    usage: Option<ChatUsage>,
+    response_text: &'a str,
 }
 
 struct LiveLoopReportInput<'a> {
@@ -251,7 +293,7 @@ struct LiveLoopReportInput<'a> {
     outcome: &'a CodingMissionRunOutcome,
     resume: Option<ResumeReport>,
     pr_ready: Option<&'a CodingMissionPrReadyBundle>,
-    provider: Option<ProviderProofReport>,
+    provider_attempts: Vec<ProviderProofReport>,
 }
 
 fn main() -> ExitCode {
@@ -326,7 +368,7 @@ fn run(args: Args, fixture_path: PathBuf, started_unix_ms: u64) -> anyhow::Resul
     let runner = CodingMissionRunner::new();
 
     let mut resume_report = None;
-    let mut provider_report = None;
+    let mut provider_attempts = Vec::new();
     let outcome = match args.mode {
         HarnessMode::Success => run_success_case(
             &runner,
@@ -346,7 +388,7 @@ fn run(args: Args, fixture_path: PathBuf, started_unix_ms: u64) -> anyhow::Resul
             &mut state,
             &args,
             &mission_id,
-            &mut provider_report,
+            &mut provider_attempts,
             started_unix_ms,
         )?,
         HarnessMode::RealRepo => run_provider_success_case(
@@ -354,7 +396,7 @@ fn run(args: Args, fixture_path: PathBuf, started_unix_ms: u64) -> anyhow::Resul
             &mut state,
             &args,
             &mission_id,
-            &mut provider_report,
+            &mut provider_attempts,
             started_unix_ms,
         )?,
     };
@@ -395,7 +437,7 @@ fn run(args: Args, fixture_path: PathBuf, started_unix_ms: u64) -> anyhow::Resul
         outcome: &outcome,
         resume: resume_report,
         pr_ready: pr_ready.as_ref(),
-        provider: provider_report,
+        provider_attempts,
     });
     let passed = report.passed;
     write_report(&args.output, &report)?;
@@ -489,7 +531,7 @@ fn run_provider_success_case(
     state: &mut CodingMissionState,
     args: &Args,
     mission_id: &str,
-    provider_report: &mut Option<ProviderProofReport>,
+    provider_attempts: &mut Vec<ProviderProofReport>,
     started_unix_ms: u64,
 ) -> anyhow::Result<CodingMissionRunOutcome> {
     let red = runner
@@ -507,49 +549,90 @@ fn run_provider_success_case(
         return Ok(red);
     }
 
-    match resolve_provider_edit(args, state)
-        .with_context(|| format!("resolve provider edit for {mission_id}"))?
-    {
-        ProviderEditOutcome::Ready(resolved) => {
-            let ProviderEditResolution { edits, report } = resolved;
-            *provider_report = Some(report);
-            let resumed = runner
-                .resume(CodingMissionResumeRequest {
-                    state_root: state.state_root.clone(),
-                    mission_id: state.mission_id.clone(),
-                    controlled_edit: None,
-                    controlled_edits: edits,
-                    commit_message: "Make M334 live verifier green with provider edit".to_string(),
-                    started_unix_ms: started_unix_ms + 2_000,
-                    stop_after: None,
-                })
-                .context("resume provider-backed coding mission")?;
-            *state = resumed.state;
-            Ok(resumed.run)
-        }
-        ProviderEditOutcome::Failed(report) => {
-            let blocked_reason = report.reason_code.clone();
-            state
-                .transition_phase(
-                    CodingMissionPhase::Blocked,
-                    blocked_reason.as_str(),
-                    report
-                        .error
-                        .clone()
-                        .unwrap_or_else(|| blocked_reason.clone()),
-                    started_unix_ms + 2_000,
-                )
-                .context("record provider-backed blocked state")?;
-            *provider_report = Some(report);
-            Ok(CodingMissionRunOutcome {
-                phase: state.phase,
-                verifier_passed: false,
-                committed: None,
-                blocked_reason: Some(blocked_reason),
-                iterations: red.iterations,
-            })
+    let total_provider_attempts = args.provider_repair_attempts.saturating_add(1).max(1);
+    let mut latest_run = red;
+    for attempt_index in 1..=total_provider_attempts {
+        let repair = if attempt_index == 1 {
+            None
+        } else {
+            Some(provider_repair_context(state)?)
+        };
+        let attempt = ProviderAttemptContext {
+            attempt_index,
+            repair,
+        };
+        match resolve_provider_edit(args, state, &attempt).with_context(|| {
+            format!("resolve provider edit for {mission_id} attempt {attempt_index}")
+        })? {
+            ProviderEditOutcome::Ready(resolved) => {
+                let ProviderEditResolution { edits, report } = resolved;
+                provider_attempts.push(report);
+                let resumed = runner
+                    .resume(CodingMissionResumeRequest {
+                        state_root: state.state_root.clone(),
+                        mission_id: state.mission_id.clone(),
+                        controlled_edit: None,
+                        controlled_edits: edits,
+                        commit_message: "Make M334 live verifier green with provider edit"
+                            .to_string(),
+                        started_unix_ms: started_unix_ms
+                            .saturating_add(2_000)
+                            .saturating_add((attempt_index as u64).saturating_mul(1_000)),
+                        stop_after: None,
+                    })
+                    .context("resume provider-backed coding mission")?;
+                *state = resumed.state;
+                latest_run = resumed.run;
+                if latest_run.verifier_passed || state.phase == CodingMissionPhase::PrReady {
+                    return Ok(latest_run);
+                }
+                if latest_run.blocked_reason.is_some() || state.phase == CodingMissionPhase::Blocked
+                {
+                    return Ok(latest_run);
+                }
+            }
+            ProviderEditOutcome::Failed(report) => {
+                let blocked_reason = report.reason_code.clone();
+                state
+                    .transition_phase(
+                        CodingMissionPhase::Blocked,
+                        blocked_reason.as_str(),
+                        report
+                            .error
+                            .clone()
+                            .unwrap_or_else(|| blocked_reason.clone()),
+                        started_unix_ms
+                            .saturating_add(2_000)
+                            .saturating_add((attempt_index as u64).saturating_mul(1_000)),
+                    )
+                    .context("record provider-backed blocked state")?;
+                provider_attempts.push(report);
+                return Ok(CodingMissionRunOutcome {
+                    phase: state.phase,
+                    verifier_passed: false,
+                    committed: None,
+                    blocked_reason: Some(blocked_reason),
+                    iterations: latest_run.iterations,
+                });
+            }
         }
     }
+
+    state
+        .transition_phase(
+            CodingMissionPhase::Blocked,
+            "provider_repair_attempts_exhausted",
+            "provider verifier repair attempts exhausted before verifiers passed",
+            started_unix_ms.saturating_add(8_000),
+        )
+        .context("record exhausted provider repair state")?;
+    Ok(CodingMissionRunOutcome {
+        phase: state.phase,
+        verifier_passed: false,
+        committed: None,
+        blocked_reason: Some("provider_repair_attempts_exhausted".to_string()),
+        iterations: latest_run.iterations,
+    })
 }
 
 fn pass_status_edit(reason_code: &str) -> CodingMissionControlledEdit {
@@ -563,19 +646,22 @@ fn pass_status_edit(reason_code: &str) -> CodingMissionControlledEdit {
 fn resolve_provider_edit(
     args: &Args,
     state: &CodingMissionState,
+    attempt: &ProviderAttemptContext,
 ) -> anyhow::Result<ProviderEditOutcome> {
     let model_ref = ModelRef::parse(&args.provider_model)
         .with_context(|| format!("parse provider model '{}'", args.provider_model))?;
 
-    if let Some(mock_response) = args.mock_provider_response.as_ref() {
-        return Ok(provider_edit_from_response(
-            "mock",
-            &model_ref,
-            true,
-            None,
-            None,
-            mock_response,
-        ));
+    if let Some(mock_response) = mock_provider_response_for_attempt(args, attempt.attempt_index) {
+        return Ok(provider_edit_from_response(ProviderEditResponseInput {
+            attempt_index: attempt.attempt_index,
+            mode: "mock",
+            model_ref: &model_ref,
+            repair: attempt.repair.as_ref(),
+            dispatched: true,
+            finish_reason: None,
+            usage: None,
+            response_text: mock_response,
+        }));
     }
 
     let client = match provider_client(args, &model_ref) {
@@ -583,6 +669,7 @@ fn resolve_provider_edit(
         Err(error) => {
             return Ok(ProviderEditOutcome::Failed(provider_failure_report(
                 ProviderFailureReportInput {
+                    attempt_index: attempt.attempt_index,
                     mode: "live",
                     model_ref: &model_ref,
                     dispatched: false,
@@ -591,6 +678,7 @@ fn resolve_provider_edit(
                     response_text_bytes: None,
                     response_text_sha256: None,
                     usage: None,
+                    repair: attempt.repair.as_ref(),
                 },
             )));
         }
@@ -603,7 +691,7 @@ fn resolve_provider_edit(
                 "You generate one safe edit for a disposable Tau coding-loop proof. \
                  Return valid JSON only. No markdown, no prose.",
             ),
-            Message::user(provider_prompt(state)?),
+            Message::user(provider_prompt(state, attempt)?),
         ],
         tools: Vec::new(),
         tool_choice: None,
@@ -620,17 +708,20 @@ fn resolve_provider_edit(
     match runtime.block_on(client.complete(request)) {
         Ok(response) => {
             let text = response.message.text_content();
-            Ok(provider_edit_from_response(
-                "live",
-                &model_ref,
-                true,
-                response.finish_reason,
-                Some(response.usage),
-                &text,
-            ))
+            Ok(provider_edit_from_response(ProviderEditResponseInput {
+                attempt_index: attempt.attempt_index,
+                mode: "live",
+                model_ref: &model_ref,
+                repair: attempt.repair.as_ref(),
+                dispatched: true,
+                finish_reason: response.finish_reason,
+                usage: Some(response.usage),
+                response_text: &text,
+            }))
         }
         Err(error) => Ok(ProviderEditOutcome::Failed(provider_failure_report(
             ProviderFailureReportInput {
+                attempt_index: attempt.attempt_index,
                 mode: "live",
                 model_ref: &model_ref,
                 dispatched: true,
@@ -639,9 +730,16 @@ fn resolve_provider_edit(
                 response_text_bytes: None,
                 response_text_sha256: None,
                 usage: None,
+                repair: attempt.repair.as_ref(),
             },
         ))),
     }
+}
+
+fn mock_provider_response_for_attempt(args: &Args, attempt_index: usize) -> Option<&str> {
+    args.mock_provider_responses
+        .get(attempt_index.saturating_sub(1))
+        .map(String::as_str)
 }
 
 fn provider_client(args: &Args, model_ref: &ModelRef) -> anyhow::Result<Arc<dyn LlmClient>> {
@@ -759,7 +857,10 @@ fn provider_proof_api_key(provider: Provider) -> Option<String> {
     resolve_api_key(candidates)
 }
 
-fn provider_prompt(state: &CodingMissionState) -> anyhow::Result<String> {
+fn provider_prompt(
+    state: &CodingMissionState,
+    attempt: &ProviderAttemptContext,
+) -> anyhow::Result<String> {
     let status_path = state.repo_path.join("status.txt");
     let current_status = match fs::read_to_string(&status_path) {
         Ok(value) => value,
@@ -771,8 +872,13 @@ fn provider_prompt(state: &CodingMissionState) -> anyhow::Result<String> {
                 .with_context(|| format!("read fixture status {}", status_path.display()));
         }
     };
+    let repair_section = attempt
+        .repair
+        .as_ref()
+        .map(render_provider_repair_context)
+        .unwrap_or_default();
     Ok(format!(
-        "Goal:\n{}\n\nRepository root:\n{}\n\nCurrent file status.txt context:\n{}\n\nVerifier commands:\n{}\n\nReturn valid JSON only. Use either the legacy single-edit shape or this multi-edit shape:\n{{\"edits\":[{{\"relative_path\":\"path/from/repo/root\",\"contents\":\"file contents\",\"reason_code\":\"provider_fix\"}}]}}",
+        "Goal:\n{}\n\nRepository root:\n{}\n\nCurrent file status.txt context:\n{}\n\nVerifier commands:\n{}\n{}\n\nReturn valid JSON only. Use either the legacy single-edit shape or this multi-edit shape:\n{{\"edits\":[{{\"relative_path\":\"path/from/repo/root\",\"contents\":\"file contents\",\"reason_code\":\"provider_fix\"}}]}}",
         state.goal,
         state.repo_path.display(),
         current_status,
@@ -781,18 +887,130 @@ fn provider_prompt(state: &CodingMissionState) -> anyhow::Result<String> {
             .iter()
             .map(String::as_str)
             .collect::<Vec<_>>()
-            .join("\n")
+            .join("\n"),
+        repair_section
     ))
 }
 
-fn provider_edit_from_response(
-    mode: &'static str,
-    model_ref: &ModelRef,
-    dispatched: bool,
-    finish_reason: Option<String>,
-    usage: Option<ChatUsage>,
-    response_text: &str,
-) -> ProviderEditOutcome {
+fn provider_repair_context(state: &CodingMissionState) -> anyhow::Result<ProviderRepairContext> {
+    let failed_verifiers = state
+        .command_evidence
+        .iter()
+        .rev()
+        .filter(|evidence| {
+            evidence.reason_code.starts_with("coding_verifier")
+                && evidence.status == CodingWorkspaceCommandStatus::Failed
+        })
+        .take(4)
+        .map(|evidence| ProviderVerifierFailureContext {
+            argv: evidence.argv.clone(),
+            exit_status: evidence.exit_status,
+            stdout: read_artifact_snippet(evidence.stdout_path.as_path(), 2_000),
+            stderr: read_artifact_snippet(evidence.stderr_path.as_path(), 4_000),
+        })
+        .collect::<Vec<_>>();
+    let changed_files = git_lines(state.repo_path.as_path(), &["status", "--porcelain"])?;
+    let git_diff = git_snippet(state.repo_path.as_path(), &["diff", "--", "."], 12_000)?;
+    Ok(ProviderRepairContext {
+        failed_verifiers,
+        changed_files: parse_git_status_changed_file_names(&changed_files),
+        git_diff,
+    })
+}
+
+fn render_provider_repair_context(context: &ProviderRepairContext) -> String {
+    let failed = context
+        .failed_verifiers
+        .iter()
+        .enumerate()
+        .map(|(index, failure)| {
+            format!(
+                "Failure {}:\nargv: {}\nexit_status: {}\nstdout:\n{}\nstderr:\n{}",
+                index.saturating_add(1),
+                failure.argv.join(" "),
+                failure
+                    .exit_status
+                    .map(|status| status.to_string())
+                    .unwrap_or_else(|| "spawn_failed".to_string()),
+                failure.stdout,
+                failure.stderr
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    let changed_files = if context.changed_files.is_empty() {
+        "none".to_string()
+    } else {
+        context.changed_files.join("\n")
+    };
+    format!(
+        "\n\nRepair attempt context:\nThe previous provider edit did not pass verification. Return a targeted JSON patch for the current dirty worktree.\n\nFailed verifier evidence:\n{}\n\nChanged files:\n{}\n\nCurrent git diff:\n{}\n",
+        failed,
+        changed_files,
+        context.git_diff
+    )
+}
+
+fn read_artifact_snippet(path: &Path, max_chars: usize) -> String {
+    let raw = fs::read_to_string(path).unwrap_or_default();
+    truncate_chars(redact_secret_like_tokens(&raw).as_str(), max_chars)
+}
+
+fn git_lines(repo_path: &Path, args: &[&str]) -> anyhow::Result<String> {
+    let output = Command::new("git")
+        .args(args)
+        .current_dir(repo_path)
+        .output()
+        .with_context(|| format!("run git {} in {}", args.join(" "), repo_path.display()))?;
+    if !output.status.success() {
+        return Ok(String::new());
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+fn git_snippet(repo_path: &Path, args: &[&str], max_chars: usize) -> anyhow::Result<String> {
+    let raw = git_lines(repo_path, args)?;
+    Ok(truncate_chars(
+        redact_secret_like_tokens(&raw).as_str(),
+        max_chars,
+    ))
+}
+
+fn parse_git_status_changed_file_names(raw_status: &str) -> Vec<String> {
+    raw_status
+        .lines()
+        .filter_map(|line| line.get(3..))
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(|line| {
+            line.rsplit_once(" -> ")
+                .map(|(_from, to)| to)
+                .unwrap_or(line)
+                .to_string()
+        })
+        .collect()
+}
+
+fn truncate_chars(value: &str, max_chars: usize) -> String {
+    if value.chars().count() <= max_chars {
+        return value.to_string();
+    }
+    let mut truncated = value.chars().take(max_chars).collect::<String>();
+    truncated.push_str("\n[truncated]");
+    truncated
+}
+
+fn provider_edit_from_response(input: ProviderEditResponseInput<'_>) -> ProviderEditOutcome {
+    let ProviderEditResponseInput {
+        attempt_index,
+        mode,
+        model_ref,
+        repair,
+        dispatched,
+        finish_reason,
+        usage,
+        response_text,
+    } = input;
     let response_text_bytes = response_text.len();
     let response_text_sha256 = sha256_hex(response_text.as_bytes());
     let usage_report = usage.as_ref().map(provider_usage_report);
@@ -802,6 +1020,7 @@ fn provider_edit_from_response(
                 let edit_relative_path = provider_edit_paths_summary(&edits);
                 let edit_reason_code = provider_edit_reason_summary(&edits);
                 let report = ProviderProofReport {
+                    attempt_index,
                     mode,
                     provider: model_ref.provider.as_str().to_string(),
                     model: model_ref.model.clone(),
@@ -814,12 +1033,18 @@ fn provider_edit_from_response(
                     response_text_sha256: Some(response_text_sha256),
                     edit_relative_path: Some(edit_relative_path),
                     edit_reason_code: Some(edit_reason_code),
+                    repair_context_included: repair.is_some(),
+                    failed_verifier_count: repair
+                        .map(|context| context.failed_verifiers.len())
+                        .unwrap_or_default(),
+                    diff_context_bytes: repair.map(|context| context.git_diff.len()),
                     error: None,
                 };
                 ProviderEditOutcome::Ready(ProviderEditResolution { edits, report })
             }
             Err(error) => {
                 ProviderEditOutcome::Failed(provider_failure_report(ProviderFailureReportInput {
+                    attempt_index,
                     mode,
                     model_ref,
                     dispatched,
@@ -828,11 +1053,13 @@ fn provider_edit_from_response(
                     response_text_bytes: Some(response_text_bytes),
                     response_text_sha256: Some(response_text_sha256),
                     usage: usage_report,
+                    repair,
                 }))
             }
         },
         Err(error) => {
             ProviderEditOutcome::Failed(provider_failure_report(ProviderFailureReportInput {
+                attempt_index,
                 mode,
                 model_ref,
                 dispatched,
@@ -841,6 +1068,7 @@ fn provider_edit_from_response(
                 response_text_bytes: Some(response_text_bytes),
                 response_text_sha256: Some(response_text_sha256),
                 usage: usage_report,
+                repair,
             }))
         }
     }
@@ -918,6 +1146,7 @@ fn provider_edit_reason_summary(edits: &[CodingMissionControlledEdit]) -> String
 
 fn provider_failure_report(input: ProviderFailureReportInput<'_>) -> ProviderProofReport {
     ProviderProofReport {
+        attempt_index: input.attempt_index,
         mode: input.mode,
         provider: input.model_ref.provider.as_str().to_string(),
         model: input.model_ref.model.clone(),
@@ -936,6 +1165,12 @@ fn provider_failure_report(input: ProviderFailureReportInput<'_>) -> ProviderPro
         response_text_sha256: input.response_text_sha256,
         edit_relative_path: None,
         edit_reason_code: None,
+        repair_context_included: input.repair.is_some(),
+        failed_verifier_count: input
+            .repair
+            .map(|context| context.failed_verifiers.len())
+            .unwrap_or_default(),
+        diff_context_bytes: input.repair.map(|context| context.git_diff.len()),
         error: input.error,
     }
 }
@@ -1001,6 +1236,7 @@ fn provider_report_satisfies_mode(mode: HarnessMode, report: Option<&ProviderPro
 }
 
 fn build_report(input: LiveLoopReportInput<'_>) -> LiveLoopReport {
+    let final_provider = input.provider_attempts.last().cloned();
     let commit = input
         .state
         .git_evidence
@@ -1052,7 +1288,7 @@ fn build_report(input: LiveLoopReportInput<'_>) -> LiveLoopReport {
                 && verifier_transcript
                     .iter()
                     .any(|evidence| evidence.status == "succeeded")
-                && provider_report_satisfies_mode(input.mode, input.provider.as_ref())
+                && provider_report_satisfies_mode(input.mode, final_provider.as_ref())
                 && (input.mode != HarnessMode::RealRepo || changed_files.len() >= 2);
             if !ok {
                 failure_reasons.push(match input.mode {
@@ -1101,7 +1337,8 @@ fn build_report(input: LiveLoopReportInput<'_>) -> LiveLoopReport {
         resume: input.resume,
         blocked_reason: input.outcome.blocked_reason.clone(),
         pr_ready: pr_ready_report,
-        provider: input.provider,
+        provider: final_provider,
+        provider_attempts: input.provider_attempts,
         operator_interventions_used: Vec::new(),
         no_routine_human_steering_used: true,
     }
@@ -1260,7 +1497,8 @@ mod provider_backed_tests {
             provider_timeout_ms: 120_000,
             provider_max_retries: 1,
             provider_max_tokens: 1_024,
-            mock_provider_response: None,
+            provider_repair_attempts: 2,
+            mock_provider_responses: Vec::new(),
             verifier_commands: Vec::new(),
         }
     }
@@ -1268,19 +1506,21 @@ mod provider_backed_tests {
     #[test]
     fn provider_backed_parses_json_edit() {
         let model_ref = ModelRef::parse("openai/test-model").expect("model parses");
-        let outcome = provider_edit_from_response(
-            "mock",
-            &model_ref,
-            true,
-            Some("stop".to_string()),
-            Some(ChatUsage {
+        let outcome = provider_edit_from_response(ProviderEditResponseInput {
+            attempt_index: 1,
+            mode: "mock",
+            model_ref: &model_ref,
+            repair: None,
+            dispatched: true,
+            finish_reason: Some("stop".to_string()),
+            usage: Some(ChatUsage {
                 input_tokens: 10,
                 output_tokens: 8,
                 total_tokens: 18,
                 cached_input_tokens: 2,
             }),
-            r#"{"relative_path":"status.txt","contents":"pass","reason_code":"provider_test"}"#,
-        );
+            response_text: r#"{"relative_path":"status.txt","contents":"pass","reason_code":"provider_test"}"#,
+        });
 
         let ProviderEditOutcome::Ready(resolved) = outcome else {
             panic!("provider edit should parse");
@@ -1290,6 +1530,8 @@ mod provider_backed_tests {
         assert_eq!(resolved.edits[0].contents, "pass\n");
         assert_eq!(resolved.edits[0].reason_code, "provider_test");
         assert_eq!(resolved.report.parse_status, "parsed");
+        assert_eq!(resolved.report.attempt_index, 1);
+        assert!(!resolved.report.repair_context_included);
         assert_eq!(
             resolved.report.edit_relative_path.as_deref(),
             Some("status.txt")
@@ -1308,14 +1550,17 @@ mod provider_backed_tests {
     #[test]
     fn provider_backed_parses_json_edit_array() {
         let model_ref = ModelRef::parse("openai/test-model").expect("model parses");
-        let outcome = provider_edit_from_response(
-            "mock",
-            &model_ref,
-            true,
-            Some("stop".to_string()),
-            None,
-            r#"{"edits":[{"relative_path":"status.txt","contents":"pass","reason_code":"provider_status"},{"relative_path":"docs/notes.txt","contents":"helper\n","reason_code":"provider_notes"}]}"#,
-        );
+        let repair = repair_context_fixture();
+        let outcome = provider_edit_from_response(ProviderEditResponseInput {
+            attempt_index: 2,
+            mode: "mock",
+            model_ref: &model_ref,
+            repair: Some(&repair),
+            dispatched: true,
+            finish_reason: Some("stop".to_string()),
+            usage: None,
+            response_text: r#"{"edits":[{"relative_path":"status.txt","contents":"pass","reason_code":"provider_status"},{"relative_path":"docs/notes.txt","contents":"helper\n","reason_code":"provider_notes"}]}"#,
+        });
 
         let ProviderEditOutcome::Ready(resolved) = outcome else {
             panic!("provider edit array should parse");
@@ -1329,6 +1574,13 @@ mod provider_backed_tests {
         );
         assert_eq!(resolved.edits[1].contents, "helper\n");
         assert_eq!(resolved.report.parse_status, "parsed");
+        assert_eq!(resolved.report.attempt_index, 2);
+        assert!(resolved.report.repair_context_included);
+        assert_eq!(resolved.report.failed_verifier_count, 1);
+        assert_eq!(
+            resolved.report.diff_context_bytes,
+            Some(repair.git_diff.len())
+        );
         assert_eq!(
             resolved.report.edit_relative_path.as_deref(),
             Some("status.txt,docs/notes.txt")
@@ -1338,13 +1590,25 @@ mod provider_backed_tests {
     #[test]
     fn provider_backed_malformed_response_fails_closed() {
         let model_ref = ModelRef::parse("openai/test-model").expect("model parses");
-        let outcome = provider_edit_from_response("mock", &model_ref, true, None, None, "not-json");
+        let repair = repair_context_fixture();
+        let outcome = provider_edit_from_response(ProviderEditResponseInput {
+            attempt_index: 3,
+            mode: "mock",
+            model_ref: &model_ref,
+            repair: Some(&repair),
+            dispatched: true,
+            finish_reason: None,
+            usage: None,
+            response_text: "not-json",
+        });
 
         let ProviderEditOutcome::Failed(report) = outcome else {
             panic!("malformed provider output should fail");
         };
         assert_eq!(report.parse_status, "malformed");
         assert_eq!(report.reason_code, "provider_output_malformed");
+        assert_eq!(report.attempt_index, 3);
+        assert!(report.repair_context_included);
         assert!(report.edit_relative_path.is_none());
         assert!(report.response_text_sha256.is_some());
     }
@@ -1352,14 +1616,16 @@ mod provider_backed_tests {
     #[test]
     fn provider_backed_rejects_path_escape() {
         let model_ref = ModelRef::parse("openai/test-model").expect("model parses");
-        let outcome = provider_edit_from_response(
-            "mock",
-            &model_ref,
-            true,
-            None,
-            None,
-            r#"{"relative_path":"../status.txt","contents":"pass\n"}"#,
-        );
+        let outcome = provider_edit_from_response(ProviderEditResponseInput {
+            attempt_index: 1,
+            mode: "mock",
+            model_ref: &model_ref,
+            repair: None,
+            dispatched: true,
+            finish_reason: None,
+            usage: None,
+            response_text: r#"{"relative_path":"../status.txt","contents":"pass\n"}"#,
+        });
 
         let ProviderEditOutcome::Failed(report) = outcome else {
             panic!("escaping provider edit should fail");
@@ -1370,25 +1636,69 @@ mod provider_backed_tests {
     }
 
     #[test]
+    fn provider_repair_context_render_includes_verifier_and_diff() {
+        let rendered = render_provider_repair_context(&repair_context_fixture());
+
+        assert!(rendered.contains("Repair attempt context"));
+        assert!(rendered.contains("grep -q repaired notes.txt"));
+        assert!(rendered.contains("expected repaired"));
+        assert!(rendered.contains("status.txt"));
+        assert!(rendered.contains("+pass"));
+    }
+
+    fn repair_context_fixture() -> ProviderRepairContext {
+        ProviderRepairContext {
+            failed_verifiers: vec![ProviderVerifierFailureContext {
+                argv: vec![
+                    "grep".to_string(),
+                    "-q".to_string(),
+                    "repaired".to_string(),
+                    "notes.txt".to_string(),
+                ],
+                exit_status: Some(1),
+                stdout: String::new(),
+                stderr: "expected repaired notes.txt".to_string(),
+            }],
+            changed_files: vec!["status.txt".to_string()],
+            git_diff: "diff --git a/status.txt b/status.txt\n+pass\n".to_string(),
+        }
+    }
+
+    fn run_provider_cli_stack_test(f: impl FnOnce() + Send + 'static) {
+        std::thread::Builder::new()
+            .name("provider-cli-stack-test".to_string())
+            .stack_size(8 * 1024 * 1024)
+            .spawn(f)
+            .expect("spawn provider cli stack test")
+            .join()
+            .expect("provider cli stack test should not panic");
+    }
+
+    #[test]
     fn provider_backed_openrouter_api_key_mode_injects_openrouter_key() {
-        let _guard = env_lock().lock().expect("env lock");
-        let prior_openrouter = std::env::var("OPENROUTER_API_KEY").ok();
-        let prior_tau_openrouter = std::env::var("TAU_OPENROUTER_API_KEY").ok();
-        let prior_openai = std::env::var("OPENAI_API_KEY").ok();
+        run_provider_cli_stack_test(|| {
+            let _guard = env_lock().lock().expect("env lock");
+            let prior_openrouter = std::env::var("OPENROUTER_API_KEY").ok();
+            let prior_tau_openrouter = std::env::var("TAU_OPENROUTER_API_KEY").ok();
+            let prior_openai = std::env::var("OPENAI_API_KEY").ok();
 
-        std::env::set_var("OPENROUTER_API_KEY", "test-openrouter-key");
-        std::env::remove_var("TAU_OPENROUTER_API_KEY");
-        std::env::remove_var("OPENAI_API_KEY");
+            std::env::set_var("OPENROUTER_API_KEY", "test-openrouter-key");
+            std::env::remove_var("TAU_OPENROUTER_API_KEY");
+            std::env::remove_var("OPENAI_API_KEY");
 
-        let args = provider_test_args("openrouter/deepseek/deepseek-v4-flash");
-        let model_ref = ModelRef::parse(&args.provider_model).expect("model parses");
-        let cli = provider_cli(&args, &model_ref).expect("provider cli");
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let args = provider_test_args("openrouter/deepseek/deepseek-v4-flash");
+                let model_ref = ModelRef::parse(&args.provider_model).expect("model parses");
+                let cli = provider_cli(&args, &model_ref).expect("provider cli");
 
-        assert_eq!(cli.openai_api_key.as_deref(), Some("test-openrouter-key"));
+                assert_eq!(cli.openai_api_key.as_deref(), Some("test-openrouter-key"));
+            }));
 
-        restore_env("OPENROUTER_API_KEY", prior_openrouter);
-        restore_env("TAU_OPENROUTER_API_KEY", prior_tau_openrouter);
-        restore_env("OPENAI_API_KEY", prior_openai);
+            restore_env("OPENROUTER_API_KEY", prior_openrouter);
+            restore_env("TAU_OPENROUTER_API_KEY", prior_tau_openrouter);
+            restore_env("OPENAI_API_KEY", prior_openai);
+            result.expect("provider cli assertions should pass");
+        });
     }
 
     #[test]
