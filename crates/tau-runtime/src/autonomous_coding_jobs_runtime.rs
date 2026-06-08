@@ -7,6 +7,7 @@
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
+    process::Command,
     sync::atomic::{AtomicU64, Ordering},
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -110,6 +111,109 @@ pub struct AutonomousCodingJobReplayRequest {
     pub started_unix_ms: u64,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AutonomousCodingMergeMethod {
+    Merge,
+    Squash,
+    Rebase,
+}
+
+impl AutonomousCodingMergeMethod {
+    fn gh_flag(self) -> &'static str {
+        match self {
+            Self::Merge => "--merge",
+            Self::Squash => "--squash",
+            Self::Rebase => "--rebase",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AutonomousCodingAutoMergeStatus {
+    Requested,
+    Blocked,
+    Failed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AutonomousCodingAutoMergeRequest {
+    pub job_id: String,
+    pub allow_auto_merge: bool,
+    pub merge_method: AutonomousCodingMergeMethod,
+    pub delete_branch: bool,
+    #[serde(default)]
+    pub github_env: BTreeMap<String, String>,
+    #[serde(default)]
+    pub gh_binary: Option<PathBuf>,
+    pub started_unix_ms: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AutonomousCodingAutoMergeEvidence {
+    pub status: AutonomousCodingAutoMergeStatus,
+    pub reason_code: String,
+    pub pr_url: Option<String>,
+    pub command_argv: Vec<String>,
+    #[serde(default)]
+    pub stdout_path: Option<PathBuf>,
+    #[serde(default)]
+    pub stderr_path: Option<PathBuf>,
+    #[serde(default)]
+    pub exit_status: Option<i32>,
+    #[serde(default)]
+    pub error_summary: Option<String>,
+    pub created_unix_ms: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AutonomousCodingAutoMergeOutcome {
+    pub record: AutonomousCodingJobRecord,
+    pub status: AutonomousCodingJobStatusSnapshot,
+    pub evidence: AutonomousCodingAutoMergeEvidence,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AutonomousCodingIssueIntakeRequest {
+    pub intake_id: String,
+    pub issue_url: String,
+    pub issue_title: String,
+    pub issue_body: String,
+    pub repo_path: PathBuf,
+    pub base_branch: String,
+    pub started_unix_ms: u64,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AutonomousCodingIssueIntakeStatus {
+    Blocked,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AutonomousCodingAuthorityRequirement {
+    pub reason_code: String,
+    pub summary: String,
+    pub required_input: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AutonomousCodingIssueIntakeOutcome {
+    pub schema_version: u32,
+    pub intake_id: String,
+    pub status: AutonomousCodingIssueIntakeStatus,
+    pub reason_code: String,
+    pub issue_url: String,
+    pub issue_title: String,
+    pub issue_body_summary: String,
+    pub repo_path: PathBuf,
+    pub base_branch: String,
+    pub required_authority: Vec<AutonomousCodingAuthorityRequirement>,
+    pub created_unix_ms: u64,
+    pub updated_unix_ms: u64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AutonomousCodingJobRecord {
     pub schema_version: u32,
@@ -137,6 +241,8 @@ pub struct AutonomousCodingJobRecord {
     pub last_background_reason_code: Option<String>,
     #[serde(default)]
     pub last_error: Option<String>,
+    #[serde(default)]
+    pub auto_merge_evidence: Option<AutonomousCodingAutoMergeEvidence>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -166,6 +272,14 @@ pub struct AutonomousCodingJobStatusSnapshot {
     pub last_background_reason_code: Option<String>,
     #[serde(default)]
     pub last_error: Option<String>,
+    #[serde(default)]
+    pub auto_merge_status: Option<String>,
+    #[serde(default)]
+    pub auto_merge_reason_code: Option<String>,
+    #[serde(default)]
+    pub auto_merge_command: Option<String>,
+    #[serde(default)]
+    pub auto_merge_pr_url: Option<String>,
     #[serde(default)]
     pub metadata: BTreeMap<String, String>,
 }
@@ -261,6 +375,7 @@ impl AutonomousCodingJobRuntime {
             replay_count: 0,
             last_background_reason_code: None,
             last_error: None,
+            auto_merge_evidence: None,
         };
 
         let mut background_job = None;
@@ -349,6 +464,208 @@ impl AutonomousCodingJobRuntime {
     pub fn status(&self, job_id: &str) -> Result<AutonomousCodingJobStatusSnapshot> {
         let record = load_autonomous_coding_job_record(&self.config.state_dir, job_id)?;
         self.refresh_status_snapshot(&record)
+    }
+
+    pub fn request_auto_merge(
+        &self,
+        request: AutonomousCodingAutoMergeRequest,
+    ) -> Result<AutonomousCodingAutoMergeOutcome> {
+        let mut record =
+            load_autonomous_coding_job_record(&self.config.state_dir, &request.job_id)?;
+        let state = load_coding_mission_state(&record.state_root, &record.mission_id)?;
+        let status = build_status_snapshot(&record, &state);
+
+        if !request.allow_auto_merge {
+            return self.block_auto_merge(
+                record,
+                "auto_merge_policy_disabled",
+                "auto-merge policy is disabled for this request",
+                status.pr_url,
+                request.started_unix_ms,
+            );
+        }
+        if record.status != AutonomousCodingJobStatus::PrReady
+            || state.phase != CodingMissionPhase::PrReady
+        {
+            return self.block_auto_merge(
+                record,
+                "auto_merge_job_not_pr_ready",
+                "job must be pr_ready before auto-merge can be requested",
+                status.pr_url,
+                request.started_unix_ms,
+            );
+        }
+        let Some(pr_url) = status.pr_url.clone() else {
+            return self.block_auto_merge(
+                record,
+                "auto_merge_missing_pr_url",
+                "PR URL is required before auto-merge can be requested",
+                None,
+                request.started_unix_ms,
+            );
+        };
+        if !github_auth_present_for_auto_merge(&request.github_env) {
+            return self.block_auto_merge(
+                record,
+                "auto_merge_missing_github_auth",
+                "GH_TOKEN or GITHUB_TOKEN is required for auto-merge",
+                Some(pr_url),
+                request.started_unix_ms,
+            );
+        }
+
+        let gh_binary = request.gh_binary.unwrap_or_else(|| PathBuf::from("gh"));
+        let mut argv = vec![
+            "pr".to_string(),
+            "merge".to_string(),
+            pr_url.clone(),
+            "--auto".to_string(),
+            request.merge_method.gh_flag().to_string(),
+        ];
+        if request.delete_branch {
+            argv.push("--delete-branch".to_string());
+        }
+        debug_assert!(!argv.iter().any(|arg| arg == "--admin"));
+
+        let artifact_dir = autonomous_coding_job_artifact_dir(&record.state_root, &record.job_id);
+        std::fs::create_dir_all(&artifact_dir)?;
+        let stdout_path = artifact_dir.join("auto-merge.stdout.log");
+        let stderr_path = artifact_dir.join("auto-merge.stderr.log");
+        let output = Command::new(&gh_binary)
+            .args(&argv)
+            .envs(&request.github_env)
+            .current_dir(&record.repo_path)
+            .output();
+
+        let evidence = match output {
+            Ok(output) => {
+                std::fs::write(&stdout_path, &output.stdout)?;
+                std::fs::write(&stderr_path, &output.stderr)?;
+                if output.status.success() {
+                    AutonomousCodingAutoMergeEvidence {
+                        status: AutonomousCodingAutoMergeStatus::Requested,
+                        reason_code: "auto_merge_requested".to_string(),
+                        pr_url: Some(pr_url),
+                        command_argv: auto_merge_command_argv(&gh_binary, &argv),
+                        stdout_path: Some(stdout_path),
+                        stderr_path: Some(stderr_path),
+                        exit_status: output.status.code(),
+                        error_summary: None,
+                        created_unix_ms: request.started_unix_ms,
+                    }
+                } else {
+                    AutonomousCodingAutoMergeEvidence {
+                        status: AutonomousCodingAutoMergeStatus::Failed,
+                        reason_code: "auto_merge_command_failed".to_string(),
+                        pr_url: Some(pr_url),
+                        command_argv: auto_merge_command_argv(&gh_binary, &argv),
+                        stdout_path: Some(stdout_path),
+                        stderr_path: Some(stderr_path),
+                        exit_status: output.status.code(),
+                        error_summary: Some(format!(
+                            "gh pr merge exited with status {}",
+                            output.status.code().unwrap_or(-1)
+                        )),
+                        created_unix_ms: request.started_unix_ms,
+                    }
+                }
+            }
+            Err(error) => AutonomousCodingAutoMergeEvidence {
+                status: AutonomousCodingAutoMergeStatus::Failed,
+                reason_code: "auto_merge_command_spawn_failed".to_string(),
+                pr_url: Some(pr_url),
+                command_argv: auto_merge_command_argv(&gh_binary, &argv),
+                stdout_path: None,
+                stderr_path: None,
+                exit_status: None,
+                error_summary: Some(error.to_string()),
+                created_unix_ms: request.started_unix_ms,
+            },
+        };
+
+        record.reason_code = evidence.reason_code.clone();
+        record.updated_unix_ms = request.started_unix_ms;
+        record.auto_merge_evidence = Some(evidence.clone());
+        persist_autonomous_coding_job_record(&record)?;
+        let status = self.refresh_status_snapshot(&record)?;
+        Ok(AutonomousCodingAutoMergeOutcome {
+            record,
+            status,
+            evidence,
+        })
+    }
+
+    pub fn intake_issue_without_authority(
+        &self,
+        request: AutonomousCodingIssueIntakeRequest,
+    ) -> Result<AutonomousCodingIssueIntakeOutcome> {
+        ensure_autonomous_coding_job_layout(&self.config.state_dir)?;
+        let repo_path = canonicalize_existing_dir(request.repo_path.as_path())?;
+        let outcome = AutonomousCodingIssueIntakeOutcome {
+            schema_version: AUTONOMOUS_CODING_JOB_SCHEMA_VERSION,
+            intake_id: request.intake_id,
+            status: AutonomousCodingIssueIntakeStatus::Blocked,
+            reason_code: "issue_intake_authority_required".to_string(),
+            issue_url: request.issue_url,
+            issue_title: request.issue_title,
+            issue_body_summary: summarize_issue_body(&request.issue_body),
+            repo_path,
+            base_branch: request.base_branch,
+            required_authority: vec![
+                AutonomousCodingAuthorityRequirement {
+                    reason_code: "verifier_authority_required".to_string(),
+                    summary: "A verifier command or acceptance test must be provided before code can be changed.".to_string(),
+                    required_input: "--verifier-command or spec-derived test command".to_string(),
+                },
+                AutonomousCodingAuthorityRequirement {
+                    reason_code: "edit_authority_required".to_string(),
+                    summary: "An edit plan, provider edit authority, or controlled edit set must be provided before mutation.".to_string(),
+                    required_input: "--edit, provider edit plan, or approved mutation authority".to_string(),
+                },
+            ],
+            created_unix_ms: request.started_unix_ms,
+            updated_unix_ms: request.started_unix_ms,
+        };
+        persist_autonomous_coding_issue_intake(&self.config.state_dir, &outcome)?;
+        Ok(outcome)
+    }
+
+    pub fn issue_intake_status(
+        &self,
+        intake_id: &str,
+    ) -> Result<AutonomousCodingIssueIntakeOutcome> {
+        load_autonomous_coding_issue_intake(&self.config.state_dir, intake_id)
+    }
+
+    fn block_auto_merge(
+        &self,
+        mut record: AutonomousCodingJobRecord,
+        reason_code: &str,
+        error_summary: &str,
+        pr_url: Option<String>,
+        started_unix_ms: u64,
+    ) -> Result<AutonomousCodingAutoMergeOutcome> {
+        let evidence = AutonomousCodingAutoMergeEvidence {
+            status: AutonomousCodingAutoMergeStatus::Blocked,
+            reason_code: reason_code.to_string(),
+            pr_url,
+            command_argv: Vec::new(),
+            stdout_path: None,
+            stderr_path: None,
+            exit_status: None,
+            error_summary: Some(error_summary.to_string()),
+            created_unix_ms: started_unix_ms,
+        };
+        record.reason_code = reason_code.to_string();
+        record.updated_unix_ms = started_unix_ms;
+        record.auto_merge_evidence = Some(evidence.clone());
+        persist_autonomous_coding_job_record(&record)?;
+        let status = self.refresh_status_snapshot(&record)?;
+        Ok(AutonomousCodingAutoMergeOutcome {
+            record,
+            status,
+            evidence,
+        })
     }
 
     fn execute_job(
@@ -541,9 +858,20 @@ pub fn autonomous_coding_job_status_path(state_dir: &Path, job_id: &str) -> Path
         .join(format!("{job_id}.status.json"))
 }
 
+pub fn autonomous_coding_issue_intake_path(state_dir: &Path, intake_id: &str) -> PathBuf {
+    state_dir
+        .join("issue-intake")
+        .join(format!("{intake_id}.json"))
+}
+
+fn autonomous_coding_job_artifact_dir(state_dir: &Path, job_id: &str) -> PathBuf {
+    state_dir.join("autonomous-coding-jobs").join(job_id)
+}
+
 fn ensure_autonomous_coding_job_layout(state_dir: &Path) -> Result<()> {
     std::fs::create_dir_all(state_dir.join("autonomous-coding-jobs"))?;
     std::fs::create_dir_all(state_dir.join("coding-missions"))?;
+    std::fs::create_dir_all(state_dir.join("issue-intake"))?;
     Ok(())
 }
 
@@ -573,6 +901,34 @@ fn persist_autonomous_coding_job_status(
 ) -> Result<()> {
     let path = autonomous_coding_job_status_path(state_dir, &status.job_id);
     write_json_atomic(&path, status)
+}
+
+fn persist_autonomous_coding_issue_intake(
+    state_dir: &Path,
+    outcome: &AutonomousCodingIssueIntakeOutcome,
+) -> Result<()> {
+    let path = autonomous_coding_issue_intake_path(state_dir, &outcome.intake_id);
+    write_json_atomic(&path, outcome)
+}
+
+fn load_autonomous_coding_issue_intake(
+    state_dir: &Path,
+    intake_id: &str,
+) -> Result<AutonomousCodingIssueIntakeOutcome> {
+    let path = autonomous_coding_issue_intake_path(state_dir, intake_id);
+    let raw = std::fs::read_to_string(&path)
+        .with_context(|| format!("failed to read {}", path.display()))?;
+    let outcome = serde_json::from_str::<AutonomousCodingIssueIntakeOutcome>(&raw)
+        .with_context(|| format!("failed to parse {}", path.display()))?;
+    if outcome.schema_version != AUTONOMOUS_CODING_JOB_SCHEMA_VERSION {
+        return Err(anyhow!(
+            "unsupported issue intake schema {} at {}; expected {}",
+            outcome.schema_version,
+            path.display(),
+            AUTONOMOUS_CODING_JOB_SCHEMA_VERSION
+        ));
+    }
+    Ok(outcome)
 }
 
 fn load_autonomous_coding_job_record(
@@ -689,6 +1045,23 @@ fn build_status_snapshot(
         replay_count: record.replay_count,
         last_background_reason_code: record.last_background_reason_code.clone(),
         last_error: record.last_error.clone(),
+        auto_merge_status: record
+            .auto_merge_evidence
+            .as_ref()
+            .map(|evidence| auto_merge_status_label(evidence.status).to_string()),
+        auto_merge_reason_code: record
+            .auto_merge_evidence
+            .as_ref()
+            .map(|evidence| evidence.reason_code.clone()),
+        auto_merge_command: record
+            .auto_merge_evidence
+            .as_ref()
+            .filter(|evidence| !evidence.command_argv.is_empty())
+            .map(|evidence| evidence.command_argv.join(" ")),
+        auto_merge_pr_url: record
+            .auto_merge_evidence
+            .as_ref()
+            .and_then(|evidence| evidence.pr_url.clone()),
         metadata: BTreeMap::from([
             (
                 "mission_state_path".to_string(),
@@ -703,6 +1076,51 @@ fn build_status_snapshot(
                     .to_string(),
             ),
         ]),
+    }
+}
+
+fn github_auth_present_for_auto_merge(env: &BTreeMap<String, String>) -> bool {
+    env.get("GH_TOKEN")
+        .or_else(|| env.get("GITHUB_TOKEN"))
+        .is_some_and(|value| !value.trim().is_empty())
+        || std::env::var("GH_TOKEN").is_ok_and(|value| !value.trim().is_empty())
+        || std::env::var("GITHUB_TOKEN").is_ok_and(|value| !value.trim().is_empty())
+}
+
+fn auto_merge_command_argv(gh_binary: &Path, args: &[String]) -> Vec<String> {
+    let mut argv = Vec::with_capacity(args.len().saturating_add(1));
+    argv.push(gh_binary.display().to_string());
+    argv.extend(args.iter().cloned());
+    argv
+}
+
+fn auto_merge_status_label(status: AutonomousCodingAutoMergeStatus) -> &'static str {
+    match status {
+        AutonomousCodingAutoMergeStatus::Requested => "requested",
+        AutonomousCodingAutoMergeStatus::Blocked => "blocked",
+        AutonomousCodingAutoMergeStatus::Failed => "failed",
+    }
+}
+
+fn canonicalize_existing_dir(path: &Path) -> Result<PathBuf> {
+    let canonical = std::fs::canonicalize(path)
+        .with_context(|| format!("failed to canonicalize {}", path.display()))?;
+    if !canonical.is_dir() {
+        return Err(anyhow!("{} must be a directory", canonical.display()));
+    }
+    Ok(canonical)
+}
+
+fn summarize_issue_body(body: &str) -> String {
+    let summary = body
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .unwrap_or("no issue body supplied");
+    if summary.chars().count() <= 240 {
+        summary.to_string()
+    } else {
+        summary.chars().take(240).collect()
     }
 }
 
@@ -944,6 +1362,116 @@ mod tests {
         assert!(status.pr_ready_command.is_some());
     }
 
+    #[tokio::test]
+    async fn spec_3796_c01_auto_merge_requests_gh_auto_merge_when_authorized() {
+        let fixture = CodingJobFixture::new();
+        let runtime = fixture.runtime_without_background();
+        let submitted = make_pr_ready_job_with_pr_url(&fixture, &runtime).await;
+        let gh = fixture.fake_gh("auto-merge-enabled\n", 0);
+        let outcome = runtime
+            .request_auto_merge(AutonomousCodingAutoMergeRequest {
+                job_id: submitted.record.job_id.clone(),
+                allow_auto_merge: true,
+                merge_method: AutonomousCodingMergeMethod::Squash,
+                delete_branch: true,
+                github_env: BTreeMap::from([("GH_TOKEN".to_string(), "test-token".to_string())]),
+                gh_binary: Some(gh.binary.clone()),
+                started_unix_ms: 4_000,
+            })
+            .expect("request auto merge");
+
+        assert_eq!(
+            outcome.evidence.status,
+            AutonomousCodingAutoMergeStatus::Requested
+        );
+        assert_eq!(
+            outcome.status.auto_merge_status.as_deref(),
+            Some("requested")
+        );
+        assert_eq!(
+            outcome.status.auto_merge_reason_code.as_deref(),
+            Some("auto_merge_requested")
+        );
+        let argv = std::fs::read_to_string(&gh.argv_path).expect("captured argv");
+        assert!(argv.contains("pr\nmerge\nhttps://github.com/njfio/Tau/pull/3796"));
+        assert!(argv.contains("--auto\n"));
+        assert!(argv.contains("--squash\n"));
+        assert!(argv.contains("--delete-branch\n"));
+        assert!(!argv.contains("--admin"));
+    }
+
+    #[tokio::test]
+    async fn spec_3796_c02_auto_merge_blocks_without_policy_or_pr_url() {
+        let fixture = CodingJobFixture::new();
+        let runtime = fixture.runtime_without_background();
+        let submitted = runtime
+            .submit_job(fixture.submit_request(false, fixture.controlled_edits()))
+            .await
+            .expect("submit job");
+        runtime
+            .run_or_replay_job(submitted.record.job_id.as_str(), 2_000)
+            .expect("run job");
+        let gh = fixture.fake_gh("should-not-run\n", 0);
+
+        let outcome = runtime
+            .request_auto_merge(AutonomousCodingAutoMergeRequest {
+                job_id: submitted.record.job_id.clone(),
+                allow_auto_merge: false,
+                merge_method: AutonomousCodingMergeMethod::Merge,
+                delete_branch: false,
+                github_env: BTreeMap::from([("GH_TOKEN".to_string(), "test-token".to_string())]),
+                gh_binary: Some(gh.binary.clone()),
+                started_unix_ms: 4_000,
+            })
+            .expect("blocked auto merge");
+
+        assert_eq!(
+            outcome.evidence.status,
+            AutonomousCodingAutoMergeStatus::Blocked
+        );
+        assert_eq!(outcome.evidence.reason_code, "auto_merge_policy_disabled");
+        assert!(!gh.argv_path.exists(), "blocked merge should not invoke gh");
+    }
+
+    #[tokio::test]
+    async fn spec_3796_c04_issue_intake_without_authority_persists_blocked_plan() {
+        let fixture = CodingJobFixture::new();
+        let runtime = fixture.runtime_without_background();
+        let before_status =
+            std::fs::read_to_string(fixture.repo.path().join("status.txt")).expect("status before");
+
+        let outcome = runtime
+            .intake_issue_without_authority(AutonomousCodingIssueIntakeRequest {
+                intake_id: "issue-3796-intake".to_string(),
+                issue_url: "https://github.com/njfio/Tau/issues/3796".to_string(),
+                issue_title: "Solve arbitrary issue".to_string(),
+                issue_body: "Make Tau solve this without verifier/edit authority.".to_string(),
+                repo_path: fixture.repo.path().to_path_buf(),
+                base_branch: "master".to_string(),
+                started_unix_ms: 5_000,
+            })
+            .expect("issue intake");
+
+        assert_eq!(outcome.status, AutonomousCodingIssueIntakeStatus::Blocked);
+        assert!(outcome
+            .required_authority
+            .iter()
+            .any(|item| item.reason_code == "verifier_authority_required"));
+        assert!(outcome
+            .required_authority
+            .iter()
+            .any(|item| item.reason_code == "edit_authority_required"));
+        assert!(autonomous_coding_issue_intake_path(
+            runtime.config().state_dir.as_path(),
+            outcome.intake_id.as_str()
+        )
+        .exists());
+        assert_eq!(
+            std::fs::read_to_string(fixture.repo.path().join("status.txt")).expect("status after"),
+            before_status
+        );
+    }
+
     struct CodingJobFixture {
         root: TempDir,
         repo: TempDir,
@@ -1033,6 +1561,56 @@ mod tests {
                 },
             ]
         }
+
+        fn fake_gh(&self, stdout: &str, exit_code: i32) -> FakeGh {
+            let binary = self.root.path().join("fake-gh.sh");
+            let argv_path = self.root.path().join("fake-gh-argv.txt");
+            let script = format!(
+                "#!/usr/bin/env bash\nprintf '%s\\n' \"$@\" > '{}'\nprintf '{}'\nexit {}\n",
+                shell_single_quote(argv_path.display().to_string().as_str()),
+                stdout.replace('\'', "'\"'\"'"),
+                exit_code
+            );
+            std::fs::write(&binary, script).expect("fake gh");
+            let mut perms = std::fs::metadata(&binary).expect("metadata").permissions();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                perms.set_mode(0o755);
+                std::fs::set_permissions(&binary, perms).expect("chmod");
+            }
+            FakeGh { binary, argv_path }
+        }
+    }
+
+    struct FakeGh {
+        binary: PathBuf,
+        argv_path: PathBuf,
+    }
+
+    async fn make_pr_ready_job_with_pr_url(
+        fixture: &CodingJobFixture,
+        runtime: &AutonomousCodingJobRuntime,
+    ) -> AutonomousCodingJobRunOutcome {
+        let submitted = runtime
+            .submit_job(fixture.submit_request(false, fixture.controlled_edits()))
+            .await
+            .expect("submit job");
+        let outcome = runtime
+            .run_or_replay_job(submitted.record.job_id.as_str(), 2_000)
+            .expect("run job");
+        let mut state = load_coding_mission_state(
+            runtime.config().state_dir.as_path(),
+            outcome.record.mission_id.as_str(),
+        )
+        .expect("mission state");
+        state
+            .pr_ready_bundle
+            .as_mut()
+            .expect("pr-ready bundle")
+            .pr_url = Some("https://github.com/njfio/Tau/pull/3796".to_string());
+        save_coding_mission_state(&state).expect("save pr url");
+        outcome
     }
 
     fn mark_background_job_stale_running(state_dir: &Path, background_job_id: &str) {
@@ -1075,5 +1653,9 @@ mod tests {
             String::from_utf8_lossy(&output.stderr)
         );
         String::from_utf8_lossy(&output.stdout).trim().to_string()
+    }
+
+    fn shell_single_quote(value: &str) -> String {
+        value.replace('\'', "'\"'\"'")
     }
 }

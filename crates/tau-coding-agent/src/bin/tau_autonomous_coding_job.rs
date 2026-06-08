@@ -15,8 +15,9 @@ use clap::{Parser, Subcommand, ValueEnum};
 use serde_json::json;
 use tau_agent_core::{CodingMissionControlledEdit, CodingMissionPrMode};
 use tau_runtime::{
+    AutonomousCodingAutoMergeRequest, AutonomousCodingIssueIntakeRequest,
     AutonomousCodingJobReplayRequest, AutonomousCodingJobRuntime, AutonomousCodingJobRuntimeConfig,
-    AutonomousCodingJobSubmitRequest,
+    AutonomousCodingJobSubmitRequest, AutonomousCodingMergeMethod,
 };
 
 #[derive(Debug, Parser)]
@@ -41,6 +42,12 @@ enum Command {
     Status(Box<JobStatusArgs>),
     /// Run the background-job stuck recovery sweep and refresh linked jobs.
     Recover(Box<JobRecoverArgs>),
+    /// Request GitHub auto-merge for a PR-ready autonomous coding job.
+    AutoMerge(Box<JobAutoMergeArgs>),
+    /// Ingest an arbitrary issue without verifier/edit authority.
+    IntakeIssue(Box<IssueIntakeArgs>),
+    /// Emit a persisted issue-intake authority plan.
+    IntakeStatus(Box<IssueIntakeStatusArgs>),
 }
 
 #[derive(Debug, Parser)]
@@ -118,6 +125,52 @@ struct JobRecoverArgs {
     runtime: RuntimeArgs,
 }
 
+#[derive(Debug, Parser)]
+struct JobAutoMergeArgs {
+    #[command(flatten)]
+    runtime: RuntimeArgs,
+    #[arg(long)]
+    job_id: String,
+    #[arg(long)]
+    allow_auto_merge: bool,
+    #[arg(long, value_enum, default_value = "squash")]
+    merge_method: MergeMethodArg,
+    #[arg(long)]
+    delete_branch: bool,
+    #[arg(long)]
+    gh_binary: Option<PathBuf>,
+    #[arg(long)]
+    started_unix_ms: Option<u64>,
+}
+
+#[derive(Debug, Parser)]
+struct IssueIntakeArgs {
+    #[command(flatten)]
+    runtime: RuntimeArgs,
+    #[arg(long)]
+    intake_id: String,
+    #[arg(long)]
+    issue_url: String,
+    #[arg(long)]
+    issue_title: String,
+    #[arg(long)]
+    issue_body: String,
+    #[arg(long)]
+    repo_path: PathBuf,
+    #[arg(long, default_value = "master")]
+    base_branch: String,
+    #[arg(long)]
+    started_unix_ms: Option<u64>,
+}
+
+#[derive(Debug, Parser)]
+struct IssueIntakeStatusArgs {
+    #[command(flatten)]
+    runtime: RuntimeArgs,
+    #[arg(long)]
+    intake_id: String,
+}
+
 #[derive(Debug, Clone, Parser)]
 struct RuntimeArgs {
     #[arg(long, default_value = ".tau/autonomous-coding")]
@@ -134,6 +187,13 @@ enum PrModeArg {
     #[value(name = "pr-ready")]
     PrReady,
     Draft,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum MergeMethodArg {
+    Merge,
+    Squash,
+    Rebase,
 }
 
 #[tokio::main]
@@ -219,6 +279,41 @@ async fn run(args: Args) -> Result<()> {
                 "recovered_jobs": outcome.recovered_jobs,
             }))?;
         }
+        Command::AutoMerge(args) => {
+            let args = *args;
+            let runtime = runtime_from_args(&args.runtime)?;
+            let outcome = runtime.request_auto_merge(AutonomousCodingAutoMergeRequest {
+                job_id: args.job_id,
+                allow_auto_merge: args.allow_auto_merge,
+                merge_method: args.merge_method.into(),
+                delete_branch: args.delete_branch,
+                github_env: github_env_from_process(),
+                gh_binary: args.gh_binary,
+                started_unix_ms: args.started_unix_ms.unwrap_or_else(now_unix_ms),
+            })?;
+            print_json(&outcome)?;
+        }
+        Command::IntakeIssue(args) => {
+            let args = *args;
+            let runtime = runtime_from_args(&args.runtime)?;
+            let outcome =
+                runtime.intake_issue_without_authority(AutonomousCodingIssueIntakeRequest {
+                    intake_id: args.intake_id,
+                    issue_url: args.issue_url,
+                    issue_title: args.issue_title,
+                    issue_body: args.issue_body,
+                    repo_path: args.repo_path,
+                    base_branch: args.base_branch,
+                    started_unix_ms: args.started_unix_ms.unwrap_or_else(now_unix_ms),
+                })?;
+            print_json(&outcome)?;
+        }
+        Command::IntakeStatus(args) => {
+            let args = *args;
+            let runtime = runtime_from_args(&args.runtime)?;
+            let outcome = runtime.issue_intake_status(args.intake_id.as_str())?;
+            print_json(&outcome)?;
+        }
     }
     Ok(())
 }
@@ -269,12 +364,34 @@ fn now_unix_ms() -> u64 {
         .unwrap_or_default()
 }
 
+fn github_env_from_process() -> std::collections::BTreeMap<String, String> {
+    ["GH_TOKEN", "GITHUB_TOKEN"]
+        .into_iter()
+        .filter_map(|key| {
+            std::env::var(key)
+                .ok()
+                .filter(|value| !value.trim().is_empty())
+                .map(|value| (key.to_string(), value))
+        })
+        .collect()
+}
+
 impl From<PrModeArg> for CodingMissionPrMode {
     fn from(value: PrModeArg) -> Self {
         match value {
             PrModeArg::Disabled => Self::Disabled,
             PrModeArg::PrReady => Self::PrReady,
             PrModeArg::Draft => Self::Draft,
+        }
+    }
+}
+
+impl From<MergeMethodArg> for AutonomousCodingMergeMethod {
+    fn from(value: MergeMethodArg) -> Self {
+        match value {
+            MergeMethodArg::Merge => Self::Merge,
+            MergeMethodArg::Squash => Self::Squash,
+            MergeMethodArg::Rebase => Self::Rebase,
         }
     }
 }
