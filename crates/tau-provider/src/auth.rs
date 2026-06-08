@@ -4,6 +4,8 @@
 //! capability/requirement checks used by client construction and CLI auth flows.
 //! Invalid or incomplete auth configuration fails with explicit guidance.
 
+use std::{fs, path::Path};
+
 use anyhow::{Context, Result};
 use tau_ai::Provider;
 use tau_cli::Cli;
@@ -212,57 +214,146 @@ pub fn provider_api_key_candidates_with_inputs(
         Provider::OpenAi => vec![
             ("--openai-api-key", openai_api_key),
             ("--api-key", api_key),
-            ("OPENAI_API_KEY", std::env::var("OPENAI_API_KEY").ok()),
+            (
+                "OPENAI_API_KEY",
+                provider_env_or_dotenv_var("OPENAI_API_KEY"),
+            ),
             (
                 "OPENROUTER_API_KEY",
-                std::env::var("OPENROUTER_API_KEY").ok(),
+                provider_env_or_dotenv_var("OPENROUTER_API_KEY"),
             ),
             (
                 "TAU_OPENROUTER_API_KEY",
-                std::env::var("TAU_OPENROUTER_API_KEY").ok(),
+                provider_env_or_dotenv_var("TAU_OPENROUTER_API_KEY"),
             ),
-            ("DEEPSEEK_API_KEY", std::env::var("DEEPSEEK_API_KEY").ok()),
+            (
+                "DEEPSEEK_API_KEY",
+                provider_env_or_dotenv_var("DEEPSEEK_API_KEY"),
+            ),
             (
                 "TAU_DEEPSEEK_API_KEY",
-                std::env::var("TAU_DEEPSEEK_API_KEY").ok(),
+                provider_env_or_dotenv_var("TAU_DEEPSEEK_API_KEY"),
             ),
-            ("GROQ_API_KEY", std::env::var("GROQ_API_KEY").ok()),
-            ("XAI_API_KEY", std::env::var("XAI_API_KEY").ok()),
-            ("MISTRAL_API_KEY", std::env::var("MISTRAL_API_KEY").ok()),
+            ("GROQ_API_KEY", provider_env_or_dotenv_var("GROQ_API_KEY")),
+            ("XAI_API_KEY", provider_env_or_dotenv_var("XAI_API_KEY")),
+            (
+                "MISTRAL_API_KEY",
+                provider_env_or_dotenv_var("MISTRAL_API_KEY"),
+            ),
             (
                 "AZURE_OPENAI_API_KEY",
-                std::env::var("AZURE_OPENAI_API_KEY").ok(),
+                provider_env_or_dotenv_var("AZURE_OPENAI_API_KEY"),
             ),
-            ("TAU_API_KEY", std::env::var("TAU_API_KEY").ok()),
+            ("TAU_API_KEY", provider_env_or_dotenv_var("TAU_API_KEY")),
         ],
         Provider::OpenRouter => vec![
             ("--openai-api-key", openai_api_key),
             ("--api-key", api_key),
             (
                 "OPENROUTER_API_KEY",
-                std::env::var("OPENROUTER_API_KEY").ok(),
+                provider_env_or_dotenv_var("OPENROUTER_API_KEY"),
             ),
             (
                 "TAU_OPENROUTER_API_KEY",
-                std::env::var("TAU_OPENROUTER_API_KEY").ok(),
+                provider_env_or_dotenv_var("TAU_OPENROUTER_API_KEY"),
             ),
-            ("OPENAI_API_KEY", std::env::var("OPENAI_API_KEY").ok()),
-            ("TAU_API_KEY", std::env::var("TAU_API_KEY").ok()),
+            (
+                "OPENAI_API_KEY",
+                provider_env_or_dotenv_var("OPENAI_API_KEY"),
+            ),
+            ("TAU_API_KEY", provider_env_or_dotenv_var("TAU_API_KEY")),
         ],
         Provider::Anthropic => vec![
             ("--anthropic-api-key", anthropic_api_key),
             ("--api-key", api_key),
-            ("ANTHROPIC_API_KEY", std::env::var("ANTHROPIC_API_KEY").ok()),
-            ("TAU_API_KEY", std::env::var("TAU_API_KEY").ok()),
+            (
+                "ANTHROPIC_API_KEY",
+                provider_env_or_dotenv_var("ANTHROPIC_API_KEY"),
+            ),
+            ("TAU_API_KEY", provider_env_or_dotenv_var("TAU_API_KEY")),
         ],
         Provider::Google => vec![
             ("--google-api-key", google_api_key),
             ("--api-key", api_key),
-            ("GEMINI_API_KEY", std::env::var("GEMINI_API_KEY").ok()),
-            ("GOOGLE_API_KEY", std::env::var("GOOGLE_API_KEY").ok()),
-            ("TAU_API_KEY", std::env::var("TAU_API_KEY").ok()),
+            (
+                "GEMINI_API_KEY",
+                provider_env_or_dotenv_var("GEMINI_API_KEY"),
+            ),
+            (
+                "GOOGLE_API_KEY",
+                provider_env_or_dotenv_var("GOOGLE_API_KEY"),
+            ),
+            ("TAU_API_KEY", provider_env_or_dotenv_var("TAU_API_KEY")),
         ],
     }
+}
+
+fn provider_env_or_dotenv_var(name: &str) -> Option<String> {
+    if let Ok(value) = std::env::var(name) {
+        if !value.trim().is_empty() {
+            return Some(value);
+        }
+    }
+    nearest_dotenv_var(name)
+}
+
+fn nearest_dotenv_var(name: &str) -> Option<String> {
+    let current_dir = std::env::current_dir().ok()?;
+    for dir in current_dir.ancestors() {
+        let dotenv_path = dir.join(".env");
+        if let Some(value) = dotenv_var_from_path(&dotenv_path, name) {
+            return Some(value);
+        }
+        if dir.join(".git").exists() {
+            break;
+        }
+    }
+    None
+}
+
+fn dotenv_var_from_path(path: &Path, name: &str) -> Option<String> {
+    let contents = fs::read_to_string(path).ok()?;
+    contents
+        .lines()
+        .filter_map(|line| parse_dotenv_line(line, name))
+        .find(|value| !value.trim().is_empty())
+}
+
+fn parse_dotenv_line(line: &str, expected_name: &str) -> Option<String> {
+    let mut trimmed = line.trim();
+    if trimmed.is_empty() || trimmed.starts_with('#') {
+        return None;
+    }
+    if let Some(rest) = trimmed.strip_prefix("export ") {
+        trimmed = rest.trim_start();
+    }
+    let (name, value) = trimmed.split_once('=')?;
+    let name = name.trim();
+    if name != expected_name || !is_dotenv_name(name) {
+        return None;
+    }
+    Some(strip_dotenv_quotes(value.trim()))
+}
+
+fn is_dotenv_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    (first == '_' || first.is_ascii_alphabetic())
+        && chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
+}
+
+fn strip_dotenv_quotes(value: &str) -> String {
+    if value.len() >= 2 {
+        let bytes = value.as_bytes();
+        if (bytes[0] == b'"' && bytes[value.len() - 1] == b'"')
+            || (bytes[0] == b'\'' && bytes[value.len() - 1] == b'\'')
+        {
+            return value[1..value.len() - 1].to_string();
+        }
+    }
+    value.to_string()
 }
 
 /// Public `fn` `provider_api_key_candidates` in `tau-provider`.
@@ -493,8 +584,12 @@ pub fn resolve_auth_login_expires_unix(provider: Provider) -> Result<Option<u64>
 
 #[cfg(test)]
 mod tests {
+    use std::{fs, sync::Mutex};
+
     use super::provider_api_key_candidates_with_inputs;
     use tau_ai::Provider;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn unit_provider_api_key_candidates_include_deepseek_env_vars_for_openai() {
@@ -512,5 +607,126 @@ mod tests {
             names.contains(&"TAU_DEEPSEEK_API_KEY"),
             "TAU_DEEPSEEK_API_KEY should be a valid OpenAI-compatible key source"
         );
+    }
+
+    #[test]
+    fn unit_provider_api_key_candidates_read_openrouter_key_from_repo_dotenv() {
+        let _guard = ENV_LOCK.lock().expect("env lock");
+        let temp = tempfile::tempdir().expect("tempdir");
+        let repo = temp.path().join("repo");
+        let nested = repo.join("crates/tau-provider");
+        fs::create_dir_all(repo.join(".git")).expect("create fake git dir");
+        fs::create_dir_all(&nested).expect("create nested dir");
+        fs::write(
+            repo.join(".env"),
+            "OPENROUTER_API_KEY=file-openrouter-key\n",
+        )
+        .expect("write dotenv");
+        let prior_dir = std::env::current_dir().expect("current dir");
+        let prior = clear_env_vars(&[
+            "OPENROUTER_API_KEY",
+            "TAU_OPENROUTER_API_KEY",
+            "OPENAI_API_KEY",
+            "TAU_API_KEY",
+        ]);
+
+        std::env::set_current_dir(&nested).expect("set current dir");
+        let candidates =
+            provider_api_key_candidates_with_inputs(Provider::OpenRouter, None, None, None, None);
+
+        std::env::set_current_dir(prior_dir).expect("restore current dir");
+        restore_env_vars(prior);
+
+        assert_eq!(
+            candidate_value(&candidates, "OPENROUTER_API_KEY").as_deref(),
+            Some("file-openrouter-key")
+        );
+    }
+
+    #[test]
+    fn unit_provider_api_key_candidates_keep_process_env_precedence_over_dotenv() {
+        let _guard = ENV_LOCK.lock().expect("env lock");
+        let temp = tempfile::tempdir().expect("tempdir");
+        fs::create_dir_all(temp.path().join(".git")).expect("create fake git dir");
+        fs::write(
+            temp.path().join(".env"),
+            "export OPENROUTER_API_KEY='file-openrouter-key'\n",
+        )
+        .expect("write dotenv");
+        let prior_dir = std::env::current_dir().expect("current dir");
+        let prior = clear_env_vars(&[
+            "OPENROUTER_API_KEY",
+            "TAU_OPENROUTER_API_KEY",
+            "OPENAI_API_KEY",
+            "TAU_API_KEY",
+        ]);
+
+        std::env::set_var("OPENROUTER_API_KEY", "env-openrouter-key");
+        std::env::set_current_dir(temp.path()).expect("set current dir");
+        let candidates =
+            provider_api_key_candidates_with_inputs(Provider::OpenRouter, None, None, None, None);
+
+        std::env::set_current_dir(prior_dir).expect("restore current dir");
+        restore_env_vars(prior);
+
+        assert_eq!(
+            candidate_value(&candidates, "OPENROUTER_API_KEY").as_deref(),
+            Some("env-openrouter-key")
+        );
+    }
+
+    #[test]
+    fn unit_provider_api_key_candidates_absent_dotenv_preserves_missing_values() {
+        let _guard = ENV_LOCK.lock().expect("env lock");
+        let temp = tempfile::tempdir().expect("tempdir");
+        fs::create_dir_all(temp.path().join(".git")).expect("create fake git dir");
+        let prior_dir = std::env::current_dir().expect("current dir");
+        let prior = clear_env_vars(&[
+            "OPENROUTER_API_KEY",
+            "TAU_OPENROUTER_API_KEY",
+            "OPENAI_API_KEY",
+            "TAU_API_KEY",
+        ]);
+
+        std::env::set_current_dir(temp.path()).expect("set current dir");
+        let candidates =
+            provider_api_key_candidates_with_inputs(Provider::OpenRouter, None, None, None, None);
+
+        std::env::set_current_dir(prior_dir).expect("restore current dir");
+        restore_env_vars(prior);
+
+        assert!(candidate_value(&candidates, "OPENROUTER_API_KEY").is_none());
+        assert!(candidate_value(&candidates, "TAU_OPENROUTER_API_KEY").is_none());
+        assert!(candidate_value(&candidates, "OPENAI_API_KEY").is_none());
+    }
+
+    fn candidate_value(
+        candidates: &[(&'static str, Option<String>)],
+        name: &'static str,
+    ) -> Option<String> {
+        candidates
+            .iter()
+            .find(|(candidate_name, _)| *candidate_name == name)
+            .and_then(|(_, value)| value.clone())
+    }
+
+    fn clear_env_vars(names: &[&'static str]) -> Vec<(&'static str, Option<String>)> {
+        names
+            .iter()
+            .map(|name| {
+                let prior = std::env::var(name).ok();
+                std::env::remove_var(name);
+                (*name, prior)
+            })
+            .collect()
+    }
+
+    fn restore_env_vars(prior: Vec<(&'static str, Option<String>)>) {
+        for (name, value) in prior {
+            match value {
+                Some(value) => std::env::set_var(name, value),
+                None => std::env::remove_var(name),
+            }
+        }
     }
 }
